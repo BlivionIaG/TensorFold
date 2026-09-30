@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAStream.h>
 
 #include "affine_api.hpp"
 
@@ -29,7 +30,8 @@ void affine(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scal
     c10::cuda::CUDAGuard guard(x.device());
     affine_launch(x.data_ptr(), words.data_ptr(), scale.data_ptr(), bias.data_ptr(), out.data_ptr(),
                   static_cast<int>(m), static_cast<int>(n), static_cast<int>(k), static_cast<int>(bits),
-                  static_cast<int>(group), static_cast<int>(schedule), x.scalar_type() == at::kHalf ? 1 : 0);
+                  static_cast<int>(group), static_cast<int>(schedule), x.scalar_type() == at::kHalf ? 1 : 0,
+                  c10::cuda::getCurrentCUDAStream().stream());
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("affine", &affine); }
