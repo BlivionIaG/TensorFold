@@ -90,6 +90,7 @@ pub const Pass = struct {
     }
 };
 pub const Model = struct {
+    round_owner: @import("decode_round.zig").Owner = .{},
     weights: cp.Store,
     config: std.json.Parsed(Config),
     kernels: mx.Kernels,

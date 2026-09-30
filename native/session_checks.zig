@@ -220,13 +220,53 @@ fn interleaved(s: *session.Session, m: anytype, tok: *@import("vendor/tokenizer.
     cancelled_capture.cancelled = true;
     try std.testing.expectError(error.RequestCancelled, cancelled.step(m));
     try std.testing.expectError(error.FailedGeneration, cancelled.step(m));
+    var abort_capture = Capture{};
+    defer abort_capture.deinit();
+    var aborted = try G.init(m, tok, a, prompts[0], options[0], s.draftSink(abort_capture.sink()), null);
+    defer aborted.deinit();
+    while (aborted.phase == .prefill) _ = try aborted.step(m);
+    {
+        var decode = try aborted.beginRound(m);
+        defer decode.deinit();
+        try std.testing.expect(try decode.prepare());
+        try decode.forward();
+        abort_capture.cancelled = true;
+        try std.testing.expectError(error.RequestCancelled, decode.settle());
+        try std.testing.expectEqual(.failed, m.round_owner.stage);
+        try std.testing.expectError(error.InvalidRoundStage, decode.settle());
+    }
+    try std.testing.expectError(error.FailedGeneration, aborted.step(m));
+    try std.testing.expectEqual(@as(i32, 0), m.position);
+    try std.testing.expectEqual(.idle, m.round_owner.stage);
     var finished = [_]bool{ false, false, false };
     var round: usize = 0;
     while (!std.mem.allEqual(bool, &finished, true)) : (round += 1) {
         if (round > 256) return error.GenerationDidNotFinish;
         for (0..active.len) |j| {
             const index = (j + round) % active.len;
-            if (!finished[index]) finished[index] = try active[index].step(m);
+            if (!finished[index]) {
+                const g = &active[index];
+                if (g.phase == .decode) {
+                    var decode = try g.beginRound(m);
+                    defer decode.deinit();
+                    try std.testing.expectError(error.GenerationRoundActive, g.step(m));
+                    try std.testing.expectError(error.GenerationRoundActive, g.takeReply());
+                    const other = &active[(index + 1) % active.len];
+                    if (other.phase == .decode or other.phase == .prefill) try std.testing.expectError(error.ModelRoundActive, other.beginRound(m));
+                    try std.testing.expectError(error.InvalidRoundStage, decode.forward());
+                    if (try decode.prepare()) {
+                        try std.testing.expectError(error.InvalidRoundStage, decode.prepare());
+                        try std.testing.expectError(error.InvalidRoundStage, decode.settle());
+                        try decode.forward();
+                        try std.testing.expectError(error.InvalidRoundStage, decode.forward());
+                        try decode.settle();
+                        try std.testing.expectError(error.InvalidRoundStage, decode.settle());
+                    }
+                    finished[index] = g.phase == .finished;
+                    decode.deinit();
+                    try std.testing.expectError(error.StaleRound, decode.prepare());
+                } else finished[index] = try g.step(m);
+            }
             try std.testing.expectEqual(@as(i32, 0), m.position);
         }
     }
@@ -257,7 +297,7 @@ fn interleaved(s: *session.Session, m: anytype, tok: *@import("vendor/tokenizer.
     var empty = try zero.takeReply();
     defer empty.deinit(a);
     try std.testing.expectEqual(@as(usize, 0), empty.tokens.items.len);
-    std.debug.print("PASS: {s} isolated/interleaved prompts, reusable prefix snapshots, sampling seeds, streaming chunks, thinking budget, cancellation, stop strings and zero-token requests\n", .{@typeName(M)});
+    std.debug.print("PASS: {s} isolated/interleaved prompts, reusable prefixes, sampling, streaming, thinking budget, cancellation after forward, round ownership, stale handles, stop strings and zero-token requests\n", .{@typeName(M)});
 }
 
 pub fn check(io: std.Io, dir: []const u8) !void {

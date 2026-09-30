@@ -20,6 +20,7 @@ pub const Pass = struct {
 pub const Model = struct {
     pub const SerialPass = Pass;
     pub const DraftCache = Cache;
+    round_owner: @import("decode_round.zig").Owner = .{},
     weights: cp.Store,
     kernels: mx.Kernels,
     cache: [52]Cache = @splat(.{}),

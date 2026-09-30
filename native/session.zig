@@ -6,6 +6,7 @@ const sampling = @import("sampling.zig");
 const text = @import("reply_text.zig");
 const prefill_plan = @import("prefill_plan.zig");
 const neural = @import("neural_draft.zig");
+const rounds = @import("decode_round.zig");
 pub const Options = @import("request_options.zig").Options;
 
 pub const Backend = union(enum) {
@@ -126,7 +127,7 @@ pub const RequestGeneration = union(std.meta.Tag(Backend)) {
     pub fn snapshot(g: *const RequestGeneration) !?Snapshot {
         switch (g.*) {
             inline else => |*request, tag| {
-                if (request.image != null or request.reply.tokens.items.len != 0 or (request.phase != .prefill and request.phase != .decode) or !request.chunks.contains(request.offset)) return null;
+                if (request.in_round or request.image != null or request.reply.tokens.items.len != 0 or (request.phase != .prefill and request.phase != .decode) or !request.chunks.contains(request.offset)) return null;
                 return @unionInit(Snapshot, @tagName(tag), try request.state.clone());
             },
         }
@@ -340,6 +341,7 @@ fn generateModel(m: anytype, tok: *tokenizer.Tokenizer, a: std.mem.Allocator, pr
 pub fn Generation(comptime M: type) type {
     return struct {
         const Self = @This();
+        const Pass = @typeInfo(@typeInfo(@TypeOf(M.forward)).@"fn".return_type.?).error_union.payload;
         pub const chunk_size: usize = if (@hasDecl(M, "prefill")) 2048 else 16;
         model: *M,
         a: std.mem.Allocator,
@@ -365,6 +367,7 @@ pub fn Generation(comptime M: type) type {
         accepted: usize = 0,
         neural_proposed: usize = 0,
         neural_accepted: usize = 0,
+        in_round: bool = false,
 
         pub fn init(m: *M, tok: *tokenizer.Tokenizer, a: std.mem.Allocator, prompt: []const i32, options: Options, sink: Sink, image: ?*@import("vision.zig").Prompt) !Self {
             const vocab: i32 = if (M == qwen.Model) 248320 else if (@hasField(M, "vocab")) m.vocab else M.vocab;
@@ -388,6 +391,7 @@ pub fn Generation(comptime M: type) type {
         }
 
         pub fn deinit(g: *Self) void {
+            std.debug.assert(!g.in_round);
             if (g.proposer) |*proposer| proposer.deinit();
             g.context.deinit(g.a);
             g.state.deinit();
@@ -398,6 +402,7 @@ pub fn Generation(comptime M: type) type {
         }
 
         pub fn takeReply(g: *Self) !Reply {
+            if (g.in_round) return error.GenerationRoundActive;
             if (g.phase != .finished) return error.IncompleteGeneration;
             const reply = g.reply;
             g.reply = .{};
@@ -412,6 +417,7 @@ pub fn Generation(comptime M: type) type {
         }
 
         fn validatePrefix(g: *const Self, saved: *const @import("request_state.zig").State(M)) !usize {
+            if (g.in_round) return error.GenerationRoundActive;
             if (g.phase != .prefill or g.offset != 0 or g.image != null or saved.rope_delta != 0 or saved.position <= 0) return error.InvalidSnapshotState;
             const offset: usize = @intCast(saved.position);
             if (!g.chunks.contains(offset) or saved.cache.len != g.state.cache.len) return error.IncompatibleSnapshotBoundary;
@@ -426,6 +432,7 @@ pub fn Generation(comptime M: type) type {
         }
 
         pub fn setPlan(g: *Self, plan: prefill_plan.Plan) !void {
+            if (g.in_round) return error.GenerationRoundActive;
             if (g.offset != 0 or g.image != null) return error.InvalidSnapshotState;
             if (plan.step > chunk_size) return error.UnsupportedPrefillChunk;
             const chunks = try plan.chunks(g.a, g.prompt);
@@ -436,17 +443,84 @@ pub fn Generation(comptime M: type) type {
         /// One prefill chunk or verified decode block; no model pass survives the call.
         pub fn step(g: *Self, m: *M) !bool {
             if (m != g.model) return error.WrongGenerationModel;
+            if (g.in_round) return error.GenerationRoundActive;
             if (g.phase == .finished) return true;
+            var round = try g.beginRound(m);
+            defer round.deinit();
+            if (g.phase == .prefill) {
+                try g.prefill(m);
+                try round.ticket.advance(.bound, .settled);
+            } else if (try round.prepare()) {
+                try round.forward();
+                try round.settle();
+            }
+            return g.phase == .finished;
+        }
+
+        pub fn beginRound(g: *Self, m: *M) !Round {
+            if (m != g.model) return error.WrongGenerationModel;
+            if (g.in_round) return error.GenerationRoundActive;
             if (g.phase == .failed) return error.FailedGeneration;
+            if (g.phase == .finished) return error.FinishedGeneration;
+            const ticket = try m.round_owner.begin();
+            errdefer ticket.release();
             errdefer g.phase = .failed;
             try g.sink.check();
             g.state.swap(m);
-            defer g.state.swap(m);
             if (g.sink.drafter) |d| g.state.swapDFlash(d);
-            defer if (g.sink.drafter) |d| g.state.swapDFlash(d);
-            if (g.phase == .prefill) try g.prefill(m) else try g.decode(m);
-            return g.phase == .finished;
+            g.in_round = true;
+            return .{ .request = g, .model = m, .ticket = ticket };
         }
+
+        /// Do not copy an active round; its request and model must stay at stable addresses.
+        pub const Round = struct {
+            request: *Self,
+            model: *M,
+            ticket: rounds.Ticket,
+            window: ?rounds.Window = null,
+            pass: ?Pass = null,
+
+            pub fn prepare(r: *Round) !bool {
+                try r.ticket.expect(.bound);
+                if (r.request.phase != .decode) return error.InvalidRoundStage;
+                errdefer r.ticket.owner.stage = .failed;
+                r.window = try r.request.prepareDecode(r.model);
+                try r.ticket.advance(.bound, if (r.window != null) .prepared else .settled);
+                return r.window != null;
+            }
+
+            pub fn forward(r: *Round) !void {
+                try r.ticket.expect(.prepared);
+                errdefer r.ticket.owner.stage = .failed;
+                const w = &r.window.?;
+                r.pass = if (M == qwen.Model) try r.model.forward(w.tokens[0..w.count], w.parents[0..w.count]) else try r.model.forward(w.tokens[0..w.count]);
+                try r.ticket.advance(.prepared, .forwarded);
+            }
+
+            pub fn settle(r: *Round) !void {
+                try r.ticket.expect(.forwarded);
+                errdefer r.ticket.owner.stage = .failed;
+                try r.request.sink.check();
+                const w = &r.window.?;
+                const pass = &r.pass.?;
+                const ids = try sampling.rows(&r.model.kernels, &pass.scope, pass.logits, w.positions[0..w.count], r.request.settings);
+                defer mx.allocator.free(ids);
+                try r.request.settleDecode(r.model, w, pass, ids);
+                try r.ticket.advance(.forwarded, .settled);
+            }
+
+            pub fn deinit(r: *Round) void {
+                if (!r.ticket.active()) return;
+                const g = r.request;
+                if (r.ticket.owner.stage != .settled) g.phase = .failed;
+                if (r.pass) |*pass| pass.deinit();
+                r.pass = null;
+                if (g.sink.drafter) |d| g.state.swapDFlash(d);
+                g.state.swap(r.model);
+                g.in_round = false;
+                r.ticket.release();
+            }
+        };
 
         fn prefill(g: *Self, m: *M) !void {
             const count = g.chunks.next(g.offset) - g.offset;
@@ -480,34 +554,24 @@ pub fn Generation(comptime M: type) type {
             return if (M == qwen.Model) id == 248044 or id == 248046 else if (@hasDecl(M, "isEos")) m.isEos(id) else M.eos(id);
         }
 
-        fn decode(g: *Self, m: *M) !void {
+        fn prepareDecode(g: *Self, m: *M) !?rounds.Window {
             if (!g.next_adjusted) g.next = try g.budget.next(g.sink.gate, g.reply.tokens.items.len, g.next, eos(m, g.next));
             g.next_adjusted = false;
             try g.emitToken(m);
-            if (g.phase == .finished) return;
-            var window: [16]i32 = undefined;
-            var parents: [16]i32 = undefined;
-            var positions: [16]i32 = undefined;
-            window[0] = g.next;
-            parents[0] = -1;
+            if (g.phase == .finished) return null;
             var draft = @import("drafter.zig").Proposal{};
             if (g.proposer) |*proposer| {
                 draft = try proposer.propose(g.a, g.context.items, @min(15, g.options.max_tokens - g.reply.tokens.items.len));
             }
             const from_neural = draft.len == 0 and g.options.draft and g.sink.draft_budget > 0 and neural.enabled(m, g.sink.drafter);
             if (from_neural) draft = try neural.propose(m, &g.state, g.sink.drafter, g.next, @min(g.sink.draft_budget, g.options.max_tokens - g.reply.tokens.items.len), g.settings);
-            const proposed = draft.len;
-            @memcpy(window[1..][0..proposed], draft.tokens[0..proposed]);
-            const count = proposed + 1;
-            positions[0] = m.position + 1;
-            for (0..proposed) |i| {
-                parents[i + 1] = draft.parents[i] + 1;
-                positions[i + 1] = positions[@intCast(parents[i + 1])] + 1;
-            }
-            var pass = if (M == qwen.Model) try m.forward(window[0..count], parents[0..count]) else try m.forward(window[0..count]);
-            defer pass.deinit();
-            const ids = try sampling.rows(&m.kernels, &pass.scope, pass.logits, positions[0..count], g.settings);
-            defer mx.allocator.free(ids);
+            return try rounds.Window.init(g.next, m.position, draft, from_neural);
+        }
+
+        fn settleDecode(g: *Self, m: *M, w: *const rounds.Window, pass: *Pass, ids: []const i32) !void {
+            const count = w.count;
+            const parents = w.parents[0..count];
+            const window = w.tokens[0..count];
             var keep: usize = 1;
             var kept: [16]i32 = undefined;
             kept[0] = 0;
@@ -542,12 +606,13 @@ pub fn Generation(comptime M: type) type {
                 keep += 1;
             }
             if (M == qwen.Model) {
-                try m.commit(&pass, kept[0..keep]);
-            } else try m.commit(&pass, keep);
-            if (g.sink.draft_budget > 0) try neural.absorb(m, &g.state, g.sink.drafter, &pass, window[0..count], kept[0..keep]);
+                try m.commit(pass, kept[0..keep]);
+            } else try m.commit(pass, keep);
+            if (g.sink.draft_budget > 0) try neural.absorb(m, &g.state, g.sink.drafter, pass, window, kept[0..keep]);
+            const proposed = w.draft.len;
             g.proposed += proposed;
             g.accepted += accepted;
-            if (from_neural) {
+            if (w.from_neural) {
                 g.neural_proposed += proposed;
                 g.neural_accepted += accepted;
             } else if (g.proposer) |*proposer| proposer.observe(proposed, accepted);

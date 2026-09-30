@@ -36,6 +36,7 @@ pub const Pass = struct {
     }
 };
 pub const Model = struct {
+    round_owner: @import("decode_round.zig").Owner = .{},
     weights: cp.Store,
     kernels: mx.Kernels,
     activations: @import("prefill_ops.zig").Ops = .{},
