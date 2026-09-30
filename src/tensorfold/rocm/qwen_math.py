@@ -130,38 +130,99 @@ def causal_conv(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor | Non
     return torch.nn.functional.silu(out), window[:, length:].contiguous()
 
 
+def _gate_beta(a: torch.Tensor, b: torch.Tensor, a_log: torch.Tensor, dt_bias: torch.Tensor,
+               ) -> tuple[torch.Tensor, torch.Tensor]:
+    beta = torch.sigmoid(b.float())
+    gate = torch.exp(-torch.exp(a_log.float()) * torch.nn.functional.softplus(a.float() + dt_bias.float()))
+    return gate, beta
+
+
+def _lanes(x: torch.Tensor, span: int) -> torch.Tensor:
+    """Pack the last axis as ``(span, 32)`` with index ``lane + i * 32``. Unused lanes stay zero."""
+
+    width = span * 32
+    if x.shape[-1] != width:
+        padded = x.new_zeros(*x.shape[:-1], width)
+        padded[..., :x.shape[-1]] = x
+        x = padded
+    return x.reshape(*x.shape[:-1], span, 32)
+
+
+def _warp0(partial: torch.Tensor) -> torch.Tensor:
+    """Lane 0 after a xor-shuffle of 16, 8, 4, 2, 1. Each lane adds ``x[i] + x[i ^ mask]``."""
+
+    x = partial
+    index = torch.arange(32, device=partial.device)
+    for mask in (16, 8, 4, 2, 1):
+        x = x + x[..., index ^ mask]
+    return x[..., 0]
+
+
+def gated_delta_reference(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, gate: torch.Tensor,
+                          beta: torch.Tensor, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """The kernel's reduction, in PyTorch. Decay, then the value residual, then the q readout."""
+
+    batch, length, key_heads, key_dim = q.shape
+    value_heads, value_dim = v.shape[-2:]
+    if key_dim not in (16, 128) or value_heads % key_heads != 0:
+        raise ValueError("dk is 16 or 128 and value heads are a multiple of key heads")
+    span = 1 if key_dim < 32 else key_dim // 32
+    repeat = value_heads // key_heads
+    q = q.float().contiguous()
+    k = k.float().contiguous()
+    v = v.float().contiguous()
+    gate = gate.float().reshape(batch, length, value_heads)
+    beta = beta.float().reshape(batch, length, value_heads)
+    state = state.float().contiguous().clone()
+    y = torch.empty(batch, length, value_heads, value_dim, device=q.device, dtype=torch.float32)
+    heads = torch.arange(value_heads, device=q.device) // repeat
+    for t in range(length):
+        scaled = state * gate[:, t].view(batch, value_heads, 1, 1)
+        kt = k[:, t].index_select(1, heads)
+        qt = q[:, t].index_select(1, heads)
+        st_l = _lanes(scaled, span)
+        k_l = _lanes(kt, span).unsqueeze(2)
+        partial = torch.zeros(batch, value_heads, value_dim, 32, device=q.device, dtype=torch.float32)
+        for i in range(span):
+            partial = partial + st_l[..., i, :] * k_l[..., i, :]
+        delta = (v[:, t] - _warp0(partial)) * beta[:, t].view(batch, value_heads, 1)
+        for i in range(span):
+            st_l[..., i, :] = st_l[..., i, :] + k_l[..., i, :] * delta.unsqueeze(-1)
+        state = st_l.reshape(batch, value_heads, value_dim, span * 32)[..., :key_dim].contiguous()
+        q_l = _lanes(qt, span).unsqueeze(2)
+        acc = torch.zeros_like(partial)
+        for i in range(span):
+            acc = acc + st_l[..., i, :] * q_l[..., i, :]
+        y[:, t] = _warp0(acc)
+    return y, state
+
+
 def gated_delta(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tensor, b: torch.Tensor,
                 a_log: torch.Tensor, dt_bias: torch.Tensor, state: torch.Tensor | None,
                 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Scalar-gate delta rule. State is fp32 and each request keeps its own.
 
-    The recurrence matches the MLX ops reference: decay, then the value residual, then the q readout.
+    Decay, then the value residual, then the q readout. On device the wave kernel runs that
+    order; ``gated_delta_reference`` is the same Dk reduction for the test.
     """
 
-    beta = torch.sigmoid(b.float())
-    gate = torch.exp(-torch.exp(a_log.float()) * torch.nn.functional.softplus(a.float() + dt_bias.float()))
+    gate, beta = _gate_beta(a, b, a_log, dt_bias)
     batch, length, key_heads, key_dim = q.shape
     value_heads, value_dim = v.shape[-2:]
     if state is None:
         state = torch.zeros(batch, value_heads, value_dim, key_dim, device=q.device, dtype=torch.float32)
     else:
         state = state.float()
-    qf = q.float()
-    kf = k.float()
-    vf = v.float()
-    if value_heads != key_heads:
-        repeat = value_heads // key_heads
-        qf = qf.repeat_interleave(repeat, dim=2)
-        kf = kf.repeat_interleave(repeat, dim=2)
-    y = torch.empty(batch, length, value_heads, value_dim, device=q.device, dtype=torch.float32)
-    for t in range(length):
-        state = state * gate[:, t].view(batch, value_heads, 1, 1)
-        kt = kf[:, t].view(batch, -1, 1, key_dim)
-        remembered = (state * kt).sum(dim=-1)
-        delta = (vf[:, t] - remembered) * beta[:, t].view(batch, value_heads, 1)
-        state = state + kt * delta.unsqueeze(-1)
-        y[:, t] = (state * qf[:, t].view(batch, -1, 1, key_dim)).sum(dim=-1)
-    return y, state
+    qf = q.float().contiguous()
+    kf = k.float().contiguous()
+    vf = v.float().contiguous()
+    gate = gate.reshape(batch, length, value_heads).contiguous()
+    beta = beta.reshape(batch, length, value_heads).contiguous()
+    if qf.is_cuda:
+        from tensorfold.rocm.gated_delta import recurrence
+
+        return recurrence(qf, kf, vf, gate, beta, state.contiguous())
+    return gated_delta_reference(qf, kf, vf, gate, beta, state)
 
 
 def _codes(words: torch.Tensor, bits: int, k: int) -> torch.Tensor:
