@@ -116,7 +116,12 @@ class Engine:
 
     def generate(self, prompts: list[list[int]], n_new: int, after_token=None) -> list[list[int]]:
         device = self.model.embed.words.device
-        return greedy(self.model, prompts, n_new, self.linear, device, after_token=after_token)
+        if self.dtype is None:
+            from tensorfold.rocm.build import gfx_name
+
+            self.dtype = activation_dtype(gfx_name())
+        return greedy(self.model, prompts, n_new, self.linear, device, after_token=after_token,
+                      cache_dtype=self.dtype)
 
 
 def _float(table, key: str, device: torch.device) -> torch.Tensor:

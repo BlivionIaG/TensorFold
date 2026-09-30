@@ -381,8 +381,8 @@ def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
         end = cache["len"] + length
         if end > cache["k"].shape[2]:
             raise RuntimeError("kv cache is shorter than the tokens written into it")
-        cache["k"][:, :, cache["len"]:end] = keys
-        cache["v"][:, :, cache["len"]:end] = values
+        cache["k"][:, :, cache["len"]:end] = keys.to(dtype=cache["k"].dtype)
+        cache["v"][:, :, cache["len"]:end] = values.to(dtype=cache["v"].dtype)
         cache["len"] = end
         kept_k = cache["k"][:, :, :end]
         kept_v = cache["v"][:, :, :end]
@@ -394,13 +394,25 @@ def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
         kept_k = torch.cat((cache["k"], keys), dim=2)
         kept_v = torch.cat((cache["v"], values), dim=2)
         new_cache = {"k": kept_k, "v": kept_v}
-    attended = causal_attend(queries, kept_k, kept_v, spec.head_dim ** -0.5, pos0)
+    attended = _attend(queries, kept_k, kept_v, spec.head_dim ** -0.5, pos0)
     attended = attended.permute(0, 2, 1, 3).reshape(batch, length, -1)
     gated = attended * torch.sigmoid(gate.reshape(batch, length, -1).float())
     return _project(gated, layer.o, linear), new_cache
 
 
-def _blank_caches(model, batch: int, total: int, device: torch.device) -> list:
+def _attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_pos0: int) -> torch.Tensor:
+    """Device attention reads the cache dtype directly. The Python path is the spec for the test."""
+
+    # One query is the decode step. Prefill stays on the chunked matmul, which already fills the GPU.
+    if q.is_cuda and k.is_cuda and q.shape[2] == 1 and q.shape[-1] <= 256 and q.shape[1] % k.shape[1] == 0:
+        from tensorfold.rocm.attention import causal
+
+        return causal(q, k, v, scale, q_pos0)
+    return causal_attend(q, k, v, scale, q_pos0)
+
+
+def _blank_caches(model, batch: int, total: int, device: torch.device, cache_dtype: torch.dtype = torch.float32,
+                  ) -> list:
     """One cache per request. Full attention keeps a fixed key/value buffer; linear attention keeps its own state."""
 
     spec = model.spec
@@ -409,8 +421,8 @@ def _blank_caches(model, batch: int, total: int, device: torch.device) -> list:
         if spec.full(index):
             shape = (batch, spec.kv_heads, total, spec.head_dim)
             caches.append({
-                "k": torch.empty(shape, device=device, dtype=torch.float32),
-                "v": torch.empty(shape, device=device, dtype=torch.float32),
+                "k": torch.empty(shape, device=device, dtype=cache_dtype),
+                "v": torch.empty(shape, device=device, dtype=cache_dtype),
                 "len": 0,
             })
         else:
@@ -419,7 +431,7 @@ def _blank_caches(model, batch: int, total: int, device: torch.device) -> list:
 
 
 def greedy(model, prompts: list[list[int]], n_new: int, linear, device: torch.device,
-           after_token=None) -> list[list[int]]:
+           after_token=None, cache_dtype: torch.dtype = torch.float32) -> list[list[int]]:
     """Generate ``n_new`` tokens for every prompt. End-of-sequence does not stop the loop.
 
     ``after_token(step)`` runs once the work for that token has been queued. Step ``-1`` is the start,
@@ -432,7 +444,7 @@ def greedy(model, prompts: list[list[int]], n_new: int, linear, device: torch.de
     if tokens.ndim != 2 or tokens.shape[0] < 1 or tokens.shape[1] < 1:
         raise ValueError("prompts must be a non-empty rectangular batch")
     batch, length = tokens.shape
-    caches = _blank_caches(model, batch, length + n_new, device)
+    caches = _blank_caches(model, batch, length + n_new, device, cache_dtype)
     out = [[] for _ in range(batch)]
 
     def commit(step: int, nxt: torch.Tensor) -> None:

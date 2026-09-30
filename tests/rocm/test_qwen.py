@@ -100,14 +100,14 @@ def test_greedy_ids_match_the_reference_at_c1_and_c8():
         got_one = engine.generate(one, 3)
         assert max(seen) == 4
         before = len(seen)
-        ref_one = greedy(model, one, 3, _reference_linear, device)
+        ref_one = greedy(model, one, 3, _reference_linear, device, cache_dtype=torch.bfloat16)
         assert len(seen) == before
         assert got_one == ref_one and len(got_one[0]) == 3
         seen.clear()
         got_eight = engine.generate(eight, 3)
         assert max(seen) == 32
         before = len(seen)
-        ref_eight = greedy(model, eight, 3, _reference_linear, device)
+        ref_eight = greedy(model, eight, 3, _reference_linear, device, cache_dtype=torch.bfloat16)
         assert len(seen) == before
         assert got_eight == ref_eight
         assert len(got_eight) == 8 and all(len(row) == 3 for row in got_eight)
