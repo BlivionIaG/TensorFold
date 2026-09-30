@@ -8,12 +8,13 @@ const Quant = @import("quantization.zig");
 pub const Store = struct {
     arrays: std.StringHashMap(A),
     dense: std.StringHashMap(lanes.Linear),
+    flash_dense: std.StringHashMap(@import("flash_lane.zig").Projection),
     group: i32,
     flash_drafts: ?bool = null,
     quant_config: ?std.json.Parsed(std.json.Value) = null,
     formats: std.StringHashMap(Quant.Spec),
     pub fn init(group: i32) Store {
-        return .{ .arrays = std.StringHashMap(A).init(mx.allocator), .dense = std.StringHashMap(lanes.Linear).init(mx.allocator), .formats = std.StringHashMap(Quant.Spec).init(mx.allocator), .group = group };
+        return .{ .arrays = std.StringHashMap(A).init(mx.allocator), .dense = std.StringHashMap(lanes.Linear).init(mx.allocator), .flash_dense = std.StringHashMap(@import("flash_lane.zig").Projection).init(mx.allocator), .formats = std.StringHashMap(Quant.Spec).init(mx.allocator), .group = group };
     }
     pub fn deinit(w: *Store) void {
         var it = w.arrays.iterator();
@@ -28,6 +29,12 @@ pub const Store = struct {
             mx.allocator.free(e.key_ptr.*);
         }
         w.dense.deinit();
+        var flash = w.flash_dense.iterator();
+        while (flash.next()) |e| {
+            e.value_ptr.deinit();
+            mx.allocator.free(e.key_ptr.*);
+        }
+        w.flash_dense.deinit();
         var formats = w.formats.keyIterator();
         while (formats.next()) |key| mx.allocator.free(key.*);
         w.formats.deinit();
@@ -209,7 +216,17 @@ pub const Store = struct {
             return s.binary(mx.c.mlx_matmul, x, try s.transpose(weight, &.{ 1, 0 }));
         };
         const t = try w.triple(name);
-        if (exact and w.flash_drafts != null) return @import("flash_ops.zig").project(k, s, x, .{ .arrays = t, .format = fmt }, mx.gpu_generation, 4);
+        if (exact and w.flash_drafts != null) {
+            if (!mx.tensor_units) return @import("flash_ops.zig").project(k, s, x, .{ .arrays = t, .format = fmt }, mx.gpu_generation, 4);
+            if (!w.flash_dense.contains(name)) {
+                var projection = try @import("flash_lane.zig").Projection.init(s, .{ .arrays = t, .format = fmt });
+                errdefer projection.deinit();
+                const key = try mx.allocator.dupe(u8, name);
+                errdefer mx.allocator.free(key);
+                try w.flash_dense.put(key, projection);
+            }
+            return w.flash_dense.get(name).?.apply(k, s, x);
+        }
         const n = mx.dim(t[0], 0);
         const dims = mx.dim(x, -1);
         const rows: i32 = @intCast(mx.c.mlx_array_size(x) / @as(usize, @intCast(dims)));

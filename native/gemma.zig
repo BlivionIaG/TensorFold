@@ -175,6 +175,13 @@ pub const Model = struct {
         return (try m.kernels.run(s, src.nemotron_rows_qmv, &.{ x, weights[0], weights[1], weights[2] }, &.{ ti("K", width), ti("N", n), ti("GS", gs), ti("RPS", 4) }, .{ 32 * rows, @divExact(n, 4), 1 }, .{ 32 * rows, if (rows <= 8) 2 else 1, 1 }, &.{.{ .shape = &.{ rows, n } }}))[0];
     }
     pub fn forward(m: *Model, tokens: []const i32) !Pass {
+        var p = try m.forwardQueued(tokens);
+        errdefer p.deinit();
+        try mx.eval(p.logits);
+        return p;
+    }
+
+    pub fn forwardQueued(m: *Model, tokens: []const i32) !Pass {
         if (tokens.len == 0 or tokens.len > 16 or m.position > 262144 - tokens.len) return error.ContextLimitExceeded;
         for (tokens) |token| if (token < 0 or token >= vocab) return error.InvalidToken;
         var p = Pass{ .position = m.position, .generation = m.generation, .rows = tokens.len };
@@ -218,7 +225,6 @@ pub const Model = struct {
         p.hidden = normed;
         if (tap_count > 0) p.taps = try s.cat(taps[0..tap_count], -1);
         p.logits = try m.activations.call(s, .softcap, &.{ try m.project(s, normed, try m.weights.triple("model.embed_tokens")), try s.scalar(30) });
-        try mx.eval(p.logits);
         return p;
     }
     pub fn prefill(m: *Model, tokens: []const i32) !Pass {
@@ -247,7 +253,12 @@ pub const Model = struct {
                 @field(target, field) = try mx.retain(value);
             }
         }
-        for (next) |cache| try mx.evalMany(&.{ cache.keys, cache.values }, false);
+        var arrays: [60]A = undefined;
+        for (next, 0..) |cache, i| {
+            arrays[2 * i] = cache.keys;
+            arrays[2 * i + 1] = cache.values;
+        }
+        try mx.evalMany(&arrays, false);
         if (m.draft) |*d| {
             if (d.position != m.position or p.taps.ctx == null) return error.InvalidDraftContext;
             try d.absorb(try s.slice(p.taps, 0, 0, @intCast(keep)));

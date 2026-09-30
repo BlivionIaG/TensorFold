@@ -251,6 +251,41 @@ def extra_variants(capture):
             mx.eval(simd_qmm_bits.qmm(x, *weights, bits, kind=kind))
 
 
+def bonsai_reuse_variants(capture):
+    import mlx.nn as nn
+    from tensorfold.families.bonsai.modules import RotatedLinear
+    from tensorfold.families.qwen3_5 import tensor_units
+    from tensorfold.kernels.qwen.dense.v1 import lane_fuse, lane_qmm
+
+    if not tensor_units():
+        return
+    k = 1024
+    signs = mx.where(mx.arange(k) % 2 == 0, 1., -1.).astype(mx.float32)
+    for n in (64, 16384):
+        members, extra = [], {"source_signs": signs}
+        for i in range(2):
+            linear = nn.QuantizedLinear(k, n, bias=False, group_size=64, bits=2)
+            q, s, b = mx.quantize(mx.random.normal((n, k), key=mx.random.key(317 + i + n)).astype(mx.bfloat16),
+                                   group_size=64, bits=2)
+            linear.weight, linear.scales, linear.biases = q, s, b
+            extra.update({f"member{i}_weight": q, f"member{i}_scales": s, f"member{i}_biases": b})
+            members.append(RotatedLinear(linear, signs))
+        parent = nn.Module()
+        parent.gate_proj, parent.up_proj = members
+        lane_qmm.install(parent)
+        group = lane_fuse._build(parent, "gu")
+        assert isinstance(group, lane_fuse._Group)
+        assert group.tiled
+        assert group.sk == lane_qmm.split_k(n, k)
+        for rows in (1, 3, 8, 33, 128):
+            x = mx.random.normal((1, rows, k), key=mx.random.key(819 + rows)).astype(mx.bfloat16)
+            capture.test = f"bonsai-reuse-{n}-{rows}"
+            capture.extra = {**extra, "source_input": x}
+            mx.eval(lane_qmm.lane_matmul(members[0].rotate(x), group.weight, group.sbt,
+                                        tiled=group.tiled, sk=group.sk, nt=group.nt))
+    capture.extra = {}
+
+
 def grouped_lane_variants(capture):
     from tensorfold.kernels.qwen.dense.v1 import lane_qmm
     for bits in (2, 3, 5, 6, 8):
@@ -565,8 +600,10 @@ def simd_bits_fixtures(directory):
 def flash_weight_fixtures(directory):
     from types import SimpleNamespace
     from tensorfold.kernels.qwen.flash_next.v1 import base, rows
+    from tensorfold.families.qwen4_exp import decode
     from tests.test_flash_next_affine import quantized, bf16
     rng = np.random.default_rng(96173)
+    project = decode._lane_project if decode.DENSE == "lane" else rows.qmv_rows
     cases = []
     formats = [(b, g) for b in (2, 3, 4, 5, 6, 8) for g in (32, 64, 128)]
     for a_fmt in formats:
@@ -591,7 +628,7 @@ def flash_weight_fixtures(directory):
             expected = {"input": x, "format": mx.array([combined.bits, combined.group], mx.int32),
                         "a.dequant": mx.dequantize(a.weight, a.scales, a.biases, bits=a_fmt[0], group_size=a_fmt[1]),
                         "a.embed": mx.dequantize(a.weight[[0, 7]], a.scales[[0, 7]], a.biases[[0, 7]], bits=a_fmt[0], group_size=a_fmt[1]),
-                        "b.projection": rows.qmv_rows(x, b), "stack.projection": rows.qmv_rows(x, stacked),
+                        "b.projection": project(x, b), "stack.projection": project(x, stacked),
                         "b.matmul": mx.quantized_matmul(x, b.weight, b.scales, b.biases, transpose=True, bits=b_fmt[0], group_size=b_fmt[1]),
                         "dense.projection": x @ dense.T}
             expected.update({f"stack.{key}": getattr(combined, key) for key in ("weight", "scales", "biases")})
@@ -1567,6 +1604,35 @@ def flash_prefill_ple_fixtures(directory):
     print(f"Saved {len(cases)} Flash PLE projection/gating/convolution cases with long-prompt continuation", flush=True)
 
 
+def flash_lane_variants(capture):
+    from tensorfold.families.qwen4_exp.decode import _lane_project
+    from tensorfold.kernels.qwen.flash_next.v1 import base, hc
+    from tests.test_flash_next_affine import quantized, bf16
+    rng = np.random.default_rng(1191721)
+    for bits in (2, 3, 4, 5, 6, 8):
+        for group in (32, 64, 128):
+            for n in (28, 32, 64, 96):
+                w = quantized(rng, (n, 1024), bits, group)
+                capture.extra = {"original_weight": w.weight, "original_scales": w.scales,
+                                 "original_biases": w.biases, "original_format": mx.array([bits, group], mx.int32)}
+                for rows in (1, 2, 4, 16, 33, 128):
+                    capture.test = f"flash-lane-{bits}-{group}-{n}-{rows}"
+                    mx.eval(_lane_project(bf16(rng, (rows, 1024)), w))
+    for df in ((4, 32), (3, 32), (6, 64), (8, 32)):
+        for uf in ((4, 32), (3, 32), (6, 64), (8, 32)):
+            down, up = quantized(rng, (68, 10240), *df), quantized(rng, (10240, 64), *uf)
+            dw, uw = base.QWeights.of(down), base.QWeights.of(up)
+            capture.extra = {"down_weight": dw.weight, "down_scales": dw.scales,
+                             "down_biases": dw.biases, "down_format": mx.array(df, mx.int32)}
+            for rows in (1, 2, 4, 16, 33):
+                capture.test = f"flash-lane-hc-{df}-{uf}-{rows}"
+                h = bf16(rng, (rows, 10240))
+                hn, ssp = hc.hc_norm(h, streams=4)
+                scale = mx.array(1 + .1 * rng.normal(size=10240), mx.float32)
+                mx.eval(*hc.hc_project(hn, ssp, dw, uw, scale, eps=mx.array([1e-6], mx.float32), streams=4, low=64))
+    capture.extra = {}
+
+
 def flash_affine_variants(capture):
     from tensorfold.kernels.qwen.flash_next.v1 import base, rows, hc, experts, embed
     from tests.test_flash_next_affine import quantized, bf16, same
@@ -1738,6 +1804,7 @@ def main():
     parser.add_argument("--simd-dense", action="store_true")
     parser.add_argument("--simd-bits", action="store_true")
     parser.add_argument("--flash-affine", action="store_true")
+    parser.add_argument("--flash-lane", action="store_true")
     parser.add_argument("--flash-weights", action="store_true")
     parser.add_argument("--flash-prefill-hc", action="store_true")
     parser.add_argument("--flash-prefill-mm", action="store_true")
@@ -1795,6 +1862,20 @@ def main():
         return
     capture = Capture(args.directory)
     mx.fast.metal_kernel = capture.kernel
+    if args.flash_lane:
+        try:
+            flash_lane_variants(capture)
+        finally:
+            mx.fast.metal_kernel = capture.original
+        required = {"lane_qmm_coop", "lane_qmm_main", "lane_qmm_main_tiled"} | {
+            f"flash_{fmt}_hc_{direction}_{kind}" for fmt in ("q4", "qa")
+            for direction in ("down", "up") for kind in ("row", "mma")}
+        missing = required - {case["kernel"] for case in capture.cases}
+        if missing:
+            raise RuntimeError(f"Missing production Flash lane kernels: {sorted(missing)}")
+        (args.directory / "cases.json").write_text(json.dumps(capture.cases, indent=2) + "\n")
+        print(f"Saved {len(capture.cases)} production Flash lane launches", flush=True)
+        return
     if args.flash_prefill_mm:
         try:
             flash_prefill_mm_fixtures(capture)
@@ -1842,7 +1923,8 @@ def main():
             flash_affine_variants(capture)
         finally:
             mx.fast.metal_kernel = capture.original
-        required = {name for name in capture.fingerprints if name.startswith("flash_") and not name.startswith("flash_prefill_")}
+        required = {name for name in capture.fingerprints if name.startswith("flash_") and not name.startswith("flash_prefill_")
+                    and not ("_hc_" in name and name.endswith(("_row", "_mma")))}
         missing = required - {case["kernel"] for case in capture.cases}
         if missing:
             raise RuntimeError(f"Missing Flash affine kernels: {sorted(missing)}")
@@ -1885,6 +1967,8 @@ def main():
                 raise SystemExit(code)
             if args.gemma_only:
                 gemma_quantization_variants(capture)
+            if args.bonsai_only:
+                bonsai_reuse_variants(capture)
             if args.tensor_quantization:
                 grouped_lane_variants(capture)
         finally:

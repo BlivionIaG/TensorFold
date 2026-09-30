@@ -136,6 +136,7 @@ The table entries are arguments to `.zig-toolchain/zig build`:
 | Host unit and checkpoint-file checks | `test test-checkpoint-files -Doptimize=safe -j1` | Native libraries; no weights or GPU execution |
 | Flash checkpoint names and PLE loading | `test-flash-checkpoint -Doptimize=safe -j1` | Metal and Python; small synthetic PLE/MTP checkpoints |
 | Flash affine row operators | `test-flash-affine -Doptimize=safe -j1` | Metal and Python; 2/3/4/5/6/8-bit projections, hyper-connections, experts, fused PLE and forced pre-M5 variants |
+| Flash M5 lane operators | `test-flash-lane -Doptimize=safe -j1` | Production lane projections, 32/64-column tiling, group-128 splitting and scalar/matrix hyper-connections |
 | Flash mixed-format checkpoint loading | `test-flash-weights -Doptimize=safe -j1` | Metal and Python; exact packed widening, regrouping, embedding lookup and configured projections |
 | Flash batched hyper-connections | `test-flash-prefill-hc -Doptimize=safe -j1` | Metal and Python; synthetic residual write-back, mixed affine formats and exact intermediate arrays; does not verify full-model prefill |
 | Flash pre-M5 matmuls | `test-flash-prefill-mm -Doptimize=safe -j1` | Tiled projections, sorted expert gathers, mixed-format/split-K fallback and the seeded runtime self-check; physical M1–M4 execution remains unverified |
@@ -175,13 +176,14 @@ The table entries are arguments to `.zig-toolchain/zig build`:
 | Gemma text/cache parity | `test-gemma-model -Doptimize=safe -j1` | Installed Gemma checkpoint |
 | Request state and interleaved generation | `test-request-state test-session-rounds test-session-images -Doptimize=safe -j1` | Synthetic ownership for all backends; Qwen/Gemma/Nemotron checkpoints and Qwen image inputs |
 | Shared Qwen/Bonsai backend | `test-qwen-stream-kernels test-qwen-shared-rounds -Doptimize=safe -j1` | Upstream kernel/layout oracles and both installed checkpoints; exact hidden/logits/taps and caches, 64 streams/128 rows, tensor and forced SIMD paths. HTTP coordination is separate; physical M1–M4 remains unverified |
+| Shared request coordination | `test-session-shared test-session-shared-neural test-server-rounds test-server-neural-multimodal -Doptimize=safe -j1` | Qwen/Bonsai exact serial output, seeded sampling, row caps, fairness, cancellation isolation, request-local DFlash caches and image/text HTTP rounds |
 | Prefix cache policy and restoration | `test-prompt-cache test-session-rounds -Doptimize=safe -j1` | Python policy oracle; exact Qwen/Gemma/Nemotron continuation after prefix reuse and eviction |
 | Adaptive prefill boundaries and markers | `test-prefill-plan test-chat -Doptimize=safe -j1` | Python plan oracle and all seven local tokenizers; no model weights loaded |
 | HTTP prefix reuse and eviction | `test-server-prefixes -Doptimize=safe -j1` | Local Qwen; JSON/SSE parity, cancellation, LRU eviction and disabled caching |
 | HTTP disk snapshots | `test-server-snapshots -Doptimize=safe -j1` | Local Qwen; eviction spill, startup/on-demand reuse and corrupt-file recovery with exact seeded outputs |
 | Cross-kernel prefix warming | `test-snapshot-warming test-server-warming -Doptimize=safe -j1` | Upstream selection oracle; Qwen rebuilds incompatible snapshots, yields to foreground work, preserves sampled output and cancels on shutdown |
 | Live serving status | `test-server-live test-server-live-http -Doptimize=safe -j1` | Python rate/redraw oracle; local Qwen for request counters, prefix reuse, cancellation, queue overflow and terminal modes |
-| Memory accounting | `test-memory-budget test-memory-runtime -Doptimize=safe -j1` | Upstream admission/growth-gate parity, repeated probes and Qwen/Gemma/Nemotron pause/resume correctness |
+| Memory accounting | `test-memory-budget test-memory-runtime -Doptimize=safe -j1` | Upstream admission/growth-gate parity, retained decode state, repeated probes and pause/resume on all five fitting checkpoints |
 | Memory admission | `test-server-memory -Doptimize=safe -j1` | Qwen rolling reservations, waiting, refusals and cancellation with a 70 GiB process budget on the 128 GiB development Mac |
 | Background priority | `test-server-background -Doptimize=safe -j1` | Qwen repeated interruption, free-slot admission, JSON/SSE replay, reasoning, images, Responses/tools and queued cancellation |
 | Gemma batched prefill | `test-gemma-prefill -Doptimize=safe -j1` | Hidden states, logits, sliding/full caches and continuation through 3,212 tokens |
@@ -206,9 +208,8 @@ traces can consume tens or hundreds of GiB. Tests do not download missing models
 Metadata checks read safetensors headers and file lengths; they do not establish
 that a model fits in memory or generates correct output.
 
-HTTP checks use the server's memory admission policy. For Flash checks on a
-128 GiB Mac, set `TENSORFOLD_MEMORY_LIMIT_GB=96` if the default budget is too small.
-Hardware limits and memory occupied by other applications still apply.
+HTTP checks use the server's maximum Metal working-set budget. Hardware limits
+and memory occupied by other applications still apply.
 
 The `Native macOS bootstrap` GitHub workflow starts with fresh sources and a fresh
 Python environment, builds dependencies from archives, checks the installation,
@@ -238,10 +239,27 @@ store keeps up to 1,024 responses with a 256 MiB limit on serialized data.
 `store: false` disables retention.
 JSON/schema output constraints are refused until grammar support is implemented.
 `--batch-streams N` controls active requests (default `4`, range `1`–`8`). One
-GPU worker interleaves their prefill chunks and decode steps with separate caches;
-GPU forwards are still per request. Up to eight further requests can queue.
-Serving follows upstream's RAM allowance and `TENSORFOLD_MEMORY_LIMIT_GB`, capped
-by Metal's recommended working set, with 3 GiB reserved outside MLX. Checkpoints
+GPU worker interleaves prefill chunks and runs Qwen/Bonsai decode requests through
+shared lane forwards with independent cache commits. `--batch-rows N` limits
+shared rows (default `128`, range `1`–`128`); pending rows take priority and
+row-limited requests rotate by their last served round. Startup measures shared
+forward/commit costs and peak workspace; draft allocation uses interpolated costs,
+proposal probabilities and observed host overhead. Other families still advance
+individually. Up to eight further requests can queue. `/health` exposes shared
+round/row totals and the maximum streams sharing a forward.
+After `.zig-toolchain/zig build install`, `zig-out/bin/native-server-checks --benchmark BEFORE
+AFTER MODEL build/native-checks/http-performance.json` compares existing native
+executables with an ABBA order, isolated warmups, three repetitions at 1/4/8
+requests, exact seeded SSE output, first-token latency and completion throughput.
+Add `--drafter PATH` (or `--drafter -` for a built-in head) to measure both draft
+modes. First use `--verify-python .venv/bin/tensorfold AFTER MODEL REPORT` for
+Python/native output checks, then `--compare-python` with the same arguments for
+timings with drafting disabled. Both executables receive the
+maximum Metal working-set allowance. Submit performance runs through Latch with `measurement: true`; throughput
+includes prefill and HTTP, and excludes startup.
+Serving defaults to Metal's recommended working set, capped by physical RAM,
+with 3 GiB reserved outside MLX. `TENSORFOLD_MEMORY_LIMIT_GB` can lower this budget;
+other processes reduce available memory. Checkpoints
 that exceed the buffer budget are rejected before loading. Serving measures cache
 growth with three startup probes, reserves unfinished prompts, up to 2,048 future
 reply tokens per request, shared-prefix copies and image workspace, and waits for

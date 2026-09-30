@@ -191,6 +191,10 @@ pub fn forward(m: *model.Model, streams: []const Stream) !Pass {
         ticket.release();
     }
     const s = &p.scope;
+    var projection_cache = lanes.ProjectionCache{};
+    const previous_cache = m.projection_cache;
+    m.projection_cache = &projection_cache;
+    defer m.projection_cache = previous_cache;
     var tokens: [128]i32 = undefined;
     var positions: [128]i32 = undefined;
     for (streams, entries) |stream, entry| {

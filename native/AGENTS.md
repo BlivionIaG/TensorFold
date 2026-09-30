@@ -48,3 +48,6 @@
   correctness separately from performance and identify skipped/unrun checks.
   Give concise findings in the conversation; update the existing build guide
   when needed, without adding investigation diaries.
+- For inference milestones, run correctness checks and performance measurements
+  on every supported checkpoint that fits the test machine. Exclude only models
+  that cannot fit and identify them explicitly; verify correctness first.

@@ -420,8 +420,8 @@ def flash_prefill_fixture(directory, output, simd=False, custom_tiles=False):
     from tensorfold.families.qwen4_exp.runtime import FlashNext
     from tensorfold.kernels.qwen.flash_next.v1 import prefill_mm
     from types import SimpleNamespace
-    decode.DENSE = "rows"
     if simd:
+        decode.DENSE = "rows"
         prefill_mm._tensor_units = lambda: False
     if custom_tiles:
         prefill_mm._tiles[:] = [True]
@@ -1463,14 +1463,10 @@ def main():
         from tensorfold.families.qwen4_exp.decode import FusedDecode
         from tensorfold.families.qwen4_exp.runtime import FlashNext
         from types import SimpleNamespace
-        from tensorfold.kernels.qwen.flash_next.v1 import embed as flash_kernels
         from tensorfold.families.qwen4_exp import decode
-        decode.DENSE = "rows"
-        # Keep the 32 GB PLE tables sharded. The reference embedding performs the
-        # same lookup/dequantization without materializing a second concatenated copy.
-        flash_kernels.PleTables = lambda embedding: embedding
-        flash_kernels.ple_lookup = lambda ids, tables: tables(ids)
-        model, tokenizer = load(args.model, lazy=True)
+        if args.simd:
+            decode.DENSE = "rows"
+        model, tokenizer = load(args.model, lazy=True, ple_on_ssd=True)
         model.__dict__["fused"] = FusedDecode(model)
         select_by_kernels(model.layers)
         if args.trace_layers:
@@ -1492,11 +1488,6 @@ def main():
                     np.save(trace_directory / f"{i:02}-{label}.npy", np.asarray(value.astype(mx.float32)))
                 return result
             fused._hc = traced_hc
-        # The lookup adapter holds the original sharded embedding. Remove its
-        # fused alias so calling it cannot recurse into this same adapter.
-        for layer in model.layers:
-            if "ple" in layer:
-                layer.ple.ple_embedding.__dict__.pop("fused_tables", None)
         cache = model.make_cache()
         # The serving runtime uses a row-invariant vocabulary projection; the raw
         # model's __call__ uses MLX's batch-dependent quantized matmul instead.

@@ -51,6 +51,7 @@ pub const Model = struct {
     round_owner: @import("decode_round.zig").Owner = .{},
     weights: Weights,
     kernels: mx.Kernels,
+    projection_cache: ?*lanes.ProjectionCache = null,
     cache: [64]Cache = @splat(.{}),
     position: i32 = 0,
     rope_delta: i32 = 0,
@@ -79,8 +80,32 @@ pub const Model = struct {
     }
     pub fn project(m: *Model, s: *mx.Scope, index: usize, suffix: []const u8, x: lanes.Act) !A {
         var buf: [192]u8 = undefined;
-        const l = try m.weights.linear(try std.fmt.bufPrint(&buf, "model.layers.{d}.{s}", .{ index, suffix }));
-        // Upstream stacks plain quantized linears, never rotated Bonsai wrappers.
+        var l = try m.weights.linear(try std.fmt.bufPrint(&buf, "model.layers.{d}.{s}", .{ index, suffix }));
+        if (m.projection_cache) |cache| if (l.signs.ctx != null) {
+            const input = try cache.prepare(l, &m.kernels, s, x);
+            if (mx.tensor_units and l.rotation_id != 0) inline for (.{
+                .{ "self_attn.k_proj", "self_attn.v_proj" },
+                .{ "mlp.gate_proj", "mlp.up_proj" },
+            }) |group| {
+                var selected: ?usize = null;
+                inline for (group, 0..) |name, j| if (std.mem.eql(u8, suffix, name)) {
+                    selected = j;
+                };
+                if (selected) |part| {
+                    var buffers: [group.len][192]u8 = undefined;
+                    var names: [group.len][]const u8 = undefined;
+                    inline for (group, 0..) |name, j| names[j] = try std.fmt.bufPrint(&buffers[j], "model.layers.{d}.{s}", .{ index, name });
+                    if (try m.weights.fused(&names)) |stack| {
+                        var offset: i32 = 0;
+                        for (names[0..part]) |name| offset += (try m.weights.linear(name)).n;
+                        return s.slice(try cache.project(stack, &m.kernels, s, input), 2, offset, offset + l.n);
+                    }
+                }
+            };
+            l.signs = mx.empty;
+            return l.apply(&m.kernels, s, input);
+        };
+        // Pre-M5 plain projections retain the stacked SIMD reduction.
         if (!mx.tensor_units and l.format != null and l.signs.ctx == null) inline for (.{
             .{ "linear_attn.in_proj_qkv", "linear_attn.in_proj_z", "linear_attn.in_proj_b", "linear_attn.in_proj_a" },
             .{ "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj" },
@@ -160,6 +185,10 @@ pub const Model = struct {
         @memcpy(p.parents[0..parents.len], parents);
         errdefer p.deinit();
         const s = &p.scope;
+        var projection_cache = lanes.ProjectionCache{};
+        const previous_cache = m.projection_cache;
+        m.projection_cache = &projection_cache;
+        defer m.projection_cache = previous_cache;
         const kernels = &m.kernels;
         var h = try m.weights.embedArray(s, tokens);
         var pending: ?A = null;

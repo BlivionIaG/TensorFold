@@ -1,4 +1,4 @@
-"""Compare Flash intermediates using the original fused blocks and native trace files."""
+"""Compare production Flash decode intermediates with native trace files."""
 import argparse
 from pathlib import Path
 
@@ -14,6 +14,7 @@ def main():
     p.add_argument("--compare", type=Path)
     p.add_argument("--native", type=Path, help="Run native tracing with the same generated prompt")
     p.add_argument("--gdn-layer", type=int, help="Trace one recurrent block across all prefill chunks")
+    p.add_argument("--dense", choices=("lane", "rows", "simd"), help="Override the production device-selected projection backend")
     args = p.parse_args()
     if args.compare:
         failures = 0
@@ -44,23 +45,22 @@ def main():
                         "--trace-dir", str(args.directory)]
         if args.gdn_layer is not None:
             command += ["--trace-gdn", str(args.gdn_layer)]
+        if args.dense == "rows":
+            command += ["--metal-simd"]
+        elif args.dense == "simd":
+            raise ValueError("The native Flash CLI has no simd_qmm override")
         subprocess.run(command, check=True)
         return
     import mlx.core as mx
     from tensorfold.families.qwen4_exp.model import load
-    from tensorfold.families.qwen4_exp.decode import FusedDecode
     from tensorfold.kernels.qwen.flash_next.v1 import embed, hc
     from tensorfold.families.qwen4_exp import decode
-    from types import SimpleNamespace
-    decode.DENSE = "rows"
-    K = SimpleNamespace(embed_rows=embed.embed_rows, hc_norm=hc.hc_norm, hc_project=decode.hc_project)
-    embed.PleTables = lambda embedding: embedding
-    embed.ple_lookup = lambda ids, tables: tables(ids)
-    model, _ = load(args.model, lazy=True)
-    fused = FusedDecode(model)
-    for layer in model.layers:
-        if "ple" in layer:
-            layer.ple.ple_embedding.__dict__.pop("fused_tables", None)
+    if args.dense:
+        decode.DENSE = args.dense
+    model, _ = load(args.model, ple_on_ssd=True)
+    fused = model.__dict__["fused"]
+    project_hc = decode.rows.hc_project if decode.DENSE == "rows" else hc.hc_project
+    print(f"Tracing production Flash backend: {decode.DENSE}", flush=True)
     cache = model.make_cache()
     if args.gdn_layer is not None:
         args.directory.mkdir(parents=True, exist_ok=True)
@@ -83,7 +83,7 @@ def main():
         if start % 512 == 0:
             print(f"Prefill {start + 16}/{len(tokens)}", flush=True)
     tokens = tokens[((len(tokens) - 1) // 16) * 16:]
-    h = K.embed_rows(tokens, model.model.embed_tokens, tile=fused.streams)
+    h = embed.embed_rows(tokens, model.model.embed_tokens, tile=fused.streams)
     args.directory.mkdir(parents=True, exist_ok=True)
     def save(i, label, value):
         mx.eval(value)
@@ -93,29 +93,28 @@ def main():
         if "ple" in layer:
             h = fused._write_back(h, pending)
             pending = ("none", (), None)
-            h = h + fused._ple(layer.ple, h, tokens[None], cache[i])
+            h = fused._ple(layer.ple, h, tokens[None], cache[i])
         save(i, "input", fused._write_back(h, pending))
         kind, branch, inject = pending
-        hn, ssp = K.hc_norm(h, streams=fused.streams, write_back=kind, branch=branch, inject=inject)
+        hn, ssp = hc.hc_norm(h, streams=fused.streams, write_back=kind, branch=branch, inject=inject)
         ahc = fused.layers[i]["attn_hc"]
-        mixed, inj = K.hc_project(hn, ssp, ahc.down, ahc.up, ahc.scale,
+        mixed, inj = project_hc(hn, ssp, ahc.down, ahc.up, ahc.scale,
                                 eps=fused.eps, streams=fused.streams, low=ahc.low)
         save(i, "mixed", mixed)
         out = fused._gdn(i, mixed, cache[i]) if layer.is_linear else fused._attention(i, mixed, cache[i])
         save(i, "branch", out)
-        hm, ssp = K.hc_norm(hn, streams=fused.streams, write_back="plain", branch=(out,), inject=inj)
+        hm, ssp = hc.hc_norm(hn, streams=fused.streams, write_back="plain", branch=(out,), inject=inj)
         mhc = fused.layers[i]["mlp_hc"]
-        mixed, inj2 = K.hc_project(hm, ssp, mhc.down, mhc.up, mhc.scale,
+        mixed, inj2 = project_hc(hm, ssp, mhc.down, mhc.up, mhc.scale,
                                  eps=fused.eps, streams=fused.streams, low=mhc.low)
         save(i, "moe-input", mixed)
-        kind, branch = fused._moe(i, mixed)
-        h, pending = hm, (kind, branch, inj2)
+        h, pending = fused._moe(i, mixed, hm, inj2)
         save(i, "output", fused._write_back(h, pending))
         print(f"Traced layer {i}", flush=True)
     from tensorfold.families.qwen4_exp.decode import project
-    hn, ssp = K.hc_norm(h, streams=fused.streams, write_back=pending[0], branch=pending[1], inject=pending[2])
+    hn, ssp = hc.hc_norm(h, streams=fused.streams, write_back=pending[0], branch=pending[1], inject=pending[2])
     mix = fused.mixer
-    mixed = K.hc_project(hn, ssp, mix.down, mix.up, mix.scale,
+    mixed = project_hc(hn, ssp, mix.down, mix.up, mix.scale,
                          eps=fused.eps, streams=fused.streams, low=mix.low)[0]
     save(47, "head-mixed", mixed)
     save(47, "logits", project(mixed, model.lm_head))

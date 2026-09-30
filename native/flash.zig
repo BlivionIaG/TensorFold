@@ -246,9 +246,10 @@ pub const Model = struct {
         const sc = try s.reshape(try m.scale(s, name, "weight"), &.{ 4, 2560 });
         return s.cast(try s.reshape(try s.binary(mx.c.mlx_multiply, try s.binary(mx.c.mlx_multiply, y, rinv), sc), mx.shape(x)), mx.dtype(x));
     }
-    fn hcNorm(m: *Model, s: *mx.Scope, h: A, branch: ?A, inject: A) ![5]A {
+    fn hcNorm(m: *Model, s: *mx.Scope, h: A, branch: ?A, inject: A) ![2]A {
         const r = mx.dim(h, 0);
-        return if (branch) |b| m.kernels.run(s, src.q4_hc_norm_plain, &.{ h, inject, b }, &.{ ti("S", 4), ti("D", 2560) }, .{ 2560, r, 1 }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ r, 10240 } }, .{ .shape = &.{ r, 10, 4 }, .dtype = mx.f32t } }) else m.kernels.run(s, src.q4_hc_norm_none, &.{h}, &.{ ti("S", 4), ti("D", 2560) }, .{ 2560, r, 1 }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ r, 10240 } }, .{ .shape = &.{ r, 10, 4 }, .dtype = mx.f32t } });
+        const out = if (branch) |b| try m.kernels.run(s, src.q4_hc_norm_plain, &.{ h, inject, b }, &.{ ti("S", 4), ti("D", 2560) }, .{ 2560, r, 1 }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ r, 10240 } }, .{ .shape = &.{ r, 10, 4 }, .dtype = mx.f32t } }) else try m.kernels.run(s, src.q4_hc_norm_none, &.{h}, &.{ ti("S", 4), ti("D", 2560) }, .{ 2560, r, 1 }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ r, 10240 } }, .{ .shape = &.{ r, 10, 4 }, .dtype = mx.f32t } });
+        return out[0..2].*;
     }
     pub fn hcWeights(m: *Model, s: *mx.Scope, base: []const u8, inject: bool) !struct { down: @import("flash_ops.zig").Weight, up: @import("flash_ops.zig").Weight, scale: A } {
         var buf: [256]u8 = undefined;
@@ -269,12 +270,49 @@ pub const Model = struct {
     }
     fn hcProject(m: *Model, s: *mx.Scope, base: []const u8, h: A, ssp: A, inject: bool) ![5]A {
         const w = try m.hcWeights(s, base, inject);
-        const out = try @import("flash_ops.zig").hyper(&m.kernels, s, h, ssp, w.down, w.up, w.scale, try s.scalar(1e-6), 4, 320, mx.gpu_generation);
+        const out = if (mx.tensor_units) try @import("flash_lane.zig").hyper(&m.kernels, s, h, ssp, w.down, w.up, w.scale, try s.scalar(1e-6), 4, 320) else try @import("flash_ops.zig").hyper(&m.kernels, s, h, ssp, w.down, w.up, w.scale, try s.scalar(1e-6), 4, 320, mx.gpu_generation);
         return .{ out[0], out[1], mx.empty, mx.empty, mx.empty };
+    }
+    fn projectStack(m: *Model, s: *mx.Scope, base: []const u8, names: []const []const u8, x: A) !A {
+        if (names.len == 0 or names.len > 4) return error.InvalidProjectionGroup;
+        var parts: [4]@import("flash_ops.zig").Weight = undefined;
+        var outputs: [4]A = undefined;
+        var done: [4]bool = @splat(false);
+        var buf: [256]u8 = undefined;
+        for (names, 0..) |name, i| {
+            if (!mx.tensor_units) {
+                outputs[i] = try m.lin(s, base, name, x);
+            } else parts[i] = try m.weights.affine(try std.fmt.bufPrint(&buf, "{s}.{s}", .{ base, name }));
+        }
+        if (mx.tensor_units) for (names, 0..) |_, i| {
+            if (done[i]) continue;
+            var group: [4]@import("flash_ops.zig").Weight = undefined;
+            var count: usize = 0;
+            for (parts[0..names.len]) |part| if (part.format.bits == parts[i].format.bits) {
+                group[count] = part;
+                count += 1;
+            };
+            const key = try std.fmt.bufPrint(&buf, "{s}.native_decode_stack_{d}", .{ base, parts[i].format.bits });
+            if (!m.weights.has(key)) {
+                const combined = try @import("flash_ops.zig").stack(s, group[0..count]);
+                try mx.evalMany(&combined.arrays, false);
+                try m.weights.putAffine(key, combined);
+                try m.weights.put(key, combined.arrays[0]);
+            }
+            const projected = try m.weights.linear(&m.kernels, s, key, x, true);
+            var at: i32 = 0;
+            for (parts[0..names.len], 0..) |part, j| if (part.format.bits == parts[i].format.bits) {
+                const n = (try part.geometry(2)).n;
+                outputs[j] = try s.slice(projected, 1, at, at + n);
+                at += n;
+                done[j] = true;
+            };
+        };
+        return s.cat(outputs[0..names.len], -1);
     }
     fn gdn(m: *Model, s: *mx.Scope, base: []const u8, x: A, cache: Cache, record: *Cache) !A {
         const r = mx.dim(x, 0);
-        const p = try s.cat(&.{ try m.lin(s, base, "in_proj_qkv", x), try m.lin(s, base, "in_proj_z", x), try m.lin(s, base, "in_proj_b", x), try m.lin(s, base, "in_proj_a", x) }, -1);
+        const p = try m.projectStack(s, base, &.{ "in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a" }, x);
         const cs = if (cache.a.ctx != null) cache.a else try s.zeros(&.{ 3, 10240 }, mx.bf16);
         const state = if (cache.b.ctx != null) cache.b else try s.zeros(&.{1}, mx.f32t);
         const out = try m.kernels.run(s, src.q4_gdn_step, &.{ p, cs, state, try s.reshape(try m.f(base, "conv1d.weight"), &.{ 10240, 4 }), try m.f(base, "A_log"), try m.f(base, "dt_bias"), try m.f(base, "norm.weight"), try s.scalar(1e-6), try s.ints(&.{r}) }, &.{ ti("NK", 16), ti("NV", 48), ti("DK", 128), ti("DV", 128), ti("TAPS", 4), ti("HAS_STATE", @intFromBool(cache.b.ctx != null)) }, .{ 48 * 1024, 1, 1 }, .{ 1024, 1, 1 }, &.{ .{ .shape = &.{ r, 6144 } }, .{ .shape = &.{ r, 3, 10240 } }, .{ .shape = &.{ r, 48, 128, 128 }, .dtype = mx.f32t } });
@@ -286,7 +324,7 @@ pub const Model = struct {
         const r = mx.dim(x, 0);
         const start = cache.offset;
         const end = start + r;
-        const p = try s.cat(&.{ try m.lin(s, base, "q_proj", x), try m.lin(s, base, "k_proj", x), try m.lin(s, base, "v_proj", x), try m.lin(s, base, "indexer.index_qk_proj", x) }, -1);
+        const p = try m.projectStack(s, base, &.{ "q_proj", "k_proj", "v_proj", "indexer.index_qk_proj" }, x);
         var pos: [16]i32 = undefined;
         for (0..@intCast(r)) |j| pos[j] = start + @as(i32, @intCast(j));
         const prep = try m.kernels.run(s, src.q4_attn_prep, &.{ p, try s.ints(pos[0..@intCast(r)]), try m.scale(s, base, "q_norm.weight"), try m.scale(s, base, "k_norm.weight"), try m.scale(s, base, "indexer.q_layernorm.weight"), try s.scalar(1e-6), try s.scalar(@log2(@as(f32, 10000000))) }, &.{ ti("NQ", 24), ti("NKV", 2), ti("HD", 256), ti("RD", 64), ti("PW", 13952), ti("NI", 4), ti("IHD", 128) }, .{ 256, 30, r }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ r, 24, 256 } }, .{ .shape = &.{ r, 2, 256 } }, .{ .shape = &.{ r, 4, 128 } } });
@@ -388,6 +426,24 @@ pub const Model = struct {
     }
     fn pleEmbedding(m: *Model, s: *mx.Scope, h: A, emb: A, r: i32, cache: Cache, record: *Cache) !A {
         const base = "model.layers.1.ple";
+        if (mx.tensor_units) {
+            const keys = try s.reshape(try m.pleNorm(s, try m.lin(s, base, "key_proj", emb), base ++ ".norm_key"), &.{ r, 4, 2560 });
+            const queries = try s.reshape(try m.pleNorm(s, h, base ++ ".norm_query"), &.{ r, 4, 2560 });
+            const values = try m.lin(s, base, "value_proj", emb);
+            var sum = mx.c.mlx_array_new();
+            const rc = mx.c.mlx_sum_axis(&sum, try s.binary(mx.c.mlx_multiply, keys, queries), -1, true, mx.stream);
+            var gate = try s.binary(mx.c.mlx_divide, try s.result(rc, sum), try s.cast(try s.scalar(@sqrt(@as(f32, 2560))), mx.bf16));
+            gate = try s.binary(mx.c.mlx_multiply, try s.unary(mx.c.mlx_sign, gate), try s.unary(mx.c.mlx_sqrt, try s.binary(mx.c.mlx_maximum, try s.unary(mx.c.mlx_abs, gate), try s.cast(try s.scalar(1e-6), mx.bf16))));
+            const gated = try s.reshape(try s.binary(mx.c.mlx_multiply, try s.unary(mx.c.mlx_sigmoid, gate), try s.reshape(values, &.{ r, 1, 2560 })), &.{ r, 10240 });
+            const normed = try m.pleNorm(s, gated, base ++ ".norm_conv");
+            const tail = if (cache.ple.ctx != null) cache.ple else try s.zeros(&.{ 9, 10240 }, mx.bf16);
+            const conv_in = try s.cat(&.{ tail, normed }, 0);
+            record.ple = conv_in;
+            var conv = mx.c.mlx_array_new();
+            const cr = mx.c.mlx_conv1d(&conv, try s.reshape(conv_in, &.{ 1, r + 9, 10240 }), try m.f(base, "conv1d.weight"), 1, 0, 3, 10240, mx.stream);
+            const branch = try s.binary(mx.c.mlx_add, gated, try s.reshape(try m.prefill_ops.call(s, .silu, &.{try s.result(cr, conv)}), &.{ r, 10240 }));
+            return s.binary(mx.c.mlx_add, h, branch);
+        }
         const kv_rows = try s.cat(&.{ try m.lin(s, base, "key_proj", emb), try m.lin(s, base, "value_proj", emb) }, -1);
         const ops = @import("flash_ops.zig");
         const out = try ops.pleGate(&m.kernels, s, kv_rows, h, .{ try m.scale(s, base ++ ".norm_key", "weight"), try m.scale(s, base ++ ".norm_query", "weight"), try m.scale(s, base ++ ".norm_conv", "weight") }, try s.scalar(1e-6), 4);
@@ -398,9 +454,8 @@ pub const Model = struct {
         if (mx.dim(h, 0) != r) return error.InvalidTensorShape;
         return ops.pleConv(&m.kernels, s, conv_in, weight, out[0], h, 4, 3);
     }
-    fn layer(m: *Model, s: *mx.Scope, base: []const u8, h: A, cache: *Cache, record: *Cache, linear: bool) !A {
+    fn layer(m: *Model, s: *mx.Scope, base: []const u8, hn: [2]A, cache: *Cache, record: *Cache, linear: bool) ![2]A {
         var buf: [256]u8 = undefined;
-        const hn = try m.hcNorm(s, h, null, mx.empty);
         const mix = try m.hcProject(s, try std.fmt.bufPrint(&buf, "{s}.attn_hyper_connection", .{base}), hn[0], hn[1], true);
         try m.trace(s, "mixed", mix[0]);
         const branch = if (linear) try m.gdn(s, try std.fmt.bufPrint(&buf, "{s}.linear_attn", .{base}), mix[0], cache.*, record) else try m.attention(s, try std.fmt.bufPrint(&buf, "{s}.self_attn", .{base}), mix[0], cache, record);
@@ -410,7 +465,7 @@ pub const Model = struct {
         try m.trace(s, "moe-input", mm[0]);
         const out = try m.moe(s, try std.fmt.bufPrint(&buf, "{s}.mlp", .{base}), post[0], mm[0], mm[1]);
         try m.trace(s, "output", out[0]);
-        return out[0];
+        return out[0..2].*;
     }
     pub fn forward(m: *Model, tokens: []const i32) !Pass {
         var p = try m.forwardQueued(tokens);
@@ -452,21 +507,26 @@ pub const Model = struct {
         if (host) |ids| @memcpy(p.tokens[0..ids.len], ids);
         const s = &p.scope;
         const e = try m.weights.embedArray(s, "model.embed_tokens", tokens);
-        var h = try s.cat(&.{ e, e, e, e }, -1);
+        var hn = try m.hcNorm(s, try s.cat(&.{ e, e, e, e }, -1), null, mx.empty);
         var buf: [256]u8 = undefined;
         for (0..48) |i| {
             m.trace_layer = i;
-            if (i == 1) h = if (m.gpuTokensEnabled()) try m.pleArray(s, h, tokens, m.cache[i], &p.records[i]) else try m.ple(s, h, host.?, m.cache[i], &p.records[i]);
-            try m.trace(s, "input", h);
-            h = try m.layer(s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), h, &m.cache[i], &p.records[i], i % 4 != 3);
-            try mx.evalMany(&.{h}, true);
+            if (i == 1) {
+                const h = if (m.gpuTokensEnabled()) try m.pleArray(s, hn[0], tokens, m.cache[i], &p.records[i]) else try m.ple(s, hn[0], host.?, m.cache[i], &p.records[i]);
+                hn = try m.hcNorm(s, h, null, mx.empty);
+            }
+            try m.trace(s, "input", hn[0]);
+            hn = try m.layer(s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), hn, &m.cache[i], &p.records[i], i % 4 != 3);
+            try mx.evalMany(&.{hn[0]}, true);
         }
-        p.hidden = h;
-        p.logits = try m.head(s, h);
+        p.hidden = hn[0];
+        p.logits = try m.headWithNorm(s, hn);
         return p;
     }
     pub fn head(m: *Model, s: *mx.Scope, h: A) !A {
-        const hn = try m.hcNorm(s, h, null, mx.empty);
+        return m.headWithNorm(s, try m.hcNorm(s, h, null, mx.empty));
+    }
+    fn headWithNorm(m: *Model, s: *mx.Scope, hn: [2]A) !A {
         const mixed = try m.hcProject(s, "model.hyper_connection_mixer", hn[0], hn[1], false);
         try m.trace(s, "head-mixed", mixed[0]);
         const logits = try m.weights.linear(&m.kernels, s, "lm_head", mixed[0], true);
@@ -515,10 +575,18 @@ pub const Model = struct {
                     for (p.tokens[0..keep]) |token| next[i].history = .{ next[i].history[1], token };
                 }
             }
-            inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
-                const v = @field(next[i], field);
-                if (evaluate and v.ctx != null) try mx.eval(v);
-            }
+        }
+        if (evaluate) {
+            var arrays: [48 * 6]A = undefined;
+            var count: usize = 0;
+            for (next) |cache| inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
+                const value = @field(cache, field);
+                if (value.ctx != null) {
+                    arrays[count] = value;
+                    count += 1;
+                }
+            };
+            try mx.evalMany(arrays[0..count], false);
         }
         for (&m.cache) |*c| c.deinit();
         m.cache = next;
@@ -533,20 +601,22 @@ pub const Model = struct {
         const e = try m.lin(s, "mtp", "fc_embedding", try m.centeredNorm(s, try m.weights.embedArray(s, "model.embed_tokens", token), "mtp.pre_fc_norm_embedding", 2560));
         const hn = try m.centeredNorm(s, hidden, "mtp.pre_fc_norm_hidden", 10240);
         const streams = try s.reshape(hn, &.{ rows * 4, 2560 });
-        // Four residual streams per token; keep every projection on the row-exact
-        // <=16-row kernel even when a speculative window has sixteen tokens.
-        var parts: [4]A = undefined;
-        var count: usize = 0;
-        var begin: i32 = 0;
-        while (begin < rows * 4) : (begin += 16) {
-            parts[count] = try m.lin(s, "mtp", "fc_hidden", try s.slice(streams, 0, begin, @min(begin + 16, rows * 4)));
-            count += 1;
-        }
-        const hs = try s.reshape(try s.cat(parts[0..count], 0), &.{ rows, 4, 2560 });
+        const projected = if (mx.tensor_units) try m.lin(s, "mtp", "fc_hidden", streams) else blk: {
+            // Pre-M5 projections take at most sixteen residual-stream rows.
+            var parts: [4]A = undefined;
+            var count: usize = 0;
+            var begin: i32 = 0;
+            while (begin < rows * 4) : (begin += 16) {
+                parts[count] = try m.lin(s, "mtp", "fc_hidden", try s.slice(streams, 0, begin, @min(begin + 16, rows * 4)));
+                count += 1;
+            }
+            break :blk try s.cat(parts[0..count], 0);
+        };
+        const hs = try s.reshape(projected, &.{ rows, 4, 2560 });
         const h = try s.reshape(try s.binary(mx.c.mlx_add, hs, try s.reshape(e, &.{ rows, 1, 2560 })), &.{ rows, 10240 });
         var rec = Cache{};
-        const out = try m.layer(s, "mtp.layers.0", h, cache, &rec, false);
-        if (!queued) try mx.eval(out);
+        const out = try m.layer(s, "mtp.layers.0", try m.hcNorm(s, h, null, mx.empty), cache, &rec, false);
+        if (!queued) try mx.eval(out[0]);
         var next = try rec.clone();
         errdefer next.deinit();
         next.keys = try cache.keys.finish(s, rec.key_write, rows);
@@ -556,7 +626,7 @@ pub const Model = struct {
         cache.* = next;
         // MTP residual streams are fed to the next chained step; its own final mixer
         // supplies the prediction, while target hidden states use the trunk mixer.
-        return out;
+        return out[0];
     }
     pub fn draftPrefix(s: *mx.Scope, cache: Cache, rows: usize, keep: usize) !Cache {
         if (rows == 0 or keep > rows or rows > @as(usize, @intCast(cache.offset))) return error.InvalidCommit;

@@ -240,7 +240,16 @@ pub const Model = struct {
                 next[i].keys = try m.cache[i].keys.finish(&p.scope, rec.key_write, n);
                 next[i].values = try m.cache[i].values.finish(&p.scope, rec.value_write, n);
             }
-            if (kind != 'E' and evaluate) try mx.evalMany(&.{ next[i].a, next[i].b }, false);
+        }
+        if (evaluate) {
+            var arrays: [104]A = undefined;
+            var count: usize = 0;
+            for (m.kinds, next) |kind, cache| if (kind != 'E') {
+                arrays[count] = cache.a;
+                arrays[count + 1] = cache.b;
+                count += 2;
+            };
+            try mx.evalMany(arrays[0..count], false);
         }
         for (&m.cache) |*c| c.deinit();
         m.cache = next;

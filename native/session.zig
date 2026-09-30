@@ -100,7 +100,8 @@ pub const RequestGeneration = union(std.meta.Tag(Backend)) {
         }
     }
 
-    pub fn progress(g: *const RequestGeneration) struct { prefilled: usize, decoded: usize, proposed: usize, accepted: usize, structural_proposed: usize, structural_accepted: usize, neural_proposed: usize, neural_accepted: usize } {
+    pub const Progress = struct { prefilled: usize, decoded: usize, proposed: usize, accepted: usize, structural_proposed: usize, structural_accepted: usize, neural_proposed: usize, neural_accepted: usize };
+    pub fn progress(g: *const RequestGeneration) Progress {
         return switch (g.*) {
             inline else => |*request| .{ .prefilled = request.offset, .decoded = request.reply.tokens.items.len, .proposed = request.proposed, .accepted = request.accepted, .structural_proposed = if (request.proposer) |p| p.structural_tokens else 0, .structural_accepted = if (request.proposer) |p| p.structural_accepted else 0, .neural_proposed = request.neural_proposed, .neural_accepted = request.neural_accepted },
         };
@@ -363,6 +364,7 @@ pub fn Generation(comptime M: type) type {
         proposer: ?@import("tool_draft.zig").Proposer = null,
         context: std.ArrayList(i32) = .empty,
         next_adjusted: bool = false,
+        pending_published: bool = false,
         proposed: usize = 0,
         accepted: usize = 0,
         neural_proposed: usize = 0,
@@ -493,7 +495,7 @@ pub fn Generation(comptime M: type) type {
                 try r.ticket.expect(.prepared);
                 errdefer r.ticket.owner.stage = .failed;
                 const w = &r.window.?;
-                r.pass = if (M == qwen.Model) try r.model.forward(w.tokens[0..w.count], w.parents[0..w.count]) else try r.model.forward(w.tokens[0..w.count]);
+                r.pass = if (M == qwen.Model) try r.model.forward(w.tokens[0..w.count], w.parents[0..w.count]) else if (@hasDecl(M, "forwardQueued")) try r.model.forwardQueued(w.tokens[0..w.count]) else try r.model.forward(w.tokens[0..w.count]);
                 try r.ticket.advance(.prepared, .forwarded);
             }
 
@@ -505,6 +507,7 @@ pub fn Generation(comptime M: type) type {
                 const pass = &r.pass.?;
                 const ids = try sampling.rows(&r.model.kernels, &pass.scope, pass.logits, w.positions[0..w.count], r.request.settings);
                 defer mx.allocator.free(ids);
+                if (M != qwen.Model and @hasDecl(M, "observeBuffers")) try M.observeBuffers(pass);
                 try r.request.settleDecode(r.model, w, pass, ids);
                 try r.ticket.advance(.forwarded, .settled);
             }
@@ -547,18 +550,29 @@ pub fn Generation(comptime M: type) type {
             for (rows_kept[0..count], 0..) |*row, j| row.* = @intCast(j);
             if (g.sink.draft_budget > 0) try neural.absorb(m, &g.state, g.sink.drafter, &pass, tokens, rows_kept[0..count]);
             g.offset += count;
-            if (g.offset == g.prompt.len) g.phase = .decode;
+            if (g.offset == g.prompt.len) {
+                g.phase = .decode;
+                try g.publishPending(m);
+            }
         }
 
         fn eos(m: *M, id: i32) bool {
             return if (M == qwen.Model) id == 248044 or id == 248046 else if (@hasDecl(M, "isEos")) m.isEos(id) else M.eos(id);
         }
 
-        fn prepareDecode(g: *Self, m: *M) !?rounds.Window {
+        fn publishPending(g: *Self, m: *M) !void {
+            if (g.pending_published) return;
+            try g.sink.check();
             if (!g.next_adjusted) g.next = try g.budget.next(g.sink.gate, g.reply.tokens.items.len, g.next, eos(m, g.next));
             g.next_adjusted = false;
             try g.emitToken(m);
+            g.pending_published = true;
+        }
+
+        fn prepareDecode(g: *Self, m: *M) !?rounds.Window {
+            try g.publishPending(m);
             if (g.phase == .finished) return null;
+            g.pending_published = false;
             var draft = @import("drafter.zig").Proposal{};
             if (g.proposer) |*proposer| {
                 draft = try proposer.propose(g.a, g.context.items, @min(15, g.options.max_tokens - g.reply.tokens.items.len));
@@ -569,13 +583,32 @@ pub fn Generation(comptime M: type) type {
         }
 
         fn settleDecode(g: *Self, m: *M, w: *const rounds.Window, pass: *Pass, ids: []const i32) !void {
+            const selected = try g.selectDecode(m, w, ids);
+            const kept = selected.rows[0..selected.count];
+            if (M == qwen.Model) {
+                try m.commit(pass, kept);
+            } else try m.commit(pass, kept.len);
+            try g.finishDecode(m, w, pass, selected);
+        }
+
+        pub const Selection = struct { rows: [16]i32 = undefined, count: usize = 1, accepted: usize = 0 };
+
+        pub fn prepareShared(g: *Self) !?rounds.Window {
+            if (M != qwen.Model) return error.UnsupportedSharedModel;
+            var round = try g.beginRound(g.model);
+            defer round.deinit();
+            _ = try round.prepare();
+            if (round.window != null) try round.ticket.advance(.prepared, .settled);
+            return round.window;
+        }
+
+        pub fn selectDecode(g: *Self, m: *M, w: *const rounds.Window, ids: []const i32) !Selection {
             const count = w.count;
+            if (ids.len != count) return error.InvalidDecodeWindow;
             const parents = w.parents[0..count];
             const window = w.tokens[0..count];
-            var keep: usize = 1;
-            var kept: [16]i32 = undefined;
-            kept[0] = 0;
-            var accepted: usize = 0;
+            var selected = Selection{};
+            selected.rows[0] = 0;
             var row: usize = 0;
             while (true) {
                 try g.sink.check();
@@ -598,24 +631,25 @@ pub fn Generation(comptime M: type) type {
                     g.next_adjusted = true;
                     break;
                 }
-                accepted += 1;
+                selected.accepted += 1;
                 try g.emitToken(m);
                 if (g.phase == .finished) break;
                 row = child.?;
-                kept[keep] = @intCast(row);
-                keep += 1;
+                selected.rows[selected.count] = @intCast(row);
+                selected.count += 1;
             }
-            if (M == qwen.Model) {
-                try m.commit(pass, kept[0..keep]);
-            } else try m.commit(pass, keep);
-            if (g.sink.draft_budget > 0) try neural.absorb(m, &g.state, g.sink.drafter, pass, window, kept[0..keep]);
+            return selected;
+        }
+
+        pub fn finishDecode(g: *Self, m: *M, w: *const rounds.Window, pass: *Pass, selected: Selection) !void {
+            if (g.sink.draft_budget > 0) try neural.absorb(m, &g.state, g.sink.drafter, pass, w.tokens[0..w.count], selected.rows[0..selected.count]);
             const proposed = w.draft.len;
             g.proposed += proposed;
-            g.accepted += accepted;
+            g.accepted += selected.accepted;
             if (w.from_neural) {
                 g.neural_proposed += proposed;
-                g.neural_accepted += accepted;
-            } else if (g.proposer) |*proposer| proposer.observe(proposed, accepted);
+                g.neural_accepted += selected.accepted;
+            } else if (g.proposer) |*proposer| proposer.observe(proposed, selected.accepted);
         }
 
         fn emitToken(g: *Self, m: *M) !void {

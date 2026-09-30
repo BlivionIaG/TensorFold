@@ -216,6 +216,15 @@ const Scenario = struct {
     disk_expected: ?*[2]?Output = null,
     warming_phase: ?usize = null,
     warming_expected: ?*?Output = null,
+    benchmark: ?*Benchmark = null,
+    python_port: ?u16 = null,
+
+    fn checkSharing(s: *Scenario, port: u16) !void {
+        const status = try health(s.init.arena.allocator(), s.init.io, port);
+        if (!status.object.get("shared_decode").?.bool) return;
+        const stats = try s.liveSnapshot(port);
+        if (stats.object.get("max_shared_streams")) |value| try std.testing.expect(value.integer >= 2);
+    }
 
     fn checkWarming(s: *Scenario, port: u16) !void {
         const a = s.init.arena.allocator();
@@ -453,6 +462,7 @@ const Scenario = struct {
         const stats = try s.liveSnapshot(port);
         const proposed = stats.object.get("neural_proposed").?.integer;
         const accepted = stats.object.get("neural_accepted").?.integer;
+        if (!s.synthetic and stats.object.contains("shared_rounds")) try s.checkSharing(port);
         if ((proposed > 0) != s.neural_enabled) return error.NeuralDraftActivationMismatch;
         if (s.neural_enabled and !s.synthetic and s.require_acceptance and accepted == 0) return error.NoNeuralDraftsAccepted;
         stage = "cancellation and recovery";
@@ -898,6 +908,7 @@ const Scenario = struct {
             }
         }
         std.debug.print("PASS: concurrent greedy/sampled/image requests match isolated JSON/SSE; short requests progress during long inference; disconnect preserves other requests\n", .{});
+        try s.checkSharing(port);
         const url = try std.fmt.allocPrint(a, "http://127.0.0.1:{d}/v1/chat/completions", .{port});
         for ([_][]const u8{ "--controls-only", "--tool-stream-only", s.image }) |mode| {
             const result = try std.process.run(a, io, .{ .argv = &.{ s.http_checks, url, mode }, .stderr_limit = .limited(4 * 1024 * 1024) });
@@ -912,17 +923,28 @@ const Scenario = struct {
         const io = s.init.io;
         const a = s.init.arena.allocator();
         var stderr_buffer: [8192]u8 = undefined;
-        var stderr = s.child.stderr.?.reader(io, &stderr_buffer);
+        var stderr = (if (s.python_port != null) s.child.stdout.? else s.child.stderr.?).reader(io, &stderr_buffer);
         const prefix = "Native inference listening at http://127.0.0.1:";
         const port = while (true) {
             const line = try stderr.interface.takeSentinel('\n');
-            if (std.mem.startsWith(u8, line, "Native memory admission:")) std.debug.print("{s}\n", .{line});
+            if (s.python_port) |python_port| {
+                std.debug.print("{s}\n", .{line});
+                if (std.mem.startsWith(u8, line, "[tensorfold] serving ")) break python_port;
+                continue;
+            }
+            if (std.mem.startsWith(u8, line, "Native memory admission:") or std.mem.startsWith(u8, line, "Native memory ceiling:")) std.debug.print("{s}\n", .{line});
             if (std.mem.indexOf(u8, line, prefix)) |start| {
                 const value = line[start + prefix.len ..];
                 const end = std.mem.indexOfScalar(u8, value, ' ') orelse return error.InvalidListenAddress;
                 break try std.fmt.parseInt(u16, value[0..end], 10);
             }
         };
+        if (s.benchmark) |bench| {
+            var logs: std.Io.Group = .init;
+            defer logs.cancel(io);
+            if (s.python_port != null) try logs.concurrent(io, drainLogs, .{&stderr.interface});
+            return bench.run(s, port);
+        }
         if (s.disk_phase != null) return s.checkDisk(port);
         if (s.warming_phase != null) return s.checkWarming(port);
         if (s.background) return s.checkBackground(port);
@@ -1039,8 +1061,226 @@ fn invalidateWarmSnapshots(init: std.process.Init, directory: []const u8) !void 
     try std.testing.expect(changed > 0);
 }
 
+const TimedResponse = struct {
+    socket: std.Io.net.Stream,
+    started: f64,
+    first_token_ms: f64 = 0,
+    latency_ms: f64 = 0,
+    bytes: []const u8 = &.{},
+    failure: ?anyerror = null,
+
+    fn read(r: *TimedResponse, io: std.Io) void {
+        r.readInner(io) catch |err| {
+            r.failure = err;
+        };
+    }
+
+    fn readInner(r: *TimedResponse, io: std.Io) !void {
+        const a = std.heap.page_allocator;
+        var buffer: [8192]u8 = undefined;
+        var reader = r.socket.reader(io, &buffer);
+        var bytes: std.ArrayList(u8) = .empty;
+        errdefer bytes.deinit(a);
+        while (true) {
+            const line = try reader.interface.takeSentinel('\n');
+            try bytes.appendSlice(a, line);
+            try bytes.append(a, '\n');
+            if (!std.mem.startsWith(u8, line, "data: ")) continue;
+            const data = std.mem.trim(u8, line[6..], "\r\n ");
+            if (std.mem.eql(u8, data, "[DONE]")) return error.MissingFirstToken;
+            const parsed = try std.json.parseFromSlice(std.json.Value, a, data, .{});
+            defer parsed.deinit();
+            if (parsed.value.object.contains("error")) return error.StreamFailed;
+            const choices = parsed.value.object.get("choices") orelse continue;
+            if (choices.array.items.len == 0) continue;
+            const text = choices.array.items[0].object.get("text") orelse continue;
+            if (text == .string and text.string.len > 0) {
+                r.first_token_ms = (instant(io) - r.started) * 1000;
+                break;
+            }
+        }
+        const rest = try reader.interface.allocRemaining(a, .limited(4 * 1024 * 1024));
+        defer a.free(rest);
+        try bytes.appendSlice(a, rest);
+        r.latency_ms = (instant(io) - r.started) * 1000;
+        r.bytes = try bytes.toOwnedSlice(a);
+    }
+};
+
+fn instant(io: std.Io) f64 {
+    return @as(f64, @floatFromInt(std.Io.Clock.awake.now(io).toNanoseconds())) / std.time.ns_per_s;
+}
+
+fn drainLogs(reader: *std.Io.Reader) void {
+    while (true) {
+        const line = reader.takeSentinel('\n') catch return;
+        std.debug.print("{s}\n", .{line});
+    }
+}
+
+const Benchmark = struct {
+    const Record = struct {
+        variant: []const u8,
+        phase: usize,
+        repetition: usize,
+        streams: usize,
+        draft: bool,
+        tokens: usize,
+        seconds: f64,
+        tokens_per_second: f64,
+        first_token_ms: []const f64,
+        latency_ms: []const f64,
+        shared_rounds: i64,
+        max_shared_streams: i64,
+        memory: std.json.Value,
+    };
+    expected: [8]?Output = @splat(null),
+    records: std.ArrayList(Record) = .empty,
+    variant: []const u8 = "baseline",
+    phase: usize = 0,
+    drafter: bool = false,
+    expect_sharing: bool = false,
+    concurrency: [3]usize = .{ 1, 4, 8 },
+    mismatch_path: []const u8 = "",
+    verify_only: bool = false,
+
+    fn compare(b: *Benchmark, s: *Scenario, i: usize, actual: Output) !void {
+        const reference = b.expected[i].?;
+        reference.compare(actual) catch |err| {
+            const a = s.init.arena.allocator();
+            const bytes = try std.json.Stringify.valueAlloc(a, .{ .variant = b.variant, .phase = b.phase, .request = try body(a, i, false), .expected = reference, .actual = actual, .failure = @errorName(err) }, .{ .whitespace = .indent_2 });
+            try std.Io.Dir.cwd().writeFile(s.init.io, .{ .sub_path = b.mismatch_path, .data = bytes });
+            std.debug.print("Output mismatch request {d}, {s}; saved {s}\n", .{ i, b.variant, b.mismatch_path });
+            return err;
+        };
+    }
+
+    fn body(a: std.mem.Allocator, i: usize, drafting: bool) ![]const u8 {
+        const prompts = [_][]const u8{ "Explain why the sky is blue:", "A short story about a fox:", "Write a Fibonacci function in Zig:", "Describe the seasons in Copenhagen:", "Count upwards, one number per line:", "What makes a good unit test?", "Explain how binary search works:", "Describe a walk beside the sea:" };
+        return std.json.Stringify.valueAlloc(a, .{ .prompt = prompts[i], .max_tokens = 32, .ignore_eos = true, .temperature = @as(f64, if (i % 2 == 0) 0 else 0.7), .top_k = 20, .top_p = 0.95, .min_p = 0.0, .seed = 819 + i, .draft = drafting, .stream = true }, .{});
+    }
+
+    fn run(b: *Benchmark, s: *Scenario, port: u16) !void {
+        const a = s.init.arena.allocator();
+        const io = s.init.io;
+        // Eight isolated requests warm kernels and establish the serial reference.
+        for (&b.expected, 0..) |*expected, i| {
+            const socket = try post(io, port, try body(a, i, false));
+            defer socket.close(io);
+            const actual = try Output.parse(a, try readAll(a, io, socket), true);
+            if (expected.* != null) try b.compare(s, i, actual) else expected.* = actual;
+        }
+        for (0..if (b.drafter) @as(usize, 2) else 1) |mode| {
+            for (b.concurrency) |count| {
+                for (0..if (b.verify_only) @as(usize, 1) else 3) |repetition| {
+                    var replies: [8]TimedResponse = undefined;
+                    var opened: usize = 0;
+                    defer for (replies[0..opened]) |r| {
+                        r.socket.close(io);
+                        std.heap.page_allocator.free(r.bytes);
+                    };
+                    var group: std.Io.Group = .init;
+                    defer group.cancel(io);
+                    const started = instant(io);
+                    for (replies[0..count], 0..) |*reply, i| {
+                        const request = try body(a, i, mode == 1);
+                        const sent = instant(io);
+                        reply.* = .{ .socket = try post(io, port, request), .started = sent };
+                        opened += 1;
+                        try group.concurrent(io, TimedResponse.read, .{ reply, io });
+                    }
+                    try group.await(io);
+                    const seconds = instant(io) - started;
+                    const first = try a.alloc(f64, count);
+                    const latency = try a.alloc(f64, count);
+                    var total: usize = 0;
+                    for (replies[0..count], 0..) |reply, i| {
+                        if (reply.failure) |err| return err;
+                        const actual = try Output.parse(a, reply.bytes, true);
+                        try b.compare(s, i, actual);
+                        const usage = (try std.json.parseFromSlice(std.json.Value, a, actual.usage.?, .{})).value;
+                        total += @intCast(usage.object.get("completion_tokens").?.integer);
+                        first[i] = reply.first_token_ms;
+                        latency[i] = reply.latency_ms;
+                    }
+                    if (s.python_port == null) _ = try s.waitForCounts(port, 0, 0);
+                    if (b.verify_only) {
+                        std.debug.print("PASS: {s}, {d} requests: exact seeded greedy/sampled SSE output and usage\n", .{ b.variant, count });
+                        continue;
+                    }
+                    const status = try health(a, io, port);
+                    const stats = status.object.get("inference") orelse std.json.Value{ .object = .empty };
+                    try b.records.append(a, .{ .variant = b.variant, .phase = b.phase, .repetition = repetition, .streams = count, .draft = mode == 1, .tokens = total, .seconds = seconds, .tokens_per_second = @as(f64, @floatFromInt(total)) / seconds, .first_token_ms = first, .latency_ms = latency, .shared_rounds = if (stats.object.get("shared_rounds")) |v| v.integer else 0, .max_shared_streams = if (stats.object.get("max_shared_streams")) |v| v.integer else 0, .memory = status.object.get("memory").? });
+                    std.debug.print("BENCH {s} phase={d} streams={d} draft={any} rep={d}: {d:.2} completion tok/s, {d:.3}s, exact output\n", .{ b.variant, b.phase, count, mode == 1, repetition, @as(f64, @floatFromInt(total)) / seconds, seconds });
+                }
+            }
+        }
+        if (std.mem.eql(u8, b.variant, "native") and b.expect_sharing) {
+            const stats = try s.liveSnapshot(port);
+            try std.testing.expectEqual(@as(i64, 8), stats.object.get("max_shared_streams").?.integer);
+        }
+        try std.posix.kill(s.child.id.?, .TERM);
+        if (!(try s.child.wait(io)).success()) return error.UncleanShutdown;
+    }
+};
+
+fn benchmark(init: std.process.Init, args: []const []const u8) !void {
+    if (args.len != 6 and args.len != 8) return error.InvalidBenchmarkArguments;
+    if (args.len == 8 and !std.mem.eql(u8, args[6], "--drafter")) return error.InvalidBenchmarkArguments;
+    const a = init.arena.allocator();
+    const verify_only = std.mem.eql(u8, args[1], "--verify-python");
+    const python = verify_only or std.mem.eql(u8, args[1], "--compare-python");
+    const repeat_native = !python and std.mem.eql(u8, args[2], args[3]);
+    if (python and args.len == 8) return error.PythonDraftBudgetNotConfigurable;
+    const config_path = try std.fs.path.join(a, &.{ args[4], "config.json" });
+    const config_bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, config_path, a, .limited(1024 * 1024));
+    const config = (try std.json.parseFromSlice(std.json.Value, a, config_bytes, .{})).value;
+    const kind = config.object.get("model_type").?.string;
+    var bench = Benchmark{ .drafter = args.len == 8, .expect_sharing = std.mem.startsWith(u8, kind, "qwen3") };
+    bench.verify_only = verify_only;
+    bench.mismatch_path = try std.fmt.allocPrint(a, "{s}.mismatch.json", .{args[5]});
+    var environment = try init.environ_map.clone(a);
+    defer environment.deinit();
+    var ram: u64 = 0;
+    var ram_size: usize = @sizeOf(u64);
+    if (std.c.sysctlbyname("hw.memsize", &ram, &ram_size, null, 0) != 0 or ram == 0) return error.PhysicalMemoryUnavailable;
+    // Both implementations cap this explicit allowance at Metal's recommended working set.
+    try environment.put("TENSORFOLD_MEMORY_LIMIT_GB", try std.fmt.allocPrint(a, "{d}", .{ram / (1024 * 1024 * 1024)}));
+    const order = [_]usize{ 2, 3, 3, 2 };
+    for (order[0..if (verify_only) @as(usize, 2) else 4], 0..) |binary, phase| {
+        bench.phase = phase;
+        bench.variant = if (repeat_native) "native" else if (binary == 2) (if (python) "python" else "baseline") else "native";
+        const is_python = python and binary == 2;
+        var python_port: ?u16 = null;
+        if (is_python) {
+            var listener = try (try std.Io.net.IpAddress.parse("127.0.0.1", 0)).listen(init.io, .{});
+            python_port = listener.socket.address.getPort();
+            listener.deinit(init.io);
+        }
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(a, &.{ args[binary], "serve", args[4], "--snapshot-dir", "none", "--port", if (python_port) |p| try std.fmt.allocPrint(a, "{d}", .{p}) else "0", if (is_python) "--parallel" else "--batch-streams", "8", "--prompt-cache-gib", "0" });
+        if (is_python) {
+            try argv.append(a, "--no-update-check");
+            if (std.mem.indexOf(u8, args[4], "Flash-Next") != null) try argv.append(a, "--ple-on-ssd");
+        }
+        if (bench.drafter) {
+            if (!std.mem.eql(u8, args[7], "-")) try argv.appendSlice(a, &.{ "--drafter", args[7] });
+            try argv.appendSlice(a, &.{ "--max-draft", "3" });
+        } else try argv.append(a, "--no-drafts");
+        var scenario = Scenario{ .init = init, .idle = false, .benchmark = &bench, .python_port = python_port, .child = try std.process.spawn(init.io, .{ .argv = argv.items, .environ_map = &environment, .stdout = if (is_python) .pipe else .inherit, .stderr = if (is_python) .inherit else .pipe }) };
+        defer if (scenario.child.id) |id| {
+            std.posix.kill(id, .KILL) catch {};
+            scenario.child.kill(init.io);
+        };
+        try scenario.run();
+    }
+    const bytes = try std.json.Stringify.valueAlloc(a, .{ .model = args[4], .baseline = args[2], .candidate = args[3], .comparison = if (python) "python_vs_native" else if (repeat_native) "native_repeatability" else "before_after", .correctness_only = verify_only, .outputs = bench.expected, .max_batch_size = 8, .memory_limit_gib = ram / (1024 * 1024 * 1024), .draft_budget = if (bench.drafter) @as(usize, 3) else 0, .method = if (verify_only) "8 isolated references; exact output/usage at 1/4/8 requests; drafting disabled" else "ABBA; 8 isolated warmups per process; 3 repetitions; identical seeded mixed greedy/sampled SSE requests; 32 completion tokens per request; maximum Metal working set; prompt caching disabled; startup excluded; throughput includes prefill and HTTP", .records = bench.records.items }, .{ .whitespace = .indent_2 });
+    try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[5], .data = bytes });
+}
+
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
+    if (args.len > 1 and (std.mem.eql(u8, args[1], "--benchmark") or std.mem.eql(u8, args[1], "--compare-python") or std.mem.eql(u8, args[1], "--verify-python"))) return benchmark(init, args);
     if (args.len != 3 and args.len != 5 and args.len != 6) return error.ExpectedExecutableAndModel;
     if (args.len == 5 and std.mem.eql(u8, args[3], "--warming-only")) {
         const a = init.arena.allocator();
@@ -1114,6 +1354,7 @@ pub fn main(init: std.process.Init) !void {
         const responses = std.mem.eql(u8, args[3], "--responses-only");
         const background = std.mem.eql(u8, args[3], "--background-only");
         const neural = std.mem.eql(u8, args[3], "--neural-only") or std.mem.eql(u8, args[3], "--neural-disabled") or std.mem.eql(u8, args[3], "--neural-synthetic") or std.mem.eql(u8, args[3], "--neural-untrained");
+        const flash = std.mem.eql(u8, std.fs.path.basename(args[2]), "Qwen3.8-Flash-Next-MLX-4bit-MTP");
         const terminal = if (live and !std.mem.eql(u8, args[4], "redirected")) try Terminal.init() else null;
         defer if (terminal) |t| {
             t.master.close(init.io);
@@ -1128,9 +1369,9 @@ pub fn main(init: std.process.Init) !void {
         }
         var argv: std.ArrayList([]const u8) = .empty;
         try argv.appendSlice(init.arena.allocator(), &.{ args[1], "serve", args[2], "--snapshot-dir", "none" });
-        try argv.appendSlice(init.arena.allocator(), &.{ "--port", "0", "--batch-streams", if (live) "1" else if (background) args[4] else "4", "--shutdown-grace-seconds", "1", "--checkpoint-slots", if (prefixes) "1" else "12", "--prompt-cache-gib", if (prefixes) args[4] else "16" });
+        try argv.appendSlice(init.arena.allocator(), &.{ "--port", "0", "--batch-streams", if (live) "1" else if (background) args[4] else "4", "--shutdown-grace-seconds", "1", "--checkpoint-slots", if (prefixes) "1" else "12", "--prompt-cache-gib", if (prefixes) args[4] else if (flash) "0" else "16" });
         if (neural) {
-            try argv.appendSlice(init.arena.allocator(), &.{ "--max-draft", "15" });
+            try argv.appendSlice(init.arena.allocator(), &.{ "--max-draft", if (flash) "3" else "15" });
             if (!std.mem.eql(u8, args[4], "-")) try argv.appendSlice(init.arena.allocator(), &.{ "--drafter", args[4] });
             if (std.mem.eql(u8, args[3], "--neural-disabled")) try argv.append(init.arena.allocator(), "--no-drafts");
         }
@@ -1163,7 +1404,7 @@ pub fn main(init: std.process.Init) !void {
     for ([_][]const u8{ "nan", "0", "1" }) |budget| {
         try environment.put("TENSORFOLD_MEMORY_LIMIT_GB", budget);
         const result = try std.process.run(init.arena.allocator(), init.io, .{ .argv = &.{ args[1], "serve", args[2], "--port", "0" }, .environ_map = &environment, .stderr_limit = .limited(64 * 1024) });
-        const expected = if (std.mem.eql(u8, budget, "1")) "WeightsExceedMemoryBudget" else "InvalidMemoryBudget";
+        const expected = if (std.mem.eql(u8, budget, "1")) "InsufficientMemoryBudget" else "InvalidMemoryBudget";
         if (result.term.success() or std.mem.indexOf(u8, result.stderr, expected) == null or std.mem.indexOf(u8, result.stderr, "Loading ") != null or std.mem.indexOf(u8, result.stderr, "Native inference listening") != null) return error.InvalidMemoryBudgetLoadedModel;
     }
     std.debug.print("PASS: invalid/insufficient process budgets fail before model weights load\n", .{});

@@ -115,6 +115,15 @@ pub fn check(io: std.Io, dir: []const u8) !void {
                 try equalBits(&scope, try flash.project(&kernels, &scope, inputs[0], w, generation, parameter(case, "RPS")), expected[0]);
                 const batch = try scope.stack(&.{ inputs[0], inputs[0] }, 0);
                 try equalBits(&scope, try flash.project(&kernels, &scope, batch, w, generation, parameter(case, "RPS")), try scope.stack(&.{ expected[0], expected[0] }, 0));
+            } else if (std.mem.indexOf(u8, case.kernel, "hc_up_row") != null or std.mem.indexOf(u8, case.kernel, "hc_up_mma") != null) {
+                const df = try weights.get("down_format");
+                try mx.eval(df);
+                const values = mx.c.mlx_array_data_int32(df)[0..2];
+                const down = flash.Weight{ .arrays = .{ try weights.get("down_weight"), try weights.get("down_scales"), try weights.get("down_biases") }, .format = .{ .bits = values[0], .group_size = values[1] } };
+                const up = flash.Weight{ .arrays = inputs[4..7].*, .format = .{ .bits = if (generic) parameter(case, "BITS") else 4, .group_size = if (generic) parameter(case, "GS") else 32 } };
+                const actual = try @import("flash_lane.zig").hyper(&kernels, &scope, inputs[0], inputs[1], down, up, inputs[2], inputs[7], parameter(case, "S"), parameter(case, "LOW"));
+                try equalBits(&scope, actual[0], expected[0]);
+                if (parameter(case, "ND") > parameter(case, "LOW")) try equalBits(&scope, actual[1], try scope.slice(expected[1], 0, 0, mx.dim(inputs[0], 0)));
             } else if (std.mem.indexOf(u8, case.kernel, "hc_up2") != null) {
                 const df = try weights.get("down_format");
                 try mx.eval(df);
@@ -175,6 +184,14 @@ pub fn check(io: std.Io, dir: []const u8) !void {
             const want = (try kernels.run(&scope, src.gemma_attention_merge, &.{ expected[0], expected[1], expected[2], inputs[7] }, &.{ mx.ti("D", dims), mx.ti("H", heads) }, .{ 32, heads, @intCast(rows) }, .{ 32, 1, 1 }, &.{.{ .shape = mx.shape(inputs[0]) }}))[0];
             try equalBits(&scope, actual, want);
         }
+        if (std.mem.startsWith(u8, case.@"test", "flash-lane-") and std.mem.startsWith(u8, case.kernel, "lane_qmm_") and !std.mem.eql(u8, case.kernel, "lane_qmm_xsum")) {
+            const fmt = try weights.get("original_format");
+            try mx.eval(fmt);
+            const values = mx.c.mlx_array_data_int32(fmt)[0..2];
+            var projection = try @import("flash_lane.zig").Projection.init(&scope, .{ .arrays = .{ try weights.get("original_weight"), try weights.get("original_scales"), try weights.get("original_biases") }, .format = .{ .bits = values[0], .group_size = values[1] } });
+            defer projection.deinit();
+            try equalBits(&scope, try projection.apply(&kernels, &scope, inputs[0]), expected[0]);
+        }
         if (std.mem.startsWith(u8, case.kernel, "lane_qmm_lowbit") or std.mem.startsWith(u8, case.kernel, "lane_qmm_bytes") or std.mem.startsWith(u8, case.kernel, "lane_qmm_main")) {
             const n = parameter(case, "N");
             const width = parameter(case, "K");
@@ -189,10 +206,21 @@ pub fn check(io: std.Io, dir: []const u8) !void {
             const bs = try scope.reshape(try scope.slice(sb, 2, 1, 2), &.{ n, groups });
             var linear = try @import("lanes.zig").Linear.initFormat(&scope, w, sc, bs, .{ .bits = bits, .group_size = group });
             defer linear.deinit();
+            try std.testing.expectEqual(mx.tensor_units and @mod(n, 32) == 0 and (group == 64 or bits == 4), linear.tiled);
+            if (linear.tiled) {
+                var selected = try linear.selectRanges(&scope, &.{.{ 0, @min(n, 3) }});
+                defer selected.deinit();
+                try equalBits(&scope, selected.weight, try scope.slice(w, 0, 0, @min(n, 3)));
+                try equalBits(&scope, selected.scales, try scope.slice(sc, 0, 0, @min(n, 3)));
+                try equalBits(&scope, selected.biases, try scope.slice(bs, 0, 0, @min(n, 3)));
+            }
             // Only default launch reductions are the production dispatch contract.
             var split: i32 = 1;
             while (split < 8 and @divTrunc(n + 31, 32) * split < 1024 and @divTrunc(@divExact(width, 64), split * 2) >= 8) split *= 2;
             if (split == parameter(case, "SK")) try equalBits(&scope, try linear.tensorRows(&kernels, &scope, .{ .x = inputs[0], .sums = inputs[1] }), expected[0]);
+        }
+        if (std.mem.startsWith(u8, case.@"test", "bonsai-reuse-") and std.mem.eql(u8, case.kernel, "lane_qmm_lowbit")) {
+            try checkBonsaiReuse(&scope, &weights, expected[0]);
         }
         if (std.mem.eql(u8, case.kernel, "simd_qmm_mma")) {
             const n = parameter(case, "N");
@@ -248,6 +276,85 @@ pub fn check(io: std.Io, dir: []const u8) !void {
 fn parameter(case: Case, name: []const u8) i32 {
     for (case.templates) |p| if (std.mem.eql(u8, p.name, name)) return p.integer;
     unreachable;
+}
+fn checkBonsaiReuse(s: *mx.Scope, fixture: *@import("checkpoint.zig").Store, expected: mx.Array) !void {
+    const lanes = @import("lanes.zig");
+    var model = @import("model.zig").Model{ .weights = @import("weights.zig").Weights.init(), .kernels = mx.Kernels.init() };
+    defer model.deinit();
+    const x = try fixture.get("source_input");
+    const signs = try fixture.get("source_signs");
+    const names = [_][]const u8{ "model.layers.0.mlp.gate_proj", "model.layers.0.mlp.up_proj", "opposite" };
+    for (names, 0..) |name, i| {
+        var buffer: [64]u8 = undefined;
+        const part = @min(i, 1);
+        const w = try fixture.get(try std.fmt.bufPrint(&buffer, "member{d}_weight", .{part}));
+        const scales = try fixture.get(try std.fmt.bufPrint(&buffer, "member{d}_scales", .{part}));
+        const biases = try fixture.get(try std.fmt.bufPrint(&buffer, "member{d}_biases", .{part}));
+        const transform = if (i == 2) try s.unary(mx.c.mlx_negative, signs) else signs;
+        var linear = try lanes.Linear.initFormat(s, w, scales, biases, .{ .bits = 2, .group_size = 64 });
+        linear.signs = mx.retain(transform) catch |err| {
+            linear.deinit();
+            return err;
+        };
+        try model.weights.putLinear(name, linear);
+    }
+    const left = try model.weights.linear(names[0]);
+    const right = try model.weights.linear(names[1]);
+    const opposite = try model.weights.linear(names[2]);
+    try std.testing.expect(left.tiled and right.tiled and opposite.tiled);
+    try std.testing.expectEqual(left.rotation_id, right.rotation_id);
+    try std.testing.expect(left.rotation_id != opposite.rotation_id);
+    if (left.n == 64 and mx.dim(x, 1) == 1) {
+        var original = left;
+        original.weight = try fixture.get("member0_weight");
+        original.tiled = false;
+        const repeated: [129]mx.Array = @splat(x);
+        const prompt = try s.cat(&repeated, 1);
+        try equalBits(s, try left.prefill(&model.kernels, s, prompt), try original.prefill(&model.kernels, s, prompt));
+        var selected = try left.selectRanges(s, &.{ .{ 1, 4 }, .{ 11, 16 } });
+        defer selected.deinit();
+        var reference = try original.selectRanges(s, &.{ .{ 1, 4 }, .{ 11, 16 } });
+        defer reference.deinit();
+        try std.testing.expect(!selected.tiled);
+        try equalBits(s, selected.weight, reference.weight);
+        try equalBits(s, try selected.apply(&model.kernels, s, .{ .x = x }), try reference.apply(&model.kernels, s, .{ .x = x }));
+        try equalBits(s, try selected.prefill(&model.kernels, s, prompt), try reference.prefill(&model.kernels, s, prompt));
+    }
+    var cache = lanes.ProjectionCache{};
+    model.projection_cache = &cache;
+    const input = lanes.Act{ .x = x };
+    const rotated = try cache.prepare(left, &model.kernels, s, input);
+    const repeated = try cache.prepare(right, &model.kernels, s, input);
+    try std.testing.expect(rotated.x.ctx == repeated.x.ctx and rotated.sums.?.ctx == repeated.sums.?.ctx);
+    const changed = try cache.prepare(opposite, &model.kernels, s, input);
+    try std.testing.expect(rotated.x.ctx != changed.x.ctx);
+    var plain = opposite;
+    plain.signs = mx.empty;
+    try equalBits(s, try plain.apply(&model.kernels, s, changed), try opposite.apply(&model.kernels, s, input));
+    const other_input = lanes.Act{ .x = try s.unary(mx.c.mlx_negative, x) };
+    const other = try cache.prepare(left, &model.kernels, s, other_input);
+    try std.testing.expect(other.x.ctx != rotated.x.ctx);
+    plain = left;
+    plain.signs = mx.empty;
+    try equalBits(s, try plain.apply(&model.kernels, s, other), try left.apply(&model.kernels, s, other_input));
+    const a = try model.project(s, 0, "mlp.gate_proj", input);
+    const b = try model.project(s, 0, "mlp.up_proj", input);
+    try equalBits(s, try s.cat(&.{ a, b }, -1), expected);
+    const stack = (try model.weights.fused(names[0..2])).?;
+    try std.testing.expect(stack.tiled);
+    try std.testing.expectEqual(left.splitK(), stack.splitK());
+    if (left.n == 16384) {
+        var unforced = stack;
+        unforced.split_k = null;
+        try std.testing.expect(stack.splitK() != unforced.splitK());
+    }
+    try std.testing.expect(try model.weights.fused(&.{ names[0], names[2] }) == null);
+    var different_format = right;
+    different_format.format.?.bits = 4;
+    try std.testing.expect(!lanes.Linear.stackCompatible(left, different_format));
+    model.projection_cache = null;
+    try std.testing.expectError(error.MissingWeight, model.forward(&.{1}, &.{-1}));
+    try std.testing.expect(model.projection_cache == null);
 }
 fn matrix(s: *mx.Scope, a: mx.Array, n: i32, width: i32) !mx.Array {
     return s.reshape(try s.slice(try s.reshape(a, &.{-1}), 0, 0, n * width), &.{ n, width });

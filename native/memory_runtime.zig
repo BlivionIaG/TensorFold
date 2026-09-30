@@ -50,25 +50,24 @@ pub fn recommendedBytes() !usize {
 pub const Runtime = struct {
     ram: u64,
     budget: u64,
-    fraction: f64,
     share: u64,
     previous_memory: usize,
     previous_cache: usize,
     previous_wired: ?usize = null,
 
-    pub fn init(override: ?[]const u8, glm: bool) !Runtime {
+    pub fn init(override: ?[]const u8) !Runtime {
         var ram: u64 = 0;
         var size: usize = @sizeOf(u64);
         if (std.c.sysctlbyname("hw.memsize", &ram, &size, null, 0) != 0 or ram == 0) return error.PhysicalMemoryUnavailable;
-        const fraction: f64 = if (glm and ram <= 256 * policy.gib) 0.85 else 0.70;
-        const budget = try policy.limit(ram, try recommendedBytes(), fraction, override);
-        const share = @max(1, budget -| policy.process_bytes);
+        const budget = try policy.workingSetLimit(ram, try recommendedBytes(), override);
+        const share = budget - policy.process_bytes;
         var previous_memory: usize = 0;
         try mx.check(mx.c.mlx_set_memory_limit(&previous_memory, @intCast(share)));
         errdefer _ = mx.c.mlx_set_memory_limit(&previous_memory, previous_memory);
         var previous_cache: usize = 0;
         try mx.check(mx.c.mlx_set_cache_limit(&previous_cache, @intCast(@min(2 * policy.gib, share))));
-        return .{ .ram = ram, .budget = budget, .fraction = fraction, .share = share, .previous_memory = previous_memory, .previous_cache = previous_cache };
+        std.debug.print("Native memory ceiling: {d:.1} GiB total, {d:.1} GiB MLX; 3 GiB process reserve\n", .{ @as(f64, @floatFromInt(budget)) / policy.gib, @as(f64, @floatFromInt(share)) / policy.gib });
+        return .{ .ram = ram, .budget = budget, .share = share, .previous_memory = previous_memory, .previous_cache = previous_cache };
     }
 
     pub fn deinit(runtime: *Runtime) void {
@@ -142,7 +141,7 @@ pub const Runtime = struct {
         var cached: usize = 0;
         try mx.check(mx.c.mlx_get_cache_memory(&cached));
         const elsewhere = @as(u64, @intFromFloat(@as(f64, @floatFromInt(runtime.ram * (100 - free))) / 100)) -| (try activeBytes() + cached);
-        return policy.concurrentBudget(runtime.ram, runtime.fraction, runtime.budget, runtime.share, elsewhere);
+        return policy.availableWorkingSet(runtime.ram, runtime.share, elsewhere);
     }
 };
 
@@ -156,7 +155,9 @@ fn perPosition(array: mx.Array, axis: usize) f64 {
     return if (positions <= 0) 0 else @as(f64, @floatFromInt(arrayBytes(array))) / @as(f64, @floatFromInt(positions));
 }
 
-fn growthFloor(comptime M: type, state: *@import("request_state.zig").State(M)) struct { kv: f64, spare: f64, unbuffered: f64 } {
+const Growth = struct { kv: f64 = 0, spare: f64 = 0, unbuffered: f64 = 0 };
+
+fn growthFloor(comptime M: type, state: *@import("request_state.zig").State(M)) Growth {
     var kv: f64 = 0;
     var spare: f64 = 0;
     var unbuffered: f64 = 0;
@@ -222,16 +223,20 @@ fn measureModel(m: anytype, tokenizer: *@import("vendor/tokenizer.zig").Tokenize
         for (held[0..initialized]) |*generation| generation.deinit();
         _ = mx.c.mlx_clear_cache();
     }
-    // Materialize the same path before measuring cache growth.
+    // Shared decode projection caches belong to the model, not each request.
     {
-        var warm = try G.init(m, tokenizer, mx.allocator, tokens[0..64], .{ .max_tokens = 1 }, sink, null);
+        var warm = try G.init(m, tokenizer, mx.allocator, tokens[0..64], .{ .max_tokens = @max(2, sink.draft_budget + 2), .ignore_eos = true }, sink, null);
         defer warm.deinit();
-        while (warm.phase == .prefill) _ = try warm.step(m);
+        while (!try warm.step(m)) {}
     }
     var sizes: [3]u64 = undefined;
+    var prefill_sizes: [3]u64 = undefined;
     var peaks: [3]u64 = undefined;
+    var decode_work: u64 = 0;
+    var prefill_floor = Growth{};
     const probes = [_]usize{ 64, chunk + 64, 2 * chunk + 64 };
-    for (probes, &held, &sizes, &peaks) |count, *generation, *size, *peak| {
+    for (probes, &held, &sizes, &prefill_sizes, &peaks) |count, *generation, *size, *prefill_size, *peak| {
+        try mx.check(mx.c.mlx_synchronize(mx.stream));
         try mx.check(mx.c.mlx_clear_cache());
         const before = try activeBytes();
         try mx.check(mx.c.mlx_reset_peak_memory());
@@ -242,23 +247,28 @@ fn measureModel(m: anytype, tokenizer: *@import("vendor/tokenizer.zig").Tokenize
         const after = try activeBytes();
         var high: usize = 0;
         try mx.check(mx.c.mlx_get_peak_memory(&high));
-        size.* = after -| before;
+        size.* = @max(after -| before, generation.state.nbytes());
+        prefill_size.* = size.*;
+        const growth = growthFloor(M, &generation.state);
+        inline for (.{ "kv", "spare", "unbuffered" }) |field| @field(prefill_floor, field) = @max(@field(prefill_floor, field), @field(growth, field));
         peak.* = high -| after;
+        try mx.check(mx.c.mlx_reset_peak_memory());
+        while (!try generation.step(m)) {}
+        try mx.check(mx.c.mlx_synchronize(mx.stream));
+        // Neural contexts and head caches can first become resident during decode.
+        size.* = @max(size.*, @max((try activeBytes()) -| before, generation.state.nbytes()));
+        try mx.check(mx.c.mlx_get_peak_memory(&high));
+        decode_work = @max(decode_work, high -| after);
     }
-    const floor = growthFloor(M, &held[2].state);
+    var floor = growthFloor(M, &held[2].state);
+    inline for (.{ "kv", "spare", "unbuffered" }) |field| @field(floor, field) = @max(@field(floor, field), @field(prefill_floor, field));
     // Plain prefill arrays have neither the second KV copy nor capacity rounding.
-    for (&sizes, probes) |*size, count| size.* += @intFromFloat(floor.unbuffered * @as(f64, @floatFromInt(count)));
+    for (&sizes, prefill_sizes, probes) |*size, prefill_size, count| size.* = @max(size.*, prefill_size + @as(u64, @intFromFloat(floor.unbuffered * @as(f64, @floatFromInt(count)))));
     const per_token = @max((@as(f64, @floatFromInt(sizes[2])) - @as(f64, @floatFromInt(sizes[1]))) / chunk, floor.kv + floor.spare);
     const spare: u64 = @intFromFloat((floor.spare + floor.unbuffered) * 2048);
     const b = @max(0, (@as(f64, @floatFromInt(peaks[2])) - @as(f64, @floatFromInt(peaks[1]))) / (chunk * chunk));
     const a = @max(0, @as(f64, @floatFromInt(peaks[1])) / chunk - b * chunk);
-    const before_decode = try activeBytes();
-    try mx.check(mx.c.mlx_reset_peak_memory());
-    _ = try held[2].step(m);
-    try mx.check(mx.c.mlx_synchronize(mx.stream));
-    var decode_peak: usize = 0;
-    try mx.check(mx.c.mlx_get_peak_memory(&decode_peak));
-    return .{ .short_tokens = probes[0], .short = sizes[0] + spare, .long_tokens = probes[1], .long = @max(sizes[0], sizes[1]) + spare, .per_token = per_token, .prefill_a = a, .prefill_b = b, .round_bytes = decode_peak -| before_decode, .chunk = chunk };
+    return .{ .short_tokens = probes[0], .short = sizes[0] + spare, .long_tokens = probes[1], .long = @max(sizes[0], sizes[1]) + spare, .per_token = per_token, .prefill_a = a, .prefill_b = b, .round_bytes = decode_work, .chunk = chunk };
 }
 
 pub fn check(io: std.Io, directory: []const u8) !void {
@@ -268,7 +278,7 @@ pub fn check(io: std.Io, directory: []const u8) !void {
 pub fn checkWithDraft(io: std.Io, directory: []const u8, drafter: ?[]const u8) !void {
     try mx.init();
     defer mx.shutdown();
-    var runtime = try Runtime.init(null, false);
+    var runtime = try Runtime.init(null);
     defer runtime.deinit();
     var model = try session.Session.initWithDraft(io, directory, .{ .enabled = drafter != null, .directory = if (drafter) |path| if (std.mem.eql(u8, path, "-")) null else path else null, .max_draft = 15 });
     defer model.deinit();
@@ -286,6 +296,7 @@ pub fn checkWithDraft(io: std.Io, directory: []const u8, drafter: ?[]const u8) !
             const sink = model.draftSink(.{});
             const reply_tokens = @max(2, sink.draft_budget + 2);
             for (counts) |count| {
+                try mx.check(mx.c.mlx_synchronize(mx.stream));
                 try mx.check(mx.c.mlx_clear_cache());
                 const before = try activeBytes();
                 var generation = try session.Generation(M).init(m, &model.tokenizer, mx.allocator, tokens[0..count], .{ .max_tokens = reply_tokens, .ignore_eos = true }, sink, null);

@@ -43,6 +43,7 @@ pub fn main(init: std.process.Init) !void {
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-session-images")) return @import("session_checks.zig").checkImages(io, args[2], args[3]);
     if (args.len == 5 and std.mem.eql(u8, args[1], "check-session-neural-images")) return @import("session_checks.zig").checkNeuralImages(io, args[2], args[3], args[4]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-session-rounds")) return @import("session_checks.zig").check(io, args[2]);
+    if ((args.len == 3 or args.len == 4) and std.mem.eql(u8, args[1], "check-session-shared")) return @import("session_checks.zig").checkShared(io, args[2], if (args.len == 4) args[3] else null);
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-session-neural")) return @import("session_checks.zig").checkNeural(io, args[2], args[3]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-memory-budget")) return @import("memory_budget.zig").check(io, args[2]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-prompt-cache")) return @import("prompt_cache.zig").check(io, args[2]);
@@ -477,6 +478,7 @@ pub fn main(init: std.process.Init) !void {
 
 test {
     _ = @import("decode_round.zig");
+    _ = @import("shared_round.zig");
     _ = @import("draft_allocation.zig");
     _ = @import("background.zig");
     _ = @import("memory_budget.zig");

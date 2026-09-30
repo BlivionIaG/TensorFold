@@ -6,6 +6,7 @@ const Capture = struct {
     bytes: std.ArrayList(u8) = .empty,
     chunks: std.ArrayList(usize) = .empty,
     cancelled: bool = false,
+    cancel_after: ?usize = null,
     fn deinit(c: *Capture) void {
         c.bytes.deinit(mx.allocator);
         c.chunks.deinit(mx.allocator);
@@ -14,6 +15,9 @@ const Capture = struct {
         const c: *Capture = @ptrCast(@alignCast(raw.?));
         try c.bytes.appendSlice(mx.allocator, value);
         try c.chunks.append(mx.allocator, value.len);
+        if (c.cancel_after) |count| if (c.chunks.items.len >= count) {
+            c.cancelled = true;
+        };
     }
     fn cancellation(raw: ?*anyopaque) !void {
         const c: *Capture = @ptrCast(@alignCast(raw.?));
@@ -24,6 +28,97 @@ const Capture = struct {
     }
 };
 
+pub fn checkShared(io: std.Io, directory: []const u8, drafter: ?[]const u8) !void {
+    try mx.init();
+    defer mx.shutdown();
+    var s = try session.Session.initWithDraft(io, directory, .{ .enabled = drafter != null, .directory = drafter, .max_draft = 15 });
+    defer s.deinit();
+    if (s.backend != .qwen) return error.UnsupportedSharedModel;
+    const G = session.Generation(@import("model.zig").Model);
+    const m = &s.backend.qwen;
+    const shared = @import("shared_round.zig");
+    var tokens: [8][73]i32 = undefined;
+    var prompts: [8][]const i32 = undefined;
+    var options: [8]session.Options = undefined;
+    var expected: [8]session.Reply = undefined;
+    var baseline: [8]Capture = @splat(.{});
+    defer for (&baseline) |*capture| capture.deinit();
+    var completed: usize = 0;
+    defer for (expected[0..completed]) |*reply| reply.deinit(mx.allocator);
+    for (0..8) |i| {
+        const count = 17 + i * 8;
+        for (tokens[i][0..count], 0..) |*token, j| token.* = @intCast(1000 + i * 73 + j);
+        prompts[i] = tokens[i][0..count];
+        options[i] = .{ .max_tokens = 24 + i, .ignore_eos = true, .draft = false, .seed = 123 + i, .sampling = .{ .temperature = if (i % 2 == 0) 0 else 0.7, .top_k = 12, .top_p = 0.8, .metal = true } };
+        var g = try G.init(m, &s.tokenizer, mx.allocator, prompts[i], options[i], s.draftSink(baseline[i].sink()), null);
+        defer g.deinit();
+        while (!try g.step(m)) {}
+        expected[i] = try g.takeReply();
+        completed += 1;
+    }
+    for ([_]usize{ 1, 2, 8, 128 }) |rows| {
+        var requests: [8]G = undefined;
+        var captures: [8]Capture = @splat(.{});
+        defer for (&captures) |*capture| capture.deinit();
+        var initialized: usize = 0;
+        defer for (requests[0..initialized]) |*g| g.deinit();
+        for (0..8) |i| {
+            var opts = options[i];
+            opts.draft = true;
+            requests[i] = try G.init(m, &s.tokenizer, mx.allocator, prompts[i], opts, s.draftSink(captures[i].sink()), null);
+            initialized += 1;
+            if (drafter == null) {
+                requests[i].context.clearRetainingCapacity();
+                try requests[i].context.appendSlice(mx.allocator, prompts[i]);
+                for (expected[i].tokens.items) |token| try requests[i].context.append(mx.allocator, @intCast(token));
+                try requests[i].context.appendSlice(mx.allocator, prompts[i]);
+                requests[i].proposer.?.prompt_len = requests[i].context.items.len;
+            }
+            while (requests[i].phase == .prefill) _ = try requests[i].step(m);
+        }
+        captures[0].cancel_after = 3;
+        var coordinator = shared.Coordinator{ .max_rows = rows };
+        var served: [8]u64 = @splat(0);
+        var done: [8]bool = @splat(false);
+        for (1..512) |turn| {
+            if (std.mem.allEqual(bool, &done, true)) break;
+            var candidates: [8]shared.Candidate = undefined;
+            var count: usize = 0;
+            for (done, 0..) |finished, i| if (!finished) {
+                candidates[count] = .{ .slot = i, .served = served[i], .activated = i };
+                count += 1;
+            };
+            const selected = shared.select(candidates[0..count], rows);
+            var gs: [8]*G = undefined;
+            var results: [8]shared.Result = undefined;
+            for (selected, 0..) |candidate, i| {
+                gs[i] = &requests[candidate.slot];
+                served[candidate.slot] = turn;
+            }
+            try coordinator.step(m, gs[0..selected.len], results[0..selected.len]);
+            try std.testing.expect(coordinator.rows <= rows);
+            for (selected, results[0..selected.len]) |candidate, result| {
+                if (result.failure) |err| {
+                    try std.testing.expectEqual(@as(usize, 0), candidate.slot);
+                    try std.testing.expectEqual(error.RequestCancelled, err);
+                    done[0] = true;
+                } else done[candidate.slot] = result.done;
+            }
+            try std.testing.expectEqual(@as(i32, 0), m.position);
+            try std.testing.expectEqual(@import("decode_round.zig").Stage.idle, m.round_owner.stage);
+            for (&requests) |*g| try std.testing.expect(!g.in_round and !g.state.borrowed);
+        }
+        try std.testing.expect(std.mem.allEqual(bool, &done, true));
+        for (1..8) |i| {
+            var reply = try requests[i].takeReply();
+            defer reply.deinit(mx.allocator);
+            try same(expected[i], reply, baseline[i], captures[i]);
+        }
+        try std.testing.expectEqual(.failed, requests[0].phase);
+        std.debug.print("PASS: 8 shared requests, row cap {d}, exact greedy/sampled {s} output and streaming, cancellation isolation and fair turns\n", .{ rows, if (drafter != null) "neural" else "copy" });
+    }
+}
+
 fn same(expected: session.Reply, actual: session.Reply, before: Capture, after: Capture) !void {
     try std.testing.expectEqualSlices(u32, expected.tokens.items, actual.tokens.items);
     try std.testing.expectEqualSlices(u8, expected.content, actual.content);
@@ -31,6 +126,108 @@ fn same(expected: session.Reply, actual: session.Reply, before: Capture, after: 
     try std.testing.expectEqual(expected.prompt_tokens, actual.prompt_tokens);
     try std.testing.expectEqualSlices(u8, before.bytes.items, after.bytes.items);
     try std.testing.expectEqualSlices(usize, before.chunks.items, after.chunks.items);
+}
+
+fn firstTokenPublication(s: *session.Session, prompt: []const i32, options: session.Options, expected: session.Reply) !void {
+    for ([_]usize{ 1, 2 }) |limit| {
+        var opts = options;
+        opts.max_tokens = limit;
+        opts.draft = false;
+        var captures: [2]Capture = @splat(.{});
+        defer for (&captures) |*capture| capture.deinit();
+        var requests: [2]session.RequestGeneration = undefined;
+        var initialized: usize = 0;
+        defer for (requests[0..initialized]) |*request| request.deinit();
+        for (&requests, &captures) |*request, *capture| {
+            request.* = try session.RequestGeneration.init(s, mx.allocator, prompt, opts, capture.sink(), null);
+            initialized += 1;
+        }
+        var finished: [2]bool = @splat(false);
+        for (&requests, &captures, &finished, 0..) |*request, *capture, *done, i| {
+            while (request.progress().prefilled < prompt.len) done.* = try request.step(s);
+            try std.testing.expectEqual(limit == 1, done.*);
+            try std.testing.expectEqualSlices(u32, expected.tokens.items[0..1], request.tokens());
+            try std.testing.expectEqual(prompt.len, request.memoryLengths().now);
+            try std.testing.expectEqual(null, try request.snapshot());
+            const first = try s.tokenizer.decode(mx.allocator, expected.tokens.items[0..1], false);
+            defer mx.allocator.free(first);
+            if (std.unicode.utf8ValidateSlice(first) and !std.mem.endsWith(u8, first, "�")) {
+                try std.testing.expectEqualSlices(u8, first, capture.bytes.items);
+                try std.testing.expect(capture.chunks.items.len > 0);
+            }
+            if (i == 0) {
+                try std.testing.expectEqual(@as(usize, 0), requests[1].progress().prefilled);
+                try std.testing.expectEqual(@as(usize, 0), requests[1].tokens().len);
+                try std.testing.expectEqual(@as(usize, 0), captures[1].chunks.items.len);
+            }
+        }
+        while (!std.mem.allEqual(bool, &finished, true)) for (&requests, &finished) |*request, *done| {
+            if (!done.*) done.* = try request.step(s);
+        };
+        for (&requests, captures) |*request, capture| {
+            try std.testing.expectEqual(prompt.len + limit - 1, request.memoryLengths().now);
+            var actual = try request.takeReply();
+            defer actual.deinit(mx.allocator);
+            try std.testing.expectEqualSlices(u32, expected.tokens.items[0..limit], actual.tokens.items);
+            try std.testing.expectEqualSlices(u8, actual.content, capture.bytes.items);
+            try std.testing.expectEqual(.length, actual.finish_reason);
+        }
+    }
+}
+
+fn firstTokenEdges(m: anytype, tok: *@import("vendor/tokenizer.zig").Tokenizer, prompt: []const i32) !void {
+    const M = @TypeOf(m.*);
+    const G = session.Generation(M);
+    const vocab: usize = if (M == @import("model.zig").Model) 248320 else if (@hasField(M, "vocab")) @intCast(m.vocab) else @intCast(M.vocab);
+    const end: u32 = blk: {
+        for (0..vocab) |id| {
+            const token: i32 = @intCast(id);
+            const eos = if (M == @import("model.zig").Model) token == 248044 or token == 248046 else if (@hasDecl(M, "isEos")) m.isEos(token) else M.eos(token);
+            if (eos) break :blk @intCast(id);
+        }
+        return error.MissingEosToken;
+    };
+    {
+        var capture = Capture{};
+        defer capture.deinit();
+        var g = try G.init(m, tok, mx.allocator, prompt, .{ .max_tokens = 2, .draft = false }, capture.sink(), null);
+        defer g.deinit();
+        // Force a known EOS independently of the model's sampled continuation.
+        g.budget.forced = &.{end};
+        var done = false;
+        while (g.phase == .prefill) done = try g.step(m);
+        try std.testing.expect(done);
+        try std.testing.expect(try g.step(m));
+        try std.testing.expectEqual(prompt.len, @as(usize, @intCast(g.state.position)));
+        try std.testing.expectEqual(@as(usize, 0), capture.chunks.items.len);
+        var reply = try g.takeReply();
+        defer reply.deinit(mx.allocator);
+        try std.testing.expectEqual(@as(usize, 0), reply.tokens.items.len);
+        try std.testing.expectEqualStrings("", reply.content);
+        try std.testing.expectEqual(.stop, reply.finish_reason);
+    }
+    {
+        var capture = Capture{};
+        defer capture.deinit();
+        var g = try G.init(m, tok, mx.allocator, prompt, .{ .max_tokens = 2, .draft = false, .ignore_eos = true, .thinking_budget = 1 }, capture.sink(), null);
+        defer g.deinit();
+        if (g.budget.limit == 0) return;
+        const close = g.budget.close;
+        try std.testing.expect(close.len >= 2);
+        while (g.phase == .prefill) try std.testing.expect(!try g.step(m));
+        try std.testing.expectEqualSlices(u32, close[0..1], g.reply.tokens.items);
+        try std.testing.expectEqualSlices(u32, close[1..], g.budget.forced);
+        try std.testing.expect(!g.budget.open);
+        try std.testing.expectEqual(prompt.len, @as(usize, @intCast(g.state.position)));
+        while (!try g.step(m)) {}
+        try std.testing.expectEqualSlices(u32, close[2..], g.budget.forced);
+        try std.testing.expectEqual(prompt.len + 1, @as(usize, @intCast(g.state.position)));
+        var reply = try g.takeReply();
+        defer reply.deinit(mx.allocator);
+        try std.testing.expectEqualSlices(u32, close[0..2], reply.tokens.items);
+        try std.testing.expectEqualSlices(u8, reply.content, capture.bytes.items);
+        try std.testing.expectEqual(.length, reply.finish_reason);
+    }
 }
 
 fn verifiedCopies(m: anytype, tok: *@import("vendor/tokenizer.zig").Tokenizer, prompt: []const i32, options: session.Options, expected: session.Reply, baseline: Capture) !void {
@@ -77,6 +274,7 @@ fn prefixReuse(s: *session.Session, prompt: []const i32, options: session.Option
         defer donor.deinit();
         try std.testing.expectEqual(null, try donor.snapshot());
         try std.testing.expect(!try donor.step(s));
+        try std.testing.expectEqual(@as(usize, 0), donor.tokens().len);
         const saved = (try donor.snapshot()) orelse return error.MissingPrefixSnapshot;
         saved.save(s.io, disk_path, identity, prompt[0..count]) catch |err| {
             var owned = saved;
@@ -183,6 +381,8 @@ fn interleaved(s: *session.Session, m: anytype, tok: *@import("vendor/tokenizer.
         reply.* = try g.takeReply();
         completed += 1;
     }
+    for ([_]usize{ 0, 2 }) |i| try firstTokenPublication(s, prompts[i], options[i], expected[i]);
+    try firstTokenEdges(m, tok, prompts[0]);
     try prefixReuse(s, prompts[1], options[1], expected[1], baseline[1]);
     for (prompts[0..2], options[0..2], expected[0..2], baseline[0..2]) |prompt, opt, reply, capture| try verifiedCopies(m, tok, prompt, opt, reply, capture);
     if (s.prefillStep() > 256) {
@@ -216,7 +416,9 @@ fn interleaved(s: *session.Session, m: anytype, tok: *@import("vendor/tokenizer.
     defer cancelled_capture.deinit();
     var cancelled = try G.init(m, tok, a, prompts[0], options[0], s.draftSink(cancelled_capture.sink()), null);
     defer cancelled.deinit();
-    _ = try cancelled.step(m);
+    while (cancelled.phase == .prefill) _ = try cancelled.step(m);
+    try std.testing.expectEqualSlices(u32, expected[0].tokens.items[0..1], cancelled.reply.tokens.items);
+    try std.testing.expectEqual(prompts[0].len, @as(usize, @intCast(cancelled.state.position)));
     cancelled_capture.cancelled = true;
     try std.testing.expectError(error.RequestCancelled, cancelled.step(m));
     try std.testing.expectError(error.FailedGeneration, cancelled.step(m));
@@ -297,7 +499,7 @@ fn interleaved(s: *session.Session, m: anytype, tok: *@import("vendor/tokenizer.
     var empty = try zero.takeReply();
     defer empty.deinit(a);
     try std.testing.expectEqual(@as(usize, 0), empty.tokens.items.len);
-    std.debug.print("PASS: {s} isolated/interleaved prompts, reusable prefixes, sampling, streaming, thinking budget, cancellation after forward, round ownership, stale handles, stop strings and zero-token requests\n", .{@typeName(M)});
+    std.debug.print("PASS: {s} isolated/interleaved prompts, immediate first token, one/two-token limits, reusable prefixes, sampling, streaming, thinking budget, cancellation after forward, round ownership, stale handles, stop strings and zero-token requests\n", .{@typeName(M)});
 }
 
 pub fn check(io: std.Io, dir: []const u8) !void {

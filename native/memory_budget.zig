@@ -25,6 +25,17 @@ pub fn concurrentBudget(ram: u64, fraction: f64, process_budget: u64, share: u64
     return @min(allowance -| elsewhere, share);
 }
 
+pub fn workingSetLimit(ram: u64, recommended: u64, override: ?[]const u8) !u64 {
+    if (recommended == 0) return error.MetalWorkingSetUnavailable;
+    const budget = try limit(ram, recommended, 1, override);
+    if (budget <= process_bytes) return error.InsufficientMemoryBudget;
+    return budget;
+}
+
+pub fn availableWorkingSet(ram: u64, share: u64, elsewhere: u64) u64 {
+    return @min(share, ram -| process_bytes -| elsewhere);
+}
+
 pub const CacheMemory = struct {
     fixed_bytes: u64,
     bytes_per_token: u64,
@@ -350,6 +361,19 @@ const GateMemory = struct {
         return true;
     }
 };
+
+test "maximum working set retains Metal, physical RAM and process ceilings" {
+    const t = std.testing;
+    try t.expectEqual(@as(u64, 96 * gib), try workingSetLimit(128 * gib, 96 * gib, null));
+    try t.expectEqual(@as(u64, 128 * gib), try workingSetLimit(128 * gib, 200 * gib, null));
+    try t.expectEqual(@as(u64, 80 * gib), try workingSetLimit(128 * gib, 96 * gib, "80"));
+    try t.expectEqual(@as(u64, 96 * gib), try workingSetLimit(128 * gib, 96 * gib, "200"));
+    try t.expectError(error.MetalWorkingSetUnavailable, workingSetLimit(128 * gib, 0, null));
+    try t.expectError(error.InsufficientMemoryBudget, workingSetLimit(128 * gib, 96 * gib, "3"));
+    try t.expectEqual(@as(u64, 93 * gib), availableWorkingSet(128 * gib, 93 * gib, 20 * gib));
+    try t.expectEqual(@as(u64, 75 * gib), availableWorkingSet(128 * gib, 93 * gib, 50 * gib));
+    try t.expectEqual(@as(u64, 0), availableWorkingSet(128 * gib, 93 * gib, 128 * gib));
+}
 
 test "repeated memory profiles retain every observed worst case" {
     const first = StreamMemory{ .short_tokens = 64, .long_tokens = 2112, .short = 100, .long = 300, .per_token = 1, .prefill_a = 10, .prefill_b = 0.5, .round_bytes = 500 };

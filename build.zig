@@ -172,6 +172,11 @@ pub fn build(b: *std.Build) void {
     flash_affine.step.dependOn(&flash_affine_fixture.step);
     b.step("test-flash-affine", "Compare Flash affine row operators and pre-M5 nibble dispatch against upstream").dependOn(&flash_affine.step);
     metal_tests.dependOn(&flash_affine.step);
+    const flash_lane_fixture = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_variant_fixtures.py", "build/native-checks/flash-lane", "--flash-lane" });
+    const flash_lane = b.addRunArtifact(exe);
+    flash_lane.addArgs(&.{ "check-variants", "build/native-checks/flash-lane" });
+    flash_lane.step.dependOn(&flash_lane_fixture.step);
+    b.step("test-flash-lane", "Compare production M5 Flash lane projections and scalar/matrix hyper-connections with upstream").dependOn(&flash_lane.step);
     const flash_weight_fixture = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_variant_fixtures.py", "build/native-checks/flash-weights", "--flash-weights" });
     const flash_weights = b.addRunArtifact(exe);
     flash_weights.addArgs(&.{ "check-flash-weights", "build/native-checks/flash-weights" });
@@ -476,6 +481,7 @@ pub fn build(b: *std.Build) void {
     metal_tests.dependOn(&simd_attention.step);
     const tensor_tests = b.option(bool, "metal-tensors", "Include M5 tensor attention fixtures in test-metal") orelse false;
     if (tensor_tests) metal_tests.dependOn(&tensor_quant.step);
+    if (tensor_tests) metal_tests.dependOn(&flash_lane.step);
     const variants_fixture = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_variant_fixtures.py", "build/native-checks/variants" });
     const variants = b.addRunArtifact(exe);
     variants.addArgs(&.{ "check-variants", "build/native-checks/variants" });
@@ -525,9 +531,9 @@ pub fn build(b: *std.Build) void {
         session_prior = &check.step;
     }
     session_tests.dependOn(session_prior.?);
-    const memory_tests = b.step("test-memory-runtime", "Verify measured cache growth on Qwen, Gemma and Nemotron checkpoints");
+    const memory_tests = b.step("test-memory-runtime", "Verify measured cache growth on every fitting checkpoint");
     var memory_prior: ?*std.Build.Step = null;
-    for ([_][]const u8{ "Qwen3.8-27B-MLX-4bit", "gemma-4-26b-a4b-it-4bit", "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit" }) |name| {
+    for ([_][]const u8{ "Qwen3.8-27B-MLX-4bit", "Ternary-Bonsai-2-27B-mlx-2bit", "gemma-4-26b-a4b-it-4bit", "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", "Qwen3.8-Flash-Next-MLX-4bit-MTP" }) |name| {
         const check = b.addRunArtifact(exe);
         check.addArgs(&.{ "check-memory-runtime", b.fmt("{s}/{s}", .{ model_root, name }) });
         if (memory_prior) |prior| check.step.dependOn(prior);
@@ -541,7 +547,11 @@ pub fn build(b: *std.Build) void {
     b.step("test-session-images", "Interleave image/text generation and verify request-local multimodal positions").dependOn(&session_images.step);
     const lifecycle_module = b.createModule(.{ .root_source_file = b.path("tools/native_server_checks.zig"), .target = b.graph.host, .optimize = .safe });
     lifecycle_module.link_libc = true;
-    const lifecycle = b.addRunArtifact(b.addExecutable(.{ .name = "native-server-checks", .root_module = lifecycle_module }));
+    const lifecycle_exe = b.addExecutable(.{ .name = "native-server-checks", .root_module = lifecycle_module });
+    const lifecycle_install = b.addInstallArtifact(lifecycle_exe, .{});
+    b.getInstallStep().dependOn(&lifecycle_install.step);
+    b.step("build-server-checks", "Build the native/Python HTTP comparison harness").dependOn(&lifecycle_install.step);
+    const lifecycle = b.addRunArtifact(lifecycle_exe);
     lifecycle.addArtifactArg(exe);
     lifecycle.addArg(b.fmt("{s}/Qwen3.8-27B-MLX-4bit", .{model_root}));
     b.step("test-server-lifecycle", "Check request deadlines, stalled clients, cancellation recovery and clean SIGINT/SIGTERM shutdown with local Qwen").dependOn(&lifecycle.step);
@@ -600,6 +610,18 @@ pub fn build(b: *std.Build) void {
     server_rounds.addArtifactArg(http_checks);
     server_rounds.step.dependOn(&session_image_fixture.step);
     b.step("test-server-rounds", "Compare concurrent HTTP image/text requests with isolated outputs, streaming and cancellation").dependOn(&server_rounds.step);
+    const shared_sessions = b.step("test-session-shared", "Verify eight Qwen/Bonsai requests, fair row caps, serial sampling, copies and cancellation isolation");
+    var shared_previous: ?*std.Build.Step = null;
+    for ([_][]const u8{ "Qwen3.8-27B-MLX-4bit", "Ternary-Bonsai-2-27B-mlx-2bit" }) |name| {
+        const check = b.addRunArtifact(exe);
+        check.addArgs(&.{ "check-session-shared", b.fmt("{s}/{s}", .{ model_root, name }) });
+        if (shared_previous) |previous| check.step.dependOn(previous);
+        shared_previous = &check.step;
+    }
+    shared_sessions.dependOn(shared_previous.?);
+    const shared_neural = b.addRunArtifact(exe);
+    shared_neural.addArgs(&.{ "check-session-shared", b.fmt("{s}/Qwen3.8-27B-MLX-4bit", .{model_root}), b.fmt("{s}/Qwen3.8-27B-DFlash2", .{model_root}) });
+    b.step("test-session-shared-neural", "Verify per-request DFlash caches through shared Qwen settlement").dependOn(&shared_neural.step);
     const server_prefixes = b.step("test-server-prefixes", "Verify HTTP prefix reuse, eviction, cancellation and disabled caching");
     var prefix_previous: ?*std.Build.Step = null;
     for ([_][]const u8{ "1", "0", "0.000001" }) |budget| {

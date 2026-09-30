@@ -11,12 +11,14 @@ pub fn readFile(io: std.Io, path: []const u8) ![]u8 {
 pub const Weights = struct {
     arrays: std.StringHashMap(mx.Array),
     linears: std.StringHashMap(lanes.Linear),
+    stacks: std.StringHashMap(lanes.Linear),
+    rotations: std.ArrayList(mx.Array) = .empty,
     embedding_format: ?@import("quantization.zig").Spec = .{},
     embedding_signs: mx.Array = mx.empty,
     bonsai_form: ?@import("bonsai.zig").Form = null,
     embedding_kernels: mx.Kernels,
     pub fn init() Weights {
-        return .{ .arrays = std.StringHashMap(mx.Array).init(mx.allocator), .linears = std.StringHashMap(lanes.Linear).init(mx.allocator), .embedding_kernels = mx.Kernels.init() };
+        return .{ .arrays = std.StringHashMap(mx.Array).init(mx.allocator), .linears = std.StringHashMap(lanes.Linear).init(mx.allocator), .stacks = std.StringHashMap(lanes.Linear).init(mx.allocator), .embedding_kernels = mx.Kernels.init() };
     }
     pub fn deinit(w: *Weights) void {
         mx.free(w.embedding_signs);
@@ -27,6 +29,14 @@ pub const Weights = struct {
             mx.allocator.free(e.key_ptr.*);
         }
         w.linears.deinit();
+        var stacks = w.stacks.iterator();
+        while (stacks.next()) |entry| {
+            entry.value_ptr.deinit();
+            mx.allocator.free(entry.key_ptr.*);
+        }
+        w.stacks.deinit();
+        for (w.rotations.items) |signs| mx.free(signs);
+        w.rotations.deinit(mx.allocator);
         var it = w.arrays.iterator();
         while (it.next()) |e| {
             mx.free(e.value_ptr.*);
@@ -55,9 +65,84 @@ pub const Weights = struct {
         var owned = value;
         errdefer owned.deinit();
         if (w.linears.contains(name)) return error.DuplicateWeight;
+        owned.rotation_id = 0;
+        if (owned.signs.ctx != null and mx.dtype(owned.signs) == mx.f32t) {
+            try mx.eval(owned.signs);
+            const count = mx.c.mlx_array_size(owned.signs);
+            const signs = mx.c.mlx_array_data_float32(owned.signs)[0..count];
+            for (w.rotations.items, 0..) |existing, i| {
+                if (mx.c.mlx_array_size(existing) == count and std.mem.eql(f32, mx.c.mlx_array_data_float32(existing)[0..count], signs)) {
+                    owned.rotation_id = i + 1;
+                    break;
+                }
+            }
+            if (owned.rotation_id == 0) {
+                const held = try mx.retain(owned.signs);
+                errdefer mx.free(held);
+                try w.rotations.append(mx.allocator, held);
+                owned.rotation_id = w.rotations.items.len;
+            }
+        }
         const key = try mx.allocator.dupe(u8, name);
         errdefer mx.allocator.free(key);
         try w.linears.put(key, owned);
+    }
+    pub fn fused(w: *Weights, names: []const []const u8) !?lanes.Linear {
+        if (names.len < 2 or names.len > 4) return error.InvalidProjectionGroup;
+        var key_buffer: [1024]u8 = undefined;
+        var key_length: usize = 0;
+        for (names) |name| {
+            if (name.len + 1 > key_buffer.len - key_length) return error.InvalidProjectionGroup;
+            @memcpy(key_buffer[key_length..][0..name.len], name);
+            key_buffer[key_length + name.len] = 0;
+            key_length += name.len + 1;
+        }
+        const stack_name = key_buffer[0..key_length];
+        if (w.stacks.get(stack_name)) |stack| return stack;
+        var members: [4]lanes.Linear = undefined;
+        var weight_parts: [4]mx.Array = undefined;
+        var pairs: [4]mx.Array = undefined;
+        var width: i32 = 0;
+        for (names, 0..) |name, i| {
+            members[i] = try w.linear(name);
+            if (!lanes.Linear.stackCompatible(members[0], members[i])) return null;
+            weight_parts[i] = members[i].weight;
+            pairs[i] = members[i].sb;
+            width = try std.math.add(i32, width, members[i].n);
+        }
+        var s = mx.Scope{};
+        defer s.deinit();
+        const weight = try s.cat(weight_parts[0..names.len], 0);
+        const sb = try s.cat(pairs[0..names.len], 1);
+        try mx.evalMany(&.{ weight, sb }, false);
+        var stack = lanes.Linear{
+            .weight = try mx.retain(weight),
+            .sb = mx.empty,
+            .n = width,
+            .k = members[0].k,
+            .tiled = members[0].tiled,
+            .format = members[0].format,
+            .generic = true,
+            .split_k = members[0].splitK(),
+        };
+        errdefer stack.deinit();
+        stack.sb = try mx.retain(sb);
+        var views: [4]mx.Array = @splat(mx.empty);
+        errdefer for (views) |value| mx.free(value);
+        var offset: i32 = 0;
+        for (members[0..names.len], 0..) |member, i| {
+            views[i] = try mx.retain(try s.slice(weight, 0, offset, offset + member.n));
+            offset += member.n;
+        }
+        const key = try mx.allocator.dupe(u8, stack_name);
+        errdefer mx.allocator.free(key);
+        try w.stacks.put(key, stack);
+        for (names, 0..) |name, i| {
+            const member = w.linears.getPtr(name).?;
+            mx.free(member.weight);
+            member.weight = views[i];
+        }
+        return stack;
     }
     pub fn releaseLinearSources(w: *Weights) !void {
         var it = w.linears.keyIterator();

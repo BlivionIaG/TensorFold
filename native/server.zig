@@ -12,6 +12,7 @@ const memory_policy = @import("memory_budget.zig");
 const memory_runtime = @import("memory_runtime.zig");
 const PrefixStore = @import("prompt_cache.zig").Store(inference.Snapshot);
 const live_status = @import("server_live.zig");
+const shared_round = @import("shared_round.zig");
 
 pub fn run(init: std.process.Init, args: []const []const u8) !void {
     var host: []const u8 = "127.0.0.1";
@@ -20,6 +21,7 @@ pub fn run(init: std.process.Init, args: []const []const u8) !void {
     var timeout_ms: i64 = 0;
     var shutdown_grace_ms: i64 = 5000;
     var batch_streams: usize = 4;
+    var batch_rows: usize = 128;
     var checkpoint_slots: ?usize = null;
     var prompt_cache_bytes: ?u64 = null;
     var snapshot_dir: ?[]const u8 = init.environ_map.get("TENSORFOLD_SNAPSHOT_DIR");
@@ -91,6 +93,11 @@ pub fn run(init: std.process.Init, args: []const []const u8) !void {
             if (batch_streams < 1 or batch_streams > 8) return error.InvalidBatchStreams;
             continue;
         }
+        if (std.mem.eql(u8, flag, "--batch-rows")) {
+            batch_rows = try std.fmt.parseInt(usize, value, 10);
+            if (batch_rows < 1 or batch_rows > 128) return error.InvalidBatchRows;
+            continue;
+        }
         if (std.mem.eql(u8, flag, "--checkpoint-slots")) {
             checkpoint_slots = try std.fmt.parseInt(usize, value, 10);
             if (checkpoint_slots.? == 0) return error.InvalidPromptCacheBudget;
@@ -145,6 +152,7 @@ pub fn run(init: std.process.Init, args: []const []const u8) !void {
     var response_store = responses.Store{ .a = init.gpa };
     defer response_store.deinit();
     var worker = Worker{ .io = init.io, .dir = args[2], .defaults = defaults, .thinking = thinking, .effort = effort, .vision_urls = vision_urls, .control = &registry, .batch_streams = batch_streams, .is_glm = is_glm, .is_flash = is_flash, .memory_limit = init.environ_map.get("TENSORFOLD_MEMORY_LIMIT_GB"), .stats = &stats, .display = &display, .response_store = &response_store };
+    worker.batch_rows = batch_rows;
     worker.checkpoint_slots = checkpoint_slots orelse @max(8, 3 * batch_streams);
     worker.prompt_cache_bytes = prompt_cache_bytes;
     const snapshot_path = if (snapshot_dir) |dir| if (std.ascii.eqlIgnoreCase(dir, "none")) null else try init.gpa.dupe(u8, dir) else if (init.environ_map.get("HOME")) |home| try std.fs.path.join(init.gpa, &.{ home, ".cache", "tensorfold", "native-prefix-snapshots" }) else null;
@@ -315,6 +323,8 @@ const Worker = struct {
     effort: ?[]const u8,
     vision_urls: bool,
     batch_streams: usize,
+    batch_rows: usize = 128,
+    shared_decode: bool = false,
     is_glm: bool,
     is_flash: bool,
     memory_limit: ?[]const u8,
@@ -335,12 +345,16 @@ const Worker = struct {
     fn loop(w: *Worker) !void {
         try mx.init();
         defer mx.shutdown();
-        var memory = try memory_runtime.Runtime.init(w.memory_limit, w.is_glm);
+        var memory = try memory_runtime.Runtime.init(w.memory_limit);
         defer memory.deinit();
         try memory.checkWeightsAndDraft(w.io, w.dir, w.is_flash, if (w.draft_options.enabled) w.draft_options.directory else null);
         var session = try inference.Session.initWithDraft(w.io, w.dir, w.draft_options);
         defer session.deinit();
-        const profile = try memory_runtime.measure(&session);
+        w.shared_decode = session.backend == .qwen;
+        var profile = try memory_runtime.measure(&session);
+        var coordinator = shared_round.Coordinator{ .max_rows = w.batch_rows };
+        try coordinator.calibrate(&session, w.batch_streams);
+        profile.round_bytes = @max(profile.round_bytes, coordinator.peak_bytes);
         try memory.wire();
         var admission = memory_policy.Admission{ .budget = try memory.admissionBudget(w.io), .memory = profile };
         var gate = memory_policy.StreamGate{ .budget = admission.budget, .per_token = profile.per_token, .work = profile.round_bytes };
@@ -381,6 +395,7 @@ const Worker = struct {
         var live: usize = 0;
         var closed = false;
         var activation_order: u64 = 0;
+        var decode_order: u64 = 1;
         while (!closed or live > 0) {
             if (warmer) |value| value.enqueue();
             while (w.queue.removeIf(w.io, Job.cancelled)) |job| {
@@ -427,8 +442,17 @@ const Worker = struct {
                 job.finish(w.io);
                 try mx.check(mx.c.mlx_clear_cache());
             };
-            for (&active) |*slot| if (slot.*) |pending| {
+            var candidates: [8]shared_round.Candidate = undefined;
+            var candidate_count: usize = 0;
+            for (&active, 0..) |*slot, slot_index| if (slot.*) |pending| {
                 const was_active = pending.generation != null;
+                if (session.backend == .qwen and !Job.cancelled(pending.job) and pending.growth == .run) {
+                    if (pending.generation) |*g| if (g.isDecoding()) {
+                        candidates[candidate_count] = .{ .slot = slot_index, .served = pending.decode_order, .activated = pending.activation_order };
+                        candidate_count += 1;
+                        continue;
+                    };
+                }
                 const done = pending.advance(&session, &admission, &active, if (prefixes) |*store| store else null) catch |err| blk: {
                     switch (err) {
                         error.RequestCancelled, error.RequestTimedOut, error.ServerStopping, error.RequestExceedsMemoryBudget => {
@@ -454,6 +478,52 @@ const Worker = struct {
                     job.finish(w.io);
                 }
             };
+            const selected = shared_round.select(candidates[0..candidate_count], w.batch_rows);
+            if (selected.len > 0) {
+                var requests: [8]*inference.Generation(@import("model.zig").Model) = undefined;
+                var before: [8]inference.RequestGeneration.Progress = undefined;
+                var results: [8]shared_round.Result = undefined;
+                for (selected, 0..) |candidate, i| {
+                    const pending = active[candidate.slot].?;
+                    requests[i] = &pending.generation.?.qwen;
+                    before[i] = pending.generation.?.progress();
+                    pending.decode_order = decode_order;
+                }
+                decode_order +|= 1;
+                const started = live_status.now(w.io);
+                coordinator.step(&session.backend.qwen, requests[0..selected.len], results[0..selected.len]) catch |err| {
+                    for (results[0..selected.len]) |*result| result.* = .{ .failure = err };
+                };
+                const ended = live_status.now(w.io);
+                w.stats.recordShared(coordinator.streams, coordinator.rows);
+                var decoded: usize = 0;
+                for (selected, 0..) |candidate, i| {
+                    const pending = active[candidate.slot].?;
+                    const after = pending.generation.?.progress();
+                    decoded += after.decoded - before[i].decoded;
+                    pending.recordDraftProgress(before[i], after);
+                    var done = results[i].done;
+                    var request_error = results[i].failure;
+                    if (request_error == null and done) _ = pending.finishReply(&session) catch |err| {
+                        request_error = err;
+                    };
+                    if (request_error) |err| {
+                        pending.reportError(err) catch |write_err| {
+                            pending.job.failure = write_err;
+                        };
+                        done = true;
+                    }
+                    if (done) {
+                        const job = pending.job;
+                        pending.deinit();
+                        active[candidate.slot] = null;
+                        live -= 1;
+                        job.finish(w.io);
+                    }
+                }
+                w.stats.record(0, decoded, started, ended);
+                w.prefix_stats.update(if (prefixes) |*store| store else null);
+            }
             var waiting: u64 = 0;
             for (active) |slot| if (slot) |pending| {
                 if (pending.generation == null or pending.growth == .paused) waiting += 1;
@@ -792,7 +862,7 @@ fn handle(worker: *Worker, a: std.mem.Allocator, request: *Request, model: []con
         if (id.len != 0) return failure(a, request, .not_found, "Unknown route");
     }
     if (request.head.method == .GET) {
-        if (route.len == 0 or std.mem.eql(u8, route, "/health")) return json(a, request, .ok, .{ .status = "ok", .model = model, .warming = worker.warming.load(.acquire), .max_batch_size = worker.batch_streams, .background_preemptions = worker.preemptions.load(.acquire), .memory = worker.memory_stats.snapshot(), .prompt_cache = worker.prefix_stats.snapshot(), .inference = worker.stats.snapshot() });
+        if (route.len == 0 or std.mem.eql(u8, route, "/health")) return json(a, request, .ok, .{ .status = "ok", .model = model, .warming = worker.warming.load(.acquire), .max_batch_size = worker.batch_streams, .max_batch_rows = worker.batch_rows, .shared_decode = worker.shared_decode, .background_preemptions = worker.preemptions.load(.acquire), .memory = worker.memory_stats.snapshot(), .prompt_cache = worker.prefix_stats.snapshot(), .inference = worker.stats.snapshot() });
         if (std.mem.eql(u8, route, "/v1/models") or std.mem.eql(u8, route, "/models")) return json(a, request, .ok, .{ .object = "list", .data = &.{.{ .id = model, .object = "model", .created = std.Io.Clock.real.now(worker.io).toSeconds(), .owned_by = "tensorfold" }} });
         return failure(a, request, .not_found, "Unknown route");
     }
@@ -872,6 +942,7 @@ const Pending = struct {
     disk: ?*@import("snapshot_store.zig").Store = null,
     prefix_reserve: u64 = 0,
     activation_order: u64 = 0,
+    decode_order: u64 = 0,
     growth: enum { run, paused, ended } = .run,
 
     fn start(w: *Worker, session: *inference.Session, job: *Job) !?*Pending {
@@ -1190,9 +1261,17 @@ const Pending = struct {
         const ended = live_status.now(session.io);
         const after = p.generation.?.progress();
         p.job.stats.record(after.prefilled - before.prefilled, after.decoded - before.decoded, started, ended);
+        p.recordDraftProgress(before, after);
+        if (!done) return false;
+        return p.finishReply(session);
+    }
+
+    fn recordDraftProgress(p: *Pending, before: inference.RequestGeneration.Progress, after: inference.RequestGeneration.Progress) void {
         p.job.stats.recordDrafts(after.proposed - before.proposed, after.accepted - before.accepted, after.structural_proposed - before.structural_proposed, after.structural_accepted - before.structural_accepted);
         p.job.stats.recordNeural(after.neural_proposed - before.neural_proposed, after.neural_accepted - before.neural_accepted);
-        if (!done) return false;
+    }
+
+    fn finishReply(p: *Pending, session: *inference.Session) !bool {
         var reply = try p.generation.?.takeReply();
         defer reply.deinit(mx.allocator);
         if (p.job.warmer != null) return true;
