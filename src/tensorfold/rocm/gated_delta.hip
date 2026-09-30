@@ -95,20 +95,21 @@ gated_delta_kernel(const float* __restrict__ q, const float* __restrict__ k, con
 
 void gated_delta_launch(const float* q, const float* k, const float* v, const float* gate, const float* beta,
                         float* state, float* y, int batch, int length, int key_heads, int value_heads, int dk,
-                        int dv) {
+                        int dv, void* stream) {
     if ((dk != 16 && dk != 128) || dv < 1 || key_heads < 1 || value_heads % key_heads != 0 || batch < 1 ||
         length < 1) {
         throw std::invalid_argument("gated delta wants dk 16 or 128 and value heads a multiple of key heads");
     }
+    hipStream_t hip_stream = static_cast<hipStream_t>(stream);
     dim3 block(32);
     dim3 grid(dv, value_heads, batch);
     hipError_t err;
     if (dk == 128) {
-        tf::rocm::gated_delta_kernel<128><<<grid, block>>>(q, k, v, gate, beta, state, y, length, key_heads,
-                                                           value_heads, dv);
+        tf::rocm::gated_delta_kernel<128><<<grid, block, 0, hip_stream>>>(
+            q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv);
     } else {
-        tf::rocm::gated_delta_kernel<16><<<grid, block>>>(q, k, v, gate, beta, state, y, length, key_heads,
-                                                          value_heads, dv);
+        tf::rocm::gated_delta_kernel<16><<<grid, block, 0, hip_stream>>>(
+            q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv);
     }
     err = hipGetLastError();
     if (err != hipSuccess) throw std::runtime_error(std::string("gated delta kernel: ") + hipGetErrorString(err));

@@ -38,11 +38,11 @@ __global__ void __launch_bounds__(32) affine_gemv_kernel(Affine a) {
     a.out[static_cast<long long>(row) * a.n + col] = acc;
 }
 
-hipError_t launch_affine_gemv(const Affine& a) {
+hipError_t launch_affine_gemv(const Affine& a, hipStream_t stream) {
     if (a.m < 1 || a.n < 1 || a.k < 1 || a.k % a.group != 0) return hipErrorInvalidValue;
     dim3 block(32);
     dim3 grid((a.n + 31) / 32, a.m);
-    affine_gemv_kernel<<<grid, block>>>(a);
+    affine_gemv_kernel<<<grid, block, 0, stream>>>(a);
     return hipGetLastError();
 }
 

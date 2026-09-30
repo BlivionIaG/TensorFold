@@ -5,4 +5,4 @@
 // schedule 0 picks WMMA on a build that has it and the GEMV otherwise. 1 is the GEMV. 2 is WMMA.
 // fp16 selects v_dot2_f32_f16. A WMMA build refuses it.
 void affine_launch(const void* x, const void* words, const void* scale, const void* bias, void* out, int m, int n,
-                   int k, int bits, int group, int schedule, int fp16);
+                   int k, int bits, int group, int schedule, int fp16, void* stream);

@@ -28,4 +28,6 @@ def causal(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_po
     if k.dtype not in _KIND or k.dtype != v.dtype:
         raise ValueError("k and v must be fp16, bf16, or fp32, and they must match")
     _ext().causal(q, k, v, out, float(scale), int(q_pos0))
+    # q may be a temporary contiguous copy. Finish the read before it can be reused.
+    torch.cuda.synchronize()
     return out

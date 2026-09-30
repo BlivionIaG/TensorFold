@@ -138,28 +138,28 @@ __global__ void __launch_bounds__(32) affine_wmma_kernel(Affine a) {
     }
 }
 
-hipError_t launch_affine_wmma(const Affine& a) {
+hipError_t launch_affine_wmma(const Affine& a, hipStream_t stream) {
     // Tiles past M or N are filled with zeros, so a single row uses the same WMMA as a full tile.
     if (a.m < 1 || a.n < 1 || a.group % kTile || a.k % a.group) return hipErrorInvalidValue;
     dim3 block(32);
     dim3 grid((a.n + kTile - 1) / kTile, (a.m + kTile - 1) / kTile);
-    affine_wmma_kernel<<<grid, block>>>(a);
+    affine_wmma_kernel<<<grid, block, 0, stream>>>(a);
     return hipGetLastError();
 }
 
 #else
 
-hipError_t launch_affine_wmma(const Affine&) { return hipErrorNotSupported; }
+hipError_t launch_affine_wmma(const Affine&, hipStream_t) { return hipErrorNotSupported; }
 
 #endif
 
-hipError_t launch_affine(const Affine& a, int schedule) {
+hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream) {
     if (a.fp16) {
         if (schedule == 2) return hipErrorNotSupported;
 #if TENSORFOLD_RDNA_WMMA
         return hipErrorNotSupported;
 #else
-        return launch_affine_dot2(a);
+        return launch_affine_dot2(a, stream);
 #endif
     }
 #if TENSORFOLD_RDNA_WMMA
@@ -168,17 +168,17 @@ hipError_t launch_affine(const Affine& a, int schedule) {
     bool tile = false;
 #endif
     if (schedule == 2 && !tile) return hipErrorNotSupported;
-    if (tile) return launch_affine_wmma(a);
-    return launch_affine_gemv(a);
+    if (tile) return launch_affine_wmma(a, stream);
+    return launch_affine_gemv(a, stream);
 }
 
 }  // namespace rocm
 }  // namespace tf
 
 void affine_launch(const void* x, const void* words, const void* scale, const void* bias, void* out, int m, int n,
-                   int k, int bits, int group, int schedule, int fp16) {
+                   int k, int bits, int group, int schedule, int fp16, void* stream) {
     tf::rocm::Affine a{x, static_cast<const uint32_t*>(words), static_cast<const float*>(scale),
                        static_cast<const float*>(bias), static_cast<float*>(out), m, n, k, bits, group, fp16};
-    hipError_t err = tf::rocm::launch_affine(a, schedule);
+    hipError_t err = tf::rocm::launch_affine(a, schedule, static_cast<hipStream_t>(stream));
     if (err != hipSuccess) throw std::runtime_error(std::string("affine kernel: ") + hipGetErrorString(err));
 }

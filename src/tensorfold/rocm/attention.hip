@@ -177,11 +177,12 @@ __global__ void sum_partials(const float* __restrict__ partials, float* __restri
 void causal_launch(const float* q, const void* k, const void* v, float* out, int batch, int qlen, int span,
                    int heads, int kv_heads, int d, float scale, int q_pos0, long long k_sb, long long k_sh,
                    long long k_ss, long long v_sb, long long v_sh, long long v_ss, int cache_kind,
-                   float* scores, float* stats, float* partials) {
+                   float* scores, float* stats, float* partials, void* stream) {
     if (d < 1 || d > 256 || heads < 1 || kv_heads < 1 || heads % kv_heads != 0 || batch < 1 || qlen < 1 ||
         span < 1 || q_pos0 < 0) {
         throw std::invalid_argument("causal attention wants d <= 256 and heads a multiple of kv heads");
     }
+    hipStream_t hip_stream = static_cast<hipStream_t>(stream);
     int visible = q_pos0 + 1;
     if (visible > span) visible = span;
     if (qlen == 1) {
@@ -193,38 +194,38 @@ void causal_launch(const float* q, const void* k, const void* v, float* out, int
         dim3 head_grid(heads, batch);
         dim3 tile_grid(tiles, heads, batch);
         if (cache_kind == 0) {
-            score_keys<__half><<<score_grid, score_block>>>(q, static_cast<const __half*>(k), scores, span, heads,
+            score_keys<__half><<<score_grid, score_block, 0, hip_stream>>>(q, static_cast<const __half*>(k), scores, span, heads,
                                                             kv_heads, d, scale, visible, k_sb, k_sh, k_ss);
-            softmax_stats<<<head_grid, 256>>>(scores, stats, span, visible);
-            apply_values<__half><<<tile_grid, 256>>>(scores, stats, static_cast<const __half*>(v), partials, span,
+            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible);
+            apply_values<__half><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const __half*>(v), partials, span,
                                                      heads, kv_heads, d, visible, v_sb, v_sh, v_ss);
         } else if (cache_kind == 1) {
-            score_keys<hip_bfloat16><<<score_grid, score_block>>>(
+            score_keys<hip_bfloat16><<<score_grid, score_block, 0, hip_stream>>>(
                 q, static_cast<const hip_bfloat16*>(k), scores, span, heads, kv_heads, d, scale, visible, k_sb, k_sh,
                 k_ss);
-            softmax_stats<<<head_grid, 256>>>(scores, stats, span, visible);
-            apply_values<hip_bfloat16><<<tile_grid, 256>>>(scores, stats, static_cast<const hip_bfloat16*>(v), partials,
+            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible);
+            apply_values<hip_bfloat16><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const hip_bfloat16*>(v), partials,
                                                            span, heads, kv_heads, d, visible, v_sb, v_sh, v_ss);
         } else if (cache_kind == 2) {
-            score_keys<float><<<score_grid, score_block>>>(q, static_cast<const float*>(k), scores, span, heads,
+            score_keys<float><<<score_grid, score_block, 0, hip_stream>>>(q, static_cast<const float*>(k), scores, span, heads,
                                                            kv_heads, d, scale, visible, k_sb, k_sh, k_ss);
-            softmax_stats<<<head_grid, 256>>>(scores, stats, span, visible);
-            apply_values<float><<<tile_grid, 256>>>(scores, stats, static_cast<const float*>(v), partials, span, heads,
+            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible);
+            apply_values<float><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const float*>(v), partials, span, heads,
                                                     kv_heads, d, visible, v_sb, v_sh, v_ss);
         } else {
             throw std::invalid_argument("cache kind is fp16, bf16, or fp32");
         }
-        sum_partials<<<head_grid, 256>>>(partials, out, tiles, d);
+        sum_partials<<<head_grid, 256, 0, hip_stream>>>(partials, out, tiles, d);
     } else if (cache_kind == 0) {
-        tf::rocm::causal_kernel<__half><<<dim3(qlen, heads, batch), 32>>>(
+        tf::rocm::causal_kernel<__half><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
             q, static_cast<const __half*>(k), static_cast<const __half*>(v), out, qlen, span, heads, kv_heads, d,
             scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
     } else if (cache_kind == 1) {
-        tf::rocm::causal_kernel<hip_bfloat16><<<dim3(qlen, heads, batch), 32>>>(
+        tf::rocm::causal_kernel<hip_bfloat16><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
             q, static_cast<const hip_bfloat16*>(k), static_cast<const hip_bfloat16*>(v), out, qlen, span, heads,
             kv_heads, d, scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
     } else if (cache_kind == 2) {
-        tf::rocm::causal_kernel<float><<<dim3(qlen, heads, batch), 32>>>(
+        tf::rocm::causal_kernel<float><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
             q, static_cast<const float*>(k), static_cast<const float*>(v), out, qlen, span, heads, kv_heads, d,
             scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
     } else {

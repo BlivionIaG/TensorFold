@@ -112,17 +112,17 @@ __global__ void affine_dot2_tiled(Affine a) {
     if (live) a.out[static_cast<long long>(row) * a.n + col] = acc;
 }
 
-hipError_t launch_affine_dot2(const Affine& a) {
+hipError_t launch_affine_dot2(const Affine& a, hipStream_t stream) {
     if (a.m < 1 || a.n < 1 || a.k < 1 || a.group % 2 != 0 || a.k % a.group != 0) return hipErrorInvalidValue;
     if (a.m > 1 && a.group <= kDotGroup) {
         dim3 block(kDotBM * kDotBN);
         dim3 grid((a.n + kDotBN - 1) / kDotBN, (a.m + kDotBM - 1) / kDotBM);
-        affine_dot2_tiled<<<grid, block>>>(a);
+        affine_dot2_tiled<<<grid, block, 0, stream>>>(a);
         return hipGetLastError();
     }
     dim3 block(32);
     dim3 grid((a.n + 31) / 32, a.m);
-    affine_dot2_kernel<<<grid, block>>>(a);
+    affine_dot2_kernel<<<grid, block, 0, stream>>>(a);
     return hipGetLastError();
 }
 

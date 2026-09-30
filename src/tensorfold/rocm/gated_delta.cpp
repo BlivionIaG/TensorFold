@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAStream.h>
 
 #include "gated_delta.hpp"
 
@@ -32,7 +33,7 @@ void gdn(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const at
     gated_delta_launch(q.data_ptr<float>(), k.data_ptr<float>(), v.data_ptr<float>(), gate.data_ptr<float>(),
                        beta.data_ptr<float>(), state.data_ptr<float>(), y.data_ptr<float>(), static_cast<int>(batch),
                        static_cast<int>(length), static_cast<int>(key_heads), static_cast<int>(value_heads),
-                       static_cast<int>(dk), static_cast<int>(dv));
+                       static_cast<int>(dk), static_cast<int>(dv), c10::cuda::getCurrentCUDAStream().stream());
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("gdn", &gdn); }

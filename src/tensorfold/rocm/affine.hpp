@@ -39,12 +39,12 @@ __host__ __device__ inline float code_bf16(uint32_t code) {
     return static_cast<float>(hip_bfloat16(static_cast<float>(code)));
 }
 
-hipError_t launch_affine_gemv(const Affine& a);
-hipError_t launch_affine_wmma(const Affine& a);
-hipError_t launch_affine_dot2(const Affine& a);
+hipError_t launch_affine_gemv(const Affine& a, hipStream_t stream);
+hipError_t launch_affine_wmma(const Affine& a, hipStream_t stream);
+hipError_t launch_affine_dot2(const Affine& a, hipStream_t stream);
 // schedule 1 is the GEMV. Anything else is the WMMA on a build that has it.
 // fp16 is the RDNA2 v_dot2 schedule, and a WMMA build refuses it.
-hipError_t launch_affine(const Affine& a, int schedule);
+hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream);
 
 }  // namespace rocm
 }  // namespace tf

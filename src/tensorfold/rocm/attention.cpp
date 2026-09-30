@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAStream.h>
 
 #include "attention.hpp"
 
@@ -40,7 +41,9 @@ void causal(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, at::T
                   static_cast<int>(qlen), static_cast<int>(k.size(2)), static_cast<int>(heads),
                   static_cast<int>(k.size(1)), static_cast<int>(d), static_cast<float>(scale),
                   static_cast<int>(q_pos0), k.stride(0), k.stride(1), k.stride(2), v.stride(0), v.stride(1),
-                  v.stride(2), kind, scores, stats, partials);
+                  v.stride(2), kind, scores, stats, partials, c10::cuda::getCurrentCUDAStream().stream());
+    // Workspace dies with this call. Wait until the kernels queued on this stream have read it.
+    if (qlen == 1) c10::cuda::getCurrentCUDAStream().synchronize();
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("causal", &causal); }

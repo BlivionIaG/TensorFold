@@ -30,4 +30,6 @@ def recurrence(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, gate: torch.Te
     state = state.contiguous()
     y = torch.empty_like(v)
     _ext().gdn(q, k, v, gate, beta, state, y)
+    # q, k, v, gate and beta can die when this returns. The kernel has to be finished first.
+    torch.cuda.synchronize()
     return y, state
