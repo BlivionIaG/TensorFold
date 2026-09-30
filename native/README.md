@@ -1,8 +1,8 @@
 # Native Zig on macOS
 
-This fork implements TensorFold's inference orchestration in Zig and runs the
-upstream Metal kernels through MLX-C. MLX supplies tensors, graph execution,
-memory management and GPU operations. The completion executable does not run
+TensorFold's experimental `zig` branch implements inference orchestration in Zig
+and runs TensorFold's Metal kernels through MLX-C. MLX supplies tensors, graph
+execution, memory management and GPU operations. The completion executable does not run
 Python; Python supplies development dependencies and correctness oracles.
 The native HTTP server provides raw and chat completions, including Qwen image
 inputs. Serving parity with the upstream Python server is still in progress.
@@ -50,7 +50,7 @@ install system software or request administrator access.
 Clone the Zig branch, then run every command from the repository root:
 
 ```sh
-git clone --branch feat/zig git@github.com:CerebralCoding/TensorFold.git
+git clone --branch zig git@github.com:ashhart/TensorFold.git
 cd TensorFold
 bash scripts/fetch-zig.sh
 .zig-toolchain/zig run tools/setup_native.zig -- --dry-run
@@ -431,12 +431,24 @@ The maintainer's sync mechanism is explicit and manual:
 .zig-toolchain/zig build sync-upstream -j1
 ```
 
-These are **not contributor setup commands**: they require the configured fork
-and upstream SSH remotes. Sync requires a clean tree, rebases the current branch,
-resolves upstream dependencies, regenerates kernels, runs extensive checks needing
-local models, then pushes fork `main`. Conflicts or failed checks stop it.
-Nothing is scheduled. Contributors should pull/rebase through their normal Git
-workflow and use setup to reproduce the resulting checked-in pins.
+These are **not contributor setup commands**. The tool discovers the remote with
+SSH URL `git@github.com:ashhart/TensorFold.git`; use `-Dsync-remote=NAME` if more
+than one remote matches. Sync requires a clean PR branch containing the latest
+remote `zig` history and refuses local `main`, `zig` and unfinished Git operations.
+It merges main without committing, resolves dependencies, rebuilds MLX/MLX-C and
+JPEG when required, regenerates kernels and runs checks needing local models.
+It never rebases, pushes, creates a PR or moves local `main`/`zig`.
+Conflicts or failed checks leave the merge available for inspection. Resolve
+conflicts and review source drift before acknowledging it with
+`record-upstream-coverage`; then resume verification with
+`.zig-toolchain/zig run tools/sync_upstream.zig -- --continue`.
+Resume keeps the pending merge's original target. To abandon it, use
+`git merge --abort`; installed dependencies/build outputs may still need setup
+to restore the checked-in pins. After successful checks, review staged and
+unstaged changes, commit with your GitHub noreply address, push your PR branch
+and open a PR against `ashhart/TensorFold:zig`. Nothing is scheduled.
+Contributors should pull the reviewed changes and run setup to reproduce their
+checked-in pins.
 
 `check-upstream-coverage` validates source hashes and the feature-to-declaration/test
 bindings in `native/features.json`; setup, CI and manual sync run it. New sources

@@ -31,13 +31,16 @@ pub fn build(b: *std.Build) void {
         .optimize = .safe,
     });
     const sync_exe = b.addExecutable(.{ .name = "sync-upstream", .root_module = sync_module });
+    const sync_remote = b.option([]const u8, "sync-remote", "TensorFold SSH remote for manual main-to-zig sync (default: discover by URL)");
     const sync = b.addRunArtifact(sync_exe);
+    if (sync_remote) |name| sync.addArgs(&.{ "--remote", name });
     sync.has_side_effects = true;
-    b.step("sync-upstream", "Manually fast-forward fork main from upstream and rebase the clean current branch (SSH)").dependOn(&sync.step);
+    b.step("sync-upstream", "Prepare an uncommitted main merge and dependency alignment on a Zig PR branch; never pushes (SSH)").dependOn(&sync.step);
     const freshness = b.addRunArtifact(sync_exe);
     freshness.addArg("--check");
+    if (sync_remote) |name| freshness.addArgs(&.{ "--remote", name });
     freshness.has_side_effects = true;
-    b.step("check-upstream", "Fetch upstream and report commits missing from fork main and the current branch").dependOn(&freshness.step);
+    b.step("check-upstream", "Fetch TensorFold main/zig and report missing commits and dependency drift").dependOn(&freshness.step);
     const sync_tests = b.addRunArtifact(b.addTest(.{ .root_module = sync_module }));
     b.step("test-sync-upstream", "Check sync worktree and remote guards without network access").dependOn(&sync_tests.step);
     const setup_module = b.createModule(.{ .root_source_file = b.path("tools/setup_native.zig"), .target = b.graph.host, .optimize = .safe });

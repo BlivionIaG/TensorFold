@@ -23,9 +23,11 @@
   `native/dependencies.json` and upstream requirements. Do not change one side
   to make a mismatch pass. Setup and sync share the dependency build recipe in
   `tools/sync_upstream.zig`.
-- Sync upstream only on request. It can rebase, resolve dependencies, run large
-  tests and push fork main. Do not schedule it or use it as a setup shortcut.
-  Use SSH Git remotes.
+- Sync main into Zig only on request, on a clean PR branch based on the latest
+  TensorFold `zig`. It prepares an uncommitted merge, aligns dependencies and
+  runs large tests; it never rebases or pushes. Review and submit changes through
+  a PR against `ashhart/TensorFold:zig`, using a GitHub noreply commit address.
+  Do not schedule sync or use it as a setup shortcut. Use SSH Git remotes.
 - Preserve upstream arithmetic, dtype, layout, sampling positions and cache
   commit/rollback semantics. Compare intermediate arrays when output diverges;
   do not widen tolerances to conceal numerical drift.
