@@ -142,6 +142,24 @@ pub fn build(b: *std.Build) void {
     b.step("test-bonsai", "Compare rotated projection, inverse embedding and dense gate kernels with upstream").dependOn(&bonsai.step);
     metal_tests.dependOn(&bonsai.step);
     const model_root = b.option([]const u8, "model-root", "Downloaded checkpoint directory for test-models") orelse "build/models";
+    const stream_fixture = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_variant_fixtures.py", "build/native-checks/qwen-streams", "--qwen-streams" });
+    const stream_kernels = b.addRunArtifact(exe);
+    stream_kernels.addArgs(&.{ "check-qwen-stream-kernels", "build/native-checks/qwen-streams" });
+    stream_kernels.step.dependOn(&stream_fixture.step);
+    b.step("test-qwen-stream-kernels", "Compare shared Qwen tree layouts, recurrence, attention and commits with upstream").dependOn(&stream_kernels.step);
+    metal_tests.dependOn(&stream_kernels.step);
+    const stream_models = b.step("test-qwen-shared-rounds", "Compare shared Qwen/Bonsai forwards and per-request commits with standalone decoding");
+    var previous_stream_check: *std.Build.Step = &stream_kernels.step;
+    for ([_][]const u8{ "Qwen3.8-27B-MLX-4bit", "Ternary-Bonsai-2-27B-mlx-2bit" }) |name| {
+        for ([_]bool{ false, true }) |simd| {
+            const check = b.addRunArtifact(exe);
+            check.addArgs(&.{ "check-qwen-shared-rounds", b.fmt("{s}/{s}", .{ model_root, name }) });
+            if (simd) check.addArg("--metal-simd");
+            check.step.dependOn(previous_stream_check);
+            previous_stream_check = &check.step;
+        }
+    }
+    stream_models.dependOn(previous_stream_check);
     const flash_names_fixture = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_families_reference.py", "build/native-checks/flash-checkpoint", "--flash-checkpoint", "--output", "build/native-checks/flash-checkpoint" });
     const flash_names = b.addRunArtifact(exe);
     flash_names.addArgs(&.{ "check-flash-checkpoint", "build/native-checks/flash-checkpoint" });

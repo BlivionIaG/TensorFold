@@ -35,6 +35,7 @@ pub const Record = struct { values: [8]A = @splat(mx.empty), key_write: kv.Write
 pub const Pass = struct {
     scope: mx.Scope = .{},
     logits: A = mx.empty,
+    hidden: A = mx.empty,
     records: [64]Record = @splat(.{}),
     taps: [5]A = @splat(mx.empty),
     parents: [2048]i32 = undefined,
@@ -76,7 +77,7 @@ pub const Model = struct {
         var buf: [192]u8 = undefined;
         return m.weights.get(try std.fmt.bufPrint(&buf, "model.layers.{d}.{s}", .{ index, suffix }));
     }
-    fn project(m: *Model, s: *mx.Scope, index: usize, suffix: []const u8, x: lanes.Act) !A {
+    pub fn project(m: *Model, s: *mx.Scope, index: usize, suffix: []const u8, x: lanes.Act) !A {
         var buf: [192]u8 = undefined;
         const l = try m.weights.linear(try std.fmt.bufPrint(&buf, "model.layers.{d}.{s}", .{ index, suffix }));
         // Upstream stacks plain quantized linears, never rotated Bonsai wrappers.
@@ -137,6 +138,9 @@ pub const Model = struct {
         try observeBuffers(&p);
         return p;
     }
+    pub fn forwardStreams(m: *Model, streams: []const @import("qwen_shared.zig").Stream) !@import("qwen_shared.zig").Pass {
+        return @import("qwen_shared.zig").forward(m, streams);
+    }
     pub fn observeBuffers(p: *Pass) !void {
         if (!kv.track_reuse) return;
         for (p.records) |rec| {
@@ -177,6 +181,7 @@ pub const Model = struct {
             if (i == 0 or (i + 1) % 4 == 0) try mx.evalMany(&.{ h, pending.? }, true);
         }
         const normed = try lanes.norm(kernels, s, h, pending, try m.weights.get("model.norm.weight"));
+        p.hidden = normed.x.x;
         try m.trace(s, m.position, 64, "decode-hidden", normed.x.x);
         p.logits = try (try m.weights.linear("lm_head")).apply(kernels, s, normed.x);
         try m.trace(s, m.position, 64, "decode-logits", p.logits);

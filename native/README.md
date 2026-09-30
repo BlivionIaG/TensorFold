@@ -174,6 +174,7 @@ The table entries are arguments to `.zig-toolchain/zig build`:
 | Bonsai memory layouts | `test-bonsai-pack test-bonsai-layouts -Doptimize=safe -j1` | Installed Bonsai; budget selection, packed/widened conversion, all layouts and mixed-layout prefill/continuation |
 | Gemma text/cache parity | `test-gemma-model -Doptimize=safe -j1` | Installed Gemma checkpoint |
 | Request state and interleaved generation | `test-request-state test-session-rounds test-session-images -Doptimize=safe -j1` | Synthetic ownership for all backends; Qwen/Gemma/Nemotron checkpoints and Qwen image inputs |
+| Shared Qwen/Bonsai backend | `test-qwen-stream-kernels test-qwen-shared-rounds -Doptimize=safe -j1` | Upstream kernel/layout oracles and both installed checkpoints; exact hidden/logits/taps and caches, 64 streams/128 rows, tensor and forced SIMD paths. HTTP coordination is separate; physical M1–M4 remains unverified |
 | Prefix cache policy and restoration | `test-prompt-cache test-session-rounds -Doptimize=safe -j1` | Python policy oracle; exact Qwen/Gemma/Nemotron continuation after prefix reuse and eviction |
 | Adaptive prefill boundaries and markers | `test-prefill-plan test-chat -Doptimize=safe -j1` | Python plan oracle and all seven local tokenizers; no model weights loaded |
 | HTTP prefix reuse and eviction | `test-server-prefixes -Doptimize=safe -j1` | Local Qwen; JSON/SSE parity, cancellation, LRU eviction and disabled caching |

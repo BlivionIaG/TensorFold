@@ -106,6 +106,7 @@ pub fn State(comptime M: type) type {
     return struct {
         const Self = @This();
         cache: []Cache,
+        borrowed: bool = false,
         position: i32 = 0,
         rope_delta: i32 = 0,
         generation: u64 = 0,
@@ -134,6 +135,7 @@ pub fn State(comptime M: type) type {
         }
 
         pub fn deinit(s: *Self) void {
+            std.debug.assert(!s.borrowed);
             for (s.cache) |*cache| cache.deinit();
             mx.allocator.free(s.cache);
             if (@hasField(M, "mtp_cache")) s.mtp_cache.deinit();
@@ -146,6 +148,7 @@ pub fn State(comptime M: type) type {
         }
 
         pub fn clone(s: *const Self) !Self {
+            if (s.borrowed) return error.RequestRoundActive;
             const cache = try mx.allocator.alloc(Cache, s.cache.len);
             @memset(cache, .{});
             var out = Self{ .cache = cache, .position = s.position, .rope_delta = s.rope_delta, .generation = s.generation, .mtp_position = s.mtp_position, .mtp_generation = s.mtp_generation };
@@ -180,11 +183,13 @@ pub fn State(comptime M: type) type {
 
         /// Every pass must be committed or destroyed before switching requests.
         pub fn swapDFlash(s: *Self, d: *@import("drafter.zig").Drafter) void {
+            std.debug.assert(!s.borrowed);
             std.mem.swap(@TypeOf(s.dflash_cache), &s.dflash_cache, &d.cache);
             std.mem.swap(i32, &s.dflash_offset, &d.offset);
         }
 
         pub fn swap(s: *Self, m: *M) void {
+            std.debug.assert(!s.borrowed);
             for (s.cache, m.cache[0..]) |*saved, *active| std.mem.swap(Cache, saved, active);
             inline for (.{ "position", "rope_delta", "generation", "mtp_cache", "mtp_position", "mtp_generation" }) |field| if (@hasField(M, field)) {
                 std.mem.swap(@FieldType(M, field), &@field(s, field), &@field(m, field));

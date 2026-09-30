@@ -127,7 +127,7 @@ pub const RequestGeneration = union(std.meta.Tag(Backend)) {
     pub fn snapshot(g: *const RequestGeneration) !?Snapshot {
         switch (g.*) {
             inline else => |*request, tag| {
-                if (request.in_round or request.image != null or request.reply.tokens.items.len != 0 or (request.phase != .prefill and request.phase != .decode) or !request.chunks.contains(request.offset)) return null;
+                if (request.in_round or request.state.borrowed or request.image != null or request.reply.tokens.items.len != 0 or (request.phase != .prefill and request.phase != .decode) or !request.chunks.contains(request.offset)) return null;
                 return @unionInit(Snapshot, @tagName(tag), try request.state.clone());
             },
         }
@@ -391,7 +391,7 @@ pub fn Generation(comptime M: type) type {
         }
 
         pub fn deinit(g: *Self) void {
-            std.debug.assert(!g.in_round);
+            std.debug.assert(!g.in_round and !g.state.borrowed);
             if (g.proposer) |*proposer| proposer.deinit();
             g.context.deinit(g.a);
             g.state.deinit();
@@ -402,7 +402,7 @@ pub fn Generation(comptime M: type) type {
         }
 
         pub fn takeReply(g: *Self) !Reply {
-            if (g.in_round) return error.GenerationRoundActive;
+            if (g.in_round or g.state.borrowed) return error.GenerationRoundActive;
             if (g.phase != .finished) return error.IncompleteGeneration;
             const reply = g.reply;
             g.reply = .{};
@@ -417,7 +417,7 @@ pub fn Generation(comptime M: type) type {
         }
 
         fn validatePrefix(g: *const Self, saved: *const @import("request_state.zig").State(M)) !usize {
-            if (g.in_round) return error.GenerationRoundActive;
+            if (g.in_round or g.state.borrowed or saved.borrowed) return error.GenerationRoundActive;
             if (g.phase != .prefill or g.offset != 0 or g.image != null or saved.rope_delta != 0 or saved.position <= 0) return error.InvalidSnapshotState;
             const offset: usize = @intCast(saved.position);
             if (!g.chunks.contains(offset) or saved.cache.len != g.state.cache.len) return error.IncompatibleSnapshotBoundary;
@@ -432,7 +432,7 @@ pub fn Generation(comptime M: type) type {
         }
 
         pub fn setPlan(g: *Self, plan: prefill_plan.Plan) !void {
-            if (g.in_round) return error.GenerationRoundActive;
+            if (g.in_round or g.state.borrowed) return error.GenerationRoundActive;
             if (g.offset != 0 or g.image != null) return error.InvalidSnapshotState;
             if (plan.step > chunk_size) return error.UnsupportedPrefillChunk;
             const chunks = try plan.chunks(g.a, g.prompt);
@@ -459,7 +459,7 @@ pub fn Generation(comptime M: type) type {
 
         pub fn beginRound(g: *Self, m: *M) !Round {
             if (m != g.model) return error.WrongGenerationModel;
-            if (g.in_round) return error.GenerationRoundActive;
+            if (g.in_round or g.state.borrowed) return error.GenerationRoundActive;
             if (g.phase == .failed) return error.FailedGeneration;
             if (g.phase == .finished) return error.FinishedGeneration;
             const ticket = try m.round_owner.begin();

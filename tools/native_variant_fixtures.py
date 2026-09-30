@@ -1650,6 +1650,80 @@ def flash_affine_variants(capture):
         capture.extra = {}
 
 
+def qwen_stream_fixtures(directory):
+    from tensorfold.kernels.qwen.dense.v1 import stream_attention as sa, stream_gdn as sg
+
+    rng = np.random.default_rng(8107)
+    bf = lambda shape: mx.array(rng.normal(0, .1, shape), mx.bfloat16)
+    architecture = re.search(r"applegpu_g(\d+)", mx.device_info()["architecture"])
+    tensor_units = architecture is not None and int(architecture[1]) >= 17
+    cases = [
+        ([[-1]], [0]),
+        ([[-1, 0, 0, 2], [-1], [-1, 0, 1, 1, 3]], [63, 511, 2048]),
+        ([[-1, 0, 1]] * 8, [0, 64, 127, 511, 512, 1023, 2047, 2048]),
+        ([list(range(-1, 127))], [513]),
+        ([list(range(-1, 31))] * 4, [0, 63, 512, 2047]),
+        ([[-1, *([0] * 31)], [-1, 0, 1]], [511, 64]),
+    ]
+    for index, (parents, starts) in enumerate(cases):
+        rows = sum(map(len, parents))
+        data = {"starts": mx.array(starts, mx.int32), "widths": mx.array(list(map(len, parents)), mx.int32)}
+        paths = []
+        for st, rp in enumerate(parents):
+            data[f"parents{st}"] = mx.array(rp, mx.int32)
+            path = []
+            node = len(rp) - 1
+            while node >= 0:
+                path.append(node)
+                node = rp[node]
+            path.reverse()
+            if st == 1:
+                path = []
+            paths.append(path)
+            data[f"kept{st}"] = mx.array(path, mx.int32)
+        convs = [bf((1, 3, 10240)) for _ in parents]
+        states = [mx.array(rng.normal(0, .01, (1, 48, 128, 128)), mx.float32) for _ in parents]
+        qkv, a, b = bf((1, rows, 10240)), bf((1, rows, 48)), bf((1, rows, 48))
+        cw, alog, dt = bf((10240, 4)), bf((48,)), bf((48,))
+        cp, tp = sg.ConvPlan(parents, 3), sg.TreePlan(parents)
+        zba = mx.concatenate([mx.zeros((1, rows, 6144), mx.bfloat16), b, a], axis=-1)
+        vals = sg.gdn_pre(qkv, convs, cw, cp, zba, alog, dt, nk=16, nv=48, dk=128, dv=128)
+        y = sg.tree(*vals, states, tp)
+        firsts = np.cumsum([0, *map(len, parents[:-1])]).tolist()
+        commit = sg.CommitPlan(paths, firsts, 3)
+        replayed = sg.replay(*vals, states, commit)
+        tails = sg.conv_tails(convs, qkv, commit)
+        data.update(qkv=qkv, a=a, b=b, cw=cw, alog=alog, dt=dt, y=y)
+        for j, value in enumerate(vals):
+            data[f"pre{j}"] = value
+        for st, (conv, state, output, tail) in enumerate(zip(convs, states, replayed, tails)):
+            data.update({f"conv{st}": conv, f"state{st}": state, f"replay{st}": output, f"tail{st}": tail})
+        data.update(windows=cp.windows, row_stream=cp.row_stream, tree_meta=tp.meta,
+                    commit_rows=commit.rows, commit_meta=commit.meta, commit_tails=commit.tails)
+        q = bf((1, 24, rows, 256))
+        kvs = [(bf((1, 4, ((start + len(rp) + 255) // 256) * 256, 256)),
+                bf((1, 4, ((start + len(rp) + 511) // 512) * 512, 256))) for rp, start in zip(parents, starts)]
+        plan = sa.Plan(parents, starts, 24, 4)
+        out = sa.tree_sdpa(q, kvs, .0625, plan) if tensor_units else None
+        if out is not None:
+            data["attention"] = out
+        data.update(query=q, attention_base=mx.array(plan.base, mx.int32),
+                    tile_stream=plan.tile_stream, q_rows=plan.q_rows, nodes=plan.nodes, paths=plan.paths)
+        for st, (key, value) in enumerate(kvs):
+            data[f"keys{st}"], data[f"values{st}"] = key, value
+            # Verify the independent upstream grouped reference against isolated launches.
+            first, width = firsts[st], len(parents[st])
+            if tensor_units:
+                one = sa.tree_sdpa(q[:, :, first:first + width], [(key, value)], .0625, sa.Plan([parents[st]], [starts[st]], 24, 4))
+                assert mx.array_equal(out[:, :, first:first + width], one).item()
+            one_vals = [v[:, first:first + width] for v in vals]
+            one_y = sg.tree(*one_vals, [states[st]], sg.TreePlan([parents[st]]))
+            assert mx.array_equal(y[:, first:first + width], one_y).item()
+        mx.eval(*data.values())
+        mx.save_safetensors(str(directory / f"streams{index}.safetensors"), data)
+    print(f"Saved {len(cases)} independent shared Qwen kernel fixtures")
+
+
 def main():
     require_mlx()
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1660,6 +1734,7 @@ def main():
     parser.add_argument("--gemma-only", action="store_true")
     parser.add_argument("--large-families", action="store_true")
     parser.add_argument("--row-attention", action="store_true")
+    parser.add_argument("--qwen-streams", action="store_true")
     parser.add_argument("--simd-dense", action="store_true")
     parser.add_argument("--simd-bits", action="store_true")
     parser.add_argument("--flash-affine", action="store_true")
@@ -1679,6 +1754,9 @@ def main():
     parser.add_argument("--flash-prefill-ple", action="store_true")
     args = parser.parse_args()
     args.directory.mkdir(parents=True, exist_ok=True)
+    if args.qwen_streams:
+        qwen_stream_fixtures(args.directory)
+        return
     if args.deepseek_prefill_attention:
         deepseek_prefill_attention_fixtures(args.directory)
         return
