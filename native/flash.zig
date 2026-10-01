@@ -490,6 +490,16 @@ pub const Model = struct {
                 try mx.evalMany(&combined.arrays, false);
                 try m.weights.putAffine(key, combined);
                 try m.weights.put(key, combined.arrays[0]);
+                var offset: i32 = 0;
+                var member_buffer: [256]u8 = undefined;
+                for (parts[0..names.len], names) |*part, name| if (part.format.bits == combined.format.bits) {
+                    const end = offset + (try part.geometry(2)).n;
+                    if (std.meta.eql(part.format, combined.format)) {
+                        for (&part.arrays, combined.arrays) |*array, joined| array.* = try s.slice(joined, 0, offset, end);
+                        try m.weights.putAffine(try std.fmt.bufPrint(&member_buffer, "{s}.{s}", .{ base, name }), part.*);
+                    }
+                    offset = end;
+                };
             }
             const projected = try m.projectNamed(s, key, x);
             const group_index = plan.group_count;

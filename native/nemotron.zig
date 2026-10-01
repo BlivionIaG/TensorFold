@@ -320,8 +320,14 @@ pub const Model = struct {
                 }
                 arrays[field] = try scope.cat(&parts, 0);
                 try m.weights.put(try std.fmt.bufPrint(&buf, "backbone.layers.{d}.mixer.qkv_proj.{s}", .{ i, suffix }), arrays[field]);
+                try mx.eval(arrays[field]);
+                var offset: i32 = 0;
+                inline for (.{ "q_proj", "k_proj", "v_proj" }, 0..) |projection, j| {
+                    const end = offset + mx.dim(parts[j], 0);
+                    try m.weights.put(try std.fmt.bufPrint(&buf, "backbone.layers.{d}.mixer.{s}.{s}", .{ i, projection, suffix }), try scope.slice(arrays[field], 0, offset, end));
+                    offset = end;
+                }
             }
-            try mx.evalMany(&arrays, false);
         } else if (kind == 'E') {
             try m.prepareDecodeFloats(try std.fmt.bufPrint(&buf, "backbone.layers.{d}.mixer", .{i}), &.{"gate.e_score_correction_bias"});
         };
@@ -335,8 +341,14 @@ pub const Model = struct {
                 inline for (.{ "q_proj", "k_proj", "v_proj" }, 0..) |projection, j| parts[j] = try m.weights.get(try std.fmt.bufPrint(&buf, "mtp.layers.0.mixer.{s}.{s}", .{ projection, suffix }));
                 arrays[field] = try scope.cat(&parts, 0);
                 try m.weights.put(try std.fmt.bufPrint(&buf, "mtp.layers.0.mixer.qkv_proj.{s}", .{suffix}), arrays[field]);
+                try mx.eval(arrays[field]);
+                var offset: i32 = 0;
+                inline for (.{ "q_proj", "k_proj", "v_proj" }, 0..) |projection, j| {
+                    const end = offset + mx.dim(parts[j], 0);
+                    try m.weights.put(try std.fmt.bufPrint(&buf, "mtp.layers.0.mixer.{s}.{s}", .{ projection, suffix }), try scope.slice(arrays[field], 0, offset, end));
+                    offset = end;
+                }
             }
-            try mx.evalMany(&arrays, false);
         }
         // MLX specializes captured lazy loads per shape; compiled blocks share realized weights.
         const arrays = try mx.allocator.alloc(A, m.weights.arrays.count());

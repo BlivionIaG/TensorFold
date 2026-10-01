@@ -259,9 +259,13 @@ pub const Drafter = struct {
         try mx.evalMany(&.{ pred, succ }, false);
         const pown = try mx.retain(pred);
         errdefer mx.free(pown);
+        const sown = try mx.retain(succ);
+        errdefer mx.free(sown);
+        w.releaseArray("candidate_selector.predecessor_codebook");
+        w.releaseArray("candidate_selector.successor_codebook");
         const tables = try calibration.parse(mx.allocator, @import("native_runtime").dflash_calibration);
         errdefer tables.deinit();
-        return .{ .weights = w, .head = selected, .vocabulary_tail = vocabulary_tail, .pred = pown, .succ = try mx.retain(succ), .calibration_tables = tables };
+        return .{ .weights = w, .head = selected, .vocabulary_tail = vocabulary_tail, .pred = pown, .succ = sown, .calibration_tables = tables };
     }
     pub fn reset(d: *Drafter) void {
         if (d.capture) |writer| writer.deinit();

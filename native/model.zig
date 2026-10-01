@@ -48,6 +48,7 @@ pub const Pass = struct {
     count: usize = 0,
     start: i32 = 0,
     vision_delta: ?i32 = null,
+    prefill_final: bool = false,
     pub fn deinit(p: *Pass) void {
         p.scope.deinit();
     }
@@ -180,9 +181,10 @@ pub const Model = struct {
     pub fn project(m: *Model, s: *mx.Scope, index: usize, suffix: []const u8, x: lanes.Act) !A {
         var buf: [192]u8 = undefined;
         var l = try m.weights.linear(try std.fmt.bufPrint(&buf, "model.layers.{d}.{s}", .{ index, suffix }));
-        if (m.projection_cache) |cache| if (l.signs.ctx != null) {
+        if (m.projection_cache) |cache| {
             const input = try cache.prepare(l, &m.kernels, s, x);
-            if (mx.tensor_units and l.rotation_id != 0) inline for (.{
+            if (mx.tensor_units) inline for (.{
+                .{ "linear_attn.in_proj_z", "linear_attn.in_proj_b", "linear_attn.in_proj_a" },
                 .{ "self_attn.k_proj", "self_attn.v_proj" },
                 .{ "mlp.gate_proj", "mlp.up_proj" },
             }) |group| {
@@ -201,9 +203,11 @@ pub const Model = struct {
                     }
                 };
             };
-            l.signs = mx.empty;
-            return l.apply(&m.kernels, s, input);
-        };
+            if (l.signs.ctx != null) {
+                l.signs = mx.empty;
+                return l.apply(&m.kernels, s, input);
+            }
+        }
         // Pre-M5 plain projections retain the stacked SIMD reduction.
         if (!mx.tensor_units and l.format != null and l.signs.ctx == null) inline for (.{
             .{ "linear_attn.in_proj_qkv", "linear_attn.in_proj_z", "linear_attn.in_proj_b", "linear_attn.in_proj_a" },
@@ -406,6 +410,7 @@ pub const Model = struct {
         if (rows.len == 0) return error.EmptyCommit;
         if (m.position != p.start or rows.len > p.count or rows[0] != 0) return error.InvalidCommit;
         if (p.vision_delta != null and rows.len != p.count) return error.PartialImagePrefillCommit;
+        if (p.prefill_final and rows.len != p.count) return error.PartialPrefillCommit;
         for (rows, 0..) |row, i| {
             if (row < 0 or row >= p.count or p.parents[@intCast(row)] != (if (i == 0) @as(i32, -1) else rows[i - 1])) return error.InvalidCommit;
         }
@@ -451,6 +456,9 @@ pub const Model = struct {
                 }
                 next[i].a = try mx.retain(keys);
                 next[i].b = try mx.retain(vals);
+            } else if (p.prefill_final) {
+                next[i].a = try mx.retain(v[6]);
+                next[i].b = try mx.retain(v[7]);
             } else {
                 const state = if (v[7].ctx != null and rows.len == p.count) v[7] else (try m.kernels.run(s, src.lane_tree_replay, &.{ v[0], v[1], v[2], v[3], v[4], v[5], ids, count }, &.{ ti("Dk", 128), ti("Dv", 128), ti("Hk", 16), ti("Hv", 48), mx.td("StT", mx.f32t) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{.{ .shape = &.{ 1, 48, 128, 128 }, .dtype = mx.f32t }}))[0];
                 var tail: [3]i32 = undefined;

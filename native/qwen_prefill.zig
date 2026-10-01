@@ -29,11 +29,18 @@ pub fn checkCommit(io: @import("std").Io, directory: []const u8) !void {
         var scope = mx.Scope{};
         defer scope.deinit();
         var logits = mx.empty;
-        for (0..2) |run| {
+        for (0..if (keep == tokens.len) @as(usize, 3) else 2) |run| {
             m.reset();
             {
-                var pass = try forward(&m, &tokens);
+                var pass = if (run == 2) try forwardFinal(&m, &tokens, mx.empty, mx.empty, m.rope_delta) else try forward(&m, &tokens);
                 defer pass.deinit();
+                if (run == 2) {
+                    try std.testing.expectError(error.PartialPrefillCommit, m.commit(&pass, rows[0 .. keep - 1]));
+                    for (pass.records, 0..) |record, layer| if (layer % 4 != 3) {
+                        for (record.values[0..6]) |value| try std.testing.expect(value.ctx == null);
+                        try std.testing.expectEqual(@as(i32, 3), mx.dim(record.values[6], 1));
+                    };
+                }
                 if (run == 0) for (&pass.records) |*record| {
                     record.values[7] = mx.empty;
                 };
@@ -53,12 +60,20 @@ pub fn checkCommit(io: @import("std").Io, directory: []const u8) !void {
             if (run == 0) logits = try scope.own(try mx.retain(next.logits)) else try @import("variant_checks.zig").equalBits(&scope, next.logits, logits);
         }
     }
-    std.debug.print("PASS: full prefill state reuse and 1/17/129-row partial commits match replay caches and continuation bit for bit.\n", .{});
+    std.debug.print("PASS: compact/full prefill states and 1/17/129-row partial commits match replay caches and continuation bit for bit.\n", .{});
 }
 
 pub fn forwardImage(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32) !model.Pass {
+    return forwardImpl(m, tokens, embeddings, positions, delta, false);
+}
+
+pub fn forwardFinal(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32) !model.Pass {
+    return forwardImpl(m, tokens, embeddings, positions, delta, true);
+}
+
+fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32, final: bool) !model.Pass {
     if (tokens.len == 0 or tokens.len > 2048) return error.InvalidPrefillWidth;
-    var p = model.Pass{ .count = tokens.len, .start = m.position };
+    var p = model.Pass{ .count = tokens.len, .start = m.position, .prefill_final = final };
     if (embeddings.ctx != null) {
         if (!@import("std").mem.eql(i32, mx.shape(embeddings), &.{ 1, @intCast(tokens.len), 5120 }) or !@import("std").mem.eql(i32, mx.shape(positions), &.{ 3, @intCast(tokens.len) })) return error.InvalidImageEmbeddings;
         p.vision_delta = delta;
@@ -69,6 +84,7 @@ pub fn forwardImage(m: *model.Model, tokens: []const i32, embeddings: A, positio
     var h = if (embeddings.ctx != null) embeddings else try m.weights.embedArray(s, try s.ints(tokens));
     var carried = mx.empty;
     defer mx.free(carried);
+    var queued_layers: usize = 0;
     for (0..64) |i| {
         var scope = mx.Scope{};
         defer scope.deinit();
@@ -88,7 +104,19 @@ pub fn forwardImage(m: *model.Model, tokens: []const i32, embeddings: A, positio
         for ([_]usize{ 5, 19, 33, 47, 61 }, 0..) |layer, j| if (i == layer) {
             p.taps[j] = try s.own(try mx.retain(h));
         };
-        if (evaluation_stride > 0 and (i == 0 or (i + 1) % evaluation_stride == 0)) try mx.evalMany(&.{h}, true);
+        if (i == 63 or (evaluation_stride > 0 and (i == 0 or (i + 1) % evaluation_stride == 0))) {
+            var pending: [129]A = undefined;
+            pending[0] = h;
+            var count: usize = 1;
+            if (final) for (p.records[queued_layers .. i + 1], queued_layers..) |record, layer| {
+                if (layer % 4 == 3) continue;
+                pending[count] = record.values[6];
+                pending[count + 1] = record.values[7];
+                count += 2;
+            };
+            try mx.evalMany(pending[0..count], true);
+            queued_layers = i + 1;
+        }
         const next = try mx.retain(h);
         mx.free(carried);
         carried = next;
@@ -129,7 +157,13 @@ fn gdn(m: *model.Model, s: *mx.Scope, i: usize, x: A, p: *model.Pass) !A {
     }
     const recurrence = try m.kernels.run(s, src.flash_prefill_gdn, &.{ q, k, v, g, beta, state, try s.reshape(try s.ints(&.{n}), &.{}) }, &.{ mx.td("InT", mx.bf16), mx.td("StT", mx.f32t), mx.ti("Dk", 128), mx.ti("Dv", 128), mx.ti("Hk", 16), mx.ti("Hv", 48) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{ .{ .shape = &.{ 1, n, 48, 128 } }, .{ .shape = &.{ 1, 48, 128, 128 }, .dtype = mx.f32t } });
     const out = recurrence[0];
-    p.records[i].values = .{ q, k, v, g, beta, try s.own(try mx.retain(state)), seq, recurrence[1] };
+    if (p.prefill_final) {
+        const tail = try s.take(seq, try s.ints(&.{ n, n + 1, n + 2 }), 1);
+        p.records[i].values[6] = tail;
+        p.records[i].values[7] = recurrence[1];
+    } else {
+        p.records[i].values = .{ q, k, v, g, beta, try s.own(try mx.retain(state)), seq, recurrence[1] };
+    }
     const normalized = try s.rms(out, try m.weight(i, "linear_attn.norm.weight"));
     const gated = try m.prefill_ops.call(s, .gated, &.{ try s.reshape(z, &.{ 1, n, 48, 128 }), normalized });
     return m.prefillProject(s, i, "linear_attn.out_proj", try s.reshape(gated, &.{ 1, n, 6144 }));

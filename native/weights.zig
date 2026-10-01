@@ -148,19 +148,26 @@ pub const Weights = struct {
         stack.sb = try mx.retain(sb);
         var views: [4]mx.Array = @splat(mx.empty);
         errdefer for (views) |value| mx.free(value);
+        var scale_views: [4]mx.Array = @splat(mx.empty);
+        errdefer for (scale_views) |value| mx.free(value);
         var offset: i32 = 0;
         const shared_members = if (mixed) tiled_prefix else names.len;
-        for (members[0..shared_members], 0..) |member, i| {
-            views[i] = try mx.retain(try s.slice(weight, 0, offset, offset + member.n));
+        for (members[0..names.len], 0..) |member, i| {
+            if (i < shared_members) views[i] = try mx.retain(try s.slice(weight, 0, offset, offset + member.n));
+            scale_views[i] = try mx.retain(try s.slice(sb, 1, offset, offset + member.n));
             offset += member.n;
         }
         const key = try mx.allocator.dupe(u8, stack_name);
         errdefer mx.allocator.free(key);
         try w.stacks.put(key, stack);
-        for (names[0..shared_members], 0..) |name, i| {
+        for (names, 0..) |name, i| {
             const member = w.linears.getPtr(name).?;
-            mx.free(member.weight);
-            member.weight = views[i];
+            if (i < shared_members) {
+                mx.free(member.weight);
+                member.weight = views[i];
+            }
+            mx.free(member.sb);
+            member.sb = scale_views[i];
         }
         return stack;
     }
@@ -170,11 +177,14 @@ pub const Weights = struct {
         while (it.next()) |name| {
             for ([_][]const u8{ ".weight", ".scales", ".biases" }) |suffix| {
                 const key = try std.fmt.bufPrint(&buffer, "{s}{s}", .{ name.*, suffix });
-                if (w.arrays.fetchRemove(key)) |entry| {
-                    mx.free(entry.value);
-                    mx.allocator.free(entry.key);
-                }
+                w.releaseArray(key);
             }
+        }
+    }
+    pub fn releaseArray(w: *Weights, name: []const u8) void {
+        if (w.arrays.fetchRemove(name)) |entry| {
+            mx.free(entry.value);
+            mx.allocator.free(entry.key);
         }
     }
     pub fn loadDraft(w: *Weights, io: std.Io, dir: []const u8) !void {

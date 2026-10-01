@@ -504,6 +504,12 @@ pub const Model = struct {
             const value = try s.cat(arrays[0..members.len], 0);
             try mx.eval(value);
             try m.weights.put(try std.fmt.bufPrint(&buf, "model.layers.{d}.{s}.{s}", .{ i, name, suffix }), value);
+            var offset: i32 = 0;
+            for (members, 0..) |member, j| {
+                const end = offset + mx.dim(arrays[j], 0);
+                try m.weights.put(try std.fmt.bufPrint(&buf, "model.layers.{d}.{s}.{s}", .{ i, member, suffix }), try s.slice(value, 0, offset, end));
+                offset = end;
+            }
         }
     }
     pub fn project(m: *Model, s: *mx.Scope, x: A, weights: [3]A) !A {

@@ -643,8 +643,9 @@ pub fn Generation(comptime M: type) type {
             var image_scope = mx.Scope{};
             defer image_scope.deinit();
             var pass = if (M == qwen.Model) blk: {
-                if (g.image) |p| break :blk try m.prefillImage(tokens, try image_scope.slice(p.embeddings, 1, @intCast(g.offset), @intCast(g.offset + count)), try p.positions.chunk(&image_scope, g.offset, g.offset + count), p.positions.delta);
-                break :blk try m.prefill(tokens);
+                const prompt_pass = @import("qwen_prefill.zig");
+                if (g.image) |p| break :blk try prompt_pass.forwardFinal(m, tokens, try image_scope.slice(p.embeddings, 1, @intCast(g.offset), @intCast(g.offset + count)), try p.positions.chunk(&image_scope, g.offset, g.offset + count), p.positions.delta);
+                break :blk try prompt_pass.forwardFinal(m, tokens, mx.empty, mx.empty, m.rope_delta);
             } else if (@hasDecl(M, "prefill")) try m.prefill(tokens) else try m.forward(tokens);
             defer pass.deinit();
             const vocab: i32 = if (M == qwen.Model) 248320 else if (@hasField(M, "vocab")) m.vocab else M.vocab;

@@ -11,10 +11,12 @@ from functools import wraps
 import hashlib
 import importlib.metadata
 import json
+import math
 import os
 from pathlib import Path
 import platform
 import struct
+import statistics
 import subprocess
 import sys
 import time
@@ -476,6 +478,35 @@ def native_synthetic_checkpoint(manifest, output):
     return destination.resolve()
 
 
+def compare_resources(python, native):
+    metrics = {}
+    for name in ("peak_mlx_bytes", "first_token_seconds", "decode_seconds", "total_seconds"):
+        def value(sample, is_native):
+            if name == "first_token_seconds" and is_native:
+                return sample.get("prefill_seconds")
+            if name == "total_seconds" and is_native:
+                first, decode = sample.get("prefill_seconds"), sample.get("decode_seconds")
+                return first + decode if first is not None and decode is not None else None
+            return sample.get(name)
+
+        baseline = [value(s, False) for s in python]
+        measured = [value(s, True) for s in native]
+        valid = bool(baseline and measured) and all(
+            isinstance(v, (int, float)) and math.isfinite(v) and v > 0 for v in baseline + measured
+        ) and all(s.get("timing_valid") is True for s in python)
+        if not valid:
+            metrics[name] = dict(passed=False, reason="missing or invalid measurements")
+            continue
+        aggregate = max if name == "peak_mlx_bytes" else statistics.median
+        reference, actual = aggregate(baseline), aggregate(measured)
+        metrics[name] = dict(python=reference, native=actual, ratio=actual / reference,
+                             passed=actual <= reference)
+    memory = metrics["peak_mlx_bytes"]["passed"]
+    performance = all(v["passed"] for k, v in metrics.items() if k != "peak_mlx_bytes")
+    return dict(memory_passed=memory, performance_passed=performance,
+                passed=memory and performance, metrics=metrics)
+
+
 def compare_golden(args):
     suite = json.loads((args.compare_golden / "suite.json").read_text())
     if not suite["complete"]:
@@ -563,9 +594,20 @@ def compare_golden(args):
                   f"{'match' if matches else 'FAIL'}, {elapsed:.3f}s process", flush=True)
     comparison["complete"] = True
     comparison["correctness_passed"] = all(c["correctness"]["matches"] for c in comparison["cases"])
+    for case in comparison["cases"]:
+        case["resources"] = compare_resources(case["python"], case["native"])
+        failures = [name for name, result in case["resources"]["metrics"].items() if not result["passed"]]
+        print(f"RESOURCES {case['family']}-{case['name']}: "
+              + ("PASS" if not failures else "FAIL " + ", ".join(failures)), flush=True)
+    comparison["resource_policy"] = "peak MLX bytes and median first-token/decode/total seconds must not exceed Python; no tolerance"
+    comparison["memory_passed"] = all(c["resources"]["memory_passed"] for c in comparison["cases"])
+    comparison["performance_passed"] = all(c["resources"]["performance_passed"] for c in comparison["cases"])
+    comparison["passed"] = all(comparison[k] for k in ("correctness_passed", "memory_passed", "performance_passed"))
     write_json(output, comparison)
     if not comparison["correctness_passed"]:
         raise SystemExit("Native correctness incomplete; mismatching cases excluded from measurements")
+    if not comparison["passed"]:
+        raise SystemExit("Native resource parity failed; see per-case memory and timing results")
 
 
 def python_worker(args):

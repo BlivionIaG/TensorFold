@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from native_engine_bench import GoldenCapture, checkpoint_identity, compare_golden, golden_cases, golden_native_command, local_drafter, native_synthetic_checkpoint, verify_golden
+from native_engine_bench import GoldenCapture, checkpoint_identity, compare_golden, compare_resources, golden_cases, golden_native_command, local_drafter, native_synthetic_checkpoint, verify_golden
 
 
 def test_capture_restores_inherited_methods_after_failure(tmp_path):
@@ -122,14 +122,16 @@ def test_native_glm_config_adaptation_preserves_golden_and_weight_payload(tmp_pa
     assert (adapted / "model.safetensors").resolve() == checkpoint / "model.safetensors"
 
 
-def test_comparison_checks_all_cases_before_measuring_and_rejects_divergence(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mismatch", [False, True])
+def test_comparison_checks_all_cases_before_measuring_and_rejects_regressions(tmp_path, monkeypatch, mismatch):
     checkpoint = tmp_path / "checkpoint"
     checkpoint.mkdir()
     (checkpoint / "config.json").write_text("{}")
     golden = tmp_path / "golden"
     golden.mkdir()
     cases = [dict(name=name, tokens=[3], temperature=0, drafts=False,
-                  measurements=[dict(tokens=[8, 9])]) for name in ("bad", "good")]
+                  measurements=[dict(tokens=[8, 9], timing_valid=True, first_token_seconds=2,
+                                     decode_seconds=3, total_seconds=5, peak_mlx_bytes=1000)]) for name in ("bad", "good")]
     manifest = dict(complete=True, family="qwen", checkpoint=checkpoint_identity(checkpoint),
                     cases=cases, seed=5678, top_k=12, top_p=0.8)
     (golden / "manifest.json").write_text(json.dumps(manifest))
@@ -144,18 +146,20 @@ def test_comparison_checks_all_cases_before_measuring_and_rejects_divergence(tmp
         from pathlib import Path
         report = Path(command[command.index("--report") + 1])
         calls.append(report.stem)
-        report.write_text(json.dumps(dict(tokens=[8, 7] if "bad" in report.stem else [8, 9])))
+        report.write_text(json.dumps(dict(tokens=[8, 7] if mismatch and "bad" in report.stem else [8, 9],
+                                          prefill_seconds=2, decode_seconds=3, peak_mlx_bytes=1001)))
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr("native_engine_bench.subprocess.run", native)
     args = SimpleNamespace(compare_golden=golden, output=tmp_path / "comparison", binary=binary,
                            family=None, case=[], repetitions=1, native_arg=[], native_env=[], resident_ple=False, native_driver="cli")
-    with pytest.raises(SystemExit, match="correctness incomplete"):
+    with pytest.raises(SystemExit, match="correctness incomplete" if mismatch else "resource parity failed"):
         compare_golden(args)
-    assert calls == ["qwen-bad-0", "qwen-good-0", "qwen-good-1"]
+    assert calls == ["qwen-bad-0", "qwen-good-0"] + ([] if mismatch else ["qwen-bad-1"]) + ["qwen-good-1"]
     result = json.loads((args.output / "comparison.json").read_text())
-    assert result["complete"] and not result["correctness_passed"]
-    assert result["cases"][0]["native"] == []
+    assert result["complete"] and result["correctness_passed"] == (not mismatch)
+    assert not result["passed"] and not result["memory_passed"]
+    assert len(result["cases"][0]["native"]) == (0 if mismatch else 1)
     assert len(result["cases"][1]["native"]) == 1
 
 
@@ -163,6 +167,39 @@ def test_verification_rejects_partial_suite(tmp_path):
     (tmp_path / "suite.json").write_text(json.dumps({"complete": False, "models": []}))
     with pytest.raises(ValueError, match="incomplete"):
         verify_golden(tmp_path)
+
+
+@pytest.mark.parametrize("metric,extra", [("peak_mlx_bytes", 1), ("prefill_seconds", 0.001), ("decode_seconds", 0.001)])
+def test_resource_parity_rejects_any_memory_or_phase_regression(metric, extra):
+    python = dict(peak_mlx_bytes=1000, first_token_seconds=2, decode_seconds=3, total_seconds=5, timing_valid=True)
+    native = dict(peak_mlx_bytes=1000, prefill_seconds=2, decode_seconds=3)
+    assert compare_resources([python], [native])["passed"]
+    native[metric] += extra
+    result = compare_resources([python], [native])
+    assert not result["passed"]
+    assert result["memory_passed"] == (metric != "peak_mlx_bytes")
+    assert result["performance_passed"] == (metric == "peak_mlx_bytes")
+
+
+def test_resource_parity_uses_worst_peak_and_median_latency():
+    python = dict(peak_mlx_bytes=1000, first_token_seconds=2, decode_seconds=3, total_seconds=5, timing_valid=True)
+    native = dict(peak_mlx_bytes=900, prefill_seconds=1, decode_seconds=2)
+    outlier = dict(peak_mlx_bytes=1001, prefill_seconds=100, decode_seconds=100)
+    result = compare_resources([python] * 3, [native, native, outlier])
+    assert not result["memory_passed"]
+    assert result["performance_passed"]
+
+
+@pytest.mark.parametrize("invalid", [None, 0, -1, float("nan"), float("inf")])
+def test_resource_parity_rejects_invalid_or_missing_measurements(invalid):
+    python = dict(peak_mlx_bytes=1000, first_token_seconds=2, decode_seconds=3, total_seconds=5, timing_valid=True)
+    native = dict(peak_mlx_bytes=invalid, prefill_seconds=2, decode_seconds=3)
+    assert not compare_resources([python], [native])["passed"]
+    assert not compare_resources([python], [])["passed"]
+    assert not compare_resources([], [native])["passed"]
+    python["timing_valid"] = False
+    native["peak_mlx_bytes"] = 1000
+    assert not compare_resources([python], [native])["passed"]
 
 
 def test_array_storage_retains_integer_precision_and_bf16(tmp_path):
