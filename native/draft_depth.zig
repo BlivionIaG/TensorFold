@@ -48,7 +48,11 @@ pub const Adaptive = struct {
             if (accepted < j) break;
             p.rates[j] += 0.15 * ((if (accepted > j) @as(f64, 1) else 0) - p.rates[j]);
         }
-        if (proposed == 0) return;
+        try p.observeElapsed(proposed, milliseconds, false);
+    }
+    pub fn observeElapsed(p: *Adaptive, proposed: usize, milliseconds: f64, initializing: bool) !void {
+        if (proposed > p.budget or !std.math.isFinite(milliseconds) or milliseconds <= 0) return error.InvalidDraftObservation;
+        if (proposed == 0 or initializing) return;
         const before = p.round_ms[proposed];
         p.round_ms[proposed] = if (before == 0) milliseconds else before + 0.2 * (milliseconds - before);
     }
@@ -87,4 +91,18 @@ test "adaptive policy rejects invalid budgets, priors and observations" {
     try std.testing.expectError(error.InvalidDraftObservation, p.observe(4, 0, 1));
     try std.testing.expectError(error.InvalidDraftObservation, p.observe(1, 2, 1));
     try std.testing.expectError(error.InvalidDraftObservation, p.observe(1, 1, 0));
+}
+
+test "completed round costs skip initialization and leave acceptance unchanged" {
+    var p = try Adaptive.init(3, &nemotron_prior);
+    const rates = p.rates;
+    try p.observeElapsed(2, 19, true);
+    try p.observeElapsed(0, 19, false);
+    try std.testing.expectEqual(@as(f64, 0), p.round_ms[2]);
+    try p.observeElapsed(2, 10, false);
+    try p.observeElapsed(2, 15, false);
+    try std.testing.expectEqual(@as(f64, 11), p.round_ms[2]);
+    try std.testing.expectEqualSlices(f64, &rates, &p.rates);
+    try std.testing.expectError(error.InvalidDraftObservation, p.observeElapsed(4, 1, false));
+    try std.testing.expectError(error.InvalidDraftObservation, p.observeElapsed(1, std.math.nan(f64), false));
 }

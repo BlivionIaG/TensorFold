@@ -39,6 +39,7 @@ pub const Coordinator = struct {
     costs: [128]allocation.Cost = undefined,
     cost_count: usize = 0,
     overhead_ms: [8]?f64 = @splat(null),
+    mtp_costs: ?@import("draft_depth.zig").Adaptive = null,
     rows: usize = 0,
     streams: usize = 0,
     peak_bytes: u64 = 0,
@@ -74,7 +75,19 @@ pub const Coordinator = struct {
 
     pub fn calibrate(c: *Coordinator, s: *session.Session, max_streams: usize) !void {
         switch (s.backend) {
-            inline .qwen, .gemma, .nemotron, .flash => |*m| try c.calibrateModel(s, m, max_streams),
+            inline .qwen, .gemma, .nemotron, .flash => |*m| {
+                try c.calibrateModel(s, m, max_streams);
+                const M = @TypeOf(m.*);
+                if (comptime adaptiveMtp(M)) if (s.draft_options.enabled and s.draft_options.max_draft > 0 and m.mtp) {
+                    var policy = try @import("draft_depth.zig").Adaptive.init(@min(s.draft_options.max_draft, c.max_rows - 1), M.draft_prior);
+                    try @import("mtp_calibration.zig").measure(M, m, s.io, &policy, .{ .metal = true });
+                    policy.forward_ms = @splat(0);
+                    for (c.costs[0..c.cost_count]) |cost| if (cost.rows < policy.forward_ms.len) {
+                        policy.forward_ms[cost.rows] = cost.ms;
+                    };
+                    c.mtp_costs = policy;
+                };
+            },
             else => {},
         }
     }
@@ -205,6 +218,8 @@ pub const Coordinator = struct {
             for (requests) |g| g.discardPreview();
         }
         const started = @import("server_live.zig").now(std.Options.debug_io);
+        const singleton_mtp = adaptiveMtp(M) and requests.len == 1 and c.mtp_costs != null;
+        var adaptive_window = false;
         var windows: [8]rounds.Window = undefined;
         var indexes: [8]usize = undefined;
         var count: usize = 0;
@@ -241,6 +256,13 @@ pub const Coordinator = struct {
                 continue;
             };
             if (window) |w| {
+                const forcing = g.budget.forced.len > 0 or (if (g.sink.gate) |gate| gate.forced.len > 0 else false);
+                if (singleton_mtp and w.from_neural and !forcing) {
+                    var room = g.options.max_tokens - g.reply.tokens.items.len;
+                    if (g.budget.open and g.budget.limit > 0 and g.budget.close.len > 0) room = @min(room, g.budget.limit -| g.reply.tokens.items.len);
+                    g.round_draft_budget = g.draft_depth.choose(&c.mtp_costs.?, g.sink.draft_budget, room);
+                    adaptive_window = true;
+                }
                 g.in_round = true;
                 windows[count] = w;
                 indexes[count] = i;
@@ -314,8 +336,10 @@ pub const Coordinator = struct {
                 try allocation.chainProbabilities(&.{if (structural) 1 else 0.94}, chances[i][0..w.draft.len]);
             }
         }
-        const granted = try allocation.allocate(mx.allocator, fixed[0..count], probabilities[0..count], c.costs[0..c.cost_count], c.overhead(count), c.max_rows);
-        defer mx.allocator.free(granted);
+        const singleton_grant = [_]usize{windows[0].draft.len};
+        const allocated = if (adaptive_window) null else try allocation.allocate(mx.allocator, fixed[0..count], probabilities[0..count], c.costs[0..c.cost_count], c.overhead(count), c.max_rows);
+        defer if (allocated) |granted| mx.allocator.free(granted);
+        const granted: []const usize = allocated orelse &singleton_grant;
         var streams: [8]S.Stream = undefined;
         var array_streams: [8]@import("nemotron_shared.zig").ArrayStream = undefined;
         var token_parts: [8]mx.Array = undefined;
@@ -530,9 +554,54 @@ pub const Coordinator = struct {
         const ended = @import("server_live.zig").now(std.Options.debug_io);
         c.timing.finish_seconds = ended - release_ended;
         const elapsed_ms = (ended - started) * 1000;
+        if (adaptive_window and results[indexes[0]].failure == null) {
+            try c.mtp_costs.?.observeElapsed(windows[0].draft.len, elapsed_ms, requests[indexes[0]].draft_depth.rounds == 0);
+        }
+        for (indexes[0..count]) |i| if (results[i].failure == null) {
+            requests[i].draft_depth.rounds += 1;
+        };
         c.observeRound(count, c.rows, elapsed_ms, forwarded_ms);
     }
 };
+
+fn builtinMtp(comptime M: type) bool {
+    return M == @import("nemotron.zig").Model or M == @import("flash.zig").Model;
+}
+
+fn adaptiveMtp(comptime M: type) bool {
+    return builtinMtp(M) and (if (@hasDecl(M, "adaptive_mtp_depth")) M.adaptive_mtp_depth else false);
+}
+
+test "singleton MTP choices use per-request rates and shared measured costs" {
+    const Adaptive = @import("draft_depth.zig").Adaptive;
+    const Depth = @import("neural_draft.zig").Depth;
+    var costs = try Adaptive.init(3, &@import("draft_depth.zig").nemotron_prior);
+    costs.forward_ms[2] = 5;
+    costs.forward_ms[3] = 8;
+    costs.forward_ms[4] = 12;
+    costs.mtp_ms = 1;
+    var first = Depth.init(@import("nemotron.zig").Model);
+    var second = Depth.init(@import("nemotron.zig").Model);
+    const rates = first.rates;
+    for (0..7) |_| try std.testing.expectEqual(@as(usize, 1), first.choose(&costs, 3, 32));
+    try std.testing.expectEqual(@as(usize, 2), first.choose(&costs, 3, 32));
+    try std.testing.expectEqual(@as(usize, 0), second.choices);
+    try std.testing.expectEqualSlices(f64, &rates, &first.rates);
+    try costs.observeElapsed(2, 4, false);
+    try std.testing.expectEqual(@as(usize, 2), second.choose(&costs, 3, 32));
+    try std.testing.expectEqual(@as(usize, 1), second.choose(&costs, 3, 2));
+    try std.testing.expectEqual(@as(usize, 0), second.choose(&costs, 0, 32));
+    try std.testing.expectEqual(@as(usize, 2), second.choices);
+    try std.testing.expectEqualSlices(f64, &rates, &second.rates);
+    try std.testing.expect(builtinMtp(@import("nemotron.zig").Model));
+    try std.testing.expect(builtinMtp(@import("flash.zig").Model));
+    try std.testing.expect(!builtinMtp(model.Model));
+    try std.testing.expect(!builtinMtp(@import("gemma.zig").Model));
+    try std.testing.expect(adaptiveMtp(@import("nemotron.zig").Model));
+    try std.testing.expect(!adaptiveMtp(@import("flash.zig").Model));
+    try std.testing.expect(!adaptiveMtp(model.Model));
+    try std.testing.expect(!adaptiveMtp(@import("gemma.zig").Model));
+}
 
 fn qwenCalibrationWidths(limit: usize, out: *[16]usize) []const usize {
     std.debug.assert(limit > 0 and limit <= 128);

@@ -8,6 +8,8 @@ const Proposal = @import("drafter.zig").Proposal;
 pub const Depth = struct {
     rates: [15]f64 = @import("draft_depth.zig").flash_prior,
     count: usize = 15,
+    choices: usize = 0,
+    rounds: usize = 0,
 
     pub fn init(comptime M: type) Depth {
         var d = Depth{};
@@ -20,6 +22,17 @@ pub const Depth = struct {
 
     pub fn chances(d: Depth, output: []f64) !void {
         try @import("draft_allocation.zig").chainProbabilities(d.rates[0..d.count], output);
+    }
+
+    pub fn choose(d: *Depth, costs: *const @import("draft_depth.zig").Adaptive, budget: usize, room: usize) usize {
+        var policy = costs.*;
+        policy.budget = @min(policy.budget, budget);
+        policy.rates = d.rates;
+        policy.rate_count = @min(d.count, @max(1, policy.budget));
+        policy.choices = d.choices;
+        const depth = policy.choose(room);
+        d.choices = policy.choices;
+        return depth;
     }
 
     pub fn observe(d: *Depth, proposed: usize, accepted: usize) void {

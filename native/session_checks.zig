@@ -100,6 +100,9 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
         expected[i] = try g.takeReply();
         completed += 1;
     }
+    if (comptime M == @import("nemotron.zig").Model or M == @import("flash.zig").Model) if (neural) {
+        try singletonMtpRequests(s, m, prompts[0]);
+    };
     for ([_]usize{ 1, 2, 8, if (@hasDecl(M, "max_shared_rows")) M.max_shared_rows else 128 }) |rows| {
         var requests: [8]G = undefined;
         var captures: [8]Capture = @splat(.{});
@@ -172,6 +175,87 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
         try std.testing.expectEqual(.failed, requests[0].phase);
         std.debug.print("PASS: 8 shared requests, row cap {d}, exact greedy/sampled {s} output and streaming, cancellation isolation and fair turns\n", .{ rows, if (neural) "neural" else "copy" });
     }
+}
+
+fn singletonMtpRequests(s: *session.Session, m: anytype, prompt: []const i32) !void {
+    const M = @TypeOf(m.*);
+    const G = session.Generation(M);
+    const shared = @import("shared_round.zig");
+    const adaptive = M.adaptive_mtp_depth;
+    for ([_]f64{ 0, 0.7 }) |temperature| for ([_]bool{ false, true }) |forced_round| {
+        const options = session.Options{ .max_tokens = 16, .ignore_eos = true, .draft = true, .seed = 819, .sampling = .{ .metal = true, .temperature = temperature, .top_k = 12, .top_p = 0.8 } };
+        var captures: [2]Capture = @splat(.{});
+        defer for (&captures) |*capture| capture.deinit();
+        var reference = try G.init(m, &s.tokenizer, mx.allocator, prompt, options, s.draftSink(captures[0].sink()), null);
+        defer reference.deinit();
+        var actual = try G.init(m, &s.tokenizer, mx.allocator, prompt, options, s.draftSink(captures[1].sink()), null);
+        defer actual.deinit();
+        reference.proposer.?.fallback_enabled = false;
+        actual.proposer.?.fallback_enabled = false;
+        reference.round_draft_budget = 0;
+        while (reference.phase == .prefill) _ = try reference.step(m);
+        while (actual.phase == .prefill) _ = try actual.step(m);
+        var saved = try actual.state.clone();
+        defer saved.deinit();
+        var saved_copy = try saved.clone();
+        defer saved_copy.deinit();
+        const forced = [_]u32{ @intCast(@mod(actual.next + 1, M.vocab)), @intCast(@mod(actual.next + 2, M.vocab)), @intCast(@mod(actual.next + 3, M.vocab)) };
+        if (forced_round) {
+            reference.budget.forced = &forced;
+            actual.budget.forced = &forced;
+        }
+        while (!try reference.step(m)) {}
+        var coordinator = shared.Coordinator{ .max_rows = 8, .cost_count = 8, .mtp_costs = try @import("draft_depth.zig").Adaptive.init(3, M.draft_prior) };
+        for (0..8) |i| {
+            const ms = @as(f64, @floatFromInt(i + 1)) * 4;
+            coordinator.costs[i] = .{ .rows = i + 1, .ms = ms };
+            coordinator.mtp_costs.?.forward_ms[i + 1] = ms;
+        }
+        coordinator.mtp_costs.?.mtp_ms = 1;
+        var result: [1]shared.Result = undefined;
+        while (actual.phase == .decode) {
+            try coordinator.step(m, &.{&actual}, &result);
+            try std.testing.expect(result[0].failure == null);
+            try std.testing.expect(coordinator.rows <= coordinator.max_rows);
+            try std.testing.expect(!actual.in_round and !actual.state.borrowed);
+            try std.testing.expectEqual(@as(i32, 0), m.position);
+            try std.testing.expectEqual(@import("decode_round.zig").Stage.idle, m.round_owner.stage);
+            if (actual.draft_depth.rounds == 1) {
+                try std.testing.expectEqualSlices(f64, &@as([16]f64, @splat(0)), &coordinator.mtp_costs.?.round_ms);
+                try std.testing.expectEqual(@as(usize, if (adaptive and !forced_round) 1 else 0), actual.draft_depth.choices);
+            }
+        }
+        try std.testing.expectEqual(adaptive, actual.draft_depth.choices > 0);
+        try std.testing.expect(actual.neural_proposed > 0);
+        var measured = false;
+        for (coordinator.mtp_costs.?.round_ms) |ms| measured = measured or ms > 0;
+        try std.testing.expectEqual(adaptive, measured);
+        try samePreviewCaches(M, &reference.state, &actual.state);
+        try samePreviewCaches(M, &saved, &saved_copy);
+        var expected = try reference.takeReply();
+        defer expected.deinit(mx.allocator);
+        var reply = try actual.takeReply();
+        defer reply.deinit(mx.allocator);
+        try same(expected, reply, captures[0], captures[1]);
+        var cancelled_capture = Capture{};
+        defer cancelled_capture.deinit();
+        var cancelled = try G.init(m, &s.tokenizer, mx.allocator, prompt, options, s.draftSink(cancelled_capture.sink()), null);
+        defer cancelled.deinit();
+        while (cancelled.phase == .prefill) _ = try cancelled.step(m);
+        var before_cancel = try cancelled.state.clone();
+        defer before_cancel.deinit();
+        const costs_before = coordinator.mtp_costs.?.round_ms;
+        cancelled_capture.cancelled = true;
+        try coordinator.step(m, &.{&cancelled}, &result);
+        try std.testing.expectEqual(error.RequestCancelled, result[0].failure.?);
+        try std.testing.expectEqual(.failed, cancelled.phase);
+        try std.testing.expectEqual(@as(usize, 0), cancelled.draft_depth.choices);
+        try std.testing.expectEqual(@as(usize, 0), cancelled.draft_depth.rounds);
+        try std.testing.expectEqualSlices(f64, &costs_before, &coordinator.mtp_costs.?.round_ms);
+        try std.testing.expect(!cancelled.in_round and !cancelled.state.borrowed);
+        try samePreviewCaches(M, &before_cancel, &cancelled.state);
+    };
+    std.debug.print("PASS: singleton MTP measured-depth={any} preserves greedy/seeded tokens, caches, snapshots, forced suffix, first-round exclusion and cancellation\n", .{adaptive});
 }
 
 fn same(expected: session.Reply, actual: session.Reply, before: Capture, after: Capture) !void {

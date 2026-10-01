@@ -5,6 +5,7 @@ const Stopwatch = @import("vendor/io_util.zig").Stopwatch;
 const Adaptive = @import("draft_depth.zig").Adaptive;
 
 pub fn measure(comptime M: type, m: *M, io: std.Io, policy: *Adaptive, settings: @import("sampling.zig").Sampling) !void {
+    m.reset();
     defer m.reset();
     var cache = M.DraftCache{};
     defer cache.deinit();

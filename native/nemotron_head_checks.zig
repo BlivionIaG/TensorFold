@@ -330,6 +330,9 @@ fn checkEarlyPredictions(m: *nemotron.Model, seeds: *const [8]nemotron.Cache) !v
             offset += count;
         }
         const verification_hidden = try m.draftWindowTail(&scope, verification.rows, all_rows[0..total]);
+        const reordered = [_]i32{ @intCast(total - 1), 0, @intCast(lengths[0]), 0, @intCast(total - 2) };
+        const reordered_hidden = try m.draftWindowTail(&scope, verification.rows, &reordered);
+        try equal(&scope, try scope.take(verification_hidden, try scope.ints(&reordered), 0), reordered_hidden);
         const verification_firsts = try @import("gpu_sampling.zig").sampleRows(&m.kernels, &scope, try m.draftHead(&scope, verification_hidden), all_positions[0..total], all_settings[0..total], m.weights.arrays.get("draft_ids"));
         try mx.eval(verification_firsts);
         var updates = try verification.prepareBatch(&keeps);

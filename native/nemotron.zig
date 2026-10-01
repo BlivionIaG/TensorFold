@@ -256,6 +256,7 @@ pub const Model = struct {
     pub const DraftCache = Cache;
     pub const HeadPrediction = @import("nemotron.zig").HeadPrediction;
     pub const max_shared_rows = 128;
+    pub const adaptive_mtp_depth = true;
     round_owner: @import("decode_round.zig").Owner = .{},
     weights: cp.Store,
     kernels: mx.Kernels,
