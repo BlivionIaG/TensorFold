@@ -11,6 +11,8 @@
 #include <stdexcept>
 #include <string>
 
+#include "attention_fa.hip"
+
 namespace tf {
 namespace rocm {
 
@@ -230,20 +232,24 @@ void causal_launch(const float* q, const void* k, const void* v, float* out, int
             throw std::invalid_argument("cache kind is fp16, bf16, or fp32");
         }
         sum_partials<<<head_grid, 256, 0, hip_stream>>>(partials, out, tiles, d);
-    } else if (cache_kind == 0) {
-        tf::rocm::causal_kernel<__half><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
-            q, static_cast<const __half*>(k), static_cast<const __half*>(v), out, qlen, span, heads, kv_heads, d,
-            scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
-    } else if (cache_kind == 1) {
-        tf::rocm::causal_kernel<hip_bfloat16><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
-            q, static_cast<const hip_bfloat16*>(k), static_cast<const hip_bfloat16*>(v), out, qlen, span, heads,
-            kv_heads, d, scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
-    } else if (cache_kind == 2) {
-        tf::rocm::causal_kernel<float><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
-            q, static_cast<const float*>(k), static_cast<const float*>(v), out, qlen, span, heads, kv_heads, d,
-            scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
-    } else {
-        throw std::invalid_argument("cache kind is fp16, bf16, or fp32");
+    } else if (!tf::rocm::launch_fa_prefill(q, k, v, out, batch, qlen, span, heads, kv_heads, d, scale, q_pos0, k_sb,
+                                            k_sh, k_ss, v_sb, v_sh, v_ss, cache_kind, hip_stream)) {
+        // Odd head sizes stay on one wave per query. Even sizes take the flash query tile.
+        if (cache_kind == 0) {
+            tf::rocm::causal_kernel<__half><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
+                q, static_cast<const __half*>(k), static_cast<const __half*>(v), out, qlen, span, heads, kv_heads, d,
+                scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
+        } else if (cache_kind == 1) {
+            tf::rocm::causal_kernel<hip_bfloat16><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
+                q, static_cast<const hip_bfloat16*>(k), static_cast<const hip_bfloat16*>(v), out, qlen, span, heads,
+                kv_heads, d, scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
+        } else if (cache_kind == 2) {
+            tf::rocm::causal_kernel<float><<<dim3(qlen, heads, batch), 32, 0, hip_stream>>>(
+                q, static_cast<const float*>(k), static_cast<const float*>(v), out, qlen, span, heads, kv_heads, d,
+                scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
+        } else {
+            throw std::invalid_argument("cache kind is fp16, bf16, or fp32");
+        }
     }
     hipError_t err = hipGetLastError();
     if (err != hipSuccess) throw std::runtime_error(std::string("causal attention: ") + hipGetErrorString(err));

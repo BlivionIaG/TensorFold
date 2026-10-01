@@ -484,8 +484,10 @@ def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
 def _attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_pos0: int) -> torch.Tensor:
     """Device attention reads the cache dtype directly. The Python path is the spec for the test."""
 
-    # One query is the decode step. Prefill stays on the chunked matmul, which already fills the GPU.
-    if q.is_cuda and k.is_cuda and q.shape[2] == 1 and q.shape[-1] <= 256 and q.shape[1] % k.shape[1] == 0:
+    # Even head sizes use the flash tile for prefill and the split key walk for one query.
+    # Odd widths stay on the chunked matmul.
+    even = q.shape[-1] <= 256 and q.shape[-1] % 2 == 0 and q.shape[1] % k.shape[1] == 0
+    if q.is_cuda and k.is_cuda and even:
         from tensorfold.rocm.attention import causal
 
         return causal(q, k, v, scale, q_pos0)

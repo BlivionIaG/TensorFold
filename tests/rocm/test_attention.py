@@ -43,9 +43,16 @@ def test_tiny_attention_matches_the_spec(dtype, qlen, span):
 
 def test_model_shaped_attention_matches_the_spec():
     _case(1, 4, 32, 8, 2, 256, torch.bfloat16, 40)
+    _case(1, 4, 32, 8, 2, 256, torch.float16, 45)
+    _case(1, 4, 32, 8, 2, 256, torch.float32, 46)
     # Decode scores one warp per key. The query sees the whole span.
     _case(1, 1, 32, 8, 2, 256, torch.bfloat16, 41, q_pos0=31)
     _case(8, 1, 32, 8, 2, 256, torch.float16, 42, q_pos0=31)
+
+
+@pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16, torch.float32])
+def test_prefill_offset_matches_the_spec(dtype):
+    _case(1, 20, 48, 4, 2, 64, dtype, 43, q_pos0=8)
 
 
 def test_a_cache_prefix_uses_its_stride():
