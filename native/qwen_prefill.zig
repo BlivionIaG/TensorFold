@@ -29,12 +29,12 @@ pub fn checkCommit(io: @import("std").Io, directory: []const u8) !void {
         var scope = mx.Scope{};
         defer scope.deinit();
         var logits = mx.empty;
-        for (0..if (keep == tokens.len) @as(usize, 3) else 2) |run| {
+        for (0..if (keep == tokens.len) @as(usize, 4) else 2) |run| {
             m.reset();
             {
-                var pass = if (run == 2) try forwardFinal(&m, &tokens, mx.empty, mx.empty, m.rope_delta) else try forward(&m, &tokens);
+                var pass = if (run >= 2) try forwardChunk(&m, &tokens, mx.empty, mx.empty, m.rope_delta, run == 2) else try forward(&m, &tokens);
                 defer pass.deinit();
-                if (run == 2) {
+                if (run >= 2) {
                     try std.testing.expectError(error.PartialPrefillCommit, m.commit(&pass, rows[0 .. keep - 1]));
                     for (pass.records, 0..) |record, layer| if (layer % 4 != 3) {
                         for (record.values[0..6]) |value| try std.testing.expect(value.ctx == null);
@@ -64,14 +64,18 @@ pub fn checkCommit(io: @import("std").Io, directory: []const u8) !void {
 }
 
 pub fn forwardImage(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32) !model.Pass {
-    return forwardImpl(m, tokens, embeddings, positions, delta, false);
+    return forwardImpl(m, tokens, embeddings, positions, delta, false, true);
 }
 
 pub fn forwardFinal(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32) !model.Pass {
-    return forwardImpl(m, tokens, embeddings, positions, delta, true);
+    return forwardChunk(m, tokens, embeddings, positions, delta, true);
 }
 
-fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32, final: bool) !model.Pass {
+pub fn forwardChunk(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32, last: bool) !model.Pass {
+    return forwardImpl(m, tokens, embeddings, positions, delta, true, last);
+}
+
+fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32, final: bool, last: bool) !model.Pass {
     if (tokens.len == 0 or tokens.len > 2048) return error.InvalidPrefillWidth;
     var p = model.Pass{ .count = tokens.len, .start = m.position, .prefill_final = final };
     if (embeddings.ctx != null) {
@@ -90,7 +94,31 @@ fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A
         defer scope.deinit();
         const work = &scope;
         const x = try work.rms(h, try m.weight(i, "input_layernorm.weight"));
-        const residual = if (i % 4 == 3) try attention(m, work, i, x, positions, &p.records[i]) else try gdn(m, work, i, x, &p);
+        const residual = if (i % 4 == 3) try attention(m, work, i, x, positions, &p.records[i], final) else try gdn(m, work, i, x, &p);
+        for (&p.records[i].values) |*value| if (value.ctx != null) {
+            value.* = try s.own(try mx.retain(value.*));
+        };
+        inline for (.{ "key_write", "value_write" }) |field| {
+            const write = &@field(p.records[i], field);
+            inline for (.{ "capacity", "added", "view" }) |part| {
+                const value = @field(write, part);
+                if (value.ctx != null) @field(write, part) = try s.own(try mx.retain(value));
+            }
+        }
+        if (i == 63 and !last) {
+            var pending: [129]A = undefined;
+            var count: usize = 0;
+            for (p.records[queued_layers..], queued_layers..) |record, layer| {
+                const values = if (layer % 4 == 3)
+                    if (record.key_write.capacity.ctx != null) [_]A{ record.key_write.capacity, record.value_write.capacity } else record.values[0..2].*
+                else
+                    record.values[6..8].*;
+                @memcpy(pending[count..][0..2], &values);
+                count += 2;
+            }
+            try mx.evalMany(pending[0..count], false);
+            return p;
+        }
         h = try work.binary(c.mlx_add, h, residual);
         const norm = try work.rms(h, try m.weight(i, "post_attention_layernorm.weight"));
         const gate = try m.prefillProject(work, i, "mlp.gate_proj", norm);
@@ -98,9 +126,6 @@ fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A
         const act = try m.prefill_ops.call(work, .swiglu, &.{ gate, up });
         h = try work.binary(c.mlx_add, h, try m.prefillProject(work, i, "mlp.down_proj", act));
         try m.trace(work, m.position, i, "hidden", h);
-        for (&p.records[i].values) |*value| if (value.ctx != null) {
-            value.* = try s.own(try mx.retain(value.*));
-        };
         for ([_]usize{ 5, 19, 33, 47, 61 }, 0..) |layer, j| if (i == layer) {
             p.taps[j] = try s.own(try mx.retain(h));
         };
@@ -109,9 +134,11 @@ fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A
             pending[0] = h;
             var count: usize = 1;
             if (final) for (p.records[queued_layers .. i + 1], queued_layers..) |record, layer| {
-                if (layer % 4 == 3) continue;
-                pending[count] = record.values[6];
-                pending[count + 1] = record.values[7];
+                const values = if (layer % 4 == 3)
+                    if (record.key_write.capacity.ctx != null) [_]A{ record.key_write.capacity, record.value_write.capacity } else record.values[0..2].*
+                else
+                    record.values[6..8].*;
+                @memcpy(pending[count..][0..2], &values);
                 count += 2;
             };
             try mx.evalMany(pending[0..count], true);
@@ -169,7 +196,7 @@ fn gdn(m: *model.Model, s: *mx.Scope, i: usize, x: A, p: *model.Pass) !A {
     return m.prefillProject(s, i, "linear_attn.out_proj", try s.reshape(gated, &.{ 1, n, 6144 }));
 }
 
-fn attention(m: *model.Model, s: *mx.Scope, i: usize, x: A, positions: A, rec: *model.Record) !A {
+fn attention(m: *model.Model, s: *mx.Scope, i: usize, x: A, positions: A, rec: *model.Record, final: bool) !A {
     const n = mx.dim(x, 1);
     const qg = try s.reshape(try m.prefillProject(s, i, "self_attn.q_proj", x), &.{ 1, n, 24, 512 });
     var q = try s.rms(try s.slice(qg, 3, 0, 256), try m.weight(i, "self_attn.q_norm.weight"));
@@ -188,7 +215,12 @@ fn attention(m: *model.Model, s: *mx.Scope, i: usize, x: A, positions: A, rec: *
     }
     rec.values[0] = k;
     rec.values[1] = v;
-    if (m.cache[i].a.ctx != null) {
+    if (final and @import("kv_buffer.zig").enabled) {
+        rec.key_write = try m.cache[i].keys.append(s, m.cache[i].a, k, 2);
+        rec.value_write = try m.cache[i].values.append(s, m.cache[i].b, v, 2);
+        k = rec.key_write.view;
+        v = rec.value_write.view;
+    } else if (m.cache[i].a.ctx != null) {
         k = try s.cat(&.{ m.cache[i].a, k }, 2);
         v = try s.cat(&.{ m.cache[i].b, v }, 2);
     }

@@ -154,6 +154,7 @@ pub const Draft = struct {
                 .{ "self_attn.q_proj", cfg.num_attention_heads * cfg.head_dim, hidden }, .{ "self_attn.k_proj", cfg.num_key_value_heads * cfg.head_dim, hidden }, .{ "self_attn.v_proj", cfg.num_key_value_heads * cfg.head_dim, hidden }, .{ "self_attn.o_proj", hidden, cfg.num_attention_heads * cfg.head_dim }, .{ "mlp.gate_proj", cfg.intermediate_size, hidden }, .{ "mlp.up_proj", cfg.intermediate_size, hidden }, .{ "mlp.down_proj", hidden, cfg.intermediate_size },
             };
             for (shapes) |shape| try d.prepare(try std.fmt.bufPrint(&path, "layers.{d}.{s}", .{ i, shape[0] }), shape[1], shape[2], json.value, bits);
+            try d.fuseKV(i);
             const post = Post{ .norm = try d.weight(i, "post_attention_layernorm.weight"), .gate = try d.linear(i, "mlp.gate_proj"), .up = try d.linear(i, "mlp.up_proj"), .down = try d.linear(i, "mlp.down_proj"), .eps = cfg.rms_norm_eps };
             const payload = try mx.allocator.create(Post);
             payload.* = post;
@@ -234,6 +235,41 @@ pub const Draft = struct {
         var buf: [256]u8 = undefined;
         return d.linears.get(try std.fmt.bufPrint(&buf, "layers.{d}.{s}", .{ i, name })) orelse error.MissingWeight;
     }
+    fn fuseKV(d: *Draft, i: usize) !void {
+        const key = try d.linear(i, "self_attn.k_proj");
+        const value = try d.linear(i, "self_attn.v_proj");
+        if (!std.meta.eql(key.spec, value.spec) or mx.dtype(key.weight) != mx.dtype(value.weight) or (key.scales.ctx == null) != (value.scales.ctx == null)) return;
+        if (key.scales.ctx != null and mx.dtype(key.scales) != mx.dtype(value.scales)) return;
+        var s = mx.Scope{};
+        defer s.deinit();
+        var fused = key;
+        var members = [_]Linear{ key, value };
+        var name: [256]u8 = undefined;
+        inline for (.{ "weight", "scales", "biases" }) |field| {
+            if (@field(key, field).ctx != null) {
+                const whole = try s.cat(&.{ @field(key, field), @field(value, field) }, 0);
+                try mx.eval(whole);
+                const stored = try std.fmt.bufPrint(&name, "layers.{d}.self_attn.kv_proj.{s}", .{ i, field });
+                try d.weights.put(stored, whole);
+                @field(fused, field) = try d.weights.get(stored);
+                const rows = mx.dim(@field(key, field), 0);
+                for (&members, [_][]const u8{ "k_proj", "v_proj" }, 0..) |*member, part, j| {
+                    const start = @as(i32, @intCast(j)) * rows;
+                    const view = try s.slice(whole, 0, start, start + rows);
+                    const original = try std.fmt.bufPrint(&name, "layers.{d}.self_attn.{s}.{s}", .{ i, part, field });
+                    try d.weights.put(original, view);
+                    @field(member, field) = try d.weights.get(original);
+                }
+            }
+        }
+        for (members, [_][]const u8{ "k_proj", "v_proj" }) |member, part| {
+            const original = try std.fmt.bufPrint(&name, "layers.{d}.self_attn.{s}", .{ i, part });
+            d.linears.getPtr(original).?.* = member;
+        }
+        const stored = try mx.allocator.dupe(u8, try std.fmt.bufPrint(&name, "layers.{d}.self_attn.kv_proj", .{i}));
+        errdefer mx.allocator.free(stored);
+        try d.linears.put(stored, fused);
+    }
     fn rope(d: *Draft, s: *mx.Scope, x: A, offset: i32) !A {
         const cfg = d.parsed.value;
         const r = cfg.rope_parameters orelse cfg.rope_scaling;
@@ -261,8 +297,14 @@ pub const Draft = struct {
     fn kv(d: *Draft, s: *mx.Scope, i: usize, x: A, offset: i32) !Cache {
         const cfg = d.parsed.value;
         const rows = mx.dim(x, 1);
-        const key = try cp.norm(s, try s.reshape(try (try d.linear(i, "self_attn.k_proj")).apply(s, x), &.{ 1, rows, cfg.num_key_value_heads, cfg.head_dim }), try d.weight(i, "self_attn.k_norm.weight"), cfg.rms_norm_eps);
-        return .{ .keys = try d.rope(s, try s.transpose(key, &.{ 0, 2, 1, 3 }), offset), .values = try s.transpose(try s.reshape(try (try d.linear(i, "self_attn.v_proj")).apply(s, x), &.{ 1, rows, cfg.num_key_value_heads, cfg.head_dim }), &.{ 0, 2, 1, 3 }) };
+        var name: [256]u8 = undefined;
+        const projected = if (d.linears.get(try std.fmt.bufPrint(&name, "layers.{d}.self_attn.kv_proj", .{i}))) |linear_| blk: {
+            const together = try linear_.apply(s, x);
+            const width = cfg.num_key_value_heads * cfg.head_dim;
+            break :blk [2]A{ try s.slice(together, 2, 0, width), try s.slice(together, 2, width, 2 * width) };
+        } else [2]A{ try (try d.linear(i, "self_attn.k_proj")).apply(s, x), try (try d.linear(i, "self_attn.v_proj")).apply(s, x) };
+        const key = try cp.norm(s, try s.reshape(projected[0], &.{ 1, rows, cfg.num_key_value_heads, cfg.head_dim }), try d.weight(i, "self_attn.k_norm.weight"), cfg.rms_norm_eps);
+        return .{ .keys = try d.rope(s, try s.transpose(key, &.{ 0, 2, 1, 3 }), offset), .values = try s.transpose(try s.reshape(projected[1], &.{ 1, rows, cfg.num_key_value_heads, cfg.head_dim }), &.{ 0, 2, 1, 3 }) };
     }
     pub fn absorb(d: *Draft, taps: A) !void {
         const count = mx.dim(taps, 0);
@@ -309,6 +351,7 @@ pub const Draft = struct {
         defer mx.allocator.free(next);
         @memset(next, .{});
         errdefer for (next) |*item| item.deinit();
+        var pending: [64]A = undefined;
         for (d.cache, next, 0..) |old, *item, i| {
             const keep = if (cfg.sliding(i)) cfg.sliding_window.? - 1 else count + d.position;
             const skip = @max(0, count - keep);
@@ -322,8 +365,10 @@ pub const Draft = struct {
                 }
                 @field(item, field) = try mx.retain(try s.contiguous(value));
             }
-            try mx.evalMany(&.{ item.keys, item.values }, false);
+            pending[2 * i] = item.keys;
+            pending[2 * i + 1] = item.values;
         }
+        try mx.evalMany(pending[0 .. next.len * 2], true);
         for (d.cache, next) |*old, item| {
             old.deinit();
             old.* = item;

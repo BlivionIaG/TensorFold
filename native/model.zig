@@ -332,22 +332,44 @@ pub const Model = struct {
         const kernels = &m.kernels;
         var h = try m.weights.embedArray(s, tokens);
         var pending: ?A = null;
+        var carried: [2]A = @splat(mx.empty);
+        defer for (carried) |value| mx.free(value);
         var positions: [128]i32 = undefined;
         for (0..parents.len) |i| positions[i] = m.position + m.rope_delta + tree.depths[i];
         const pos = try s.ints(positions[0..parents.len]);
         for (0..64) |i| {
-            const inorm = try lanes.norm(kernels, s, h, pending, try m.weight(i, "input_layernorm.weight"));
+            var layer_scope = mx.Scope{};
+            defer layer_scope.deinit();
+            defer projection_cache = .{};
+            const work = &layer_scope;
+            const inorm = try lanes.norm(kernels, work, h, pending, try m.weight(i, "input_layernorm.weight"));
             h = inorm.h;
-            const r = if (i % 4 == 3) try m.attn(s, i, inorm.x, &tree, pos, &p.records[i]) else try m.gdn(s, i, inorm.x, &tree, &p.records[i]);
-            const post = try lanes.norm(kernels, s, h, r, try m.weight(i, "post_attention_layernorm.weight"));
-            h = post.h;
-            const act = try m.mlpAct(s, i, post.x);
-            pending = try m.project(s, i, "mlp.down_proj", act);
+            const r = if (i % 4 == 3) try m.attn(work, i, inorm.x, &tree, pos, &p.records[i]) else try m.gdn(work, i, inorm.x, &tree, &p.records[i]);
+            const post = try m.postAttention(work, i, h, r);
+            const next: [2]A = retain: {
+                const first = try mx.retain(post[0]);
+                errdefer mx.free(first);
+                break :retain .{ first, try mx.retain(post[1]) };
+            };
+            for (carried) |value| mx.free(value);
+            carried = next;
+            h = carried[0];
+            pending = carried[1];
+            for (&p.records[i].values) |*value| if (value.ctx != null) {
+                value.* = try s.own(try mx.retain(value.*));
+            };
+            inline for (.{ "key_write", "value_write" }) |field| {
+                const write = &@field(p.records[i], field);
+                inline for (.{ "capacity", "added", "view" }) |part| {
+                    const value = @field(write, part);
+                    if (value.ctx != null) @field(write, part) = try s.own(try mx.retain(value));
+                }
+            }
             // DFlash taps are the post-residual layer outputs, before the next norm.
             for ([_]usize{ 5, 19, 33, 47, 61 }, 0..) |layer, j| if (i == layer) {
                 p.taps[j] = try s.binary(mx.c.mlx_add, h, pending.?);
             };
-            if (i == 0 or (i + 1) % 4 == 0) try mx.evalMany(&.{ h, pending.? }, true);
+            if (i < 63 and (i == 0 or (i + 1) % 4 == 0)) try mx.evalMany(&.{ h, pending.? }, true);
         }
         const normed = try lanes.norm(kernels, s, h, pending, try m.weights.get("model.norm.weight"));
         p.hidden = normed.x.x;
@@ -358,11 +380,11 @@ pub const Model = struct {
     }
     fn attn(m: *Model, s: *mx.Scope, i: usize, x: lanes.Act, t: *const lanes.Tree, pos: A, rec: *Record) !A {
         const w: i32 = @intCast(t.parents.len);
-        const qg = try s.reshape(try m.project(s, i, "self_attn.q_proj", x), &.{ 1, w, 24, 512 });
-        var q = try s.rms(try s.slice(qg, 3, 0, 256), try m.weight(i, "self_attn.q_norm.weight"));
-        const gate = try s.reshape(try s.slice(qg, 3, 256, 512), &.{ 1, w, 6144 });
-        var key = try s.rms(try s.reshape(try m.project(s, i, "self_attn.k_proj", x), &.{ 1, w, 4, 256 }), try m.weight(i, "self_attn.k_norm.weight"));
-        var value = try s.transpose(try s.reshape(try m.project(s, i, "self_attn.v_proj", x), &.{ 1, w, 4, 256 }), &.{ 0, 2, 1, 3 });
+        const projected = try @import("qwen_shared.zig").attentionProjections(m, s, i, x);
+        var q = projected.queries;
+        const gate = projected.gate;
+        var key = projected.keys;
+        var value = try s.transpose(projected.values, &.{ 0, 2, 1, 3 });
         q = try s.transpose(try s.rope(try s.transpose(q, &.{ 1, 2, 0, 3 }), pos, 64), &.{ 2, 1, 0, 3 });
         key = try s.transpose(try s.rope(try s.transpose(key, &.{ 1, 2, 0, 3 }), pos, 64), &.{ 2, 1, 0, 3 });
         rec.values[0] = key;
@@ -390,7 +412,15 @@ pub const Model = struct {
         const st = if (m.cache[i].b.ctx != null) m.cache[i].b else try s.zeros(&.{ 1, 48, 128, 128 }, mx.f32t);
         const cw = try s.reshape(try m.weight(i, "linear_attn.conv1d.weight"), &.{ 10240, 4 });
         const vals = try m.kernels.run(s, src.lane_glue_gdn_pre, &.{ qkv, cs, cw, try s.ints(t.windows[0 .. t.parents.len * 4]), a, b, try m.weight(i, "linear_attn.A_log"), try m.weight(i, "linear_attn.dt_bias") }, &.{ ti("NK", 16), ti("NV", 48), ti("DK", 128), ti("DV", 128), ti("TAPS", 4) }, .{ 32, 80, w }, .{ 32, 1, 1 }, &.{ .{ .shape = &.{ 1, w, 16, 128 } }, .{ .shape = &.{ 1, w, 16, 128 } }, .{ .shape = &.{ 1, w, 48, 128 } }, .{ .shape = &.{ 1, w, 48 }, .dtype = mx.f32t }, .{ .shape = &.{ 1, w, 48 } } });
-        const y = (try m.kernels.run(s, src.lane_tree_tree, &.{ vals[0], vals[1], vals[2], vals[3], vals[4], st, try s.ints(t.parents), try s.ints(&.{w}) }, &.{ mx.td("InT", mx.bf16), ti("Dk", 128), ti("Dv", 128), ti("Hk", 16), ti("Hv", 48), ti("MAXW", if (t.chain) 1 else if (w <= 16) 16 else 32), mx.tb("CHAIN", t.chain) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{.{ .shape = &.{ 1, w, 48, 128 } }}))[0];
+        const y = if (w == 1) single: {
+            const streams = @import("qwen_streams.zig");
+            var layout = streams.Layout{ .streams = 1, .rows = 1 };
+            layout.arrays.parents = try s.ints(t.parents);
+            layout.arrays.tree_meta = try s.ints(&.{ 0, 1 });
+            const result = try streams.step(&m.kernels, s, &layout, vals, &.{st});
+            rec.values[7] = result.states[0];
+            break :single result.y;
+        } else (try m.kernels.run(s, src.lane_tree_tree, &.{ vals[0], vals[1], vals[2], vals[3], vals[4], st, try s.ints(t.parents), try s.ints(&.{w}) }, &.{ mx.td("InT", mx.bf16), ti("Dk", 128), ti("Dv", 128), ti("Hk", 16), ti("Hv", 48), ti("MAXW", if (t.chain) 1 else if (w <= 16) 16 else 32), mx.tb("CHAIN", t.chain) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{.{ .shape = &.{ 1, w, 48, 128 } }}))[0];
         @memcpy(rec.values[0..5], vals[0..5]);
         // A pass must own its replay base even if the caller restores/replaces the
         // live cache before committing a different accepted path from this pass.

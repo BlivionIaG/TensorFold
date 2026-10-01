@@ -99,7 +99,6 @@ pub const Coordinator = struct {
         const qwen_costs = if (M == model.Model) mx.tensor_units and m.weights.bonsai_form == null else false;
         const nemotron_costs = M == @import("nemotron.zig").Model;
         const gemma_costs = M == @import("gemma.zig").Model;
-        const target_costs = qwen_costs or nemotron_costs or gemma_costs;
         if (max_streams == 0 or max_streams > 8 or c.max_rows == 0 or c.max_rows > 128) return error.InvalidSharedLimits;
         c.max_rows = @min(c.max_rows, if (@hasDecl(M, "max_shared_rows")) M.max_shared_rows else 128);
         var prompt: [64]i32 = undefined;
@@ -135,7 +134,7 @@ pub const Coordinator = struct {
             // Extra streams probe workspace without charging their state cost to row growth.
             const single_cost = qwen_costs or ((nemotron_costs or gemma_costs) and width <= 16);
             const geometries: usize = if (single_cost and max_streams > 1 and width > 1) 2 else 1;
-            for (0..geometries) |geometry| for (0..if (target_costs) @as(usize, 3) else 2) |_| {
+            for (0..geometries) |geometry| {
                 var states: [8]S.State = undefined;
                 var initialized: usize = 0;
                 defer for (states[0..initialized]) |*state| state.deinit();
@@ -155,21 +154,24 @@ pub const Coordinator = struct {
                     }
                     streams[i] = .{ .state = &states[i], .tokens = tokens[i][0..count], .parents = parents[i][0..count] };
                 }
-                if (!target_costs or geometry != 0) try mx.check(mx.c.mlx_clear_cache());
-                const resident = try @import("memory_runtime.zig").activeBytes();
-                try mx.check(mx.c.mlx_reset_peak_memory());
-                const started = @import("server_live.zig").now(s.io);
-                var pass = try m.forwardStreams(streams[0..n]);
-                defer pass.deinit();
-                try mx.eval(pass.logits);
-                if (geometry == 0) best = @min(best, (@import("server_live.zig").now(s.io) - started) * 1000);
-                var paths: [8][]const i32 = @splat(&.{0});
-                try pass.commit(paths[0..n]);
-                try mx.check(mx.c.mlx_synchronize(mx.stream));
-                var peak: usize = 0;
-                try mx.check(mx.c.mlx_get_peak_memory(&peak));
-                c.peak_bytes = @max(c.peak_bytes, peak -| resident);
-            };
+                for (0..4) |repetition| {
+                    if (geometry != 0 or repetition == 0) try mx.check(mx.c.mlx_clear_cache());
+                    try mx.check(mx.c.mlx_synchronize(mx.stream));
+                    const resident = try @import("memory_runtime.zig").activeBytes();
+                    try mx.check(mx.c.mlx_reset_peak_memory());
+                    const started = @import("server_live.zig").now(s.io);
+                    var pass = try m.forwardStreams(streams[0..n]);
+                    defer pass.deinit();
+                    try mx.eval(pass.logits);
+                    if (geometry == 0 and repetition != 0) best = @min(best, (@import("server_live.zig").now(s.io) - started) * 1000);
+                    var paths: [8][]const i32 = @splat(&.{0});
+                    try pass.commit(paths[0..n]);
+                    try mx.check(mx.c.mlx_synchronize(mx.stream));
+                    var peak: usize = 0;
+                    try mx.check(mx.c.mlx_get_peak_memory(&peak));
+                    c.peak_bytes = @max(c.peak_bytes, peak -| resident);
+                }
+            }
             measured[measured_count] = .{ .rows = width, .ms = @max(best, 0.001) };
             measured_count += 1;
         }
@@ -242,7 +244,7 @@ pub const Coordinator = struct {
             var probabilities: [8][]const f64 = undefined;
             var mandatory: [8]usize = @splat(1);
             for (requests, 0..) |g, i| {
-                const budget = if (g.options.draft and @import("neural_draft.zig").enabled(m, g.sink.drafter)) @min(15, g.sink.draft_budget) else 0;
+                const budget = if (g.options.draft and @import("neural_draft.zig").enabled(m, g.sink.drafter)) @min(15, g.sink.draft_budget, @max(1, g.draftRoom() -| 1)) else 0;
                 probabilities[i] = prior[i][0..budget];
                 try g.draft_depth.chances(prior[i][0..budget]);
             }
@@ -264,11 +266,10 @@ pub const Coordinator = struct {
             if (window) |w| {
                 const forcing = g.budget.forced.len > 0 or (if (g.sink.gate) |gate| gate.forced.len > 0 else false);
                 if (singleton_mtp and w.from_neural and !forcing) {
-                    var room = g.options.max_tokens - g.reply.tokens.items.len;
-                    if (g.budget.open and g.budget.limit > 0 and g.budget.close.len > 0) room = @min(room, g.budget.limit -| g.reply.tokens.items.len);
-                    g.round_draft_budget = g.draft_depth.choose(&c.mtp_costs.?, g.sink.draft_budget, room);
+                    g.round_draft_budget = g.draft_depth.next_depth orelse g.draft_depth.choose(&c.mtp_costs.?, g.sink.draft_budget, g.draftRoom());
                     adaptive_window = true;
                 }
+                g.draft_depth.next_depth = null;
                 g.in_round = true;
                 windows[count] = w;
                 indexes[count] = i;
@@ -298,7 +299,7 @@ pub const Coordinator = struct {
             for (windows[0..count], 0..) |window, j| if (window.from_neural) {
                 const g = requests[indexes[j]];
                 draft_indexes[drafting] = j;
-                const budget = @min(g.round_draft_budget, g.sink.draft_budget, g.options.max_tokens - g.reply.tokens.items.len);
+                const budget = @min(g.round_draft_budget, g.sink.draft_budget, @max(1, g.draftRoom() -| 1));
                 draft_streams[drafting] = if (M == model.Model) .{ .state = &g.state, .anchor = window.tokens[0], .budget = budget, .settings = g.settings } else .{ .state = &g.state, .first = window.tokens[0], .budget = budget, .settings = g.settings };
                 if (M == model.Model) {
                     if (drafter != null and drafter != g.sink.drafter) return error.IncompatibleSharedDraft;
@@ -567,7 +568,10 @@ pub const Coordinator = struct {
         c.timing.finish_seconds = ended - release_ended;
         const elapsed_ms = (ended - started) * 1000;
         if (adaptive_window and results[indexes[0]].failure == null) {
-            try c.mtp_costs.?.observeElapsed(windows[0].draft.len, elapsed_ms, requests[indexes[0]].draft_depth.rounds == 0);
+            const g = requests[indexes[0]];
+            // Python queues the next head depth before recording this round's cost.
+            if (g.phase == .decode and g.draftRoom() > 1) g.draft_depth.next_depth = g.draft_depth.choose(&c.mtp_costs.?, g.sink.draft_budget, g.draftRoom() - 1);
+            try c.mtp_costs.?.observeElapsed(windows[0].draft.len, elapsed_ms, g.draft_depth.rounds == 0);
         }
         for (indexes[0..count]) |i| if (results[i].failure == null) {
             requests[i].draft_depth.rounds += 1;

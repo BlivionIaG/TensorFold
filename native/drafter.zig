@@ -434,7 +434,7 @@ pub const Drafter = struct {
                 n_arrays += 2;
             }
         };
-        try mx.evalMany(arrays[0..n_arrays], false);
+        try mx.evalMany(arrays[0..n_arrays], true);
         var at: i32 = 0;
         for (streams, next[0..streams.len]) |stream, *caches| {
             if (stream.rows.len == 0) continue;

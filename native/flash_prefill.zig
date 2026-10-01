@@ -87,6 +87,10 @@ fn embedding(m: *flash.Model, s: *mx.Scope, h: A, tokens: []const i32, previous:
 }
 
 pub fn forward(m: *flash.Model, tokens: []const i32) !flash.Pass {
+    return forwardChunk(m, tokens, true);
+}
+
+pub fn forwardChunk(m: *flash.Model, tokens: []const i32, last: bool) !flash.Pass {
     if (tokens.len < 17 or tokens.len > 2048 or tokens.len > 262144 - m.position) return error.ContextLimitExceeded;
     for (tokens) |token| if (token < 0 or token >= flash.Model.vocab) return error.InvalidToken;
     var pass = flash.Pass{ .prefilled = true, .count = tokens.len, .start = m.position };
@@ -113,9 +117,11 @@ pub fn forward(m: *flash.Model, tokens: []const i32) !flash.Pass {
         }
         const ah = try hyper(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.attn_hyper_connection", .{i}), h, pending, true);
         const branch = if (i % 4 != 3) try recurrent(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.linear_attn", .{i}), ah.mixed, m.cache[i], &pass.records[i]) else try attention(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.self_attn", .{i}), ah.mixed, &m.cache[i], &pass.records[i]);
-        const mh = try hyper(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.mlp_hyper_connection", .{i}), ah.residual, .{ .branch = branch, .inject = ah.inject.? }, true);
-        h = mh.residual;
-        pending = .{ .branch = try experts(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.mlp", .{i}), mh.mixed), .inject = mh.inject.? };
+        if (i < 47 or last) {
+            const mh = try hyper(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.mlp_hyper_connection", .{i}), ah.residual, .{ .branch = branch, .inject = ah.inject.? }, true);
+            h = mh.residual;
+            pending = .{ .branch = try experts(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.mlp", .{i}), mh.mixed), .inject = mh.inject.? };
+        }
         const record = &pass.records[i];
         inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
             const value = @field(record, field);
@@ -129,6 +135,29 @@ pub fn forward(m: *flash.Model, tokens: []const i32) !flash.Pass {
                 const value = @field(write, part);
                 if (value.ctx != null) @field(write, part) = try pass.scope.own(try mx.retain(value));
             }
+        }
+        if (i == 47 and !last) {
+            var arrays: [48 * 15]A = undefined;
+            var count: usize = 0;
+            for (pass.records) |state| {
+                inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
+                    const value = @field(state, field);
+                    if (value.ctx != null) {
+                        arrays[count] = value;
+                        count += 1;
+                    }
+                }
+                inline for (.{ "key_write", "value_write", "index_write" }) |field| {
+                    const value = @field(state, field).capacity;
+                    if (value.ctx != null) {
+                        arrays[count] = value;
+                        count += 1;
+                    }
+                }
+            }
+            try mx.evalMany(arrays[0..count], false);
+            try flash.Model.observeBuffers(&pass);
+            return pass;
         }
         carry.deinit();
         carry = .{};
@@ -183,11 +212,40 @@ pub fn check(io: std.Io, dir: []const u8, output: []const u8, custom_tiles: bool
     if (custom_tiles) m.kernels.flash_prefill.decision = true;
     try std.Io.Dir.cwd().createDirPath(io, output);
     var buf: [256]u8 = undefined;
-    for ([_]usize{ 17, 63, 64, 2048, 2048, 17, 1 }, 0..) |count, step| {
+    for ([_]usize{ 17, 63, 64, 2048, 2048, 17, 1, 2, 8, 16 }, 0..) |count, step| {
         var tokens: [2048]i32 = undefined;
         for (tokens[0..count], 0..) |*id, j| id.* = 1000 + @mod(m.position + @as(i32, @intCast(j)), 37);
-        var pass = try m.prefill(tokens[0..count]);
+        var pass = try m.prefillFinal(tokens[0..count]);
         defer pass.deinit();
+        if (count > 16) {
+            var cache_only = try m.prefillChunk(tokens[0..count], false);
+            defer cache_only.deinit();
+            try std.testing.expect(cache_only.hidden.ctx == null and cache_only.logits.ctx == null);
+            var expected = try m.committedCache(&pass, &m.cache, count);
+            defer for (&expected) |*cache| cache.deinit();
+            var actual = try m.committedCache(&cache_only, &m.cache, count);
+            defer for (&actual) |*cache| cache.deinit();
+            for (expected, actual) |before, after| {
+                inline for (.{ "a", "b", "raw", "pooled", "ple" }) |field| {
+                    if (@field(before, field).ctx != null) try @import("variant_checks.zig").equalBits(&pass.scope, @field(before, field), @field(after, field));
+                }
+                try std.testing.expectEqualSlices(i32, &before.history, &after.history);
+            }
+        }
+        if (count <= 16) {
+            var expanded = try m.forward(tokens[0..count]);
+            defer expanded.deinit();
+            try @import("variant_checks.zig").equalBits(&pass.scope, expanded.hidden, pass.hidden);
+            try @import("variant_checks.zig").equalBits(&pass.scope, try pass.scope.slice(expanded.logits, 0, @intCast(count - 1), @intCast(count)), pass.logits);
+            var expected = try m.committedCache(&expanded, &m.cache, count);
+            defer for (&expected) |*cache| cache.deinit();
+            var actual = try m.committedCache(&pass, &m.cache, count);
+            defer for (&actual) |*cache| cache.deinit();
+            for (expected, actual) |before, after| {
+                try @import("variant_checks.zig").equalBits(&pass.scope, before.a, after.a);
+                try @import("variant_checks.zig").equalBits(&pass.scope, before.b, after.b);
+            }
+        }
         try save(&pass.scope, output, try std.fmt.bufPrint(&buf, "hidden-{d}", .{step}), pass.hidden);
         try save(&pass.scope, output, try std.fmt.bufPrint(&buf, "logits-{d}", .{step}), try pass.scope.slice(pass.logits, 0, mx.dim(pass.logits, 0) - 1, mx.dim(pass.logits, 0)));
         if (pass.prefilled) try std.testing.expectError(error.InvalidCommit, m.commit(&pass, count - 1));

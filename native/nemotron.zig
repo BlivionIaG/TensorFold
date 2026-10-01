@@ -103,6 +103,10 @@ pub const HeadRows = struct {
     attended: A = mx.empty,
 };
 fn capturedLinear(m: *Model, weights: *cp.Store, kernels: *mx.Kernels, scope: *mx.Scope, name: []const u8) !void {
+    if (!m.weights.dense.contains(name)) {
+        const width = mx.dim(try m.weights.field(name, "weight"), -1) * 8;
+        _ = try m.weights.linear(kernels, scope, name, try scope.zeros(&.{ 1, width }, mx.bf16), true);
+    }
     if (m.weights.dense.get(name)) |original| {
         var copy = original;
         inline for (.{ "weight", "sb", "scales", "biases", "signs" }) |field| @field(copy, field) = mx.empty;
@@ -113,10 +117,8 @@ fn capturedLinear(m: *Model, weights: *cp.Store, kernels: *mx.Kernels, scope: *m
         const key = try mx.allocator.dupe(u8, name);
         errdefer mx.allocator.free(key);
         try weights.dense.put(key, copy);
-    } else {
-        const width = mx.dim(try weights.field(name, "weight"), -1) * 8;
-        _ = try weights.linear(kernels, scope, name, try scope.zeros(&.{ 1, width }, mx.bf16), true);
     }
+    if (weights.compact_dense) try weights.compactDense(scope, name);
 }
 const Block = struct {
     weights: cp.Store,
@@ -132,6 +134,7 @@ const Block = struct {
         const base = try std.fmt.allocPrint(mx.allocator, "backbone.layers.{d}.mixer", .{layer});
         errdefer mx.allocator.free(base);
         var weights = cp.Store.init(m.weights.group);
+        weights.compact_dense = true;
         errdefer weights.deinit();
         inline for (.{ "decode.eps", "decode.limits", "decode.scaling" }) |name| try weights.put(name, try m.weights.get(name));
         var buffer: [256]u8 = undefined;
@@ -204,6 +207,7 @@ const HeadPlan = struct {
         const p = try mx.allocator.create(HeadPlan);
         errdefer mx.allocator.destroy(p);
         var weights = cp.Store.init(m.weights.group);
+        weights.compact_dense = true;
         errdefer weights.deinit();
         inline for (.{ "decode.eps", "decode.scaling" }) |name| try weights.put(name, try m.weights.get(name));
         var entries = m.weights.arrays.iterator();
@@ -276,6 +280,7 @@ pub const Model = struct {
     }
     pub fn init(io: std.Io, dir: []const u8, drafts: bool) !Model {
         var m = Model{ .weights = cp.Store.init(64), .kernels = mx.Kernels.init() };
+        m.weights.compact_dense = true;
         errdefer m.deinit();
         var buf: [4096]u8 = undefined;
         const bytes = try @import("weights.zig").readFile(io, try std.fmt.bufPrint(&buf, "{s}/config.json", .{dir}));
@@ -476,8 +481,15 @@ pub const Model = struct {
         return @import("nemotron_shared.zig").forward(m, streams);
     }
     pub fn prefill(m: *Model, tokens: []const i32) !Pass {
-        if (tokens.len <= 16) return m.forward(tokens);
-        return @import("nemotron_prefill.zig").forward(m, tokens);
+        if (tokens.len > 16) return @import("nemotron_prefill.zig").forward(m, tokens);
+        if (tokens.len == 0) return error.InvalidLaneWidth;
+        var scope = mx.Scope{};
+        defer scope.deinit();
+        var pass = try m.forwardInput(try scope.ints(tokens), &m.cache, m.position, true);
+        errdefer pass.deinit();
+        try mx.eval(pass.logits);
+        try observeBuffers(&pass);
+        return pass;
     }
     pub fn observeBuffers(p: *Pass) !void {
         if (!kv.track_reuse) return;
@@ -498,16 +510,16 @@ pub const Model = struct {
         if (mx.c.mlx_array_ndim(tokens) != 1 or mx.dim(tokens, 0) < 1 or mx.dim(tokens, 0) > 16) return error.InvalidLaneWidth;
         const dtype = mx.c.mlx_array_dtype(tokens);
         if (dtype != mx.c.MLX_INT32 and dtype != mx.c.MLX_UINT32) return error.InvalidToken;
-        return m.forwardInput(tokens, &m.cache, m.position);
+        return m.forwardInput(tokens, &m.cache, m.position, false);
     }
     pub fn forwardAfter(m: *Model, previous: *Pass, sampled: A) !Pass {
         if (previous.count != 1 or !previous.staged_ready or previous.start != m.position) return error.InvalidPreview;
         if (sampled.ctx == null or mx.dtype(sampled) != mx.c.MLX_UINT32 or !std.mem.eql(i32, mx.shape(sampled), &.{1})) return error.InvalidSamplingShape;
         const position = std.math.add(i32, previous.start, 1) catch return error.InvalidPreview;
         if (position < 1 or position > std.math.maxInt(i32) - 2048) return error.InvalidPreview;
-        return m.forwardInput(sampled, &previous.staged, position);
+        return m.forwardInput(sampled, &previous.staged, position, false);
     }
-    fn forwardInput(m: *Model, tokens: A, cache: []Cache, position: i32) !Pass {
+    fn forwardInput(m: *Model, tokens: A, cache: []Cache, position: i32, last_logits: bool) !Pass {
         var p = Pass{ .start = position, .count = @intCast(mx.dim(tokens, 0)) };
         errdefer p.deinit();
         const s = &p.scope;
@@ -541,7 +553,10 @@ pub const Model = struct {
             if ((i + 1) % 8 == 0) try mx.evalMany(&.{ h, x }, true);
         }
         p.hidden = x;
-        p.logits = try m.linSums(s, "lm_head", x, sums);
+        p.logits = if (last_logits and p.count > 1)
+            try m.lin(s, "lm_head", try s.slice(x, 0, @intCast(p.count - 1), @intCast(p.count)))
+        else
+            try m.linSums(s, "lm_head", x, sums);
         if (p.count == 1) {
             p.staged = try m.prepareCommit(&p, cache, position, 1);
             p.staged_ready = true;

@@ -43,7 +43,11 @@ pub fn install(w: *Store, text: []const u8, vocab: usize, multiple: usize) !void
     defer s.deinit();
     const mapping = try s.data(ids.ptr, &.{@intCast(ids.len)}, mx.c.MLX_UINT32);
     inline for (.{ "weight", "scales", "biases" }) |suffix| {
-        const value = try s.take(try w.field("lm_head", suffix), mapping, 0);
+        const source = if (comptime std.mem.eql(u8, suffix, "weight"))
+            if (w.dense.get("lm_head")) |projection| try projection.untiledWeight(&s) else try w.field("lm_head", suffix)
+        else
+            try w.field("lm_head", suffix);
+        const value = try s.take(source, mapping, 0);
         try mx.eval(value);
         try w.put("draft_lm_head." ++ suffix, value);
     }

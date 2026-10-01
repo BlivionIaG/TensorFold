@@ -282,8 +282,7 @@ fn recurrence(p: *Pass, s: *mx.Scope, layer: usize, base: []const u8, x: A) !A {
         const rows = starts[n];
         inputs[0] = try s.slice(projected, 0, first, first + rows);
         inputs[1 + 2 * n ..][0..6].* = .{ cw, alog, dt, nw, eps, try s.ints(starts[0 .. n + 1]) };
-        const held = @divTrunc(rows + 7, 8) * 8;
-        const out = try m.kernels.run(s, gdn_specs[n - 1], inputs[0 .. 7 + 2 * n], &.{ ti("NK", 16), ti("NV", 48), ti("DK", 128), ti("DV", 128), ti("TAPS", 4), ti("HAS_STATE", 1) }, .{ 48 * 1024, @intCast(n), 1 }, .{ 1024, 1, 1 }, &.{ .{ .shape = &.{ rows, 6144 } }, .{ .shape = &.{ held, 3, 10240 } }, .{ .shape = &.{ held, 48, 128, 128 }, .dtype = mx.f32t } });
+        const out = try m.kernels.run(s, gdn_specs[n - 1], inputs[0 .. 7 + 2 * n], &.{ ti("NK", 16), ti("NV", 48), ti("DK", 128), ti("DV", 128), ti("TAPS", 4), ti("HAS_STATE", 1) }, .{ 48 * 1024, @intCast(n), 1 }, .{ 1024, 1, 1 }, &.{ .{ .shape = &.{ rows, 6144 } }, .{ .shape = &.{ rows, 3, 10240 } }, .{ .shape = &.{ rows, 48, 128, 128 }, .dtype = mx.f32t } });
         outputs[groups] = out[0];
         groups += 1;
         for (entries, 0..) |*entry, j| {

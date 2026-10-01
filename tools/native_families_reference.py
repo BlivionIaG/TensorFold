@@ -434,7 +434,7 @@ def flash_prefill_fixture(directory, output, simd=False, custom_tiles=False):
     def save(name, value):
         np.save(output / f"{name}.npy", np.asarray(value.astype(mx.float32)))
     position = 0
-    for step, count in enumerate((17, 63, 64, 2048, 2048, 17, 1)):
+    for step, count in enumerate((17, 63, 64, 2048, 2048, 17, 1, 2, 8, 16)):
         tokens = np.array([[1000 + (position + j) % 37 for j in range(count)]], dtype=np.int64)
         hidden = model.hidden(tokens, cache)
         streams = model.fused.last_streams if count <= model.fused_rows else model.__dict__["last_streams"]

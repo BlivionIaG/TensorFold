@@ -107,7 +107,9 @@ fn moeGraph(kernels: *mx.Kernels, s: *mx.Scope, inputs: MoEInputs, h: A, x: A, i
     var first: i32 = 0;
     while (first < r) : (first += 16) {
         const end = @min(first + 16, r);
-        router[router_count] = (try kernels.run(s, src.q4_router_float, &.{ try s.slice(x, 0, first, end), inputs.router, try s.ints(&.{end - first}) }, &.{ ti("D", 2560), ti("NE", 513), ti("T", 256), ti("MAXR", 16) }, .{ @divTrunc(513 + 7, 8) * 256, 1, 1 }, .{ 256, 1, 1 }, &.{.{ .shape = &.{ end - first, 513 }, .dtype = mx.f32t }}))[0];
+        const templates = [_]mx.Template{ ti("D", 2560), ti("NE", 513), ti("MAXR", 16), ti("T", 256) };
+        const groups: i32 = if (mx.tensor_units) @divTrunc(513 + 7, 8) else @divTrunc(513 + 1, 2);
+        router[router_count] = (try kernels.run(s, if (mx.tensor_units) src.q4_router_float else src.q4_router_split_float, &.{ try s.slice(x, 0, first, end), inputs.router, try s.ints(&.{end - first}) }, templates[0..if (mx.tensor_units) 4 else 3], .{ groups * 256, 1, 1 }, .{ 256, 1, 1 }, &.{.{ .shape = &.{ end - first, 513 }, .dtype = mx.f32t }}))[0];
         router_count += 1;
     }
     const logits = if (router_count == 1) router[0] else try s.cat(router[0..router_count], 0);
@@ -354,7 +356,11 @@ pub const Model = struct {
     }
     fn projectNamed(m: *Model, s: *mx.Scope, name: []const u8, x: A) !A {
         if (mx.tensor_units and m.weights.flash_drafts != null) if (m.weights.flash_dense.get(name)) |projection| return projection.apply(&m.kernels, s, x);
-        return m.weights.linear(&m.kernels, s, name, x, true);
+        const result = try m.weights.linear(&m.kernels, s, name, x, true);
+        if (std.mem.eql(u8, name, "draft_lm_head") and m.weights.flash_dense.contains(name)) {
+            inline for (.{ "weight", "scales", "biases" }) |suffix| m.weights.remove("draft_lm_head." ++ suffix);
+        }
+        return result;
     }
     pub fn embedResidual(m: *Model, s: *mx.Scope, tokens: A) !A {
         if (tokens.ctx == null or mx.shape(tokens).len != 1 or (mx.dtype(tokens) != mx.i32t and mx.dtype(tokens) != mx.c.MLX_UINT32)) return error.InvalidToken;
@@ -428,6 +434,16 @@ pub const Model = struct {
             try mx.evalMany(&combined.arrays, false);
             try m.weights.putAffine(try std.fmt.bufPrint(&buf, "{s}.native_down", .{base}), combined);
             try m.weights.put(try std.fmt.bufPrint(&buf, "{s}.native_down", .{base}), combined.arrays[0]);
+            var offset: i32 = 0;
+            for (parts[0..if (inject) @as(usize, 2) else 1], 0..) |part, i| {
+                const end = offset + (try part.geometry(2)).n;
+                if (std.meta.eql(part.format, combined.format)) {
+                    var shared = part;
+                    for (&shared.arrays, combined.arrays) |*array, joined| array.* = try s.slice(joined, 0, offset, end);
+                    try m.weights.putAffine(try std.fmt.bufPrint(&buf, "{s}.{s}", .{ base, if (i == 0) "input_mix_weight_down" else "block_inject_weight" }), shared);
+                }
+                offset = end;
+            }
         }
         const down = try m.weights.affine(try std.fmt.bufPrint(&buf, "{s}.native_down", .{base}));
         const up = try m.weights.affine(try std.fmt.bufPrint(&buf, "{s}.input_mix_weight_up", .{base}));
@@ -529,14 +545,15 @@ pub const Model = struct {
         errdefer mx.allocator.free(name);
         try m.projection_plans.put(mx.allocator, name, plan);
     }
-    fn gdn(m: *Model, s: *mx.Scope, base: []const u8, x: A, cache: Cache, record: *Cache) !A {
+    fn gdn(m: *Model, s: *mx.Scope, base: []const u8, x: A, cache: Cache, record: *Cache, final_state: bool) !A {
         const r = mx.dim(x, 0);
         const p = try m.projectStack(s, base, &.{ "in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a" }, x);
         const cs = if (cache.a.ctx != null) cache.a else try s.zeros(&.{ 3, 10240 }, mx.bf16);
         const state = if (cache.b.ctx != null) cache.b else try s.zeros(&.{1}, mx.f32t);
-        const out = try m.kernels.run(s, src.q4_gdn_step, &.{ p, cs, state, try s.reshape(try m.f(base, "conv1d.weight"), &.{ 10240, 4 }), try m.f(base, "A_log"), try m.f(base, "dt_bias"), try m.f(base, "norm.weight"), try m.weights.get("decode.eps"), try s.ints(&.{r}) }, &.{ ti("NK", 16), ti("NV", 48), ti("DK", 128), ti("DV", 128), ti("TAPS", 4), ti("HAS_STATE", @intFromBool(cache.b.ctx != null)) }, .{ 48 * 1024, 1, 1 }, .{ 1024, 1, 1 }, &.{ .{ .shape = &.{ r, 6144 } }, .{ .shape = &.{ r, 3, 10240 } }, .{ .shape = &.{ r, 48, 128, 128 }, .dtype = mx.f32t } });
-        record.a = out[1];
-        record.b = out[2];
+        const states: i32 = if (final_state) 1 else r;
+        const out = try m.kernels.run(s, if (final_state) src.q4_gdn_prefill else src.q4_gdn_step, &.{ p, cs, state, try s.reshape(try m.f(base, "conv1d.weight"), &.{ 10240, 4 }), try m.f(base, "A_log"), try m.f(base, "dt_bias"), try m.f(base, "norm.weight"), try m.weights.get("decode.eps"), try s.ints(&.{r}) }, &.{ ti("NK", 16), ti("NV", 48), ti("DK", 128), ti("DV", 128), ti("TAPS", 4), ti("HAS_STATE", @intFromBool(cache.b.ctx != null)) }, .{ 48 * 1024, 1, 1 }, .{ 1024, 1, 1 }, &.{ .{ .shape = &.{ r, 6144 } }, .{ .shape = &.{ states, 3, 10240 } }, .{ .shape = &.{ states, 48, 128, 128 }, .dtype = mx.f32t } });
+        record.a = if (final_state) try s.reshape(out[1], &.{ 3, 10240 }) else out[1];
+        record.b = if (final_state) try s.reshape(out[2], &.{ 48, 128, 128 }) else out[2];
         return m.lin(s, base, "out_proj", out[0]);
     }
     pub fn attention(m: *Model, s: *mx.Scope, base: []const u8, x: A, cache: *Cache, record: *Cache) !A {
@@ -703,11 +720,11 @@ pub const Model = struct {
         const weight = try s.cast(try s.reshape(try m.f(base, "conv1d.weight"), &.{ 10240, 4 }), mx.f32t);
         return @import("flash_ops.zig").pleConv(&m.kernels, s, conv_in, weight, gated, h, 4, 3);
     }
-    fn layer(m: *Model, s: *mx.Scope, base: []const u8, hn: [2]A, cache: *Cache, record: *Cache, linear: bool) ![2]A {
+    fn layer(m: *Model, s: *mx.Scope, base: []const u8, hn: [2]A, cache: *Cache, record: *Cache, linear: bool, final_state: bool) ![2]A {
         var buf: [256]u8 = undefined;
         const mix = try m.hcProject(s, try std.fmt.bufPrint(&buf, "{s}.attn_hyper_connection", .{base}), hn[0], hn[1], true);
         try m.trace(s, "mixed", mix[0]);
-        const branch = if (linear) try m.gdn(s, try std.fmt.bufPrint(&buf, "{s}.linear_attn", .{base}), mix[0], cache.*, record) else try m.attention(s, try std.fmt.bufPrint(&buf, "{s}.self_attn", .{base}), mix[0], cache, record);
+        const branch = if (linear) try m.gdn(s, try std.fmt.bufPrint(&buf, "{s}.linear_attn", .{base}), mix[0], cache.*, record, final_state) else try m.attention(s, try std.fmt.bufPrint(&buf, "{s}.self_attn", .{base}), mix[0], cache, record);
         try m.trace(s, "branch", branch);
         const post = try m.hcNorm(s, hn[0], branch, mix[1]);
         const mm = try m.hcProject(s, try std.fmt.bufPrint(&buf, "{s}.mlp_hyper_connection", .{base}), post[0], post[1], true);
@@ -727,11 +744,21 @@ pub const Model = struct {
         return @import("flash_shared.zig").forward(m, streams);
     }
     pub fn prefill(m: *Model, tokens: []const i32) !Pass {
+        return m.prefillImpl(tokens, false);
+    }
+    pub fn prefillFinal(m: *Model, tokens: []const i32) !Pass {
+        return m.prefillImpl(tokens, true);
+    }
+    pub fn prefillChunk(m: *Model, tokens: []const i32, last: bool) !Pass {
+        if (tokens.len > 16) return @import("flash_prefill.zig").forwardChunk(m, tokens, last or m.mtp);
+        return m.prefillFinal(tokens);
+    }
+    fn prefillImpl(m: *Model, tokens: []const i32, final_state: bool) !Pass {
         if (tokens.len > 16) return @import("flash_prefill.zig").forward(m, tokens);
         if (m.trace_dir != null) return m.forward(tokens);
         if (tokens.len == 0) return error.InvalidLaneWidth;
         for (tokens) |token| if (token < 0 or token >= vocab) return error.InvalidToken;
-        var p = Pass{ .count = tokens.len, .start = m.position };
+        var p = Pass{ .count = tokens.len, .start = m.position, .prefilled = final_state };
         errdefer p.deinit();
         @memcpy(p.tokens[0..tokens.len], tokens);
         const ids = try p.scope.ints(tokens);
@@ -752,10 +779,11 @@ pub const Model = struct {
                 const h = if (m.gpuTokensEnabled()) try m.pleArray(&s, hn[0], ids, m.cache[i], &p.records[i]) else try m.ple(&s, hn[0], tokens, m.cache[i], &p.records[i]);
                 input = try m.hcNorm(&s, h, null, mx.empty);
             }
-            const next = try retainPair(try m.layer(&s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), input, &m.cache[i], &p.records[i], i % 4 != 3));
+            const next = try retainPair(try m.layer(&s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), input, &m.cache[i], &p.records[i], i % 4 != 3, final_state));
             for (hn) |value| mx.free(value);
             hn = next;
             const record = &p.records[i];
+            if (i == 1 and final_state) record.ple = try s.slice(record.ple, 0, @intCast(tokens.len), @intCast(tokens.len + 9));
             inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
                 const value = @field(record, field);
                 if (value.ctx != null) @field(record, field) = try p.scope.own(try mx.retain(value));
@@ -767,7 +795,7 @@ pub const Model = struct {
                     if (value.ctx != null) @field(write, part) = try p.scope.own(try mx.retain(value));
                 }
             }
-            try mx.evalMany(&.{hn[0]}, true);
+            if ((i + 1) % 4 == 0 and i + 1 < 48) try mx.evalMany(&.{hn[0]}, true);
         }
         const last: i32 = @intCast(tokens.len - 1);
         p.hidden = try p.scope.own(try mx.retain(hn[0]));
@@ -820,7 +848,7 @@ pub const Model = struct {
                 hn = try m.hcNorm(s, h, null, mx.empty);
             }
             try m.trace(s, "input", hn[0]);
-            hn = try m.layer(s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), hn, &m.cache[i], &p.records[i], i % 4 != 3);
+            hn = try m.layer(s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), hn, &m.cache[i], &p.records[i], i % 4 != 3, false);
             try mx.evalMany(&.{hn[0]}, true);
         }
         p.hidden = hn[0];
@@ -942,7 +970,7 @@ pub const Model = struct {
         const h = try m.draftInput(s, hidden, token);
         const rows = mx.dim(h, 0);
         var rec = Cache{};
-        const out = try m.layer(s, "mtp.layers.0", try m.hcNorm(s, h, null, mx.empty), cache, &rec, false);
+        const out = try m.layer(s, "mtp.layers.0", try m.hcNorm(s, h, null, mx.empty), cache, &rec, false, false);
         if (!queued) try mx.eval(out[0]);
         var next = try rec.clone();
         errdefer next.deinit();

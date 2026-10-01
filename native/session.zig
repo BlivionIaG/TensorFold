@@ -640,20 +640,23 @@ pub fn Generation(comptime M: type) type {
         fn prefill(g: *Self, m: *M) !void {
             const count = g.chunks.next(g.offset) - g.offset;
             const tokens = g.prompt[g.offset..][0..count];
+            const last = g.offset + count == g.prompt.len;
             var image_scope = mx.Scope{};
             defer image_scope.deinit();
             var pass = if (M == qwen.Model) blk: {
                 const prompt_pass = @import("qwen_prefill.zig");
-                if (g.image) |p| break :blk try prompt_pass.forwardFinal(m, tokens, try image_scope.slice(p.embeddings, 1, @intCast(g.offset), @intCast(g.offset + count)), try p.positions.chunk(&image_scope, g.offset, g.offset + count), p.positions.delta);
-                break :blk try prompt_pass.forwardFinal(m, tokens, mx.empty, mx.empty, m.rope_delta);
-            } else if (@hasDecl(M, "prefill")) try m.prefill(tokens) else try m.forward(tokens);
+                if (g.image) |p| break :blk try prompt_pass.forwardChunk(m, tokens, try image_scope.slice(p.embeddings, 1, @intCast(g.offset), @intCast(g.offset + count)), try p.positions.chunk(&image_scope, g.offset, g.offset + count), p.positions.delta, last);
+                break :blk try prompt_pass.forwardChunk(m, tokens, mx.empty, mx.empty, m.rope_delta, last);
+            } else if (@hasDecl(M, "prefillChunk")) try m.prefillChunk(tokens, last) else if (@hasDecl(M, "prefill")) try m.prefill(tokens) else try m.forward(tokens);
             defer pass.deinit();
-            const vocab: i32 = if (M == qwen.Model) 248320 else if (@hasField(M, "vocab")) m.vocab else M.vocab;
-            const logits = try pass.scope.reshape(pass.logits, &.{ -1, vocab });
-            const rows = mx.dim(logits, 0);
-            const ids = try sampling.rows(&m.kernels, &pass.scope, try pass.scope.slice(logits, 0, rows - 1, rows), &.{@intCast(g.offset + count)}, g.settings);
-            defer mx.allocator.free(ids);
-            g.next = ids[0];
+            if (last) {
+                const vocab: i32 = if (M == qwen.Model) 248320 else if (@hasField(M, "vocab")) m.vocab else M.vocab;
+                const logits = try pass.scope.reshape(pass.logits, &.{ -1, vocab });
+                const rows = mx.dim(logits, 0);
+                const ids = try sampling.rows(&m.kernels, &pass.scope, try pass.scope.slice(logits, 0, rows - 1, rows), &.{@intCast(g.offset + count)}, g.settings);
+                defer mx.allocator.free(ids);
+                g.next = ids[0];
+            }
             if (M == qwen.Model) {
                 var kept: [2048]i32 = undefined;
                 for (kept[0..count], 0..) |*row, j| row.* = @intCast(j);
@@ -688,14 +691,20 @@ pub fn Generation(comptime M: type) type {
             g.pending_published = false;
             var draft = @import("drafter.zig").Proposal{};
             if (g.proposer) |*proposer| {
-                draft = try proposer.propose(g.a, g.context.items, @min(15, g.options.max_tokens - g.reply.tokens.items.len));
+                draft = try proposer.propose(g.a, g.context.items, @min(15, g.draftRoom() -| 1));
             }
             const from_neural = draft.len == 0 and g.options.draft and g.sink.draft_budget > 0 and neural.enabled(m, g.sink.drafter);
             if (from_neural and !g.defer_neural) {
-                draft = try neural.propose(m, &g.state, g.sink.drafter, g.next, @min(g.round_draft_budget, g.sink.draft_budget, g.options.max_tokens - g.reply.tokens.items.len), g.settings);
+                draft = try neural.propose(m, &g.state, g.sink.drafter, g.next, @min(g.round_draft_budget, g.sink.draft_budget, @max(1, g.draftRoom() -| 1)), g.settings);
                 if (M != qwen.Model) try g.draft_depth.chances(draft.probabilities[0..draft.len]);
             }
             return try rounds.Window.init(g.next, m.position, draft, from_neural);
+        }
+
+        pub fn draftRoom(g: *const Self) usize {
+            var room = g.options.max_tokens - g.reply.tokens.items.len;
+            if (g.budget.open and g.budget.limit > 0 and g.budget.close.len > 0) room = @min(room, g.budget.limit -| g.reply.tokens.items.len);
+            return room;
         }
 
         fn settleDecode(g: *Self, m: *M, w: *const rounds.Window, pass: *Pass, ids: []const i32) !void {

@@ -10,6 +10,7 @@ pub const Depth = struct {
     count: usize = 15,
     choices: usize = 0,
     rounds: usize = 0,
+    next_depth: ?usize = null,
 
     pub fn init(comptime M: type) Depth {
         var d = Depth{};

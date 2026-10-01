@@ -3,6 +3,35 @@ const std = @import("std");
 const mx = @import("mlx.zig");
 const safe = @import("safetensors.zig");
 const Ref = struct { file: usize, tensor: safe.Tensor, name: []const u8 };
+const Gather = struct {
+    tables: *const Tables,
+    ids: []const i64,
+    order: []const u32,
+    weights: []u32,
+    scales: []u16,
+    biases: []u16,
+
+    fn read(g: Gather, begin: usize, end: usize, failure: *?anyerror) void {
+        g.readUnique(begin, end) catch |err| {
+            failure.* = err;
+        };
+    }
+    fn readUnique(g: Gather, begin: usize, end: usize) !void {
+        const words = @divExact(g.weights.len, g.ids.len);
+        const groups = @divExact(g.scales.len, g.ids.len);
+        for (g.order[begin..end], begin..) |index, sorted| {
+            const i: usize = index;
+            const id = g.ids[i];
+            if (sorted > 0 and id == g.ids[g.order[sorted - 1]]) continue;
+            const loc = try g.tables.locate(id);
+            const refs = g.tables.rows[loc.shard];
+            inline for (.{ g.weights, g.scales, g.biases }, 0..) |buffer, part| {
+                const width = if (part == 0) words else groups;
+                try g.tables.files.items[refs[part].file].readRow(refs[part].tensor, loc.row, std.mem.sliceAsBytes(buffer[i * width ..][0..width]));
+            }
+        }
+    }
+};
 pub const Tables = struct {
     format: @import("quantization.zig").Spec = .{ .bits = 4, .group_size = 32 },
     resident: ?@import("ple_resident.zig").Resident = null,
@@ -93,6 +122,14 @@ pub const Tables = struct {
     }
     pub fn gather(t: *const Tables, s: *mx.Scope, ids: []const i64) !mx.Array {
         if (ids.len == 0 or ids.len > 2048 * 16) return error.InvalidLaneWidth;
+        const order = try mx.allocator.alloc(u32, ids.len);
+        defer mx.allocator.free(order);
+        for (order, 0..) |*index, i| index.* = @intCast(i);
+        std.mem.sort(u32, order, ids, struct {
+            fn less(values: []const i64, a: u32, b: u32) bool {
+                return values[a] < values[b];
+            }
+        }.less);
         const words: usize = @intCast(@divExact(160 * t.format.bits, 32));
         const groups: usize = @intCast(@divExact(160, t.format.group_size));
         const weights = try mx.allocator.alloc(u32, ids.len * words);
@@ -101,12 +138,28 @@ pub const Tables = struct {
         defer mx.allocator.free(scales);
         const biases = try mx.allocator.alloc(u16, ids.len * groups);
         defer mx.allocator.free(biases);
-        for (ids, 0..) |id, i| {
-            const loc = try t.locate(id);
-            const refs = t.rows[loc.shard];
-            inline for (.{ weights, scales, biases }, 0..) |buffer, part| {
-                const width = if (part == 0) words else groups;
-                try t.files.items[refs[part].file].readRow(refs[part].tensor, loc.row, std.mem.sliceAsBytes(buffer[i * width ..][0..width]));
+        const gather_ = Gather{ .tables = t, .ids = ids, .order = order, .weights = weights, .scales = scales, .biases = biases };
+        const workers = @min(16, @divTrunc(ids.len + 15, 16));
+        if (workers == 1) {
+            try gather_.readUnique(0, order.len);
+        } else {
+            const io = t.files.items[0].io;
+            var reads: std.Io.Group = .init;
+            defer reads.cancel(io);
+            var failures: [16]?anyerror = @splat(null);
+            for (0..workers) |worker| reads.async(io, Gather.read, .{ gather_, worker * order.len / workers, (worker + 1) * order.len / workers, &failures[worker] });
+            try reads.await(io);
+            for (failures[0..workers]) |failure| if (failure) |err| return err;
+        }
+        for (order, 0..) |index, sorted| {
+            const i: usize = index;
+            const id = ids[i];
+            if (sorted > 0 and id == ids[order[sorted - 1]]) {
+                const previous: usize = order[sorted - 1];
+                inline for (.{ weights, scales, biases }, 0..) |buffer, part| {
+                    const width = if (part == 0) words else groups;
+                    @memcpy(buffer[i * width ..][0..width], buffer[previous * width ..][0..width]);
+                }
             }
         }
         const count: i32 = @intCast(ids.len);
@@ -135,15 +188,17 @@ pub const Tables = struct {
                 files[part] = ref.file;
             }
             const end = tables.starts[shard + 1] - tables.starts[shard];
-            const rows = [_]i32{ 0, 1, @intCast(@divTrunc(end, 2)), @intCast(end - 2), @intCast(end - 1) };
-            var ids: [5]i64 = undefined;
+            const samples = [_]i32{ @intCast(end - 1), 0, @intCast(@divTrunc(end, 2)), 1, 0, @intCast(end - 2), @intCast(end - 1), @intCast(@divTrunc(end, 2)) };
+            var rows: [65]i32 = undefined;
+            for (&rows, 0..) |*row, i| row.* = samples[i % samples.len];
+            var ids: [rows.len]i64 = undefined;
             for (rows, &ids) |row, *id| id.* = tables.starts[shard] + row;
             const ix = try scope.ints(&rows);
             var selected: [3]mx.Array = undefined;
             for (tables.rows[shard], &selected) |ref, *array| array.* = try scope.take(try oracle.get(ref.name), ix, 0);
             try @import("sampling_checks.zig").equal(&scope, try cp.dequantizeFormat(&scope, selected, tables.format), try tables.gather(&scope, &ids));
         }
-        std.debug.print("PASS: 640 PLE rows (first, last, adjacent and middle) across all 128 shards exactly match independent MLX reads/dequantization\n", .{});
+        std.debug.print("PASS: 8320 PLE rows (boundaries, interior, parallel duplicates and permutations) across all 128 shards exactly match independent MLX reads/dequantization\n", .{});
     }
     pub fn checkResident(io: std.Io, dir: []const u8) !void {
         try mx.init();

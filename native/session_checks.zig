@@ -82,9 +82,11 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                 g.context.clearRetainingCapacity();
                 var measured = coordinator;
                 try mx.check(mx.c.mlx_reset_peak_memory());
+                const resident = try @import("memory_runtime.zig").activeBytes();
                 const begin = now(io);
                 while (g.phase == .prefill) _ = try g.step(m);
                 const first = now(io);
+                const prefilled = try @import("memory_runtime.zig").activeBytes();
                 var rounds: usize = 0;
                 var phase_seconds = @import("server_live.zig").RoundTiming{};
                 var widths: [128]usize = undefined;
@@ -127,6 +129,9 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                     .phase_seconds = phase_seconds,
                     .prefill_seconds = first - begin,
                     .decode_seconds = finished - first,
+                    .resident_mlx_bytes = resident,
+                    .prefill_active_mlx_bytes = prefilled,
+                    .active_mlx_bytes = try @import("memory_runtime.zig").activeBytes(),
                     .peak_mlx_bytes = peak,
                 }, .{});
                 defer a.free(bytes);
@@ -360,7 +365,7 @@ fn singletonMtpRequests(s: *session.Session, m: anytype, prompt: []const i32) !v
             try std.testing.expectEqual(@import("decode_round.zig").Stage.idle, m.round_owner.stage);
             if (actual.draft_depth.rounds == 1) {
                 try std.testing.expectEqualSlices(f64, &@as([16]f64, @splat(0)), &coordinator.mtp_costs.?.round_ms);
-                try std.testing.expectEqual(@as(usize, if (adaptive and !forced_round) 1 else 0), actual.draft_depth.choices);
+                try std.testing.expectEqual(@as(usize, if (adaptive and !forced_round) 1 + @as(usize, @intFromBool(actual.draft_depth.next_depth != null)) else 0), actual.draft_depth.choices);
             }
         }
         try std.testing.expectEqual(adaptive, actual.draft_depth.choices > 0);

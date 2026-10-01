@@ -170,7 +170,7 @@ pub const Pass = struct {
         for (next, paths) |cache, path| if (path.len > 0) for (cache) |c| {
             try arrays.appendSlice(mx.allocator, &.{ c.a, c.b });
         };
-        if (arrays.items.len > 0) try mx.evalMany(arrays.items, false);
+        if (arrays.items.len > 0) try mx.evalMany(arrays.items, true);
         try p.acceptCaches(paths, next);
     }
 

@@ -186,7 +186,7 @@ pub const Linear = struct {
         return s.result(rc, result);
     }
 
-    fn untiledWeight(l: Linear, s: *mx.Scope) !A {
+    pub fn untiledWeight(l: Linear, s: *mx.Scope) !A {
         if (!l.tiled) return l.weight;
         const f = l.format.?;
         const groups = @divExact(l.k, f.group_size);

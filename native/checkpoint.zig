@@ -11,6 +11,7 @@ pub const Store = struct {
     flash_dense: std.StringHashMap(@import("flash_lane.zig").Projection),
     group: i32,
     flash_drafts: ?bool = null,
+    compact_dense: bool = false,
     quant_config: ?std.json.Parsed(std.json.Value) = null,
     formats: std.StringHashMap(Quant.Spec),
     pub fn init(group: i32) Store {
@@ -88,6 +89,12 @@ pub const Store = struct {
     }
     pub fn has(w: *Store, key: []const u8) bool {
         return w.arrays.contains(key);
+    }
+    pub fn remove(w: *Store, key: []const u8) void {
+        if (w.arrays.fetchRemove(key)) |removed| {
+            mx.free(removed.value);
+            mx.allocator.free(removed.key);
+        }
     }
     fn accepts(w: *const Store, key: []const u8, strip: []const u8) bool {
         return if (w.flash_drafts) |drafts| @import("flash_names.zig").accepts(key, drafts) else std.mem.startsWith(u8, key, strip);
@@ -211,6 +218,16 @@ pub const Store = struct {
         return dequantizeFormat(s, .{ try s.take(t[0], ix, 0), try s.take(t[1], ix, 0), try s.take(t[2], ix, 0) }, fmt);
     }
     pub fn linear(w: *Store, k: *mx.Kernels, s: *mx.Scope, name: []const u8, x: A, exact: bool) !A {
+        if (exact) if (w.flash_dense.get(name)) |projection| return projection.apply(k, s, x);
+        if (w.dense.get(name)) |projection| {
+            if (exact) {
+                const rows: i32 = @intCast(mx.c.mlx_array_size(x) / @as(usize, @intCast(projection.k)));
+                return s.reshape(try projection.apply(k, s, .{ .x = x }), &.{ rows, projection.n });
+            }
+            var out = mx.c.mlx_array_new();
+            const rc = mx.c.mlx_quantized_matmul(&out, x, try projection.untiledWeight(s), try w.field(name, "scales"), try w.field(name, "biases"), true, mx.opt(64), mx.opt(4), "affine", mx.stream);
+            return s.result(rc, out);
+        }
         const fmt = (try w.format(name)) orelse {
             const weight = try w.field(name, "weight");
             return s.binary(mx.c.mlx_matmul, x, try s.transpose(weight, &.{ 1, 0 }));
@@ -238,6 +255,7 @@ pub const Store = struct {
                 errdefer mx.allocator.free(key);
                 try w.dense.put(key, linear_);
             }
+            if (w.compact_dense) try w.compactDense(s, name);
             return s.reshape(try w.dense.get(name).?.apply(k, s, .{ .x = x }), &.{ rows, n });
         }
         if (exact and fmt.bits == 4 and rows <= 16 and @mod(n, 8) == 0 and @mod(dims, 64) == 0) {
@@ -246,6 +264,19 @@ pub const Store = struct {
         var out = mx.c.mlx_array_new();
         const rc = mx.c.mlx_quantized_matmul(&out, x, t[0], t[1], t[2], true, mx.opt(fmt.group_size), mx.opt(fmt.bits), "affine", mx.stream);
         return s.result(rc, out);
+    }
+    pub fn compactDense(w: *Store, s: *mx.Scope, name: []const u8) !void {
+        const projection = w.dense.get(name) orelse return;
+        var buffer: [512]u8 = undefined;
+        const weight_name = try std.fmt.bufPrint(&buffer, "{s}.weight", .{name});
+        if (!w.arrays.contains(weight_name)) return;
+        const sb = try s.transpose(projection.sb, &.{ 1, 0, 2 });
+        const shape = &.{ projection.n, @divExact(projection.k, 64) };
+        inline for (.{ "scales", "biases" }, 0..) |suffix, index| {
+            const value = try s.reshape(try s.slice(sb, 2, index, index + 1), shape);
+            try w.put(try std.fmt.bufPrint(&buffer, "{s}.{s}", .{ name, suffix }), value);
+        }
+        w.remove(try std.fmt.bufPrint(&buffer, "{s}.weight", .{name}));
     }
 };
 pub fn dequantize(s: *mx.Scope, t: [3]A, group: i32) !A {
