@@ -78,4 +78,5 @@ def test_decode_rope_matches_the_formula():
     xf = x.float()
     x1, x2 = xf[..., :half], xf[..., half:32]
     rot = torch.cat((x1 * cos - x2 * sin, x1 * sin + x2 * cos, xf[..., 32:]), dim=-1)
-    assert torch.allclose(got, rot, rtol=1e-4, atol=1e-4)
+    assert got.dtype == x.dtype
+    assert torch.allclose(got, rot.to(dtype=got.dtype), rtol=1e-4, atol=1e-4)

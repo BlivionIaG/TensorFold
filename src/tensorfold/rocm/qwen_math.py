@@ -16,6 +16,9 @@ _FMAF = ctypes.CDLL(ctypes.util.find_library("m") or "libm.so.6").fmaf
 _FMAF.argtypes = (ctypes.c_float, ctypes.c_float, ctypes.c_float)
 _FMAF.restype = ctypes.c_float
 
+# Tokens resident in one prefill step. A multiple of the 16-wide matmul tile.
+SPAN = 2048
+
 
 @dataclass
 class Packed:
@@ -61,12 +64,24 @@ class Spec:
         return self.value_heads * self.value_dim
 
 
-def _rms_torch(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
+def _rms_rows(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
     var = x.float().pow(2).mean(dim=-1, keepdim=True)
     y = x.float() * torch.rsqrt(var + eps)
     if weight is not None:
         y = y * weight.float()
-    return y
+    return y if y.dtype == x.dtype else y.to(dtype=x.dtype)
+
+
+def _rms_torch(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
+    width = x.shape[-1]
+    flat = x.reshape(-1, width)
+    if flat.shape[0] <= SPAN:
+        return _rms_rows(flat, weight, eps).reshape(x.shape)
+    out = torch.empty_like(flat)
+    for start in range(0, flat.shape[0], SPAN):
+        stop = min(start + SPAN, flat.shape[0])
+        out[start:stop] = _rms_rows(flat[start:stop], weight, eps)
+    return out.reshape(x.shape)
 
 
 def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
@@ -80,7 +95,8 @@ def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.
 
         flat = x.reshape(rows, width).float().contiguous()
         scale = None if weight is None else weight.reshape(width).float().contiguous()
-        return rms(flat, scale, eps).reshape(x.shape)
+        y = rms(flat, scale, eps).reshape(x.shape)
+        return y if y.dtype == x.dtype else y.to(dtype=x.dtype)
     return _rms_torch(x, weight, eps)
 
 
@@ -102,7 +118,8 @@ def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int) -> tor
         from tensorfold.rocm.act import rope_decode
 
         flat = x.reshape(rows, width).float().contiguous()
-        return rope_decode(flat, pos0, rotary_dim, theta).reshape(x.shape)
+        y = rope_decode(flat, pos0, rotary_dim, theta).reshape(x.shape)
+        return y if y.dtype == x.dtype else y.to(dtype=x.dtype)
     half = rotary_dim // 2
     freq = 1.0 / (theta ** (torch.arange(half, device=x.device, dtype=torch.float32) / half))
     pos = torch.arange(pos0, pos0 + x.shape[2], device=x.device, dtype=torch.float32)
@@ -113,8 +130,10 @@ def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int) -> tor
     x2 = x[..., half:rotary_dim].float()
     rot = torch.cat((x1 * cos - x2 * sin, x1 * sin + x2 * cos), dim=-1)
     if rotary_dim == x.shape[-1]:
-        return rot
-    return torch.cat((rot, x[..., rotary_dim:].float()), dim=-1)
+        full = rot
+    else:
+        full = torch.cat((rot, x[..., rotary_dim:].float()), dim=-1)
+    return full if full.dtype == x.dtype else full.to(dtype=x.dtype)
 
 
 def causal_attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_pos0: int) -> torch.Tensor:
@@ -158,8 +177,9 @@ def causal_conv(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor | Non
         state = x.new_zeros(batch, kernel - 1, channels)
     window = torch.cat((state.float(), x.float()), dim=1)
     out = torch.zeros(batch, length, channels, device=x.device, dtype=torch.float32)
+    taps = weight.float()
     for tap in range(kernel):
-        out = out + window[:, tap:tap + length] * weight[:, tap].float().view(1, 1, channels)
+        out.add_(window[:, tap:tap + length] * taps[:, tap].view(1, 1, channels))
     return torch.nn.functional.silu(out), window[:, length:].contiguous()
 
 
@@ -275,10 +295,9 @@ def _codes(words: torch.Tensor, bits: int, k: int) -> torch.Tensor:
     return value & ((1 << bits) - 1)
 
 
-def gather_rows(packed: Packed, ids: torch.Tensor) -> torch.Tensor:
-    """Dequantize selected embedding rows from packed codes. The table itself stays packed."""
+def _dequant_rows(packed: Packed, ids: torch.Tensor) -> torch.Tensor:
+    """Fp32 rows for a 1-D id list. The packed table is not expanded."""
 
-    ids = ids.to(packed.words.device)
     words = packed.words[ids]
     groups = packed.scale.shape[1]
     k = groups * packed.group
@@ -290,7 +309,21 @@ def gather_rows(packed: Packed, ids: torch.Tensor) -> torch.Tensor:
     codes = codes.to(torch.bfloat16).to(torch.float32)
     scale = packed.scale[ids].to(torch.float32).unsqueeze(-1)
     bias = packed.bias[ids].to(torch.float32).unsqueeze(-1)
-    return (codes.view(*ids.shape, groups, packed.group) * scale + bias).reshape(*ids.shape, -1)
+    return (codes.view(ids.shape[0], groups, packed.group) * scale + bias).reshape(ids.shape[0], k)
+
+
+def gather_rows(packed: Packed, ids: torch.Tensor, dtype: torch.dtype | None = None) -> torch.Tensor:
+    """Dequantize selected embedding rows from packed codes. The table itself stays packed."""
+
+    ids = ids.to(packed.words.device)
+    k = packed.scale.shape[1] * packed.group
+    flat = ids.reshape(-1)
+    out = torch.empty(flat.shape[0], k, dtype=torch.float32 if dtype is None else dtype, device=ids.device)
+    for start in range(0, flat.shape[0], SPAN):
+        stop = min(start + SPAN, flat.shape[0])
+        piece = _dequant_rows(packed, flat[start:stop])
+        out[start:stop] = piece if piece.dtype == out.dtype else piece.to(dtype=out.dtype)
+    return out.view(*ids.shape, k)
 
 
 def affine_reference(x: torch.Tensor, packed: Packed) -> torch.Tensor:
@@ -358,7 +391,9 @@ def _fma_rows(summed: torch.Tensor, bias: torch.Tensor, acc: torch.Tensor) -> to
 def _project(x: torch.Tensor, packed: Packed, linear) -> torch.Tensor:
     flat = x.reshape(-1, x.shape[-1])
     y = linear(flat, packed)
-    return y.float().reshape(*x.shape[:-1], -1)
+    if y.dtype != x.dtype:
+        y = y.to(dtype=x.dtype)
+    return y.reshape(*x.shape[:-1], -1)
 
 
 def _project_pair(x: torch.Tensor, first: Packed, second: Packed, linear):
@@ -369,7 +404,11 @@ def _project_pair(x: torch.Tensor, first: Packed, second: Packed, linear):
     if pair is None:
         return _project(x, first, linear), _project(x, second, linear)
     left, right = pair(x, first, second)
-    return left.float().reshape(*x.shape[:-1], -1), right.float().reshape(*x.shape[:-1], -1)
+    if left.dtype != x.dtype:
+        left = left.to(dtype=x.dtype)
+    if right.dtype != x.dtype:
+        right = right.to(dtype=x.dtype)
+    return left.reshape(*x.shape[:-1], -1), right.reshape(*x.shape[:-1], -1)
 
 
 def _project_group(x: torch.Tensor, packeds: tuple, linear):
@@ -382,42 +421,62 @@ def _project_group(x: torch.Tensor, packeds: tuple, linear):
     outs = group(x, packeds)
     if outs is None:
         return None
-    return tuple(y.float().reshape(*x.shape[:-1], -1) for y in outs)
+    return tuple(y.reshape(*x.shape[:-1], -1) if y.dtype == x.dtype else y.to(dtype=x.dtype).reshape(*x.shape[:-1], -1)
+                 for y in outs)
 
 
-def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos0: int):
+def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos0: int,
+                   act_dtype: torch.dtype | None = None):
     """One prefill or decode step. ``tokens`` is (batch, length). Returns hidden states and new caches."""
 
     spec = model.spec
-    x = gather_rows(model.embed, tokens).float()
+    x = gather_rows(model.embed, tokens, dtype=act_dtype)
     if x.device != tokens.device:
-        x = x.to(tokens.device)
+        x = x.to(device=tokens.device)
+    if not x.is_contiguous():
+        x = x.contiguous()
     fresh = caches is None
     new_caches = []
+    length = x.shape[1]
     for index, layer in enumerate(model.layers):
         cache = None if fresh else caches[index]
-        normed = rms_norm(x, layer.input_norm, spec.eps)
-        if spec.full(index):
-            y, cache = _attention(spec, layer, normed, cache, linear, pos0)
-        else:
-            y, cache = _linear_attn(spec, layer, normed, cache, linear)
-        x = x + y
-        y = _mlp(spec, layer, rms_norm(x, layer.post_norm, spec.eps), linear)
-        x = x + y
+        # One span of the residual. The whole prompt is not a second fp32 copy.
+        for start in range(0, length, SPAN):
+            stop = min(length, start + SPAN)
+            normed = rms_norm(x[:, start:stop], layer.input_norm, spec.eps)
+            if spec.full(index):
+                y, cache = _attention(spec, layer, normed, cache, linear, pos0 + start)
+            else:
+                y, cache = _linear_attn(spec, layer, normed, cache, linear)
+            x[:, start:stop] = x[:, start:stop] + y
+            y = _mlp(spec, layer, rms_norm(x[:, start:stop], layer.post_norm, spec.eps), linear)
+            x[:, start:stop] = x[:, start:stop] + y
         new_caches.append(cache)
     return rms_norm(x, model.final_norm, spec.eps), new_caches
 
 
 def _mlp(spec: Spec, layer, x: torch.Tensor, linear) -> torch.Tensor:
-    grouped = _project_group(x, (layer.gate, layer.up), linear)
-    if grouped is None:
-        gate, up = _project_pair(x, layer.gate, layer.up, linear)
-    else:
-        gate, up = grouped
-    return _project(torch.nn.functional.silu(gate) * up, layer.down, linear)
+    # Gate and up are the wide tensors. A long prefill computes them a chunk at a time.
+    batch, length, hidden = x.shape
+    flat = x.reshape(-1, hidden)
+    if flat.shape[0] <= SPAN:
+        grouped = _project_group(x, (layer.gate, layer.up), linear)
+        if grouped is None:
+            gate, up = _project_pair(x, layer.gate, layer.up, linear)
+        else:
+            gate, up = grouped
+        return _project(torch.nn.functional.silu(gate) * up, layer.down, linear)
+    out = torch.empty_like(flat)
+    for start in range(0, flat.shape[0], SPAN):
+        stop = min(start + SPAN, flat.shape[0])
+        piece = flat[start:stop]
+        gate = _project(piece, layer.gate, linear)
+        up = _project(piece, layer.up, linear)
+        out[start:stop] = _project(torch.nn.functional.silu(gate) * up, layer.down, linear)
+    return out.view(batch, length, hidden)
 
 
-def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear):
+def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear):
     batch, length, _ = x.shape
     grouped = _project_group(x, (layer.qkv, layer.z, layer.a, layer.b), linear)
     if grouped is None:
@@ -428,20 +487,46 @@ def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear):
     else:
         qkv, z, a, b = grouped
     z = z.view(batch, length, spec.value_heads, spec.value_dim)
-    state = None if cache is None else cache["conv"]
-    mixed, conv_state = causal_conv(qkv, layer.conv, state)
+    mixed, conv_state = causal_conv(qkv, layer.conv, conv_state)
     q, k, v = mixed.split((spec.key_width, spec.key_width, spec.value_width), dim=-1)
     q = q.view(batch, length, spec.key_heads, spec.key_dim)
     k = k.view(batch, length, spec.key_heads, spec.key_dim)
     v = v.view(batch, length, spec.value_heads, spec.value_dim)
     q, k = normalize_qk(q, k, spec.key_dim, spec.eps)
-    rec = None if cache is None else cache["state"]
     y, rec = gated_delta(q, k, v, a, b, layer.a_log, layer.dt_bias, rec)
-    y = rms_norm(y, layer.gnorm, spec.eps) * torch.nn.functional.silu(z.float())
-    return _project(y.reshape(batch, length, -1), layer.out, linear), {"conv": conv_state, "state": rec}
+    y = rms_norm(y, layer.gnorm, spec.eps) * torch.nn.functional.silu(z)
+    if y.dtype != x.dtype:
+        y = y.to(dtype=x.dtype)
+    return _project(y.reshape(batch, length, -1), layer.out, linear), conv_state, rec
+
+
+def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear):
+    batch, length, hidden = x.shape
+    conv_state = None if cache is None else cache["conv"]
+    rec = None if cache is None else cache["state"]
+    if length <= SPAN:
+        y, conv_state, rec = _linear_span(spec, layer, x, conv_state, rec, linear)
+        return y, {"conv": conv_state, "state": rec}
+    y = torch.empty(batch, length, hidden, dtype=x.dtype, device=x.device)
+    for start in range(0, length, SPAN):
+        stop = min(length, start + SPAN)
+        y[:, start:stop], conv_state, rec = _linear_span(
+            spec, layer, x[:, start:stop], conv_state, rec, linear)
+    return y, {"conv": conv_state, "state": rec}
 
 
 def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
+    batch, length, hidden = x.shape
+    if length <= SPAN:
+        return _attention_span(spec, layer, x, cache, linear, pos0)
+    y = torch.empty(batch, length, hidden, dtype=x.dtype, device=x.device)
+    for start in range(0, length, SPAN):
+        stop = min(length, start + SPAN)
+        y[:, start:stop], cache = _attention_span(spec, layer, x[:, start:stop], cache, linear, pos0 + start)
+    return y, cache
+
+
+def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
     batch, length, _ = x.shape
     grouped = _project_group(x, (layer.q, layer.k, layer.v), linear)
     if grouped is None:
@@ -475,9 +560,12 @@ def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
         kept_k = torch.cat((cache["k"], keys), dim=2)
         kept_v = torch.cat((cache["v"], values), dim=2)
         new_cache = {"k": kept_k, "v": kept_v}
-    attended = _attend(queries, kept_k, kept_v, spec.head_dim ** -0.5, pos0)
+    query = queries if queries.dtype == torch.float32 else queries.float()
+    attended = _attend(query, kept_k, kept_v, spec.head_dim ** -0.5, pos0)
     attended = attended.permute(0, 2, 1, 3).reshape(batch, length, -1)
     gated = attended * torch.sigmoid(gate.reshape(batch, length, -1).float())
+    if gated.dtype != x.dtype:
+        gated = gated.to(dtype=x.dtype)
     return _project(gated, layer.o, linear), new_cache
 
 
@@ -540,12 +628,12 @@ def greedy(model, prompts: list[list[int]], n_new: int, linear, device: torch.de
 
     if after_token is not None:
         after_token(-1)
-    hidden, caches = forward_hidden(model, tokens, caches, linear, 0)
-    nxt = torch.argmax(_project(hidden[:, -1], model.embed, linear), dim=-1)
+    hidden, caches = forward_hidden(model, tokens, caches, linear, 0, cache_dtype)
+    nxt = torch.argmax(_project(hidden[:, -1], model.output_head(), linear), dim=-1)
     commit(0, nxt)
     for step in range(1, n_new):
-        hidden, caches = forward_hidden(model, nxt.view(-1, 1), caches, linear, length + step - 1)
-        nxt = torch.argmax(_project(hidden[:, -1], model.embed, linear), dim=-1)
+        hidden, caches = forward_hidden(model, nxt.view(-1, 1), caches, linear, length + step - 1, cache_dtype)
+        nxt = torch.argmax(_project(hidden[:, -1], model.output_head(), linear), dim=-1)
         commit(step, nxt)
     if any(len(row) != n_new for row in out):
         raise RuntimeError("generation stopped before the requested token count")
