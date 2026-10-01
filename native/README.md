@@ -142,6 +142,8 @@ Use a fresh output directory for each capture. Verify retained arrays and result
 `.venv/bin/python tools/native_engine_bench.py --verify-golden build/native-checks/python-golden`.
 Compare native tokens and warm phase timings through Latch with
 `.venv/bin/python tools/native_engine_bench.py --compare-golden build/native-checks/python-golden --repetitions 2 --output build/native-checks/golden-comparison`.
+Add `--native-driver serving` for all five fitting checkpoints through native
+Session/shared-round scheduling, draft allocation and first-token publication.
 Only matching cases receive measurements. `--family` and repeatable `--case`
 select cases; `--native-arg=--flag` and `--native-env KEY=VALUE` support diagnostics.
 Native CLI warmup repeats the exact case with fresh request caches; serial-family

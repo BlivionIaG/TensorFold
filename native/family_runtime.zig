@@ -39,11 +39,6 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
         const key = args[i];
-        if (std.mem.eql(u8, key, "--prefill-release-layers")) {
-            if (M != @import("nemotron.zig").Model) return error.UnsupportedArgument;
-            @import("nemotron_prefill.zig").release_layer_temporaries = true;
-            continue;
-        }
         if (std.mem.eql(u8, key, "--warm-case")) {
             warm_case = true;
             continue;

@@ -1010,9 +1010,7 @@ pub fn build(b: *std.Build) void {
     b.step("test-ssm-prefill", "Compare chunked SSD arithmetic and recurrent continuation with pinned mlx-lm").dependOn(&ssm_check.step);
     const nemotron_prefill_model = b.fmt("{s}/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", .{model_root});
     const nemotron_prefill_simd = b.option(bool, "nemotron-prefill-simd", "Verify Nemotron prefill using forced SIMD projection kernels") orelse false;
-    const nemotron_prefill_release = b.option(bool, "nemotron-prefill-release-layers", "Verify Nemotron prefill while releasing layer temporaries") orelse false;
-    if (nemotron_prefill_release and nemotron_prefill_simd) @panic("select one Nemotron prefill diagnostic");
-    const nemotron_prefill_dir = if (nemotron_prefill_release) "build/native-checks/nemotron-prefill-release" else if (nemotron_prefill_simd) "build/native-checks/nemotron-prefill-simd" else "build/native-checks/nemotron-prefill";
+    const nemotron_prefill_dir = if (nemotron_prefill_simd) "build/native-checks/nemotron-prefill-simd" else "build/native-checks/nemotron-prefill";
     const nemotron_oracle_dir = b.fmt("{s}/oracle", .{nemotron_prefill_dir});
     const nemotron_native_dir = b.fmt("{s}/native", .{nemotron_prefill_dir});
     const nemotron_prefill_oracle = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_families_reference.py", nemotron_prefill_model, "--nemotron-prefill", "--output", b.fmt("{s}/logits.npy", .{nemotron_oracle_dir}), "--state-directory", nemotron_oracle_dir });
@@ -1021,7 +1019,6 @@ pub fn build(b: *std.Build) void {
     const nemotron_prefill = b.addRunArtifact(exe);
     nemotron_prefill.addArgs(&.{ "check-nemotron-prefill", nemotron_prefill_model, nemotron_native_dir });
     if (nemotron_prefill_simd) nemotron_prefill.addArg("--metal-simd");
-    if (nemotron_prefill_release) nemotron_prefill.addArg("--prefill-release-layers");
     nemotron_prefill.step.dependOn(&nemotron_prefill_oracle.step);
     const nemotron_prefill_compare = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_reference.py", "--compare-arrays", nemotron_oracle_dir, nemotron_native_dir });
     nemotron_prefill_compare.step.dependOn(&nemotron_prefill.step);
@@ -1096,7 +1093,11 @@ pub fn build(b: *std.Build) void {
             prefill_previous = &compare.step;
         }
     }
-    prefill_tests.dependOn(prefill_previous);
+    const prefill_commit = b.addRunArtifact(exe);
+    prefill_commit.addArgs(&.{ "check-qwen-prefill-commit", b.fmt("{s}/{s}", .{ model_root, if (prefill_family == 0) "Qwen3.8-27B-MLX-4bit" else "Ternary-Bonsai-2-27B-mlx-2bit" }) });
+    if (prefill_backend != null and prefill_backend.? == 1) prefill_commit.addArg("--metal-simd");
+    prefill_commit.step.dependOn(prefill_previous);
+    prefill_tests.dependOn(&prefill_commit.step);
     const ngram_checks = b.addRunArtifact(exe);
     ngram_checks.addArg("check-ngram-gpu");
     b.step("test-ngram-gpu", "Compare GPU n-gram IDs with exact CPU integer hashing").dependOn(&ngram_checks.step);

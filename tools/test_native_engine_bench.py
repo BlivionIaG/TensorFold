@@ -80,18 +80,26 @@ def test_cases_cover_decode_prefill_chunk_and_pass_boundaries():
 
 
 @pytest.mark.parametrize("family", ["qwen", "bonsai", "nemotron", "flash", "gemma", "glm", "deepseek"])
-def test_native_comparison_uses_fixture_inputs_and_supported_runtime_flags(tmp_path, family):
-    args = SimpleNamespace(binary=tmp_path / "tensorfold", resident_ple=False, native_arg=[])
+@pytest.mark.parametrize("driver", ["cli", "serving"])
+def test_native_comparison_uses_fixture_inputs_and_supported_runtime_flags(tmp_path, family, driver):
+    args = SimpleNamespace(binary=tmp_path / "tensorfold", resident_ple=False, native_arg=[], native_driver=driver)
     manifest = dict(checkpoint={"path": str(tmp_path / "checkpoint")}, seed=5678, top_k=12, top_p=0.8,
                     drafter={"path": str(tmp_path / "linked-drafter")})
     case = dict(tokens=[1, 38, 75], temperature=0.7, drafts=True, measurements=[{"tokens": [2] * 16}])
+    if driver == "serving" and family in ("glm", "deepseek"):
+        with pytest.raises(ValueError, match="fitting checkpoint"):
+            golden_native_command(args, family, manifest, case, tmp_path / "report.json")
+        return
     command = golden_native_command(args, family, manifest, case, tmp_path / "report.json")
+    assert command[1] == ("bench-session" if driver == "serving" else "run")
     assert command[command.index("--tokens") + 1] == "1,38,75"
     assert command[command.index("--max-tokens") + 1] == "16"
     assert command[command.index("--seed") + 1] == "5678"
-    assert ("--no-copy" in command) == (family not in ("gemma", "glm", "deepseek"))
+    assert ("--no-copy" in command) == (driver == "serving" or family not in ("gemma", "glm", "deepseek"))
     assert ("--metal-sampling" in command) == (family not in ("qwen", "bonsai"))
-    assert ("--ignore-eos" in command) == (family in ("gemma", "glm", "deepseek"))
+    assert ("--ignore-eos" in command) == (driver == "serving" or family in ("gemma", "glm", "deepseek"))
+    if driver == "serving":
+        assert "--warm-case" not in command
     if family in ("qwen", "bonsai", "gemma"):
         assert command[command.index("--drafter") + 1] == manifest["drafter"]["path"]
     if family == "gemma":
@@ -141,7 +149,7 @@ def test_comparison_checks_all_cases_before_measuring_and_rejects_divergence(tmp
 
     monkeypatch.setattr("native_engine_bench.subprocess.run", native)
     args = SimpleNamespace(compare_golden=golden, output=tmp_path / "comparison", binary=binary,
-                           family=None, case=[], repetitions=1, native_arg=[], native_env=[], resident_ple=False)
+                           family=None, case=[], repetitions=1, native_arg=[], native_env=[], resident_ple=False, native_driver="cli")
     with pytest.raises(SystemExit, match="correctness incomplete"):
         compare_golden(args)
     assert calls == ["qwen-bad-0", "qwen-good-0", "qwen-good-1"]

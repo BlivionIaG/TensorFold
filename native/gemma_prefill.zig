@@ -226,29 +226,33 @@ pub fn forward(m: *gemma.Model, tokens: []const i32) !gemma.Pass {
     }
     var taps: [32]A = undefined;
     var tap_count: usize = 0;
+    var carried = mx.empty;
+    defer mx.free(carried);
     for (0..30) |i| {
+        var layer = mx.Scope{};
+        defer layer.deinit();
         const local = i % 6 != 5;
-        const qkv = try m.prefills.front(m, s, i, h);
-        const q = try rope(m, s, qkv[0], local);
-        const keys = try rope(m, s, qkv[1], local);
+        const qkv = try m.prefills.front(m, &layer, i, h);
+        const q = try rope(m, &layer, qkv[0], local);
+        const keys = try rope(m, &layer, qkv[1], local);
         const values = qkv[2];
-        pass.records[i] = .{ .keys = keys, .values = values };
+        pass.records[i] = .{ .keys = try s.own(try mx.retain(keys)), .values = try s.own(try mx.retain(values)) };
         try gemma.Model.stageCacheLayer(&m.cache, &pass, i);
         var all_keys = keys;
         var all_values = values;
         if (m.position > 0) {
-            const previous_keys = if (local) try ordered(s, m.cache[i].keys, @max(0, m.position - 1023), m.position) else m.cache[i].keys;
-            const previous_values = if (local) try ordered(s, m.cache[i].values, @max(0, m.position - 1023), m.position) else m.cache[i].values;
-            all_keys = try s.cat(&.{ previous_keys, keys }, 2);
-            all_values = try s.cat(&.{ previous_values, values }, 2);
+            const previous_keys = if (local) try ordered(&layer, m.cache[i].keys, @max(0, m.position - 1023), m.position) else m.cache[i].keys;
+            const previous_values = if (local) try ordered(&layer, m.cache[i].values, @max(0, m.position - 1023), m.position) else m.cache[i].values;
+            all_keys = try layer.cat(&.{ previous_keys, keys }, 2);
+            all_values = try layer.cat(&.{ previous_values, values }, 2);
         }
         const mask = masks[if (local) @as(usize, 0) else 1];
         var out = c.mlx_array_new();
         const rc = c.mlx_fast_scaled_dot_product_attention(&out, q, all_keys, all_values, 1, if (rows > 1 and mask.ctx == null) "causal" else "", mask, mx.empty, false, mx.stream);
-        out = try s.result(rc, out);
-        h = try m.prefills.back(m, s, i, h, out);
+        out = try layer.result(rc, out);
+        h = try m.prefills.back(m, &layer, i, h, out);
         if (m.draft) |d| for (d.parsed.value.dflash_config.target_layer_ids) |id| if (id == i) {
-            taps[tap_count] = try s.reshape(h, &.{ rows, 2816 });
+            taps[tap_count] = try s.own(try mx.retain(try layer.reshape(h, &.{ rows, 2816 })));
             tap_count += 1;
         };
         if ((i + 1) % 8 == 0) {
@@ -260,6 +264,10 @@ pub fn forward(m: *gemma.Model, tokens: []const i32) !gemma.Pass {
             }
             try mx.evalMany(&pending, true);
         }
+        const next = try mx.retain(h);
+        mx.free(carried);
+        carried = next;
+        h = carried;
     }
     pass.hidden = try s.reshape(try s.rms(h, try m.weights.get("model.norm.weight")), &.{ rows, 2816 });
     if (tap_count > 0) pass.taps = try s.cat(taps[0..tap_count], -1);

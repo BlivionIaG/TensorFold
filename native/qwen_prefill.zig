@@ -5,9 +5,55 @@ const lanes = @import("lanes.zig");
 const src = @import("kernel_sources.zig");
 const A = mx.Array;
 const c = mx.c;
+pub var evaluation_stride: usize = 4;
 
 pub fn forward(m: *model.Model, tokens: []const i32) !model.Pass {
     return forwardImage(m, tokens, mx.empty, mx.empty, m.rope_delta);
+}
+
+pub fn checkCommit(io: @import("std").Io, directory: []const u8) !void {
+    const std = @import("std");
+    try mx.init();
+    defer mx.shutdown();
+    var m = try model.Model.init(io, directory);
+    defer m.deinit();
+    var tokens: [193]i32 = undefined;
+    var rows: [193]i32 = undefined;
+    for (&tokens, &rows, 0..) |*token, *row, i| {
+        token.* = @intCast(1000 + i * 37);
+        row.* = @intCast(i);
+    }
+    for ([_]usize{ 1, 17, 129, tokens.len }) |keep| {
+        var expected: [64]model.Cache = @splat(.{});
+        defer for (&expected) |*cache| cache.deinit();
+        var scope = mx.Scope{};
+        defer scope.deinit();
+        var logits = mx.empty;
+        for (0..2) |run| {
+            m.reset();
+            {
+                var pass = try forward(&m, &tokens);
+                defer pass.deinit();
+                if (run == 0) for (&pass.records) |*record| {
+                    record.values[7] = mx.empty;
+                };
+                try m.commit(&pass, rows[0..keep]);
+            }
+            if (run == 0) {
+                for (m.cache, &expected) |cache, *saved| saved.* = try cache.clone();
+            } else {
+                try std.testing.expectEqual(@as(i32, @intCast(keep)), m.position);
+                for (m.cache, expected) |actual, saved| {
+                    try @import("variant_checks.zig").equalBits(&scope, actual.a, saved.a);
+                    try @import("variant_checks.zig").equalBits(&scope, actual.b, saved.b);
+                }
+            }
+            var next = try m.forward(&.{701}, &.{-1});
+            defer next.deinit();
+            if (run == 0) logits = try scope.own(try mx.retain(next.logits)) else try @import("variant_checks.zig").equalBits(&scope, next.logits, logits);
+        }
+    }
+    std.debug.print("PASS: full prefill state reuse and 1/17/129-row partial commits match replay caches and continuation bit for bit.\n", .{});
 }
 
 pub fn forwardImage(m: *model.Model, tokens: []const i32, embeddings: A, positions: A, delta: i32) !model.Pass {
@@ -42,7 +88,7 @@ pub fn forwardImage(m: *model.Model, tokens: []const i32, embeddings: A, positio
         for ([_]usize{ 5, 19, 33, 47, 61 }, 0..) |layer, j| if (i == layer) {
             p.taps[j] = try s.own(try mx.retain(h));
         };
-        if (i == 0 or (i + 1) % 4 == 0) try mx.evalMany(&.{h}, true);
+        if (evaluation_stride > 0 and (i == 0 or (i + 1) % evaluation_stride == 0)) try mx.evalMany(&.{h}, true);
         const next = try mx.retain(h);
         mx.free(carried);
         carried = next;
@@ -81,8 +127,9 @@ fn gdn(m: *model.Model, s: *mx.Scope, i: usize, x: A, p: *model.Pass) !A {
     if (i == 16) {
         for ([_]A{ q, k, v, a, b, g, beta }, [_][]const u8{ "q", "k", "v", "a", "b", "g", "beta" }) |value, label| try m.trace(s, m.position, i, label, value);
     }
-    const out = (try m.kernels.run(s, src.lane_tree_tree, &.{ q, k, v, g, beta, state, try s.ints(p.parents[0..p.count]), try s.ints(&.{n}) }, &.{ mx.td("InT", mx.bf16), mx.ti("Dk", 128), mx.ti("Dv", 128), mx.ti("Hk", 16), mx.ti("Hv", 48), mx.ti("MAXW", 1), mx.tb("CHAIN", true) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{.{ .shape = &.{ 1, n, 48, 128 } }}))[0];
-    p.records[i].values = .{ q, k, v, g, beta, try s.own(try mx.retain(state)), seq, mx.empty };
+    const recurrence = try m.kernels.run(s, src.flash_prefill_gdn, &.{ q, k, v, g, beta, state, try s.reshape(try s.ints(&.{n}), &.{}) }, &.{ mx.td("InT", mx.bf16), mx.td("StT", mx.f32t), mx.ti("Dk", 128), mx.ti("Dv", 128), mx.ti("Hk", 16), mx.ti("Hv", 48) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{ .{ .shape = &.{ 1, n, 48, 128 } }, .{ .shape = &.{ 1, 48, 128, 128 }, .dtype = mx.f32t } });
+    const out = recurrence[0];
+    p.records[i].values = .{ q, k, v, g, beta, try s.own(try mx.retain(state)), seq, recurrence[1] };
     const normalized = try s.rms(out, try m.weight(i, "linear_attn.norm.weight"));
     const gated = try m.prefill_ops.call(s, .gated, &.{ try s.reshape(z, &.{ 1, n, 48, 128 }), normalized });
     return m.prefillProject(s, i, "linear_attn.out_proj", try s.reshape(gated, &.{ 1, n, 6144 }));

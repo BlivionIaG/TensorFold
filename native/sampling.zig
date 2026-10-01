@@ -98,6 +98,27 @@ pub fn rows(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, positions: []const i
     return rowsMapped(k, s, logits, positions, settings, null);
 }
 
+fn cpuTop(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, settings: Sampling, mapping: ?mx.Array) !?[2]mx.Array {
+    if (mx.dtype(logits) != mx.bf16) return null;
+    const width: usize = @intCast(mx.dim(logits, -1));
+    const count = @min(width, (if (settings.top_k == 0) width else settings.top_k) +| 8);
+    if (count == 0 or count > 64) return null;
+    const selected = try @import("gpu_sampling.zig").topk(k, s, logits, @intCast(count));
+    const ids = if (mapping) |map| try s.take(map, selected[0], 0) else try s.cast(selected[0], mx.c.MLX_UINT32);
+    return .{ ids, selected[1] };
+}
+
+fn chooseTop(output: []i32, selected: [2]mx.Array, positions: []const i32, settings: Sampling) void {
+    const count: usize = @intCast(mx.dim(selected[1], -1));
+    const ids = mx.c.mlx_array_data_uint32(selected[0]);
+    const values = mx.c.mlx_array_data_float32(selected[1]);
+    var candidates: [64]Candidate = undefined;
+    for (output, positions, 0..) |*token, position, row| {
+        for (candidates[0..count], 0..) |*candidate, col| candidate.* = .{ .id = @intCast(ids[row * count + col]), .value = values[row * count + col] };
+        token.* = settings.choose(candidates[0..count], @intCast(position));
+    }
+}
+
 pub fn streamRowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, positions: []const i32, settings: []const Sampling, mapping: ?mx.Array) ![]i32 {
     if (positions.len == 0 or positions.len > 128 or positions.len != settings.len or mx.shape(logits).len != 2 or mx.dim(logits, 0) != positions.len) return error.InvalidSamplingRows;
     for (positions, settings) |position, cfg| {
@@ -116,7 +137,8 @@ pub fn streamRowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, position
         for (output, mx.c.mlx_array_data_uint32(selected)[0..positions.len]) |*token, id| token.* = @intCast(id);
         return output;
     }
-    var arrays: [129]mx.Array = undefined;
+    var arrays: [257]mx.Array = undefined;
+    var selected_ids: [128]?mx.Array = @splat(null);
     var starts: [128]usize = undefined;
     var ends: [128]usize = undefined;
     var count: usize = 0;
@@ -131,6 +153,10 @@ pub fn streamRowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, position
             const picked = try s.argmax(part);
             break :blk if (mapping) |ids| try s.take(ids, picked, 0) else picked;
         } else blk: {
+            if (try cpuTop(k, s, part, cfg, mapping)) |selected| {
+                selected_ids[count] = selected[0];
+                break :blk selected[1];
+            }
             cpu = true;
             break :blk try s.contiguous(try s.cast(part, mx.f32t));
         };
@@ -140,6 +166,10 @@ pub fn streamRowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, position
         begin = end;
     }
     var evaluated = count;
+    for (selected_ids[0..count]) |ids| if (ids) |selected| {
+        arrays[evaluated] = selected;
+        evaluated += 1;
+    };
     if (cpu) if (mapping) |ids| {
         arrays[evaluated] = ids;
         evaluated += 1;
@@ -149,10 +179,12 @@ pub fn streamRowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, position
     const id_map: ?[]const u32 = if (cpu and mapping != null) mx.c.mlx_array_data_uint32(mapping.?)[0..width] else null;
     const output = try mx.allocator.alloc(i32, positions.len);
     errdefer mx.allocator.free(output);
-    for (arrays[0..count], starts[0..count], ends[0..count]) |array, start, end| {
+    for (arrays[0..count], selected_ids[0..count], starts[0..count], ends[0..count]) |array, selected, start, end| {
         const cfg = settings[start];
         if (cfg.metal or cfg.temperature == 0) {
             for (output[start..end], mx.c.mlx_array_data_uint32(array)[0 .. end - start]) |*token, id| token.* = @intCast(id);
+        } else if (selected) |ids| {
+            chooseTop(output[start..end], .{ ids, array }, positions[start..end], cfg);
         } else {
             const values = mx.c.mlx_array_data_float32(array);
             for (output[start..end], positions[start..end], 0..) |*token, position, row| {
@@ -185,6 +217,11 @@ pub fn rowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, positions: []c
         const ids = if (mapping) |ids| try s.take(ids, picked, 0) else picked;
         try mx.eval(ids);
         for (out, 0..) |*v, i| v.* = @intCast(mx.c.mlx_array_data_uint32(ids)[i]);
+        return out;
+    }
+    if (try cpuTop(k, s, logits, settings, mapping)) |selected| {
+        try mx.evalMany(&selected, false);
+        chooseTop(out, selected, positions, settings);
         return out;
     }
     const f = try s.cast(logits, mx.f32t);

@@ -425,7 +425,10 @@ def verify_golden(directory):
 def golden_native_command(args, family, manifest, case, report):
     directory = Path(manifest["checkpoint"]["path"])
     serial = family in ("gemma", "glm", "deepseek")
-    command = [str(args.binary.resolve()), "run", str(directory),
+    serving = args.native_driver == "serving"
+    if serving and family in ("glm", "deepseek"):
+        raise ValueError("Shared serving measurements require a fitting checkpoint")
+    command = [str(args.binary.resolve()), "bench-session" if serving else "run", str(directory),
                "--tokens", ",".join(map(str, case["tokens"])),
                "--max-tokens", str(len(case["measurements"][0]["tokens"])),
                "--temperature", str(case["temperature"]), "--seed", str(manifest["seed"]),
@@ -433,7 +436,9 @@ def golden_native_command(args, family, manifest, case, report):
                "--warmup", "--report", str(report)]
     if family not in ("qwen", "bonsai"):
         command.append("--metal-sampling")
-    if not serial:
+    if serving:
+        command += ["--no-copy", "--ignore-eos"]
+    elif not serial:
         command += ["--no-copy", "--warm-case"]
     else:
         command.append("--ignore-eos")
@@ -488,14 +493,21 @@ def compare_golden(args):
     comparison = dict(complete=False, cases=[], binary=str(args.binary.resolve()),
                       binary_sha256=hashlib.sha256(args.binary.read_bytes()).hexdigest(),
                       golden=str(args.compare_golden.resolve()),
-                      scope="CLI versus production LaneEngine, not native Session/shared-round serving; CLI draft policies differ; warm resident model, fresh request caches; native process startup excluded",
+                      scope=("Session/shared-round serving versus production LaneEngine" if args.native_driver == "serving"
+                             else "CLI versus production LaneEngine, not native Session/shared-round serving; CLI draft policies differ")
+                            + "; warm resident model, fresh request caches; native process startup excluded",
                       native_warmup="one discarded exact-case run before every native measured request",
                       native_environment={k: v for k, v in native_env.items()
                                           if k.startswith(("TF_", "TENSORFOLD_", "MLX_"))},
-                      checkpoint_adaptations=[])
+                      checkpoint_adaptations=[], excluded=[])
     selected = []
     for model in suite["models"]:
         if args.family and args.family != model["family"]:
+            continue
+        if args.native_driver == "serving" and model["synthetic"]:
+            if args.family:
+                raise ValueError("Shared serving measurements require a fitting checkpoint")
+            comparison["excluded"].append(dict(family=model["family"], reason="full checkpoint cannot fit; shared serving benchmark covers fitting checkpoints"))
             continue
         path = args.compare_golden / model["manifest"]
         manifest = json.loads(path.read_text())
@@ -659,6 +671,7 @@ def main():
     parser.add_argument("--golden-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--verify-golden", type=Path, help="Verify a retained golden suite's arrays, provenance labels and token comparisons")
     parser.add_argument("--compare-golden", type=Path, help="Check native tokens against a golden suite before comparing phase measurements")
+    parser.add_argument("--native-driver", choices=("cli", "serving"), default="cli", help="Native path for golden comparisons; serving uses Session/shared-round without HTTP")
     parser.add_argument("--case", action="append", default=[], help="Select golden case names (repeatable)")
     parser.add_argument("--native-arg", action="append", default=[], help="Append a native diagnostic argument (use --native-arg=--flag)")
     parser.add_argument("--native-env", action="append", default=[], help="Native measurement environment KEY=VALUE (repeatable)")

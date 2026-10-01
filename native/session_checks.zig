@@ -2,6 +2,143 @@ const std = @import("std");
 const mx = @import("mlx.zig");
 const session = @import("session.zig");
 
+pub fn bench(init: std.process.Init, args: []const []const u8) !void {
+    const a = init.gpa;
+    const io = init.io;
+    var options = session.Options{ .max_tokens = 16, .ignore_eos = true, .sampling = .{ .temperature = 0, .top_k = 0, .top_p = 1 } };
+    var drafts = @import("neural_draft.zig").Options{ .enabled = true, .max_draft = 15 };
+    var tokens: ?[]const u8 = null;
+    var report: ?[]const u8 = null;
+    var warm = false;
+    var resident_ple = false;
+    var evaluation_stride: ?usize = null;
+    var i: usize = 3;
+    while (i < args.len) : (i += 1) {
+        const key = args[i];
+        if (std.mem.eql(u8, key, "--warmup")) {
+            warm = true;
+            continue;
+        }
+        if (std.mem.eql(u8, key, "--no-copy") or std.mem.eql(u8, key, "--ignore-eos")) continue;
+        if (std.mem.eql(u8, key, "--no-drafts")) {
+            drafts.enabled = false;
+            options.draft = false;
+            continue;
+        }
+        if (std.mem.eql(u8, key, "--metal-sampling")) {
+            options.sampling.metal = true;
+            continue;
+        }
+        if (std.mem.eql(u8, key, "--metal-simd")) {
+            mx.force_simd = true;
+            continue;
+        }
+        if (std.mem.eql(u8, key, "--resident-ple")) {
+            resident_ple = true;
+            continue;
+        }
+        if (i + 1 >= args.len) return error.MissingArgument;
+        const value = args[i + 1];
+        if (std.mem.eql(u8, key, "--prefill-eval-layers")) {
+            evaluation_stride = try std.fmt.parseInt(usize, value, 10);
+            i += 1;
+            continue;
+        }
+        if (std.mem.eql(u8, key, "--tokens")) tokens = value else if (std.mem.eql(u8, key, "--report")) report = value else if (std.mem.eql(u8, key, "--max-tokens")) options.max_tokens = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, key, "--seed")) options.seed = try std.fmt.parseInt(u64, value, 10) else if (std.mem.eql(u8, key, "--temperature")) options.sampling.temperature = try std.fmt.parseFloat(f64, value) else if (std.mem.eql(u8, key, "--top-k")) options.sampling.top_k = try std.fmt.parseInt(usize, value, 10) else if (std.mem.eql(u8, key, "--top-p")) options.sampling.top_p = try std.fmt.parseFloat(f64, value) else if (std.mem.eql(u8, key, "--min-p")) options.sampling.min_p = try std.fmt.parseFloat(f64, value) else if (std.mem.eql(u8, key, "--drafter")) drafts.directory = value else if (std.mem.eql(u8, key, "--drafter-bits")) drafts.bits = try std.fmt.parseInt(i32, value, 10) else if (std.mem.eql(u8, key, "--mtp-drafts")) drafts.max_draft = try std.fmt.parseInt(usize, value, 10) else return error.UnsupportedArgument;
+        i += 1;
+    }
+    var prompt: std.ArrayList(i32) = .empty;
+    defer prompt.deinit(a);
+    var split = std.mem.splitScalar(u8, tokens orelse return error.MissingTokens, ',');
+    while (split.next()) |id| try prompt.append(a, try std.fmt.parseInt(i32, id, 10));
+    try mx.init();
+    defer mx.shutdown();
+    const now = @import("server_live.zig").now;
+    const started = now(io);
+    var s = try session.Session.initWithDraft(io, args[2], drafts);
+    defer s.deinit();
+    if (evaluation_stride) |stride| switch (s.backend) {
+        .qwen => @import("qwen_prefill.zig").evaluation_stride = stride,
+        .nemotron => @import("nemotron_prefill.zig").evaluation_stride = stride,
+        else => return error.UnsupportedArgument,
+    };
+    s.prefill_plan = .{ .step = 2048 };
+    if (resident_ple) {
+        if (s.backend != .flash) return error.UnsupportedResidentPLE;
+        try s.backend.flash.makeResidentPLE(true);
+    }
+    try mx.check(mx.c.mlx_synchronize(mx.stream));
+    const loaded = now(io);
+    var coordinator = @import("shared_round.zig").Coordinator{};
+    if (options.draft) try coordinator.calibrate(&s, 1);
+    const calibrated = now(io);
+    switch (s.backend) {
+        inline .qwen, .gemma, .nemotron, .flash => |*m| {
+            for (0..if (warm) @as(usize, 2) else 1) |repetition| {
+                var g = try session.Generation(@TypeOf(m.*)).init(m, &s.tokenizer, a, prompt.items, options, s.draftSink(.{}), null);
+                defer g.deinit();
+                if (g.proposer) |*proposer| proposer.deinit();
+                g.proposer = null;
+                g.context.clearRetainingCapacity();
+                var measured = coordinator;
+                try mx.check(mx.c.mlx_reset_peak_memory());
+                const begin = now(io);
+                while (g.phase == .prefill) _ = try g.step(m);
+                const first = now(io);
+                var rounds: usize = 0;
+                var phase_seconds = @import("server_live.zig").RoundTiming{};
+                var widths: [128]usize = undefined;
+                var width_count: usize = 0;
+                while (g.phase == .decode) {
+                    var results: [1]@import("shared_round.zig").Result = undefined;
+                    try measured.step(m, &.{&g}, &results);
+                    if (results[0].failure) |failure| return failure;
+                    inline for (comptime std.meta.fieldNames(@TypeOf(phase_seconds))) |field| @field(phase_seconds, field) += @field(measured.timing, field);
+                    if (measured.rows > 0) {
+                        rounds += 1;
+                        if (width_count < widths.len) {
+                            widths[width_count] = measured.rows;
+                            width_count += 1;
+                        }
+                    }
+                }
+                try mx.check(mx.c.mlx_synchronize(mx.stream));
+                const finished = now(io);
+                if (warm and repetition == 0) continue;
+                var peak: usize = 0;
+                try mx.check(mx.c.mlx_get_peak_memory(&peak));
+                const bytes = try std.json.Stringify.valueAlloc(a, .{
+                    .driver = "Session/shared-round",
+                    .prompt_tokens = prompt.items,
+                    .tokens = g.reply.tokens.items,
+                    .seed = g.settings.seed,
+                    .temperature = g.settings.temperature,
+                    .top_k = g.settings.top_k,
+                    .top_p = g.settings.top_p,
+                    .rounds = rounds,
+                    .drafted = g.neural_proposed,
+                    .accepted = g.neural_accepted,
+                    .verification_widths = widths[0..width_count],
+                    .load_seconds = loaded - started,
+                    .calibration_seconds = calibrated - loaded,
+                    .target_costs = coordinator.costs[0..coordinator.cost_count],
+                    .mtp_step_ms = if (coordinator.mtp_costs) |policy| policy.mtp_ms else 0,
+                    .overhead_ms = measured.overhead_ms,
+                    .phase_seconds = phase_seconds,
+                    .prefill_seconds = first - begin,
+                    .decode_seconds = finished - first,
+                    .peak_mlx_bytes = peak,
+                }, .{});
+                defer a.free(bytes);
+                const file = try std.Io.Dir.cwd().createFile(io, report orelse return error.MissingReport, .{});
+                defer file.close(io);
+                try file.writeStreamingAll(io, bytes);
+            }
+        },
+        else => return error.UnsupportedSharedModel,
+    }
+}
+
 const Capture = struct {
     bytes: std.ArrayList(u8) = .empty,
     chunks: std.ArrayList(usize) = .empty,
@@ -100,7 +237,7 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
         expected[i] = try g.takeReply();
         completed += 1;
     }
-    if (comptime M == @import("nemotron.zig").Model or M == @import("flash.zig").Model) if (neural) {
+    if (comptime M == @import("nemotron.zig").Model or M == @import("flash.zig").Model or M == @import("gemma.zig").Model) if (neural) {
         try singletonMtpRequests(s, m, prompts[0]);
     };
     for ([_]usize{ 1, 2, 8, if (@hasDecl(M, "max_shared_rows")) M.max_shared_rows else 128 }) |rows| {
@@ -181,7 +318,8 @@ fn singletonMtpRequests(s: *session.Session, m: anytype, prompt: []const i32) !v
     const M = @TypeOf(m.*);
     const G = session.Generation(M);
     const shared = @import("shared_round.zig");
-    const adaptive = M.adaptive_mtp_depth;
+    const adaptive = if (M == @import("gemma.zig").Model) true else M.adaptive_mtp_depth;
+    const prior = if (@hasDecl(M, "draft_prior")) M.draft_prior else &@import("draft_depth.zig").flash_prior;
     for ([_]f64{ 0, 0.7 }) |temperature| for ([_]bool{ false, true }) |forced_round| {
         const options = session.Options{ .max_tokens = 16, .ignore_eos = true, .draft = true, .seed = 819, .sampling = .{ .metal = true, .temperature = temperature, .top_k = 12, .top_p = 0.8 } };
         var captures: [2]Capture = @splat(.{});
@@ -205,7 +343,7 @@ fn singletonMtpRequests(s: *session.Session, m: anytype, prompt: []const i32) !v
             actual.budget.forced = &forced;
         }
         while (!try reference.step(m)) {}
-        var coordinator = shared.Coordinator{ .max_rows = 8, .cost_count = 8, .mtp_costs = try @import("draft_depth.zig").Adaptive.init(3, M.draft_prior) };
+        var coordinator = shared.Coordinator{ .max_rows = 8, .cost_count = 8, .mtp_costs = try @import("draft_depth.zig").Adaptive.init(3, prior) };
         for (0..8) |i| {
             const ms = @as(f64, @floatFromInt(i + 1)) * 4;
             coordinator.costs[i] = .{ .rows = i + 1, .ms = ms };
@@ -230,7 +368,16 @@ fn singletonMtpRequests(s: *session.Session, m: anytype, prompt: []const i32) !v
         var measured = false;
         for (coordinator.mtp_costs.?.round_ms) |ms| measured = measured or ms > 0;
         try std.testing.expectEqual(adaptive, measured);
-        try samePreviewCaches(M, &reference.state, &actual.state);
+        if (M == @import("gemma.zig").Model) {
+            var scope = mx.Scope{};
+            defer scope.deinit();
+            try std.testing.expectEqual(reference.state.position, actual.state.position);
+            for (reference.state.cache, actual.state.cache) |left, right| {
+                try previewEqual(&scope, left.keys, right.keys);
+                try previewEqual(&scope, left.values, right.values);
+            }
+            try mx.evalMany(scope.arrays.items, false);
+        } else try samePreviewCaches(M, &reference.state, &actual.state);
         try samePreviewCaches(M, &saved, &saved_copy);
         var expected = try reference.takeReply();
         defer expected.deinit(mx.allocator);

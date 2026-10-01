@@ -4,6 +4,37 @@ const mx = @import("mlx.zig");
 const Stopwatch = @import("vendor/io_util.zig").Stopwatch;
 const Adaptive = @import("draft_depth.zig").Adaptive;
 
+pub fn checkTokens(tokenizer: *@import("vendor/tokenizer.zig").Tokenizer, tokens: *[64]i32, vocab: usize) !void {
+    const text = "def merge(intervals):\n    \"\"\"Merge overlapping intervals and return them sorted.\"\"\"\n" ++
+        "    intervals = sorted(intervals)\n    out = [intervals[0]]\n    for start, end in intervals[1:]:\n" ++
+        "        if start <= out[-1][1]:\n            out[-1][1] = max(out[-1][1], end)\n        else:\n" ++
+        "            out.append([start, end])\n    return out\n\nThe river ran high that spring, and the ferry " ++
+        "stopped for the first time anyone could remember.";
+    const ids = try tokenizer.encode(mx.allocator, text);
+    defer mx.allocator.free(ids);
+    for (tokens, 0..) |*token, i| token.* = @intCast(if (ids.len >= tokens.len) ids[i] else ((37 * i + 11) % 50_000 + 1000) % vocab);
+}
+
+pub fn measureStep(comptime M: type, m: *M, io: std.Io, policy: *Adaptive) !void {
+    var cache = M.DraftCache{};
+    defer cache.deinit();
+    var inputs = mx.Scope{};
+    defer inputs.deinit();
+    const hidden = try inputs.zeros(&.{ 1, mx.dim(try m.weights.get("mtp.layers.0.hnorm.weight"), 0) }, mx.bf16);
+    const token = try inputs.ints(&.{1000});
+    var best = std.math.inf(f64);
+    for (0..6) |_| {
+        var s = mx.Scope{};
+        defer s.deinit();
+        const timer = Stopwatch.init(io);
+        const out = try m.draftStepArray(&s, hidden, token, &cache, true);
+        const picked = try @import("gpu_sampling.zig").sample(&m.kernels, &s, try m.draftHead(&s, out), &.{0}, .{ .metal = true, .temperature = 0, .top_k = 0, .top_p = 1 }, m.weights.arrays.get("draft_ids"));
+        try mx.eval(picked);
+        best = @min(best, @as(f64, @floatFromInt(timer.read())) / 1e6);
+    }
+    policy.mtp_ms = best;
+}
+
 pub fn measure(comptime M: type, m: *M, io: std.Io, policy: *Adaptive, settings: @import("sampling.zig").Sampling) !void {
     m.reset();
     defer m.reset();

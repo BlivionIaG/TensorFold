@@ -5,8 +5,7 @@ const cp = @import("checkpoint.zig");
 const nemotron = @import("nemotron.zig");
 const c = mx.c;
 const A = mx.Array;
-pub var evaluation_stride: usize = 4;
-pub var release_layer_temporaries = false;
+pub var evaluation_stride: usize = 0;
 
 pub const Route = struct {
     closure: c.mlx_closure = .{ .ctx = null },
@@ -163,7 +162,7 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
     for (m.kinds, 0..) |kind, index| {
         var layer_scope = mx.Scope{};
         defer layer_scope.deinit();
-        const layer = if (release_layer_temporaries) &layer_scope else s;
+        const layer = &layer_scope;
         const weight = try m.weights.get(try std.fmt.bufPrint(&buf, "backbone.layers.{d}.norm.weight", .{index}));
         const x = try cp.norm(layer, h, weight, 1e-5);
         const base = try std.fmt.bufPrint(&buf, "backbone.layers.{d}.mixer", .{index});
@@ -174,12 +173,10 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
             else => return error.InvalidLayerKind,
         };
         h = try layer.binary(c.mlx_add, h, branch);
-        if (release_layer_temporaries) {
-            h = try s.own(try mx.retain(h));
-            inline for (.{ "a", "b" }) |field| {
-                const value = @field(pass.records[index], field);
-                if (value.ctx != null) @field(pass.records[index], field) = try s.own(try mx.retain(value));
-            }
+        h = try s.own(try mx.retain(h));
+        inline for (.{ "a", "b" }) |field| {
+            const value = @field(pass.records[index], field);
+            if (value.ctx != null) @field(pass.records[index], field) = try s.own(try mx.retain(value));
         }
         if (evaluation_stride > 0 and (index + 1) % evaluation_stride == 0) try mx.eval(h);
     }

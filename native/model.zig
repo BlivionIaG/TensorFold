@@ -452,7 +452,7 @@ pub const Model = struct {
                 next[i].a = try mx.retain(keys);
                 next[i].b = try mx.retain(vals);
             } else {
-                const state = (try m.kernels.run(s, src.lane_tree_replay, &.{ v[0], v[1], v[2], v[3], v[4], v[5], ids, count }, &.{ ti("Dk", 128), ti("Dv", 128), ti("Hk", 16), ti("Hv", 48), mx.td("StT", mx.f32t) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{.{ .shape = &.{ 1, 48, 128, 128 }, .dtype = mx.f32t }}))[0];
+                const state = if (v[7].ctx != null and rows.len == p.count) v[7] else (try m.kernels.run(s, src.lane_tree_replay, &.{ v[0], v[1], v[2], v[3], v[4], v[5], ids, count }, &.{ ti("Dk", 128), ti("Dv", 128), ti("Hk", 16), ti("Hv", 48), mx.td("StT", mx.f32t) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{.{ .shape = &.{ 1, 48, 128, 128 }, .dtype = mx.f32t }}))[0];
                 var tail: [3]i32 = undefined;
                 for (0..3) |j| {
                     const n = @as(i32, @intCast(rows.len)) + @as(i32, @intCast(j));

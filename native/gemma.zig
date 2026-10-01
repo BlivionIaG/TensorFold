@@ -575,11 +575,15 @@ pub const Model = struct {
     }
 
     pub fn forwardQueued(m: *Model, tokens: []const i32) !Pass {
-        if (tokens.len == 0 or tokens.len > max_decode_rows or m.position > 262144 - tokens.len) return error.ContextLimitExceeded;
+        return m.forwardState(&m.cache, m.position, m.generation, tokens);
+    }
+
+    pub fn forwardState(m: *Model, cache: []Cache, position: i32, generation: u64, tokens: []const i32) !Pass {
+        if (tokens.len == 0 or tokens.len > max_decode_rows or position > 262144 - tokens.len) return error.ContextLimitExceeded;
         for (tokens) |token| if (token < 0 or token >= vocab) return error.InvalidToken;
         var scope = mx.Scope{};
         defer scope.deinit();
-        return m.forwardInput(&m.cache, m.position, m.generation, try scope.ints(tokens), tokens.len);
+        return m.forwardInput(cache, position, generation, try scope.ints(tokens), tokens.len);
     }
 
     pub fn forwardAfter(m: *Model, previous: *Pass, sampled: A) !Pass {

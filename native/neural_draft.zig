@@ -86,7 +86,7 @@ pub fn absorb(m: anytype, state: anytype, d: ?*Drafter, pass: anytype, tokens: [
     } else {
         const on_commit = if (@hasDecl(M, "draftAbsorbsOnCommit")) m.draftAbsorbsOnCommit() else false;
         const hidden = if (@hasDecl(M, "draftHidden")) M.draftHidden(pass) else pass.hidden;
-        if (M == @import("nemotron.zig").Model) {
+        if (M == @import("nemotron.zig").Model or M == @import("flash.zig").Model) {
             if (rows.len == 0) return;
             if (state.borrowed) return error.RequestRoundActive;
             var pending = try @import("request_state.zig").State(M).init(m);
@@ -101,7 +101,7 @@ pub fn absorb(m: anytype, state: anytype, d: ?*Drafter, pass: anytype, tokens: [
             }
             std.mem.swap(M.DraftCache, &state.head_cache, &pending.head_cache);
             std.mem.swap(mx.Array, &state.draft_hidden, &pending.draft_hidden);
-            state.head_prediction.deinit();
+            if (@hasDecl(M, "HeadPrediction")) state.head_prediction.deinit();
             return;
         }
         if (comptime @hasDecl(M, "absorbDraftContext")) {

@@ -97,6 +97,10 @@ pub fn forward(m: *flash.Model, tokens: []const i32) !flash.Pass {
     const e = try m.weights.embed(&carry, "model.embed_tokens", tokens);
     var h = try carry.cat(&.{ e, e, e, e }, -1);
     var pending: ?hc.Pending = null;
+    var queued = mx.Scope{};
+    defer queued.deinit();
+    var queued_arrays: [33]A = undefined;
+    var queued_count: usize = 0;
     var buf: [256]u8 = undefined;
     for (0..48) |i| {
         var scratch = mx.Scope{};
@@ -112,12 +116,10 @@ pub fn forward(m: *flash.Model, tokens: []const i32) !flash.Pass {
         const mh = try hyper(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.mlp_hyper_connection", .{i}), ah.residual, .{ .branch = branch, .inject = ah.inject.? }, true);
         h = mh.residual;
         pending = .{ .branch = try experts(m, s, try std.fmt.bufPrint(&buf, "model.layers.{d}.mlp", .{i}), mh.mixed), .inject = mh.inject.? };
-        try mx.evalMany(&.{ h, pending.?.branch, pending.?.inject, pass.records[i].a, pass.records[i].b }, false);
         const record = &pass.records[i];
         inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
             const value = @field(record, field);
             if (value.ctx != null) {
-                try mx.eval(value);
                 @field(record, field) = try pass.scope.own(try mx.retain(value));
             }
         }
@@ -132,6 +134,37 @@ pub fn forward(m: *flash.Model, tokens: []const i32) !flash.Pass {
         carry = .{};
         h = try carry.own(try mx.retain(h));
         pending = .{ .branch = try carry.own(try mx.retain(pending.?.branch)), .inject = try carry.own(try mx.retain(pending.?.inject)) };
+        if ((i + 1) % 2 == 0) {
+            var next = mx.Scope{};
+            errdefer next.deinit();
+            var arrays: [33]A = undefined;
+            for ([_]A{ h, pending.?.branch, pending.?.inject }, 0..) |value, j| arrays[j] = try next.own(try mx.retain(value));
+            var count: usize = 3;
+            for (pass.records[i - 1 .. i + 1]) |state| {
+                inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
+                    const value = @field(state, field);
+                    if (value.ctx != null) {
+                        arrays[count] = value;
+                        count += 1;
+                    }
+                }
+                inline for (.{ "key_write", "value_write", "index_write" }) |field| {
+                    inline for (.{ "capacity", "added", "view" }) |part| {
+                        const value = @field(@field(state, field), part);
+                        if (value.ctx != null) {
+                            arrays[count] = value;
+                            count += 1;
+                        }
+                    }
+                }
+            }
+            try mx.evalMany(arrays[0..count], true);
+            if (queued_count > 0) try mx.evalMany(queued_arrays[0..queued_count], false);
+            queued.deinit();
+            queued = next;
+            @memcpy(queued_arrays[0..count], arrays[0..count]);
+            queued_count = count;
+        }
     }
     const s = &pass.scope;
     const mixed = try hyper(m, s, "model.hyper_connection_mixer", h, pending, false);

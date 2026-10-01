@@ -130,6 +130,15 @@ pub fn forward(m: *gemma.Model, streams: []const Stream) !Pass {
         ticket.release();
     }
     const s = &p.scope;
+    if (entries.len == 1) {
+        const state = entries[0].state;
+        entries[0].pass = try m.forwardState(state.cache, state.position, state.generation, streams[0].tokens);
+        for (entries[0].pass.records, 0..) |record, layer| entries[0].pass.record_bytes[layer] = .{ mx.c.mlx_array_nbytes(record.keys), mx.c.mlx_array_nbytes(record.values) };
+        p.hidden = entries[0].pass.hidden;
+        p.logits = entries[0].pass.logits;
+        try ticket.advance(.bound, .forwarded);
+        return p;
+    }
     const at = try ops.paddedInts(s, positions[0..rows]);
     var attention_rows: [stream_limit][2]ops.Rows = undefined;
     for (entries, attention_rows[0..entries.len]) |entry, *prepared| {

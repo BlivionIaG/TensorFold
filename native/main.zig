@@ -16,6 +16,7 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     @import("bonsai.zig").memory_limit = init.environ_map.get("TENSORFOLD_MEMORY_LIMIT_GB");
     @import("flash_prefill_mm.zig").require_kernels = std.mem.eql(u8, init.environ_map.get("TF_REQUIRE_KERNELS") orelse "", "1");
+    if (args.len >= 3 and std.mem.eql(u8, args[1], "bench-session")) return @import("session_checks.zig").bench(init, args);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-flash-checkpoint")) return @import("flash_names.zig").check(io, args[2]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-flash-weights")) return @import("flash_ops.zig").checkWeights(io, args[2]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-flash-prefill-hc")) return @import("flash_prefill_ops.zig").check(io, args[2]);
@@ -62,6 +63,11 @@ pub fn main(init: std.process.Init) !void {
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-memory-budget")) return @import("memory_budget.zig").check(io, args[2]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-prompt-cache")) return @import("prompt_cache.zig").check(io, args[2]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-prefill-plan")) return @import("prefill_plan.zig").check(io, args[2]);
+    if (args.len == 3 and std.mem.eql(u8, args[1], "check-qwen-prefill-commit")) return @import("qwen_prefill.zig").checkCommit(io, args[2]);
+    if (args.len == 4 and std.mem.eql(u8, args[1], "check-qwen-prefill-commit") and std.mem.eql(u8, args[3], "--metal-simd")) {
+        mx.force_simd = true;
+        return @import("qwen_prefill.zig").checkCommit(io, args[2]);
+    }
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-snapshot-warming")) return @import("snapshot_store.zig").checkWarming(io, args[2]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-server-live")) return @import("server_live.zig").check(io, args[2]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-tool-drafts")) return @import("tool_draft_checks.zig").check(io, args[2], args[3]);
@@ -82,10 +88,6 @@ pub fn main(init: std.process.Init) !void {
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-image-url")) return @import("image_http.zig").fetchCheck(io, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-gemma-prefill")) return @import("gemma_prefill.zig").check(io, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-nemotron-prefill")) return @import("nemotron_prefill.zig").check(io, args[2], args[3]);
-    if (args.len == 5 and std.mem.eql(u8, args[1], "check-nemotron-prefill") and std.mem.eql(u8, args[4], "--prefill-release-layers")) {
-        @import("nemotron_prefill.zig").release_layer_temporaries = true;
-        return @import("nemotron_prefill.zig").check(io, args[2], args[3]);
-    }
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-flash-prefill")) return @import("flash_prefill.zig").check(io, args[2], args[3], false);
     if (args.len == 5 and std.mem.eql(u8, args[1], "check-flash-prefill") and std.mem.eql(u8, args[4], "--custom-tiles")) return @import("flash_prefill.zig").check(io, args[2], args[3], true);
     if (args.len == 5 and std.mem.eql(u8, args[1], "check-flash-prefill") and std.mem.eql(u8, args[4], "--metal-simd")) {
