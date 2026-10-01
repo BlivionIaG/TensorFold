@@ -16,6 +16,7 @@
 #include "affine_api.hpp"
 #include "arch.hpp"
 
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -32,10 +33,151 @@
 namespace tf {
 namespace rocm {
 
+struct GroupSide {
+    const uint32_t* words;
+    const float* scale;
+    const float* bias;
+    float* out;
+    int n;
+    int tiles;
+};
+
 #if TENSORFOLD_RDNA_WMMA
 
 constexpr int kTile = 16;
 
+// 8-bit codes are whole bytes. A column's 16 codes are two dword pairs at a 16-byte step.
+__device__ inline uint2 load_b8(const uint32_t* words, int words_per_row, int n0, int k0, int n, int lane) {
+    int col = lane & 15;
+    if (n0 + col >= n) return make_uint2(0u, 0u);
+    const uint32_t* ptr = words + static_cast<long long>(n0 + col) * words_per_row + (k0 >> 2) + (lane >> 4) * 2;
+    uint2 packed;
+    ::memcpy(&packed, ptr, sizeof(packed));
+    return packed;
+}
+
+__device__ inline void store_b8(hip_bfloat16* tile, uint2 packed, int lane) {
+    hip_bfloat16* dst = tile + (lane & 15) * kTile + (lane >> 4) * 8;
+    unsigned int halves[2] = {packed.x, packed.y};
+#pragma unroll
+    for (int half = 0; half < 2; ++half) {
+        unsigned int word = halves[half];
+#pragma unroll
+        for (int i = 0; i < 4; ++i) dst[half * 4 + i] = hip_bfloat16(code_bf16((word >> (i * 8)) & 0xffu));
+    }
+}
+
+__device__ inline hip_bfloat16 bf16_bits(unsigned short bits) {
+    hip_bfloat16 out;
+    ::memcpy(&out, &bits, sizeof(out));
+    return out;
+}
+
+__device__ inline void store_bf8(hip_bfloat16* dst, uint4 packed) {
+    unsigned int words[4] = {packed.x, packed.y, packed.z, packed.w};
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+        dst[i * 2] = bf16_bits(static_cast<unsigned short>(words[i]));
+        dst[i * 2 + 1] = bf16_bits(static_cast<unsigned short>(words[i] >> 16));
+    }
+}
+
+// One lane owns one activation row. Rows past M are zeros, and odd rows park at r ^ 1.
+__device__ inline void fill_a8(hip_bfloat16* As, hip_bfloat16* AsOdd, const hip_bfloat16* x, int m0, int k0, int m,
+                               int k, int lane, bool replay) {
+    if (lane >= kTile) return;
+    hip_bfloat16* row = As + lane * kTile;
+    if (m0 + lane < m) {
+        const hip_bfloat16* src = x + static_cast<long long>(m0 + lane) * k + k0;
+        uint4 lo, hi;
+        ::memcpy(&lo, src, sizeof(lo));
+        ::memcpy(&hi, src + 8, sizeof(hi));
+        store_bf8(row, lo);
+        store_bf8(row + 8, hi);
+    } else {
+#pragma unroll
+        for (int i = 0; i < kTile; ++i) row[i] = hip_bfloat16(0.f);
+    }
+    if (!replay) return;
+    hip_bfloat16* odd = AsOdd + (lane ^ 1) * kTile;
+#pragma unroll
+    for (int i = 0; i < kTile; ++i) odd[i] = row[i];
+}
+
+__device__ void write_xsum(const hip_bfloat16* x, const float* scale, const float* bias, float* xsum, float* scol,
+                           float* bcol, int lane, int m0, int n0, int base, int g, int group, int groups, int m,
+                           int k, int n) {
+    if (lane >= kTile) return;
+    float sum = 0.f;
+    if (m0 + lane < m) {
+        const hip_bfloat16* xrow = x + static_cast<long long>(m0 + lane) * k + base;
+        for (int t = 0; t < group; ++t) sum += static_cast<float>(xrow[t]);
+    }
+    xsum[lane] = sum;
+    int col = n0 + lane;
+    long long at = static_cast<long long>(col) * groups + g;
+    scol[lane] = col < n ? scale[at] : 0.f;
+    bcol[lane] = col < n ? bias[at] : 0.f;
+}
+
+__device__ void fma_group(float* acc, const float* dot_even, const float* dot_odd, const float* xsum,
+                          const float* scol, const float* bcol, bool replay, int lane) {
+    for (int e = lane; e < kTile * kTile; e += 32) {
+        int r = e / kTile;
+        int c = e % kTile;
+        float dot = (replay && (r & 1)) ? dot_odd[(r ^ 1) * kTile + c] : dot_even[e];
+        acc[e] = fmaf(dot, scol[c], acc[e]);
+        acc[e] = fmaf(xsum[r], bcol[c], acc[e]);
+    }
+}
+
+template <typename FragA, typename FragB, typename FragC>
+__device__ void mma_tile(FragC& even, FragC& odd, const hip_bfloat16* As, const hip_bfloat16* AsOdd,
+                         const hip_bfloat16* Bs, bool replay) {
+    using namespace rocwmma;
+    FragA fa;
+    FragB fb;
+    load_matrix_sync(fa, As, kTile);
+    load_matrix_sync(fb, Bs, kTile);
+    mma_sync(even, fa, fb, even);
+    if (replay) {
+        FragA fa_odd;
+        load_matrix_sync(fa_odd, AsOdd, kTile);
+        mma_sync(odd, fa_odd, fb, odd);
+    }
+}
+
+// Every thread takes the same `live` path, so the barriers are uniform.
+template <typename FragA, typename FragB, typename FragC>
+__device__ void consume8(FragC& even, FragC& odd, hip_bfloat16* As, hip_bfloat16* AsOdd, hip_bfloat16* Bs,
+                         const hip_bfloat16* x, uint2 packed, int m0, int k0, int m, int k, int lane, bool replay,
+                         bool live) {
+    if (!live) return;
+    store_b8(Bs, packed, lane);
+    fill_a8(As, AsOdd, x, m0, k0, m, k, lane, replay);
+    __syncthreads();
+    mma_tile<FragA, FragB, FragC>(even, odd, As, AsOdd, Bs, replay);
+    __syncthreads();
+}
+
+// One activation tile feeds both sides. `live` is uniform across the wave.
+template <typename FragA, typename FragB, typename FragC>
+__device__ void consume_pair(FragC* even, FragC* odd, hip_bfloat16* As, hip_bfloat16* AsOdd, hip_bfloat16* Bs,
+                             const hip_bfloat16* x, uint2 first, uint2 second, int m0, int k0, int m, int k,
+                             int lane, bool replay, bool live) {
+    if (!live) return;
+    fill_a8(As, AsOdd, x, m0, k0, m, k, lane, replay);
+    store_b8(Bs, first, lane);
+    __syncthreads();
+    mma_tile<FragA, FragB, FragC>(even[0], odd[0], As, AsOdd, Bs, replay);
+    __syncthreads();
+    store_b8(Bs, second, lane);
+    __syncthreads();
+    mma_tile<FragA, FragB, FragC>(even[1], odd[1], As, AsOdd, Bs, replay);
+    __syncthreads();
+}
+
+template <bool kEight>
 __global__ void __launch_bounds__(32) affine_wmma_kernel(Affine a) {
     using namespace rocwmma;
     int n0 = blockIdx.x * kTile;
@@ -65,69 +207,75 @@ __global__ void __launch_bounds__(32) affine_wmma_kernel(Affine a) {
 
     for (int group = 0; group < groups; ++group) {
         int base = group * a.group;
-        if (lane < kTile) {
-            float sum = 0.f;
-            int row = m0 + lane;
-            if (row < a.m) {
-                const hip_bfloat16* xrow = x + static_cast<long long>(row) * a.k + base;
-                for (int t = 0; t < a.group; ++t) sum += static_cast<float>(xrow[t]);
-            }
-            xsum[lane] = sum;
-            int col = n0 + lane;
-            scol[lane] = col < a.n ? a.scale[static_cast<long long>(col) * groups + group] : 0.f;
-            bcol[lane] = col < a.n ? a.bias[static_cast<long long>(col) * groups + group] : 0.f;
+        // The whole group is in flight before the scale sum, so the K steps do not each wait on HBM.
+        uint2 b0, b1, b2, b3, b4, b5, b6, b7;
+        if constexpr (kEight) {
+            b0 = load_b8(a.words, words, n0, base, a.n, lane);
+            b1 = load_b8(a.words, words, n0, base + 16, a.n, lane);
+            b2 = a.group > 32 ? load_b8(a.words, words, n0, base + 32, a.n, lane) : make_uint2(0u, 0u);
+            b3 = a.group > 48 ? load_b8(a.words, words, n0, base + 48, a.n, lane) : make_uint2(0u, 0u);
+            b4 = a.group > 64 ? load_b8(a.words, words, n0, base + 64, a.n, lane) : make_uint2(0u, 0u);
+            b5 = a.group > 80 ? load_b8(a.words, words, n0, base + 80, a.n, lane) : make_uint2(0u, 0u);
+            b6 = a.group > 96 ? load_b8(a.words, words, n0, base + 96, a.n, lane) : make_uint2(0u, 0u);
+            b7 = a.group > 112 ? load_b8(a.words, words, n0, base + 112, a.n, lane) : make_uint2(0u, 0u);
         }
+        write_xsum(x, a.scale, a.bias, xsum, scol, bcol, lane, m0, n0, base, group, a.group, groups, a.m, a.k,
+                   a.n);
         __syncthreads();
 
         FragC part_even, part_odd;
         fill_fragment(part_even, 0.f);
         fill_fragment(part_odd, 0.f);
-        for (int step = 0; step < a.group; step += kTile) {
-            int k0 = base + step;
-            for (int e = lane; e < kTile * kTile; e += 32) {
-                int r = e / kTile;
-                int c = e % kTile;
-                int grow = m0 + r;
-                int gcol = k0 + c;
-                hip_bfloat16 xv = hip_bfloat16(0.f);
-                if (grow < a.m && gcol < a.k) xv = x[static_cast<long long>(grow) * a.k + gcol];
-                As[r * kTile + c] = xv;
-                if (replay) AsOdd[(r ^ 1) * kTile + c] = xv;
+        if constexpr (kEight) {
+            consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b0, m0, base, a.m, a.k, lane,
+                                          replay, true);
+            consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b1, m0, base + 16, a.m, a.k, lane,
+                                          replay, true);
+            consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b2, m0, base + 32, a.m, a.k, lane,
+                                          replay, a.group > 32);
+            consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b3, m0, base + 48, a.m, a.k, lane,
+                                          replay, a.group > 48);
+            consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b4, m0, base + 64, a.m, a.k, lane,
+                                          replay, a.group > 64);
+            consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b5, m0, base + 80, a.m, a.k, lane,
+                                          replay, a.group > 80);
+            consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b6, m0, base + 96, a.m, a.k, lane,
+                                          replay, a.group > 96);
+            consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b7, m0, base + 112, a.m, a.k, lane,
+                                          replay, a.group > 112);
+        } else {
+            for (int step = 0; step < a.group; step += kTile) {
+                int k0 = base + step;
+                for (int e = lane; e < kTile * kTile; e += 32) {
+                    int r = e / kTile;
+                    int c = e % kTile;
+                    int grow = m0 + r;
+                    int gcol = k0 + c;
+                    hip_bfloat16 xv = hip_bfloat16(0.f);
+                    if (grow < a.m && gcol < a.k) xv = x[static_cast<long long>(grow) * a.k + gcol];
+                    As[r * kTile + c] = xv;
+                    if (replay) AsOdd[(r ^ 1) * kTile + c] = xv;
 
-                int ncol = n0 + r;
-                int nk = k0 + c;
-                hip_bfloat16 qv = hip_bfloat16(0.f);
-                if (ncol < a.n && nk < a.k) {
-                    const uint32_t* wrow = a.words + static_cast<long long>(ncol) * words;
-                    qv = hip_bfloat16(code_bf16(affine_code(wrow, nk, a.bits, words)));
+                    int ncol = n0 + r;
+                    int nk = k0 + c;
+                    hip_bfloat16 qv = hip_bfloat16(0.f);
+                    if (ncol < a.n && nk < a.k) {
+                        const uint32_t* wrow = a.words + static_cast<long long>(ncol) * words;
+                        qv = hip_bfloat16(code_bf16(affine_code(wrow, nk, a.bits, words)));
+                    }
+                    Bs[r * kTile + c] = qv;  // col-major (k, n): index n * 16 + k
                 }
-                Bs[r * kTile + c] = qv;  // col-major (k, n): index n * 16 + k
+                __syncthreads();
+                mma_tile<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, replay);
+                __syncthreads();
             }
-            __syncthreads();
-            FragA fa;
-            FragB fb;
-            load_matrix_sync(fa, As, kTile);
-            load_matrix_sync(fb, Bs, kTile);
-            mma_sync(part_even, fa, fb, part_even);
-            if (replay) {
-                FragA fa_odd;
-                load_matrix_sync(fa_odd, AsOdd, kTile);
-                mma_sync(part_odd, fa_odd, fb, part_odd);
-            }
-            __syncthreads();
         }
 
         store_matrix_sync(dot_even, part_even, kTile, mem_row_major);
         if (replay) store_matrix_sync(dot_odd, part_odd, kTile, mem_row_major);
         __syncthreads();
-        for (int e = lane; e < kTile * kTile; e += 32) {
-            int r = e / kTile;
-            int c = e % kTile;
-            // The replay's even physical row r ^ 1 holds logical row r.
-            float dot = (replay && (r & 1)) ? dot_odd[(r ^ 1) * kTile + c] : dot_even[e];
-            acc[e] = fmaf(dot, scol[c], acc[e]);
-            acc[e] = fmaf(xsum[r], bcol[c], acc[e]);
-        }
+        // The replay's even physical row r ^ 1 holds logical row r.
+        fma_group(acc, dot_even, dot_odd, xsum, scol, bcol, replay, lane);
         __syncthreads();
     }
 
@@ -138,18 +286,266 @@ __global__ void __launch_bounds__(32) affine_wmma_kernel(Affine a) {
     }
 }
 
+// One wave, two outputs. A is loaded once per K step and both sides use it.
+__global__ void __launch_bounds__(32) affine_wmma_pair_kernel(Affine a, AffineSide first, AffineSide second) {
+    using namespace rocwmma;
+    int n0 = blockIdx.x * kTile;
+    int m0 = blockIdx.y * kTile;
+    int lane = threadIdx.x;
+    int words = a.k * a.bits / 32;
+    int groups = a.k / a.group;
+    const hip_bfloat16* x = static_cast<const hip_bfloat16*>(a.x);
+    AffineSide sides[2] = {first, second};
+
+    __shared__ hip_bfloat16 As[kTile * kTile];
+    __shared__ hip_bfloat16 AsOdd[kTile * kTile];
+    __shared__ hip_bfloat16 Bs[kTile * kTile];
+    __shared__ float dot_even[kTile * kTile];
+    __shared__ float dot_odd[kTile * kTile];
+    __shared__ float acc[2][kTile * kTile];
+    __shared__ float xsum[kTile];
+    __shared__ float scol[2][kTile];
+    __shared__ float bcol[2][kTile];
+
+    for (int side = 0; side < 2; ++side) {
+        for (int e = lane; e < kTile * kTile; e += 32) acc[side][e] = 0.f;
+    }
+    const bool replay = m0 + 1 < a.m;
+
+    using FragA = fragment<matrix_a, kTile, kTile, kTile, bfloat16_t, row_major>;
+    using FragB = fragment<matrix_b, kTile, kTile, kTile, bfloat16_t, col_major>;
+    using FragC = fragment<accumulator, kTile, kTile, kTile, float>;
+
+    for (int group = 0; group < groups; ++group) {
+        int base = group * a.group;
+        if (lane < kTile) {
+            float sum = 0.f;
+            int row = m0 + lane;
+            if (row < a.m) {
+                const hip_bfloat16* xrow = x + static_cast<long long>(row) * a.k + base;
+                for (int t = 0; t < a.group; ++t) sum += static_cast<float>(xrow[t]);
+            }
+            xsum[lane] = sum;
+            int col = n0 + lane;
+            for (int side = 0; side < 2; ++side) {
+                long long at = static_cast<long long>(col) * groups + group;
+                scol[side][lane] = col < sides[side].n ? sides[side].scale[at] : 0.f;
+                bcol[side][lane] = col < sides[side].n ? sides[side].bias[at] : 0.f;
+            }
+        }
+        __syncthreads();
+
+        FragC part_even[2], part_odd[2];
+        for (int side = 0; side < 2; ++side) {
+            fill_fragment(part_even[side], 0.f);
+            fill_fragment(part_odd[side], 0.f);
+        }
+        // Both sides of this group are read before either WMMA, one chunk of 64 codes at a time.
+        for (int chunk = 0; chunk < a.group; chunk += 64) {
+            int kbase = base + chunk;
+            int left = a.group - chunk;
+            uint2 p0 = load_b8(sides[0].words, words, n0, kbase, sides[0].n, lane);
+            uint2 q0 = load_b8(sides[1].words, words, n0, kbase, sides[1].n, lane);
+            uint2 p1 = make_uint2(0u, 0u), p2 = make_uint2(0u, 0u), p3 = make_uint2(0u, 0u);
+            uint2 q1 = make_uint2(0u, 0u), q2 = make_uint2(0u, 0u), q3 = make_uint2(0u, 0u);
+            if (left > 16) {
+                p1 = load_b8(sides[0].words, words, n0, kbase + 16, sides[0].n, lane);
+                q1 = load_b8(sides[1].words, words, n0, kbase + 16, sides[1].n, lane);
+            }
+            if (left > 32) {
+                p2 = load_b8(sides[0].words, words, n0, kbase + 32, sides[0].n, lane);
+                q2 = load_b8(sides[1].words, words, n0, kbase + 32, sides[1].n, lane);
+            }
+            if (left > 48) {
+                p3 = load_b8(sides[0].words, words, n0, kbase + 48, sides[0].n, lane);
+                q3 = load_b8(sides[1].words, words, n0, kbase + 48, sides[1].n, lane);
+            }
+            consume_pair<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, p0, q0, m0, kbase, a.m, a.k,
+                                              lane, replay, true);
+            consume_pair<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, p1, q1, m0, kbase + 16, a.m,
+                                              a.k, lane, replay, left > 16);
+            consume_pair<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, p2, q2, m0, kbase + 32, a.m,
+                                              a.k, lane, replay, left > 32);
+            consume_pair<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, p3, q3, m0, kbase + 48, a.m,
+                                              a.k, lane, replay, left > 48);
+        }
+        for (int side = 0; side < 2; ++side) {
+            store_matrix_sync(dot_even, part_even[side], kTile, mem_row_major);
+            if (replay) store_matrix_sync(dot_odd, part_odd[side], kTile, mem_row_major);
+            __syncthreads();
+            for (int e = lane; e < kTile * kTile; e += 32) {
+                int r = e / kTile;
+                int c = e % kTile;
+                float dot = (replay && (r & 1)) ? dot_odd[(r ^ 1) * kTile + c] : dot_even[e];
+                acc[side][e] = fmaf(dot, scol[side][c], acc[side][e]);
+                acc[side][e] = fmaf(xsum[r], bcol[side][c], acc[side][e]);
+            }
+            __syncthreads();
+        }
+    }
+
+    for (int side = 0; side < 2; ++side) {
+        for (int e = lane; e < kTile * kTile; e += 32) {
+            int grow = m0 + e / kTile;
+            int gcol = n0 + e % kTile;
+            if (grow < a.m && gcol < sides[side].n) {
+                sides[side].out[static_cast<long long>(grow) * sides[side].n + gcol] = acc[side][e];
+            }
+        }
+    }
+}
+
+// One block owns one 16-column tile of one side. The side is uniform inside the block.
+__device__ void pick_group(int tile, GroupSide s0, GroupSide s1, GroupSide s2, GroupSide s3, const uint32_t*& words,
+                           const float*& scale, const float*& bias, float*& out, int& n, int& n0) {
+    int b1 = s0.tiles;
+    int b2 = b1 + s1.tiles;
+    int b3 = b2 + s2.tiles;
+    GroupSide side = s0;
+    int local = tile;
+    if (tile >= b1 && tile < b2) {
+        side = s1;
+        local = tile - b1;
+    } else if (tile >= b2 && tile < b3) {
+        side = s2;
+        local = tile - b2;
+    } else if (tile >= b3) {
+        side = s3;
+        local = tile - b3;
+    }
+    words = side.words;
+    scale = side.scale;
+    bias = side.bias;
+    out = side.out;
+    n = side.n;
+    n0 = local * kTile;
+}
+
+__global__ void __launch_bounds__(32) affine_wmma_group_kernel(Affine a, GroupSide s0, GroupSide s1, GroupSide s2,
+                                                              GroupSide s3) {
+    using namespace rocwmma;
+    int m0 = blockIdx.y * kTile;
+    int lane = threadIdx.x;
+    int words_per_row = a.k * a.bits / 32;
+    int groups = a.k / a.group;
+    const hip_bfloat16* x = static_cast<const hip_bfloat16*>(a.x);
+    const uint32_t* side_words = nullptr;
+    const float* side_scale = nullptr;
+    const float* side_bias = nullptr;
+    float* side_out = nullptr;
+    int side_n = 0;
+    int n0 = 0;
+    pick_group(blockIdx.x, s0, s1, s2, s3, side_words, side_scale, side_bias, side_out, side_n, n0);
+
+    __shared__ hip_bfloat16 As[kTile * kTile];
+    __shared__ hip_bfloat16 AsOdd[kTile * kTile];
+    __shared__ hip_bfloat16 Bs[kTile * kTile];
+    __shared__ float dot_even[kTile * kTile];
+    __shared__ float dot_odd[kTile * kTile];
+    __shared__ float acc[kTile * kTile];
+    __shared__ float xsum[kTile];
+    __shared__ float scol[kTile];
+    __shared__ float bcol[kTile];
+
+    for (int e = lane; e < kTile * kTile; e += 32) acc[e] = 0.f;
+    const bool replay = m0 + 1 < a.m;
+
+    using FragA = fragment<matrix_a, kTile, kTile, kTile, bfloat16_t, row_major>;
+    using FragB = fragment<matrix_b, kTile, kTile, kTile, bfloat16_t, col_major>;
+    using FragC = fragment<accumulator, kTile, kTile, kTile, float>;
+
+    for (int group = 0; group < groups; ++group) {
+        int base = group * a.group;
+        uint2 b0 = load_b8(side_words, words_per_row, n0, base, side_n, lane);
+        uint2 b1 = load_b8(side_words, words_per_row, n0, base + 16, side_n, lane);
+        uint2 b2 = a.group > 32 ? load_b8(side_words, words_per_row, n0, base + 32, side_n, lane) : make_uint2(0u, 0u);
+        uint2 b3 = a.group > 48 ? load_b8(side_words, words_per_row, n0, base + 48, side_n, lane) : make_uint2(0u, 0u);
+        uint2 b4 = a.group > 64 ? load_b8(side_words, words_per_row, n0, base + 64, side_n, lane) : make_uint2(0u, 0u);
+        uint2 b5 = a.group > 80 ? load_b8(side_words, words_per_row, n0, base + 80, side_n, lane) : make_uint2(0u, 0u);
+        uint2 b6 = a.group > 96 ? load_b8(side_words, words_per_row, n0, base + 96, side_n, lane) : make_uint2(0u, 0u);
+        uint2 b7 = a.group > 112 ? load_b8(side_words, words_per_row, n0, base + 112, side_n, lane)
+                                 : make_uint2(0u, 0u);
+        write_xsum(x, side_scale, side_bias, xsum, scol, bcol, lane, m0, n0, base, group, a.group, groups, a.m, a.k,
+                   side_n);
+        __syncthreads();
+
+        FragC part_even, part_odd;
+        fill_fragment(part_even, 0.f);
+        fill_fragment(part_odd, 0.f);
+        consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b0, m0, base, a.m, a.k, lane, replay,
+                                      true);
+        consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b1, m0, base + 16, a.m, a.k, lane,
+                                      replay, true);
+        consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b2, m0, base + 32, a.m, a.k, lane,
+                                      replay, a.group > 32);
+        consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b3, m0, base + 48, a.m, a.k, lane,
+                                      replay, a.group > 48);
+        consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b4, m0, base + 64, a.m, a.k, lane,
+                                      replay, a.group > 64);
+        consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b5, m0, base + 80, a.m, a.k, lane,
+                                      replay, a.group > 80);
+        consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b6, m0, base + 96, a.m, a.k, lane,
+                                      replay, a.group > 96);
+        consume8<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, b7, m0, base + 112, a.m, a.k, lane,
+                                      replay, a.group > 112);
+
+        store_matrix_sync(dot_even, part_even, kTile, mem_row_major);
+        if (replay) store_matrix_sync(dot_odd, part_odd, kTile, mem_row_major);
+        __syncthreads();
+        fma_group(acc, dot_even, dot_odd, xsum, scol, bcol, replay, lane);
+        __syncthreads();
+    }
+
+    for (int e = lane; e < kTile * kTile; e += 32) {
+        int grow = m0 + e / kTile;
+        int gcol = n0 + e % kTile;
+        if (grow < a.m && gcol < side_n) side_out[static_cast<long long>(grow) * side_n + gcol] = acc[e];
+    }
+}
+
+hipError_t launch_affine_wmma_group(const Affine& a, GroupSide s0, GroupSide s1, GroupSide s2, GroupSide s3,
+                                    int total_tiles, hipStream_t stream) {
+    if (a.m < 1 || a.bits != 8 || a.group % kTile || a.k % a.group || total_tiles < 1) return hipErrorInvalidValue;
+    dim3 block(32);
+    dim3 grid(total_tiles, (a.m + kTile - 1) / kTile);
+    affine_wmma_group_kernel<<<grid, block, 0, stream>>>(a, s0, s1, s2, s3);
+    return hipGetLastError();
+}
+
+hipError_t launch_affine_wmma_pair(const Affine& a, AffineSide first, AffineSide second, hipStream_t stream) {
+    if (a.m < 1 || first.n < 1 || first.n != second.n || a.group % kTile || a.k % a.group) {
+        return hipErrorInvalidValue;
+    }
+    dim3 block(32);
+    dim3 grid((first.n + kTile - 1) / kTile, (a.m + kTile - 1) / kTile);
+    affine_wmma_pair_kernel<<<grid, block, 0, stream>>>(a, first, second);
+    return hipGetLastError();
+}
+
 hipError_t launch_affine_wmma(const Affine& a, hipStream_t stream) {
     // Tiles past M or N are filled with zeros, so a single row uses the same WMMA as a full tile.
     if (a.m < 1 || a.n < 1 || a.group % kTile || a.k % a.group) return hipErrorInvalidValue;
     dim3 block(32);
     dim3 grid((a.n + kTile - 1) / kTile, (a.m + kTile - 1) / kTile);
-    affine_wmma_kernel<<<grid, block, 0, stream>>>(a);
+    if (a.bits == 8) {
+        affine_wmma_kernel<true><<<grid, block, 0, stream>>>(a);
+    } else {
+        affine_wmma_kernel<false><<<grid, block, 0, stream>>>(a);
+    }
     return hipGetLastError();
 }
 
 #else
 
 hipError_t launch_affine_wmma(const Affine&, hipStream_t) { return hipErrorNotSupported; }
+
+hipError_t launch_affine_wmma_pair(const Affine&, AffineSide, AffineSide, hipStream_t) {
+    return hipErrorNotSupported;
+}
+
+hipError_t launch_affine_wmma_group(const Affine&, GroupSide, GroupSide, GroupSide, GroupSide, int, hipStream_t) {
+    return hipErrorNotSupported;
+}
 
 #endif
 
@@ -181,4 +577,37 @@ void affine_launch(const void* x, const void* words, const void* scale, const vo
                        static_cast<const float*>(bias), static_cast<float*>(out), m, n, k, bits, group, fp16};
     hipError_t err = tf::rocm::launch_affine(a, schedule, static_cast<hipStream_t>(stream));
     if (err != hipSuccess) throw std::runtime_error(std::string("affine kernel: ") + hipGetErrorString(err));
+}
+
+void affine_group_launch(const void* x, const void* const* words, const void* const* scale, const void* const* bias,
+                         void* const* out, const int* ns, int nsides, int m, int k, int bits, int group,
+                         void* stream) {
+    if (nsides < 1 || nsides > 4) throw std::runtime_error("affine group kernel: 1 to 4 sides");
+    tf::rocm::GroupSide sides[4] = {};
+    int total = 0;
+    for (int i = 0; i < nsides; ++i) {
+        sides[i].words = static_cast<const uint32_t*>(words[i]);
+        sides[i].scale = static_cast<const float*>(scale[i]);
+        sides[i].bias = static_cast<const float*>(bias[i]);
+        sides[i].out = static_cast<float*>(out[i]);
+        sides[i].n = ns[i];
+        sides[i].tiles = (ns[i] + 15) / 16;
+        total += sides[i].tiles;
+    }
+    tf::rocm::Affine a{x, nullptr, nullptr, nullptr, nullptr, m, 0, k, bits, group, 0};
+    hipError_t err = tf::rocm::launch_affine_wmma_group(a, sides[0], sides[1], sides[2], sides[3], total,
+                                                        static_cast<hipStream_t>(stream));
+    if (err != hipSuccess) throw std::runtime_error(std::string("affine group kernel: ") + hipGetErrorString(err));
+}
+
+void affine_pair_launch(const void* x, const void* words0, const void* scale0, const void* bias0, void* out0,
+                        const void* words1, const void* scale1, const void* bias1, void* out1, int m, int n, int k,
+                        int bits, int group, void* stream) {
+    tf::rocm::Affine a{x, nullptr, nullptr, nullptr, nullptr, m, n, k, bits, group, 0};
+    tf::rocm::AffineSide first{static_cast<const uint32_t*>(words0), static_cast<const float*>(scale0),
+                               static_cast<const float*>(bias0), static_cast<float*>(out0), n};
+    tf::rocm::AffineSide second{static_cast<const uint32_t*>(words1), static_cast<const float*>(scale1),
+                                static_cast<const float*>(bias1), static_cast<float*>(out1), n};
+    hipError_t err = tf::rocm::launch_affine_wmma_pair(a, first, second, static_cast<hipStream_t>(stream));
+    if (err != hipSuccess) throw std::runtime_error(std::string("affine pair kernel: ") + hipGetErrorString(err));
 }

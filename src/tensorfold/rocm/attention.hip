@@ -88,24 +88,38 @@ causal_kernel(const float* __restrict__ q, const Cache* __restrict__ k, const Ca
 
 // Decode: many blocks score the keys, one block per head reduces the softmax, one block per head
 // streams V. A single query does not fill the machine if one wave walks the whole span.
+// One warp owns one key. Lanes read consecutive head elements, so the key vector is coalesced.
+// Every lane enters the xor tree, including warps whose key is past the visible span.
 template <typename Cache>
 __global__ void score_keys(const float* __restrict__ q, const Cache* __restrict__ k, float* __restrict__ scores,
                            int span, int heads, int kv_heads, int d, float scale, int visible, long long k_sb,
                            long long k_sh, long long k_ss) {
-    int key = blockIdx.x * blockDim.x + threadIdx.x;
+    int lane = threadIdx.x & 31;
+    int key = blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5);
     int head = blockIdx.y;
     int batch = blockIdx.z;
-    if (key >= span) return;
-    float score = -INFINITY;
+    const float* qrow = q + (static_cast<long long>(batch) * heads + head) * d;
+    float qreg[8];
+#pragma unroll
+    for (int i = 0; i < 8; ++i) {
+        int idx = lane + i * 32;
+        qreg[i] = idx < d ? qrow[idx] : 0.f;
+    }
+    float partial = 0.f;
     if (key < visible) {
         int kv = head / (heads / kv_heads);
-        const float* qrow = q + (static_cast<long long>(batch) * heads + head) * d;
         const Cache* krow = k + batch * k_sb + static_cast<long long>(kv) * k_sh + static_cast<long long>(key) * k_ss;
-        float dot = 0.f;
-        for (int i = 0; i < d; ++i) dot += qrow[i] * static_cast<float>(krow[i]);
-        score = dot * scale;
+#pragma unroll
+        for (int i = 0; i < 8; ++i) {
+            int idx = lane + i * 32;
+            if (idx < d) partial += qreg[i] * static_cast<float>(krow[idx]);
+        }
     }
-    scores[(static_cast<long long>(batch) * heads + head) * span + key] = score;
+    float dot = tf::rocm::lane0_sum(partial);
+    if (lane == 0 && key < span) {
+        float score = key < visible ? dot * scale : -INFINITY;
+        scores[(static_cast<long long>(batch) * heads + head) * span + key] = score;
+    }
 }
 
 __global__ void softmax_stats(const float* __restrict__ scores, float* __restrict__ stats, int span, int visible) {
@@ -189,8 +203,8 @@ void causal_launch(const float* q, const void* k, const void* v, float* out, int
         if (scores == nullptr || stats == nullptr) throw std::invalid_argument("decode attention needs workspace");
         if (partials == nullptr) throw std::invalid_argument("decode attention needs partials");
         int tiles = (visible + 127) / 128;
-        dim3 score_block(128);
-        dim3 score_grid((span + 127) / 128, heads, batch);
+        dim3 score_block(128);  // four warps, one key each
+        dim3 score_grid((span + 3) / 4, heads, batch);
         dim3 head_grid(heads, batch);
         dim3 tile_grid(tiles, heads, batch);
         if (cache_kind == 0) {

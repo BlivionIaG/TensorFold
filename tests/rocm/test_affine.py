@@ -10,7 +10,7 @@ import torch
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.affine import matmul  # noqa: E402
+from tensorfold.rocm.affine import matmul, matmul_group, matmul_pair  # noqa: E402
 from tensorfold.rocm.build import WMMA, gfx_name  # noqa: E402
 
 ROWS = [1, 2, 7, 15, 16, 17, 31, 32]
@@ -171,6 +171,56 @@ def test_fp16_is_the_rdna2_schedule():
         assert torch.equal(matmul(x[:m], words, scale, bias, bits=8, group=64, f32=True), alone[:m])
     perm = torch.randperm(max(ROWS), device="cuda")
     assert torch.equal(matmul(x[perm], words, scale, bias, bits=8, group=64, f32=True), alone[perm])
+
+
+def test_pair_matches_two_wmma_launches():
+    if gfx_name() not in WMMA:
+        pytest.skip("the paired matmul is the WMMA schedule")
+    _, words_a, scale_a, bias_a = _pack(64, 256, 8, 64, 21)
+    _, words_b, scale_b, bias_b = _pack(64, 256, 8, 64, 22)
+    tensors = [t.cuda() for t in (words_a, scale_a, bias_a, words_b, scale_b, bias_b)]
+    words_a, scale_a, bias_a, words_b, scale_b, bias_b = tensors
+    x = torch.randn(17, 256, device="cuda", dtype=torch.bfloat16)
+    for rows in (1, 8, 17):
+        got_a, got_b = matmul_pair(x[:rows], words_a, scale_a, bias_a, words_b, scale_b, bias_b, bits=8, group=64,
+                                   f32=True)
+        one_a = matmul(x[:rows], words_a, scale_a, bias_a, bits=8, group=64, schedule="wmma", f32=True)
+        one_b = matmul(x[:rows], words_b, scale_b, bias_b, bits=8, group=64, schedule="wmma", f32=True)
+        assert torch.equal(got_a, one_a)
+        assert torch.equal(got_b, one_b)
+
+
+@pytest.mark.parametrize("group,k", [(32, 128), (64, 256), (128, 256)])
+def test_group_matches_solo_wmma(group, k):
+    """Columns of different widths in one launch match the same columns launched alone."""
+
+    if gfx_name() not in WMMA:
+        pytest.skip("the grouped matmul is the WMMA schedule")
+    packs = []
+    for n, seed in ((40, 31), (16, 32), (64, 33)):
+        packs.append(_pack(n, k, 8, group, seed))
+    tensors = []
+    for _, words, scale, bias in packs:
+        tensors.append((words.cuda(), scale.cuda(), bias.cuda()))
+    x = torch.randn(17, k, device="cuda", dtype=torch.bfloat16)
+    for rows in (1, 8, 17):
+        got = matmul_group(x[:rows], tensors, bits=8, group=group, f32=True)
+        for (words, scale, bias), part in zip(tensors, got):
+            solo = matmul(x[:rows], words, scale, bias, bits=8, group=group, schedule="wmma", f32=True)
+            assert torch.equal(part, solo)
+
+
+def test_wmma_partial_tile_matches_one_row():
+    """The last 16-column tile is short. Its row still matches that row launched alone."""
+
+    if gfx_name() not in WMMA:
+        pytest.skip("partial-tile WMMA is the gfx11 schedule")
+    _, words, scale, bias = _pack(40, 128, 8, 64, 5)
+    words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
+    x = torch.randn(17, 128, device="cuda", dtype=torch.bfloat16)
+    alone = matmul(x[:1], words, scale, bias, bits=8, group=64, schedule="wmma", f32=True)
+    wide = matmul(x, words, scale, bias, bits=8, group=64, schedule="wmma", f32=True)
+    assert torch.equal(wide[:1], alone)
 
 
 def test_fp16_word_spanning_rows_do_not_depend_on_row_count():
