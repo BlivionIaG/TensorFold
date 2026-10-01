@@ -1,22 +1,25 @@
 const std = @import("std");
 const mx = @import("mlx.zig");
 const sampling = @import("sampling.zig");
+const Stopwatch = @import("vendor/io_util.zig").Stopwatch;
 
 pub const Result = struct {
     tokens: std.ArrayList(u32) = .empty,
     drafted: usize = 0,
     accepted: usize = 0,
     rounds: usize = 0,
+    prefill_seconds: f64 = 0,
+    decode_seconds: f64 = 0,
     pub fn deinit(r: *Result) void {
         r.tokens.deinit(mx.allocator);
     }
 };
 
-pub fn generate(m: anytype, tokens: []const i32, max_tokens: usize, settings: sampling.Sampling, drafts: usize, dump: ?[]const u8) !Result {
-    return generateWithPrefill(m, tokens, max_tokens, settings, drafts, dump, true);
+pub fn generate(io: std.Io, m: anytype, tokens: []const i32, max_tokens: usize, settings: sampling.Sampling, drafts: usize, dump: ?[]const u8) !Result {
+    return generateWithPrefill(io, m, tokens, max_tokens, settings, drafts, dump, true, false);
 }
 
-pub fn generateWithPrefill(m: anytype, tokens: []const i32, max_tokens: usize, settings: sampling.Sampling, drafts: usize, dump: ?[]const u8, batched_prefill: bool) !Result {
+pub fn generateWithPrefill(io: std.Io, m: anytype, tokens: []const i32, max_tokens: usize, settings: sampling.Sampling, drafts: usize, dump: ?[]const u8, batched_prefill: bool, ignore_eos: bool) !Result {
     const M = @TypeOf(m.*);
     if (tokens.len == 0 or drafts > 15) return error.InvalidGeneration;
     if (drafts > 0 and !@hasDecl(M, "propose")) return error.UnsupportedDrafts;
@@ -28,6 +31,7 @@ pub fn generateWithPrefill(m: anytype, tokens: []const i32, max_tokens: usize, s
     defer mx.free(hidden);
     var pending: i32 = 0;
     var offset: usize = 0;
+    var timer = Stopwatch.init(io);
     while (offset < tokens.len) {
         const use_prefill = @hasDecl(M, "prefill") and batched_prefill;
         const count = @min(if (use_prefill) @as(usize, 2048) else 16, tokens.len - offset);
@@ -58,6 +62,8 @@ pub fn generateWithPrefill(m: anytype, tokens: []const i32, max_tokens: usize, s
         try m.commit(&pass, count);
         offset += count;
     }
+    result.prefill_seconds = @as(f64, @floatFromInt(timer.read())) / 1e9;
+    timer.reset();
     while (result.tokens.items.len < max_tokens) {
         const count = @min(draft_budget + 1, max_tokens - result.tokens.items.len);
         var proposed: [16]i32 = undefined;
@@ -77,7 +83,7 @@ pub fn generateWithPrefill(m: anytype, tokens: []const i32, max_tokens: usize, s
             const id = proposed[keep];
             try result.tokens.append(mx.allocator, @intCast(id));
             keep += 1;
-            stopped = if (@hasDecl(M, "isEos")) m.isEos(id) else M.eos(id);
+            stopped = !ignore_eos and (if (@hasDecl(M, "isEos")) m.isEos(id) else M.eos(id));
             if (stopped) break;
         }
         if (comptime @hasDecl(M, "propose")) if (draft_budget > 0 and !absorb_on_commit) {
@@ -94,6 +100,8 @@ pub fn generateWithPrefill(m: anytype, tokens: []const i32, max_tokens: usize, s
         pending = targets[keep - 1];
         if (stopped) break;
     }
+    try mx.check(mx.c.mlx_synchronize(mx.stream));
+    result.decode_seconds = @as(f64, @floatFromInt(timer.read())) / 1e9;
     return result;
 }
 

@@ -82,6 +82,10 @@ pub fn main(init: std.process.Init) !void {
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-image-url")) return @import("image_http.zig").fetchCheck(io, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-gemma-prefill")) return @import("gemma_prefill.zig").check(io, args[2], args[3]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-nemotron-prefill")) return @import("nemotron_prefill.zig").check(io, args[2], args[3]);
+    if (args.len == 5 and std.mem.eql(u8, args[1], "check-nemotron-prefill") and std.mem.eql(u8, args[4], "--prefill-release-layers")) {
+        @import("nemotron_prefill.zig").release_layer_temporaries = true;
+        return @import("nemotron_prefill.zig").check(io, args[2], args[3]);
+    }
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-flash-prefill")) return @import("flash_prefill.zig").check(io, args[2], args[3], false);
     if (args.len == 5 and std.mem.eql(u8, args[1], "check-flash-prefill") and std.mem.eql(u8, args[4], "--custom-tiles")) return @import("flash_prefill.zig").check(io, args[2], args[3], true);
     if (args.len == 5 and std.mem.eql(u8, args[1], "check-flash-prefill") and std.mem.eql(u8, args[4], "--metal-simd")) {
@@ -163,6 +167,7 @@ pub fn main(init: std.process.Init) !void {
     var cache_stress = false;
     var long_cache = false;
     var warmup = false;
+    var warm_case = false;
     var lane_prefill = false;
     var trace_dir: ?[]const u8 = null;
     var copy_enabled = true;
@@ -173,6 +178,10 @@ pub fn main(init: std.process.Init) !void {
     var report: ?[]const u8 = null;
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
+        if (std.mem.eql(u8, args[i], "--warm-case")) {
+            warm_case = true;
+            continue;
+        }
         if (std.mem.eql(u8, args[i], "--no-drafts")) {
             drafts_enabled = false;
             continue;
@@ -347,146 +356,154 @@ pub fn main(init: std.process.Init) !void {
     }
     const startup_seconds = @as(f64, @floatFromInt(startup_timer.read())) / 1e9;
     std.debug.print("Loaded and prepared target in {d:.2}s; prompt {d} tokens\n", .{ startup_seconds, tokens.items.len });
-    timer.reset();
-    var pending: i32 = 0;
-    var off: usize = 0;
-    while (off < tokens.items.len) {
-        const n = @min(if (lane_prefill) @as(usize, 128) else 2048, tokens.items.len - off);
-        var parents: [2048]i32 = undefined;
-        var rows: [2048]i32 = undefined;
-        for (0..n) |j| {
-            parents[j] = @as(i32, @intCast(j)) - 1;
-            rows[j] = @intCast(j);
+    for (0..if (warm_case) @as(usize, 2) else 1) |repetition| {
+        if (repetition > 0) {
+            try mx.check(mx.c.mlx_synchronize(mx.stream));
+            m.reset();
+            if (draft) |*d| d.reset();
         }
-        var image_scope = mx.Scope{};
-        defer image_scope.deinit();
-        var p = if (image_prompt) |*image| try m.prefillImage(tokens.items[off..][0..n], try image_scope.slice(image.embeddings, 1, @intCast(off), @intCast(off + n)), try image.positions.chunk(&image_scope, off, off + n), image.positions.delta) else if (lane_prefill) try m.forward(tokens.items[off..][0..n], parents[0..n]) else try m.prefill(tokens.items[off..][0..n]);
-        defer p.deinit();
-        const last_logits = try p.scope.slice(p.logits, 1, mx.dim(p.logits, 1) - 1, mx.dim(p.logits, 1));
-        const ids = try sampling.rows(&m.kernels, &p.scope, last_logits, &.{m.position + @as(i32, @intCast(n))}, settings);
-        defer mx.allocator.free(ids);
-        pending = ids[0];
-        if (dump) |path| if (off + n == tokens.items.len) {
-            const z = try allocator.dupeSentinel(u8, path, 0);
-            defer allocator.free(z);
-            const f = try p.scope.cast(p.logits, mx.f32t);
-            try mx.eval(f);
-            try mx.check(mx.c.mlx_save(z, f));
-        };
-        try m.commit(&p, rows[0..n]);
-        if (trace_dir != null) for (m.cache, 0..) |cache, layer| {
-            try m.trace(&p.scope, p.start, layer, "cache0", cache.a);
-            try m.trace(&p.scope, p.start, layer, "cache1", cache.b);
-        };
-        if (draft) |*d| {
-            var begin: usize = 0;
-            while (begin < n) {
-                const end = @min(begin + 128, n);
-                try d.absorb(&m, &p, rows[begin..end], tokens.items[off..][0..n]);
-                begin = end;
+        timer.reset();
+        var pending: i32 = 0;
+        var off: usize = 0;
+        while (off < tokens.items.len) {
+            const n = @min(if (lane_prefill) @as(usize, 128) else 2048, tokens.items.len - off);
+            var parents: [2048]i32 = undefined;
+            var rows: [2048]i32 = undefined;
+            for (0..n) |j| {
+                parents[j] = @as(i32, @intCast(j)) - 1;
+                rows[j] = @intCast(j);
             }
-            if (off + n == tokens.items.len and max_tokens > 0) {
-                if (mx.dim(p.logits, 1) == 1) {
-                    d.captureTarget(&m, &p, &.{0}, &.{m.position});
-                } else {
-                    for (0..n) |j| parents[j] = p.start + @as(i32, @intCast(j)) + 1;
-                    d.captureTarget(&m, &p, &.{@intCast(n - 1)}, parents[0..n]);
+            var image_scope = mx.Scope{};
+            defer image_scope.deinit();
+            var p = if (image_prompt) |*image| try m.prefillImage(tokens.items[off..][0..n], try image_scope.slice(image.embeddings, 1, @intCast(off), @intCast(off + n)), try image.positions.chunk(&image_scope, off, off + n), image.positions.delta) else if (lane_prefill) try m.forward(tokens.items[off..][0..n], parents[0..n]) else try m.prefill(tokens.items[off..][0..n]);
+            defer p.deinit();
+            const last_logits = try p.scope.slice(p.logits, 1, mx.dim(p.logits, 1) - 1, mx.dim(p.logits, 1));
+            const ids = try sampling.rows(&m.kernels, &p.scope, last_logits, &.{m.position + @as(i32, @intCast(n))}, settings);
+            defer mx.allocator.free(ids);
+            pending = ids[0];
+            if (dump) |path| if (off + n == tokens.items.len) {
+                const z = try allocator.dupeSentinel(u8, path, 0);
+                defer allocator.free(z);
+                const f = try p.scope.cast(p.logits, mx.f32t);
+                try mx.eval(f);
+                try mx.check(mx.c.mlx_save(z, f));
+            };
+            try m.commit(&p, rows[0..n]);
+            if (trace_dir != null) for (m.cache, 0..) |cache, layer| {
+                try m.trace(&p.scope, p.start, layer, "cache0", cache.a);
+                try m.trace(&p.scope, p.start, layer, "cache1", cache.b);
+            };
+            if (draft) |*d| {
+                var begin: usize = 0;
+                while (begin < n) {
+                    const end = @min(begin + 128, n);
+                    try d.absorb(&m, &p, rows[begin..end], tokens.items[off..][0..n]);
+                    begin = end;
+                }
+                if (off + n == tokens.items.len and max_tokens > 0) {
+                    if (mx.dim(p.logits, 1) == 1) {
+                        d.captureTarget(&m, &p, &.{0}, &.{m.position});
+                    } else {
+                        for (0..n) |j| parents[j] = p.start + @as(i32, @intCast(j)) + 1;
+                        d.captureTarget(&m, &p, &.{@intCast(n - 1)}, parents[0..n]);
+                    }
                 }
             }
+            off += n;
         }
-        off += n;
-    }
-    const prefill_seconds = @as(f64, @floatFromInt(timer.read())) / 1e9;
-    std.debug.print("Prefill {d:.2}s\n", .{prefill_seconds});
-    timer.reset();
-    var generated: std.ArrayList(u32) = .empty;
-    defer generated.deinit(allocator);
-    var history: std.ArrayList(i32) = .empty;
-    defer history.deinit(allocator);
-    try history.appendSlice(allocator, tokens.items);
-    var rounds: usize = 0;
-    var accepted: usize = 0;
-    var draft_ns: u64 = 0;
-    var forward_ns: u64 = 0;
-    var commit_ns: u64 = 0;
-    if (max_tokens > 0) try generated.append(allocator, @intCast(pending));
-    const use_serial_pipeline = serial_pipeline and settings.metal and draft == null;
-    var queued_serial_steps: usize = 0;
-    if (use_serial_pipeline) {
-        const result = try @import("serial_pipeline.zig").generate(model.Model, &m, allocator, &generated, max_tokens, settings, eos, null);
-        rounds = result.rounds;
-        queued_serial_steps = result.queued_ahead;
-        forward_ns = timer.read();
-    }
-    while (!use_serial_pipeline and generated.items.len < max_tokens and pending != 248044 and pending != 248046) {
-        var stage = Stopwatch.init(io);
-        history.shrinkRetainingCapacity(tokens.items.len);
-        for (generated.items) |id| try history.append(allocator, @intCast(id));
-        const copy = if (draft != null and copy_enabled) @import("copy.zig").propose(history.items, max_tokens - generated.items.len) else @import("drafter.zig").Proposal{};
-        const proposal = if (copy.len >= @min(15, max_tokens - generated.items.len)) copy else if (draft) |*d| try d.propose(&m, pending, @min(15, max_tokens - generated.items.len), settings) else @import("drafter.zig").Proposal{};
-        draft_ns += stage.read();
-        stage.reset();
-        var window: [32]i32 = undefined;
-        var parents: [32]i32 = undefined;
-        window[0] = pending;
-        parents[0] = -1;
-        for (0..proposal.len) |j| {
-            window[j + 1] = proposal.tokens[j];
-            parents[j + 1] = proposal.parents[j] + 1;
+        const prefill_seconds = @as(f64, @floatFromInt(timer.read())) / 1e9;
+        std.debug.print("Prefill {d:.2}s\n", .{prefill_seconds});
+        timer.reset();
+        var generated: std.ArrayList(u32) = .empty;
+        defer generated.deinit(allocator);
+        var history: std.ArrayList(i32) = .empty;
+        defer history.deinit(allocator);
+        try history.appendSlice(allocator, tokens.items);
+        var rounds: usize = 0;
+        var accepted: usize = 0;
+        var draft_ns: u64 = 0;
+        var forward_ns: u64 = 0;
+        var commit_ns: u64 = 0;
+        if (max_tokens > 0) try generated.append(allocator, @intCast(pending));
+        const use_serial_pipeline = serial_pipeline and settings.metal and draft == null;
+        var queued_serial_steps: usize = 0;
+        if (use_serial_pipeline) {
+            const result = try @import("serial_pipeline.zig").generate(model.Model, &m, allocator, &generated, max_tokens, settings, eos, null);
+            rounds = result.rounds;
+            queued_serial_steps = result.queued_ahead;
+            forward_ns = timer.read();
         }
-        const n = proposal.len + 1;
-        const tree = try lanes.Tree.init(parents[0..n]);
-        var p = try m.forward(window[0..n], parents[0..n]);
-        defer p.deinit();
-        var positions: [32]i32 = undefined;
-        for (0..n) |j| positions[j] = m.position + tree.depths[j] + 1;
-        const ids = try sampling.rows(&m.kernels, &p.scope, p.logits, positions[0..n], settings);
-        forward_ns += stage.read();
-        stage.reset();
-        defer mx.allocator.free(ids);
-        const result = try @import("acceptance.zig").select(window[0..n], parents[0..n], ids, max_tokens - generated.items.len, eos);
-        try generated.appendSlice(allocator, result.tokens[0..result.count]);
-        accepted += result.accepted;
-        pending = result.pending;
-        try m.commit(&p, result.path[0..result.kept]);
-        if (draft) |*d| {
-            d.captureTarget(&m, &p, result.path[0..result.count], positions[0..n]);
-            try d.absorb(&m, &p, result.path[0..result.kept], window[0..n]);
+        while (!use_serial_pipeline and generated.items.len < max_tokens and pending != 248044 and pending != 248046) {
+            var stage = Stopwatch.init(io);
+            history.shrinkRetainingCapacity(tokens.items.len);
+            for (generated.items) |id| try history.append(allocator, @intCast(id));
+            const copy = if (draft != null and copy_enabled) @import("copy.zig").propose(history.items, max_tokens - generated.items.len) else @import("drafter.zig").Proposal{};
+            const proposal = if (copy.len >= @min(15, max_tokens - generated.items.len)) copy else if (draft) |*d| try d.propose(&m, pending, @min(15, max_tokens - generated.items.len), settings) else @import("drafter.zig").Proposal{};
+            draft_ns += stage.read();
+            stage.reset();
+            var window: [32]i32 = undefined;
+            var parents: [32]i32 = undefined;
+            window[0] = pending;
+            parents[0] = -1;
+            for (0..proposal.len) |j| {
+                window[j + 1] = proposal.tokens[j];
+                parents[j + 1] = proposal.parents[j] + 1;
+            }
+            const n = proposal.len + 1;
+            const tree = try lanes.Tree.init(parents[0..n]);
+            var p = try m.forward(window[0..n], parents[0..n]);
+            defer p.deinit();
+            var positions: [32]i32 = undefined;
+            for (0..n) |j| positions[j] = m.position + tree.depths[j] + 1;
+            const ids = try sampling.rows(&m.kernels, &p.scope, p.logits, positions[0..n], settings);
+            forward_ns += stage.read();
+            stage.reset();
+            defer mx.allocator.free(ids);
+            const result = try @import("acceptance.zig").select(window[0..n], parents[0..n], ids, max_tokens - generated.items.len, eos);
+            try generated.appendSlice(allocator, result.tokens[0..result.count]);
+            accepted += result.accepted;
+            pending = result.pending;
+            try m.commit(&p, result.path[0..result.kept]);
+            if (draft) |*d| {
+                d.captureTarget(&m, &p, result.path[0..result.count], positions[0..n]);
+                try d.absorb(&m, &p, result.path[0..result.kept], window[0..n]);
+            }
+            commit_ns += stage.read();
+            rounds += 1;
+            if (result.stop) break;
         }
-        commit_ns += stage.read();
-        rounds += 1;
-        if (result.stop) break;
-    }
-    const seconds = @as(f64, @floatFromInt(timer.read())) / 1e9;
-    const capture_base: ?[]const u8 = if (draft) |d| (if (d.capture) |writer| writer.base else null) else null;
-    const text = try tok.decode(allocator, generated.items, false);
-    defer allocator.free(text);
-    var outbuf: [4096]u8 = undefined;
-    var out = std.Io.File.stdout().writer(io, &outbuf);
-    try out.interface.writeAll(text);
-    try out.interface.writeAll("\n");
-    try out.interface.flush();
-    var digest: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(std.mem.sliceAsBytes(generated.items), &digest, .{});
-    std.debug.print("Token SHA-256: {s}\n", .{std.fmt.bytesToHex(digest, .lower)});
-    if (use_serial_pipeline) {
-        std.debug.print("Pipelined target/sample/cache: {d:.3}s; {d} steps queued ahead\n", .{ @as(f64, @floatFromInt(forward_ns)) / 1e9, queued_serial_steps });
-    } else std.debug.print("Stage totals: draft {d:.3}s, target+sample {d:.3}s, commit+absorb {d:.3}s\n", .{ @as(f64, @floatFromInt(draft_ns)) / 1e9, @as(f64, @floatFromInt(forward_ns)) / 1e9, @as(f64, @floatFromInt(commit_ns)) / 1e9 });
-    std.debug.print("Generated {d} tokens in {d:.3}s ({d:.2} tok/s), {d} rounds, {d} accepted drafts\nIDs: {any}\n", .{ generated.items.len, seconds, @as(f64, @floatFromInt(generated.items.len)) / seconds, rounds, accepted, generated.items });
-    if (report) |path| {
-        var version = mx.c.mlx_string_new();
-        defer _ = mx.c.mlx_string_free(version);
-        try mx.check(mx.c.mlx_version(&version));
-        var peak: usize = 0;
-        var active: usize = 0;
-        try mx.check(mx.c.mlx_get_peak_memory(&peak));
-        try mx.check(mx.c.mlx_get_active_memory(&active));
-        const bonsai_form = if (m.weights.bonsai_form) |form| try form.name(init.arena.allocator()) else null;
-        const content = try std.json.Stringify.valueAlloc(allocator, .{ .mlx_version = std.mem.span(mx.c.mlx_string_data(version)), .bonsai_form = bonsai_form, .prompt_tokens = tokens.items, .tokens = generated.items, .text = text, .seed = settings.seed, .temperature = settings.temperature, .top_k = settings.top_k, .top_p = settings.top_p, .min_p = settings.min_p, .metal_sampling = settings.metal, .context_copy = copy_enabled, .draft_capture = capture_base, .serial_pipeline = use_serial_pipeline, .kv_buffers = @import("kv_buffer.zig").enabled, .queued_serial_steps = queued_serial_steps, .load_seconds = load_seconds, .warmup_seconds = warmup_seconds, .startup_seconds = startup_seconds, .calibration_seconds = @as(f64, 0), .prefill_mode = if (lane_prefill) "lane" else "regular", .metal_backend = if (mx.tensor_units) "tensor" else "simd", .prefill_seconds = prefill_seconds, .decode_seconds = seconds, .rounds = rounds, .accepted_drafts = accepted, .warmed = warmup, .peak_mlx_bytes = peak, .active_mlx_bytes = active, .token_sha256 = std.fmt.bytesToHex(digest, .lower) }, .{});
-        defer allocator.free(content);
-        const f = try std.Io.Dir.cwd().createFile(io, path, .{});
-        defer f.close(io);
-        try f.writeStreamingAll(io, content);
+        const seconds = @as(f64, @floatFromInt(timer.read())) / 1e9;
+        if (warm_case and repetition == 0) continue;
+        const capture_base: ?[]const u8 = if (draft) |d| (if (d.capture) |writer| writer.base else null) else null;
+        const text = try tok.decode(allocator, generated.items, false);
+        defer allocator.free(text);
+        var outbuf: [4096]u8 = undefined;
+        var out = std.Io.File.stdout().writer(io, &outbuf);
+        try out.interface.writeAll(text);
+        try out.interface.writeAll("\n");
+        try out.interface.flush();
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(std.mem.sliceAsBytes(generated.items), &digest, .{});
+        std.debug.print("Token SHA-256: {s}\n", .{std.fmt.bytesToHex(digest, .lower)});
+        if (use_serial_pipeline) {
+            std.debug.print("Pipelined target/sample/cache: {d:.3}s; {d} steps queued ahead\n", .{ @as(f64, @floatFromInt(forward_ns)) / 1e9, queued_serial_steps });
+        } else std.debug.print("Stage totals: draft {d:.3}s, target+sample {d:.3}s, commit+absorb {d:.3}s\n", .{ @as(f64, @floatFromInt(draft_ns)) / 1e9, @as(f64, @floatFromInt(forward_ns)) / 1e9, @as(f64, @floatFromInt(commit_ns)) / 1e9 });
+        std.debug.print("Generated {d} tokens in {d:.3}s ({d:.2} tok/s), {d} rounds, {d} accepted drafts\nIDs: {any}\n", .{ generated.items.len, seconds, @as(f64, @floatFromInt(generated.items.len)) / seconds, rounds, accepted, generated.items });
+        if (report) |path| {
+            var version = mx.c.mlx_string_new();
+            defer _ = mx.c.mlx_string_free(version);
+            try mx.check(mx.c.mlx_version(&version));
+            var peak: usize = 0;
+            var active: usize = 0;
+            try mx.check(mx.c.mlx_get_peak_memory(&peak));
+            try mx.check(mx.c.mlx_get_active_memory(&active));
+            const bonsai_form = if (m.weights.bonsai_form) |form| try form.name(init.arena.allocator()) else null;
+            const content = try std.json.Stringify.valueAlloc(allocator, .{ .mlx_version = std.mem.span(mx.c.mlx_string_data(version)), .bonsai_form = bonsai_form, .prompt_tokens = tokens.items, .tokens = generated.items, .text = text, .seed = settings.seed, .temperature = settings.temperature, .top_k = settings.top_k, .top_p = settings.top_p, .min_p = settings.min_p, .metal_sampling = settings.metal, .context_copy = copy_enabled, .draft_capture = capture_base, .serial_pipeline = use_serial_pipeline, .kv_buffers = @import("kv_buffer.zig").enabled, .queued_serial_steps = queued_serial_steps, .load_seconds = load_seconds, .warmup_seconds = warmup_seconds, .startup_seconds = startup_seconds, .calibration_seconds = @as(f64, 0), .prefill_mode = if (lane_prefill) "lane" else "regular", .metal_backend = if (mx.tensor_units) "tensor" else "simd", .prefill_seconds = prefill_seconds, .decode_seconds = seconds, .rounds = rounds, .accepted_drafts = accepted, .warmed = warmup, .peak_mlx_bytes = peak, .active_mlx_bytes = active, .token_sha256 = std.fmt.bytesToHex(digest, .lower) }, .{});
+            defer allocator.free(content);
+            const f = try std.Io.Dir.cwd().createFile(io, path, .{});
+            defer f.close(io);
+            try f.writeStreamingAll(io, content);
+        }
     }
 }
 

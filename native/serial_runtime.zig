@@ -1,6 +1,7 @@
 const std = @import("std");
 const mx = @import("mlx.zig");
 const sampling = @import("sampling.zig");
+const Stopwatch = @import("vendor/io_util.zig").Stopwatch;
 
 pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !void {
     const a = init.gpa;
@@ -18,9 +19,19 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
     var exact = false;
     var long_cache = false;
     var batched_prefill = true;
+    var warm = false;
+    var ignore_eos = false;
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
         const key = args[i];
+        if (std.mem.eql(u8, key, "--ignore-eos")) {
+            ignore_eos = true;
+            continue;
+        }
+        if (std.mem.eql(u8, key, "--warmup")) {
+            warm = true;
+            continue;
+        }
         if (std.mem.eql(u8, key, "--lane-prefill")) {
             batched_prefill = false;
             continue;
@@ -76,6 +87,7 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
     if (@hasDecl(M, "prepareRuntime")) try M.prepareRuntime();
     try mx.init();
     defer mx.shutdown();
+    const load_timer = Stopwatch.init(io);
     var model = try M.init(io, args[2]);
     defer model.deinit();
     if (drafter) |dir| {
@@ -84,6 +96,8 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
     if (@hasField(M, "has_mtp")) if (!model.has_mtp) {
         drafts = 0;
     };
+    try mx.check(mx.c.mlx_synchronize(mx.stream));
+    const load_seconds = @as(f64, @floatFromInt(load_timer.read())) / 1e9;
     if (exact or long_cache) {
         try model.checkExact(33);
         if (long_cache) for ([_]usize{ 1022, 1150, 2302 }) |prefix| try model.checkExact(prefix);
@@ -108,7 +122,15 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
     const vocab = if (@hasField(M, "vocab")) model.vocab else M.vocab;
     for (tokens.items) |id| if (id < 0 or id >= vocab) return error.InvalidToken;
     if (!seed_set) settings.seed = sampling.seedFor(tokens.items);
-    var generated = try @import("serial_generation.zig").generateWithPrefill(&model, tokens.items, max_tokens, settings, drafts, dump, batched_prefill);
+    const warm_timer = Stopwatch.init(io);
+    if (warm) {
+        var warmed = try @import("serial_generation.zig").generateWithPrefill(io, &model, tokens.items, max_tokens, settings, drafts, null, batched_prefill, ignore_eos);
+        warmed.deinit();
+        model.reset();
+        try mx.check(mx.c.mlx_synchronize(mx.stream));
+    }
+    const warmup_seconds = if (warm) @as(f64, @floatFromInt(warm_timer.read())) / 1e9 else 0;
+    var generated = try @import("serial_generation.zig").generateWithPrefill(io, &model, tokens.items, max_tokens, settings, drafts, dump, batched_prefill, ignore_eos);
     defer generated.deinit();
     const text = try tokenizer.decode(a, generated.tokens.items, false);
     defer a.free(text);
@@ -120,7 +142,7 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
     if (report) |file| {
         var digest: [32]u8 = undefined;
         std.crypto.hash.sha2.Sha256.hash(std.mem.sliceAsBytes(generated.tokens.items), &digest, .{});
-        const bytes = try std.json.Stringify.valueAlloc(a, .{ .prompt_tokens = tokens.items, .tokens = generated.tokens.items, .text = text, .seed = settings.seed, .temperature = settings.temperature, .top_k = settings.top_k, .top_p = settings.top_p, .min_p = settings.min_p, .metal_sampling = settings.metal, .rounds = generated.rounds, .drafted = generated.drafted, .accepted = generated.accepted, .token_sha256 = std.fmt.bytesToHex(digest, .lower) }, .{});
+        const bytes = try std.json.Stringify.valueAlloc(a, .{ .prompt_tokens = tokens.items, .tokens = generated.tokens.items, .text = text, .seed = settings.seed, .temperature = settings.temperature, .top_k = settings.top_k, .top_p = settings.top_p, .min_p = settings.min_p, .metal_sampling = settings.metal, .rounds = generated.rounds, .drafted = generated.drafted, .accepted = generated.accepted, .load_seconds = load_seconds, .warmup_seconds = warmup_seconds, .prefill_seconds = generated.prefill_seconds, .decode_seconds = generated.decode_seconds, .token_sha256 = std.fmt.bytesToHex(digest, .lower) }, .{});
         defer a.free(bytes);
         const f = try std.Io.Dir.cwd().createFile(io, file, .{});
         defer f.close(io);

@@ -987,7 +987,7 @@ pub fn checkModel(io: std.Io, dir: []const u8, output: []const u8) !void {
         defer reference.deinit(mx.allocator);
         for ([_]usize{ 0, 1, 3, 7, 15 }) |drafts| {
             m.reset();
-            var generated = try @import("serial_generation.zig").generate(&m, &.{ 1, 2, 3, 4 }, 12, sampling, drafts, null);
+            var generated = try @import("serial_generation.zig").generate(io, &m, &.{ 1, 2, 3, 4 }, 12, sampling, drafts, null);
             defer generated.deinit();
             if (drafts == 0) {
                 try reference.appendSlice(mx.allocator, generated.tokens.items);
@@ -1037,7 +1037,7 @@ pub fn checkDspark(io: std.Io, dir: []const u8, output: []const u8) !void {
         defer reference.deinit(mx.allocator);
         for ([_]usize{ 0, 1, 3, 15 }) |depth| {
             model.reset();
-            var generated = try @import("serial_generation.zig").generate(&model, &.{ 1, 2, 3, 4 }, 12, .{ .seed = 1234, .temperature = temperature, .top_k = 20, .top_p = 0.95, .metal = true }, depth, null);
+            var generated = try @import("serial_generation.zig").generate(io, &model, &.{ 1, 2, 3, 4 }, 12, .{ .seed = 1234, .temperature = temperature, .top_k = 20, .top_p = 0.95, .metal = true }, depth, null);
             defer generated.deinit();
             if (depth == 0) try reference.appendSlice(mx.allocator, generated.tokens.items) else try std.testing.expectEqualSlices(u32, reference.items, generated.tokens.items);
         }

@@ -839,7 +839,7 @@ pub const Model = struct {
         }
         std.debug.print("PASS: GLM MTP serial/chain, partial commit, stale passes and every cache.\n", .{});
     }
-    pub fn checkGeneration(m: *Model) !void {
+    pub fn checkGeneration(m: *Model, io: std.Io) !void {
         if (!m.has_mtp) return;
         defer m.reset();
         const generation = @import("serial_generation.zig");
@@ -847,7 +847,7 @@ pub const Model = struct {
         for (&prompt, 0..) |*token, i| token.* = @intCast(i + 1);
         for ([_]@import("sampling.zig").Sampling{ .{ .temperature = 0 }, .{ .seed = 456, .temperature = 0.7, .top_k = 20, .top_p = 0.95, .metal = true } }) |settings| {
             m.reset();
-            var serial = try generation.generate(m, &prompt, 12, settings, 0, null);
+            var serial = try generation.generate(io, m, &prompt, 12, settings, 0, null);
             defer serial.deinit();
             const saved = try mx.allocator.alloc(Cache, m.cache.len);
             @memset(saved, .{});
@@ -858,7 +858,7 @@ pub const Model = struct {
             for (m.cache, saved) |cache, *copy| copy.* = try cache.clone();
             for ([_]usize{ 1, 3, 15 }) |depth| {
                 m.reset();
-                var drafted = try generation.generate(m, &prompt, 12, settings, depth, null);
+                var drafted = try generation.generate(io, m, &prompt, 12, settings, depth, null);
                 defer drafted.deinit();
                 try std.testing.expectEqualSlices(u32, serial.tokens.items, drafted.tokens.items);
                 try std.testing.expect(drafted.drafted > 0);
@@ -885,7 +885,7 @@ pub const Model = struct {
         try m.weights.put("lm_head.biases", try s.zeros(mx.shape(head[2]), mx.dtype(head[2])));
         for ([_]usize{ 0, 1, 2, 17 }) |limit| {
             m.reset();
-            var result = try generation.generate(m, &prompt, limit, .{ .temperature = 0 }, 3, null);
+            var result = try generation.generate(io, m, &prompt, limit, .{ .temperature = 0 }, 3, null);
             defer result.deinit();
             try std.testing.expectEqual(limit, result.tokens.items.len);
             try std.testing.expectEqual(result.drafted, result.accepted);
@@ -894,7 +894,7 @@ pub const Model = struct {
         defer m.config.value.eos_token_id = eos;
         m.config.value.eos_token_id = &.{0};
         m.reset();
-        var stopped = try generation.generate(m, &prompt, 12, .{ .temperature = 0 }, 3, null);
+        var stopped = try generation.generate(io, m, &prompt, 12, .{ .temperature = 0 }, 3, null);
         defer stopped.deinit();
         try std.testing.expectEqualSlices(u32, &.{0}, stopped.tokens.items);
         std.debug.print("PASS: GLM greedy/seeded MTP generation, depths 1/3/15, target cache parity, full acceptance, EOS and token budgets.\n", .{});
@@ -974,7 +974,7 @@ pub fn checkModel(io: std.Io, dir: []const u8, out_dir: []const u8) !void {
     m.trace_dir = null;
     try m.checkExact(19);
     try m.checkMtp();
-    try m.checkGeneration();
+    try m.checkGeneration(io);
     try @import("session_checks.zig").checkSyntheticNeural(&m, io);
 }
 pub fn checkPrefillKda(io: std.Io, dir: []const u8) !void {

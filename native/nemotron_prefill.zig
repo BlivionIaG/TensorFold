@@ -5,6 +5,8 @@ const cp = @import("checkpoint.zig");
 const nemotron = @import("nemotron.zig");
 const c = mx.c;
 const A = mx.Array;
+pub var evaluation_stride: usize = 4;
+pub var release_layer_temporaries = false;
 
 pub const Route = struct {
     closure: c.mlx_closure = .{ .ctx = null },
@@ -159,17 +161,27 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
     var h = try s.reshape(try m.weights.embed(s, "backbone.embeddings", tokens), &.{ 1, rows, 2688 });
     var buf: [256]u8 = undefined;
     for (m.kinds, 0..) |kind, index| {
+        var layer_scope = mx.Scope{};
+        defer layer_scope.deinit();
+        const layer = if (release_layer_temporaries) &layer_scope else s;
         const weight = try m.weights.get(try std.fmt.bufPrint(&buf, "backbone.layers.{d}.norm.weight", .{index}));
-        const x = try cp.norm(s, h, weight, 1e-5);
+        const x = try cp.norm(layer, h, weight, 1e-5);
         const base = try std.fmt.bufPrint(&buf, "backbone.layers.{d}.mixer", .{index});
         const branch = switch (kind) {
-            'M' => try mamba(m, s, base, x, index, &pass.records[index]),
-            '*' => try attention(m, s, base, x, index, &pass.records[index]),
-            'E' => try moe(m, s, base, x),
+            'M' => try mamba(m, layer, base, x, index, &pass.records[index]),
+            '*' => try attention(m, layer, base, x, index, &pass.records[index]),
+            'E' => try moe(m, layer, base, x),
             else => return error.InvalidLayerKind,
         };
-        h = try s.binary(c.mlx_add, h, branch);
-        if ((index + 1) % 4 == 0) try mx.eval(h);
+        h = try layer.binary(c.mlx_add, h, branch);
+        if (release_layer_temporaries) {
+            h = try s.own(try mx.retain(h));
+            inline for (.{ "a", "b" }) |field| {
+                const value = @field(pass.records[index], field);
+                if (value.ctx != null) @field(pass.records[index], field) = try s.own(try mx.retain(value));
+            }
+        }
+        if (evaluation_stride > 0 and (index + 1) % evaluation_stride == 0) try mx.eval(h);
     }
     pass.hidden = try s.reshape(try cp.norm(s, h, try m.weights.get("backbone.norm_f.weight"), 1e-5), &.{ rows, 2688 });
     pass.logits = try m.weights.linear(&m.kernels, s, "lm_head", try s.slice(pass.hidden, 0, rows - 1, rows), true);

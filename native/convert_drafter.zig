@@ -401,7 +401,7 @@ pub fn check(io: std.Io, directory: []const u8) !void {
             defer reference.deinit(a);
             for ([_]usize{ 0, 1, 3, 7 }) |depth| {
                 model.reset();
-                var generated = try @import("serial_generation.zig").generate(&model, &.{ 1, 2, 3, 4 }, 12, .{ .seed = 1234, .temperature = temperature, .top_k = 20, .top_p = 0.95, .metal = true }, depth, null);
+                var generated = try @import("serial_generation.zig").generate(io, &model, &.{ 1, 2, 3, 4 }, 12, .{ .seed = 1234, .temperature = temperature, .top_k = 20, .top_p = 0.95, .metal = true }, depth, null);
                 defer generated.deinit();
                 if (depth == 0) try reference.appendSlice(a, generated.tokens.items) else try std.testing.expectEqualSlices(u32, reference.items, generated.tokens.items);
             }

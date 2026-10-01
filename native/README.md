@@ -140,6 +140,14 @@ GLM/DeepSeek use random checkpoints with production widths/experts but reduced
 layers/vocabulary; their timings do not estimate full-model or CUDA performance.
 Use a fresh output directory for each capture. Verify retained arrays and results with
 `.venv/bin/python tools/native_engine_bench.py --verify-golden build/native-checks/python-golden`.
+Compare native tokens and warm phase timings through Latch with
+`.venv/bin/python tools/native_engine_bench.py --compare-golden build/native-checks/python-golden --repetitions 2 --output build/native-checks/golden-comparison`.
+Only matching cases receive measurements. `--family` and repeatable `--case`
+select cases; `--native-arg=--flag` and `--native-env KEY=VALUE` support diagnostics.
+Native CLI warmup repeats the exact case with fresh request caches; serial-family
+comparisons use `--ignore-eos` to match the fixture's fixed output budget.
+These compare CLI drivers with Python's LaneEngine; native Session/shared-round
+serving already has different draft allocation and pipelining mechanics.
 The table entries are arguments to `.zig-toolchain/zig build`:
 
 | Checks | Arguments | Requirements |

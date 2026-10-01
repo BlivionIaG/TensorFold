@@ -1012,11 +1012,11 @@ pub fn checkDraft(io: std.Io, dir: []const u8, drafter: []const u8, output: []co
     for ([_]f64{ 0, 0.8 }) |temperature| {
         const settings = @import("sampling.zig").Sampling{ .temperature = temperature, .seed = 1234, .metal = true };
         m.reset();
-        var serial = try @import("serial_generation.zig").generate(&m, &.{ 1000, 1001, 1002, 1003 }, 12, settings, 0, null);
+        var serial = try @import("serial_generation.zig").generate(io, &m, &.{ 1000, 1001, 1002, 1003 }, 12, settings, 0, null);
         defer serial.deinit();
         for ([_]usize{ 1, 3, 15 }) |budget| {
             m.reset();
-            var drafted = try @import("serial_generation.zig").generate(&m, &.{ 1000, 1001, 1002, 1003 }, 12, settings, budget, null);
+            var drafted = try @import("serial_generation.zig").generate(io, &m, &.{ 1000, 1001, 1002, 1003 }, 12, settings, budget, null);
             defer drafted.deinit();
             try std.testing.expectEqualSlices(u32, serial.tokens.items, drafted.tokens.items);
         }

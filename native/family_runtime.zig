@@ -21,6 +21,7 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
     var cache_stress = false;
     var long_cache = false;
     var warm = false;
+    var warm_case = false;
     var copy_enabled = true;
     var reduced_vocab = true;
     var queued_drafts = true;
@@ -38,6 +39,15 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
         const key = args[i];
+        if (std.mem.eql(u8, key, "--prefill-release-layers")) {
+            if (M != @import("nemotron.zig").Model) return error.UnsupportedArgument;
+            @import("nemotron_prefill.zig").release_layer_temporaries = true;
+            continue;
+        }
+        if (std.mem.eql(u8, key, "--warm-case")) {
+            warm_case = true;
+            continue;
+        }
         if (std.mem.eql(u8, key, "--no-ple-wiring")) {
             if (!@hasDecl(M, "makeResidentPLE")) return error.UnsupportedResidentPLE;
             ple_wiring = false;
@@ -132,6 +142,12 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
         }
         if (i + 1 >= args.len) return error.MissingArgument;
         const val = args[i + 1];
+        if (std.mem.eql(u8, key, "--prefill-eval-layers")) {
+            if (M != @import("nemotron.zig").Model) return error.UnsupportedArgument;
+            @import("nemotron_prefill.zig").evaluation_stride = try std.fmt.parseInt(usize, val, 10);
+            i += 1;
+            continue;
+        }
         if (std.mem.eql(u8, key, "--prompt")) prompt = val else if (std.mem.eql(u8, key, "--tokens")) token_list = val else if (std.mem.eql(u8, key, "--max-tokens")) max_tokens = try std.fmt.parseInt(usize, val, 10) else if (std.mem.eql(u8, key, "--mtp-drafts")) drafts = try std.fmt.parseInt(usize, val, 10) else if (std.mem.eql(u8, key, "--temperature")) settings.temperature = try std.fmt.parseFloat(f64, val) else if (std.mem.eql(u8, key, "--top-k")) settings.top_k = try std.fmt.parseInt(usize, val, 10) else if (std.mem.eql(u8, key, "--top-p")) settings.top_p = try std.fmt.parseFloat(f64, val) else if (std.mem.eql(u8, key, "--min-p")) settings.min_p = try std.fmt.parseFloat(f64, val) else if (std.mem.eql(u8, key, "--seed")) {
             settings.seed = try std.fmt.parseInt(u64, val, 10);
             seed_set = true;
@@ -211,119 +227,103 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
         return error.InvalidToken;
     };
     if (!seed_set) settings.seed = sampling.seedFor(tokens.items);
-    var head_cache = M.DraftCache{};
-    defer head_cache.deinit();
-    var last = mx.empty;
-    defer mx.free(last);
-    const startup_seconds = @as(f64, @floatFromInt(startup_timer.read())) / 1e9;
-    var timer = Stopwatch.init(io);
-    var pending: i32 = 0;
-    var off: usize = 0;
-    while (off < tokens.items.len) {
-        const n = @min(if (@hasDecl(M, "prefill")) @as(usize, 2048) else 16, tokens.items.len - off);
-        if (@hasField(M, "trace_dir")) m.trace_dir = if (trace_gdn != null or off + n == tokens.items.len) trace_dir else null;
-        var p = if (@hasDecl(M, "prefill")) try m.prefill(tokens.items[off..][0..n]) else try m.forward(tokens.items[off..][0..n]);
-        if (@hasField(M, "trace_dir")) m.trace_dir = null;
-        defer p.deinit();
-        if (m.mtp) for (0..n) |j| {
-            if (last.ctx != null) _ = try m.draftStep(&p.scope, last, tokens.items[off + j], &head_cache);
-            try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(j), @intCast(j + 1)));
-        };
-        if (!m.mtp) try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(n - 1), @intCast(n)));
-        const logit_rows = mx.dim(p.logits, 0);
-        const ids = try sampling.rows(&m.kernels, &p.scope, try p.scope.slice(p.logits, 0, logit_rows - 1, logit_rows), &.{@intCast(off + n)}, settings);
-        defer mx.allocator.free(ids);
-        pending = ids[0];
-        if (dump) |file| if (off + n == tokens.items.len) {
-            const z = try a.dupeSentinel(u8, file, 0);
-            defer a.free(z);
-            const f = try p.scope.cast(p.logits, mx.f32t);
-            try mx.eval(f);
-            try mx.check(mx.c.mlx_save(z, f));
-        };
-        try m.commit(&p, n);
-        off += n;
-    }
-    const prefill = @as(f64, @floatFromInt(timer.read())) / 1e9;
-    std.debug.print("Prefill {d} tokens in {d:.3}s\n", .{ tokens.items.len, prefill });
-    timer.reset();
-    var generated: std.ArrayList(u32) = .empty;
-    defer generated.deinit(a);
-    var history: std.ArrayList(i32) = .empty;
-    defer history.deinit(a);
-    var accepted: usize = 0;
-    var rounds: usize = 0;
-    var handoff_rounds: usize = 0;
-    var depth_counts: [16]usize = @splat(0);
-    var proposal_hash = std.crypto.hash.sha2.Sha256.init(.{});
-    const Pipeline = @import("mtp_pipeline.zig").Pipeline(M);
-    var pipeline = Pipeline{};
-    defer pipeline.deinit();
-    const early = early_mtp and m.mtp and settings.metal;
-    if (early and max_tokens > 1 and !M.eos(pending)) {
-        var s = mx.Scope{};
-        defer s.deinit();
-        pipeline = try Pipeline.prepare(&m, &s, head_cache, last, pending, m.position, settings);
-    }
-    if (max_tokens > 0) try generated.append(a, @intCast(pending));
-    const use_serial_pipeline = serial_pipeline and settings.metal and !m.mtp and @hasDecl(M, "SerialPass") and gpu_tokens;
-    var queued_serial_steps: usize = 0;
-    if (@hasDecl(M, "SerialPass")) {
-        if (use_serial_pipeline) {
-            const result = try @import("serial_pipeline.zig").generate(M, &m, a, &generated, max_tokens, settings, M.eos, &proposal_hash);
-            rounds = result.rounds;
-            queued_serial_steps = result.queued_ahead;
+    const initial_depth = depth;
+    for (0..if (warm_case) @as(usize, 2) else 1) |repetition| {
+        if (repetition > 0) {
+            try mx.check(mx.c.mlx_synchronize(mx.stream));
+            m.reset();
         }
-    }
-    while (!use_serial_pipeline and generated.items.len < max_tokens and !M.eos(pending)) {
-        const round_timer = Stopwatch.init(io);
-        var neural_proposed: usize = 0;
-        var stage: []const u8 = "draft proposals";
-        var proposal: usize = 0;
-        errdefer std.debug.print("Decode failed at round {d}, position {d}, stage {s}, proposal {d}\n", .{ rounds, m.position, stage, proposal });
-        var window: [16]i32 = undefined;
-        window[0] = pending;
-        var n: usize = 1;
-        var proposal_scope = mx.Scope{};
-        defer proposal_scope.deinit();
-        var gpu_chain: ?mx.Array = null;
-        const handoff = gpu_handoff and queued_drafts and settings.metal and @hasDecl(M, "forwardArray") and gpu_tokens;
-        if (m.mtp) {
-            history.clearRetainingCapacity();
-            try history.appendSlice(a, tokens.items);
-            for (generated.items) |id| try history.append(a, @intCast(id));
-            const remaining = max_tokens - generated.items.len;
-            // Python chooses the initial depth before committing the first token.
-            const budget = if (adaptive_drafts) depth.choose(remaining + @intFromBool(rounds == 0)) else @min(drafts, remaining);
-            const copy = @import("copy.zig").propose(history.items, budget);
-            if (copy_enabled and copy.len == budget and budget > 0) {
-                @memcpy(window[1..][0..budget], copy.tokens[0..budget]);
-                n += budget;
-            } else if (early) {
-                const chain = try pipeline.propose(&m, &proposal_scope, budget, m.position, settings, queued_drafts);
-                if (handoff) {
-                    gpu_chain = chain;
+        depth = initial_depth;
+        var head_cache = M.DraftCache{};
+        defer head_cache.deinit();
+        var last = mx.empty;
+        defer mx.free(last);
+        const startup_seconds = @as(f64, @floatFromInt(startup_timer.read())) / 1e9;
+        var timer = Stopwatch.init(io);
+        var pending: i32 = 0;
+        var off: usize = 0;
+        while (off < tokens.items.len) {
+            const n = @min(if (@hasDecl(M, "prefill")) @as(usize, 2048) else 16, tokens.items.len - off);
+            if (@hasField(M, "trace_dir")) m.trace_dir = if (trace_gdn != null or off + n == tokens.items.len) trace_dir else null;
+            var p = if (@hasDecl(M, "prefill")) try m.prefill(tokens.items[off..][0..n]) else try m.forward(tokens.items[off..][0..n]);
+            if (@hasField(M, "trace_dir")) m.trace_dir = null;
+            defer p.deinit();
+            if (m.mtp) for (0..n) |j| {
+                if (last.ctx != null) _ = try m.draftStep(&p.scope, last, tokens.items[off + j], &head_cache);
+                try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(j), @intCast(j + 1)));
+            };
+            if (!m.mtp) try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(n - 1), @intCast(n)));
+            const logit_rows = mx.dim(p.logits, 0);
+            const ids = try sampling.rows(&m.kernels, &p.scope, try p.scope.slice(p.logits, 0, logit_rows - 1, logit_rows), &.{@intCast(off + n)}, settings);
+            defer mx.allocator.free(ids);
+            pending = ids[0];
+            if (dump) |file| if (off + n == tokens.items.len) {
+                const z = try a.dupeSentinel(u8, file, 0);
+                defer a.free(z);
+                const f = try p.scope.cast(p.logits, mx.f32t);
+                try mx.eval(f);
+                try mx.check(mx.c.mlx_save(z, f));
+            };
+            try m.commit(&p, n);
+            off += n;
+        }
+        const prefill = @as(f64, @floatFromInt(timer.read())) / 1e9;
+        std.debug.print("Prefill {d} tokens in {d:.3}s\n", .{ tokens.items.len, prefill });
+        timer.reset();
+        var generated: std.ArrayList(u32) = .empty;
+        defer generated.deinit(a);
+        var history: std.ArrayList(i32) = .empty;
+        defer history.deinit(a);
+        var accepted: usize = 0;
+        var rounds: usize = 0;
+        var handoff_rounds: usize = 0;
+        var depth_counts: [16]usize = @splat(0);
+        var proposal_hash = std.crypto.hash.sha2.Sha256.init(.{});
+        const Pipeline = @import("mtp_pipeline.zig").Pipeline(M);
+        var pipeline = Pipeline{};
+        defer pipeline.deinit();
+        const early = early_mtp and m.mtp and settings.metal;
+        if (early and max_tokens > 1 and !M.eos(pending)) {
+            var s = mx.Scope{};
+            defer s.deinit();
+            pipeline = try Pipeline.prepare(&m, &s, head_cache, last, pending, m.position, settings);
+        }
+        if (max_tokens > 0) try generated.append(a, @intCast(pending));
+        const use_serial_pipeline = serial_pipeline and settings.metal and !m.mtp and @hasDecl(M, "SerialPass") and gpu_tokens;
+        var queued_serial_steps: usize = 0;
+        if (@hasDecl(M, "SerialPass")) {
+            if (use_serial_pipeline) {
+                const result = try @import("serial_pipeline.zig").generate(M, &m, a, &generated, max_tokens, settings, M.eos, &proposal_hash);
+                rounds = result.rounds;
+                queued_serial_steps = result.queued_ahead;
+            }
+        }
+        while (!use_serial_pipeline and generated.items.len < max_tokens and !M.eos(pending)) {
+            const round_timer = Stopwatch.init(io);
+            var neural_proposed: usize = 0;
+            var stage: []const u8 = "draft proposals";
+            var proposal: usize = 0;
+            errdefer std.debug.print("Decode failed at round {d}, position {d}, stage {s}, proposal {d}\n", .{ rounds, m.position, stage, proposal });
+            var window: [16]i32 = undefined;
+            window[0] = pending;
+            var n: usize = 1;
+            var proposal_scope = mx.Scope{};
+            defer proposal_scope.deinit();
+            var gpu_chain: ?mx.Array = null;
+            const handoff = gpu_handoff and queued_drafts and settings.metal and @hasDecl(M, "forwardArray") and gpu_tokens;
+            if (m.mtp) {
+                history.clearRetainingCapacity();
+                try history.appendSlice(a, tokens.items);
+                for (generated.items) |id| try history.append(a, @intCast(id));
+                const remaining = max_tokens - generated.items.len;
+                // Python chooses the initial depth before committing the first token.
+                const budget = if (adaptive_drafts) depth.choose(remaining + @intFromBool(rounds == 0)) else @min(drafts, remaining);
+                const copy = @import("copy.zig").propose(history.items, budget);
+                if (copy_enabled and copy.len == budget and budget > 0) {
+                    @memcpy(window[1..][0..budget], copy.tokens[0..budget]);
                     n += budget;
-                } else {
-                    try mx.eval(chain);
-                    n += try @import("acceptance.zig").copyChain(window[n..], mx.c.mlx_array_data_uint32(chain)[0..budget], M.eos);
-                }
-                neural_proposed = n - 1;
-            } else {
-                const scope = &proposal_scope;
-                var dc = try head_cache.clone();
-                defer dc.deinit();
-                var dh = last;
-                if (queued_drafts and settings.metal) {
-                    var proposed: [15]mx.Array = undefined;
-                    var token = try scope.ints(&.{pending});
-                    for (0..budget) |j| {
-                        proposal = j;
-                        dh = try m.draftStepArray(scope, dh, token, &dc, true);
-                        token = try @import("gpu_sampling.zig").sample(&m.kernels, scope, try m.draftHead(scope, dh), &.{m.position + @as(i32, @intCast(j)) + 1}, settings, draft_ids);
-                        proposed[j] = token;
-                    }
-                    const chain = try scope.cat(proposed[0..budget], 0);
+                } else if (early) {
+                    const chain = try pipeline.propose(&m, &proposal_scope, budget, m.position, settings, queued_drafts);
                     if (handoff) {
                         gpu_chain = chain;
                         n += budget;
@@ -331,148 +331,173 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
                         try mx.eval(chain);
                         n += try @import("acceptance.zig").copyChain(window[n..], mx.c.mlx_array_data_uint32(chain)[0..budget], M.eos);
                     }
-                } else for (0..budget) |j| {
-                    proposal = j;
-                    dh = try m.draftStep(scope, dh, window[j], &dc);
-                    const ids = try sampling.rowsMapped(&m.kernels, scope, try m.draftHead(scope, dh), &.{m.position + @as(i32, @intCast(j)) + 1}, settings, draft_ids);
-                    defer mx.allocator.free(ids);
-                    window[n] = ids[0];
-                    n += 1;
-                    if (M.eos(ids[0])) break;
+                    neural_proposed = n - 1;
+                } else {
+                    const scope = &proposal_scope;
+                    var dc = try head_cache.clone();
+                    defer dc.deinit();
+                    var dh = last;
+                    if (queued_drafts and settings.metal) {
+                        var proposed: [15]mx.Array = undefined;
+                        var token = try scope.ints(&.{pending});
+                        for (0..budget) |j| {
+                            proposal = j;
+                            dh = try m.draftStepArray(scope, dh, token, &dc, true);
+                            token = try @import("gpu_sampling.zig").sample(&m.kernels, scope, try m.draftHead(scope, dh), &.{m.position + @as(i32, @intCast(j)) + 1}, settings, draft_ids);
+                            proposed[j] = token;
+                        }
+                        const chain = try scope.cat(proposed[0..budget], 0);
+                        if (handoff) {
+                            gpu_chain = chain;
+                            n += budget;
+                        } else {
+                            try mx.eval(chain);
+                            n += try @import("acceptance.zig").copyChain(window[n..], mx.c.mlx_array_data_uint32(chain)[0..budget], M.eos);
+                        }
+                    } else for (0..budget) |j| {
+                        proposal = j;
+                        dh = try m.draftStep(scope, dh, window[j], &dc);
+                        const ids = try sampling.rowsMapped(&m.kernels, scope, try m.draftHead(scope, dh), &.{m.position + @as(i32, @intCast(j)) + 1}, settings, draft_ids);
+                        defer mx.allocator.free(ids);
+                        window[n] = ids[0];
+                        n += 1;
+                        if (M.eos(ids[0])) break;
+                    }
+                    neural_proposed = n - 1;
                 }
-                neural_proposed = n - 1;
             }
-        }
-        stage = "target verification";
-        var p = if (@hasDecl(M, "forwardArray")) blk: {
-            if (gpu_chain) |chain| {
-                const first = try proposal_scope.cast(try proposal_scope.ints(&.{pending}), mx.c.MLX_UINT32);
-                break :blk try m.forwardArray(try proposal_scope.cat(&.{ first, chain }, 0));
-            }
-            break :blk try m.forwardQueued(window[0..n]);
-        } else try m.forwardQueued(window[0..n]);
-        defer p.deinit();
-        var positions: [16]i32 = undefined;
-        for (0..n) |j| positions[j] = m.position + @as(i32, @intCast(j)) + 1;
-        var speculation: ?Pipeline.Speculation = null;
-        defer if (speculation) |*spec| spec.deinit();
-        const ids = if (early or gpu_chain != null) blk: {
-            const target = try @import("gpu_sampling.zig").sample(&m.kernels, &p.scope, p.logits, positions[0..n], settings, null);
-            var draws: [3]mx.Array = undefined;
-            draws[0] = target;
-            var draw_count: usize = 1;
+            stage = "target verification";
+            var p = if (@hasDecl(M, "forwardArray")) blk: {
+                if (gpu_chain) |chain| {
+                    const first = try proposal_scope.cast(try proposal_scope.ints(&.{pending}), mx.c.MLX_UINT32);
+                    break :blk try m.forwardArray(try proposal_scope.cat(&.{ first, chain }, 0));
+                }
+                break :blk try m.forwardQueued(window[0..n]);
+            } else try m.forwardQueued(window[0..n]);
+            defer p.deinit();
+            var positions: [16]i32 = undefined;
+            for (0..n) |j| positions[j] = m.position + @as(i32, @intCast(j)) + 1;
+            var speculation: ?Pipeline.Speculation = null;
+            defer if (speculation) |*spec| spec.deinit();
+            const ids = if (early or gpu_chain != null) blk: {
+                const target = try @import("gpu_sampling.zig").sample(&m.kernels, &p.scope, p.logits, positions[0..n], settings, null);
+                var draws: [3]mx.Array = undefined;
+                draws[0] = target;
+                var draw_count: usize = 1;
+                if (early) {
+                    speculation = try pipeline.speculate(&m, &p.scope, p.hidden, target, m.position, settings);
+                    draws[draw_count] = speculation.?.firsts;
+                    draw_count += 1;
+                }
+                if (gpu_chain) |chain| {
+                    draws[draw_count] = chain;
+                    draw_count += 1;
+                }
+                // Target, next drafts and incoming proposals share one host read.
+                const values = try p.scope.cat(draws[0..draw_count], 0);
+                try mx.eval(values);
+                const out_ids = try mx.allocator.alloc(i32, n);
+                errdefer mx.allocator.free(out_ids);
+                for (out_ids, 0..) |*id, j| id.* = @intCast(mx.c.mlx_array_data_uint32(values)[j]);
+                if (gpu_chain != null) {
+                    const physical_rows = n;
+                    const start = physical_rows * (1 + @as(usize, @intFromBool(early)));
+                    // The GPU can evaluate beyond a proposed EOS. Acceptance and cache
+                    // commit see only its logical prefix, exactly as in host handoff.
+                    n = 1 + try @import("acceptance.zig").copyChain(window[1..], mx.c.mlx_array_data_uint32(values)[start..][0 .. physical_rows - 1], M.eos);
+                    neural_proposed = n - 1;
+                    handoff_rounds += 1;
+                }
+                break :blk out_ids;
+            } else try sampling.rows(&m.kernels, &p.scope, p.logits, positions[0..n], settings);
+            defer mx.allocator.free(ids);
+            const width = [_]u8{@intCast(n)};
+            proposal_hash.update(&width);
+            proposal_hash.update(std.mem.sliceAsBytes(window[0..n]));
+            var parents: [16]i32 = undefined;
+            for (0..n) |j| parents[j] = @as(i32, @intCast(j)) - 1;
+            const result = try @import("acceptance.zig").select(window[0..n], parents[0..n], ids[0..n], max_tokens - generated.items.len, M.eos);
+            const keep = result.kept;
+            try generated.appendSlice(a, result.tokens[0..result.count]);
+            accepted += result.accepted;
+            pending = result.pending;
+            stage = "draft cache commit";
             if (early) {
-                speculation = try pipeline.speculate(&m, &p.scope, p.hidden, target, m.position, settings);
-                draws[draw_count] = speculation.?.firsts;
-                draw_count += 1;
+                if (!result.stop) try pipeline.settle(&p.scope, speculation.?, keep);
+                try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(keep - 1), @intCast(keep)));
+            } else if (m.mtp) for (0..keep) |j| {
+                _ = try m.draftStep(&p.scope, last, window[j], &head_cache);
+                try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(j), @intCast(j + 1)));
+            };
+            if (!m.mtp) try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(keep - 1), @intCast(keep)));
+            stage = "target cache commit";
+            try m.commit(&p, keep);
+            if (neural_proposed > 0) {
+                depth_counts[neural_proposed] += 1;
+                if (adaptive_drafts) try depth.observe(neural_proposed, result.accepted, @as(f64, @floatFromInt(round_timer.read())) / 1e6);
             }
-            if (gpu_chain) |chain| {
-                draws[draw_count] = chain;
-                draw_count += 1;
-            }
-            // Target, next drafts and incoming proposals share one host read.
-            const values = try p.scope.cat(draws[0..draw_count], 0);
-            try mx.eval(values);
-            const out_ids = try mx.allocator.alloc(i32, n);
-            errdefer mx.allocator.free(out_ids);
-            for (out_ids, 0..) |*id, j| id.* = @intCast(mx.c.mlx_array_data_uint32(values)[j]);
-            if (gpu_chain != null) {
-                const physical_rows = n;
-                const start = physical_rows * (1 + @as(usize, @intFromBool(early)));
-                // The GPU can evaluate beyond a proposed EOS. Acceptance and cache
-                // commit see only its logical prefix, exactly as in host handoff.
-                n = 1 + try @import("acceptance.zig").copyChain(window[1..], mx.c.mlx_array_data_uint32(values)[start..][0 .. physical_rows - 1], M.eos);
-                neural_proposed = n - 1;
-                handoff_rounds += 1;
-            }
-            break :blk out_ids;
-        } else try sampling.rows(&m.kernels, &p.scope, p.logits, positions[0..n], settings);
-        defer mx.allocator.free(ids);
-        const width = [_]u8{@intCast(n)};
-        proposal_hash.update(&width);
-        proposal_hash.update(std.mem.sliceAsBytes(window[0..n]));
-        var parents: [16]i32 = undefined;
-        for (0..n) |j| parents[j] = @as(i32, @intCast(j)) - 1;
-        const result = try @import("acceptance.zig").select(window[0..n], parents[0..n], ids[0..n], max_tokens - generated.items.len, M.eos);
-        const keep = result.kept;
-        try generated.appendSlice(a, result.tokens[0..result.count]);
-        accepted += result.accepted;
-        pending = result.pending;
-        stage = "draft cache commit";
-        if (early) {
-            if (!result.stop) try pipeline.settle(&p.scope, speculation.?, keep);
-            try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(keep - 1), @intCast(keep)));
-        } else if (m.mtp) for (0..keep) |j| {
-            _ = try m.draftStep(&p.scope, last, window[j], &head_cache);
-            try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(j), @intCast(j + 1)));
-        };
-        if (!m.mtp) try mx.replace(&last, try p.scope.slice(p.hidden, 0, @intCast(keep - 1), @intCast(keep)));
-        stage = "target cache commit";
-        try m.commit(&p, keep);
-        if (neural_proposed > 0) {
-            depth_counts[neural_proposed] += 1;
-            if (adaptive_drafts) try depth.observe(neural_proposed, result.accepted, @as(f64, @floatFromInt(round_timer.read())) / 1e6);
+            rounds += 1;
+            if (result.stop) break;
         }
-        rounds += 1;
-        if (result.stop) break;
-    }
-    const seconds = @as(f64, @floatFromInt(timer.read())) / 1e9;
-    const text = try tok.decode(a, generated.items, false);
-    defer a.free(text);
-    var buffer: [4096]u8 = undefined;
-    var out = std.Io.File.stdout().writer(io, &buffer);
-    try out.interface.writeAll(text);
-    try out.interface.writeAll("\n");
-    try out.interface.flush();
-    var digest: [32]u8 = undefined;
-    var proposal_digest: [32]u8 = undefined;
-    proposal_hash.final(&proposal_digest);
-    std.crypto.hash.sha2.Sha256.hash(std.mem.sliceAsBytes(generated.items), &digest, .{});
-    std.debug.print("Generated {d} tokens in {d:.3}s ({d:.2} tok/s), {d} rounds, {d} accepted drafts\nSHA-256: {s}\n", .{ generated.items.len, seconds, @as(f64, @floatFromInt(generated.items.len)) / seconds, rounds, accepted, std.fmt.bytesToHex(digest, .lower) });
-    if (report) |file| {
-        var peak: usize = 0;
-        var active: usize = 0;
-        try mx.check(mx.c.mlx_get_peak_memory(&peak));
-        try mx.check(mx.c.mlx_get_active_memory(&active));
-        const bytes = try std.json.Stringify.valueAlloc(a, .{
-            .prompt_tokens = tokens.items,
-            .tokens = generated.items,
-            .text = text,
-            .seed = settings.seed,
-            .temperature = settings.temperature,
-            .top_k = settings.top_k,
-            .top_p = settings.top_p,
-            .min_p = settings.min_p,
-            .metal_sampling = settings.metal,
-            .context_copy = copy_enabled,
-            .draft_vocab_size = if (draft_ids) |ids| mx.c.mlx_array_size(ids) else @as(usize, M.vocab),
-            .queued_drafts = m.mtp and queued_drafts and settings.metal,
-            .early_mtp = early,
-            .gpu_handoff_rounds = handoff_rounds,
-            .serial_pipeline = use_serial_pipeline,
-            .kv_buffers = @import("kv_buffer.zig").enabled,
-            .resident_ple = resident_ple,
-            .resident_wired_bytes = if (@hasField(M, "resident_wired_bytes")) m.resident_wired_bytes else @as(usize, 0),
-            .queued_serial_steps = queued_serial_steps,
-            .adaptive_drafts = adaptive_drafts and m.mtp,
-            .draft_depth_counts = depth_counts,
-            .calibration_seconds = calibration_seconds,
-            .load_seconds = load_seconds,
-            .warmup_seconds = warmup_seconds,
-            .startup_seconds = startup_seconds,
-            .proposal_sha256 = std.fmt.bytesToHex(proposal_digest, .lower),
-            .prefill_seconds = prefill,
-            .decode_seconds = seconds,
-            .rounds = rounds,
-            .accepted_drafts = accepted,
-            .peak_mlx_bytes = peak,
-            .active_mlx_bytes = active,
-            .token_sha256 = std.fmt.bytesToHex(digest, .lower),
-        }, .{});
-        defer a.free(bytes);
-        const f = try std.Io.Dir.cwd().createFile(io, file, .{});
-        defer f.close(io);
-        try f.writeStreamingAll(io, bytes);
+        const seconds = @as(f64, @floatFromInt(timer.read())) / 1e9;
+        if (warm_case and repetition == 0) continue;
+        const text = try tok.decode(a, generated.items, false);
+        defer a.free(text);
+        var buffer: [4096]u8 = undefined;
+        var out = std.Io.File.stdout().writer(io, &buffer);
+        try out.interface.writeAll(text);
+        try out.interface.writeAll("\n");
+        try out.interface.flush();
+        var digest: [32]u8 = undefined;
+        var proposal_digest: [32]u8 = undefined;
+        proposal_hash.final(&proposal_digest);
+        std.crypto.hash.sha2.Sha256.hash(std.mem.sliceAsBytes(generated.items), &digest, .{});
+        std.debug.print("Generated {d} tokens in {d:.3}s ({d:.2} tok/s), {d} rounds, {d} accepted drafts\nSHA-256: {s}\n", .{ generated.items.len, seconds, @as(f64, @floatFromInt(generated.items.len)) / seconds, rounds, accepted, std.fmt.bytesToHex(digest, .lower) });
+        if (report) |file| {
+            var peak: usize = 0;
+            var active: usize = 0;
+            try mx.check(mx.c.mlx_get_peak_memory(&peak));
+            try mx.check(mx.c.mlx_get_active_memory(&active));
+            const bytes = try std.json.Stringify.valueAlloc(a, .{
+                .prompt_tokens = tokens.items,
+                .tokens = generated.items,
+                .text = text,
+                .seed = settings.seed,
+                .temperature = settings.temperature,
+                .top_k = settings.top_k,
+                .top_p = settings.top_p,
+                .min_p = settings.min_p,
+                .metal_sampling = settings.metal,
+                .context_copy = copy_enabled,
+                .draft_vocab_size = if (draft_ids) |ids| mx.c.mlx_array_size(ids) else @as(usize, M.vocab),
+                .queued_drafts = m.mtp and queued_drafts and settings.metal,
+                .early_mtp = early,
+                .gpu_handoff_rounds = handoff_rounds,
+                .serial_pipeline = use_serial_pipeline,
+                .kv_buffers = @import("kv_buffer.zig").enabled,
+                .resident_ple = resident_ple,
+                .resident_wired_bytes = if (@hasField(M, "resident_wired_bytes")) m.resident_wired_bytes else @as(usize, 0),
+                .queued_serial_steps = queued_serial_steps,
+                .adaptive_drafts = adaptive_drafts and m.mtp,
+                .draft_depth_counts = depth_counts,
+                .calibration_seconds = calibration_seconds,
+                .load_seconds = load_seconds,
+                .warmup_seconds = warmup_seconds,
+                .startup_seconds = startup_seconds,
+                .proposal_sha256 = std.fmt.bytesToHex(proposal_digest, .lower),
+                .prefill_seconds = prefill,
+                .decode_seconds = seconds,
+                .rounds = rounds,
+                .accepted_drafts = accepted,
+                .peak_mlx_bytes = peak,
+                .active_mlx_bytes = active,
+                .token_sha256 = std.fmt.bytesToHex(digest, .lower),
+            }, .{});
+            defer a.free(bytes);
+            const f = try std.Io.Dir.cwd().createFile(io, file, .{});
+            defer f.close(io);
+            try f.writeStreamingAll(io, bytes);
+        }
     }
 }
 pub fn check(comptime M: type, m: *M) !void {

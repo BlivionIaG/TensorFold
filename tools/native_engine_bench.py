@@ -422,6 +422,140 @@ def verify_golden(directory):
     print(f"PASS golden fixture: {len(suite['models'])} families, {arrays} hashed finite arrays", flush=True)
 
 
+def golden_native_command(args, family, manifest, case, report):
+    directory = Path(manifest["checkpoint"]["path"])
+    serial = family in ("gemma", "glm", "deepseek")
+    command = [str(args.binary.resolve()), "run", str(directory),
+               "--tokens", ",".join(map(str, case["tokens"])),
+               "--max-tokens", str(len(case["measurements"][0]["tokens"])),
+               "--temperature", str(case["temperature"]), "--seed", str(manifest["seed"]),
+               "--top-k", str(manifest["top_k"]), "--top-p", str(manifest["top_p"]),
+               "--warmup", "--report", str(report)]
+    if family not in ("qwen", "bonsai"):
+        command.append("--metal-sampling")
+    if not serial:
+        command += ["--no-copy", "--warm-case"]
+    else:
+        command.append("--ignore-eos")
+    if case["drafts"]:
+        if family in DRAFTERS:
+            command += ["--drafter", manifest["drafter"]["path"]]
+            if family == "gemma":
+                command += ["--mtp-drafts", "15", "--drafter-bits", "8"]
+        else:
+            command += ["--mtp-drafts", "3"]
+            if family == "deepseek":
+                command += ["--drafter", str(directory / "drafter")]
+    else:
+        command.append("--no-drafts")
+    if args.resident_ple and family == "flash":
+        command.append("--resident-ple")
+    return command + args.native_arg
+
+
+def native_synthetic_checkpoint(manifest, output):
+    # GLM's native configuration uses a list of EOS IDs; the oracle's synthetic
+    # generator emits the equivalent scalar. Keep the golden checkpoint immutable.
+    source = Path(manifest["checkpoint"]["path"])
+    config = json.loads((source / "config.json").read_text())
+    text_config = config.get("text_config", config)
+    if manifest["family"] != "glm" or not isinstance(text_config.get("eos_token_id"), int):
+        return source
+    destination = output / "glm-checkpoint"
+    destination.mkdir()
+    for path in source.iterdir():
+        if path.name != "config.json":
+            (destination / path.name).symlink_to(path.resolve())
+    text_config["eos_token_id"] = [text_config["eos_token_id"]]
+    write_json(destination / "config.json", config)
+    return destination.resolve()
+
+
+def compare_golden(args):
+    suite = json.loads((args.compare_golden / "suite.json").read_text())
+    if not suite["complete"]:
+        raise ValueError("Golden suite is incomplete")
+    args.output.mkdir(parents=True, exist_ok=True)
+    output = args.output / "comparison.json"
+    if output.exists():
+        raise ValueError("Comparison already exists; preserve prior measurements")
+    native_env = os.environ.copy()
+    for assignment in args.native_env:
+        key, separator, value = assignment.partition("=")
+        if not separator or not key:
+            raise ValueError("Native environment requires KEY=VALUE")
+        native_env[key] = value
+    comparison = dict(complete=False, cases=[], binary=str(args.binary.resolve()),
+                      binary_sha256=hashlib.sha256(args.binary.read_bytes()).hexdigest(),
+                      golden=str(args.compare_golden.resolve()),
+                      scope="CLI versus production LaneEngine, not native Session/shared-round serving; CLI draft policies differ; warm resident model, fresh request caches; native process startup excluded",
+                      native_warmup="one discarded exact-case run before every native measured request",
+                      native_environment={k: v for k, v in native_env.items()
+                                          if k.startswith(("TF_", "TENSORFOLD_", "MLX_"))},
+                      checkpoint_adaptations=[])
+    selected = []
+    for model in suite["models"]:
+        if args.family and args.family != model["family"]:
+            continue
+        path = args.compare_golden / model["manifest"]
+        manifest = json.loads(path.read_text())
+        if not manifest["complete"]:
+            raise ValueError("Incomplete family fixture")
+        if checkpoint_identity(Path(manifest["checkpoint"]["path"]))["files"] != manifest["checkpoint"]["files"]:
+            raise ValueError(f"Checkpoint identity changed: {model['family']}")
+        drafter = manifest.get("drafter")
+        if drafter and checkpoint_identity(Path(drafter["path"]))["files"] != drafter["files"]:
+            raise ValueError(f"Drafter identity changed: {model['family']}")
+        checkpoint = native_synthetic_checkpoint(manifest, args.output) if model["synthetic"] else Path(manifest["checkpoint"]["path"])
+        if str(checkpoint) != manifest["checkpoint"]["path"]:
+            comparison["checkpoint_adaptations"].append(dict(family=model["family"], source=manifest["checkpoint"]["path"],
+                                                             native=str(checkpoint), change="scalar EOS converted to singleton list; weights symlinked unchanged"))
+            manifest["checkpoint"]["path"] = str(checkpoint)
+        for case in manifest["cases"]:
+            if args.case and case["name"] not in args.case:
+                continue
+            entry = dict(family=model["family"], name=case["name"], synthetic=model["synthetic"],
+                         python=case["measurements"], native=[], correctness=None)
+            comparison["cases"].append(entry)
+            selected.append((model["family"], manifest, case, entry))
+    if not selected:
+        raise ValueError("No matching fixture cases")
+    # Check every selected case before retaining any native performance measurements.
+    for repetition in range(args.repetitions + 1):
+        for family, manifest, case, entry in selected:
+            if repetition and not entry["correctness"]["matches"]:
+                continue
+            stem = f"{family}-{case['name']}-{repetition}"
+            report = args.output / f"{stem}.json"
+            command = golden_native_command(args, family, manifest, case, report)
+            before = time.perf_counter()
+            with (args.output / f"{stem}.log").open("w") as log:
+                process = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, env=native_env)
+            elapsed = time.perf_counter() - before
+            result = json.loads(report.read_text()) if process.returncode == 0 else {}
+            expected = case["measurements"][0]["tokens"]
+            actual = result.get("tokens", [])
+            matches = process.returncode == 0 and actual == expected
+            result.update(command=command, process_seconds=elapsed, exit_code=process.returncode,
+                          matches=matches, expected_tokens=expected)
+            write_json(report, result)
+            if repetition:
+                if not matches:
+                    raise RuntimeError(f"Output changed after correctness check: {stem}")
+                entry["native"].append(result)
+            else:
+                entry["correctness"] = dict(matches=matches, exit_code=process.returncode,
+                                            tokens=actual, expected_tokens=expected, report=report.name)
+            write_json(output, comparison)
+            print(f"{'MEASURE' if repetition else 'CHECK'} {stem}: "
+                  f"{'match' if matches else 'FAIL'}, {elapsed:.3f}s process", flush=True)
+    comparison["complete"] = True
+    comparison["correctness_passed"] = all(c["correctness"]["matches"] for c in comparison["cases"])
+    write_json(output, comparison)
+    if not comparison["correctness_passed"]:
+        raise SystemExit("Native correctness incomplete; mismatching cases excluded from measurements")
+
+
 def python_worker(args):
     from native_runtime import require_mlx
     require_mlx()
@@ -524,6 +658,10 @@ def main():
     parser.add_argument("--golden", action="store_true", help="Capture and measure all local Python families, plus synthetic GLM/DeepSeek")
     parser.add_argument("--golden-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--verify-golden", type=Path, help="Verify a retained golden suite's arrays, provenance labels and token comparisons")
+    parser.add_argument("--compare-golden", type=Path, help="Check native tokens against a golden suite before comparing phase measurements")
+    parser.add_argument("--case", action="append", default=[], help="Select golden case names (repeatable)")
+    parser.add_argument("--native-arg", action="append", default=[], help="Append a native diagnostic argument (use --native-arg=--flag)")
+    parser.add_argument("--native-env", action="append", default=[], help="Native measurement environment KEY=VALUE (repeatable)")
     parser.add_argument("--synthetic-shape", choices=("production", "reduced"), default="production",
                         help="Synthetic GLM/DeepSeek retain checkpoint widths/experts with reduced layers/vocabulary; reduced is a quick smoke")
     parser.add_argument("--drafts", type=int, default=0, choices=(0, 3, 15))
@@ -547,6 +685,10 @@ def main():
         return verify_golden(args.verify_golden)
     if args.output is None:
         parser.error("--output is required")
+    if args.compare_golden:
+        if args.repetitions < 1:
+            parser.error("positive repetitions required")
+        return compare_golden(args)
     if args.golden or args.golden_worker:
         if args.engine != "python" or args.resident_ple or args.max_tokens < 2 or args.repetitions < 1:
             parser.error("golden fixtures require Python, at least two tokens and positive repetitions")
