@@ -516,6 +516,7 @@ pub fn build(b: *std.Build) void {
         check.step.dependOn(&fixture.step);
         metal_tests.dependOn(&check.step);
         if (std.mem.eql(u8, kind, "sampling")) b.step("test-sampling", "Compare CPU and Metal top-k/top-p/min-p sampling against upstream").dependOn(&check.step);
+        if (std.mem.eql(u8, kind, "sparse")) b.step("test-flash-shared-attention", "Compare shared Flash attention across sparse thresholds and partial commits").dependOn(&check.step);
         if (std.mem.eql(u8, kind, "ple_norm")) b.step("test-ple-norm", "Compare PLE normalization against original Python arithmetic").dependOn(&check.step);
     }
     const model_tests = b.step("test-models", "Real-model row/rollback/cache checks for all three Metal families (large RAM required)");
@@ -551,6 +552,7 @@ pub fn build(b: *std.Build) void {
     const lifecycle_install = b.addInstallArtifact(lifecycle_exe, .{});
     b.getInstallStep().dependOn(&lifecycle_install.step);
     b.step("build-server-checks", "Build the native/Python HTTP comparison harness").dependOn(&lifecycle_install.step);
+    b.step("test-server-benchmark", "Check Python/native benchmark medians and complete performance acceptance").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = lifecycle_module })).step);
     const lifecycle = b.addRunArtifact(lifecycle_exe);
     lifecycle.addArtifactArg(exe);
     lifecycle.addArg(b.fmt("{s}/Qwen3.8-27B-MLX-4bit", .{model_root}));
@@ -610,18 +612,67 @@ pub fn build(b: *std.Build) void {
     server_rounds.addArtifactArg(http_checks);
     server_rounds.step.dependOn(&session_image_fixture.step);
     b.step("test-server-rounds", "Compare concurrent HTTP image/text requests with isolated outputs, streaming and cancellation").dependOn(&server_rounds.step);
-    const shared_sessions = b.step("test-session-shared", "Verify eight Qwen/Bonsai requests, fair row caps, serial sampling, copies and cancellation isolation");
+    const shared_sessions = b.step("test-session-shared", "Verify eight requests for every fitting family, fair row caps, serial sampling, copies and cancellation isolation");
     var shared_previous: ?*std.Build.Step = null;
-    for ([_][]const u8{ "Qwen3.8-27B-MLX-4bit", "Ternary-Bonsai-2-27B-mlx-2bit" }) |name| {
+    for ([_][]const u8{ "Qwen3.8-27B-MLX-4bit", "Ternary-Bonsai-2-27B-mlx-2bit", "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", "Qwen3.8-Flash-Next-MLX-4bit-MTP", "gemma-4-26b-a4b-it-4bit" }) |name| {
         const check = b.addRunArtifact(exe);
         check.addArgs(&.{ "check-session-shared", b.fmt("{s}/{s}", .{ model_root, name }) });
         if (shared_previous) |previous| check.step.dependOn(previous);
         shared_previous = &check.step;
     }
     shared_sessions.dependOn(shared_previous.?);
+    const family_shared = b.step("test-family-shared-rounds", "Compare Gemma, Nemotron and Flash shared target logits and committed states against isolated forwards");
+    var family_previous: ?*std.Build.Step = null;
+    for ([_][]const u8{ "gemma-4-26b-a4b-it-4bit", "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", "Qwen3.8-Flash-Next-MLX-4bit-MTP" }) |name| {
+        const check = b.addRunArtifact(exe);
+        check.addArgs(&.{ "check-family-shared-rounds", b.fmt("{s}/{s}", .{ model_root, name }) });
+        if (family_previous) |previous| check.step.dependOn(previous);
+        family_previous = &check.step;
+    }
+    family_shared.dependOn(family_previous.?);
+    const shared_heads = b.step("test-family-shared-heads", "Verify batched Nemotron and Flash draft heads with independent caches");
+    var heads_previous: ?*std.Build.Step = null;
+    for ([_][]const u8{ "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", "Qwen3.8-Flash-Next-MLX-4bit-MTP" }) |name| {
+        const check = b.addRunArtifact(exe);
+        check.addArgs(&.{ "check-family-shared-rounds", b.fmt("{s}/{s}", .{ model_root, name }), "--mtp" });
+        if (heads_previous) |previous| check.step.dependOn(previous);
+        heads_previous = &check.step;
+    }
+    shared_heads.dependOn(heads_previous.?);
+    const shared_simd = b.step("test-family-shared-simd", "Verify Nemotron and Flash shared targets and MTP caches through forced SIMD fallback kernels");
+    var simd_shared_previous: ?*std.Build.Step = null;
+    for ([_][]const u8{ "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", "Qwen3.8-Flash-Next-MLX-4bit-MTP" }) |name| {
+        const check = b.addRunArtifact(exe);
+        check.addArgs(&.{ "check-family-shared-rounds", b.fmt("{s}/{s}", .{ model_root, name }), "--metal-simd", "--mtp" });
+        if (simd_shared_previous) |previous| check.step.dependOn(previous);
+        simd_shared_previous = &check.step;
+    }
+    shared_simd.dependOn(simd_shared_previous.?);
+    const nemotron_head_oracle = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_families_reference.py", b.fmt("{s}/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", .{model_root}), "--nemotron-shared-head", "--output", "build/native-checks/nemotron-shared-head/oracle/logits.npy", "--state-directory", "build/native-checks/nemotron-shared-head/oracle" });
+    const nemotron_head = b.addRunArtifact(exe);
+    nemotron_head.addArgs(&.{ "check-nemotron-shared-head", b.fmt("{s}/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", .{model_root}), "build/native-checks/nemotron-shared-head/native" });
+    nemotron_head.step.dependOn(&nemotron_head_oracle.step);
+    const nemotron_head_compare = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_reference.py", "--compare-arrays", "build/native-checks/nemotron-shared-head/oracle", "build/native-checks/nemotron-shared-head/native" });
+    nemotron_head_compare.step.dependOn(&nemotron_head.step);
+    b.step("test-nemotron-shared-head", "Compare shared MTP heads across the 10K attention boundary against the Python row-exact oracle").dependOn(&nemotron_head_compare.step);
     const shared_neural = b.addRunArtifact(exe);
     shared_neural.addArgs(&.{ "check-session-shared", b.fmt("{s}/Qwen3.8-27B-MLX-4bit", .{model_root}), b.fmt("{s}/Qwen3.8-27B-DFlash2", .{model_root}) });
-    b.step("test-session-shared-neural", "Verify per-request DFlash caches through shared Qwen settlement").dependOn(&shared_neural.step);
+    const shared_neural_step = b.step("test-session-shared-neural", "Verify per-request neural draft caches through shared Qwen, Gemma, Nemotron and Flash settlement");
+    var neural_shared_previous: *std.Build.Step = &shared_neural.step;
+    for ([_][]const u8{ "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", "Qwen3.8-Flash-Next-MLX-4bit-MTP" }) |name| {
+        const check = b.addRunArtifact(exe);
+        check.addArgs(&.{ "check-session-shared", b.fmt("{s}/{s}", .{ model_root, name }), "-" });
+        check.step.dependOn(neural_shared_previous);
+        neural_shared_previous = &check.step;
+    }
+    shared_neural_step.dependOn(neural_shared_previous);
+    const dflash_streams_oracle = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_reference.py", "--model", b.fmt("{s}/Qwen3.8-27B-MLX-4bit", .{model_root}), "--dflash-streams-fixture", b.fmt("{s}/Qwen3.8-27B-DFlash2", .{model_root}), "--output", "build/native-checks/qwen-dflash-streams" });
+    const dflash_streams = b.addRunArtifact(exe);
+    dflash_streams.addArgs(&.{ "check-qwen-dflash-streams", b.fmt("{s}/Qwen3.8-27B-MLX-4bit", .{model_root}), b.fmt("{s}/Qwen3.8-27B-DFlash2", .{model_root}), "build/native-checks/qwen-dflash-streams", "build/native-checks/qwen-dflash-streams/native" });
+    dflash_streams.step.dependOn(&dflash_streams_oracle.step);
+    const dflash_streams_compare = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_reference.py", "--compare-arrays", "build/native-checks/qwen-dflash-streams/python", "build/native-checks/qwen-dflash-streams/native" });
+    dflash_streams_compare.step.dependOn(&dflash_streams.step);
+    b.step("test-qwen-shared-drafter", "Compare shared Qwen DFlash layer states, lattices and calibrated proposals against upstream").dependOn(&dflash_streams_compare.step);
     const server_prefixes = b.step("test-server-prefixes", "Verify HTTP prefix reuse, eviction, cancellation and disabled caching");
     var prefix_previous: ?*std.Build.Step = null;
     for ([_][]const u8{ "1", "0", "0.000001" }) |budget| {
@@ -798,6 +849,11 @@ pub fn build(b: *std.Build) void {
     b.step("test-gemma-prefill", "Compare batched Gemma prompt arithmetic, ring wrap, caches and decode continuation").dependOn(&gemma_prefill_compare.step);
     const gemma_drafter_option = b.option([]const u8, "gemma-drafter", "Existing trained Gemma DFlash checkpoint; default is the synthetic oracle fixture");
     const gemma_drafter = gemma_drafter_option orelse "build/native-checks/dflash-3";
+    const gemma_shared_neural = b.addRunArtifact(exe);
+    gemma_shared_neural.addArgs(&.{ "check-session-shared", gemma_model, gemma_drafter });
+    gemma_shared_neural.step.dependOn(neural_shared_previous);
+    if (gemma_drafter_option == null) gemma_shared_neural.step.dependOn(dflash_previous.?);
+    shared_neural_step.dependOn(&gemma_shared_neural.step);
     const neural_sessions = b.step("test-session-neural", "Verify neural drafts, prefix restoration and interleaved requests on Qwen, Gemma, Nemotron and Flash");
     const neural_http = b.step("test-server-neural", "Verify neural HTTP drafts, serial/concurrent JSON/SSE parity, cancellation and opt-out");
     var neural_prior: ?*std.Build.Step = null;

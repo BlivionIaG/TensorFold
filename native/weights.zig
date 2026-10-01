@@ -103,16 +103,34 @@ pub const Weights = struct {
         var weight_parts: [4]mx.Array = undefined;
         var pairs: [4]mx.Array = undefined;
         var width: i32 = 0;
+        var tiled_prefix = names.len;
         for (names, 0..) |name, i| {
             members[i] = try w.linear(name);
             if (!lanes.Linear.stackCompatible(members[0], members[i])) return null;
+            if (!members[i].tiled and tiled_prefix == names.len) tiled_prefix = i;
+            if (members[i].tiled and tiled_prefix < i) return null;
             weight_parts[i] = members[i].weight;
             pairs[i] = members[i].sb;
             width = try std.math.add(i32, width, members[i].n);
         }
         var s = mx.Scope{};
         defer s.deinit();
-        const weight = try s.cat(weight_parts[0..names.len], 0);
+        const mixed = tiled_prefix > 0 and tiled_prefix < names.len;
+        if (mixed) {
+            if (members[0].tile_width != 32) return null;
+            var tail_width: i32 = 0;
+            var tail_bytes: usize = 0;
+            for (members[tiled_prefix..names.len]) |member| {
+                tail_width += member.n;
+                tail_bytes += mx.c.mlx_array_nbytes(member.weight);
+            }
+            if (@mod(tail_width, 32) != 0 or tail_bytes > 8 * 1024 * 1024) return null;
+            const tail = try s.cat(weight_parts[tiled_prefix..names.len], 0);
+            const group = members[0].format.?.group_size;
+            const words = @divExact(group * members[0].format.?.bits, 32);
+            weight_parts[tiled_prefix] = try s.contiguous(try s.reshape(try s.transpose(try s.reshape(tail, &.{ @divExact(tail_width, 32), 32, @divExact(members[0].k, group), words }), &.{ 0, 2, 1, 3 }), mx.shape(tail)));
+        }
+        const weight = try s.cat(weight_parts[0..if (mixed) tiled_prefix + 1 else names.len], 0);
         const sb = try s.cat(pairs[0..names.len], 1);
         try mx.evalMany(&.{ weight, sb }, false);
         var stack = lanes.Linear{
@@ -120,7 +138,8 @@ pub const Weights = struct {
             .sb = mx.empty,
             .n = width,
             .k = members[0].k,
-            .tiled = members[0].tiled,
+            .tiled = tiled_prefix > 0,
+            .tile_width = if (tiled_prefix > 0) members[0].tile_width else 32,
             .format = members[0].format,
             .generic = true,
             .split_k = members[0].splitK(),
@@ -130,14 +149,15 @@ pub const Weights = struct {
         var views: [4]mx.Array = @splat(mx.empty);
         errdefer for (views) |value| mx.free(value);
         var offset: i32 = 0;
-        for (members[0..names.len], 0..) |member, i| {
+        const shared_members = if (mixed) tiled_prefix else names.len;
+        for (members[0..shared_members], 0..) |member, i| {
             views[i] = try mx.retain(try s.slice(weight, 0, offset, offset + member.n));
             offset += member.n;
         }
         const key = try mx.allocator.dupe(u8, stack_name);
         errdefer mx.allocator.free(key);
         try w.stacks.put(key, stack);
-        for (names, 0..) |name, i| {
+        for (names[0..shared_members], 0..) |name, i| {
             const member = w.linears.getPtr(name).?;
             mx.free(member.weight);
             member.weight = views[i];
@@ -202,7 +222,7 @@ pub const Weights = struct {
                 const rc = mx.c.mlx_vector_array_get(&a, quant, j);
                 arrays[j] = try s.result(rc, a);
             }
-            const l = try lanes.Linear.init(&s, arrays[0], arrays[1], arrays[2]);
+            const l = try lanes.Linear.initWide(&s, arrays[0], arrays[1], arrays[2], true);
             try w.putLinear(name[0 .. name.len - 7], l);
         }
         try w.releaseLinearSources();
@@ -281,7 +301,7 @@ pub const Weights = struct {
             const format = try @import("quantization.zig").resolve(cfg.value, name);
             const scales = if (format != null) try w.get(try std.fmt.bufPrint(&pathbuf, "{s}.scales", .{name})) else mx.empty;
             const biases = if (format != null) try w.get(try std.fmt.bufPrint(&pathbuf, "{s}.biases", .{name})) else mx.empty;
-            const linear_ = try lanes.Linear.initFormat(&s, weight, scales, biases, format);
+            const linear_ = try lanes.Linear.initFormatWide(&s, weight, scales, biases, format, !std.mem.endsWith(u8, name, "in_proj_z"));
             try w.putLinear(name, linear_);
         }
         try w.releaseLinearSources();
@@ -318,5 +338,28 @@ pub const Weights = struct {
         try std.testing.expectError(error.DuplicateWeight, w.putLinear("projection", try lanes.Linear.init(&s, value, scales, scales)));
         try w.releaseLinearSources();
         try std.testing.expectEqual(@as(usize, 0), w.arrays.count());
+        if (mx.tensor_units) {
+            const tail = try s.zeros(&.{ 48, 8 }, mx.c.MLX_UINT32);
+            const tail_scales = try s.zeros(&.{ 48, 1 }, mx.bf16);
+            try w.putLinear("tail0", try lanes.Linear.init(&s, tail, tail_scales, tail_scales));
+            try w.putLinear("tail1", try lanes.Linear.init(&s, tail, tail_scales, tail_scales));
+            const tail_handle = (try w.linear("tail0")).weight.ctx;
+            const names = [_][]const u8{ "projection", "tail0", "tail1" };
+            const stack = (try w.fused(&names)).?;
+            try std.testing.expect(stack.tiled and stack.n == 128);
+            try std.testing.expectEqual(stack.weight.ctx, (try w.fused(&names)).?.weight.ctx);
+            try std.testing.expectEqual(tail_handle, (try w.linear("tail0")).weight.ctx);
+            try std.testing.expect(try w.fused(&.{ "projection", "tail0" }) == null);
+            try std.testing.expect(try w.fused(&.{ "tail0", "projection" }) == null);
+            const wide_weight = try s.zeros(&.{ 64, 8 }, mx.c.MLX_UINT32);
+            const wide_scales = try s.zeros(&.{ 64, 1 }, mx.bf16);
+            for ([_][]const u8{ "wide0", "wide1" }) |name| try w.putLinear(name, try lanes.Linear.initWide(&s, wide_weight, wide_scales, wide_scales, true));
+            const wide_stack = (try w.fused(&.{ "wide0", "wide1" })).?;
+            try std.testing.expectEqual(@as(i32, 64), wide_stack.tile_width);
+            try std.testing.expectEqual(@as(i32, 128), wide_stack.n);
+            try std.testing.expectEqual(wide_stack.weight.ctx, (try w.fused(&.{ "wide0", "wide1" })).?.weight.ctx);
+            try std.testing.expect(try w.fused(&.{ "wide0", "projection" }) == null);
+            try std.testing.expect(try w.fused(&.{ "wide0", "tail0", "tail1" }) == null);
+        }
     }
 };

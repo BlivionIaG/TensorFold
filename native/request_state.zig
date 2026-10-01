@@ -24,6 +24,7 @@ fn arrayBytes(value: anytype) u64 {
 
 fn cacheBytes(cache: anytype) u64 {
     const T = @TypeOf(cache);
+    if (@hasDecl(T, "nbytes")) return cache.nbytes();
     var total: u64 = 0;
     inline for (comptime std.meta.fieldNames(T)) |name| {
         const view = comptime if (std.mem.eql(u8, name, "a")) "keys" else if (std.mem.eql(u8, name, "b")) "values" else if (std.mem.eql(u8, name, "raw")) "index_keys" else "";
@@ -115,6 +116,7 @@ pub fn State(comptime M: type) type {
         mtp_generation: u64 = 0,
         draft_hidden: mx.Array = mx.empty,
         head_cache: if (@hasDecl(M, "DraftCache")) M.DraftCache else void = if (@hasDecl(M, "DraftCache")) .{} else {},
+        head_prediction: if (@hasDecl(M, "HeadPrediction")) M.HeadPrediction else void = if (@hasDecl(M, "HeadPrediction")) .{} else {},
         dflash_cache: [5]@import("model.zig").Cache = @splat(.{}),
         dflash_offset: i32 = 0,
         draft: ?DFlash = null,
@@ -141,6 +143,7 @@ pub fn State(comptime M: type) type {
             if (@hasField(M, "mtp_cache")) s.mtp_cache.deinit();
             mx.free(s.draft_hidden);
             if (@hasDecl(M, "DraftCache")) s.head_cache.deinit();
+            if (@hasDecl(M, "HeadPrediction")) s.head_prediction.deinit();
             for (&s.dflash_cache) |*cache| cache.deinit();
             if (s.draft) |*draft| draft.deinit();
             if (s.dspark) |*draft| draft.deinit();
@@ -181,7 +184,7 @@ pub fn State(comptime M: type) type {
             return total;
         }
 
-        /// Every pass must be committed or destroyed before switching requests.
+        /// Active round passes must be committed or destroyed before switching requests.
         pub fn swapDFlash(s: *Self, d: *@import("drafter.zig").Drafter) void {
             std.debug.assert(!s.borrowed);
             std.mem.swap(@TypeOf(s.dflash_cache), &s.dflash_cache, &d.cache);

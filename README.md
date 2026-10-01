@@ -1,4 +1,4 @@
-> **Experimental native Zig inference:** Development lives on TensorFold's long-running `zig` branch. See [native/README.md](native/README.md) for macOS setup and verification. The native HTTP server currently interleaves independent request forwards; shared lane rounds remain to be implemented.
+> **Experimental native Zig inference:** Development lives on TensorFold's long-running `zig` branch. See [native/README.md](native/README.md) for macOS setup and verification. This branch implements native HTTP shared target and draft rounds for Qwen, Bonsai, Gemma, Nemotron and Flash. Full serving parity remains incomplete.
 
 Main-to-`zig` sync is manual and goes through review. `.zig-toolchain/zig build check-upstream` reports missing commits and dependency drift; `sync-upstream` prepares a local, uncommitted main merge on a clean PR branch based on the latest `zig`, aligns dependencies and runs correctness checks. It never pushes or updates local `main`/`zig`. See the [sync instructions](native/README.md#dependency-updates-and-troubleshooting). Nothing runs on a schedule.
 

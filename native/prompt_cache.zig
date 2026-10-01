@@ -26,6 +26,10 @@ pub fn commonPrefix(lhs: []const i32, rhs: []const i32) usize {
     return n;
 }
 
+fn extends(longer: []const i32, shorter: []const i32) bool {
+    return shorter.len > 0 and longer.len > shorter.len and longer[shorter.len - 1] == shorter[shorter.len - 1] and std.mem.eql(i32, longer[0..shorter.len], shorter);
+}
+
 pub const Checkpoints = struct {
     values: [3]usize = @splat(0),
     count: usize = 0,
@@ -84,6 +88,7 @@ pub fn Store(comptime T: type) type {
             last_prompt: []i32,
             nbytes: u64,
             pinned: bool,
+            born: usize,
             fn deinit(e: *Entry, a: std.mem.Allocator) void {
                 a.free(e.tokens);
                 a.free(e.last_prompt);
@@ -186,7 +191,7 @@ pub fn Store(comptime T: type) type {
                 replaced.deinit(s.a);
                 break;
             };
-            s.entries.insertAssumeCapacity(0, .{ .tokens = key, .cache = cache, .last_prompt = previous, .nbytes = size, .pinned = keep_pinned });
+            s.entries.insertAssumeCapacity(0, .{ .tokens = key, .cache = cache, .last_prompt = previous, .nbytes = size, .pinned = keep_pinned, .born = last_prompt.len });
             adopted = true;
             var pinned_count: usize = 0;
             for (s.entries.items) |*entry| if (entry.pinned) {
@@ -209,27 +214,43 @@ pub fn Store(comptime T: type) type {
                 };
                 const over_budget = if (limit) |budget| s.entries.items.len > 1 and s.nbytes() > budget else false;
                 if (ordinary <= s.slots and !over_budget) break;
-                const remove = oldest orelse if (over_budget) s.entries.items.len - 1 else break;
+                const remove = if (oldest != null) s.victim(1, null).? else if (over_budget) s.entries.items.len - 1 else break;
                 var gone = s.entries.orderedRemove(remove);
-                if (s.on_evict) |callback| callback(s.eviction_context, &gone);
+                s.notifyEviction(&gone);
                 gone.deinit(s.a);
                 s.evictions +|= 1;
             }
         }
         pub fn evictOne(s: *Self, keep: ?[]const i32) bool {
             var oldest: ?usize = null;
-            var ordinary: ?usize = null;
             for (s.entries.items, 0..) |entry, i| {
                 if (keep) |tokens| if (std.mem.eql(i32, tokens, entry.tokens)) continue;
                 oldest = i;
-                if (!entry.pinned) ordinary = i;
             }
-            const index = ordinary orelse oldest orelse return false;
+            const index = s.victim(0, keep) orelse oldest orelse return false;
             var gone = s.entries.orderedRemove(index);
-            if (s.on_evict) |callback| callback(s.eviction_context, &gone);
+            s.notifyEviction(&gone);
             gone.deinit(s.a);
             s.evictions +|= 1;
             return true;
+        }
+        fn victim(s: *const Self, start: usize, keep: ?[]const i32) ?usize {
+            var oldest: ?usize = null;
+            var i = s.entries.items.len;
+            while (i > start) {
+                i -= 1;
+                const entry = s.entries.items[i];
+                if (entry.pinned) continue;
+                if (keep) |tokens| if (std.mem.eql(i32, tokens, entry.tokens)) continue;
+                if (oldest == null) oldest = i;
+                for (s.entries.items) |other| if (other.born > entry.born and extends(other.tokens, entry.tokens)) return i;
+            }
+            return oldest;
+        }
+        fn notifyEviction(s: *const Self, gone: *const Entry) void {
+            if (gone.pinned) return;
+            for (s.entries.items) |entry| if (extends(entry.tokens, gone.tokens)) return;
+            if (s.on_evict) |callback| callback(s.eviction_context, gone);
         }
     };
 }
@@ -250,7 +271,7 @@ pub fn check(io: std.Io, path: []const u8) !void {
     const a = std.heap.page_allocator;
     const source = try std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(32 * 1024 * 1024));
     defer a.free(source);
-    const Entry = struct { tokens: []const i32, payload: FixturePayload, previous: []const i32, pinned: bool };
+    const Entry = struct { tokens: []const i32, payload: FixturePayload, previous: []const i32, pinned: bool, born: usize };
     const Hit = struct { count: usize, payload: FixturePayload, previous: []const i32 };
     const Operation = struct {
         kind: enum { insert, match, longest, evict },
@@ -312,6 +333,7 @@ pub fn check(io: std.Io, path: []const u8) !void {
                 try std.testing.expectEqualSlices(i32, expected.previous, actual.last_prompt);
                 try std.testing.expectEqualDeep(expected.payload, actual.cache);
                 try std.testing.expectEqual(expected.pinned, actual.pinned);
+                try std.testing.expectEqual(expected.born, actual.born);
             }
             count += 1;
         }
@@ -334,6 +356,61 @@ test "prefixes are strict and checkpoints exclude cached or terminal positions" 
     const result = checkpoints(4, 0, &.{ 1, 2, 3, 9 }, &.{ 1, 2, 3, 4, 5 });
     try std.testing.expectEqualSlices(usize, &.{ 3, 4 }, result.values[0..result.count]);
     try std.testing.expectEqual(@as(usize, 0), checkpoints(4, 4, null, &.{ 1, 2, 3, 4 }).count);
+}
+
+test "later turns give up superseded prefixes before another conversation's newest" {
+    var store = try Store(FixturePayload).init(std.testing.allocator, 3, null);
+    defer store.deinit();
+    try store.insertOwned(&.{ 5, 6 }, .{ .id = 1, .size = 0 }, &.{ 5, 6, 7 }, false);
+    try store.insertOwned(&.{ 1, 2 }, .{ .id = 2, .size = 0 }, &.{ 1, 2, 3 }, false);
+    try store.insertOwned(&.{ 1, 2, 3, 4 }, .{ .id = 3, .size = 0 }, &.{ 1, 2, 3, 4, 5 }, false);
+    try store.insertOwned(&.{9}, .{ .id = 4, .size = 0 }, &.{ 9, 9 }, false);
+    const first = [_]u64{ 4, 3, 1 };
+    for (first, store.entries.items) |id, entry| try std.testing.expectEqual(id, entry.cache.id);
+    try std.testing.expect(store.evictOne(null));
+    try std.testing.expectEqual(@as(u64, 3), store.entries.items[1].cache.id);
+    try store.insertOwned(&.{ 1, 2, 3, 4, 5, 6 }, .{ .id = 5, .size = 0 }, &.{ 1, 2, 3, 4, 5, 6, 7 }, false);
+    try std.testing.expect(store.evictOne(null));
+    try std.testing.expectEqual(@as(u64, 4), store.entries.items[1].cache.id);
+}
+
+test "one turn keeps its candidates and a cache hit cannot change a prefix's birth" {
+    var store = try Store(FixturePayload).init(std.testing.allocator, 3, null);
+    defer store.deinit();
+    try store.insertOwned(&.{ 5, 6 }, .{ .id = 1, .size = 0 }, &.{ 5, 6, 7 }, false);
+    try store.insertOwned(&.{ 1, 2 }, .{ .id = 2, .size = 0 }, &.{ 1, 2, 3, 4, 5 }, false);
+    try store.insertOwned(&.{ 1, 2, 3, 4 }, .{ .id = 3, .size = 0 }, &.{ 1, 2, 3, 4, 5 }, false);
+    try store.insertOwned(&.{9}, .{ .id = 4, .size = 0 }, &.{ 9, 9 }, false);
+    try std.testing.expectEqual(@as(u64, 2), store.entries.items[2].cache.id);
+    var hit = (try store.match(&.{ 1, 2, 8, 9, 10, 11 }, .{}, false)).?;
+    defer hit.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(usize, 5), store.entries.items[0].born);
+    try std.testing.expectEqual(@as(usize, 6), store.entries.items[0].last_prompt.len);
+    try store.insertOwned(&.{ 1, 2, 3, 4, 5, 6 }, .{ .id = 5, .size = 0 }, &.{ 1, 2, 3, 4, 5, 6 }, false);
+    try std.testing.expectEqual(@as(u64, 4), store.entries.items[2].cache.id);
+    try std.testing.expect(store.evictOne(&.{ 1, 2 }));
+    try std.testing.expectEqual(@as(usize, 2), store.entries.items.len);
+    try std.testing.expectEqual(@as(u64, 2), store.entries.items[1].cache.id);
+}
+
+test "evicted prefixes continued by retained checkpoints do not spill obsolete states" {
+    const Probe = struct {
+        count: usize = 0,
+        fn evicted(raw: ?*anyopaque, _: *const Store(FixturePayload).Entry) void {
+            const probe: *@This() = @ptrCast(@alignCast(raw.?));
+            probe.count += 1;
+        }
+    };
+    var probe = Probe{};
+    var store = try Store(FixturePayload).init(std.testing.allocator, 1, null);
+    defer store.deinit();
+    store.eviction_context = &probe;
+    store.on_evict = Probe.evicted;
+    try store.insertOwned(&.{1}, .{ .id = 1, .size = 0 }, &.{ 1, 2 }, false);
+    try store.insertOwned(&.{ 1, 2 }, .{ .id = 2, .size = 0 }, &.{ 1, 2, 3 }, false);
+    try std.testing.expectEqual(@as(usize, 0), probe.count);
+    try store.insertOwned(&.{9}, .{ .id = 3, .size = 0 }, &.{9}, false);
+    try std.testing.expectEqual(@as(usize, 1), probe.count);
 }
 
 const OwnedPayload = struct {

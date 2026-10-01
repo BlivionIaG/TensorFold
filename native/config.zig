@@ -119,9 +119,13 @@ pub fn nemotron(value: std.json.Value) !void {
         if (!std.mem.eql(u8, v.string, "mamba") and !std.mem.eql(u8, v.string, "moe") and !std.mem.eql(u8, v.string, "attention")) return error.UnsupportedModel;
     }
 }
+pub fn isFlash(kind: []const u8) bool {
+    return std.mem.eql(u8, kind, "qwen4_exp") or std.mem.eql(u8, kind, "qwen3_8_flash_next");
+}
 pub fn flash(value: std.json.Value) !void {
     const root = try object(value);
-    try string(root, "model_type", "qwen4_exp");
+    const kind = root.get("model_type") orelse return error.UnsupportedModel;
+    if (kind != .string or !isFlash(kind.string)) return error.UnsupportedModel;
     const t = try object(root.get("text_config") orelse return error.UnsupportedModel);
     inline for (.{ .{ "hidden_size", 2560 }, .{ "num_hidden_layers", 48 }, .{ "num_attention_heads", 24 }, .{ "num_key_value_heads", 2 }, .{ "head_dim", 256 }, .{ "vocab_size", 248320 }, .{ "hc_count", 4 }, .{ "hc_lowrank", 320 }, .{ "linear_num_key_heads", 16 }, .{ "linear_num_value_heads", 48 }, .{ "linear_key_head_dim", 128 }, .{ "linear_value_head_dim", 128 }, .{ "linear_conv_kernel_dim", 4 }, .{ "num_experts", 512 }, .{ "num_experts_per_tok", 10 }, .{ "moe_intermediate_size", 640 }, .{ "shared_expert_intermediate_size", 640 }, .{ "indexer_n_heads", 4 }, .{ "indexer_head_dim", 128 }, .{ "indexer_budget", 2048 }, .{ "indexer_compress_ratio", 4 }, .{ "ngram_size", 3 }, .{ "heads_per_ngram", 8 }, .{ "ngram_vocab_size_base", 20000000 }, .{ "split_ngram_parts", 128 }, .{ "ple_embed_dim", 2560 }, .{ "ple_conv_kernel_size", 4 } }) |f| try integer(t, f[0], f[1]);
     try number(t, "rms_norm_eps", 1e-6);
@@ -152,6 +156,17 @@ pub fn flash(value: std.json.Value) !void {
     }
     const ple = t.get("ple_layer_ids") orelse return error.UnsupportedModel;
     if (ple != .array or ple.array.items.len != 1 or ple.array.items[0] != .integer or ple.array.items[0].integer != 2) return error.UnsupportedModel;
+}
+test "both Flash model types use the same checkpoint contract" {
+    var config = try std.json.parseFromSlice(std.json.Value, std.testing.allocator, @embedFile("fixtures/configs/flash.json"), .{});
+    defer config.deinit();
+    const kind = config.value.object.getPtr("model_type").?;
+    for ([_][]const u8{ "qwen4_exp", "qwen3_8_flash_next" }) |name| {
+        kind.* = .{ .string = name };
+        try flash(config.value);
+    }
+    kind.* = .{ .string = "qwen3_5" };
+    try std.testing.expectError(error.UnsupportedModel, flash(config.value));
 }
 test "malformed and wrong-family checkpoints fail before weight loading" {
     for ([_][]const u8{ "null", "{}", "{\"model_type\":123}", "{\"model_type\":\"qwen3_5\",\"text_config\":null}" }) |json| {

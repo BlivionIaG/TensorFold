@@ -56,6 +56,37 @@ def main():
                         arrays[key + ".ids"] = ids
                     cases.append(dict(key=key, op="cpu_sample", seed=seed, temperature=temp,
                                       k=count, p=prob, min_p=min_p, mapped=mapped, positions=positions))
+            for mapped in (False, True):
+                key = f"c{len(cases)}"
+                mixed = mx.concatenate([x, x], axis=0)
+                ids = mx.arange(vocab, dtype=mx.uint32) * 3 + 7 if mapped else None
+                positions = [1, 513, 2049, 262144, 1007, 1007, 9, 43]
+                settings = [
+                    Sampling(0, temperature=.7, top_k=17, top_p=.8, min_p=.03),
+                    None,
+                    Sampling(2**64-1, temperature=2., top_k=0, top_p=1., min_p=.5),
+                    Sampling(2**63+9876, temperature=1.2, top_k=2048, top_p=.95, min_p=1e-12),
+                    None,
+                    Sampling(5678, temperature=.35, top_k=7, top_p=.87, min_p=1.),
+                    Sampling(1234, temperature=1., top_k=1, top_p=1., min_p=0.),
+                    Sampling(1234, temperature=1.1, top_k=0, top_p=.96, min_p=.2),
+                ]
+                expected = gpu_sampling.sample_rows(mixed, settings, positions, ids)
+                mx.eval(expected)
+                separate = mx.concatenate([
+                    gpu_sampling.sample(mixed[row:row + 1], setting, [position], ids)
+                    for row, (setting, position) in enumerate(zip(settings, positions))
+                ])
+                mx.eval(separate)
+                np.testing.assert_array_equal(np.array(expected), np.array(separate))
+                arrays.update({key + ".x": mixed, key + ".expected": expected})
+                if mapped:
+                    arrays[key + ".ids"] = ids
+                cases.append(dict(key=key, op="sample_rows", mapped=mapped, positions=positions,
+                                  settings=[dict(metal=True, seed=setting.seed, temperature=setting.temperature,
+                                                 top_k=setting.top_k, top_p=setting.top_p, min_p=setting.min_p)
+                                            if setting is not None else dict(metal=True, temperature=0.)
+                                            for setting in settings]))
     mx.save_safetensors(str(args.output / "arrays.safetensors"), arrays)
     (args.output / "cases.json").write_text(json.dumps(cases, indent=2) + "\n")
     print(f"Saved {len(cases)} CPU/Metal sampling/top-k cases in {args.output}")

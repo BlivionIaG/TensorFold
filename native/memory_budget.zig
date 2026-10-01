@@ -184,6 +184,7 @@ pub const StreamGate = struct {
 };
 pub const Admission = struct {
     budget: u64,
+    solo_budget: ?u64 = null,
     memory: StreamMemory,
     refused: usize = 0,
     lanes: u64 = 1,
@@ -229,6 +230,32 @@ pub const Admission = struct {
         }
         const work = @max(try admission.roundBytes(decoding.len + 1), try admission.memory.prefillBytes(prompt));
         return bytes(@as(f64, @floatFromInt(used)) + @as(f64, @floatFromInt(copy_bytes)) + @as(f64, @floatFromInt(grow)) * admission.memory.per_token + @as(f64, @floatFromInt(work)));
+    }
+
+    pub fn fillingProjected(admission: Admission, used: u64, prompt: u64, filling: Live, others: []const Live) !u64 {
+        var needed = try std.math.add(u64, used, filling.copy_bytes);
+        needed = try std.math.add(u64, needed, try admission.remainingBytes(filling));
+        for (others) |other| {
+            needed = try std.math.add(u64, needed, other.copy_bytes);
+            needed = try std.math.add(u64, needed, try admission.remainingBytes(other));
+        }
+        return std.math.add(u64, needed, @max(try admission.roundBytes(others.len + 1), try admission.memory.prefillBytes(prompt)));
+    }
+
+    fn remainingBytes(admission: Admission, stream: Live) !u64 {
+        if (stream.now == 0) return admission.memory.streamBytes(stream.most);
+        return bytes(@as(f64, @floatFromInt(stream.most -| stream.now)) * admission.memory.per_token);
+    }
+
+    pub fn initialBytes(admission: Admission, stream: Live) !u64 {
+        if (stream.now != 0) return 0;
+        return (try admission.memory.streamBytes(stream.most)) -| (try bytes(@as(f64, @floatFromInt(stream.most)) * admission.memory.per_token));
+    }
+
+    pub fn idleCacheBudget(admission: Admission, initial: u64, explicit: ?u64, used: u64, window: u64, streams: u64) !u64 {
+        if (explicit) |fixed| return fixed;
+        const held = try std.math.add(u64, try admission.projected(used, window, window, &.{}), try admission.roundBytes(streams));
+        return @max(initial, admission.budget -| held);
     }
 
     pub fn fitting(admission: Admission, used: u64, tokens: u64) !u64 {
@@ -449,4 +476,31 @@ test "taking a prefix credits only bytes outside other retained and live caches"
     try std.testing.expectEqualDeep(Admission.Prefix{ .copy = 1140, .take = 1040, .shared = 100 }, try admission.prefixProjected(1000, 64, 64, &.{}, 200, 100, 20));
     try std.testing.expectEqualDeep(Admission.Prefix{ .copy = 1140, .take = 1140, .shared = 200 }, try admission.prefixProjected(1000, 64, 64, &.{}, 200, 1000, 20));
     try std.testing.expectEqualDeep(Admission.Prefix{ .copy = 240, .take = 140, .shared = 0 }, try admission.prefixProjected(100, 64, 64, &.{}, 200, 0, 20));
+}
+
+test "every open prompt reserves its complete remaining growth and shared workspace" {
+    const admission = Admission{ .budget = 2000, .lanes = 4, .memory = .{ .short_tokens = 0, .short = 300, .long_tokens = 1, .long = 301, .per_token = 1, .prefill_a = 2, .prefill_b = 0, .round_bytes = 40, .chunk = 4 } };
+    const first = Live{ .now = 0, .most = 400, .copy_bytes = 19 };
+    const second = Live{ .now = 0, .most = 200, .copy_bytes = 23 };
+    const both = try admission.fillingProjected(100, 400, first, &.{second});
+    try std.testing.expectEqual(both, try admission.fillingProjected(100, 400, second, &.{first}));
+    try std.testing.expect(both > try admission.fillingProjected(100, 400, first, &.{}));
+    const cached = Live{ .now = 128, .most = first.most, .copy_bytes = first.copy_bytes };
+    const holding = 100 + try admission.memory.streamBytes(128);
+    try std.testing.expectEqual(both, try admission.fillingProjected(holding, 400, cached, &.{second}));
+    try std.testing.expectEqual(try admission.memory.streamBytes(second.most), second.most + try admission.initialBytes(second));
+    const decoding = Live{ .now = 512, .most = 520, .copy_bytes = 7 };
+    try std.testing.expect(try admission.fillingProjected(holding, 400, cached, &.{ second, decoding }) > both);
+    try std.testing.expectEqual(try admission.fillingProjected(100, 400, first, &.{second}), both);
+}
+
+test "default prefix budgets use idle whole-window room and explicit caps remain fixed" {
+    const admission = Admission{ .budget = 4000, .lanes = 4, .memory = .{ .short_tokens = 0, .short = 300, .long_tokens = 1, .long = 301, .per_token = 1, .prefill_a = 2, .prefill_b = 0, .round_bytes = 40, .chunk = 4 } };
+    const grown = try admission.idleCacheBudget(100, null, 1000, 512, 4);
+    try std.testing.expect(grown > 100);
+    try std.testing.expectEqual(@as(u64, 100), try admission.idleCacheBudget(100, 100, 1000, 512, 4));
+    try std.testing.expectEqual(@as(u64, 0), try admission.idleCacheBudget(100, 0, 1000, 512, 4));
+    try std.testing.expectEqual(@as(u64, 100), try admission.idleCacheBudget(100, null, 3999, 512, 4));
+    const reserved = try admission.projected(1000, 512, 512, &.{});
+    try std.testing.expectEqual(admission.budget, reserved + try admission.roundBytes(4) + grown);
 }

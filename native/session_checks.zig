@@ -31,11 +31,46 @@ const Capture = struct {
 pub fn checkShared(io: std.Io, directory: []const u8, drafter: ?[]const u8) !void {
     try mx.init();
     defer mx.shutdown();
-    var s = try session.Session.initWithDraft(io, directory, .{ .enabled = drafter != null, .directory = drafter, .max_draft = 15 });
+    var s = try session.Session.initWithDraft(io, directory, .{ .enabled = drafter != null, .directory = if (drafter) |path| if (std.mem.eql(u8, path, "-")) null else path else null, .max_draft = 15 });
+    defer s.deinit();
+    if (s.backend == .qwen) if (s.drafter) |*d| try d.checkStreams(&s.backend.qwen);
+    switch (s.backend) {
+        inline .qwen, .gemma, .nemotron, .flash => |*m| try sharedRequests(&s, m, drafter != null),
+        else => return error.UnsupportedSharedModel,
+    }
+}
+
+pub fn checkSharedModel(io: std.Io, directory: []const u8, drafts: bool, simd: bool) !void {
+    mx.force_simd = simd;
+    try mx.init();
+    defer mx.shutdown();
+    var s = try session.Session.initWithDraft(io, directory, .{ .enabled = drafts });
+    defer s.deinit();
+    switch (s.backend) {
+        .gemma => |*m| try @import("gemma_shared.zig").check(m),
+        .nemotron => |*m| try @import("nemotron_shared.zig").check(m),
+        .flash => |*m| {
+            try @import("flash_shared.zig").check(m);
+            if (m.mtp) try @import("flash_shared.zig").checkDraft(m);
+        },
+        else => return error.UnsupportedSharedModel,
+    }
+}
+
+pub fn checkDFlashStreams(io: std.Io, directory: []const u8, drafter: []const u8, fixture: []const u8, output: []const u8) !void {
+    try mx.init();
+    defer mx.shutdown();
+    var s = try session.Session.initWithDraft(io, directory, .{ .enabled = true, .directory = drafter, .max_draft = 15 });
     defer s.deinit();
     if (s.backend != .qwen) return error.UnsupportedSharedModel;
-    const G = session.Generation(@import("model.zig").Model);
-    const m = &s.backend.qwen;
+    const d = if (s.drafter) |*value| value else return error.MissingDraft;
+    try d.checkStreams(&s.backend.qwen);
+    try d.oracleStreams(&s.backend.qwen, io, fixture, output);
+}
+
+fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
+    const M = @TypeOf(m.*);
+    const G = session.Generation(M);
     const shared = @import("shared_round.zig");
     var tokens: [8][73]i32 = undefined;
     var prompts: [8][]const i32 = undefined;
@@ -52,22 +87,33 @@ pub fn checkShared(io: std.Io, directory: []const u8, drafter: ?[]const u8) !voi
         options[i] = .{ .max_tokens = 24 + i, .ignore_eos = true, .draft = false, .seed = 123 + i, .sampling = .{ .temperature = if (i % 2 == 0) 0 else 0.7, .top_k = 12, .top_p = 0.8, .metal = true } };
         var g = try G.init(m, &s.tokenizer, mx.allocator, prompts[i], options[i], s.draftSink(baseline[i].sink()), null);
         defer g.deinit();
+        while (g.phase == .prefill) _ = try g.step(m);
+        const head = if (M == @import("nemotron.zig").Model) g.state.head_cache.a.ctx else null;
+        const last = g.state.draft_hidden.ctx;
         while (!try g.step(m)) {}
+        if (M == @import("nemotron.zig").Model) {
+            try std.testing.expectEqual(head, g.state.head_cache.a.ctx);
+            try std.testing.expectEqual(last, g.state.draft_hidden.ctx);
+            if (m.mtp) try std.testing.expectEqual(@as(i32, @intCast(prompts[i].len - 1)), mx.dim(g.state.head_cache.a, 2));
+        }
+        try std.testing.expectEqual(@as(usize, 0), g.neural_proposed);
         expected[i] = try g.takeReply();
         completed += 1;
     }
-    for ([_]usize{ 1, 2, 8, 128 }) |rows| {
+    for ([_]usize{ 1, 2, 8, if (@hasDecl(M, "max_shared_rows")) M.max_shared_rows else 128 }) |rows| {
         var requests: [8]G = undefined;
         var captures: [8]Capture = @splat(.{});
         defer for (&captures) |*capture| capture.deinit();
         var initialized: usize = 0;
         defer for (requests[0..initialized]) |*g| g.deinit();
+        var head_handles: [8]?*anyopaque = undefined;
+        var hidden_handles: [8]?*anyopaque = undefined;
         for (0..8) |i| {
             var opts = options[i];
-            opts.draft = true;
+            opts.draft = !neural or i != 7;
             requests[i] = try G.init(m, &s.tokenizer, mx.allocator, prompts[i], opts, s.draftSink(captures[i].sink()), null);
             initialized += 1;
-            if (drafter == null) {
+            if (!neural) {
                 requests[i].context.clearRetainingCapacity();
                 try requests[i].context.appendSlice(mx.allocator, prompts[i]);
                 for (expected[i].tokens.items) |token| try requests[i].context.append(mx.allocator, @intCast(token));
@@ -75,6 +121,8 @@ pub fn checkShared(io: std.Io, directory: []const u8, drafter: ?[]const u8) !voi
                 requests[i].proposer.?.prompt_len = requests[i].context.items.len;
             }
             while (requests[i].phase == .prefill) _ = try requests[i].step(m);
+            head_handles[i] = if (M == @import("nemotron.zig").Model) requests[i].state.head_cache.a.ctx else null;
+            hidden_handles[i] = requests[i].state.draft_hidden.ctx;
         }
         captures[0].cancel_after = 3;
         var coordinator = shared.Coordinator{ .max_rows = rows };
@@ -110,12 +158,19 @@ pub fn checkShared(io: std.Io, directory: []const u8, drafter: ?[]const u8) !voi
         }
         try std.testing.expect(std.mem.allEqual(bool, &done, true));
         for (1..8) |i| {
+            if (!requests[i].options.draft) {
+                try std.testing.expectEqual(@as(usize, 0), requests[i].neural_proposed);
+                if (M == @import("nemotron.zig").Model) {
+                    try std.testing.expectEqual(head_handles[i], requests[i].state.head_cache.a.ctx);
+                    try std.testing.expectEqual(hidden_handles[i], requests[i].state.draft_hidden.ctx);
+                }
+            }
             var reply = try requests[i].takeReply();
             defer reply.deinit(mx.allocator);
             try same(expected[i], reply, baseline[i], captures[i]);
         }
         try std.testing.expectEqual(.failed, requests[0].phase);
-        std.debug.print("PASS: 8 shared requests, row cap {d}, exact greedy/sampled {s} output and streaming, cancellation isolation and fair turns\n", .{ rows, if (drafter != null) "neural" else "copy" });
+        std.debug.print("PASS: 8 shared requests, row cap {d}, exact greedy/sampled {s} output and streaming, cancellation isolation and fair turns\n", .{ rows, if (neural) "neural" else "copy" });
     }
 }
 
@@ -126,6 +181,158 @@ fn same(expected: session.Reply, actual: session.Reply, before: Capture, after: 
     try std.testing.expectEqual(expected.prompt_tokens, actual.prompt_tokens);
     try std.testing.expectEqualSlices(u8, before.bytes.items, after.bytes.items);
     try std.testing.expectEqualSlices(usize, before.chunks.items, after.chunks.items);
+}
+
+fn unqueuedStep(g: anytype, m: anytype) !bool {
+    if (g.phase == .prefill or g.phase == .finished) return g.step(m);
+    var round = try g.beginRound(m);
+    defer round.deinit();
+    if (try round.prepare()) {
+        try round.forward();
+        try round.settle();
+    }
+    return g.phase == .finished;
+}
+
+fn previewEqual(scope: *mx.Scope, x: mx.Array, y: mx.Array) !void {
+    if (x.ctx == null or y.ctx == null) {
+        try std.testing.expect(x.ctx == null and y.ctx == null);
+        return;
+    }
+    try std.testing.expectEqualSlices(i32, mx.shape(x), mx.shape(y));
+    try std.testing.expectEqual(mx.dtype(x), mx.dtype(y));
+    var equal = mx.c.mlx_array_new();
+    const rc = mx.c.mlx_array_equal(&equal, x, y, false, mx.stream);
+    _ = try scope.result(rc, equal);
+}
+
+fn samePreviewCaches(comptime M: type, left: *const @import("request_state.zig").State(M), right: *const @import("request_state.zig").State(M)) !void {
+    try std.testing.expectEqual(left.position, right.position);
+    var scope = mx.Scope{};
+    defer scope.deinit();
+    const fields = if (M == @import("gemma.zig").Model) .{ "keys", "values" } else .{ "a", "b" };
+    for (left.cache, right.cache) |a, b| inline for (fields) |field| {
+        try previewEqual(&scope, @field(a, field), @field(b, field));
+    };
+    if (M == @import("gemma.zig").Model) {
+        try std.testing.expectEqual(left.draft == null, right.draft == null);
+        if (left.draft) |a| {
+            const b = right.draft.?;
+            try std.testing.expectEqual(a.position, b.position);
+            try std.testing.expectEqual(a.projected_position, b.projected_position);
+            try std.testing.expectEqual(a.started, b.started);
+            try previewEqual(&scope, a.pending, b.pending);
+            for (a.cache, b.cache) |x, y| {
+                try previewEqual(&scope, x.keys, y.keys);
+                try previewEqual(&scope, x.values, y.values);
+            }
+        }
+    } else {
+        try previewEqual(&scope, left.head_cache.a, right.head_cache.a);
+        try previewEqual(&scope, left.head_cache.b, right.head_cache.b);
+        try previewEqual(&scope, left.draft_hidden, right.draft_hidden);
+    }
+    try mx.evalMany(scope.arrays.items, false);
+    for (scope.arrays.items) |equal| {
+        var value: bool = false;
+        try mx.check(mx.c.mlx_array_item_bool(&value, equal));
+        try std.testing.expect(value);
+    }
+}
+
+fn previewRequests(s: *session.Session, m: anytype, prompt: []const i32) !void {
+    const M = @TypeOf(m.*);
+    const G = session.Generation(M);
+    for ([_]f64{ 0, 0.7 }) |temperature| {
+        const options = session.Options{ .max_tokens = 8, .draft = false, .ignore_eos = true, .seed = 991, .sampling = .{ .metal = true, .temperature = temperature, .top_k = 12, .top_p = 0.8 } };
+        var captures: [2]Capture = @splat(.{});
+        defer for (&captures) |*capture| capture.deinit();
+        var expected = try G.init(m, &s.tokenizer, mx.allocator, prompt, options, s.draftSink(captures[0].sink()), null);
+        defer expected.deinit();
+        var actual = try G.init(m, &s.tokenizer, mx.allocator, prompt, options, s.draftSink(captures[1].sink()), null);
+        defer actual.deinit();
+        while (expected.phase == .prefill) _ = try unqueuedStep(&expected, m);
+        while (actual.phase == .prefill) _ = try actual.step(m);
+        try std.testing.expect(!try unqueuedStep(&expected, m));
+        try std.testing.expect(!try actual.step(m));
+        try std.testing.expect(actual.preview != null);
+        try std.testing.expectEqual(actual.state.position, actual.preview.?.position);
+        try samePreviewCaches(M, &expected.state, &actual.state);
+        var saved_expected = try expected.state.clone();
+        defer saved_expected.deinit();
+        var saved_actual = try actual.state.clone();
+        defer saved_actual.deinit();
+        const forced = [_]u32{@intCast(@mod(actual.next + 1, M.vocab))};
+        expected.budget.forced = &forced;
+        actual.budget.forced = &forced;
+        try std.testing.expect(!try unqueuedStep(&expected, m));
+        try std.testing.expect(!try actual.step(m));
+        try std.testing.expectEqual(forced[0], actual.reply.tokens.items[1]);
+        try samePreviewCaches(M, &expected.state, &actual.state);
+        var coordinator = @import("shared_round.zig").Coordinator{};
+        var results: [2]@import("shared_round.zig").Result = undefined;
+        try coordinator.step(m, &.{ &expected, &actual }, &results);
+        for (results) |result| try std.testing.expect(result.failure == null and !result.done);
+        try std.testing.expect(actual.preview == null);
+        while (!try unqueuedStep(&expected, m)) {}
+        while (!try actual.step(m)) {}
+        try std.testing.expect(actual.preview == null);
+        try samePreviewCaches(M, &expected.state, &actual.state);
+        try samePreviewCaches(M, &saved_expected, &saved_actual);
+        var before = try expected.takeReply();
+        defer before.deinit(mx.allocator);
+        var after = try actual.takeReply();
+        defer after.deinit(mx.allocator);
+        try same(before, after, captures[0], captures[1]);
+
+        var cancelled = Capture{};
+        defer cancelled.deinit();
+        var pending = try G.init(m, &s.tokenizer, mx.allocator, prompt, options, s.draftSink(cancelled.sink()), null);
+        defer pending.deinit();
+        while (pending.phase == .prefill) _ = try pending.step(m);
+        try std.testing.expect(!try pending.step(m));
+        try std.testing.expect(pending.preview != null);
+        var saved = try pending.state.clone();
+        defer saved.deinit();
+        cancelled.cancelled = true;
+        try std.testing.expectError(error.RequestCancelled, pending.step(m));
+        try std.testing.expect(pending.preview == null and pending.phase == .failed);
+        try samePreviewCaches(M, &saved, &pending.state);
+
+        var stopped = try G.init(m, &s.tokenizer, mx.allocator, prompt, options, s.draftSink(.{}), null);
+        defer stopped.deinit();
+        while (stopped.phase == .prefill) _ = try stopped.step(m);
+        try std.testing.expect(!try stopped.step(m));
+        try std.testing.expect(stopped.preview != null);
+        const stop = try s.tokenizer.decode(mx.allocator, &.{ stopped.reply.tokens.items[0], @intCast(stopped.next) }, false);
+        defer mx.allocator.free(stop);
+        if (stop.len > 0) {
+            const position = stopped.state.position;
+            stopped.options.stops = &.{stop};
+            try std.testing.expect(try stopped.step(m));
+            try std.testing.expect(stopped.preview == null);
+            try std.testing.expectEqual(position, stopped.state.position);
+            try std.testing.expectEqual(.stop, stopped.reply.finish_reason);
+        }
+    }
+    const eos: u32 = blk: {
+        for (0..M.vocab) |id| if (M.eos(@intCast(id))) break :blk @intCast(id);
+        return error.MissingEosToken;
+    };
+    var ending = try G.init(m, &s.tokenizer, mx.allocator, prompt, .{ .max_tokens = 8, .draft = false }, s.draftSink(.{}), null);
+    defer ending.deinit();
+    while (ending.phase == .prefill) _ = try ending.step(m);
+    if (ending.phase != .finished) {
+        try std.testing.expect(!try ending.step(m));
+        try std.testing.expect(ending.preview != null);
+        const position = ending.state.position;
+        ending.budget.forced = &.{eos};
+        try std.testing.expect(try ending.step(m));
+        try std.testing.expect(ending.preview == null);
+        try std.testing.expectEqual(position, ending.state.position);
+        try std.testing.expectEqual(.stop, ending.reply.finish_reason);
+    }
+    std.debug.print("PASS: {s} GPU-token lookahead matches synchronous greedy/seeded rounds, forced tokens, shared transitions, snapshots, cancellation, stops and EOS\n", .{@typeName(M)});
 }
 
 fn firstTokenPublication(s: *session.Session, prompt: []const i32, options: session.Options, expected: session.Reply) !void {
@@ -270,7 +477,9 @@ fn prefixReuse(s: *session.Session, prompt: []const i32, options: session.Option
     defer a.free(identity);
     const boundary = @import("prompt_cache.zig").Boundary{ .starts = chunks.starts };
     {
-        var donor = try session.RequestGeneration.init(s, a, prompt, options, .{}, null);
+        var donor_options = options;
+        donor_options.draft = false;
+        var donor = try session.RequestGeneration.init(s, a, prompt, donor_options, .{}, null);
         defer donor.deinit();
         try std.testing.expectEqual(null, try donor.snapshot());
         try std.testing.expect(!try donor.step(s));
@@ -382,6 +591,7 @@ fn interleaved(s: *session.Session, m: anytype, tok: *@import("vendor/tokenizer.
         completed += 1;
     }
     for ([_]usize{ 0, 2 }) |i| try firstTokenPublication(s, prompts[i], options[i], expected[i]);
+    if (@hasDecl(M, "forwardAfter")) try previewRequests(s, m, prompts[0]);
     try firstTokenEdges(m, tok, prompts[0]);
     try prefixReuse(s, prompts[1], options[1], expected[1], baseline[1]);
     for (prompts[0..2], options[0..2], expected[0..2], baseline[0..2]) |prompt, opt, reply, capture| try verifiedCopies(m, tok, prompt, opt, reply, capture);

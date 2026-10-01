@@ -6,7 +6,7 @@ const V = std.json.Value;
 
 // Capacity buffers and forward-pass writes are rebuilt from the logical cache arrays.
 fn transient(comptime T: type) bool {
-    return T == kv.Buffer or T == kv.Write;
+    return T == kv.Buffer or T == kv.Write or T == @import("gemma.zig").CacheStorage or T == @import("nemotron.zig").RecurrentRows or T == @import("nemotron.zig").HeadPrediction;
 }
 
 fn encode(a: std.mem.Allocator, arrays: mx.c.mlx_map_string_to_array, path: [:0]const u8, value: anytype) anyerror!V {
@@ -225,6 +225,7 @@ const Fixture = struct {
     optional: ?[2]u64,
     buffer: kv.Buffer,
     write: kv.Write,
+    head_prediction: @import("nemotron.zig").HeadPrediction,
     position: i32,
 };
 
@@ -235,18 +236,29 @@ pub fn exercise(io: std.Io) !void {
     const sliced = try scope.slice(try scope.reshape(original, &.{ 2, 2 }), 1, 0, 1);
     const bf16 = try scope.cast(original, mx.bf16);
     var arrays = [_]mx.Array{ original, sliced, bf16, mx.empty };
-    const state = Fixture{ .arrays = &arrays, .optional = .{ 0, std.math.maxInt(u64) }, .buffer = .{ .current = original, .offset = 4 }, .write = .{}, .position = 4 };
+    const state = Fixture{
+        .arrays = &arrays,
+        .optional = .{ 0, std.math.maxInt(u64) },
+        .buffer = .{ .current = original, .offset = 4 },
+        .write = .{},
+        .head_prediction = .{ .cache = .{ .a = original, .b = sliced }, .hidden = bf16, .first = original, .position = 4, .token = 67, .settings = .{ .metal = true, .seed = 99, .temperature = 0.7, .top_k = 12, .top_p = 0.8, .min_p = 0.02 } },
+        .position = 4,
+    };
     const path = "build/native-checks/snapshot-fixture.safetensors";
     try save(io, path, "snapshot-fixture", &.{ 1, 2, 3, 4 }, state);
     var reader = try Reader.open(io, path, "snapshot-fixture");
     defer reader.deinit();
     try std.testing.expectEqual(@as(usize, 3), reader.file.header.tensors.count());
+    try std.testing.expect(reader.metadata.value.state.object.get("head_prediction").? == .null);
     var loaded = try reader.load(Fixture);
     defer release(&loaded);
     try std.testing.expectEqualDeep(state.optional, loaded.optional);
     try std.testing.expectEqual(state.position, loaded.position);
     try std.testing.expectEqual(@as(usize, 4), loaded.arrays.len);
     try std.testing.expect(loaded.buffer.current.ctx == null);
+    try std.testing.expect(loaded.head_prediction.cache.a.ctx == null and loaded.head_prediction.cache.b.ctx == null);
+    try std.testing.expect(loaded.head_prediction.hidden.ctx == null and loaded.head_prediction.first.ctx == null);
+    try std.testing.expectEqual(@as(i32, -1), loaded.head_prediction.position);
     try std.testing.expect(loaded.arrays[3].ctx == null);
     for (state.arrays[0..3], loaded.arrays[0..3]) |before, after| {
         try std.testing.expectEqualSlices(i32, mx.shape(before), mx.shape(after));
@@ -257,6 +269,7 @@ pub fn exercise(io: std.Io) !void {
 
 pub fn check(io: std.Io) !void {
     try exercise(io);
+    try gemmaBacking(io);
     const path = "build/native-checks/snapshot-fixture.safetensors";
     try std.testing.expectError(error.IncompatibleSnapshot, Reader.open(io, path, "other-model"));
     const backend = mx.tensor_units;
@@ -274,6 +287,10 @@ pub fn check(io: std.Io) !void {
         try std.testing.expectError(error.InvalidSnapshotState, reader.load(Fixture));
     }
     position.* = saved_position;
+    const prediction = reader.metadata.value.state.object.getPtr("head_prediction").?;
+    prediction.* = .{ .integer = 4 };
+    try std.testing.expectError(error.InvalidSnapshotState, reader.load(Fixture));
+    prediction.* = .null;
     const first = &reader.metadata.value.state.object.getPtr("arrays").?.array.items[0];
     const saved_first = first.*;
     first.* = .{ .string = "state.arrays.1" };
@@ -293,4 +310,36 @@ pub fn check(io: std.Io) !void {
     try writer.setLength(io, reader.file.data_offset + 1);
     try std.testing.expectError(error.TruncatedSafetensors, reader.load(Fixture));
     std.debug.print("PASS: snapshot identity/backend/type isolation, noncontiguous and BF16 arrays, malformed state, orphan arrays and truncated reads\n", .{});
+}
+
+fn gemmaBacking(io: std.Io) !void {
+    const Cache = @import("gemma.zig").Cache;
+    var scope = mx.Scope{};
+    defer scope.deinit();
+    const keys = try scope.zeros(&.{ 1, 2, 2048, 64 }, mx.bf16);
+    const values = try scope.zeros(&.{ 1, 2, 2048, 64 }, mx.bf16);
+    const state = Cache{
+        .keys = try scope.slice(keys, 2, 0, 3),
+        .values = try scope.slice(values, 2, 0, 3),
+        .storage = .{ .keys = .{ .current = keys, .offset = 3 }, .values = .{ .current = values, .offset = 3 } },
+    };
+    var retained = try state.clone();
+    defer retained.deinit();
+    const capacity_bytes = mx.c.mlx_array_nbytes(keys) + mx.c.mlx_array_nbytes(values);
+    const logical_bytes = mx.c.mlx_array_nbytes(state.keys) + mx.c.mlx_array_nbytes(state.values);
+    try std.testing.expect(capacity_bytes > logical_bytes);
+    try std.testing.expectEqual(capacity_bytes, retained.nbytes());
+    try std.testing.expect(retained.storage.keys.current.ctx == null and retained.storage.values.current.ctx == null);
+    const path = "build/native-checks/gemma-snapshot-backing.safetensors";
+    try save(io, path, "gemma-snapshot-backing", &.{ 1, 2, 3 }, retained);
+    var reader = try Reader.open(io, path, "gemma-snapshot-backing");
+    defer reader.deinit();
+    try std.testing.expect(reader.metadata.value.state.object.get("storage").? == .null);
+    try std.testing.expectEqual(@as(usize, 2), reader.file.header.tensors.count());
+    var loaded = try reader.load(Cache);
+    defer loaded.deinit();
+    try std.testing.expectEqual(logical_bytes, loaded.nbytes());
+    try std.testing.expectEqual([2]u64{ 0, 0 }, loaded.storage.backing_bytes);
+    try @import("sampling_checks.zig").equal(&scope, state.keys, loaded.keys);
+    try @import("sampling_checks.zig").equal(&scope, state.values, loaded.values);
 }

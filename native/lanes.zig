@@ -6,7 +6,7 @@ const A = mx.Array;
 const ti = mx.ti;
 const td = mx.td;
 const tb = mx.tb;
-pub const Act = struct { x: A, sums: ?A = null };
+pub const Act = struct { x: A, sums: ?A = null, dimensions: ?A = null };
 pub const ProjectionCache = struct {
     const Rotation = struct { input: A, identity: usize, group: i32, act: Act };
     const Output = struct { input: A, weight: A, value: A };
@@ -14,6 +14,8 @@ pub const ProjectionCache = struct {
     outputs: [2]?Output = @splat(null),
     rotation_next: usize = 0,
     output_next: usize = 0,
+    rows: i32 = 0,
+    dimensions: A = mx.empty,
 
     // Entries borrow handles from one forward's scope, which outlives this cache.
     pub fn prepare(cache: *ProjectionCache, l: Linear, kernels: *mx.Kernels, s: *mx.Scope, input: Act) !Act {
@@ -23,7 +25,16 @@ pub const ProjectionCache = struct {
         for (cache.rotations) |entry| if (entry) |hit| {
             if (hit.input.ctx == input.x.ctx and hit.identity == l.rotation_id and hit.group == group) return hit.act;
         };
-        const act = try l.prepareInput(kernels, s, input);
+        var prepared = input;
+        if (mx.tensor_units and l.sb.ctx != null and l.format != null and l.format.?.group_size == 64) {
+            const rows: i32 = @intCast(mx.c.mlx_array_size(input.x) / @as(usize, @intCast(l.k)));
+            if (cache.dimensions.ctx == null or cache.rows != rows) {
+                cache.dimensions = input.dimensions orelse try s.ints(&.{ rows, @divTrunc(rows + 15, 16) * 16 });
+                cache.rows = rows;
+            }
+            prepared.dimensions = cache.dimensions;
+        }
+        const act = try l.prepareInput(kernels, s, prepared);
         cache.rotations[cache.rotation_next] = .{ .input = input.x, .identity = l.rotation_id, .group = group, .act = act };
         cache.rotation_next = (cache.rotation_next + 1) % cache.rotations.len;
         return act;
@@ -45,6 +56,7 @@ pub const Linear = struct {
     n: i32,
     k: i32,
     tiled: bool,
+    tile_width: i32 = 32,
     scales: A = mx.empty,
     biases: A = mx.empty,
     format: ?@import("quantization.zig").Spec = .{},
@@ -54,6 +66,9 @@ pub const Linear = struct {
     split_k: ?i32 = null,
     prism_dense: bool = false,
     pub fn initFormat(s: *mx.Scope, weight: A, scales: A, biases: A, format: ?@import("quantization.zig").Spec) !Linear {
+        return initFormatWide(s, weight, scales, biases, format, false);
+    }
+    pub fn initFormatWide(s: *mx.Scope, weight: A, scales: A, biases: A, format: ?@import("quantization.zig").Spec, wide: bool) !Linear {
         const f = format orelse {
             if (mx.shape(weight).len != 2 or mx.dim(weight, 0) < 1 or mx.dim(weight, 1) < 1) return error.InvalidTensorShape;
             if (mx.dtype(weight) != mx.bf16 and mx.dtype(weight) != mx.f32t and mx.dtype(weight) != mx.c.MLX_FLOAT16) return error.InvalidTensorDType;
@@ -62,12 +77,13 @@ pub const Linear = struct {
         const shape = try f.shape(mx.shape(weight), mx.shape(scales), mx.shape(biases));
         if (mx.dtype(weight) != mx.c.MLX_UINT32 or mx.dtype(scales) != mx.dtype(biases)) return error.InvalidTensorDType;
         if (mx.dtype(scales) != mx.bf16 and mx.dtype(scales) != mx.f32t and mx.dtype(scales) != mx.c.MLX_FLOAT16) return error.InvalidTensorDType;
-        if (f.bits == 4 and f.group_size == 64 and mx.dtype(scales) == mx.bf16 and @mod(shape.n, if (mx.tensor_units) @as(i32, 4) else 8) == 0 and @mod(shape.k, 64) == 0) return init(s, weight, scales, biases);
+        if (f.bits == 4 and f.group_size == 64 and mx.dtype(scales) == mx.bf16 and @mod(shape.n, if (mx.tensor_units) @as(i32, 4) else 8) == 0 and @mod(shape.k, 64) == 0) return initWide(s, weight, scales, biases, wide);
         const tensor = mx.tensor_units and mx.dtype(scales) == mx.bf16 and @mod(shape.n, 4) == 0 and @mod(shape.k, 64) == 0 and (f.group_size == 64 or (f.bits == 4 and f.group_size == 32));
         const tiled = tensor and @mod(shape.n, 32) == 0;
+        const nt: i32 = if (tiled and wide and f.bits == 4 and @mod(shape.n, 64) == 0) 64 else 32;
         const groups = @divExact(shape.k, f.group_size);
         const words = @divExact(f.group_size * f.bits, 32);
-        const layout = if (tiled) try s.contiguous(try s.reshape(try s.transpose(try s.reshape(weight, &.{ @divExact(shape.n, 32), 32, groups, words }), &.{ 0, 2, 1, 3 }), mx.shape(weight))) else weight;
+        const layout = if (tiled) try s.contiguous(try s.reshape(try s.transpose(try s.reshape(weight, &.{ @divExact(shape.n, nt), nt, groups, words }), &.{ 0, 2, 1, 3 }), mx.shape(weight))) else weight;
         const w = try mx.retain(layout);
         errdefer mx.free(w);
         const sc = try mx.retain(scales);
@@ -75,14 +91,18 @@ pub const Linear = struct {
         const pairs = if (tensor) try mx.retain(try s.cast(try s.stack(&.{ try s.transpose(scales, &.{ 1, 0 }), try s.transpose(biases, &.{ 1, 0 }) }, -1), mx.bf16)) else mx.empty;
         errdefer mx.free(pairs);
         if (tensor) try mx.evalMany(&.{ w, pairs }, false);
-        return .{ .weight = w, .scales = sc, .biases = try mx.retain(biases), .sb = pairs, .n = shape.n, .k = shape.k, .tiled = tiled, .format = f, .generic = true };
+        return .{ .weight = w, .scales = sc, .biases = try mx.retain(biases), .sb = pairs, .n = shape.n, .k = shape.k, .tiled = tiled, .tile_width = nt, .format = f, .generic = true };
     }
     pub fn init(s: *mx.Scope, weight: A, scales: A, biases: A) !Linear {
+        return initWide(s, weight, scales, biases, false);
+    }
+    pub fn initWide(s: *mx.Scope, weight: A, scales: A, biases: A, wide: bool) !Linear {
         const n = mx.dim(weight, 0);
         const k = mx.dim(weight, 1) * 8;
         const sb = try s.cast(try s.stack(&.{ try s.transpose(scales, &.{ 1, 0 }), try s.transpose(biases, &.{ 1, 0 }) }, -1), mx.bf16);
         const tiled = mx.tensor_units and @mod(n, 32) == 0;
-        const w = if (tiled) try s.contiguous(try s.reshape(try s.transpose(try s.reshape(weight, &.{ @divExact(n, 32), 32, @divExact(k, 64), 8 }), &.{ 0, 2, 1, 3 }), &.{ n, @divExact(k, 8) })) else weight;
+        const nt: i32 = if (tiled and wide and @mod(n, 64) == 0) 64 else 32;
+        const w = if (tiled) try s.contiguous(try s.reshape(try s.transpose(try s.reshape(weight, &.{ @divExact(n, nt), nt, @divExact(k, 64), 8 }), &.{ 0, 2, 1, 3 }), &.{ n, @divExact(k, 8) })) else weight;
         try mx.evalMany(&.{ w, sb }, false);
         const own_w = try mx.retain(w);
         errdefer mx.free(own_w);
@@ -90,7 +110,7 @@ pub const Linear = struct {
         errdefer mx.free(own_sb);
         const own_sc = if (!mx.tensor_units) try mx.retain(scales) else mx.empty;
         errdefer mx.free(own_sc);
-        return .{ .weight = own_w, .sb = own_sb, .n = n, .k = k, .tiled = tiled, .scales = own_sc, .biases = if (!mx.tensor_units) try mx.retain(biases) else mx.empty };
+        return .{ .weight = own_w, .sb = own_sb, .n = n, .k = k, .tiled = tiled, .tile_width = nt, .scales = own_sc, .biases = if (!mx.tensor_units) try mx.retain(biases) else mx.empty };
     }
     pub fn deinit(l: *Linear) void {
         mx.free(l.weight);
@@ -120,9 +140,10 @@ pub const Linear = struct {
         }
         if (!mx.tensor_units) return l.simdRows(kernels, s, x.x, reduction, 64);
         const mp = @divTrunc(m + 15, 16) * 16;
-        const dims = try s.ints(&.{ m, mp });
+        const dims = x.dimensions orelse try s.ints(&.{ m, mp });
         const x2 = try s.reshape(x.x, &.{ m, l.k });
         const sums = x.sums orelse (try kernels.run(s, src.lane_qmm_xsum, &.{ x2, dims }, &.{ ti("K", l.k), ti("GS", 64) }, .{ @divExact(l.k, 64), mp, 1 }, .{ @min(@divExact(l.k, 64), 256), 1, 1 }, &.{.{ .shape = &.{ @divExact(l.k, 64), mp }, .dtype = mx.f32t }}))[0];
+        if (l.tiled and l.tile_width == 64) return l.cooperativeRows(kernels, s, x2, sums, l.sb, dims, m, mp, 64);
         const tiles = @divTrunc(l.n + 31, 32);
         const sk = l.splitK();
         const block = @min(mp, 32);
@@ -170,7 +191,7 @@ pub const Linear = struct {
         const f = l.format.?;
         const groups = @divExact(l.k, f.group_size);
         const words = @divExact(f.group_size * f.bits, 32);
-        return s.contiguous(try s.reshape(try s.transpose(try s.reshape(l.weight, &.{ @divExact(l.n, 32), groups, 32, words }), &.{ 0, 2, 1, 3 }), mx.shape(l.weight)));
+        return s.contiguous(try s.reshape(try s.transpose(try s.reshape(l.weight, &.{ @divExact(l.n, l.tile_width), groups, l.tile_width, words }), &.{ 0, 2, 1, 3 }), mx.shape(l.weight)));
     }
 
     fn rotate(l: Linear, kernels: *mx.Kernels, s: *mx.Scope, x: A) !A {
@@ -187,8 +208,9 @@ pub const Linear = struct {
         if (count < 1 or count > 128) return error.InvalidLaneWidth;
         const padded_count = @divTrunc(count + 15, 16) * 16;
         const groups = @divExact(l.k, 64);
-        const sums = (try kernels.run(s, src.lane_qmm_xsum, &.{ try s.reshape(x, &.{ count, l.k }), try s.ints(&.{ count, padded_count }) }, &.{ ti("K", l.k), ti("GS", 64) }, .{ groups, padded_count, 1 }, .{ @min(groups, 256), 1, 1 }, &.{.{ .shape = &.{ groups, padded_count }, .dtype = mx.f32t }}))[0];
-        return .{ .x = x, .sums = sums };
+        const dimensions = input.dimensions orelse try s.ints(&.{ count, padded_count });
+        const sums = (try kernels.run(s, src.lane_qmm_xsum, &.{ try s.reshape(x, &.{ count, l.k }), dimensions }, &.{ ti("K", l.k), ti("GS", 64) }, .{ groups, padded_count, 1 }, .{ @min(groups, 256), 1, 1 }, &.{.{ .shape = &.{ groups, padded_count }, .dtype = mx.f32t }}))[0];
+        return .{ .x = x, .sums = sums, .dimensions = dimensions };
     }
 
     pub fn splitK(l: Linear) i32 {
@@ -200,11 +222,13 @@ pub const Linear = struct {
     }
 
     pub fn stackCompatible(first: Linear, other: Linear) bool {
-        return mx.tensor_units and first.rotation_id != 0 and first.rotation_id == other.rotation_id and
+        const same_rotation = if (first.signs.ctx == null) other.signs.ctx == null else other.signs.ctx != null and first.rotation_id != 0 and first.rotation_id == other.rotation_id;
+        return mx.tensor_units and same_rotation and
             first.sb.ctx != null and other.sb.ctx != null and first.format != null and
-            std.meta.eql(first.format, other.format) and first.format.?.group_size == 64 and
-            first.k == other.k and first.tiled == other.tiled and first.splitK() == other.splitK() and
-            @mod(first.n, 32) == 0 and @mod(other.n, 32) == 0;
+            std.meta.eql(first.format, other.format) and (first.format.?.group_size == 64 or (first.format.?.bits == 4 and first.format.?.group_size == 32)) and
+            (!first.tiled or !other.tiled or first.tile_width == other.tile_width) and
+            first.k == other.k and first.splitK() == other.splitK() and
+            @mod(first.n, 4) == 0 and @mod(other.n, 4) == 0;
     }
 
     pub fn simdBitsFits(l: Linear) bool {
@@ -259,10 +283,11 @@ pub const Linear = struct {
             break :blk try s.stack(&.{ try s.transpose(l.scales, &.{ 1, 0 }), try s.transpose(l.biases, &.{ 1, 0 }) }, -1);
         };
         const mp = @divTrunc(m + 15, 16) * 16;
-        const dims = try s.ints(&.{ m, mp });
+        const dims = input.dimensions orelse try s.ints(&.{ m, mp });
         const x2 = try s.reshape(x, &.{ m, l.k });
         const kg = @divExact(l.k, f.group_size);
         const sums = (if (f.group_size == 64) input.sums else null) orelse (try kernels.run(s, src.lane_qmm_xsum, &.{ x2, dims }, &.{ ti("K", l.k), ti("GS", f.group_size) }, .{ kg, mp, 1 }, .{ @min(kg, 256), 1, 1 }, &.{.{ .shape = &.{ kg, mp }, .dtype = mx.f32t }}))[0];
+        if (l.tiled and l.tile_width == 64) return l.cooperativeRows(kernels, s, x2, sums, sb, dims, m, mp, f.group_size);
         const tiles = @divTrunc(l.n + 31, 32);
         const sk = l.splitK();
         const block = @min(mp, 32);
@@ -270,6 +295,14 @@ pub const Linear = struct {
         const grouped = f.bits != 4 and f.group_size != 64;
         const spec = if (f.bits == 4) (if (l.tiled) src.lane_qmm_main_tiled else src.lane_qmm_main) else if (f.bits < 4) (if (grouped) src.lane_qmm_lowbit_grouped else src.lane_qmm_lowbit) else (if (grouped) src.lane_qmm_bytes_grouped else src.lane_qmm_bytes);
         return s.reshape((try kernels.run(s, spec, &.{ x2, sums, l.weight, sb, dims }, args[0..if (grouped) 8 else 7], .{ tiles * 32 * sk, @divTrunc(mp + block - 1, block), 1 }, .{ 32 * sk, 1, 1 }, &.{.{ .shape = &.{ m, l.n } }}))[0], &.{ 1, m, l.n });
+    }
+
+    fn cooperativeRows(l: Linear, kernels: *mx.Kernels, s: *mx.Scope, x: A, sums: A, sb: A, dims: A, m: i32, mp: i32, group: i32) !A {
+        if (l.format == null or l.format.?.bits != 4 or @mod(l.n, 64) != 0) return error.UnsupportedProjectionGeometry;
+        const sk = l.splitK();
+        const block = @min(mp, 32);
+        const out = (try kernels.run(s, src.lane_qmm_coop, &.{ x, sums, l.weight, sb, dims }, &.{ ti("TMR", @divExact(block, 16)), ti("N", l.n), ti("K", l.k), ti("SK", sk), ti("GS", group), ti("EDGE", @intFromBool(@mod(mp, block) != 0)) }, .{ @divExact(l.n, 64) * 64 * sk, @divTrunc(mp + block - 1, block), 1 }, .{ 64 * sk, 1, 1 }, &.{.{ .shape = &.{ m, l.n } }}))[0];
+        return s.reshape(out, &.{ 1, m, l.n });
     }
 
     pub fn rows(l: Linear, kernels: *mx.Kernels, s: *mx.Scope, x: A) !A {
@@ -309,7 +342,7 @@ pub const Linear = struct {
                 bs[i] = try s.slice(biases, 0, range[0], range[1]);
             }
         }
-        var selected = try initFormat(s, try s.cat(ws[0..ranges.len], 0), if (l.format != null) try s.cat(ss[0..ranges.len], 0) else mx.empty, if (l.format != null) try s.cat(bs[0..ranges.len], 0) else mx.empty, l.format);
+        var selected = try initFormatWide(s, try s.cat(ws[0..ranges.len], 0), if (l.format != null) try s.cat(ss[0..ranges.len], 0) else mx.empty, if (l.format != null) try s.cat(bs[0..ranges.len], 0) else mx.empty, l.format, l.tile_width == 64);
         errdefer selected.deinit();
         if (l.signs.ctx != null) selected.signs = try mx.retain(l.signs);
         selected.prism_dense = l.prism_dense;
@@ -331,14 +364,24 @@ pub fn norm(k: *mx.Kernels, s: *mx.Scope, h: A, r: ?A, w: A) !struct { h: A, x: 
     const dims = try s.ints(&.{ m, mp });
     const hh = try s.reshape(h, &.{ m, width });
     const out = if (r) |res| try k.run(s, src.lane_glue_norm, &.{ hh, try s.reshape(res, &.{ m, width }), w, eps, dims }, &.{ti("K", width)}, .{ @divExact(width, 16), mp, 1 }, .{ @divExact(width, 16), 1, 1 }, &.{ .{ .shape = &.{ m, width } }, .{ .shape = &.{ m, width } }, .{ .shape = &.{ @divExact(width, 64), mp }, .dtype = mx.f32t } }) else try k.run(s, src.lane_glue_norm_nores, &.{ hh, w, eps, dims }, &.{ti("K", width)}, .{ @divExact(width, 16), mp, 1 }, .{ @divExact(width, 16), 1, 1 }, &.{ .{ .shape = &.{ m, width } }, .{ .shape = &.{ @divExact(width, 64), mp }, .dtype = mx.f32t } });
-    return .{ .h = if (r != null) try s.reshape(out[0], &.{ 1, m, width }) else h, .x = .{ .x = try s.reshape(out[@intFromBool(r != null)], &.{ 1, m, width }), .sums = out[1 + @as(usize, @intFromBool(r != null))] } };
+    return .{ .h = if (r != null) try s.reshape(out[0], &.{ 1, m, width }) else h, .x = .{ .x = try s.reshape(out[@intFromBool(r != null)], &.{ 1, m, width }), .sums = out[1 + @as(usize, @intFromBool(r != null))], .dimensions = dims } };
 }
 pub fn mlp(k: *mx.Kernels, s: *mx.Scope, gate: A, up: A) !Act {
     const m = mx.dim(gate, 1);
     const width = mx.dim(gate, 2);
     const mp = @divTrunc(m + 15, 16) * 16;
-    const out = try k.run(s, src.lane_glue_mlp_act, &.{ gate, up, try s.ints(&.{ m, mp }) }, &.{ti("N", width)}, .{ width, mp, 1 }, .{ 64, 1, 1 }, &.{ .{ .shape = &.{ 1, m, width } }, .{ .shape = &.{ @divExact(width, 64), mp }, .dtype = mx.f32t } });
-    return .{ .x = out[0], .sums = out[1] };
+    const dimensions = try s.ints(&.{ m, mp });
+    const out = try k.run(s, src.lane_glue_mlp_act, &.{ gate, up, dimensions }, &.{ti("N", width)}, .{ width, mp, 1 }, .{ 64, 1, 1 }, &.{ .{ .shape = &.{ 1, m, width } }, .{ .shape = &.{ @divExact(width, 64), mp }, .dtype = mx.f32t } });
+    return .{ .x = out[0], .sums = out[1], .dimensions = dimensions };
+}
+
+pub fn mlpStack(k: *mx.Kernels, s: *mx.Scope, gate_up: A) !Act {
+    const m = mx.dim(gate_up, 1);
+    const width = @divExact(mx.dim(gate_up, 2), 2);
+    const mp = @divTrunc(m + 15, 16) * 16;
+    const dimensions = try s.ints(&.{ m, mp });
+    const out = try k.run(s, src.lane_fuse_mlp_act, &.{ gate_up, gate_up, dimensions }, &.{ti("N", width)}, .{ width, mp, 1 }, .{ 64, 1, 1 }, &.{ .{ .shape = &.{ 1, m, width } }, .{ .shape = &.{ @divExact(width, 64), mp }, .dtype = mx.f32t } });
+    return .{ .x = out[0], .sums = out[1], .dimensions = dimensions };
 }
 
 pub const Tree = struct {

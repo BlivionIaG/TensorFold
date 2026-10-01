@@ -97,6 +97,76 @@ pub fn top(allocator: std.mem.Allocator, values: []const f32, n: usize) ![]Candi
 pub fn rows(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, positions: []const i32, settings: Sampling) ![]i32 {
     return rowsMapped(k, s, logits, positions, settings, null);
 }
+
+pub fn streamRowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, positions: []const i32, settings: []const Sampling, mapping: ?mx.Array) ![]i32 {
+    if (positions.len == 0 or positions.len > 128 or positions.len != settings.len or mx.shape(logits).len != 2 or mx.dim(logits, 0) != positions.len) return error.InvalidSamplingRows;
+    for (positions, settings) |position, cfg| {
+        if (position < 0) return error.InvalidSamplingPosition;
+        try cfg.validate();
+    }
+    if (mapping) |ids| {
+        if (mx.dtype(ids) != mx.c.MLX_UINT32 or mx.c.mlx_array_size(ids) != @as(usize, @intCast(mx.dim(logits, -1)))) return error.InvalidSamplingMapping;
+    }
+    var gpu_only = true;
+    for (settings) |cfg| gpu_only = gpu_only and (cfg.metal or cfg.temperature == 0);
+    if (gpu_only) {
+        const selected = try @import("gpu_sampling.zig").sampleRows(k, s, logits, positions, settings, mapping);
+        try mx.eval(selected);
+        const output = try mx.allocator.alloc(i32, positions.len);
+        for (output, mx.c.mlx_array_data_uint32(selected)[0..positions.len]) |*token, id| token.* = @intCast(id);
+        return output;
+    }
+    var arrays: [129]mx.Array = undefined;
+    var starts: [128]usize = undefined;
+    var ends: [128]usize = undefined;
+    var count: usize = 0;
+    var cpu = false;
+    var begin: usize = 0;
+    while (begin < positions.len) {
+        var end = begin + 1;
+        const cfg = settings[begin];
+        while (end < positions.len and (if (cfg.metal) settings[end].metal else std.meta.eql(cfg, settings[end]))) : (end += 1) {}
+        const part = if (begin == 0 and end == positions.len) logits else try s.slice(logits, 0, @intCast(begin), @intCast(end));
+        arrays[count] = if (cfg.metal) try @import("gpu_sampling.zig").sampleRows(k, s, part, positions[begin..end], settings[begin..end], mapping) else if (cfg.temperature == 0) blk: {
+            const picked = try s.argmax(part);
+            break :blk if (mapping) |ids| try s.take(ids, picked, 0) else picked;
+        } else blk: {
+            cpu = true;
+            break :blk try s.contiguous(try s.cast(part, mx.f32t));
+        };
+        starts[count] = begin;
+        ends[count] = end;
+        count += 1;
+        begin = end;
+    }
+    var evaluated = count;
+    if (cpu) if (mapping) |ids| {
+        arrays[evaluated] = ids;
+        evaluated += 1;
+    };
+    try mx.evalMany(arrays[0..evaluated], false);
+    const width: usize = @intCast(mx.dim(logits, -1));
+    const id_map: ?[]const u32 = if (cpu and mapping != null) mx.c.mlx_array_data_uint32(mapping.?)[0..width] else null;
+    const output = try mx.allocator.alloc(i32, positions.len);
+    errdefer mx.allocator.free(output);
+    for (arrays[0..count], starts[0..count], ends[0..count]) |array, start, end| {
+        const cfg = settings[start];
+        if (cfg.metal or cfg.temperature == 0) {
+            for (output[start..end], mx.c.mlx_array_data_uint32(array)[0 .. end - start]) |*token, id| token.* = @intCast(id);
+        } else {
+            const values = mx.c.mlx_array_data_float32(array);
+            for (output[start..end], positions[start..end], 0..) |*token, position, row| {
+                const candidates = try top(mx.allocator, values[row * width ..][0..width], cfg.top_k);
+                defer mx.allocator.free(candidates);
+                if (id_map) |ids| for (candidates) |*candidate| {
+                    candidate.id = @intCast(ids[@intCast(candidate.id)]);
+                };
+                token.* = cfg.choose(candidates, @intCast(position));
+            }
+        }
+    }
+    return output;
+}
 /// Mapping must be sorted ascending, preserving token-ID tie ordering.
 pub fn rowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, positions: []const i32, settings: Sampling, mapping: ?mx.Array) ![]i32 {
     if (mapping) |ids| {
@@ -134,6 +204,99 @@ pub fn rowsMapped(k: *mx.Kernels, s: *mx.Scope, logits: mx.Array, positions: []c
         out[i] = settings.choose(candidates, @intCast(pos));
     }
     return out;
+}
+
+pub fn checkStreams(k: *mx.Kernels) !void {
+    var scope = mx.Scope{};
+    defer scope.deinit();
+    const count = 12;
+    const width = 2053;
+    var values: [count * width]f32 = undefined;
+    var mapped: [width]u32 = undefined;
+    for (&mapped, 0..) |*id, i| id.* = @intCast(101 + 7 * i);
+    for (0..count) |row| {
+        for (0..width) |col| values[row * width + col] = @as(f32, @floatFromInt(@as(i32, @intCast((37 * col + 17 * row) % 257)) - 128)) / 23;
+        values[row * width + 1] = 12;
+        values[row * width + 1027] = 12;
+    }
+    const cpu_greedy = Sampling{ .temperature = 0 };
+    const metal_greedy = Sampling{ .metal = true, .temperature = 0 };
+    const metal_sample = Sampling{ .metal = true, .seed = 1234, .temperature = 0.8, .top_k = 17, .top_p = 0.87, .min_p = 0.03 };
+    const metal_other = Sampling{ .metal = true, .seed = 0xffffeeee12345678, .temperature = 1.2, .top_k = 0, .top_p = 0.96, .min_p = 0.02 };
+    const cpu_sample = Sampling{ .seed = 0xabcdef0123456789, .temperature = 1.1, .top_k = 7, .top_p = 0.8, .min_p = 0.05 };
+    const cpu_other = Sampling{ .seed = 991, .temperature = 0.35, .top_k = 0, .top_p = 1 };
+    const settings = [_]Sampling{ cpu_greedy, cpu_greedy, metal_greedy, metal_greedy, metal_sample, metal_sample, metal_other, cpu_sample, cpu_sample, cpu_other, metal_sample, cpu_greedy };
+    const positions = [_]i32{ 7, 17, 4, 99, 3, 1, 1007, 1007, 262143, 9, 43, 14 };
+    const original = try scope.data(&values, &.{ count, width }, mx.f32t);
+    const mapping = try scope.data(&mapped, &.{width}, mx.c.MLX_UINT32);
+    const lazy_mapping = try scope.cast(try scope.cast(mapping, mx.i32t), mx.c.MLX_UINT32);
+    for ([_]mx.c.mlx_dtype{ mx.f32t, mx.bf16 }) |dtype| {
+        const logits = try scope.cast(original, dtype);
+        for ([_]?mx.Array{ null, mapping, lazy_mapping }) |ids| {
+            const actual = try streamRowsMapped(k, &scope, logits, &positions, &settings, ids);
+            defer mx.allocator.free(actual);
+            for (settings, 0..) |cfg, row| {
+                const expected = try rowsMapped(k, &scope, try scope.slice(logits, 0, @intCast(row), @intCast(row + 1)), positions[row..][0..1], cfg, ids);
+                defer mx.allocator.free(expected);
+                try std.testing.expectEqual(expected[0], actual[row]);
+                if (cfg.temperature == 0) try std.testing.expectEqual(@as(i32, if (ids != null) @intCast(mapped[1]) else 1), actual[row]);
+            }
+            var reversed_settings: [count]Sampling = undefined;
+            var reversed_positions: [count]i32 = undefined;
+            var reversed_rows: [count]i32 = undefined;
+            for (0..count) |i| {
+                reversed_settings[i] = settings[count - i - 1];
+                reversed_positions[i] = positions[count - i - 1];
+                reversed_rows[i] = @intCast(count - i - 1);
+            }
+            const reversed = try streamRowsMapped(k, &scope, try scope.take(logits, try scope.ints(&reversed_rows), 0), &reversed_positions, &reversed_settings, ids);
+            defer mx.allocator.free(reversed);
+            for (reversed, 0..) |token, i| try std.testing.expectEqual(actual[count - i - 1], token);
+
+            var cpu_settings: [count]Sampling = undefined;
+            for (&cpu_settings, 0..) |*cfg, row| cfg.* = if (row % 3 == 2) cpu_other else cpu_sample;
+            const strided = try scope.slice(try scope.contiguous(try scope.cat(&.{ logits, try scope.zeros(&.{ count, 3 }, dtype) }, 1)), 1, 0, width);
+            const cpu_actual = try streamRowsMapped(k, &scope, strided, &positions, &cpu_settings, ids);
+            defer mx.allocator.free(cpu_actual);
+            for (cpu_settings, 0..) |cfg, row| {
+                const expected = try rowsMapped(k, &scope, try scope.slice(strided, 0, @intCast(row), @intCast(row + 1)), positions[row..][0..1], cfg, ids);
+                defer mx.allocator.free(expected);
+                try std.testing.expectEqual(expected[0], cpu_actual[row]);
+            }
+            for ([_]bool{ false, true }) |all_greedy| {
+                var gpu_settings: [count]Sampling = undefined;
+                for (&gpu_settings, settings, 0..) |*cfg, original_cfg, row| {
+                    cfg.* = original_cfg;
+                    cfg.seed +%= row;
+                    if (all_greedy) cfg.temperature = 0 else if (cfg.temperature != 0) cfg.metal = true;
+                }
+                const gpu_actual = try streamRowsMapped(k, &scope, strided, &positions, &gpu_settings, ids);
+                defer mx.allocator.free(gpu_actual);
+                for (gpu_settings, 0..) |cfg, row| {
+                    const expected = try rowsMapped(k, &scope, try scope.slice(strided, 0, @intCast(row), @intCast(row + 1)), positions[row..][0..1], cfg, ids);
+                    defer mx.allocator.free(expected);
+                    try std.testing.expectEqual(expected[0], gpu_actual[row]);
+                }
+            }
+        }
+    }
+    try std.testing.expectError(error.InvalidSamplingRows, streamRowsMapped(k, &scope, original, &.{}, &.{}, null));
+    try std.testing.expectError(error.InvalidSamplingRows, streamRowsMapped(k, &scope, original, &positions, settings[0 .. count - 1], null));
+    try std.testing.expectError(error.InvalidSamplingRows, streamRowsMapped(k, &scope, original, positions[0 .. count - 1], settings[0 .. count - 1], null));
+    const oversized_positions: [129]i32 = @splat(1);
+    const oversized_settings: [129]Sampling = @splat(cpu_greedy);
+    try std.testing.expectError(error.InvalidSamplingRows, streamRowsMapped(k, &scope, original, &oversized_positions, &oversized_settings, null));
+    try std.testing.expectError(error.InvalidSamplingRows, streamRowsMapped(k, &scope, try scope.zeros(&.{count}, mx.f32t), &positions, &settings, null));
+    try std.testing.expectError(error.InvalidSamplingRows, streamRowsMapped(k, &scope, try scope.reshape(original, &.{ count, 1, width }), &positions, &settings, null));
+    var invalid_positions = positions;
+    invalid_positions[0] = -1;
+    try std.testing.expectError(error.InvalidSamplingPosition, streamRowsMapped(k, &scope, original, &invalid_positions, &settings, null));
+    var invalid_settings = settings;
+    invalid_settings[0].top_p = 0;
+    try std.testing.expectError(error.InvalidSampling, streamRowsMapped(k, &scope, original, &positions, &invalid_settings, null));
+    try std.testing.expectError(error.InvalidSamplingMapping, streamRowsMapped(k, &scope, original, &positions, &settings, try scope.cast(mapping, mx.i32t)));
+    try std.testing.expectError(error.InvalidSamplingMapping, streamRowsMapped(k, &scope, original, &positions, &settings, try scope.slice(mapping, 0, 0, width - 1)));
+    std.debug.print("PASS: CPU-only and mixed CPU/Metal shared sampling, strided rows, mapped IDs, reordered positions and invalid geometry.\n", .{});
 }
 test "sampling is position keyed, greedy ties use token id" {
     const values = [_]f32{ 1, 3, 3, -1 };

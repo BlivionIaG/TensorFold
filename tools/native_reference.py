@@ -212,6 +212,124 @@ def verify_capture(model_dir, draft_dir, report_path):
     print(f'PASS: {end} committed context rows and {checked} target distributions match upstream exactly; capture positions and metadata agree with generation')
 
 
+def dflash_streams_fixture(model_dir, draft_dir, output):
+    from native_runtime import require_mlx
+    require_mlx()
+    import mlx.core as mx
+    from tensorfold.families.qwen3_5 import load_lane_model
+    from tensorfold.families.qwen3_5.dflash_head import DFlashHead
+    from tensorfold.kernels.qwen.dense.v1 import lane_qmm
+    from tensorfold.drafters.dflash_drafter import DFlashDrafter
+    from tensorfold.drafters import dflash_batch
+    from tensorfold.drafters.calibration import load as load_calibration
+    from tensorfold.engine.exact_sampling import Sampling
+
+    folder = Path(output)
+    reference = folder / 'python'
+    reference.mkdir(parents=True, exist_ok=True)
+    target, _ = load_lane_model(Path(model_dir))
+    lane_qmm.install(target, rows=128, tile=True, wide=True)
+    drafter = DFlashDrafter(target, str(draft_dir), bits=4)
+    lane_qmm.install(drafter.model, rows=128, tile=True, wide=True)
+
+    def save(path, value):
+        mx.eval(value)
+        np.save(path, np.array(value.astype(mx.float32)))
+
+    head_input = mx.array((((np.arange(5120, dtype=np.int32) * 7) % 29 - 14) / 64).astype(np.float32)).astype(mx.bfloat16)
+    head_logits, vocabulary = drafter.candidate_logits(head_input.reshape(1, 1, 5120))
+    assert vocabulary is not None
+    assert vocabulary.shape == (98624,) and int(vocabulary[98304].item()) == 248000
+    boundary = mx.array([0, 98303, 98304, 98335, 98336, vocabulary.size - 1], mx.int32)
+    boundary_ids = vocabulary[boundary]
+    assert boundary_ids.tolist() == [0, 98303, 248000, 248031, 248032, 248319]
+    save(reference / 'vocabulary-ids.npy', boundary_ids)
+    save(reference / 'vocabulary-logits.npy', mx.take(head_logits, boundary, axis=2))
+
+    calibration = load_calibration(Path('src/tensorfold/families/qwen3_5/dflash2_calibration.json'))
+    head = DFlashHead(drafter, nodes=15, calibration=calibration)
+    head.log_path = ''
+    pasts = (0, 1, 6, 14, 30, 63, 126, 2046)
+    width = drafter.model.config.hidden_size * len(drafter.model.config.target_layer_ids)
+    anchors = [1000 + 37 * j for j in range(len(pasts))]
+    samplings = [None if j % 2 == 0 else Sampling(seed=1234 + 17 * j, temperature=0.75) for j in range(len(pasts))]
+    cases = (
+        ('', [15] * 8),
+        ('ragged15-', [15, 7, 3, 1, 15, 7, 3, 1]),
+        ('ragged7-', [7, 3, 1, 7, 3, 1, 7, 1]),
+        ('ragged3-', [3, 1, 3, 1, 3, 1, 3, 1]),
+    )
+    for prefix, depths in cases:
+        caches, positions = [], []
+        for j, past in enumerate(pasts):
+            slot = head.slot()
+            proposer = slot.get(samplings[j])
+            offset = past + j * 97
+            taps = (((np.arange(width, dtype=np.int32) * 7 + j * 11) % 29 - 14) / 64).astype(np.float32)
+            proposer.prefill_taps(offset + 1, mx.array(taps.reshape(1, 1, width)).astype(mx.bfloat16))
+            if not prefix:
+                save(folder / f'taps-{j}.npy', proposer.context)
+            if past:
+                shape = (1, 8, past, 128)
+                indexes = np.arange(np.prod(shape), dtype=np.int32).reshape(shape)
+                for i, cache in enumerate(proposer.cache):
+                    cache.keys = mx.array((((indexes * 7 + j * 11 + i * 3) % 29 - 14) / 64).astype(np.float32)).astype(mx.bfloat16)
+                    cache.values = mx.array((((indexes * 13 + j * 5 + i * 7) % 31 - 15) / 32).astype(np.float32)).astype(mx.bfloat16)
+                    cache._idx = past
+                    if not prefix:
+                        save(folder / f'input-cache-{j}-{i}-keys.npy', cache.keys)
+                        save(folder / f'input-cache-{j}-{i}-values.npy', cache.values)
+            caches.append([slot])
+            positions.append(offset + 2)
+
+        layers = [None] * len(drafter.model.layers)
+        parts = caches[0][-1].proposer._compiled_parts()
+        assert parts is not None, 'DFlash2 convolution blocks required'
+        def traced(index, post):
+            def call(*args):
+                value = post(*args)
+                layers[index] = value
+                return value
+            return call
+        captured = []
+        batched_lattices = dflash_batch.batched_lattices
+        def traced_lattices(*args, **kwargs):
+            value = batched_lattices(*args, **kwargs)
+            captured.append(value)
+            return value
+        drafter._parts = [(pre, traced(i, post)) for i, (pre, post) in enumerate(parts)]
+        dflash_batch.batched_lattices = traced_lattices
+        try:
+            proposals = head.draft_streams(caches, [[anchor] for anchor in anchors], [[] for _ in caches],
+                                           positions, samplings, depths)
+        finally:
+            drafter._parts = parts
+            dflash_batch.batched_lattices = batched_lattices
+        assert len(captured) == 1 and len(captured[0]) == len(caches), 'Expected one production shared lattice'
+        lattices = captured[0]
+        for i, layer in enumerate(layers):
+            save(reference / f'{prefix}layer-{i}.npy', layer.reshape(1, len(caches) * (max(depths) + 1), -1))
+        candidates = mx.concatenate([x[0] for x in lattices])
+        save(reference / f'{prefix}candidates.npy', candidates)
+        save(reference / f'{prefix}scores.npy', mx.concatenate([x[1] for x in lattices]))
+        save(reference / f'{prefix}projection.npy', mx.concatenate([x[2] for x in lattices], axis=1))
+        for j, (cache, proposal) in enumerate(zip(caches, proposals)):
+            tokens, parents = proposal if isinstance(proposal, tuple) else (proposal, list(range(-1, len(proposal) - 1)))
+            np.save(reference / f'{prefix}tokens-{j}.npy', np.asarray(tokens, dtype=np.float32))
+            np.save(reference / f'{prefix}parents-{j}.npy', np.asarray(parents, dtype=np.float32))
+            np.save(reference / f'{prefix}probabilities-{j}.npy', np.asarray(head.probabilities(cache), dtype=np.float32))
+        if not prefix:
+            offsets = []
+            for j, cache in enumerate(caches):
+                proposer = cache[-1].proposer
+                offsets.append(int(proposer.cache[0].offset))
+                for i, item in enumerate(proposer.cache):
+                    save(reference / f'cache-{j}-{i}-keys.npy', item.keys)
+                    save(reference / f'cache-{j}-{i}-values.npy', item.values)
+            (folder / 'streams.json').write_text(json.dumps(dict(offsets=offsets, anchors=anchors, pasts=pasts)))
+    print(f'Saved production eight-stream DFlash layers, lattices, context caches and calibrated proposals in {folder}')
+
+
 def capture_fixtures(output):
     from types import SimpleNamespace
     from tensorfold.drafters import dflash_proposer
@@ -411,7 +529,8 @@ def prompt_cache_fixtures(output):
                     else:
                         keep = rng.choice([None, *store._entries])
                         op.update(keep=None if keep is None else keep.tokens, evicted=store.evict_one(keep))
-                    op.update(entries=[dict(tokens=e.tokens, payload=e.cache, previous=e.last_prompt, pinned=e.pinned) for e in store._entries],
+                    op.update(entries=[dict(tokens=e.tokens, payload=e.cache, previous=e.last_prompt, pinned=e.pinned,
+                                            born=e.born) for e in store._entries],
                               nbytes=store.nbytes, hits=store.hits, misses=store.misses, evictions=store.evictions)
                     case['operations'].append(op)
                 result['stores'].append(case)
@@ -498,6 +617,7 @@ def memory_fixtures(output):
 
     for _ in range(1000):
         scheduler = Scheduler.__new__(Scheduler)
+        scheduler._fills = []
         memory = StreamMemory(**rng.choice(result["streams"])["memory"])
         horizon = rng.choice((None, 0, 1, 16, 2048, 4096))
         scheduler.gate = None if horizon is None else SimpleNamespace(horizon=horizon)
@@ -524,6 +644,45 @@ def memory_fixtures(output):
                                            budget=scheduler.admission.budget, projected=projected, fits=fits,
                                            jobs=[dict(prompt=len(j.prompt_ids), now=len(j.stream.context), most=len(j.prompt_ids) + j.max_tokens) for j in jobs],
                                            live=[dict(now=now, most=most) for now, most in live]))
+    memory = StreamMemory(64, 8192, 8256, 270336, 32.0, 256.0, 0.5, 131072, 2048)
+    fill_layouts = (
+        ((8192, 8192, 4096),),
+        ((8192, 4096, 16),),
+        ((8192, 1, 0),),
+        ((8192, 8192, 4096), (2048, 1024, 2049), (64, 1, 1)),
+    )
+    for horizon in (None, 0, 1, 16, 2048, 4096):
+        reserved = lambda reply: reply if horizon is None else min(reply, horizon)
+        for layout in fill_layouts:
+            for decoding in (False, True):
+                for prompt in (64, 16384):
+                    scheduler = Scheduler.__new__(Scheduler)
+                    scheduler.gate = None if horizon is None else SimpleNamespace(horizon=horizon)
+                    scheduler.prompt_memory = None
+                    scheduler._fills = [SimpleNamespace(job=SimpleNamespace(prompt_ids=range(size), max_tokens=reply), left=left)
+                                        for size, left, reply in layout]
+                    scheduler._jobs = {0: SimpleNamespace(prompt_ids=range(128), max_tokens=4096,
+                                                         stream=SimpleNamespace(context=range(256), finished=False))} if decoding else {}
+                    scheduler.engine = SimpleNamespace(active_count=int(decoding))
+                    used, lanes, reply = GIB, 8, 4096
+                    scheduler.admission = ObservedAdmission(0, memory, used=lambda: used, lanes=lanes)
+                    candidate = SimpleNamespace(prompt_ids=range(prompt), max_tokens=reply)
+                    scheduler._fits(candidate)
+                    requested, longest, live = scheduler.admission.reservation
+                    assert requested == max(prompt, *(size for size, _, _ in layout))
+                    assert longest == prompt + reserved(reply)
+                    expected_live = [(256, min(4224, 256 + reserved(4096)))] if decoding else []
+                    expected_live += [(size - left, size + reserved(most)) for size, left, most in layout]
+                    assert live == expected_live
+                    projected = scheduler.admission.projected(requested, longest, live)
+                    for delta in (-1, 0, 1):
+                        scheduler.admission.budget = projected + delta
+                        result["streams"].append(dict(memory=asdict(memory), lanes=lanes, tokens=longest, prompt=requested,
+                                                      used=used, budget=scheduler.admission.budget,
+                                                      live=[dict(now=now, most=most) for now, most in live],
+                                                      stream=memory.stream_bytes(longest), prefill=memory.prefill_bytes(requested),
+                                                      projected=projected, admits=scheduler._fits(candidate),
+                                                      fitting=scheduler.admission.fitting(longest)))
     for fraction in (0.7, 0.85):
         for process in (64 * GIB, 110 * GIB):
             for elsewhere in (0, 8 * GIB, 20 * GIB, 128 * GIB):
@@ -683,6 +842,7 @@ def main():
     parser.add_argument("--server-live-fixtures", action="store_true")
     parser.add_argument("--capture-fixtures", action="store_true")
     parser.add_argument("--verify-capture", nargs=2, metavar=('DRAFTER', 'REPORT'))
+    parser.add_argument("--dflash-streams-fixture", metavar="DRAFTER")
     parser.add_argument("--compare-calibration", nargs=2, type=Path)
     parser.add_argument("--image-mode", choices=("RGB", "RGBA", "L", "CMYK"))
     parser.add_argument("--image-orientation", type=int, choices=range(1, 9), default=1)
@@ -713,6 +873,8 @@ def main():
         return capture_fixtures(args.output)
     if args.verify_capture:
         return verify_capture(args.model, *args.verify_capture)
+    if args.dflash_streams_fixture:
+        return dflash_streams_fixture(args.model, args.dflash_streams_fixture, args.output)
     if args.calibration_fixtures:
         return calibration_fixtures(args.output)
     if args.compare_calibration:

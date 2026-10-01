@@ -126,7 +126,12 @@ pub const Runtime = struct {
         if (mx.c.mlx_set_wired_limit(&previous, @intCast(limit)) == 0) runtime.previous_wired = previous;
     }
 
-    pub fn admissionBudget(runtime: Runtime, io: std.Io) !u64 {
+    fn admissionLimit(runtime: Runtime, family: std.meta.Tag(session.Backend), elsewhere: u64) u64 {
+        const fraction: f64 = if (family == .glm and runtime.ram <= 256 * policy.gib) 0.85 else 0.70;
+        return policy.concurrentBudget(runtime.ram, fraction, runtime.budget, runtime.share, elsewhere);
+    }
+
+    pub fn admissionBudget(runtime: Runtime, io: std.Io, family: std.meta.Tag(session.Backend)) !u64 {
         const a = mx.allocator;
         const result = std.process.run(a, io, .{ .argv = &.{"/usr/bin/memory_pressure"}, .stdout_limit = .limited(64 * 1024), .stderr_limit = .limited(4096) }) catch return runtime.share;
         defer a.free(result.stdout);
@@ -141,9 +146,43 @@ pub const Runtime = struct {
         var cached: usize = 0;
         try mx.check(mx.c.mlx_get_cache_memory(&cached));
         const elsewhere = @as(u64, @intFromFloat(@as(f64, @floatFromInt(runtime.ram * (100 - free))) / 100)) -| (try activeBytes() + cached);
-        return policy.availableWorkingSet(runtime.ram, runtime.share, elsewhere);
+        return runtime.admissionLimit(family, elsewhere);
     }
 };
+
+test "runtime admission subtracts external use from the process allowance" {
+    const runtime = Runtime{
+        .ram = 128 * policy.gib,
+        .budget = 215 * policy.gib / 2,
+        .share = 209 * policy.gib / 2,
+        .previous_memory = 0,
+        .previous_cache = 0,
+    };
+    const elsewhere = @as(u64, 57 * policy.gib) / 5;
+    try std.testing.expectEqual(@as(u64, 103186589287), runtime.admissionLimit(.flash, elsewhere));
+    try std.testing.expectEqual(runtime.share, runtime.admissionLimit(.flash, 0));
+    try std.testing.expectEqual(@as(u64, 0), runtime.admissionLimit(.flash, runtime.ram));
+}
+
+test "runtime admission uses upstream family fractions and the GLM RAM boundary" {
+    var runtime = Runtime{
+        .ram = 128 * policy.gib,
+        .budget = 80 * policy.gib,
+        .share = 77 * policy.gib,
+        .previous_memory = 0,
+        .previous_cache = 0,
+    };
+    for (std.meta.tags(std.meta.Tag(session.Backend))) |family| {
+        const expected: u64 = if (family == .glm) 73873437491 else 53257594470;
+        try std.testing.expectEqual(expected, runtime.admissionLimit(family, 40 * policy.gib));
+    }
+    runtime.ram = 256 * policy.gib;
+    runtime.budget = 128 * policy.gib;
+    runtime.share = 125 * policy.gib;
+    try std.testing.expectEqual(@as(u64, 126272038502), runtime.admissionLimit(.glm, 100 * policy.gib));
+    runtime.ram += 1;
+    try std.testing.expectEqual(@as(u64, 85040352461), runtime.admissionLimit(.glm, 100 * policy.gib));
+}
 
 fn arrayBytes(array: mx.Array) u64 {
     return if (array.ctx == null) 0 else mx.c.mlx_array_nbytes(array);
@@ -180,7 +219,12 @@ fn growthFloor(comptime M: type, state: *@import("request_state.zig").State(M)) 
                 kv += @as(f64, @floatFromInt(arrayBytes(cache.pooled) + arrayBytes(cache.token_history))) / @as(f64, @floatFromInt(@max(1, state.position)));
             }
         } else if (M == @import("gemma.zig").Model) {
-            if (index % 6 == 5) kv += perPosition(cache.keys, 2) + perPosition(cache.values, 2);
+            if (index % 6 == 5) {
+                const each = perPosition(cache.keys, 2) + perPosition(cache.values, 2);
+                kv += each;
+                spare += 2 * each;
+                if (cache.storage.keys.current.ctx == null and cache.keys.ctx != null) unbuffered += each;
+            }
         } else if (M == @import("glm.zig").Model) {
             inline for (.{ "keys", "ik", "ig", "pool" }) |name| kv += @as(f64, @floatFromInt(arrayBytes(@field(cache, name)))) / @as(f64, @floatFromInt(@max(1, state.position)));
         } else if (M == @import("deepseek.zig").Model) {
@@ -215,6 +259,7 @@ fn measureModel(m: anytype, tokenizer: *@import("vendor/tokenizer.zig").Tokenize
     const G = session.Generation(M);
     const chunk: usize = if (@hasDecl(M, "prefill")) 2048 else 16;
     const vocab: usize = if (M == @import("model.zig").Model) 248320 else if (@hasField(M, "vocab")) @intCast(m.vocab) else M.vocab;
+    const reply_tokens = @max(if (@hasDecl(M, "forwardAfter")) @as(usize, 4) else 2, sink.draft_budget + 2);
     var tokens: [2 * chunk + 64]i32 = undefined;
     for (&tokens, 0..) |*token, index| token.* = @intCast((1000 + index) % vocab);
     var held: [3]G = undefined;
@@ -225,7 +270,7 @@ fn measureModel(m: anytype, tokenizer: *@import("vendor/tokenizer.zig").Tokenize
     }
     // Shared decode projection caches belong to the model, not each request.
     {
-        var warm = try G.init(m, tokenizer, mx.allocator, tokens[0..64], .{ .max_tokens = @max(2, sink.draft_budget + 2), .ignore_eos = true }, sink, null);
+        var warm = try G.init(m, tokenizer, mx.allocator, tokens[0..64], .{ .max_tokens = reply_tokens, .ignore_eos = true }, sink, null);
         defer warm.deinit();
         while (!try warm.step(m)) {}
     }
@@ -240,7 +285,7 @@ fn measureModel(m: anytype, tokenizer: *@import("vendor/tokenizer.zig").Tokenize
         try mx.check(mx.c.mlx_clear_cache());
         const before = try activeBytes();
         try mx.check(mx.c.mlx_reset_peak_memory());
-        generation.* = try G.init(m, tokenizer, mx.allocator, tokens[0..count], .{ .max_tokens = @max(2, sink.draft_budget + 2), .ignore_eos = true }, sink, null);
+        generation.* = try G.init(m, tokenizer, mx.allocator, tokens[0..count], .{ .max_tokens = reply_tokens, .ignore_eos = true }, sink, null);
         initialized += 1;
         while (generation.phase == .prefill) _ = try generation.step(m);
         try mx.check(mx.c.mlx_synchronize(mx.stream));
@@ -253,12 +298,35 @@ fn measureModel(m: anytype, tokenizer: *@import("vendor/tokenizer.zig").Tokenize
         inline for (.{ "kv", "spare", "unbuffered" }) |field| @field(prefill_floor, field) = @max(@field(prefill_floor, field), @field(growth, field));
         peak.* = high -| after;
         try mx.check(mx.c.mlx_reset_peak_memory());
-        while (!try generation.step(m)) {}
-        try mx.check(mx.c.mlx_synchronize(mx.stream));
-        // Neural contexts and head caches can first become resident during decode.
-        size.* = @max(size.*, @max((try activeBytes()) -| before, generation.state.nbytes()));
+        while (true) {
+            const done = try generation.step(m);
+            try mx.check(mx.c.mlx_synchronize(mx.stream));
+            // A retained row can keep its complete draft-window allocation alive.
+            size.* = @max(size.*, @max((try activeBytes()) -| before, generation.state.nbytes()));
+            if (done) break;
+        }
         try mx.check(mx.c.mlx_get_peak_memory(&high));
         decode_work = @max(decode_work, high -| after);
+        if (@hasDecl(M, "forwardAfter")) {
+            const target_resident_before = try activeBytes();
+            var target = try G.init(m, tokenizer, mx.allocator, tokens[0..count], .{ .max_tokens = reply_tokens, .ignore_eos = true, .draft = false }, sink, null);
+            defer target.deinit();
+            while (target.phase == .prefill) _ = try target.step(m);
+            try mx.check(mx.c.mlx_synchronize(mx.stream));
+            const target_before = try activeBytes();
+            try mx.check(mx.c.mlx_reset_peak_memory());
+            while (true) {
+                const done = try target.step(m);
+                try mx.check(mx.c.mlx_synchronize(mx.stream));
+                size.* = @max(size.*, @max((try activeBytes()) -| target_resident_before, target.state.nbytes()));
+                if (done) break;
+            }
+            try mx.check(mx.c.mlx_get_peak_memory(&high));
+            decode_work = @max(decode_work, high -| target_before);
+        }
+        if (M == @import("nemotron.zig").Model) {
+            if (m.mtp and sink.draft_budget > 0) decode_work = @max(decode_work, try measureNemotronDraft(m, tokenizer, sink, tokens[0..count]));
+        }
     }
     var floor = growthFloor(M, &held[2].state);
     inline for (.{ "kv", "spare", "unbuffered" }) |field| @field(floor, field) = @max(@field(floor, field), @field(prefill_floor, field));
@@ -269,6 +337,41 @@ fn measureModel(m: anytype, tokenizer: *@import("vendor/tokenizer.zig").Tokenize
     const b = @max(0, (@as(f64, @floatFromInt(peaks[2])) - @as(f64, @floatFromInt(peaks[1]))) / (chunk * chunk));
     const a = @max(0, @as(f64, @floatFromInt(peaks[1])) / chunk - b * chunk);
     return .{ .short_tokens = probes[0], .short = sizes[0] + spare, .long_tokens = probes[1], .long = @max(sizes[0], sizes[1]) + spare, .per_token = per_token, .prefill_a = a, .prefill_b = b, .round_bytes = decode_work, .chunk = chunk };
+}
+
+fn measureNemotronDraft(m: *@import("nemotron.zig").Model, tokenizer: *@import("vendor/tokenizer.zig").Tokenizer, sink: session.Sink, tokens: []const i32) !u64 {
+    const G = session.Generation(@import("nemotron.zig").Model);
+    var generations: [8]G = undefined;
+    var initialized: usize = 0;
+    defer for (generations[0..initialized]) |*generation| generation.deinit();
+    var requests: [8]*G = undefined;
+    for (&generations, &requests, 0..) |*generation, *request, i| {
+        generation.* = try G.init(m, tokenizer, mx.allocator, tokens, .{ .max_tokens = @max(4, sink.draft_budget + 2), .ignore_eos = true, .seed = 819 + i, .sampling = .{ .metal = true, .temperature = if (i % 2 == 0) 0 else 0.7, .top_k = 20, .top_p = 0.95, .min_p = 0 } }, sink, null);
+        initialized += 1;
+        request.* = generation;
+        while (generation.phase == .prefill) _ = try generation.step(m);
+    }
+    try mx.check(mx.c.mlx_synchronize(mx.stream));
+    try mx.check(mx.c.mlx_clear_cache());
+    const before = try activeBytes();
+    try mx.check(mx.c.mlx_reset_peak_memory());
+    var coordinator = @import("shared_round.zig").Coordinator{};
+    var results: [8]@import("shared_round.zig").Result = undefined;
+    var pending: [8]*G = undefined;
+    while (true) {
+        var count: usize = 0;
+        for (requests) |request| if (request.phase == .decode) {
+            pending[count] = request;
+            count += 1;
+        };
+        if (count == 0) break;
+        try coordinator.step(m, pending[0..count], results[0..count]);
+        for (results[0..count]) |result| if (result.failure) |err| return err;
+    }
+    try mx.check(mx.c.mlx_synchronize(mx.stream));
+    var high: usize = 0;
+    try mx.check(mx.c.mlx_get_peak_memory(&high));
+    return high -| before;
 }
 
 pub fn check(io: std.Io, directory: []const u8) !void {
@@ -294,23 +397,31 @@ pub fn checkWithDraft(io: std.Io, directory: []const u8, drafter: ?[]const u8) !
             for (&tokens, 0..) |*token, index| token.* = @intCast((1000 + index) % vocab);
             const counts: []const usize = if (M == @import("glm.zig").Model or M == @import("deepseek.zig").Model) &.{ 1, 15, 16, 17, 63, 64, 65, 127, 128, 129, 511, 512, 513, 2047, 2048, 2049, 4161 } else if (M == @import("nemotron.zig").Model) &.{ 1, 15, 16, 17, 65, 127, 128, 129, 2047, 2048, 2049, 4161 } else if (@hasDecl(M, "prefill")) &.{ 1, 65, 2047, 2048, 2049, 4161 } else &.{ 1, 15, 16, 17, 65, 257 };
             const sink = model.draftSink(.{});
-            const reply_tokens = @max(2, sink.draft_budget + 2);
-            for (counts) |count| {
+            const reply_tokens = @max(if (@hasDecl(M, "forwardAfter")) @as(usize, 4) else 2, sink.draft_budget + 2);
+            const modes: []const bool = if (@hasDecl(M, "forwardAfter")) &.{ true, false } else &.{true};
+            for (counts) |count| for (modes) |draft| {
                 try mx.check(mx.c.mlx_synchronize(mx.stream));
                 try mx.check(mx.c.mlx_clear_cache());
                 const before = try activeBytes();
-                var generation = try session.Generation(M).init(m, &model.tokenizer, mx.allocator, tokens[0..count], .{ .max_tokens = reply_tokens, .ignore_eos = true }, sink, null);
+                var generation = try session.Generation(M).init(m, &model.tokenizer, mx.allocator, tokens[0..count], .{ .max_tokens = reply_tokens, .ignore_eos = true, .draft = draft }, sink, null);
                 defer generation.deinit();
-                while (!try generation.step(m)) {}
+                while (!try generation.step(m)) {
+                    if (@hasDecl(M, "forwardAfter")) if (generation.preview != null) {
+                        try mx.check(mx.c.mlx_synchronize(mx.stream));
+                        const active = (try activeBytes()) -| before;
+                        const allowed = (try profile.streamBytes(count + reply_tokens)) +| profile.round_bytes;
+                        if (active > allowed) return error.PreviewMemoryUnderestimated;
+                    };
+                }
                 try mx.check(mx.c.mlx_synchronize(mx.stream));
                 const held = (try activeBytes()) -| before;
                 const estimate = try profile.streamBytes(count + reply_tokens);
                 if (held > estimate) {
-                    std.debug.print("Underestimated {d}-token request: {d} held, {d} predicted\n", .{ count, held, estimate });
+                    std.debug.print("Underestimated {d}-token request, draft={any}: {d} held, {d} logical cache, {d} predicted\n", .{ count, draft, held, generation.state.nbytes(), estimate });
                     return error.CacheMemoryUnderestimated;
                 }
                 if (m.position != 0) return error.ProbeChangedModelState;
-            }
+            };
         },
     }
     try @import("server.zig").checkGrowth(&model, profile);

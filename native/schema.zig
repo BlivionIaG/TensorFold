@@ -33,7 +33,7 @@ fn adjusted(spec: Spec, config: ?std.json.Value, shape: *[8]i32, actual_dtype: ?
     const bias = std.mem.endsWith(u8, spec.name, ".biases");
     const kind = cfg.object.get("model_type");
     const bonsai = kind != null and kind.? == .string and std.mem.eql(u8, kind.?.string, "prism_hadamard_qwen35");
-    const flash = kind != null and kind.? == .string and std.mem.eql(u8, kind.?.string, "qwen4_exp");
+    const flash = kind != null and kind.? == .string and @import("config.zig").isFlash(kind.?.string);
     if (spec.dtype != .U32 and !scale and !bias) {
         var result = spec;
         if (bonsai) result.dtype = try floating(actual_dtype);

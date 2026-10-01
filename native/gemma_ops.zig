@@ -32,29 +32,181 @@ pub fn qkv(k: *mx.Kernels, s: *mx.Scope, g: Geometry, x: A, weight: [3]A, qw: A,
     return result[0..3].*;
 }
 
+pub const Rows = struct {
+    positions: A,
+    lows: A,
+    meta: A,
+    count: i32,
+    dims: i32,
+    first_position: i32,
+    ring: i32,
+    chunks: i32,
+
+    pub fn init(s: *mx.Scope, positions: []const i32, window: i32, ring: i32, dims: i32) !Rows {
+        if (positions.len < 1 or positions.len > 128 or window < 0 or ring < 0 or (ring > 0 and ring <= window)) return error.InvalidGemmaAttention;
+        if (dims < 32 or dims > 512 or @mod(dims, 32) != 0) return error.InvalidGemmaGeometry;
+        for (positions, 0..) |position, i| if (position < 0 or position > 262144 or position != positions[0] + @as(i32, @intCast(i))) return error.InvalidGemmaPositions;
+        const chunk: i32 = if (dims == 256) 128 else 64;
+        var lows: [128]i32 = undefined;
+        for (positions, 0..) |position, i| lows[i] = if (window > 0) @max(0, position - window + 1) else 0;
+        const first = @divTrunc(lows[0], chunk);
+        const chunks = @divTrunc(positions[positions.len - 1], chunk) - first + 1;
+        const count: i32 = @intCast(positions.len);
+        return .{
+            .positions = try paddedInts(s, positions),
+            .lows = try paddedInts(s, lows[0..positions.len]),
+            .meta = try paddedInts(s, &.{ first, chunks, ring, count }),
+            .count = count,
+            .dims = dims,
+            .first_position = positions[0],
+            .ring = ring,
+            .chunks = chunks,
+        };
+    }
+};
+
 pub fn attention(k: *mx.Kernels, s: *mx.Scope, q: A, keys: A, values: A, new_keys: A, new_values: A, positions: []const i32, window: i32, ring: i32, scale: f32) !A {
-    const rows = mx.dim(q, 0);
-    const heads = mx.dim(q, 1);
-    const dims = mx.dim(q, 2);
-    const kv_heads = mx.dim(keys, 1);
-    if (positions.len != rows or rows < 1 or rows > 128 or window < 0 or ring < 0 or (ring > 0 and ring <= window) or !std.math.isFinite(scale)) return error.InvalidGemmaAttention;
-    if (dims < 32 or dims > 512 or @mod(dims, 32) != 0 or kv_heads <= 0 or @mod(heads, kv_heads) != 0) return error.InvalidGemmaGeometry;
-    for (positions, 0..) |p, i| if (p < 0 or p > 262144 or p != positions[0] + @as(i32, @intCast(i))) return error.InvalidGemmaPositions;
-    if (!std.mem.eql(i32, mx.shape(keys), mx.shape(values)) or !std.mem.eql(i32, mx.shape(new_keys), &.{ kv_heads, rows, dims }) or !std.mem.eql(i32, mx.shape(new_values), mx.shape(new_keys))) return error.InvalidGemmaAttention;
-    if (mx.dim(keys, 0) != 1 or mx.dim(keys, 3) != dims or mx.dim(keys, 2) < (if (ring > 0) ring else positions[0])) return error.InvalidGemmaAttention;
-    const chunk: i32 = if (dims == 256) 128 else 64;
-    const split: i32 = if (dims == 512) 1 else 4;
-    const group = @divExact(heads, kv_heads);
-    if (32 * group * split > 1024) return error.InvalidGemmaGeometry;
-    var lows: [128]i32 = undefined;
-    for (positions, 0..) |p, i| lows[i] = if (window > 0) @max(0, p - window + 1) else 0;
-    const first = @divTrunc(lows[0], chunk);
-    const chunks = @divTrunc(positions[positions.len - 1], chunk) - first + 1;
-    const meta = try paddedInts(s, &.{ first, chunks, ring, rows });
-    const slots = heads * rows * chunks;
-    const partials = try k.run(s, src.gemma_attention_partial, &.{ q, keys, values, new_keys, new_values, try paddedInts(s, positions), try paddedInts(s, lows[0..positions.len]), meta }, &.{ ti("D", dims), ti("G", group), ti("HK", kv_heads), ti("CK", chunk), ti("S", split), ti("BLK", 4), ti("SCALE_BITS", @bitCast(scale)) }, .{ 32 * group * split * chunks, kv_heads, rows }, .{ 32 * group * split, 1, 1 }, &.{ .{ .shape = &.{@max(slots, 8)}, .dtype = mx.f32t }, .{ .shape = &.{@max(slots, 8)}, .dtype = mx.f32t }, .{ .shape = &.{ slots, dims }, .dtype = mx.f32t } });
-    return (try k.run(s, src.gemma_attention_merge, &.{ partials[0], partials[1], partials[2], meta }, &.{ ti("D", dims), ti("H", heads) }, .{ 32, heads, rows }, .{ 32, 1, 1 }, &.{.{ .shape = &.{ rows, heads, dims } }}))[0];
+    const rows = try Rows.init(s, positions, window, ring, mx.dim(q, 2));
+    return attentionRows(k, s, q, keys, values, new_keys, new_values, rows, scale);
 }
+
+pub fn attentionRows(k: *mx.Kernels, s: *mx.Scope, q: A, keys: A, values: A, new_keys: A, new_values: A, prepared: Rows, scale: f32) !A {
+    const plan = try AttentionPlan.init(q, keys, values, new_keys, new_values, prepared, scale);
+    return plan.apply(k, s, .{ q, keys, values, new_keys, new_values, prepared.positions, prepared.lows, prepared.meta });
+}
+
+// One exact shape per closure bounds MLX's internal specialization cache.
+pub const Attention = struct {
+    closure: mx.c.mlx_closure = .{ .ctx = null },
+    signature: ?Signature = null,
+
+    const Input = struct {
+        dims: [4]i32 = @splat(0),
+        rank: usize,
+        dtype: mx.c.mlx_dtype,
+
+        fn shape(input: *const Input) []const i32 {
+            return input.dims[0..input.rank];
+        }
+    };
+    const Signature = struct {
+        inputs: [8]Input,
+        chunks: i32,
+        scale: u32,
+
+        fn init(inputs: [8]A, chunks: i32, scale: f32) !Signature {
+            var key = Signature{ .inputs = undefined, .chunks = chunks, .scale = @bitCast(scale) };
+            for (inputs, &key.inputs) |value, *input| {
+                const shape = mx.shape(value);
+                if (shape.len > 4) return error.InvalidGemmaAttention;
+                input.* = .{ .rank = shape.len, .dtype = mx.dtype(value) };
+                @memcpy(input.dims[0..shape.len], shape);
+            }
+            return key;
+        }
+    };
+    const Payload = struct {
+        kernels: mx.Kernels,
+        plan: AttentionPlan,
+
+        fn destroy(raw: ?*anyopaque) callconv(.c) void {
+            const p: *Payload = @ptrCast(@alignCast(raw.?));
+            p.kernels.deinit();
+            mx.allocator.destroy(p);
+        }
+        fn callback(out: [*c]mx.c.mlx_vector_array, ins: mx.c.mlx_vector_array, raw: ?*anyopaque) callconv(.c) c_int {
+            const p: *Payload = @ptrCast(@alignCast(raw.?));
+            return p.graph(out, ins) catch -1;
+        }
+        fn graph(p: *Payload, out: [*c]mx.c.mlx_vector_array, ins: mx.c.mlx_vector_array) !c_int {
+            var scope = mx.Scope{};
+            defer scope.deinit();
+            var inputs: [8]A = undefined;
+            for (&inputs, 0..) |*input, i| {
+                var value = mx.c.mlx_array_new();
+                const rc = mx.c.mlx_vector_array_get(&value, ins, i);
+                input.* = try scope.result(rc, value);
+            }
+            const result = [_]A{try p.plan.apply(&p.kernels, &scope, inputs)};
+            return mx.c.mlx_vector_array_set_data(out, &result, result.len);
+        }
+    };
+
+    pub fn deinit(a: *Attention) void {
+        if (a.closure.ctx != null) _ = mx.c.mlx_closure_free(a.closure);
+        a.* = .{};
+    }
+
+    pub fn apply(a: *Attention, k: *mx.Kernels, s: *mx.Scope, q: A, keys: A, values: A, new_keys: A, new_values: A, prepared: Rows, scale: f32) !A {
+        const inputs = [_]A{ q, keys, values, new_keys, new_values, prepared.positions, prepared.lows, prepared.meta };
+        const signature = try Signature.init(inputs, prepared.chunks, scale);
+        var result: [1]A = undefined;
+        if (a.signature) |key| {
+            if (std.meta.eql(key, signature)) {
+                if (prepared.count != key.inputs[0].dims[0]) return error.InvalidGemmaAttention;
+                if (prepared.dims != key.inputs[0].dims[2]) return error.InvalidGemmaGeometry;
+                if (key.inputs[1].dims[2] < (if (prepared.ring > 0) prepared.ring else prepared.first_position)) return error.InvalidGemmaAttention;
+                try k.call(s, a.closure, &inputs, &result);
+                return result[0];
+            }
+        }
+        const plan = try AttentionPlan.fromShapes(signature.inputs[0].shape(), signature.inputs[1].shape(), signature.inputs[2].shape(), signature.inputs[3].shape(), signature.inputs[4].shape(), prepared, scale);
+        const payload = try mx.allocator.create(Payload);
+        payload.* = .{ .kernels = mx.Kernels.init(), .plan = plan };
+        const fun = mx.c.mlx_closure_new_func_payload(Payload.callback, payload, Payload.destroy);
+        if (fun.ctx == null) {
+            Payload.destroy(payload);
+            return error.MlxFailure;
+        }
+        defer _ = mx.c.mlx_closure_free(fun);
+        var replacement = Attention{};
+        errdefer replacement.deinit();
+        try mx.check(mx.c.mlx_compile(&replacement.closure, fun, false));
+        try k.call(s, replacement.closure, &inputs, &result);
+        replacement.signature = signature;
+        a.deinit();
+        a.* = replacement;
+        return result[0];
+    }
+};
+
+const AttentionPlan = struct {
+    rows: i32,
+    heads: i32,
+    dims: i32,
+    kv_heads: i32,
+    chunks: i32,
+    scale: f32,
+
+    fn init(q: A, keys: A, values: A, new_keys: A, new_values: A, prepared: Rows, scale: f32) !AttentionPlan {
+        return fromShapes(mx.shape(q), mx.shape(keys), mx.shape(values), mx.shape(new_keys), mx.shape(new_values), prepared, scale);
+    }
+
+    fn fromShapes(q: []const i32, keys: []const i32, values: []const i32, new_keys: []const i32, new_values: []const i32, prepared: Rows, scale: f32) !AttentionPlan {
+        if (q.len < 3 or keys.len < 4) return error.InvalidGemmaAttention;
+        const rows = q[0];
+        const heads = q[1];
+        const dims = q[2];
+        const kv_heads = keys[1];
+        if (prepared.count != rows or rows < 1 or rows > 128 or !std.math.isFinite(scale)) return error.InvalidGemmaAttention;
+        if (dims != prepared.dims or dims < 32 or dims > 512 or @mod(dims, 32) != 0 or kv_heads <= 0 or @mod(heads, kv_heads) != 0) return error.InvalidGemmaGeometry;
+        if (!std.mem.eql(i32, keys, values) or !std.mem.eql(i32, new_keys, &.{ kv_heads, rows, dims }) or !std.mem.eql(i32, new_values, new_keys)) return error.InvalidGemmaAttention;
+        if (keys[0] != 1 or keys[3] != dims or keys[2] < (if (prepared.ring > 0) prepared.ring else prepared.first_position)) return error.InvalidGemmaAttention;
+        const split: i32 = if (dims == 512) 1 else 4;
+        const group = @divExact(heads, kv_heads);
+        if (32 * group * split > 1024) return error.InvalidGemmaGeometry;
+        return .{ .rows = rows, .heads = heads, .dims = dims, .kv_heads = kv_heads, .chunks = prepared.chunks, .scale = scale };
+    }
+
+    fn apply(p: AttentionPlan, k: *mx.Kernels, s: *mx.Scope, inputs: [8]A) !A {
+        const chunk: i32 = if (p.dims == 256) 128 else 64;
+        const split: i32 = if (p.dims == 512) 1 else 4;
+        const group = @divExact(p.heads, p.kv_heads);
+        const slots = p.heads * p.rows * p.chunks;
+        const partials = try k.run(s, src.gemma_attention_partial, &inputs, &.{ ti("D", p.dims), ti("G", group), ti("HK", p.kv_heads), ti("CK", chunk), ti("S", split), ti("BLK", 4), ti("SCALE_BITS", @bitCast(p.scale)) }, .{ 32 * group * split * p.chunks, p.kv_heads, p.rows }, .{ 32 * group * split, 1, 1 }, &.{ .{ .shape = &.{@max(slots, 8)}, .dtype = mx.f32t }, .{ .shape = &.{@max(slots, 8)}, .dtype = mx.f32t }, .{ .shape = &.{ slots, p.dims }, .dtype = mx.f32t } });
+        return (try k.run(s, src.gemma_attention_merge, &.{ partials[0], partials[1], partials[2], inputs[7] }, &.{ ti("D", p.dims), ti("H", p.heads) }, .{ 32, p.heads, p.rows }, .{ 32, 1, 1 }, &.{.{ .shape = &.{ p.rows, p.heads, p.dims } }}))[0];
+    }
+};
 
 pub fn route(k: *mx.Kernels, s: *mx.Scope, logits: A, per_expert_scale: A, top: i32) ![2]A {
     const rows = mx.dim(logits, 0);

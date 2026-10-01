@@ -500,6 +500,101 @@ def nemotron_prefill_fixture(directory, output, simd=False):
         save(f"continuation-{step}", model.head(model.hidden(mx.array([[2000 + step]], dtype=mx.uint32), cache))[0])
 
 
+def nemotron_shared_head_fixture(directory, output, simd=False):
+    """Upstream segmented MTP with the native row-exact projection/expert contract."""
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx.utils import tree_flatten
+    from mlx_lm import load
+    from tensorfold.families.nemotron_h.model import NemotronH
+    from tensorfold.families.nemotron_h import mtp
+    from tensorfold.kernels.nemotron.lightning.v1 import kernels, rows
+    from tools.native_legacy import nemotron as legacy, nemotron_rows
+
+    model = NemotronH.__new__(NemotronH)
+    model.model, _ = load(str(directory))
+    model.args = model.model.args
+    model.fused = kernels.FusedDecode(model.model)
+    model.mtp = mtp.load(directory / "mtp-4bit.safetensors", model.args)
+    holder = nn.Module()
+    holder.mtp, holder.head = model.mtp, model.model.lm_head
+    if not simd and kernels.tensor_units():
+        from tensorfold.kernels.qwen.dense.v1 import lane_qmm
+        lane_qmm.install(holder, rows=16, tile=True, wide=True)
+    else:
+        model.fused.lane_attention = False
+        for _, layer in tree_flatten(holder.leaf_modules()):
+            if isinstance(layer, nn.QuantizedLinear):
+                layer.__class__ = nemotron_rows.RowLinear
+    caches = [model.mtp.make_cache() for _ in range(8)]
+    for i, (cache, past) in enumerate(zip(caches, (0, 1, 3, 7, 31, 127, 9999, 10000))):
+        if past:
+            cache.keys = mx.full((1, 2, past, 128), (i + 1) / 64, dtype=mx.bfloat16)
+            cache.values = mx.full((1, 2, past, 128), -(i + 1) / 32, dtype=mx.bfloat16)
+            cache.offset = past
+    hidden = mx.array([[(j % 23 - 11) / 64 + i / 128 for j in range(2688)] for i in range(8)],
+                      dtype=mx.bfloat16)[None]
+    output.mkdir(parents=True, exist_ok=True)
+    def save(name, value):
+        np.save(output / f"{name}.npy", np.asarray(value.astype(mx.float32)))
+    original_route, original_experts = kernels.route, rows.experts
+    original_add, original_moe, original_router = kernels.add_norm, kernels.add_norm_moe, kernels.router_logits
+    original_attention = model.fused._attention_streams
+    trace = {}
+    def traced_attention(mixer, x, caches, lengths, index=None):
+        trace["attention-input"] = x
+        out = original_attention(mixer, x, caches, lengths, index)
+        trace["attention-output"] = out
+        return out
+    def traced_add(h, delta, *args, **kwargs):
+        trace["x"] = h
+        out = original_add(h, delta, *args, **kwargs)
+        trace["residual"], trace["moe-input"] = out[:2]
+        return out
+    def traced_moe(h, routed, weights, shared, *args, **kwargs):
+        trace["routed"], trace["expert-weights"], trace["shared"] = routed, weights, shared
+        return original_moe(h, routed, weights, shared, *args, **kwargs)
+    def traced_router(*args, **kwargs):
+        trace["router"] = original_router(*args, **kwargs)
+        return trace["router"]
+    def traced_route(*args, **kwargs):
+        out = legacy.route(*args, **kwargs)
+        trace["expert-ids"] = out[0]
+        return out
+    kernels.route, rows.experts = traced_route, nemotron_rows.experts
+    kernels.add_norm, kernels.add_norm_moe, kernels.router_logits = traced_add, traced_moe, traced_router
+    model.fused._attention_streams = traced_attention
+    try:
+        for step, count in enumerate((8, 3, 1)):
+            tokens = mx.array([[1000 + 37 * i + 17 * step for i in range(count)]], dtype=mx.uint32)
+            hidden = model._head_rows(hidden[:, :count], model.model.backbone.embeddings(tokens),
+                                      caches[:count], (1,) * count, last_only=False)
+            logits = model.model.lm_head(hidden)
+            save(f"hidden-{step}", hidden[0])
+            save(f"logits-{step}", logits[0])
+            for name, value in trace.items():
+                save(f"stage-{step}-{name}", value)
+            trace.clear()
+            for i, cache in enumerate(caches[:count]):
+                save(f"keys-{step}-{i}", cache.keys[:, :, :cache.offset])
+                save(f"values-{step}-{i}", cache.values[:, :, :cache.offset])
+        lengths = (3, 0, 1, 2, 4, 1, 3, 2)
+        hidden = mx.array([[(j % 23 - 11) / 64 + (i % 8) / 128 for j in range(2688)] for i in range(16)],
+                          dtype=mx.bfloat16)[None]
+        tokens = mx.array([[3000 + 13 * i for i in range(16)]], dtype=mx.uint32)
+        model._head_rows(hidden, model.model.backbone.embeddings(tokens),
+                         [cache for cache, count in zip(caches, lengths) if count],
+                         tuple(count for count in lengths if count), last_only=True)
+        for i, cache in enumerate(caches):
+            save(f"absorbed-keys-{i}", cache.keys[:, :, :cache.offset])
+            save(f"absorbed-values-{i}", cache.values[:, :, :cache.offset])
+    finally:
+        kernels.route, rows.experts = original_route, original_experts
+        kernels.add_norm, kernels.add_norm_moe, kernels.router_logits = original_add, original_moe, original_router
+        model.fused._attention_streams = original_attention
+    print("Saved Nemotron shared MTP row-exact oracle: 8/3/1 streams, unequal contexts and 10K switch", flush=True)
+
+
 def gemma_prefill_fixture(directory, output):
     import mlx.core as mx
     from tensorfold.families.gemma4.model import load
@@ -1292,6 +1387,7 @@ def main():
     p.add_argument("--gemma-drafter", type=Path)
     p.add_argument("--gemma-prefill", action="store_true")
     p.add_argument("--nemotron-prefill", action="store_true")
+    p.add_argument("--nemotron-shared-head", action="store_true")
     p.add_argument("--flash-prefill", action="store_true")
     p.add_argument("--glm-prefill", action="store_true")
     p.add_argument("--deepseek-prefill", action="store_true")
@@ -1333,6 +1429,9 @@ def main():
         return
     if args.nemotron_prefill:
         nemotron_prefill_fixture(args.model, args.state_directory, args.simd)
+        return
+    if args.nemotron_shared_head:
+        nemotron_shared_head_fixture(args.model, args.state_directory, args.simd)
         return
     if args.gemma_drafter:
         gemma_dflash_fixture(args.model, args.gemma_drafter, args.state_directory)

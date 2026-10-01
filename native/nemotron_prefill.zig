@@ -112,7 +112,7 @@ fn moe(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A) !A {
     const shared = try linear(m, s, base, "shared_experts.down_proj", try relu2(s, try linear(m, s, base, "shared_experts.up_proj", x)));
     return s.binary(c.mlx_add, reduced, shared);
 }
-fn mamba(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A, index: usize, record: *@import("model.zig").Cache) !A {
+fn mamba(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A, index: usize, record: *nemotron.Cache) !A {
     const rows = mx.dim(x, 1);
     const projected = try linear(m, s, base, "in_proj", x);
     const gate = try s.slice(projected, 2, 0, 4096);
@@ -134,7 +134,7 @@ fn mamba(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A, index: usize,
     const normed = try s.reshape(try cp.norm(s, try s.reshape(gated, &.{ 1, rows, 8, 512 }), mx.empty, 1e-5), &.{ 1, rows, 4096 });
     return linear(m, s, base, "out_proj", try s.binary(c.mlx_multiply, try m.weights.field(base, "norm.weight"), normed));
 }
-fn attention(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A, index: usize, record: *@import("model.zig").Cache) !A {
+fn attention(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A, index: usize, record: *nemotron.Cache) !A {
     const rows = mx.dim(x, 1);
     const q = try s.transpose(try s.reshape(try linear(m, s, base, "q_proj", x), &.{ 1, rows, 32, 128 }), &.{ 0, 2, 1, 3 });
     var keys = try s.transpose(try s.reshape(try linear(m, s, base, "k_proj", x), &.{ 1, rows, 2, 128 }), &.{ 0, 2, 1, 3 });
@@ -152,7 +152,7 @@ fn attention(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A, index: us
 pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
     if (tokens.len < 17 or tokens.len > 2048 or tokens.len > 262144 - m.position) return error.ContextLimitExceeded;
     for (tokens) |token| if (token < 0 or token >= nemotron.Model.vocab) return error.InvalidToken;
-    var pass = nemotron.Pass{ .prefilled = true };
+    var pass = nemotron.Pass{ .prefilled = true, .start = m.position, .count = tokens.len };
     errdefer pass.deinit();
     const s = &pass.scope;
     const rows: i32 = @intCast(tokens.len);

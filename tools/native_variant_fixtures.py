@@ -286,6 +286,39 @@ def bonsai_reuse_variants(capture):
     capture.extra = {}
 
 
+def plain_stack_variants(capture):
+    from itertools import product
+    import mlx.nn as nn
+    from tensorfold.families.qwen3_5 import tensor_units
+    from tensorfold.kernels.qwen.dense.v1 import lane_fuse, lane_qmm
+
+    if not tensor_units():
+        return
+    cases = (("zba", (128, 48, 48), False), ("zba", (12, 12, 12), False),
+             ("kv", (64, 64), False), ("gu", (16384, 16384), False),
+             ("zba", (128, 48, 48), True), ("kv", (64, 64), True), ("gu", (16384, 16384), True))
+    for (kind, sizes, wide), group_size in product(cases, (32, 64)):
+        parent, extra = nn.Module(), {}
+        for i, (name, n) in enumerate(zip(lane_fuse.GROUPS[kind], sizes)):
+            linear = nn.QuantizedLinear(1024, n, bias=False, group_size=group_size, bits=4)
+            q, s, b = mx.quantize(mx.random.normal((n, 1024), key=mx.random.key(1817 + i + n)).astype(mx.bfloat16),
+                                 group_size=group_size, bits=4)
+            linear.weight, linear.scales, linear.biases = q, s, b
+            extra.update({f"member{i}_weight": q, f"member{i}_scales": s, f"member{i}_biases": b})
+            setattr(parent, name, linear)
+        lane_qmm.install(parent, wide=wide)
+        group = lane_fuse._build(parent, kind)
+        assert isinstance(group, lane_fuse._Group)
+        assert group.nt == (64 if wide and kind != "zba" else 32)
+        for rows in (1, 16, 17, 32, 33, 48, 64, 65, 128):
+            capture.test = f"plain-stack-{'wide-' if wide else ''}{kind}-g{group_size}-{sizes[0]}-{rows}"
+            x = mx.random.normal((1, rows, 1024), key=mx.random.key(1927 + rows)).astype(mx.bfloat16)
+            capture.extra = {**extra, "source_input": x, "member_count": mx.array([len(sizes)], mx.int32)}
+            mx.eval(lane_qmm.lane_matmul(x, group.weight, group.sbt, tiled=group.tiled, sk=group.sk, nt=group.nt,
+                                        group=group.group))
+    capture.extra = {}
+
+
 def grouped_lane_variants(capture):
     from tensorfold.kernels.qwen.dense.v1 import lane_qmm
     for bits in (2, 3, 5, 6, 8):
@@ -1633,9 +1666,34 @@ def flash_lane_variants(capture):
     capture.extra = {}
 
 
+def flash_row_block_sums(capture):
+    from tensorfold.kernels.qwen.flash_next.v1 import rows
+    rng = np.random.default_rng(61729)
+    # This helper needs none of base.kernel's default QDOT_HEADER; native exports omit it.
+    run = mx.fast.metal_kernel(name="flash_row_block_sums_oracle", source=rows._ROW_BLOCK_SUMS,
+                               header="", input_names=["X"], output_names=["SUMS"])
+    for vpt in (8, 16):
+        for width in (vpt, 32 * vpt, 2560):
+            blocks = width // vpt
+            for count in (1, 3, 8, 33, 65):
+                capture.test = f"flash-row-block-sums-{vpt}-{width}-{count}"
+                values = rng.normal(size=(count, blocks, vpt)) * np.exp2(rng.integers(-20, 21, size=(count, blocks, vpt)))
+                values[..., :3] = (16777216, 1, -16777216)
+                x = mx.array(values.reshape(count, width), mx.bfloat16)
+                ordered = np.asarray(x.astype(mx.float32)).reshape(count, blocks, vpt)
+                expected = np.zeros((count, blocks), np.float32)
+                for i in range(vpt):
+                    np.add(expected, ordered[..., i], out=expected)
+                actual = run(inputs=[x], template=[("K", width), ("VPT", vpt)],
+                             grid=(-(-blocks // 32) * 32, count, 1), threadgroup=(32, 1, 1),
+                             output_shapes=[(count, blocks)], output_dtypes=[mx.float32])[0]
+                assert np.array_equal(np.asarray(actual).view(np.uint32), expected.view(np.uint32)), capture.test
+
+
 def flash_affine_variants(capture):
-    from tensorfold.kernels.qwen.flash_next.v1 import base, rows, hc, experts, embed
+    from tensorfold.kernels.qwen.flash_next.v1 import base, rows, row_tiles, hc, experts, embed
     from tests.test_flash_next_affine import quantized, bf16, same
+    flash_row_block_sums(capture)
     rng = np.random.default_rng(91721)
     from types import SimpleNamespace
     for bits in (2, 3, 5, 6, 8):
@@ -1664,15 +1722,21 @@ def flash_affine_variants(capture):
     try:
         for gen in (13, 15, 17):
             base._generation = lambda: gen
+            rows._hc_mma_ok.clear()
             for fmt in ([(4, 32)] if gen != 17 else [(b, g) for b in (2, 3, 4, 5, 6, 8) for g in (32, 64, 128)]):
                 for n in ((320,) if fmt == (4, 32) else (320, 322, 321)):
                     weight = quantized(rng, (n, 2560), *fmt)
                     x = bf16(rng, (65, 2560))
-                    for count in (1, 2, 3, 16, 17, 32, 33, 65):
+                    for count in (1, 2, 3, 4, 7, 8, 9, 16, 17, 32, 33, 65):
                         capture.test = f"flash-affine-project-{gen}-{fmt}-{n}-{count}"
                         result = rows.qmv_rows(x[:count], weight)
                         one = rows.qmv_rows(x[:1], weight)
                         assert same(result[:1], one)
+                        if fmt != (4, 32):
+                            capture.test += "-matrix"
+                            capture.extra = {"dispatch_output": result}
+                            mx.eval(rows.qmv_rows_mma(x[:count], weight))
+                            capture.extra = {}
             for fmt, up_fmt in ([( (4, 32), (4, 32) )] if gen != 17 else [
                 ((b, g), (b, g)) for b in (2, 3, 4, 5, 6, 8) for g in (32, 64)
             ] + [((5, 128), (6, 64)), ((4, 32), (8, 64))]):
@@ -1683,15 +1747,24 @@ def flash_affine_variants(capture):
                     eps = mx.array([1e-6], mx.float32)
                     down_q = base.QWeights(down.weight, down.scales, down.biases, *fmt)
                     up_q = base.QWeights(up.weight, up.scales, up.biases, *up_fmt)
-                    h, ssp = hc.hc_norm(bf16(rng, (16, 10240)), streams=4)
+                    h, ssp = hc.hc_norm(bf16(rng, (40, 10240)), streams=4)
                     capture.extra = {"down_weight": down.weight, "down_scales": down.scales, "down_biases": down.biases,
                                      "down_format": mx.array(fmt, mx.int32)}
-                    for count in (1, 2, 3, 8, 16):
+                    for count in (1, 2, 3, 7, 8, 9, 16, 17, 32, 40):
                         capture.test = f"flash-affine-hc-{gen}-{fmt}-{up_fmt}-{inject}-{count}"
                         mixed, inj = rows.hc_project(h[:count], ssp[:count], down_q, up_q, scale, eps=eps, streams=4, low=320)
                         mx.eval(mixed)
                         if inject:
                             mx.eval(inj)
+                        if fmt == up_fmt == (4, 32):
+                            capture.test += "-tiles"
+                            capture.extra.update(dispatch_output=mixed, generation=mx.array([gen], mx.int32))
+                            if inject:
+                                capture.extra["dispatch_inject"] = inj[:count]
+                            mx.eval(*row_tiles.hc_tiles(h[:count], ssp[:count], down_q, up_q, scale, eps=eps,
+                                                       streams=4, low=320))
+                            for key in ("dispatch_output", "dispatch_inject", "generation"):
+                                capture.extra.pop(key, None)
                     capture.extra = {}
             formats = [((4, 32), (4, 32))] if gen != 17 else [
                 ((b, g), (8 if b != 8 else 3, 128 if g != 128 else 32))
@@ -1718,6 +1791,7 @@ def flash_affine_variants(capture):
 
 def qwen_stream_fixtures(directory):
     from tensorfold.kernels.qwen.dense.v1 import stream_attention as sa, stream_gdn as sg
+    from tensorfold.kernels.qwen.dense.v1 import lane_fuse, lane_qmm
 
     rng = np.random.default_rng(8107)
     bf = lambda shape: mx.array(rng.normal(0, .1, shape), mx.bfloat16)
@@ -1730,6 +1804,8 @@ def qwen_stream_fixtures(directory):
         ([list(range(-1, 127))], [513]),
         ([list(range(-1, 31))] * 4, [0, 63, 512, 2047]),
         ([[-1, *([0] * 31)], [-1, 0, 1]], [511, 64]),
+        ([[-1]] * 4, [0, 63, 511, 2047]),
+        ([[-1]] * 8, [0, 64, 127, 511, 512, 1023, 2047, 2048]),
     ]
     for index, (parents, starts) in enumerate(cases):
         rows = sum(map(len, parents))
@@ -1752,14 +1828,21 @@ def qwen_stream_fixtures(directory):
         qkv, a, b = bf((1, rows, 10240)), bf((1, rows, 48)), bf((1, rows, 48))
         cw, alog, dt = bf((10240, 4)), bf((48,)), bf((48,))
         cp, tp = sg.ConvPlan(parents, 3), sg.TreePlan(parents)
-        zba = mx.concatenate([mx.zeros((1, rows, 6144), mx.bfloat16), b, a], axis=-1)
+        zba = mx.concatenate([bf((1, rows, 6144)), b, a], axis=-1)
         vals = sg.gdn_pre(qkv, convs, cw, cp, zba, alog, dt, nk=16, nv=48, dk=128, dv=128)
         y = sg.tree(*vals, states, tp)
         firsts = np.cumsum([0, *map(len, parents[:-1])]).tolist()
         commit = sg.CommitPlan(paths, firsts, 3)
         replayed = sg.replay(*vals, states, commit)
         tails = sg.conv_tails(convs, qkv, commit)
-        data.update(qkv=qkv, a=a, b=b, cw=cw, alog=alog, dt=dt, y=y)
+        if all(len(rp) == 1 for rp in parents):
+            step_commit = sg.CommitPlan([[0] for _ in parents], firsts, 3)
+            for st, state in enumerate(sg.replay(*vals, states, step_commit)):
+                data[f"step_state{st}"] = state
+        norm = bf((128,))
+        post = lane_fuse.gdn_post(y, zba, norm, 1e-6)
+        data.update(qkv=qkv, a=a, b=b, cw=cw, alog=alog, dt=dt, y=y,
+                    zba=zba, norm=norm, post=post, post_sums=lane_qmm._xs_cache[id(post)][1])
         for j, value in enumerate(vals):
             data[f"pre{j}"] = value
         for st, (conv, state, output, tail) in enumerate(zip(convs, states, replayed, tails)):
@@ -1971,6 +2054,7 @@ def main():
                 bonsai_reuse_variants(capture)
             if args.tensor_quantization:
                 grouped_lane_variants(capture)
+                plain_stack_variants(capture)
         finally:
             mx.fast.metal_kernel = capture.original
         if not capture.cases:
@@ -1991,6 +2075,7 @@ def main():
         if code:
             raise SystemExit(code)
         extra_variants(capture)
+        plain_stack_variants(capture)
         retired_glue_variants(capture)
         flash_variants(capture)
         nemotron_variants(capture)

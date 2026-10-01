@@ -176,7 +176,8 @@ The table entries are arguments to `.zig-toolchain/zig build`:
 | Gemma text/cache parity | `test-gemma-model -Doptimize=safe -j1` | Installed Gemma checkpoint |
 | Request state and interleaved generation | `test-request-state test-session-rounds test-session-images -Doptimize=safe -j1` | Synthetic ownership for all backends; Qwen/Gemma/Nemotron checkpoints and Qwen image inputs |
 | Shared Qwen/Bonsai backend | `test-qwen-stream-kernels test-qwen-shared-rounds -Doptimize=safe -j1` | Upstream kernel/layout oracles and both installed checkpoints; exact hidden/logits/taps and caches, 64 streams/128 rows, tensor and forced SIMD paths. HTTP coordination is separate; physical M1–M4 remains unverified |
-| Shared request coordination | `test-session-shared test-session-shared-neural test-server-rounds test-server-neural-multimodal -Doptimize=safe -j1` | Qwen/Bonsai exact serial output, seeded sampling, row caps, fairness, cancellation isolation, request-local DFlash caches and image/text HTTP rounds |
+| Shared family backends and heads | `test-family-shared-rounds test-family-shared-heads test-family-shared-simd test-nemotron-shared-head test-qwen-shared-drafter -Doptimize=safe -j1` | Gemma/Nemotron/Flash target and MTP caches, ragged commits, Qwen batched DFlash; independent Python intermediate-array checks for Qwen DFlash and Nemotron MTP; forced SIMD coverage for Nemotron/Flash (physical M1–M4 remains unverified) |
+| Shared request coordination | `test-session-shared test-session-shared-neural test-server-rounds test-server-neural-multimodal -Doptimize=safe -j1` | All five fitting checkpoints: exact serial output, seeded sampling, row caps, fairness and cancellation isolation; Qwen DFlash and Nemotron/Flash MTP request caches; Qwen image/text HTTP rounds |
 | Prefix cache policy and restoration | `test-prompt-cache test-session-rounds -Doptimize=safe -j1` | Python policy oracle; exact Qwen/Gemma/Nemotron continuation after prefix reuse and eviction |
 | Adaptive prefill boundaries and markers | `test-prefill-plan test-chat -Doptimize=safe -j1` | Python plan oracle and all seven local tokenizers; no model weights loaded |
 | HTTP prefix reuse and eviction | `test-server-prefixes -Doptimize=safe -j1` | Local Qwen; JSON/SSE parity, cancellation, LRU eviction and disabled caching |
@@ -239,12 +240,14 @@ store keeps up to 1,024 responses with a 256 MiB limit on serialized data.
 `store: false` disables retention.
 JSON/schema output constraints are refused until grammar support is implemented.
 `--batch-streams N` controls active requests (default `4`, range `1`–`8`). One
-GPU worker interleaves prefill chunks and runs Qwen/Bonsai decode requests through
-shared lane forwards with independent cache commits. `--batch-rows N` limits
-shared rows (default `128`, range `1`–`128`); pending rows take priority and
+GPU worker interleaves prefill chunks and runs Qwen, Bonsai, Gemma, Nemotron and
+Flash decode requests through shared lane forwards with independent cache commits.
+`--batch-rows N` limits shared rows (default `128`, range `1`–`128`, capped at `64`
+for Gemma/Flash); pending rows take priority and
 row-limited requests rotate by their last served round. Startup measures shared
 forward/commit costs and peak workspace; draft allocation uses interpolated costs,
-proposal probabilities and observed host overhead. Other families still advance
+proposal probabilities and observed host overhead. Qwen DFlash and Nemotron/Flash
+MTP proposals share projections across requests. GLM and DeepSeek still advance
 individually. Up to eight further requests can queue. `/health` exposes shared
 round/row totals and the maximum streams sharing a forward.
 After `.zig-toolchain/zig build install`, `zig-out/bin/native-server-checks --benchmark BEFORE
@@ -254,7 +257,9 @@ requests, exact seeded SSE output, first-token latency and completion throughput
 Add `--drafter PATH` (or `--drafter -` for a built-in head) to measure both draft
 modes. First use `--verify-python .venv/bin/tensorfold AFTER MODEL REPORT` for
 Python/native output checks, then `--compare-python` with the same arguments for
-timings with drafting disabled. Both executables receive the
+timings. The optional drafter argument matches precision and maximum budget
+(Qwen: 4-bit/15 nodes; Gemma: 8-bit/15 nodes; built-in MTP: 3 drafts), while each
+implementation retains its adaptive policy. Both executables receive the
 maximum Metal working-set allowance. Submit performance runs through Latch with `measurement: true`; throughput
 includes prefill and HTTP, and excludes startup.
 Serving defaults to Metal's recommended working set, capped by physical RAM,

@@ -25,6 +25,7 @@ pub fn check(io: std.Io, path: []const u8) !void {
         try mx.init();
         defer mx.shutdown();
         try arithmetic(mx.stream);
+        try @import("kernel_config_checks.zig").check();
     }
     const bytes = try std.json.Stringify.valueAlloc(mx.allocator, .{
         .mlx_version = @import("native_runtime").mlx_version,

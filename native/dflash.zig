@@ -281,7 +281,7 @@ pub const Draft = struct {
         };
         const next = try mx.retain(try s.contiguous(value));
         errdefer mx.free(next);
-        try mx.eval(next);
+        try mx.evalMany(&.{next}, true);
         mx.free(d.pending);
         d.pending = next;
         d.projected_position = first;
@@ -416,7 +416,32 @@ pub fn check(io: std.Io, dir: []const u8, output: []const u8, case: usize) !void
     d.reset();
     try std.testing.expectEqual(@as(i32, 0), d.position);
     for (d.cache) |cache| try std.testing.expect(cache.keys.ctx == null and cache.values.ctx == null);
-    std.debug.print("PASS: DFlash context caches, repeated proposals and reset.\n", .{});
+    const source = try inputs.get("taps-0");
+    {
+        var temporary = mx.Scope{};
+        defer temporary.deinit();
+        try d.absorb(try temporary.slice(source, 0, 0, 1));
+    }
+    var saved = mx.Scope{};
+    defer saved.deinit();
+    const pending_handle = d.pending.ctx;
+    const pending = try saved.own(try mx.retain(d.pending));
+    const pending_position = d.position;
+    const pending_first = d.projected_position;
+    try std.testing.expectError(error.InvalidDraftContext, d.absorb(try saved.ints(&.{1})));
+    try std.testing.expectEqual(pending_position, d.position);
+    try std.testing.expectEqual(pending_first, d.projected_position);
+    try std.testing.expectEqual(pending_handle, d.pending.ctx);
+    d.reset();
+    try std.testing.expect(d.pending.ctx == null);
+    var same = c.mlx_array_new();
+    const rc = c.mlx_array_equal(&same, pending, try saved.slice(source, 0, 0, 1), false, mx.stream);
+    same = try saved.result(rc, same);
+    try mx.eval(same);
+    var equal: bool = false;
+    try mx.check(c.mlx_array_item_bool(&equal, same));
+    try std.testing.expect(equal);
+    std.debug.print("PASS: DFlash context caches, repeated proposals, pending ownership and reset.\n", .{});
 }
 fn save(s: *mx.Scope, dir: []const u8, name: []const u8, value: A) !void {
     const path = try std.fmt.allocPrintSentinel(mx.allocator, "{s}/{s}.npy", .{ dir, name }, 0);

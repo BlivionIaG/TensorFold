@@ -44,6 +44,20 @@ pub fn main(init: std.process.Init) !void {
     if (args.len == 5 and std.mem.eql(u8, args[1], "check-session-neural-images")) return @import("session_checks.zig").checkNeuralImages(io, args[2], args[3], args[4]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-session-rounds")) return @import("session_checks.zig").check(io, args[2]);
     if ((args.len == 3 or args.len == 4) and std.mem.eql(u8, args[1], "check-session-shared")) return @import("session_checks.zig").checkShared(io, args[2], if (args.len == 4) args[3] else null);
+    if (args.len >= 3 and std.mem.eql(u8, args[1], "check-family-shared-rounds")) {
+        var drafts = false;
+        var simd = false;
+        for (args[3..]) |flag| {
+            if (std.mem.eql(u8, flag, "--mtp") and !drafts) {
+                drafts = true;
+            } else if (std.mem.eql(u8, flag, "--metal-simd") and !simd) {
+                simd = true;
+            } else return error.InvalidSharedModelCheckOptions;
+        }
+        return @import("session_checks.zig").checkSharedModel(io, args[2], drafts, simd);
+    }
+    if (args.len == 4 and std.mem.eql(u8, args[1], "check-nemotron-shared-head")) return @import("nemotron_head_checks.zig").checkOracle(io, args[2], args[3]);
+    if (args.len == 6 and std.mem.eql(u8, args[1], "check-qwen-dflash-streams")) return @import("session_checks.zig").checkDFlashStreams(io, args[2], args[3], args[4], args[5]);
     if (args.len == 4 and std.mem.eql(u8, args[1], "check-session-neural")) return @import("session_checks.zig").checkNeural(io, args[2], args[3]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-memory-budget")) return @import("memory_budget.zig").check(io, args[2]);
     if (args.len == 3 and std.mem.eql(u8, args[1], "check-prompt-cache")) return @import("prompt_cache.zig").check(io, args[2]);
@@ -126,7 +140,7 @@ pub fn main(init: std.process.Init) !void {
         defer cfg.deinit();
         if (cfg.value == .object) if (cfg.value.object.get("model_type")) |kind| {
             if (kind == .string and std.mem.eql(u8, kind.string, "nemotron_h")) return @import("family_runtime.zig").run(@import("nemotron.zig").Model, init, args);
-            if (kind == .string and std.mem.eql(u8, kind.string, "qwen4_exp")) return @import("family_runtime.zig").run(@import("flash.zig").Model, init, args);
+            if (kind == .string and @import("config.zig").isFlash(kind.string)) return @import("family_runtime.zig").run(@import("flash.zig").Model, init, args);
             if (kind == .string and std.mem.eql(u8, kind.string, "gemma4")) return @import("serial_runtime.zig").run(@import("gemma.zig").Model, init, args);
             if (kind == .string and std.mem.eql(u8, kind.string, "glm5_next")) return @import("serial_runtime.zig").run(@import("glm.zig").Model, init, args);
             if (kind == .string and std.mem.eql(u8, kind.string, "deepseek_v4")) return @import("serial_runtime.zig").run(@import("deepseek.zig").Model, init, args);
@@ -477,11 +491,13 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test {
+    _ = @import("server.zig");
     _ = @import("decode_round.zig");
     _ = @import("shared_round.zig");
     _ = @import("draft_allocation.zig");
     _ = @import("background.zig");
     _ = @import("memory_budget.zig");
+    _ = @import("memory_runtime.zig");
     _ = @import("prompt_cache.zig");
     _ = @import("prefill_plan.zig");
     _ = @import("draft_capture.zig");

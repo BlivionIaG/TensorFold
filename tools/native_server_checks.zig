@@ -181,12 +181,17 @@ const Output = struct {
     }
 
     fn compare(expected: Output, actual: Output) !void {
+        return expected.compareWithCache(actual, false);
+    }
+
+    fn compareWithCache(expected: Output, actual: Output, comptime strict_cache: bool) !void {
         if (!std.mem.eql(u8, expected.content, actual.content) or !std.mem.eql(u8, expected.reasoning, actual.reasoning) or !std.mem.eql(u8, expected.finish, actual.finish)) return error.ConcurrentOutputMismatch;
         const lhs = try std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, expected.usage orelse return error.MissingUsage, .{});
         defer lhs.deinit();
         const rhs = try std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, actual.usage orelse return error.MissingUsage, .{});
         defer rhs.deinit();
         try @import("native_http_checks.zig").compareUsage(lhs.value, rhs.value);
+        if (strict_cache and lhs.value.object.get("prompt_tokens_details").?.object.get("cached_tokens").?.integer != rhs.value.object.get("prompt_tokens_details").?.object.get("cached_tokens").?.integer) return error.CachedUsageMismatch;
     }
 };
 
@@ -308,6 +313,23 @@ const Scenario = struct {
         const encoded = try a.alloc(u8, std.base64.standard.Encoder.calcSize(pixels.len));
         const url = try std.fmt.allocPrint(a, "data:image/png;base64,{s}", .{std.base64.standard.Encoder.encode(encoded, pixels)});
         const image = try std.json.Stringify.valueAlloc(a, .{ .messages = &.{.{ .role = "user", .content = .{ .{ .type = "text", .text = "Describe this image." }, .{ .type = "image_url", .image_url = .{ .url = url, .detail = "low" } } } }}, .reasoning_effort = "none", .max_tokens = @as(usize, 96), .ignore_eos = true, .temperature = @as(f64, 0.7), .seed = @as(usize, 123) }, .{});
+        if (s.background_lanes > 1) {
+            const system = try a.alloc(u8, 16384 * 5);
+            for (0..16384) |i| @memcpy(system[i * 5 ..][0..5], "word ");
+            const body = try std.json.Stringify.valueAlloc(a, .{ .messages = &.{ .{ .role = "system", .content = system }, .{ .role = "user", .content = "Name three colors." } }, .priority = "background", .reasoning_effort = "none", .max_tokens = @as(usize, 4096), .ignore_eos = true, .stream = true }, .{});
+            const count = (try health(a, io, port)).object.get("background_preemptions").?.integer;
+            const filling = try postRoute(io, port, "/v1/chat/completions", body);
+            var filling_open = true;
+            defer if (filling_open) filling.close(io);
+            try firstEvent(io, filling);
+            const foreground = try post(io, port, "{\"prompt\":\"Hello\",\"max_tokens\":1,\"temperature\":0}");
+            defer foreground.close(io);
+            _ = try Output.parse(a, try readAll(a, io, foreground), false);
+            try std.testing.expectEqual(count, (try health(a, io, port)).object.get("background_preemptions").?.integer);
+            filling.close(io);
+            filling_open = false;
+            _ = try s.waitForCounts(port, 0, 0);
+        }
         for ([_][]const u8{ raw, chat, image }, 0..) |source, kind| {
             const route = if (kind == 0) "/v1/completions" else "/v1/chat/completions";
             var request = try std.json.parseFromSlice(std.json.Value, a, source, .{});
@@ -932,7 +954,7 @@ const Scenario = struct {
                 if (std.mem.startsWith(u8, line, "[tensorfold] serving ")) break python_port;
                 continue;
             }
-            if (std.mem.startsWith(u8, line, "Native memory admission:") or std.mem.startsWith(u8, line, "Native memory ceiling:")) std.debug.print("{s}\n", .{line});
+            if (std.mem.startsWith(u8, line, "Native memory admission:") or std.mem.startsWith(u8, line, "Native memory ceiling:") or std.mem.startsWith(u8, line, "Qwen calibrated target forward costs:")) std.debug.print("{s}\n", .{line});
             if (std.mem.indexOf(u8, line, prefix)) |start| {
                 const value = line[start + prefix.len ..];
                 const end = std.mem.indexOfScalar(u8, value, ' ') orelse return error.InvalidListenAddress;
@@ -1132,6 +1154,8 @@ const Benchmark = struct {
         latency_ms: []const f64,
         shared_rounds: i64,
         max_shared_streams: i64,
+        inference_before: std.json.Value,
+        inference_after: std.json.Value,
         memory: std.json.Value,
     };
     expected: [8]?Output = @splat(null),
@@ -1144,9 +1168,105 @@ const Benchmark = struct {
     mismatch_path: []const u8 = "",
     verify_only: bool = false,
 
+    const Performance = struct {
+        const Cell = struct {
+            streams: usize,
+            draft: bool,
+            python_samples: usize,
+            native_samples: usize,
+            python_median_tokens_per_second: ?f64,
+            native_median_tokens_per_second: ?f64,
+            passed: bool,
+        };
+        required_samples: usize = 6,
+        criterion: []const u8 = "Native median completion tokens/s >= Python in every concurrency/draft cell; six samples per implementation",
+        passed: bool,
+        cells: []const Cell,
+    };
+
+    const PythonReference = struct {
+        const Cell = struct {
+            streams: usize,
+            draft: bool,
+            python_samples: usize,
+            python_median_tokens_per_second: ?f64,
+            valid: bool,
+        };
+        required_samples: usize = 6,
+        valid: bool,
+        cells: []const Cell,
+    };
+
+    fn samples(b: *const Benchmark, variant: []const u8, streams: usize, draft: bool) struct { count: usize, median: ?f64 } {
+        var values: [6]f64 = undefined;
+        var count: usize = 0;
+        var valid = true;
+        for (b.records.items) |record| {
+            if (!std.mem.eql(u8, record.variant, variant) or record.streams != streams or record.draft != draft) continue;
+            valid = valid and std.math.isFinite(record.tokens_per_second) and record.tokens_per_second > 0;
+            if (count < values.len) values[count] = record.tokens_per_second;
+            count += 1;
+        }
+        if (count != values.len or !valid) return .{ .count = count, .median = null };
+        std.mem.sort(f64, &values, {}, std.sort.asc(f64));
+        return .{ .count = count, .median = (values[2] + values[3]) / 2 };
+    }
+
+    fn performance(b: *const Benchmark, a: std.mem.Allocator) !Performance {
+        const cells = try a.alloc(Performance.Cell, b.concurrency.len * @as(usize, if (b.drafter) 2 else 1));
+        var passed = true;
+        for (cells, 0..) |*cell, i| {
+            const streams = b.concurrency[i % b.concurrency.len];
+            const draft = i >= b.concurrency.len;
+            const python = b.samples("python", streams, draft);
+            const native = b.samples("native", streams, draft);
+            const at_least_python = python.median != null and native.median != null and native.median.? >= python.median.?;
+            cell.* = .{ .streams = streams, .draft = draft, .python_samples = python.count, .native_samples = native.count, .python_median_tokens_per_second = python.median, .native_median_tokens_per_second = native.median, .passed = at_least_python };
+            passed = passed and at_least_python;
+        }
+        return .{ .passed = passed, .cells = cells };
+    }
+
+    fn pythonReference(b: *const Benchmark, a: std.mem.Allocator) !PythonReference {
+        const cells = try a.alloc(PythonReference.Cell, b.concurrency.len * @as(usize, if (b.drafter) 2 else 1));
+        var valid = b.records.items.len == cells.len * 6;
+        for (cells, 0..) |*cell, i| {
+            const streams = b.concurrency[i % b.concurrency.len];
+            const draft = i >= b.concurrency.len;
+            const python = b.samples("python", streams, draft);
+            var cell_valid = python.median != null and std.math.isFinite(python.median.?);
+            var seen: u6 = 0;
+            for (b.records.items) |record| {
+                if (!std.mem.eql(u8, record.variant, "python") or record.streams != streams or record.draft != draft) continue;
+                if ((record.phase != 0 and record.phase != 3) or record.repetition >= 3) {
+                    cell_valid = false;
+                    continue;
+                }
+                const slot: u3 = @intCast((if (record.phase == 0) @as(usize, 0) else 3) + record.repetition);
+                const mask = @as(u6, 1) << slot;
+                cell_valid = cell_valid and seen & mask == 0;
+                seen |= mask;
+                cell_valid = cell_valid and record.tokens == 32 * streams and std.math.isFinite(record.seconds) and record.seconds > 0;
+                cell_valid = cell_valid and record.tokens_per_second == @as(f64, @floatFromInt(record.tokens)) / record.seconds;
+            }
+            cell_valid = cell_valid and seen == 0b111111;
+            cell.* = .{ .streams = streams, .draft = draft, .python_samples = python.count, .python_median_tokens_per_second = if (cell_valid) python.median else null, .valid = cell_valid };
+            valid = valid and cell_valid;
+        }
+        return .{ .valid = valid, .cells = cells };
+    }
+
+    fn validateOutput(actual: Output) !void {
+        const usage = try std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, actual.usage orelse return error.MissingUsage, .{});
+        defer usage.deinit();
+        try @import("native_http_checks.zig").compareUsage(usage.value, usage.value);
+        if (usage.value.object.get("completion_tokens").?.integer != 32) return error.InvalidBenchmarkCompletionCount;
+    }
+
     fn compare(b: *Benchmark, s: *Scenario, i: usize, actual: Output) !void {
+        try validateOutput(actual);
         const reference = b.expected[i].?;
-        reference.compare(actual) catch |err| {
+        reference.compareWithCache(actual, true) catch |err| {
             const a = s.init.arena.allocator();
             const bytes = try std.json.Stringify.valueAlloc(a, .{ .variant = b.variant, .phase = b.phase, .request = try body(a, i, false), .expected = reference, .actual = actual, .failure = @errorName(err) }, .{ .whitespace = .indent_2 });
             try std.Io.Dir.cwd().writeFile(s.init.io, .{ .sub_path = b.mismatch_path, .data = bytes });
@@ -1168,11 +1288,20 @@ const Benchmark = struct {
             const socket = try post(io, port, try body(a, i, false));
             defer socket.close(io);
             const actual = try Output.parse(a, try readAll(a, io, socket), true);
-            if (expected.* != null) try b.compare(s, i, actual) else expected.* = actual;
+            if (expected.* != null) try b.compare(s, i, actual) else {
+                try validateOutput(actual);
+                expected.* = actual;
+            }
         }
         for (0..if (b.drafter) @as(usize, 2) else 1) |mode| {
+            if (mode == 1) for (0..b.expected.len) |i| {
+                const socket = try post(io, port, try body(a, i, true));
+                defer socket.close(io);
+                try b.compare(s, i, try Output.parse(a, try readAll(a, io, socket), true));
+            };
             for (b.concurrency) |count| {
                 for (0..if (b.verify_only) @as(usize, 1) else 3) |repetition| {
+                    const before = if (b.verify_only) std.json.Value.null else (try health(a, io, port)).object.get("inference") orelse std.json.Value.null;
                     var replies: [8]TimedResponse = undefined;
                     var opened: usize = 0;
                     defer for (replies[0..opened]) |r| {
@@ -1210,7 +1339,7 @@ const Benchmark = struct {
                     }
                     const status = try health(a, io, port);
                     const stats = status.object.get("inference") orelse std.json.Value{ .object = .empty };
-                    try b.records.append(a, .{ .variant = b.variant, .phase = b.phase, .repetition = repetition, .streams = count, .draft = mode == 1, .tokens = total, .seconds = seconds, .tokens_per_second = @as(f64, @floatFromInt(total)) / seconds, .first_token_ms = first, .latency_ms = latency, .shared_rounds = if (stats.object.get("shared_rounds")) |v| v.integer else 0, .max_shared_streams = if (stats.object.get("max_shared_streams")) |v| v.integer else 0, .memory = status.object.get("memory").? });
+                    try b.records.append(a, .{ .variant = b.variant, .phase = b.phase, .repetition = repetition, .streams = count, .draft = mode == 1, .tokens = total, .seconds = seconds, .tokens_per_second = @as(f64, @floatFromInt(total)) / seconds, .first_token_ms = first, .latency_ms = latency, .shared_rounds = if (stats.object.get("shared_rounds")) |v| v.integer else 0, .max_shared_streams = if (stats.object.get("max_shared_streams")) |v| v.integer else 0, .inference_before = before, .inference_after = stats, .memory = status.object.get("memory").? });
                     std.debug.print("BENCH {s} phase={d} streams={d} draft={any} rep={d}: {d:.2} completion tok/s, {d:.3}s, exact output\n", .{ b.variant, b.phase, count, mode == 1, repetition, @as(f64, @floatFromInt(total)) / seconds, seconds });
                 }
             }
@@ -1229,14 +1358,19 @@ fn benchmark(init: std.process.Init, args: []const []const u8) !void {
     if (args.len == 8 and !std.mem.eql(u8, args[6], "--drafter")) return error.InvalidBenchmarkArguments;
     const a = init.arena.allocator();
     const verify_only = std.mem.eql(u8, args[1], "--verify-python");
-    const python = verify_only or std.mem.eql(u8, args[1], "--compare-python");
+    const python_only = std.mem.eql(u8, args[1], "--benchmark-python");
+    if (python_only and !std.mem.eql(u8, args[2], args[3])) return error.InvalidBenchmarkArguments;
+    const python = python_only or verify_only or std.mem.eql(u8, args[1], "--compare-python");
     const repeat_native = !python and std.mem.eql(u8, args[2], args[3]);
-    if (python and args.len == 8) return error.PythonDraftBudgetNotConfigurable;
     const config_path = try std.fs.path.join(a, &.{ args[4], "config.json" });
     const config_bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, config_path, a, .limited(1024 * 1024));
     const config = (try std.json.parseFromSlice(std.json.Value, a, config_bytes, .{})).value;
     const kind = config.object.get("model_type").?.string;
-    var bench = Benchmark{ .drafter = args.len == 8, .expect_sharing = std.mem.startsWith(u8, kind, "qwen3") };
+    const external_drafter = args.len == 8 and !std.mem.eql(u8, args[7], "-");
+    const gemma = std.mem.startsWith(u8, kind, "gemma4");
+    const draft_budget: usize = if (args.len != 8) 0 else if (external_drafter) 15 else 3;
+    const draft_bits: usize = if (external_drafter) (if (gemma) 8 else 4) else 0;
+    var bench = Benchmark{ .drafter = args.len == 8, .expect_sharing = std.mem.startsWith(u8, kind, "qwen3") or std.mem.startsWith(u8, kind, "qwen4") or std.mem.startsWith(u8, kind, "gemma4") or std.mem.eql(u8, kind, "nemotron_h") };
     bench.verify_only = verify_only;
     bench.mismatch_path = try std.fmt.allocPrint(a, "{s}.mismatch.json", .{args[5]});
     var environment = try init.environ_map.clone(a);
@@ -1248,6 +1382,7 @@ fn benchmark(init: std.process.Init, args: []const []const u8) !void {
     try environment.put("TENSORFOLD_MEMORY_LIMIT_GB", try std.fmt.allocPrint(a, "{d}", .{ram / (1024 * 1024 * 1024)}));
     const order = [_]usize{ 2, 3, 3, 2 };
     for (order[0..if (verify_only) @as(usize, 2) else 4], 0..) |binary, phase| {
+        if (python_only and binary != 2) continue;
         bench.phase = phase;
         bench.variant = if (repeat_native) "native" else if (binary == 2) (if (python) "python" else "baseline") else "native";
         const is_python = python and binary == 2;
@@ -1264,9 +1399,16 @@ fn benchmark(init: std.process.Init, args: []const []const u8) !void {
             if (std.mem.indexOf(u8, args[4], "Flash-Next") != null) try argv.append(a, "--ple-on-ssd");
         }
         if (bench.drafter) {
-            if (!std.mem.eql(u8, args[7], "-")) try argv.appendSlice(a, &.{ "--drafter", args[7] });
-            try argv.appendSlice(a, &.{ "--max-draft", "3" });
-        } else try argv.append(a, "--no-drafts");
+            if (external_drafter) {
+                try argv.appendSlice(a, &.{ "--drafter", args[7], "--drafter-bits", try std.fmt.allocPrint(a, "{d}", .{draft_bits}) });
+            } else if (is_python) {
+                try argv.appendSlice(a, &.{ "--drafter", "none" });
+            }
+            if (!is_python or !external_drafter) try argv.appendSlice(a, &.{ if (is_python) "--mtp-drafts" else "--max-draft", try std.fmt.allocPrint(a, "{d}", .{draft_budget}) });
+        } else {
+            try argv.append(a, "--no-drafts");
+            if (is_python) try argv.appendSlice(a, &.{ "--mtp-drafts", "0" });
+        }
         var scenario = Scenario{ .init = init, .idle = false, .benchmark = &bench, .python_port = python_port, .child = try std.process.spawn(init.io, .{ .argv = argv.items, .environ_map = &environment, .stdout = if (is_python) .pipe else .inherit, .stderr = if (is_python) .inherit else .pipe }) };
         defer if (scenario.child.id) |id| {
             std.posix.kill(id, .KILL) catch {};
@@ -1274,13 +1416,168 @@ fn benchmark(init: std.process.Init, args: []const []const u8) !void {
         };
         try scenario.run();
     }
-    const bytes = try std.json.Stringify.valueAlloc(a, .{ .model = args[4], .baseline = args[2], .candidate = args[3], .comparison = if (python) "python_vs_native" else if (repeat_native) "native_repeatability" else "before_after", .correctness_only = verify_only, .outputs = bench.expected, .max_batch_size = 8, .memory_limit_gib = ram / (1024 * 1024 * 1024), .draft_budget = if (bench.drafter) @as(usize, 3) else 0, .method = if (verify_only) "8 isolated references; exact output/usage at 1/4/8 requests; drafting disabled" else "ABBA; 8 isolated warmups per process; 3 repetitions; identical seeded mixed greedy/sampled SSE requests; 32 completion tokens per request; maximum Metal working set; prompt caching disabled; startup excluded; throughput includes prefill and HTTP", .records = bench.records.items }, .{ .whitespace = .indent_2 });
+    const performance = if (python and !verify_only and !python_only) try bench.performance(a) else null;
+    const python_reference = if (python_only) try bench.pythonReference(a) else null;
+    const bytes = try std.json.Stringify.valueAlloc(a, .{ .model = args[4], .baseline = args[2], .candidate = if (python_only) @as(?[]const u8, null) else args[3], .comparison = if (python_only) "python_reference" else if (python) "python_vs_native" else if (repeat_native) "native_repeatability" else "before_after", .correctness_only = verify_only, .outputs = bench.expected, .max_batch_size = 8, .memory_limit_gib = ram / (1024 * 1024 * 1024), .draft_budget = draft_budget, .drafter = if (bench.drafter) args[7] else "none", .drafter_bits = draft_bits, .draft_policy = if (python_only) "Python adaptive allocation and proposal policies; unchanged checkpoint, quantization and maximum draft budget" else if (bench.drafter and python) "Matched checkpoint, quantization and maximum draft budget; implementations retain their own adaptive allocation and proposal policies" else "Same native draft settings", .method = if (python_only) "Two fresh Python processes at phases 0 and 3; 8 isolated warmups per process; 3 repetitions; identical seeded mixed greedy/sampled SSE requests; 32 completion tokens per request; maximum Metal working set; prompt caching disabled; startup excluded; throughput includes prefill and HTTP" else if (verify_only) "8 isolated references; exact output/usage at 1/4/8 requests" else "ABBA; 8 isolated warmups per process; 3 repetitions; identical seeded mixed greedy/sampled SSE requests; 32 completion tokens per request; maximum Metal working set; prompt caching disabled; startup excluded; throughput includes prefill and HTTP", .performance = performance, .python_reference = python_reference, .records = bench.records.items }, .{ .whitespace = .indent_2 });
     try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[5], .data = bytes });
+    if (python_reference) |result| {
+        for (result.cells) |cell| std.debug.print("{s}: streams={d} draft={any}: Python {any} median completion tok/s ({d} samples)\n", .{ if (cell.valid) "VALID" else "INVALID", cell.streams, cell.draft, cell.python_median_tokens_per_second, cell.python_samples });
+        if (!result.valid) return error.InvalidPythonReference;
+    }
+    if (performance) |result| {
+        for (result.cells) |cell| std.debug.print("{s}: streams={d} draft={any}: native {any}, Python {any} median completion tok/s ({d}/{d} samples)\n", .{ if (cell.passed) "PASS" else "FAIL", cell.streams, cell.draft, cell.native_median_tokens_per_second, cell.python_median_tokens_per_second, cell.native_samples, cell.python_samples });
+        if (!result.passed) return error.NativeSlowerThanPython;
+    }
+}
+
+test "benchmark responses require exact cached usage and 32 completion tokens" {
+    const expected = Output{ .content = "response", .reasoning = "", .finish = "length", .usage = "{\"prompt_tokens\":4,\"completion_tokens\":32,\"total_tokens\":36,\"prompt_tokens_details\":{\"cached_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0}}" };
+    try Benchmark.validateOutput(expected);
+    try expected.compareWithCache(expected, true);
+    var actual = expected;
+    actual.usage = "{\"prompt_tokens\":4,\"completion_tokens\":32,\"total_tokens\":36,\"prompt_tokens_details\":{\"cached_tokens\":1},\"completion_tokens_details\":{\"reasoning_tokens\":0}}";
+    try std.testing.expectError(error.CachedUsageMismatch, expected.compareWithCache(actual, true));
+    try expected.compare(actual);
+    actual.usage = "{\"prompt_tokens\":4,\"completion_tokens\":31,\"total_tokens\":35,\"prompt_tokens_details\":{\"cached_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0}}";
+    try std.testing.expectError(error.InvalidBenchmarkCompletionCount, Benchmark.validateOutput(actual));
+    actual.usage = "{\"prompt_tokens\":4,\"completion_tokens\":33,\"total_tokens\":37,\"prompt_tokens_details\":{\"cached_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0}}";
+    try std.testing.expectError(error.InvalidBenchmarkCompletionCount, Benchmark.validateOutput(actual));
+    actual.usage = "{\"prompt_tokens\":4,\"completion_tokens\":32,\"total_tokens\":35,\"prompt_tokens_details\":{\"cached_tokens\":0},\"completion_tokens_details\":{\"reasoning_tokens\":0}}";
+    try std.testing.expectError(error.InvalidUsage, Benchmark.validateOutput(actual));
+    actual.usage = null;
+    try std.testing.expectError(error.MissingUsage, Benchmark.validateOutput(actual));
+}
+
+test "Python performance gate uses every concurrency and draft median" {
+    const a = std.testing.allocator;
+    var b = Benchmark{ .drafter = true };
+    defer b.records.deinit(a);
+    const rates = [_]f64{ 1000, 101, 1, 103, 100, 102 };
+    for ([_][]const u8{ "python", "native" }) |variant| {
+        for ([_]bool{ false, true }) |draft| {
+            for (b.concurrency) |streams| {
+                for (rates, 0..) |rate_value, i| try b.records.append(a, .{
+                    .variant = variant,
+                    .phase = i / 3,
+                    .repetition = i % 3,
+                    .streams = streams,
+                    .draft = draft,
+                    .tokens = 32 * streams,
+                    .seconds = @as(f64, @floatFromInt(32 * streams)) / rate_value,
+                    .tokens_per_second = rate_value,
+                    .first_token_ms = &.{},
+                    .latency_ms = &.{},
+                    .shared_rounds = 0,
+                    .max_shared_streams = 0,
+                    .inference_before = .null,
+                    .inference_after = .null,
+                    .memory = .null,
+                });
+            }
+        }
+    }
+    {
+        const result = try b.performance(a);
+        defer a.free(result.cells);
+        try std.testing.expect(result.passed);
+        try std.testing.expectEqual(6, result.cells.len);
+        for (result.cells) |cell| {
+            try std.testing.expectEqual(@as(?f64, 101.5), cell.native_median_tokens_per_second);
+            try std.testing.expectEqual(@as(?f64, 101.5), cell.python_median_tokens_per_second);
+        }
+    }
+    b.records.items[b.records.items.len - 1].tokens_per_second = 99;
+    {
+        const result = try b.performance(a);
+        defer a.free(result.cells);
+        try std.testing.expect(!result.passed);
+        for (result.cells[0..5]) |cell| try std.testing.expect(cell.passed);
+        try std.testing.expect(!result.cells[5].passed);
+        try std.testing.expectEqual(@as(?f64, 100.5), result.cells[5].native_median_tokens_per_second);
+    }
+    b.records.items.len -= 1;
+    const incomplete = try b.performance(a);
+    defer a.free(incomplete.cells);
+    try std.testing.expect(!incomplete.passed);
+    try std.testing.expectEqual(5, incomplete.cells[5].native_samples);
+    try std.testing.expectEqual(null, incomplete.cells[5].native_median_tokens_per_second);
+}
+
+test "Python reference requires six exact finite phase samples in every cell" {
+    const a = std.testing.allocator;
+    var b = Benchmark{ .drafter = true };
+    defer b.records.deinit(a);
+    for ([_]bool{ false, true }) |draft| {
+        for (b.concurrency) |streams| {
+            for ([_]f64{ 64, 32, 128, 8, 256, 16 }, 0..) |rate, i| try b.records.append(a, .{
+                .variant = "python",
+                .phase = if (i < 3) 0 else 3,
+                .repetition = i % 3,
+                .streams = streams,
+                .draft = draft,
+                .tokens = 32 * streams,
+                .seconds = @as(f64, @floatFromInt(32 * streams)) / rate,
+                .tokens_per_second = rate,
+                .first_token_ms = &.{},
+                .latency_ms = &.{},
+                .shared_rounds = 0,
+                .max_shared_streams = 0,
+                .inference_before = .null,
+                .inference_after = .null,
+                .memory = .null,
+            });
+        }
+    }
+    for ([_]bool{ false, true }) |draft| {
+        b.drafter = draft;
+        b.records.items.len = if (draft) 36 else 18;
+        const result = try b.pythonReference(a);
+        defer a.free(result.cells);
+        try std.testing.expect(result.valid);
+        try std.testing.expectEqual(@as(usize, if (draft) 6 else 3), result.cells.len);
+        for (result.cells) |cell| {
+            try std.testing.expect(cell.valid);
+            try std.testing.expectEqual(6, cell.python_samples);
+            try std.testing.expectEqual(@as(?f64, 48), cell.python_median_tokens_per_second);
+        }
+    }
+    const last = &b.records.items[b.records.items.len - 1];
+    const saved = last.*;
+    for ([_]f64{ 0, -1, std.math.nan(f64), std.math.inf(f64) }) |seconds| {
+        last.* = saved;
+        last.seconds = seconds;
+        const invalid = try b.pythonReference(a);
+        defer a.free(invalid.cells);
+        try std.testing.expect(!invalid.valid);
+        try std.testing.expectEqual(null, invalid.cells[5].python_median_tokens_per_second);
+    }
+    for ([_]usize{ 0, 1 }) |phase| {
+        last.* = saved;
+        last.phase = phase;
+        const invalid = try b.pythonReference(a);
+        defer a.free(invalid.cells);
+        try std.testing.expect(!invalid.valid);
+    }
+    last.* = saved;
+    last.tokens_per_second = 17;
+    {
+        const invalid = try b.pythonReference(a);
+        defer a.free(invalid.cells);
+        try std.testing.expect(!invalid.valid);
+    }
+    last.* = saved;
+    b.records.items.len -= 1;
+    const incomplete = try b.pythonReference(a);
+    defer a.free(incomplete.cells);
+    try std.testing.expect(!incomplete.valid);
+    for (incomplete.cells[0..5]) |cell| try std.testing.expect(cell.valid);
+    try std.testing.expectEqual(5, incomplete.cells[5].python_samples);
+    try std.testing.expectEqual(null, incomplete.cells[5].python_median_tokens_per_second);
 }
 
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len > 1 and (std.mem.eql(u8, args[1], "--benchmark") or std.mem.eql(u8, args[1], "--compare-python") or std.mem.eql(u8, args[1], "--verify-python"))) return benchmark(init, args);
+    if (args.len > 1 and (std.mem.eql(u8, args[1], "--benchmark") or std.mem.eql(u8, args[1], "--compare-python") or std.mem.eql(u8, args[1], "--verify-python") or std.mem.eql(u8, args[1], "--benchmark-python"))) return benchmark(init, args);
     if (args.len != 3 and args.len != 5 and args.len != 6) return error.ExpectedExecutableAndModel;
     if (args.len == 5 and std.mem.eql(u8, args[3], "--warming-only")) {
         const a = init.arena.allocator();

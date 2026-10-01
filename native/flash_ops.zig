@@ -4,6 +4,17 @@ const src = @import("kernel_sources.zig");
 const Quant = @import("quantization.zig").Spec;
 const A = mx.Array;
 
+pub const State = struct {
+    qmv: std.AutoHashMapUnmanaged([4]i32, bool) = .empty,
+    hc: std.AutoHashMapUnmanaged([11]i32, bool) = .empty,
+    hc_tiles_on: bool = true,
+
+    pub fn deinit(state: *State) void {
+        state.qmv.deinit(mx.allocator);
+        state.hc.deinit(mx.allocator);
+    }
+};
+
 pub const Weight = struct {
     arrays: [3]A,
     format: Quant = .{ .bits = 4, .group_size = 32 },
@@ -126,6 +137,15 @@ pub fn project(kernels: *mx.Kernels, s: *mx.Scope, x: A, w: Weight, generation: 
     if (dims.len == 0 or dims.len > 8 or mx.dim(x, -1) != geometry.k or mx.dtype(x) != mx.bf16) return error.InvalidTensorShape;
     const rows: i32 = @intCast(mx.c.mlx_array_size(x) / @as(usize, @intCast(geometry.k)));
     if (rows < 1 or requested_rps < 1) return error.InvalidLaneWidth;
+    const vpt: i32 = if (w.format.bits == 6 or w.format.bits == 8) 8 else 16;
+    if (!w.q4() and rows >= 4 and @mod(geometry.k, 32 * vpt) == 0 and try qmvExact(kernels, w)) return projectTiles(kernels, s, x, w);
+    return projectRows(kernels, s, x, w, generation, requested_rps);
+}
+
+fn projectRows(kernels: *mx.Kernels, s: *mx.Scope, x: A, w: Weight, generation: u32, requested_rps: i32) !A {
+    const geometry = try w.geometry(2);
+    const dims = mx.shape(x);
+    const rows: i32 = @intCast(mx.c.mlx_array_size(x) / @as(usize, @intCast(geometry.k)));
     var rps = requested_rps;
     if (w.q4()) {
         if (@mod(geometry.k, 512) != 0 or @mod(geometry.n, rps) != 0) return error.InvalidTensorShape;
@@ -157,6 +177,14 @@ pub fn hyper(kernels: *mx.Kernels, s: *mx.Scope, h: A, ssp: A, down: Weight, up:
     const rows = mx.dim(h, 0);
     const wide = mx.dim(h, 1);
     if (rows <= 0 or @mod(wide, streams * 256) != 0 or @mod(wide, 1024) != 0 or dg.k != wide or ug.n != wide or ug.k != low or (dg.n != low and dg.n != low + streams)) return error.InvalidTensorShape;
+    if (kernels.flash_rows.hc_tiles_on and rows >= 8 and down.q4() and up.q4() and try hyperExact(kernels, down, up, norm, eps, streams, low, generation)) return hyperTiles(kernels, s, h, ssp, down, up, norm, eps, streams, low);
+    return hyperRows(kernels, s, h, ssp, down, up, norm, eps, streams, low, generation);
+}
+
+fn hyperRows(kernels: *mx.Kernels, s: *mx.Scope, h: A, ssp: A, down: Weight, up: Weight, norm: A, eps: A, streams: i32, low: i32, generation: u32) ![2]A {
+    const dg = try down.geometry(2);
+    const rows = mx.dim(h, 0);
+    const wide = mx.dim(h, 1);
     const dims = @divExact(wide, streams);
     const splits = @divExact(wide, 1024);
     const generic = !down.q4() or !up.q4();
@@ -168,6 +196,124 @@ pub fn hyper(kernels: *mx.Kernels, s: *mx.Scope, h: A, ssp: A, down: Weight, up:
     if (threads > 1024) return error.InvalidThreadgroup;
     const out = try kernels.run(s, if (generic) src.flash_qa_hc_up2 else select(.hc_up, rows, generation), &.{ h, ssp, part, up.arrays[0], up.arrays[1], up.arrays[2], norm, eps, count }, up_params[0..if (generic) @as(usize, 7) else 5], .{ @divExact(dims, 8) * threads, rows, 1 }, .{ threads, 1, 1 }, &.{ .{ .shape = &.{ rows, dims } }, .{ .shape = &.{ @max(rows, 2), streams } } });
     return .{ out[0], try s.slice(out[1], 0, 0, rows) };
+}
+
+pub fn projectTiles(kernels: *mx.Kernels, s: *mx.Scope, x: A, w: Weight) !A {
+    const g = try w.geometry(2);
+    const shape = mx.shape(x);
+    if (shape.len == 0 or shape.len > 8 or mx.dim(x, -1) != g.k or mx.dtype(x) != mx.bf16) return error.InvalidTensorShape;
+    const rows: i32 = @intCast(mx.c.mlx_array_size(x) / @as(usize, @intCast(g.k)));
+    const vpt: i32 = if (w.format.bits == 6 or w.format.bits == 8) 8 else 16;
+    if (rows < 1 or @mod(g.k, 32 * vpt) != 0) return error.InvalidTensorShape;
+    const blocks = @divExact(g.k, vpt);
+    const flat = try s.reshape(x, &.{ rows, g.k });
+    const sums = (try kernels.run(s, src.flash_qa_row_block_sums, &.{flat}, &.{ mx.ti("K", g.k), mx.ti("VPT", vpt) }, .{ @divTrunc(blocks + 31, 32) * 32, rows, 1 }, .{ 32, 1, 1 }, &.{.{ .shape = &.{ rows, blocks }, .dtype = mx.f32t }}))[0];
+    const out = (try kernels.run(s, src.flash_qa_qmv_rows_mma, &.{ flat, sums, w.arrays[0], w.arrays[1], w.arrays[2] }, &.{ mx.ti("K", g.k), mx.ti("N", g.n), mx.ti("BITS", w.format.bits), mx.ti("GS", w.format.group_size), mx.ti("SG", 8) }, .{ @divTrunc(g.n + 7, 8) * 256, @divTrunc(rows + 7, 8), 1 }, .{ 256, 1, 1 }, &.{.{ .shape = &.{ rows, g.n } }}))[0];
+    var dims: [8]i32 = undefined;
+    @memcpy(dims[0..shape.len], shape);
+    dims[shape.len - 1] = g.n;
+    return s.reshape(out, dims[0..shape.len]);
+}
+
+pub fn hyperTiles(kernels: *mx.Kernels, s: *mx.Scope, h: A, ssp: A, down: Weight, up: Weight, norm: A, eps: A, streams: i32, low: i32) ![2]A {
+    const dg = try down.geometry(2);
+    const ug = try up.geometry(2);
+    if (mx.shape(h).len != 2 or streams < 1 or low < 1 or @mod(low, 32) != 0 or !down.q4() or !up.q4()) return error.InvalidTensorShape;
+    const rows = mx.dim(h, 0);
+    const wide = mx.dim(h, 1);
+    if (rows < 1 or @mod(wide, streams * 256) != 0 or @mod(wide, 1024) != 0 or dg.k != wide or ug.n != wide or ug.k != low or (dg.n != low and dg.n != low + streams)) return error.InvalidTensorShape;
+    const dims = @divExact(wide, streams);
+    const splits = @divExact(wide, 1024);
+    const tiles = @divTrunc(rows + 7, 8);
+    const count = try s.ints(&.{rows});
+    const part = (try kernels.run(s, src.flash_q4_hc_down_tiles, &.{ h, ssp, norm, down.arrays[0], down.arrays[1], down.arrays[2], eps, count }, &.{ mx.ti("S", streams), mx.ti("D", dims), mx.ti("ND", dg.n) }, .{ @divTrunc(dg.n + 7, 8) * 256, splits, tiles }, .{ 256, 1, 1 }, &.{.{ .shape = &.{ splits, rows, dg.n }, .dtype = mx.f32t }}))[0];
+    const out = try kernels.run(s, src.flash_q4_hc_up_tiles, &.{ h, ssp, norm, part, up.arrays[0], up.arrays[1], up.arrays[2], eps, count }, &.{ mx.ti("S", streams), mx.ti("D", dims), mx.ti("LOW", low), mx.ti("ND", dg.n), mx.ti("KS", splits), mx.ti("DT", 32) }, .{ @divExact(dims, 32) * 32 * streams, tiles, 1 }, .{ 32 * streams, 1, 1 }, &.{ .{ .shape = &.{ rows, dims } }, .{ .shape = &.{ @max(rows, 2), streams } } });
+    return .{ out[0], try s.slice(out[1], 0, 0, rows) };
+}
+
+fn probeRows(s: *mx.Scope, seed: u64, rows: i32, dims: i32, scale: f32) !A {
+    var key = mx.c.mlx_array_new();
+    const rc = mx.c.mlx_random_key(&key, seed);
+    key = try s.result(rc, key);
+    var values = mx.c.mlx_array_new();
+    const shape = [_]c_int{ rows, dims };
+    const nr = mx.c.mlx_random_normal(&values, &shape, shape.len, mx.f32t, 0, 1, key, mx.stream);
+    values = try s.result(nr, values);
+    return s.cast(try s.binary(mx.c.mlx_multiply, values, try s.scalar(scale)), mx.bf16);
+}
+
+fn equalRows(s: *mx.Scope, a: A, b: A) !bool {
+    var result = mx.c.mlx_array_new();
+    const rc = mx.c.mlx_array_equal(&result, a, b, false, mx.stream);
+    result = try s.result(rc, result);
+    try mx.eval(result);
+    var equal = false;
+    try mx.check(mx.c.mlx_array_item_bool(&equal, result));
+    return equal;
+}
+
+fn qmvExact(kernels: *mx.Kernels, w: Weight) !bool {
+    const g = try w.geometry(2);
+    const key = [4]i32{ g.n, g.k, w.format.bits, w.format.group_size };
+    if (kernels.flash_rows.qmv.get(key)) |same| return same;
+    var s = mx.Scope{};
+    defer s.deinit();
+    const x = try probeRows(&s, 0, 8, g.k, 0.5);
+    var rows: [8]A = undefined;
+    for (&rows, 0..) |*out, i| out.* = try projectRows(kernels, &s, try s.slice(x, 0, @intCast(i), @intCast(i + 1)), w, mx.gpu_generation, 4);
+    const same = try equalRows(&s, try projectTiles(kernels, &s, x, w), try s.cat(&rows, 0));
+    try kernels.flash_rows.qmv.put(mx.allocator, key, same);
+    return same;
+}
+
+fn hyperExact(kernels: *mx.Kernels, down: Weight, up: Weight, norm: A, eps: A, streams: i32, low: i32, generation: u32) !bool {
+    const dg = try down.geometry(2);
+    const ug = try up.geometry(2);
+    const key = [11]i32{ dg.n, dg.k, down.format.bits, down.format.group_size, ug.n, ug.k, up.format.bits, up.format.group_size, streams, low, @intCast(generation) };
+    if (kernels.flash_rows.hc.get(key)) |same| return same;
+    var s = mx.Scope{};
+    defer s.deinit();
+    const h = try probeRows(&s, 3, 12, dg.k, 0.3);
+    const dims = @divExact(dg.k, streams);
+    const hn = try kernels.run(&s, src.q4_hc_norm_none, &.{h}, &.{ mx.ti("S", streams), mx.ti("D", dims) }, .{ dims, 12, 1 }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ 12, dg.k } }, .{ .shape = &.{ 12, @divExact(dims, 256), streams }, .dtype = mx.f32t } });
+    const want = try hyperRows(kernels, &s, hn[0], hn[1], down, up, norm, eps, streams, low, generation);
+    const same = compareHyperTiles(kernels, &s, hn[0], hn[1], down, up, norm, eps, streams, low, want) catch |err| blk: {
+        if (err == error.OutOfMemory) return err;
+        break :blk false;
+    };
+    try kernels.flash_rows.hc.put(mx.allocator, key, same);
+    return same;
+}
+
+fn compareHyperTiles(kernels: *mx.Kernels, s: *mx.Scope, h: A, ssp: A, down: Weight, up: Weight, norm: A, eps: A, streams: i32, low: i32, want: [2]A) !bool {
+    const got = try hyperTiles(kernels, s, h, ssp, down, up, norm, eps, streams, low);
+    return try equalRows(s, want[0], got[0]) and (mx.dim(down.arrays[0], 0) == low or try equalRows(s, want[1], got[1]));
+}
+
+pub fn exerciseRows(kernels: *mx.Kernels) !void {
+    var s = mx.Scope{};
+    defer s.deinit();
+    const w = Weight{ .arrays = .{ try s.zeros(&.{ 8, 64 }, mx.c.MLX_UINT32), try s.zeros(&.{ 8, 8 }, mx.bf16), try s.zeros(&.{ 8, 8 }, mx.bf16) }, .format = .{ .bits = 4, .group_size = 64 } };
+    const h = try probeRows(&s, 7, 9, 512, 0.5);
+    const first = try project(kernels, &s, try s.slice(h, 0, 0, 4), w, mx.gpu_generation, 4);
+    const second = try project(kernels, &s, h, w, mx.gpu_generation, 4);
+    try std.testing.expectEqual(@as(usize, 1), kernels.flash_rows.qmv.count());
+    try std.testing.expect(try equalRows(&s, first, try s.slice(second, 0, 0, 4)));
+    const down = Weight{ .arrays = .{ try s.zeros(&.{ 36, 128 }, mx.c.MLX_UINT32), try s.zeros(&.{ 36, 32 }, mx.bf16), try s.zeros(&.{ 36, 32 }, mx.bf16) } };
+    const up = Weight{ .arrays = .{ try s.zeros(&.{ 1024, 4 }, mx.c.MLX_UINT32), try s.zeros(&.{ 1024, 1 }, mx.bf16), try s.zeros(&.{ 1024, 1 }, mx.bf16) } };
+    const input = try probeRows(&s, 9, 9, 1024, 0.3);
+    const hn = try kernels.run(&s, src.q4_hc_norm_none, &.{input}, &.{ mx.ti("S", 4), mx.ti("D", 256) }, .{ 256, 9, 1 }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ 9, 1024 } }, .{ .shape = &.{ 9, 1, 4 }, .dtype = mx.f32t } });
+    const norm = try s.zeros(&.{1024}, mx.f32t);
+    const eps = try s.scalar(1e-6);
+    const actual = try hyper(kernels, &s, hn[0], hn[1], down, up, norm, eps, 4, 32, mx.gpu_generation);
+    const cached = try hyper(kernels, &s, hn[0], hn[1], down, up, norm, eps, 4, 32, mx.gpu_generation);
+    try std.testing.expectEqual(@as(usize, 1), kernels.flash_rows.hc.count());
+    for (actual, cached) |a, b| try std.testing.expect(try equalRows(&s, a, b));
+    const enabled = kernels.flash_rows.hc_tiles_on;
+    kernels.flash_rows.hc_tiles_on = false;
+    defer kernels.flash_rows.hc_tiles_on = enabled;
+    const per_row = try hyper(kernels, &s, hn[0], hn[1], down, up, norm, eps, 4, 32, mx.gpu_generation);
+    for (actual, per_row) |a, b| try std.testing.expect(try equalRows(&s, a, b));
 }
 
 pub fn gateUp(kernels: *mx.Kernels, s: *mx.Scope, x: A, logits: A, gate: Weight, up: Weight, shared: ?[2]Weight, top: i32, generation: u32, rps: i32, groups: i32) ![3]A {

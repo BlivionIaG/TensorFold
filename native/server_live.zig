@@ -49,7 +49,19 @@ const ChunkRate = struct {
     }
 };
 
+// Host phase durations; GPU work overlaps forward construction and completes in sampling.
+pub const RoundTiming = struct {
+    prepare_seconds: f64 = 0,
+    forward_seconds: f64 = 0,
+    sample_seconds: f64 = 0,
+    select_seconds: f64 = 0,
+    commit_seconds: f64 = 0,
+    release_seconds: f64 = 0,
+    finish_seconds: f64 = 0,
+};
+
 pub const Snapshot = struct {
+    shared_timing: RoundTiming = .{},
     shared_rounds: u64 = 0,
     shared_rows: u64 = 0,
     max_shared_streams: usize = 0,
@@ -101,6 +113,7 @@ fn number(out: *std.Io.Writer, rate: f64) !void {
 }
 
 pub const Stats = struct {
+    shared_timing: RoundTiming = .{},
     shared_rounds: u64 = 0,
     shared_rows: u64 = 0,
     max_shared_streams: usize = 0,
@@ -166,16 +179,17 @@ pub const Stats = struct {
         s.mutex.lockUncancelable(s.io);
         defer s.mutex.unlock(s.io);
         const instant = now(s.io);
-        return .{ .connections = s.connections, .waiting_requests = s.waiting, .decode_tokens_per_second = s.decoded.rate(instant), .prefill_tokens_per_second = s.prefilled.rate(instant), .decoded_tokens = s.decoded_tokens, .prefilled_tokens = s.prefilled_tokens, .available = s.available, .proposed_tokens = s.proposed_tokens, .accepted_tokens = s.accepted_tokens, .structural_proposed = s.structural_proposed, .structural_accepted = s.structural_accepted, .neural_proposed = s.neural_proposed, .neural_accepted = s.neural_accepted, .shared_rounds = s.shared_rounds, .shared_rows = s.shared_rows, .max_shared_streams = s.max_shared_streams };
+        return .{ .connections = s.connections, .waiting_requests = s.waiting, .decode_tokens_per_second = s.decoded.rate(instant), .prefill_tokens_per_second = s.prefilled.rate(instant), .decoded_tokens = s.decoded_tokens, .prefilled_tokens = s.prefilled_tokens, .available = s.available, .proposed_tokens = s.proposed_tokens, .accepted_tokens = s.accepted_tokens, .structural_proposed = s.structural_proposed, .structural_accepted = s.structural_accepted, .neural_proposed = s.neural_proposed, .neural_accepted = s.neural_accepted, .shared_rounds = s.shared_rounds, .shared_rows = s.shared_rows, .max_shared_streams = s.max_shared_streams, .shared_timing = s.shared_timing };
     }
 
-    pub fn recordShared(s: *Stats, streams: usize, rows: usize) void {
+    pub fn recordShared(s: *Stats, streams: usize, rows: usize, timing: RoundTiming) void {
         if (streams == 0) return;
         s.mutex.lockUncancelable(s.io);
         defer s.mutex.unlock(s.io);
         s.shared_rounds +|= 1;
         s.shared_rows +|= rows;
         s.max_shared_streams = @max(s.max_shared_streams, streams);
+        inline for (comptime std.meta.fieldNames(RoundTiming)) |field| @field(s.shared_timing, field) += @field(timing, field);
     }
 
     pub fn recordNeural(s: *Stats, proposed: usize, accepted: usize) void {

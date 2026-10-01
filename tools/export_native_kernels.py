@@ -2,7 +2,7 @@
 
 Development-only generator. The native executable embeds the generated sources;
 it neither imports Python nor calls a Python subprocess. Run after kernel edits.
-Integer constants become templates and Metal math precision is explicit. Retired
+Launch specialization and Metal math precision match upstream. Retired
 kernel interfaces come from the versioned independent oracles in native_legacy.
 """
 import argparse
@@ -24,10 +24,11 @@ from tools.native_legacy import row_forward, row_qmv, tree_attention, nemotron a
 from tensorfold.kernels.nemotron.lightning.v1 import kernels as nemotron
 from tools.native_legacy import nemotron_rows
 from tools.native_legacy import flash
-from tensorfold.kernels.qwen.flash_next.v1 import attention, base, rows as flash_rows, hc as flash_hc, experts as flash_experts, embed as flash_embed
+from tensorfold.kernels.qwen.flash_next.v1 import attention, base, gdn as flash_gdn, rows as flash_rows, hc as flash_hc, experts as flash_experts, embed as flash_embed
 from tensorfold.kernels.qwen.flash_next.v1 import prefill_hc as flash_prefill_hc
 from tensorfold.kernels.qwen.flash_next.v1 import prefill as flash_prefill
 from tensorfold.kernels.qwen.flash_next.v1 import prefill_mm as flash_prefill_mm
+from tensorfold.kernels.qwen.flash_next.v1 import row_tiles as flash_row_tiles
 from tensorfold.engine import gpu_sampling, topk
 from tensorfold.kernels.qwen.prism.v1 import rotate
 from tensorfold.kernels.gemma.v1 import attention as gemma_attention, glue as gemma_glue, moe as gemma_moe
@@ -67,10 +68,9 @@ def main():
     definitions = []
     def export(key, spec):
         if not isinstance(spec, dict):
-            # Current lane projections bake their integer templates at launch;
-            # Zig supplies the same constants as Metal template arguments.
             spec = dict(source=spec.body, header=getattr(spec, "header", lane_qmm._HEADER),
-                        input_names=spec.inputs, output_names=spec.outputs)
+                        input_names=spec.inputs, output_names=spec.outputs,
+                        bake_templates=isinstance(spec, lane_qmm._Baked))
         # Undo Python's launch-specific constexpr/thread reservation wrappers.
         spec = dict(spec)
         spec["source"] = re.sub(r"\A(?:  constexpr int \w+ = -?\d+;\n)+", "", spec["source"])
@@ -96,7 +96,8 @@ def main():
             f'.source = @embedFile("metal/{key}.metal"), '
             f'.header = @embedFile("metal/{key}.h"), .contiguous = {contiguous}'
             + (f', .reserve = {spec["reserve"]}' if spec.get("reserve") else '')
-            + (', .reserve_launch = true' if spec.get("reserve_launch") else '') + ' };'
+            + (', .reserve_launch = true' if spec.get("reserve_launch") else '')
+            + (', .bake_templates = true' if spec.get("bake_templates") else '') + ' };'
         )
     try:
         stream_attention._kernels.clear()
@@ -107,6 +108,16 @@ def main():
         export("stream_gdn_pre", stream_gdn._kernel())
         for name in ("tree", "replay", "tails"):
             export("stream_gdn_" + name, stream_gdn._commit_kernel(name))
+        step = dict(stream_gdn._commit_kernel("tree"))
+        step["output_names"] = ["y", *[f"O{i}" for i in range(stream_gdn.MAX_STREAMS)]]
+        step["source"] += """
+        device float* Ob = O0;
+        switch (st) {
+""" + "".join(f"          case {i}: Ob = O{i}; break;\n" for i in range(1, stream_gdn.MAX_STREAMS)) + """        }
+        auto o_state = Ob + (hv_idx * Dv + dv_idx) * Dk;
+        for (int i = 0; i < n_per_t; ++i) o_state[n_per_t * dk_idx + i] = states[0][i];
+"""
+        export("stream_gdn_step", step)
         export("glm_gated_delta", gated_delta._make_gated_delta_kernel(vectorized=True))
         scalar_delta = gated_delta._make_gated_delta_kernel()
         scalar_delta["source"] = scalar_delta["source"].rstrip() + "\n"
@@ -152,19 +163,20 @@ def main():
                     body = spec.body
                     if module is gemma_attention and spec is module._partial:
                         body = "  const float SCALE = as_type<float>(uint(SCALE_BITS));\n" + body
-                    export(spec.name, dict(source=body, header=spec.header, input_names=spec.inputs, output_names=spec.outputs))
+                    export(spec.name, dict(source=body, header=spec.header, input_names=spec.inputs, output_names=spec.outputs,
+                                           bake_templates=True))
         export("affine_rows", dict(source=affine_rows._SOURCE, header=affine_rows._HEADER,
                input_names=["X", "W", "SC", "BI"], output_names=["OUT"]))
         for name, body, inputs in (("rotate", rotate._ROTATE, ["X", "SG"]),
                                    ("embed", rotate._EMBED, ["IDS", "W", "SC", "BI", "SG"]),
                                    ("dense", rotate._DENSE, ["X", "WT"])):
-            export("prism_" + name, dict(source=body, input_names=inputs, output_names=["OUT"]))
+            export("prism_" + name, dict(source=body, input_names=inputs, output_names=["OUT"], bake_templates=True))
         topk._kernels.clear()
         for mapped in (False, True):
             export("gpu_sample_ids" if mapped else "gpu_sample", dict(
                 source=gpu_sampling._SOURCE_IDS if mapped else gpu_sampling._SOURCE,
                 header=gpu_sampling._HEADER, input_names=["L", "seeds", "positions", "cfg", "kcap"] + (["IDS"] if mapped else []),
-                output_names=["TOK"]))
+                output_names=["TOK"], reserve=1024, bake_templates=True))
         export("radix_topk", dict(source=topk._SOURCE, input_names=["X", "dims"], output_names=["IDX", "VAL"]))
         for module, names in [
             (lane_qmm, ["xsum", "main", "main_tiled", "coop", "lowbit", "bytes", "lowbit_grouped", "bytes_grouped"]),
@@ -221,13 +233,19 @@ def main():
         export("nemotron_mamba_step", dict(source=legacy_nemotron._MAMBA_STEP,
                input_names=["P", "CS_IN", "S_IN", "CW", "CB", "A_LOG", "DSKIP", "DT_BIAS", "limits", "dims"],
                output_names=["Y", "CS_OUT", "S_OUT"]))
+        export("nemotron_mamba_conv", dict(source=nemotron._MAMBA_CONV,
+               input_names=["P", "CS_IN", "CW", "CB", "SEG", "START", "SLOT"],
+               output_names=["XBC", "CS_OUT"]))
+        export("nemotron_mamba_scan", dict(source=nemotron._MAMBA_SCAN,
+               input_names=["P", "XBC", "S_IN", "A_LOG", "DSKIP", "DT_BIAS", "limits", "dims", "SEG", "SLOT"],
+               output_names=["Y", "S_OUT"]))
         for name, source, ins, outs in (
             ("qmv", nemotron_rows._QMV, ["X", "W", "S", "B"], ["OUT"]),
             ("expert_up", nemotron_rows._EXPERT_UP, ["X", "IDS", "W", "S", "B"], ["ACT"]),
             ("expert_down", nemotron_rows._EXPERT_DOWN, ["X", "IDS", "W", "S", "B"], ["Y"]),
         ):
             export("nemotron_rows_" + name, dict(source=source, header=nemotron_rows._HEADER,
-                   input_names=ins, output_names=outs))
+                   input_names=ins, output_names=outs, reserve=32 * nemotron_rows.MAX_ROWS if name == "qmv" else 0))
         for module in (nemotron, flash):
             module._kernels.clear()
             tree = ast.parse(Path(module.__file__).read_text())
@@ -251,6 +269,8 @@ def main():
                         spec["source"] = eval(compile(ast.Expression(call.args[1]), attention.__file__, "eval"), vars(attention))
                         if spec.get("header") == flash._QDOT_HEADER:
                             spec["header"] = base.QDOT_HEADER
+                    if key == "q4_attn_prep":
+                        spec["reserve_launch"] = True
                 export(key, spec)
         for kind, mix, inputs in [
             ("plain", nemotron._MIX_PLAIN, ["H", "X", "W", "eps"]),
@@ -258,7 +278,14 @@ def main():
             ("experts", legacy_nemotron._MIX_EXPERTS, ["H", "Y", "WE", "W", "eps"]),
         ]:
             name = "nemotron_add_norm_" + kind
-            export(name, nemotron._kernel(name, nemotron._ADD_NORM.replace("MIX", mix), inputs, ["HN", "OUT"]))
+            spec = nemotron._kernel(name, nemotron._ADD_NORM.replace("MIX", mix), inputs, ["HN", "OUT"])
+            if kind in ("plain", "moe"):
+                spec["reserve_launch"] = True
+            export(name, spec)
+            if kind in ("plain", "moe"):
+                export(name + "_xs", nemotron._kernel(name + "_xs",
+                       nemotron._with_group_sums(nemotron._ADD_NORM.replace("MIX", mix)),
+                       inputs + ["dims"], ["HN", "OUT", "XS"]))
         for kind, branch, writeback, names in [
             ("none", "", "", ["H"]),
             ("plain", flash._BRANCH_PLAIN, flash._WRITEBACK, ["H", "INJ", "BR"]),
@@ -266,11 +293,25 @@ def main():
         ]:
             name = "q4_hc_norm_" + kind
             source = flash._HC_NORM.replace("BRANCH", branch).replace("WRITEBACK", writeback)
-            export(name, flash._kernel(name, source, names, ["HN", "SSP"]))
-        export("q4_router_float", flash._kernel("q4_router_float", flash._ROUTER.replace("OUT_T", "float"), ["X", "GW", "rows"], ["OUT"]))
+            export(name, dict(flash._kernel(name, source, names, ["HN", "SSP"]), reserve_launch=True))
+        export("q4_router_float", dict(flash._kernel("q4_router_float", flash._ROUTER.replace("OUT_T", "float"), ["X", "GW", "rows"], ["OUT"]), reserve_launch=True))
         export("q4_router_bfloat", flash._kernel("q4_router_bfloat", flash._ROUTER.replace("OUT_T", "bfloat"), ["X", "GW", "rows"], ["OUT"]))
         export("q4_ple_lookup", flash._kernel("q4_ple_lookup", flash._PLE_LOOKUP,
                ["IDS", "GSTART"] + [f"{kind}{g}" for g in range(8) for kind in ("W", "S", "B")], ["OUT"]))
+        for n in range(1, 9):
+            export(f"q4_gdn_step_multi{n}", dict(source=flash_gdn._gdn_source(n), header=base.QDOT_HEADER,
+                   input_names=["P"] + [f"CS{i}" for i in range(n)] + [f"SIN{i}" for i in range(n)]
+                   + ["CW", "ALOG", "DT", "NW", "eps", "STARTS"],
+                   output_names=["OUT", "CSO", "SO"], reserve_launch=True))
+            export(f"q4_attn_parts_multi{n}", dict(source=attention._attn_source(n), header=base.QDOT_HEADER,
+                   input_names=["Q"] + [f"Kc{i}" for i in range(n)] + [f"Vc{i}" for i in range(n)]
+                   + ["IDS", "NK", "SPARSE", "SCALE", "SROW", "CAPS"],
+                   output_names=["PO", "PM"], reserve_launch=True))
+            export(f"q4_idx_scores_multi{n}", dict(source=attention._scores_source(n), header=base.QDOT_HEADER,
+                   input_names=["Q"] + [f"POOLED{i}" for i in range(n)] + ["COMPLETE", "SROW", "STRIDE"],
+                   output_names=["SC"], reserve_launch=True))
+        export("q4_attn_merge_gate", dict(source=attention._ATTN_MERGE_GATE, header=base.QDOT_HEADER,
+               input_names=["PO", "PM", "GP"], output_names=["OUT"], reserve_launch=True))
         original_generation = base._generation
         export("flash_qa_ple_lookup", dict(source=flash_embed._PLE_LOOKUP_Q, header=base.QDOT_HEADER + base.AFFINE_HEADER,
                input_names=["IDS", "GSTART"] + [f"{k}{g}" for g in range(8) for k in ("W", "S", "B")], output_names=["OUT"], reserve_launch=True))
@@ -288,7 +329,7 @@ def main():
                     inputs = ["HN", "SSP", "NW"] + (["PART"] if direction == "up" else []) + ["QW", "QS", "QB", "eps", "rows"]
                     export(f"flash_{'qa' if generic else 'q4'}_hc_{direction}_{kind}", dict(
                         source=body, header=header, input_names=inputs,
-                        output_names=["PART"] if direction == "down" else ["MIXED", "INJOUT"]))
+                        output_names=["PART"] if direction == "down" else ["MIXED", "INJOUT"], reserve_launch=True))
         for name, source, inputs, outputs in (
             ("normed", flash_prefill_hc._HC_NORMED, ["HN", "SSP", "NW", "eps"], ["NORMED"]),
             ("act", flash_prefill_hc._HC_ACT, ["DN"], ["ACT", "INJ"]),
@@ -296,6 +337,17 @@ def main():
         ):
             export("flash_prefill_hc_" + name, dict(source=source, header=flash_prefill_hc._HEADER,
                    input_names=inputs, output_names=outputs))
+        export("flash_qa_row_block_sums", dict(source=flash_rows._ROW_BLOCK_SUMS, header="",
+               input_names=["X"], output_names=["SUMS"], reserve_launch=True))
+        export("flash_qa_qmv_rows_mma", dict(source=flash_rows._QMV_ROWS_MMA,
+               header=base.QDOT_HEADER + base.LANE_CODES + base.AFFINE_HEADER + '#define PRAGMA_UNROLL _Pragma("clang loop unroll(full)")\n',
+               input_names=["X", "SUMS", "W", "S", "B"], output_names=["OUT"], reserve_launch=True))
+        for direction in ("down", "up"):
+            export("flash_q4_hc_" + direction + "_tiles", dict(
+                source=getattr(flash_row_tiles, "_HC_" + direction.upper() + "_MMA"),
+                header=base.QDOT_HEADER + flash_hc.RINV + base.MMA_HEADER,
+                input_names=["HN", "SSP", "NW"] + (["PART"] if direction == "up" else []) + ["QW", "QS", "QB", "eps", "rows"],
+                output_names=["PART"] if direction == "down" else ["MIXED", "INJOUT"], reserve_launch=True))
         try:
             for name, body, generic, ins, outs, extra_header, reserve in (
                 ("qmv_rows", flash_rows._QMV_ROWS, flash_rows._QMV_ROWS_Q, ["X", "W", "S", "B"], ["OUT"], base.LANE_CODES, 1024),
@@ -320,12 +372,12 @@ def main():
             base._generation = original_generation
     finally:
         mx.fast.metal_kernel = original
-    if len(definitions) != 191:
-        raise ValueError(f"Native catalog must retain all 191 kernels; found {len(definitions)}")
+    if len(definitions) != 225:
+        raise ValueError(f"Native catalog must retain all 225 kernels; found {len(definitions)}")
     emit(ROOT / "native" / "kernel_sources.zig",
         '// Generated by tools/export_native_kernels.py; do not edit.\n'
         'pub const Spec = struct { name: [:0]const u8, inputs: []const [:0]const u8, '
-        'outputs: []const [:0]const u8, source: [:0]const u8, header: [:0]const u8, contiguous: bool, reserve: u16 = 0, reserve_launch: bool = false };\n'
+        'outputs: []const [:0]const u8, source: [:0]const u8, header: [:0]const u8, contiguous: bool, reserve: u16 = 0, reserve_launch: bool = false, bake_templates: bool = false };\n'
         + "\n".join(definitions) + "\n"
     )
     for path, content in files.items():

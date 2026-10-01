@@ -31,7 +31,13 @@ pub const Cache = struct {
         c.* = .{};
     }
 };
-pub const Record = struct { values: [8]A = @splat(mx.empty), key_write: kv.Write = .{}, value_write: kv.Write = .{} };
+pub const Record = struct {
+    values: [8]A = @splat(mx.empty),
+    // Shared rounds keep the original conv state separate from values[6]'s window rows.
+    conv_state: A = mx.empty,
+    key_write: kv.Write = .{},
+    value_write: kv.Write = .{},
+};
 pub const Pass = struct {
     scope: mx.Scope = .{},
     logits: A = mx.empty,
@@ -46,12 +52,104 @@ pub const Pass = struct {
         p.scope.deinit();
     }
 };
+pub const CompiledPost = struct {
+    closure: mx.c.mlx_closure = .{ .ctx = null },
+    payload: ?*Payload = null,
+    const arrays = .{ "weight", "sb", "scales", "biases", "signs" };
+    const Payload = struct {
+        scope: mx.Scope = .{},
+        kernels: mx.Kernels,
+        norm: A,
+        linears: [3]lanes.Linear,
+        stack: ?lanes.Linear,
+        failure: ?anyerror = null,
+
+        fn destroy(raw: ?*anyopaque) callconv(.c) void {
+            const p: *Payload = @ptrCast(@alignCast(raw.?));
+            p.kernels.deinit();
+            p.scope.deinit();
+            mx.allocator.destroy(p);
+        }
+        fn callback(out: [*c]mx.c.mlx_vector_array, ins: mx.c.mlx_vector_array, raw: ?*anyopaque) callconv(.c) c_int {
+            const p: *Payload = @ptrCast(@alignCast(raw.?));
+            return p.graph(out, ins) catch |err| {
+                p.failure = err;
+                return -1;
+            };
+        }
+        fn graph(p: *Payload, out: [*c]mx.c.mlx_vector_array, ins: mx.c.mlx_vector_array) !c_int {
+            if (mx.c.mlx_vector_array_size(ins) != 2) return error.InvalidKernelArity;
+            var s = mx.Scope{};
+            defer s.deinit();
+            var args: [2]A = undefined;
+            for (&args, 0..) |*arg, j| {
+                var value = mx.c.mlx_array_new();
+                const rc = mx.c.mlx_vector_array_get(&value, ins, j);
+                arg.* = try s.result(rc, value);
+            }
+            const post = try lanes.norm(&p.kernels, &s, args[0], args[1], p.norm);
+            const rows = mx.dim(post.x.x, 1);
+            const act = if ((rows < 17 or rows > 32) and p.stack != null)
+                try lanes.mlpStack(&p.kernels, &s, try p.stack.?.apply(&p.kernels, &s, post.x))
+            else
+                try lanes.mlp(&p.kernels, &s, try p.linears[0].apply(&p.kernels, &s, post.x), try p.linears[1].apply(&p.kernels, &s, post.x));
+            const values = [_]A{ post.h, try p.linears[2].apply(&p.kernels, &s, act) };
+            return mx.c.mlx_vector_array_set_data(out, &values, values.len);
+        }
+    };
+
+    pub fn init(norm: A, linears: [3]lanes.Linear, stack: ?lanes.Linear) !CompiledPost {
+        var value = Payload{ .kernels = mx.Kernels.init(), .norm = norm, .linears = linears, .stack = stack };
+        var transferred = false;
+        errdefer if (!transferred) {
+            value.kernels.deinit();
+            value.scope.deinit();
+        };
+        value.norm = try value.scope.own(try mx.retain(norm));
+        for (&value.linears) |*linear| try retainLinear(&value.scope, linear);
+        if (value.stack) |*linear| try retainLinear(&value.scope, linear);
+        // Evaluated constants share storage across all row specializations.
+        try mx.evalMany(value.scope.arrays.items, false);
+        const payload = try mx.allocator.create(Payload);
+        payload.* = value;
+        transferred = true;
+        const fun = mx.c.mlx_closure_new_func_payload(Payload.callback, payload, Payload.destroy);
+        if (fun.ctx == null) {
+            Payload.destroy(payload);
+            return error.MlxFailure;
+        }
+        defer _ = mx.c.mlx_closure_free(fun);
+        var closure = mx.c.mlx_closure{ .ctx = null };
+        errdefer if (closure.ctx != null) {
+            _ = mx.c.mlx_closure_free(closure);
+        };
+        try mx.check(mx.c.mlx_compile(&closure, fun, false));
+        return .{ .closure = closure, .payload = payload };
+    }
+    fn retainLinear(s: *mx.Scope, linear: *lanes.Linear) !void {
+        if (linear.signs.ctx != null) return error.InvalidCompiledProjection;
+        inline for (arrays) |field| if (@field(linear, field).ctx != null) {
+            @field(linear, field) = try s.own(try mx.retain(@field(linear, field)));
+        };
+    }
+    pub fn deinit(p: *CompiledPost) void {
+        if (p.closure.ctx != null) _ = mx.c.mlx_closure_free(p.closure);
+        p.* = .{};
+    }
+    pub fn call(p: *CompiledPost, kernels: *mx.Kernels, s: *mx.Scope, h: A, r: A) ![2]A {
+        p.payload.?.failure = null;
+        var result: [2]A = undefined;
+        kernels.call(s, p.closure, &.{ h, r }, &result) catch |err| return p.payload.?.failure orelse err;
+        return result;
+    }
+};
 pub const Model = struct {
     pub const SerialPass = Pass;
     round_owner: @import("decode_round.zig").Owner = .{},
     weights: Weights,
     kernels: mx.Kernels,
     projection_cache: ?*lanes.ProjectionCache = null,
+    posts: [64]CompiledPost = @splat(.{}),
     cache: [64]Cache = @splat(.{}),
     position: i32 = 0,
     rope_delta: i32 = 0,
@@ -70,6 +168,7 @@ pub const Model = struct {
     }
     pub fn deinit(m: *Model) void {
         m.reset();
+        for (&m.posts) |*post| post.deinit();
         m.weights.deinit();
         m.kernels.deinit();
         m.prefill_ops.deinit();
@@ -91,7 +190,7 @@ pub const Model = struct {
                 inline for (group, 0..) |name, j| if (std.mem.eql(u8, suffix, name)) {
                     selected = j;
                 };
-                if (selected) |part| {
+                if (selected) |part| if (!std.mem.eql(u8, group[0], "mlp.gate_proj") or mx.dim(x.x, 1) < 17 or mx.dim(x.x, 1) > 32) {
                     var buffers: [group.len][192]u8 = undefined;
                     var names: [group.len][]const u8 = undefined;
                     inline for (group, 0..) |name, j| names[j] = try std.fmt.bufPrint(&buffers[j], "model.layers.{d}.{s}", .{ index, name });
@@ -100,7 +199,7 @@ pub const Model = struct {
                         for (names[0..part]) |name| offset += (try m.weights.linear(name)).n;
                         return s.slice(try cache.project(stack, &m.kernels, s, input), 2, offset, offset + l.n);
                     }
-                }
+                };
             };
             l.signs = mx.empty;
             return l.apply(&m.kernels, s, input);
@@ -133,6 +232,43 @@ pub const Model = struct {
             }
         };
         return l.apply(&m.kernels, s, x);
+    }
+    pub fn mlpAct(m: *Model, s: *mx.Scope, index: usize, x: lanes.Act) !lanes.Act {
+        const rows = mx.dim(x.x, 1);
+        if (rows < 17 or rows > 32) if (try m.projectStack(s, index, &.{ "mlp.gate_proj", "mlp.up_proj" }, x)) |gate_up|
+            return lanes.mlpStack(&m.kernels, s, gate_up);
+        return lanes.mlp(&m.kernels, s, try m.project(s, index, "mlp.gate_proj", x), try m.project(s, index, "mlp.up_proj", x));
+    }
+    pub fn postAttention(m: *Model, s: *mx.Scope, index: usize, h: A, r: A) ![2]A {
+        if (mx.tensor_units and m.weights.bonsai_form == null) {
+            const compiled = &m.posts[index];
+            if (compiled.closure.ctx == null) {
+                var buffers: [3][192]u8 = undefined;
+                var names: [3][]const u8 = undefined;
+                inline for (.{ "mlp.gate_proj", "mlp.up_proj", "mlp.down_proj" }, 0..) |suffix, j|
+                    names[j] = try std.fmt.bufPrint(&buffers[j], "model.layers.{d}.{s}", .{ index, suffix });
+                const stack = try m.weights.fused(names[0..2]);
+                var linears: [3]lanes.Linear = undefined;
+                for (&linears, names) |*linear, name| linear.* = try m.weights.linear(name);
+                compiled.* = try CompiledPost.init(try m.weight(index, "post_attention_layernorm.weight"), linears, stack);
+            }
+            return compiled.call(&m.kernels, s, h, r);
+        }
+        const normalized = try lanes.norm(&m.kernels, s, h, r, try m.weight(index, "post_attention_layernorm.weight"));
+        return .{ normalized.h, try m.project(s, index, "mlp.down_proj", try m.mlpAct(s, index, normalized.x)) };
+    }
+    pub fn projectStack(m: *Model, s: *mx.Scope, index: usize, comptime suffixes: []const []const u8, x: lanes.Act) !?A {
+        if (mx.tensor_units) if (m.projection_cache) |cache| {
+            var buffers: [suffixes.len][192]u8 = undefined;
+            var names: [suffixes.len][]const u8 = undefined;
+            inline for (suffixes, 0..) |suffix, i| names[i] = try std.fmt.bufPrint(&buffers[i], "model.layers.{d}.{s}", .{ index, suffix });
+            const first = try m.weights.linear(names[0]);
+            if (try m.weights.fused(&names)) |stack| {
+                const input = try cache.prepare(first, &m.kernels, s, x);
+                return try cache.project(stack, &m.kernels, s, input);
+            }
+        };
+        return null;
     }
     pub fn prefillProject(m: *Model, s: *mx.Scope, index: usize, suffix: []const u8, x: A) !A {
         var buf: [192]u8 = undefined;
@@ -201,7 +337,7 @@ pub const Model = struct {
             const r = if (i % 4 == 3) try m.attn(s, i, inorm.x, &tree, pos, &p.records[i]) else try m.gdn(s, i, inorm.x, &tree, &p.records[i]);
             const post = try lanes.norm(kernels, s, h, r, try m.weight(i, "post_attention_layernorm.weight"));
             h = post.h;
-            const act = try lanes.mlp(kernels, s, try m.project(s, i, "mlp.gate_proj", post.x), try m.project(s, i, "mlp.up_proj", post.x));
+            const act = try m.mlpAct(s, i, post.x);
             pending = try m.project(s, i, "mlp.down_proj", act);
             // DFlash taps are the post-residual layer outputs, before the next norm.
             for ([_]usize{ 5, 19, 33, 47, 61 }, 0..) |layer, j| if (i == layer) {
@@ -322,7 +458,8 @@ pub const Model = struct {
                     const n = @as(i32, @intCast(rows.len)) + @as(i32, @intCast(j));
                     tail[j] = if (n < 3) n else 3 + rows[@intCast(n - 3)];
                 }
-                next[i].a = try mx.retain(try s.contiguous(try s.take(v[6], try s.ints(&tail), 1)));
+                const sequence = if (rec.conv_state.ctx != null) try s.cat(&.{ rec.conv_state, v[6] }, 1) else v[6];
+                next[i].a = try mx.retain(try s.contiguous(try s.take(sequence, try s.ints(&tail), 1)));
                 next[i].b = try mx.retain(state);
             }
         }

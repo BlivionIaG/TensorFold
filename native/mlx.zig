@@ -227,19 +227,209 @@ pub fn tb(name: [:0]const u8, value: bool) Template {
     return .{ .name = name, .value = .{ .boolean = value } };
 }
 pub const Output = struct { shape: []const c_int, dtype: c.mlx_dtype = bf16 };
+const KernelKey = struct {
+    name: []const u8,
+    reserve: i64,
+    specialized: bool,
+    templates: []const Template,
+    names: []u8 = &.{},
+
+    fn clone(key: KernelKey) !KernelKey {
+        var bytes = key.name.len;
+        for (key.templates) |t| bytes = try std.math.add(usize, bytes, try std.math.add(usize, t.name.len, 1));
+        const names = try allocator.alloc(u8, bytes);
+        errdefer allocator.free(names);
+        const templates = try allocator.dupe(Template, key.templates);
+        errdefer allocator.free(templates);
+        @memcpy(names[0..key.name.len], key.name);
+        var at = key.name.len;
+        for (templates) |*t| {
+            @memcpy(names[at..][0..t.name.len], t.name);
+            names[at + t.name.len] = 0;
+            t.name = names[at..][0..t.name.len :0];
+            at += t.name.len + 1;
+        }
+        return .{ .name = names[0..key.name.len], .reserve = key.reserve, .specialized = key.specialized, .templates = templates, .names = names };
+    }
+
+    fn deinit(key: KernelKey) void {
+        allocator.free(key.templates);
+        allocator.free(key.names);
+    }
+
+    const Context = struct {
+        pub fn hash(_: Context, key: KernelKey) u64 {
+            var h = std.hash.Wyhash.init(0);
+            std.hash.autoHash(&h, key.name.len);
+            h.update(key.name);
+            std.hash.autoHash(&h, key.reserve);
+            std.hash.autoHash(&h, key.specialized);
+            std.hash.autoHash(&h, key.templates.len);
+            for (key.templates) |t| {
+                std.hash.autoHash(&h, t.name.len);
+                h.update(t.name);
+                std.hash.autoHash(&h, std.meta.activeTag(t.value));
+                switch (t.value) {
+                    inline else => |value| std.hash.autoHash(&h, value),
+                }
+            }
+            return h.final();
+        }
+
+        pub fn eql(_: Context, a: KernelKey, b: KernelKey) bool {
+            if (a.reserve != b.reserve or a.specialized != b.specialized or a.templates.len != b.templates.len or !std.mem.eql(u8, a.name, b.name)) return false;
+            for (a.templates, b.templates) |left, right| {
+                if (!std.mem.eql(u8, left.name, right.name) or std.meta.activeTag(left.value) != std.meta.activeTag(right.value)) return false;
+                switch (left.value) {
+                    inline else => |value, tag| if (value != @field(right.value, @tagName(tag))) return false,
+                }
+            }
+            return true;
+        }
+    };
+};
+
+const LaunchConfig = struct {
+    handle: c.mlx_fast_metal_kernel_config,
+    grid: [3]c_int,
+    group: [3]c_int,
+    init_bits: ?u32,
+    outputs: []Output,
+    shapes: []c_int,
+
+    fn init(grid: [3]c_int, group: [3]c_int, outputs: []const Output, init_value: ?f32) !LaunchConfig {
+        var shape_count: usize = 0;
+        for (outputs) |output| shape_count = try std.math.add(usize, shape_count, output.shape.len);
+        const owned_outputs = try allocator.dupe(Output, outputs);
+        errdefer allocator.free(owned_outputs);
+        const shapes = try allocator.alloc(c_int, shape_count);
+        errdefer allocator.free(shapes);
+        var at: usize = 0;
+        for (owned_outputs, outputs) |*owned, output| {
+            const dims = shapes[at..][0..output.shape.len];
+            @memcpy(dims, output.shape);
+            owned.shape = dims;
+            at += dims.len;
+        }
+        return .{
+            .handle = try newLaunchConfig(grid, group, outputs, &.{}, init_value),
+            .grid = grid,
+            .group = group,
+            .init_bits = if (init_value) |value| @bitCast(value) else null,
+            .outputs = owned_outputs,
+            .shapes = shapes,
+        };
+    }
+
+    fn deinit(config: *LaunchConfig) void {
+        c.mlx_fast_metal_kernel_config_free(config.handle);
+        allocator.free(config.outputs);
+        allocator.free(config.shapes);
+    }
+
+    fn matches(config: *const LaunchConfig, grid: [3]c_int, group: [3]c_int, outputs: []const Output, init_value: ?f32) bool {
+        const init_bits: ?u32 = if (init_value) |value| @bitCast(value) else null;
+        if (!std.mem.eql(c_int, &config.grid, &grid) or !std.mem.eql(c_int, &config.group, &group) or config.init_bits != init_bits or config.outputs.len != outputs.len) return false;
+        for (config.outputs, outputs) |cached, output| {
+            if (cached.dtype != output.dtype or !std.mem.eql(c_int, cached.shape, output.shape)) return false;
+        }
+        return true;
+    }
+};
+
+fn newLaunchConfig(grid: [3]c_int, group: [3]c_int, outputs: []const Output, templates: []const Template, init_value: ?f32) !c.mlx_fast_metal_kernel_config {
+    const cfg = c.mlx_fast_metal_kernel_config_new();
+    if (cfg.ctx == null) return error.MlxFailure;
+    errdefer c.mlx_fast_metal_kernel_config_free(cfg);
+    if (init_value) |value| try check(c.mlx_fast_metal_kernel_config_set_init_value(cfg, value));
+    try check(c.mlx_fast_metal_kernel_config_set_grid(cfg, grid[0], grid[1], grid[2]));
+    try check(c.mlx_fast_metal_kernel_config_set_thread_group(cfg, group[0], group[1], group[2]));
+    for (templates) |t| try check(switch (t.value) {
+        .int => |v| c.mlx_fast_metal_kernel_config_add_template_arg_int(cfg, t.name, v),
+        .dtype => |v| c.mlx_fast_metal_kernel_config_add_template_arg_dtype(cfg, t.name, v),
+        .boolean => |v| c.mlx_fast_metal_kernel_config_add_template_arg_bool(cfg, t.name, v),
+    });
+    for (outputs) |o| try check(c.mlx_fast_metal_kernel_config_add_output_arg(cfg, o.shape.ptr, o.shape.len, o.dtype));
+    return cfg;
+}
+
+const Kernel = struct {
+    handle: c.mlx_fast_metal_kernel,
+    launch: ?LaunchConfig = null,
+
+    fn config(kernel: *Kernel, grid: [3]c_int, group: [3]c_int, outputs: []const Output, init_value: ?f32) !c.mlx_fast_metal_kernel_config {
+        if (kernel.launch) |*cached| if (cached.matches(grid, group, outputs, init_value)) return cached.handle;
+        const replacement = try LaunchConfig.init(grid, group, outputs, init_value);
+        if (kernel.launch) |*previous| previous.deinit();
+        kernel.launch = replacement;
+        return replacement.handle;
+    }
+};
+
+const LaunchVectors = struct {
+    blank: c.mlx_vector_array = .{ .ctx = null },
+    inputs: c.mlx_vector_array = .{ .ctx = null },
+    outputs: c.mlx_vector_array = .{ .ctx = null },
+    active: bool = false,
+
+    fn prepare(vectors: *LaunchVectors) !void {
+        if (vectors.active) return error.ReentrantKernelLaunch;
+        errdefer vectors.deinit();
+        inline for (.{ "blank", "inputs", "outputs" }) |field| {
+            const value = &@field(vectors, field);
+            if (value.ctx == null) value.* = c.mlx_vector_array_new();
+            if (value.ctx == null) return error.MlxFailure;
+        }
+        vectors.active = true;
+    }
+
+    fn clear(vectors: *LaunchVectors) void {
+        inline for (.{ "inputs", "outputs" }) |field| {
+            const value = &@field(vectors, field);
+            if (value.ctx != null and c.mlx_vector_array_set(value, vectors.blank) != 0) {
+                _ = c.mlx_vector_array_free(value.*);
+                value.* = .{ .ctx = null };
+            }
+        }
+        vectors.active = false;
+    }
+
+    fn read(vectors: *LaunchVectors, s: *Scope, results: []Array) !void {
+        for (results, 0..) |*result, i| {
+            var value = c.mlx_array_new();
+            const rc = c.mlx_vector_array_get(&value, vectors.outputs, i);
+            result.* = try s.result(rc, value);
+        }
+    }
+
+    fn deinit(vectors: *LaunchVectors) void {
+        inline for (.{ "blank", "inputs", "outputs" }) |field| {
+            const value = @field(vectors, field);
+            if (value.ctx != null) _ = c.mlx_vector_array_free(value);
+        }
+        vectors.* = .{};
+    }
+};
+
 pub const Kernels = struct {
-    items: std.StringHashMap(c.mlx_fast_metal_kernel),
+    const Map = std.HashMap(KernelKey, Kernel, KernelKey.Context, std.hash_map.default_max_load_percentage);
+    items: Map,
+    vectors: LaunchVectors = .{},
     affine: @import("deepseek_dense.zig").Dense = .{},
     flash_prefill: @import("flash_prefill_mm.zig").State = .{},
+    flash_rows: @import("flash_ops.zig").State = .{},
     pub fn init() Kernels {
-        return .{ .items = std.StringHashMap(c.mlx_fast_metal_kernel).init(allocator) };
+        return .{ .items = Map.init(allocator) };
     }
     pub fn deinit(k: *Kernels) void {
+        k.vectors.deinit();
         k.affine.deinit();
+        k.flash_rows.deinit();
         var it = k.items.iterator();
         while (it.next()) |entry| {
-            c.mlx_fast_metal_kernel_free(entry.value_ptr.*);
-            allocator.free(entry.key_ptr.*);
+            if (entry.value_ptr.launch) |*launch| launch.deinit();
+            c.mlx_fast_metal_kernel_free(entry.value_ptr.handle);
+            entry.key_ptr.deinit();
         }
         k.items.deinit();
     }
@@ -249,30 +439,41 @@ pub const Kernels = struct {
         try k.runInto(s, spec, inputs, templates, grid, group, outputs, result_[0..outputs.len], null);
         return result_;
     }
+
+    // A closure's host callback must use its own Kernels instance.
+    pub fn call(k: *Kernels, s: *Scope, closure: c.mlx_closure, inputs: []const Array, results: []Array) !void {
+        try k.vectors.prepare();
+        defer k.vectors.clear();
+        try check(c.mlx_vector_array_append_data(k.vectors.inputs, inputs.ptr, inputs.len));
+        try check(c.mlx_closure_apply(&k.vectors.outputs, closure, k.vectors.inputs));
+        if (c.mlx_vector_array_size(k.vectors.outputs) != results.len) return error.InvalidKernelArity;
+        try k.vectors.read(s, results);
+    }
+
     pub fn runInto(k: *Kernels, s: *Scope, spec: @import("kernel_sources.zig").Spec, inputs: []const Array, templates: []const Template, grid: [3]c_int, group: [3]c_int, outputs: []const Output, result_: []Array, init_value: ?f32) !void {
         if (result_.len != outputs.len or outputs.len != spec.outputs.len or inputs.len != spec.inputs.len) return error.InvalidKernelArity;
         if (group[0] < 1 or group[1] < 1 or group[2] < 1) return error.InvalidThreadgroup;
         const threads = @as(i64, group[0]) * group[1] * group[2];
         if (threads > 1024) return error.InvalidThreadgroup;
         const reserve: i64 = if (spec.reserve > 0) spec.reserve else if (spec.reserve_launch and threads > 256) threads else 0;
-        const specialize = spec.reserve_launch or spec.reserve > 0;
-        var name: [2048]u8 = undefined;
-        const cache_name = if (specialize) blk: {
-            var used = (try std.fmt.bufPrint(&name, "{s}_r{d}", .{ spec.name, reserve })).len;
-            for (templates) |t| used += (try switch (t.value) {
-                .int => |v| std.fmt.bufPrint(name[used..], "_{s}_i{x}", .{ t.name, @as(u32, @bitCast(v)) }),
-                .boolean => |v| std.fmt.bufPrint(name[used..], "_{s}_b{d}", .{ t.name, @intFromBool(v) }),
-                .dtype => return error.UnsupportedReservedTemplate,
-            }).len;
-            if (used == name.len) return error.NoSpaceLeft;
-            name[used] = 0;
-            break :blk name[0..used :0];
-        } else spec.name;
-        const entry = try k.items.getOrPut(cache_name);
-        if (!entry.found_existing) {
-            errdefer _ = k.items.remove(cache_name);
-            const owned_name = try allocator.dupe(u8, cache_name);
-            errdefer allocator.free(owned_name);
+        const specialize = spec.bake_templates or spec.reserve_launch or spec.reserve > 0;
+        if (specialize) for (templates) |t| if (t.value == .dtype) return error.UnsupportedReservedTemplate;
+        const key = KernelKey{ .name = spec.name, .reserve = reserve, .specialized = specialize, .templates = if (specialize) templates else &.{} };
+        const kernel = k.items.getPtr(key) orelse blk: {
+            var name: [2048]u8 = undefined;
+            const cache_name = if (specialize) named: {
+                var used = (try std.fmt.bufPrint(&name, "{s}_r{d}", .{ spec.name, reserve })).len;
+                for (templates) |t| used += (try switch (t.value) {
+                    .int => |v| std.fmt.bufPrint(name[used..], "_{s}_i{x}", .{ t.name, @as(u32, @bitCast(v)) }),
+                    .boolean => |v| std.fmt.bufPrint(name[used..], "_{s}_b{d}", .{ t.name, @intFromBool(v) }),
+                    .dtype => unreachable,
+                }).len;
+                if (used == name.len) return error.NoSpaceLeft;
+                name[used] = 0;
+                break :named name[0..used :0];
+            } else spec.name;
+            const owned_key = try key.clone();
+            errdefer owned_key.deinit();
             const ins = c.mlx_vector_string_new();
             defer _ = c.mlx_vector_string_free(ins);
             const outs = c.mlx_vector_string_new();
@@ -295,31 +496,20 @@ pub const Kernels = struct {
                 try body.append(allocator, 0);
             }
             const source = if (specialize) body.items[0 .. body.items.len - 1 :0] else spec.source;
-            entry.value_ptr.* = c.mlx_fast_metal_kernel_new(cache_name, ins, outs, source, reserved orelse spec.header, spec.contiguous, false);
-            if (entry.value_ptr.ctx == null) return error.MlxFailure;
-            entry.key_ptr.* = owned_name;
-        }
-        const cfg = c.mlx_fast_metal_kernel_config_new();
-        if (cfg.ctx == null) return error.MlxFailure;
-        defer c.mlx_fast_metal_kernel_config_free(cfg);
-        if (init_value) |value| try check(c.mlx_fast_metal_kernel_config_set_init_value(cfg, value));
-        try check(c.mlx_fast_metal_kernel_config_set_grid(cfg, grid[0], grid[1], grid[2]));
-        try check(c.mlx_fast_metal_kernel_config_set_thread_group(cfg, group[0], group[1], group[2]));
-        if (!specialize) for (templates) |t| try check(switch (t.value) {
-            .int => |v| c.mlx_fast_metal_kernel_config_add_template_arg_int(cfg, t.name, v),
-            .dtype => |v| c.mlx_fast_metal_kernel_config_add_template_arg_dtype(cfg, t.name, v),
-            .boolean => |v| c.mlx_fast_metal_kernel_config_add_template_arg_bool(cfg, t.name, v),
-        });
-        for (outputs) |o| try check(c.mlx_fast_metal_kernel_config_add_output_arg(cfg, o.shape.ptr, o.shape.len, o.dtype));
-        const ins = c.mlx_vector_array_new_data(inputs.ptr, inputs.len);
-        defer _ = c.mlx_vector_array_free(ins);
-        var outs = c.mlx_vector_array_new();
-        defer _ = c.mlx_vector_array_free(outs);
-        try check(c.mlx_fast_metal_kernel_apply(&outs, entry.value_ptr.*, ins, cfg, stream));
-        for (0..outputs.len) |i| {
-            var a = c.mlx_array_new();
-            const rc = c.mlx_vector_array_get(&a, outs, i);
-            result_[i] = try s.result(rc, a);
-        }
+            const handle = c.mlx_fast_metal_kernel_new(cache_name, ins, outs, source, reserved orelse spec.header, spec.contiguous, false);
+            if (handle.ctx == null) return error.MlxFailure;
+            errdefer c.mlx_fast_metal_kernel_free(handle);
+            try k.items.putNoClobber(owned_key, .{ .handle = handle });
+            break :blk k.items.getPtr(key).?;
+        };
+        const cfg = if (specialize) try kernel.config(grid, group, outputs, init_value) else try newLaunchConfig(grid, group, outputs, templates, init_value);
+        defer if (!specialize) c.mlx_fast_metal_kernel_config_free(cfg);
+        try k.vectors.prepare();
+        defer k.vectors.clear();
+        // Direct Metal apply constructs graph nodes without invoking host closures.
+        // Empty assignment keeps vector capacity while releasing all tensor handles.
+        try check(c.mlx_vector_array_append_data(k.vectors.inputs, inputs.ptr, inputs.len));
+        try check(c.mlx_fast_metal_kernel_apply(&k.vectors.outputs, kernel.handle, k.vectors.inputs, cfg, stream));
+        try k.vectors.read(s, result_);
     }
 };
