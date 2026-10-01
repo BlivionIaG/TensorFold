@@ -129,11 +129,23 @@ Setup intentionally uses the repository-local prefixes.
 
 A successful host build does not establish Metal correctness. Run GPU and model
 tests with `-j1` to avoid loading multiple checkpoints concurrently.
+Capture the production Python lane protocol with
+`.venv/bin/python tools/native_engine_bench.py --golden --max-tokens 16 --repetitions 2 --output build/native-checks/python-golden`.
+Run this finite measurement through Latch. It loads local checkpoints sequentially,
+safely links cached Qwen/Gemma drafters from `~/.models/z-lab` into `build/models`,
+saves hidden/logit arrays, sampling and rollback decisions, and cache snapshots,
+then checks untraced warm measurements against the captured token IDs. The chunk
+grid is fixed at 2048; serving admission, images and prefix reuse are outside this fixture.
+GLM/DeepSeek use random checkpoints with production widths/experts but reduced
+layers/vocabulary; their timings do not estimate full-model or CUDA performance.
+Use a fresh output directory for each capture. Verify retained arrays and results with
+`.venv/bin/python tools/native_engine_bench.py --verify-golden build/native-checks/python-golden`.
 The table entries are arguments to `.zig-toolchain/zig build`:
 
 | Checks | Arguments | Requirements |
 | --- | --- | --- |
 | Host unit and checkpoint-file checks | `test test-checkpoint-files -Doptimize=safe -j1` | Native libraries; no weights or GPU execution |
+| Python golden capture and integrity guards | `test-python-golden -Doptimize=safe -j1` | Python and MLX; no model weights |
 | Flash checkpoint names and PLE loading | `test-flash-checkpoint -Doptimize=safe -j1` | Metal and Python; small synthetic PLE/MTP checkpoints |
 | Flash affine row operators | `test-flash-affine -Doptimize=safe -j1` | Metal and Python; 2/3/4/5/6/8-bit projections, hyper-connections, experts, fused PLE and forced pre-M5 variants |
 | Flash M5 lane operators | `test-flash-lane -Doptimize=safe -j1` | Production lane projections, 32/64-column tiling, group-128 splitting and scalar/matrix hyper-connections |

@@ -85,6 +85,8 @@ pub fn build(b: *std.Build) void {
     b.step("check-dependencies", "Verify installed native/Python MLX and pinned packages against project constraints").dependOn(&dependency_check.step);
     const dependency_tests = b.addSystemCommand(&.{ ".venv/bin/python", "-m", "pytest", "-q", "tools/test_native_runtime.py" });
     b.step("test-dependencies", "Check upstream constraint changes and native dependency drift detection").dependOn(&dependency_tests.step);
+    const golden_tests = b.addSystemCommand(&.{ ".venv/bin/python", "-m", "pytest", "-q", "tools/test_native_engine_bench.py" });
+    b.step("test-python-golden", "Check production Python fixture capture and integrity guards").dependOn(&golden_tests.step);
     mod.addImport("mlx_c", bindings.createModule());
     const draft_vocab = b.addOptions();
     draft_vocab.addOption([]const u8, "nemotron", @embedFile("src/tensorfold/families/nemotron_h/draft_ids.txt"));
