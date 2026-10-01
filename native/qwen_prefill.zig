@@ -21,20 +21,32 @@ pub fn forwardImage(m: *model.Model, tokens: []const i32, embeddings: A, positio
     const s = &p.scope;
     for (0..tokens.len) |i| p.parents[i] = @as(i32, @intCast(i)) - 1;
     var h = if (embeddings.ctx != null) embeddings else try m.weights.embedArray(s, try s.ints(tokens));
+    var carried = mx.empty;
+    defer mx.free(carried);
     for (0..64) |i| {
-        const x = try s.rms(h, try m.weight(i, "input_layernorm.weight"));
-        const residual = if (i % 4 == 3) try attention(m, s, i, x, positions, &p.records[i]) else try gdn(m, s, i, x, &p);
-        h = try s.binary(c.mlx_add, h, residual);
-        const norm = try s.rms(h, try m.weight(i, "post_attention_layernorm.weight"));
-        const gate = try m.prefillProject(s, i, "mlp.gate_proj", norm);
-        const up = try m.prefillProject(s, i, "mlp.up_proj", norm);
-        const act = try m.prefill_ops.call(s, .swiglu, &.{ gate, up });
-        h = try s.binary(c.mlx_add, h, try m.prefillProject(s, i, "mlp.down_proj", act));
-        try m.trace(s, m.position, i, "hidden", h);
+        var scope = mx.Scope{};
+        defer scope.deinit();
+        const work = &scope;
+        const x = try work.rms(h, try m.weight(i, "input_layernorm.weight"));
+        const residual = if (i % 4 == 3) try attention(m, work, i, x, positions, &p.records[i]) else try gdn(m, work, i, x, &p);
+        h = try work.binary(c.mlx_add, h, residual);
+        const norm = try work.rms(h, try m.weight(i, "post_attention_layernorm.weight"));
+        const gate = try m.prefillProject(work, i, "mlp.gate_proj", norm);
+        const up = try m.prefillProject(work, i, "mlp.up_proj", norm);
+        const act = try m.prefill_ops.call(work, .swiglu, &.{ gate, up });
+        h = try work.binary(c.mlx_add, h, try m.prefillProject(work, i, "mlp.down_proj", act));
+        try m.trace(work, m.position, i, "hidden", h);
+        for (&p.records[i].values) |*value| if (value.ctx != null) {
+            value.* = try s.own(try mx.retain(value.*));
+        };
         for ([_]usize{ 5, 19, 33, 47, 61 }, 0..) |layer, j| if (i == layer) {
-            p.taps[j] = h;
+            p.taps[j] = try s.own(try mx.retain(h));
         };
         if (i == 0 or (i + 1) % 4 == 0) try mx.evalMany(&.{h}, true);
+        const next = try mx.retain(h);
+        mx.free(carried);
+        carried = next;
+        h = carried;
     }
     const norm = try s.rms(h, try m.weights.get("model.norm.weight"));
     p.logits = try (try m.weights.linear("lm_head")).apply(&m.kernels, s, .{ .x = try s.slice(norm, 1, @intCast(tokens.len - 1), @intCast(tokens.len)) });

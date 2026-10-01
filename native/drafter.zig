@@ -527,11 +527,30 @@ pub const Drafter = struct {
         const projected = try d.projectKV(k, s, i, input);
         const keys = try s.rms(try s.reshape(projected[0], &.{ 1, rows, 8, 128 }), try d.get(i, "self_attn.k_norm.weight"));
         const values = try s.reshape(projected[1], &.{ 1, rows, 8, 128 });
+        var positions: [128]i32 = undefined;
+        var position_count: usize = 0;
+        for (streams) |stream| {
+            const n = @as(usize, @min(15, stream.budget)) + 1;
+            for (positions[position_count..][0..n], 0..) |*position, j| position.* = stream.state.dflash_offset + @as(i32, @intCast(j));
+            position_count += n;
+        }
+        const pos = try s.ints(positions[0..position_count]);
+        const rotated_q = try s.transpose(try s.rope(try s.transpose(q, &.{ 1, 2, 0, 3 }), pos, 128), &.{ 2, 1, 0, 3 });
+        const rotated_keys = try s.transpose(try s.rope(try s.transpose(keys, &.{ 1, 2, 0, 3 }), pos, 128), &.{ 2, 1, 0, 3 });
+        const all_values = try s.transpose(values, &.{ 0, 2, 1, 3 });
         var outputs: [8]A = undefined;
         var at: i32 = 0;
         for (streams, 0..) |stream, j| {
             const n: i32 = @as(i32, @intCast(@min(15, stream.budget))) + 1;
-            outputs[j] = try attendNormalized(s, stream.state.dflash_cache[i], stream.state.dflash_offset, try s.slice(q, 1, at, at + n), try s.slice(keys, 1, at, at + n), try s.slice(values, 1, at, at + n), masks);
+            const cache = stream.state.dflash_cache[i];
+            const query = try s.slice(rotated_q, 2, at, at + n);
+            const key = try s.cat(&.{ cache.a, try s.slice(rotated_keys, 2, at, at + n) }, 2);
+            const value = try s.cat(&.{ cache.b, try s.slice(all_values, 2, at, at + n) }, 2);
+            const mask = try masks.get(s, n, mx.dim(cache.a, 2));
+            var out = mx.c.mlx_array_new();
+            const rc = mx.c.mlx_fast_scaled_dot_product_attention(&out, query, key, value, 0.08838834764831845, "", mask, mx.empty, false, mx.stream);
+            out = try s.result(rc, out);
+            outputs[j] = try s.reshape(try s.transpose(out, &.{ 0, 2, 1, 3 }), &.{ 1, n, 4096 });
             at += n;
         }
         return d.project(k, s, i, "self_attn.o_proj", try s.cat(outputs[0..streams.len], 1));
@@ -742,7 +761,7 @@ pub const Drafter = struct {
                 }
             }
         }
-        std.debug.print("PASS: DFlash shared Q/K normalization matches serial attention for 1/4/8 streams, common/ragged rows, independent offsets and sliding caches\n", .{});
+        std.debug.print("PASS: DFlash shared Q/K normalization and RoPE match serial attention for 1/4/8 streams, common/ragged rows, independent offsets and sliding caches\n", .{});
     }
     fn checkProjections(d: *Drafter, target: *model.Model) !void {
         const equal = @import("variant_checks.zig").equalBits;
