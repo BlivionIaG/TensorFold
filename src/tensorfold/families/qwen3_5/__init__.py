@@ -114,7 +114,9 @@ def check_quantization(config: dict[str, Any], backend: str) -> None:
 
     if resolve_affine(config) is None:
         raise ValueError("Qwen dense requires MLX affine quantization metadata; this checkpoint has none (unquantized weights)")
-    if config.get("tie_word_embeddings") or (config.get("text_config") or {}).get("tie_word_embeddings"):
+    # The Mac row decoder has no tied-head kernel. The ROCm loader uses the tied embedding as the output head.
+    tied = config.get("tie_word_embeddings") or (config.get("text_config") or {}).get("tie_word_embeddings")
+    if backend != "rocm" and tied:
         raise ValueError("the tied embedding head is not supported by this packed Qwen decoder")
     _language_specs(config)
 

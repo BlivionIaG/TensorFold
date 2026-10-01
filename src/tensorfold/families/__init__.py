@@ -141,7 +141,7 @@ def require_readable(family: Family, config: dict[str, Any], backend: str) -> No
     """Reject unsupported storage formats or MLX quantization dimensions before downloading weights."""
 
     method = quant_method(config)
-    where = "NVIDIA GPUs (CUDA)" if backend == "cuda" else "Apple Silicon (MLX)"
+    where = {"cuda": "NVIDIA GPUs (CUDA)", "rocm": "AMD GPUs (ROCm)"}.get(backend, "Apple Silicon (MLX)")
     tested = ", ".join(getattr(family.package, "MODELS", ())) or "none listed"
     accepted = readable_quants(family, backend)
     if method not in accepted:

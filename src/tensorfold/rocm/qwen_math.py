@@ -108,12 +108,15 @@ def normalize_qk(q: torch.Tensor, k: torch.Tensor, head_k: int, eps: float) -> t
     return (inv * inv) * rms_norm(q, None, rms_eps), inv * rms_norm(k, None, rms_eps)
 
 
-def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int) -> torch.Tensor:
-    """Rotate the first ``rotary_dim`` features. Text positions use one index, so interleaved mrope matches this."""
+def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int, *, exact: bool = False) -> torch.Tensor:
+    """Rotate the first ``rotary_dim`` features. Text positions use one index, so interleaved mrope matches this.
+
+    ``exact`` keeps the prefill formula. The one-row HIP rope is for decode and is not bit-identical.
+    """
 
     width = x.shape[-1]
     rows = x.numel() // width
-    short = x.is_cuda and x.shape[-2] == 1 and rows <= 256 and width <= 8192
+    short = not exact and x.is_cuda and x.shape[-2] == 1 and rows <= 256 and width <= 8192
     if short and 0 < rotary_dim <= width and rotary_dim % 2 == 0:
         from tensorfold.rocm.act import rope_decode
 
@@ -158,12 +161,16 @@ def causal_attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: floa
     return torch.cat(pieces, dim=2)
 
 
-def causal_conv(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor | None) -> tuple[torch.Tensor, torch.Tensor]:
-    """Depthwise causal convolution. ``weight`` is (channels, kernel)."""
+def causal_conv(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor | None, *,
+                exact: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+    """Depthwise causal convolution. ``weight`` is (channels, kernel).
+
+    ``exact`` keeps the prefill loop. The one-token HIP kernel uses ``expf`` and does not match it bit for bit.
+    """
 
     batch, length, channels = x.shape
     kernel = weight.shape[1]
-    if x.is_cuda and length == 1 and 1 <= kernel <= 8:
+    if not exact and x.is_cuda and length == 1 and 1 <= kernel <= 8:
         from tensorfold.rocm.act import conv_decode
 
         if state is None:
@@ -426,7 +433,7 @@ def _project_group(x: torch.Tensor, packeds: tuple, linear):
 
 
 def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos0: int,
-                   act_dtype: torch.dtype | None = None):
+                   act_dtype: torch.dtype | None = None, *, exact_short: bool = False):
     """One prefill or decode step. ``tokens`` is (batch, length). Returns hidden states and new caches."""
 
     spec = model.spec
@@ -445,9 +452,9 @@ def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos
             stop = min(length, start + SPAN)
             normed = rms_norm(x[:, start:stop], layer.input_norm, spec.eps)
             if spec.full(index):
-                y, cache = _attention(spec, layer, normed, cache, linear, pos0 + start)
+                y, cache = _attention(spec, layer, normed, cache, linear, pos0 + start, exact_short)
             else:
-                y, cache = _linear_attn(spec, layer, normed, cache, linear)
+                y, cache = _linear_attn(spec, layer, normed, cache, linear, exact_short)
             x[:, start:stop] = x[:, start:stop] + y
             y = _mlp(spec, layer, rms_norm(x[:, start:stop], layer.post_norm, spec.eps), linear)
             x[:, start:stop] = x[:, start:stop] + y
@@ -476,7 +483,7 @@ def _mlp(spec: Spec, layer, x: torch.Tensor, linear) -> torch.Tensor:
     return out.view(batch, length, hidden)
 
 
-def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear):
+def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, exact: bool):
     batch, length, _ = x.shape
     grouped = _project_group(x, (layer.qkv, layer.z, layer.a, layer.b), linear)
     if grouped is None:
@@ -487,7 +494,7 @@ def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear):
     else:
         qkv, z, a, b = grouped
     z = z.view(batch, length, spec.value_heads, spec.value_dim)
-    mixed, conv_state = causal_conv(qkv, layer.conv, conv_state)
+    mixed, conv_state = causal_conv(qkv, layer.conv, conv_state, exact=exact)
     q, k, v = mixed.split((spec.key_width, spec.key_width, spec.value_width), dim=-1)
     q = q.view(batch, length, spec.key_heads, spec.key_dim)
     k = k.view(batch, length, spec.key_heads, spec.key_dim)
@@ -500,33 +507,34 @@ def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear):
     return _project(y.reshape(batch, length, -1), layer.out, linear), conv_state, rec
 
 
-def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear):
+def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear, exact: bool):
     batch, length, hidden = x.shape
     conv_state = None if cache is None else cache["conv"]
     rec = None if cache is None else cache["state"]
     if length <= SPAN:
-        y, conv_state, rec = _linear_span(spec, layer, x, conv_state, rec, linear)
+        y, conv_state, rec = _linear_span(spec, layer, x, conv_state, rec, linear, exact)
         return y, {"conv": conv_state, "state": rec}
     y = torch.empty(batch, length, hidden, dtype=x.dtype, device=x.device)
     for start in range(0, length, SPAN):
         stop = min(length, start + SPAN)
         y[:, start:stop], conv_state, rec = _linear_span(
-            spec, layer, x[:, start:stop], conv_state, rec, linear)
+            spec, layer, x[:, start:stop], conv_state, rec, linear, exact)
     return y, {"conv": conv_state, "state": rec}
 
 
-def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
+def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exact: bool):
     batch, length, hidden = x.shape
     if length <= SPAN:
-        return _attention_span(spec, layer, x, cache, linear, pos0)
+        return _attention_span(spec, layer, x, cache, linear, pos0, exact)
     y = torch.empty(batch, length, hidden, dtype=x.dtype, device=x.device)
     for start in range(0, length, SPAN):
         stop = min(length, start + SPAN)
-        y[:, start:stop], cache = _attention_span(spec, layer, x[:, start:stop], cache, linear, pos0 + start)
+        y[:, start:stop], cache = _attention_span(
+            spec, layer, x[:, start:stop], cache, linear, pos0 + start, exact)
     return y, cache
 
 
-def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
+def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exact: bool):
     batch, length, _ = x.shape
     grouped = _project_group(x, (layer.q, layer.k, layer.v), linear)
     if grouped is None:
@@ -541,8 +549,8 @@ def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int
     queries = rms_norm(queries, layer.q_norm, spec.eps).permute(0, 2, 1, 3)
     keys = rms_norm(keys, layer.k_norm, spec.eps).permute(0, 2, 1, 3)
     values = values.permute(0, 2, 1, 3)
-    queries = apply_rope(queries, pos0, spec.rope_theta, spec.rotary_dim)
-    keys = apply_rope(keys, pos0, spec.rope_theta, spec.rotary_dim)
+    queries = apply_rope(queries, pos0, spec.rope_theta, spec.rotary_dim, exact=exact)
+    keys = apply_rope(keys, pos0, spec.rope_theta, spec.rotary_dim, exact=exact)
     if cache is not None and "len" in cache:
         end = cache["len"] + length
         if end > cache["k"].shape[2]:

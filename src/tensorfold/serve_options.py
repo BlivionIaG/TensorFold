@@ -49,7 +49,8 @@ def check(args: argparse.Namespace, family: Any, backend: str, config_dir: Any =
         raise ValueError(f"--decode-share is 0 (whole prompts first) or more, not {share}")
     kv = getattr(args, "kv_dtype", "bf16")
     if kv != "bf16" and backend != "cuda":
-        raise ValueError(f"--kv-dtype {kv} is a CUDA engine option: the MLX path caches keys and values as bf16")
+        lane = "ROCm" if backend == "rocm" else "MLX"
+        raise ValueError(f"--kv-dtype {kv} is a CUDA engine option: the {lane} path caches keys and values as bf16")
     supported = getattr(family.package, "CUDA_KV_DTYPES", ("bf16",))
     if kv not in supported:
         raise ValueError(f"{family.title} on CUDA serves a {' or '.join(supported)} KV cache, not --kv-dtype {kv}")
@@ -69,8 +70,9 @@ def check(args: argparse.Namespace, family: Any, backend: str, config_dir: Any =
         return
     engine = getattr(family.package, "cuda_engine", None) if backend == "cuda" else None
     if engine is None or "mtp_confidence" not in inspect.signature(engine).parameters:
+        lane = {"cuda": "CUDA", "rocm": "ROCm"}.get(backend, "MLX")
         raise ValueError(f"--mtp-confidence sets where a CUDA engine's MTP chains stop; {family.title} on "
-                         f"{'CUDA' if backend == 'cuda' else 'MLX'} has no such rule")
+                         f"{lane} has no such rule")
     if not 0.0 <= confidence <= 1.0:
         raise ValueError(f"--mtp-confidence is a probability from 0 to 1, not {confidence}")
 
