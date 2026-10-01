@@ -522,9 +522,127 @@ hipError_t launch_affine_wmma_pair(const Affine& a, AffineSide first, AffineSide
     return hipGetLastError();
 }
 
+// One wave owns several 16-column tiles and one row tile. The activation tile is loaded once per
+// K step and every column uses it. Each column's WMMA and replay match the one-column kernel.
+constexpr int kCols = 4;
+
+template <typename FragA, typename FragB, typename FragC>
+__device__ void cols_step(FragC* even, FragC* odd, hip_bfloat16* As, hip_bfloat16* AsOdd,
+                          hip_bfloat16 Bs[][kTile * kTile], const hip_bfloat16* x, const uint2* packed, int m0,
+                          int k0, int m, int k, int lane, bool replay) {
+    fill_a8(As, AsOdd, x, m0, k0, m, k, lane, replay);
+#pragma unroll
+    for (int col = 0; col < kCols; ++col) store_b8(Bs[col], packed[col], lane);
+    __syncthreads();
+#pragma unroll
+    for (int col = 0; col < kCols; ++col) {
+        mma_tile<FragA, FragB, FragC>(even[col], odd[col], As, AsOdd, Bs[col], replay);
+    }
+    __syncthreads();
+}
+
+template <int Group>
+__global__ void __launch_bounds__(32) affine_wmma_cols(Affine a) {
+    using namespace rocwmma;
+    constexpr int kSteps = Group / kTile;
+    const int lane = threadIdx.x;
+    const int nbase = blockIdx.x * (kCols * kTile);
+    const int m0 = blockIdx.y * kTile;
+    const int words = a.k * a.bits / 32;
+    const int groups = a.k / Group;
+    const hip_bfloat16* x = static_cast<const hip_bfloat16*>(a.x);
+    const bool replay = m0 + 1 < a.m;
+
+    __shared__ hip_bfloat16 As[kTile * kTile];
+    __shared__ hip_bfloat16 AsOdd[kTile * kTile];
+    __shared__ hip_bfloat16 Bs[kCols][kTile * kTile];
+    __shared__ float dot_even[kTile * kTile];
+    __shared__ float dot_odd[kTile * kTile];
+    __shared__ float acc[kCols][kTile * kTile];
+    __shared__ float xsum[kTile];
+    __shared__ float scol[kCols][kTile];
+    __shared__ float bcol[kCols][kTile];
+
+    for (int col = 0; col < kCols; ++col) {
+        for (int e = lane; e < kTile * kTile; e += 32) acc[col][e] = 0.f;
+    }
+
+    using FragA = fragment<matrix_a, kTile, kTile, kTile, bfloat16_t, row_major>;
+    using FragB = fragment<matrix_b, kTile, kTile, kTile, bfloat16_t, col_major>;
+    using FragC = fragment<accumulator, kTile, kTile, kTile, float>;
+
+    for (int group = 0; group < groups; ++group) {
+        const int base = group * Group;
+        // Every code load for this group is issued before the first WMMA, so the misses overlap.
+        uint2 stage[kSteps][kCols];
+#pragma unroll
+        for (int step = 0; step < kSteps; ++step) {
+#pragma unroll
+            for (int col = 0; col < kCols; ++col) {
+                stage[step][col] = load_b8(a.words, words, nbase + col * kTile, base + step * kTile, a.n, lane);
+            }
+        }
+        if (lane < kTile) {
+            float sum = 0.f;
+            if (m0 + lane < a.m) {
+                const hip_bfloat16* xrow = x + static_cast<long long>(m0 + lane) * a.k + base;
+                for (int t = 0; t < Group; ++t) sum += static_cast<float>(xrow[t]);
+            }
+            xsum[lane] = sum;
+#pragma unroll
+            for (int col = 0; col < kCols; ++col) {
+                const int gcol = nbase + col * kTile + lane;
+                const long long at = static_cast<long long>(gcol) * groups + group;
+                scol[col][lane] = gcol < a.n ? a.scale[at] : 0.f;
+                bcol[col][lane] = gcol < a.n ? a.bias[at] : 0.f;
+            }
+        }
+        __syncthreads();
+
+        FragC part_even[kCols], part_odd[kCols];
+#pragma unroll
+        for (int col = 0; col < kCols; ++col) {
+            fill_fragment(part_even[col], 0.f);
+            fill_fragment(part_odd[col], 0.f);
+        }
+#pragma unroll
+        for (int step = 0; step < kSteps; ++step) {
+            cols_step<FragA, FragB, FragC>(part_even, part_odd, As, AsOdd, Bs, x, stage[step], m0, base + step * kTile,
+                                           a.m, a.k, lane, replay);
+        }
+        for (int col = 0; col < kCols; ++col) {
+            store_matrix_sync(dot_even, part_even[col], kTile, mem_row_major);
+            if (replay) store_matrix_sync(dot_odd, part_odd[col], kTile, mem_row_major);
+            __syncthreads();
+            fma_group(acc[col], dot_even, dot_odd, xsum, scol[col], bcol[col], replay, lane);
+            __syncthreads();
+        }
+    }
+
+    for (int col = 0; col < kCols; ++col) {
+        for (int e = lane; e < kTile * kTile; e += 32) {
+            const int grow = m0 + e / kTile;
+            const int gcol = nbase + col * kTile + e % kTile;
+            if (grow < a.m && gcol < a.n) a.out[static_cast<long long>(grow) * a.n + gcol] = acc[col][e];
+        }
+    }
+}
+
 hipError_t launch_affine_wmma(const Affine& a, hipStream_t stream) {
     // Tiles past M or N are filled with zeros, so a single row uses the same WMMA as a full tile.
     if (a.m < 1 || a.n < 1 || a.group % kTile || a.k % a.group) return hipErrorInvalidValue;
+    if (a.bits == 8 && a.m > kTile && a.n > kTile && (a.group == 32 || a.group == 64 || a.group == 128)) {
+        dim3 block(32);
+        dim3 grid((a.n + kCols * kTile - 1) / (kCols * kTile), (a.m + kTile - 1) / kTile);
+        if (a.group == 32) {
+            affine_wmma_cols<32><<<grid, block, 0, stream>>>(a);
+        } else if (a.group == 64) {
+            affine_wmma_cols<64><<<grid, block, 0, stream>>>(a);
+        } else {
+            affine_wmma_cols<128><<<grid, block, 0, stream>>>(a);
+        }
+        return hipGetLastError();
+    }
     dim3 block(32);
     dim3 grid((a.n + kTile - 1) / kTile, (a.m + kTile - 1) / kTile);
     if (a.bits == 8) {
