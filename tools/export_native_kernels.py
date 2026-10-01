@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 import mlx.core as mx
 from tensorfold.kernels.qwen.dense.v1 import lane_qmm, lane_glue, lane_tree, lane_attention
 from tensorfold.kernels.qwen.dense.v1 import row_attention, simd_qmm, simd_qmm_bits, affine_rows
