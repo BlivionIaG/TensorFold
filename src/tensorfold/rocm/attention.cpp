@@ -1,4 +1,5 @@
 #include <torch/extension.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
 
@@ -37,13 +38,24 @@ void causal(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, at::T
         stats = stat_buf.data_ptr<float>();
         partials = partial_buf.data_ptr<float>();
     }
+    auto stream = c10::cuda::getCurrentCUDAStream();
+    auto keep = [&](const at::Tensor& tensor) {
+        if (tensor.defined() && tensor.has_storage() && tensor.storage().data_ptr()) {
+            c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
+        }
+    };
+    keep(q);
+    keep(k);
+    keep(v);
+    keep(out);
+    keep(score_buf);
+    keep(stat_buf);
+    keep(partial_buf);
     causal_launch(q.data_ptr<float>(), k.data_ptr(), v.data_ptr(), out.data_ptr<float>(), static_cast<int>(batch),
                   static_cast<int>(qlen), static_cast<int>(k.size(2)), static_cast<int>(heads),
                   static_cast<int>(k.size(1)), static_cast<int>(d), static_cast<float>(scale),
                   static_cast<int>(q_pos0), k.stride(0), k.stride(1), k.stride(2), v.stride(0), v.stride(1),
-                  v.stride(2), kind, scores, stats, partials, c10::cuda::getCurrentCUDAStream().stream());
-    // Workspace dies with this call. Wait until the kernels queued on this stream have read it.
-    if (qlen == 1) c10::cuda::getCurrentCUDAStream().synchronize();
+                  v.stride(2), kind, scores, stats, partials, stream.stream());
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("causal", &causal); }

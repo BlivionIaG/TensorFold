@@ -319,6 +319,30 @@ def _project(x: torch.Tensor, packed: Packed, linear) -> torch.Tensor:
     return y.float().reshape(*x.shape[:-1], -1)
 
 
+def _project_pair(x: torch.Tensor, first: Packed, second: Packed, linear):
+    """Two projections of one activation. Falls back to two solo launches."""
+
+    owner = getattr(linear, "__self__", None)
+    pair = getattr(owner, "linear_pair", None) if owner is not None else None
+    if pair is None:
+        return _project(x, first, linear), _project(x, second, linear)
+    left, right = pair(x, first, second)
+    return left.float().reshape(*x.shape[:-1], -1), right.float().reshape(*x.shape[:-1], -1)
+
+
+def _project_group(x: torch.Tensor, packeds: tuple, linear):
+    """One launch for several projections of a short activation. None keeps the solo or pair path."""
+
+    owner = getattr(linear, "__self__", None)
+    group = getattr(owner, "linear_group", None) if owner is not None else None
+    if group is None:
+        return None
+    outs = group(x, packeds)
+    if outs is None:
+        return None
+    return tuple(y.float().reshape(*x.shape[:-1], -1) for y in outs)
+
+
 def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos0: int):
     """One prefill or decode step. ``tokens`` is (batch, length). Returns hidden states and new caches."""
 
@@ -343,16 +367,25 @@ def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos
 
 
 def _mlp(spec: Spec, layer, x: torch.Tensor, linear) -> torch.Tensor:
-    gate = torch.nn.functional.silu(_project(x, layer.gate, linear))
-    return _project(gate * _project(x, layer.up, linear), layer.down, linear)
+    grouped = _project_group(x, (layer.gate, layer.up), linear)
+    if grouped is None:
+        gate, up = _project_pair(x, layer.gate, layer.up, linear)
+    else:
+        gate, up = grouped
+    return _project(torch.nn.functional.silu(gate) * up, layer.down, linear)
 
 
 def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear):
     batch, length, _ = x.shape
-    qkv = _project(x, layer.qkv, linear)
-    z = _project(x, layer.z, linear).view(batch, length, spec.value_heads, spec.value_dim)
-    b = _project(x, layer.b, linear)
-    a = _project(x, layer.a, linear)
+    grouped = _project_group(x, (layer.qkv, layer.z, layer.a, layer.b), linear)
+    if grouped is None:
+        qkv = _project(x, layer.qkv, linear)
+        z = _project(x, layer.z, linear)
+        a = _project(x, layer.a, linear)
+        b = _project(x, layer.b, linear)
+    else:
+        qkv, z, a, b = grouped
+    z = z.view(batch, length, spec.value_heads, spec.value_dim)
     state = None if cache is None else cache["conv"]
     mixed, conv_state = causal_conv(qkv, layer.conv, state)
     q, k, v = mixed.split((spec.key_width, spec.key_width, spec.value_width), dim=-1)
@@ -368,10 +401,16 @@ def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear):
 
 def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int):
     batch, length, _ = x.shape
-    qg = _project(x, layer.q, linear).view(batch, length, spec.heads, spec.head_dim * 2)
+    grouped = _project_group(x, (layer.q, layer.k, layer.v), linear)
+    if grouped is None:
+        qg = _project(x, layer.q, linear)
+        keys, values = _project_pair(x, layer.k, layer.v, linear)
+    else:
+        qg, keys, values = grouped
+    qg = qg.view(batch, length, spec.heads, spec.head_dim * 2)
     queries, gate = qg.split(spec.head_dim, dim=-1)
-    keys = _project(x, layer.k, linear).view(batch, length, spec.kv_heads, spec.head_dim)
-    values = _project(x, layer.v, linear).view(batch, length, spec.kv_heads, spec.head_dim)
+    keys = keys.view(batch, length, spec.kv_heads, spec.head_dim)
+    values = values.view(batch, length, spec.kv_heads, spec.head_dim)
     queries = rms_norm(queries, layer.q_norm, spec.eps).permute(0, 2, 1, 3)
     keys = rms_norm(keys, layer.k_norm, spec.eps).permute(0, 2, 1, 3)
     values = values.permute(0, 2, 1, 3)

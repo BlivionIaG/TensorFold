@@ -1,4 +1,5 @@
 #include <torch/extension.h>
+#include <c10/cuda/CUDACachingAllocator.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <c10/cuda/CUDAStream.h>
 
@@ -30,10 +31,16 @@ void gdn(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const at
     TORCH_CHECK(dk == 16 || dk == 128, "dk is 16 or 128");
     TORCH_CHECK(value_heads % key_heads == 0, "value heads are a multiple of key heads");
     c10::cuda::CUDAGuard guard(q.device());
+    // The caller may drop q, k, v, gate, and beta as soon as we return. The caching allocator
+    // does not see a raw launch, so record the stream or it will reuse those buffers early.
+    auto stream = c10::cuda::getCurrentCUDAStream();
+    for (const at::Tensor& tensor : {q, k, v, gate, beta, state, y}) {
+        c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
+    }
     gated_delta_launch(q.data_ptr<float>(), k.data_ptr<float>(), v.data_ptr<float>(), gate.data_ptr<float>(),
                        beta.data_ptr<float>(), state.data_ptr<float>(), y.data_ptr<float>(), static_cast<int>(batch),
                        static_cast<int>(length), static_cast<int>(key_heads), static_cast<int>(value_heads),
-                       static_cast<int>(dk), static_cast<int>(dv), c10::cuda::getCurrentCUDAStream().stream());
+                       static_cast<int>(dk), static_cast<int>(dv), stream.stream());
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("gdn", &gdn); }

@@ -104,6 +104,46 @@ class Engine:
                  for start in range(0, flat.shape[0], _CHUNK)]
         return torch.cat(parts, dim=0)
 
+    def linear_pair(self, x: torch.Tensor, first: Packed, second: Packed):
+        """Gate and up, or k and v: one shared activation load when both widths match."""
+
+        from tensorfold.rocm import affine as affine_mod
+        from tensorfold.rocm.build import WMMA, gfx_name
+
+        if self.dtype is None:
+            self.dtype = activation_dtype(gfx_name())
+        flat = x.reshape(-1, x.shape[-1]).to(dtype=self.dtype).contiguous()
+        same = (first.words.shape[0] == second.words.shape[0] and first.bits == second.bits == 8
+                and first.group == second.group and self.schedule != "gemv" and self.dtype == torch.bfloat16
+                and gfx_name() in WMMA)
+        if not same:
+            return self.linear(flat, first), self.linear(flat, second)
+        self._note(flat, first)
+        self._note(flat, second)
+        left, right = affine_mod.matmul_pair(
+            flat, first.words, first.scale, first.bias, second.words, second.scale, second.bias,
+            bits=first.bits, group=first.group)
+        return left, right
+
+    def linear_group(self, x: torch.Tensor, packeds: tuple):
+        """Several projections of one short activation. None means the caller uses solo or pair launches."""
+
+        from tensorfold.rocm import affine as affine_mod
+        from tensorfold.rocm.build import WMMA, gfx_name
+
+        if self.dtype is None:
+            self.dtype = activation_dtype(gfx_name())
+        flat = x.reshape(-1, x.shape[-1]).to(dtype=self.dtype).contiguous()
+        same = (2 <= len(packeds) <= 4 and flat.shape[0] <= 16 and self.schedule != "gemv"
+                and self.dtype == torch.bfloat16 and gfx_name() in WMMA
+                and all(p.bits == 8 and p.group == packeds[0].group for p in packeds))
+        if not same:
+            return None
+        for packed in packeds:
+            self._note(flat, packed)
+        return affine_mod.matmul_group(
+            flat, tuple((p.words, p.scale, p.bias) for p in packeds), bits=8, group=packeds[0].group)
+
     def _note(self, flat: torch.Tensor, packed: Packed) -> None:
         words = packed.words
         k = flat.shape[-1]

@@ -43,6 +43,9 @@ def test_tiny_attention_matches_the_spec(dtype, qlen, span):
 
 def test_model_shaped_attention_matches_the_spec():
     _case(1, 4, 32, 8, 2, 256, torch.bfloat16, 40)
+    # Decode scores one warp per key. The query sees the whole span.
+    _case(1, 1, 32, 8, 2, 256, torch.bfloat16, 41, q_pos0=31)
+    _case(8, 1, 32, 8, 2, 256, torch.float16, 42, q_pos0=31)
 
 
 def test_a_cache_prefix_uses_its_stride():

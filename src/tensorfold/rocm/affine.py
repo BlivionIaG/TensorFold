@@ -54,3 +54,68 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
     out = torch.empty((m, n), dtype=torch.float32, device=x.device)
     _ext().affine(x, words.contiguous(), scale, bias, out, bits, group, which)
     return out if f32 else out.to(x.dtype)
+
+
+def _as_affine(words, scale, bias, k, bits, group):
+    if words.dtype != torch.int32 or words.ndim != 2 or words.shape[1] != k * bits // 32:
+        raise ValueError("packed words must be int32 of shape (N, K * bits / 32)")
+    n = words.shape[0]
+    groups = k // group
+    scale = scale.to(torch.float32).contiguous()
+    bias = bias.to(torch.float32).contiguous()
+    if scale.shape != (n, groups) or bias.shape != scale.shape:
+        raise ValueError("scale and bias must be (N, K / group)")
+    return words.contiguous(), scale, bias, n
+
+
+def matmul_pair(x: torch.Tensor, words_a: torch.Tensor, scale_a: torch.Tensor, bias_a: torch.Tensor,
+                words_b: torch.Tensor, scale_b: torch.Tensor, bias_b: torch.Tensor, *, bits: int, group: int,
+                f32: bool = False):
+    """Two packed products that share ``x``. Each side matches a solo WMMA launch. 8-bit only."""
+
+    from tensorfold.rocm.build import WMMA, gfx_name
+
+    if x.dtype != torch.bfloat16 or gfx_name() not in WMMA or bits != 8:
+        raise ValueError("the paired matmul is the BF16 WMMA 8-bit schedule")
+    if x.ndim != 2 or not x.is_cuda or not x.is_contiguous():
+        raise ValueError("affine inputs must be a contiguous BF16 matrix on the device")
+    m, k = x.shape
+    if k % group != 0:
+        raise ValueError("K must be whole groups")
+    wa, sa, ba, na = _as_affine(words_a, scale_a, bias_a, k, bits, group)
+    wb, sb, bb, nb = _as_affine(words_b, scale_b, bias_b, k, bits, group)
+    if na != nb:
+        raise ValueError("a paired matmul needs both sides to share N")
+    out_a = torch.empty((m, na), dtype=torch.float32, device=x.device)
+    out_b = torch.empty((m, nb), dtype=torch.float32, device=x.device)
+    _ext().affine_pair(x, wa, sa, ba, out_a, wb, sb, bb, out_b, bits, group)
+    if f32:
+        return out_a, out_b
+    return out_a.to(x.dtype), out_b.to(x.dtype)
+
+
+def matmul_group(x: torch.Tensor, packeds: tuple, *, bits: int, group: int, f32: bool = False):
+    """Up to four packed products that share ``x``. Each side matches a solo WMMA launch."""
+
+    from tensorfold.rocm.build import WMMA, gfx_name
+
+    if not 1 <= len(packeds) <= 4:
+        raise ValueError("a grouped matmul takes 1 to 4 weights")
+    if x.dtype != torch.bfloat16 or gfx_name() not in WMMA or bits != 8:
+        raise ValueError("the grouped matmul is the BF16 WMMA 8-bit schedule")
+    if x.ndim != 2 or not x.is_cuda or not x.is_contiguous():
+        raise ValueError("affine inputs must be a contiguous BF16 matrix on the device")
+    m, k = x.shape
+    if k % group != 0:
+        raise ValueError("K must be whole groups")
+    words, scale, bias, outs = [], [], [], []
+    for packed in packeds:
+        w, s, b, n = _as_affine(*packed, k, bits, group)
+        words.append(w)
+        scale.append(s)
+        bias.append(b)
+        outs.append(torch.empty((m, n), dtype=torch.float32, device=x.device))
+    _ext().affine_group(x, words, scale, bias, outs, bits, group)
+    if f32:
+        return tuple(outs)
+    return tuple(y.to(x.dtype) for y in outs)

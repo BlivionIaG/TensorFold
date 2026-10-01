@@ -6,3 +6,10 @@
 // fp16 selects v_dot2_f32_f16. A WMMA build refuses it.
 void affine_launch(const void* x, const void* words, const void* scale, const void* bias, void* out, int m, int n,
                    int k, int bits, int group, int schedule, int fp16, void* stream);
+void affine_pair_launch(const void* x, const void* words0, const void* scale0, const void* bias0, void* out0,
+                        const void* words1, const void* scale1, const void* bias1, void* out1, int m, int n, int k,
+                        int bits, int group, void* stream);
+// Up to four packed products that share x and K. Each column tile matches a solo WMMA launch.
+void affine_group_launch(const void* x, const void* const* words, const void* const* scale, const void* const* bias,
+                         void* const* out, const int* ns, int nsides, int m, int k, int bits, int group,
+                         void* stream);
