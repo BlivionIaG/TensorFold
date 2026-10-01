@@ -572,10 +572,13 @@ hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream) {
 }  // namespace tf
 
 void affine_launch(const void* x, const void* words, const void* scale, const void* bias, void* out, int m, int n,
-                   int k, int bits, int group, int schedule, int fp16, void* stream) {
+                   int k, int bits, int group, int schedule, int fp16, void* stream, float* partial, int splits) {
     tf::rocm::Affine a{x, static_cast<const uint32_t*>(words), static_cast<const float*>(scale),
                        static_cast<const float*>(bias), static_cast<float*>(out), m, n, k, bits, group, fp16};
-    hipError_t err = tf::rocm::launch_affine(a, schedule, static_cast<hipStream_t>(stream));
+    hipStream_t hip_stream = static_cast<hipStream_t>(stream);
+    hipError_t err = (partial != nullptr && splits > 1)
+                         ? tf::rocm::launch_affine_dot2_split(a, partial, splits, hip_stream)
+                         : tf::rocm::launch_affine(a, schedule, hip_stream);
     if (err != hipSuccess) throw std::runtime_error(std::string("affine kernel: ") + hipGetErrorString(err));
 }
 
