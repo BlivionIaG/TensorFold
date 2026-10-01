@@ -61,12 +61,27 @@ class Spec:
         return self.value_heads * self.value_dim
 
 
-def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
+def _rms_torch(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
     var = x.float().pow(2).mean(dim=-1, keepdim=True)
     y = x.float() * torch.rsqrt(var + eps)
     if weight is not None:
         y = y * weight.float()
     return y
+
+
+def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
+    """fp32 RMSNorm. A short CUDA row uses one HIP launch; a long prefill stays on PyTorch."""
+
+    width = x.shape[-1]
+    rows = x.numel() // width
+    weight_ok = weight is None or weight.numel() == width
+    if x.is_cuda and weight_ok and 1 <= rows <= 256 and 1 <= width <= 8192:
+        from tensorfold.rocm.act import rms
+
+        flat = x.reshape(rows, width).float().contiguous()
+        scale = None if weight is None else weight.reshape(width).float().contiguous()
+        return rms(flat, scale, eps).reshape(x.shape)
+    return _rms_torch(x, weight, eps)
 
 
 def normalize_qk(q: torch.Tensor, k: torch.Tensor, head_k: int, eps: float) -> tuple[torch.Tensor, torch.Tensor]:
@@ -80,6 +95,14 @@ def normalize_qk(q: torch.Tensor, k: torch.Tensor, head_k: int, eps: float) -> t
 def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int) -> torch.Tensor:
     """Rotate the first ``rotary_dim`` features. Text positions use one index, so interleaved mrope matches this."""
 
+    width = x.shape[-1]
+    rows = x.numel() // width
+    short = x.is_cuda and x.shape[-2] == 1 and rows <= 256 and width <= 8192
+    if short and 0 < rotary_dim <= width and rotary_dim % 2 == 0:
+        from tensorfold.rocm.act import rope_decode
+
+        flat = x.reshape(rows, width).float().contiguous()
+        return rope_decode(flat, pos0, rotary_dim, theta).reshape(x.shape)
     half = rotary_dim // 2
     freq = 1.0 / (theta ** (torch.arange(half, device=x.device, dtype=torch.float32) / half))
     pos = torch.arange(pos0, pos0 + x.shape[2], device=x.device, dtype=torch.float32)
@@ -121,6 +144,16 @@ def causal_conv(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor | Non
 
     batch, length, channels = x.shape
     kernel = weight.shape[1]
+    if x.is_cuda and length == 1 and 1 <= kernel <= 8:
+        from tensorfold.rocm.act import conv_decode
+
+        if state is None:
+            state = torch.zeros(batch, kernel - 1, channels, device=x.device, dtype=torch.float32)
+        else:
+            state = state.to(dtype=torch.float32).contiguous()
+        sample = x.reshape(batch, 1, channels).float().contiguous()
+        y = conv_decode(sample, weight.float().contiguous(), state)
+        return y.view(batch, 1, channels), state
     if state is None:
         state = x.new_zeros(batch, kernel - 1, channels)
     window = torch.cat((state.float(), x.float()), dim=1)
@@ -226,11 +259,20 @@ def gated_delta(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tens
 
 
 def _codes(words: torch.Tensor, bits: int, k: int) -> torch.Tensor:
+    """Unpack codes the way the HIP reader does, including a code that crosses two words."""
+
+    words64 = words.to(torch.int64) & 0xFFFFFFFF
     index = torch.arange(k, device=words.device)
-    word = (index * bits) // 32
-    shift = (index * bits) % 32
-    gathered = torch.gather(words.to(torch.int64), -1, word.expand(*words.shape[:-1], k))
-    return (gathered >> shift) & ((1 << bits) - 1)
+    bit = index * bits
+    word = bit // 32
+    shift = bit % 32
+    shape = (*words.shape[:-1], k)
+    low = torch.gather(words64, -1, word.expand(shape))
+    nxt = (word + 1).clamp(max=words.shape[-1] - 1)
+    high = torch.gather(words64, -1, nxt.expand(shape))
+    high = torch.where((shift + bits > 32) & (word + 1 < words.shape[-1]), high, torch.zeros_like(high))
+    value = (low >> shift) | (high << ((32 - shift) & 31))
+    return value & ((1 << bits) - 1)
 
 
 def gather_rows(packed: Packed, ids: torch.Tensor) -> torch.Tensor:
