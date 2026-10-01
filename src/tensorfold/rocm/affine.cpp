@@ -10,7 +10,7 @@
 // Packed MLX affine words. The kernel reads those words; this function does not decode them into a BF16 weight.
 
 void affine(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scale, const at::Tensor& bias,
-            at::Tensor& out, int64_t bits, int64_t group, int64_t schedule) {
+            at::Tensor& out, int64_t bits, int64_t group, int64_t schedule, int64_t split_mode) {
     TORCH_CHECK(bits == 2 || bits == 3 || bits == 4 || bits == 5 || bits == 6 || bits == 8, "bits 2/3/4/5/6/8");
     TORCH_CHECK(group == 32 || group == 64 || group == 128, "groups of 32, 64 or 128");
     TORCH_CHECK(schedule == 0 || schedule == 1 || schedule == 2, "schedule 0, 1 or 2");
@@ -32,13 +32,27 @@ void affine(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scal
                 "out: (M, N) fp32");
     c10::cuda::CUDAGuard guard(x.device());
     auto stream = c10::cuda::getCurrentCUDAStream();
-    for (const at::Tensor& tensor : {x, words, scale, bias, out}) {
-        c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
+    int splits = 1;
+    at::Tensor scratch;
+    float* partial = nullptr;
+    // The vocabulary grid is already wide. A short N with a long K splits whole groups.
+    if (x.scalar_type() == at::kHalf && schedule != 2) {
+        splits = affine_dot2_splits(static_cast<int>(m), static_cast<int>(n), static_cast<int>(k),
+                                    static_cast<int>(group), static_cast<int>(split_mode));
+    }
+    if (splits > 1) {
+        scratch = at::empty({m * n * groups * 2}, out.options());
+        partial = scratch.data_ptr<float>();
+    }
+    for (const at::Tensor& tensor : {x, words, scale, bias, out, scratch}) {
+        if (tensor.defined()) {
+            c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
+        }
     }
     affine_launch(x.data_ptr(), words.data_ptr(), scale.data_ptr(), bias.data_ptr(), out.data_ptr(),
                   static_cast<int>(m), static_cast<int>(n), static_cast<int>(k), static_cast<int>(bits),
                   static_cast<int>(group), static_cast<int>(schedule), x.scalar_type() == at::kHalf ? 1 : 0,
-                  stream.stream());
+                  stream.stream(), partial, splits);
 }
 
 void affine_pair(const at::Tensor& x, const at::Tensor& words0, const at::Tensor& scale0, const at::Tensor& bias0,

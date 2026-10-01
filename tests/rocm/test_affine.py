@@ -223,6 +223,35 @@ def test_wmma_partial_tile_matches_one_row():
     assert torch.equal(wide[:1], alone)
 
 
+def test_fp16_split_k_matches_one_launch():
+    """Group-boundary K splits fold in group order, so the bits match one launch, including M=1 against a wide grid."""
+
+    if gfx_name() in WMMA:
+        pytest.skip("FP16 activations are the RDNA2 schedule")
+    specs = (
+        (1, 512, 256, 8, 64, 3),
+        (3, 1024, 512, 8, 64, 4),
+        (8, 4096, 256, 8, 32, 5),
+        (1, 640, 384, 5, 64, 6),
+        (17, 768, 256, 3, 32, 7),
+    )
+    for rows, n, k, bits, group, seed in specs:
+        _, words, scale, bias = _pack(n, k, bits, group, seed)
+        words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
+        g = torch.Generator(device="cuda").manual_seed(seed)
+        x = torch.randn(rows, k, generator=g, device="cuda", dtype=torch.float16)
+        one = matmul(x, words, scale, bias, bits=bits, group=group, f32=True, dot2_split=False)
+        split = matmul(x, words, scale, bias, bits=bits, group=group, f32=True, dot2_split=True)
+        assert torch.equal(one, split)
+    _, words, scale, bias = _pack(512, 256, 8, 64, 9)
+    words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
+    g = torch.Generator(device="cuda").manual_seed(9)
+    x = torch.randn(1024, 256, generator=g, device="cuda", dtype=torch.float16)
+    alone = matmul(x[:1], words, scale, bias, bits=8, group=64, f32=True)
+    wide = matmul(x, words, scale, bias, bits=8, group=64, f32=True)
+    assert torch.equal(wide[:1], alone)
+
+
 def test_fp16_word_spanning_rows_do_not_depend_on_row_count():
     if gfx_name() in WMMA:
         pytest.skip("FP16 activations are the RDNA2 schedule")

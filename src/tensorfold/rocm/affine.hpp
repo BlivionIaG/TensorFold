@@ -53,6 +53,7 @@ struct AffineSide {
 // Two same-shape WMMA products that share x. Each side matches a solo launch.
 hipError_t launch_affine_wmma_pair(const Affine& a, AffineSide first, AffineSide second, hipStream_t stream);
 hipError_t launch_affine_dot2(const Affine& a, hipStream_t stream);
+hipError_t launch_affine_dot2_split(const Affine& a, float* partial, int splits, hipStream_t stream);
 // schedule 1 is the GEMV. Anything else is the WMMA on a build that has it.
 // fp16 is the RDNA2 v_dot2 schedule, and a WMMA build refuses it.
 hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream);

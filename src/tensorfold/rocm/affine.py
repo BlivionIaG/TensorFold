@@ -23,7 +23,7 @@ def _ext():
 
 
 def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torch.Tensor, *, bits: int,
-           group: int, schedule: str = "auto", f32: bool = False) -> torch.Tensor:
+           group: int, schedule: str = "auto", f32: bool = False, dot2_split: bool | None = None) -> torch.Tensor:
     """``x`` (M, K) times packed words (N, K * bits / 32). ``x`` is BF16, or FP16 on RDNA2.
 
     ``schedule`` is ``auto``, ``gemv`` or ``wmma``. FP16 ``auto`` and ``gemv`` are ``v_dot2_f32_f16``.
@@ -52,7 +52,9 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
     if not all(t.is_cuda and t.device == x.device for t in (words, scale, bias)):
         raise ValueError("affine operands must share the input's device")
     out = torch.empty((m, n), dtype=torch.float32, device=x.device)
-    _ext().affine(x, words.contiguous(), scale, bias, out, bits, group, which)
+    # None follows the column grid. False is one launch. True splits K on group boundaries.
+    split_mode = 0 if dot2_split is None else (2 if dot2_split else 1)
+    _ext().affine(x, words.contiguous(), scale, bias, out, bits, group, which, split_mode)
     return out if f32 else out.to(x.dtype)
 
 
