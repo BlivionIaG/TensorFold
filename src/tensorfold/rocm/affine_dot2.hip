@@ -45,8 +45,119 @@ __global__ void __launch_bounds__(32) affine_dot2_kernel(Affine a) {
     a.out[static_cast<long long>(row) * a.n + col] = acc;
 }
 
+// Wide tile, including one row. 256 threads each own one output column. A K chunk is
+// loaded once into shared memory (activations reused across the columns), then each
+// thread walks that chunk with v_dot2_f32_f16 in pair order and applies the group
+// scale only after the whole group. No atomics. The one-thread kernel remains for a
+// group this tile cannot hold.
+constexpr int kFastM = 8;
+constexpr int kFastN = 256;
+constexpr int kFastK = 64;
+constexpr int kFastLd = 68;
+
+__global__ void __launch_bounds__(kFastN, 1) affine_dot2_fast(Affine a) {
+    __shared__ __half xs[kFastM * kFastLd];
+    __shared__ __half ws[kFastN * kFastLd];
+    int tid = threadIdx.x;
+    int col = blockIdx.x * kFastN + tid;
+    int row0 = blockIdx.y * kFastM;
+    int words = a.k * a.bits / 32;
+    int groups = a.k / a.group;
+    int chunk = a.group < kFastK ? a.group : kFastK;
+    const __half* x = static_cast<const __half*>(a.x);
+    float acc[kFastM];
+#pragma unroll
+    for (int m = 0; m < kFastM; ++m) acc[m] = 0.f;
+
+    for (int group = 0; group < groups; ++group) {
+        int gbase = group * a.group;
+        float dot[kFastM];
+        float sumx[kFastM];
+#pragma unroll
+        for (int m = 0; m < kFastM; ++m) {
+            dot[m] = 0.f;
+            sumx[m] = 0.f;
+        }
+        for (int k0 = 0; k0 < a.group; k0 += chunk) {
+            if (a.bits == 8) {
+                int words_per = chunk >> 2;
+                int nwords = kFastN * words_per;
+                for (int e = tid; e < nwords; e += kFastN) {
+                    int c = e / words_per;
+                    int w = e - c * words_per;
+                    int gc = blockIdx.x * kFastN + c;
+                    int gk = gbase + k0 + (w << 2);
+                    uint32_t packed = 0u;
+                    if (gc < a.n && gk < a.k) {
+                        packed = a.words[static_cast<long long>(gc) * words + (gk >> 2)];
+                    }
+#pragma unroll
+                    for (int b = 0; b < 4; ++b) {
+                        ws[c * kFastLd + (w << 2) + b] = code_f16((packed >> (8 * b)) & 0xffu);
+                    }
+                }
+            } else {
+                int span = kFastN * chunk;
+                for (int e = tid; e < span; e += kFastN) {
+                    int c = e / chunk;
+                    int kk = e - c * chunk;
+                    int gc = blockIdx.x * kFastN + c;
+                    int gk = gbase + k0 + kk;
+                    __half qv = __float2half(0.f);
+                    if (gc < a.n && gk < a.k) {
+                        const uint32_t* wrow = a.words + static_cast<long long>(gc) * words;
+                        qv = code_f16(affine_code(wrow, gk, a.bits, words));
+                    }
+                    ws[c * kFastLd + kk] = qv;
+                }
+            }
+            int xspan = kFastM * chunk;
+            for (int e = tid; e < xspan; e += kFastN) {
+                int r = e / chunk;
+                int kk = e - r * chunk;
+                int gr = row0 + r;
+                int gk = gbase + k0 + kk;
+                __half xv = __float2half(0.f);
+                if (gr < a.m && gk < a.k) xv = x[static_cast<long long>(gr) * a.k + gk];
+                xs[r * kFastLd + kk] = xv;
+            }
+            __syncthreads();
+            if (col < a.n) {
+                for (int t = 0; t < chunk; t += 2) {
+                    __half2 q = __halves2half2(ws[tid * kFastLd + t], ws[tid * kFastLd + t + 1]);
+#pragma unroll
+                    for (int m = 0; m < kFastM; ++m) {
+                        __half x0 = xs[m * kFastLd + t];
+                        __half x1 = xs[m * kFastLd + t + 1];
+                        dot[m] = __builtin_amdgcn_fdot2(__halves2half2(x0, x1), q, dot[m], false);
+                        sumx[m] += static_cast<float>(x0);
+                        sumx[m] += static_cast<float>(x1);
+                    }
+                }
+            }
+            __syncthreads();
+        }
+        if (col < a.n) {
+            float scale = a.scale[static_cast<long long>(col) * groups + group];
+            float biasv = a.bias[static_cast<long long>(col) * groups + group];
+#pragma unroll
+            for (int m = 0; m < kFastM; ++m) {
+                acc[m] = fmaf(dot[m], scale, acc[m]);
+                acc[m] = fmaf(sumx[m], biasv, acc[m]);
+            }
+        }
+    }
+    if (col < a.n) {
+#pragma unroll
+        for (int m = 0; m < kFastM; ++m) {
+            int row = row0 + m;
+            if (row < a.m) a.out[static_cast<long long>(row) * a.n + col] = acc[m];
+        }
+    }
+}
+
 // Prefill tile. Each output is still one thread's fdot2 chain in pair order, so the
-// bits match the one-thread kernel. M=1 stays on that kernel.
+// bits match the one-thread kernel.
 constexpr int kDotBM = 16;
 constexpr int kDotBN = 16;
 constexpr int kDotGroup = 128;
@@ -114,6 +225,12 @@ __global__ void affine_dot2_tiled(Affine a) {
 
 hipError_t launch_affine_dot2(const Affine& a, hipStream_t stream) {
     if (a.m < 1 || a.n < 1 || a.k < 1 || a.group % 2 != 0 || a.k % a.group != 0) return hipErrorInvalidValue;
+    if (a.group == 32 || a.group == 64 || a.group == 128) {
+        dim3 block(kFastN);
+        dim3 grid((a.n + kFastN - 1) / kFastN, (a.m + kFastM - 1) / kFastM);
+        affine_dot2_fast<<<grid, block, 0, stream>>>(a);
+        return hipGetLastError();
+    }
     if (a.m > 1 && a.group <= kDotGroup) {
         dim3 block(kDotBM * kDotBN);
         dim3 grid((a.n + kDotBN - 1) / kDotBN, (a.m + kDotBM - 1) / kDotBM);
