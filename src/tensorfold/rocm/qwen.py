@@ -16,10 +16,8 @@ from pathlib import Path
 
 import torch
 
+from tensorfold.rocm import qwen_math
 from tensorfold.rocm.qwen_math import Packed, Spec, greedy
-
-# Rows per matmul launch. A multiple of the 16-wide WMMA tile, so a row keeps the bits it has in a full launch.
-_CHUNK = 2048
 _CELLS = ((1024, 512, 1), (1024, 512, 8), (16384, 1024, 1), (16384, 1024, 8))
 _RDNA2 = {f"gfx103{i}" for i in range(7)}
 _RDNA3 = {f"gfx110{i}" for i in range(4)}
@@ -64,6 +62,10 @@ class TextModel:
     embed: Packed
     layers: list
     final_norm: torch.Tensor
+    head: Packed | None = None
+
+    def output_head(self) -> Packed:
+        return self.embed if self.head is None else self.head
 
 
 def activation_dtype(gfx: str) -> torch.dtype:
@@ -98,11 +100,15 @@ class Engine:
         self._note(flat, packed)
         words, scale, bias = packed.words, packed.scale, packed.bias
         kwargs = {"bits": packed.bits, "group": packed.group, "schedule": self.schedule}
-        if flat.shape[0] <= _CHUNK:
+        span = qwen_math.SPAN
+        if flat.shape[0] <= span:
             return affine_mod.matmul(flat, words, scale, bias, **kwargs)
-        parts = [affine_mod.matmul(flat[start:start + _CHUNK], words, scale, bias, **kwargs)
-                 for start in range(0, flat.shape[0], _CHUNK)]
-        return torch.cat(parts, dim=0)
+        # One activation-dtype buffer. Keeping every chunk and then concatenating doubles a long prefill.
+        out = torch.empty(flat.shape[0], words.shape[0], dtype=flat.dtype, device=flat.device)
+        for start in range(0, flat.shape[0], span):
+            stop = min(start + span, flat.shape[0])
+            out[start:stop] = affine_mod.matmul(flat[start:stop], words, scale, bias, **kwargs)
+        return out
 
     def linear_pair(self, x: torch.Tensor, first: Packed, second: Packed):
         """Gate and up, or k and v: one shared activation load when both widths match."""
@@ -160,8 +166,29 @@ class Engine:
             from tensorfold.rocm.build import gfx_name
 
             self.dtype = activation_dtype(gfx_name())
-        return greedy(self.model, prompts, n_new, self.linear, device, after_token=after_token,
-                      cache_dtype=self.dtype)
+        with torch.inference_mode():
+            return greedy(self.model, prompts, n_new, self.linear, device, after_token=after_token,
+                          cache_dtype=self.dtype)
+
+
+class _Shards:
+    """One logical tensor table over every safetensors file in a checkpoint."""
+
+    def __init__(self, paths: list[Path]):
+        from safetensors import safe_open
+
+        self._open = [safe_open(str(path), framework="pt") for path in paths]
+        self._where: dict[str, int] = {}
+        for index, table in enumerate(self._open):
+            for key in table.keys():
+                self._where[key] = index
+
+    def get_tensor(self, key: str) -> torch.Tensor:
+        try:
+            index = self._where[key]
+        except KeyError as exc:
+            raise KeyError(key) from exc
+        return self._open[index].get_tensor(key)
 
 
 def _float(table, key: str, device: torch.device) -> torch.Tensor:
@@ -218,8 +245,7 @@ def load(path: str | Path, device: torch.device | None = None) -> TextModel:
     text = cfg.get("text_config") or cfg
     quant = cfg.get("quantization") or text.get("quantization") or {}
     bits, group = _affine_quant(quant)
-    if not (cfg.get("tie_word_embeddings", text.get("tie_word_embeddings"))):
-        raise ValueError("the tied embedding is the output head")
+    tied = bool(cfg.get("tie_word_embeddings", text.get("tie_word_embeddings", True)))
     head_dim = int(text.get("head_dim") or text["hidden_size"] // text["num_attention_heads"])
     rope = text.get("rope_parameters") or {}
     partial = float(rope.get("partial_rotary_factor", text.get("partial_rotary_factor", 0.25)))
@@ -244,10 +270,10 @@ def load(path: str | Path, device: torch.device | None = None) -> TextModel:
             want = "full_attention" if spec.full(index) else "linear_attention"
             if kind != want:
                 raise ValueError(f"layer {index} is {kind}, the interval says {want}")
-    shards = list(root.glob("*.safetensors"))
-    if len(shards) != 1:
-        raise ValueError(f"expected one safetensors shard in {root}, found {len(shards)}")
-    table = safe_open(shards[0], framework="pt")
+    shards = sorted(path for path in root.glob("*.safetensors") if "mtp" not in path.name.lower())
+    if not shards:
+        raise ValueError(f"no safetensors weights in {root}")
+    table = _Shards(shards)
     prefix = "language_model.model."
     embed = _packed(table, prefix + "embed_tokens", bits, group, device)
     if embed.words.shape[0] != spec.vocab:
@@ -279,7 +305,8 @@ def load(path: str | Path, device: torch.device | None = None) -> TextModel:
                 _float(table, lin + "A_log", device), _float(table, lin + "dt_bias", device),
                 _float(table, lin + "norm.weight", device),
                 _packed(table, lin + "out_proj", bits, group, device), *mlp))
-    return TextModel(spec, embed, layers, _float(table, prefix + "norm.weight", device))
+    head = embed if tied else _packed(table, "language_model.lm_head", bits, group, device)
+    return TextModel(spec, embed, layers, _float(table, prefix + "norm.weight", device), head)
 
 
 def _prompts(prompt_len: int, generated: int, concurrency: int, vocab: int) -> list[list[int]]:
