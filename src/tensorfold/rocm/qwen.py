@@ -196,6 +196,15 @@ def _conv(table, key: str, device: torch.device) -> torch.Tensor:
     return weight.to(device=device, dtype=torch.float32).contiguous()
 
 
+def _affine_quant(quant: dict) -> tuple[int, int]:
+    """MLX affine widths. 2, 4 and 8 sit inside a word; 3, 5 and 6 may cross into the next one."""
+
+    bits, group = quant.get("bits"), quant.get("group_size")
+    if quant.get("mode") != "affine" or bits not in (2, 3, 4, 5, 6, 8) or group not in (32, 64, 128):
+        raise ValueError(f"the RDNA text path loads affine 2/3/4/5/6/8-bit groups 32/64/128, got {quant}")
+    return int(bits), int(group)
+
+
 def load(path: str | Path, device: torch.device | None = None) -> TextModel:
     """Load the text tower. Vision weights and any MTP head are left on disk."""
 
@@ -208,11 +217,9 @@ def load(path: str | Path, device: torch.device | None = None) -> TextModel:
         raise ValueError(f"expected model_type qwen3_5, got {cfg.get('model_type')}")
     text = cfg.get("text_config") or cfg
     quant = cfg.get("quantization") or text.get("quantization") or {}
-    if (quant.get("bits"), quant.get("group_size"), quant.get("mode")) != (8, 64, "affine"):
-        raise ValueError(f"the RDNA text path loads affine 8-bit group 64, got {quant}")
+    bits, group = _affine_quant(quant)
     if not (cfg.get("tie_word_embeddings", text.get("tie_word_embeddings"))):
         raise ValueError("the tied embedding is the output head")
-    bits, group = 8, 64
     head_dim = int(text.get("head_dim") or text["hidden_size"] // text["num_attention_heads"])
     rope = text.get("rope_parameters") or {}
     partial = float(rope.get("partial_rotary_factor", text.get("partial_rotary_factor", 0.25)))
