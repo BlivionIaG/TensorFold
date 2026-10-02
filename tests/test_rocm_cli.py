@@ -33,3 +33,18 @@ def test_auto_picks_rocm_where_the_amd_driver_is(monkeypatch):
 def test_rocm_is_listed_where_a_family_has_it():
     assert families.backends_of(_family(load=_engine, rocm_engine=_engine)) == ("mlx", "rocm")
     assert "ROCm engine" in cli._engines(SimpleNamespace(package=SimpleNamespace(rocm_engine=_engine), lanes=False))
+
+
+@pytest.mark.parametrize("backend", ["cuda", "mlx"])
+def test_tp_four_and_eight_are_rocm_only(backend):
+    for tp in (4, 8):
+        with pytest.raises(ValueError, match=f"--tp {tp} is ROCm only"):
+            cli._check_world(SimpleNamespace(tp=tp, rank=0), backend)
+    with pytest.raises(ValueError, match="--rank 3 is ROCm only"):
+        cli._check_world(SimpleNamespace(tp=2, rank=3), backend)
+    cli._check_world(SimpleNamespace(tp=2, rank=1), backend)
+
+
+def test_rocm_takes_every_world():
+    for tp in (1, 2, 4, 8):
+        cli._check_world(SimpleNamespace(tp=tp, rank=tp - 1), "rocm")
