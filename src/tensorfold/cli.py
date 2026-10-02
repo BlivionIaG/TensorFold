@@ -299,6 +299,11 @@ def _serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, context:
                                        tp=int(args.tp), rank=int(args.rank),
                                        master=args.master, master_port=int(args.master_port),
                                        p2p=p2p)
+    if args.tp > 1 and args.rank > 0:
+        print(f"[tensorfold] rank {args.rank} of {args.tp} loaded in {time.perf_counter() - started:.1f}s; "
+              f"following rank 0 at {args.master}:{args.master_port}", flush=True)
+        engine.follow()
+        return 0
     sampling = _generation_config(model_dir)
     for key, value in (("temperature", args.temperature), ("top_p", args.top_p), ("top_k", args.top_k),
                        ("min_p", args.min_p)):
