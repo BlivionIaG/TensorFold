@@ -127,7 +127,7 @@ def build_parser(handlers: dict[str, Callable[[argparse.Namespace], int]]) -> ar
     cuda.add_argument("--backend", choices=("auto", "mlx", "cuda", "rocm"), default="auto",
                       help="auto: MLX on macOS, ROCm on an AMD GPU, CUDA elsewhere")
     cuda.add_argument("--tp", type=int, choices=(1, 2, 4, 8), default=1,
-                      help="GPUs the model is split over (tp 2/4/8 on ROCm/RDNA, 1/disk; run the same command on each)")
+                      help="GPUs the model is split over: 1 or 2 (4 and 8 on ROCm); run the same command on each")
     cuda.add_argument("--rank", type=int, default=0,
                       help="with --tp > 1: this machine's rank in [0, tp); rank 0 serves HTTP, others follow it")
     cuda.add_argument("--master", default="", help="with --tp > 1: rank 0's address on the link between the machines")
