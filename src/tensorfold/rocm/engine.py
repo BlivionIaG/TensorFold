@@ -389,6 +389,10 @@ class QwenEngine:
         mtp_state = self.mtp.fresh_cache(batch=1,
                                          total=position + max(0, depth) + 1,
                                          device=self._device(), dtype=dtype)
+        # Followers (tp>1, rank!=0) run this with sampling=None from follow(); the drafter's samples
+        # are discarded by the follower, so default to a deterministic Sampling so the chain can run.
+        if sampling is None:
+            sampling = Sampling(seed=0)
         drafts = self.mtp.draft_chain(hidden[:, -1:], last_token, position - 1, depth, mtp_state,
                                       sampling=sampling, dtype=dtype)
         extra: list[int] = []
