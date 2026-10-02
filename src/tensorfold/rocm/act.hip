@@ -22,23 +22,33 @@ __device__ inline void narrow(float v, float* out) { *out = v; }
 __device__ inline void narrow(float v, __half* out) { *out = __float2half_rn(v); }
 __device__ inline void narrow(float v, hip_bfloat16* out) { *out = hip_bfloat16(v); }
 
-// Sequential squares along the row, then one scale, all in fp32. The warp tree is the reduction. Input and output
-// are the activation dtype: the result is rounded once, as the fp32 kernel followed by a cast was.
+// Sequential squares along the row, then one scale, all in fp32. Input and output are the activation dtype: the
+// result is rounded once, as the fp32 kernel followed by a cast was. The block stages the row in LDS and writes it
+// back with 256 threads; the sum stays one wave's, lane l adding elements l, l + 32, ... in order, then the warp
+// tree, so the bits do not depend on the block size.
+constexpr int kRmsThreads = 256;
+constexpr int kRmsWidth = 8192;
+
 template <typename T>
-__global__ void rms_kernel(const T* __restrict__ x, const float* __restrict__ weight, T* __restrict__ y, int width,
-                           float eps) {
-    int row = blockIdx.x;
-    int lane = threadIdx.x;
+__global__ void __launch_bounds__(kRmsThreads) rms_kernel(const T* __restrict__ x, const float* __restrict__ weight,
+                                                         T* __restrict__ y, int width, float eps) {
+    __shared__ float row_v[kRmsWidth];
+    __shared__ float inv_s;
+    const int row = blockIdx.x;
     const T* in = x + static_cast<long long>(row) * width;
-    float sum = 0.f;
-    for (int i = lane; i < width; i += 32) {
-        const float v = widen(in[i]);
-        sum += v * v;
+    for (int i = threadIdx.x; i < width; i += kRmsThreads) row_v[i] = widen(in[i]);
+    __syncthreads();
+    if (threadIdx.x < 32) {
+        float sum = 0.f;
+        for (int i = threadIdx.x; i < width; i += 32) sum += row_v[i] * row_v[i];
+        const float inv = rsqrtf(warp_sum(sum) / static_cast<float>(width) + eps);
+        if (threadIdx.x == 0) inv_s = inv;
     }
-    float inv = rsqrtf(warp_sum(sum) / static_cast<float>(width) + eps);
+    __syncthreads();
+    const float inv = inv_s;
     T* out = y + static_cast<long long>(row) * width;
-    for (int i = lane; i < width; i += 32) {
-        float value = widen(in[i]) * inv;
+    for (int i = threadIdx.x; i < width; i += kRmsThreads) {
+        float value = row_v[i] * inv;
         if (weight != nullptr) value *= weight[i];
         narrow(value, out + i);
     }
@@ -94,13 +104,13 @@ __global__ void rope_decode_kernel(const float* __restrict__ x, float* __restric
 void rms_launch(const void* x, const float* weight, void* y, int kind, int rows, int width, float eps,
                 hipStream_t stream) {
     if (kind == 1) {
-        tf::rocm::rms_kernel<__half><<<rows, 32, 0, stream>>>(static_cast<const __half*>(x), weight,
+        tf::rocm::rms_kernel<__half><<<rows, tf::rocm::kRmsThreads, 0, stream>>>(static_cast<const __half*>(x), weight,
                                                                static_cast<__half*>(y), width, eps);
     } else if (kind == 2) {
-        tf::rocm::rms_kernel<hip_bfloat16><<<rows, 32, 0, stream>>>(static_cast<const hip_bfloat16*>(x), weight,
+        tf::rocm::rms_kernel<hip_bfloat16><<<rows, tf::rocm::kRmsThreads, 0, stream>>>(static_cast<const hip_bfloat16*>(x), weight,
                                                                      static_cast<hip_bfloat16*>(y), width, eps);
     } else {
-        tf::rocm::rms_kernel<float><<<rows, 32, 0, stream>>>(static_cast<const float*>(x), weight,
+        tf::rocm::rms_kernel<float><<<rows, tf::rocm::kRmsThreads, 0, stream>>>(static_cast<const float*>(x), weight,
                                                               static_cast<float*>(y), width, eps);
     }
     hipError_t err = hipGetLastError();

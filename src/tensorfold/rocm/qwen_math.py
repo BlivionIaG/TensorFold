@@ -516,7 +516,8 @@ def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, ex
     v = v.view(batch, length, spec.value_heads, spec.value_dim)
     q, k = normalize_qk(q, k, spec.key_dim, spec.eps)
     y, rec = gated_delta(q, k, v, a, b, layer.a_log, layer.dt_bias, rec)
-    y = rms_norm(y, layer.gnorm, spec.eps) * torch.nn.functional.silu(z)
+    # silu(z) widened first: the same product as the promoting multiply, on the same-dtype kernel.
+    y = rms_norm(y, layer.gnorm, spec.eps) * torch.nn.functional.silu(z).float()
     if y.dtype != x.dtype:
         y = y.to(dtype=x.dtype)
     return _project(y.reshape(batch, length, -1), layer.out, linear), conv_state, rec
