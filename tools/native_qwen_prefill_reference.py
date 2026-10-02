@@ -198,4 +198,5 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from native_runtime import fixture_storage
+    fixture_storage(main)()

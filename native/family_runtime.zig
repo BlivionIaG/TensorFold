@@ -257,7 +257,7 @@ pub fn run(comptime M: type, init: std.process.Init, args: []const []const u8) !
                 defer a.free(z);
                 const f = try p.scope.cast(p.logits, mx.f32t);
                 try mx.eval(f);
-                try mx.check(mx.c.mlx_save(z, f));
+                try mx.saveArray(z, f);
             };
             try m.commit(&p, n);
             off += n;

@@ -1052,7 +1052,7 @@ fn save(s: *mx.Scope, path: []const u8, value: A) !void {
     defer mx.allocator.free(z);
     const v = try s.cast(value, mx.f32t);
     try mx.eval(v);
-    try mx.check(c.mlx_save(z, v));
+    try mx.saveArray(z, v);
 }
 
 test "GLM checkpoint layouts preserve projection and draft-head identities" {

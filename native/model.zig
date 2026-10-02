@@ -291,7 +291,7 @@ pub const Model = struct {
         const path = try std.fmt.bufPrintSentinel(&buf, "{s}/{d}-{d}-{s}.npy", .{ dir, position, layer, label }, 0);
         const out = try s.cast(value, mx.f32t);
         try mx.eval(out);
-        try mx.check(mx.c.mlx_save(path, out));
+        try mx.saveArray(path, out);
     }
     pub fn forward(m: *Model, tokens: []const i32, parents: []const i32) !Pass {
         if (tokens.len != parents.len) return error.InvalidTree;

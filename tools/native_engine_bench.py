@@ -23,6 +23,8 @@ import time
 from types import SimpleNamespace
 import uuid
 
+from native_runtime import FixtureStorage, FIXTURE_LIMIT_BYTES, fixture_bytes
+
 
 MODELS = {
     "qwen": "Qwen3.8-27B-MLX-4bit",
@@ -87,9 +89,10 @@ class GoldenCapture:
     methods = ("prefill", "hidden", "hidden_pass", "head", "hidden_rows", "keep_rows", "keep_rows_streams",
                "absorb_draft_context", "speculate", "settle", "unspeculate", "draft", "draft_streams")
 
-    def __init__(self, directory):
+    def __init__(self, directory, storage=None):
         self.directory = directory
         directory.mkdir(parents=True)
+        self.storage = storage if storage is not None else FixtureStorage()
         self.events = []
         self.arrays = []
         self.originals = []
@@ -100,12 +103,12 @@ class GoldenCapture:
         if isinstance(value, mx.array):
             mx.eval(value)
             dtype = str(value.dtype)
-            # NumPy cannot represent MLX BF16; every BF16 value is exact in FP32.
-            array = np.asarray(value.astype(mx.float32) if value.dtype == mx.bfloat16 else value)
-            name = f"array-{len(self.arrays):06}.npy"
-            np.save(self.directory / name, array, allow_pickle=False)
+            # Preserve BF16 bits without widening the captured tensor to FP32.
+            array = np.asarray(value.view(mx.uint16) if value.dtype == mx.bfloat16 else value)
+            name = f"array-{len(self.arrays):06}.npz"
+            self.storage.save_npz(self.directory / name, array)
             entry = dict(file=name, shape=list(value.shape), mlx_dtype=dtype, storage_dtype=str(array.dtype),
-                         sha256=hashlib.sha256((self.directory / name).read_bytes()).hexdigest())
+                         sha256=file_digest(self.directory / name))
             self.arrays.append(entry)
             return entry
         if value is None or isinstance(value, (str, bool, int, float)):
@@ -117,11 +120,12 @@ class GoldenCapture:
         return {"type": f"{type(value).__module__}.{type(value).__name__}"}
 
     def cache(self, cache):
+        from tensorfold.engine.family_common import cache_contents
         out = []
         for item in cache:
             scalars = {k: v for k, v in vars(item).items() if v is None or isinstance(v, (bool, int, float, str))}
             out.append(dict(type=f"{type(item).__module__}.{type(item).__name__}", metadata=scalars,
-                            state=self.value(item.state)))
+                            state=self.value(cache_contents(item))))
         return out
 
     def install(self, model, engine):
@@ -148,7 +152,12 @@ class GoldenCapture:
             else:
                 delattr(obj, name)
         write_json(self.directory / "trace.json", dict(events=self.events, arrays=self.arrays,
-                                                      timing_valid=False, bf16_storage="lossless float32"))
+                                                      timing_valid=False, bf16_storage="uint16 bits"))
+
+
+def file_digest(path):
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
 def golden_cases(tokenizer, synthetic=False):
@@ -251,6 +260,13 @@ def synthetic_checkpoint(family, directory, source=None):
 
 
 def golden_worker(args):
+    root = args.storage_root or args.output
+    with FixtureStorage(FIXTURE_LIMIT_BYTES - fixture_bytes(root)) as storage:
+        storage.check(args.output / "manifest.json", 0)
+        return capture_golden_worker(args, storage)
+
+
+def capture_golden_worker(args, storage):
     from native_runtime import require_mlx
     versions = require_mlx()
     import importlib
@@ -299,7 +315,7 @@ def golden_worker(args):
     expected = {}
     cases = golden_cases(tokenizer, synthetic)
     for case in cases:
-        capture = GoldenCapture(args.output / case["name"])
+        capture = GoldenCapture(args.output / case["name"], storage)
         result = run_golden_case(model, options, case, args, capture)
         write_json(capture.directory / "result.json", result)
         baseline = case["name"].replace("draft-", "text-")
@@ -330,8 +346,10 @@ def golden_suite(args):
     path = args.output / "suite.json"
     if path.exists():
         raise SystemExit("Golden output already exists; choose a new directory to preserve the fixture")
+    FixtureStorage(FIXTURE_LIMIT_BYTES - fixture_bytes(args.output)).check(path, 0)
     ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
     suite = dict(schema=1, run_id=str(uuid.uuid4()), physical_memory_bytes=ram, complete=False,
+                 storage_limit_bytes=FIXTURE_LIMIT_BYTES,
                  cuda=dict(status="unmeasured", reason="no CUDA hardware; Metal results do not verify CUDA"), models=[])
     write_json(path, suite)
     selected = [args.family] if args.family else [*MODELS, *SYNTHETIC_MODELS]
@@ -361,7 +379,7 @@ def golden_suite(args):
                        "--model-root", str(args.model_root), "--output", str(out), "--max-tokens", str(args.max_tokens),
                        "--repetitions", str(args.repetitions), "--seed", str(args.seed),
                        "--top-k", str(args.top_k), "--top-p", str(args.top_p),
-                       "--synthetic-shape", args.synthetic_shape]
+                       "--synthetic-shape", args.synthetic_shape, "--storage-root", str(args.output)]
             with (out / "worker.log").open("w") as log:
                 # Fresh sequential processes release each model before the next load; no inference deadline.
                 process = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
@@ -403,12 +421,14 @@ def verify_golden(directory):
                 raise ValueError("Missing production forward/head/draw observations")
             for entry in trace["arrays"]:
                 path = trace_path.parent / entry["file"]
-                if hashlib.sha256(path.read_bytes()).hexdigest() != entry["sha256"]:
+                if file_digest(path) != entry["sha256"]:
                     raise ValueError(f"Array hash mismatch: {path}")
-                value = np.load(path, allow_pickle=False)
+                with np.load(path, allow_pickle=False) as archive:
+                    value = archive["value"]
                 if list(value.shape) != entry["shape"] or str(value.dtype) != entry["storage_dtype"]:
                     raise ValueError(f"Array shape/dtype mismatch: {path}")
-                if not np.isfinite(value).all():
+                finite = ((value & 0x7f80) != 0x7f80).all() if entry["mlx_dtype"] == "mlx.core.bfloat16" else np.isfinite(value).all()
+                if not finite:
                     raise ValueError(f"Nonfinite fixture array: {path}")
                 arrays += 1
             tokens = result["tokens"]
@@ -770,6 +790,7 @@ def main():
     parser.add_argument("--family", choices=(*MODELS, *SYNTHETIC_MODELS))
     parser.add_argument("--golden", action="store_true", help="Capture and measure all local Python families, plus synthetic GLM/DeepSeek")
     parser.add_argument("--golden-worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--storage-root", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--python-case-manifest", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--verify-golden", type=Path, help="Verify a retained golden suite's arrays, provenance labels and token comparisons")
     parser.add_argument("--compare-golden", type=Path, help="Check native tokens against a golden suite before comparing phase measurements")

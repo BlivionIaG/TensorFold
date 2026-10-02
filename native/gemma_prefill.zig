@@ -416,5 +416,5 @@ fn save(s: *mx.Scope, dir: []const u8, name: []const u8, value: A) !void {
     defer mx.allocator.free(path);
     const out = try s.cast(value, mx.f32t);
     try mx.eval(out);
-    try mx.check(c.mlx_save(path, out));
+    try mx.saveArray(path, out);
 }

@@ -421,7 +421,7 @@ pub const Model = struct {
         defer mx.allocator.free(zpath);
         const value_f32 = try s.cast(value, mx.f32t);
         try mx.eval(value_f32);
-        try mx.check(mx.c.mlx_save(zpath, value_f32));
+        try mx.saveArray(zpath, value_f32);
     }
     pub fn f(m: *Model, base: []const u8, suffix: []const u8) !A {
         return m.weights.field(base, suffix);

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 from types import SimpleNamespace
 
 import pytest
@@ -242,17 +243,52 @@ def test_array_storage_retains_integer_precision_and_bf16(tmp_path):
     capture = GoldenCapture(tmp_path / "trace")
     integer = capture.value(mx.array([2**60 + 1], dtype=mx.uint64))
     bf16 = capture.value(mx.array([0.125, -3.5], dtype=mx.bfloat16))
-    assert int(np.load(capture.directory / integer["file"])[0]) == 2**60 + 1
-    assert np.array_equal(np.load(capture.directory / bf16["file"]), [0.125, -3.5])
-    assert bf16["storage_dtype"] == "float32"
+    with np.load(capture.directory / integer["file"]) as archive:
+        assert int(archive["value"][0]) == 2**60 + 1
+    with np.load(capture.directory / bf16["file"]) as archive:
+        bits = archive["value"]
+        assert np.array_equal(np.asarray(mx.array(bits).view(mx.bfloat16).astype(mx.float32)), [0.125, -3.5])
+        assert bits.nbytes == 4
+    assert bf16["storage_dtype"] == "uint16"
     capture.close()
 
 
-def test_verification_rejects_modified_array_payload(tmp_path):
+def test_golden_captures_share_one_budget_and_compress_repeated_values(tmp_path):
+    import mlx.core as mx
+    from native_runtime import FixtureStorage
+    storage = FixtureStorage(max_bytes=2 * 1024**2)
+    first = GoldenCapture(tmp_path / "first", storage)
+    entry = first.value(mx.zeros((65536,), dtype=mx.bfloat16))
+    assert (first.directory / entry["file"]).stat().st_size < 4096
+    storage.max_bytes = storage.used_bytes
+    second = GoldenCapture(tmp_path / "second", storage)
+    with pytest.raises(OSError, match="storage limit"):
+        second.value(mx.array([1.0]))
+    assert not list(second.directory.iterdir())
+
+
+def test_golden_workers_count_previous_families_against_the_suite_limit(tmp_path, monkeypatch):
+    import native_engine_bench as bench
+    (tmp_path / "previous-family.npz").write_bytes(b"123456")
+    output = tmp_path / "next-family"
+    output.mkdir()
+    monkeypatch.setattr(bench, "FIXTURE_LIMIT_BYTES", 10)
+
+    def capture(args, storage):
+        storage.write(args.output / "array.npz", 5, lambda _: pytest.fail("suite budget must reject this write"))
+
+    monkeypatch.setattr(bench, "capture_golden_worker", capture)
+    with pytest.raises(OSError, match="storage limit"):
+        bench.golden_worker(SimpleNamespace(output=output, storage_root=tmp_path))
+    assert not list(output.iterdir())
+
+
+@pytest.mark.parametrize("dtype,number", [("float32", 1.0), ("bfloat16", 1.0), ("bfloat16", float("inf")), ("bfloat16", float("nan"))])
+def test_verification_rejects_modified_or_nonfinite_array_payload(tmp_path, dtype, number):
     import mlx.core as mx
     family = tmp_path / "qwen"
     capture = GoldenCapture(family / "text-greedy")
-    value = capture.value(mx.array([1.0]))
+    value = capture.value(mx.array([number], dtype=getattr(mx, dtype)))
     capture.events = [{"method": method} for method in ("head", "_draw", "hidden")]
     capture.close()
     tokens = [1, 2]
@@ -266,6 +302,10 @@ def test_verification_rejects_modified_array_payload(tmp_path):
     (tmp_path / "suite.json").write_text(json.dumps(dict(complete=True, models=[
         dict(family="qwen", status="ok", synthetic=False, manifest="qwen/manifest.json")
     ])))
+    if not math.isfinite(number):
+        with pytest.raises(ValueError, match="Nonfinite fixture array"):
+            verify_golden(tmp_path)
+        return
     verify_golden(tmp_path)
     with (capture.directory / value["file"]).open("ab") as handle:
         handle.write(b"changed")

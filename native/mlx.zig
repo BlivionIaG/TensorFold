@@ -23,6 +23,10 @@ fn onError(msg: [*c]const u8, _: ?*anyopaque) callconv(.c) void {
 pub fn check(rc: c_int) !void {
     if (rc != 0) return error.MlxFailure;
 }
+pub fn saveArray(path: [:0]const u8, value: Array) !void {
+    try @import("storage.zig").check(path, c.mlx_array_nbytes(value) +| 65536);
+    try check(c.mlx_save(path, value));
+}
 pub fn checkVersion() !void {
     var version_string = c.mlx_string_new();
     defer _ = c.mlx_string_free(version_string);

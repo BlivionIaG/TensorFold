@@ -249,7 +249,7 @@ pub fn checkImage(io: std.Io, path: []const u8, fixture: []const u8) !void {
     const array = try s.data(pixels.ptr, &.{ @intCast(pixels.len / 1536), 1536 }, mx.f32t);
     var buf: [4096]u8 = undefined;
     try mx.eval(array);
-    try mx.check(c.mlx_save(try std.fmt.bufPrintSentinel(&buf, "{s}/pixels-native.npy", .{fixture}, 0), array));
+    try mx.saveArray(try std.fmt.bufPrintSentinel(&buf, "{s}/pixels-native.npy", .{fixture}, 0), array);
 }
 
 pub fn check(io: std.Io, dir: []const u8, fixture: []const u8) !void {
@@ -376,7 +376,7 @@ pub const Tower = struct {
         const path = try std.fmt.bufPrintSentinel(&buf, "{s}/{s}.npy", .{ dir, name }, 0);
         const value = try s.cast(x, mx.f32t);
         try mx.eval(value);
-        try mx.check(c.mlx_save(path, value));
+        try mx.saveArray(path, value);
     }
     fn positionEmbedding(t: *Tower, s: *mx.Scope, grid: Grid) !A {
         var coords: [2]A = undefined;

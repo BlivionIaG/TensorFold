@@ -54,7 +54,7 @@ pub fn generateWithPrefill(io: std.Io, m: anytype, tokens: []const i32, max_toke
             defer mx.allocator.free(z);
             const logits = try pass.scope.cast(pass.logits, mx.f32t);
             try mx.eval(logits);
-            try mx.check(mx.c.mlx_save(z, logits));
+            try mx.saveArray(z, logits);
         };
         const next = try mx.retain(try pass.scope.slice(draft_hidden, 0, @intCast(count - 1), @intCast(count)));
         mx.free(hidden);

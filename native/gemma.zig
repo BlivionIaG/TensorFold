@@ -974,7 +974,7 @@ pub fn checkModel(io: std.Io, dir: []const u8, output: []const u8) !void {
     const logits = try p.scope.cast(p.logits, mx.f32t);
     const path = try mx.allocator.dupeSentinel(u8, output, 0);
     defer mx.allocator.free(path);
-    try mx.check(mx.c.mlx_save(path, logits));
+    try mx.saveArray(path, logits);
     try model.commit(&p, 2);
     var continuation = try model.forward(&.{ 3, 4 });
     defer continuation.deinit();
@@ -1038,5 +1038,5 @@ fn saveDraft(s: *mx.Scope, dir: []const u8, name: []const u8, value: A) !void {
     defer mx.allocator.free(path);
     const out = try s.cast(value, mx.f32t);
     try mx.eval(out);
-    try mx.check(mx.c.mlx_save(path, out));
+    try mx.saveArray(path, out);
 }

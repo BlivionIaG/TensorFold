@@ -388,7 +388,7 @@ pub fn main(init: std.process.Init) !void {
                 defer allocator.free(z);
                 const f = try p.scope.cast(p.logits, mx.f32t);
                 try mx.eval(f);
-                try mx.check(mx.c.mlx_save(z, f));
+                try mx.saveArray(z, f);
             };
             try m.commit(&p, rows[0..n]);
             if (trace_dir != null) for (m.cache, 0..) |cache, layer| {
@@ -510,6 +510,7 @@ pub fn main(init: std.process.Init) !void {
 }
 
 test {
+    _ = @import("storage.zig");
     _ = @import("server.zig");
     _ = @import("decode_round.zig");
     _ = @import("shared_round.zig");

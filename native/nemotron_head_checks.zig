@@ -27,7 +27,7 @@ fn save(s: *mx.Scope, output: []const u8, name: []const u8, value: A) !void {
     defer mx.allocator.free(path);
     const converted = try s.cast(value, mx.f32t);
     try mx.eval(converted);
-    try mx.check(mx.c.mlx_save(path, converted));
+    try mx.saveArray(path, converted);
 }
 
 fn checkWideAbsorption(m: *nemotron.Model, seeds: *const [8]nemotron.Cache) !void {

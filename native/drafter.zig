@@ -1029,7 +1029,7 @@ pub const Drafter = struct {
         defer mx.allocator.free(path);
         const converted = try s.cast(value, mx.f32t);
         try mx.eval(converted);
-        try mx.check(mx.c.mlx_save(path, converted));
+        try mx.saveArray(path, converted);
     }
     fn saveLattice(d: *Drafter, s: *mx.Scope, output: []const u8, prefix: []const u8, lattice: Lattice, proposals: []const Proposal) !void {
         var buffer: [160]u8 = undefined;

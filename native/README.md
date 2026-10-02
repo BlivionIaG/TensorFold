@@ -226,8 +226,12 @@ Start GPU verification with:
 .zig-toolchain/zig build test-metal-smoke -Doptimize=safe -j1
 ```
 
-Fixtures and oracle outputs go under `build/native-checks`. Long-context/layer
-traces can consume tens or hundreds of GiB. Tests do not download missing models.
+Fixtures and oracle outputs go under `build/native-checks`. Python fixture writes
+and native array dumps preserve 64 GiB of free disk space. Python tensor writes
+have a 128 GiB budget per invocation, shared across families in a golden suite;
+golden arrays use lossless compression and retain BF16 bits without widening.
+Prune obsolete generated fixtures before retrying a storage-limit failure.
+Tests do not download missing models.
 Metadata checks read safetensors headers and file lengths; they do not establish
 that a model fits in memory or generates correct output.
 

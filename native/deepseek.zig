@@ -895,7 +895,7 @@ fn save(s: *mx.Scope, path: []const u8, value: A) !void {
     defer mx.allocator.free(z);
     const out = try s.cast(value, mx.f32t);
     try mx.eval(out);
-    try mx.check(c.mlx_save(z, out));
+    try mx.saveArray(z, out);
 }
 fn validateFormats(root: std.json.Value) !void {
     const block = blk: {

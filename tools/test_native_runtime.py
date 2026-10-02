@@ -62,3 +62,89 @@ def test_upstream_resolution_updates_native_pairing_instead_of_freezing_it():
 def test_resolver_rejects_mismatched_mlx_metal_wheels():
     with pytest.raises(RuntimeError, match="versions disagree"):
         resolved_dependencies({}, {"mlx": "0.33.1", "mlx-metal": "0.32.2"}, None)
+
+
+def test_fixture_reserve_checks_incoming_bytes_before_opening(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import native_runtime as runtime
+    storage = runtime.FixtureStorage()
+    path = tmp_path / "array.npy"
+    path.write_bytes(b"previous fixture")
+    monkeypatch.setattr(runtime.shutil, "disk_usage", lambda _: SimpleNamespace(free=runtime.DISK_RESERVE_BYTES + 8))
+    storage.check(path, 8)
+    with pytest.raises(OSError, match="preserving 64 GiB"):
+        storage.write(path, 9, lambda _: pytest.fail("writer must not run"))
+    assert path.read_bytes() == b"previous fixture"
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_fixture_budget_accumulates_writes_and_removes_failed_partials(tmp_path):
+    from native_runtime import FixtureStorage
+    storage = FixtureStorage(max_bytes=10)
+    first, second = tmp_path / "first", tmp_path / "second"
+    storage.write(first, 6, lambda path: path.write_bytes(b"123456"))
+    with pytest.raises(OSError, match="storage limit"):
+        storage.write(second, 5, lambda _: pytest.fail("writer must not run"))
+
+    def fail(path):
+        path.write_bytes(b"bad")
+        raise OSError("interrupted")
+
+    with pytest.raises(OSError, match="interrupted"):
+        storage.write(first, 4, fail)
+    assert first.read_bytes() == b"123456"
+    assert list(tmp_path.iterdir()) == [first]
+    assert storage.used_bytes == 6
+    storage.write(second, 4, lambda path: path.write_bytes(b"7890"))
+    assert storage.used_bytes == 10
+
+
+def test_fixture_guard_covers_numpy_and_imported_checkpoint_writers(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    import mlx.core as mx
+    import numpy as np
+    import native_runtime as runtime
+    original_numpy, original_mlx = np.save, mx.save_safetensors
+    values = np.array([2**60 + 1], dtype=np.uint64)
+    with runtime.FixtureStorage() as storage:
+        np.save(tmp_path / "array", values, allow_pickle=False)
+        mx.save_safetensors(str(tmp_path / "checkpoint.safetensors"), {"value": mx.array(values)})
+        storage.save_npz(tmp_path / "compressed.npz", values)
+        assert np.array_equal(np.load(tmp_path / "array.npy"), values)
+        assert np.array_equal(np.asarray(mx.load(str(tmp_path / "checkpoint.safetensors"))["value"]), values)
+        with np.load(tmp_path / "compressed.npz") as archive:
+            assert np.array_equal(archive["value"], values)
+        monkeypatch.setattr(runtime.shutil, "disk_usage", lambda _: SimpleNamespace(free=runtime.DISK_RESERVE_BYTES))
+        for save in (lambda: np.save(tmp_path / "blocked", values),
+                     lambda: mx.save_safetensors(str(tmp_path / "blocked.safetensors"), {"value": mx.array(values)}),
+                     lambda: storage.save_npz(tmp_path / "blocked.npz", values)):
+            with pytest.raises(OSError, match="preserving 64 GiB"):
+                save()
+        assert len(list(tmp_path.iterdir())) == 3
+    assert (np.save, mx.save_safetensors) == (original_numpy, original_mlx)
+
+
+def test_fixture_guard_restores_writers_after_failure_and_ignores_model_links(tmp_path):
+    import mlx.core as mx
+    import numpy as np
+    from native_runtime import fixture_bytes, fixture_storage, FixtureStorage
+    originals = np.save, mx.save_safetensors
+    checkpoint = tmp_path / "checkpoint"
+    checkpoint.write_bytes(b"weights")
+    output = tmp_path / "output"
+    output.mkdir()
+    link = output / "model.safetensors"
+    link.symlink_to(checkpoint)
+    (output / "model-directory").symlink_to(tmp_path, target_is_directory=True)
+    assert fixture_bytes(output) == 0
+    with pytest.raises(ValueError, match="symlink"):
+        FixtureStorage().write(link, 0, lambda _: pytest.fail("must preserve model link"))
+
+    @fixture_storage
+    def fail():
+        raise RuntimeError("capture failed")
+
+    with pytest.raises(RuntimeError, match="capture failed"):
+        fail()
+    assert (np.save, mx.save_safetensors) == originals
+    assert link.is_symlink() and checkpoint.read_bytes() == b"weights"

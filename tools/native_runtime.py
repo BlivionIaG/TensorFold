@@ -1,9 +1,99 @@
 """Keep Python oracles and native MLX on the same upstream-resolved dependencies."""
 import importlib.metadata
 import json
+import os
 from pathlib import Path
+import shutil
+import tempfile
+from functools import wraps
 
 ROOT = Path(__file__).resolve().parents[1]
+DISK_RESERVE_BYTES = 64 * 1024**3
+FIXTURE_LIMIT_BYTES = 128 * 1024**3
+
+
+class FixtureStorage:
+    """Bound oracle writes, including checkpoints produced by imported test fakes."""
+
+    def __init__(self, max_bytes=FIXTURE_LIMIT_BYTES):
+        self.max_bytes = max_bytes
+        self.used_bytes = 0
+        self.originals = []
+
+    def check(self, path, incoming_bytes):
+        if incoming_bytes > self.max_bytes - self.used_bytes:
+            raise OSError(f"Fixture storage limit exceeded at {path}; prune generated fixtures before retrying")
+        free = shutil.disk_usage(Path(path).parent).free
+        if incoming_bytes > free - DISK_RESERVE_BYTES:
+            raise OSError(f"Fixture write refused at {path}: preserving 64 GiB free disk space; "
+                          "prune generated fixtures before retrying")
+
+    def write(self, path, upper_bytes, writer):
+        path = Path(path)
+        self.check(path, upper_bytes)
+        if path.is_symlink():
+            raise ValueError(f"Refusing to replace a fixture symlink: {path}")
+        fd, name = tempfile.mkstemp(prefix=f".{path.name}.partial-", suffix=path.suffix, dir=path.parent)
+        os.close(fd)
+        partial = Path(name)
+        try:
+            writer(partial)
+            size = partial.stat().st_size
+            if size > upper_bytes:
+                raise OSError(f"Fixture exceeded its reserved write size: {path}")
+            self.check(path, 0)
+            partial.replace(path)
+            self.used_bytes += size
+        finally:
+            partial.unlink(missing_ok=True)
+
+    def save_npz(self, path, array):
+        import numpy as np
+        # DEFLATE can expand incompressible data; reserve that bound plus the headers.
+        self.write(path, array.nbytes + array.nbytes // 1000 + 1024**2,
+                   lambda partial: np.savez_compressed(partial, value=array))
+
+    def __enter__(self):
+        import numpy as np
+        import mlx.core as mx
+        original_numpy, original_mlx = np.save, mx.save_safetensors
+
+        def save_numpy(path, array, *args, **kwargs):
+            array = np.asarray(array)
+            if array.dtype.hasobject:
+                raise ValueError("Fixture arrays must not contain Python objects")
+            path = Path(path)
+            if not str(path).endswith(".npy"):
+                path = Path(str(path) + ".npy")
+            self.write(path, array.nbytes + 64 * 1024,
+                       lambda partial: original_numpy(partial, array, *args, **kwargs))
+
+        def save_safetensors(path, arrays, *args, **kwargs):
+            size = sum(array.nbytes for array in arrays.values())
+            self.write(path, size + 64 * 1024**2,
+                       lambda partial: original_mlx(str(partial), arrays, *args, **kwargs))
+
+        self.originals = [(np, "save", original_numpy), (mx, "save_safetensors", original_mlx)]
+        np.save, mx.save_safetensors = save_numpy, save_safetensors
+        return self
+
+    def __exit__(self, *_):
+        for module, name, original in self.originals:
+            setattr(module, name, original)
+        self.originals.clear()
+
+
+def fixture_storage(function):
+    @wraps(function)
+    def guarded(*args, **kwargs):
+        with FixtureStorage():
+            return function(*args, **kwargs)
+    return guarded
+
+
+def fixture_bytes(directory):
+    return sum(path.stat().st_size for root, _, files in os.walk(directory)
+               for name in files if not (path := Path(root) / name).is_symlink())
 
 
 def dependencies():
