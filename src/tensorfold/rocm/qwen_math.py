@@ -22,7 +22,7 @@ SPAN = 2048
 
 @dataclass
 class Packed:
-    """One affine matrix: packed int32 ``words`` and fp32 group ``scale``/``bias``."""
+    """One affine matrix: packed int32 ``words`` and group ``scale``/``bias`` (fp32, bf16 or fp16)."""
 
     words: torch.Tensor
     scale: torch.Tensor

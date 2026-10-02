@@ -260,3 +260,51 @@ def test_fp16_word_spanning_rows_do_not_depend_on_row_count():
     x = torch.randn((17, 96), device="cuda", dtype=torch.float16)
     alone = matmul(x[:1], words, scale, bias, bits=3, group=32, f32=True)
     assert torch.equal(matmul(x, words, scale, bias, bits=3, group=32, f32=True)[:1], alone)
+
+
+def _schedules():
+    """Every schedule this part runs, with its activation dtype."""
+
+    if gfx_name() in WMMA:
+        return [(schedule, torch.bfloat16) for schedule in ("auto", "gemv", "wmma", "decode")]
+    return [("auto", torch.float16), ("gemv", torch.bfloat16)]
+
+
+@pytest.mark.parametrize("table", [torch.bfloat16, torch.float16])
+@pytest.mark.parametrize("bits,group,k", [(8, 64, 256), (4, 64, 256), (6, 32, 192), (3, 128, 384)])
+def test_bf16_and_fp16_tables_match_the_same_values_in_fp32(table, bits, group, k):
+    """Group tables stored as bf16 or fp16 widen exactly, so every schedule gives the fp32 table's bits."""
+
+    _, words, scale, bias = _pack(48, k, bits, group, 41)
+    words, scale, bias = words.cuda(), scale.to(table).cuda(), bias.to(table).cuda()
+    wide_scale, wide_bias = scale.float(), bias.float()
+    for schedule, act in _schedules():
+        if schedule == "decode" and bits != 8:
+            continue
+        x = torch.randn(17, k, device="cuda", dtype=act)
+        for rows in (1, 8, 17):
+            if schedule == "decode" and rows > 16:
+                continue
+            splits = (None, True) if act == torch.float16 else (None,)
+            for split in splits:
+                kw = dict(bits=bits, group=group, schedule=schedule, f32=True, dot2_split=split)
+                got = matmul(x[:rows], words, scale, bias, **kw)
+                assert torch.equal(got, matmul(x[:rows], words, wide_scale, wide_bias, **kw)), (schedule, rows, split)
+
+
+def test_pair_and_group_read_bf16_tables():
+    """Paired and grouped launches read bf16 tables too. Sides of mixed types widen to fp32 together."""
+
+    if gfx_name() not in WMMA:
+        pytest.skip("the paired and grouped matmuls are the WMMA schedule")
+    packs = [_pack(n, 256, 8, 64, seed) for n, seed in ((64, 51), (64, 52), (16, 53))]
+    half = [(w.cuda(), s.to(torch.bfloat16).cuda(), b.to(torch.bfloat16).cuda()) for _, w, s, b in packs]
+    wide = [(w, s.float(), b.float()) for w, s, b in half]
+    x = torch.randn(9, 256, device="cuda", dtype=torch.bfloat16)
+    got = matmul_pair(x, *half[0], *half[1], bits=8, group=64, f32=True)
+    want = matmul_pair(x, *wide[0], *wide[1], bits=8, group=64, f32=True)
+    assert all(torch.equal(a, b) for a, b in zip(got, want))
+    want = matmul_group(x, wide, bits=8, group=64, f32=True)
+    for sides in (half, [half[0], wide[1], half[2]]):
+        got = matmul_group(x, sides, bits=8, group=64, f32=True)
+        assert all(torch.equal(a, b) for a, b in zip(got, want))
