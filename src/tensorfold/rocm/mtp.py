@@ -123,8 +123,8 @@ class MTPEngine:
         x = e_proj + h_proj
         attn_out, cache = _attention(self.head, x, cache, position, dtype, self.linear, spec)
         x = x + attn_out
-        x = qwen_math.rms_norm(x, self.head.final_norm, spec.eps)
-        return _vocab_logits(self.head, self.model, x, dtype)
+        residual = qwen_math.rms_norm(x, self.head.final_norm, spec.eps)
+        return _vocab_logits(self.head, self.model, residual, dtype), residual
 
     def draft_chain(self, hidden: torch.Tensor, last_token: int, position: int, depth: int, cache: dict, *,
                     sampling, dtype: torch.dtype) -> list[int]:
@@ -142,7 +142,7 @@ class MTPEngine:
         cur_hidden, cur_token = hidden, last_token
         for step in range(depth):
             tok_input = torch.as_tensor([cur_token], dtype=torch.long, device=device)
-            logits = self.forward(cur_hidden, tok_input, position + step, cache, dtype=dtype)
+            logits, residual = self.forward(cur_hidden, tok_input, position + step, cache, dtype=dtype)
             row = logits.detach().float().reshape(-1)
             k = int(sampling.top_k)
             sample_key = position + step
@@ -160,7 +160,7 @@ class MTPEngine:
                                  sample_key, sampling))
             ids.append(nxt)
             cur_token = nxt
-            cur_hidden = logits[:, -1:, :].to(dtype=dtype)
+            cur_hidden = residual[:, -1:, :]
         return ids
 
     def absorb(self, hidden_per_step: Sequence[torch.Tensor], tokens: Sequence[int], cache: dict, *,
