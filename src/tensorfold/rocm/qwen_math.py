@@ -439,6 +439,15 @@ def _project_group(x: torch.Tensor, packeds: tuple, linear):
                  for y in outs)
 
 
+def _residual(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """``x + y``. The ranks' fp32 sum is added to a widened residual: the promoting add's value on the
+    same-dtype kernel, rounded once into ``x`` as before."""
+
+    if y.dtype == torch.float32 and x.dtype != torch.float32:
+        return x.float() + y
+    return x + y
+
+
 def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos0: int,
                    act_dtype: torch.dtype | None = None, *, exact_short: bool = False, reduce=None):
     """One prefill or decode step. ``tokens`` is (batch, length). Returns hidden states and new caches.
@@ -468,11 +477,11 @@ def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos
                 y, cache = _linear_attn(spec, layer, normed, cache, linear, exact_short)
             if reduce is not None:
                 y = reduce(y)
-            x[:, start:stop] = x[:, start:stop] + y
+            x[:, start:stop] = _residual(x[:, start:stop], y)
             y = _mlp(spec, layer, rms_norm(x[:, start:stop], layer.post_norm, spec.eps), linear)
             if reduce is not None:
                 y = reduce(y)
-            x[:, start:stop] = x[:, start:stop] + y
+            x[:, start:stop] = _residual(x[:, start:stop], y)
         new_caches.append(cache)
     return rms_norm(x, model.final_norm, spec.eps), new_caches
 
