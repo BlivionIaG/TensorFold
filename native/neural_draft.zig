@@ -4,6 +4,7 @@ const sampling = @import("sampling.zig");
 const qwen = @import("model.zig");
 pub const Drafter = @import("drafter.zig").Drafter;
 const Proposal = @import("drafter.zig").Proposal;
+const max_streams = nemotron.Model.max_shared_streams;
 
 pub const Depth = struct {
     rates: [15]f64 = @import("draft_depth.zig").flash_prior,
@@ -199,7 +200,8 @@ fn cacheArrays(value: anytype, arrays: *std.ArrayList(mx.Array)) !void {
 
 pub fn absorbStreams(m: anytype, streams: []const AbsorbStream(@TypeOf(m.*))) !void {
     const M = @TypeOf(m.*);
-    if (streams.len > 8) return error.InvalidDraftRows;
+    const capacity = if (M == nemotron.Model) max_streams else 8;
+    if (streams.len > capacity) return error.InvalidDraftRows;
     if (!enabled(m, null) or streams.len == 0) return;
     var total: usize = 0;
     for (streams, 0..) |stream, i| {
@@ -216,13 +218,13 @@ pub fn absorbStreams(m: anytype, streams: []const AbsorbStream(@TypeOf(m.*))) !v
     }
     var scope = mx.Scope{};
     defer scope.deinit();
-    var caches: [8]M.DraftCache = @splat(.{});
+    var caches: [capacity]M.DraftCache = @splat(.{});
     defer for (&caches) |*cache| cache.deinit();
-    var last: [8]mx.Array = @splat(mx.empty);
+    var last: [capacity]mx.Array = @splat(mx.empty);
     defer for (last) |hidden| mx.free(hidden);
-    var pointers: [8]*M.DraftCache = undefined;
-    var lengths: [8]usize = @splat(0);
-    var contexts: [8]mx.Array = undefined;
+    var pointers: [capacity]*M.DraftCache = undefined;
+    var lengths: [capacity]usize = @splat(0);
+    var contexts: [capacity]mx.Array = undefined;
     var parts: usize = 0;
     var tokens: [128]i32 = undefined;
     var token_count: usize = 0;
@@ -376,12 +378,12 @@ pub const HeadUpdate = struct {
 pub const HeadVerification = struct {
     scope: mx.Scope = .{},
     model: ?*nemotron.Model = null,
-    bases: [8]nemotron.Cache = @splat(.{}),
-    records: [8]nemotron.Cache = @splat(.{}),
-    lengths: [8]usize = @splat(0),
-    offsets: [8]i32 = @splat(0),
-    positions: [8]i32 = @splat(0),
-    settings: [8]sampling.Sampling = undefined,
+    bases: [max_streams]nemotron.Cache = @splat(.{}),
+    records: [max_streams]nemotron.Cache = @splat(.{}),
+    lengths: [max_streams]usize = @splat(0),
+    offsets: [max_streams]i32 = @splat(0),
+    positions: [max_streams]i32 = @splat(0),
+    settings: [max_streams]sampling.Sampling = undefined,
     count: usize = 0,
     target_hidden: mx.Array = mx.empty,
     rows: nemotron.HeadRows = .{},
@@ -395,7 +397,7 @@ pub const HeadVerification = struct {
     }
 
     pub fn init(m: *nemotron.Model, streams: []const HeadStream, hidden: mx.Array, following: mx.Array) !HeadVerification {
-        if (streams.len == 0 or streams.len > 8) return error.InvalidDraftRows;
+        if (streams.len == 0 or streams.len > max_streams) return error.InvalidDraftRows;
         var total: usize = 0;
         for (streams, 0..) |stream, i| {
             if (stream.count == 0 or stream.count > 16 or stream.state.draft_hidden.ctx == null or stream.anchor < 0 or stream.anchor >= nemotron.Model.vocab) return error.InvalidDraftRows;
@@ -412,11 +414,11 @@ pub const HeadVerification = struct {
         errdefer v.deinit();
         const s = &v.scope;
         v.target_hidden = try s.own(try mx.retain(hidden));
-        var pointers: [8]*nemotron.Cache = undefined;
-        var catchup: [8]*nemotron.Cache = undefined;
-        var contexts: [8]mx.Array = undefined;
-        var anchors: [8]i32 = undefined;
-        const ones: [8]usize = @splat(1);
+        var pointers: [max_streams]*nemotron.Cache = undefined;
+        var catchup: [max_streams]*nemotron.Cache = undefined;
+        var contexts: [max_streams]mx.Array = undefined;
+        var anchors: [max_streams]i32 = undefined;
+        const ones: [max_streams]usize = @splat(1);
         var catching: usize = 0;
         var first: usize = 0;
         for (streams, 0..) |stream, i| {
@@ -437,7 +439,6 @@ pub const HeadVerification = struct {
         }
         if (catching > 0) try m.absorbDraftStreams(s, try s.cat(contexts[0..catching], 0), try s.ints(anchors[0..catching]), ones[0..catching], catchup[0..catching]);
         v.rows = try m.draftWindowFront(s, hidden, following, v.lengths[0..streams.len], pointers[0..streams.len], v.records[0..streams.len]);
-        try mx.evalMany(&.{ v.rows.context, v.rows.attended }, true);
         return v;
     }
 
@@ -449,19 +450,19 @@ pub const HeadVerification = struct {
         return result;
     }
 
-    pub fn prepareBatch(v: *HeadVerification, keeps: []const Keep) ![8]HeadUpdate {
+    pub fn prepareBatch(v: *HeadVerification, keeps: []const Keep) ![max_streams]HeadUpdate {
         const m = v.model orelse return error.InvalidDraftRows;
         if (keeps.len > v.count) return error.InvalidDraftRows;
         for (keeps, 0..) |keep, i| {
             if (keep.slot >= v.count or keep.count == 0 or keep.count > v.lengths[keep.slot] or keep.token < 0 or keep.token >= nemotron.Model.vocab) return error.InvalidDraftRows;
             for (keeps[0..i]) |other| if (other.slot == keep.slot) return error.DuplicateStream;
         }
-        var updates: [8]HeadUpdate = @splat(.{});
+        var updates: [max_streams]HeadUpdate = @splat(.{});
         errdefer for (&updates) |*update| update.deinit();
-        var slots: [8]usize = undefined;
-        var selected: [8]i32 = undefined;
-        var positions: [8]i32 = undefined;
-        var settings: [8]sampling.Sampling = undefined;
+        var slots: [max_streams]usize = undefined;
+        var selected: [max_streams]i32 = undefined;
+        var positions: [max_streams]i32 = undefined;
+        var settings: [max_streams]sampling.Sampling = undefined;
         var predicting: usize = 0;
         for (keeps) |keep| {
             updates[keep.slot] = try v.prepareCache(keep.slot, keep.count, keep.token, keep.predict);
@@ -481,7 +482,6 @@ pub const HeadVerification = struct {
                 updates[slot].prediction.hidden = try mx.retain(try v.scope.slice(hidden, 0, row, row + 1));
                 updates[slot].prediction.first = try mx.retain(try v.scope.slice(firsts, 0, row, row + 1));
             }
-            try mx.evalMany(&.{firsts}, true);
         }
         return updates;
     }
@@ -516,8 +516,8 @@ pub const HeadVerification = struct {
 };
 
 pub const PendingProposals = struct {
-    tokens: [8]mx.Array = @splat(mx.empty),
-    lengths: [8]usize = @splat(0),
+    tokens: [max_streams]mx.Array = @splat(mx.empty),
+    lengths: [max_streams]usize = @splat(0),
     count: usize = 0,
 
     pub fn deinit(p: *PendingProposals) void {
@@ -525,7 +525,8 @@ pub const PendingProposals = struct {
         p.* = .{};
     }
 
-    pub fn arrays(p: *const PendingProposals, out: *[8]mx.Array) []const mx.Array {
+    pub fn arrays(p: *const PendingProposals, out: []mx.Array) []const mx.Array {
+        std.debug.assert(out.len >= p.count);
         var count: usize = 0;
         for (p.tokens[0..p.count]) |token| if (token.ctx != null) {
             out[count] = token;
@@ -556,7 +557,8 @@ pub const PendingProposals = struct {
 
 pub fn proposeStreamsLazy(m: anytype, streams: []const Stream(@TypeOf(m.*))) !PendingProposals {
     const M = @TypeOf(m.*);
-    if (streams.len == 0 or streams.len > 8) return error.InvalidDraftRows;
+    const capacity = if (M == nemotron.Model) max_streams else 8;
+    if (streams.len == 0 or streams.len > capacity) return error.InvalidDraftRows;
     for (streams, 0..) |stream, i| {
         if (stream.budget > 15) return error.InvalidDraftBudget;
         if (!stream.settings.metal and stream.settings.temperature != 0) return error.RequiresGPUSampling;
@@ -569,19 +571,29 @@ pub fn proposeStreamsLazy(m: anytype, streams: []const Stream(@TypeOf(m.*))) !Pe
     }
     var pending = PendingProposals{ .count = streams.len };
     errdefer pending.deinit();
-    var caches: [8]M.DraftCache = undefined;
+    var caches: [capacity]M.DraftCache = undefined;
     var initialized: usize = 0;
     defer for (caches[0..initialized]) |*cache| cache.deinit();
     var scope = mx.Scope{};
     defer scope.deinit();
-    var hidden: [8]mx.Array = undefined;
-    var tokens: [8]mx.Array = undefined;
-    var parts: [8][15]mx.Array = undefined;
+    var hidden: [capacity]mx.Array = undefined;
+    var tokens: [capacity]mx.Array = undefined;
+    var parts: [capacity][15]mx.Array = undefined;
     var most: usize = 0;
-    var predicted: [8]bool = @splat(false);
+    var predicted: [capacity]bool = @splat(false);
+    var cached: [capacity]bool = @splat(false);
     for (streams, 0..) |stream, i| {
         if (@hasDecl(M, "HeadPrediction")) {
             predicted[i] = stream.budget > 0 and stream.state.head_prediction.matches(stream.state.position, stream.first, stream.settings);
+        }
+        pending.lengths[i] = stream.budget;
+        if (M == nemotron.Model and predicted[i] and stream.state.head_prediction.drafts.ctx != null and stream.budget <= mx.c.mlx_array_size(stream.state.head_prediction.drafts)) {
+            const drafts = stream.state.head_prediction.drafts;
+            pending.tokens[i] = try mx.retain(if (stream.budget == mx.c.mlx_array_size(drafts)) drafts else try scope.slice(drafts, 0, 0, @intCast(stream.budget)));
+            caches[i] = .{};
+            initialized += 1;
+            cached[i] = true;
+            continue;
         }
         caches[i] = if (@hasDecl(M, "HeadPrediction") and predicted[i]) try stream.state.head_prediction.cache.clone() else try stream.state.head_cache.clone();
         initialized += 1;
@@ -593,18 +605,17 @@ pub fn proposeStreamsLazy(m: anytype, streams: []const Stream(@TypeOf(m.*))) !Pe
             hidden[i] = stream.state.draft_hidden;
             tokens[i] = try scope.ints(&.{stream.first});
         }
-        pending.lengths[i] = stream.budget;
         most = @max(most, stream.budget);
     }
     for (0..most) |depth| {
-        var active: [8]usize = undefined;
-        var inputs: [8]mx.Array = undefined;
-        var token_parts: [8]mx.Array = undefined;
-        var state: [8]*M.DraftCache = undefined;
-        var positions: [8]i32 = undefined;
-        var settings: [8]sampling.Sampling = undefined;
+        var active: [capacity]usize = undefined;
+        var inputs: [capacity]mx.Array = undefined;
+        var token_parts: [capacity]mx.Array = undefined;
+        var state: [capacity]*M.DraftCache = undefined;
+        var positions: [capacity]i32 = undefined;
+        var settings: [capacity]sampling.Sampling = undefined;
         var count: usize = 0;
-        for (streams, 0..) |stream, i| if (stream.budget > depth and !(depth == 0 and predicted[i])) {
+        for (streams, 0..) |stream, i| if (!cached[i] and stream.budget > depth and !(depth == 0 and predicted[i])) {
             active[count] = i;
             inputs[count] = hidden[i];
             token_parts[count] = tokens[i];
@@ -623,32 +634,36 @@ pub fn proposeStreamsLazy(m: anytype, streams: []const Stream(@TypeOf(m.*))) !Pe
             hidden[i] = try scope.slice(next, 0, at, at + 1);
         }
     }
-    for (streams, 0..) |stream, i| if (stream.budget > 0) {
+    for (streams, 0..) |stream, i| if (!cached[i] and stream.budget > 0) {
         pending.tokens[i] = try mx.retain(try scope.cat(parts[i][0..stream.budget], 0));
     };
+    var arrays: [capacity]mx.Array = undefined;
+    const ready = pending.arrays(&arrays);
+    if (most > 0 and ready.len > 0) try mx.evalMany(ready, true);
     return pending;
 }
 
 pub fn proposeStreams(m: anytype, streams: []const Stream(@TypeOf(m.*)), output: []Proposal) !void {
     const M = @TypeOf(m.*);
-    if (streams.len == 0 or streams.len > 8 or output.len != streams.len) return error.InvalidDraftRows;
+    const capacity = if (M == nemotron.Model) max_streams else 8;
+    if (streams.len == 0 or streams.len > capacity or output.len != streams.len) return error.InvalidDraftRows;
     var queued = true;
     for (streams) |stream| queued = queued and (stream.settings.metal or stream.settings.temperature == 0);
     if (queued) {
         var pending = try proposeStreamsLazy(m, streams);
         defer pending.deinit();
-        var arrays: [8]mx.Array = undefined;
+        var arrays: [capacity]mx.Array = undefined;
         const ready = pending.arrays(&arrays);
         if (ready.len > 0) try mx.evalMany(ready, false);
         return pending.read(output);
     }
-    var caches: [8]M.DraftCache = undefined;
+    var caches: [capacity]M.DraftCache = undefined;
     var initialized: usize = 0;
     defer for (caches[0..initialized]) |*cache| cache.deinit();
     var scope = mx.Scope{};
     defer scope.deinit();
-    var hidden: [8]mx.Array = undefined;
-    var tokens: [8]i32 = undefined;
+    var hidden: [capacity]mx.Array = undefined;
+    var tokens: [capacity]i32 = undefined;
     var most: usize = 0;
     for (streams, output, 0..) |stream, *proposal, i| {
         if (stream.budget > 15) return error.InvalidDraftBudget;
@@ -660,10 +675,10 @@ pub fn proposeStreams(m: anytype, streams: []const Stream(@TypeOf(m.*)), output:
         most = @max(most, stream.budget);
     }
     for (0..most) |depth| {
-        var active: [8]usize = undefined;
-        var inputs: [8]mx.Array = undefined;
-        var ids: [8]i32 = undefined;
-        var state: [8]*M.DraftCache = undefined;
+        var active: [capacity]usize = undefined;
+        var inputs: [capacity]mx.Array = undefined;
+        var ids: [capacity]i32 = undefined;
+        var state: [capacity]*M.DraftCache = undefined;
         var count: usize = 0;
         for (streams, 0..) |stream, i| if (stream.budget > depth) {
             active[count] = i;
@@ -674,8 +689,8 @@ pub fn proposeStreams(m: anytype, streams: []const Stream(@TypeOf(m.*)), output:
         };
         const next = try m.draftStepStreams(&scope, try scope.cat(inputs[0..count], 0), try scope.ints(ids[0..count]), state[0..count]);
         const logits = try m.draftHead(&scope, next);
-        var positions: [8]i32 = undefined;
-        var settings: [8]sampling.Sampling = undefined;
+        var positions: [capacity]i32 = undefined;
+        var settings: [capacity]sampling.Sampling = undefined;
         for (active[0..count], 0..) |i, row| {
             positions[row] = streams[i].state.position + @as(i32, @intCast(depth)) + 1;
             settings[row] = streams[i].settings;

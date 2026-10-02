@@ -240,22 +240,6 @@ pub const Model = struct {
         try mx.check(mx.c.mlx_device_info_get_size(&recommended, info, "max_recommended_working_set_size"));
         if (wire and m.wired_before == null) {
             var previous: usize = 0;
-            // Safetensors payloads are lazy. Materialize weights before measuring
-            // their budget; counting active arrays immediately after init only
-            // sees the small normalization/constants validation tensors.
-            const arrays = try mx.allocator.alloc(A, m.weights.arrays.count());
-            defer mx.allocator.free(arrays);
-            var values = m.weights.arrays.iterator();
-            var index: usize = 0;
-            while (values.next()) |entry| {
-                // These lazy shard handles are metadata for schema validation;
-                // resident PLE is assembled separately from bounded file reads.
-                if (std.mem.startsWith(u8, entry.key_ptr.*, "model.layers.1.ple.ple_embedding.ngram_embedding.")) continue;
-                if (!m.mtp and std.mem.startsWith(u8, entry.key_ptr.*, "mtp.")) continue;
-                arrays[index] = entry.value_ptr.*;
-                index += 1;
-            }
-            try mx.evalMany(arrays[0..index], false);
             try mx.check(mx.c.mlx_synchronize(mx.stream));
             try mx.check(mx.c.mlx_clear_cache());
             var weights_bytes: usize = 0;
@@ -274,6 +258,13 @@ pub const Model = struct {
         std.debug.print("Resident Flash wired budget: {d} bytes; Metal recommended working set: {d}\n", .{ m.resident_wired_bytes, recommended });
     }
     pub fn init(io: std.Io, dir: []const u8, drafts: bool) !Model {
+        var previous_cache: usize = 0;
+        try mx.check(mx.c.mlx_set_cache_limit(&previous_cache, 0));
+        defer {
+            var ignored: usize = 0;
+            _ = mx.c.mlx_set_cache_limit(&ignored, previous_cache);
+        }
+        try mx.check(mx.c.mlx_clear_cache());
         var m = Model{ .weights = cp.Store.init(32), .kernels = mx.Kernels.init() };
         errdefer m.deinit();
         var buf: [4096]u8 = undefined;
@@ -316,6 +307,49 @@ pub const Model = struct {
             if (mx.dtype(value) != mx.c.MLX_INT64 or mx.c.mlx_array_size(value) != expected.len or !std.mem.eql(i64, mx.c.mlx_array_data_int64(value)[0..expected.len], expected)) return error.NGramConstantsMismatch;
         }
         m.ple_tables = try @import("ple_tables.zig").Tables.init(io, dir);
+        // Replace raw projection storage before realizing the rest of the checkpoint.
+        if (mx.tensor_units) for (0..48) |layer_index| {
+            var scope = mx.Scope{};
+            defer scope.deinit();
+            var base: [256]u8 = undefined;
+            _ = try m.hcWeights(&scope, try std.fmt.bufPrint(&base, "model.layers.{d}.attn_hyper_connection", .{layer_index}), true);
+            _ = try m.hcWeights(&scope, try std.fmt.bufPrint(&base, "model.layers.{d}.mlp_hyper_connection", .{layer_index}), true);
+            const linear = layer_index % 4 != 3;
+            const names: []const []const u8 = if (linear) &.{ "in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a" } else &.{ "q_proj", "k_proj", "v_proj", "indexer.index_qk_proj" };
+            const prefix = try std.fmt.bufPrint(&base, "model.layers.{d}.{s}", .{ layer_index, if (linear) "linear_attn" else "self_attn" });
+            var parts: [4]@import("flash_ops.zig").Weight = undefined;
+            var name_buffer: [256]u8 = undefined;
+            for (names, &parts) |name, *part| part.* = try m.weights.affine(try std.fmt.bufPrint(&name_buffer, "{s}.{s}", .{ prefix, name }));
+            try m.prepareProjectionStack(&scope, prefix, names, &parts, "native_decode_stack");
+        };
+        // Bound concurrent reads and discard one-use packing buffers during loading.
+        var arrays: [32]A = undefined;
+        const Entry = std.StringHashMap(A).Entry;
+        const ordered = try mx.allocator.alloc(Entry, m.weights.arrays.count());
+        defer mx.allocator.free(ordered);
+        var values = m.weights.arrays.iterator();
+        for (ordered) |*entry| entry.* = values.next().?;
+        std.mem.sort(Entry, ordered, {}, struct {
+            fn less(_: void, a: Entry, b: Entry) bool {
+                return std.mem.lessThan(u8, a.key_ptr.*, b.key_ptr.*);
+            }
+        }.less);
+        var count: usize = 0;
+        var batch_bytes: usize = 0;
+        for (ordered) |entry| {
+            // PLE shard handles describe host tables; those are read separately.
+            if (std.mem.startsWith(u8, entry.key_ptr.*, "model.layers.1.ple.ple_embedding.ngram_embedding.")) continue;
+            if (!m.mtp and std.mem.startsWith(u8, entry.key_ptr.*, "mtp.")) continue;
+            arrays[count] = entry.value_ptr.*;
+            count += 1;
+            batch_bytes += mx.c.mlx_array_nbytes(entry.value_ptr.*);
+            if (count == arrays.len or batch_bytes >= 256 * 1024 * 1024) {
+                try mx.evalMany(arrays[0..count], false);
+                count = 0;
+                batch_bytes = 0;
+            }
+        }
+        if (count > 0) try mx.evalMany(arrays[0..count], false);
         return m;
     }
     fn prepareConstants(m: *Model) !void {
@@ -472,6 +506,33 @@ pub const Model = struct {
         }
         return m.projectStackNamed(s, base, &.{ "k_proj", "v_proj", "native_index_key" }, x, "native_absorb_stack");
     }
+    fn prepareProjectionStack(m: *Model, s: *mx.Scope, base: []const u8, names: []const []const u8, parts: []@import("flash_ops.zig").Weight, label: []const u8) !void {
+        var buf: [256]u8 = undefined;
+        for (0..parts.len) |i| {
+            const key = try std.fmt.bufPrint(&buf, "{s}.{s}_{d}", .{ base, label, parts[i].format.bits });
+            if (m.weights.has(key)) continue;
+            var group: [4]@import("flash_ops.zig").Weight = undefined;
+            var count: usize = 0;
+            for (parts) |part| if (part.format.bits == parts[i].format.bits) {
+                group[count] = part;
+                count += 1;
+            };
+            const combined = try @import("flash_ops.zig").stack(s, group[0..count]);
+            try mx.evalMany(&combined.arrays, false);
+            try m.weights.putAffine(key, combined);
+            try m.weights.put(key, combined.arrays[0]);
+            var offset: i32 = 0;
+            var member_buffer: [256]u8 = undefined;
+            for (parts, names) |*part, name| if (part.format.bits == combined.format.bits) {
+                const end = offset + (try part.geometry(2)).n;
+                if (std.meta.eql(part.format, combined.format)) {
+                    for (&part.arrays, combined.arrays) |*array, joined| array.* = try s.slice(joined, 0, offset, end);
+                    try m.weights.putAffine(try std.fmt.bufPrint(&member_buffer, "{s}.{s}", .{ base, name }), part.*);
+                }
+                offset = end;
+            };
+        }
+    }
     fn projectStackNamed(m: *Model, s: *mx.Scope, base: []const u8, names: []const []const u8, x: A, label: []const u8) !A {
         if (names.len == 0 or names.len > 4) return error.InvalidProjectionGroup;
         var plan_buffer: [512]u8 = undefined;
@@ -492,31 +553,14 @@ pub const Model = struct {
                 outputs[i] = try m.lin(s, base, name, x);
             } else parts[i] = try m.weights.affine(try std.fmt.bufPrint(&buf, "{s}.{s}", .{ base, name }));
         }
+        if (mx.tensor_units) try m.prepareProjectionStack(s, base, names, parts[0..names.len], label);
         if (mx.tensor_units) for (names, 0..) |_, i| {
             if (done[i]) continue;
-            var group: [4]@import("flash_ops.zig").Weight = undefined;
             var count: usize = 0;
             for (parts[0..names.len]) |part| if (part.format.bits == parts[i].format.bits) {
-                group[count] = part;
                 count += 1;
             };
             const key = try std.fmt.bufPrint(&buf, "{s}.{s}_{d}", .{ base, label, parts[i].format.bits });
-            if (!m.weights.has(key)) {
-                const combined = try @import("flash_ops.zig").stack(s, group[0..count]);
-                try mx.evalMany(&combined.arrays, false);
-                try m.weights.putAffine(key, combined);
-                try m.weights.put(key, combined.arrays[0]);
-                var offset: i32 = 0;
-                var member_buffer: [256]u8 = undefined;
-                for (parts[0..names.len], names) |*part, name| if (part.format.bits == combined.format.bits) {
-                    const end = offset + (try part.geometry(2)).n;
-                    if (std.meta.eql(part.format, combined.format)) {
-                        for (&part.arrays, combined.arrays) |*array, joined| array.* = try s.slice(joined, 0, offset, end);
-                        try m.weights.putAffine(try std.fmt.bufPrint(&member_buffer, "{s}.{s}", .{ base, name }), part.*);
-                    }
-                    offset = end;
-                };
-            }
             const projected = try m.projectNamed(s, key, x);
             const group_index = plan.group_count;
             if (cache_plan) {

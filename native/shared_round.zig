@@ -6,6 +6,17 @@ const rounds = @import("decode_round.zig");
 const allocation = @import("draft_allocation.zig");
 const sampling = @import("sampling.zig");
 const G = session.Generation(model.Model);
+pub const max_streams = @import("nemotron.zig").Model.max_shared_streams;
+
+pub fn modelStreamLimit(comptime M: type) usize {
+    return if (M == @import("nemotron.zig").Model) M.max_shared_streams else 8;
+}
+
+pub fn streamLimit(backend: session.Backend) usize {
+    return switch (backend) {
+        inline else => |m| modelStreamLimit(@TypeOf(m)),
+    };
+}
 
 fn Shared(comptime M: type) type {
     if (M == model.Model) return @import("qwen_shared.zig");
@@ -38,7 +49,7 @@ pub const Coordinator = struct {
     max_rows: usize = 128,
     costs: [128]allocation.Cost = undefined,
     cost_count: usize = 0,
-    overhead_ms: [8]?f64 = @splat(null),
+    overhead_ms: [max_streams]?f64 = @splat(null),
     mtp_costs: ?@import("draft_depth.zig").Adaptive = null,
     rows: usize = 0,
     streams: usize = 0,
@@ -73,10 +84,10 @@ pub const Coordinator = struct {
         c.observeOverhead(streams, elapsed_ms - target_ms);
     }
 
-    pub fn calibrate(c: *Coordinator, s: *session.Session, max_streams: usize) !void {
+    pub fn calibrate(c: *Coordinator, s: *session.Session, stream_count: usize) !void {
         switch (s.backend) {
             inline .qwen, .gemma, .nemotron, .flash => |*m| {
-                try c.calibrateModel(s, m, max_streams);
+                try c.calibrateModel(s, m, stream_count);
                 const M = @TypeOf(m.*);
                 if (comptime adaptiveMtp(M) or M == @import("gemma.zig").Model) if (s.draft_options.enabled and s.draft_options.max_draft > 0 and @import("neural_draft.zig").enabled(m, null)) {
                     const prior = if (@hasDecl(M, "draft_prior")) M.draft_prior else &@import("draft_depth.zig").flash_prior;
@@ -93,13 +104,14 @@ pub const Coordinator = struct {
         }
     }
 
-    fn calibrateModel(c: *Coordinator, s: *session.Session, m: anytype, max_streams: usize) !void {
+    fn calibrateModel(c: *Coordinator, s: *session.Session, m: anytype, stream_count: usize) !void {
         const M = @TypeOf(m.*);
         const S = Shared(M);
+        const capacity = comptime modelStreamLimit(M);
         const qwen_costs = if (M == model.Model) mx.tensor_units and m.weights.bonsai_form == null else false;
         const nemotron_costs = M == @import("nemotron.zig").Model;
         const gemma_costs = M == @import("gemma.zig").Model;
-        if (max_streams == 0 or max_streams > 8 or c.max_rows == 0 or c.max_rows > 128) return error.InvalidSharedLimits;
+        if (stream_count == 0 or stream_count > capacity or c.max_rows == 0 or c.max_rows > 128) return error.InvalidSharedLimits;
         c.max_rows = @min(c.max_rows, if (@hasDecl(M, "max_shared_rows")) M.max_shared_rows else 128);
         var prompt: [64]i32 = undefined;
         for (&prompt, 0..) |*token, i| token.* = @intCast(1000 + i);
@@ -111,7 +123,7 @@ pub const Coordinator = struct {
         var base = try session.Generation(M).init(m, &s.tokenizer, mx.allocator, prompt[0..if (qwen_costs) @as(usize, 64) else if (nemotron_costs or gemma_costs) 48 else 4], .{ .max_tokens = 1 }, .{}, null);
         defer base.deinit();
         while (base.phase == .prefill) _ = try base.step(m);
-        const limit = @min(c.max_rows, max_streams * 16);
+        const limit = @min(c.max_rows, stream_count * 16);
         var measured: [32]allocation.Cost = undefined;
         var measured_count: usize = 0;
         var widths: [32]usize = undefined;
@@ -133,15 +145,15 @@ pub const Coordinator = struct {
             var best = std.math.inf(f64);
             // Extra streams probe workspace without charging their state cost to row growth.
             const single_cost = qwen_costs or ((nemotron_costs or gemma_costs) and width <= 16);
-            const geometries: usize = if (single_cost and max_streams > 1 and width > 1) 2 else 1;
+            const geometries: usize = if (single_cost and stream_count > 1 and width > 1) 2 else 1;
             for (0..geometries) |geometry| {
-                var states: [8]S.State = undefined;
+                var states: [capacity]S.State = undefined;
                 var initialized: usize = 0;
                 defer for (states[0..initialized]) |*state| state.deinit();
-                var streams: [8]S.Stream = undefined;
-                var tokens: [8][if (M == model.Model) 128 else 16]i32 = undefined;
-                var parents: [8][if (M == model.Model) 128 else 16]i32 = undefined;
-                const n = if (single_cost and geometry == 0) 1 else @min(max_streams, width);
+                var streams: [capacity]S.Stream = undefined;
+                var tokens: [capacity][if (M == model.Model) 128 else 16]i32 = undefined;
+                var parents: [capacity][if (M == model.Model) 128 else 16]i32 = undefined;
+                const n = if (single_cost and geometry == 0) 1 else @min(stream_count, if (!single_cost and (nemotron_costs or gemma_costs)) (width + 1) / 2 else width);
                 var remaining = width;
                 for (0..n) |i| {
                     states[i] = try base.state.clone();
@@ -155,6 +167,11 @@ pub const Coordinator = struct {
                     streams[i] = .{ .state = &states[i], .tokens = tokens[i][0..count], .parents = parents[i][0..count] };
                 }
                 for (0..4) |repetition| {
+                    if (repetition > 0) for (states[0..n]) |*state| {
+                        const fresh = try base.state.clone();
+                        state.deinit();
+                        state.* = fresh;
+                    };
                     if (geometry != 0 or repetition == 0) try mx.check(mx.c.mlx_clear_cache());
                     try mx.check(mx.c.mlx_synchronize(mx.stream));
                     const resident = try @import("memory_runtime.zig").activeBytes();
@@ -164,7 +181,7 @@ pub const Coordinator = struct {
                     defer pass.deinit();
                     try mx.eval(pass.logits);
                     if (geometry == 0 and repetition != 0) best = @min(best, (@import("server_live.zig").now(s.io) - started) * 1000);
-                    var paths: [8][]const i32 = @splat(&.{0});
+                    var paths: [capacity][]const i32 = @splat(&.{0});
                     try pass.commit(paths[0..n]);
                     try mx.check(mx.c.mlx_synchronize(mx.stream));
                     var peak: usize = 0;
@@ -175,7 +192,7 @@ pub const Coordinator = struct {
             measured[measured_count] = .{ .rows = width, .ms = @max(best, 0.001) };
             measured_count += 1;
         }
-        if (qwen_costs) std.debug.print("Qwen calibrated target forward costs: {any}\n", .{measured[0..measured_count]});
+        if (qwen_costs or nemotron_costs) std.debug.print("{s} calibrated target forward costs: {any}\n", .{ if (qwen_costs) "Qwen" else "Nemotron", measured[0..measured_count] });
         for (1..limit + 1) |rows| {
             var upper: usize = 0;
             while (measured[upper].rows < rows) : (upper += 1) {}
@@ -192,10 +209,11 @@ pub const Coordinator = struct {
         c.timing = .{};
         const M = @TypeOf(m.*);
         const S = Shared(M);
+        const capacity = comptime modelStreamLimit(M);
         const Generation = session.Generation(M);
         const Pass = @typeInfo(@typeInfo(@TypeOf(M.forward)).@"fn".return_type.?).error_union.payload;
         if (@hasDecl(M, "max_shared_rows")) c.max_rows = @min(c.max_rows, M.max_shared_rows);
-        if (requests.len == 0 or requests.len > 8 or requests.len > c.max_rows or results.len != requests.len) return error.InvalidSharedLimits;
+        if (requests.len == 0 or requests.len > capacity or requests.len > c.max_rows or results.len != requests.len) return error.InvalidSharedLimits;
         if (m.round_owner.stage != .idle) return error.ModelRoundActive;
         var shared_drafter: ?*@import("drafter.zig").Drafter = null;
         for (requests, 0..) |g, i| {
@@ -228,8 +246,8 @@ pub const Coordinator = struct {
         const started = @import("server_live.zig").now(std.Options.debug_io);
         const singleton_mtp = (adaptiveMtp(M) or M == @import("gemma.zig").Model) and requests.len == 1 and c.mtp_costs != null;
         var adaptive_window = false;
-        var windows: [8]rounds.Window = undefined;
-        var indexes: [8]usize = undefined;
+        var windows: [capacity]rounds.Window = undefined;
+        var indexes: [capacity]usize = undefined;
         var count: usize = 0;
         defer for (requests) |g| {
             g.in_round = false;
@@ -240,9 +258,9 @@ pub const Coordinator = struct {
         if (M == model.Model) {
             for (requests) |g| g.round_draft_budget = @min(g.sink.draft_budget, g.shared_draft_grant + 2);
         } else {
-            var prior: [8][15]f64 = undefined;
-            var probabilities: [8][]const f64 = undefined;
-            var mandatory: [8]usize = @splat(1);
+            var prior: [capacity][15]f64 = undefined;
+            var probabilities: [capacity][]const f64 = undefined;
+            var mandatory: [capacity]usize = @splat(1);
             for (requests, 0..) |g, i| {
                 const budget = if (g.options.draft and @import("neural_draft.zig").enabled(m, g.sink.drafter)) @min(15, g.sink.draft_budget, @max(1, g.draftRoom() -| 1)) else 0;
                 probabilities[i] = prior[i][0..budget];
@@ -281,19 +299,19 @@ pub const Coordinator = struct {
         defer pending_proposals.deinit();
         var head_verification = @import("neural_draft.zig").HeadVerification{};
         defer head_verification.deinit();
-        var head_slots: [8]?usize = @splat(null);
-        var head_updates: [8]@import("neural_draft.zig").HeadUpdate = @splat(.{});
+        var head_slots: [capacity]?usize = @splat(null);
+        var head_updates: [max_streams]@import("neural_draft.zig").HeadUpdate = @splat(.{});
         defer for (&head_updates) |*update| update.deinit();
-        var pending_windows: [8]usize = undefined;
-        var pending_slots: [8]?usize = @splat(null);
+        var pending_windows: [capacity]usize = undefined;
+        var pending_slots: [capacity]?usize = @splat(null);
         var input_scope = mx.Scope{};
         defer input_scope.deinit();
         if (M == model.Model or M == @import("gemma.zig").Model or @hasDecl(M, "draftStepStreams")) {
             const neural = @import("neural_draft.zig");
             const DraftStream = if (M == model.Model) @import("drafter.zig").Stream else neural.Stream(M);
-            var draft_streams: [8]DraftStream = undefined;
-            var proposals: [8]@import("drafter.zig").Proposal = undefined;
-            var draft_indexes: [8]usize = undefined;
+            var draft_streams: [capacity]DraftStream = undefined;
+            var proposals: [capacity]@import("drafter.zig").Proposal = undefined;
+            var draft_indexes: [capacity]usize = undefined;
             var drafting: usize = 0;
             var drafter: ?*neural.Drafter = null;
             for (windows[0..count], 0..) |window, j| if (window.from_neural) {
@@ -337,9 +355,9 @@ pub const Coordinator = struct {
                 }
             }
         }
-        var chances: [8][15]f64 = undefined;
-        var probabilities: [8][]const f64 = undefined;
-        var fixed: [8]usize = @splat(1);
+        var chances: [capacity][15]f64 = undefined;
+        var probabilities: [capacity][]const f64 = undefined;
+        var fixed: [capacity]usize = @splat(1);
         for (windows[0..count], 0..) |w, i| {
             probabilities[i] = chances[i][0..w.draft.len];
             if (w.from_neural) {
@@ -353,9 +371,9 @@ pub const Coordinator = struct {
         const allocated = if (adaptive_window) null else try allocation.allocate(mx.allocator, fixed[0..count], probabilities[0..count], c.costs[0..c.cost_count], c.overhead(count), c.max_rows);
         defer if (allocated) |granted| mx.allocator.free(granted);
         const granted: []const usize = allocated orelse &singleton_grant;
-        var streams: [8]S.Stream = undefined;
-        var array_streams: [8]@import("nemotron_shared.zig").ArrayStream = undefined;
-        var token_parts: [8]mx.Array = undefined;
+        var streams: [capacity]S.Stream = undefined;
+        var array_streams: [capacity]@import("nemotron_shared.zig").ArrayStream = undefined;
+        var token_parts: [capacity]mx.Array = undefined;
         for (windows[0..count], granted, 0..) |*w, extra, i| {
             const g = requests[indexes[i]];
             if (w.from_neural) g.shared_draft_grant = extra;
@@ -373,10 +391,10 @@ pub const Coordinator = struct {
             c.rows += w.count;
         }
         c.streams = count;
-        var retained: [8]Pass = @splat(if (M == @import("gemma.zig").Model) .{ .position = 0, .generation = 0, .rows = 0 } else .{});
+        var retained: [capacity]Pass = @splat(if (M == @import("gemma.zig").Model) .{ .position = 0, .generation = 0, .rows = 0 } else .{});
         defer for (retained[0..count]) |*pass| pass.deinit();
-        var selections: [8]Generation.Selection = undefined;
-        var paths: [8][]const i32 = undefined;
+        var selections: [capacity]Generation.Selection = undefined;
+        var paths: [capacity][]const i32 = undefined;
         const forward_started = @import("server_live.zig").now(std.Options.debug_io);
         c.timing.prepare_seconds = forward_started - started;
         var pass = if (M == @import("nemotron.zig").Model and pending_proposals.count > 0)
@@ -405,31 +423,13 @@ pub const Coordinator = struct {
         }
         const ids = if (M == @import("nemotron.zig").Model and head_gpu_targets) blk: {
             const selected = try @import("gpu_sampling.zig").sampleRows(&m.kernels, &sample_scope, logits, positions[0..sampled_rows], settings[0..sampled_rows], null);
-            var heads: [8]@import("neural_draft.zig").HeadStream = undefined;
-            var head_hidden: [8]mx.Array = undefined;
-            var head_tokens: [8]mx.Array = undefined;
-            var heading: usize = 0;
-            var first: i32 = 0;
-            for (windows[0..count], 0..) |w, j| {
-                const g = requests[indexes[j]];
-                const end = first + @as(i32, @intCast(w.count));
-                if (g.options.draft and g.sink.draft_budget > 0 and g.state.draft_hidden.ctx != null) {
-                    heads[heading] = .{ .state = &g.state, .anchor = w.tokens[0], .count = w.count, .settings = g.settings };
-                    head_hidden[heading] = try sample_scope.slice(pass.hidden, 0, first, end);
-                    head_tokens[heading] = try sample_scope.slice(selected, 0, first, end);
-                    head_slots[j] = heading;
-                    heading += 1;
-                }
-                first = end;
-            }
-            if (heading > 0) head_verification = try @import("neural_draft.zig").HeadVerification.init(m, heads[0..heading], try sample_scope.cat(head_hidden[0..heading], 0), try sample_scope.cat(head_tokens[0..heading], 0));
-            var proposal_arrays: [8]mx.Array = undefined;
+            var proposal_arrays: [max_streams]mx.Array = undefined;
             const ready = pending_proposals.arrays(&proposal_arrays);
-            var arrays: [9]mx.Array = undefined;
+            var arrays: [max_streams + 1]mx.Array = undefined;
             arrays[0] = selected;
             @memcpy(arrays[1..][0..ready.len], ready);
             try mx.evalMany(arrays[0 .. ready.len + 1], false);
-            var proposals: [8]@import("drafter.zig").Proposal = undefined;
+            var proposals: [capacity]@import("drafter.zig").Proposal = undefined;
             try pending_proposals.read(proposals[0..pending_proposals.count]);
             for (pending_windows[0..pending_proposals.count], proposals[0..pending_proposals.count]) |j, proposal| {
                 const w = &windows[j];
@@ -445,7 +445,10 @@ pub const Coordinator = struct {
         const sample_ended = @import("server_live.zig").now(std.Options.debug_io);
         c.timing.sample_seconds = sample_ended - forward_ended;
         var sampled: usize = 0;
-        var head_keeps: [8]@import("neural_draft.zig").HeadVerification.Keep = undefined;
+        var heads: [capacity]@import("neural_draft.zig").HeadStream = undefined;
+        var head_hidden: [capacity]mx.Array = undefined;
+        var head_tokens: [capacity]mx.Array = undefined;
+        var head_keeps: [capacity]@import("neural_draft.zig").HeadVerification.Keep = undefined;
         var keeping_heads: usize = 0;
         for (windows[0..count], 0..) |*w, j| {
             const i = indexes[j];
@@ -459,14 +462,20 @@ pub const Coordinator = struct {
             };
             sampled += w.count;
             paths[j] = selections[j].rows[0..selections[j].count];
-            if (M == @import("nemotron.zig").Model) if (head_slots[j]) |slot| {
-                if (results[i].failure == null and selections[j].count > 0) {
+            if (M == @import("nemotron.zig").Model and head_gpu_targets) {
+                if (g.options.draft and g.sink.draft_budget > 0 and g.state.draft_hidden.ctx != null and results[i].failure == null and selections[j].count > 0) {
+                    const slot = keeping_heads;
+                    const keep = selections[j].count;
                     const row: usize = @intCast(selections[j].rows[selections[j].count - 1]);
                     const token = ids[sampled - w.count + row];
-                    head_keeps[keeping_heads] = .{ .slot = slot, .count = selections[j].count, .token = token, .predict = g.phase == .decode and g.next == token };
+                    heads[slot] = .{ .state = &g.state, .anchor = w.tokens[0], .count = keep, .settings = g.settings };
+                    head_hidden[slot] = try sample_scope.slice(view.hidden, 0, 0, @intCast(keep));
+                    head_tokens[slot] = try sample_scope.cast(try sample_scope.ints(ids[sampled - w.count ..][0..keep]), mx.c.MLX_UINT32);
+                    head_slots[j] = slot;
+                    head_keeps[slot] = .{ .slot = slot, .count = keep, .token = token, .predict = g.phase == .decode and g.draftRoom() > 1 and g.next == token };
                     keeping_heads += 1;
                 }
-            };
+            }
             if (M == @import("gemma.zig").Model) {
                 retained[j].position = view.position;
                 retained[j].generation = view.generation;
@@ -488,12 +497,53 @@ pub const Coordinator = struct {
                 }
             }
         }
-        if (M == @import("nemotron.zig").Model and keeping_heads > 0) head_updates = try head_verification.prepareBatch(head_keeps[0..keeping_heads]);
+        if (M == @import("nemotron.zig").Model and keeping_heads > 0) head_verification = try @import("neural_draft.zig").HeadVerification.init(m, heads[0..keeping_heads], try sample_scope.cat(head_hidden[0..keeping_heads], 0), try sample_scope.cat(head_tokens[0..keeping_heads], 0));
         const select_ended = @import("server_live.zig").now(std.Options.debug_io);
         c.timing.select_seconds = select_ended - sample_ended;
-        try pass.commit(paths[0..count]);
         if (M == @import("nemotron.zig").Model) {
-            var head_arrays: [56]mx.Array = undefined;
+            if (keeping_heads > 0) head_updates = try head_verification.prepareBatch(head_keeps[0..keeping_heads]);
+            const neural = @import("neural_draft.zig");
+            var draft_states: [capacity]@import("request_state.zig").State(M) = undefined;
+            var draft_streams: [capacity]neural.Stream(M) = undefined;
+            var draft_slots: [capacity]usize = undefined;
+            var draft_rates: [capacity][15]f64 = undefined;
+            var draft_chances: [capacity][]const f64 = undefined;
+            const mandatory: [capacity]usize = @splat(1);
+            var drafting: usize = 0;
+            for (indexes[0..count], 0..) |index, j| if (head_slots[j]) |slot| {
+                const g = requests[index];
+                const update = &head_updates[slot];
+                if (update.prediction.first.ctx == null) continue;
+                var depth = g.draft_depth;
+                if (windows[j].from_neural) depth.observe(windows[j].draft.len, selections[j].accepted);
+                const budget = @min(g.sink.draft_budget, @max(1, g.draftRoom() -| 2));
+                draft_chances[drafting] = draft_rates[drafting][0..budget];
+                try depth.chances(draft_rates[drafting][0..budget]);
+                // Borrow only the head fields; target caches are still awaiting atomic commit.
+                draft_states[drafting] = g.state;
+                draft_states[drafting].borrowed = false;
+                draft_states[drafting].position = update.prediction.position;
+                draft_states[drafting].head_cache = update.cache;
+                draft_states[drafting].draft_hidden = update.hidden;
+                draft_states[drafting].head_prediction = update.prediction;
+                draft_streams[drafting] = .{ .state = &draft_states[drafting], .first = update.prediction.token, .settings = g.settings, .budget = if (adaptive_window) depth.choose(&c.mtp_costs.?, g.sink.draft_budget, g.draftRoom() -| 1) else budget };
+                draft_slots[drafting] = slot;
+                drafting += 1;
+            };
+            if (drafting > 0) {
+                if (!adaptive_window) {
+                    const budgets = try allocation.allocate(mx.allocator, mandatory[0..drafting], draft_chances[0..drafting], c.costs[0..c.cost_count], c.overhead(drafting), c.max_rows);
+                    defer mx.allocator.free(budgets);
+                    for (draft_streams[0..drafting], budgets) |*stream, budget| stream.budget = @max(1, budget);
+                }
+                var queued = try neural.proposeStreamsLazy(m, draft_streams[0..drafting]);
+                defer queued.deinit();
+                for (draft_slots[0..drafting], 0..) |slot, i| {
+                    head_updates[slot].prediction.drafts = queued.tokens[i];
+                    queued.tokens[i] = mx.empty;
+                }
+            }
+            var head_arrays: [max_streams * 7]mx.Array = undefined;
             var ready: usize = 0;
             for (head_updates[0..head_verification.count]) |update| if (update.hidden.ctx != null) {
                 head_arrays[ready] = update.cache.a;
@@ -508,8 +558,9 @@ pub const Coordinator = struct {
                     ready += 4;
                 }
             };
-            if (ready > 0) try mx.evalMany(head_arrays[0..ready], false);
+            if (ready > 0 and drafting != keeping_heads) try mx.evalMany(head_arrays[0..ready], true);
         }
+        try pass.commit(paths[0..count]);
         const commit_ended = @import("server_live.zig").now(std.Options.debug_io);
         c.timing.commit_seconds = commit_ended - select_ended;
         const forwarded_ms = (commit_ended - forward_started) * 1000;
@@ -525,7 +576,7 @@ pub const Coordinator = struct {
         const release_ended = @import("server_live.zig").now(std.Options.debug_io);
         c.timing.release_seconds = release_ended - commit_ended;
         if (M == model.Model) if (shared_drafter) |d| {
-            var absorption: [8]@import("drafter.zig").AbsorbStream = undefined;
+            var absorption: [capacity]@import("drafter.zig").AbsorbStream = undefined;
             var absorbing: usize = 0;
             for (windows[0..count], 0..) |*w, j| {
                 const i = indexes[j];
@@ -538,7 +589,7 @@ pub const Coordinator = struct {
         };
         if (@hasDecl(M, "absorbDraftStreams")) {
             const neural = @import("neural_draft.zig");
-            var absorption: [8]neural.AbsorbStream(M) = undefined;
+            var absorption: [capacity]neural.AbsorbStream(M) = undefined;
             var absorbing: usize = 0;
             for (windows[0..count], 0..) |*w, j| {
                 const i = indexes[j];

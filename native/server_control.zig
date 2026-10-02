@@ -75,14 +75,15 @@ pub const Registry = struct {
     stopping: std.atomic.Value(bool) = .init(false),
     finished: std.atomic.Value(bool) = .init(false),
     mutex: std.Io.Mutex = .init,
-    clients: [32]Client = @splat(.{}),
+    clients: [144]Client = @splat(.{}),
+    client_limit: usize = 32,
     stop_time: ?i64 = null,
 
     pub fn acquire(r: *Registry, socket: std.posix.fd_t) ?*Client {
         r.mutex.lockUncancelable(r.io);
         defer r.mutex.unlock(r.io);
         if (r.stopping.load(.acquire)) return null;
-        for (&r.clients) |*client| if (client.socket == null) {
+        for (r.clients[0..r.client_limit]) |*client| if (client.socket == null) {
             client.* = .{ .owner = r, .socket = socket, .deadline = if (r.timeout_ms == 0) null else now(r.io) + r.timeout_ms };
             return client;
         };
@@ -156,6 +157,19 @@ test "connection slots survive cancellation until worker acknowledgement" {
     registry.stop();
     registry.release(recycled);
     try std.testing.expectEqual(null, registry.acquire(999));
+}
+
+test "64 active and waiting clients leave room for health and cancellation" {
+    var registry = Registry{ .io = std.testing.io, .client_limit = 144 };
+    var held: [128]*Client = undefined;
+    for (&held, 0..) |*slot, index| slot.* = registry.acquire(@intCast(index + 100)).?;
+    const health = registry.acquire(999) orelse return error.MissingControlSlot;
+    registry.release(health);
+    held[63].mark(.timeout);
+    registry.release(held[63]);
+    const replacement = registry.acquire(998).?;
+    try std.testing.expectEqual(Reason.none, replacement.reason.load(.acquire));
+    for (held[64..]) |client| try std.testing.expectEqual(Reason.none, client.reason.load(.acquire));
 }
 
 test "timeout flags accept finite nonnegative seconds and preserve subsecond limits" {

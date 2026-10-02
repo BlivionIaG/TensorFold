@@ -5,7 +5,7 @@ const cp = @import("checkpoint.zig");
 const nemotron = @import("nemotron.zig");
 const c = mx.c;
 const A = mx.Array;
-pub var evaluation_stride: usize = 0;
+pub var evaluation_stride: usize = 8;
 
 pub const Route = struct {
     closure: c.mlx_closure = .{ .ctx = null },
@@ -158,6 +158,8 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
     const s = &pass.scope;
     const rows: i32 = @intCast(tokens.len);
     var h = try s.reshape(try m.weights.embed(s, "backbone.embeddings", tokens), &.{ 1, rows, 2688 });
+    var carried = mx.empty;
+    defer mx.free(carried);
     var buf: [256]u8 = undefined;
     for (m.kinds, 0..) |kind, index| {
         var layer_scope = mx.Scope{};
@@ -173,12 +175,15 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
             else => return error.InvalidLayerKind,
         };
         h = try layer.binary(c.mlx_add, h, branch);
-        h = try s.own(try mx.retain(h));
+        const next = try mx.retain(h);
+        mx.free(carried);
+        carried = next;
+        h = carried;
         inline for (.{ "a", "b" }) |field| {
             const value = @field(pass.records[index], field);
             if (value.ctx != null) @field(pass.records[index], field) = try s.own(try mx.retain(value));
         }
-        if (evaluation_stride > 0 and (index + 1) % evaluation_stride == 0) try mx.eval(h);
+        if (evaluation_stride > 0 and (index + 1) % evaluation_stride == 0) try mx.evalMany(&.{h}, true);
     }
     pass.hidden = try s.reshape(try cp.norm(s, h, try m.weights.get("backbone.norm_f.weight"), 1e-5), &.{ rows, 2688 });
     pass.logits = try m.weights.linear(&m.kernels, s, "lm_head", try s.slice(pass.hidden, 0, rows - 1, rows), true);

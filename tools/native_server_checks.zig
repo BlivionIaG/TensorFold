@@ -176,7 +176,10 @@ const Output = struct {
                 usage = try std.json.Stringify.valueAlloc(a, body.value.object.get("usage") orelse return error.MissingStreamUsage, .{});
             };
         }
-        if (!done or finish == null) return error.IncompleteStream;
+        if (!done or finish == null) {
+            std.debug.print("Incomplete HTTP stream: {s}\n", .{bytes[bytes.len -| 4096..]});
+            return error.IncompleteStream;
+        }
         return .{ .content = content.items, .reasoning = reasoning.items, .finish = finish.?, .usage = usage orelse return error.MissingStreamUsage };
     }
 
@@ -964,7 +967,7 @@ const Scenario = struct {
         if (s.benchmark) |bench| {
             var logs: std.Io.Group = .init;
             defer logs.cancel(io);
-            if (s.python_port != null) try logs.concurrent(io, drainLogs, .{&stderr.interface});
+            try logs.concurrent(io, drainLogs, .{&stderr.interface});
             return bench.run(s, port);
         }
         if (s.disk_phase != null) return s.checkDisk(port);
@@ -1141,6 +1144,14 @@ fn drainLogs(reader: *std.Io.Reader) void {
 }
 
 const Benchmark = struct {
+    const ProcessMemory = @import("process_memory").Snapshot;
+    const Process = struct {
+        variant: []const u8,
+        phase: usize,
+        startup: ProcessMemory,
+        before_shutdown: ProcessMemory,
+        peak_rss_bytes: usize,
+    };
     const Record = struct {
         variant: []const u8,
         phase: usize,
@@ -1157,9 +1168,11 @@ const Benchmark = struct {
         inference_before: std.json.Value,
         inference_after: std.json.Value,
         memory: std.json.Value,
+        process_memory: ?ProcessMemory = null,
     };
-    expected: [8]?Output = @splat(null),
+    expected: [64]?Output = @splat(null),
     records: std.ArrayList(Record) = .empty,
+    processes: std.ArrayList(Process) = .empty,
     variant: []const u8 = "baseline",
     phase: usize = 0,
     drafter: bool = false,
@@ -1167,6 +1180,48 @@ const Benchmark = struct {
     concurrency: [3]usize = .{ 1, 4, 8 },
     mismatch_path: []const u8 = "",
     verify_only: bool = false,
+    memory_map_prefix: ?[]const u8 = null,
+
+    fn captureMemoryMap(b: *const Benchmark, s: *Scenario, stage: []const u8) !void {
+        const prefix = b.memory_map_prefix orelse return;
+        const a = s.init.arena.allocator();
+        const pid = try std.fmt.allocPrint(a, "{d}", .{s.child.id.?});
+        const result = try std.process.run(a, s.init.io, .{ .argv = &.{ "/usr/bin/vmmap", "-summary", pid }, .stdout_limit = .limited(1024 * 1024) });
+        if (!result.term.success()) {
+            std.debug.print("{s}", .{result.stderr});
+            return error.ProcessMemoryMapFailed;
+        }
+        const path = try std.fmt.allocPrint(a, "{s}.{s}-{d}-{s}.vmmap.txt", .{ prefix, b.variant, b.phase, stage });
+        try std.Io.Dir.cwd().writeFile(s.init.io, .{ .sub_path = path, .data = result.stdout });
+    }
+
+    fn maxStreams(b: *const Benchmark) usize {
+        return std.mem.max(usize, &b.concurrency);
+    }
+
+    const MemoryComparison = struct {
+        python_peak_rss_bytes: usize = 0,
+        native_peak_rss_bytes: usize = 0,
+        python_peak_footprint_bytes: u64 = 0,
+        native_peak_footprint_bytes: u64 = 0,
+        passed: bool = false,
+    };
+
+    fn memoryComparison(b: *const Benchmark) MemoryComparison {
+        var result = MemoryComparison{};
+        for (b.processes.items) |process| {
+            if (std.mem.eql(u8, process.variant, "python")) {
+                result.python_peak_rss_bytes = @max(result.python_peak_rss_bytes, process.peak_rss_bytes);
+                result.python_peak_footprint_bytes = @max(result.python_peak_footprint_bytes, process.before_shutdown.peak_footprint_bytes);
+            } else if (std.mem.eql(u8, process.variant, "native")) {
+                result.native_peak_rss_bytes = @max(result.native_peak_rss_bytes, process.peak_rss_bytes);
+                result.native_peak_footprint_bytes = @max(result.native_peak_footprint_bytes, process.before_shutdown.peak_footprint_bytes);
+            }
+        }
+        result.passed = result.native_peak_rss_bytes > 0 and result.native_peak_footprint_bytes > 0 and
+            result.native_peak_rss_bytes <= result.python_peak_rss_bytes and result.native_peak_footprint_bytes <= result.python_peak_footprint_bytes;
+        return result;
+    }
 
     const Performance = struct {
         const Cell = struct {
@@ -1277,14 +1332,16 @@ const Benchmark = struct {
 
     fn body(a: std.mem.Allocator, i: usize, drafting: bool) ![]const u8 {
         const prompts = [_][]const u8{ "Explain why the sky is blue:", "A short story about a fox:", "Write a Fibonacci function in Zig:", "Describe the seasons in Copenhagen:", "Count upwards, one number per line:", "What makes a good unit test?", "Explain how binary search works:", "Describe a walk beside the sea:" };
-        return std.json.Stringify.valueAlloc(a, .{ .prompt = prompts[i], .max_tokens = 32, .ignore_eos = true, .temperature = @as(f64, if (i % 2 == 0) 0 else 0.7), .top_k = 20, .top_p = 0.95, .min_p = 0.0, .seed = 819 + i, .draft = drafting, .stream = true }, .{});
+        return std.json.Stringify.valueAlloc(a, .{ .prompt = prompts[i % prompts.len], .max_tokens = 32, .ignore_eos = true, .temperature = @as(f64, if (i % 2 == 0) 0 else 0.7), .top_k = 20, .top_p = 0.95, .min_p = 0.0, .seed = 819 + i, .draft = drafting, .stream = true }, .{});
     }
 
     fn run(b: *Benchmark, s: *Scenario, port: u16) !void {
         const a = s.init.arena.allocator();
         const io = s.init.io;
-        // Eight isolated requests warm kernels and establish the serial reference.
-        for (&b.expected, 0..) |*expected, i| {
+        const startup = try ProcessMemory.read(s.child.id.?);
+        try b.captureMemoryMap(s, "startup");
+        // Establish each request's serial reference before sharing caches or kernels.
+        for (b.expected[0..b.maxStreams()], 0..) |*expected, i| {
             const socket = try post(io, port, try body(a, i, false));
             defer socket.close(io);
             const actual = try Output.parse(a, try readAll(a, io, socket), true);
@@ -1294,7 +1351,7 @@ const Benchmark = struct {
             }
         }
         for (0..if (b.drafter) @as(usize, 2) else 1) |mode| {
-            if (mode == 1) for (0..b.expected.len) |i| {
+            if (mode == 1) for (0..b.maxStreams()) |i| {
                 const socket = try post(io, port, try body(a, i, true));
                 defer socket.close(io);
                 try b.compare(s, i, try Output.parse(a, try readAll(a, io, socket), true));
@@ -1302,7 +1359,7 @@ const Benchmark = struct {
             for (b.concurrency) |count| {
                 for (0..if (b.verify_only) @as(usize, 1) else 3) |repetition| {
                     const before = if (b.verify_only) std.json.Value.null else (try health(a, io, port)).object.get("inference") orelse std.json.Value.null;
-                    var replies: [8]TimedResponse = undefined;
+                    var replies: [64]TimedResponse = undefined;
                     var opened: usize = 0;
                     defer for (replies[0..opened]) |r| {
                         r.socket.close(io);
@@ -1339,21 +1396,27 @@ const Benchmark = struct {
                     }
                     const status = try health(a, io, port);
                     const stats = status.object.get("inference") orelse std.json.Value{ .object = .empty };
-                    try b.records.append(a, .{ .variant = b.variant, .phase = b.phase, .repetition = repetition, .streams = count, .draft = mode == 1, .tokens = total, .seconds = seconds, .tokens_per_second = @as(f64, @floatFromInt(total)) / seconds, .first_token_ms = first, .latency_ms = latency, .shared_rounds = if (stats.object.get("shared_rounds")) |v| v.integer else 0, .max_shared_streams = if (stats.object.get("max_shared_streams")) |v| v.integer else 0, .inference_before = before, .inference_after = stats, .memory = status.object.get("memory").? });
+                    try b.records.append(a, .{ .variant = b.variant, .phase = b.phase, .repetition = repetition, .streams = count, .draft = mode == 1, .tokens = total, .seconds = seconds, .tokens_per_second = @as(f64, @floatFromInt(total)) / seconds, .first_token_ms = first, .latency_ms = latency, .shared_rounds = if (stats.object.get("shared_rounds")) |v| v.integer else 0, .max_shared_streams = if (stats.object.get("max_shared_streams")) |v| v.integer else 0, .inference_before = before, .inference_after = stats, .memory = status.object.get("memory").?, .process_memory = try ProcessMemory.read(s.child.id.?) });
                     std.debug.print("BENCH {s} phase={d} streams={d} draft={any} rep={d}: {d:.2} completion tok/s, {d:.3}s, exact output\n", .{ b.variant, b.phase, count, mode == 1, repetition, @as(f64, @floatFromInt(total)) / seconds, seconds });
                 }
             }
         }
         if (std.mem.eql(u8, b.variant, "native") and b.expect_sharing) {
             const stats = try s.liveSnapshot(port);
-            try std.testing.expectEqual(@as(i64, 8), stats.object.get("max_shared_streams").?.integer);
+            try std.testing.expectEqual(@as(i64, @intCast(b.maxStreams())), stats.object.get("max_shared_streams").?.integer);
         }
+        const before_shutdown = try ProcessMemory.read(s.child.id.?);
+        try b.captureMemoryMap(s, "finished");
         try std.posix.kill(s.child.id.?, .TERM);
         if (!(try s.child.wait(io)).success()) return error.UncleanShutdown;
+        const peak_rss = s.child.resource_usage_statistics.getMaxRss() orelse return error.ProcessMemoryUnavailable;
+        try b.processes.append(a, .{ .variant = b.variant, .phase = b.phase, .startup = startup, .before_shutdown = before_shutdown, .peak_rss_bytes = peak_rss });
     }
 };
 
-fn benchmark(init: std.process.Init, args: []const []const u8) !void {
+fn benchmark(init: std.process.Init, all_args: []const []const u8) !void {
+    const memory_maps = std.mem.eql(u8, all_args[all_args.len - 1], "--memory-maps");
+    const args = all_args[0 .. all_args.len - @intFromBool(memory_maps)];
     if (args.len != 6 and args.len != 8) return error.InvalidBenchmarkArguments;
     if (args.len == 8 and !std.mem.eql(u8, args[6], "--drafter")) return error.InvalidBenchmarkArguments;
     const a = init.arena.allocator();
@@ -1371,7 +1434,9 @@ fn benchmark(init: std.process.Init, args: []const []const u8) !void {
     const draft_budget: usize = if (args.len != 8) 0 else if (external_drafter) 15 else 3;
     const draft_bits: usize = if (external_drafter) (if (gemma) 8 else 4) else 0;
     var bench = Benchmark{ .drafter = args.len == 8, .expect_sharing = std.mem.startsWith(u8, kind, "qwen3") or std.mem.startsWith(u8, kind, "qwen4") or std.mem.startsWith(u8, kind, "gemma4") or std.mem.eql(u8, kind, "nemotron_h") };
+    if (std.mem.eql(u8, kind, "nemotron_h")) bench.concurrency = .{ 1, 8, 64 };
     bench.verify_only = verify_only;
+    if (memory_maps) bench.memory_map_prefix = args[5];
     bench.mismatch_path = try std.fmt.allocPrint(a, "{s}.mismatch.json", .{args[5]});
     var environment = try init.environ_map.clone(a);
     defer environment.deinit();
@@ -1393,7 +1458,7 @@ fn benchmark(init: std.process.Init, args: []const []const u8) !void {
             listener.deinit(init.io);
         }
         var argv: std.ArrayList([]const u8) = .empty;
-        try argv.appendSlice(a, &.{ args[binary], "serve", args[4], "--snapshot-dir", "none", "--port", if (python_port) |p| try std.fmt.allocPrint(a, "{d}", .{p}) else "0", if (is_python) "--parallel" else "--batch-streams", "8", "--prompt-cache-gib", "0" });
+        try argv.appendSlice(a, &.{ args[binary], "serve", args[4], "--snapshot-dir", "none", "--port", if (python_port) |p| try std.fmt.allocPrint(a, "{d}", .{p}) else "0", if (is_python) "--parallel" else "--batch-streams", try std.fmt.allocPrint(a, "{d}", .{bench.maxStreams()}), "--prompt-cache-gib", "0" });
         if (is_python) {
             try argv.append(a, "--no-update-check");
             if (std.mem.indexOf(u8, args[4], "Flash-Next") != null) try argv.append(a, "--ple-on-ssd");
@@ -1409,7 +1474,7 @@ fn benchmark(init: std.process.Init, args: []const []const u8) !void {
             try argv.append(a, "--no-drafts");
             if (is_python) try argv.appendSlice(a, &.{ "--mtp-drafts", "0" });
         }
-        var scenario = Scenario{ .init = init, .idle = false, .benchmark = &bench, .python_port = python_port, .child = try std.process.spawn(init.io, .{ .argv = argv.items, .environ_map = &environment, .stdout = if (is_python) .pipe else .inherit, .stderr = if (is_python) .inherit else .pipe }) };
+        var scenario = Scenario{ .init = init, .idle = false, .benchmark = &bench, .python_port = python_port, .child = try std.process.spawn(init.io, .{ .argv = argv.items, .environ_map = &environment, .stdout = if (is_python) .pipe else .inherit, .stderr = if (is_python) .inherit else .pipe, .request_resource_usage_statistics = true }) };
         defer if (scenario.child.id) |id| {
             std.posix.kill(id, .KILL) catch {};
             scenario.child.kill(init.io);
@@ -1418,8 +1483,31 @@ fn benchmark(init: std.process.Init, args: []const []const u8) !void {
     }
     const performance = if (python and !verify_only and !python_only) try bench.performance(a) else null;
     const python_reference = if (python_only) try bench.pythonReference(a) else null;
-    const bytes = try std.json.Stringify.valueAlloc(a, .{ .model = args[4], .baseline = args[2], .candidate = if (python_only) @as(?[]const u8, null) else args[3], .comparison = if (python_only) "python_reference" else if (python) "python_vs_native" else if (repeat_native) "native_repeatability" else "before_after", .correctness_only = verify_only, .outputs = bench.expected, .max_batch_size = 8, .memory_limit_gib = ram / (1024 * 1024 * 1024), .draft_budget = draft_budget, .drafter = if (bench.drafter) args[7] else "none", .drafter_bits = draft_bits, .draft_policy = if (python_only) "Python adaptive allocation and proposal policies; unchanged checkpoint, quantization and maximum draft budget" else if (bench.drafter and python) "Matched checkpoint, quantization and maximum draft budget; implementations retain their own adaptive allocation and proposal policies" else "Same native draft settings", .method = if (python_only) "Two fresh Python processes at phases 0 and 3; 8 isolated warmups per process; 3 repetitions; identical seeded mixed greedy/sampled SSE requests; 32 completion tokens per request; maximum Metal working set; prompt caching disabled; startup excluded; throughput includes prefill and HTTP" else if (verify_only) "8 isolated references; exact output/usage at 1/4/8 requests" else "ABBA; 8 isolated warmups per process; 3 repetitions; identical seeded mixed greedy/sampled SSE requests; 32 completion tokens per request; maximum Metal working set; prompt caching disabled; startup excluded; throughput includes prefill and HTTP", .performance = performance, .python_reference = python_reference, .records = bench.records.items }, .{ .whitespace = .indent_2 });
+    const memory = if (python and !python_only) bench.memoryComparison() else null;
+    const bytes = try std.json.Stringify.valueAlloc(a, .{
+        .model = args[4],
+        .baseline = args[2],
+        .candidate = if (python_only) @as(?[]const u8, null) else args[3],
+        .comparison = if (python_only) "python_reference" else if (python) "python_vs_native" else if (repeat_native) "native_repeatability" else "before_after",
+        .correctness_only = verify_only,
+        .outputs = bench.expected[0..bench.maxStreams()],
+        .concurrency = bench.concurrency,
+        .max_batch_size = bench.maxStreams(),
+        .memory_limit_gib = ram / (1024 * 1024 * 1024),
+        .draft_budget = draft_budget,
+        .drafter = if (bench.drafter) args[7] else "none",
+        .drafter_bits = draft_bits,
+        .draft_policy = "Matched checkpoint, quantization and maximum draft budget; implementations retain their adaptive allocation and proposal policies",
+        .method = if (verify_only) "Isolated reference per request, followed by exact concurrent output/usage checks" else "ABBA (Python-only: phases 0 and 3); isolated warmup per request in each process; 3 repetitions per concurrency/draft cell; seeded mixed greedy/sampled SSE; 32 completion tokens per request; prompt caching disabled; throughput includes prefill and HTTP, excludes startup",
+        .memory_scope = "Whole child-process lifetime peak RSS including shutdown; physical footprint sampled through the end of inference before shutdown; bytes",
+        .memory = memory,
+        .processes = bench.processes.items,
+        .performance = performance,
+        .python_reference = python_reference,
+        .records = bench.records.items,
+    }, .{ .whitespace = .indent_2 });
     try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[5], .data = bytes });
+    if (memory) |result| if (!result.passed) return error.NativeMemoryExceedsPython;
     if (python_reference) |result| {
         for (result.cells) |cell| std.debug.print("{s}: streams={d} draft={any}: Python {any} median completion tok/s ({d} samples)\n", .{ if (cell.valid) "VALID" else "INVALID", cell.streams, cell.draft, cell.python_median_tokens_per_second, cell.python_samples });
         if (!result.valid) return error.InvalidPythonReference;
@@ -1446,6 +1534,20 @@ test "benchmark responses require exact cached usage and 32 completion tokens" {
     try std.testing.expectError(error.InvalidUsage, Benchmark.validateOutput(actual));
     actual.usage = null;
     try std.testing.expectError(error.MissingUsage, Benchmark.validateOutput(actual));
+}
+
+test "whole-process memory gate rejects either peak exceeding Python" {
+    var b = Benchmark{};
+    defer b.processes.deinit(std.testing.allocator);
+    const memory = Benchmark.ProcessMemory{ .rss_bytes = 80, .footprint_bytes = 90, .peak_footprint_bytes = 100 };
+    try std.testing.expect(!b.memoryComparison().passed);
+    for ([_][]const u8{ "python", "native" }) |variant| try b.processes.append(std.testing.allocator, .{ .variant = variant, .phase = 0, .startup = memory, .before_shutdown = memory, .peak_rss_bytes = 100 });
+    try std.testing.expect(b.memoryComparison().passed);
+    b.processes.items[1].peak_rss_bytes += 1;
+    try std.testing.expect(!b.memoryComparison().passed);
+    b.processes.items[1].peak_rss_bytes -= 1;
+    b.processes.items[1].before_shutdown.peak_footprint_bytes += 1;
+    try std.testing.expect(!b.memoryComparison().passed);
 }
 
 test "Python performance gate uses every concurrency and draft median" {

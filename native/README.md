@@ -146,10 +146,10 @@ Add `--native-driver serving` for all five fitting checkpoints through native
 Session/shared-round scheduling, draft allocation and first-token publication.
 Only matching cases receive measurements. `--family` and repeatable `--case`
 select cases; `--native-arg=--flag` and `--native-env KEY=VALUE` support diagnostics.
-Native CLI warmup repeats the exact case with fresh request caches; serial-family
-comparisons use `--ignore-eos` to match the fixture's fixed output budget.
-These compare CLI drivers with Python's LaneEngine; native Session/shared-round
-serving already has different draft allocation and pipelining mechanics.
+Fresh Python/native processes each warm the exact case with fresh request caches.
+Request timings exclude startup; whole-process peak RSS and physical footprint
+include loading, calibration, warmup and teardown. Calibration capacities are
+recorded because unequal stream limits do not establish concurrency memory parity.
 The table entries are arguments to `.zig-toolchain/zig build`:
 
 | Checks | Arguments | Requirements |
@@ -261,7 +261,7 @@ Responses support GET/DELETE by ID and `previous_response_id`; the in-memory
 store keeps up to 1,024 responses with a 256 MiB limit on serialized data.
 `store: false` disables retention.
 JSON/schema output constraints are refused until grammar support is implemented.
-`--batch-streams N` controls active requests (default `4`, range `1`–`8`). One
+`--batch-streams N` controls active requests (default `4`, maximum `64` for Nemotron and `8` for other families). One
 GPU worker interleaves prefill chunks and runs Qwen, Bonsai, Gemma, Nemotron and
 Flash decode requests through shared lane forwards with independent cache commits.
 `--batch-rows N` limits shared rows (default `128`, range `1`–`128`, capped at `64`
@@ -270,12 +270,13 @@ row-limited requests rotate by their last served round. Startup measures shared
 forward/commit costs and peak workspace; draft allocation uses interpolated costs,
 proposal probabilities and observed host overhead. Qwen DFlash and Nemotron/Flash
 MTP proposals share projections across requests. GLM and DeepSeek still advance
-individually. Up to eight further requests can queue. `/health` exposes shared
+individually. Up to `max(8, batch-streams)` further requests can queue. `/health` exposes shared
 round/row totals and the maximum streams sharing a forward.
 After `.zig-toolchain/zig build install`, `zig-out/bin/native-server-checks --benchmark BEFORE
 AFTER MODEL build/native-checks/http-performance.json` compares existing native
-executables with an ABBA order, isolated warmups, three repetitions at 1/4/8
-requests, exact seeded SSE output, first-token latency and completion throughput.
+executables with an ABBA order, isolated warmups, three repetitions at 1/8/64
+requests for Nemotron or 1/4/8 for other families, exact seeded SSE output,
+first-token latency and completion throughput.
 Add `--drafter PATH` (or `--drafter -` for a built-in head) to measure both draft
 modes. First use `--verify-python .venv/bin/tensorfold AFTER MODEL REPORT` for
 Python/native output checks, then `--compare-python` with the same arguments for
@@ -356,7 +357,7 @@ DFlash2, Gemma DFlash or a converted DeepSeek MTP/DSpark folder; Gemma supports
 Qwen accepts `--draft-calibration FILE`. Draft caches are request-local and
 included in prefix snapshots and memory admission. No models are downloaded by
 these options.
-One inference worker owns the model; its queue holds eight requests.
+One inference worker owns the model.
 Against a running Qwen server, compare JSON/SSE text, reasoning and images with
 `.zig-toolchain/zig run tools/native_http_checks.zig -- http://127.0.0.1:8080/v1/chat/completions /path/to/image.png`.
 Replace the image path with `--tools-only` to check a named tool call.

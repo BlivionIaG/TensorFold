@@ -22,11 +22,12 @@ pub fn requested(body: std.json.Value, chat: bool) bool {
     return size < 4096 and std.ascii.findIgnoreCase(text.string, "title") != null;
 }
 
-pub fn Queue(comptime T: type) type {
+pub fn Queue(comptime T: type, comptime capacity: usize) type {
     return struct {
         const Self = @This();
-        // Eight waiting clients plus the eight active jobs that may be preempted.
-        entries: [16]T = undefined,
+        // Reserve space for preempted active jobs as well as waiting clients.
+        entries: [2 * capacity]T = undefined,
+        waiting_limit: usize = capacity,
         len: usize = 0,
         closed: bool = false,
         mutex: std.Io.Mutex = .init,
@@ -35,7 +36,7 @@ pub fn Queue(comptime T: type) type {
         pub fn put(q: *Self, io: std.Io, item: T, resumed: bool) bool {
             q.mutex.lockUncancelable(io);
             defer q.mutex.unlock(io);
-            if (q.closed or (!resumed and q.len >= 8)) return false;
+            if (q.closed or (!resumed and q.len >= q.waiting_limit)) return false;
             std.debug.assert(q.len < q.entries.len);
             q.entries[q.len] = item;
             q.len += 1;
@@ -115,7 +116,7 @@ test "replay suppresses delivered bytes across new chunk and UTF-8 boundaries" {
 
 test "foreground bypasses queued backgrounds and interrupted jobs retain capacity" {
     const Item = struct { background: bool, id: usize };
-    var queue = Queue(Item){};
+    var queue = Queue(Item, 8){};
     const io = std.testing.io;
     for (0..7) |id| try std.testing.expect(queue.put(io, .{ .background = true, .id = id }, false));
     try std.testing.expect(queue.put(io, .{ .background = false, .id = 7 }, false));
@@ -157,4 +158,15 @@ test "title requests require short text-only chat without tools" {
     try std.testing.expect(requested(parsed.value, true));
     content.* = .{ .string = &text };
     try std.testing.expect(!requested(parsed.value, true));
+}
+
+test "a full queue retains all 64 preempted active requests" {
+    const Item = struct { background: bool = true, id: usize };
+    var queue = Queue(Item, 64){};
+    const io = std.testing.io;
+    for (0..64) |id| try std.testing.expect(queue.put(io, .{ .id = id }, false));
+    try std.testing.expect(!queue.put(io, .{ .id = 128 }, false));
+    for (64..128) |id| try std.testing.expect(queue.put(io, .{ .id = id }, true));
+    for (0..128) |id| try std.testing.expectEqual(id, (try queue.take(io, false, false)).?.id);
+    try std.testing.expectEqual(null, try queue.take(io, false, false));
 }

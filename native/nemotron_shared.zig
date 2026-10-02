@@ -9,7 +9,7 @@ pub const Stream = struct { state: *State, tokens: []const i32, parents: []const
 pub const ArrayStream = struct { state: *State, count: usize, parents: []const i32 };
 const Entry = struct { state: *State, first: i32, pass: model.Pass };
 pub const max_shared_rows = model.Model.max_shared_rows;
-const max_streams = 16;
+const max_streams = model.Model.max_shared_streams;
 
 // The model and states must remain at stable addresses until deinit; do not copy.
 pub const Pass = struct {
@@ -56,15 +56,20 @@ pub const Pass = struct {
         defer for (next) |*cache| for (cache) |*c| c.deinit();
         var arrays: std.ArrayList(A) = .empty;
         defer arrays.deinit(mx.allocator);
+        var recurrent_ready: [52]bool = @splat(false);
         for (p.entries, paths, next) |*entry, path, *cache| {
             if (path.len == 0) continue;
             try model.Model.observeBuffers(&entry.pass);
             cache.* = try p.model.prepareCommit(&entry.pass, entry.state.cache, entry.pass.start, path.len);
-            for (p.model.kinds, cache) |kind, c| if (kind != 'E') {
-                try arrays.appendSlice(mx.allocator, &.{ c.a, c.b });
+            for (p.model.kinds, cache, 0..) |kind, c, layer| if (kind != 'E') {
+                if (c.recurrent.ssm.ctx != null) {
+                    // Every stream keeps a row of the same forward's recurrent pool.
+                    if (!recurrent_ready[layer]) try arrays.appendSlice(mx.allocator, &.{ c.recurrent.conv, c.recurrent.ssm });
+                    recurrent_ready[layer] = true;
+                } else try arrays.appendSlice(mx.allocator, &.{ c.a, c.b });
             };
         }
-        if (arrays.items.len > 0) try mx.evalMany(arrays.items, false);
+        if (arrays.items.len > 0) try mx.evalMany(arrays.items, true);
         for (p.entries, paths, next) |entry, path, *cache| {
             if (path.len == 0) continue;
             for (entry.state.cache, cache) |*old, *replacement| {
@@ -184,28 +189,37 @@ fn forwardInput(m: *model.Model, streams: []const ArrayStream, rows: usize, toke
     var h = try m.weights.embedArray(s, "backbone.embeddings", tokens);
     var x = try m.norm(s, h, "backbone.layers.0.norm");
     var sums: ?A = null;
+    var carried: [3]A = @splat(mx.empty);
+    defer for (carried) |value| mx.free(value);
     var base_buf: [256]u8 = undefined;
     var next_buf: [256]u8 = undefined;
     for (m.kinds, 0..) |kind, layer| {
+        var layer_scope = mx.Scope{};
+        defer layer_scope.deinit();
         const base = try std.fmt.bufPrint(&base_buf, "backbone.layers.{d}.mixer", .{layer});
         const next = if (layer + 1 == 52) "backbone.norm_f" else try std.fmt.bufPrint(&next_buf, "backbone.layers.{d}.norm", .{layer + 1});
         const nw = try m.weights.field(next, "weight");
         const both = switch (kind) {
             'M' => if (entries.len == 1) blk: {
-                const out = try m.blockSums(s, layer, x, h, entries[0].state.cache[layer], sums);
-                entries[0].pass.records[layer] = .{ .a = out[2], .b = out[3], .recurrent = .{ .conv = out[2], .ssm = out[3], .owner = @intFromPtr(ticket.owner), .epoch = ticket.epoch, .row = 0 } };
+                const out = try m.blockSums(&layer_scope, layer, x, h, entries[0].state.cache[layer], sums);
+                const conv = try s.own(try mx.retain(out[2]));
+                const ssm = try s.own(try mx.retain(out[3]));
+                entries[0].pass.records[layer] = .{ .a = conv, .b = ssm, .recurrent = .{ .conv = conv, .ssm = ssm, .owner = @intFromPtr(ticket.owner), .epoch = ticket.epoch, .row = 0 } };
                 break :blk out;
-            } else try mamba(&p, layer, x, h, sums),
+            } else try mamba(&p, &layer_scope, layer, x, h, sums),
             '*' => try m.addNormSums(s, h, try attention(&p, base, layer, x, sums), nw),
-            'E' => try m.blockSums(s, layer, x, h, .{}, sums),
+            'E' => try m.blockSums(&layer_scope, layer, x, h, .{}, sums),
             else => return error.InvalidLayerKind,
         };
-        h = both[0];
-        x = both[1];
-        sums = if (both[4].ctx != null) both[4] else null;
-        if ((layer + 1) % 8 == 0) try mx.evalMany(&.{ h, x }, true);
+        try mx.replace(&carried[0], both[0]);
+        try mx.replace(&carried[1], both[1]);
+        if (both[4].ctx != null) try mx.replace(&carried[2], both[4]);
+        h = carried[0];
+        x = carried[1];
+        sums = if (both[4].ctx != null) carried[2] else null;
+        if ((layer + 1) % 8 == 0) try mx.evalMany(&.{x}, true);
     }
-    p.hidden = x;
+    p.hidden = try s.own(try mx.retain(x));
     p.logits = try m.headSums(s, x, sums);
     for (entries) |*entry| {
         const end = entry.first + @as(i32, @intCast(entry.pass.count));
@@ -216,9 +230,8 @@ fn forwardInput(m: *model.Model, streams: []const ArrayStream, rows: usize, toke
     return p;
 }
 
-fn mamba(p: *Pass, layer: usize, x: A, h: A, sums: ?A) ![5]A {
+fn mamba(p: *Pass, s: *mx.Scope, layer: usize, x: A, h: A, sums: ?A) ![5]A {
     const m = p.model;
-    const s = &p.scope;
     var refs: [max_shared_rows]model.RecurrentRows = undefined;
     for (p.entries, 0..) |entry, index| refs[index] = entry.state.cache[layer].recurrent;
     var conv_in: A = undefined;
@@ -240,9 +253,10 @@ fn mamba(p: *Pass, layer: usize, x: A, h: A, sums: ?A) ![5]A {
         ssm_in = try s.cat(ssm_states[0..p.entries.len], 0);
     }
     const out = try m.blockSharedSums(s, layer, x, h, .{ .conv = conv_in, .ssm = ssm_in, .segments = p.segments, .starts = p.starts, .slots = slots, .dimensions = p.dimensions }, sums);
+    const conv = try p.scope.own(try mx.retain(out[2]));
+    const ssm = try p.scope.own(try mx.retain(out[3]));
     for (p.entries) |*entry| {
-        const end = entry.first + @as(i32, @intCast(entry.pass.count));
-        entry.pass.records[layer] = .{ .a = try s.slice(out[2], 0, entry.first, end), .b = try s.slice(out[3], 0, entry.first, end), .recurrent = .{ .conv = out[2], .ssm = out[3], .owner = @intFromPtr(p.ticket.owner), .epoch = p.ticket.epoch, .row = entry.first } };
+        entry.pass.records[layer] = .{ .recurrent = .{ .conv = conv, .ssm = ssm, .owner = @intFromPtr(p.ticket.owner), .epoch = p.ticket.epoch, .row = entry.first } };
     }
     return out;
 }
@@ -598,6 +612,11 @@ pub fn check(m: *model.Model) !void {
         try exercise(m, &wide, &counts, &counts);
         var kept: [max_streams]i32 = undefined;
         for (&kept, 0..) |*row, index| row.* = @intCast(index);
+        try expectPool(m, &wide, &kept);
+        var partial: [max_streams]usize = undefined;
+        for (&partial, 0..) |*count, index| count.* = index % 3;
+        try exercise(m, &wide, &@as([max_streams]usize, @splat(2)), &partial);
+        try exercise(m, &wide, &counts, &counts);
         try expectPool(m, &wide, &kept);
     }
     {

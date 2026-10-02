@@ -11,6 +11,7 @@ pub const HeadPrediction = struct {
     cache: Cache = .{},
     hidden: A = mx.empty,
     first: A = mx.empty,
+    drafts: A = mx.empty,
     position: i32 = -1,
     token: i32 = -1,
     settings: sampling.Sampling = .{},
@@ -19,6 +20,7 @@ pub const HeadPrediction = struct {
         p.cache.deinit();
         mx.free(p.hidden);
         mx.free(p.first);
+        mx.free(p.drafts);
         p.* = .{};
     }
     pub fn matches(p: *const HeadPrediction, position: i32, token: i32, settings: sampling.Sampling) bool {
@@ -126,9 +128,8 @@ const Block = struct {
     base: []const u8,
     next: A,
     kind: u8,
-    shared: bool,
 
-    fn init(m: *Model, layer: usize, shared: bool) !*Block {
+    fn init(m: *Model, layer: usize) !*Block {
         const p = try mx.allocator.create(Block);
         errdefer mx.allocator.destroy(p);
         const base = try std.fmt.allocPrint(mx.allocator, "backbone.layers.{d}.mixer", .{layer});
@@ -155,7 +156,7 @@ const Block = struct {
             const name = try std.fmt.bufPrint(&buffer, "{s}.{s}", .{ base, suffix });
             try capturedLinear(m, &weights, &kernels, &scope, name);
         }
-        p.* = .{ .weights = weights, .kernels = kernels, .base = base, .next = next, .kind = m.kinds[layer], .shared = shared };
+        p.* = .{ .weights = weights, .kernels = kernels, .base = base, .next = next, .kind = m.kinds[layer] };
         return p;
     }
     fn destroy(raw: ?*anyopaque) callconv(.c) void {
@@ -172,8 +173,8 @@ const Block = struct {
     fn graph(p: *Block, out: [*c]mx.c.mlx_vector_array, ins: mx.c.mlx_vector_array) !c_int {
         var scope = mx.Scope{};
         defer scope.deinit();
-        var args: [9]A = undefined;
-        const count: usize = if (p.shared) 9 else if (p.kind == 'M') 5 else 3;
+        var args: [5]A = undefined;
+        const count: usize = if (p.kind == 'M') 5 else 3;
         for (args[0..count], 0..) |*arg, index| {
             var value = mx.c.mlx_array_new();
             const rc = mx.c.mlx_vector_array_get(&value, ins, index);
@@ -188,7 +189,7 @@ const Block = struct {
         const sums: ?A = if (mx.shape(previous_sums).len == 2) previous_sums else null;
         if (p.kind == 'M') {
             var record = Cache{};
-            const delta = if (p.shared) try model.mambaSharedSums(&scope, p.base, args[0], .{ .conv = args[2], .ssm = args[3], .segments = args[4], .starts = args[5], .slots = args[6], .dimensions = args[7] }, &record, sums) else try model.mambaSums(&scope, p.base, args[0], .{ .a = args[2], .b = args[3] }, &record, sums);
+            const delta = try model.mambaSums(&scope, p.base, args[0], .{ .a = args[2], .b = args[3] }, &record, sums);
             const normalized = try model.addNormSums(&scope, args[1], delta, p.next);
             const values = [_]A{ normalized[0], normalized[1], record.a, record.b, if (normalized[4].ctx != null) normalized[4] else previous_sums };
             return mx.c.mlx_vector_array_set_data(out, &values, values.len);
@@ -260,12 +261,12 @@ pub const Model = struct {
     pub const DraftCache = Cache;
     pub const HeadPrediction = @import("nemotron.zig").HeadPrediction;
     pub const max_shared_rows = 128;
+    pub const max_shared_streams = 64;
     pub const adaptive_mtp_depth = true;
     round_owner: @import("decode_round.zig").Owner = .{},
     weights: cp.Store,
     kernels: mx.Kernels,
     blocks: [52]mx.c.mlx_closure = @splat(.{ .ctx = null }),
-    shared_blocks: [52]mx.c.mlx_closure = @splat(.{ .ctx = null }),
     head_plans: [2]mx.c.mlx_closure = @splat(.{ .ctx = null }),
     cache: [52]Cache = @splat(.{}),
     kinds: [52]u8 = undefined,
@@ -303,6 +304,7 @@ pub const Model = struct {
             try m.weights.put("decode.eps", try scope.scalar(1e-5));
             try m.weights.put("decode.limits", try scope.data(&[_]f32{ 0, std.math.inf(f32) }, &.{2}, mx.f32t));
             try m.weights.put("decode.scaling", try scope.scalar(2.5));
+            try m.weights.put("decode.no_sums", try scope.scalar(0));
         }
         // Small constants are prepared once; expert tables remain in their packed format.
         for (m.kinds, 0..) |kind, i| if (kind == 'M') {
@@ -355,6 +357,19 @@ pub const Model = struct {
                 }
             }
         }
+        // Pack dense weights before realizing the expert tables so raw and packed
+        // projections do not all become resident together during startup.
+        if (mx.tensor_units) {
+            for (m.kinds, 0..) |kind, layer| {
+                const projections: []const []const u8 = switch (kind) {
+                    'M' => &.{ "in_proj", "out_proj" },
+                    'E' => &.{ "shared_experts.up_proj", "shared_experts.down_proj" },
+                    else => continue,
+                };
+                for (projections) |suffix| try m.packLinear(try std.fmt.bufPrint(&buf, "backbone.layers.{d}.mixer.{s}", .{ layer, suffix }));
+            }
+            try m.packLinear("lm_head");
+        }
         // MLX specializes captured lazy loads per shape; compiled blocks share realized weights.
         const arrays = try mx.allocator.alloc(A, m.weights.arrays.count());
         defer mx.allocator.free(arrays);
@@ -362,6 +377,12 @@ pub const Model = struct {
         for (arrays) |*array| array.* = entries.next().?.*;
         try mx.evalMany(arrays, false);
         return m;
+    }
+    fn packLinear(m: *Model, name: []const u8) !void {
+        var scope = mx.Scope{};
+        defer scope.deinit();
+        const width = mx.dim(try m.weights.field(name, "weight"), -1) * 8;
+        _ = try m.weights.linear(&m.kernels, &scope, name, try scope.zeros(&.{ 1, width }, mx.bf16), true);
     }
     fn prepareDecodeFloats(m: *Model, base: []const u8, suffixes: []const []const u8) !void {
         var scope = mx.Scope{};
@@ -379,9 +400,6 @@ pub const Model = struct {
     pub fn deinit(m: *Model) void {
         m.reset();
         for (m.blocks) |fun| if (fun.ctx != null) {
-            _ = mx.c.mlx_closure_free(fun);
-        };
-        for (m.shared_blocks) |fun| if (fun.ctx != null) {
             _ = mx.c.mlx_closure_free(fun);
         };
         for (m.head_plans) |fun| if (fun.ctx != null) {
@@ -574,7 +592,7 @@ pub const Model = struct {
         if (recurrent and ((cache.a.ctx == null) != (cache.b.ctx == null))) return error.InvalidCacheState;
         if (recurrent and cache.a.ctx != null and (!std.mem.eql(i32, mx.shape(cache.a), &.{ 1, 3, 6144 }) or !std.mem.eql(i32, mx.shape(cache.b), &.{ 1, 64, 64, 128 }) or mx.dtype(cache.a) != mx.bf16 or mx.dtype(cache.b) != mx.f32t)) return error.InvalidCacheState;
         if (m.blocks[layer].ctx == null) {
-            const payload = try Block.init(m, layer, false);
+            const payload = try Block.init(m, layer);
             const fun = mx.c.mlx_closure_new_func_payload(Block.callback, payload, Block.destroy);
             if (fun.ctx == null) {
                 Block.destroy(payload);
@@ -589,7 +607,7 @@ pub const Model = struct {
             arguments[3] = if (cache.b.ctx != null) cache.b else try s.zeros(&.{ 1, 64, 64, 128 }, mx.f32t);
         }
         const count: usize = if (recurrent) 5 else 3;
-        arguments[count - 1] = sums orelse try s.zeros(&.{1}, mx.f32t);
+        arguments[count - 1] = sums orelse try m.weights.get("decode.no_sums");
         var values: [5]A = undefined;
         try m.kernels.call(s, m.blocks[layer], arguments[0..count], values[0..count]);
         var result: [5]A = @splat(mx.empty);
@@ -611,21 +629,15 @@ pub const Model = struct {
             if (value.ctx == null or mx.shape(value).len != 1 or mx.dim(value, 0) < 8 or mx.dtype(value) != mx.i32t) return error.InvalidBlockInputs;
         }
         if (mx.dim(inputs.segments, 0) < mx.dim(x, 0)) return error.InvalidBlockInputs;
-        if (m.shared_blocks[layer].ctx == null) {
-            const payload = try Block.init(m, layer, true);
-            const fun = mx.c.mlx_closure_new_func_payload(Block.callback, payload, Block.destroy);
-            if (fun.ctx == null) {
-                Block.destroy(payload);
-                return error.MlxFailure;
-            }
-            defer _ = mx.c.mlx_closure_free(fun);
-            try mx.check(mx.c.mlx_compile(&m.shared_blocks[layer], fun, false));
-        }
-        const arguments = [_]A{ x, h, inputs.conv, inputs.ssm, inputs.segments, inputs.starts, inputs.slots, inputs.dimensions, sums orelse try s.zeros(&.{1}, mx.f32t) };
-        var result: [5]A = undefined;
-        try m.kernels.call(s, m.shared_blocks[layer], &arguments, &result);
-        if (mx.shape(result[4]).len != 2) result[4] = mx.empty;
-        return result;
+        // Row/pool geometries change as streams finish; tracing each retains many variants.
+        var buffer: [256]u8 = undefined;
+        const base = try std.fmt.bufPrint(&buffer, "backbone.layers.{d}.mixer", .{layer});
+        var next_buffer: [256]u8 = undefined;
+        const next = try m.weights.get(if (layer + 1 == m.kinds.len) "backbone.norm_f.weight" else try std.fmt.bufPrint(&next_buffer, "backbone.layers.{d}.norm.weight", .{layer + 1}));
+        var record = Cache{};
+        const delta = try m.mambaSharedSums(s, base, x, inputs, &record, sums);
+        const normalized = try m.addNormSums(s, h, delta, next);
+        return .{ normalized[0], normalized[1], record.a, record.b, normalized[4] };
     }
     pub fn checkBlocks(m: *Model) !void {
         var invalid_scope = mx.Scope{};
@@ -639,7 +651,7 @@ pub const Model = struct {
             const next = try m.weights.get(if (layer + 1 == m.kinds.len) "backbone.norm_f.weight" else try std.fmt.bufPrint(&next_buffer, "backbone.layers.{d}.norm.weight", .{layer + 1}));
             var closure: ?*anyopaque = null;
             var resident: ?u64 = null;
-            const widths: []const usize = if (kind == 'M') &.{ 1, 3, 16, 1 } else &.{ 1, 3, 16, 128, 1 };
+            const widths: []const usize = if (kind == 'M') &.{ 1, 3, 16, 1 } else &.{ 1, 3, 11, 12, 16, 128, 1 };
             for (widths) |rows| {
                 {
                     var scope = mx.Scope{};
@@ -652,6 +664,14 @@ pub const Model = struct {
                     const hidden = try m.weights.embed(&scope, "backbone.embeddings", ids[0..rows]);
                     var norm_buffer: [256]u8 = undefined;
                     const x = try m.norm(&scope, hidden, try std.fmt.bufPrint(&norm_buffer, "backbone.layers.{d}.norm", .{layer}));
+                    if (kind == 'E' and rows >= 11) {
+                        var experts: [max_shared_rows * 6]i32 = undefined;
+                        for (experts[0 .. rows * 6], 0..) |*expert, i| expert.* = @intCast(if (i % 3 == 0) 127 else (i * 17) % 128);
+                        const selected = try scope.cast(try scope.ints(experts[0 .. rows * 6]), mx.c.MLX_UINT32);
+                        const individual = try m.expertRows(&scope, base, x, selected, false);
+                        const grouped = try m.expertRows(&scope, base, x, selected, true);
+                        try @import("variant_checks.zig").equalBits(&scope, individual, grouped);
+                    }
                     var record = Cache{};
                     const expected = if (kind == 'M') try m.addNorm(&scope, hidden, try m.mamba(&scope, base, x, cache, &record), next) else try m.moe(&scope, base, hidden, x, next);
                     const actual = try m.block(&scope, layer, x, hidden, if (kind == 'M') cache else .{});
@@ -699,7 +719,6 @@ pub const Model = struct {
         const base = try std.fmt.bufPrint(&buffer, "backbone.layers.{d}.mixer", .{layer});
         var next_buffer: [256]u8 = undefined;
         const next = try m.weights.get(if (layer + 1 == m.kinds.len) "backbone.norm_f.weight" else try std.fmt.bufPrint(&next_buffer, "backbone.layers.{d}.norm.weight", .{layer + 1}));
-        var closure: ?*anyopaque = null;
         var resident: ?u64 = null;
         for ([_]usize{ 1, 3, 16, 128, 1 }, 0..) |rows, step| {
             {
@@ -761,7 +780,6 @@ pub const Model = struct {
                     try @import("variant_checks.zig").equalBits(&scope, expected_sums, actual[4]);
                     try @import("variant_checks.zig").equalBits(&scope, expected_sums, supplied[4]);
                 }
-                if (closure) |previous| try std.testing.expectEqual(previous, m.shared_blocks[layer].ctx.?) else closure = m.shared_blocks[layer].ctx;
                 var invalid = inputs;
                 invalid.dimensions = try scope.ints(&.{@intCast(rows)});
                 try std.testing.expectError(error.InvalidBlockInputs, m.blockSharedSums(&scope, layer, x, h, invalid, null));
@@ -775,7 +793,7 @@ pub const Model = struct {
                 if (active > baseline + 64 * 1024 * 1024) return error.CompiledBlockRetainsWeightsPerShape;
             } else resident = active;
         }
-        std.debug.print("Compiled shared Nemotron Mamba: exact serial residual/norm/conv/SSM and fused sums for ragged/permuted1/3/16/128 rows, changed inputs, cached closure and bounded weight residency\n", .{});
+        std.debug.print("Shared Nemotron Mamba: exact serial residual/norm/conv/SSM and fused sums for ragged/permuted1/3/16/128 rows, changed inputs and bounded weight residency\n", .{});
     }
     pub fn forwardSerialArray(m: *Model, tokens: A) !Pass {
         if (tokens.ctx == null or mx.c.mlx_array_size(tokens) != 1) return error.InvalidToken;
@@ -848,12 +866,15 @@ pub const Model = struct {
         const start = mx.dim(keys, 2) - r;
         for (0..@intCast(r)) |i| {
             const j: i32 = @intCast(i);
+            const query = if (r == 1) q else try s.slice(q, 2, j, j + 1);
+            const visible_keys = if (j + 1 == r) keys else try s.slice(keys, 2, 0, start + j + 1);
+            const visible_values = if (j + 1 == r) values else try s.slice(values, 2, 0, start + j + 1);
             if (mx.tensor_units and start + j + 1 >= 10000) {
-                rows[i] = try @import("lanes.zig").sdpa(&m.kernels, s, try s.slice(q, 2, j, j + 1), try s.slice(keys, 2, 0, start + j + 1), try s.slice(values, 2, 0, start + j + 1), 0.08838834764831845);
+                rows[i] = try @import("lanes.zig").sdpa(&m.kernels, s, query, visible_keys, visible_values, 0.08838834764831845);
                 continue;
             }
             var out = mx.c.mlx_array_new();
-            const rc = mx.c.mlx_fast_scaled_dot_product_attention(&out, try s.slice(q, 2, j, j + 1), try s.slice(keys, 2, 0, start + j + 1), try s.slice(values, 2, 0, start + j + 1), 0.08838834764831845, "", mx.empty, mx.empty, false, mx.stream);
+            const rc = mx.c.mlx_fast_scaled_dot_product_attention(&out, query, visible_keys, visible_values, 0.08838834764831845, "", mx.empty, mx.empty, false, mx.stream);
             rows[i] = try s.result(rc, out);
         }
         return s.reshape(try s.transpose(try s.cat(rows[0..@intCast(r)], 2), &.{ 0, 2, 1, 3 }), &.{ r, 4096 });
@@ -868,12 +889,8 @@ pub const Model = struct {
         const route = try m.kernels.run(s, src.nemotron_route, &.{ logits, try m.f(base, "gate.e_score_correction_bias_f32"), try m.weights.get("decode.scaling") }, &.{ ti("NE", 128), ti("K", 6), ti("OK", 6) }, .{ 32 * r, 1, 1 }, .{ 32, 1, 1 }, &.{ .{ .shape = &.{ r, 6 }, .dtype = mx.c.MLX_UINT32 }, .{ .shape = &.{ r, 6 }, .dtype = mx.f32t } });
         try m.traceHead("expert-ids", route[0]);
         try m.traceHead("expert-weights", route[1]);
-        var buf: [256]u8 = undefined;
-        const up = try m.weights.triple(try std.fmt.bufPrint(&buf, "{s}.switch_mlp.fc1", .{base}));
-        const down = try m.weights.triple(try std.fmt.bufPrint(&buf, "{s}.switch_mlp.fc2", .{base}));
         const ids = try s.reshape(route[0], &.{r * 6});
-        const act = (try m.kernels.run(s, src.nemotron_rows_expert_up, &.{ x, ids, up[0], up[1], up[2] }, &.{ ti("K", 2688), ti("N", 1856), ti("GS", 64), ti("RPS", 4), ti("SG", 2), ti("TOPK", 6) }, .{ 64, 232, r * 6 }, .{ 64, 1, 1 }, &.{.{ .shape = &.{ r * 6, 1856 } }}))[0];
-        const routed = (try m.kernels.run(s, src.nemotron_rows_expert_down, &.{ act, ids, down[0], down[1], down[2] }, &.{ ti("K", 1856), ti("N", 2688), ti("GS", 64), ti("RPS", 4), ti("SG", 2) }, .{ 64, 336, r * 6 }, .{ 64, 1, 1 }, &.{.{ .shape = &.{ r, 6, 2688 } }}))[0];
+        const routed = try m.expertRows(s, base, x, ids, r >= 12);
         try m.traceHead("routed", routed);
         const shared_up = try s.binary(mx.c.mlx_maximum, try m.projectSums(s, base, "shared_experts.up_proj", x, sums), try s.cast(try s.scalar(0), mx.bf16));
         const shared = try m.project(s, base, "shared_experts.down_proj", try s.binary(mx.c.mlx_multiply, shared_up, shared_up));
@@ -886,6 +903,21 @@ pub const Model = struct {
             return result;
         }
         return m.kernels.run(s, src.nemotron_add_norm_moe, &.{ h, routed, route[1], shared, nw, try m.weights.get("decode.eps") }, &.{ ti("D", 2688), ti("T", 896), ti("E", 6) }, .{ 896 * r, 1, 1 }, .{ 896, 1, 1 }, &.{ .{ .shape = &.{ r, 2688 } }, .{ .shape = &.{ r, 2688 } } });
+    }
+    fn expertRows(m: *Model, s: *mx.Scope, base: []const u8, x: A, ids: A, grouped: bool) !A {
+        const r = mx.dim(x, 0);
+        var buf: [256]u8 = undefined;
+        const up = try m.weights.triple(try std.fmt.bufPrint(&buf, "{s}.switch_mlp.fc1", .{base}));
+        const down = try m.weights.triple(try std.fmt.bufPrint(&buf, "{s}.switch_mlp.fc2", .{base}));
+        if (grouped) {
+            const size = @max(r * 6, 8);
+            const group = try m.kernels.run(s, src.nemotron_rows_group, &.{ ids, try s.ints(&.{r * 6}) }, &.{ ti("E", 128), ti("T", 128), ti("MAXP", 1024) }, .{ 128, 1, 1 }, .{ 128, 1, 1 }, &.{ .{ .shape = &.{size}, .dtype = mx.c.MLX_UINT32 }, .{ .shape = &.{size}, .dtype = mx.c.MLX_INT32 }, .{ .shape = &.{size}, .dtype = mx.c.MLX_INT32 }, .{ .shape = &.{size}, .dtype = mx.c.MLX_INT32 }, .{ .shape = &.{1}, .dtype = mx.c.MLX_INT32 } });
+            const groups = @min(r * 6, 128);
+            const act = (try m.kernels.run(s, src.nemotron_rows_grouped_up, &.{ x, group[0], group[1], group[2], group[3], group[4], up[0], up[1], up[2] }, &.{ ti("K", 2688), ti("N", 1856), ti("GS", 64), ti("RPS", 4), ti("SG", 2), ti("TOPK", 6) }, .{ 64, 232, groups }, .{ 64, 1, 1 }, &.{.{ .shape = &.{ r * 6, 1856 } }}))[0];
+            return (try m.kernels.run(s, src.nemotron_rows_grouped_down, &.{ act, group[0], group[1], group[2], group[3], group[4], down[0], down[1], down[2] }, &.{ ti("K", 1856), ti("N", 2688), ti("GS", 64), ti("RPS", 4), ti("SG", 2) }, .{ 64, 336, groups }, .{ 64, 1, 1 }, &.{.{ .shape = &.{ r, 6, 2688 } }}))[0];
+        }
+        const act = (try m.kernels.run(s, src.nemotron_rows_expert_up, &.{ x, ids, up[0], up[1], up[2] }, &.{ ti("K", 2688), ti("N", 1856), ti("GS", 64), ti("RPS", 4), ti("SG", 2), ti("TOPK", 6) }, .{ 64, 232, r * 6 }, .{ 64, 1, 1 }, &.{.{ .shape = &.{ r * 6, 1856 } }}))[0];
+        return (try m.kernels.run(s, src.nemotron_rows_expert_down, &.{ act, ids, down[0], down[1], down[2] }, &.{ ti("K", 1856), ti("N", 2688), ti("GS", 64), ti("RPS", 4), ti("SG", 2) }, .{ 64, 336, r * 6 }, .{ 64, 1, 1 }, &.{.{ .shape = &.{ r, 6, 2688 } }}))[0];
     }
     pub fn commit(m: *Model, p: *Pass, keep: usize) !void {
         return m.commitImpl(p, keep, true);
@@ -927,11 +959,15 @@ pub const Model = struct {
         for (m.kinds, 0..) |kind, i| {
             const rec = p.records[i];
             if (kind == 'M') {
-                next[i].a = try mx.retain(if (p.prefilled) rec.a else try p.scope.slice(rec.a, 0, n - 1, n));
-                next[i].b = try mx.retain(if (p.prefilled) rec.b else try p.scope.slice(rec.b, 0, n - 1, n));
                 if (rec.recurrent.ssm.ctx != null) {
                     next[i].recurrent = try rec.recurrent.clone();
                     next[i].recurrent.row += n - 1;
+                    const row = next[i].recurrent.row;
+                    next[i].a = try mx.retain(try p.scope.slice(rec.recurrent.conv, 0, row, row + 1));
+                    next[i].b = try mx.retain(try p.scope.slice(rec.recurrent.ssm, 0, row, row + 1));
+                } else {
+                    next[i].a = try mx.retain(if (p.prefilled) rec.a else try p.scope.slice(rec.a, 0, n - 1, n));
+                    next[i].b = try mx.retain(if (p.prefilled) rec.b else try p.scope.slice(rec.b, 0, n - 1, n));
                 }
             }
             if (kind == '*') {
@@ -966,7 +1002,7 @@ pub const Model = struct {
         return out[1];
     }
     pub fn draftStepStreams(m: *Model, s: *mx.Scope, hidden: A, tokens: A, caches: []const *Cache) !A {
-        if (caches.len == 0 or caches.len > 8 or hidden.ctx == null or tokens.ctx == null) return error.InvalidDraftRows;
+        if (caches.len == 0 or caches.len > max_shared_streams or hidden.ctx == null or tokens.ctx == null) return error.InvalidDraftRows;
         const rows: i32 = @intCast(caches.len);
         if (!std.mem.eql(i32, mx.shape(hidden), &.{ rows, 2688 }) or !std.mem.eql(i32, mx.shape(tokens), &.{rows}) or mx.dtype(hidden) != mx.bf16) return error.InvalidDraftRows;
         if (mx.dtype(tokens) != mx.c.MLX_INT32 and mx.dtype(tokens) != mx.c.MLX_UINT32) return error.InvalidToken;
@@ -979,14 +1015,14 @@ pub const Model = struct {
             }
         }
         const front = try m.headFront(s, hidden, tokens);
-        var outputs: [8]A = undefined;
-        var records: [8]Cache = @splat(.{});
+        var outputs: [max_shared_streams]A = undefined;
+        var records: [max_shared_streams]Cache = @splat(.{});
         for (caches, 0..) |cache, index| {
             const row: i32 = @intCast(index);
             outputs[index] = try m.attend(s, try s.slice(front[1], 2, row, row + 1), try s.slice(front[2], 2, row, row + 1), try s.slice(front[3], 2, row, row + 1), cache, &records[index]);
         }
         const out = try m.headBack(s, front[0], try s.cat(outputs[0..caches.len], 0));
-        var next: [8]Cache = @splat(.{});
+        var next: [max_shared_streams]Cache = @splat(.{});
         defer for (&next) |*cache| cache.deinit();
         for (caches, 0..) |cache, index| {
             next[index] = try records[index].clone();
@@ -1005,7 +1041,7 @@ pub const Model = struct {
         return m.headBack(s, rows.context, rows.attended);
     }
     pub fn draftWindowFront(m: *Model, s: *mx.Scope, hidden: A, tokens: A, lengths: []const usize, caches: []const *Cache, records: []Cache) !HeadRows {
-        if (caches.len == 0 or caches.len > 8 or lengths.len != caches.len or records.len != caches.len) return error.InvalidDraftRows;
+        if (caches.len == 0 or caches.len > max_shared_streams or lengths.len != caches.len or records.len != caches.len) return error.InvalidDraftRows;
         var total: usize = 0;
         for (caches, lengths, 0..) |cache, count, i| {
             if (count == 0 or count > 16 or total > max_shared_rows - count) return error.InvalidDraftRows;
@@ -1021,7 +1057,7 @@ pub const Model = struct {
         if (hidden.ctx == null or tokens.ctx == null or !std.mem.eql(i32, mx.shape(hidden), &.{ rows, 2688 }) or !std.mem.eql(i32, mx.shape(tokens), &.{rows}) or mx.dtype(hidden) != mx.bf16) return error.InvalidDraftRows;
         if (mx.dtype(tokens) != mx.c.MLX_INT32 and mx.dtype(tokens) != mx.c.MLX_UINT32) return error.InvalidToken;
         const front = try m.headFront(s, hidden, tokens);
-        var outputs: [8]A = undefined;
+        var outputs: [max_shared_streams]A = undefined;
         var first: i32 = 0;
         for (caches, lengths, records, 0..) |cache, count, *record, i| {
             const end = first + @as(i32, @intCast(count));
@@ -1035,6 +1071,9 @@ pub const Model = struct {
         const shape = mx.shape(rows.context);
         if (shape.len != 2 or shape[0] < 1 or shape[0] > max_shared_rows or shape[1] != 2688 or !std.mem.eql(i32, mx.shape(rows.attended), &.{ shape[0], 4096 }) or mx.dtype(rows.context) != mx.bf16 or mx.dtype(rows.attended) != mx.bf16) return error.InvalidDraftRows;
         for (selected) |row| if (row < 0 or row >= shape[0]) return error.InvalidDraftRows;
+        var identity = selected.len == shape[0];
+        for (selected, 0..) |row, index| identity = identity and row == index;
+        if (identity) return m.headBack(s, rows.context, rows.attended);
         const indices = try s.ints(selected);
         return m.headBack(s, try s.take(rows.context, indices, 0), try s.take(rows.attended, indices, 0));
     }
@@ -1086,7 +1125,7 @@ pub const Model = struct {
     }
 
     pub fn absorbDraftStreams(m: *Model, s: *mx.Scope, hidden: A, tokens: A, lengths: []const usize, caches: []const *Cache) !void {
-        if (caches.len > 8 or lengths.len != caches.len) return error.InvalidDraftRows;
+        if (caches.len > max_shared_streams or lengths.len != caches.len) return error.InvalidDraftRows;
         var total: usize = 0;
         for (caches, lengths, 0..) |cache, count, i| {
             for (caches[0..i]) |other| if (cache == other) return error.DuplicateStream;
@@ -1108,7 +1147,7 @@ pub const Model = struct {
         const normalized = try m.norm(s, projected, "mtp.layers.0.norm");
         const keys = try s.transpose(try s.reshape(try m.project(s, "mtp.layers.0.mixer", "k_proj", normalized), &.{ 1, rows, 2, 128 }), &.{ 0, 2, 1, 3 });
         const values = try s.transpose(try s.reshape(try m.project(s, "mtp.layers.0.mixer", "v_proj", normalized), &.{ 1, rows, 2, 128 }), &.{ 0, 2, 1, 3 });
-        var replacements: [8]Cache = @splat(.{});
+        var replacements: [max_shared_streams]Cache = @splat(.{});
         defer for (&replacements) |*cache| cache.deinit();
         var offset: i32 = 0;
         for (caches, lengths, 0..) |cache, count, i| {

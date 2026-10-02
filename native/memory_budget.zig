@@ -451,6 +451,17 @@ test "decode gate reserves retained-prefix copies only for running streams" {
     try std.testing.expectEqualDeep(StreamGate.Plan{ .run = 2, .paused = 0 }, try gate.plan(&memory, &streams));
 }
 
+test "64-stream growth keeps every reservation and pauses the newest request at the budget" {
+    var memory = GateMemory{ .active = 1000, .cache = 0, .entries = &.{} };
+    var gate = StreamGate{ .budget = 3048, .per_token = 2, .work = 128 };
+    const streams: [64]Live = @splat(.{ .now = 100, .most = 110, .copy_bytes = 10 });
+    try std.testing.expectEqual(@as(u64, 3048), try gate.need(1000, &streams));
+    try std.testing.expectEqualDeep(StreamGate.Plan{ .run = 64, .paused = 0 }, try gate.plan(&memory, &streams));
+    gate.budget -= 1;
+    try std.testing.expectEqualDeep(StreamGate.Plan{ .run = 63, .paused = 1 }, try gate.plan(&memory, &streams));
+    try std.testing.expectEqual(@as(u64, 0), memory.reclaims);
+}
+
 test "prefill rounds reserve their chunk and the decode growth already scheduled beside it" {
     const admission = Admission{ .budget = 320, .memory = .{ .short_tokens = 0, .short = 0, .long_tokens = 1, .long = 0, .chunk = 4, .per_token = 10, .prefill_a = 2, .prefill_b = 0, .round_bytes = 50 } };
     const decoding = [_]Live{.{ .now = 100, .most = 103, .copy_bytes = 20 }};

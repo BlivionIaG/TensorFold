@@ -437,6 +437,22 @@ fn checkEarlyPredictions(m: *nemotron.Model, seeds: *const [8]nemotron.Cache) !v
             var actual: [8]@import("drafter.zig").Proposal = undefined;
             try proposed.read(&actual);
             for (expected_proposals, actual) |expected, got| try std.testing.expectEqualSlices(i32, expected.tokens[0..expected.len], got.tokens[0..got.len]);
+            for (&states, proposed.tokens[0..8], 0..) |*state, tokens_, i| {
+                state.head_prediction.drafts = try mx.retain(try scope.slice(tokens_, 0, 0, @intCast(if (i % 2 == 0) proposal_streams[i].budget else 1)));
+            }
+        }
+        for ([_]bool{ true, false }) |prefix_only| {
+            var streams = proposal_streams;
+            if (prefix_only) for (&streams) |*stream| {
+                stream.budget = 1;
+            };
+            var proposed = try neural.proposeStreamsLazy(m, &streams);
+            defer proposed.deinit();
+            var arrays: [8]A = undefined;
+            try mx.evalMany(proposed.arrays(&arrays), false);
+            var actual: [8]@import("drafter.zig").Proposal = undefined;
+            try proposed.read(&actual);
+            for (expected_proposals, actual) |expected, got| try std.testing.expectEqualSlices(i32, expected.tokens[0..got.len], got.tokens[0..got.len]);
         }
         proposal_streams[0].first += 1;
         m.position = states[0].position;

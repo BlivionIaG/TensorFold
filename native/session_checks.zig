@@ -12,16 +12,21 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
     var warm = false;
     var resident_ple = false;
     var evaluation_stride: ?usize = null;
+    var calibration_streams: ?usize = null;
+    var memory_map = false;
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
         const key = args[i];
+        if (std.mem.eql(u8, key, "--memory-map")) {
+            memory_map = true;
+            continue;
+        }
         if (std.mem.eql(u8, key, "--warmup")) {
             warm = true;
             continue;
         }
         if (std.mem.eql(u8, key, "--no-copy") or std.mem.eql(u8, key, "--ignore-eos")) continue;
         if (std.mem.eql(u8, key, "--no-drafts")) {
-            drafts.enabled = false;
             options.draft = false;
             continue;
         }
@@ -39,6 +44,11 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
         }
         if (i + 1 >= args.len) return error.MissingArgument;
         const value = args[i + 1];
+        if (std.mem.eql(u8, key, "--batch-streams")) {
+            calibration_streams = try std.fmt.parseInt(usize, value, 10);
+            i += 1;
+            continue;
+        }
         if (std.mem.eql(u8, key, "--prefill-eval-layers")) {
             evaluation_stride = try std.fmt.parseInt(usize, value, 10);
             i += 1;
@@ -69,9 +79,25 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
     }
     try mx.check(mx.c.mlx_synchronize(mx.stream));
     const loaded = now(io);
+    const load_memory = try @import("process_memory.zig").Snapshot.current();
+    if (memory_map) {
+        var pid_buffer: [32]u8 = undefined;
+        const pid = try std.fmt.bufPrint(&pid_buffer, "{d}", .{std.c.getpid()});
+        const mapping = try std.process.run(a, io, .{ .argv = &.{ "/usr/bin/vmmap", "-summary", pid }, .stdout_limit = .limited(1024 * 1024) });
+        defer a.free(mapping.stdout);
+        defer a.free(mapping.stderr);
+        if (mapping.term != .exited or mapping.term.exited != 0) return error.ProcessMemoryUnavailable;
+        const path = try std.fmt.allocPrint(a, "{s}.load.vmmap.txt", .{report orelse return error.MissingReport});
+        defer a.free(path);
+        const file = try std.Io.Dir.cwd().createFile(io, path, .{});
+        defer file.close(io);
+        try file.writeStreamingAll(io, mapping.stdout);
+    }
     var coordinator = @import("shared_round.zig").Coordinator{};
-    if (options.draft) try coordinator.calibrate(&s, 1);
+    const stream_count = calibration_streams orelse @import("shared_round.zig").streamLimit(s.backend);
+    try coordinator.calibrate(&s, stream_count);
     const calibrated = now(io);
+    const calibration_memory = try @import("process_memory.zig").Snapshot.current();
     switch (s.backend) {
         inline .qwen, .gemma, .nemotron, .flash => |*m| {
             for (0..if (warm) @as(usize, 2) else 1) |repetition| {
@@ -90,9 +116,11 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                 var rounds: usize = 0;
                 var phase_seconds = @import("server_live.zig").RoundTiming{};
                 var widths: [128]usize = undefined;
+                var keeps: [128]usize = undefined;
                 var width_count: usize = 0;
                 while (g.phase == .decode) {
                     var results: [1]@import("shared_round.zig").Result = undefined;
+                    const position = g.state.position;
                     try measured.step(m, &.{&g}, &results);
                     if (results[0].failure) |failure| return failure;
                     inline for (comptime std.meta.fieldNames(@TypeOf(phase_seconds))) |field| @field(phase_seconds, field) += @field(measured.timing, field);
@@ -100,6 +128,7 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                         rounds += 1;
                         if (width_count < widths.len) {
                             widths[width_count] = measured.rows;
+                            keeps[width_count] = @intCast(g.state.position - position);
                             width_count += 1;
                         }
                     }
@@ -121,8 +150,14 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                     .drafted = g.neural_proposed,
                     .accepted = g.neural_accepted,
                     .verification_widths = widths[0..width_count],
+                    .verification_keeps = keeps[0..width_count],
                     .load_seconds = loaded - started,
                     .calibration_seconds = calibrated - loaded,
+                    .calibration_streams = stream_count,
+                    .calibration_rows = coordinator.cost_count,
+                    .load_process_memory = load_memory,
+                    .calibration_process_memory = calibration_memory,
+                    .request_process_memory = try @import("process_memory.zig").Snapshot.current(),
                     .target_costs = coordinator.costs[0..coordinator.cost_count],
                     .mtp_step_ms = if (coordinator.mtp_costs) |policy| policy.mtp_ms else 0,
                     .overhead_ms = measured.overhead_ms,
@@ -214,19 +249,20 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
     const M = @TypeOf(m.*);
     const G = session.Generation(M);
     const shared = @import("shared_round.zig");
-    var tokens: [8][73]i32 = undefined;
-    var prompts: [8][]const i32 = undefined;
-    var options: [8]session.Options = undefined;
-    var expected: [8]session.Reply = undefined;
-    var baseline: [8]Capture = @splat(.{});
+    const capacity = comptime shared.modelStreamLimit(M);
+    var tokens: [capacity][73]i32 = undefined;
+    var prompts: [capacity][]const i32 = undefined;
+    var options: [capacity]session.Options = undefined;
+    var expected: [capacity]session.Reply = undefined;
+    var baseline: [capacity]Capture = @splat(.{});
     defer for (&baseline) |*capture| capture.deinit();
     var completed: usize = 0;
     defer for (expected[0..completed]) |*reply| reply.deinit(mx.allocator);
-    for (0..8) |i| {
-        const count = 17 + i * 8;
+    for (0..capacity) |i| {
+        const count = 17 + (i % 8) * 8;
         for (tokens[i][0..count], 0..) |*token, j| token.* = @intCast(1000 + i * 73 + j);
         prompts[i] = tokens[i][0..count];
-        options[i] = .{ .max_tokens = 24 + i, .ignore_eos = true, .draft = false, .seed = 123 + i, .sampling = .{ .temperature = if (i % 2 == 0) 0 else 0.7, .top_k = 12, .top_p = 0.8, .metal = true } };
+        options[i] = .{ .max_tokens = 24 + i % 8, .ignore_eos = true, .draft = false, .seed = 123 + i, .sampling = .{ .temperature = if (i % 2 == 0) 0 else 0.7, .top_k = 12, .top_p = 0.8, .metal = true } };
         var g = try G.init(m, &s.tokenizer, mx.allocator, prompts[i], options[i], s.draftSink(baseline[i].sink()), null);
         defer g.deinit();
         while (g.phase == .prefill) _ = try g.step(m);
@@ -246,14 +282,14 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
         try singletonMtpRequests(s, m, prompts[0]);
     };
     for ([_]usize{ 1, 2, 8, if (@hasDecl(M, "max_shared_rows")) M.max_shared_rows else 128 }) |rows| {
-        var requests: [8]G = undefined;
-        var captures: [8]Capture = @splat(.{});
+        var requests: [capacity]G = undefined;
+        var captures: [capacity]Capture = @splat(.{});
         defer for (&captures) |*capture| capture.deinit();
         var initialized: usize = 0;
         defer for (requests[0..initialized]) |*g| g.deinit();
-        var head_handles: [8]?*anyopaque = undefined;
-        var hidden_handles: [8]?*anyopaque = undefined;
-        for (0..8) |i| {
+        var head_handles: [capacity]?*anyopaque = undefined;
+        var hidden_handles: [capacity]?*anyopaque = undefined;
+        for (0..capacity) |i| {
             var opts = options[i];
             opts.draft = !neural or i != 7;
             requests[i] = try G.init(m, &s.tokenizer, mx.allocator, prompts[i], opts, s.draftSink(captures[i].sink()), null);
@@ -271,19 +307,19 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
         }
         captures[0].cancel_after = 3;
         var coordinator = shared.Coordinator{ .max_rows = rows };
-        var served: [8]u64 = @splat(0);
-        var done: [8]bool = @splat(false);
-        for (1..512) |turn| {
+        var served: [capacity]u64 = @splat(0);
+        var done: [capacity]bool = @splat(false);
+        for (1..capacity * 64) |turn| {
             if (std.mem.allEqual(bool, &done, true)) break;
-            var candidates: [8]shared.Candidate = undefined;
+            var candidates: [capacity]shared.Candidate = undefined;
             var count: usize = 0;
             for (done, 0..) |finished, i| if (!finished) {
                 candidates[count] = .{ .slot = i, .served = served[i], .activated = i };
                 count += 1;
             };
             const selected = shared.select(candidates[0..count], rows);
-            var gs: [8]*G = undefined;
-            var results: [8]shared.Result = undefined;
+            var gs: [capacity]*G = undefined;
+            var results: [capacity]shared.Result = undefined;
             for (selected, 0..) |candidate, i| {
                 gs[i] = &requests[candidate.slot];
                 served[candidate.slot] = turn;
@@ -302,7 +338,7 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
             for (&requests) |*g| try std.testing.expect(!g.in_round and !g.state.borrowed);
         }
         try std.testing.expect(std.mem.allEqual(bool, &done, true));
-        for (1..8) |i| {
+        for (1..capacity) |i| {
             if (!requests[i].options.draft) {
                 try std.testing.expectEqual(@as(usize, 0), requests[i].neural_proposed);
                 if (M == @import("nemotron.zig").Model) {
@@ -315,7 +351,7 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
             try same(expected[i], reply, baseline[i], captures[i]);
         }
         try std.testing.expectEqual(.failed, requests[0].phase);
-        std.debug.print("PASS: 8 shared requests, row cap {d}, exact greedy/sampled {s} output and streaming, cancellation isolation and fair turns\n", .{ rows, if (neural) "neural" else "copy" });
+        std.debug.print("PASS: {d} shared requests, row cap {d}, exact greedy/sampled {s} output and streaming, cancellation isolation and fair turns\n", .{ capacity, rows, if (neural) "neural" else "copy" });
     }
 }
 

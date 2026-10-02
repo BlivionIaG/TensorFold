@@ -549,6 +549,7 @@ pub fn build(b: *std.Build) void {
     session_images.step.dependOn(&session_image_fixture.step);
     b.step("test-session-images", "Interleave image/text generation and verify request-local multimodal positions").dependOn(&session_images.step);
     const lifecycle_module = b.createModule(.{ .root_source_file = b.path("tools/native_server_checks.zig"), .target = b.graph.host, .optimize = .safe });
+    lifecycle_module.addImport("process_memory", b.createModule(.{ .root_source_file = b.path("native/process_memory.zig"), .target = b.graph.host, .optimize = .safe, .link_libc = true }));
     lifecycle_module.link_libc = true;
     const lifecycle_exe = b.addExecutable(.{ .name = "native-server-checks", .root_module = lifecycle_module });
     const lifecycle_install = b.addInstallArtifact(lifecycle_exe, .{});

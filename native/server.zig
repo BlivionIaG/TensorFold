@@ -90,7 +90,7 @@ pub fn run(init: std.process.Init, args: []const []const u8) !void {
         }
         if (std.mem.eql(u8, flag, "--batch-streams")) {
             batch_streams = try std.fmt.parseInt(usize, value, 10);
-            if (batch_streams < 1 or batch_streams > 8) return error.InvalidBatchStreams;
+            if (batch_streams < 1 or batch_streams > shared_round.max_streams) return error.InvalidBatchStreams;
             continue;
         }
         if (std.mem.eql(u8, flag, "--batch-rows")) {
@@ -127,7 +127,7 @@ pub fn run(init: std.process.Init, args: []const []const u8) !void {
     try draft_options.validate();
     var signals = control.Signals.install();
     defer signals.deinit();
-    var registry = control.Registry{ .io = init.io, .timeout_ms = timeout_ms, .shutdown_grace_ms = shutdown_grace_ms };
+    var registry = control.Registry{ .io = init.io, .timeout_ms = timeout_ms, .shutdown_grace_ms = shutdown_grace_ms, .client_limit = 2 * @max(8, batch_streams) + 16 };
     const monitor = try std.Thread.spawn(.{}, control.Registry.watch, .{&registry});
     defer {
         registry.finished.store(true, .release);
@@ -153,6 +153,7 @@ pub fn run(init: std.process.Init, args: []const []const u8) !void {
     defer response_store.deinit();
     var worker = Worker{ .io = init.io, .dir = args[2], .defaults = defaults, .thinking = thinking, .effort = effort, .vision_urls = vision_urls, .control = &registry, .batch_streams = batch_streams, .is_glm = is_glm, .is_flash = is_flash, .memory_limit = init.environ_map.get("TENSORFOLD_MEMORY_LIMIT_GB"), .stats = &stats, .display = &display, .response_store = &response_store };
     worker.batch_rows = batch_rows;
+    worker.queue.waiting_limit = @max(8, batch_streams);
     worker.checkpoint_slots = checkpoint_slots orelse @max(8, 3 * batch_streams);
     worker.prompt_cache_bytes = prompt_cache_bytes;
     const snapshot_path = if (snapshot_dir) |dir| if (std.ascii.eqlIgnoreCase(dir, "none")) null else try init.gpa.dupe(u8, dir) else if (init.environ_map.get("HOME")) |home| try std.fs.path.join(init.gpa, &.{ home, ".cache", "tensorfold", "native-prefix-snapshots" }) else null;
@@ -312,7 +313,7 @@ const Worker = struct {
     display: *live_status.Display,
     io: std.Io,
     dir: []const u8,
-    queue: background.Queue(*Job) = .{},
+    queue: background.Queue(*Job, shared_round.max_streams) = .{},
     preemptions: std.atomic.Value(u64) = .init(0),
     warming: std.atomic.Value(bool) = .init(false),
     ready: std.Io.Event = .unset,
@@ -350,6 +351,7 @@ const Worker = struct {
         try memory.checkWeightsAndDraft(w.io, w.dir, w.is_flash, if (w.draft_options.enabled) w.draft_options.directory else null);
         var session = try inference.Session.initWithDraft(w.io, w.dir, w.draft_options);
         defer session.deinit();
+        if (w.batch_streams > shared_round.streamLimit(session.backend)) return error.InvalidBatchStreams;
         const shared_limit = shared_round.rowLimit(session.backend);
         w.shared_decode = shared_limit != 0;
         if (w.shared_decode) w.batch_rows = @min(w.batch_rows, shared_limit);
@@ -393,7 +395,7 @@ const Worker = struct {
         w.memory_stats.update(0);
         std.debug.print("Native memory admission: {d} bytes available, {d} resident, {d} bytes per token; stream={d}, decode work={d}, prefill work={d}\n", .{ admission.budget, try memory_runtime.activeBytes(), profile.per_token, try profile.streamBytes(64), profile.round_bytes, try profile.prefillBytes(profile.chunk) });
         w.ready.set(w.io);
-        var active: [8]?*Pending = @splat(null);
+        var active: [shared_round.max_streams]?*Pending = @splat(null);
         var live: usize = 0;
         var closed = false;
         var activation_order: u64 = 0;
@@ -445,7 +447,7 @@ const Worker = struct {
                 job.finish(w.io);
                 try mx.check(mx.c.mlx_clear_cache());
             };
-            var admissions: [8]*Pending = undefined;
+            var admissions: [shared_round.max_streams]*Pending = undefined;
             var admitting: usize = 0;
             for (active) |slot| if (slot) |pending| if (pending.generation == null and pending.admission_failure == null) {
                 admissions[admitting] = pending;
@@ -462,14 +464,15 @@ const Worker = struct {
             var filled = false;
             var serial_decode_seconds: f64 = 0;
             var serial_decoded = false;
-            var order = [_]usize{ 0, 1, 2, 3, 4, 5, 6, 7 };
+            var order: [shared_round.max_streams]usize = undefined;
+            for (&order, 0..) |*slot, index| slot.* = index;
             if (filling) |chosen| for (active, 0..) |slot, index| {
                 if (slot == chosen) {
                     std.mem.swap(usize, &order[0], &order[index]);
                     break;
                 }
             };
-            var candidates: [8]shared_round.Candidate = undefined;
+            var candidates: [shared_round.max_streams]shared_round.Candidate = undefined;
             var candidate_count: usize = 0;
             for (order) |slot_index| {
                 const slot = &active[slot_index];
@@ -523,8 +526,8 @@ const Worker = struct {
             if (serial_decoded) fill_schedule.decoded(serial_decode_seconds);
             const selected = shared_round.select(candidates[0..candidate_count], w.batch_rows);
             if (selected.len > 0) {
-                var before: [8]inference.RequestGeneration.Progress = undefined;
-                var results: [8]shared_round.Result = undefined;
+                var before: [shared_round.max_streams]inference.RequestGeneration.Progress = undefined;
+                var results: [shared_round.max_streams]shared_round.Result = undefined;
                 for (selected, 0..) |candidate, i| {
                     const pending = active[candidate.slot].?;
                     before[i] = pending.generation.?.progress();
@@ -534,7 +537,7 @@ const Worker = struct {
                 const started = live_status.now(w.io);
                 switch (session.backend) {
                     inline .qwen, .gemma, .nemotron, .flash => |*m, tag| {
-                        var requests: [8]*inference.Generation(@TypeOf(m.*)) = undefined;
+                        var requests: [shared_round.max_streams]*inference.Generation(@TypeOf(m.*)) = undefined;
                         for (selected, 0..) |candidate, i| requests[i] = &@field(active[candidate.slot].?.generation.?, @tagName(tag));
                         coordinator.step(m, requests[0..selected.len], results[0..selected.len]) catch |err| {
                             for (results[0..selected.len]) |*result| result.* = .{ .failure = err };
@@ -583,7 +586,7 @@ const Worker = struct {
         }
     }
 
-    fn preempt(w: *Worker, session: *inference.Session, admission: *memory_policy.Admission, active: *[8]?*Pending, live: *usize, prefixes: ?*PrefixStore) !void {
+    fn preempt(w: *Worker, session: *inference.Session, admission: *memory_policy.Admission, active: []?*Pending, live: *usize, prefixes: ?*PrefixStore) !void {
         var waiting: ?*Pending = null;
         for (active) |slot| if (slot) |pending| if (!pending.job.background and pending.generation == null and !Job.cancelled(pending.job)) {
             if (waiting == null or pending.job.sequence < waiting.?.job.sequence) waiting = pending;
@@ -896,7 +899,7 @@ test "prompt priority is foreground then shortest with a bounded age guard" {
 }
 
 fn gateRound(gate: *memory_policy.StreamGate, active: []const ?*Pending, prefixes: ?*PrefixStore) !void {
-    var oldest: [8]*Pending = undefined;
+    var oldest: [shared_round.max_streams]*Pending = undefined;
     var count: usize = 0;
     var residents: usize = 0;
     for (active) |slot| if (slot != null) {
@@ -915,7 +918,7 @@ fn gateRound(gate: *memory_policy.StreamGate, active: []const ?*Pending, prefixe
             return lhs.activation_order < rhs.activation_order;
         }
     }.less);
-    var streams: [8]memory_policy.Live = undefined;
+    var streams: [shared_round.max_streams]memory_policy.Live = undefined;
     for (oldest[0..count], streams[0..count]) |pending, *stream| {
         stream.* = pending.generation.?.memoryLengths();
         stream.copy_bytes = pending.prefix_reserve;
@@ -1517,7 +1520,7 @@ const Pending = struct {
     };
 
     fn reservePrefix(p: *Pending, session: *inference.Session, admission: *memory_policy.Admission, active: []const ?*Pending, prefixes: ?*PrefixStore) !?PrefixReservation {
-        var live: [8]memory_policy.Live = undefined;
+        var live: [shared_round.max_streams]memory_policy.Live = undefined;
         var count: usize = 0;
         var copies: u64 = 0;
         var active_caches: u64 = 0;
@@ -1620,7 +1623,7 @@ const Pending = struct {
     }
 
     fn guardPrefill(p: *Pending, admission: memory_policy.Admission, active: []const ?*Pending, prefixes: ?*PrefixStore) !bool {
-        var others: [8]memory_policy.Live = undefined;
+        var others: [shared_round.max_streams]memory_policy.Live = undefined;
         var count: usize = 0;
         var decoding = false;
         var prompt = p.ids.len;
@@ -1654,7 +1657,7 @@ const Pending = struct {
         defer if (!adopted) snapshot.deinit();
         const size = snapshot.nbytes();
         if (store.budget_bytes) |budget| if (size > budget and !store.admit_oversize) return;
-        var live: [8]memory_policy.Live = undefined;
+        var live: [shared_round.max_streams]memory_policy.Live = undefined;
         var count: usize = 0;
         var prompt: usize = 0;
         var copies: u64 = 0;

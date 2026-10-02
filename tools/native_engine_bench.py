@@ -20,6 +20,7 @@ import statistics
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 import uuid
 
 
@@ -444,7 +445,7 @@ def golden_native_command(args, family, manifest, case, report):
         command += ["--no-copy", "--warm-case"]
     else:
         command.append("--ignore-eos")
-    if case["drafts"]:
+    if case["drafts"] or serving:
         if family in DRAFTERS:
             command += ["--drafter", manifest["drafter"]["path"]]
             if family == "gemma":
@@ -453,7 +454,7 @@ def golden_native_command(args, family, manifest, case, report):
             command += ["--mtp-drafts", "3"]
             if family == "deepseek":
                 command += ["--drafter", str(directory / "drafter")]
-    else:
+    if not case["drafts"]:
         command.append("--no-drafts")
     if args.resident_ple and family == "flash":
         command.append("--resident-ple")
@@ -480,7 +481,8 @@ def native_synthetic_checkpoint(manifest, output):
 
 def compare_resources(python, native):
     metrics = {}
-    for name in ("peak_mlx_bytes", "first_token_seconds", "decode_seconds", "total_seconds"):
+    memory_metrics = ("peak_mlx_bytes", "peak_rss_bytes", "peak_footprint_bytes")
+    for name in (*memory_metrics, "first_token_seconds", "decode_seconds", "total_seconds"):
         def value(sample, is_native):
             if name == "first_token_seconds" and is_native:
                 return sample.get("prefill_seconds")
@@ -497,14 +499,54 @@ def compare_resources(python, native):
         if not valid:
             metrics[name] = dict(passed=False, reason="missing or invalid measurements")
             continue
-        aggregate = max if name == "peak_mlx_bytes" else statistics.median
+        aggregate = max if name in memory_metrics else statistics.median
         reference, actual = aggregate(baseline), aggregate(measured)
         metrics[name] = dict(python=reference, native=actual, ratio=actual / reference,
                              passed=actual <= reference)
-    memory = metrics["peak_mlx_bytes"]["passed"]
-    performance = all(v["passed"] for k, v in metrics.items() if k != "peak_mlx_bytes")
+    memory = all(metrics[name]["passed"] for name in memory_metrics)
+    performance = all(v["passed"] for k, v in metrics.items() if k not in memory_metrics)
     return dict(memory_passed=memory, performance_passed=performance,
                 passed=memory and performance, metrics=metrics)
+
+
+def measured_process(command, log, env=None):
+    if sys.platform != "darwin":
+        raise RuntimeError("Whole-process Metal memory measurement requires macOS /usr/bin/time")
+    usage = log.with_suffix(".memory.txt")
+    started = time.perf_counter()
+    with log.open("w") as handle:
+        process = subprocess.run(["/usr/bin/time", "-l", "-o", str(usage), *command],
+                                 stdout=handle, stderr=subprocess.STDOUT, env=env)
+    result = dict(exit_code=process.returncode, process_seconds=time.perf_counter() - started)
+    labels = {"maximum resident set size": "peak_rss_bytes", "peak memory footprint": "peak_footprint_bytes"}
+    for line in usage.read_text().splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) == 2 and parts[1] in labels:
+            result[labels[parts[1]]] = int(parts[0])
+    if any(result.get(metric, 0) <= 0 for metric in labels.values()):
+        raise RuntimeError(f"Missing whole-process memory counters: {usage}")
+    return result
+
+
+def python_case_worker(args):
+    from native_runtime import require_mlx
+    require_mlx()
+    import importlib
+    manifest = json.loads(args.python_case_manifest.read_text())
+    package = importlib.import_module(f"tensorfold.families.{FAMILY_PACKAGES[manifest['family']]}")
+    for key, value in getattr(package, "MLX_ENV", {}).items():
+        os.environ.setdefault(key, value)
+    case, = [case for case in manifest["cases"] if case["name"] in args.case]
+    model, _ = package.load(Path(manifest["checkpoint"]["path"]), **manifest["load_options"])
+    settings = SimpleNamespace(max_tokens=len(case["measurements"][0]["tokens"]),
+                               seed=manifest["seed"], top_k=manifest["top_k"], top_p=manifest["top_p"])
+    for _ in range(2):
+        result = run_golden_case(model, manifest["engine_options"], case, settings)
+        if result["tokens"] != case["measurements"][0]["tokens"]:
+            raise RuntimeError(f"Fresh Python execution disagrees with fixture: {case['name']}")
+    result.update(calibration_streams=getattr(model, "max_streams", None),
+                  calibration_rows=getattr(model, "batch_rows", None))
+    write_json(args.output, result)
 
 
 def compare_golden(args):
@@ -526,8 +568,10 @@ def compare_golden(args):
                       golden=str(args.compare_golden.resolve()),
                       scope=("Session/shared-round serving versus production LaneEngine" if args.native_driver == "serving"
                              else "CLI versus production LaneEngine, not native Session/shared-round serving; CLI draft policies differ")
-                            + "; warm resident model, fresh request caches; native process startup excluded",
-                      native_warmup="one discarded exact-case run before every native measured request",
+                            + "; warm resident model, fresh request caches; process startup excluded from request timing",
+                      warmup="one discarded exact-case run in each fresh Python/native process",
+                      rss_scope="macOS time -l whole-process lifetime maximum RSS and physical footprint, including load, calibration, warmup, request and teardown; bytes",
+                      calibration_scope="each implementation's supported stream/row limits are recorded per sample; unequal limits are not equivalent concurrency memory measurements",
                       native_environment={k: v for k, v in native_env.items()
                                           if k.startswith(("TF_", "TENSORFOLD_", "MLX_"))},
                       checkpoint_adaptations=[], excluded=[])
@@ -558,40 +602,55 @@ def compare_golden(args):
             if args.case and case["name"] not in args.case:
                 continue
             entry = dict(family=model["family"], name=case["name"], synthetic=model["synthetic"],
-                         python=case["measurements"], native=[], correctness=None)
+                         golden_measurements=case["measurements"], python=[], native=[], correctness=None)
             comparison["cases"].append(entry)
-            selected.append((model["family"], manifest, case, entry))
+            selected.append((model["family"], manifest, path, case, entry))
+    missing = set(args.case) - {case["name"] for _, _, _, case, _ in selected}
+    if missing:
+        raise ValueError(f"Unknown fixture cases: {', '.join(sorted(missing))}")
     if not selected:
         raise ValueError("No matching fixture cases")
     # Check every selected case before retaining any native performance measurements.
     for repetition in range(args.repetitions + 1):
-        for family, manifest, case, entry in selected:
+        for family, manifest, manifest_path, case, entry in selected:
             if repetition and not entry["correctness"]["matches"]:
                 continue
             stem = f"{family}-{case['name']}-{repetition}"
             report = args.output / f"{stem}.json"
             command = golden_native_command(args, family, manifest, case, report)
-            before = time.perf_counter()
-            with (args.output / f"{stem}.log").open("w") as log:
-                process = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, env=native_env)
-            elapsed = time.perf_counter() - before
-            result = json.loads(report.read_text()) if process.returncode == 0 else {}
+            python_report = args.output / f"{stem}-python.json"
+            python_command = [sys.executable, str(Path(__file__).resolve()), "--python-case-manifest",
+                              str(manifest_path), "--case", case["name"], "--output", str(python_report)]
+            # Alternate ordering to avoid always assigning the second run to one implementation.
+            runs = [("python", python_command, python_report, None), ("native", command, report, native_env)]
+            if repetition % 2:
+                runs.reverse()
+            measured = {}
+            for engine, invocation, destination, environment in runs:
+                process = measured_process(invocation, destination.with_suffix(".log"), environment)
+                sample = json.loads(destination.read_text()) if process["exit_code"] == 0 else {}
+                sample.update(process, command=invocation)
+                write_json(destination, sample)
+                measured[engine] = sample
+            result = measured["native"]
             expected = case["measurements"][0]["tokens"]
             actual = result.get("tokens", [])
-            matches = process.returncode == 0 and actual == expected
-            result.update(command=command, process_seconds=elapsed, exit_code=process.returncode,
-                          matches=matches, expected_tokens=expected)
+            matches = (result["exit_code"] == 0 and actual == expected
+                       and measured["python"]["exit_code"] == 0 and measured["python"].get("tokens") == expected)
+            result.update(matches=matches, expected_tokens=expected)
             write_json(report, result)
             if repetition:
                 if not matches:
                     raise RuntimeError(f"Output changed after correctness check: {stem}")
                 entry["native"].append(result)
+                entry["python"].append(measured["python"])
             else:
-                entry["correctness"] = dict(matches=matches, exit_code=process.returncode,
+                entry["correctness"] = dict(matches=matches, exit_code=result["exit_code"],
+                                            python_exit_code=measured["python"]["exit_code"],
                                             tokens=actual, expected_tokens=expected, report=report.name)
             write_json(output, comparison)
             print(f"{'MEASURE' if repetition else 'CHECK'} {stem}: "
-                  f"{'match' if matches else 'FAIL'}, {elapsed:.3f}s process", flush=True)
+                  f"{'match' if matches else 'FAIL'}, {result['process_seconds']:.3f}s native process", flush=True)
     comparison["complete"] = True
     comparison["correctness_passed"] = all(c["correctness"]["matches"] for c in comparison["cases"])
     for case in comparison["cases"]:
@@ -599,7 +658,7 @@ def compare_golden(args):
         failures = [name for name, result in case["resources"]["metrics"].items() if not result["passed"]]
         print(f"RESOURCES {case['family']}-{case['name']}: "
               + ("PASS" if not failures else "FAIL " + ", ".join(failures)), flush=True)
-    comparison["resource_policy"] = "peak MLX bytes and median first-token/decode/total seconds must not exceed Python; no tolerance"
+    comparison["resource_policy"] = "peak MLX bytes, whole-process peak RSS/physical footprint and median first-token/decode/total seconds must not exceed fresh Python; no tolerance"
     comparison["memory_passed"] = all(c["resources"]["memory_passed"] for c in comparison["cases"])
     comparison["performance_passed"] = all(c["resources"]["performance_passed"] for c in comparison["cases"])
     comparison["passed"] = all(comparison[k] for k in ("correctness_passed", "memory_passed", "performance_passed"))
@@ -711,6 +770,7 @@ def main():
     parser.add_argument("--family", choices=(*MODELS, *SYNTHETIC_MODELS))
     parser.add_argument("--golden", action="store_true", help="Capture and measure all local Python families, plus synthetic GLM/DeepSeek")
     parser.add_argument("--golden-worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--python-case-manifest", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--verify-golden", type=Path, help="Verify a retained golden suite's arrays, provenance labels and token comparisons")
     parser.add_argument("--compare-golden", type=Path, help="Check native tokens against a golden suite before comparing phase measurements")
     parser.add_argument("--native-driver", choices=("cli", "serving"), default="cli", help="Native path for golden comparisons; serving uses Session/shared-round without HTTP")
@@ -740,6 +800,8 @@ def main():
         return verify_golden(args.verify_golden)
     if args.output is None:
         parser.error("--output is required")
+    if args.python_case_manifest:
+        return python_case_worker(args)
     if args.compare_golden:
         if args.repetitions < 1:
             parser.error("positive repetitions required")

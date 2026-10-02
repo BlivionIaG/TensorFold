@@ -173,12 +173,13 @@ pub const Weights = struct {
     }
     pub fn releaseLinearSources(w: *Weights) !void {
         var it = w.linears.keyIterator();
+        while (it.next()) |name| try w.releaseLinearSource(name.*);
+    }
+    fn releaseLinearSource(w: *Weights, name: []const u8) !void {
         var buffer: [256]u8 = undefined;
-        while (it.next()) |name| {
-            for ([_][]const u8{ ".weight", ".scales", ".biases" }) |suffix| {
-                const key = try std.fmt.bufPrint(&buffer, "{s}{s}", .{ name.*, suffix });
-                w.releaseArray(key);
-            }
+        for ([_][]const u8{ ".weight", ".scales", ".biases" }) |suffix| {
+            const key = try std.fmt.bufPrint(&buffer, "{s}{s}", .{ name, suffix });
+            w.releaseArray(key);
         }
     }
     pub fn releaseArray(w: *Weights, name: []const u8) void {
@@ -301,10 +302,14 @@ pub const Weights = struct {
         // MLX-format checkpoints already carry shifted RMS weights and [C,4,1] convs.
         // Refuse raw HF tensors rather than silently applying the wrong normalization.
         if (mx.dim(try w.get("model.layers.0.linear_attn.conv1d.weight"), -1) != 1) return error.UnsanitizedCheckpoint;
+        var projections: std.ArrayList([]const u8) = .empty;
+        defer projections.deinit(mx.allocator);
         var entries = w.arrays.iterator();
         while (entries.next()) |e| {
             if (!std.mem.endsWith(u8, e.key_ptr.*, ".weight") or mx.shape(e.value_ptr.*).len != 2 or std.mem.indexOf(u8, e.key_ptr.*, "embed_tokens") != null) continue;
-            const name = e.key_ptr.*[0 .. e.key_ptr.len - 7];
+            try projections.append(mx.allocator, e.key_ptr.*[0 .. e.key_ptr.len - 7]);
+        }
+        for (projections.items) |name| {
             var s = mx.Scope{};
             defer s.deinit();
             const weight = try w.get(try std.fmt.bufPrint(&pathbuf, "{s}.weight", .{name}));
@@ -313,8 +318,9 @@ pub const Weights = struct {
             const biases = if (format != null) try w.get(try std.fmt.bufPrint(&pathbuf, "{s}.biases", .{name})) else mx.empty;
             const linear_ = try lanes.Linear.initFormatWide(&s, weight, scales, biases, format, !std.mem.endsWith(u8, name, "in_proj_z"));
             try w.putLinear(name, linear_);
+            // Use the retained key: releasing the source also frees its name.
+            try w.releaseLinearSource(w.linears.getKey(name).?);
         }
-        try w.releaseLinearSources();
     }
     pub fn embed(w: *Weights, s: *mx.Scope, tokens: []const i32) !mx.Array {
         return w.embedArray(s, try s.ints(tokens));
