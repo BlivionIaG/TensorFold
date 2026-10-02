@@ -1,16 +1,11 @@
 """Qwen3.5 text forward on RDNA. Projections are packed affine matmuls; nothing here densifies a weight.
 
-The measurement entry is ``python -m tensorfold.rocm.qwen MODEL_DIR``. It reports prefill tok/s,
-decode tok/s, ttft, and itil for prompt/generated loads 1024/512 and 16384/1024 at concurrency 1 and 8.
+Serving cells are measured by ``python -m tensorfold.rocm.bench MODEL_DIR``.
 """
 
 from __future__ import annotations
 
-import gc
 import json
-import statistics
-import sys
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,9 +13,8 @@ import torch
 
 from tensorfold.rocm import qwen_math
 from tensorfold.rocm.qwen_math import Packed, Spec, greedy
-_CELLS = ((1024, 512, 1), (1024, 512, 8), (16384, 1024, 1), (16384, 1024, 8))
+
 _RDNA2 = {f"gfx103{i}" for i in range(7)}
-_RDNA3 = {f"gfx110{i}" for i in range(4)}
 
 
 @dataclass
@@ -311,124 +305,3 @@ def load(path: str | Path, device: torch.device | None = None) -> TextModel:
                 _packed(table, lin + "out_proj", bits, group, device), *mlp))
     head = embed if tied else _packed(table, "language_model.lm_head", bits, group, device)
     return TextModel(spec, embed, layers, _float(table, prefix + "norm.weight", device), head)
-
-
-def _prompts(prompt_len: int, generated: int, concurrency: int, vocab: int) -> list[list[int]]:
-    if prompt_len < 1 or generated < 2 or concurrency < 1:
-        raise ValueError("a measured cell needs a prompt, at least two generated tokens, and one request")
-    # Distinct requests. Token 0 is avoided so a pad id is not the whole prompt. EOS is not consulted.
-    return [[(index + 1 + row * 17) % (vocab - 1) + 1 for index in range(prompt_len)] for row in range(concurrency)]
-
-
-def measure_cell(engine: Engine, prompt_len: int, generated: int, concurrency: int) -> dict:
-    """One shared wall for ``concurrency`` requests. Clocks move only after the device synchronizes."""
-
-    spec = engine.model.spec
-    prompts = _prompts(prompt_len, generated, concurrency, spec.vocab)
-    stamps: list[float] = []
-
-    def after(step: int) -> None:
-        torch.cuda.synchronize()
-        stamps.append(time.perf_counter())
-        if step > 0 and step % 64 == 0:
-            print(f"# c={concurrency} prompt={prompt_len} token {step}/{generated}", file=sys.stderr, flush=True)
-
-    ids = engine.generate(prompts, generated, after_token=after)
-    if len(stamps) != generated + 1:
-        raise RuntimeError("the clock did not record a start and every generated token")
-    counts = [len(row) for row in ids]
-    if counts != [generated] * concurrency:
-        raise RuntimeError(f"generated {counts}, requested {generated} from each of {concurrency} requests")
-    t0, t_first, t_last = stamps[0], stamps[1], stamps[-1]
-    prefill_wall = t_first - t0
-    decode_wall = t_last - t_first
-    if prefill_wall <= 0 or decode_wall <= 0:
-        raise RuntimeError("non-positive measured wall")
-    ttft = [prefill_wall] * concurrency
-    itil = [decode_wall / (generated - 1)] * concurrency
-    prefill_tokens = concurrency * prompt_len
-    decode_tokens = concurrency * (generated - 1)
-    return {
-        "prompt": prompt_len, "generated": generated, "concurrency": concurrency,
-        "prefill_tokens": prefill_tokens, "decode_tokens": decode_tokens,
-        "prefill_tok_s": prefill_tokens / prefill_wall, "decode_tok_s": decode_tokens / decode_wall,
-        "ttft_s": statistics.median(ttft), "itil_s": statistics.median(itil),
-        "ttft_each": ttft, "itil_each": itil, "generated_each": counts,
-    }
-
-
-def _finite_positive(row: dict) -> None:
-    for key in ("prefill_tok_s", "decode_tok_s", "ttft_s", "itil_s"):
-        value = row[key]
-        if not (value > 0) or value != value or value == float("inf"):
-            raise RuntimeError(f"{key} is not a finite positive rate ({value})")
-
-
-def _format(gfx: str, dtype: torch.dtype, row: dict) -> str:
-    activation = "bf16" if dtype == torch.bfloat16 else "fp16"
-    each_t = ",".join(f"{v:.9g}" for v in row["ttft_each"])
-    each_i = ",".join(f"{v:.9g}" for v in row["itil_each"])
-    each_n = ",".join(str(v) for v in row["generated_each"])
-    return (f"cell gfx={gfx} activation={activation} prompt={row['prompt']} generated={row['generated']} "
-            f"concurrency={row['concurrency']} prefill_tok_s={row['prefill_tok_s']:.9g} "
-            f"decode_tok_s={row['decode_tok_s']:.9g} ttft_s={row['ttft_s']:.9g} itil_s={row['itil_s']:.9g} "
-            f"prefill_tokens={row['prefill_tokens']} decode_tokens={row['decode_tokens']} "
-            f"ttft_each={each_t} itil_each={each_i} generated_each={each_n}")
-
-
-def measure(path: str | Path, cells=_CELLS) -> list[str]:
-    """Load the checkpoint and print one line per cell. Refuses a gfx outside RDNA2 and RDNA3 WMMA."""
-
-    from tensorfold.rocm.build import gfx_name
-
-    if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
-        raise RuntimeError("no HIP device is visible")
-    gfx = gfx_name()
-    if gfx not in _RDNA2 and gfx not in _RDNA3:
-        raise RuntimeError(f"{gfx} is not an RDNA2 (gfx1030-gfx1036) or RDNA3 (gfx1100-gfx1103) measurement target")
-    dtype = activation_dtype(gfx)
-    model = load(path)
-    engine = Engine(model, schedule="auto", dtype=dtype)
-    probe = model.layers[0]
-    packed = probe.qkv if isinstance(probe, LinearLayer) else probe.q
-    sample = torch.zeros(1, model.spec.hidden, device=packed.words.device, dtype=dtype)
-    got = engine.linear(sample, packed)
-    if got.shape != (1, packed.words.shape[0]) or not torch.isfinite(got).all():
-        raise RuntimeError("the packed projection did not return a finite row")
-    print(f"loaded gfx={gfx} activation={'bf16' if dtype == torch.bfloat16 else 'fp16'} "
-          f"layers={model.spec.n_layers} hidden={model.spec.hidden} vocab={model.spec.vocab} "
-          f"bits={model.spec.bits} group={model.spec.group} "
-          f"embed_words={model.embed.words.shape[0]}x{model.embed.words.shape[1]} dtype=int32", flush=True)
-    # The extension is already built. A short generate pays for the first launch before a cell is timed.
-    engine.generate(_prompts(8, 2, 1, model.spec.vocab), 2)
-    torch.cuda.synchronize()
-    print("# warmup done", file=sys.stderr, flush=True)
-    lines = []
-    for prompt_len, generated, concurrency in cells:
-        gc.collect()
-        torch.cuda.empty_cache()
-        print(f"# start prompt={prompt_len} generated={generated} concurrency={concurrency}", file=sys.stderr, flush=True)
-        row = measure_cell(engine, prompt_len, generated, concurrency)
-        _finite_positive(row)
-        if (row["prompt"], row["generated"], row["concurrency"]) != (prompt_len, generated, concurrency):
-            raise RuntimeError("cell lengths do not match the requested load")
-        line = _format(gfx, dtype, row)
-        print(line, flush=True)
-        lines.append(line)
-    return lines
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    cells = _CELLS
-    if len(args) == 4:
-        cells = ((int(args[1]), int(args[2]), int(args[3])),)
-    elif len(args) != 1:
-        print("usage: python -m tensorfold.rocm.qwen MODEL_DIR [PROMPT GENERATED CONCURRENCY]", file=sys.stderr)
-        return 2
-    measure(args[0], cells)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
