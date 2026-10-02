@@ -305,12 +305,24 @@ def gb10() -> bool:
 
 
 def rocm_engine(model_dir: str | Path, *, context: int | None = None, keep: int = 8,
-                byte_budget: int | None = None):
-    """The ROCm engine for ``tensorfold serve --backend rocm``: packed affine text on RDNA2 and RDNA3."""
+                byte_budget: int | None = None, tp: int = 1, rank: int = 0, master: str = "",
+                master_port: int = 29551, p2p: bool | None = None, no_drafts: bool = False, **options: Any):
+    """The ROCm engine for ``tensorfold serve --backend rocm``: packed affine text on RDNA 2/3/3.5/4.
+
+    ``tp > 1`` splits the model across ``tp`` ranks via RCCL all-reduce (column-split MLP / row-split
+    attention / vocab-split logits); ``--p2p`` opts into RCCL P2P for hardware that supports it (BIOS ACS
+    off, AMDGPUDirect enabled). Refuses with a clear error if the device pair has no peer access.
+    """
 
     from tensorfold.rocm.engine import QwenEngine
 
-    return QwenEngine.load(Path(model_dir), context=context, keep=keep, byte_budget=byte_budget)
+    if tp not in (1, 2, 4, 8):
+        raise ValueError(f"--tp {tp} is not a supported ROCm world size; choose 1, 2, 4 or 8")
+    if not 0 <= rank < tp:
+        raise ValueError(f"--rank {rank} not in [0, --tp {tp})")
+    return QwenEngine.load(Path(model_dir), context=context, keep=keep, byte_budget=byte_budget,
+                           tp=tp, rank=rank, master=master, master_port=master_port, p2p=p2p,
+                           no_drafts=no_drafts)
 
 
 def cuda_engine(model_dir: str | Path, *, drafter: str = "", tp: int = 1, rank: int = 0, master: str = "",
