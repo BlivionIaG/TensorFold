@@ -275,14 +275,28 @@ def _serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, context:
     from tensorfold import hub
     from tensorfold.cuda.server import App, serve
 
-    if args.tp != 1:
-        raise ValueError("the ROCm engine serves on one GPU; drop --tp 2")
+    if args.tp not in (1, 2, 4, 8):
+        raise ValueError(f"--tp {args.tp} is not a supported ROCm world size; choose 1, 2, 4 or 8")
+    if args.tp > 1 and not args.master:
+        raise ValueError("--tp > 1 needs --master: rank 0's address on the link between the machines")
+    if args.tp == 1 and args.rank != 0:
+        raise ValueError("--rank must be 0 when --tp 1")
+    if not 0 <= args.rank < args.tp:
+        raise ValueError(f"--rank {args.rank} not in [0, --tp {args.tp})")
+    if args.tp > 1 and args.host == "0.0.0.0" and args.rank == 0:
+        print("[tensorfold] --tp > 1: rank 0 binds --host 0.0.0.0 by default; other ranks follow over --master", flush=True)
     started = time.perf_counter()
     served = args.name or (args.model.rstrip("/").split("/")[-1] if hub.is_repo_id(args.model) else model_dir.name)
     keep, budget = _rocm_cache(args)
-    print(f"[tensorfold] loading {served}: {family.title} ({family.model_type}) on ROCm", flush=True)
-    engine = family.package.rocm_engine(model_dir, context=context if context is not None else args.context,
-                                        keep=keep, byte_budget=budget)
+    where = f", rank {args.rank} of {args.tp}" if args.tp > 1 else ""
+    print(f"[tensorfold] loading {served}: {family.title} ({family.model_type}) on ROCm{where}", flush=True)
+    p2p = getattr(args, "p2p", None)
+    engine = family.package.rocm_engine(model_dir,
+                                       context=context if context is not None else args.context,
+                                       keep=keep, byte_budget=budget,
+                                       tp=int(args.tp), rank=int(args.rank),
+                                       master=args.master, master_port=int(args.master_port),
+                                       p2p=p2p)
     sampling = _generation_config(model_dir)
     for key, value in (("temperature", args.temperature), ("top_p", args.top_p), ("top_k", args.top_k),
                        ("min_p", args.min_p)):

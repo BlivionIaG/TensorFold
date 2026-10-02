@@ -21,8 +21,24 @@ from tensorfold.rocm.qwen import Engine as Kernels
 from tensorfold.rocm.qwen import activation_dtype, load
 from tensorfold.rocm.qwen_math import _blank_caches, _project, forward_hidden
 
-# Qwen's end token when the checkpoint does not name one.
 _DEFAULT_EOS = (151645,)
+
+
+def _resolve_p2p(gfx: str, p2p: bool | None) -> bool:
+    """ROCm P2P gating: opt-in only for RDNA 2/3/4 discrete; default-on for multi-mgpu-capable APUs.
+
+    The user passes ``--p2p`` to opt in (or opt out). When unset, the default depends on whether the
+    device is an integrated multi-mgpu APU. PCIe peer access is BIOS/ACS/driver-dependent; we don't
+    autodetect — the CLI refuses with a name when ``--p2p`` is set and ``hipDeviceCanAccessPeer`` is 0.
+    """
+    if p2p is not None:
+        return bool(p2p)
+    try:
+        multi = bool(torch.cuda.get_device_properties(0).multi_gpu_capable)
+        integrated = bool(torch.cuda.get_device_properties(0).is_integrated)
+        return multi and integrated
+    except (AttributeError, AssertionError, RuntimeError):
+        return False
 
 
 def read_eos(model_dir: Path) -> tuple[int, ...]:
@@ -122,7 +138,8 @@ class QwenEngine:
 
     def __init__(self, model, kernels: Kernels, eos: Sequence[int], *, keep: int = 8,
                  context: int | None = None, byte_budget: int | None = None,
-                 points: Callable[[Sequence[int]], list[int]] | None = None):
+                 points: Callable[[Sequence[int]], list[int]] | None = None,
+                 tp: int = 1, rank: int = 0, rccl: Any = None, no_drafts: bool = False):
         self.model = model
         self.kernels = kernels
         self.eos = tuple(int(token) for token in eos)
@@ -130,16 +147,38 @@ class QwenEngine:
         self.context_window = context
         self.byte_budget = byte_budget
         self.points = points
+        self.tp, self.rank, self.rccl, self.no_drafts = int(tp), int(rank), rccl, bool(no_drafts)
 
     @classmethod
     def load(cls, model_dir: Path | str, *, schedule: str = "auto", keep: int = 8,
-             context: int | None = None, byte_budget: int | None = None) -> QwenEngine:
+             context: int | None = None, byte_budget: int | None = None,
+             tp: int = 1, rank: int = 0, master: str = "", master_port: int = 29551,
+             p2p: bool | None = None, no_drafts: bool = False) -> QwenEngine:
+        from tensorfold.rocm.build import gfx_name
+
         path = Path(model_dir)
+        if tp == 1:
+            if rank != 0:
+                raise ValueError("rank must be 0 when tp=1")
+            model = load(path)
+            from tensorfold.rocm.prefix import message_points
+
+            return cls(model, Kernels(model, schedule=schedule), read_eos(path),
+                       keep=keep, context=context, byte_budget=byte_budget,
+                       points=message_points(path), tp=1, rank=0, no_drafts=no_drafts)
+
+        from tensorfold.rocm.comm import RCCL
+
+        gfx = gfx_name()
+        prefer_p2p = _resolve_p2p(gfx, p2p)
+        rccl = RCCL(rank, tp, master, master_port, prefer_p2p=prefer_p2p)
+        rccl.ready("startup")
         model = load(path)
         from tensorfold.rocm.prefix import message_points
 
-        return cls(model, Kernels(model, schedule=schedule), read_eos(path), keep=keep, context=context,
-                   byte_budget=byte_budget, points=message_points(path))
+        return cls(model, Kernels(model, schedule=schedule), read_eos(path),
+                   keep=keep, context=context, byte_budget=byte_budget,
+                   points=message_points(path), tp=tp, rank=rank, rccl=rccl, no_drafts=no_drafts)
 
     def _dtype(self) -> torch.dtype:
         if self.kernels.dtype is None:
