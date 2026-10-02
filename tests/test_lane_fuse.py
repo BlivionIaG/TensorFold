@@ -8,6 +8,7 @@ mx = pytest.importorskip("mlx.core")
 nn = pytest.importorskip("mlx.nn")
 
 from tensorfold.kernels.qwen.dense.v1 import lane_fuse, lane_glue, lane_qmm  # noqa: E402
+from tensorfold.engine.family_common import cache_contents  # noqa: E402
 
 from tensorfold.kernels.qwen.dense.v1 import (  # noqa: E402
     lane_attention, lane_multi, lane_tree, stream_attention, stream_gdn)
@@ -366,7 +367,7 @@ def _check_fused_rounds(bits, *, pipeline_layers, group=64):
         step(tree, parents, path)
         step(chain, [-1] + list(range(len(chain) - 1)), list(range(len(chain))))
         step([7], [-1], [0])
-        outs.extend(a for c in cache for a in c.state if a is not None)
+        outs.extend(a for c in cache for a in cache_contents(c))
         mx.eval(outs)
         return outs
 
@@ -525,7 +526,7 @@ def test_kernel_signatures_do_not_change_between_calls(bits, fused):
                 logits, record = lane_tree.tree_forward(core, head, take(n), parents, cache, start, pipeline_layers=2)
                 lane_tree.commit_tree(cache, record, keep, n, start)
                 start += len(keep)
-                mx.eval(logits, [a for c in cache for a in c.state if a is not None])
+                mx.eval(logits, [a for c in cache for a in cache_contents(c)])
                 assert bool(mx.all(mx.isfinite(logits)).item())
             streams = [model.make_cache() for _ in range(9)]
             starts = [0] * 9
@@ -549,7 +550,7 @@ def test_kernel_signatures_do_not_change_between_calls(bits, fused):
                                           [len(w) for w in windows], [starts[s] for s in ids])
                 for s, _, keep in plan:
                     starts[s] += len(keep)
-                mx.eval(logits, [a for s in ids for c in streams[s] for a in c.state if a is not None])
+                mx.eval(logits, [a for s in ids for c in streams[s] for a in cache_contents(c)])
                 assert bool(mx.all(mx.isfinite(logits)).item())
     finally:
         lane_fuse.enabled = saved

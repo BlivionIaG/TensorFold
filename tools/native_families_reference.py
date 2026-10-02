@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from tensorfold.engine.family_common import cache_contents
 
 
 def deepseek_fixture(directory, output, wide=False, packed=False, prefill=False):
@@ -309,7 +310,7 @@ def dflash_fixture(directory, output, case):
             h = post(h, _dflash_attend(layer.self_attn, pre(h), context, model.rope, item, {}))
         save(f"hidden-{step}", model.norm(h[:, 1:]))
         for i, item in enumerate(cache):
-            keys, values = item.state
+            keys, values = cache_contents(item)
             save(f"keys-{step}-{i}", keys)
             save(f"values-{step}-{i}", values)
     (directory / "fixtures").mkdir(exist_ok=True)
@@ -344,8 +345,9 @@ def gemma_dflash_fixture(directory, draft_dir, output):
         proposal = proposer.propose(_Context(position + 1, 42), budget)
         save(f"proposal-{step}", mx.array([42] + proposal))
         for i, item in enumerate(proposer.cache):
-            save(f"keys-{step}-{i}", item.state[0])
-            save(f"values-{step}-{i}", item.state[1])
+            keys, values = cache_contents(item)
+            save(f"keys-{step}-{i}", keys)
+            save(f"values-{step}-{i}", values)
     print("Saved full Gemma target taps and DFlash proposals", flush=True)
 
 
@@ -489,7 +491,7 @@ def nemotron_prefill_fixture(directory, output, simd=False):
         for i, layer in enumerate(model.layers):
             if layer.block_type not in "M*":
                 continue
-            state = cache[index].state
+            state = cache_contents(cache[index])
             for j, value in enumerate(state):
                 save(f"cache-{step}-{i}-{j}", value)
             index += 1
@@ -514,7 +516,7 @@ def gemma_prefill_fixture(directory, output):
         save(f"logits-{step}", model.head(hidden[:, -1:])[0])
         position += count
         for i, item in enumerate(cache):
-            keys, values = item.state
+            keys, values = cache_contents(item)
             if not item.ring:
                 keys, values = keys[:, :, :position], values[:, :, :position]
             save(f"keys-{step}-{i}", keys)

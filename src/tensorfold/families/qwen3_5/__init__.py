@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import re
 from typing import Any
 
 MODEL_TYPES = ("qwen3_5",)
 TITLE = "Qwen3.8 dense"
 LANES = True
-MODELS = ("Vontra/Qwen3.8-27B-MLX-4bit", "turboderp/Qwen3.8-27B-exl3", "nvidia/Qwen3.8-27B-NVFP4")
+MODELS = ("TensorFold/Qwen3.8-27B-MLX-4bit", "turboderp/Qwen3.8-27B-exl3", "nvidia/Qwen3.8-27B-NVFP4")
 DRAFTER = "z-lab/Qwen3.8-27B-DFlash2"
 QUANT_METHODS = {"cuda": ("mlx", "exl3", "modelopt", "compressed-tensors")}   # MLX affine, EXL3, NVFP4 / FP8
 EXL3_VARIANT = "any"                           # every EXL3 codebook and width (tensorfold.families.EXL3_VARIANT_ANY)
@@ -38,11 +37,9 @@ def copy_rows(first: int, default: int) -> int:
 def tensor_units() -> bool:
     """Whether this GPU has Metal 4 tensor units (``applegpu_g17`` and later), which the lane kernels need."""
 
-    import mlx.core as mx
+    from tensorfold.kernels import device
 
-    info = mx.device_info() if hasattr(mx, "device_info") else mx.metal.device_info()
-    found = re.match(r"applegpu_g(\d+)", str(info.get("architecture", "")))
-    return bool(found) and int(found.group(1)) >= 17
+    return device.tensor_units()
 
 
 def load_lane_model(model_dir: Path) -> tuple[Any, Any]:
@@ -325,4 +322,5 @@ def cuda_engine(model_dir: str | Path, *, drafter: str = "", tp: int = 1, rank: 
                         split_head=tp == 2, tp_draft=tp == 2 and draft is not None, allow_copy=not no_drafts,
                         streams=streams, context=options.get("context"),
                         context_explicit=options.get("context_explicit"), vision=bool(options.get("vision", False)),
-                        vision_urls=bool(options.get("vision_urls", False)), keep=options.get("checkpoint_slots"))
+                        vision_urls=bool(options.get("vision_urls", False)),
+                        vision_offload=bool(options.get("vision_offload", False)), keep=options.get("checkpoint_slots"))

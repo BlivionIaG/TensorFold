@@ -44,7 +44,7 @@
     "upstream": ["src/tensorfold/families/__init__.py", "src/tensorfold/families/qwen3_5_moe/__init__.py"],
     "implementation": [{"path":"native/session.zig","symbol":"init"}, {"path":"native/schema.zig","symbol":"checkCheckpoint"}],
     "checks": [{"step":"test-model-schemas","driver":{"path":"native/schema.zig","symbol":"checkCheckpoint"},"scope":"checkpoint"}],
-    "limitation": "The qwen3_8_flash_next model-type alias added in 0.6.0 is not accepted by the native Flash loader. Metadata validation does not establish full-model execution."
+    "limitation": "The qwen3_8_flash_next alias and the Qwen3.6 MoE Mac backend are not implemented. Metadata validation does not establish full-model execution."
   },
   {
     "id": "qwen-backbone", "state": "partial", "requirement": "Qwen dense attention, GDN, row/tree verification and cache commit/rollback",
@@ -135,7 +135,7 @@
     "upstream": ["src/tensorfold/drafters/__init__.py", "src/tensorfold/drafters/dflash_attention.py", "src/tensorfold/drafters/dflash_block.py", "src/tensorfold/drafters/dflash_drafter.py", "src/tensorfold/drafters/dflash_proposer.py", "src/tensorfold/drafters/dflash_tree.py", "src/tensorfold/drafters/vendor/z_lab_dflash/model_mlx.py", "src/tensorfold/families/qwen3_5/dflash_head.py"],
     "implementation": [{"path":"native/drafter.zig","symbol":"propose"}, {"path":"native/dflash.zig","symbol":"forward"}],
     "checks": [{"step":"test-dflash","driver":{"path":"native/dflash.zig","symbol":"check"},"scope":"synthetic"}, {"step":"test-drafts","driver":{"path":"native/main.zig","symbol":"main"},"scope":"checkpoint"}],
-    "limitation": "DFlash execution is implemented. The 0.6.0 first-call reduced-head self-check and fallback are not ported."
+    "limitation": "DFlash execution is implemented. The first-call reduced-head self-check and the Qwen3.6 MoE DFlash v1 path are not ported."
   },
   {
     "id": "draft-calibration-capture", "state": "partial", "requirement": "DFlash calibration tables, proposal allocation probabilities and capture sidecars",
@@ -152,10 +152,11 @@
     "limitation": "Copy proposals are implemented; the 0.6.0 adaptive copy-window ramp is not ported."
   },
   {
-    "id": "sampling", "state": "present", "requirement": "Seeded position-stable CPU/Metal sampling, top-k/top-p/min-p and adaptive draft depth",
+    "id": "sampling", "state": "partial", "requirement": "Seeded position-stable CPU/Metal sampling, top-k/top-p/min-p and adaptive draft depth",
     "upstream": ["src/tensorfold/engine/exact_sampling.py", "src/tensorfold/engine/gpu_sampling.py", "src/tensorfold/engine/topk.py", "src/tensorfold/engine/family_depth.py"],
     "implementation": [{"path":"native/draft_depth.zig","symbol":"choose"}, {"path":"native/sampling.zig","symbol":"rowsMapped"}, {"path":"native/sampling.zig","symbol":"choose"}],
-    "checks": [{"step":"test-sampling","driver":{"path":"native/sampling_checks.zig","symbol":"check"},"scope":"synthetic"}, {"step":"test-draft-depth","driver":{"path":"native/draft_depth.zig","symbol":"check"},"scope":"host"}, {"step":"test-mtp-positions","driver":{"path":"native/mtp_position_checks.zig","symbol":"check"},"scope":"host"}]
+    "checks": [{"step":"test-sampling","driver":{"path":"native/sampling_checks.zig","symbol":"check"},"scope":"synthetic"}, {"step":"test-draft-depth","driver":{"path":"native/draft_depth.zig","symbol":"check"},"scope":"host"}, {"step":"test-mtp-positions","driver":{"path":"native/mtp_position_checks.zig","symbol":"check"},"scope":"host"}],
+    "limitation": "Explicit seeded sampling is implemented; TENSORFOLD_SEED_SALT is not ported."
   },
   {
     "id": "serial-generation", "state": "present", "requirement": "Serial/speculative verification, committed sampling positions and GPU pipeline ownership",
@@ -182,7 +183,7 @@
     "upstream": ["src/tensorfold/engine/prefix_snapshots.py", "src/tensorfold/server/checkpoints.py", "src/tensorfold/server/prompt_fill.py", "src/tensorfold/server/prompt_memory.py", "src/tensorfold/server/stacks.py", "src/tensorfold/streaming/checkpoint.py", "src/tensorfold/server/prompt_blocks.py"],
     "implementation": [{"path":"native/prompt_cache.zig","symbol":"Store"}, {"path":"native/prompt_cache.zig","symbol":"checkpoints"}, {"path":"native/prompt_cache.zig","symbol":"aligned"}, {"path":"native/prompt_cache.zig","symbol":"sharedCheckpoints"}, {"path":"native/prefill_plan.zig","symbol":"chunks"}, {"path":"native/prefill_plan.zig","symbol":"init"}, {"path":"native/chat.zig","symbol":"messageMarkers"}, {"path":"native/chat.zig","symbol":"historyLength"}, {"path":"native/chat.zig","symbol":"systemPrefixLength"}, {"path":"native/session.zig","symbol":"restorePrefix"}, {"path":"native/session.zig","symbol":"restoreOwnedPrefix"}, {"path":"native/memory_budget.zig","symbol":"prefixProjected"}, {"path":"native/server.zig","symbol":"reservePrefix"}, {"path":"native/server.zig","symbol":"savePrefix"}, {"path":"native/server.zig","symbol":"enqueue"}, {"path":"native/snapshot_file.zig","symbol":"save"}, {"path":"native/snapshot_file.zig","symbol":"load"}, {"path":"native/snapshot_store.zig","symbol":"startup"}, {"path":"native/snapshot_store.zig","symbol":"blocksToWarm"}, {"path":"native/snapshot_store.zig","symbol":"readBest"}, {"path":"native/snapshot_store.zig","symbol":"evicted"}, {"path":"native/snapshot_store.zig","symbol":"shutdown"}],
     "checks": [{"step":"test-prompt-cache","driver":{"path":"native/prompt_cache.zig","symbol":"check"},"scope":"host"}, {"step":"test-prefill-plan","driver":{"path":"native/prefill_plan.zig","symbol":"check"},"scope":"host"}, {"step":"test-snapshot-warming","driver":{"path":"native/snapshot_store.zig","symbol":"checkWarming"},"scope":"host"}, {"step":"test-request-state","driver":{"path":"native/request_state_checks.zig","symbol":"check"},"scope":"synthetic"}, {"step":"test-session-rounds","driver":{"path":"native/session_checks.zig","symbol":"check"},"scope":"checkpoint"}, {"step":"test-server-prefixes","driver":{"path":"tools/native_server_checks.zig","symbol":"checkPrefixes"},"scope":"checkpoint"}, {"step":"test-server-snapshots","driver":{"path":"tools/native_server_checks.zig","symbol":"checkDisk"},"scope":"checkpoint"}, {"step":"test-server-warming","driver":{"path":"tools/native_server_checks.zig","symbol":"checkWarming"},"scope":"checkpoint"}],
-    "limitation": "Prefix reuse, persistence and warming are implemented. The 0.6.0 insertion-length eviction ordering and idle default-cap growth are not ported. Full GLM/DeepSeek inference remains unverified."
+    "limitation": "Prefix reuse, persistence and warming are implemented. Insertion-length eviction, idle cap growth, continued-turn history boundaries, refused-prefix spill and prompt-first shutdown ordering are not ported. Full GLM/DeepSeek inference remains unverified."
   },
   {
     "id": "cache-buffers", "state": "present", "requirement": "KV buffer reuse without corrupting snapshots or retained prefixes",
@@ -211,11 +212,11 @@
     "limitation": "Tokenizer/proposer parity covers all seven checkpoints; HTTP structure verification uses Qwen and copy-block cache checks use Qwen/Gemma/Nemotron. Full GLM/DeepSeek inference remains unverified."
   },
   {
-    "id": "request-controls", "state": "present", "requirement": "Sampling defaults, thinking budgets, required-call gates, stop strings and reasoning separation",
+    "id": "request-controls", "state": "partial", "requirement": "Sampling defaults, thinking budgets, required-call gates, stop strings and reasoning separation",
     "upstream": ["src/tensorfold/server/request_options.py", "src/tensorfold/server/stopping.py", "src/tensorfold/server/text.py", "src/tensorfold/engine/call_gate.py"],
     "implementation": [{"path":"native/request_options.zig","symbol":"parseWithDefaults"}, {"path":"native/reply_text.zig","symbol":"splitThinking"}, {"path":"native/reply_text.zig","symbol":"reasoningCount"}, {"path":"native/chat.zig","symbol":"namesEffort"}, {"path":"native/chat.zig","symbol":"glmThinkingOff"}, {"path":"native/server.zig","symbol":"finishWithUsage"}],
     "checks": [{"step":"test-chat","driver":{"path":"native/chat.zig","symbol":"check"},"scope":"checkpoint"}, {"step":"test","driver":{"path":"native/request_options.zig","symbol":"model sampling defaults and request overrides preserve null and explicit zero","kind":"test"},"scope":"host"}, {"step":"test-server-tool-drafts","driver":{"path":"tools/native_http_checks.zig","symbol":"compareStream"},"scope":"checkpoint"}, {"step":"test-server-snapshots","driver":{"path":"tools/native_server_checks.zig","symbol":"checkDisk"},"scope":"checkpoint"}],
-    "limitation": "Reasoning controls/counting match upstream across all seven tokenizers; JSON/SSE usage and forced-close checks use Qwen. Full GLM/DeepSeek inference remains unverified."
+    "limitation": "Reasoning effort max and nearest named levels, and Gemma thought channels opening after visible text, are not ported. JSON/SSE usage checks use Qwen; full GLM/DeepSeek inference remains unverified."
   },
   {
     "id": "structured-output", "state": "missing", "requirement": "Grammar-constrained JSON/schema, regex, choice and EBNF output across serial and draft windows",
@@ -256,10 +257,11 @@
     "checks": [{"step":"test-draft-vocab","driver":{"path":"native/draft_vocab_checks.zig","symbol":"check"},"scope":"checkpoint"}]
   },
   {
-    "id": "qwen-images", "state": "present", "requirement": "PNG/JPEG/WebP decoding, orientation, preprocessing, vision encoder and image-conditioned generation",
+    "id": "qwen-images", "state": "partial", "requirement": "PNG/JPEG/WebP decoding, orientation, preprocessing, vision encoder and image-conditioned generation",
     "upstream": ["src/tensorfold/vision/__init__.py", "src/tensorfold/vision/config.py", "src/tensorfold/vision/images.py", "src/tensorfold/vision/qwen_checkpoint.py", "src/tensorfold/vision/qwen_mlx.py", "src/tensorfold/vision/qwen_processing.py", "src/tensorfold/vision/rotary.py"],
     "implementation": [{"path":"native/vision.zig","symbol":"encode"}, {"path":"native/vision.zig","symbol":"prepareEncoded"}],
-    "checks": [{"step":"test-images","driver":{"path":"native/vision.zig","symbol":"checkImage"},"scope":"host"}, {"step":"test-vision-encoder","driver":{"path":"native/vision.zig","symbol":"check"},"scope":"checkpoint"}, {"step":"test-vision","driver":{"path":"native/main.zig","symbol":"main"},"scope":"checkpoint"}]
+    "checks": [{"step":"test-images","driver":{"path":"native/vision.zig","symbol":"checkImage"},"scope":"host"}, {"step":"test-vision-encoder","driver":{"path":"native/vision.zig","symbol":"check"},"scope":"checkpoint"}, {"step":"test-vision","driver":{"path":"native/main.zig","symbol":"main"},"scope":"checkpoint"}],
+    "limitation": "Qwen image inference uses a fixed four-image limit; the configurable history image limit is not ported."
   },
   {
     "id": "https-images", "state": "present", "requirement": "Bounded HTTPS image fetches with upstream URL/DNS/redirect policy and cancellation",
@@ -289,6 +291,21 @@
     "id": "http-metrics", "state": "missing", "requirement": "Expose server request and inference metrics",
     "upstream": ["src/tensorfold/server/metrics.py"],
     "limitation": "The metrics endpoint added in 0.6.0 is not ported."
+  },
+  {
+    "id": "flash-mtp-side-cache", "state": "missing", "requirement": "Keep chained Flash drafts beside retained attention buffers with relative index pooling",
+    "upstream": ["src/tensorfold/families/qwen4_exp/mtp_cache.py"],
+    "limitation": "Flash drafts use ordinary cache copies; the separate chained-draft buffers are not ported."
+  },
+  {
+    "id": "decision-scoring", "state": "missing", "requirement": "Score typed decision labels from prompt logits through /v1/decisions",
+    "upstream": ["src/tensorfold/server/decisions.py", "src/tensorfold/server/decision_requests.py"],
+    "limitation": "Native serving does not implement decision requests or label scoring."
+  },
+  {
+    "id": "cuda-vision-conversion", "state": "excluded", "requirement": "Convert EXL3 vision sidecars for CUDA serving",
+    "upstream": ["src/tensorfold/vision/exl3_convert.py"],
+    "limitation": "EXL3 CUDA checkpoint conversion is outside the native Mac inference port."
   },
   {
     "id": "glm-images", "state": "missing", "requirement": "Process GLM image inputs and run its vision encoder",
