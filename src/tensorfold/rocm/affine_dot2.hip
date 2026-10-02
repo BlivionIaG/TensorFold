@@ -382,17 +382,17 @@ int affine_dot2_splits(int m, int n, int k, int group, int mode) {
     return 1;
 }
 
-// Prefill tile. 128 rows reuse one load of 16 columns. Each thread still owns one
+// Prefill tile. 128 rows reuse one load of 32 columns. Each thread still owns one
 // column and eight rows, and walks pairs in the same order as the decode tile.
 constexpr int kWideM = 128;
-constexpr int kWideN = 16;
+constexpr int kWideN = 32;
 constexpr int kWideRows = 8;
 
 __device__ void load_wide_chunk(__half* xs, __half* ws, const Affine& a, int tid, int row_base, int words,
                                  int chunk, int gbase, int k0) {
     int vecs = chunk >> 2;
     int nvecs = kWideM * vecs;
-    for (int e = tid; e < nvecs; e += 256) {
+    for (int e = tid; e < nvecs; e += blockDim.x) {
         int r = e / vecs;
         int v = e - r * vecs;
         int kk = v << 2;
@@ -424,7 +424,7 @@ __device__ void dot_wide_chunk(float dot[kWideRows], float sumx[kWideRows], cons
     }
 }
 
-__global__ void __launch_bounds__(256, 1) affine_dot2_wide(Affine a) {
+__global__ void __launch_bounds__(512, 1) affine_dot2_wide(Affine a) {
     __shared__ __half xs[2][kWideM * kFastLd];
     __shared__ __half ws[2][kWideN * kFastLd];
     int tid = threadIdx.x;
@@ -510,7 +510,7 @@ hipError_t launch_affine_dot2(const Affine& a, hipStream_t stream) {
         hipError_t lut = ensure_byte_lut(stream);
         if (lut != hipSuccess) return lut;
         if (a.bits == 8 && a.m > kFastM) {
-            dim3 block(256);
+            dim3 block(512);
             dim3 grid((a.n + kWideN - 1) / kWideN, (a.m + kWideM - 1) / kWideM);
             affine_dot2_wide<<<grid, block, 0, stream>>>(a);
             return hipGetLastError();
