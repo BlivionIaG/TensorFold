@@ -97,9 +97,12 @@ def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.
     if x.is_cuda and weight_ok and 1 <= rows <= 256 and 1 <= width <= 8192:
         from tensorfold.rocm.act import rms
 
-        flat = x.reshape(rows, width).float().contiguous()
+        # The kernel reads and writes the activation dtype and computes in fp32: no cast either side.
+        flat = x.reshape(rows, width)
+        if flat.dtype not in (torch.float32, torch.float16, torch.bfloat16):
+            flat = flat.float()
         scale = None if weight is None else weight.reshape(width).float().contiguous()
-        y = rms(flat, scale, eps).reshape(x.shape)
+        y = rms(flat.contiguous(), scale, eps).reshape(x.shape)
         return y if y.dtype == x.dtype else y.to(dtype=x.dtype)
     return _rms_torch(x, weight, eps)
 

@@ -1,5 +1,8 @@
 #include "act.hpp"
 
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+
 #include <stdexcept>
 #include <string>
 
@@ -12,20 +15,32 @@ __device__ float warp_sum(float x) {
     return __shfl(x, 0, 32);
 }
 
-// Sequential squares along the row, then one scale. The warp tree is the reduction.
-__global__ void rms_kernel(const float* __restrict__ x, const float* __restrict__ weight, float* __restrict__ y,
-                           int width, float eps) {
+__device__ inline float widen(float v) { return v; }
+__device__ inline float widen(__half v) { return __half2float(v); }
+__device__ inline float widen(hip_bfloat16 v) { return static_cast<float>(v); }
+__device__ inline void narrow(float v, float* out) { *out = v; }
+__device__ inline void narrow(float v, __half* out) { *out = __float2half_rn(v); }
+__device__ inline void narrow(float v, hip_bfloat16* out) { *out = hip_bfloat16(v); }
+
+// Sequential squares along the row, then one scale, all in fp32. The warp tree is the reduction. Input and output
+// are the activation dtype: the result is rounded once, as the fp32 kernel followed by a cast was.
+template <typename T>
+__global__ void rms_kernel(const T* __restrict__ x, const float* __restrict__ weight, T* __restrict__ y, int width,
+                           float eps) {
     int row = blockIdx.x;
     int lane = threadIdx.x;
-    const float* in = x + static_cast<long long>(row) * width;
+    const T* in = x + static_cast<long long>(row) * width;
     float sum = 0.f;
-    for (int i = lane; i < width; i += 32) sum += in[i] * in[i];
-    float inv = rsqrtf(warp_sum(sum) / static_cast<float>(width) + eps);
-    float* out = y + static_cast<long long>(row) * width;
     for (int i = lane; i < width; i += 32) {
-        float value = in[i] * inv;
+        const float v = widen(in[i]);
+        sum += v * v;
+    }
+    float inv = rsqrtf(warp_sum(sum) / static_cast<float>(width) + eps);
+    T* out = y + static_cast<long long>(row) * width;
+    for (int i = lane; i < width; i += 32) {
+        float value = widen(in[i]) * inv;
         if (weight != nullptr) value *= weight[i];
-        out[i] = value;
+        narrow(value, out + i);
     }
 }
 
@@ -76,8 +91,18 @@ __global__ void rope_decode_kernel(const float* __restrict__ x, float* __restric
 }  // namespace rocm
 }  // namespace tf
 
-void rms_launch(const float* x, const float* weight, float* y, int rows, int width, float eps, hipStream_t stream) {
-    tf::rocm::rms_kernel<<<rows, 32, 0, stream>>>(x, weight, y, width, eps);
+void rms_launch(const void* x, const float* weight, void* y, int kind, int rows, int width, float eps,
+                hipStream_t stream) {
+    if (kind == 1) {
+        tf::rocm::rms_kernel<__half><<<rows, 32, 0, stream>>>(static_cast<const __half*>(x), weight,
+                                                               static_cast<__half*>(y), width, eps);
+    } else if (kind == 2) {
+        tf::rocm::rms_kernel<hip_bfloat16><<<rows, 32, 0, stream>>>(static_cast<const hip_bfloat16*>(x), weight,
+                                                                     static_cast<hip_bfloat16*>(y), width, eps);
+    } else {
+        tf::rocm::rms_kernel<float><<<rows, 32, 0, stream>>>(static_cast<const float*>(x), weight,
+                                                              static_cast<float*>(y), width, eps);
+    }
     hipError_t err = hipGetLastError();
     if (err != hipSuccess) throw std::runtime_error(std::string("rms kernel: ") + hipGetErrorString(err));
 }
