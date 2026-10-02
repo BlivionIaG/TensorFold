@@ -80,3 +80,16 @@ def test_decode_rope_matches_the_formula():
     rot = torch.cat((x1 * cos - x2 * sin, x1 * sin + x2 * cos, xf[..., 32:]), dim=-1)
     assert got.dtype == x.dtype
     assert torch.allclose(got, rot.to(dtype=got.dtype), rtol=1e-4, atol=1e-4)
+
+
+def test_rms_in_the_activation_dtype_matches_fp32_then_cast():
+    """FP16 and BF16 rows give the bits of the fp32 kernel followed by one cast, which is what the forward ran."""
+
+    from tensorfold.rocm.act import rms
+
+    g = torch.Generator(device="cuda").manual_seed(9)
+    weight = torch.randn(5120, generator=g, device="cuda")
+    for dtype in (torch.float16, torch.bfloat16):
+        x = torch.randn(3, 5120, generator=g, device="cuda").to(dtype)
+        assert torch.equal(rms(x, weight, 1e-6), rms(x.float(), weight, 1e-6).to(dtype))
+        assert torch.equal(rms(x, None, 1e-6), rms(x.float(), None, 1e-6).to(dtype))

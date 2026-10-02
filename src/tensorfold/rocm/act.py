@@ -19,7 +19,7 @@ def _ext():
 
 
 def rms(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
-    """``x`` is (rows, width) fp32. ``weight`` is that width, or absent."""
+    """``x`` is (rows, width) fp32, fp16 or bf16; ``y`` has its dtype, computed in fp32. ``weight`` is fp32."""
 
     y = torch.empty_like(x)
     _ext().rms(x, weight if weight is not None else torch.empty(0, device=x.device), y, float(eps))

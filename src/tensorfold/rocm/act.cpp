@@ -14,8 +14,11 @@ void keep(const at::Tensor& tensor, c10::cuda::CUDAStream stream) {
 }  // namespace
 
 void rms(const at::Tensor& x, const at::Tensor& weight, at::Tensor& y, double eps) {
-    TORCH_CHECK(x.is_cuda() && x.is_contiguous() && x.scalar_type() == at::kFloat && x.dim() == 2, "x: (rows, d) fp32");
-    TORCH_CHECK(y.is_cuda() && y.is_contiguous() && y.sizes() == x.sizes() && y.scalar_type() == at::kFloat, "y");
+    const auto type = x.scalar_type();
+    TORCH_CHECK(x.is_cuda() && x.is_contiguous() && x.dim() == 2 &&
+                    (type == at::kFloat || type == at::kHalf || type == at::kBFloat16),
+                "x: (rows, d) fp32, fp16 or bf16");
+    TORCH_CHECK(y.is_cuda() && y.is_contiguous() && y.sizes() == x.sizes() && y.scalar_type() == type, "y matches x");
     const int64_t rows = x.size(0), width = x.size(1);
     TORCH_CHECK(rows >= 1 && width >= 1 && width <= 8192, "rms width");
     const float* wptr = nullptr;
@@ -30,7 +33,8 @@ void rms(const at::Tensor& x, const at::Tensor& weight, at::Tensor& y, double ep
     keep(x, stream);
     keep(y, stream);
     if (wptr != nullptr) keep(weight, stream);
-    rms_launch(x.data_ptr<float>(), wptr, y.data_ptr<float>(), static_cast<int>(rows), static_cast<int>(width),
+    const int kind = type == at::kHalf ? 1 : type == at::kBFloat16 ? 2 : 0;
+    rms_launch(x.data_ptr(), wptr, y.data_ptr(), kind, static_cast<int>(rows), static_cast<int>(width),
                static_cast<float>(eps), stream.stream());
 }
 
