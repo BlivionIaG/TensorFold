@@ -154,8 +154,6 @@ class Engine:
         expect = k * packed.bits // 32
         if words.dtype != torch.int32 or words.ndim != 2 or words.shape[1] != expect:
             raise RuntimeError("a projection handed the matmul a weight that is not packed int32 words")
-        if any(t.dtype.is_floating_point and t.ndim == 2 and t.shape[1] == k for t in (words,)):
-            raise RuntimeError("a projection expanded its weight to a dense matrix")
         self.projections += 1
 
     def generate(self, prompts: list[list[int]], n_new: int, after_token=None) -> list[list[int]]:
