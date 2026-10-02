@@ -35,6 +35,80 @@ class LinearLayer:
     down: Packed
 
 
+def _slice_packed(packed: Packed, rank: int, world: int, *, name: str) -> Packed:
+    """Column-split a packed matrix across ``world`` ranks; rank 0 keeps [0, N/world), rank ``world-1`` the tail."""
+
+    if not (0 <= rank < world):
+        raise ValueError(f"rank {rank} not in [0, {world})")
+    total = packed.words.shape[0]
+    if total % world:
+        raise ValueError(f"{name}: output rows {total} not divisible by world {world}")
+    width = total // world
+    a, b = rank * width, (rank + 1) * width
+    return Packed(packed.words[a:b].contiguous(), packed.scale[a:b].contiguous(),
+                  packed.bias[a:b].contiguous(), packed.bits, packed.group)
+
+
+def _slice_tensor(tensor: torch.Tensor, rank: int, world: int, *, axis: int, name: str) -> torch.Tensor:
+    """Slice an unpacked fp32 tensor along ``axis``; refuses a non-divisible dim."""
+
+    if not (0 <= rank < world):
+        raise ValueError(f"rank {rank} not in [0, {world})")
+    size = tensor.shape[axis]
+    if size % world:
+        raise ValueError(f"{name}: axis {axis} size {size} not divisible by world {world}")
+    width = size // world
+    return tensor.narrow(axis, rank * width, width).contiguous()
+
+
+def slice_for_tp(model: TextModel, rank: int, world: int) -> TextModel:
+    """Column-split every TP-able weight; replicate the rest. Mutates ``model.spec`` to per-rank dims.
+
+    Heads / KV heads / linear-attention key-value heads / linear-attention ``a_log`` ``dt_bias`` and
+    the linear conv weight's output channels are sliced. Embeddings and per-row norms stay replicated.
+    The output ``head`` (or tied embed) is vocab-split so logits are produced per rank.
+    """
+
+    if not (0 <= rank < world):
+        raise ValueError(f"rank {rank} not in [0, {world})")
+    spec = model.spec
+    if spec.heads % world:
+        raise ValueError(f"heads {spec.heads} not divisible by world {world}")
+    if spec.kv_heads % world:
+        raise ValueError(f"kv_heads {spec.kv_heads} not divisible by world {world}")
+    if spec.key_heads % world:
+        raise ValueError(f"key_heads {spec.key_heads} not divisible by world {world}")
+    if spec.value_heads % world:
+        raise ValueError(f"value_heads {spec.value_heads} not divisible by world {world}")
+    spec.heads //= world
+    spec.kv_heads //= world
+    spec.key_heads //= world
+    spec.value_heads //= world
+    spec.vocab //= world
+    for index, layer in enumerate(model.layers):
+        base = f"layer {index}"
+        if isinstance(layer, FullLayer):
+            layer.q = _slice_packed(layer.q, rank, world, name=f"{base} q_proj")
+            layer.k = _slice_packed(layer.k, rank, world, name=f"{base} k_proj")
+            layer.v = _slice_packed(layer.v, rank, world, name=f"{base} v_proj")
+            layer.o = _slice_packed(layer.o, rank, world, name=f"{base} o_proj")
+        else:
+            layer.qkv = _slice_packed(layer.qkv, rank, world, name=f"{base} in_proj_qkv")
+            layer.z = _slice_packed(layer.z, rank, world, name=f"{base} in_proj_z")
+            layer.a = _slice_packed(layer.a, rank, world, name=f"{base} in_proj_a")
+            layer.b = _slice_packed(layer.b, rank, world, name=f"{base} in_proj_b")
+            layer.conv = _slice_tensor(layer.conv, rank, world, axis=0, name=f"{base} conv1d.weight")
+            layer.a_log = _slice_tensor(layer.a_log, rank, world, axis=0, name=f"{base} A_log")
+            layer.dt_bias = _slice_tensor(layer.dt_bias, rank, world, axis=0, name=f"{base} dt_bias")
+            layer.out = _slice_packed(layer.out, rank, world, name=f"{base} out_proj")
+        layer.gate = _slice_packed(layer.gate, rank, world, name=f"{base} mlp.gate_proj")
+        layer.up = _slice_packed(layer.up, rank, world, name=f"{base} mlp.up_proj")
+        layer.down = _slice_packed(layer.down, rank, world, name=f"{base} mlp.down_proj")
+    if model.head is not None:
+        model.head = _slice_packed(model.head, rank, world, name="lm_head")
+    return model
+
+
 @dataclass
 class FullLayer:
     input_norm: torch.Tensor
