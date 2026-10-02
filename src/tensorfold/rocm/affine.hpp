@@ -4,8 +4,10 @@
 // y[m, n] = sum_groups (scale[n, g] * sum_k x[m, k] * bf16(code[n, k])
 //                       + bias[n, g] * sum_k x[m, k])
 // with k ranging over the group and code rounded through BF16 before the product.
+// scale and bias are read as stored (fp32, bf16 or fp16) and widen exactly to fp32.
 
 #include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
 
 #include <cstdint>
@@ -13,11 +15,24 @@
 namespace tf {
 namespace rocm {
 
+enum ScaleKind : int { kScaleF32 = 0, kScaleBF16 = 1, kScaleF16 = 2 };
+
+// One (n, k / group) table of scales or biases, row major, in its stored type.
+struct GroupTable {
+    const void* p;
+    int kind;  // ScaleKind
+    __device__ float operator[](long long i) const {
+        if (kind == kScaleBF16) return static_cast<float>(static_cast<const hip_bfloat16*>(p)[i]);
+        if (kind == kScaleF16) return __half2float(static_cast<const __half*>(p)[i]);
+        return static_cast<const float*>(p)[i];
+    }
+};
+
 struct Affine {
     const void* x;           // (m, k) row major, bf16 or fp16
     const uint32_t* words;   // (n, k * bits / 32) row major
-    const float* scale;      // (n, k / group) row major
-    const float* bias;
+    GroupTable scale;
+    GroupTable bias;
     float* out;  // (m, n)
     int m, n, k, bits, group;
     int fp16;  // 0 is bf16, 1 is fp16
@@ -45,8 +60,8 @@ hipError_t launch_affine_wmma(const Affine& a, hipStream_t stream);
 
 struct AffineSide {
     const uint32_t* words;
-    const float* scale;
-    const float* bias;
+    GroupTable scale;
+    GroupTable bias;
     float* out;
     int n;
 };

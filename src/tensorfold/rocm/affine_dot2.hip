@@ -347,7 +347,7 @@ __global__ void __launch_bounds__(kFastN, 1) affine_dot2_span(Affine a, float* p
     }
 }
 
-__global__ void __launch_bounds__(kFastN) affine_dot2_fold(const float* partial, const float* scale, const float* bias,
+__global__ void __launch_bounds__(kFastN) affine_dot2_fold(const float* partial, GroupTable scale, GroupTable bias,
                                                           float* out, int m, int n, int groups) {
     int col = blockIdx.x * kFastN + threadIdx.x;
     int row = blockIdx.y;

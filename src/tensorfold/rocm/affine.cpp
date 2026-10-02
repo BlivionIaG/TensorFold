@@ -7,6 +7,21 @@
 
 #include "affine_api.hpp"
 
+namespace {
+
+// fp32, bf16 or fp16 group tables, read as stored. Every table of one call shares the type.
+int scale_kind(const at::Tensor& scale) {
+    switch (scale.scalar_type()) {
+        case at::kFloat: return 0;
+        case at::kBFloat16: return 1;
+        case at::kHalf: return 2;
+        default: TORCH_CHECK(false, "scale and bias are fp32, bf16 or fp16");
+    }
+    return 0;
+}
+
+}  // namespace
+
 void affine(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scale, const at::Tensor& bias,
             at::Tensor& out, int64_t bits, int64_t group, int64_t schedule, int64_t split_mode) {
     TORCH_CHECK(bits == 2 || bits == 3 || bits == 4 || bits == 5 || bits == 6 || bits == 8, "bits 2/3/4/5/6/8");
@@ -22,9 +37,10 @@ void affine(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scal
                     words.size(0) == n && words.size(1) == words_row,
                 "words: (N, K * bits / 32) int32, the packed weight");
     TORCH_CHECK(scale.is_cuda() && scale.is_contiguous() && bias.is_cuda() && bias.is_contiguous() &&
-                    scale.scalar_type() == at::kFloat && bias.scalar_type() == at::kFloat && scale.sizes() == bias.sizes() &&
+                    scale.scalar_type() == bias.scalar_type() && scale.sizes() == bias.sizes() &&
                     scale.size(0) == n && scale.size(1) == groups,
-                "scale and bias: (N, K / group) fp32");
+                "scale and bias: (N, K / group), one type");
+    const int kind = scale_kind(scale);
     TORCH_CHECK(out.is_cuda() && out.is_contiguous() && out.scalar_type() == at::kFloat && out.size(0) == m &&
                     out.size(1) == n,
                 "out: (M, N) fp32");
@@ -47,7 +63,7 @@ void affine(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scal
             c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
         }
     }
-    affine_launch(x.data_ptr(), words.data_ptr(), scale.data_ptr(), bias.data_ptr(), out.data_ptr(),
+    affine_launch(x.data_ptr(), words.data_ptr(), scale.data_ptr(), bias.data_ptr(), kind, out.data_ptr(),
                   static_cast<int>(m), static_cast<int>(n), static_cast<int>(k), static_cast<int>(bits),
                   static_cast<int>(group), static_cast<int>(schedule), x.scalar_type() == at::kHalf ? 1 : 0,
                   stream.stream(), partial, splits);
@@ -61,7 +77,10 @@ void affine_pair(const at::Tensor& x, const at::Tensor& words0, const at::Tensor
     const int64_t m = x.size(0), k = x.size(1);
     auto check = [&](const at::Tensor& words, const at::Tensor& scale, const at::Tensor& bias, const at::Tensor& out) {
         TORCH_CHECK(words.is_cuda() && words.is_contiguous() && words.scalar_type() == at::kInt, "words");
-        TORCH_CHECK(scale.is_cuda() && bias.is_cuda() && out.is_cuda() && out.is_contiguous(), "pair tensors");
+        TORCH_CHECK(scale.is_cuda() && bias.is_cuda() && out.is_cuda() && out.is_contiguous() && scale.is_contiguous() &&
+                        bias.is_contiguous() && scale.scalar_type() == scale0.scalar_type() &&
+                        bias.scalar_type() == scale0.scalar_type(),
+                    "pair tensors: contiguous, one scale type");
         TORCH_CHECK(words.size(1) == k * bits / 32 && scale.size(0) == words.size(0) && out.size(0) == m &&
                         out.size(1) == words.size(0) && scale.size(1) == k / group,
                     "pair shapes");
@@ -75,9 +94,9 @@ void affine_pair(const at::Tensor& x, const at::Tensor& words0, const at::Tensor
         c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
     }
     affine_pair_launch(x.data_ptr(), words0.data_ptr(), scale0.data_ptr(), bias0.data_ptr(), out0.data_ptr(),
-                       words1.data_ptr(), scale1.data_ptr(), bias1.data_ptr(), out1.data_ptr(), static_cast<int>(m),
-                       static_cast<int>(words0.size(0)), static_cast<int>(k), static_cast<int>(bits),
-                       static_cast<int>(group), stream.stream());
+                       words1.data_ptr(), scale1.data_ptr(), bias1.data_ptr(), out1.data_ptr(), scale_kind(scale0),
+                       static_cast<int>(m), static_cast<int>(words0.size(0)), static_cast<int>(k),
+                       static_cast<int>(bits), static_cast<int>(group), stream.stream());
 }
 
 void affine_group(const at::Tensor& x, std::vector<at::Tensor> words, std::vector<at::Tensor> scale,
@@ -104,8 +123,10 @@ void affine_group(const at::Tensor& x, std::vector<at::Tensor> words, std::vecto
                         words[i].size(1) == k * bits / 32,
                     "words");
         TORCH_CHECK(scale[i].is_cuda() && bias[i].is_cuda() && out[i].is_cuda() && scale[i].is_contiguous() &&
-                        bias[i].is_contiguous() && out[i].is_contiguous(),
-                    "group tensors");
+                        bias[i].is_contiguous() && out[i].is_contiguous() &&
+                        scale[i].scalar_type() == scale[0].scalar_type() &&
+                        bias[i].scalar_type() == scale[0].scalar_type(),
+                    "group tensors: contiguous, one scale type");
         TORCH_CHECK(scale[i].size(0) == n && scale[i].size(1) == k / group && out[i].size(0) == m &&
                         out[i].size(1) == n,
                     "group shapes");
@@ -124,7 +145,8 @@ void affine_group(const at::Tensor& x, std::vector<at::Tensor> words, std::vecto
     for (const at::Tensor& tensor : kept) {
         c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
     }
-    affine_group_launch(x.data_ptr(), wptr, sptr, bptr, optr, ns, static_cast<int>(nsides), static_cast<int>(m),
+    affine_group_launch(x.data_ptr(), wptr, sptr, bptr, scale_kind(scale[0]), optr, ns, static_cast<int>(nsides),
+                        static_cast<int>(m),
                         static_cast<int>(k), static_cast<int>(bits), static_cast<int>(group), stream.stream());
 }
 

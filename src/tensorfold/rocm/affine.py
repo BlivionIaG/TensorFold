@@ -11,12 +11,15 @@ BITS = (2, 3, 4, 5, 6, 8)
 GROUPS = (32, 64, 128)
 
 
-def _fp32(tensor: torch.Tensor) -> torch.Tensor:
-    """fp32 and contiguous already stays put, so a decode step does not recast the scales."""
+SCALE_DTYPES = (torch.float32, torch.bfloat16, torch.float16)
 
-    if tensor.dtype == torch.float32 and tensor.is_contiguous():
-        return tensor
-    return tensor.to(dtype=torch.float32).contiguous()
+
+def _tables(scale: torch.Tensor, bias: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Scale and bias as stored when they are fp32, bf16 or fp16 of one type; the kernel widens them exactly."""
+
+    if scale.dtype != bias.dtype or scale.dtype not in SCALE_DTYPES:
+        scale, bias = scale.to(torch.float32), bias.to(torch.float32)
+    return scale.contiguous(), bias.contiguous()
 
 
 @lru_cache(maxsize=1)
@@ -54,7 +57,7 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
         raise ValueError("packed words must be int32 of shape (N, K * bits / 32)")
     n = words.shape[0]
     groups = k // group
-    scale, bias = _fp32(scale), _fp32(bias)
+    scale, bias = _tables(scale, bias)
     if scale.shape != (n, groups) or bias.shape != scale.shape:
         raise ValueError("scale and bias must be (N, K / group)")
     if not all(t.is_cuda and t.device == x.device for t in (words, scale, bias)):
@@ -66,12 +69,20 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
     return out if f32 else out.to(x.dtype)
 
 
+def _one_type(tables: list[torch.Tensor]) -> list[torch.Tensor]:
+    """One launch reads one scale type. Mixed sides widen to fp32."""
+
+    if len({t.dtype for t in tables}) == 1:
+        return tables
+    return [t.to(torch.float32) for t in tables]
+
+
 def _as_affine(words, scale, bias, k, bits, group):
     if words.dtype != torch.int32 or words.ndim != 2 or words.shape[1] != k * bits // 32:
         raise ValueError("packed words must be int32 of shape (N, K * bits / 32)")
     n = words.shape[0]
     groups = k // group
-    scale, bias = _fp32(scale), _fp32(bias)
+    scale, bias = _tables(scale, bias)
     if scale.shape != (n, groups) or bias.shape != scale.shape:
         raise ValueError("scale and bias must be (N, K / group)")
     return words.contiguous(), scale, bias, n
@@ -95,6 +106,7 @@ def matmul_pair(x: torch.Tensor, words_a: torch.Tensor, scale_a: torch.Tensor, b
     wb, sb, bb, nb = _as_affine(words_b, scale_b, bias_b, k, bits, group)
     if na != nb:
         raise ValueError("a paired matmul needs both sides to share N")
+    sa, ba, sb, bb = _one_type([sa, ba, sb, bb])
     out_a = torch.empty((m, na), dtype=torch.float32, device=x.device)
     out_b = torch.empty((m, nb), dtype=torch.float32, device=x.device)
     _ext().affine_pair(x, wa, sa, ba, out_a, wb, sb, bb, out_b, bits, group)
@@ -124,6 +136,8 @@ def matmul_group(x: torch.Tensor, packeds: tuple, *, bits: int, group: int, f32:
         scale.append(s)
         bias.append(b)
         outs.append(torch.empty((m, n), dtype=torch.float32, device=x.device))
+    tables = _one_type(scale + bias)
+    scale, bias = tables[:len(scale)], tables[len(scale):]
     _ext().affine_group(x, words, scale, bias, outs, bits, group)
     if f32:
         return tuple(outs)
