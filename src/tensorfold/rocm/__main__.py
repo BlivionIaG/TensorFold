@@ -1,5 +1,5 @@
-"""``python -m tensorfold.rocm MODEL_DIR`` runs the RDNA text measurement."""
+"""``python -m tensorfold.rocm MODEL_DIR`` runs the RDNA serving cells (``tensorfold.rocm.bench``)."""
 
-from tensorfold.rocm.qwen import main
+from tensorfold.rocm.bench import main
 
 raise SystemExit(main())
