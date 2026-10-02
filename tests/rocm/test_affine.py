@@ -1,4 +1,4 @@
-"""Packed affine on RDNA: a row's bits do not depend on how many rows share the launch, and the weight is never expanded."""
+"""Packed affine on RDNA: a row's bits do not depend on how many rows share the launch."""
 
 import ctypes
 import ctypes.util

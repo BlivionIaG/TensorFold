@@ -1,4 +1,4 @@
-"""The shipped RDNA text forward, on a tiny stack, matches an independent fmaf reference.
+"""The RDNA text forward, on a tiny stack, matches an independent fmaf reference.
 
 The reference calls ``affine_reference`` and never the ROCm forward or the affine extension.
 GEMV with BF16 activations is the scalar kernel, which matches that fmaf order. ``auto`` on an
