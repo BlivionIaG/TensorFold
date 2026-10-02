@@ -157,3 +157,39 @@ def test_mtp_engine_cache_grows_across_steps():
     assert cache["len"] == 4
     assert cache["k"].shape[2] >= 4
     assert cache["v"].shape[2] >= 4
+
+
+def test_qwen_engine_generate_with_mtp_emits_tokens():
+    """QwenEngine.generate runs to ``max_tokens`` both with and without MTP drafting."""
+
+    from tensorfold.rocm.engine import QwenEngine
+
+    if not torch.cuda.is_available():
+        pytest.skip("no HIP device")
+    device = DEVICE
+    dtype = _act_dtype()
+    g = torch.Generator().manual_seed(42)
+    model, head = _model_and_mtp(hidden=64, vocab=64, heads=4, kv_heads=2, head_dim=16,
+                                 rotary_dim=8, device=device, g=g)
+    kernels = Kernels(model, schedule="auto", dtype=dtype)
+    eos = (0,)
+    prompt = [1, 2, 3, 4]
+
+    def _run(depth: int) -> list[int]:
+        eng = QwenEngine(model, kernels, eos, tp=1, rank=0, rccl=None, no_drafts=False, mtp_depth=depth)
+        emitted: list[int] = []
+
+        def _on(tokens: list[int]) -> bool | None:
+            emitted.extend(tokens)
+            return None
+
+        eng.generate(prompt, max_tokens=8, sampling=_Sampling(), on_tokens=_on, stop_eos=False)
+        return emitted
+
+    serial = _run(0)
+    drafted = _run(2)
+    assert len(serial) == 8, f"serial emitted {serial}"
+    # MTP depth=2 may accept 0..2 drafts, so the run produces 8..24 tokens depending on accept rate.
+    assert 8 <= len(drafted) <= 24, f"drafted emitted {drafted}"
+    assert all(0 <= t < 64 for t in serial)
+    assert all(0 <= t < 64 for t in drafted)
