@@ -393,7 +393,8 @@ fn attentionStreams(m: *flash.Model, s: *mx.Scope, base: []const u8, x: A, pos: 
             for (pooled[0..n], 0..) |value, j| score_inputs[1 + j] = if (value.ctx != null) value else try s.slice(filler, 0, 0, 1);
             const ca = try s.ints(complete[begin..end]);
             score_inputs[1 + n ..][0..3].* = .{ ca, row_stream, try s.ints(&.{blocks}) };
-            const scores = (try m.kernels.run(s, score_specs[n - 1], score_inputs[0 .. n + 4], &.{ ti("HI", 4), ti("DI", 128), ti("TOP", 512) }, .{ @divTrunc(blocks + 7, 8) * 256, rows, 1 }, .{ 256, 1, 1 }, &.{.{ .shape = &.{ rows, blocks }, .dtype = mx.f32t }}))[0];
+            const block_group: i32 = if (rows == 1 or blocks < 4096) 1 else if (blocks < 8192) 2 else if (blocks < 16384) 4 else 8;
+            const scores = (try m.kernels.run(s, score_specs[n - 1], score_inputs[0 .. n + 4], &.{ ti("HI", 4), ti("DI", 128), ti("TOP", 512), ti("BB", block_group), ti("RB", 8) }, .{ @divTrunc(blocks + 8 * block_group - 1, 8 * block_group) * 256, @divTrunc(rows + 7, 8), 1 }, .{ 256, 1, 1 }, &.{.{ .shape = &.{ rows, blocks }, .dtype = mx.f32t }}))[0];
             ids = (try m.kernels.run(s, src.q4_idx_select, &.{ scores, ca, try s.ints(ends[begin..end]) }, &.{ ti("TOP", 512), ti("KW", 2051) }, .{ 1024 * rows, 1, 1 }, .{ 1024, 1, 1 }, &.{.{ .shape = &.{ rows, 2051 }, .dtype = mx.i32t }}))[0];
         }
         inputs[0] = try s.slice(prep[0], 0, first, last);
