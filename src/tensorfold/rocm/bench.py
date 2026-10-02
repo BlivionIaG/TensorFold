@@ -1,5 +1,8 @@
 """RDNA serving cells: ``python -m tensorfold.rocm.bench MODEL_DIR [PROMPT GENERATED CONCURRENCY] [--runs N]``.
 
+Tensor parallel: start one process a rank with ``--tp N --rank R --master ADDR [--master-port P]``; every rank
+runs the same cells and rank 0 prints them.
+
 Each cell reports prefill tok/s, decode tok/s, ttft, itil and peak GiB for prompt/generated loads 1024/512 and
 16384/1024 at concurrency 1 and 8. A cell runs ``--runs`` times (3 by default); the ``median`` line is the
 number the plan compares.
@@ -83,9 +86,9 @@ def _finite_positive(row: dict) -> None:
             raise RuntimeError(f"{key} is not a finite positive rate ({value})")
 
 
-def _format(gfx: str, dtype: torch.dtype, row: dict, label: str = "cell") -> str:
+def _format(gfx: str, dtype: torch.dtype, row: dict, label: str = "cell", tp: int = 1) -> str:
     activation = "bf16" if dtype == torch.bfloat16 else "fp16"
-    line = (f"{label} gfx={gfx} activation={activation} prompt={row['prompt']} generated={row['generated']} "
+    line = (f"{label} gfx={gfx} activation={activation} tp={tp} prompt={row['prompt']} generated={row['generated']} "
             f"concurrency={row['concurrency']} prefill_tok_s={row['prefill_tok_s']:.9g} "
             f"decode_tok_s={row['decode_tok_s']:.9g} ttft_s={row['ttft_s']:.9g} itil_s={row['itil_s']:.9g} "
             f"peak_gib={row['peak_gib']:.4g} prefill_tokens={row['prefill_tokens']} "
@@ -97,8 +100,9 @@ def _format(gfx: str, dtype: torch.dtype, row: dict, label: str = "cell") -> str
     return line
 
 
-def measure(path: str | Path, cells=CELLS, runs: int = 3) -> list[str]:
-    """Load the checkpoint and print each run and one median line per cell."""
+def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: int = 0, master: str = "",
+            master_port: int = 29551) -> list[str]:
+    """Load the checkpoint and print each run and one median line per cell (rank 0 prints)."""
 
     from tensorfold.rocm.build import gfx_name
 
@@ -106,59 +110,82 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3) -> list[str]:
         raise RuntimeError("no HIP device is visible")
     if runs < 1:
         raise ValueError("runs must be 1 or more")
+
+    def say(text: str, **kwargs) -> None:
+        if rank == 0:
+            print(text, flush=True, **kwargs)
+
+    rccl = None
+    if tp > 1:
+        from tensorfold.rocm.comm import RCCL
+
+        torch.cuda.set_device(rank % torch.cuda.device_count())
+        rccl = RCCL(rank, tp, master, master_port)
+        rccl.ready("startup")
     gfx = gfx_name()
     dtype = activation_dtype(gfx)
     model = load(path)
-    engine = Engine(model, schedule="auto", dtype=dtype)
+    if rccl is not None:
+        from tensorfold.rocm.qwen import slice_for_tp
+
+        slice_for_tp(model, rank, tp)
+    engine = Engine(model, schedule="auto", dtype=dtype, rccl=rccl)
     probe = model.layers[0]
     packed = probe.qkv if isinstance(probe, LinearLayer) else probe.q
     sample = torch.zeros(1, model.spec.hidden, device=packed.words.device, dtype=dtype)
     got = engine.linear(sample, packed)
     if got.shape != (1, packed.words.shape[0]) or not torch.isfinite(got).all():
         raise RuntimeError("the packed projection did not return a finite row")
-    print(f"loaded gfx={gfx} activation={'bf16' if dtype == torch.bfloat16 else 'fp16'} "
-          f"layers={model.spec.n_layers} hidden={model.spec.hidden} vocab={model.spec.vocab} "
-          f"bits={model.spec.bits} group={model.spec.group} "
-          f"embed_words={model.embed.words.shape[0]}x{model.embed.words.shape[1]} dtype=int32", flush=True)
-    # The extension is already built. A short generate pays for the first launch before a cell is timed.
-    engine.generate(_prompts(8, 2, 1, model.spec.vocab), 2)
+    say(f"loaded gfx={gfx} activation={'bf16' if dtype == torch.bfloat16 else 'fp16'} tp={tp} "
+        f"layers={model.spec.n_layers} hidden={model.spec.hidden} vocab={model.spec.vocab} "
+        f"bits={model.spec.bits} group={model.spec.group} "
+        f"embed_words={model.embed.words.shape[0]}x{model.embed.words.shape[1]} dtype=int32 "
+        f"rank_weights_gib={torch.cuda.memory_allocated() / 1024**3:.2f}")
+    # One short generate per prompt length (a prefill span at most) compiles every kernel a cell will launch,
+    # including the Triton attention tile, before any cell is timed.
+    from tensorfold.rocm.qwen_math import SPAN
+
+    for length in sorted({8, *(min(prompt_len, SPAN) for prompt_len, _, _ in cells)}):
+        engine.generate(_prompts(length, 2, 1, model.spec.vocab), 2)
     torch.cuda.synchronize()
-    print("# warmup done", file=sys.stderr, flush=True)
+    say("# warmup done", file=sys.stderr)
     lines = []
     for prompt_len, generated, concurrency in cells:
         rows = []
         for run in range(runs):
             gc.collect()
             torch.cuda.empty_cache()
-            print(f"# start prompt={prompt_len} generated={generated} concurrency={concurrency} run={run + 1}/{runs}",
-                  file=sys.stderr, flush=True)
+            say(f"# start prompt={prompt_len} generated={generated} concurrency={concurrency} run={run + 1}/{runs}",
+                file=sys.stderr)
             row = measure_cell(engine, prompt_len, generated, concurrency)
             _finite_positive(row)
             if (row["prompt"], row["generated"], row["concurrency"]) != (prompt_len, generated, concurrency):
                 raise RuntimeError("cell lengths do not match the requested load")
-            print(_format(gfx, dtype, row), flush=True)
+            say(_format(gfx, dtype, row, tp=tp))
             rows.append(row)
-        line = _format(gfx, dtype, median_row(rows), "median")
-        print(line, flush=True)
+        line = _format(gfx, dtype, median_row(rows), "median", tp=tp)
+        say(line)
         lines.append(line)
     return lines
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    runs = 3
-    if "--runs" in args:
-        at = args.index("--runs")
-        runs = int(args[at + 1])
-        del args[at:at + 2]
+    options = {"--runs": 3, "--tp": 1, "--rank": 0, "--master": "", "--master-port": 29551}
+    for flag, default in options.items():
+        if flag in args:
+            at = args.index(flag)
+            options[flag] = type(default)(args[at + 1])
+            del args[at:at + 2]
     cells = CELLS
     if len(args) == 4:
         cells = ((int(args[1]), int(args[2]), int(args[3])),)
     elif len(args) != 1:
-        print("usage: python -m tensorfold.rocm.bench MODEL_DIR [PROMPT GENERATED CONCURRENCY] [--runs N]",
-              file=sys.stderr)
+        print("usage: python -m tensorfold.rocm.bench MODEL_DIR [PROMPT GENERATED CONCURRENCY] [--runs N] "
+              "[--tp N --rank R --master ADDR [--master-port P]]", file=sys.stderr)
         return 2
-    measure(args[0], cells, runs)
+    measure(args[0], cells, options["--runs"], tp=options["--tp"], rank=options["--rank"],
+            master=options["--master"], master_port=options["--master-port"])
     return 0
 
 
