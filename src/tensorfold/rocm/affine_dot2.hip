@@ -574,15 +574,24 @@ constexpr int kLaneWaves = 8;
 constexpr int kLaneRows = 8;
 constexpr int kLaneGroupMax = 128;
 
-template <int BITS, int ROWS>
+// Groups a wave owns each round. Fewer rows leave room for more loads in flight; at most 16 code words a lane.
+constexpr int lane_groups(int bits, int rows, int pieces) {
+    int per = rows <= 2 ? 4 : rows <= 4 ? 2 : 1;
+    while (per > 1 && per * pieces * bits > 8) per /= 2;
+    return per;
+}
+
+template <int BITS, int ROWS, int PIECES>
 __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affine a) {
-    __shared__ __half xs[ROWS][kLaneWaves * kLaneGroupMax];
-    __shared__ float part[kLaneWaves][ROWS][2][kLaneCols];
+    constexpr int kGroup = 32 * PIECES;
+    constexpr int kPer = lane_groups(BITS, ROWS, PIECES);
+    constexpr int kRound = kLaneWaves * kPer;
+    __shared__ __half xs[ROWS][kRound * kGroup];
+    __shared__ float part[kRound][ROWS][2][kLaneCols];
     const int lane = threadIdx.x % kLaneCols;
     const int wave = threadIdx.x / kLaneCols;
     const int col = blockIdx.x * kLaneCols + lane;
-    const int group = a.group;
-    const int groups = a.k / group;
+    const int groups = a.k / kGroup;
     const int words_row = a.k * BITS / 32;
     // A lane past N reads the last column and stores nothing, so every lane reaches every barrier.
     const uint32_t* wrow = a.words + static_cast<long long>(col < a.n ? col : a.n - 1) * words_row;
@@ -591,17 +600,29 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
 #pragma unroll
     for (int r = 0; r < ROWS; ++r) acc[r] = 0.f;
 
-    for (int g0 = 0; g0 < groups; g0 += kLaneWaves) {
-        const int span = kLaneWaves * group;
-        for (int e = threadIdx.x; e < ROWS * span; e += blockDim.x) {
-            const int r = e / span;
-            const int kk = e - r * span;
-            const int gk = g0 * group + kk;
+    for (int g0 = 0; g0 < groups; g0 += kRound) {
+        constexpr int kSpan = kRound * kGroup;
+        for (int e = threadIdx.x; e < ROWS * kSpan; e += blockDim.x) {
+            const int r = e / kSpan;
+            const int kk = e - r * kSpan;
+            const int gk = g0 * kGroup + kk;
             xs[r][kk] = (r < a.m && gk < a.k) ? x[static_cast<long long>(r) * a.k + gk] : __float2half(0.f);
         }
+        // Every code word of the wave's groups is requested before the first product.
+        uint32_t w[kPer][PIECES][BITS];
+#pragma unroll
+        for (int j = 0; j < kPer; ++j) {
+            const int g = g0 + wave * kPer + j;
+            if (g < groups) {
+#pragma unroll
+                for (int p = 0; p < PIECES; ++p) load_piece<BITS>(wrow + (g * PIECES + p) * BITS, w[j][p]);
+            }
+        }
         __syncthreads();
-        const int g = g0 + wave;
-        if (g < groups) {
+#pragma unroll
+        for (int j = 0; j < kPer; ++j) {
+            const int local = wave * kPer + j;
+            if (g0 + local >= groups) continue;
             float dot[ROWS];
             float sum[ROWS];
 #pragma unroll
@@ -609,13 +630,12 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
                 dot[r] = 0.f;
                 sum[r] = 0.f;
             }
-            for (int p = 0; p < group; p += 32) {
-                uint32_t w[BITS];
-                load_piece<BITS>(wrow + (g * group + p) / 32 * BITS, w);
-                const int xk = wave * group + p;
+#pragma unroll
+            for (int p = 0; p < PIECES; ++p) {
+                const int xk = local * kGroup + 32 * p;
 #pragma unroll
                 for (int t = 0; t < 32; t += 2) {
-                    const __half2 q = __halves2half2(piece_code<BITS>(w, t), piece_code<BITS>(w, t + 1));
+                    const __half2 q = __halves2half2(piece_code<BITS>(w[j][p], t), piece_code<BITS>(w[j][p], t + 1));
 #pragma unroll
                     for (int r = 0; r < ROWS; ++r) {
                         const __half x0 = xs[r][xk + t];
@@ -628,13 +648,13 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
             }
 #pragma unroll
             for (int r = 0; r < ROWS; ++r) {
-                part[wave][r][0][lane] = dot[r];
-                part[wave][r][1][lane] = sum[r];
+                part[local][r][0][lane] = dot[r];
+                part[local][r][1][lane] = sum[r];
             }
         }
         __syncthreads();
         if (wave == 0 && col < a.n) {
-            const int round = groups - g0 < kLaneWaves ? groups - g0 : kLaneWaves;
+            const int round = groups - g0 < kRound ? groups - g0 : kRound;
             for (int j = 0; j < round; ++j) {
                 const long long at = static_cast<long long>(col) * groups + g0 + j;
                 const float scale = a.scale[at];
@@ -646,6 +666,7 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
                 }
             }
         }
+        // The next round restages xs: wave 0's fold above only reads part.
     }
     if (wave == 0 && col < a.n) {
 #pragma unroll
@@ -655,20 +676,29 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
     }
 }
 
-template <int BITS>
-hipError_t launch_lanes(const Affine& a, hipStream_t stream) {
+template <int BITS, int PIECES>
+hipError_t launch_lanes_rows(const Affine& a, hipStream_t stream) {
     const dim3 block(kLaneCols * kLaneWaves);
     const dim3 grid((a.n + kLaneCols - 1) / kLaneCols);
     if (a.m == 1) {
-        affine_dot2_lanes<BITS, 1><<<grid, block, 0, stream>>>(a);
+        affine_dot2_lanes<BITS, 1, PIECES><<<grid, block, 0, stream>>>(a);
     } else if (a.m == 2) {
-        affine_dot2_lanes<BITS, 2><<<grid, block, 0, stream>>>(a);
+        affine_dot2_lanes<BITS, 2, PIECES><<<grid, block, 0, stream>>>(a);
     } else if (a.m <= 4) {
-        affine_dot2_lanes<BITS, 4><<<grid, block, 0, stream>>>(a);
+        affine_dot2_lanes<BITS, 4, PIECES><<<grid, block, 0, stream>>>(a);
     } else {
-        affine_dot2_lanes<BITS, kLaneRows><<<grid, block, 0, stream>>>(a);
+        affine_dot2_lanes<BITS, kLaneRows, PIECES><<<grid, block, 0, stream>>>(a);
     }
     return hipGetLastError();
+}
+
+template <int BITS>
+hipError_t launch_lanes(const Affine& a, hipStream_t stream) {
+    switch (a.group) {
+        case 32: return launch_lanes_rows<BITS, 1>(a, stream);
+        case 64: return launch_lanes_rows<BITS, 2>(a, stream);
+        default: return launch_lanes_rows<BITS, 4>(a, stream);
+    }
 }
 
 hipError_t launch_affine_dot2_lanes(const Affine& a, hipStream_t stream) {
