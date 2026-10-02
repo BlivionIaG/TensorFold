@@ -35,77 +35,89 @@ class LinearLayer:
     down: Packed
 
 
-def _slice_packed(packed: Packed, rank: int, world: int, *, name: str) -> Packed:
-    """Column-split a packed matrix across ``world`` ranks; rank 0 keeps [0, N/world), rank ``world-1`` the tail."""
-
-    if not (0 <= rank < world):
-        raise ValueError(f"rank {rank} not in [0, {world})")
-    total = packed.words.shape[0]
-    if total % world:
-        raise ValueError(f"{name}: output rows {total} not divisible by world {world}")
-    width = total // world
-    a, b = rank * width, (rank + 1) * width
-    return Packed(packed.words[a:b].contiguous(), packed.scale[a:b].contiguous(),
-                  packed.bias[a:b].contiguous(), packed.bits, packed.group)
-
-
-def _slice_tensor(tensor: torch.Tensor, rank: int, world: int, *, axis: int, name: str) -> torch.Tensor:
-    """Slice an unpacked fp32 tensor along ``axis``; refuses a non-divisible dim."""
-
-    if not (0 <= rank < world):
-        raise ValueError(f"rank {rank} not in [0, {world})")
-    size = tensor.shape[axis]
+def _even(size: int, world: int, name: str) -> int:
     if size % world:
-        raise ValueError(f"{name}: axis {axis} size {size} not divisible by world {world}")
-    width = size // world
-    return tensor.narrow(axis, rank * width, width).contiguous()
+        raise ValueError(f"{name}: {size} does not split into {world} equal parts")
+    return size // world
+
+
+def _rows(packed: Packed, spans: list[tuple[int, int]]) -> Packed:
+    """Output rows ``spans`` of ``packed``, in order: one rank's share of a column-split projection."""
+
+    pick = lambda t: torch.cat([t[a:b] for a, b in spans]).contiguous()  # noqa: E731
+    return Packed(pick(packed.words), pick(packed.scale), pick(packed.bias), packed.bits, packed.group)
+
+
+def _row_spans(widths: list[int], rank: int, world: int, name: str) -> list[tuple[int, int]]:
+    """This rank's rows of each segment of a concatenated output (q | k | v): each segment split evenly."""
+
+    spans, base = [], 0
+    for width in widths:
+        part = _even(width, world, name)
+        spans.append((base + rank * part, base + (rank + 1) * part))
+        base += width
+    return spans
+
+
+def _cols(packed: Packed, rank: int, world: int, name: str) -> Packed:
+    """Input columns of one rank, whole groups: a row-split projection whose fp32 outputs the ranks sum."""
+
+    groups = _even(packed.scale.shape[1], world, f"{name} groups")
+    words = groups * packed.group * packed.bits // 32
+    return Packed(packed.words[:, rank * words:(rank + 1) * words].contiguous(),
+                  packed.scale[:, rank * groups:(rank + 1) * groups].contiguous(),
+                  packed.bias[:, rank * groups:(rank + 1) * groups].contiguous(), packed.bits, packed.group,
+                  partial=True)
+
+
+def _heads(tensor: torch.Tensor, spans: list[tuple[int, int]]) -> torch.Tensor:
+    return torch.cat([tensor[a:b] for a, b in spans]).contiguous()
 
 
 def slice_for_tp(model: TextModel, rank: int, world: int) -> TextModel:
-    """Column-split every TP-able weight; replicate the rest. Mutates ``model.spec`` to per-rank dims.
+    """Keep this rank's share of every projection. Mutates ``model`` and ``model.spec`` to per-rank heads.
 
-    Heads / KV heads / linear-attention key-value heads / linear-attention ``a_log`` ``dt_bias`` and
-    the linear conv weight's output channels are sliced. Embeddings and per-row norms stay replicated.
-    The output ``head`` (or tied embed) is vocab-split so logits are produced per rank.
+    Projections that read the replicated hidden state are split by output heads (full-attention q/k/v,
+    the linear-attention qkv/z/a/b, MLP gate/up), keeping each segment of a concatenated output whole per
+    head. Projections that write the residual (o, out, down) are split by input groups and return fp32
+    shares that ``forward_hidden``'s ``reduce`` sums. The output head is split by vocabulary rows; a tied
+    checkpoint keeps the full embedding for the lookup and a vocabulary slice of it as the head.
     """
 
-    if not (0 <= rank < world):
+    if not 0 <= rank < world:
         raise ValueError(f"rank {rank} not in [0, {world})")
     spec = model.spec
-    if spec.heads % world:
-        raise ValueError(f"heads {spec.heads} not divisible by world {world}")
-    if spec.kv_heads % world:
-        raise ValueError(f"kv_heads {spec.kv_heads} not divisible by world {world}")
-    if spec.key_heads % world:
-        raise ValueError(f"key_heads {spec.key_heads} not divisible by world {world}")
-    if spec.value_heads % world:
-        raise ValueError(f"value_heads {spec.value_heads} not divisible by world {world}")
+    for name in ("heads", "kv_heads", "key_heads", "value_heads"):
+        _even(getattr(spec, name), world, name)
+    _even(spec.vocab, world, "vocab")
+    key_width, value_width = spec.key_width, spec.value_width
+    for index, layer in enumerate(model.layers):
+        base = f"layer {index}"
+        if isinstance(layer, FullLayer):
+            layer.q = _rows(layer.q, _row_spans([spec.heads * spec.head_dim * 2], rank, world, f"{base} q_proj"))
+            layer.k = _rows(layer.k, _row_spans([spec.kv_heads * spec.head_dim], rank, world, f"{base} k_proj"))
+            layer.v = _rows(layer.v, _row_spans([spec.kv_heads * spec.head_dim], rank, world, f"{base} v_proj"))
+            layer.o = _cols(layer.o, rank, world, f"{base} o_proj")
+        else:
+            qkv = _row_spans([key_width, key_width, value_width], rank, world, f"{base} in_proj_qkv")
+            layer.qkv = _rows(layer.qkv, qkv)
+            layer.conv = _heads(layer.conv, qkv)
+            layer.z = _rows(layer.z, _row_spans([value_width], rank, world, f"{base} in_proj_z"))
+            heads = _row_spans([spec.value_heads], rank, world, f"{base} value heads")
+            layer.a = _rows(layer.a, heads)
+            layer.b = _rows(layer.b, heads)
+            layer.a_log = _heads(layer.a_log, heads)
+            layer.dt_bias = _heads(layer.dt_bias, heads)
+            layer.out = _cols(layer.out, rank, world, f"{base} out_proj")
+        mlp = _row_spans([layer.gate.words.shape[0]], rank, world, f"{base} mlp")
+        layer.gate = _rows(layer.gate, mlp)
+        layer.up = _rows(layer.up, mlp)
+        layer.down = _cols(layer.down, rank, world, f"{base} mlp.down_proj")
+    model.head = _rows(model.output_head(), _row_spans([spec.vocab], rank, world, "vocab"))
     spec.heads //= world
     spec.kv_heads //= world
     spec.key_heads //= world
     spec.value_heads //= world
-    spec.vocab //= world
-    for index, layer in enumerate(model.layers):
-        base = f"layer {index}"
-        if isinstance(layer, FullLayer):
-            layer.q = _slice_packed(layer.q, rank, world, name=f"{base} q_proj")
-            layer.k = _slice_packed(layer.k, rank, world, name=f"{base} k_proj")
-            layer.v = _slice_packed(layer.v, rank, world, name=f"{base} v_proj")
-            layer.o = _slice_packed(layer.o, rank, world, name=f"{base} o_proj")
-        else:
-            layer.qkv = _slice_packed(layer.qkv, rank, world, name=f"{base} in_proj_qkv")
-            layer.z = _slice_packed(layer.z, rank, world, name=f"{base} in_proj_z")
-            layer.a = _slice_packed(layer.a, rank, world, name=f"{base} in_proj_a")
-            layer.b = _slice_packed(layer.b, rank, world, name=f"{base} in_proj_b")
-            layer.conv = _slice_tensor(layer.conv, rank, world, axis=0, name=f"{base} conv1d.weight")
-            layer.a_log = _slice_tensor(layer.a_log, rank, world, axis=0, name=f"{base} A_log")
-            layer.dt_bias = _slice_tensor(layer.dt_bias, rank, world, axis=0, name=f"{base} dt_bias")
-            layer.out = _slice_packed(layer.out, rank, world, name=f"{base} out_proj")
-        layer.gate = _slice_packed(layer.gate, rank, world, name=f"{base} mlp.gate_proj")
-        layer.up = _slice_packed(layer.up, rank, world, name=f"{base} mlp.up_proj")
-        layer.down = _slice_packed(layer.down, rank, world, name=f"{base} mlp.down_proj")
-    if model.head is not None:
-        model.head = _slice_packed(model.head, rank, world, name="lm_head")
     return model
 
 
@@ -131,9 +143,33 @@ class TextModel:
     layers: list
     final_norm: torch.Tensor
     head: Packed | None = None
+    mtp: "MTPHead | None" = None
 
     def output_head(self) -> Packed:
         return self.embed if self.head is None else self.head
+
+
+@dataclass
+class MTPHead:
+    """One dense attention-only MTP head (the Qwen4_exp / Flash Next shape).
+
+    A draft token at position ``i + 1`` is produced from the main model's residual at position ``i`` and
+    the embedding of the token sampled at position ``i``. The head shares the main model's embed and (by
+    default) its lm_head; a checkpoint that ships an MTP-specific final projection names it ``mtp.head_proj``.
+    """
+
+    fc_e_norm: torch.Tensor
+    fc_h_norm: torch.Tensor
+    fc_e: Packed
+    fc_h: Packed
+    q_norm: torch.Tensor
+    k_norm: torch.Tensor
+    q: Packed
+    k: Packed
+    v: Packed
+    o: Packed
+    final_norm: torch.Tensor
+    head: Packed | None = None             # None ties with main ``model.output_head()``
 
 
 def activation_dtype(gfx: str) -> torch.dtype:
@@ -149,12 +185,16 @@ def activation_dtype(gfx: str) -> torch.dtype:
 
 
 class Engine:
-    """The forward's projections. ``schedule`` selects the affine kernel; ``dtype`` is the activation type."""
+    """The forward's projections. ``schedule`` selects the affine kernel; ``dtype`` is the activation type.
 
-    def __init__(self, model: TextModel, schedule: str = "auto", dtype: torch.dtype | None = None):
+    ``rccl`` is the tensor-parallel ring for a model cut by :func:`slice_for_tp`; None is one GPU.
+    """
+
+    def __init__(self, model: TextModel, schedule: str = "auto", dtype: torch.dtype | None = None, rccl=None):
         self.model = model
         self.schedule = schedule
         self.dtype = dtype
+        self.rccl = rccl
         self.projections = 0
 
     def linear(self, flat: torch.Tensor, packed: Packed) -> torch.Tensor:
@@ -171,12 +211,14 @@ class Engine:
         # A short batch on the WMMA part streams each column once. Wide rows stay on WMMA.
         if schedule == "auto" and flat.shape[0] == 1 and packed.bits == 8 and self.dtype == torch.bfloat16:
             schedule = "decode"
-        kwargs = {"bits": packed.bits, "group": packed.group, "schedule": schedule}
+        # A tensor-parallel share along K stays fp32 until the ranks are summed.
+        kwargs = {"bits": packed.bits, "group": packed.group, "schedule": schedule, "f32": packed.partial}
         span = qwen_math.SPAN
         if flat.shape[0] <= span:
             return affine_mod.matmul(flat, words, scale, bias, **kwargs)
-        # One activation-dtype buffer. Keeping every chunk and then concatenating doubles a long prefill.
-        out = torch.empty(flat.shape[0], words.shape[0], dtype=flat.dtype, device=flat.device)
+        # One output buffer. Keeping every chunk and then concatenating doubles a long prefill.
+        out = torch.empty(flat.shape[0], words.shape[0], dtype=torch.float32 if packed.partial else flat.dtype,
+                          device=flat.device)
         for start in range(0, flat.shape[0], span):
             stop = min(start + span, flat.shape[0])
             out[start:stop] = affine_mod.matmul(flat[start:stop], words, scale, bias, **kwargs)
@@ -236,9 +278,16 @@ class Engine:
             from tensorfold.rocm.build import gfx_name
 
             self.dtype = activation_dtype(gfx_name())
+        hooks = {}
+        if self.rccl is not None and self.rccl.world > 1:
+            from functools import partial
+
+            from tensorfold.rocm.qwen_tp import all_reduce_local, vocab_gather
+
+            hooks = {"reduce": partial(all_reduce_local, self.rccl), "gather": partial(vocab_gather, self.rccl)}
         with torch.inference_mode():
             return greedy(self.model, prompts, n_new, self.linear, device, after_token=after_token,
-                          cache_dtype=self.dtype)
+                          cache_dtype=self.dtype, **hooks)
 
 
 class _Shards:
@@ -303,6 +352,42 @@ def _affine_quant(quant: dict) -> tuple[int, int]:
     if quant.get("mode") != "affine" or bits not in (2, 3, 4, 5, 6, 8) or group not in (32, 64, 128):
         raise ValueError(f"the RDNA text path loads affine 2/3/4/5/6/8-bit groups 32/64/128, got {quant}")
     return int(bits), int(group)
+
+
+def load_mtp_head(path: str | Path, spec: Spec, bits: int, group: int, device: torch.device) -> MTPHead | None:
+    """Read ``mtp-4bit.safetensors`` (or any ``mtp*.safetensors``) from ``path``; ``None`` when absent.
+
+    Refuses a partial / malformed MTP file by name. The head's ``head`` projection is the dedicated
+    ``mtp.head_proj`` tensor when the checkpoint ships one; otherwise the caller ties with the main
+    model's ``lm_head`` (or tied embedding).
+    """
+
+    root = Path(path)
+    shards = sorted(root.glob("mtp*.safetensors"))
+    if not shards:
+        return None
+    table = _Shards(shards)
+    base = "mtp."
+    try:
+        head = None
+        if f"{base}head_proj.weight" in table:
+            head = _packed(table, f"{base}head_proj", bits, group, device)
+        return MTPHead(
+            _float(table, f"{base}norm_e.weight", device),
+            _float(table, f"{base}norm_h.weight", device),
+            _packed(table, f"{base}fc_e", bits, group, device),
+            _packed(table, f"{base}fc_h", bits, group, device),
+            _float(table, f"{base}q_norm.weight", device),
+            _float(table, f"{base}k_norm.weight", device),
+            _packed(table, f"{base}q_proj", bits, group, device),
+            _packed(table, f"{base}k_proj", bits, group, device),
+            _packed(table, f"{base}v_proj", bits, group, device),
+            _packed(table, f"{base}o_proj", bits, group, device),
+            _float(table, f"{base}final_norm.weight", device),
+            head,
+        )
+    except (KeyError, ValueError) as exc:
+        raise ValueError(f"{shards[0]} has the MTP prefix but is incomplete or wrong: {exc}") from None
 
 
 def load(path: str | Path, device: torch.device | None = None) -> TextModel:
@@ -379,4 +464,5 @@ def load(path: str | Path, device: torch.device | None = None) -> TextModel:
                 _float(table, lin + "norm.weight", device),
                 _packed(table, lin + "out_proj", bits, group, device), *mlp))
     head = embed if tied else _packed(table, "language_model.lm_head", bits, group, device)
-    return TextModel(spec, embed, layers, _float(table, prefix + "norm.weight", device), head)
+    mtp = load_mtp_head(root, spec, bits, group, device)
+    return TextModel(spec, embed, layers, _float(table, prefix + "norm.weight", device), head, mtp)
