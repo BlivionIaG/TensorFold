@@ -11,6 +11,14 @@ BITS = (2, 3, 4, 5, 6, 8)
 GROUPS = (32, 64, 128)
 
 
+def _fp32(tensor: torch.Tensor) -> torch.Tensor:
+    """fp32 and contiguous already stays put, so a decode step does not recast the scales."""
+
+    if tensor.dtype == torch.float32 and tensor.is_contiguous():
+        return tensor
+    return tensor.to(dtype=torch.float32).contiguous()
+
+
 @lru_cache(maxsize=1)
 def _ext():
     from tensorfold.rocm.build import load
@@ -45,8 +53,7 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
         raise ValueError("packed words must be int32 of shape (N, K * bits / 32)")
     n = words.shape[0]
     groups = k // group
-    scale = scale.to(torch.float32).contiguous()
-    bias = bias.to(torch.float32).contiguous()
+    scale, bias = _fp32(scale), _fp32(bias)
     if scale.shape != (n, groups) or bias.shape != scale.shape:
         raise ValueError("scale and bias must be (N, K / group)")
     if not all(t.is_cuda and t.device == x.device for t in (words, scale, bias)):
@@ -63,8 +70,7 @@ def _as_affine(words, scale, bias, k, bits, group):
         raise ValueError("packed words must be int32 of shape (N, K * bits / 32)")
     n = words.shape[0]
     groups = k // group
-    scale = scale.to(torch.float32).contiguous()
-    bias = bias.to(torch.float32).contiguous()
+    scale, bias = _fp32(scale), _fp32(bias)
     if scale.shape != (n, groups) or bias.shape != scale.shape:
         raise ValueError("scale and bias must be (N, K / group)")
     return words.contiguous(), scale, bias, n
