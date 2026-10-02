@@ -672,7 +672,7 @@ hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream) {
 #if TENSORFOLD_RDNA_WMMA
         return hipErrorNotSupported;
 #else
-        return launch_affine_dot2(a, stream);
+        return launch_affine_dot2(a, schedule == 1, stream);
 #endif
     }
 #if TENSORFOLD_RDNA_WMMA
