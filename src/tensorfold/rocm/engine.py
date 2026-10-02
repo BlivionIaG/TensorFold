@@ -21,8 +21,10 @@ from tensorfold.rocm.qwen import Engine as Kernels
 from tensorfold.rocm.qwen import activation_dtype, load, slice_for_tp
 from tensorfold.rocm.qwen_math import _blank_caches, _project, forward_hidden
 from tensorfold.rocm.qwen_tp import tp_forward_hidden, vocab_gather
+from tensorfold.rocm.mtp import MTPEngine
 
 _DEFAULT_EOS = (151645,)
+_DEFAULT_MTP_DEPTH = 4
 
 
 def _resolve_p2p(gfx: str, p2p: bool | None) -> bool:
@@ -140,7 +142,8 @@ class QwenEngine:
     def __init__(self, model, kernels: Kernels, eos: Sequence[int], *, keep: int = 8,
                  context: int | None = None, byte_budget: int | None = None,
                  points: Callable[[Sequence[int]], list[int]] | None = None,
-                 tp: int = 1, rank: int = 0, rccl: Any = None, no_drafts: bool = False):
+                 tp: int = 1, rank: int = 0, rccl: Any = None, no_drafts: bool = False,
+                 mtp_depth: int = _DEFAULT_MTP_DEPTH):
         self.model = model
         self.kernels = kernels
         self.eos = tuple(int(token) for token in eos)
@@ -150,12 +153,16 @@ class QwenEngine:
         self.points = points
         self.tp, self.rank, self.rccl, self.no_drafts = int(tp), int(rank), rccl, bool(no_drafts)
         self._posted = 0          # requests rank 0 has published (tp > 1)
+        head = getattr(model, "mtp", None)
+        self.mtp = MTPEngine(model, head, linear=kernels.linear) if head is not None else None
+        self.mtp_depth = int(mtp_depth)
 
     @classmethod
     def load(cls, model_dir: Path | str, *, schedule: str = "auto", keep: int = 8,
              context: int | None = None, byte_budget: int | None = None,
              tp: int = 1, rank: int = 0, master: str = "", master_port: int = 29551,
-             p2p: bool | None = None, no_drafts: bool = False) -> QwenEngine:
+             p2p: bool | None = None, no_drafts: bool = False,
+             mtp_depth: int = _DEFAULT_MTP_DEPTH) -> QwenEngine:
         from tensorfold.rocm.build import gfx_name
 
         path = Path(model_dir)
@@ -167,7 +174,8 @@ class QwenEngine:
 
             return cls(model, Kernels(model, schedule=schedule), read_eos(path),
                        keep=keep, context=context, byte_budget=byte_budget,
-                       points=message_points(path), tp=1, rank=0, no_drafts=no_drafts)
+                       points=message_points(path), tp=1, rank=0, no_drafts=no_drafts,
+                       mtp_depth=mtp_depth)
 
         from tensorfold.rocm.comm import RCCL
 
@@ -183,7 +191,8 @@ class QwenEngine:
 
         return cls(model, Kernels(model, schedule=schedule), read_eos(path),
                    keep=keep, context=context, byte_budget=byte_budget,
-                   points=message_points(path), tp=tp, rank=rank, rccl=rccl, no_drafts=no_drafts)
+                   points=message_points(path), tp=tp, rank=rank, rccl=rccl, no_drafts=no_drafts,
+                   mtp_depth=mtp_depth)
 
     def _dtype(self) -> torch.dtype:
         if self.kernels.dtype is None:
@@ -325,6 +334,7 @@ class QwenEngine:
         ends = set(self.eos)
         position = len(prompt)
         nxt = self._sample(hidden, sampling, position, constraint)
+        depth = self.mtp_depth if self.mtp is not None and not self.no_drafts else 0
         for step in range(room):
             done = step + 1 == room
             if self.rank == 0 and not done:
@@ -338,10 +348,58 @@ class QwenEngine:
                 done = bool(self._share([int(done)])[0])
             if done:
                 break
-            hidden, caches = self._forward([nxt], caches, position)
+            emitted, hidden, caches, position, nxt = self._decode_step(
+                hidden, caches, position, nxt,
+                sampling=sampling, constraint=constraint, depth=depth,
+            )
+            for tok in emitted[1:]:
+                if self.rank == 0 and not done:
+                    stop = bool(on_tokens([tok])) if on_tokens is not None else False
+                    ended = stop_eos and tok in ends
+                    grammar_done = constraint is not None and bool(getattr(constraint, "finished", False))
+                    done = stop or ended or grammar_done
+                    if self.tp > 1:
+                        done = bool(self._share([int(done)])[0])
+                    if done:
+                        break
+        return {"cached": cached}
+
+    def _decode_step(self, hidden: torch.Tensor, caches: list[dict], position: int, last_token: int, *,
+                     sampling: Sampling | None, constraint, depth: int) -> tuple[list[int], torch.Tensor, list[dict], int, int]:
+        """One decode round. Entry: ``hidden`` at ``position - 1``, ``last_token`` at ``position - 1``.
+
+        Returns ``(emitted, hidden, caches, position, nxt)``. ``emitted[0]`` is ``last_token`` so
+        ``_run`` can skip the pre-step emit; later entries are the drafter's accepted tokens plus
+        the verifier's final sample on full-chain acceptance. With ``depth <= 0`` or no MTP head
+        installed this is one forward + one sample, the same shape as the serial path.
+        """
+        emitted = [last_token]
+        if self.mtp is None or depth <= 0:
+            hidden, caches = self._forward([last_token], caches, position)
             position += 1
             nxt = self._sample(hidden, sampling, position, constraint)
-        return {"cached": cached}
+            return emitted + [nxt], hidden, caches, position, nxt
+
+        dtype = self._dtype()
+        hidden, caches = self._forward([last_token], caches, position)
+        position += 1
+        mtp_state = self.mtp.fresh_cache(batch=1,
+                                         total=position + max(0, depth) + 1,
+                                         device=self._device(), dtype=dtype)
+        drafts = self.mtp.draft_chain(hidden[:, -1:], last_token, position - 1, depth, mtp_state,
+                                      sampling=sampling, dtype=dtype)
+        cur_hidden = hidden
+        for i, d in enumerate(drafts):
+            sample_key = position + i - 1
+            nxt_main = self._sample(cur_hidden, sampling, sample_key, constraint)
+            advance = nxt_main if nxt_main != d else d
+            cur_hidden, caches = self._forward([advance], caches, position + i)
+            if nxt_main != d:
+                return emitted + [nxt_main], cur_hidden, caches, position + i + 1, nxt_main
+            emitted.append(d)
+        nxt = self._sample(cur_hidden, sampling, position + depth - 1, constraint)
+        emitted.append(nxt)
+        return emitted, cur_hidden, caches, position + depth, nxt
 
     def _post(self, prompt: list[int], room: int, draft: bool) -> None:
         """Rank 0 publishes a request on the rendezvous store. The previous one has been read by every rank."""
