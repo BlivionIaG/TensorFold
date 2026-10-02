@@ -25,8 +25,11 @@ class MTPState:
         self.pos = 0
 
 
-def _alloc_cache(spec, batch: int, total: int, device: torch.device, dtype: torch.dtype) -> dict:
-    shape = (batch, spec.kv_heads, total, spec.head_dim)
+def _alloc_cache(spec, batch: int, total: int, device: torch.device, dtype: torch.dtype,
+                 kv_heads: int | None = None) -> dict:
+    if kv_heads is None:
+        kv_heads = spec.kv_heads
+    shape = (batch, kv_heads, total, spec.head_dim)
     return {"k": torch.empty(shape, device=device, dtype=dtype),
             "v": torch.empty(shape, device=device, dtype=dtype),
             "len": 0}
@@ -47,14 +50,15 @@ def _grow_cache(cache: dict, needed: int, dtype: torch.dtype) -> None:
 
 
 def _attention(head: MTPHead, x: torch.Tensor, cache: dict | None, position: int, dtype: torch.dtype,
-               linear: Callable[[torch.Tensor, Packed], torch.Tensor], spec) -> tuple[torch.Tensor, dict]:
+               linear: Callable[[torch.Tensor, Packed], torch.Tensor], spec,
+               heads: int, kv_heads: int) -> tuple[torch.Tensor, dict]:
     batch, length, _ = x.shape
     qg = linear(x, head.q)
     keys = linear(x, head.k)
     values = linear(x, head.v)
-    qg = qg.view(batch, length, spec.heads, spec.head_dim)
-    keys = keys.view(batch, length, spec.kv_heads, spec.head_dim)
-    values = values.view(batch, length, spec.kv_heads, spec.head_dim)
+    qg = qg.view(batch, length, heads, spec.head_dim)
+    keys = keys.view(batch, length, kv_heads, spec.head_dim)
+    values = values.view(batch, length, kv_heads, spec.head_dim)
     queries = qwen_math.rms_norm(qg, head.q_norm, spec.eps).permute(0, 2, 1, 3)
     keys = qwen_math.rms_norm(keys, head.k_norm, spec.eps).permute(0, 2, 1, 3)
     values = values.permute(0, 2, 1, 3)
@@ -102,9 +106,15 @@ class MTPEngine:
         self.model = model
         self.head = head
         self.linear = linear
+        # The head's q/k/v row counts encode its heads; spec.head_dim lets us derive them. Spec may be
+        # sliced under TP, so the head's own q/k/v shapes are the truth - read them here once.
+        spec = model.spec
+        self._heads = int(head.q.words.shape[0]) // int(spec.head_dim)
+        self._kv_heads = int(head.k.words.shape[0]) // int(spec.head_dim)
 
     def fresh_cache(self, *, batch: int, total: int, device: torch.device, dtype: torch.dtype) -> dict:
-        return _alloc_cache(self.model.spec, batch, total, device, dtype)
+        # The head's own kv_heads; spec.kv_heads may be sliced under TP.
+        return _alloc_cache(self.model.spec, batch, total, device, dtype, self._kv_heads)
 
     def forward(self, hidden: torch.Tensor, next_token: torch.Tensor, position: int, cache: dict, *,
                 dtype: torch.dtype | None = None) -> torch.Tensor:
@@ -121,7 +131,8 @@ class MTPEngine:
         e_proj = self.linear(emb_e.view(-1, emb_e.shape[-1]), self.head.fc_e).view(*emb_e.shape[:-1], -1)
         h_proj = self.linear(emb_h.view(-1, emb_h.shape[-1]), self.head.fc_h).view(*emb_h.shape[:-1], -1)
         x = e_proj + h_proj
-        attn_out, cache = _attention(self.head, x, cache, position, dtype, self.linear, spec)
+        attn_out, cache = _attention(self.head, x, cache, position, dtype, self.linear, spec,
+                                     self._heads, self._kv_heads)
         x = x + attn_out
         residual = qwen_math.rms_norm(x, self.head.final_norm, spec.eps)
         return _vocab_logits(self.head, self.model, residual, dtype), residual
