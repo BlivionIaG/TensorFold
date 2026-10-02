@@ -20,7 +20,7 @@ from tensorfold.rocm.prefix import PrefixCache, entry_end, trim_bytes
 from tensorfold.rocm.qwen import Engine as Kernels
 from tensorfold.rocm.qwen import activation_dtype, load, slice_for_tp
 from tensorfold.rocm.qwen_math import _blank_caches, _project, forward_hidden
-from tensorfold.rocm.qwen_tp import all_reduce_local, tp_forward_hidden, vocab_gather
+from tensorfold.rocm.qwen_tp import tp_forward_hidden, vocab_gather
 
 _DEFAULT_EOS = (151645,)
 
@@ -149,6 +149,7 @@ class QwenEngine:
         self.byte_budget = byte_budget
         self.points = points
         self.tp, self.rank, self.rccl, self.no_drafts = int(tp), int(rank), rccl, bool(no_drafts)
+        self._posted = 0          # requests rank 0 has published (tp > 1)
 
     @classmethod
     def load(cls, model_dir: Path | str, *, schedule: str = "auto", keep: int = 8,
@@ -170,6 +171,8 @@ class QwenEngine:
 
         from tensorfold.rocm.comm import RCCL
 
+        # One GPU a rank: with every card visible, rank r takes card r; with one card per process, that card.
+        torch.cuda.set_device(rank % torch.cuda.device_count())
         gfx = gfx_name()
         prefer_p2p = _resolve_p2p(gfx, p2p)
         rccl = RCCL(rank, tp, master, master_port, prefer_p2p=prefer_p2p)
@@ -256,10 +259,10 @@ class QwenEngine:
         return hidden, caches
 
     def _sample(self, hidden: torch.Tensor, sampling: Sampling | None, position: int, constraint) -> int:
-        if self.tp > 1 and self.rank != 0:
-            return self._follow_token()
-        local_logits = _project(hidden[:, -1], self.model.output_head(), self.kernels.linear)
-        logits = vocab_gather(self.rccl, local_logits) if self.tp > 1 else local_logits
+        local = _project(hidden[:, -1], self.model.output_head(), self.kernels.linear)
+        logits = vocab_gather(self.rccl, local) if self.tp > 1 else local     # every rank joins the gather
+        if self.rank != 0:
+            return self._share([0])[0]
         if constraint is not None:
             constraint.mask(logits)
         row = logits.detach().float().reshape(-1)
@@ -276,25 +279,16 @@ class QwenEngine:
                 token = choose(row.cpu().numpy(), np.arange(width, dtype=np.int64), position, sampling)
         if constraint is not None:
             constraint.advance([token])
-        if self.tp > 1:
-            self._broadcast_token(token)
-        return token
+        return self._share([token])[0]
 
-    def _broadcast_token(self, token: int) -> None:
-        """Rank 0 publishes the chosen token; every rank reads the same value via RCCL broadcast."""
+    def _share(self, values: list[int]) -> list[int]:
+        """Rank 0's ``values`` on every rank. Other ranks pass placeholders of the same length."""
 
-        device = self._device()
-        send = torch.tensor([token], dtype=torch.int64, device=device)
-        recv = torch.empty((1,), dtype=torch.int64, device=device)
-        self.rccl.broadcast(send, recv, root=0)
-
-    def _follow_token(self) -> int:
-        """Follower waits for rank 0's broadcast; the chosen token drives the next ``_forward`` step."""
-
-        device = self._device()
-        recv = torch.empty((1,), dtype=torch.int64, device=device)
-        self.rccl.broadcast(recv, recv, root=0)
-        return int(recv.item())
+        if self.tp <= 1:
+            return values
+        buffer = torch.tensor(values, dtype=torch.int64, device=self._device())
+        self.rccl.broadcast(buffer, buffer, root=0)
+        return [int(value) for value in buffer.tolist()]
 
     def generate(self, prompt: list[int], max_tokens: int, sampling: Sampling | None,
                  on_tokens: Callable[[list[int]], bool | None], *, stop_eos: bool = True, draft: bool = True,
@@ -302,7 +296,8 @@ class QwenEngine:
         """One prompt. ``draft=False`` ignores the prefix cache. ``stats['cached']`` is the reused length.
 
         ``constraint`` is the server's grammar. ``vision`` is refused. ``background`` is accepted and
-        unused: this engine serves one request at a time, and the server orders those requests.
+        unused: this engine serves one request at a time, and the server orders those requests. With
+        ``tp > 1`` this runs on rank 0, and every other rank runs the same request in :meth:`follow`.
         """
 
         del background
@@ -317,6 +312,12 @@ class QwenEngine:
             room = min(room, self.context_window - len(prompt))
         if room < 1:
             raise ValueError("max_tokens must leave room for one token")
+        if self.tp > 1:
+            self._post(list(prompt), room, draft)
+        return self._run(list(prompt), room, sampling, on_tokens, stop_eos, draft, constraint)
+
+    def _run(self, prompt: list[int], room: int, sampling: Sampling | None, on_tokens, stop_eos: bool,
+             draft: bool, constraint) -> dict[str, int]:
         hit = self.cache.longest(prompt) if draft else None
         cached = len(hit[0]) if hit is not None else 0
         held = clone_caches(hit[1]) if hit is not None else None
@@ -325,15 +326,48 @@ class QwenEngine:
         position = len(prompt)
         nxt = self._sample(hidden, sampling, position, constraint)
         for step in range(room):
-            stop = bool(on_tokens([nxt])) if on_tokens is not None else False
-            ended = stop_eos and nxt in ends
-            grammar_done = constraint is not None and bool(getattr(constraint, "finished", False))
-            if stop or ended or grammar_done or step + 1 == room:
+            done = step + 1 == room
+            if self.rank == 0 and not done:
+                stop = bool(on_tokens([nxt])) if on_tokens is not None else False
+                ended = stop_eos and nxt in ends
+                grammar_done = constraint is not None and bool(getattr(constraint, "finished", False))
+                done = stop or ended or grammar_done
+            elif self.rank == 0 and on_tokens is not None:
+                on_tokens([nxt])
+            if self.tp > 1:
+                done = bool(self._share([int(done)])[0])
+            if done:
                 break
             hidden, caches = self._forward([nxt], caches, position)
             position += 1
             nxt = self._sample(hidden, sampling, position, constraint)
         return {"cached": cached}
+
+    def _post(self, prompt: list[int], room: int, draft: bool) -> None:
+        """Rank 0 publishes a request on the rendezvous store. The previous one has been read by every rank."""
+
+        store = self.rccl.store
+        store.set(f"tf_request/{self._posted}", json.dumps([prompt, room, bool(draft)]))
+        if self._posted:
+            store.delete_key(f"tf_request/{self._posted - 1}")
+        self._posted += 1
+
+    def follow(self) -> None:
+        """Ranks above 0: run each of rank 0's requests in step with it, until the process ends."""
+
+        if self.rank == 0:
+            raise RuntimeError("rank 0 serves requests; follow() is for the other ranks")
+        while True:
+            key = f"tf_request/{self._posted}"
+            try:
+                self.rccl.store.wait([key])
+            except Exception as exc:  # noqa: BLE001 - the store's wait timeout: rank 0 is idle
+                if "timeout" in str(exc).lower():
+                    continue
+                raise
+            prompt, room, draft = json.loads(self.rccl.store.get(key))
+            self._posted += 1
+            self._run(prompt, room, None, None, False, draft, None)
 
     def prefill_caches(self, prompt: Sequence[int]) -> list[dict]:
         """Caches after one forward of ``prompt``. A stored prefix of that length matches this."""

@@ -1,8 +1,8 @@
 """RCCL all-gather / all-reduce on the current HIP stream so HIP graphs capture it.
 
-A rank-order sum after ``all_reduce`` keeps ranks bit-equal; ``ready`` and ``barrier`` are the
+Every rank receives the same ``all_reduce`` result; ``ready`` and ``barrier`` are the
 rendezvous that the follower rank uses to wait for the leader. Same shape as ``tensorfold.cuda.comm``
-because RCCL's C API matches NCCL's (rcclGetUniqueId / rcclCommInitRank / rcclAllGather / rcclAllReduce).
+because librccl exports NCCL's C API under NCCL's names (ncclGetUniqueId, ncclCommInitRank, ncclAllReduce, ...).
 
 Hardware support:
 - RDNA 3.5 / RDNA 4 integrated (``multi_gpu_capable=True``): dies on one APU package; P2P over
@@ -22,10 +22,11 @@ import os
 import torch
 
 _DTYPES = {
-    torch.float32: 7,    # ncclFloat32 / rcclFloat32
-    torch.bfloat16: 9,   # ncclBfloat16 / rcclBfloat16
-    torch.int32: 2,      # ncclInt32 / rcclInt32
-    torch.int64: 4,      # ncclInt64 / rcclInt64
+    torch.float32: 7,    # ncclFloat32
+    torch.float16: 6,    # ncclFloat16
+    torch.bfloat16: 9,   # ncclBfloat16
+    torch.int32: 2,      # ncclInt32
+    torch.int64: 4,      # ncclInt64
 }
 _OPS = {"sum": 0, "prod": 1, "max": 2, "min": 3}
 
@@ -87,21 +88,21 @@ class RCCL:
         self.rank, self.world, self.prefer_p2p = rank, world, bool(prefer_p2p)
         self.lib = _library()
         lib = self.lib
-        lib.rcclGetErrorString.restype = ctypes.c_char_p
-        lib.rcclGetErrorString.argtypes = [ctypes.c_int]
-        lib.rcclGetUniqueId.argtypes = [ctypes.POINTER(_UniqueId)]
-        lib.rcclCommInitRank.argtypes = [
+        lib.ncclGetErrorString.restype = ctypes.c_char_p
+        lib.ncclGetErrorString.argtypes = [ctypes.c_int]
+        lib.ncclGetUniqueId.argtypes = [ctypes.POINTER(_UniqueId)]
+        lib.ncclCommInitRank.argtypes = [
             ctypes.POINTER(ctypes.c_void_p), ctypes.c_int, _UniqueId, ctypes.c_int,
         ]
-        lib.rcclAllGather.argtypes = [
+        lib.ncclAllGather.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int,
             ctypes.c_void_p, ctypes.c_void_p,
         ]
-        lib.rcclAllReduce.argtypes = [
+        lib.ncclAllReduce.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
             ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
         ]
-        lib.rcclBroadcast.argtypes = [
+        lib.ncclBroadcast.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
             ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
         ]
@@ -109,7 +110,7 @@ class RCCL:
         self.store = TCPStore(master, port, world, rank == 0, timeout=timedelta(seconds=600))
         uid = _UniqueId()
         if rank == 0:
-            self._check(self.lib.rcclGetUniqueId(ctypes.byref(uid)))
+            self._check(self.lib.ncclGetUniqueId(ctypes.byref(uid)))
             self.store.set("tf_rccl_uid", bytes(uid.internal))
         else:
             raw = self.store.get("tf_rccl_uid")
@@ -119,36 +120,35 @@ class RCCL:
 
         self.comm = ctypes.c_void_p()
         torch.cuda.current_device()
-        self._check(self.lib.rcclCommInitRank(
+        self._check(self.lib.ncclCommInitRank(
             ctypes.byref(self.comm), ctypes.c_int(world), uid, ctypes.c_int(rank),
         ))
 
     def _check(self, code: int) -> None:
         if code != 0:
-            raise RuntimeError(f"RCCL error {code}: {self.lib.rcclGetErrorString(code).decode()}")
+            raise RuntimeError(f"RCCL error {code}: {self.lib.ncclGetErrorString(code).decode()}")
 
     def all_gather(self, send: torch.Tensor, recv: torch.Tensor) -> None:
         """recv [world * n] <- every rank's send [n], contiguous on this stream so HIP-graph capture keeps it."""
         if recv.numel() != send.numel() * self.world or send.dtype != recv.dtype:
             raise ValueError("all_gather: recv must hold world x send of the same dtype")
         stream = torch.cuda.current_stream().cuda_stream
-        self._check(self.lib.rcclAllGather(
+        self._check(self.lib.ncclAllGather(
             send.data_ptr(), recv.data_ptr(), send.numel(), _DTYPES[send.dtype], self.comm, stream,
         ))
 
     def all_reduce(self, send: torch.Tensor, recv: torch.Tensor, *, op: str = "sum") -> None:
-        """In-place ``send`` -> ``recv`` across all ranks, on this stream.
+        """``send`` summed (or ``op``) across ranks into ``recv``, on this stream. Same shape and dtype.
 
-        bf16 reduces with bf16 alias ``sum`` only; the engine stages fp32 partials before the reduce
-        when ``op="sum"`` and ``send.dtype is bfloat16``, then casts back. ``recv`` must be the same
-        shape and dtype as ``send``.
+        The ring decides the order of the adds. With two ranks that is one add; past two, fp32 sums can
+        differ in the last bit from a rank-order sum.
         """
         if op not in _OPS:
             raise ValueError(f"all_reduce: op must be one of {list(_OPS)}, not {op!r}")
         if send.dtype != recv.dtype or send.numel() != recv.numel():
             raise ValueError("all_reduce: send and recv must share shape and dtype")
         stream = torch.cuda.current_stream().cuda_stream
-        self._check(self.lib.rcclAllReduce(
+        self._check(self.lib.ncclAllReduce(
             send.data_ptr(), recv.data_ptr(), send.numel(),
             _DTYPES[send.dtype], _OPS[op], self.comm, stream,
         ))
@@ -161,7 +161,7 @@ class RCCL:
         if send.dtype != recv.dtype or send.numel() != recv.numel():
             raise ValueError("broadcast: send and recv must share shape and dtype")
         stream = torch.cuda.current_stream().cuda_stream
-        self._check(self.lib.rcclBroadcast(
+        self._check(self.lib.ncclBroadcast(
             send.data_ptr(), recv.data_ptr(), send.numel(),
             _DTYPES[send.dtype], ctypes.c_int(root), self.comm, stream,
         ))

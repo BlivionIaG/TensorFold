@@ -20,9 +20,8 @@ def test_ops_enum_uses_sum_zero():
 def test_library_refuses_when_no_rccl(monkeypatch):
     from tensorfold.rocm import comm
 
-    monkeypatch.setattr(comm, "glob", lambda pattern: [])
-    monkeypatch.setattr(comm.os.path, "dirname", lambda value: "/nonexistent")
-    monkeypatch.setattr(comm.os.environ, "get", lambda key, default: default)
+    monkeypatch.setattr(comm.glob, "glob", lambda pattern: [])
+    monkeypatch.setattr(comm.ctypes.util, "find_library", lambda name: None)
     monkeypatch.delenv("TF_RCCL_LIB", raising=False)
     with pytest.raises(RuntimeError, match="librccl not found"):
         comm._library()
