@@ -22,13 +22,17 @@ SPAN = 2048
 
 @dataclass
 class Packed:
-    """One affine matrix: packed int32 ``words`` and group ``scale``/``bias`` (fp32, bf16 or fp16)."""
+    """One affine matrix: packed int32 ``words`` and group ``scale``/``bias`` (fp32, bf16 or fp16).
+
+    ``partial`` marks a tensor-parallel slice along K: its output is one rank's fp32 share of the sum.
+    """
 
     words: torch.Tensor
     scale: torch.Tensor
     bias: torch.Tensor
     bits: int
     group: int
+    partial: bool = False
 
 
 @dataclass
@@ -398,7 +402,7 @@ def _fma_rows(summed: torch.Tensor, bias: torch.Tensor, acc: torch.Tensor) -> to
 def _project(x: torch.Tensor, packed: Packed, linear) -> torch.Tensor:
     flat = x.reshape(-1, x.shape[-1])
     y = linear(flat, packed)
-    if y.dtype != x.dtype:
+    if y.dtype != x.dtype and not packed.partial:     # a rank's share stays fp32 until the ranks are summed
         y = y.to(dtype=x.dtype)
     return y.reshape(*x.shape[:-1], -1)
 
@@ -433,8 +437,12 @@ def _project_group(x: torch.Tensor, packeds: tuple, linear):
 
 
 def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos0: int,
-                   act_dtype: torch.dtype | None = None, *, exact_short: bool = False):
-    """One prefill or decode step. ``tokens`` is (batch, length). Returns hidden states and new caches."""
+                   act_dtype: torch.dtype | None = None, *, exact_short: bool = False, reduce=None):
+    """One prefill or decode step. ``tokens`` is (batch, length). Returns hidden states and new caches.
+
+    ``reduce`` sums the ranks' shares of each attention and MLP output before the residual add (tensor
+    parallel); None is one rank.
+    """
 
     spec = model.spec
     x = gather_rows(model.embed, tokens, dtype=act_dtype)
@@ -455,8 +463,12 @@ def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos
                 y, cache = _attention(spec, layer, normed, cache, linear, pos0 + start, exact_short)
             else:
                 y, cache = _linear_attn(spec, layer, normed, cache, linear, exact_short)
+            if reduce is not None:
+                y = reduce(y)
             x[:, start:stop] = x[:, start:stop] + y
             y = _mlp(spec, layer, rms_norm(x[:, start:stop], layer.post_norm, spec.eps), linear)
+            if reduce is not None:
+                y = reduce(y)
             x[:, start:stop] = x[:, start:stop] + y
         new_caches.append(cache)
     return rms_norm(x, model.final_norm, spec.eps), new_caches
@@ -473,7 +485,7 @@ def _mlp(spec: Spec, layer, x: torch.Tensor, linear) -> torch.Tensor:
         else:
             gate, up = grouped
         return _project(torch.nn.functional.silu(gate) * up, layer.down, linear)
-    out = torch.empty_like(flat)
+    out = torch.empty(flat.shape, dtype=torch.float32 if layer.down.partial else flat.dtype, device=flat.device)
     for start in range(0, flat.shape[0], SPAN):
         stop = min(start + SPAN, flat.shape[0])
         piece = flat[start:stop]
@@ -514,7 +526,7 @@ def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear, exact: bool)
     if length <= SPAN:
         y, conv_state, rec = _linear_span(spec, layer, x, conv_state, rec, linear, exact)
         return y, {"conv": conv_state, "state": rec}
-    y = torch.empty(batch, length, hidden, dtype=x.dtype, device=x.device)
+    y = torch.empty(batch, length, hidden, dtype=torch.float32 if layer.out.partial else x.dtype, device=x.device)
     for start in range(0, length, SPAN):
         stop = min(length, start + SPAN)
         y[:, start:stop], conv_state, rec = _linear_span(
@@ -610,11 +622,13 @@ def _blank_caches(model, batch: int, total: int, device: torch.device, cache_dty
 
 
 def greedy(model, prompts: list[list[int]], n_new: int, linear, device: torch.device,
-           after_token=None, cache_dtype: torch.dtype = torch.float32) -> list[list[int]]:
+           after_token=None, cache_dtype: torch.dtype = torch.float32, *, reduce=None,
+           gather=None) -> list[list[int]]:
     """Generate ``n_new`` tokens for every prompt. End-of-sequence does not stop the loop.
 
     ``after_token(step)`` runs once the work for that token has been queued. Step ``-1`` is the start,
-    before the prompt forward. The requests share one batch and one cache each.
+    before the prompt forward. The requests share one batch and one cache each. ``reduce`` and ``gather``
+    are the tensor-parallel hooks: the residual sum and the vocabulary slices joined in rank order.
     """
 
     if n_new < 1:
@@ -636,12 +650,17 @@ def greedy(model, prompts: list[list[int]], n_new: int, linear, device: torch.de
 
     if after_token is not None:
         after_token(-1)
-    hidden, caches = forward_hidden(model, tokens, caches, linear, 0, cache_dtype)
-    nxt = torch.argmax(_project(hidden[:, -1], model.output_head(), linear), dim=-1)
+    def pick(hidden: torch.Tensor) -> torch.Tensor:
+        logits = _project(hidden[:, -1], model.output_head(), linear)
+        return torch.argmax(logits if gather is None else gather(logits), dim=-1)
+
+    hidden, caches = forward_hidden(model, tokens, caches, linear, 0, cache_dtype, reduce=reduce)
+    nxt = pick(hidden)
     commit(0, nxt)
     for step in range(1, n_new):
-        hidden, caches = forward_hidden(model, nxt.view(-1, 1), caches, linear, length + step - 1, cache_dtype)
-        nxt = torch.argmax(_project(hidden[:, -1], model.output_head(), linear), dim=-1)
+        hidden, caches = forward_hidden(model, nxt.view(-1, 1), caches, linear, length + step - 1, cache_dtype,
+                                        reduce=reduce)
+        nxt = pick(hidden)
         commit(step, nxt)
     if any(len(row) != n_new for row in out):
         raise RuntimeError("generation stopped before the requested token count")
