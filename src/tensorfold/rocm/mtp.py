@@ -1,14 +1,14 @@
-"""The Qwen3.5 ROCm MTP drafter skeleton (Phase 1: state only).
-
-Phase 2 wires the head's forward on top of ``qwen_math._attention_span`` so the same per-layer KV
-machinery the main model uses. Same shape as ``tensorfold.families.qwen4_exp.cuda.mtp``.
-"""
+"""The Qwen3.5 ROCm MTP drafter (Phase 2: forward + chain + absorb)."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable, Sequence
 
 import torch
+
+from tensorfold.rocm import qwen_math
+from tensorfold.rocm.qwen import MTPHead, Packed, TextModel
 
 
 @dataclass
@@ -25,4 +25,147 @@ class MTPState:
         self.pos = 0
 
 
-__all__ = ["MTPState"]
+def _alloc_cache(spec, batch: int, total: int, device: torch.device, dtype: torch.dtype) -> dict:
+    shape = (batch, spec.kv_heads, total, spec.head_dim)
+    return {"k": torch.empty(shape, device=device, dtype=dtype),
+            "v": torch.empty(shape, device=device, dtype=dtype),
+            "len": 0}
+
+
+def _grow_cache(cache: dict, needed: int, dtype: torch.dtype) -> None:
+    """Extend the head's KV cache to at least ``needed`` rows; matches _blank_caches' growth policy."""
+
+    if cache["k"].shape[2] >= needed:
+        return
+    new_total = max(needed, cache["k"].shape[2] * 2)
+    new_shape = (cache["k"].shape[0], cache["k"].shape[1], new_total, cache["k"].shape[3])
+    new_k = torch.empty(new_shape, device=cache["k"].device, dtype=dtype)
+    new_v = torch.empty(new_shape, device=cache["k"].device, dtype=dtype)
+    new_k[:, :, :cache["len"]].copy_(cache["k"][:, :, :cache["len"]])
+    new_v[:, :, :cache["len"]].copy_(cache["v"][:, :, :cache["len"]])
+    cache["k"], cache["v"] = new_k, new_v
+
+
+def _attention(head: MTPHead, x: torch.Tensor, cache: dict | None, position: int, dtype: torch.dtype,
+               linear: Callable[[torch.Tensor, Packed], torch.Tensor], spec) -> tuple[torch.Tensor, dict]:
+    batch, length, _ = x.shape
+    qg = linear(x, head.q)
+    keys = linear(x, head.k)
+    values = linear(x, head.v)
+    qg = qg.view(batch, length, spec.heads, spec.head_dim)
+    keys = keys.view(batch, length, spec.kv_heads, spec.head_dim)
+    values = values.view(batch, length, spec.kv_heads, spec.head_dim)
+    queries = qwen_math.rms_norm(qg, head.q_norm, spec.eps).permute(0, 2, 1, 3)
+    keys = qwen_math.rms_norm(keys, head.k_norm, spec.eps).permute(0, 2, 1, 3)
+    values = values.permute(0, 2, 1, 3)
+    queries = qwen_math.apply_rope(queries, position, spec.rope_theta, spec.rotary_dim, exact=False)
+    keys = qwen_math.apply_rope(keys, position, spec.rope_theta, spec.rotary_dim, exact=False)
+    if cache is None:
+        shape = (batch, spec.kv_heads, length + position, spec.head_dim)
+        cache = {"k": torch.empty(shape, device=x.device, dtype=dtype),
+                 "v": torch.empty(shape, device=x.device, dtype=dtype),
+                 "len": 0}
+    end = cache["len"] + length
+    if end > cache["k"].shape[2]:
+        _grow_cache(cache, end, dtype)
+    cache["k"][:, :, cache["len"]:end] = keys.to(dtype=dtype)
+    cache["v"][:, :, cache["len"]:end] = values.to(dtype=dtype)
+    cache["len"] = end
+    kept_k = cache["k"][:, :, :end]
+    kept_v = cache["v"][:, :, :end]
+    scale = spec.head_dim ** -0.5
+    if queries.dtype != torch.float32:
+        queries_f = queries.float()
+    else:
+        queries_f = queries
+    attended = qwen_math._attend(queries_f, kept_k, kept_v, scale, position)
+    attended = attended.permute(0, 2, 1, 3).reshape(batch, length, -1)
+    if attended.dtype != dtype:
+        attended = attended.to(dtype=dtype)
+    out = linear(attended, head.o)
+    return out, cache
+
+
+def _vocab_logits(head: MTPHead, model: TextModel, x: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+    target = head.head if head.head is not None else model.output_head()
+    flat = x.reshape(-1, x.shape[-1]).to(dtype=dtype).contiguous()
+    from tensorfold.rocm import affine as affine_mod
+
+    out = affine_mod.matmul(flat, target.words, target.scale, target.bias,
+                            bits=target.bits, group=target.group, schedule="auto")
+    return out.view(*x.shape[:-1], -1)
+
+
+class MTPEngine:
+    def __init__(self, model: TextModel, head: MTPHead, *,
+                 linear: Callable[[torch.Tensor, Packed], torch.Tensor]):
+        self.model = model
+        self.head = head
+        self.linear = linear
+
+    def fresh_cache(self, *, batch: int, total: int, device: torch.device, dtype: torch.dtype) -> dict:
+        return _alloc_cache(self.model.spec, batch, total, device, dtype)
+
+    def forward(self, hidden: torch.Tensor, next_token: torch.Tensor, position: int, cache: dict, *,
+                dtype: torch.dtype | None = None) -> torch.Tensor:
+        spec = self.model.spec
+        if dtype is None:
+            dtype = hidden.dtype
+        emb = qwen_math.gather_rows(self.model.embed, next_token, dtype=dtype)
+        if emb.dim() == 1:
+            emb = emb.unsqueeze(0)
+        if hidden.dim() == 2:
+            hidden = hidden.unsqueeze(0)
+        emb_e = qwen_math.rms_norm(emb, self.head.fc_e_norm, spec.eps)
+        emb_h = qwen_math.rms_norm(hidden, self.head.fc_h_norm, spec.eps)
+        e_proj = self.linear(emb_e.view(-1, emb_e.shape[-1]), self.head.fc_e).view(*emb_e.shape[:-1], -1)
+        h_proj = self.linear(emb_h.view(-1, emb_h.shape[-1]), self.head.fc_h).view(*emb_h.shape[:-1], -1)
+        x = e_proj + h_proj
+        attn_out, cache = _attention(self.head, x, cache, position, dtype, self.linear, spec)
+        x = x + attn_out
+        x = qwen_math.rms_norm(x, self.head.final_norm, spec.eps)
+        return _vocab_logits(self.head, self.model, x, dtype)
+
+    def draft_chain(self, hidden: torch.Tensor, last_token: int, position: int, depth: int, cache: dict, *,
+                    sampling, dtype: torch.dtype) -> list[int]:
+        if depth < 1:
+            raise ValueError(f"depth must be >= 1, got {depth}")
+        from tensorfold.engine.exact_sampling import MARGIN, choose
+
+        device, ids = hidden.device, []
+        cur_hidden, cur_token = hidden, last_token
+        for step in range(depth):
+            tok_input = torch.as_tensor([cur_token], dtype=torch.long, device=device)
+            logits = self.forward(cur_hidden, tok_input, position + step, cache, dtype=dtype)
+            row = logits.detach().float().reshape(-1)
+            k = int(sampling.top_k)
+            if sampling is None or float(sampling.temperature) <= 0.0:
+                nxt = int(torch.argmax(row).item())
+            elif k:
+                count = min(int(row.shape[0]), k + MARGIN)
+                values, index = torch.topk(row, count, sorted=False)
+                nxt = int(choose(values.cpu().numpy(),
+                                 index.cpu().numpy().astype("int64"),
+                                 position + step, sampling))
+            else:
+                nxt = int(choose(row.cpu().numpy(),
+                                 torch.arange(int(row.shape[0]), dtype=torch.int64).numpy(),
+                                 position + step, sampling))
+            ids.append(nxt)
+            cur_token = nxt
+            cur_hidden = logits[:, -1:, :].to(dtype=dtype)
+        return ids
+
+    def absorb(self, hidden_per_step: Sequence[torch.Tensor], tokens: Sequence[int], cache: dict, *,
+               dtype: torch.dtype) -> dict:
+        device = hidden_per_step[0].device
+        for step, t in enumerate(tokens):
+            cur = hidden_per_step[step] if step < len(hidden_per_step) else hidden_per_step[-1]
+            if cur.dim() == 1:
+                cur = cur.unsqueeze(0)
+            tok = torch.as_tensor([t], dtype=torch.long, device=device)
+            self.forward(cur, tok, cache["len"], cache, dtype=dtype)
+        return cache
+
+
+__all__ = ["MTPEngine", "MTPState"]
