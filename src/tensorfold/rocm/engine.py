@@ -330,11 +330,14 @@ class QwenEngine:
         hit = self.cache.longest(prompt) if draft else None
         cached = len(hit[0]) if hit is not None else 0
         held = clone_caches(hit[1]) if hit is not None else None
-        hidden, caches = self._prefill(prompt, held, cached, len(prompt) + room, store=draft)
+        depth = self.mtp_depth if self.mtp is not None and not self.no_drafts else 0
+        # An MTP step may advance the main cache by ``depth + 1`` tokens (one initial plus the chain).
+        # Size for that worst case so the decode loop never has to grow on the hot path.
+        total = len(prompt) + room * (depth + 1)
+        hidden, caches = self._prefill(prompt, held, cached, total, store=draft)
         ends = set(self.eos)
         position = len(prompt)
         nxt = self._sample(hidden, sampling, position, constraint)
-        depth = self.mtp_depth if self.mtp is not None and not self.no_drafts else 0
         for step in range(room):
             done = step + 1 == room
             if self.rank == 0 and not done:
@@ -348,11 +351,11 @@ class QwenEngine:
                 done = bool(self._share([int(done)])[0])
             if done:
                 break
-            emitted, hidden, caches, position, nxt = self._decode_step(
+            extra, hidden, caches, position, nxt = self._decode_step(
                 hidden, caches, position, nxt,
                 sampling=sampling, constraint=constraint, depth=depth,
             )
-            for tok in emitted[1:]:
+            for tok in extra:
                 if self.rank == 0 and not done:
                     stop = bool(on_tokens([tok])) if on_tokens is not None else False
                     ended = stop_eos and tok in ends
@@ -368,17 +371,17 @@ class QwenEngine:
                      sampling: Sampling | None, constraint, depth: int) -> tuple[list[int], torch.Tensor, list[dict], int, int]:
         """One decode round. Entry: ``hidden`` at ``position - 1``, ``last_token`` at ``position - 1``.
 
-        Returns ``(emitted, hidden, caches, position, nxt)``. ``emitted[0]`` is ``last_token`` so
-        ``_run`` can skip the pre-step emit; later entries are the drafter's accepted tokens plus
-        the verifier's final sample on full-chain acceptance. With ``depth <= 0`` or no MTP head
-        installed this is one forward + one sample, the same shape as the serial path.
+        Returns ``(extra, hidden, caches, position, nxt)``. ``extra`` is the tokens to emit AFTER
+        ``last_token`` (which ``_run`` already emitted at the top of the loop). For serial decoding
+        ``extra`` is empty: ``_run``'s pre-step emit is the only token this round produces. With
+        MTP, ``extra`` is the accepted drafter chain plus the verifier's rejection token or the
+        final sample on full-chain acceptance.
         """
-        emitted = [last_token]
         if self.mtp is None or depth <= 0:
             hidden, caches = self._forward([last_token], caches, position)
             position += 1
             nxt = self._sample(hidden, sampling, position, constraint)
-            return emitted + [nxt], hidden, caches, position, nxt
+            return [], hidden, caches, position, nxt
 
         dtype = self._dtype()
         hidden, caches = self._forward([last_token], caches, position)
@@ -388,6 +391,7 @@ class QwenEngine:
                                          device=self._device(), dtype=dtype)
         drafts = self.mtp.draft_chain(hidden[:, -1:], last_token, position - 1, depth, mtp_state,
                                       sampling=sampling, dtype=dtype)
+        extra: list[int] = []
         cur_hidden = hidden
         for i, d in enumerate(drafts):
             sample_key = position + i - 1
@@ -395,11 +399,12 @@ class QwenEngine:
             advance = nxt_main if nxt_main != d else d
             cur_hidden, caches = self._forward([advance], caches, position + i)
             if nxt_main != d:
-                return emitted + [nxt_main], cur_hidden, caches, position + i + 1, nxt_main
-            emitted.append(d)
+                extra.append(nxt_main)
+                return extra, cur_hidden, caches, position + i + 1, nxt_main
+            extra.append(d)
         nxt = self._sample(cur_hidden, sampling, position + depth - 1, constraint)
-        emitted.append(nxt)
-        return emitted, cur_hidden, caches, position + depth, nxt
+        extra.append(nxt)
+        return extra, cur_hidden, caches, position + depth, nxt
 
     def _post(self, prompt: list[int], room: int, draft: bool) -> None:
         """Rank 0 publishes a request on the rendezvous store. The previous one has been read by every rank."""
