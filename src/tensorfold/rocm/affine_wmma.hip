@@ -34,8 +34,8 @@ namespace rocm {
 
 struct GroupSide {
     const uint32_t* words;
-    const float* scale;
-    const float* bias;
+    GroupTable scale;
+    GroupTable bias;
     float* out;
     int n;
     int tiles;
@@ -103,7 +103,7 @@ __device__ inline void fill_a8(hip_bfloat16* As, hip_bfloat16* AsOdd, const hip_
     for (int i = 0; i < kTile; ++i) odd[i] = row[i];
 }
 
-__device__ void write_xsum(const hip_bfloat16* x, const float* scale, const float* bias, float* xsum, float* scol,
+__device__ void write_xsum(const hip_bfloat16* x, GroupTable scale, GroupTable bias, float* xsum, float* scol,
                            float* bcol, int lane, int m0, int n0, int base, int g, int group, int groups, int m,
                            int k, int n) {
     if (lane >= kTile) return;
@@ -396,7 +396,7 @@ __global__ void __launch_bounds__(32) affine_wmma_pair_kernel(Affine a, AffineSi
 
 // One block owns one 16-column tile of one side. The side is uniform inside the block.
 __device__ void pick_group(int tile, GroupSide s0, GroupSide s1, GroupSide s2, GroupSide s3, const uint32_t*& words,
-                           const float*& scale, const float*& bias, float*& out, int& n, int& n0) {
+                           GroupTable& scale, GroupTable& bias, float*& out, int& n, int& n0) {
     int b1 = s0.tiles;
     int b2 = b1 + s1.tiles;
     int b3 = b2 + s2.tiles;
@@ -429,8 +429,8 @@ __global__ void __launch_bounds__(32) affine_wmma_group_kernel(Affine a, GroupSi
     int groups = a.k / a.group;
     const hip_bfloat16* x = static_cast<const hip_bfloat16*>(a.x);
     const uint32_t* side_words = nullptr;
-    const float* side_scale = nullptr;
-    const float* side_bias = nullptr;
+    GroupTable side_scale{};
+    GroupTable side_bias{};
     float* side_out = nullptr;
     int side_n = 0;
     int n0 = 0;
@@ -689,10 +689,11 @@ hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream) {
 }  // namespace rocm
 }  // namespace tf
 
-void affine_launch(const void* x, const void* words, const void* scale, const void* bias, void* out, int m, int n,
-                   int k, int bits, int group, int schedule, int fp16, void* stream, float* partial, int splits) {
-    tf::rocm::Affine a{x, static_cast<const uint32_t*>(words), static_cast<const float*>(scale),
-                       static_cast<const float*>(bias), static_cast<float*>(out), m, n, k, bits, group, fp16};
+void affine_launch(const void* x, const void* words, const void* scale, const void* bias, int scale_kind, void* out,
+                   int m, int n, int k, int bits, int group, int schedule, int fp16, void* stream, float* partial,
+                   int splits) {
+    tf::rocm::Affine a{x, static_cast<const uint32_t*>(words), {scale, scale_kind}, {bias, scale_kind},
+                       static_cast<float*>(out), m, n, k, bits, group, fp16};
     hipStream_t hip_stream = static_cast<hipStream_t>(stream);
     hipError_t err = (partial != nullptr && splits > 1)
                          ? tf::rocm::launch_affine_dot2_split(a, partial, splits, hip_stream)
@@ -701,34 +702,34 @@ void affine_launch(const void* x, const void* words, const void* scale, const vo
 }
 
 void affine_group_launch(const void* x, const void* const* words, const void* const* scale, const void* const* bias,
-                         void* const* out, const int* ns, int nsides, int m, int k, int bits, int group,
-                         void* stream) {
+                         int scale_kind, void* const* out, const int* ns, int nsides, int m, int k, int bits,
+                         int group, void* stream) {
     if (nsides < 1 || nsides > 4) throw std::runtime_error("affine group kernel: 1 to 4 sides");
     tf::rocm::GroupSide sides[4] = {};
     int total = 0;
     for (int i = 0; i < nsides; ++i) {
         sides[i].words = static_cast<const uint32_t*>(words[i]);
-        sides[i].scale = static_cast<const float*>(scale[i]);
-        sides[i].bias = static_cast<const float*>(bias[i]);
+        sides[i].scale = {scale[i], scale_kind};
+        sides[i].bias = {bias[i], scale_kind};
         sides[i].out = static_cast<float*>(out[i]);
         sides[i].n = ns[i];
         sides[i].tiles = (ns[i] + 15) / 16;
         total += sides[i].tiles;
     }
-    tf::rocm::Affine a{x, nullptr, nullptr, nullptr, nullptr, m, 0, k, bits, group, 0};
+    tf::rocm::Affine a{x, nullptr, {}, {}, nullptr, m, 0, k, bits, group, 0};
     hipError_t err = tf::rocm::launch_affine_wmma_group(a, sides[0], sides[1], sides[2], sides[3], total,
                                                         static_cast<hipStream_t>(stream));
     if (err != hipSuccess) throw std::runtime_error(std::string("affine group kernel: ") + hipGetErrorString(err));
 }
 
 void affine_pair_launch(const void* x, const void* words0, const void* scale0, const void* bias0, void* out0,
-                        const void* words1, const void* scale1, const void* bias1, void* out1, int m, int n, int k,
-                        int bits, int group, void* stream) {
-    tf::rocm::Affine a{x, nullptr, nullptr, nullptr, nullptr, m, n, k, bits, group, 0};
-    tf::rocm::AffineSide first{static_cast<const uint32_t*>(words0), static_cast<const float*>(scale0),
-                               static_cast<const float*>(bias0), static_cast<float*>(out0), n};
-    tf::rocm::AffineSide second{static_cast<const uint32_t*>(words1), static_cast<const float*>(scale1),
-                                static_cast<const float*>(bias1), static_cast<float*>(out1), n};
+                        const void* words1, const void* scale1, const void* bias1, void* out1, int scale_kind, int m,
+                        int n, int k, int bits, int group, void* stream) {
+    tf::rocm::Affine a{x, nullptr, {}, {}, nullptr, m, n, k, bits, group, 0};
+    tf::rocm::AffineSide first{static_cast<const uint32_t*>(words0), {scale0, scale_kind}, {bias0, scale_kind},
+                               static_cast<float*>(out0), n};
+    tf::rocm::AffineSide second{static_cast<const uint32_t*>(words1), {scale1, scale_kind}, {bias1, scale_kind},
+                                static_cast<float*>(out1), n};
     hipError_t err = tf::rocm::launch_affine_wmma_pair(a, first, second, static_cast<hipStream_t>(stream));
     if (err != hipSuccess) throw std::runtime_error(std::string("affine pair kernel: ") + hipGetErrorString(err));
 }

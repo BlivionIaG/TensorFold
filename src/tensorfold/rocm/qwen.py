@@ -204,8 +204,11 @@ def _packed(table, key: str, bits: int, group: int, device: torch.device) -> Pac
     k = scale.shape[1] * group
     if k % group != 0 or words.shape[1] != k * bits // 32 or words.shape[0] != scale.shape[0]:
         raise ValueError(f"{key} packed shape {tuple(words.shape)} does not match K={k} bits={bits} group={group}")
-    return Packed(words.to(device).contiguous(), scale.to(device=device, dtype=torch.float32).contiguous(),
-                  bias.to(device=device, dtype=torch.float32).contiguous(), bits, group)
+    # The kernels read fp32, bf16 or fp16 group tables as stored. Anything else is widened to fp32 once.
+    if scale.dtype != bias.dtype or scale.dtype not in (torch.float32, torch.bfloat16, torch.float16):
+        scale, bias = scale.to(torch.float32), bias.to(torch.float32)
+    return Packed(words.to(device).contiguous(), scale.to(device).contiguous(), bias.to(device).contiguous(), bits,
+                  group)
 
 
 def _conv(table, key: str, device: torch.device) -> torch.Tensor:
