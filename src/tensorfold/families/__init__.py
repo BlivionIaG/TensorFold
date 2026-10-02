@@ -123,10 +123,11 @@ def describe_quantization(config: dict[str, Any]) -> str:
 
 
 def backends_of(family: Family) -> tuple[str, ...]:
-    """The backends a family has an engine for: ``mlx`` (``load``) and ``cuda`` (``cuda_engine``)."""
+    """The backends a family has an engine for: ``mlx`` (``load``), ``cuda`` (``cuda_engine``), ``rocm``."""
 
     package = family.package
-    return tuple(b for b, member in (("mlx", "load"), ("cuda", "cuda_engine")) if hasattr(package, member))
+    members = (("mlx", "load"), ("cuda", "cuda_engine"), ("rocm", "rocm_engine"))
+    return tuple(b for b, member in members if hasattr(package, member))
 
 
 def readable_quants(family: Family, backend: str) -> tuple[str | None, ...]:
