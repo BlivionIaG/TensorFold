@@ -18,8 +18,9 @@ import torch
 from tensorfold.engine.exact_sampling import MARGIN, Sampling, choose
 from tensorfold.rocm.prefix import PrefixCache, entry_end, trim_bytes
 from tensorfold.rocm.qwen import Engine as Kernels
-from tensorfold.rocm.qwen import activation_dtype, load
+from tensorfold.rocm.qwen import activation_dtype, load, slice_for_tp
 from tensorfold.rocm.qwen_math import _blank_caches, _project, forward_hidden
+from tensorfold.rocm.qwen_tp import all_reduce_local, tp_forward_hidden, vocab_gather
 
 _DEFAULT_EOS = (151645,)
 
@@ -174,6 +175,7 @@ class QwenEngine:
         rccl = RCCL(rank, tp, master, master_port, prefer_p2p=prefer_p2p)
         rccl.ready("startup")
         model = load(path)
+        slice_for_tp(model, rank, tp)
         from tensorfold.rocm.prefix import message_points
 
         return cls(model, Kernels(model, schedule=schedule), read_eos(path),
@@ -197,6 +199,9 @@ class QwenEngine:
         ids = torch.tensor([list(tokens)], dtype=torch.long, device=device)
         with torch.inference_mode():
             # Prefill and the one-token step share the prefill conv and rope, so a split matches one forward.
+            if self.tp > 1:
+                return tp_forward_hidden(self.model, ids, caches, self.kernels.linear, pos0, self.rccl,
+                                         act_dtype=dtype, exact_short=True)
             return forward_hidden(self.model, ids, caches, self.kernels.linear, pos0, dtype, exact_short=True)
 
     def _span(self, tokens: Sequence[int], caches: list[dict] | None, pos0: int, total: int,
@@ -251,7 +256,10 @@ class QwenEngine:
         return hidden, caches
 
     def _sample(self, hidden: torch.Tensor, sampling: Sampling | None, position: int, constraint) -> int:
-        logits = _project(hidden[:, -1], self.model.output_head(), self.kernels.linear)
+        if self.tp > 1 and self.rank != 0:
+            return self._follow_token()
+        local_logits = _project(hidden[:, -1], self.model.output_head(), self.kernels.linear)
+        logits = vocab_gather(self.rccl, local_logits) if self.tp > 1 else local_logits
         if constraint is not None:
             constraint.mask(logits)
         row = logits.detach().float().reshape(-1)
@@ -268,7 +276,25 @@ class QwenEngine:
                 token = choose(row.cpu().numpy(), np.arange(width, dtype=np.int64), position, sampling)
         if constraint is not None:
             constraint.advance([token])
+        if self.tp > 1:
+            self._broadcast_token(token)
         return token
+
+    def _broadcast_token(self, token: int) -> None:
+        """Rank 0 publishes the chosen token; every rank reads the same value via RCCL broadcast."""
+
+        device = self._device()
+        send = torch.tensor([token], dtype=torch.int64, device=device)
+        recv = torch.empty((1,), dtype=torch.int64, device=device)
+        self.rccl.broadcast(send, recv, root=0)
+
+    def _follow_token(self) -> int:
+        """Follower waits for rank 0's broadcast; the chosen token drives the next ``_forward`` step."""
+
+        device = self._device()
+        recv = torch.empty((1,), dtype=torch.int64, device=device)
+        self.rccl.broadcast(recv, recv, root=0)
+        return int(recv.item())
 
     def generate(self, prompt: list[int], max_tokens: int, sampling: Sampling | None,
                  on_tokens: Callable[[list[int]], bool | None], *, stop_eos: bool = True, draft: bool = True,

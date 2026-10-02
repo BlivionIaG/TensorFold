@@ -101,6 +101,10 @@ class RCCL:
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
             ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
         ]
+        lib.rcclBroadcast.argtypes = [
+            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
+            ctypes.c_int, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+        ]
 
         self.store = TCPStore(master, port, world, rank == 0, timeout=timedelta(seconds=600))
         uid = _UniqueId()
@@ -147,6 +151,19 @@ class RCCL:
         self._check(self.lib.rcclAllReduce(
             send.data_ptr(), recv.data_ptr(), send.numel(),
             _DTYPES[send.dtype], _OPS[op], self.comm, stream,
+        ))
+
+    def broadcast(self, send: torch.Tensor, recv: torch.Tensor, *, root: int) -> None:
+        """Stream-aware broadcast: ``root`` sends, every rank (including root) receives into ``recv``."""
+
+        if not (0 <= root < self.world):
+            raise ValueError(f"broadcast: root {root} not in [0, {self.world})")
+        if send.dtype != recv.dtype or send.numel() != recv.numel():
+            raise ValueError("broadcast: send and recv must share shape and dtype")
+        stream = torch.cuda.current_stream().cuda_stream
+        self._check(self.lib.rcclBroadcast(
+            send.data_ptr(), recv.data_ptr(), send.numel(),
+            _DTYPES[send.dtype], ctypes.c_int(root), self.comm, stream,
         ))
 
     def ready(self, label: str, *, every: float = 60.0, timeout: float = 3600.0) -> None:
