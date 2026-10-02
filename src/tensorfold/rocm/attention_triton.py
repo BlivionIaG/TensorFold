@@ -1,7 +1,6 @@
 """Prefill attention as a 64-row Flash Attention 2 tile on ROCm Triton.
 
-Dao-AILab/flash-attention is the upstream AMD kernel. This is that schedule
-against the Triton beside the ROCm wheel, so serving does not install ``aiter``.
+The schedule follows Dao-AILab/flash-attention's AMD Triton kernel, on the Triton the ROCm torch wheel ships.
 gfx1100 uses a bf16 WMMA dot. gfx1030 uses fp16. ``causal`` calls the tile
 only on the lengths where that dot beat the HIP tile. One new token stays the
 HIP split-key walk.

@@ -1,7 +1,7 @@
-"""Qwen3.5 text math shared by the ROCm forward and the numeric reference.
+"""Qwen3.5 text math for the ROCm forward. The projection is passed in.
 
-The reference calls these functions with its own projection. Nothing here imports the
-affine extension or the ROCm forward.
+Device rows use the HIP norm, rope, conv, gated-delta and attention kernels. Tests pass a scalar
+projection (``affine_reference``) to check the same math without the affine extension.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ SPAN = 2048
 
 @dataclass
 class Packed:
-    """One affine matrix. ``words`` are the packed integer codes, never a dense (N, K) weight."""
+    """One affine matrix: packed int32 ``words`` and fp32 group ``scale``/``bias``."""
 
     words: torch.Tensor
     scale: torch.Tensor
@@ -85,7 +85,7 @@ def _rms_torch(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torc
 
 
 def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
-    """fp32 RMSNorm. A short CUDA row uses one HIP launch; a long prefill stays on PyTorch."""
+    """fp32 RMSNorm. A short device row uses one HIP launch; a long prefill stays on PyTorch."""
 
     width = x.shape[-1]
     rows = x.numel() // width

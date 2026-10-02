@@ -7,8 +7,6 @@
 
 #include "affine_api.hpp"
 
-// Packed MLX affine words. The kernel reads those words; this function does not decode them into a BF16 weight.
-
 void affine(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scale, const at::Tensor& bias,
             at::Tensor& out, int64_t bits, int64_t group, int64_t schedule, int64_t split_mode) {
     TORCH_CHECK(bits == 2 || bits == 3 || bits == 4 || bits == 5 || bits == 6 || bits == 8, "bits 2/3/4/5/6/8");

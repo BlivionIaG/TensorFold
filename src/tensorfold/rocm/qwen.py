@@ -1,4 +1,4 @@
-"""Qwen3.5 text forward on RDNA. Projections are packed affine matmuls; nothing here densifies a weight.
+"""Qwen3.5 text forward on RDNA. Projections are packed affine matmuls.
 
 Serving cells are measured by ``python -m tensorfold.rocm.bench MODEL_DIR``.
 """
@@ -75,7 +75,7 @@ def activation_dtype(gfx: str) -> torch.dtype:
 
 
 class Engine:
-    """Shipped forward. ``schedule`` selects the affine kernel; ``dtype`` is the activation type."""
+    """The forward's projections. ``schedule`` selects the affine kernel; ``dtype`` is the activation type."""
 
     def __init__(self, model: TextModel, schedule: str = "auto", dtype: torch.dtype | None = None):
         self.model = model

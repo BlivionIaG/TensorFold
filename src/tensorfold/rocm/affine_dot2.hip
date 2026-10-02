@@ -2,7 +2,7 @@
 // so a row's bits do not depend on any other row. Codes are rounded through BF16
 // and widened to FP16. The pair product is v_dot2_f32_f16; hipcc does not lower an
 // hfma2 chain to that instruction on gfx1030. Scale and bias stay fp32, outside
-// the group sum. The packed words stay the only copy of the weight.
+// the group sum.
 
 #include "affine.hpp"
 #include "arch.hpp"
@@ -45,7 +45,7 @@ __global__ void __launch_bounds__(32) affine_dot2_kernel(Affine a) {
     a.out[static_cast<long long>(row) * a.n + col] = acc;
 }
 
-// Wide tile, including one row. 256 threads each own one output column. A K chunk is
+// Column tile, including one row. 256 threads each own one output column. A K chunk is
 // loaded once into shared memory (activations reused across the columns), then each
 // thread walks that chunk with v_dot2_f32_f16 in pair order and applies the group
 // scale only after the whole group. No atomics. A short column grid runs the same

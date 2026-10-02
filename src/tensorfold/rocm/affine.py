@@ -1,4 +1,4 @@
-"""Packed MLX affine projections. The kernel reads the integer words and applies each group's scale and bias; it does not write a BF16 copy of the weight."""
+"""Packed MLX affine projections. The kernel reads the integer words and applies each group's scale and bias."""
 
 from __future__ import annotations
 
@@ -34,7 +34,8 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
            group: int, schedule: str = "auto", f32: bool = False, dot2_split: bool | None = None) -> torch.Tensor:
     """``x`` (M, K) times packed words (N, K * bits / 32). ``x`` is BF16, or FP16 on RDNA2.
 
-    ``schedule`` is ``auto``, ``gemv`` or ``wmma``. FP16 ``auto`` and ``gemv`` are ``v_dot2_f32_f16``.
+    ``schedule`` is ``auto``, ``gemv``, ``wmma`` or ``decode`` (the 8-bit column stream, up to 16 rows, whose
+    sum order differs from WMMA). FP16 ``auto`` and ``gemv`` are ``v_dot2_f32_f16``.
     """
 
     from tensorfold.rocm.build import WMMA, gfx_name

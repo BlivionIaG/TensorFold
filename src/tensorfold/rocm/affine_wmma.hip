@@ -1,6 +1,5 @@
 // RDNA3, RDNA 3.5 and RDNA4 tile. One wave owns a 16x16 output. Each K step unpacks
-// a 16x16 patch of codes into LDS for the WMMA; the packed words stay the only copy
-// of the weight. That patch is staging for one K step, not a stored matrix.
+// a 16x16 patch of codes into LDS for the WMMA.
 // RDNA 3.5 uses the same gfx11 WMMA as RDNA3. rocWMMA hides that layout against gfx12.
 //
 // A row computed on its own always sits in row 0 of the tile. On gfx1100 the even
