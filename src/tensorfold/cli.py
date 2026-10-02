@@ -118,13 +118,15 @@ def cmd_models(args: argparse.Namespace) -> int:
 
 
 def _engines(family: Any) -> str:
-    """Which backends serve a family: MLX (its lane or serial engine) and CUDA."""
+    """Which backends serve a family: MLX (its lane or serial engine), CUDA and ROCm."""
 
     found = []
     if hasattr(family.package, "load"):
         found.append(f"MLX {'lane engine' if family.lanes else 'serial engine'}")
     if hasattr(family.package, "cuda_engine"):
         found.append("CUDA engine")
+    if hasattr(family.package, "rocm_engine"):
+        found.append("ROCm engine")
     return ", ".join(found) or "no engine"
 
 
@@ -153,7 +155,7 @@ def cmd_info(args: argparse.Namespace) -> int:
     readers = [b for b in families.backends_of(family)
                if families.quant_method(config) in families.readable_quants(family, b)]
     if readers:
-        print(f"runs on      {', '.join('NVIDIA GPUs (CUDA)' if b == 'cuda' else 'Apple Silicon (MLX)' for b in readers)}")
+        print(f"runs on      {', '.join(_WHERE[b] for b in readers)}")
     else:
         print(f"runs on      not yet: no {family.title} engine reads these weights. {families.OWN_MODEL_HELP}")
     generation = _generation_config(directory)
@@ -218,12 +220,25 @@ def _note_untested(family: Any, model: str) -> None:
               f"decoding, speed and quality are unmeasured. {families.OWN_MODEL_HELP}", flush=True)
 
 
-def _backend(choice: str, family: Any) -> str:
-    """mlx or cuda: auto picks MLX on macOS and CUDA elsewhere; a family serves only the backends it has."""
+_WHERE = {"mlx": "Apple Silicon (MLX)", "cuda": "NVIDIA GPUs (CUDA)", "rocm": "AMD GPUs (ROCm)"}
 
-    backend = choice if choice != "auto" else ("mlx" if sys.platform == "darwin" else "cuda")
-    if backend == "rocm":
-        return "rocm"
+
+def _backend(choice: str, family: Any) -> str:
+    """mlx, cuda or rocm: auto picks MLX on macOS, ROCm where the AMD driver is, CUDA elsewhere.
+
+    A family serves only the backends it has.
+    """
+
+    backend = choice
+    if choice == "auto":
+        if sys.platform == "darwin":
+            backend = "mlx"
+        elif os.path.exists("/dev/kfd") and hasattr(family.package, "rocm_engine"):     # the amdgpu compute device
+            backend = "rocm"
+        else:
+            backend = "cuda"
+    if backend == "rocm" and not hasattr(family.package, "rocm_engine"):
+        raise ValueError(f"{family.title} has no ROCm engine yet")
     if backend == "cuda" and not hasattr(family.package, "cuda_engine"):
         raise ValueError(f"{family.title} has no CUDA engine yet: serve it on Apple Silicon")
     if backend == "mlx" and not hasattr(family.package, "load"):
@@ -247,11 +262,10 @@ def _rocm_cache(args: argparse.Namespace) -> tuple[int, int | None]:
 
 
 def _serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, context: int | None = None) -> int:
-    """Serve with the ROCm Qwen engine behind the same torch server the CUDA lane uses."""
+    """Serve with the family's ROCm engine (``rocm_engine``) behind the same torch server the CUDA lane uses."""
 
     from tensorfold import hub
     from tensorfold.cuda.server import App, serve
-    from tensorfold.rocm.engine import QwenEngine
 
     if args.tp != 1:
         raise ValueError("the ROCm engine serves on one GPU; drop --tp 2")
@@ -259,8 +273,8 @@ def _serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, context:
     served = args.name or (args.model.rstrip("/").split("/")[-1] if hub.is_repo_id(args.model) else model_dir.name)
     keep, budget = _rocm_cache(args)
     print(f"[tensorfold] loading {served}: {family.title} ({family.model_type}) on ROCm", flush=True)
-    engine = QwenEngine.load(model_dir, context=context if context is not None else args.context, keep=keep,
-                             byte_budget=budget)
+    engine = family.package.rocm_engine(model_dir, context=context if context is not None else args.context,
+                                        keep=keep, byte_budget=budget)
     sampling = _generation_config(model_dir)
     for key, value in (("temperature", args.temperature), ("top_p", args.top_p), ("top_k", args.top_k),
                        ("min_p", args.min_p)):
