@@ -81,7 +81,7 @@ pub const Pass = struct {
                     count += 1;
                 }
             };
-            if (count > 0) try mx.evalMany(arrays[0..count], false);
+            if (count > 0) try mx.evalMany(arrays[0..count], true);
         }
         for (p.entries) |*entry| try flash.Model.observeBuffers(&entry.pass);
         for (p.entries, paths, next) |entry, path, *cache| {
@@ -1121,6 +1121,11 @@ pub fn check(m: *flash.Model) !void {
         var expected = mx.Scope{};
         defer expected.deinit();
         var logits: [2]A = undefined;
+        var next_logits: [2]A = undefined;
+        const following = [_]Stream{
+            .{ .state = &states[0], .tokens = &.{1900}, .parents = &.{-1} },
+            .{ .state = &states[1], .tokens = &.{1901}, .parents = &.{-1} },
+        };
         for (streams, 0..) |stream, i| {
             reference[i].swap(m);
             defer reference[i].swap(m);
@@ -1128,11 +1133,20 @@ pub fn check(m: *flash.Model) !void {
             defer isolated.deinit();
             logits[i] = try expected.own(try mx.retain(isolated.logits));
             try m.commit(&isolated, 1);
+            var next = try m.forward(following[i].tokens);
+            defer next.deinit();
+            next_logits[i] = try expected.own(try mx.retain(next.logits));
+            try m.commit(&next, 1);
         }
         var resumed = try forward(m, &streams);
         defer resumed.deinit();
         for (0..streams.len) |i| try equalArray((try resumed.view(i)).logits, logits[i]);
         try resumed.commit(&.{ &.{0}, &.{0} });
+        resumed.deinit();
+        var continuation = try forward(m, &following);
+        defer continuation.deinit();
+        for (next_logits, 0..) |logit, i| try equalArray((try continuation.view(i)).logits, logit);
+        try continuation.commit(&.{ &.{0}, &.{0} });
         for (states[0..2], reference[0..2]) |*state, *ref| try equalState(state, ref);
     }
     std.debug.print("PASS: Flash shared 2/4/8/9-stream rounds through64 rows: exact logits, hidden states, caches, partial/zero commits and cancellation.\n", .{});

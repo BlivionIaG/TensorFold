@@ -254,7 +254,7 @@ pub fn absorbStreams(m: anytype, streams: []const AbsorbStream(@TypeOf(m.*))) !v
         try cacheArrays(caches[i], &arrays);
         try arrays.append(mx.allocator, last[i]);
     };
-    if (arrays.items.len > 0) try mx.evalMany(arrays.items, false);
+    if (arrays.items.len > 0) try mx.evalMany(arrays.items, M == @import("flash.zig").Model);
     for (streams, 0..) |stream, i| if (stream.rows.len > 0) {
         std.mem.swap(M.DraftCache, &stream.state.head_cache, &caches[i]);
         std.mem.swap(mx.Array, &stream.state.draft_hidden, &last[i]);
