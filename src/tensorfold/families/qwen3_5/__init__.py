@@ -303,6 +303,15 @@ def gb10() -> bool:
     return tuple(torch.cuda.get_device_capability(0)) == (12, 1) or "GB10" in torch.cuda.get_device_name(0)
 
 
+def rocm_engine(model_dir: str | Path, *, context: int | None = None, keep: int = 8,
+                byte_budget: int | None = None):
+    """The ROCm engine for ``tensorfold serve --backend rocm``: packed affine text on RDNA2 and RDNA3."""
+
+    from tensorfold.rocm.engine import QwenEngine
+
+    return QwenEngine.load(Path(model_dir), context=context, keep=keep, byte_budget=byte_budget)
+
+
 def cuda_engine(model_dir: str | Path, *, drafter: str = "", tp: int = 1, rank: int = 0, master: str = "",
                 master_port: int = 29551, no_drafts: bool = False, **options: Any):
     """The CUDA engine for ``tensorfold serve``; tp=2 adds fp32 partials in rank order and needs the drafter on both."""
