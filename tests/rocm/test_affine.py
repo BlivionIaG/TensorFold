@@ -308,3 +308,56 @@ def test_pair_and_group_read_bf16_tables():
     for sides in (half, [half[0], wide[1], half[2]]):
         got = matmul_group(x, sides, bits=8, group=64, f32=True)
         assert all(torch.equal(a, b) for a, b in zip(got, want))
+
+
+@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
+@pytest.mark.parametrize("group", [32, 64, 128])
+def test_fp16_decode_tile_matches_the_one_thread_kernel(bits, group):
+    """The 1-8 row decode tile gives the one-thread kernel's bits, a tail round of fewer than 8 groups included."""
+
+    if gfx_name() in WMMA:
+        pytest.skip("FP16 activations are the RDNA2 schedule")
+    k = group * 12
+    for n in (77, 300):
+        _, words, scale, bias = _pack(n, k, bits, group, bits * 1000 + group + n)
+        words, scale, bias = words.cuda(), scale.to(torch.bfloat16).cuda(), bias.to(torch.bfloat16).cuda()
+        x = torch.randn((8, k), device="cuda", dtype=torch.float16)
+        alone = matmul(x[:1], words, scale, bias, bits=bits, group=group, f32=True)
+        for m in range(1, 9):
+            got = matmul(x[:m], words, scale, bias, bits=bits, group=group, f32=True)
+            want = matmul(x[:m], words, scale, bias, bits=bits, group=group, schedule="gemv", f32=True)
+            assert torch.equal(got, want), (n, m)
+            assert torch.equal(got[:1], alone), (n, m)
+
+
+@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
+@pytest.mark.parametrize("group", [32, 64, 128])
+def test_fp16_prefill_tile_matches_the_one_thread_kernel(bits, group):
+    """The 128-row prefill tile reads every width and gives the one-thread kernel's bits at any row count."""
+
+    if gfx_name() in WMMA:
+        pytest.skip("FP16 activations are the RDNA2 schedule")
+    k = group * 6
+    _, words, scale, bias = _pack(70, k, bits, group, bits * 100 + group)
+    words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
+    x = torch.randn((300, k), device="cuda", dtype=torch.float16)
+    want = matmul(x, words, scale, bias, bits=bits, group=group, schedule="gemv", f32=True)
+    for m in (9, 17, 128, 300):
+        assert torch.equal(matmul(x[:m], words, scale, bias, bits=bits, group=group, f32=True), want[:m]), m
+
+
+@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
+@pytest.mark.parametrize("group", [32, 64, 128])
+def test_fp16_gemm_tile_matches_the_one_thread_kernel(bits, group):
+    """From 64 rows the 128x128 GEMM tile runs: ragged rows and columns keep the one-thread kernel's bits."""
+
+    if gfx_name() in WMMA:
+        pytest.skip("FP16 activations are the RDNA2 schedule")
+    k = group * 5
+    _, words, scale, bias = _pack(200, k, bits, group, bits * 10 + group)
+    words, scale, bias = words.cuda(), scale.to(torch.float16).cuda(), bias.to(torch.float16).cuda()
+    x = torch.randn((260, k), device="cuda", dtype=torch.float16)
+    want = matmul(x, words, scale, bias, bits=bits, group=group, schedule="gemv", f32=True)
+    for m in (64, 129, 260):
+        assert torch.equal(matmul(x[:m], words, scale, bias, bits=bits, group=group, f32=True), want[:m]), m
+    assert torch.equal(matmul(x[5:6], words, scale, bias, bits=bits, group=group, f32=True), want[5:6])
