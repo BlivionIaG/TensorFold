@@ -128,6 +128,12 @@ class MTPEngine:
 
     def draft_chain(self, hidden: torch.Tensor, last_token: int, position: int, depth: int, cache: dict, *,
                     sampling, dtype: torch.dtype) -> list[int]:
+        """Chain ``depth`` drafts starting at ``position``.
+
+        ``position`` is the absolute position of the input row (``hidden`` and ``last_token``);
+        the head writes its K/V at RoPE offset ``position`` and predicts at ``position + 1``.
+        Step ``i`` predicts at ``position + i + 1`` with sampling key ``position + i``.
+        """
         if depth < 1:
             raise ValueError(f"depth must be >= 1, got {depth}")
         from tensorfold.engine.exact_sampling import MARGIN, choose
@@ -139,6 +145,7 @@ class MTPEngine:
             logits = self.forward(cur_hidden, tok_input, position + step, cache, dtype=dtype)
             row = logits.detach().float().reshape(-1)
             k = int(sampling.top_k)
+            sample_key = position + step
             if sampling is None or float(sampling.temperature) <= 0.0:
                 nxt = int(torch.argmax(row).item())
             elif k:
@@ -146,11 +153,11 @@ class MTPEngine:
                 values, index = torch.topk(row, count, sorted=False)
                 nxt = int(choose(values.cpu().numpy(),
                                  index.cpu().numpy().astype("int64"),
-                                 position + step, sampling))
+                                 sample_key, sampling))
             else:
                 nxt = int(choose(row.cpu().numpy(),
                                  torch.arange(int(row.shape[0]), dtype=torch.int64).numpy(),
-                                 position + step, sampling))
+                                 sample_key, sampling))
             ids.append(nxt)
             cur_token = nxt
             cur_hidden = logits[:, -1:, :].to(dtype=dtype)
