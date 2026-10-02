@@ -99,7 +99,11 @@ class Engine:
         flat = flat.reshape(-1, flat.shape[-1]).to(dtype=self.dtype).contiguous()
         self._note(flat, packed)
         words, scale, bias = packed.words, packed.scale, packed.bias
-        kwargs = {"bits": packed.bits, "group": packed.group, "schedule": self.schedule}
+        schedule = self.schedule
+        # A short batch on the WMMA part streams each column once. Wide rows stay on WMMA.
+        if schedule == "auto" and flat.shape[0] == 1 and packed.bits == 8 and self.dtype == torch.bfloat16:
+            schedule = "decode"
+        kwargs = {"bits": packed.bits, "group": packed.group, "schedule": schedule}
         span = qwen_math.SPAN
         if flat.shape[0] <= span:
             return affine_mod.matmul(flat, words, scale, bias, **kwargs)
