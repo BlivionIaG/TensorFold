@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import threading
 from typing import Any
@@ -53,6 +54,10 @@ def load(name: str, sources: list[str], **kwargs: Any) -> Any:
     One architecture: ``PYTORCH_ROCM_ARCH`` is that gfx for the duration of the build, which is what
     torch reads when the flags do not already name a target. A leftover list would compile gfx this
     translation unit does not share.
+
+    The module name carries a digest of the sources, the headers beside them and the flags. ninja does not
+    see a .hip file's headers, so a header change alone would otherwise keep an object built against the old
+    layout.
     """
 
     from torch.utils import cpp_extension
@@ -68,6 +73,7 @@ def load(name: str, sources: list[str], **kwargs: Any) -> Any:
                                    *_rocm_lib_flags(),
                                    *kwargs.get("extra_cuda_cflags", [])]
     kwargs.setdefault("with_cuda", True)
+    name = f"{name}_{gfx}_{_digest(sources, kwargs)}"
     held = _announce(cpp_extension, name, sources, kwargs.get("build_directory"), gfx, wmma)
     timer = None
     if held is not None:
@@ -85,6 +91,21 @@ def load(name: str, sources: list[str], **kwargs: Any) -> Any:
             os.environ.pop("PYTORCH_ROCM_ARCH", None)
         else:
             os.environ["PYTORCH_ROCM_ARCH"] = previous
+
+
+def _digest(sources: list[str], kwargs: dict[str, Any]) -> str:
+    """Twelve hex digits over the flags, every source, and every header in the source and include directories."""
+
+    folders = {os.path.dirname(os.path.abspath(source)) for source in sources}
+    folders.update(os.path.abspath(path) for path in kwargs.get("extra_include_paths", ()))
+    headers = sorted(os.path.join(folder, entry) for folder in folders for entry in os.listdir(folder)
+                     if entry.endswith((".hpp", ".h", ".cuh")))
+    digest = hashlib.sha256(repr(sorted((k, repr(v)) for k, v in kwargs.items() if k != "verbose")).encode())
+    for path in [*sources, *headers]:
+        digest.update(os.path.basename(path).encode())
+        with open(path, "rb") as handle:
+            digest.update(handle.read())
+    return digest.hexdigest()[:12]
 
 
 def _announce(cpp_extension: Any, name: str, sources: list[str], directory: str | None, gfx: str,
