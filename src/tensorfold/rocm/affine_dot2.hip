@@ -608,14 +608,18 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
             const int gk = g0 * kGroup + kk;
             xs[r][kk] = (r < a.m && gk < a.k) ? x[static_cast<long long>(r) * a.k + gk] : __float2half(0.f);
         }
-        // Every code word of the wave's groups is requested before the first product.
+        // 6- and 8-bit lanes request every code word of their groups before the first product. Narrower widths
+        // read a piece just before its products: up front was slower for them on the 27B 4-bit decode step.
+        constexpr bool kAhead = BITS >= 6;
         uint32_t w[kPer][PIECES][BITS];
+        if constexpr (kAhead) {
 #pragma unroll
-        for (int j = 0; j < kPer; ++j) {
-            const int g = g0 + wave * kPer + j;
-            if (g < groups) {
+            for (int j = 0; j < kPer; ++j) {
+                const int g = g0 + wave * kPer + j;
+                if (g < groups) {
 #pragma unroll
-                for (int p = 0; p < PIECES; ++p) load_piece<BITS>(wrow + (g * PIECES + p) * BITS, w[j][p]);
+                    for (int p = 0; p < PIECES; ++p) load_piece<BITS>(wrow + (g * PIECES + p) * BITS, w[j][p]);
+                }
             }
         }
         __syncthreads();
@@ -632,6 +636,7 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
             }
 #pragma unroll
             for (int p = 0; p < PIECES; ++p) {
+                if constexpr (!kAhead) load_piece<BITS>(wrow + ((g0 + local) * PIECES + p) * BITS, w[j][p]);
                 const int xk = local * kGroup + 32 * p;
 #pragma unroll
                 for (int t = 0; t < 32; t += 2) {
