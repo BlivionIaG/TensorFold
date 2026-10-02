@@ -31,8 +31,7 @@ void gdn(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const at
     TORCH_CHECK(dk == 16 || dk == 128, "dk is 16 or 128");
     TORCH_CHECK(value_heads % key_heads == 0, "value heads are a multiple of key heads");
     c10::cuda::CUDAGuard guard(q.device());
-    // The caller may drop q, k, v, gate, and beta as soon as we return. The caching allocator
-    // does not see a raw launch, so record the stream or it will reuse those buffers early.
+    // Mark the tensors used on this stream, so a caller that frees them from another stream waits.
     auto stream = c10::cuda::getCurrentCUDAStream();
     for (const at::Tensor& tensor : {q, k, v, gate, beta, state, y}) {
         c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);

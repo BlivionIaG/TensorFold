@@ -46,8 +46,8 @@ hipError_t launch_affine_gemv(const Affine& a, hipStream_t stream) {
     return hipGetLastError();
 }
 
-// One warp streams one output column. Up to 16 rows share that read. The warp
-// sums the products, so this is the short-batch schedule, not the ordered GEMV.
+// One warp streams one output column, 8-bit only. Up to 16 rows share that read. The warp
+// sums the products in its own order, so a row's bits differ from the same row on WMMA.
 __global__ void __launch_bounds__(32) affine_gemv_cols_kernel(Affine a) {
     const int col = blockIdx.x;
     const int lane = threadIdx.x;

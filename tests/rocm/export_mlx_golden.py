@@ -1,4 +1,4 @@
-"""Write the Phase 0 fixture from MLX. Run on Apple Silicon, not on ROCm.
+"""Write the golden fixture from MLX. Run on Apple Silicon, not on ROCm.
 
     python tests/rocm/export_mlx_golden.py /path/to/Qwen3.5-0.8B-MLX-8bit
 

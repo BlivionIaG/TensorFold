@@ -1,4 +1,4 @@
-"""Build the RDNA affine kernel for the GPU present, one gfx target, wavefront 32."""
+"""Build the RDNA extensions for the GPU present, one gfx target, wavefront 32."""
 
 from __future__ import annotations
 

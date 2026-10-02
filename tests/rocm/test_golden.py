@@ -1,4 +1,4 @@
-"""The shipped auto schedule against a Mac MLX hidden state and last-token logits.
+"""The auto schedule against a Mac MLX hidden state and last-token logits.
 
 The fixture is produced by ``tests/rocm/export_mlx_golden.py`` on Apple Silicon. Set
 ``TENSORFOLD_GOLDEN_MODEL`` to that same checkpoint. Row invariance is not this check.
