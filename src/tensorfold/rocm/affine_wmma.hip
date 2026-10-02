@@ -681,6 +681,7 @@ hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream) {
 #else
     bool tile = false;
 #endif
+    if (schedule == 3) return launch_affine_gemv_cols(a, stream);
     if (schedule == 2 && !tile) return hipErrorNotSupported;
     if (tile) return launch_affine_wmma(a, stream);
     return launch_affine_gemv(a, stream);

@@ -40,6 +40,7 @@ __host__ __device__ inline float code_bf16(uint32_t code) {
 }
 
 hipError_t launch_affine_gemv(const Affine& a, hipStream_t stream);
+hipError_t launch_affine_gemv_cols(const Affine& a, hipStream_t stream);
 hipError_t launch_affine_wmma(const Affine& a, hipStream_t stream);
 
 struct AffineSide {

@@ -41,7 +41,7 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
 
     if bits not in BITS or group not in GROUPS:
         raise ValueError("RDNA affine weights require 2/3/4/5/6/8 bits and groups of 32/64/128")
-    which = {"auto": 0, "gemv": 1, "wmma": 2}[schedule]
+    which = {"auto": 0, "gemv": 1, "wmma": 2, "decode": 3}[schedule]
     if x.ndim != 2 or x.dtype not in (torch.bfloat16, torch.float16) or not x.is_cuda or not x.is_contiguous():
         raise ValueError("affine inputs must be a contiguous BF16 or FP16 matrix on the device")
     if x.dtype == torch.float16 and gfx_name() in WMMA:

@@ -13,7 +13,7 @@ void affine(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scal
             at::Tensor& out, int64_t bits, int64_t group, int64_t schedule, int64_t split_mode) {
     TORCH_CHECK(bits == 2 || bits == 3 || bits == 4 || bits == 5 || bits == 6 || bits == 8, "bits 2/3/4/5/6/8");
     TORCH_CHECK(group == 32 || group == 64 || group == 128, "groups of 32, 64 or 128");
-    TORCH_CHECK(schedule == 0 || schedule == 1 || schedule == 2, "schedule 0, 1 or 2");
+    TORCH_CHECK(schedule >= 0 && schedule <= 3, "schedule 0, 1, 2, or 3");
     TORCH_CHECK(x.is_cuda() && x.is_contiguous() && x.dim() == 2 && x.size(0) >= 1 &&
                     (x.scalar_type() == at::kBFloat16 || x.scalar_type() == at::kHalf),
                 "x: (M, K) bf16, or fp16 on RDNA2, contiguous");
