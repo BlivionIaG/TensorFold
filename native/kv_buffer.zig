@@ -7,6 +7,7 @@ pub var enabled = true;
 pub var track_reuse = false;
 pub var attempted: usize = 0;
 pub var reused: usize = 0;
+const growth_rows = 256;
 // Pointer ABI only: Zig cannot translate Clang's arm __bf16 element typedef.
 extern "mlxc" fn mlx_array_data_bfloat16(mx.Array) [*c]const u16;
 pub fn address(array: mx.Array) usize {
@@ -66,7 +67,7 @@ pub const Buffer = struct {
         defer s.deinit();
         var dims: [8]i32 = undefined;
         @memcpy(dims[0..shape.len], shape);
-        dims[axis] = std.mem.alignForward(i32, end, 2048) - valid;
+        dims[axis] = std.mem.alignForward(i32, end, growth_rows) - valid;
         const zeros = try s.zeros(dims[0..shape.len], dtype);
         const out = if (valid == 0) zeros else try s.cat(&.{ try s.slice(source, axis, 0, valid), zeros }, @intCast(axis));
         return mx.retain(out);
@@ -78,7 +79,7 @@ pub const Buffer = struct {
         if (b.current.ctx != null and (b.offset != start or b.axis != axis)) return error.InvalidCacheOffset;
         const rows = shape[axis];
         const end = try std.math.add(i32, start, rows);
-        if (end > std.math.maxInt(i32) - 2047) return error.InvalidCacheShape;
+        if (end > std.math.maxInt(i32) - (growth_rows - 1)) return error.InvalidCacheShape;
         var at = start;
         var fill = added;
         var target = mx.empty;

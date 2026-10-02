@@ -114,14 +114,14 @@ const CompiledPart = struct {
             defer s.deinit();
             const arity: usize = if (p.kind == .pre) 1 else 3;
             const count = mx.c.mlx_vector_array_size(ins);
-            if (count < arity or count > arity + 8) return error.InvalidDraftStreams;
-            var args: [11]A = undefined;
+            if (count < arity or count > arity + model.Model.max_shared_streams) return error.InvalidDraftStreams;
+            var args: [3 + model.Model.max_shared_streams]A = undefined;
             for (args[0..count], 0..) |*arg, j| {
                 var value = mx.c.mlx_array_new();
                 const rc = mx.c.mlx_vector_array_get(&value, ins, j);
                 arg.* = try s.result(rc, value);
             }
-            var lengths: [8]i32 = undefined;
+            var lengths: [model.Model.max_shared_streams]i32 = undefined;
             const blocks = if (count == arity) @as(usize, 1) else count - arity;
             if (count == arity) {
                 lengths[0] = mx.dim(args[0], 1);
@@ -134,7 +134,7 @@ const CompiledPart = struct {
                 if (length < 1 or length > 16) return error.InvalidDraftBlock;
                 total += length;
             }
-            if (total != mx.dim(args[0], 1)) return error.InvalidDraftBlock;
+            if (total > 128 or total != mx.dim(args[0], 1)) return error.InvalidDraftBlock;
             const starts = try blockStarts(&s, lengths[0..blocks]);
             if (p.kind == .pre) {
                 const x = try s.rms(args[0], p.norm);
@@ -211,8 +211,8 @@ const CompiledPart = struct {
         return p.apply(s, args, layout, output, true);
     }
     fn apply(p: *CompiledPart, s: *mx.Scope, args: []const A, layout: []const A, output: []A, compiled: bool) !void {
-        if (args.len != (if (p.payload.?.kind == .pre) @as(usize, 1) else 3) or layout.len > 8) return error.InvalidDraftStreams;
-        var inputs: [11]A = undefined;
+        if (args.len != (if (p.payload.?.kind == .pre) @as(usize, 1) else 3) or layout.len > model.Model.max_shared_streams) return error.InvalidDraftStreams;
+        var inputs: [3 + model.Model.max_shared_streams]A = undefined;
         @memcpy(inputs[0..args.len], args);
         @memcpy(inputs[args.len..][0..layout.len], layout);
         const ins = mx.c.mlx_vector_array_new_data(&inputs, args.len + layout.len);
@@ -359,7 +359,7 @@ pub const Drafter = struct {
         d.offset += count;
     }
     pub fn absorbStreams(d: *Drafter, target: *model.Model, streams: []const AbsorbStream) !void {
-        if (streams.len > 8) return error.InvalidDraftStreams;
+        if (streams.len > model.Model.max_shared_streams) return error.InvalidDraftStreams;
         var total: usize = 0;
         for (streams, 0..) |stream, j| {
             if (stream.state.borrowed) return error.RequestRoundActive;
@@ -383,7 +383,7 @@ pub const Drafter = struct {
         if (total == 0) return;
         var scope = mx.Scope{};
         defer scope.deinit();
-        var inputs: [8]A = undefined;
+        var inputs: [model.Model.max_shared_streams]A = undefined;
         var count: usize = 0;
         for (streams) |stream| if (stream.rows.len > 0) {
             const ids = try scope.ints(stream.rows);
@@ -395,7 +395,7 @@ pub const Drafter = struct {
         const k = &target.kernels;
         const ctx = try scope.rms(try (try d.weights.linear("fc")).apply(k, &scope, .{ .x = try scope.cat(inputs[0..count], 1) }), try d.weights.get("hidden_norm.weight"));
         const ctx_input = try projectionInput(k, &scope, ctx);
-        var next: [8][5]model.Cache = @splat(@splat(.{}));
+        var next: [model.Model.max_shared_streams][5]model.Cache = @splat(@splat(.{}));
         defer for (&next) |*caches| {
             for (caches) |*cache| cache.deinit();
         };
@@ -425,7 +425,7 @@ pub const Drafter = struct {
                 at += n;
             }
         }
-        var arrays: [80]A = undefined;
+        var arrays: [model.Model.max_shared_streams * 10]A = undefined;
         var n_arrays: usize = 0;
         for (streams, next[0..streams.len]) |stream, caches| if (stream.rows.len > 0) {
             for (caches) |cache| {
@@ -542,7 +542,7 @@ pub const Drafter = struct {
         const rotated_q = try s.transpose(try s.rope(try s.transpose(q, &.{ 1, 2, 0, 3 }), pos, 128), &.{ 2, 1, 0, 3 });
         const rotated_keys = try s.transpose(try s.rope(try s.transpose(keys, &.{ 1, 2, 0, 3 }), pos, 128), &.{ 2, 1, 0, 3 });
         const all_values = try s.transpose(values, &.{ 0, 2, 1, 3 });
-        var outputs: [8]A = undefined;
+        var outputs: [model.Model.max_shared_streams]A = undefined;
         var at: i32 = 0;
         for (streams, 0..) |stream, j| {
             const n: i32 = @as(i32, @intCast(@min(15, stream.budget))) + 1;
@@ -560,15 +560,18 @@ pub const Drafter = struct {
         return d.project(k, s, i, "self_attn.o_proj", try s.cat(outputs[0..streams.len], 1));
     }
     fn latticeStreams(d: *Drafter, target: *model.Model, s: *mx.Scope, streams: []const Stream) !Lattice {
+        if (streams.len == 0 or streams.len > model.Model.max_shared_streams) return error.InvalidDraftStreams;
         var ids: [128]i32 = @splat(248070);
         var count: usize = 0;
         for (streams) |stream| {
+            const rows = @as(usize, @min(15, stream.budget)) + 1;
+            if (count + rows > ids.len) return error.InvalidDraftStreams;
             ids[count] = stream.anchor;
-            count += @as(usize, @min(15, stream.budget)) + 1;
+            count += rows;
         }
         const k = &target.kernels;
         var h = try target.weights.embed(s, ids[0..count]);
-        var layout: [8]A = undefined;
+        var layout: [model.Model.max_shared_streams]A = undefined;
         var start: i32 = 0;
         for (streams, 0..) |stream, j| {
             const n: i32 = @as(i32, @intCast(@min(15, stream.budget))) + 1;
@@ -587,7 +590,7 @@ pub const Drafter = struct {
             layers[i] = h;
             if (i == 0 or i == 2) try mx.evalMany(&.{h}, true);
         }
-        var hidden_rows: [8]A = undefined;
+        var hidden_rows: [model.Model.max_shared_streams]A = undefined;
         var at: i32 = 0;
         for (streams, 0..) |stream, j| {
             const n: i32 = @as(i32, @intCast(@min(15, stream.budget))) + 1;
@@ -602,9 +605,9 @@ pub const Drafter = struct {
         return .{ .layers = layers, .candidates = ranked[0], .scores = ranked[1], .projection = projection };
     }
     pub fn proposeStreams(d: *Drafter, target: *model.Model, streams: []const Stream, output: []Proposal) !void {
-        if (streams.len > 8 or streams.len != output.len) return error.InvalidDraftStreams;
-        var active: [8]Stream = undefined;
-        var indexes: [8]usize = undefined;
+        if (streams.len > model.Model.max_shared_streams or streams.len != output.len) return error.InvalidDraftStreams;
+        var active: [model.Model.max_shared_streams]Stream = undefined;
+        var indexes: [model.Model.max_shared_streams]usize = undefined;
         var count: usize = 0;
         var common_depth: usize = 0;
         for (streams, 0..) |stream, j| {
@@ -623,18 +626,24 @@ pub const Drafter = struct {
         @memset(output, .{});
         if (count == 0) return;
         for (active[0..count]) |*stream| stream.budget = common_depth;
-        var s = mx.Scope{};
-        defer s.deinit();
-        const lattice = try d.latticeStreams(target, &s, active[0..count]);
-        try mx.evalMany(&.{ lattice.candidates, lattice.scores, lattice.projection }, false);
-        const ids = mx.c.mlx_array_data_int32(lattice.candidates);
-        const values = mx.c.mlx_array_data_float32(lattice.scores);
-        const projected = mx.c.mlx_array_data_float32(lattice.projection);
-        var at: usize = 0;
-        for (active[0..count], indexes[0..count]) |stream, j| {
-            output[j] = try d.finish(ids[at * 16 ..][0 .. common_depth * 16], values[at * 16 ..][0 .. common_depth * 16], projected[at * 256 ..][0 .. common_depth * 256], stream.state.dflash_offset, stream.anchor, common_depth, stream.settings);
-            output[j].len = @min(output[j].len, streams[j].budget);
-            at += common_depth;
+        // Each lattice has at most 128 rows, including its per-stream anchors.
+        const group_size = 128 / (common_depth + 1);
+        var first: usize = 0;
+        while (first < count) : (first += group_size) {
+            const end = @min(first + group_size, count);
+            var s = mx.Scope{};
+            defer s.deinit();
+            const lattice = try d.latticeStreams(target, &s, active[first..end]);
+            try mx.evalMany(&.{ lattice.candidates, lattice.scores, lattice.projection }, false);
+            const ids = mx.c.mlx_array_data_int32(lattice.candidates);
+            const values = mx.c.mlx_array_data_float32(lattice.scores);
+            const projected = mx.c.mlx_array_data_float32(lattice.projection);
+            var at: usize = 0;
+            for (active[first..end], indexes[first..end]) |stream, j| {
+                output[j] = try d.finish(ids[at * 16 ..][0 .. common_depth * 16], values[at * 16 ..][0 .. common_depth * 16], projected[at * 256 ..][0 .. common_depth * 256], stream.state.dflash_offset, stream.anchor, common_depth, stream.settings);
+                output[j].len = @min(output[j].len, streams[j].budget);
+                at += common_depth;
+            }
         }
     }
     pub fn checkStreams(d: *Drafter, target: *model.Model) !void {
@@ -730,7 +739,49 @@ pub const Drafter = struct {
         try std.testing.expectError(error.InvalidDraftBlock, d.blockPart(&scope, 0, .pre, &.{try scope.zeros(&.{ 1, 17, 5120 }, mx.bf16)}, &.{}, &invalid_part));
         try d.proposeStreams(target, streams[0..1], actual[0..1]);
         try d.checkAbsorbStreams(target, &states);
+        try d.checkPackedStreams(target, &states);
         std.debug.print("Shared Qwen DFlash: exact common-block calibrated proposals, independent ragged lattices, maxima15/7/3, mixed sampling and unequal sliding contexts; caches unchanged\n", .{});
+    }
+    fn checkPackedStreams(d: *Drafter, target: *model.Model, templates: []const @import("request_state.zig").State(model.Model)) !void {
+        const State = @import("request_state.zig").State(model.Model);
+        var states: [model.Model.max_shared_streams]State = undefined;
+        var initialized: usize = 0;
+        defer for (states[0..initialized]) |*state| state.deinit();
+        for (&states, 0..) |*state, j| {
+            state.* = try State.init(target);
+            initialized += 1;
+            const source = templates[j % templates.len];
+            state.dflash_offset = source.dflash_offset;
+            for (&state.dflash_cache, source.dflash_cache) |*cache, original| cache.* = try original.clone();
+        }
+        var streams: [model.Model.max_shared_streams]Stream = undefined;
+        var actual: [model.Model.max_shared_streams]Proposal = undefined;
+        for ([_]usize{ 1, 3, 7, 15 }) |depth| {
+            for (&streams, &states, 0..) |*stream, *state, j| stream.* = .{
+                .state = state,
+                .anchor = @intCast(1000 + 37 * j),
+                .budget = depth,
+                .settings = .{ .temperature = if (j % 2 == 0) 0 else 0.75, .seed = @intCast(1234 + j * 17) },
+            };
+            try d.proposeStreams(target, &streams, &actual);
+            for (streams, actual) |stream, proposed| {
+                stream.state.swapDFlash(d);
+                const expected = d.propose(target, stream.anchor, depth, stream.settings) catch |err| {
+                    stream.state.swapDFlash(d);
+                    return err;
+                };
+                stream.state.swapDFlash(d);
+                try std.testing.expectEqual(expected.len, proposed.len);
+                try std.testing.expectEqualSlices(i32, expected.tokens[0..expected.len], proposed.tokens[0..proposed.len]);
+                try std.testing.expectEqualSlices(i32, expected.parents[0..expected.len], proposed.parents[0..proposed.len]);
+                try std.testing.expectEqualSlices(f64, expected.scores[0..expected.len], proposed.scores[0..proposed.len]);
+                try std.testing.expectEqualSlices(f64, expected.probabilities[0..expected.len], proposed.probabilities[0..proposed.len]);
+            }
+        }
+        var scope = mx.Scope{};
+        defer scope.deinit();
+        try std.testing.expectError(error.InvalidDraftStreams, d.latticeStreams(target, &scope, streams[0..9]));
+        std.debug.print("PASS: 64 DFlash streams at depths 1/3/7/15 match isolated proposals, scores and probabilities across 128-row lattice groups\n", .{});
     }
     fn checkAttentionStreams(d: *Drafter, target: *model.Model, states: []@import("request_state.zig").State(model.Model)) !void {
         const equal = @import("variant_checks.zig").equalBits;

@@ -182,7 +182,7 @@ fn gdn(m: *model.Model, s: *mx.Scope, i: usize, x: A, p: *model.Pass) !A {
     if (i == 16) {
         for ([_]A{ q, k, v, a, b, g, beta }, [_][]const u8{ "q", "k", "v", "a", "b", "g", "beta" }) |value, label| try m.trace(s, m.position, i, label, value);
     }
-    const recurrence = try m.kernels.run(s, src.flash_prefill_gdn, &.{ q, k, v, g, beta, state, try s.reshape(try s.ints(&.{n}), &.{}) }, &.{ mx.td("InT", mx.bf16), mx.td("StT", mx.f32t), mx.ti("Dk", 128), mx.ti("Dv", 128), mx.ti("Hk", 16), mx.ti("Hv", 48) }, .{ 32, 128, 48 }, .{ 32, 4, 1 }, &.{ .{ .shape = &.{ 1, n, 48, 128 } }, .{ .shape = &.{ 1, 48, 128, 128 }, .dtype = mx.f32t } });
+    const recurrence = try m.kernels.run(s, src.flash_prefill_gdn_packed, &.{ q, k, v, g, beta, state, try s.reshape(try s.ints(&.{n}), &.{}) }, &.{ mx.td("InT", mx.bf16), mx.td("StT", mx.f32t), mx.ti("Dk", 128), mx.ti("Dv", 128), mx.ti("Hk", 16), mx.ti("Hv", 48) }, .{ 32, 16, 48 }, .{ 32, 2, 1 }, &.{ .{ .shape = &.{ 1, n, 48, 128 } }, .{ .shape = &.{ 1, 48, 128, 128 }, .dtype = mx.f32t } });
     const out = recurrence[0];
     if (p.prefill_final) {
         const tail = try s.take(seq, try s.ints(&.{ n, n + 1, n + 2 }), 1);
@@ -261,11 +261,17 @@ fn exactAttention(s: *mx.Scope, q: A, k: A, v: A) !A {
 fn promptAttention(s: *mx.Scope, q: A, k: A, v: A) !A {
     const n = mx.dim(q, 2);
     const total = mx.dim(k, 2);
+    if (total <= 4096 or n <= 128) {
+        var out = c.mlx_array_new();
+        const rc = c.mlx_fast_scaled_dot_product_attention(&out, q, k, v, 0.0625, "causal", mx.empty, mx.empty, false, mx.stream);
+        return s.result(rc, out);
+    }
     var parts: [16]A = undefined;
     var count: usize = 0;
     var begin: i32 = 0;
     while (begin < n) {
-        var end = if (total > 4096 and n > 128) @min(begin + 128, n) else n;
+        var end = @min(begin + 128, n);
+        if (!mx.tensor_units and end < n) end -= @mod(total - n + end, 16);
         if (n - end <= 16) end = n;
         const visible = total - n + end;
         var out = c.mlx_array_new();

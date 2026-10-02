@@ -9,11 +9,12 @@ const G = session.Generation(model.Model);
 pub const max_streams = @import("nemotron.zig").Model.max_shared_streams;
 
 pub fn modelStreamLimit(comptime M: type) usize {
-    return if (M == @import("nemotron.zig").Model) M.max_shared_streams else 8;
+    return if (@hasDecl(M, "max_shared_streams")) M.max_shared_streams else 8;
 }
 
 pub fn streamLimit(backend: session.Backend) usize {
     return switch (backend) {
+        .qwen => if (mx.tensor_units) model.Model.max_shared_streams else 32,
         inline else => |m| modelStreamLimit(@TypeOf(m)),
     };
 }
@@ -28,7 +29,8 @@ fn Shared(comptime M: type) type {
 
 pub fn rowLimit(backend: session.Backend) usize {
     return switch (backend) {
-        inline .qwen, .gemma, .nemotron, .flash => |m| if (@hasDecl(@TypeOf(m), "max_shared_rows")) @TypeOf(m).max_shared_rows else 128,
+        .qwen => if (mx.tensor_units) model.Model.max_shared_rows else 32,
+        inline .gemma, .nemotron, .flash => |m| @TypeOf(m).max_shared_rows,
         else => 0,
     };
 }
@@ -108,11 +110,11 @@ pub const Coordinator = struct {
         const M = @TypeOf(m.*);
         const S = Shared(M);
         const capacity = comptime modelStreamLimit(M);
-        const qwen_costs = if (M == model.Model) mx.tensor_units and m.weights.bonsai_form == null else false;
+        const qwen_costs = M == model.Model;
         const nemotron_costs = M == @import("nemotron.zig").Model;
         const gemma_costs = M == @import("gemma.zig").Model;
-        if (stream_count == 0 or stream_count > capacity or c.max_rows == 0 or c.max_rows > 128) return error.InvalidSharedLimits;
-        c.max_rows = @min(c.max_rows, if (@hasDecl(M, "max_shared_rows")) M.max_shared_rows else 128);
+        if (stream_count == 0 or stream_count > streamLimit(s.backend) or c.max_rows == 0 or c.max_rows > 128) return error.InvalidSharedLimits;
+        c.max_rows = @min(c.max_rows, rowLimit(s.backend));
         var prompt: [64]i32 = undefined;
         for (&prompt, 0..) |*token, i| token.* = @intCast(1000 + i);
         var calibration_tokens: [64]i32 = undefined;
@@ -127,7 +129,7 @@ pub const Coordinator = struct {
         var measured: [32]allocation.Cost = undefined;
         var measured_count: usize = 0;
         var widths: [32]usize = undefined;
-        const count_widths = if (qwen_costs) qwenCalibrationWidths(limit, widths[0..16]).len else if (nemotron_costs or gemma_costs) nemotronCalibrationWidths(limit, &widths).len else blk: {
+        const count_widths = if (qwen_costs) qwenCalibrationWidths(limit, mx.tensor_units, &widths).len else if (nemotron_costs or gemma_costs) nemotronCalibrationWidths(limit, &widths).len else blk: {
             var width: usize = 1;
             var n: usize = 0;
             while (true) {
@@ -141,11 +143,13 @@ pub const Coordinator = struct {
         const hc_tiles = m.kernels.flash_rows.hc_tiles_on;
         if (M == @import("flash.zig").Model) m.kernels.flash_rows.hc_tiles_on = false;
         defer m.kernels.flash_rows.hc_tiles_on = hc_tiles;
+        var commit_bytes: u64 = 0;
         for (widths[0..count_widths]) |width| {
             var best = std.math.inf(f64);
             // Extra streams probe workspace without charging their state cost to row growth.
             const single_cost = qwen_costs or ((nemotron_costs or gemma_costs) and width <= 16);
-            const geometries: usize = if (single_cost and stream_count > 1 and width > 1) 2 else 1;
+            const settlement_probe = qwen_costs and width == @min(stream_count, 8);
+            const geometries: usize = if (single_cost and stream_count > 1 and width > 1 and (!qwen_costs or width == limit or settlement_probe)) 2 else 1;
             for (0..geometries) |geometry| {
                 var states: [capacity]S.State = undefined;
                 var initialized: usize = 0;
@@ -153,7 +157,7 @@ pub const Coordinator = struct {
                 var streams: [capacity]S.Stream = undefined;
                 var tokens: [capacity][if (M == model.Model) 128 else 16]i32 = undefined;
                 var parents: [capacity][if (M == model.Model) 128 else 16]i32 = undefined;
-                const n = if (single_cost and geometry == 0) 1 else @min(stream_count, if (!single_cost and (nemotron_costs or gemma_costs)) (width + 1) / 2 else width);
+                const n = if (single_cost and geometry == 0) 1 else @min(stream_count, if (settlement_probe) width else if (qwen_costs) @max(1, width / 2) else if (!single_cost and (nemotron_costs or gemma_costs)) (width + 1) / 2 else width);
                 var remaining = width;
                 for (0..n) |i| {
                     states[i] = try base.state.clone();
@@ -181,12 +185,38 @@ pub const Coordinator = struct {
                     defer pass.deinit();
                     try mx.eval(pass.logits);
                     if (geometry == 0 and repetition != 0) best = @min(best, (@import("server_live.zig").now(s.io) - started) * 1000);
+                    var forward_bytes: u64 = 0;
+                    var before_commit: u64 = 0;
+                    var logit_workspace: u64 = 0;
+                    if (qwen_costs) {
+                        var peak: usize = 0;
+                        try mx.check(mx.c.mlx_get_peak_memory(&peak));
+                        forward_bytes = peak -| resident;
+                        // Host sampling and a DFlash lattice can retain FP32 logits alongside target work.
+                        const draft_rows = if (s.drafter != null) @as(usize, @min(stream_count, 8)) * 16 else 0;
+                        logit_workspace = try std.math.mul(u64, width + draft_rows, @as(u64, @intCast(mx.dim(pass.logits, -1))) * @sizeOf(f32));
+                        if (geometry != 0) {
+                            // One-row forwards stage cache settlement in the GDN kernel itself.
+                            // Measure a kernel group to bound that path without materializing every idle stream.
+                            if (settlement_probe) commit_bytes = @max(commit_bytes, try std.math.divCeil(u64, forward_bytes, n));
+                            // Python's shared workspace probe forwards two rows per stream without settlement.
+                            // Reserve each stream's measured settlement peak without allocating idle caches.
+                            const committed = try std.math.add(u64, forward_bytes, try std.math.mul(u64, commit_bytes, n));
+                            c.peak_bytes = @max(c.peak_bytes, try std.math.add(u64, committed, logit_workspace));
+                            continue;
+                        }
+                        before_commit = try @import("memory_runtime.zig").activeBytes();
+                        try mx.check(mx.c.mlx_reset_peak_memory());
+                    }
                     var paths: [capacity][]const i32 = @splat(&.{0});
                     try pass.commit(paths[0..n]);
                     try mx.check(mx.c.mlx_synchronize(mx.stream));
                     var peak: usize = 0;
                     try mx.check(mx.c.mlx_get_peak_memory(&peak));
-                    c.peak_bytes = @max(c.peak_bytes, peak -| resident);
+                    if (qwen_costs) {
+                        commit_bytes = @max(commit_bytes, peak -| before_commit);
+                        c.peak_bytes = @max(c.peak_bytes, try std.math.add(u64, try std.math.add(u64, forward_bytes, commit_bytes), logit_workspace));
+                    } else c.peak_bytes = @max(c.peak_bytes, peak -| resident);
                 }
             }
             measured[measured_count] = .{ .rows = width, .ms = @max(best, 0.001) };
@@ -202,18 +232,17 @@ pub const Coordinator = struct {
             c.costs[rows - 1] = .{ .rows = rows, .ms = lo.ms + fraction * (hi.ms - lo.ms) };
         }
         c.cost_count = limit;
-        std.debug.print("Shared decode measured {d} widths, interpolated to {d}; peak work={d} bytes\n", .{ measured_count, limit, c.peak_bytes });
+        std.debug.print("Shared decode measured {d} widths, interpolated to {d}; workspace reserve={d} bytes\n", .{ measured_count, limit, c.peak_bytes });
     }
 
     pub fn step(c: *Coordinator, m: anytype, requests: []const *session.Generation(@TypeOf(m.*)), results: []Result) !void {
         c.timing = .{};
         const M = @TypeOf(m.*);
-        const S = Shared(M);
         const capacity = comptime modelStreamLimit(M);
-        const Generation = session.Generation(M);
-        const Pass = @typeInfo(@typeInfo(@TypeOf(M.forward)).@"fn".return_type.?).error_union.payload;
         if (@hasDecl(M, "max_shared_rows")) c.max_rows = @min(c.max_rows, M.max_shared_rows);
-        if (requests.len == 0 or requests.len > capacity or requests.len > c.max_rows or results.len != requests.len) return error.InvalidSharedLimits;
+        const stream_limit = if (M == model.Model and !mx.tensor_units) 32 else capacity;
+        if (M == model.Model and !mx.tensor_units) c.max_rows = @min(c.max_rows, 32);
+        if (requests.len == 0 or requests.len > stream_limit or requests.len > c.max_rows or results.len != requests.len) return error.InvalidSharedLimits;
         if (m.round_owner.stage != .idle) return error.ModelRoundActive;
         var shared_drafter: ?*@import("drafter.zig").Drafter = null;
         for (requests, 0..) |g, i| {
@@ -240,6 +269,16 @@ pub const Coordinator = struct {
             c.timing = g.round_timing;
             return;
         }
+        return c.stepShared(m, requests, results, shared_drafter);
+    }
+
+    // Single-request dispatch must not allocate the full shared round's stack frame.
+    noinline fn stepShared(c: *Coordinator, m: anytype, requests: []const *session.Generation(@TypeOf(m.*)), results: []Result, shared_drafter: ?*@import("drafter.zig").Drafter) !void {
+        const M = @TypeOf(m.*);
+        const S = Shared(M);
+        const capacity = comptime modelStreamLimit(M);
+        const Generation = session.Generation(M);
+        const Pass = @typeInfo(@typeInfo(@TypeOf(M.forward)).@"fn".return_type.?).error_union.payload;
         if (@hasDecl(M, "forwardAfter")) {
             for (requests) |g| g.discardPreview();
         }
@@ -399,6 +438,8 @@ pub const Coordinator = struct {
         c.timing.prepare_seconds = forward_started - started;
         var pass = if (M == @import("nemotron.zig").Model and pending_proposals.count > 0)
             try @import("nemotron_shared.zig").forwardArray(m, array_streams[0..count], try input_scope.cat(token_parts[0..count], 0))
+        else if (M == model.Model)
+            try @import("qwen_shared.zig").forwardQueued(m, streams[0..count])
         else
             try m.forwardStreams(streams[0..count]);
         const forward_ended = @import("server_live.zig").now(std.Options.debug_io);
@@ -670,11 +711,12 @@ test "singleton MTP choices use per-request rates and shared measured costs" {
     try std.testing.expect(!adaptiveMtp(@import("gemma.zig").Model));
 }
 
-fn qwenCalibrationWidths(limit: usize, out: *[16]usize) []const usize {
+fn qwenCalibrationWidths(limit: usize, tensor: bool, out: *[32]usize) []const usize {
     std.debug.assert(limit > 0 and limit <= 128);
     var count: usize = 0;
-    for ([_]usize{ 1, 2, 4, 8, 12, 16, 17, 24, 32, 33, 48, 64, 65, 96, 128 }) |width| {
+    for ([_]usize{ 1, 2, 4, 8, 9, 12, 16, 17, 24, 25, 32, 33, 48, 64, 65, 96, 128 }) |width| {
         if (width > limit) break;
+        if (tensor and (width == 9 or width == 25)) continue;
         out[count] = width;
         count += 1;
     }
@@ -702,11 +744,12 @@ fn nemotronCalibrationWidths(limit: usize, out: *[32]usize) []const usize {
 }
 
 test "Qwen forward cost probes separate tensor tile boundaries" {
-    var widths: [16]usize = undefined;
-    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 4, 8, 12, 16 }, qwenCalibrationWidths(16, &widths));
-    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 4, 8, 12, 16, 17 }, qwenCalibrationWidths(17, &widths));
-    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 4, 8, 12, 16, 17, 24, 32, 33, 48, 64, 65, 96, 128 }, qwenCalibrationWidths(128, &widths));
-    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 3 }, qwenCalibrationWidths(3, &widths));
+    var widths: [32]usize = undefined;
+    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 4, 8, 12, 16 }, qwenCalibrationWidths(16, true, &widths));
+    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 4, 8, 12, 16, 17 }, qwenCalibrationWidths(17, true, &widths));
+    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 4, 8, 12, 16, 17, 24, 32, 33, 48, 64, 65, 96, 128 }, qwenCalibrationWidths(128, true, &widths));
+    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 3 }, qwenCalibrationWidths(3, true, &widths));
+    try std.testing.expectEqualSlices(usize, &.{ 1, 2, 4, 8, 9, 12, 16, 17, 24, 25, 32 }, qwenCalibrationWidths(32, false, &widths));
 }
 
 test "Nemotron forward cost probes every serial width and wide shared boundaries" {

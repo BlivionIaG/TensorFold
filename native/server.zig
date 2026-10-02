@@ -20,7 +20,7 @@ pub fn run(init: std.process.Init, args: []const []const u8) !void {
     var limit: usize = 0;
     var timeout_ms: i64 = 0;
     var shutdown_grace_ms: i64 = 5000;
-    var batch_streams: usize = 4;
+    var batch_streams: usize = 8;
     var batch_rows: usize = 128;
     var checkpoint_slots: ?usize = null;
     var prompt_cache_bytes: ?u64 = null;

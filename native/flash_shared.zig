@@ -7,6 +7,7 @@ const round = @import("decode_round.zig");
 const A = mx.Array;
 const ti = mx.ti;
 const max_rows = flash.Model.max_shared_rows;
+const max_streams = flash.Model.max_shared_streams;
 pub const State = @import("request_state.zig").State(flash.Model);
 pub const Stream = struct { state: *State, tokens: []const i32, parents: []const i32 };
 const Entry = struct { state: *State, first: i32, pass: flash.Pass, staged: [48]flash.Cache = @splat(.{}) };
@@ -103,7 +104,7 @@ fn validatePath(rows: usize, path: []const i32) !void {
 
 fn validate(m: *flash.Model, streams: []const Stream) !usize {
     if (m.round_owner.stage != .idle) return error.ModelRoundActive;
-    if (streams.len == 0 or streams.len > max_rows) return error.InvalidStreams;
+    if (streams.len == 0 or streams.len > max_streams) return error.InvalidStreams;
     var rows: usize = 0;
     for (streams, 0..) |stream, index| {
         if (stream.state.borrowed) return error.RequestRoundActive;
@@ -407,13 +408,13 @@ fn attentionStreams(m: *flash.Model, s: *mx.Scope, base: []const u8, x: A, pos: 
 }
 
 pub fn draftStep(m: *flash.Model, s: *mx.Scope, hidden: A, tokens: A, caches: []const *flash.Cache) !A {
-    if (caches.len == 0 or caches.len > 8) return error.InvalidDraftRows;
+    if (caches.len == 0 or caches.len > max_streams) return error.InvalidDraftRows;
     if (hidden.ctx == null or tokens.ctx == null) return error.InvalidDraftRows;
     const rows: i32 = @intCast(caches.len);
     if (!std.mem.eql(i32, mx.shape(hidden), &.{ rows, 10240 }) or !std.mem.eql(i32, mx.shape(tokens), &.{rows}) or mx.dtype(hidden) != mx.bf16 or (mx.dtype(tokens) != mx.i32t and mx.dtype(tokens) != mx.c.MLX_UINT32)) return error.InvalidDraftRows;
-    var records: [8]flash.Cache = @splat(.{});
-    var streams: [8]AttentionStream = undefined;
-    var positions: [8]i32 = undefined;
+    var records: [max_streams]flash.Cache = @splat(.{});
+    var streams: [max_streams]AttentionStream = undefined;
+    var positions: [max_streams]i32 = undefined;
     for (caches, 0..) |cache, i| {
         for (caches[0..i]) |other| if (other == cache) return error.DuplicateStream;
         if (cache.offset < 0 or cache.offset > std.math.maxInt(i32) - 2048) return error.InvalidCacheState;
@@ -431,7 +432,7 @@ pub fn draftStep(m: *flash.Model, s: *mx.Scope, hidden: A, tokens: A, caches: []
     const post = try m.hcNorm(s, hn[0], branch, mix[1]);
     const mm = try m.hcProject(s, "mtp.layers.0.mlp_hyper_connection", post[0], post[1], true);
     const out = try m.moe(s, "mtp.layers.0.mlp", post[0], mm[0], mm[1]);
-    var next: [8]flash.Cache = @splat(.{});
+    var next: [max_streams]flash.Cache = @splat(.{});
     defer for (&next) |*cache| cache.deinit();
     for (caches, 0..) |cache, i| {
         next[i] = try records[i].clone();
@@ -448,7 +449,7 @@ pub fn draftStep(m: *flash.Model, s: *mx.Scope, hidden: A, tokens: A, caches: []
 }
 
 pub fn absorbDraft(m: *flash.Model, s: *mx.Scope, hidden: A, tokens: A, lengths: []const usize, caches: []const *flash.Cache) !void {
-    if (caches.len > 8 or caches.len != lengths.len) return error.InvalidDraftRows;
+    if (caches.len > max_streams or caches.len != lengths.len) return error.InvalidDraftRows;
     var count: usize = 0;
     for (caches, lengths, 0..) |cache, n, j| {
         if (n > 16 or n > max_rows - count) return error.InvalidDraftRows;
@@ -486,7 +487,7 @@ pub fn absorbDraft(m: *flash.Model, s: *mx.Scope, hidden: A, tokens: A, lengths:
     const log_base = try m.weights.get("decode.log_base");
     // NQ/NI=0 preserves the production key norm/RoPE while omitting unused query heads.
     const prepared = try m.kernels.run(s, src.q4_attn_prep, &.{ projected, try s.ints(positions[0..count]), weight, weight, weight, eps, log_base }, &.{ ti("NQ", 0), ti("NKV", 2), ti("HD", 256), ti("RD", 64), ti("PW", 1152), ti("NI", 0), ti("IHD", 128) }, .{ 256, 2, rows }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{1} }, .{ .shape = &.{ rows, 2, 256 } }, .{ .shape = &.{1} } });
-    var next: [8]flash.Cache = @splat(.{});
+    var next: [max_streams]flash.Cache = @splat(.{});
     defer for (&next) |*cache| cache.deinit();
     var first: i32 = 0;
     for (caches, lengths, 0..) |cache, n, j| {
@@ -635,12 +636,12 @@ pub fn checkDraft(m: *flash.Model) !void {
     var scope = mx.Scope{};
     defer scope.deinit();
     const s = &scope;
-    var caches: [8]flash.Cache = @splat(.{});
+    var caches: [max_streams]flash.Cache = @splat(.{});
     defer for (&caches) |*cache| cache.deinit();
-    var reference: [8]flash.Cache = @splat(.{});
+    var reference: [max_streams]flash.Cache = @splat(.{});
     defer for (&reference) |*cache| cache.deinit();
-    var pointers: [8]*flash.Cache = undefined;
-    var tokens: [8]i32 = undefined;
+    var pointers: [max_streams]*flash.Cache = undefined;
+    var tokens: [max_streams]i32 = undefined;
     for (&tokens, 0..) |*token, i| token.* = @intCast(1230 + i);
     const emb = try m.weights.embedArray(s, "model.embed_tokens", try s.ints(&tokens));
     var h = try s.cat(&.{ emb, emb, emb, emb }, -1);
@@ -657,7 +658,7 @@ pub fn checkDraft(m: *flash.Model) !void {
     }
     for (0..3) |step| {
         for (&tokens, 0..) |*token, i| token.* = @intCast(1300 + step * 37 + i);
-        var expected: [8]A = undefined;
+        var expected: [max_streams]A = undefined;
         for (&reference, 0..) |*cache, i| expected[i] = try m.draftStepArray(s, try s.slice(h, 0, @intCast(i), @intCast(i + 1)), try s.ints(tokens[i..][0..1]), cache, false);
         h = try m.draftStepStreams(s, h, try s.ints(&tokens), &pointers);
         const head = try m.draftHead(s, h);
@@ -669,7 +670,7 @@ pub fn checkDraft(m: *flash.Model) !void {
         }
     }
     try checkDraftAbsorption(m);
-    std.debug.print("PASS: Flash shared 8-stream MTP hidden states, heads and independent caches through three chained steps.\n", .{});
+    std.debug.print("PASS: Flash shared {d}-stream MTP hidden states, heads and independent caches through three chained steps.\n", .{max_streams});
 }
 
 fn seedBuffer(s: *mx.Scope, buffer: *kv.Buffer, value: A, axis: usize) !A {

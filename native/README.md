@@ -142,14 +142,15 @@ Use a fresh output directory for each capture. Verify retained arrays and result
 `.venv/bin/python tools/native_engine_bench.py --verify-golden build/native-checks/python-golden`.
 Compare native tokens and warm phase timings through Latch with
 `.venv/bin/python tools/native_engine_bench.py --compare-golden build/native-checks/python-golden --repetitions 2 --output build/native-checks/golden-comparison`.
-Add `--native-driver serving` for all five fitting checkpoints through native
+The default `--native-driver serving` covers all five fitting checkpoints through
 Session/shared-round scheduling, draft allocation and first-token publication.
 Only matching cases receive measurements. `--family` and repeatable `--case`
 select cases; `--native-arg=--flag` and `--native-env KEY=VALUE` support diagnostics.
-Fresh Python/native processes each warm the exact case with fresh request caches.
+Each case measures one active request; fresh Python/native processes each warm
+the exact case with fresh request caches.
 Request timings exclude startup; whole-process peak RSS and physical footprint
-include loading, calibration, warmup and teardown. Calibration capacities are
-recorded because unequal stream limits do not establish concurrency memory parity.
+include loading, calibration, warmup and teardown. Stream and row capacities must
+match exactly; missing or unequal capacities exclude resource measurements.
 The table entries are arguments to `.zig-toolchain/zig build`:
 
 | Checks | Arguments | Requirements |
@@ -228,7 +229,7 @@ Start GPU verification with:
 
 Fixtures and oracle outputs go under `build/native-checks`. Python fixture writes
 and native array dumps preserve 64 GiB of free disk space. Python tensor writes
-have a 128 GiB budget per invocation, shared across families in a golden suite;
+have a 256 GiB budget per invocation, shared across families in a golden suite;
 golden arrays use lossless compression and retain BF16 bits without widening.
 Prune obsolete generated fixtures before retrying a storage-limit failure.
 Tests do not download missing models.
@@ -265,22 +266,25 @@ Responses support GET/DELETE by ID and `previous_response_id`; the in-memory
 store keeps up to 1,024 responses with a 256 MiB limit on serialized data.
 `store: false` disables retention.
 JSON/schema output constraints are refused until grammar support is implemented.
-`--batch-streams N` controls active requests (default `4`, maximum `64` for Nemotron and `8` for other families). One
+`--batch-streams N` controls active requests (default `8`, capped by the family).
+Maximums are Qwen/Bonsai `64` (`32` on SIMD), Nemotron `64`, Flash `32`, Gemma `16`, and serial families `8`. One
 GPU worker interleaves prefill chunks and runs Qwen, Bonsai, Gemma, Nemotron and
 Flash decode requests through shared lane forwards with independent cache commits.
 `--batch-rows N` limits shared rows (default `128`, range `1`–`128`, capped at `64`
-for Gemma/Flash); pending rows take priority and
+for Gemma/Flash and `32` for Qwen/Bonsai on SIMD); pending rows take priority and
 row-limited requests rotate by their last served round. Startup measures shared
-forward/commit costs and peak workspace; draft allocation uses interpolated costs,
+forward/commit costs and reserves workspace; draft allocation uses interpolated costs,
 proposal probabilities and observed host overhead. Qwen DFlash and Nemotron/Flash
 MTP proposals share projections across requests. GLM and DeepSeek still advance
 individually. Up to `max(8, batch-streams)` further requests can queue. `/health` exposes shared
 round/row totals and the maximum streams sharing a forward.
 After `.zig-toolchain/zig build install`, `zig-out/bin/native-server-checks --benchmark BEFORE
 AFTER MODEL build/native-checks/http-performance.json` compares existing native
-executables with an ABBA order, isolated warmups, three repetitions at 1/8/64
-requests for Nemotron or 1/4/8 for other families, exact seeded SSE output,
+executables with an ABBA order, isolated warmups, three repetitions at single,
+intermediate and full family concurrency, exact seeded SSE output,
 first-token latency and completion throughput.
+Both servers receive the same explicit stream limit, and their reported capacities
+must match in every phase. Append `--streams N` to select a limit (`32` for Qwen/Bonsai on SIMD).
 Add `--drafter PATH` (or `--drafter -` for a built-in head) to measure both draft
 modes. First use `--verify-python .venv/bin/tensorfold AFTER MODEL REPORT` for
 Python/native output checks, then `--compare-python` with the same arguments for

@@ -615,7 +615,7 @@ pub fn build(b: *std.Build) void {
     server_rounds.addArtifactArg(http_checks);
     server_rounds.step.dependOn(&session_image_fixture.step);
     b.step("test-server-rounds", "Compare concurrent HTTP image/text requests with isolated outputs, streaming and cancellation").dependOn(&server_rounds.step);
-    const shared_sessions = b.step("test-session-shared", "Verify eight requests for every fitting family, fair row caps, serial sampling, copies and cancellation isolation");
+    const shared_sessions = b.step("test-session-shared", "Verify each fitting family's full stream capacity, fair row caps, serial sampling, copies and cancellation isolation");
     var shared_previous: ?*std.Build.Step = null;
     for ([_][]const u8{ "Qwen3.8-27B-MLX-4bit", "Ternary-Bonsai-2-27B-mlx-2bit", "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit", "Qwen3.8-Flash-Next-MLX-4bit-MTP", "gemma-4-26b-a4b-it-4bit" }) |name| {
         const check = b.addRunArtifact(exe);
@@ -668,6 +668,10 @@ pub fn build(b: *std.Build) void {
         check.step.dependOn(neural_shared_previous);
         neural_shared_previous = &check.step;
     }
+    const bonsai_shared_neural = b.addRunArtifact(exe);
+    bonsai_shared_neural.addArgs(&.{ "check-session-shared", b.fmt("{s}/Ternary-Bonsai-2-27B-mlx-2bit", .{model_root}), b.fmt("{s}/Qwen3.8-27B-DFlash2", .{model_root}) });
+    bonsai_shared_neural.step.dependOn(neural_shared_previous);
+    neural_shared_previous = &bonsai_shared_neural.step;
     shared_neural_step.dependOn(neural_shared_previous);
     const dflash_streams_oracle = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_reference.py", "--model", b.fmt("{s}/Qwen3.8-27B-MLX-4bit", .{model_root}), "--dflash-streams-fixture", b.fmt("{s}/Qwen3.8-27B-DFlash2", .{model_root}), "--output", "build/native-checks/qwen-dflash-streams" });
     const dflash_streams = b.addRunArtifact(exe);

@@ -1352,6 +1352,8 @@ def flash_prefill_gdn_fixtures(capture):
     for hidden, nk, nv, dk, dv, taps, batch, activation, bits, groups in (
         (256, 2, 4, 32, 64, 4, 2, "sigmoid", (4,) * 5, (32, 64, 128, 32, 64)),
         (384, 3, 6, 64, 32, 2, 1, "silu", (2, 3, 5, 6, 8), (128, 64, 32, 128, 64)),
+        (256, 1, 2, 128, 64, 4, 2, "silu", (4,) * 5, (32,) * 5),
+        (256, 1, 8, 128, 36, 4, 1, "sigmoid", (4,) * 5, (32,) * 5),
         (2560, 16, 48, 128, 128, 4, 1, "sigmoid", (4,) * 5, (32,) * 5),
     ):
         cfg = SimpleNamespace(linear_num_key_heads=nk, linear_num_value_heads=nv,
@@ -1985,8 +1987,9 @@ def main():
             flash_prefill_gdn_fixtures(capture)
         finally:
             mx.fast.metal_kernel = capture.original
-        if "flash_prefill_gdn" not in {case["kernel"] for case in capture.cases}:
-            raise RuntimeError("Flash prefill scalar gated-delta kernel was not captured")
+        required = {"flash_prefill_gdn", "flash_prefill_gdn_packed"}
+        if required - {case["kernel"] for case in capture.cases}:
+            raise RuntimeError("Flash prefill packed and generic gated-delta kernels were not both captured")
         (args.directory / "cases.json").write_text(json.dumps(capture.cases, indent=2) + "\n")
         print(f"Saved {len(capture.cases)} Flash prefill recurrence launches", flush=True)
         return

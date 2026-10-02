@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from native_engine_bench import GoldenCapture, checkpoint_identity, compare_golden, compare_resources, golden_cases, golden_native_command, local_drafter, measured_process, native_synthetic_checkpoint, verify_golden
+from native_engine_bench import GoldenCapture, checkpoint_identity, compare_capacity, compare_golden, compare_resources, golden_cases, golden_native_command, local_drafter, measured_process, native_synthetic_checkpoint, verify_golden
 
 
 def test_capture_restores_inherited_methods_after_failure(tmp_path):
@@ -127,7 +127,8 @@ def test_native_glm_config_adaptation_preserves_golden_and_weight_payload(tmp_pa
 
 @pytest.mark.parametrize("mismatch", [False, True])
 @pytest.mark.parametrize("unknown_case", [False, True])
-def test_comparison_checks_all_cases_before_measuring_and_rejects_regressions(tmp_path, monkeypatch, mismatch, unknown_case):
+@pytest.mark.parametrize("capacity_mismatch", [False, True])
+def test_comparison_checks_all_cases_before_measuring_and_rejects_regressions(tmp_path, monkeypatch, mismatch, unknown_case, capacity_mismatch):
     checkpoint = tmp_path / "checkpoint"
     checkpoint.mkdir()
     (checkpoint / "config.json").write_text("{}")
@@ -153,7 +154,9 @@ def test_comparison_checks_all_cases_before_measuring_and_rejects_regressions(tm
         calls.append(report.stem)
         report.write_text(json.dumps(dict(tokens=[8, 7] if mismatch and "bad" in report.stem else [8, 9],
                                           prefill_seconds=2, first_token_seconds=2, decode_seconds=3,
-                                          total_seconds=5, timing_valid=True, peak_mlx_bytes=1000 if python else 1001)))
+                                          total_seconds=5, timing_valid=True, peak_mlx_bytes=1000 if python else 1001,
+                                          calibration_streams=8 if capacity_mismatch and not python and "bad" in report.stem else 64,
+                                          calibration_rows=128)))
         return dict(exit_code=0, process_seconds=1, peak_rss_bytes=2000, peak_footprint_bytes=3000)
 
     monkeypatch.setattr("native_engine_bench.measured_process", native)
@@ -165,14 +168,15 @@ def test_comparison_checks_all_cases_before_measuring_and_rejects_regressions(tm
             compare_golden(args)
         assert not calls
         return
-    with pytest.raises(SystemExit, match="correctness incomplete" if mismatch else "resource parity failed"):
+    with pytest.raises(SystemExit, match="correctness incomplete" if mismatch else "capacity parity incomplete" if capacity_mismatch else "resource parity failed"):
         compare_golden(args)
     assert calls == ["qwen-bad-0-python", "qwen-bad-0", "qwen-good-0-python", "qwen-good-0"] + (
-        [] if mismatch else ["qwen-bad-1", "qwen-bad-1-python"]) + ["qwen-good-1", "qwen-good-1-python"]
+        [] if mismatch or capacity_mismatch else ["qwen-bad-1", "qwen-bad-1-python"]) + ["qwen-good-1", "qwen-good-1-python"]
     result = json.loads((args.output / "comparison.json").read_text())
     assert result["complete"] and result["correctness_passed"] == (not mismatch)
     assert not result["passed"] and not result["memory_passed"]
-    assert len(result["cases"][0]["native"]) == (0 if mismatch else 1)
+    assert result["capacity_passed"] == (not capacity_mismatch)
+    assert len(result["cases"][0]["native"]) == (0 if mismatch or capacity_mismatch else 1)
     assert len(result["cases"][1]["native"]) == 1
 
 
@@ -180,6 +184,49 @@ def test_verification_rejects_partial_suite(tmp_path):
     (tmp_path / "suite.json").write_text(json.dumps({"complete": False, "models": []}))
     with pytest.raises(ValueError, match="incomplete"):
         verify_golden(tmp_path)
+
+
+def test_python_worker_includes_production_shared_workspace_before_warmup(tmp_path, monkeypatch):
+    import sys
+    from native_engine_bench import python_case_worker
+    events = []
+    model = object()
+    case = dict(name="text-greedy", measurements=[dict(tokens=[8, 9])])
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps(dict(family="qwen", cases=[case], checkpoint=dict(path="checkpoint"),
+                                        load_options={}, engine_options=dict(max_rows=128),
+                                        seed=5678, top_k=12, top_p=0.8)))
+
+    class Engine:
+        def __init__(self, loaded, **options):
+            assert loaded is model and options == dict(max_rows=128)
+
+        def round_working_set(self):
+            events.append("workspace")
+            return 4096
+
+        def release_rounds(self):
+            events.append("release")
+
+    def load(*args, **kwargs):
+        events.append("load")
+        return model, None
+
+    def run(loaded, *args):
+        assert loaded is model
+        events.append("request")
+        return dict(tokens=[8, 9], calibration_streams=64, calibration_rows=128)
+
+    monkeypatch.setattr("native_runtime.require_mlx", lambda: None)
+    monkeypatch.setitem(sys.modules, "tensorfold.engine.lane_engine", SimpleNamespace(LaneEngine=Engine))
+    monkeypatch.setitem(sys.modules, "tensorfold.families.qwen3_5", SimpleNamespace(load=load))
+    monkeypatch.setattr("native_engine_bench.run_golden_case", run)
+    output = tmp_path / "result.json"
+    python_case_worker(SimpleNamespace(python_case_manifest=manifest, case=[case["name"]], output=output))
+    assert events == ["load", "workspace", "release", "request", "request"]
+    result = json.loads(output.read_text())
+    assert result["round_workspace_bytes"] == 4096
+    assert result["calibration_streams"] == 64 and result["calibration_rows"] == 128
 
 
 @pytest.mark.parametrize("missing", [False, True])
@@ -205,6 +252,8 @@ def test_process_memory_retains_lifetime_rss_and_footprint_in_bytes(tmp_path, mo
 def test_resource_parity_rejects_any_memory_or_phase_regression(metric, extra):
     python = dict(peak_mlx_bytes=1000, peak_rss_bytes=2000, peak_footprint_bytes=3000, first_token_seconds=2, decode_seconds=3, total_seconds=5, timing_valid=True)
     native = dict(peak_mlx_bytes=1000, peak_rss_bytes=2000, peak_footprint_bytes=3000, prefill_seconds=2, decode_seconds=3)
+    for sample in (python, native):
+        sample.update(calibration_streams=64, calibration_rows=128)
     assert compare_resources([python], [native])["passed"]
     native[metric] += extra
     result = compare_resources([python], [native])
@@ -217,6 +266,8 @@ def test_resource_parity_uses_worst_peak_and_median_latency():
     python = dict(peak_mlx_bytes=1000, peak_rss_bytes=2000, peak_footprint_bytes=3000, first_token_seconds=2, decode_seconds=3, total_seconds=5, timing_valid=True)
     native = dict(peak_mlx_bytes=900, peak_rss_bytes=1900, peak_footprint_bytes=2900, prefill_seconds=1, decode_seconds=2)
     outlier = dict(peak_mlx_bytes=1001, peak_rss_bytes=2001, peak_footprint_bytes=3001, prefill_seconds=100, decode_seconds=100)
+    for sample in (python, native, outlier):
+        sample.update(calibration_streams=64, calibration_rows=128)
     result = compare_resources([python] * 3, [native, native, outlier])
     assert not result["memory_passed"]
     assert result["performance_passed"]
@@ -228,12 +279,30 @@ def test_resource_parity_uses_worst_peak_and_median_latency():
 def test_resource_parity_rejects_invalid_or_missing_measurements(invalid, metric):
     python = dict(peak_mlx_bytes=1000, peak_rss_bytes=2000, peak_footprint_bytes=3000, first_token_seconds=2, decode_seconds=3, total_seconds=5, timing_valid=True)
     native = dict(peak_mlx_bytes=1000, peak_rss_bytes=2000, peak_footprint_bytes=3000, prefill_seconds=2, decode_seconds=3)
+    for sample in (python, native):
+        sample.update(calibration_streams=64, calibration_rows=128)
     native[metric] = invalid
     assert not compare_resources([python], [native])["passed"]
     assert not compare_resources([python], [])["passed"]
     assert not compare_resources([], [native])["passed"]
     python["timing_valid"] = False
     native[metric] = python[metric]
+    assert not compare_resources([python], [native])["passed"]
+
+
+@pytest.mark.parametrize("field", ["calibration_streams", "calibration_rows"])
+@pytest.mark.parametrize("invalid", [None, 0, -1, True, 8, 256, 64.0])
+def test_resource_parity_requires_exact_capacity(field, invalid):
+    python = dict(calibration_streams=64, calibration_rows=128, peak_mlx_bytes=1000,
+                  peak_rss_bytes=2000, peak_footprint_bytes=3000, first_token_seconds=2,
+                  decode_seconds=3, total_seconds=5, timing_valid=True)
+    native = dict(python, prefill_seconds=1, decode_seconds=1, peak_mlx_bytes=1,
+                  peak_rss_bytes=1, peak_footprint_bytes=1)
+    native[field] = invalid
+    assert not compare_capacity(python, native)["passed"]
+    result = compare_resources([python], [native])
+    assert not any(result[k] for k in ("capacity_passed", "memory_passed", "performance_passed", "passed"))
+    del native[field]
     assert not compare_resources([python], [native])["passed"]
 
 

@@ -342,10 +342,10 @@ fn checkAttentionProjections(m: *model.Model) !void {
 }
 
 fn exercise(m: *model.Model, states: []shared.State, parents: []const []const i32, paths: []const []const i32) !void {
-    return exerciseMode(m, states, parents, paths, true);
+    for ([_]bool{ false, true }) |queued| try exerciseMode(m, states, parents, paths, true, queued);
 }
 
-fn exerciseMode(m: *model.Model, states: []shared.State, parents: []const []const i32, paths: []const []const i32, evaluate_before_commit: bool) !void {
+fn exerciseMode(m: *model.Model, states: []shared.State, parents: []const []const i32, paths: []const []const i32, evaluate_before_commit: bool, queued: bool) !void {
     const a = mx.allocator;
     const refs = try a.alloc(shared.State, states.len);
     defer a.free(refs);
@@ -375,7 +375,7 @@ fn exerciseMode(m: *model.Model, states: []shared.State, parents: []const []cons
         pass.* = try m.forward(stream.tokens, stream.parents);
         passed += 1;
     }
-    var shared_pass = try m.forwardStreams(streams);
+    var shared_pass = if (queued) try shared.forwardQueued(m, streams) else try m.forwardStreams(streams);
     defer shared_pass.deinit();
     try std.testing.expectEqual(first, shared_pass.count);
     try std.testing.expectEqual(@as(i32, 0), m.position);
@@ -510,11 +510,14 @@ pub fn checkModel(io: std.Io, dir: []const u8, simd: bool) !void {
         const wide_parents: [64][]const i32 = @splat(&.{ -1, 0 });
         const wide_paths: [64][]const i32 = @splat(&.{ 0, 1 });
         try exercise(&m, &wide, &wide_parents, &wide_paths);
+        const root_parents: [64][]const i32 = @splat(&.{-1});
+        const root_paths: [64][]const i32 = @splat(&.{0});
+        try exerciseMode(&m, &wide, &root_parents, &root_paths, true, true);
         // All 128 rows across eight kernel groups, with copy-on-write prefixes.
         try exercise(&m, wide[0..2], &.{ &.{-1}, &.{-1} }, &.{ &.{0}, &.{0} });
         std.debug.print("Shared maximum round: 64 streams / 128 rows and prefix-copy continuation exact\n", .{});
     }
-    for ([_]usize{ 1, 4, 8, 9 }) |count| try exerciseMode(&m, states[0..count], singleton_parents[0..count], singleton_paths[0..count], false);
+    for ([_]bool{ false, true }) |queued| for ([_]usize{ 1, 4, 8, 9 }) |count| try exerciseMode(&m, states[0..count], singleton_parents[0..count], singleton_paths[0..count], false, queued);
     try exercise(&m, states[0..3], singleton_parents[0..3], &.{ &.{0}, &.{}, &.{0} });
     {
         const cache_enabled = @import("kv_buffer.zig").enabled;
@@ -529,41 +532,43 @@ pub fn checkModel(io: std.Io, dir: []const u8, simd: bool) !void {
         }
         try exercise(&m, &uncached, &.{ &.{ -1, 0, 0 }, &.{-1} }, &.{ &.{ 0, 2 }, &.{0} });
         try exercise(&m, &uncached, &.{ &.{-1}, &.{ -1, 0 } }, &.{ &.{0}, &.{ 0, 1 } });
-        try exerciseMode(&m, &uncached, singleton_parents[0..2], &.{ &.{0}, &.{} }, false);
+        for ([_]bool{ false, true }) |queued| try exerciseMode(&m, &uncached, singleton_parents[0..2], &.{ &.{0}, &.{} }, false, queued);
     }
     // Abandoning a forward preserves committed state and releases every lease.
-    var before = try states[0].clone();
-    defer before.deinit();
-    const stream = [_]shared.Stream{.{ .state = &states[0], .tokens = &.{123}, .parents = &.{-1} }};
-    var pass = try m.forwardStreams(&stream);
-    pass.deinit();
-    var scope = mx.Scope{};
-    defer scope.deinit();
-    try sameCache(&scope, before, states[0]);
-    var evaluated = try m.forwardStreams(&stream);
-    errdefer evaluated.deinit();
-    try mx.eval(evaluated.logits);
-    evaluated.deinit();
-    try sameCache(&scope, before, states[0]);
-    var zero = try m.forwardStreams(&stream);
-    errdefer zero.deinit();
-    var available = false;
-    try mx.check(mx.c._mlx_array_is_available(&available, zero.logits));
-    try std.testing.expect(!available);
-    try zero.commit(&.{&.{}});
-    try mx.check(mx.c._mlx_array_is_available(&available, zero.logits));
-    try std.testing.expect(!available);
-    zero.deinit();
-    try sameCache(&scope, before, states[0]);
-    for ([_][]const i32{ &.{1}, &.{ 0, 0 } }) |invalid| {
-        var failed = try m.forwardStreams(&stream);
-        defer failed.deinit();
-        try std.testing.expectError(error.InvalidCommit, failed.commit(&.{invalid}));
-        try std.testing.expectError(error.InvalidRoundStage, failed.commit(&.{&.{0}}));
-        failed.deinit();
+    for ([_]bool{ false, true }) |queued| {
+        var before = try states[0].clone();
+        defer before.deinit();
+        const stream = [_]shared.Stream{.{ .state = &states[0], .tokens = &.{123}, .parents = &.{-1} }};
+        var pass = if (queued) try shared.forwardQueued(&m, &stream) else try m.forwardStreams(&stream);
+        pass.deinit();
+        var scope = mx.Scope{};
+        defer scope.deinit();
         try sameCache(&scope, before, states[0]);
+        var evaluated = if (queued) try shared.forwardQueued(&m, &stream) else try m.forwardStreams(&stream);
+        errdefer evaluated.deinit();
+        try mx.eval(evaluated.logits);
+        evaluated.deinit();
+        try sameCache(&scope, before, states[0]);
+        var zero = if (queued) try shared.forwardQueued(&m, &stream) else try m.forwardStreams(&stream);
+        errdefer zero.deinit();
+        var available = false;
+        try mx.check(mx.c._mlx_array_is_available(&available, zero.logits));
+        try std.testing.expect(!available);
+        try zero.commit(&.{&.{}});
+        try mx.check(mx.c._mlx_array_is_available(&available, zero.logits));
+        try std.testing.expect(!available);
+        zero.deinit();
+        try sameCache(&scope, before, states[0]);
+        for ([_][]const i32{ &.{1}, &.{ 0, 0 } }) |invalid| {
+            var failed = if (queued) try shared.forwardQueued(&m, &stream) else try m.forwardStreams(&stream);
+            defer failed.deinit();
+            try std.testing.expectError(error.InvalidCommit, failed.commit(&.{invalid}));
+            try std.testing.expectError(error.InvalidRoundStage, failed.commit(&.{&.{0}}));
+            failed.deinit();
+            try sameCache(&scope, before, states[0]);
+        }
+        try exercise(&m, states[0..1], singleton_parents[0..1], singleton_paths[0..1]);
+        try std.testing.expectError(error.DuplicateStream, m.forwardStreams(&.{ stream[0], stream[0] }));
     }
-    try exercise(&m, states[0..1], singleton_parents[0..1], singleton_paths[0..1]);
-    try std.testing.expectError(error.DuplicateStream, m.forwardStreams(&.{ stream[0], stream[0] }));
     std.debug.print("Shared Qwen/Bonsai rounds: exact hidden/logits/taps, ragged commits, continuation, cache modes, cancellation and failed settlement\n", .{});
 }

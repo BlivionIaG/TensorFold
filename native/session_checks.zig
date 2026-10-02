@@ -1,5 +1,6 @@
 const std = @import("std");
 const mx = @import("mlx.zig");
+const model = @import("model.zig");
 const session = @import("session.zig");
 
 pub fn bench(init: std.process.Init, args: []const []const u8) !void {
@@ -155,6 +156,7 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                     .calibration_seconds = calibrated - loaded,
                     .calibration_streams = stream_count,
                     .calibration_rows = coordinator.cost_count,
+                    .round_workspace_reserve_bytes = coordinator.peak_bytes,
                     .load_process_memory = load_memory,
                     .calibration_process_memory = calibration_memory,
                     .request_process_memory = try @import("process_memory.zig").Snapshot.current(),
@@ -208,7 +210,7 @@ const Capture = struct {
 pub fn checkShared(io: std.Io, directory: []const u8, drafter: ?[]const u8) !void {
     try mx.init();
     defer mx.shutdown();
-    var s = try session.Session.initWithDraft(io, directory, .{ .enabled = drafter != null, .directory = if (drafter) |path| if (std.mem.eql(u8, path, "-")) null else path else null, .max_draft = 15 });
+    var s = try session.Session.initWithDraft(io, directory, .{ .enabled = drafter != null, .directory = if (drafter) |path| if (std.mem.eql(u8, path, "-")) null else path else null, .max_draft = 15, .bits = 8 });
     defer s.deinit();
     if (s.backend == .qwen) if (s.drafter) |*d| try d.checkStreams(&s.backend.qwen);
     switch (s.backend) {
@@ -250,6 +252,12 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
     const G = session.Generation(M);
     const shared = @import("shared_round.zig");
     const capacity = comptime shared.modelStreamLimit(M);
+    var workspace_reserve: u64 = 0;
+    if (M == model.Model) {
+        var calibration = shared.Coordinator{};
+        try calibration.calibrate(s, shared.streamLimit(s.backend));
+        workspace_reserve = calibration.peak_bytes;
+    }
     var tokens: [capacity][73]i32 = undefined;
     var prompts: [capacity][]const i32 = undefined;
     var options: [capacity]session.Options = undefined;
@@ -263,6 +271,10 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
         for (tokens[i][0..count], 0..) |*token, j| token.* = @intCast(1000 + i * 73 + j);
         prompts[i] = tokens[i][0..count];
         options[i] = .{ .max_tokens = 24 + i % 8, .ignore_eos = true, .draft = false, .seed = 123 + i, .sampling = .{ .temperature = if (i % 2 == 0) 0 else 0.7, .top_k = 12, .top_p = 0.8, .metal = true } };
+        if (M == model.Model and i % 4 == 1) {
+            options[i].sampling.metal = false;
+            options[i].sampling.top_k = 0;
+        }
         var g = try G.init(m, &s.tokenizer, mx.allocator, prompts[i], options[i], s.draftSink(baseline[i].sink()), null);
         defer g.deinit();
         while (g.phase == .prefill) _ = try g.step(m);
@@ -324,7 +336,23 @@ fn sharedRequests(s: *session.Session, m: anytype, neural: bool) !void {
                 gs[i] = &requests[candidate.slot];
                 served[candidate.slot] = turn;
             }
+            const check_workspace = M == model.Model and rows == M.max_shared_rows;
+            var resident: u64 = 0;
+            if (check_workspace) {
+                try mx.check(mx.c.mlx_synchronize(mx.stream));
+                resident = try @import("memory_runtime.zig").activeBytes();
+                try mx.check(mx.c.mlx_reset_peak_memory());
+            }
             try coordinator.step(m, gs[0..selected.len], results[0..selected.len]);
+            if (check_workspace) {
+                try mx.check(mx.c.mlx_synchronize(mx.stream));
+                var peak: usize = 0;
+                try mx.check(mx.c.mlx_get_peak_memory(&peak));
+                if (peak -| resident > workspace_reserve) {
+                    std.debug.print("Shared workspace exceeded reservation: {d} bytes used, {d} reserved\n", .{ peak -| resident, workspace_reserve });
+                    return error.SharedWorkspaceUnderestimated;
+                }
+            }
             try std.testing.expect(coordinator.rows <= rows);
             for (selected, results[0..selected.len]) |candidate, result| {
                 if (result.failure) |err| {

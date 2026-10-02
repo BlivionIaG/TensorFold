@@ -110,6 +110,7 @@ pub fn check() !void {
             const expected = if (view.ctx != null) try s.cat(&.{ view, added }, @intCast(axis)) else added;
             const write = try b.append(&s, view, added, axis);
             try mx.eval(write.capacity);
+            try std.testing.expectEqual(@as(i32, 256), mx.dim(write.capacity, @intCast(axis)));
             if (donor != 0) {
                 const actual = address(write.capacity);
                 if (donor != actual) {

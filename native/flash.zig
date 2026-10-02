@@ -222,6 +222,7 @@ pub const Model = struct {
     pub const SerialPass = Pass;
     pub const vocab = 248320;
     pub const max_shared_rows = 64;
+    pub const max_shared_streams = 32;
     pub const adaptive_mtp_depth = false;
     pub fn eos(id: i32) bool {
         return id == 248044 or id == 248046;

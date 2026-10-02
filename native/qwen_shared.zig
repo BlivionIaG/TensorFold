@@ -25,6 +25,7 @@ pub const Pass = struct {
     logits: A = mx.empty,
     hidden: A = mx.empty,
     count: usize,
+    queued: bool = false,
 
     pub fn view(p: *Pass, index: usize) !*const model.Pass {
         const result = try p.contextView(index);
@@ -127,7 +128,7 @@ pub const Pass = struct {
                     const first = p.entries[group.first].first;
                     const last = first + @as(i32, @intCast(group.layout.rows));
                     var replayed: [8]A = undefined;
-                    if (p.count == p.entries.len) {
+                    if (!p.queued and p.count == p.entries.len) {
                         @memcpy(replayed[0..group.len], p.gdn[layer].final_states[group.first..][0..group.len]);
                     } else {
                         var vals: [5]A = undefined;
@@ -165,12 +166,14 @@ pub const Pass = struct {
         defer scope.deinit();
         const next = try p.prepareCaches(&scope, paths);
         defer deinitCaches(next);
-        var arrays: std.ArrayList(A) = .empty;
-        defer arrays.deinit(mx.allocator);
-        for (next, paths) |cache, path| if (path.len > 0) for (cache) |c| {
-            try arrays.appendSlice(mx.allocator, &.{ c.a, c.b });
-        };
-        if (arrays.items.len > 0) try mx.evalMany(arrays.items, true);
+        if (!p.queued) {
+            var arrays: std.ArrayList(A) = .empty;
+            defer arrays.deinit(mx.allocator);
+            for (next, paths) |cache, path| if (path.len > 0) for (cache) |c| {
+                try arrays.appendSlice(mx.allocator, &.{ c.a, c.b });
+            };
+            if (arrays.items.len > 0) try mx.evalMany(arrays.items, true);
+        }
         try p.acceptCaches(paths, next);
     }
 
@@ -209,6 +212,16 @@ fn cacheDependency(s: *mx.Scope, value: A, arrays: []const A) !A {
 }
 
 pub fn forward(m: *model.Model, streams: []const Stream) !Pass {
+    return forwardImpl(m, streams, false);
+}
+
+// Publish validated replacement graphs, then release the pass before evaluating
+// caches so replay can recycle each old recurrent state as it finishes.
+pub fn forwardQueued(m: *model.Model, streams: []const Stream) !Pass {
+    return forwardImpl(m, streams, true);
+}
+
+fn forwardImpl(m: *model.Model, streams: []const Stream, queued: bool) !Pass {
     if (m.round_owner.stage != .idle) return error.ModelRoundActive;
     if (streams.len == 0 or streams.len > 64) return error.InvalidStreams;
     var rows: usize = 0;
@@ -256,7 +269,7 @@ pub fn forward(m: *model.Model, streams: []const Stream) !Pass {
     }
     const ticket = try m.round_owner.begin();
     for (streams) |stream| stream.state.borrowed = true;
-    var p = Pass{ .model = m, .ticket = ticket, .entries = entries, .groups = groups, .count = rows };
+    var p = Pass{ .model = m, .ticket = ticket, .entries = entries, .groups = groups, .count = rows, .queued = queued };
     // Ownership of allocations transfers to p only on success.
     errdefer {
         if (p.staged) |cache| deinitCaches(cache);
@@ -306,7 +319,7 @@ pub fn forward(m: *model.Model, streams: []const Stream) !Pass {
     const norm = try lanes.norm(&m.kernels, s, carried[0], carried[1], try m.weights.get("model.norm.weight"));
     p.hidden = norm.x.x;
     p.logits = try (try m.weights.linear("lm_head")).apply(&m.kernels, s, norm.x);
-    if (rows == streams.len) {
+    if (!queued and rows == streams.len) {
         const paths: [64][]const i32 = @splat(&.{0});
         p.staged = try p.prepareCaches(s, paths[0..streams.len]);
         var arrays: [64 * 128]A = undefined;
@@ -357,7 +370,7 @@ fn recurrence(p: *Pass, s: *mx.Scope, layer: usize, x: lanes.Act) !A {
             st[j] = if (cache.b.ctx != null) cache.b else try s.zeros(&.{ 1, 48, 128, 128 }, mx.f32t);
         }
         pieces[gi] = if (zba) |stack| try grouped.preStack(&m.kernels, s, &group.layout, try s.slice(qkv, 1, first, end), cs[0..group.len], cw, try s.slice(stack, 1, first, end), try m.weight(layer, "linear_attn.A_log"), try m.weight(layer, "linear_attn.dt_bias")) else try grouped.pre(&m.kernels, s, &group.layout, try s.slice(qkv, 1, first, end), cs[0..group.len], cw, try s.slice(a, 1, first, end), try s.slice(b, 1, first, end), try m.weight(layer, "linear_attn.A_log"), try m.weight(layer, "linear_attn.dt_bias"));
-        if (p.count == p.entries.len) {
+        if (!p.queued and p.count == p.entries.len) {
             const result = try grouped.step(&m.kernels, s, &group.layout, pieces[gi], st[0..group.len]);
             ys[gi] = result.y;
             for (result.states[0..group.len], p.gdn[layer].final_states[group.first..][0..group.len]) |state, *out| out.* = try p.scope.own(try mx.retain(state));

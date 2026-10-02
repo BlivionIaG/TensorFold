@@ -1178,6 +1178,7 @@ const Benchmark = struct {
     drafter: bool = false,
     expect_sharing: bool = false,
     concurrency: [3]usize = .{ 1, 4, 8 },
+    capacity: ?usize = null,
     mismatch_path: []const u8 = "",
     verify_only: bool = false,
     memory_map_prefix: ?[]const u8 = null,
@@ -1197,6 +1198,25 @@ const Benchmark = struct {
 
     fn maxStreams(b: *const Benchmark) usize {
         return std.mem.max(usize, &b.concurrency);
+    }
+
+    fn streamCounts(b: *const Benchmark) []const usize {
+        return b.concurrency[0..@min(3, b.maxStreams())];
+    }
+
+    fn configureCapacity(b: *Benchmark, status: std.json.Value) !void {
+        const value = if (status == .object) status.object.get("max_batch_size") orelse return error.MissingBenchmarkCapacity else return error.MissingBenchmarkCapacity;
+        if (value != .integer or value.integer < 1 or value.integer > b.expected.len) return error.InvalidBenchmarkCapacity;
+        const streams: usize = @intCast(value.integer);
+        if (b.capacity) |reference| {
+            if (streams != reference) {
+                std.debug.print("Benchmark stream capacity mismatch: {s} reports {d}, expected {d}\n", .{ b.variant, streams, reference });
+                return error.BenchmarkCapacityMismatch;
+            }
+        } else {
+            b.capacity = streams;
+            b.concurrency = .{ 1, @min(streams, @min(8, @max(2, streams / 2))), streams };
+        }
     }
 
     const MemoryComparison = struct {
@@ -1268,11 +1288,12 @@ const Benchmark = struct {
     }
 
     fn performance(b: *const Benchmark, a: std.mem.Allocator) !Performance {
-        const cells = try a.alloc(Performance.Cell, b.concurrency.len * @as(usize, if (b.drafter) 2 else 1));
+        const counts = b.streamCounts();
+        const cells = try a.alloc(Performance.Cell, counts.len * @as(usize, if (b.drafter) 2 else 1));
         var passed = true;
         for (cells, 0..) |*cell, i| {
-            const streams = b.concurrency[i % b.concurrency.len];
-            const draft = i >= b.concurrency.len;
+            const streams = counts[i % counts.len];
+            const draft = i >= counts.len;
             const python = b.samples("python", streams, draft);
             const native = b.samples("native", streams, draft);
             const at_least_python = python.median != null and native.median != null and native.median.? >= python.median.?;
@@ -1283,11 +1304,12 @@ const Benchmark = struct {
     }
 
     fn pythonReference(b: *const Benchmark, a: std.mem.Allocator) !PythonReference {
-        const cells = try a.alloc(PythonReference.Cell, b.concurrency.len * @as(usize, if (b.drafter) 2 else 1));
+        const counts = b.streamCounts();
+        const cells = try a.alloc(PythonReference.Cell, counts.len * @as(usize, if (b.drafter) 2 else 1));
         var valid = b.records.items.len == cells.len * 6;
         for (cells, 0..) |*cell, i| {
-            const streams = b.concurrency[i % b.concurrency.len];
-            const draft = i >= b.concurrency.len;
+            const streams = counts[i % counts.len];
+            const draft = i >= counts.len;
             const python = b.samples("python", streams, draft);
             var cell_valid = python.median != null and std.math.isFinite(python.median.?);
             var seen: u6 = 0;
@@ -1338,6 +1360,7 @@ const Benchmark = struct {
     fn run(b: *Benchmark, s: *Scenario, port: u16) !void {
         const a = s.init.arena.allocator();
         const io = s.init.io;
+        try b.configureCapacity(try health(a, io, port));
         const startup = try ProcessMemory.read(s.child.id.?);
         try b.captureMemoryMap(s, "startup");
         // Establish each request's serial reference before sharing caches or kernels.
@@ -1356,7 +1379,7 @@ const Benchmark = struct {
                 defer socket.close(io);
                 try b.compare(s, i, try Output.parse(a, try readAll(a, io, socket), true));
             };
-            for (b.concurrency) |count| {
+            for (b.streamCounts()) |count| {
                 for (0..if (b.verify_only) @as(usize, 1) else 3) |repetition| {
                     const before = if (b.verify_only) std.json.Value.null else (try health(a, io, port)).object.get("inference") orelse std.json.Value.null;
                     var replies: [64]TimedResponse = undefined;
@@ -1390,13 +1413,13 @@ const Benchmark = struct {
                         latency[i] = reply.latency_ms;
                     }
                     if (s.python_port == null) _ = try s.waitForCounts(port, 0, 0);
-                    if (b.verify_only) {
-                        std.debug.print("PASS: {s}, {d} requests: exact seeded greedy/sampled SSE output and usage\n", .{ b.variant, count });
-                        continue;
-                    }
                     const status = try health(a, io, port);
                     const stats = status.object.get("inference") orelse std.json.Value{ .object = .empty };
                     try b.records.append(a, .{ .variant = b.variant, .phase = b.phase, .repetition = repetition, .streams = count, .draft = mode == 1, .tokens = total, .seconds = seconds, .tokens_per_second = @as(f64, @floatFromInt(total)) / seconds, .first_token_ms = first, .latency_ms = latency, .shared_rounds = if (stats.object.get("shared_rounds")) |v| v.integer else 0, .max_shared_streams = if (stats.object.get("max_shared_streams")) |v| v.integer else 0, .inference_before = before, .inference_after = stats, .memory = status.object.get("memory").?, .process_memory = try ProcessMemory.read(s.child.id.?) });
+                    if (b.verify_only) {
+                        std.debug.print("PASS: {s}, {d} requests, draft={any}: exact seeded greedy/sampled SSE output and usage; peak footprint {d}\n", .{ b.variant, count, mode == 1, b.records.items[b.records.items.len - 1].process_memory.?.peak_footprint_bytes });
+                        continue;
+                    }
                     std.debug.print("BENCH {s} phase={d} streams={d} draft={any} rep={d}: {d:.2} completion tok/s, {d:.3}s, exact output\n", .{ b.variant, b.phase, count, mode == 1, repetition, @as(f64, @floatFromInt(total)) / seconds, seconds });
                 }
             }
@@ -1415,8 +1438,20 @@ const Benchmark = struct {
 };
 
 fn benchmark(init: std.process.Init, all_args: []const []const u8) !void {
-    const memory_maps = std.mem.eql(u8, all_args[all_args.len - 1], "--memory-maps");
-    const args = all_args[0 .. all_args.len - @intFromBool(memory_maps)];
+    var memory_maps = false;
+    var stream_limit: ?usize = null;
+    var end = all_args.len;
+    while (end > 6) {
+        if (std.mem.eql(u8, all_args[end - 1], "--memory-maps") and !memory_maps) {
+            memory_maps = true;
+            end -= 1;
+        } else if (end >= 8 and std.mem.eql(u8, all_args[end - 2], "--streams") and stream_limit == null) {
+            stream_limit = try std.fmt.parseInt(usize, all_args[end - 1], 10);
+            if (stream_limit.? < 1 or stream_limit.? > 64) return error.InvalidBenchmarkCapacity;
+            end -= 2;
+        } else break;
+    }
+    const args = all_args[0..end];
     if (args.len != 6 and args.len != 8) return error.InvalidBenchmarkArguments;
     if (args.len == 8 and !std.mem.eql(u8, args[6], "--drafter")) return error.InvalidBenchmarkArguments;
     const a = init.arena.allocator();
@@ -1433,8 +1468,10 @@ fn benchmark(init: std.process.Init, all_args: []const []const u8) !void {
     const gemma = std.mem.startsWith(u8, kind, "gemma4");
     const draft_budget: usize = if (args.len != 8) 0 else if (external_drafter) 15 else 3;
     const draft_bits: usize = if (external_drafter) (if (gemma) 8 else 4) else 0;
-    var bench = Benchmark{ .drafter = args.len == 8, .expect_sharing = std.mem.startsWith(u8, kind, "qwen3") or std.mem.startsWith(u8, kind, "qwen4") or std.mem.startsWith(u8, kind, "gemma4") or std.mem.eql(u8, kind, "nemotron_h") };
-    if (std.mem.eql(u8, kind, "nemotron_h")) bench.concurrency = .{ 1, 8, 64 };
+    var bench = Benchmark{ .drafter = args.len == 8, .expect_sharing = std.mem.startsWith(u8, kind, "qwen3") or std.mem.startsWith(u8, kind, "qwen4") or std.mem.startsWith(u8, kind, "gemma4") or std.mem.eql(u8, kind, "prism_hadamard_qwen35") or std.mem.eql(u8, kind, "nemotron_h") };
+    const streams: usize = stream_limit orelse if (std.mem.startsWith(u8, kind, "qwen3") or std.mem.eql(u8, kind, "prism_hadamard_qwen35") or std.mem.eql(u8, kind, "nemotron_h")) 64 else if (std.mem.startsWith(u8, kind, "qwen4")) 32 else if (gemma) 16 else 1;
+    bench.capacity = streams;
+    bench.concurrency = .{ 1, @min(streams, @min(8, @max(2, streams / 2))), streams };
     bench.verify_only = verify_only;
     if (memory_maps) bench.memory_map_prefix = args[5];
     bench.mismatch_path = try std.fmt.allocPrint(a, "{s}.mismatch.json", .{args[5]});
@@ -1458,7 +1495,7 @@ fn benchmark(init: std.process.Init, all_args: []const []const u8) !void {
             listener.deinit(init.io);
         }
         var argv: std.ArrayList([]const u8) = .empty;
-        try argv.appendSlice(a, &.{ args[binary], "serve", args[4], "--snapshot-dir", "none", "--port", if (python_port) |p| try std.fmt.allocPrint(a, "{d}", .{p}) else "0", if (is_python) "--parallel" else "--batch-streams", try std.fmt.allocPrint(a, "{d}", .{bench.maxStreams()}), "--prompt-cache-gib", "0" });
+        try argv.appendSlice(a, &.{ args[binary], "serve", args[4], "--snapshot-dir", "none", "--port", if (python_port) |p| try std.fmt.allocPrint(a, "{d}", .{p}) else "0", if (is_python) "--parallel" else "--batch-streams", try std.fmt.allocPrint(a, "{d}", .{streams}), "--prompt-cache-gib", "0" });
         if (is_python) {
             try argv.append(a, "--no-update-check");
             if (std.mem.indexOf(u8, args[4], "Flash-Next") != null) try argv.append(a, "--ple-on-ssd");
@@ -1491,7 +1528,7 @@ fn benchmark(init: std.process.Init, all_args: []const []const u8) !void {
         .comparison = if (python_only) "python_reference" else if (python) "python_vs_native" else if (repeat_native) "native_repeatability" else "before_after",
         .correctness_only = verify_only,
         .outputs = bench.expected[0..bench.maxStreams()],
-        .concurrency = bench.concurrency,
+        .concurrency = bench.streamCounts(),
         .max_batch_size = bench.maxStreams(),
         .memory_limit_gib = ram / (1024 * 1024 * 1024),
         .draft_budget = draft_budget,
@@ -1516,6 +1553,40 @@ fn benchmark(init: std.process.Init, all_args: []const []const u8) !void {
         for (result.cells) |cell| std.debug.print("{s}: streams={d} draft={any}: native {any}, Python {any} median completion tok/s ({d}/{d} samples)\n", .{ if (cell.passed) "PASS" else "FAIL", cell.streams, cell.draft, cell.native_median_tokens_per_second, cell.python_median_tokens_per_second, cell.native_samples, cell.python_samples });
         if (!result.passed) return error.NativeSlowerThanPython;
     }
+}
+
+test "HTTP comparisons require matching stream capacities" {
+    const a = std.testing.allocator;
+    for ([_]usize{ 1, 2, 16, 32, 64 }) |streams| {
+        var selected = Benchmark{};
+        const json = try std.json.Stringify.valueAlloc(a, .{ .max_batch_size = streams }, .{});
+        defer a.free(json);
+        const status = try std.json.parseFromSlice(std.json.Value, a, json, .{});
+        defer status.deinit();
+        try selected.configureCapacity(status.value);
+        const counts = selected.streamCounts();
+        try std.testing.expectEqual(@min(3, streams), counts.len);
+        try std.testing.expectEqual(streams, counts[counts.len - 1]);
+        for (counts[1..], counts[0 .. counts.len - 1]) |next, previous| try std.testing.expect(next > previous);
+    }
+    var benchmark_state = Benchmark{};
+    const reference = try std.json.parseFromSlice(std.json.Value, a, "{\"max_batch_size\":64}", .{});
+    defer reference.deinit();
+    try benchmark_state.configureCapacity(reference.value);
+    try std.testing.expectEqualSlices(usize, &.{ 1, 8, 64 }, &benchmark_state.concurrency);
+    try benchmark_state.configureCapacity(reference.value);
+    for ([_][]const u8{ "{\"max_batch_size\":8}", "{\"max_batch_size\":32}" }) |json| {
+        const candidate = try std.json.parseFromSlice(std.json.Value, a, json, .{});
+        defer candidate.deinit();
+        try std.testing.expectError(error.BenchmarkCapacityMismatch, benchmark_state.configureCapacity(candidate.value));
+    }
+    for ([_][]const u8{ "{\"max_batch_size\":0}", "{\"max_batch_size\":65}", "{\"max_batch_size\":64.0}", "{\"max_batch_size\":true}" }) |json| {
+        const invalid = try std.json.parseFromSlice(std.json.Value, a, json, .{});
+        defer invalid.deinit();
+        try std.testing.expectError(error.InvalidBenchmarkCapacity, benchmark_state.configureCapacity(invalid.value));
+    }
+    try std.testing.expectError(error.MissingBenchmarkCapacity, benchmark_state.configureCapacity(.null));
+    try std.testing.expectEqual(@as(usize, 64), benchmark_state.maxStreams());
 }
 
 test "benchmark responses require exact cached usage and 32 completion tokens" {

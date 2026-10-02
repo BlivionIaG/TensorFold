@@ -145,6 +145,8 @@ pub const CompiledPost = struct {
     }
 };
 pub const Model = struct {
+    pub const max_shared_streams = 64;
+    pub const max_shared_rows = 128;
     pub const SerialPass = Pass;
     round_owner: @import("decode_round.zig").Owner = .{},
     weights: Weights,

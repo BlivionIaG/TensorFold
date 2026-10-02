@@ -209,6 +209,7 @@ def run_golden_case(model, options, case, args, capture=None):
                       first_token_seconds=first_seconds, decode_seconds=decode_seconds,
                       total_seconds=time.perf_counter() - started, timing_valid=capture is None,
                       peak_mlx_bytes=mx.get_peak_memory(), active_mlx_bytes=mx.get_active_memory(),
+                      calibration_streams=engine.batch_streams, calibration_rows=engine.batch_rows,
                       rounds=stream.rounds, drafted=stream.drafted, accepted=stream.accepted,
                       prefill_widths=stream.prefill_widths, prefill_raised=stream.prefill_raised,
                       round_stats=[asdict(stat) for stat in engine.round_stats], snapshots=snapshots)
@@ -499,8 +500,20 @@ def native_synthetic_checkpoint(manifest, output):
     return destination.resolve()
 
 
+def compare_capacity(python, native):
+    limits = {}
+    for name in ("calibration_streams", "calibration_rows"):
+        reference, actual = python.get(name), native.get(name)
+        valid = type(reference) is int and type(actual) is int and reference > 0 and actual > 0
+        limits[name] = dict(python=reference, native=actual, passed=valid and reference == actual)
+    return dict(passed=all(limit["passed"] for limit in limits.values()), limits=limits)
+
+
 def compare_resources(python, native):
     metrics = {}
+    capacity = bool(python) and len(python) == len(native) and all(
+        compare_capacity(reference, actual)["passed"] for reference, actual in zip(python, native)
+    )
     memory_metrics = ("peak_mlx_bytes", "peak_rss_bytes", "peak_footprint_bytes")
     for name in (*memory_metrics, "first_token_seconds", "decode_seconds", "total_seconds"):
         def value(sample, is_native):
@@ -516,8 +529,9 @@ def compare_resources(python, native):
         valid = bool(baseline and measured) and all(
             isinstance(v, (int, float)) and math.isfinite(v) and v > 0 for v in baseline + measured
         ) and all(s.get("timing_valid") is True for s in python)
-        if not valid:
-            metrics[name] = dict(passed=False, reason="missing or invalid measurements")
+        if not capacity or not valid:
+            metrics[name] = dict(passed=False, reason="stream or row capacity mismatch or missing" if not capacity
+                                else "missing or invalid measurements")
             continue
         aggregate = max if name in memory_metrics else statistics.median
         reference, actual = aggregate(baseline), aggregate(measured)
@@ -525,7 +539,7 @@ def compare_resources(python, native):
                              passed=actual <= reference)
     memory = all(metrics[name]["passed"] for name in memory_metrics)
     performance = all(v["passed"] for k, v in metrics.items() if k not in memory_metrics)
-    return dict(memory_passed=memory, performance_passed=performance,
+    return dict(capacity_passed=capacity, memory_passed=memory, performance_passed=performance,
                 passed=memory and performance, metrics=metrics)
 
 
@@ -552,20 +566,25 @@ def python_case_worker(args):
     from native_runtime import require_mlx
     require_mlx()
     import importlib
+    from tensorfold.engine.lane_engine import LaneEngine
     manifest = json.loads(args.python_case_manifest.read_text())
     package = importlib.import_module(f"tensorfold.families.{FAMILY_PACKAGES[manifest['family']]}")
     for key, value in getattr(package, "MLX_ENV", {}).items():
         os.environ.setdefault(key, value)
     case, = [case for case in manifest["cases"] if case["name"] in args.case]
     model, _ = package.load(Path(manifest["checkpoint"]["path"]), **manifest["load_options"])
+    # Production admission probes shared workspace after loading the family.
+    calibration = LaneEngine(model, **manifest["engine_options"])
+    round_workspace_bytes = calibration.round_working_set()
+    calibration.release_rounds()
+    del calibration
     settings = SimpleNamespace(max_tokens=len(case["measurements"][0]["tokens"]),
                                seed=manifest["seed"], top_k=manifest["top_k"], top_p=manifest["top_p"])
     for _ in range(2):
         result = run_golden_case(model, manifest["engine_options"], case, settings)
         if result["tokens"] != case["measurements"][0]["tokens"]:
             raise RuntimeError(f"Fresh Python execution disagrees with fixture: {case['name']}")
-    result.update(calibration_streams=getattr(model, "max_streams", None),
-                  calibration_rows=getattr(model, "batch_rows", None))
+    result["round_workspace_bytes"] = round_workspace_bytes
     write_json(args.output, result)
 
 
@@ -588,10 +607,10 @@ def compare_golden(args):
                       golden=str(args.compare_golden.resolve()),
                       scope=("Session/shared-round serving versus production LaneEngine" if args.native_driver == "serving"
                              else "CLI versus production LaneEngine, not native Session/shared-round serving; CLI draft policies differ")
-                            + "; warm resident model, fresh request caches; process startup excluded from request timing",
+                            + "; one active request per case at matching stream/row capacity; warm resident model, fresh request caches; process startup excluded from request timing",
                       warmup="one discarded exact-case run in each fresh Python/native process",
                       rss_scope="macOS time -l whole-process lifetime maximum RSS and physical footprint, including load, calibration, warmup, request and teardown; bytes",
-                      calibration_scope="each implementation's supported stream/row limits are recorded per sample; unequal limits are not equivalent concurrency memory measurements",
+                      calibration_scope="production family loading and shared-workspace probes on both sides; positive stream and row capacities must match exactly in every fresh Python/native pair; missing or unequal capacities exclude resource measurements",
                       native_environment={k: v for k, v in native_env.items()
                                           if k.startswith(("TF_", "TENSORFOLD_", "MLX_"))},
                       checkpoint_adaptations=[], excluded=[])
@@ -633,7 +652,7 @@ def compare_golden(args):
     # Check every selected case before retaining any native performance measurements.
     for repetition in range(args.repetitions + 1):
         for family, manifest, manifest_path, case, entry in selected:
-            if repetition and not entry["correctness"]["matches"]:
+            if repetition and (not entry["correctness"]["matches"] or not entry["capacity"]["passed"]):
                 continue
             stem = f"{family}-{case['name']}-{repetition}"
             report = args.output / f"{stem}.json"
@@ -659,20 +678,28 @@ def compare_golden(args):
                        and measured["python"]["exit_code"] == 0 and measured["python"].get("tokens") == expected)
             result.update(matches=matches, expected_tokens=expected)
             write_json(report, result)
+            capacity = compare_capacity(measured["python"], result)
             if repetition:
                 if not matches:
                     raise RuntimeError(f"Output changed after correctness check: {stem}")
+                if not capacity["passed"]:
+                    entry["capacity"] = capacity
+                    write_json(output, comparison)
+                    raise RuntimeError(f"Stream or row capacity changed after correctness check: {stem}: {capacity['limits']}")
                 entry["native"].append(result)
                 entry["python"].append(measured["python"])
             else:
+                entry["capacity"] = capacity
                 entry["correctness"] = dict(matches=matches, exit_code=result["exit_code"],
                                             python_exit_code=measured["python"]["exit_code"],
                                             tokens=actual, expected_tokens=expected, report=report.name)
             write_json(output, comparison)
             print(f"{'MEASURE' if repetition else 'CHECK'} {stem}: "
-                  f"{'match' if matches else 'FAIL'}, {result['process_seconds']:.3f}s native process", flush=True)
+                  f"{'match' if matches else 'FAIL'}, capacity {'match' if capacity['passed'] else 'FAIL ' + str(capacity['limits'])}, "
+                  f"{result['process_seconds']:.3f}s native process", flush=True)
     comparison["complete"] = True
     comparison["correctness_passed"] = all(c["correctness"]["matches"] for c in comparison["cases"])
+    comparison["capacity_passed"] = all(c["capacity"]["passed"] for c in comparison["cases"])
     for case in comparison["cases"]:
         case["resources"] = compare_resources(case["python"], case["native"])
         failures = [name for name, result in case["resources"]["metrics"].items() if not result["passed"]]
@@ -681,10 +708,12 @@ def compare_golden(args):
     comparison["resource_policy"] = "peak MLX bytes, whole-process peak RSS/physical footprint and median first-token/decode/total seconds must not exceed fresh Python; no tolerance"
     comparison["memory_passed"] = all(c["resources"]["memory_passed"] for c in comparison["cases"])
     comparison["performance_passed"] = all(c["resources"]["performance_passed"] for c in comparison["cases"])
-    comparison["passed"] = all(comparison[k] for k in ("correctness_passed", "memory_passed", "performance_passed"))
+    comparison["passed"] = all(comparison[k] for k in ("correctness_passed", "capacity_passed", "memory_passed", "performance_passed"))
     write_json(output, comparison)
     if not comparison["correctness_passed"]:
         raise SystemExit("Native correctness incomplete; mismatching cases excluded from measurements")
+    if not comparison["capacity_passed"]:
+        raise SystemExit("Native capacity parity incomplete; missing or unequal stream/row limits excluded from measurements")
     if not comparison["passed"]:
         raise SystemExit("Native resource parity failed; see per-case memory and timing results")
 
@@ -794,7 +823,7 @@ def main():
     parser.add_argument("--python-case-manifest", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--verify-golden", type=Path, help="Verify a retained golden suite's arrays, provenance labels and token comparisons")
     parser.add_argument("--compare-golden", type=Path, help="Check native tokens against a golden suite before comparing phase measurements")
-    parser.add_argument("--native-driver", choices=("cli", "serving"), default="cli", help="Native path for golden comparisons; serving uses Session/shared-round without HTTP")
+    parser.add_argument("--native-driver", choices=("cli", "serving"), default="serving", help="Native path for golden comparisons; serving uses Session/shared-round without HTTP")
     parser.add_argument("--case", action="append", default=[], help="Select golden case names (repeatable)")
     parser.add_argument("--native-arg", action="append", default=[], help="Append a native diagnostic argument (use --native-arg=--flag)")
     parser.add_argument("--native-env", action="append", default=[], help="Native measurement environment KEY=VALUE (repeatable)")

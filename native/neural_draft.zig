@@ -200,7 +200,7 @@ fn cacheArrays(value: anytype, arrays: *std.ArrayList(mx.Array)) !void {
 
 pub fn absorbStreams(m: anytype, streams: []const AbsorbStream(@TypeOf(m.*))) !void {
     const M = @TypeOf(m.*);
-    const capacity = if (M == nemotron.Model) max_streams else 8;
+    const capacity = M.max_shared_streams;
     if (streams.len > capacity) return error.InvalidDraftRows;
     if (!enabled(m, null) or streams.len == 0) return;
     var total: usize = 0;
@@ -557,7 +557,7 @@ pub const PendingProposals = struct {
 
 pub fn proposeStreamsLazy(m: anytype, streams: []const Stream(@TypeOf(m.*))) !PendingProposals {
     const M = @TypeOf(m.*);
-    const capacity = if (M == nemotron.Model) max_streams else 8;
+    const capacity = M.max_shared_streams;
     if (streams.len == 0 or streams.len > capacity) return error.InvalidDraftRows;
     for (streams, 0..) |stream, i| {
         if (stream.budget > 15) return error.InvalidDraftBudget;
@@ -645,7 +645,7 @@ pub fn proposeStreamsLazy(m: anytype, streams: []const Stream(@TypeOf(m.*))) !Pe
 
 pub fn proposeStreams(m: anytype, streams: []const Stream(@TypeOf(m.*)), output: []Proposal) !void {
     const M = @TypeOf(m.*);
-    const capacity = if (M == nemotron.Model) max_streams else 8;
+    const capacity = M.max_shared_streams;
     if (streams.len == 0 or streams.len > capacity or output.len != streams.len) return error.InvalidDraftRows;
     var queued = true;
     for (streams) |stream| queued = queued and (stream.settings.metal or stream.settings.temperature == 0);

@@ -9,7 +9,7 @@ from functools import wraps
 
 ROOT = Path(__file__).resolve().parents[1]
 DISK_RESERVE_BYTES = 64 * 1024**3
-FIXTURE_LIMIT_BYTES = 128 * 1024**3
+FIXTURE_LIMIT_BYTES = 256 * 1024**3
 
 
 class FixtureStorage:

@@ -96,7 +96,8 @@ pub fn forward(kernels: *mx.Kernels, ops: *Ops, s: *mx.Scope, x: A, w: Weights, 
     const g = try ops.call(s, .decay, &.{ w.a_log, a, w.dt_bias });
     const beta = try s.unary(c.mlx_sigmoid, b);
     const initial = if (cache.state.ctx != null) cache.state else try s.zeros(&.{ batch, cfg.value_heads, cfg.value_dims, cfg.key_dims }, mx.f32t);
-    const result = try kernels.run(s, src.flash_prefill_gdn, &.{ q, k, v, g, beta, initial, try s.reshape(try s.ints(&.{rows}), &.{}) }, &.{ mx.td("InT", mx.bf16), mx.td("StT", mx.f32t), mx.ti("Dk", cfg.key_dims), mx.ti("Dv", cfg.value_dims), mx.ti("Hk", cfg.key_heads), mx.ti("Hv", cfg.value_heads) }, .{ 32, cfg.value_dims, batch * cfg.value_heads }, .{ 32, 4, 1 }, &.{ .{ .shape = &.{ batch, rows, cfg.value_heads, cfg.value_dims } }, .{ .shape = &.{ batch, cfg.value_heads, cfg.value_dims, cfg.key_dims }, .dtype = mx.f32t } });
+    const use_packed = cfg.key_dims == 128 and @mod(cfg.value_dims, 8) == 0;
+    const result = try kernels.run(s, if (use_packed) src.flash_prefill_gdn_packed else src.flash_prefill_gdn, &.{ q, k, v, g, beta, initial, try s.reshape(try s.ints(&.{rows}), &.{}) }, &.{ mx.td("InT", mx.bf16), mx.td("StT", mx.f32t), mx.ti("Dk", cfg.key_dims), mx.ti("Dv", cfg.value_dims), mx.ti("Hk", cfg.key_heads), mx.ti("Hv", cfg.value_heads) }, .{ 32, @divExact(cfg.value_dims, if (use_packed) @as(i32, 8) else 1), batch * cfg.value_heads }, .{ 32, if (use_packed) @as(i32, 2) else 4, 1 }, &.{ .{ .shape = &.{ batch, rows, cfg.value_heads, cfg.value_dims } }, .{ .shape = &.{ batch, cfg.value_heads, cfg.value_dims, cfg.key_dims }, .dtype = mx.f32t } });
     var normed = c.mlx_array_new();
     const nr = c.mlx_fast_rms_norm(&normed, result[0], w.norm, cfg.epsilon, mx.stream);
     const y = try s.cast(try s.result(nr, normed), mx.f32t);
