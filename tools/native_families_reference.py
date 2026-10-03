@@ -481,9 +481,11 @@ def nemotron_prefill_fixture(directory, output, simd=False):
     def save(name, value):
         np.save(output / f"{name}.npy", np.asarray(value.astype(mx.float32)))
     position = 0
-    for step, count in enumerate((17, 255, 16, 257, 2048, 1)):
-        tokens = mx.array([[1000 + (position + j) % 37 for j in range(count)]], dtype=mx.uint32)
-        hidden = model.hidden(tokens, cache)
+    for step, count in enumerate((12, 17, 255, 16, 257, 2048, 1)):
+        ids = ([18746, 1261, 4958, 17616, 2254, 1455, 108462, 1278, 61634, 87539, 7980, 1046]
+               if step == 0 else [1000 + (position + j) % 37 for j in range(count)])
+        tokens = mx.array([ids], dtype=mx.uint32)
+        hidden = model.prefill(tokens, cache)
         save(f"hidden-{step}", hidden[0])
         save(f"logits-{step}", model.head(hidden[:, -1:])[0])
         position += count
@@ -1527,36 +1529,30 @@ def main():
         cache = model.make_cache()
         forward = lambda ids: model.head(model.hidden(mx.array([ids], dtype=mx.uint32), cache))
     elif kind == "nemotron_h":
-        from mlx_lm import load
+        from tensorfold.families.nemotron_h.model import load
         from tensorfold.kernels.nemotron.lightning.v1 import kernels
-        from tensorfold.kernels.qwen.dense.v1 import lane_qmm
-        from tools.native_legacy import nemotron_rows, nemotron as legacy_nemotron
-        model, tokenizer = load(str(args.model))
-        # Native retains the original combined conv/scan and per-slot experts.
-        kernels.mamba_step = legacy_nemotron.mamba_step
-        fused = kernels.FusedDecode(model)
-        # Build the same explicit operations as native, without mx.compile
-        # combining neighboring elementwise operations.
-        fused._block = lambda index, kind, nxt: (fused._mamba_block(index, nxt) if kind == "M"
-                                                else fused._moe_block(index, nxt))
         if args.simd:
-            fused.lane_attention = False
-        def experts(index, mixer, x):
-            logits = kernels.router_logits(x, mixer.gate.weight)
-            ids, weights = kernels.route(logits, fused.gate_bias[index], fused.top_k, fused.scaling)
-            return nemotron_rows.experts(mixer.switch_mlp, x, ids), weights, mixer.shared_experts(x)
-        fused._moe = experts
-        holder = nn.Module()
-        holder.model = model
-        holder.stacked = [x for x, _ in fused.qkv.values()]
-        if args.simd:
-            from tensorfold.kernels.nemotron.lightning.v1 import rows
-            from types import SimpleNamespace
-            rows.install(SimpleNamespace(model=model, fused=fused, args=model.args, batch_rows=128))
-        else:
-            lane_qmm.install(holder, rows=128, tile=True, wide=True)
+            kernels.tensor_units = lambda: False
+        model, tokenizer = load(args.model, mtp_drafts=0)
+        if args.trace_layers:
+            if args.state_directory is None:
+                raise ValueError("--trace-layers requires --state-directory")
+            trace_directory = args.state_directory / "layers"
+            trace_directory.mkdir(parents=True, exist_ok=True)
+            original_block = model.fused._block
+            def traced_block(index, block_kind, nxt):
+                block = original_block(index, block_kind, nxt)
+                def run(*values):
+                    result = block(*values)
+                    for label, value in zip(("hidden", "normed"), result[:2]):
+                        np.save(trace_directory / f"0-{index}-{label}.npy", np.asarray(value.astype(mx.float32)))
+                    return result
+                return run
+            model.fused._block = traced_block
         cache = model.make_cache()
-        forward = lambda ids: model.lm_head(fused(mx.array([ids], dtype=mx.uint32), cache) if len(ids) <= 16 else model.backbone(mx.array([ids], dtype=mx.uint32), cache)[:, -1:])
+        def forward(ids):
+            hidden = model.hidden(mx.array([ids], dtype=mx.uint32), cache)
+            return model.head(hidden[:, -1:] if len(ids) > model.window_rows else hidden)
     elif kind == "qwen4_exp":
         from tensorfold.families.qwen4_exp.model import load, select_by_kernels
         from tensorfold.families.qwen4_exp.decode import FusedDecode
@@ -1601,7 +1597,7 @@ def main():
     prompt_chunk = 2048 if kind in ("gemma4", "gemma4_text", "nemotron_h", "qwen4_exp") or (kind == "glm5_next" and not (args.synthetic_glm or args.synthetic_glm_layout)) else 16
     for start in range(0, len(tokens), prompt_chunk):
         chunk = tokens[start:start + prompt_chunk]
-        if kind in ("gemma4", "gemma4_text"):
+        if kind in ("gemma4", "gemma4_text", "nemotron_h"):
             logits = model.head(model.prefill(mx.array([chunk], dtype=mx.uint32), cache)[:, -1:])
         elif kind == "glm5_next" and args.serial_rows:
             hidden_rows = []
@@ -1635,6 +1631,8 @@ def main():
             print(f"Prefill {start + len(chunk)}/{len(tokens)}", flush=True)
     if kind == "qwen4_exp" and args.trace_layers:
         model.fused._hc = original_hc
+    if kind == "nemotron_h" and args.trace_layers:
+        model.fused._block = original_block
     if args.dump_logits:
         args.dump_logits.parent.mkdir(parents=True, exist_ok=True)
         np.save(args.dump_logits, np.asarray(logits.astype(mx.float32)).reshape(-1, logits.shape[-1]))

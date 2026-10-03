@@ -894,7 +894,7 @@ pub const Model = struct {
             }
             try m.trace(s, "input", hn[0]);
             hn = try m.layer(s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), hn, &m.cache[i], &p.records[i], i % 4 != 3, false);
-            try mx.evalMany(&.{hn[0]}, true);
+            if (i < 2 or (i + 1) % 3 == 0) try mx.evalMany(&.{hn[0]}, true);
         }
         p.hidden = hn[0];
         p.logits = try m.headWithNorm(s, hn);

@@ -14,11 +14,34 @@ fn arithmetic(stream: mx.c.mlx_stream) !void {
     if (!std.mem.eql(f32, actual, &.{ 4, -2, -1, 0.75 })) return error.RuntimeArithmeticMismatch;
 }
 
+fn constantCache(stream: mx.c.mlx_stream) !void {
+    var kernels = mx.Kernels.init();
+    defer kernels.deinit();
+    var scope = mx.Scope{};
+    defer scope.deinit();
+    const first = try kernels.constantInts(&scope, &.{ 7, 11 });
+    const same = try kernels.constantInts(&scope, &.{ 7, 11 });
+    if (mx.c.mlx_array_data_int32(first) != mx.c.mlx_array_data_int32(same)) return error.ConstantNotReused;
+    const float = try kernels.constantScalar(&scope, @bitCast(@as(u32, 7)));
+    if (mx.dtype(float) != mx.f32t or @as(u32, @bitCast(mx.c.mlx_array_data_float32(float)[0])) != 7) return error.ConstantDtypeMismatch;
+    var pending = mx.c.mlx_array_new();
+    defer mx.free(pending);
+    try mx.check(mx.c.mlx_add(&pending, first, same, stream));
+    for (0..1024) |i| {
+        var transient = mx.Scope{};
+        defer transient.deinit();
+        _ = try kernels.constantInts(&transient, &.{ @intCast(i), 99 });
+    }
+    try mx.eval(pending);
+    if (!std.mem.eql(i32, mx.c.mlx_array_data_int32(pending)[0..2], &.{ 14, 22 })) return error.ConstantEvictionChangedPendingGraph;
+}
+
 pub fn check(io: std.Io, path: []const u8) !void {
     try mx.checkVersion();
     const cpu = mx.c.mlx_default_cpu_stream_new();
     defer _ = mx.c.mlx_stream_free(cpu);
     try arithmetic(cpu);
+    try constantCache(cpu);
     var available: bool = false;
     try mx.check(mx.c.mlx_metal_is_available(&available));
     if (available) {

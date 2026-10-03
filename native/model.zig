@@ -296,14 +296,17 @@ pub const Model = struct {
         try mx.saveArray(path, out);
     }
     pub fn forward(m: *Model, tokens: []const i32, parents: []const i32) !Pass {
-        if (tokens.len != parents.len) return error.InvalidTree;
-        var s = mx.Scope{};
-        defer s.deinit();
-        var p = try m.forwardTokens(try s.ints(tokens), parents);
+        var p = try m.forwardQueued(tokens, parents);
         errdefer p.deinit();
         try mx.eval(p.logits);
         try observeBuffers(&p);
         return p;
+    }
+    pub fn forwardQueued(m: *Model, tokens: []const i32, parents: []const i32) !Pass {
+        if (tokens.len != parents.len) return error.InvalidTree;
+        var s = mx.Scope{};
+        defer s.deinit();
+        return m.forwardTokens(try s.ints(tokens), parents);
     }
     pub fn forwardStreams(m: *Model, streams: []const @import("qwen_shared.zig").Stream) !@import("qwen_shared.zig").Pass {
         return @import("qwen_shared.zig").forward(m, streams);
@@ -407,13 +410,15 @@ pub const Model = struct {
         const w: i32 = @intCast(t.parents.len);
         const mp = @divTrunc(w + 15, 16) * 16;
         const qkv = try m.project(s, i, "linear_attn.in_proj_qkv", x);
-        const z = try m.project(s, i, "linear_attn.in_proj_z", x);
-        const b = try m.project(s, i, "linear_attn.in_proj_b", x);
-        const a = try m.project(s, i, "linear_attn.in_proj_a", x);
+        const zba = try m.projectStack(s, i, &.{ "linear_attn.in_proj_z", "linear_attn.in_proj_b", "linear_attn.in_proj_a" }, x);
+        const z = zba orelse try m.project(s, i, "linear_attn.in_proj_z", x);
+        const b = zba orelse try m.project(s, i, "linear_attn.in_proj_b", x);
+        const a = zba orelse try m.project(s, i, "linear_attn.in_proj_a", x);
         const cs = if (m.cache[i].a.ctx != null) m.cache[i].a else try s.zeros(&.{ 1, 3, 10240 }, mx.bf16);
         const st = if (m.cache[i].b.ctx != null) m.cache[i].b else try s.zeros(&.{ 1, 48, 128, 128 }, mx.f32t);
         const cw = try s.reshape(try m.weight(i, "linear_attn.conv1d.weight"), &.{ 10240, 4 });
-        const vals = try m.kernels.run(s, src.lane_glue_gdn_pre, &.{ qkv, cs, cw, try s.ints(t.windows[0 .. t.parents.len * 4]), a, b, try m.weight(i, "linear_attn.A_log"), try m.weight(i, "linear_attn.dt_bias") }, &.{ ti("NK", 16), ti("NV", 48), ti("DK", 128), ti("DV", 128), ti("TAPS", 4) }, .{ 32, 80, w }, .{ 32, 1, 1 }, &.{ .{ .shape = &.{ 1, w, 16, 128 } }, .{ .shape = &.{ 1, w, 16, 128 } }, .{ .shape = &.{ 1, w, 48, 128 } }, .{ .shape = &.{ 1, w, 48 }, .dtype = mx.f32t }, .{ .shape = &.{ 1, w, 48 } } });
+        const pre_templates = [_]mx.Template{ ti("NK", 16), ti("NV", 48), ti("DK", 128), ti("DV", 128), ti("TAPS", 4), ti("ZS", 6240), ti("AO", 6192), ti("BO", 6144) };
+        const vals = try m.kernels.run(s, if (zba != null) src.lane_fuse_gdn_pre else src.lane_glue_gdn_pre, &.{ qkv, cs, cw, try m.kernels.constantInts(s, t.windows[0 .. t.parents.len * 4]), a, b, try m.weight(i, "linear_attn.A_log"), try m.weight(i, "linear_attn.dt_bias") }, pre_templates[0..if (zba != null) @as(usize, 8) else 5], .{ 32, 80, w }, .{ 32, 1, 1 }, &.{ .{ .shape = &.{ 1, w, 16, 128 } }, .{ .shape = &.{ 1, w, 16, 128 } }, .{ .shape = &.{ 1, w, 48, 128 } }, .{ .shape = &.{ 1, w, 48 }, .dtype = mx.f32t }, .{ .shape = &.{ 1, w, 48 } } });
         const y = if (w == 1) single: {
             const streams = @import("qwen_streams.zig");
             var layout = streams.Layout{ .streams = 1, .rows = 1 };
@@ -428,7 +433,8 @@ pub const Model = struct {
         // live cache before committing a different accepted path from this pass.
         rec.values[5] = try s.own(try mx.retain(st));
         rec.values[6] = try s.cat(&.{ cs, qkv }, 1);
-        const post = try m.kernels.run(s, src.lane_glue_gdn_post, &.{ y, z, try m.weight(i, "linear_attn.norm.weight"), try s.scalar(1e-6), try s.ints(&.{ w, mp }) }, &.{ ti("NV", 48), ti("DV", 128) }, .{ 32, 48, mp }, .{ 32, 1, 1 }, &.{ .{ .shape = &.{ 1, w, 6144 } }, .{ .shape = &.{ 96, mp }, .dtype = mx.f32t } });
+        const post_templates = [_]mx.Template{ ti("NV", 48), ti("DV", 128), ti("ZS", 6240) };
+        const post = try m.kernels.run(s, if (zba != null) src.lane_fuse_gdn_post else src.lane_glue_gdn_post, &.{ y, z, try m.weight(i, "linear_attn.norm.weight"), try m.kernels.constantScalar(s, 1e-6), try m.kernels.constantInts(s, &.{ w, mp }) }, post_templates[0..if (zba != null) @as(usize, 3) else 2], .{ 32, 48, mp }, .{ 32, 1, 1 }, &.{ .{ .shape = &.{ 1, w, 6144 } }, .{ .shape = &.{ 96, mp }, .dtype = mx.f32t } });
         return m.project(s, i, "linear_attn.out_proj", .{ .x = post[0], .sums = post[1] });
     }
     pub fn commit(m: *Model, p: *Pass, rows: []const i32) !void {
@@ -499,7 +505,9 @@ pub const Model = struct {
                     tail[j] = if (n < 3) n else 3 + rows[@intCast(n - 3)];
                 }
                 const sequence = if (rec.conv_state.ctx != null) try s.cat(&.{ rec.conv_state, v[6] }, 1) else v[6];
-                next[i].a = try mx.retain(try s.contiguous(try s.take(sequence, try s.ints(&tail), 1)));
+                const contiguous_tail = tail[1] == tail[0] + 1 and tail[2] == tail[1] + 1;
+                const history = if (contiguous_tail) try s.slice(sequence, 1, tail[0], tail[2] + 1) else try s.take(sequence, try s.ints(&tail), 1);
+                next[i].a = try mx.retain(try s.contiguous(history));
                 next[i].b = try mx.retain(state);
             }
         }

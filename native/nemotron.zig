@@ -273,6 +273,7 @@ pub const Model = struct {
     position: i32 = 0,
     mtp: bool = false,
     head_trace: ?*std.StringHashMap(A) = null,
+    trace_dir: ?[]const u8 = null,
     prefill_ops: @import("prefill_ops.zig").Ops = .{},
     prefill_route: @import("nemotron_prefill.zig").Route = .{},
     pub const vocab = 131072;
@@ -415,6 +416,14 @@ pub const Model = struct {
     }
     fn traceHead(m: *Model, name: []const u8, value: A) !void {
         if (m.head_trace) |trace| try trace.put(name, value);
+    }
+    fn traceLayer(m: *Model, s: *mx.Scope, position: i32, layer: usize, label: []const u8, value: A) !void {
+        const dir = m.trace_dir orelse return;
+        var buf: [4096]u8 = undefined;
+        const path = try std.fmt.bufPrintSentinel(&buf, "{s}/{d}-{d}-{s}.npy", .{ dir, position, layer, label }, 0);
+        const out = try s.cast(value, mx.f32t);
+        try mx.eval(out);
+        try mx.saveArray(path, out);
     }
     fn lin(m: *Model, s: *mx.Scope, name: []const u8, x: A) !A {
         return m.linSums(s, name, x, null);
@@ -568,6 +577,8 @@ pub const Model = struct {
                 x = both[1];
                 sums = if (both[4].ctx != null) both[4] else null;
             }
+            try m.traceLayer(s, position, i, "hidden", h);
+            try m.traceLayer(s, position, i, "normed", x);
             if ((i + 1) % 8 == 0) try mx.evalMany(&.{ h, x }, true);
         }
         p.hidden = x;
@@ -863,6 +874,10 @@ pub const Model = struct {
             values = try s.cat(&.{ cache.b, values }, 2);
         }
         record.* = .{ .a = keys, .b = values, .key_write = kw, .value_write = vw };
+        if (mx.tensor_units) {
+            const attended = try @import("lanes.zig").sdpa(&m.kernels, s, q, keys, values, 0.08838834764831845);
+            return s.reshape(try s.transpose(attended, &.{ 0, 2, 1, 3 }), &.{ r, 4096 });
+        }
         // Each query uses the serial kernel and exactly its own visible key length.
         var rows: [16]A = undefined;
         const start = mx.dim(keys, 2) - r;
@@ -871,10 +886,6 @@ pub const Model = struct {
             const query = if (r == 1) q else try s.slice(q, 2, j, j + 1);
             const visible_keys = if (j + 1 == r) keys else try s.slice(keys, 2, 0, start + j + 1);
             const visible_values = if (j + 1 == r) values else try s.slice(values, 2, 0, start + j + 1);
-            if (mx.tensor_units and start + j + 1 >= 10000) {
-                rows[i] = try @import("lanes.zig").sdpa(&m.kernels, s, query, visible_keys, visible_values, 0.08838834764831845);
-                continue;
-            }
             var out = mx.c.mlx_array_new();
             const rc = mx.c.mlx_fast_scaled_dot_product_attention(&out, query, visible_keys, visible_values, 0.08838834764831845, "", mx.empty, mx.empty, false, mx.stream);
             rows[i] = try s.result(rc, out);

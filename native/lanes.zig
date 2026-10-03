@@ -360,8 +360,8 @@ pub fn norm(k: *mx.Kernels, s: *mx.Scope, h: A, r: ?A, w: A) !struct { h: A, x: 
     const width = mx.dim(h, -1);
     const m: i32 = @intCast(mx.c.mlx_array_size(h) / @as(usize, @intCast(width)));
     const mp = @divTrunc(m + 15, 16) * 16;
-    const eps = try s.scalar(1e-6);
-    const dims = try s.ints(&.{ m, mp });
+    const eps = try k.constantScalar(s, 1e-6);
+    const dims = try k.constantInts(s, &.{ m, mp });
     const hh = try s.reshape(h, &.{ m, width });
     const out = if (r) |res| try k.run(s, src.lane_glue_norm, &.{ hh, try s.reshape(res, &.{ m, width }), w, eps, dims }, &.{ti("K", width)}, .{ @divExact(width, 16), mp, 1 }, .{ @divExact(width, 16), 1, 1 }, &.{ .{ .shape = &.{ m, width } }, .{ .shape = &.{ m, width } }, .{ .shape = &.{ @divExact(width, 64), mp }, .dtype = mx.f32t } }) else try k.run(s, src.lane_glue_norm_nores, &.{ hh, w, eps, dims }, &.{ti("K", width)}, .{ @divExact(width, 16), mp, 1 }, .{ @divExact(width, 16), 1, 1 }, &.{ .{ .shape = &.{ m, width } }, .{ .shape = &.{ @divExact(width, 64), mp }, .dtype = mx.f32t } });
     return .{ .h = if (r != null) try s.reshape(out[0], &.{ 1, m, width }) else h, .x = .{ .x = try s.reshape(out[@intFromBool(r != null)], &.{ 1, m, width }), .sums = out[1 + @as(usize, @intFromBool(r != null))], .dimensions = dims } };
@@ -420,6 +420,7 @@ pub fn attention(k: *mx.Kernels, s: *mx.Scope, q: A, keys: A, values: A, t: *con
 pub fn attentionCapacity(k: *mx.Kernels, s: *mx.Scope, q: A, keys: A, values: A, t: *const Tree, used: i32) !A {
     if (used > mx.dim(keys, 2) or used < t.parents.len) return error.InvalidAttentionShape;
     if (!mx.tensor_units) return serialAttention(s, q, keys, values, t, used);
+    if (t.chain) return sdpa(k, s, q, try s.slice(keys, 2, 0, used), try s.slice(values, 2, 0, used), 0.0625);
     const w: i32 = @intCast(t.parents.len);
     const h = mx.dim(q, 1);
     const d = mx.dim(q, 3);

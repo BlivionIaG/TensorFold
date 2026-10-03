@@ -417,7 +417,15 @@ const LaunchVectors = struct {
 
 pub const Kernels = struct {
     const Map = std.HashMap(KernelKey, Kernel, KernelKey.Context, std.hash_map.default_max_load_percentage);
+    const Constant = struct {
+        bytes: [32]u8 = @splat(0),
+        len: usize = 0,
+        dtype: c.mlx_dtype = i32t,
+        value: Array = empty,
+    };
     items: Map,
+    constants: [64]Constant = @splat(.{}),
+    next_constant: usize = 0,
     vectors: LaunchVectors = .{},
     affine: @import("deepseek_dense.zig").Dense = .{},
     flash_prefill: @import("flash_prefill_mm.zig").State = .{},
@@ -426,6 +434,7 @@ pub const Kernels = struct {
         return .{ .items = Map.init(allocator) };
     }
     pub fn deinit(k: *Kernels) void {
+        for (k.constants) |entry| free(entry.value);
         k.vectors.deinit();
         k.affine.deinit();
         k.flash_rows.deinit();
@@ -436,6 +445,28 @@ pub const Kernels = struct {
             entry.key_ptr.deinit();
         }
         k.items.deinit();
+    }
+    fn constant(k: *Kernels, s: *Scope, comptime T: type, values: []const T, element_type: c.mlx_dtype) !Array {
+        const bytes = std.mem.sliceAsBytes(values);
+        if (bytes.len > 32) return s.data(values.ptr, &.{@intCast(values.len)}, element_type);
+        for (&k.constants) |*entry| {
+            if (entry.value.ctx != null and entry.dtype == element_type and entry.len == bytes.len and std.mem.eql(u8, entry.bytes[0..entry.len], bytes))
+                return s.own(try retain(entry.value));
+        }
+        const value = try s.data(values.ptr, &.{@intCast(values.len)}, element_type);
+        const held = try retain(value);
+        const entry = &k.constants[k.next_constant];
+        free(entry.value);
+        entry.* = .{ .len = bytes.len, .dtype = element_type, .value = held };
+        @memcpy(entry.bytes[0..bytes.len], bytes);
+        k.next_constant = (k.next_constant + 1) % k.constants.len;
+        return value;
+    }
+    pub fn constantInts(k: *Kernels, s: *Scope, values: []const i32) !Array {
+        return k.constant(s, i32, values, i32t);
+    }
+    pub fn constantScalar(k: *Kernels, s: *Scope, value: f32) !Array {
+        return k.constant(s, f32, &.{value}, f32t);
     }
     pub fn run(k: *Kernels, s: *Scope, spec: @import("kernel_sources.zig").Spec, inputs: []const Array, templates: []const Template, grid: [3]c_int, group: [3]c_int, outputs: []const Output) ![5]Array {
         if (outputs.len > 5) return error.TooManyKernelOutputs;

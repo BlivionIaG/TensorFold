@@ -543,7 +543,7 @@ pub fn Generation(comptime M: type) type {
                 errdefer r.ticket.owner.stage = .failed;
                 r.request.discardPreview();
                 const w = &r.window.?;
-                r.pass = if (M == qwen.Model) try r.model.forward(w.tokens[0..w.count], w.parents[0..w.count]) else if (@hasDecl(M, "forwardQueued")) try r.model.forwardQueued(w.tokens[0..w.count]) else try r.model.forward(w.tokens[0..w.count]);
+                r.pass = if (M == qwen.Model) try r.model.forwardQueued(w.tokens[0..w.count], w.parents[0..w.count]) else if (@hasDecl(M, "forwardQueued")) try r.model.forwardQueued(w.tokens[0..w.count]) else try r.model.forward(w.tokens[0..w.count]);
                 try r.ticket.advance(.prepared, .forwarded);
             }
 
@@ -614,7 +614,7 @@ pub fn Generation(comptime M: type) type {
                 const pass = &r.pass.?;
                 const ids = try sampling.rows(&r.model.kernels, &pass.scope, pass.logits, w.positions[0..w.count], r.request.settings);
                 defer mx.allocator.free(ids);
-                if (M != qwen.Model and @hasDecl(M, "observeBuffers")) try M.observeBuffers(pass);
+                if (@hasDecl(M, "observeBuffers")) try M.observeBuffers(pass);
                 try r.request.settleDecode(r.model, w, pass, ids);
                 try r.ticket.advance(.forwarded, .settled);
             }
@@ -711,7 +711,9 @@ pub fn Generation(comptime M: type) type {
             const selected = try g.selectDecode(m, w, ids);
             const kept = selected.rows[0..selected.count];
             if (M == qwen.Model) {
-                try m.commit(pass, kept);
+                if (w.count == 1 and !g.options.draft) try m.commitSerialQueued(pass) else try m.commit(pass, kept);
+            } else if (M == @import("flash.zig").Model) {
+                if (w.count == 1 and !g.options.draft) try m.commitSerialQueued(pass) else try m.commit(pass, kept.len);
             } else try m.commit(pass, kept.len);
             try g.finishDecode(m, w, pass, selected, true);
         }

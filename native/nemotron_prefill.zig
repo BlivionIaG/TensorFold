@@ -90,10 +90,6 @@ fn expert(m: *nemotron.Model, s: *mx.Scope, base: []const u8, name: []const u8, 
     const rc = c.mlx_gather_qmm(&out, x, weights[0], weights[1], weights[2], mx.empty, indices, true, mx.opt(format.group_size), mx.opt(format.bits), "affine", true, mx.stream);
     return s.result(rc, out);
 }
-fn relu2(s: *mx.Scope, x: A) !A {
-    const relu = try s.binary(c.mlx_maximum, x, try s.cast(try s.scalar(0), mx.dtype(x)));
-    return s.binary(c.mlx_multiply, relu, relu);
-}
 fn moe(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A) !A {
     const rows = mx.dim(x, 1);
     const logits = try s.binary(c.mlx_matmul, x, try s.transpose(try m.weights.field(base, "gate.weight"), &.{ 1, 0 }));
@@ -104,13 +100,13 @@ fn moe(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A) !A {
     const row_ids = try s.binary(c.mlx_floor_divide, order, try s.cast(try s.ints(&.{6}), mx.dtype(order)));
     const input = try s.take(try s.reshape(x, &.{ rows, 1, 2688 }), row_ids, 0);
     const ids = try s.take(flat, order, 0);
-    const activated = try relu2(s, try expert(m, s, base, "fc1", input, ids));
+    const activated = try m.prefill_ops.call(s, .relu2, &.{try expert(m, s, base, "fc1", input, ids)});
     const routed = try s.reshape(try s.take(try expert(m, s, base, "fc2", activated, ids), inverse, 0), &.{ 1, rows, 6, 2688 });
     const weighted = try s.binary(c.mlx_multiply, routed, try s.reshape(selected[1], &.{ 1, rows, 6, 1 }));
     var reduced = c.mlx_array_new();
     const rc = c.mlx_sum_axis(&reduced, weighted, -2, false, mx.stream);
     reduced = try s.cast(try s.result(rc, reduced), mx.dtype(routed));
-    const shared = try linear(m, s, base, "shared_experts.down_proj", try relu2(s, try linear(m, s, base, "shared_experts.up_proj", x)));
+    const shared = try linear(m, s, base, "shared_experts.down_proj", try m.prefill_ops.call(s, .relu2, &.{try linear(m, s, base, "shared_experts.up_proj", x)}));
     return s.binary(c.mlx_add, reduced, shared);
 }
 fn mamba(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A, index: usize, record: *nemotron.Cache) !A {
@@ -161,6 +157,7 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
     var carried = mx.empty;
     defer mx.free(carried);
     var buf: [256]u8 = undefined;
+    var queued_layers: usize = 0;
     for (m.kinds, 0..) |kind, index| {
         var layer_scope = mx.Scope{};
         defer layer_scope.deinit();
@@ -183,7 +180,19 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
             const value = @field(pass.records[index], field);
             if (value.ctx != null) @field(pass.records[index], field) = try s.own(try mx.retain(value));
         }
-        if (evaluation_stride > 0 and (index + 1) % evaluation_stride == 0) try mx.evalMany(&.{h}, true);
+        if (index + 1 == m.kinds.len or (evaluation_stride > 0 and (index + 1) % evaluation_stride == 0)) {
+            var pending: [1 + 2 * pass.records.len]A = undefined;
+            pending[0] = h;
+            var count: usize = 1;
+            for (pass.records[queued_layers .. index + 1]) |record| {
+                inline for (.{ record.a, record.b }) |value| if (value.ctx != null) {
+                    pending[count] = value;
+                    count += 1;
+                };
+            }
+            try mx.evalMany(pending[0..count], true);
+            queued_layers = index + 1;
+        }
     }
     pass.hidden = try s.reshape(try cp.norm(s, h, try m.weights.get("backbone.norm_f.weight"), 1e-5), &.{ rows, 2688 });
     pass.logits = try m.weights.linear(&m.kernels, s, "lm_head", try s.slice(pass.hidden, 0, rows - 1, rows), true);
@@ -198,9 +207,11 @@ pub fn check(io: std.Io, dir: []const u8, output: []const u8) !void {
     defer m.deinit();
     try std.Io.Dir.cwd().createDirPath(io, output);
     var buf: [256]u8 = undefined;
-    for ([_]usize{ 17, 255, 16, 257, 2048, 1 }, 0..) |count, step| {
+    for ([_]usize{ 12, 17, 255, 16, 257, 2048, 1 }, 0..) |count, step| {
         var tokens: [2048]i32 = undefined;
-        for (tokens[0..count], 0..) |*id, j| id.* = 1000 + @mod(m.position + @as(i32, @intCast(j)), 37);
+        if (step == 0) {
+            @memcpy(tokens[0..count], &[_]i32{ 18746, 1261, 4958, 17616, 2254, 1455, 108462, 1278, 61634, 87539, 7980, 1046 });
+        } else for (tokens[0..count], 0..) |*id, j| id.* = 1000 + @mod(m.position + @as(i32, @intCast(j)), 37);
         var pass = try m.prefill(tokens[0..count]);
         defer pass.deinit();
         try save(&pass.scope, output, try std.fmt.bufPrint(&buf, "hidden-{d}", .{step}), pass.hidden);
