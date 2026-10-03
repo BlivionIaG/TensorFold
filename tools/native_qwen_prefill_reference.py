@@ -1,5 +1,6 @@
 """Trace the actual Qwen family prefill; compare every layer/cache with Zig."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -14,6 +15,7 @@ def main():
     parser.add_argument("--model", type=Path, default=Path("build/models/Qwen3.8-27B-MLX-4bit"))
     parser.add_argument("--length", type=int, help="Repeat four token IDs to this length")
     parser.add_argument("--compare", type=Path)
+    parser.add_argument("--prune-compared", action="store_true", help="Remove matched trace arrays after saving their hashes; retain mismatches")
     parser.add_argument("--native", type=Path)
     parser.add_argument("--simd", action="store_true")
     parser.add_argument("--bonsai-form", help="Diagnostic Bonsai layout: lanes, packed, widened or widened:N")
@@ -22,12 +24,15 @@ def main():
     parser.add_argument("--prompt", default="Write a short Python function that computes the Fibonacci sequence.")
     parser.add_argument("--generate", type=int, default=0, help="Check serial continuation with seed 5678, temperature 0.7, top-k 12, top-p 0.8")
     args = parser.parse_args()
+    if args.prune_compared and not args.compare:
+        parser.error("--prune-compared requires --compare")
     if args.length is not None and not 1 <= args.length <= 262144:
         parser.error("--length must be 1..262144")
     if not 0 <= args.generate <= 128:
         parser.error("--generate must be 0..128")
     versions = require_mlx()
     if args.compare:
+        verified = args.directory / "comparison.json"
         report = json.loads((args.directory / "report.json").read_text())
         if report.get("versions") != versions:
             raise ValueError("Stale reference runtime; regenerate the Python prefill trace")
@@ -54,9 +59,11 @@ def main():
         native_names = {x.name for x in args.compare.glob("*.npy")}
         if {x.name for x in args.directory.glob("*.npy")} != expected or not expected <= native_names or (not report.get("final_only") and native_names != expected):
             raise ValueError("Incomplete prefill trace")
+        verified.unlink(missing_ok=True)
         failures = []
+        hashes = {}
         for name in sorted(expected, key=lambda x: (int(x.split("-")[0]), int(x.split("-")[1]), x)):
-            a, b = np.load(args.directory / name), np.load(args.compare / name)
+            a, b = np.load(args.directory / name, mmap_mode="r"), np.load(args.compare / name, mmap_mode="r")
             if not np.array_equal(a.view(np.uint32), b.view(np.uint32)):
                 failures.append(name)
                 detail = (f"{np.count_nonzero(a != b)}/{a.size}, max {np.max(np.abs(a-b))}"
@@ -66,8 +73,20 @@ def main():
                 if len(failures) <= 12 and a.shape == b.shape and np.count_nonzero(a != b) < 10:
                     at = np.flatnonzero(a != b)
                     print("  indices", at.tolist(), "python", a.flat[at].tolist(), "native", b.flat[at].tolist())
+            elif args.prune_compared:
+                hashes[name] = {"shape": list(a.shape), "dtype": a.dtype.str, "sha256": hashlib.sha256(a).hexdigest()}
         print(f"Compared {len(expected)} prefill/decode arrays; {len(failures)} differ; "
               f"{len(native['tokens'])} continuation tokens {'match' if continuation_matches else 'DIFFER'}")
+        if args.prune_compared and not failures and continuation_matches:
+            verification = {"matched": True, "versions": versions, "arrays": hashes,
+                            "continuation_tokens": len(native["tokens"]), "arrays_retained": True}
+            verified.write_text(json.dumps(verification) + "\n")
+            for name in expected:
+                (args.directory / name).unlink()
+                (args.compare / name).unlink()
+            verification["arrays_retained"] = False
+            verified.write_text(json.dumps(verification) + "\n")
+            print("Removed matched trace arrays; comparison hashes and token reports retained")
         raise SystemExit(bool(failures) or not continuation_matches)
     args.directory.mkdir(parents=True, exist_ok=True)
     prompt = args.prompt
@@ -89,6 +108,7 @@ def main():
         return
     import mlx.core as mx
     (args.directory / "report.json").unlink(missing_ok=True)
+    (args.directory / "comparison.json").unlink(missing_ok=True)
     from tensorfold.families.qwen3_5 import load
     bonsai_form = None
     if json.loads((args.model / "config.json").read_text()).get("model_type") == "prism_hadamard_qwen35":
