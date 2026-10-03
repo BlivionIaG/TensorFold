@@ -43,6 +43,9 @@
       const float sz = float(bfloat(z / (1.0f + metal::exp(-z))));
       Y[rr * XD + cx] = bfloat(sz * y);
     }
-    // the SSM state after this row (a verify window keeps the state of its last accepted row)
-    for (int i = 0; i < NS; i++) S_OUT[size_t(rr) * SSZ + sbase + i] = st[i];
+    // the SSM state after this row, in its slot of S_OUT (a verify window keeps the state of its last accepted
+    // row; STORE[rr] < 0: a row whose state is not kept)
+    const int so = STORE[rr];
+    if (so >= 0)
+      for (int i = 0; i < NS; i++) S_OUT[size_t(so) * SSZ + sbase + i] = st[i];
   }

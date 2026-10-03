@@ -15,5 +15,8 @@
   for (int k = 0; k < KC; k++) a = fma(CW[k * CD + ch], float(TAP(loc - (KC - 1) + k)), a);
   const float cv = float(bfloat(a));
   XBC[rr * CD + ch] = bfloat(cv / (1.0f + metal::exp(-cv)));
-  for (int k = 0; k < KC - 1; k++) CS_OUT[(rr * (KC - 1) + k) * CD + ch] = TAP(loc - (KC - 2) + k);
+  // the conv state after this row, in its slot of CS_OUT (STORE[rr] < 0: a row whose state is not kept)
+  const int so = STORE[rr];
+  if (so >= 0)
+    for (int k = 0; k < KC - 1; k++) CS_OUT[(so * (KC - 1) + k) * CD + ch] = TAP(loc - (KC - 2) + k);
   #undef TAP

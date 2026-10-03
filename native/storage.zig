@@ -42,6 +42,14 @@ test "writes preserve the disk reserve including the incoming payload" {
 }
 
 test "space checks use the output filesystem and fail closed" {
-    try check("build/native-checks/storage-probe.npy", 0);
-    try std.testing.expectError(error.DiskSpaceUnavailable, check("build/native-checks/missing-storage-parent/storage-probe.npy", 0));
+    var directory = std.testing.tmpDir(.{});
+    defer directory.cleanup();
+    var root: [4096]u8 = undefined;
+    const length = try directory.dir.realPath(std.testing.io, &root);
+    var path: [4096]u8 = undefined;
+    check(try std.fmt.bufPrintSentinel(&path, "{s}/probe.npy", .{root[0..length]}, 0), 0) catch |err| switch (err) {
+        error.DiskReserveExceeded => {},
+        else => return err,
+    };
+    try std.testing.expectError(error.DiskSpaceUnavailable, check(try std.fmt.bufPrintSentinel(&path, "{s}/missing/probe.npy", .{root[0..length]}, 0), 0));
 }

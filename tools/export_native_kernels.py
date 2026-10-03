@@ -238,10 +238,10 @@ def main():
                input_names=["P", "CS_IN", "S_IN", "CW", "CB", "A_LOG", "DSKIP", "DT_BIAS", "limits", "dims"],
                output_names=["Y", "CS_OUT", "S_OUT"]))
         export("nemotron_mamba_conv", dict(source=nemotron._MAMBA_CONV,
-               input_names=["P", "CS_IN", "CW", "CB", "SEG", "START", "SLOT"],
+               input_names=["P", "CS_IN", "CW", "CB", "SEG", "START", "SLOT", "STORE"],
                output_names=["XBC", "CS_OUT"]))
         export("nemotron_mamba_scan", dict(source=nemotron._MAMBA_SCAN,
-               input_names=["P", "XBC", "S_IN", "A_LOG", "DSKIP", "DT_BIAS", "limits", "dims", "SEG", "SLOT"],
+               input_names=["P", "XBC", "S_IN", "A_LOG", "DSKIP", "DT_BIAS", "limits", "dims", "SEG", "SLOT", "STORE"],
                output_names=["Y", "S_OUT"]))
         for name, source, ins, outs in (
             ("qmv", nemotron_rows._QMV, ["X", "W", "S", "B"], ["OUT"]),

@@ -23,6 +23,7 @@ pub const Pass = struct {
     segments: A = mx.empty,
     starts: A = mx.empty,
     slots: A = mx.empty,
+    stores: A = mx.empty,
     dimensions: A = mx.empty,
 
     pub fn view(p: *Pass, index: usize) !*const model.Pass {
@@ -185,6 +186,9 @@ fn forwardInput(m: *model.Model, streams: []const ArrayStream, rows: usize, toke
     p.segments = try s.ints(segments[0..@max(rows, 8)]);
     p.starts = try s.ints(starts[0..@max(streams.len, 8)]);
     p.slots = try s.ints(slots[0..@max(streams.len, 8)]);
+    var stores: [max_shared_rows]i32 = undefined;
+    for (&stores, 0..) |*slot, row| slot.* = @intCast(row);
+    p.stores = try s.ints(stores[0..@max(rows, 8)]);
     p.dimensions = try s.ints(&.{ @intCast(rows), 0, 0, 0, 0, 0, 0, 0 });
     var h = try m.weights.embedArray(s, "backbone.embeddings", tokens);
     var x = try m.norm(s, h, "backbone.layers.0.norm");
@@ -252,7 +256,7 @@ fn mamba(p: *Pass, s: *mx.Scope, layer: usize, x: A, h: A, sums: ?A) ![5]A {
         conv_in = try s.cat(conv_states[0..p.entries.len], 0);
         ssm_in = try s.cat(ssm_states[0..p.entries.len], 0);
     }
-    const out = try m.blockSharedSums(s, layer, x, h, .{ .conv = conv_in, .ssm = ssm_in, .segments = p.segments, .starts = p.starts, .slots = slots, .dimensions = p.dimensions }, sums);
+    const out = try m.blockSharedSums(s, layer, x, h, .{ .conv = conv_in, .ssm = ssm_in, .segments = p.segments, .starts = p.starts, .slots = slots, .stores = p.stores, .dimensions = p.dimensions }, sums);
     const conv = try p.scope.own(try mx.retain(out[2]));
     const ssm = try p.scope.own(try mx.retain(out[3]));
     for (p.entries) |*entry| {

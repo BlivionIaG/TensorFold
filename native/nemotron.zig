@@ -618,17 +618,17 @@ pub const Model = struct {
         }
         return result;
     }
-    pub const SharedMamba = struct { conv: A, ssm: A, segments: A, starts: A, slots: A, dimensions: A };
+    pub const SharedMamba = struct { conv: A, ssm: A, segments: A, starts: A, slots: A, stores: A, dimensions: A };
     pub fn blockSharedSums(m: *Model, s: *mx.Scope, layer: usize, x: A, h: A, inputs: SharedMamba, sums: ?A) ![5]A {
         if (layer >= m.kinds.len or m.kinds[layer] != 'M') return error.InvalidLayerKind;
         if (x.ctx == null or h.ctx == null or mx.shape(x).len != 2 or mx.dim(x, 0) < 1 or mx.dim(x, 0) > max_shared_rows or mx.dim(x, 1) != 2688 or !std.mem.eql(i32, mx.shape(x), mx.shape(h)) or mx.dtype(x) != mx.bf16 or mx.dtype(h) != mx.bf16) return error.InvalidBlockInputs;
         if (sums) |value| if (value.ctx == null or !std.mem.eql(i32, mx.shape(value), &.{ 42, @divTrunc(mx.dim(x, 0) + 15, 16) * 16 }) or mx.dtype(value) != mx.f32t) return error.InvalidBlockInputs;
         if (inputs.conv.ctx == null or inputs.ssm.ctx == null or mx.shape(inputs.conv).len != 3 or mx.dim(inputs.conv, 0) < 1 or mx.dim(inputs.conv, 0) > max_shared_rows or !std.mem.eql(i32, mx.shape(inputs.conv), &.{ mx.dim(inputs.conv, 0), 3, 6144 }) or !std.mem.eql(i32, mx.shape(inputs.ssm), &.{ mx.dim(inputs.conv, 0), 64, 64, 128 }) or mx.dtype(inputs.conv) != mx.bf16 or mx.dtype(inputs.ssm) != mx.f32t) return error.InvalidCacheState;
-        inline for (.{ "segments", "starts", "slots", "dimensions" }) |field| {
+        inline for (.{ "segments", "starts", "slots", "stores", "dimensions" }) |field| {
             const value = @field(inputs, field);
             if (value.ctx == null or mx.shape(value).len != 1 or mx.dim(value, 0) < 8 or mx.dtype(value) != mx.i32t) return error.InvalidBlockInputs;
         }
-        if (mx.dim(inputs.segments, 0) < mx.dim(x, 0)) return error.InvalidBlockInputs;
+        if (mx.dim(inputs.segments, 0) < mx.dim(x, 0) or mx.dim(inputs.stores, 0) < mx.dim(x, 0)) return error.InvalidBlockInputs;
         // Row/pool geometries change as streams finish; tracing each retains many variants.
         var buffer: [256]u8 = undefined;
         const base = try std.fmt.bufPrint(&buffer, "backbone.layers.{d}.mixer", .{layer});
@@ -765,7 +765,9 @@ pub const Model = struct {
                     expected_ssm[i] = record.b;
                     first += count;
                 }
-                const inputs = SharedMamba{ .conv = try scope.cat(conv_states[0..counts.len], 0), .ssm = try scope.cat(ssm_states[0..counts.len], 0), .segments = try scope.ints(segments[0..@max(rows, 8)]), .starts = try scope.ints(&starts), .slots = try scope.ints(&slots), .dimensions = try scope.ints(&.{ @intCast(rows), 0, 0, 0, 0, 0, 0, 0 }) };
+                var stores: [max_shared_rows]i32 = undefined;
+                for (&stores, 0..) |*slot, row| slot.* = @intCast(row);
+                const inputs = SharedMamba{ .conv = try scope.cat(conv_states[0..counts.len], 0), .ssm = try scope.cat(ssm_states[0..counts.len], 0), .segments = try scope.ints(segments[0..@max(rows, 8)]), .starts = try scope.ints(&starts), .slots = try scope.ints(&slots), .stores = try scope.ints(stores[0..@max(rows, 8)]), .dimensions = try scope.ints(&.{ @intCast(rows), 0, 0, 0, 0, 0, 0, 0 }) };
                 const expected = [_]A{ try scope.cat(expected_h[0..counts.len], 0), try scope.cat(expected_x[0..counts.len], 0), try scope.cat(expected_conv[0..counts.len], 0), try scope.cat(expected_ssm[0..counts.len], 0) };
                 const actual = try m.blockSharedSums(&scope, layer, x, h, inputs, null);
                 for (expected, actual[0..4]) |reference, got| try @import("variant_checks.zig").equalBits(&scope, reference, got);
@@ -828,8 +830,8 @@ pub const Model = struct {
     fn mambaSharedSums(m: *Model, s: *mx.Scope, base: []const u8, x: A, inputs: SharedMamba, record: *Cache, sums: ?A) !A {
         const r = mx.dim(x, 0);
         const projected = try m.projectSums(s, base, "in_proj", x, sums);
-        const conv = try m.kernels.run(s, src.nemotron_mamba_conv, &.{ projected, inputs.conv, try m.f(base, "conv1d.weight"), try m.f(base, "conv1d.bias_f32"), inputs.segments, inputs.starts, inputs.slots }, &.{ ti("XD", 4096), ti("NG", 8), ti("DS", 128), ti("KC", 4), ti("PROJ", 10304), ti("XOFF", 4096) }, .{ 6144, r, 1 }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ r, 6144 } }, .{ .shape = &.{ r, 3, 6144 } } });
-        const scan = try m.kernels.run(s, src.nemotron_mamba_scan, &.{ projected, conv[0], inputs.ssm, try m.f(base, "A_log_f32"), try m.f(base, "D_f32"), try m.f(base, "dt_bias_f32"), try m.weights.get("decode.limits"), inputs.dimensions, inputs.segments, inputs.slots }, &.{ ti("H", 64), ti("DH", 64), ti("NG", 8), ti("DS", 128), ti("XD", 4096), ti("PROJ", 10304), ti("DTOFF", 10240), ti("SSZ", 524288) }, .{ 32, 64, 64 }, .{ 32, 8, 1 }, &.{ .{ .shape = &.{ r, 4096 } }, .{ .shape = &.{ r, 64, 64, 128 }, .dtype = mx.f32t } });
+        const conv = try m.kernels.run(s, src.nemotron_mamba_conv, &.{ projected, inputs.conv, try m.f(base, "conv1d.weight"), try m.f(base, "conv1d.bias_f32"), inputs.segments, inputs.starts, inputs.slots, inputs.stores }, &.{ ti("XD", 4096), ti("NG", 8), ti("DS", 128), ti("KC", 4), ti("PROJ", 10304), ti("XOFF", 4096) }, .{ 6144, r, 1 }, .{ 256, 1, 1 }, &.{ .{ .shape = &.{ r, 6144 } }, .{ .shape = &.{ r, 3, 6144 } } });
+        const scan = try m.kernels.run(s, src.nemotron_mamba_scan, &.{ projected, conv[0], inputs.ssm, try m.f(base, "A_log_f32"), try m.f(base, "D_f32"), try m.f(base, "dt_bias_f32"), try m.weights.get("decode.limits"), inputs.dimensions, inputs.segments, inputs.slots, inputs.stores }, &.{ ti("H", 64), ti("DH", 64), ti("NG", 8), ti("DS", 128), ti("XD", 4096), ti("PROJ", 10304), ti("DTOFF", 10240), ti("SSZ", 524288) }, .{ 32, 64, 64 }, .{ 32, 8, 1 }, &.{ .{ .shape = &.{ r, 4096 } }, .{ .shape = &.{ r, 64, 64, 128 }, .dtype = mx.f32t } });
         record.* = .{ .a = conv[1], .b = scan[1] };
         const normed = (try m.kernels.run(s, src.nemotron_group_norm, &.{ scan[0], try m.f(base, "norm.weight"), try m.weights.get("decode.eps") }, &.{ ti("XD", 4096), ti("GS", 512) }, .{ 1024, r, 1 }, .{ 128, 1, 1 }, &.{.{ .shape = &.{ r, 4096 } }}))[0];
         return m.project(s, base, "out_proj", normed);
