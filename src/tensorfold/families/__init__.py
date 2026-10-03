@@ -123,10 +123,11 @@ def describe_quantization(config: dict[str, Any]) -> str:
 
 
 def backends_of(family: Family) -> tuple[str, ...]:
-    """The backends a family has an engine for: ``mlx`` (``load``) and ``cuda`` (``cuda_engine``)."""
+    """The backends a family has an engine for: ``mlx`` (``load``), ``cuda`` (``cuda_engine``), ``rocm``."""
 
     package = family.package
-    return tuple(b for b, member in (("mlx", "load"), ("cuda", "cuda_engine")) if hasattr(package, member))
+    members = (("mlx", "load"), ("cuda", "cuda_engine"), ("rocm", "rocm_engine"))
+    return tuple(b for b, member in members if hasattr(package, member))
 
 
 def readable_quants(family: Family, backend: str) -> tuple[str | None, ...]:
@@ -141,7 +142,7 @@ def require_readable(family: Family, config: dict[str, Any], backend: str) -> No
     """Reject unsupported storage formats or MLX quantization dimensions before downloading weights."""
 
     method = quant_method(config)
-    where = "NVIDIA GPUs (CUDA)" if backend == "cuda" else "Apple Silicon (MLX)"
+    where = {"cuda": "NVIDIA GPUs (CUDA)", "rocm": "AMD GPUs (ROCm)"}.get(backend, "Apple Silicon (MLX)")
     tested = ", ".join(getattr(family.package, "MODELS", ())) or "none listed"
     accepted = readable_quants(family, backend)
     if method not in accepted:

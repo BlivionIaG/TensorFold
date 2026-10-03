@@ -113,14 +113,17 @@ def build_parser(handlers: dict[str, Callable[[argparse.Namespace], int]]) -> ar
                        help="don't ask GitHub whether a newer release exists (also TENSORFOLD_NO_UPDATE_CHECK=1)")
 
     cuda = serve.add_argument_group("NVIDIA GPUs (DGX Spark)")
-    cuda.add_argument("--backend", choices=("auto", "mlx", "cuda"), default="auto",
-                      help="auto: MLX on macOS, CUDA elsewhere")
-    cuda.add_argument("--tp", type=int, choices=(1, 2), default=1,
-                      help="GPUs (one per machine) the model is split over; run the same command on each")
-    cuda.add_argument("--rank", type=int, choices=(0, 1), default=0,
-                      help="with --tp 2: this machine's rank; rank 0 serves HTTP, rank 1 follows it")
-    cuda.add_argument("--master", default="", help="with --tp 2: rank 0's address on the link between the machines")
-    cuda.add_argument("--master-port", type=int, default=29551, help="with --tp 2: rank 0's rendezvous port")
+    cuda.add_argument("--backend", choices=("auto", "mlx", "cuda", "rocm"), default="auto",
+                      help="auto: MLX on macOS, ROCm on an AMD GPU, CUDA elsewhere")
+    cuda.add_argument("--tp", type=int, choices=(1, 2, 4, 8), default=1,
+                      help="GPUs the model is split over: 1 or 2 (4 and 8 on ROCm); run the same command on each")
+    cuda.add_argument("--rank", type=int, default=0,
+                      help="with --tp > 1: this machine's rank in [0, tp); rank 0 serves HTTP, others follow it")
+    cuda.add_argument("--master", default="", help="with --tp > 1: rank 0's address on the link between the machines")
+    cuda.add_argument("--master-port", type=int, default=29551, help="with --tp > 1: rank 0's rendezvous port")
+    cuda.add_argument("--p2p", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS,
+                      help="ROCm tp: --p2p allows RCCL peer-to-peer between the cards, --no-p2p stages through host "
+                           "memory; unset, RCCL decides (and a multi-die APU turns it on)")
     cuda.add_argument("--kv-dtype", choices=("bf16", "int8", "int4"), default="bf16",
                       help="KV cache: bf16 (the default), int8, or int4. Quantized keys and values use one "
                            "fp16 scale per 32 values (changes the output; Flash Next on CUDA only)")
