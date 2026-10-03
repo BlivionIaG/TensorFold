@@ -14,6 +14,9 @@ import torch
 TILE = 16
 PREFILL_TILE = 64
 SMALL = 1024
+LANE_ROWS = 8      # the affine decode tile's most rows
+BLOCK_ROWS = 128   # the affine prefill GEMM tile's rows
+BLOCK_FROM = 64    # rows from which an expert's run is long enough for the GEMM tile
 
 
 def max_items(pairs: int, experts: int, tile: int = TILE) -> int:
@@ -31,38 +34,46 @@ class Plan:
         self.rows, self.slots, self.experts, self.prefill = rows, slots, experts, prefill
         self.tile = PREFILL_TILE if prefill else TILE
         self.members = torch.empty((pairs,), dtype=torch.int32, device=device)
-        self.items = torch.zeros((max_items(pairs, experts, TILE), 3), dtype=torch.int32, device=device)
+        self.items = torch.zeros((max_items(pairs, experts, min(TILE, LANE_ROWS)), 3), dtype=torch.int32,
+                                 device=device)
         self.count = 0
+
+
+def tile_for(ex: "Experts", rows: int, prefill: bool) -> int:
+    """Most pairs an item holds: the affine decode tile for short inputs, its GEMM tile past them, or W4A16's."""
+
+    if isinstance(ex, AffineExperts):
+        return LANE_ROWS if rows < BLOCK_FROM else BLOCK_ROWS
+    return PREFILL_TILE if prefill else TILE
 
 
 def route(picks: torch.Tensor, plan: Plan, tile: int = PREFILL_TILE) -> None:
     """``picks`` [R, slots] int32, contiguous: each pair's expert; the runs land in ``plan.items``.
 
     ``members`` is the pair ids sorted by expert, so an item's rows are contiguous. Every slot is routed,
-    so the items partition ``0 .. pairs - 1`` exactly once. The tail of ``items`` is zeroed, since the
-    W4A16 kernel takes the whole tensor and reads count 0 as an item it skips.
+    so the items partition ``0 .. pairs - 1`` exactly once. Every row of ``items`` is written without a host
+    sync: the ones past the plan's runs get count 0, which every kernel reads as an item it skips. ``tile``
+    has to fit the plan: at most ``max_items(pairs, experts, TILE)`` runs.
     """
 
     rows, slots = picks.shape
     if slots != plan.slots or rows > plan.rows:
         raise ValueError(f"picks {tuple(picks.shape)} do not fit a plan of {plan.rows} x {plan.slots}")
-    plan.tile = tile if plan.prefill else TILE
+    plan.tile = tile
     flat = picks.reshape(-1)[: rows * slots].to(torch.int32)
     plan.members[: flat.numel()] = torch.argsort(flat, stable=True).to(torch.int32)
-    counts = torch.bincount(flat.to(torch.int64), minlength=plan.experts)
+    ids = flat.to(torch.int64)
+    counts = torch.zeros(plan.experts, dtype=torch.int64, device=flat.device).index_add_(0, ids, torch.ones_like(ids))
     starts = torch.cumsum(counts, 0) - counts
-    reps = (counts + plan.tile - 1) // plan.tile
-    total = int(reps.sum())
-    index = torch.repeat_interleave(torch.arange(plan.experts, device=flat.device), reps)
-    offset = torch.cumsum(reps, 0) - reps
-    within = torch.arange(total, device=flat.device) - offset[index]
-    first = starts[index] + within * plan.tile
-    span = torch.minimum(counts[index] - within * plan.tile, torch.full_like(index, plan.tile))
-    plan.items[:total, 0] = index
-    plan.items[:total, 1] = first
-    plan.items[:total, 2] = span
-    plan.items[total:] = 0
-    plan.count = total
+    reps = (counts + tile - 1) // tile
+    ends = torch.cumsum(reps, 0)
+    slot = torch.arange(plan.items.shape[0], device=flat.device)
+    expert = torch.searchsorted(ends, slot, right=True).clamp_(max=plan.experts - 1)
+    within = slot - (ends[expert] - reps[expert])
+    plan.items[:, 0] = expert
+    plan.items[:, 1] = starts[expert] + within * tile
+    plan.items[:, 2] = (counts[expert] - within * tile).clamp(0, tile)
+    plan.count = plan.items.shape[0]
 
 
 @dataclass
@@ -80,6 +91,19 @@ class AffineExperts:
     group: int
     limit: float = 0.0
     kind: str = field(default="affine", init=False)
+    fused: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Gate and up stacked as one (E + 1, 2 NI, ...) weight for one launch; ``gate`` and ``up`` view its halves."""
+
+        if self.gate is None:
+            self.fused = tuple(t.contiguous() for t in self.up)
+            self.up = self.fused
+            return
+        width = self.up[0].shape[1]
+        self.fused = tuple(torch.cat([g, u], dim=1) for g, u in zip(self.gate, self.up))
+        self.gate = tuple(t[:, :width] for t in self.fused)
+        self.up = tuple(t[:, width:] for t in self.fused)
 
     @property
     def count(self) -> int:
@@ -147,11 +171,26 @@ def _items(ex: "AffineExperts | GptqExperts", plan: Plan) -> list[tuple[int, int
     return [item for item in plan.items[: plan.count].tolist() if item[2] > 0]
 
 
+def one_launch(ex, x: torch.Tensor) -> bool:
+    """Affine experts on the RDNA2 schedule run every item in one launch a projection."""
+
+    return isinstance(ex, AffineExperts) and x.dtype == torch.float16
+
+
+def _activate(u: torch.Tensor, g: torch.Tensor | None, limit: float) -> torch.Tensor:
+    if g is None:
+        return torch.nn.functional.relu(u).square()
+    if limit > 0:
+        g = g.clamp(max=limit)
+        u = u.clamp(-limit, limit)
+    return torch.nn.functional.silu(g) * u
+
+
 def gate_up(x: torch.Tensor, ex, plan: Plan, rows: int, *, block_m: int = 4) -> torch.Tensor:
     """``x`` [R, D] bf16 or fp16 -> [R * slots, NI], each pair's activated expert output.
 
     The W4A16 kernels take bf16, so that kind is normalized here; the affine kind keeps the caller's
-    activation dtype, which is fp16 on RDNA2.
+    activation dtype, which is fp16 on RDNA2, and returns it.
     """
 
     if isinstance(ex, GptqExperts):
@@ -163,21 +202,24 @@ def gate_up(x: torch.Tensor, ex, plan: Plan, rows: int, *, block_m: int = 4) -> 
 
     from tensorfold.rocm import affine as affine_mod
 
-    out = torch.empty((rows * plan.slots, ex.width), dtype=torch.bfloat16, device=x.device)
+    if one_launch(ex, x):
+        both = affine_mod.matmul_routed(x, *ex.fused, plan.items[:plan.count], plan.members, pairs=rows * plan.slots,
+                                        x_div=plan.slots, rows=min(plan.tile, rows), bits=ex.bits, group=ex.group)
+        if ex.gate is None:
+            return _activate(both, None, ex.limit).to(x.dtype)
+        from tensorfold.rocm.act import moe_act
+
+        return moe_act(both, x.dtype, ex.limit)
+    out = torch.empty((rows * plan.slots, ex.width), dtype=x.dtype, device=x.device)
     group = ex.group
     for expert, first, count in _items(ex, plan):
         idx = plan.members[first:first + count].to(torch.int64)
         xr = x.index_select(0, idx // plan.slots)
         u = affine_mod.matmul(xr, *_affine(ex.up, expert), bits=ex.bits, group=group, f32=True)
-        if ex.gate is None:
-            act = torch.nn.functional.relu(u).square()
-        else:
+        g = None
+        if ex.gate is not None:
             g = affine_mod.matmul(xr, *_affine(ex.gate, expert), bits=ex.bits, group=group, f32=True)
-            if ex.limit > 0:
-                g = g.clamp(max=ex.limit)
-                u = u.clamp(-ex.limit, ex.limit)
-            act = torch.nn.functional.silu(g) * u
-        out.index_copy_(0, idx, act.to(torch.bfloat16))
+        out.index_copy_(0, idx, _activate(u, g, ex.limit).to(x.dtype))
     return out
 
 
@@ -192,6 +234,9 @@ def down(act: torch.Tensor, ex, plan: Plan, rows: int, *, block_m: int = 4) -> t
 
     from tensorfold.rocm import affine as affine_mod
 
+    if one_launch(ex, act):
+        return affine_mod.matmul_routed(act, *ex.down, plan.items[:plan.count], plan.members, pairs=rows * plan.slots,
+                                        x_div=1, rows=min(plan.tile, rows), bits=ex.bits, group=ex.group)
     out = torch.empty((rows * plan.slots, ex.dims), dtype=torch.float32, device=act.device)
     for expert, first, count in _items(ex, plan):
         idx = plan.members[first:first + count].to(torch.int64)

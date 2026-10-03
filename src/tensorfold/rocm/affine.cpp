@@ -150,8 +150,47 @@ void affine_group(const at::Tensor& x, std::vector<at::Tensor> words, std::vecto
                         static_cast<int>(k), static_cast<int>(bits), static_cast<int>(group), stream.stream());
 }
 
+void affine_routed(const at::Tensor& x, const at::Tensor& words, const at::Tensor& scale, const at::Tensor& bias,
+                   at::Tensor& out, const at::Tensor& items, const at::Tensor& members, int64_t x_div, int64_t rows,
+                   int64_t bits, int64_t group) {
+    TORCH_CHECK(bits == 2 || bits == 3 || bits == 4 || bits == 5 || bits == 6 || bits == 8, "bits 2/3/4/5/6/8");
+    TORCH_CHECK(group == 32 || group == 64 || group == 128, "groups of 32, 64 or 128");
+    TORCH_CHECK(x.is_cuda() && x.is_contiguous() && x.dim() == 2 && x.scalar_type() == at::kHalf,
+                "x: (rows, K) fp16, contiguous: the routed experts are the RDNA2 schedule");
+    const int64_t k = x.size(1);
+    TORCH_CHECK(k % group == 0 && (k * bits) % 32 == 0, "K is whole groups and whole packed words");
+    TORCH_CHECK(words.is_cuda() && words.is_contiguous() && words.scalar_type() == at::kInt && words.dim() == 3 &&
+                    words.size(2) == k * bits / 32,
+                "words: (E, N, K * bits / 32) int32");
+    const int64_t n = words.size(1);
+    TORCH_CHECK(scale.is_cuda() && scale.is_contiguous() && bias.is_cuda() && bias.is_contiguous() &&
+                    scale.scalar_type() == bias.scalar_type() && scale.sizes() == bias.sizes() && scale.dim() == 3 &&
+                    scale.size(0) == words.size(0) && scale.size(1) == n && scale.size(2) == k / group,
+                "scale and bias: (E, N, K / group), one type");
+    TORCH_CHECK(out.is_cuda() && out.is_contiguous() && out.scalar_type() == at::kFloat && out.dim() == 2 &&
+                    out.size(1) == n,
+                "out: (pairs, N) fp32");
+    TORCH_CHECK(items.is_cuda() && items.is_contiguous() && items.scalar_type() == at::kInt && items.dim() == 2 &&
+                    items.size(1) == 3 && items.size(0) >= 1,
+                "items: (count, 3) int32");
+    TORCH_CHECK(members.is_cuda() && members.is_contiguous() && members.scalar_type() == at::kInt,
+                "members: int32 pair ids");
+    TORCH_CHECK(x_div >= 1 && rows >= 1, "x_div and rows are positive");
+    c10::cuda::CUDAGuard guard(x.device());
+    auto stream = c10::cuda::getCurrentCUDAStream();
+    for (const at::Tensor& tensor : {x, words, scale, bias, out, items, members}) {
+        c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
+    }
+    affine_routed_launch(x.data_ptr(), words.data_ptr(), scale.data_ptr(), bias.data_ptr(), scale_kind(scale),
+                         out.data_ptr(), items.data_ptr<int>(), static_cast<int>(items.size(0)),
+                         members.data_ptr<int>(), static_cast<int>(x_div), static_cast<int>(rows),
+                         static_cast<int>(n), static_cast<int>(k), static_cast<int>(bits), static_cast<int>(group),
+                         stream.stream());
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("affine", &affine);
+    m.def("affine_routed", &affine_routed);
     m.def("affine_pair", &affine_pair);
     m.def("affine_group", &affine_group);
 }

@@ -234,21 +234,20 @@ def test_drafting_equals_serial_token_for_token(tmp_path):
 
 
 def test_a_stop_token_ends_generation_at_that_token(tmp_path):
-    """An eos ends a drafted run at its own token. The synthetic model repeats one token, so it fires first.
+    """An eos ends a drafted run at its first appearance: the third token's id, inside the first drafted round.
 
-    The stop landing inside a drafted batch is pinned by the client-stop test below; this one covers the
-    end-token arm, which shares the same ``done`` decision.
+    The client-stop test below pins the other arm of the same ``done`` decision.
     """
 
     prompt, sampling, room = [1, 2, 3, 4], Sampling(seed=11, temperature=0.0), 12
     drafted, model = _served(tmp_path)
     want = []
     drafted.generate(prompt, room, sampling, want.extend, stop_eos=False)
-    assert len(want) == room and len(set(want)) == 1
+    assert len(want) == room
 
     seen = []
-    _engine(model, drafted.kernels, eos=(want[0],)).generate(prompt, room, sampling, seen.extend)
-    assert seen == want[:1]
+    _engine(model, drafted.kernels, eos=(want[2],)).generate(prompt, room, sampling, seen.extend)
+    assert seen == want[:want.index(want[2]) + 1]
 
 
 def test_a_client_stop_inside_the_drafts_ends_generation(tmp_path):
