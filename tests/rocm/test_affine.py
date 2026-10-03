@@ -332,6 +332,27 @@ def test_fp16_decode_tile_matches_the_one_thread_kernel(bits, group):
 
 @pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
 @pytest.mark.parametrize("group", [32, 64, 128])
+@pytest.mark.parametrize("groups", [4, 8, 32, 80, 160])
+def test_fp16_one_row_tile_matches_the_one_thread_kernel(bits, group, groups):
+    """One row reads a weight row's groups side by side: every lane mapping and tail round keeps the bits, and the
+    fp16 output is the fp32 one rounded."""
+
+    if gfx_name() in WMMA:
+        pytest.skip("FP16 activations are the RDNA2 schedule")
+    k = group * groups
+    n = 157
+    _, words, scale, bias = _pack(n, k, bits, group, bits * 977 + group + groups)
+    words, scale, bias = words.cuda(), scale.to(torch.bfloat16).cuda(), bias.to(torch.bfloat16).cuda()
+    x = torch.randn((2, k), device="cuda", dtype=torch.float16)
+    one = matmul(x[:1], words, scale, bias, bits=bits, group=group, f32=True)
+    assert torch.equal(one, matmul(x[:1], words, scale, bias, bits=bits, group=group, schedule="gemv", f32=True))
+    assert torch.equal(one, matmul(x, words, scale, bias, bits=bits, group=group, f32=True)[:1])
+    half = matmul(x[:1], words, scale, bias, bits=bits, group=group)
+    assert half.dtype == torch.float16 and torch.equal(half, one.half())
+
+
+@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
+@pytest.mark.parametrize("group", [32, 64, 128])
 def test_fp16_prefill_tile_matches_the_one_thread_kernel(bits, group):
     """The 128-row prefill tile reads every width and gives the one-thread kernel's bits at any row count."""
 
