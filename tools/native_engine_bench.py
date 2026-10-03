@@ -23,7 +23,38 @@ import time
 from types import SimpleNamespace
 import uuid
 
-from native_runtime import FixtureStorage, FIXTURE_LIMIT_BYTES, fixture_bytes
+from native_runtime import FixtureStorage, fixture_bytes
+
+FIXTURE_LIMIT_BYTES = 64 * 1024**3
+
+
+def python_source_identity(directory):
+    directory = directory.resolve()
+    package = directory / "tensorfold"
+    if not (package / "__init__.py").is_file():
+        raise ValueError(f"Missing Python reference package: {package}")
+    digest = hashlib.sha256()
+    for path in sorted(package.rglob("*")):
+        if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc":
+            digest.update(str(path.relative_to(directory)).encode() + b"\0")
+            digest.update(bytes.fromhex(file_digest(path)))
+    return dict(path=str(directory), sha256=digest.hexdigest())
+
+
+def select_python_source(directory, expected=None):
+    identity = python_source_identity(directory)
+    if expected is not None and identity != expected:
+        raise ValueError("Python reference source changed since golden capture")
+    sys.path.insert(0, identity["path"])
+    return identity
+
+
+def configure_reference_memory():
+    if "TENSORFOLD_MEMORY_LIMIT_GB" not in os.environ:
+        return None
+    import mlx.core as mx
+    from tensorfold.server.memory_budget import configure_mlx
+    return configure_mlx(mx, 2 * 1024**3, fraction=1.0)
 
 
 MODELS = {
@@ -95,6 +126,7 @@ class GoldenCapture:
         self.storage = storage if storage is not None else FixtureStorage()
         self.events = []
         self.arrays = []
+        self.array_identities = {}
         self.originals = []
 
     def value(self, value):
@@ -105,11 +137,18 @@ class GoldenCapture:
             dtype = str(value.dtype)
             # Preserve BF16 bits without widening the captured tensor to FP32.
             array = np.asarray(value.view(mx.uint16) if value.dtype == mx.bfloat16 else value)
+            if not array.flags.c_contiguous:
+                array = np.ascontiguousarray(array)
+            payload = memoryview(array).cast("B") if array.size else b""
+            identity = (dtype, array.dtype.str, tuple(array.shape), hashlib.sha256(payload).digest())
+            if identity in self.array_identities:
+                return self.array_identities[identity]
             name = f"array-{len(self.arrays):06}.npz"
             self.storage.save_npz(self.directory / name, array)
             entry = dict(file=name, shape=list(value.shape), mlx_dtype=dtype, storage_dtype=str(array.dtype),
                          sha256=file_digest(self.directory / name))
             self.arrays.append(entry)
+            self.array_identities[identity] = entry
             return entry
         if value is None or isinstance(value, (str, bool, int, float)):
             return value
@@ -199,7 +238,8 @@ def run_golden_case(model, options, case, args, capture=None):
         while engine.active_count:
             landed = engine.step()
             if capture:
-                snapshots.append(dict(stage="round", landed=landed, cache=capture.cache(cache),
+                retain_cache = len(snapshots) == 1 or not engine.active_count or case["drafts"]
+                snapshots.append(dict(stage="round", landed=landed, cache=capture.cache(cache) if retain_cache else [],
                                       cache_len=stream.cache_len, pending=stream.pending[:],
                                       emitted=stream.emitted[:], drafted=stream.drafted, accepted=stream.accepted))
         mx.synchronize()
@@ -268,6 +308,9 @@ def golden_worker(args):
 
 
 def capture_golden_worker(args, storage):
+    reference = select_python_source(args.python_source)
+    if args.memory_limit_gib is not None:
+        os.environ["TENSORFOLD_MEMORY_LIMIT_GB"] = str(args.memory_limit_gib)
     from native_runtime import require_mlx
     versions = require_mlx()
     import importlib
@@ -276,6 +319,7 @@ def capture_golden_worker(args, storage):
         os.environ.setdefault(key, value)
     import mlx.core as mx
     from tensorfold.families import kernel_version, detect
+    memory_budget = configure_reference_memory()
     synthetic = args.family in SYNTHETIC_MODELS
     directory = args.output / "checkpoint" if synthetic else args.model_root / MODELS[args.family]
     source = args.model_root / SYNTHETIC_MODELS[args.family] if synthetic and args.synthetic_shape == "production" else None
@@ -284,7 +328,7 @@ def capture_golden_worker(args, storage):
     if args.family in DRAFTERS:
         load_options["drafter"] = str(local_drafter(args.family, args.model_root))
     if args.family == "flash":
-        load_options["ple_on_ssd"] = True
+        load_options["ple_on_ssd"] = not args.resident_ple
     if args.family == "deepseek":
         load_options["drafter"] = str(directory / "drafter")
     load_started = time.perf_counter()
@@ -301,6 +345,8 @@ def capture_golden_worker(args, storage):
                     device=mx.device_info(), physical_memory_bytes=os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES"),
                     git_commit=subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
                     source_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                    python_source=reference,
+                    process_memory_budget_bytes=memory_budget,
                     kernel_version=kernel_version(detect(directory), model), load_options=load_options,
                     load_seconds=load_seconds, engine_options=options, declared_engine_options=declared_options,
                     prefill_grid=2048, eos_policy="disabled for fixed output budget", context_copy=False,
@@ -311,6 +357,7 @@ def capture_golden_worker(args, storage):
                                  ("exact_width", "window_costs", "shared_costs", "check_report", "mtp_step_ms")},
                     draft_available=getattr(model, "mtp", None) is not None,
                     scope="production lane protocol, text only; fixed prefill grid; no HTTP admission or prefix reuse",
+                    cache_snapshot_policy="prefill, first and final serial round, every speculative round; all forward/head/draw events",
                     cases=[], complete=False)
     write_json(args.output / "manifest.json", manifest)
     expected = {}
@@ -347,7 +394,8 @@ def golden_suite(args):
     path = args.output / "suite.json"
     if path.exists():
         raise SystemExit("Golden output already exists; choose a new directory to preserve the fixture")
-    FixtureStorage(FIXTURE_LIMIT_BYTES - fixture_bytes(args.output)).check(path, 0)
+    storage_root = args.storage_root or args.output
+    FixtureStorage(FIXTURE_LIMIT_BYTES - fixture_bytes(storage_root)).check(path, 0)
     ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
     suite = dict(schema=1, run_id=str(uuid.uuid4()), physical_memory_bytes=ram, complete=False,
                  storage_limit_bytes=FIXTURE_LIMIT_BYTES,
@@ -380,7 +428,12 @@ def golden_suite(args):
                        "--model-root", str(args.model_root), "--output", str(out), "--max-tokens", str(args.max_tokens),
                        "--repetitions", str(args.repetitions), "--seed", str(args.seed),
                        "--top-k", str(args.top_k), "--top-p", str(args.top_p),
-                       "--synthetic-shape", args.synthetic_shape, "--storage-root", str(args.output)]
+                       "--synthetic-shape", args.synthetic_shape, "--storage-root", str(storage_root),
+                       "--python-source", str(args.python_source)]
+            if args.resident_ple and family == "flash":
+                command.append("--resident-ple")
+            if args.memory_limit_gib is not None:
+                command += ["--memory-limit-gib", str(args.memory_limit_gib)]
             with (out / "worker.log").open("w") as log:
                 # Fresh sequential processes release each model before the next load; no inference deadline.
                 process = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
@@ -477,7 +530,7 @@ def golden_native_command(args, family, manifest, case, report):
                 command += ["--drafter", str(directory / "drafter")]
     if not case["drafts"]:
         command.append("--no-drafts")
-    if args.resident_ple and family == "flash":
+    if family == "flash" and (args.resident_ple or not manifest["load_options"]["ple_on_ssd"]):
         command.append("--resident-ple")
     return command + args.native_arg
 
@@ -563,11 +616,17 @@ def measured_process(command, log, env=None):
 
 
 def python_case_worker(args):
+    manifest = json.loads(args.python_case_manifest.read_text())
+    select_python_source(Path(manifest["python_source"]["path"]), manifest["python_source"])
+    for key in list(os.environ):
+        if key.startswith(("TF_", "TENSORFOLD_", "MLX_")):
+            del os.environ[key]
+    os.environ.update(manifest["environment"])
+    configure_reference_memory()
     from native_runtime import require_mlx
     require_mlx()
     import importlib
     from tensorfold.engine.lane_engine import LaneEngine
-    manifest = json.loads(args.python_case_manifest.read_text())
     package = importlib.import_module(f"tensorfold.families.{FAMILY_PACKAGES[manifest['family']]}")
     for key, value in getattr(package, "MLX_ENV", {}).items():
         os.environ.setdefault(key, value)
@@ -596,12 +655,12 @@ def compare_golden(args):
     output = args.output / "comparison.json"
     if output.exists():
         raise ValueError("Comparison already exists; preserve prior measurements")
-    native_env = os.environ.copy()
+    native_overrides = {}
     for assignment in args.native_env:
         key, separator, value = assignment.partition("=")
         if not separator or not key:
             raise ValueError("Native environment requires KEY=VALUE")
-        native_env[key] = value
+        native_overrides[key] = value
     comparison = dict(complete=False, cases=[], binary=str(args.binary.resolve()),
                       binary_sha256=hashlib.sha256(args.binary.read_bytes()).hexdigest(),
                       golden=str(args.compare_golden.resolve()),
@@ -611,8 +670,7 @@ def compare_golden(args):
                       warmup="one discarded exact-case run in each fresh Python/native process",
                       rss_scope="macOS time -l whole-process lifetime maximum RSS and physical footprint, including load, calibration, warmup, request and teardown; bytes",
                       calibration_scope="production family loading and shared-workspace probes on both sides; positive stream and row capacities must match exactly in every fresh Python/native pair; missing or unequal capacities exclude resource measurements",
-                      native_environment={k: v for k, v in native_env.items()
-                                          if k.startswith(("TF_", "TENSORFOLD_", "MLX_"))},
+                      native_environment_overrides=native_overrides,
                       checkpoint_adaptations=[], excluded=[])
     selected = []
     for model in suite["models"]:
@@ -660,6 +718,9 @@ def compare_golden(args):
             python_report = args.output / f"{stem}-python.json"
             python_command = [sys.executable, str(Path(__file__).resolve()), "--python-case-manifest",
                               str(manifest_path), "--case", case["name"], "--output", str(python_report)]
+            native_env = {k: v for k, v in os.environ.items() if not k.startswith(("TF_", "TENSORFOLD_", "MLX_"))}
+            native_env.update(manifest["environment"])
+            native_env.update(native_overrides)
             # Alternate ordering to avoid always assigning the second run to one implementation.
             runs = [("python", python_command, python_report, None), ("native", command, report, native_env)]
             if repetition % 2:
@@ -669,6 +730,8 @@ def compare_golden(args):
                 process = measured_process(invocation, destination.with_suffix(".log"), environment)
                 sample = json.loads(destination.read_text()) if process["exit_code"] == 0 else {}
                 sample.update(process, command=invocation)
+                sample["environment"] = {k: v for k, v in (environment or manifest["environment"]).items()
+                                         if k.startswith(("TF_", "TENSORFOLD_", "MLX_"))}
                 write_json(destination, sample)
                 measured[engine] = sample
             result = measured["native"]
@@ -820,6 +883,8 @@ def main():
     parser.add_argument("--golden", action="store_true", help="Capture and measure all local Python families, plus synthetic GLM/DeepSeek")
     parser.add_argument("--golden-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--storage-root", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--python-source", type=Path, default=Path("src"), help="Exact reference source directory containing tensorfold; recorded and verified for paired runs")
+    parser.add_argument("--memory-limit-gib", type=float, help="Apply the upstream process memory budget before loading, capped by physical RAM and Metal's working-set limit")
     parser.add_argument("--python-case-manifest", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--verify-golden", type=Path, help="Verify a retained golden suite's arrays, provenance labels and token comparisons")
     parser.add_argument("--compare-golden", type=Path, help="Check native tokens against a golden suite before comparing phase measurements")
@@ -846,6 +911,8 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.memory_limit_gib is not None and (not math.isfinite(args.memory_limit_gib) or args.memory_limit_gib <= 0):
+        parser.error("--memory-limit-gib must be positive and finite")
     if args.verify_golden:
         return verify_golden(args.verify_golden)
     if args.output is None:
@@ -857,7 +924,7 @@ def main():
             parser.error("positive repetitions required")
         return compare_golden(args)
     if args.golden or args.golden_worker:
-        if args.engine != "python" or args.resident_ple or args.max_tokens < 2 or args.repetitions < 1:
+        if args.engine != "python" or args.max_tokens < 2 or args.repetitions < 1:
             parser.error("golden fixtures require Python, at least two tokens and positive repetitions")
         if args.golden_worker:
             if not args.family:

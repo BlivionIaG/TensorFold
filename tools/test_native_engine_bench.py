@@ -86,7 +86,7 @@ def test_cases_cover_decode_prefill_chunk_and_pass_boundaries():
 def test_native_comparison_uses_fixture_inputs_and_supported_runtime_flags(tmp_path, family, driver, drafts):
     args = SimpleNamespace(binary=tmp_path / "tensorfold", resident_ple=False, native_arg=[], native_driver=driver)
     manifest = dict(checkpoint={"path": str(tmp_path / "checkpoint")}, seed=5678, top_k=12, top_p=0.8,
-                    drafter={"path": str(tmp_path / "linked-drafter")})
+                    drafter={"path": str(tmp_path / "linked-drafter")}, load_options=dict(ple_on_ssd=True))
     case = dict(tokens=[1, 38, 75], temperature=0.7, drafts=drafts, measurements=[{"tokens": [2] * 16}])
     if driver == "serving" and family in ("glm", "deepseek"):
         with pytest.raises(ValueError, match="fitting checkpoint"):
@@ -138,7 +138,7 @@ def test_comparison_checks_all_cases_before_measuring_and_rejects_regressions(tm
                   measurements=[dict(tokens=[8, 9], timing_valid=True, first_token_seconds=2,
                                      decode_seconds=3, total_seconds=5, peak_mlx_bytes=1000)]) for name in ("bad", "good")]
     manifest = dict(complete=True, family="qwen", checkpoint=checkpoint_identity(checkpoint),
-                    cases=cases, seed=5678, top_k=12, top_p=0.8)
+                    cases=cases, seed=5678, top_k=12, top_p=0.8, environment={"MLX_MAX_OPS_PER_BUFFER": "200"})
     (golden / "manifest.json").write_text(json.dumps(manifest))
     (golden / "suite.json").write_text(json.dumps(dict(complete=True, models=[
         dict(family="qwen", synthetic=False, manifest="manifest.json")
@@ -150,6 +150,8 @@ def test_comparison_checks_all_cases_before_measuring_and_rejects_regressions(tm
     def native(command, log, env=None):
         from pathlib import Path
         python = "--python-case-manifest" in command
+        if not python:
+            assert env["MLX_MAX_OPS_PER_BUFFER"] == "200"
         report = Path(command[command.index("--output" if python else "--report") + 1])
         calls.append(report.stem)
         report.write_text(json.dumps(dict(tokens=[8, 7] if mismatch and "bad" in report.stem else [8, 9],
@@ -195,6 +197,7 @@ def test_python_worker_includes_production_shared_workspace_before_warmup(tmp_pa
     manifest = tmp_path / "manifest.json"
     manifest.write_text(json.dumps(dict(family="qwen", cases=[case], checkpoint=dict(path="checkpoint"),
                                         load_options={}, engine_options=dict(max_rows=128),
+                                        python_source=dict(path="reference", sha256="source"), environment={},
                                         seed=5678, top_k=12, top_p=0.8)))
 
     class Engine:
@@ -218,6 +221,7 @@ def test_python_worker_includes_production_shared_workspace_before_warmup(tmp_pa
         return dict(tokens=[8, 9], calibration_streams=64, calibration_rows=128)
 
     monkeypatch.setattr("native_runtime.require_mlx", lambda: None)
+    monkeypatch.setattr("native_engine_bench.select_python_source", lambda directory, expected: expected)
     monkeypatch.setitem(sys.modules, "tensorfold.engine.lane_engine", SimpleNamespace(LaneEngine=Engine))
     monkeypatch.setitem(sys.modules, "tensorfold.families.qwen3_5", SimpleNamespace(load=load))
     monkeypatch.setattr("native_engine_bench.run_golden_case", run)
@@ -334,6 +338,53 @@ def test_golden_captures_share_one_budget_and_compress_repeated_values(tmp_path)
     with pytest.raises(OSError, match="storage limit"):
         second.value(mx.array([1.0]))
     assert not list(second.directory.iterdir())
+
+
+def test_golden_deduplicates_exact_arrays_without_changing_dtype_or_shape(tmp_path):
+    import mlx.core as mx
+    import numpy as np
+    capture = GoldenCapture(tmp_path / "trace")
+    first = capture.value(mx.array([1, 2], dtype=mx.uint32))
+    used = capture.storage.used_bytes
+    assert capture.value(mx.array([1, 2], dtype=mx.uint32)) == first
+    assert capture.storage.used_bytes == used
+    reshaped = capture.value(mx.array([[1, 2]], dtype=mx.uint32))
+    different_type = capture.value(mx.array([1, 2], dtype=mx.int32))
+    scalar = capture.value(mx.array(1, dtype=mx.uint32))
+    assert len({entry["file"] for entry in (first, reshaped, different_type, scalar)}) == 4
+    with np.load(capture.directory / scalar["file"]) as archive:
+        assert archive["value"].shape == ()
+    empty = capture.value(mx.zeros((0, 3), dtype=mx.uint32))
+    with np.load(capture.directory / empty["file"]) as archive:
+        assert archive["value"].shape == (0, 3)
+    capture.close()
+
+
+def test_python_reference_identity_rejects_changed_code_and_ignores_bytecode(tmp_path, monkeypatch):
+    import sys
+    from native_engine_bench import python_source_identity, select_python_source
+    package = tmp_path / "tensorfold"
+    package.mkdir()
+    source = package / "__init__.py"
+    source.write_text("value = 1\n")
+    identity = python_source_identity(tmp_path)
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+    assert select_python_source(tmp_path, identity) == identity
+    cache = package / "__pycache__"
+    cache.mkdir()
+    (cache / "__init__.pyc").write_bytes(b"compiled")
+    assert python_source_identity(tmp_path) == identity
+    source.write_text("value = 2\n")
+    with pytest.raises(ValueError, match="source changed"):
+        select_python_source(tmp_path, identity)
+
+
+def test_native_flash_uses_golden_resident_setting(tmp_path):
+    args = SimpleNamespace(binary=tmp_path / "tensorfold", resident_ple=False, native_arg=[], native_driver="serving")
+    manifest = dict(checkpoint=dict(path="checkpoint"), seed=5678, top_k=12, top_p=0.8,
+                    load_options=dict(ple_on_ssd=False))
+    case = dict(tokens=[1], temperature=0, drafts=False, measurements=[dict(tokens=[2, 3])])
+    assert "--resident-ple" in golden_native_command(args, "flash", manifest, case, tmp_path / "report")
 
 
 def test_golden_workers_count_previous_families_against_the_suite_limit(tmp_path, monkeypatch):

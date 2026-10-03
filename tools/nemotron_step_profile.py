@@ -115,12 +115,15 @@ def main() -> int:
     parser.add_argument("--prompt", default=PROMPT)
     parser.add_argument("--out", default="")
     parser.add_argument("--summary", default="", help="print a saved run's summary")
+    parser.add_argument("--python-source", type=Path, default=Path("src"))
     args = parser.parse_args()
     if args.summary:
         print(summary(json.loads(Path(args.summary).read_text())))
         return 0
     if not args.model:
         parser.error("MODEL_DIR required")
+    from native_engine_bench import select_python_source
+    reference = select_python_source(args.python_source)
     for key, value in (("MLX_MAX_OPS_PER_BUFFER", "200"), ("MLX_MAX_MB_PER_BUFFER", "100000")):
         os.environ.setdefault(key, value)                      # the server's command-buffer settings
     import mlx.core as mx
@@ -133,7 +136,7 @@ def main() -> int:
 
     model, tokenizer = nemotron_h.load(Path(args.model))
     fused = model.fused
-    result: dict[str, Any] = {"model": str(args.model), "window_costs": dict(model.window_costs),
+    result: dict[str, Any] = {"model": str(args.model), "python_source": reference, "window_costs": dict(model.window_costs),
                               "shared_costs": dict(model.shared_costs), "exact_width": model.exact_width,
                               "mtp_step_ms": model.mtp_step_ms, "device": str(mx.default_device())}
     layers = model.model.layers
@@ -148,12 +151,13 @@ def main() -> int:
 
     def route_recording(*a: Any, **k: Any) -> Any:
         out = original_route(*a, **k)
-        routed[-1].append(out[0])
+        if routed:
+            routed[-1].append(out[0])
         return out
 
-    def moe_recording(self: Any, index: int, mixer: Any, x: Any) -> Any:
+    def moe_recording(self: Any, index: int, mixer: Any, x: Any, xs: Any = None) -> Any:
         recent_x[index].append(x)
-        return original_moe(self, index, mixer, x)
+        return original_moe(self, index, mixer, x, xs)
 
     K.route, K.FusedDecode._moe = route_recording, moe_recording
     ids = chat_ids(tokenizer, args.prompt)
@@ -193,25 +197,28 @@ def main() -> int:
             return fn(*a, **k)
         return wrapped
 
-    patches = [(K, "mamba_step", "mamba conv+scan"), (K, "group_norm", "mamba group_norm"),
-               (K, "add_norm", "add_norm (mamba, attn)"), (K, "add_norm_moe", "moe add_norm_moe"),
+    patches = [(K, "mamba_step", "mamba conv+scan"), (K.FusedDecode, "_group_norm", "mamba group_norm"),
+               (K.FusedDecode, "_add_norm", "add_norm (mamba, attn)"), (K, "add_norm_moe", "moe add_norm_moe"),
                (K, "router_logits", "moe router"), (K, "route", "moe route"),
-               (R, "experts", f"moe experts ({top_k} pairs)"), (K.FusedDecode, "_attention_streams", ATTENTION)]
+               (R, "experts", f"moe experts ({top_k} pairs)"), (K.FusedDecode, "_attention_streams", ATTENTION),
+               (K.FusedDecode, "_shared", "moe shared up+relu2+down")]
     saved = [(mod, name, getattr(mod, name)) for mod, name, _ in patches]
     for mod, name, group in patches:
         setattr(mod, name, record(group, getattr(mod, name)))
-    linear_call = R.RowLinear.__call__
+    linears = [model.model.lm_head] + [projection for layer in layers if layer.block_type == "M"
+                                     for projection in (layer.mixer.in_proj, layer.mixer.out_proj)]
+    linear_calls = {type(linear): type(linear).__call__ for linear in linears}
 
-    def linear_recording(self: Any, x: Any) -> Any:
-        group = names.get(id(self))
-        if group is not None and recording[0]:
-            calls.append((group, linear_call, (self, x), {}))
-        return linear_call(self, x)
+    def linear_recording(linear_call: Any) -> Any:
+        def recorded(self: Any, x: Any) -> Any:
+            group = names.get(id(self))
+            if group is not None and recording[0]:
+                calls.append((group, linear_call, (self, x), {}))
+            return linear_call(self, x)
+        return recorded
 
-    R.RowLinear.__call__ = linear_recording
-    shared_type = type(layers[moe_layers[0]].mixer.shared_experts)
-    shared_call = shared_type.__call__
-    shared_type.__call__ = record("moe shared up+relu2+down", shared_call)
+    for linear_type, original in linear_calls.items():
+        linear_type.__call__ = linear_recording(original)
     embed_type = type(model.model.backbone.embeddings)
     embed_call = embed_type.__call__
     embed_type.__call__ = record("embeddings", embed_call)
@@ -222,8 +229,8 @@ def main() -> int:
     recording[0] = False
     mx.fast.rms_norm = rms
     embed_type.__call__ = embed_call
-    shared_type.__call__ = shared_call
-    R.RowLinear.__call__ = linear_call
+    for linear_type, original in linear_calls.items():
+        linear_type.__call__ = original
     for mod, name, fn in saved:
         setattr(mod, name, fn)
     del fused._block                                           # the compiled blocks again
@@ -257,7 +264,8 @@ def main() -> int:
                                         + linear_bytes(layers[i].mixer.shared_experts.down_proj) for i in moe_layers),
         "moe router": sum(int(layers[i].mixer.gate.weight.nbytes) for i in moe_layers),
         f"moe experts ({top_k} pairs)": expert_bytes * top_k * len(moe_layers)}
-    launches = {"mamba conv+scan": 2, f"moe experts ({top_k} pairs)": 2, "moe shared up+relu2+down": 4, ATTENTION: 4}
+    launches = {"mamba conv+scan": 2, f"moe experts ({top_k} pairs)": 2,
+                "moe shared up+relu2+down": 2 if fused.lane_xs and fused.fused_launches else 4, ATTENTION: 4}
 
     def build(fns: list[Any]) -> list[Any]:
         flat: list[Any] = []
