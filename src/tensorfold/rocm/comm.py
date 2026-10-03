@@ -66,14 +66,16 @@ class RCCL:
         rank: this process's rank in ``[0, world)``.
         world: total ranks (``tp``); 1 disables multi-rank and is not constructed here.
         master: rank-0's reachable address (used by ``torch.distributed.TCPStore``).
-        port: rendezvous port (default 29551; matches ``--master-port``).
+        port: rendezvous port. ``0`` (the default) makes rank 0 pick a free port at runtime via
+            ``socket.bind(('', 0))`` - the chosen port is exposed as ``self.port`` - so concurrent
+            agents on overlapping port ranges don't collide. Multi-host runs pass a fixed port.
         prefer_p2p: when ``True``, set ``RCCL_USE_P2P=1``; when ``False``, force host-memory staging.
             Default ``False``; APU multi-die devices set it from the engine (RDNA 3.5/4 integrated with
             ``multi_gpu_capable=True``). Disagreeing with ``hipDeviceCanAccessPeer`` is an explicit
             error at startup, never a silent downgrade.
     """
 
-    def __init__(self, rank: int, world: int, master: str, port: int, *, prefer_p2p: bool = False) -> None:
+    def __init__(self, rank: int, world: int, master: str, port: int = 0, *, prefer_p2p: bool = False) -> None:
         if world < 2:
             raise ValueError("RCCL is for multi-rank: tp=1 needs no comm")
         if not (0 <= rank < world):
@@ -84,6 +86,24 @@ class RCCL:
         from datetime import timedelta
 
         from torch.distributed import TCPStore
+
+        # On this ROCm build PyTorch ignores HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES at
+        # module-init time, so two spawned ranks land on the same physical GPU by default. RCCL
+        # refuses multi-rank-on-one-GPU unless this opt-in is set. Set it for any multi-rank run.
+        if world >= 2:
+            os.environ.setdefault("NCCL_MULTI_RANK_GPU_ENABLE", "1")
+
+        # port=0 (the new default) lets rank 0 pick a free port at runtime so concurrent agents on
+        # overlapping port ranges don't collide. The caller passes the chosen port back into every
+        # other rank on the same host; multi-host runs pass a fixed port from the launcher.
+        if port == 0 and rank == 0:
+            import socket as _socket
+            with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+                s.bind(("", 0))
+                port = s.getsockname()[1]
+            self.port = port
+        elif port == 0:
+            raise ValueError("port=0 is rank-0-only: the master must be told a real port to dial")
 
         self.rank, self.world, self.prefer_p2p = rank, world, bool(prefer_p2p)
         self.lib = _library()
