@@ -133,9 +133,8 @@ def build_parser(handlers: dict[str, Callable[[argparse.Namespace], int]]) -> ar
     cuda.add_argument("--master", default="", help="with --tp > 1: rank 0's address on the link between the machines")
     cuda.add_argument("--master-port", type=int, default=29551, help="with --tp > 1: rank 0's rendezvous port")
     cuda.add_argument("--p2p", action=argparse.BooleanOptionalAction, default=argparse.SUPPRESS,
-                      help="ROCm/RDNA: opt in to RCCL P2P over PCIe (BIOS ACS off, AMDGPUDirect enabled); "
-                           "default off for RDNA 2/3/4 discrete, on for RDNA 3.5/4 multi-mgpu-capable APUs. "
-                           "Refuses with a clear error if --p2p is set and hipDeviceCanAccessPeer returns 0")
+                      help="ROCm tp: --p2p allows RCCL peer-to-peer between the cards, --no-p2p stages through host "
+                           "memory; unset, RCCL decides (and a multi-die APU turns it on)")
     cuda.add_argument("--kv-dtype", choices=("bf16", "int8", "int4"), default="bf16",
                       help="KV cache: bf16 (the default), int8, or int4. Quantized keys and values use one "
                            "fp16 scale per 32 values (changes the output; Flash Next on CUDA only)")

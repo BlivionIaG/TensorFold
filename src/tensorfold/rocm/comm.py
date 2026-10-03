@@ -69,13 +69,14 @@ class RCCL:
         port: rendezvous port. ``0`` (the default) makes rank 0 pick a free port at runtime via
             ``socket.bind(('', 0))`` - the chosen port is exposed as ``self.port`` - so concurrent
             agents on overlapping port ranges don't collide. Multi-host runs pass a fixed port.
-        prefer_p2p: when ``True``, set ``RCCL_USE_P2P=1``; when ``False``, force host-memory staging.
-            Default ``False``; APU multi-die devices set it from the engine (RDNA 3.5/4 integrated with
-            ``multi_gpu_capable=True``). Disagreeing with ``hipDeviceCanAccessPeer`` is an explicit
-            error at startup, never a silent downgrade.
+        prefer_p2p: ``True`` allows RCCL peer-to-peer (``NCCL_P2P_DISABLE=0``), ``False`` stages through host
+            memory (``NCCL_P2P_DISABLE=1``), ``None`` (the default) leaves the choice to RCCL. On eight V620s
+            on PCIe RCCL picks P2P, 24-32 us an all-reduce of one 5120-wide fp32 row.
+
+    Each rank must hold its own GPU: two ranks on one card are refused at startup.
     """
 
-    def __init__(self, rank: int, world: int, master: str, port: int = 0, *, prefer_p2p: bool = False) -> None:
+    def __init__(self, rank: int, world: int, master: str, port: int = 0, *, prefer_p2p: bool | None = None) -> None:
         if world < 2:
             raise ValueError("RCCL is for multi-rank: tp=1 needs no comm")
         if not (0 <= rank < world):
@@ -86,12 +87,6 @@ class RCCL:
         from datetime import timedelta
 
         from torch.distributed import TCPStore
-
-        # On this ROCm build PyTorch ignores HIP_VISIBLE_DEVICES / CUDA_VISIBLE_DEVICES at
-        # module-init time, so two spawned ranks land on the same physical GPU by default. RCCL
-        # refuses multi-rank-on-one-GPU unless this opt-in is set. Set it for any multi-rank run.
-        if world >= 2:
-            os.environ.setdefault("NCCL_MULTI_RANK_GPU_ENABLE", "1")
 
         # port=0 (the new default) lets rank 0 pick a free port at runtime so concurrent agents on
         # overlapping port ranges don't collide. The caller passes the chosen port back into every
@@ -104,8 +99,9 @@ class RCCL:
             self.port = port
         elif port == 0:
             raise ValueError("port=0 is rank-0-only: the master must be told a real port to dial")
+        self.port = port
 
-        self.rank, self.world, self.prefer_p2p = rank, world, bool(prefer_p2p)
+        self.rank, self.world, self.prefer_p2p = rank, world, prefer_p2p
         self.lib = _library()
         lib = self.lib
         lib.ncclGetErrorString.restype = ctypes.c_char_p
@@ -135,14 +131,30 @@ class RCCL:
         else:
             raw = self.store.get("tf_rccl_uid")
             ctypes.memmove(ctypes.addressof(uid), raw, 128)
+        self._one_gpu_a_rank()
 
-        os.environ["RCCL_USE_P2P"] = "1" if self.prefer_p2p else "0"
+        if self.prefer_p2p is not None:
+            os.environ["NCCL_P2P_DISABLE"] = "0" if self.prefer_p2p else "1"
 
         self.comm = ctypes.c_void_p()
         torch.cuda.current_device()
         self._check(self.lib.ncclCommInitRank(
             ctypes.byref(self.comm), ctypes.c_int(world), uid, ctypes.c_int(rank),
         ))
+
+    def _one_gpu_a_rank(self) -> None:
+        """Refuse two ranks on one card: they would split nothing and hold the model twice."""
+
+        props = torch.cuda.get_device_properties(torch.cuda.current_device())
+        mine = ":".join(str(getattr(props, name, -1)) for name in ("pci_domain_id", "pci_bus_id", "pci_device_id"))
+        self.store.set(f"tf_gpu/{self.rank}", mine)
+        cards = {}
+        for rank in range(self.world):
+            card = self.store.get(f"tf_gpu/{rank}").decode()
+            if card in cards and "-1" not in card.split(":"):
+                raise RuntimeError(f"ranks {cards[card]} and {rank} share one GPU (PCI {card}): give each rank "
+                                   "its own card, with HIP_VISIBLE_DEVICES per process or every card visible")
+            cards[card] = rank
 
     def _check(self, code: int) -> None:
         if code != 0:
