@@ -110,3 +110,19 @@ def cuda_engine(model_dir: str | Path, *, drafter: str = "", tp: int = 1, rank: 
         raise ValueError(f"--parallel verifies up to 16 rows a stream: --mtp-drafts 0 to 15, not {depth}")
     return Qwen36Engine(Path(model_dir), depth=depth, context=context, context_explicit=options.get("context_explicit"),
                         streams=streams)
+
+
+def rocm_engine(model_dir: str | Path, *, context: int | None = None, keep: int = 8,
+                byte_budget: int | None = None, tp: int = 1, rank: int = 0, master: str = "",
+                master_port: int = 29551, p2p: bool | None = None, no_drafts: bool = False, **options: Any):
+    """The ROCm engine for ``tensorfold serve --backend rocm``: routed experts on RDNA 2/3.
+
+    With ``tp`` above 1 each rank holds ``E / tp`` of the routed experts (the shared one on rank 0) beside its
+    attention heads; the checkpoint's MTP layer drafts unless ``no_drafts``.
+    """
+
+    from tensorfold.rocm.engine import QwenEngine
+
+    return QwenEngine.load(Path(model_dir), context=context, keep=keep, byte_budget=byte_budget,
+                           tp=int(tp), rank=int(rank), master=master, master_port=master_port, p2p=p2p,
+                           no_drafts=no_drafts)
