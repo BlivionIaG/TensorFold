@@ -528,34 +528,36 @@ def simd_dense_fixtures(directory):
 def simd_bits_fixtures(directory):
     from tensorfold.kernels.qwen.dense.v1 import simd_qmm_bits as sq, affine_rows
     cases = []
-    for bits in sq.BITS:
+    for bits, group in ((bits, group) for bits in sq.BITS for group in (64, 128)):
         for n, k in ((32, 128), (72, 192), (80, 512), (6152, 128), (17408, 5120), (5120, 17408), (5120, 6144), (1024, 5120), (48, 5120)):
+            if k % group:
+                continue
             sq.fallback.clear()
             weight = (mx.random.normal((n, k), key=mx.random.key(7)) * .02).astype(mx.bfloat16)
-            weights = mx.quantize(weight, group_size=64, bits=bits)
-            scalar_ok = sq.check(*weights, bits)
+            weights = mx.quantize(weight, group_size=group, bits=bits)
+            scalar_ok = sq.check(*weights, bits, group)
             x = (mx.random.normal((129, k), key=mx.random.key(99)) * .5).astype(mx.bfloat16)
             arrays = dict(weight=weights[0], scales=weights[1], biases=weights[2], x=x)
             rows = (1, 2, 3, 4, 8, 16, 17, 33, 65, 128, 129)
             for count in rows:
-                arrays[f"out{count}"] = sq.qmm(x[:count], *weights, bits, kind="mma")
-                arrays[f"fallback{count}"] = affine_rows.qmm(x[:count], *weights, 64, bits)
+                arrays[f"out{count}"] = sq.qmm(x[:count], *weights, bits, group, kind="mma")
+                arrays[f"fallback{count}"] = affine_rows.qmm(x[:count], *weights, group, bits)
             key = f"shape{len(cases):03}"
             mx.save_safetensors(str(directory / f"{key}.safetensors"), arrays)
-            cases.append(dict(key=key, group=64, bits=bits, scalar_ok=scalar_ok, rows=rows))
+            cases.append(dict(key=key, group=group, bits=bits, scalar_ok=scalar_ok, rows=rows))
         for sizes, k in (((48, 48), 1024), ((5120, 1024, 1024), 128), ((24, 24, 24, 24), 512)):
             n = sum(sizes)
-            weights = mx.quantize(mx.random.normal((n, k), key=mx.random.key(bits)).astype(mx.bfloat16), group_size=64, bits=bits)
-            scalar_ok = sq.check(*weights, bits)
+            weights = mx.quantize(mx.random.normal((n, k), key=mx.random.key(bits)).astype(mx.bfloat16), group_size=group, bits=bits)
+            scalar_ok = sq.check(*weights, bits, group)
             x = mx.random.normal((17, k), key=mx.random.key(99)).astype(mx.bfloat16)
             arrays = dict(weight=weights[0], scales=weights[1], biases=weights[2], x=x)
             rows = (1, 3, 8, 17)
             for count in rows:
-                arrays[f"out{count}"] = sq.qmm(x[:count], *weights, bits, kind="mma")
-                arrays[f"fallback{count}"] = affine_rows.qmm(x[:count], *weights, 64, bits)
+                arrays[f"out{count}"] = sq.qmm(x[:count], *weights, bits, group, kind="mma")
+                arrays[f"fallback{count}"] = affine_rows.qmm(x[:count], *weights, group, bits)
             key = f"shape{len(cases):03}"
             mx.save_safetensors(str(directory / f"{key}.safetensors"), arrays)
-            cases.append(dict(key=key, group=64, bits=bits, scalar_ok=scalar_ok, rows=rows, members=sizes))
+            cases.append(dict(key=key, group=group, bits=bits, scalar_ok=scalar_ok, rows=rows, members=sizes))
     (directory / "cases.json").write_text(json.dumps(cases, indent=2) + "\n")
     print(f"Saved {len(cases)} calibrated 5/6/8-bit SIMD shapes and affine fallback outputs", flush=True)
 

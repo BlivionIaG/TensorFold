@@ -73,7 +73,12 @@ def main():
         # Undo Python's launch-specific constexpr/thread reservation wrappers.
         spec = dict(spec)
         spec["source"] = re.sub(r"\A(?:  constexpr int \w+ = -?\d+;\n)+", "", spec["source"])
-        spec["header"] = re.sub(r"\n\[\[max_total_threads_per_threadgroup\(\d+\)\]\]\n$", "", spec.get("header", ""))
+        header = spec.get("header", "")
+        reservation = re.search(r"\n\[\[max_total_threads_per_threadgroup\((\d+)\)\]\]\n$", header)
+        if reservation:
+            spec.setdefault("reserve", int(reservation.group(1)))
+            header = header[:reservation.start()]
+        spec["header"] = header
         emit(OUT / f"{key}.metal", spec["source"])
         emit(OUT / f"{key}.h", spec.get("header", ""))
         ins = ", ".join(json.dumps(x) for x in spec["input_names"])

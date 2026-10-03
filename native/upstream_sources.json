@@ -1,7 +1,7 @@
 [
   {
     "path": "src/tensorfold/__init__.py",
-    "sha256": "412e982ffd24e58dc2776cc66a5a795c31c1974605dea1906080a7f9d1fd004d"
+    "sha256": "ee0c73e014e16f7687263ac82b8f6816b3ad64931d8b69a00c288437b9659b2d"
   },
   {
     "path": "src/tensorfold/__main__.py",
@@ -9,11 +9,67 @@
   },
   {
     "path": "src/tensorfold/cli.py",
-    "sha256": "6fc869188d7aa1db275ec9b6677caac4b24242d98d8cb5a1eca08be5756140dc"
+    "sha256": "2c6a28e800dfeb0000c91f920146535955c701e749af9e6342de34bdaaa8ff27"
   },
   {
     "path": "src/tensorfold/cli_args.py",
-    "sha256": "9d46aa7aafeca5d1c5e122da0cdb34c4f0da4071c88338aa788bcbec60f2133b"
+    "sha256": "c5ea2d07bc37ab34de4ebbe51cedb11b0b899a1b36b744b1e9a1ea3e1a3ede9e"
+  },
+  {
+    "path": "src/tensorfold/control/__init__.py",
+    "sha256": "5c136f1b3a2516f82cccd19fddc36c01088673cbd4c5938707d7508a57fa6445"
+  },
+  {
+    "path": "src/tensorfold/control/__main__.py",
+    "sha256": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d"
+  },
+  {
+    "path": "src/tensorfold/control/app.py",
+    "sha256": "c9e850782e314a26ef9a88bd08907a6db95c4cd0ba93c714dbf3a489d4349a9f"
+  },
+  {
+    "path": "src/tensorfold/control/assets/__init__.py",
+    "sha256": "f066e9649ecfcd6deba36b11cf82e2a9a914bc32f82d8f16e3b0016cc46ed439"
+  },
+  {
+    "path": "src/tensorfold/control/assets/logo-pixels.json",
+    "sha256": "a2f1272246a347a5961bf64ad8d1b17dfc52a069689dea6fb58f4a9eb57269ad"
+  },
+  {
+    "path": "src/tensorfold/control/cli.py",
+    "sha256": "d56e85f317e3dd380aa7af338fb093070772f575a37223342ac382233ddac80a"
+  },
+  {
+    "path": "src/tensorfold/control/config.py",
+    "sha256": "2d38bc4aa50fe9325b5e1affc519ae1075fdf9a822cf7114f4235fa31f13e1bd"
+  },
+  {
+    "path": "src/tensorfold/control/demo.py",
+    "sha256": "9f0947bf11f97e1d1c1341b51d5b02858033fd149972ceb39c140e34dbc81c89"
+  },
+  {
+    "path": "src/tensorfold/control/launchd.py",
+    "sha256": "2d9fb3c0808f45719ef2408a4ed139fdee0e222d9d6ff4fce35952f3651d0148"
+  },
+  {
+    "path": "src/tensorfold/control/logs.py",
+    "sha256": "e411928b701090f9acc42d9919ecbf7368d7f25b32d1e0e8bf47a229673b73b8"
+  },
+  {
+    "path": "src/tensorfold/control/runner.py",
+    "sha256": "2405be3e9379b0132500aa7fbc0066cd553edae98996a5ae21a97f979af4efaa"
+  },
+  {
+    "path": "src/tensorfold/control/safety.py",
+    "sha256": "18627cd8a0280dbc93470945e403946456c3b64f0ee61c70975feb3ca98291ce"
+  },
+  {
+    "path": "src/tensorfold/control/telemetry.py",
+    "sha256": "31d5fce2f39bbe6e9cc637f43aebfa4002a3e377ded60095deb457f3f57e8996"
+  },
+  {
+    "path": "src/tensorfold/control/view.py",
+    "sha256": "28b30ae0c49e93f5f5966eed8ca483dcfd3a35fa5e03513971fae3558050d2f0"
   },
   {
     "path": "src/tensorfold/drafters/__init__.py",
@@ -113,11 +169,11 @@
   },
   {
     "path": "src/tensorfold/engine/lane_engine.py",
-    "sha256": "07b18373e1eef56776d7220528d138c5702f861707a79eca514cd926377fef9c"
+    "sha256": "97810d3c71f7757f56cc243374f1830d667222f3a63c43723137a6b815a5a7d0"
   },
   {
     "path": "src/tensorfold/engine/lane_family.py",
-    "sha256": "da59903769be4c63eb48958700717d7d3c2d8e07abcef5f87f4210af39a87fee"
+    "sha256": "e17286b52dc00200a0f7405b0310696d28817412cea89b2fd4996da992b09b12"
   },
   {
     "path": "src/tensorfold/engine/memory.py",
@@ -133,11 +189,11 @@
   },
   {
     "path": "src/tensorfold/engine/prefix_snapshots.py",
-    "sha256": "8bc5d20bdd66cd3603c1c2f96e772077ee1a130b752abe2f3e3dba6a77c38c76"
+    "sha256": "d16bcddf58f884782dc5088b2f6307029a63b9164a4f41166f5491d6a5e0e62d"
   },
   {
     "path": "src/tensorfold/engine/probabilities.py",
-    "sha256": "5dd98df214ee4a477db38f7503d79b3eac153e2c1e0a356e513c56428741bb90"
+    "sha256": "942126908158755838862a77b444825a5c85409dbc93004eecec67b16f364196"
   },
   {
     "path": "src/tensorfold/engine/tool_draft.py",
@@ -165,7 +221,7 @@
   },
   {
     "path": "src/tensorfold/families/deepseek_v4/__init__.py",
-    "sha256": "ac0186734578cd59e3297a9d4a9d31693bf268e5c95d1494d172fc91d28ef396"
+    "sha256": "0c1470245ef5c6845be33c4048d6becc43e66160142a455db3956458102968f3"
   },
   {
     "path": "src/tensorfold/families/deepseek_v4/attention.py",
@@ -213,7 +269,7 @@
   },
   {
     "path": "src/tensorfold/families/deepseek_v4/runtime.py",
-    "sha256": "a0b2105f2479fe0121fb3d335440ebd463eac854915984bd61530296b0d95729"
+    "sha256": "ed062b2a7fa1e5cd636b3e4b20753a6e97f4152a2033dcb971010e5f5d20fa7c"
   },
   {
     "path": "src/tensorfold/families/deepseek_v4/vendor/__init__.py",
@@ -245,7 +301,7 @@
   },
   {
     "path": "src/tensorfold/families/glm5_next/__init__.py",
-    "sha256": "aea1fab72bcf9b80be6187055623b828d94d5b7e5b1c22d412a11784cc74f77a"
+    "sha256": "89c2b41611943412344f2568869e4544e64d11fd74c22b52a2bc03219f9791de"
   },
   {
     "path": "src/tensorfold/families/glm5_next/caches.py",
@@ -285,7 +341,7 @@
   },
   {
     "path": "src/tensorfold/families/glm5_next/prompts.py",
-    "sha256": "eb4e2a57c16feb6ef0fce5e6c638d9574ddeb90b437941eea4650e7756991565"
+    "sha256": "765ca993248e0958db311f2c4d29fec32fcd53eedbb007646664cb70b7c25ee1"
   },
   {
     "path": "src/tensorfold/families/glm5_next/runtime.py",
@@ -301,7 +357,7 @@
   },
   {
     "path": "src/tensorfold/families/nemotron_h/__init__.py",
-    "sha256": "49460414f6641e8ada689071dd5eb8d904efb3f2a30f478401fd9a0ed9310cb2"
+    "sha256": "0c973bfc63b2199e0107ed413b8687dc0c902495fe141a4e5cac203ee869b14c"
   },
   {
     "path": "src/tensorfold/families/nemotron_h/draft_ids.txt",
@@ -309,7 +365,7 @@
   },
   {
     "path": "src/tensorfold/families/nemotron_h/model.py",
-    "sha256": "898897bdcd05763bf177a73a412e3acd33994057baf4c6c07175d41bfa7ea660"
+    "sha256": "cd09e295c6e4f2463e276892cbee6fb7227a7c9c36a588b23d998fbc0d69415f"
   },
   {
     "path": "src/tensorfold/families/nemotron_h/mtp.py",
@@ -325,7 +381,7 @@
   },
   {
     "path": "src/tensorfold/families/qwen3_5/__init__.py",
-    "sha256": "68e4b6c0c61824b75d9f62d4e275394211401f5a64da6f2ae4a996deabe028e8"
+    "sha256": "2ca1e1cc061efdbfdeb7b5942c9d18ecd50a87184b6ff1f3adf2c98870090d6b"
   },
   {
     "path": "src/tensorfold/families/qwen3_5/dflash2_calibration.json",
@@ -341,11 +397,11 @@
   },
   {
     "path": "src/tensorfold/families/qwen3_5_moe/__init__.py",
-    "sha256": "86853e7ec3bdf3aa533d1beb2894ecc080ee3169fb0810d72a8ea44320178a4f"
+    "sha256": "815732e376781d475e8c51c2ac9a5f5522c3d1d8b004228fc10ddc204ea01f2f"
   },
   {
     "path": "src/tensorfold/families/qwen4_exp/__init__.py",
-    "sha256": "f98078b0db6f7d6eba44e4ebe6cd15da069df449bd653f7ffc0d9677bc9cd772"
+    "sha256": "da0854e5983e5371a804c617c26179cfff3d41d299b48c4a4eba1a2006b1c5f5"
   },
   {
     "path": "src/tensorfold/families/qwen4_exp/cuda/draft_vocab.txt",
@@ -353,7 +409,7 @@
   },
   {
     "path": "src/tensorfold/families/qwen4_exp/decode.py",
-    "sha256": "5bb4bfc342adc321b0c8de8993bff33b52ce4270364d4ebb9ddcc3f8663cf975"
+    "sha256": "4e9cebf289b04d4258f9fa91389ebaeaa81e40b08ac1ca6fed0acb8fec50d260"
   },
   {
     "path": "src/tensorfold/families/qwen4_exp/draft_head.py",
@@ -365,11 +421,11 @@
   },
   {
     "path": "src/tensorfold/families/qwen4_exp/model.py",
-    "sha256": "94f641cd0f25cd81917c11ced2680e62d4c4b70a1051279d7476d9079172d7a8"
+    "sha256": "4911d6e938152b769d7f4299c5bcb9b41b24672dea31e8c3c71743a5d096954a"
   },
   {
     "path": "src/tensorfold/families/qwen4_exp/model_layers.py",
-    "sha256": "8c3ab3a4890a37014ee201128f0abc8fa78dce206c377a48bd7dbc723a79de01"
+    "sha256": "7d715f686bd1ded1ef41ca20e2823dea1fb54ad0dbf2382857f51d8424b07d75"
   },
   {
     "path": "src/tensorfold/families/qwen4_exp/mtp.py",
@@ -380,8 +436,12 @@
     "sha256": "b488ae77cb8a7f85894852df19608284fd3baec2d299c25d6a81e475b6f88dff"
   },
   {
+    "path": "src/tensorfold/families/qwen4_exp/mtp_chain.py",
+    "sha256": "e09f7e9e164c9d5c2811bb483274225d2dee9e40ff855842d1a41c7dbad3089b"
+  },
+  {
     "path": "src/tensorfold/families/qwen4_exp/runtime.py",
-    "sha256": "3a7366b1dd5b9c2b8eb0e0fac642b073d1f7e01c82c12de8e37a2731bdd8487c"
+    "sha256": "9bfa6c22850e2eabda4391ef057e66421aeee4461b88f1b8707024f6f033c3da"
   },
   {
     "path": "src/tensorfold/families/qwen4_exp/ssd_table.py",
@@ -397,7 +457,7 @@
   },
   {
     "path": "src/tensorfold/hub.py",
-    "sha256": "5f8f3492c6181da50c4d18b75cd3ff3c4cfd02d2b2494512f5657ca72290332f"
+    "sha256": "a6896c3cf4ada7f37e8bb9c2bed4286cb6ec29b566934f085a03a64a7f7fe7d0"
   },
   {
     "path": "src/tensorfold/kernels/__init__.py",
@@ -432,6 +492,10 @@
     "sha256": "95982410e4e8a8e42f92d1962e9e813d0f6ac0a5897e56dc8ee47e7e0c1acf01"
   },
   {
+    "path": "src/tensorfold/kernels/device.py",
+    "sha256": "44c2f41f832cffb9eb5b8e18c52a2365230565f0b9a7f3523382462895c567fd"
+  },
+  {
     "path": "src/tensorfold/kernels/gemma/__init__.py",
     "sha256": "7b02b8e92a4a65e86a4a02828a337951366096bcdafb2f8e1ba1d87716e4b622"
   },
@@ -453,11 +517,11 @@
   },
   {
     "path": "src/tensorfold/kernels/gemma/v1/glue.py",
-    "sha256": "72c830b9d2b31ed70479b2f17d5f1f29b5b8decc609ae75e6ac0ec82b40b1003"
+    "sha256": "78de80e9e62fa7948eac5c2ee15caab3c74094d9299f3f0e38b27a0a533229d2"
   },
   {
     "path": "src/tensorfold/kernels/gemma/v1/matmul.py",
-    "sha256": "a597e03c8796bf5d01bc122b908d4aae21f641c5ad1bea11735331b3a10da37b"
+    "sha256": "55fc06e820772e1b56cb31133af453e92dd0c63933ca74777e4b1fd0e2835223"
   },
   {
     "path": "src/tensorfold/kernels/gemma/v1/moe.py",
@@ -529,15 +593,19 @@
   },
   {
     "path": "src/tensorfold/kernels/nemotron/lightning/v1/kernels.py",
-    "sha256": "f4d9070d2cfc25f999047168aee08062dac4539df7f58dd07f3c46ef03a3a1f0"
+    "sha256": "7871a7d2093f1f83b53e8d4d85fc022b598d5d8a39e0b212b6aa5b5d0b271015"
+  },
+  {
+    "path": "src/tensorfold/kernels/nemotron/lightning/v1/lane_fused.py",
+    "sha256": "6c29ab8c6e59bc07ab9c087ce7c60f56f5bb1c2dabb46e69e68f732bfda8eb17"
   },
   {
     "path": "src/tensorfold/kernels/nemotron/lightning/v1/rows.py",
-    "sha256": "648eb82a2352ca016c9f59ee2069414eb5d658f8a01911f6f6946fdb93f59b44"
+    "sha256": "9705a2bf93bf5ba2186deda9a5f8ffb1c66d4eece817c664adf4824b49df2cb3"
   },
   {
     "path": "src/tensorfold/kernels/nemotron/lightning/v1/sources.py",
-    "sha256": "77a57a4863bd538b926cf6aff9232d8e2c8043fd39b94f897f816af3377bb158"
+    "sha256": "6fc8dae3f289fe2f944adc9cc2c1021335d366593b5da882c9629bcbd18b58ca"
   },
   {
     "path": "src/tensorfold/kernels/qwen/__init__.py",
@@ -609,7 +677,7 @@
   },
   {
     "path": "src/tensorfold/kernels/qwen/dense/v1/row_matmul.py",
-    "sha256": "9371390ceabeba0e23894bbfed3546a6be30851cd20b9acec6c01100a828d50c"
+    "sha256": "281ae53a8dd6b8b3444c438f6c1699a66fbf116cd240ba38ac6a82eb160110f2"
   },
   {
     "path": "src/tensorfold/kernels/qwen/dense/v1/row_streams.py",
@@ -621,7 +689,7 @@
   },
   {
     "path": "src/tensorfold/kernels/qwen/dense/v1/simd_qmm_bits.py",
-    "sha256": "c8aab12180295bdcb54f044ea4246657049594b5feeee15eedebcf8a2543b8e4"
+    "sha256": "092e8c42d3a6a3d884ae580de4a7cfee1bb0cc4eee8a63250b54c3fdfe36aea1"
   },
   {
     "path": "src/tensorfold/kernels/qwen/dense/v1/stream_attention.py",
@@ -641,15 +709,19 @@
   },
   {
     "path": "src/tensorfold/kernels/qwen/flash_next/v1/attention.py",
-    "sha256": "b81ddcd0093a2e7308d0b5b87b0760c2711a676665ab8c02f857da99928280ee"
+    "sha256": "b5ae051ae87d2d1d23e7233c7166e8aa78c40b35a0977e487466e94d7a828b98"
   },
   {
     "path": "src/tensorfold/kernels/qwen/flash_next/v1/base.py",
-    "sha256": "81807c7a4d799565c63a3191f3fd26bd9abf267b3d6b7c5b777f20e47e790fce"
+    "sha256": "2b3980800e87b6fce63938a0a04ce5c1cfd06651b9afbfed612c29164439633b"
+  },
+  {
+    "path": "src/tensorfold/kernels/qwen/flash_next/v1/block_select.py",
+    "sha256": "2af891df16dc386ba46d5d7ab65920b1f67e54df7c845d397e857ecd865e87be"
   },
   {
     "path": "src/tensorfold/kernels/qwen/flash_next/v1/embed.py",
-    "sha256": "171107eea64b8bfc464de8703b32d0d5452b99ee6d61f9b273740878b7fc9f97"
+    "sha256": "9998dc881ca865bf680bbba70ac37ab01186d9f024f8f09ad9a5ed99d2a7a5a2"
   },
   {
     "path": "src/tensorfold/kernels/qwen/flash_next/v1/experts.py",
@@ -664,6 +736,10 @@
     "sha256": "ab01535b27cbc36f5ec821d90d00a3b397c8ec39266de1f26ad2ef2181372068"
   },
   {
+    "path": "src/tensorfold/kernels/qwen/flash_next/v1/ngram.py",
+    "sha256": "b0f0551904c79e129af1fea0a6f58014aed4fa14eda8d7ed826ee3706b06d47f"
+  },
+  {
     "path": "src/tensorfold/kernels/qwen/flash_next/v1/prefill.py",
     "sha256": "2ee1bc01eb9c5db32189fa0264e79eb06212cc73ec21862458330052d341dbaf"
   },
@@ -673,7 +749,7 @@
   },
   {
     "path": "src/tensorfold/kernels/qwen/flash_next/v1/prefill_mm.py",
-    "sha256": "1d00f1021d121acbe7d63c1625bb8fd41dd82bcc416aeec21a33b656398dbc7b"
+    "sha256": "f2ceb200287a4b136e437866a9094dd0b3029ac54cb6607f70fcd86a0439f165"
   },
   {
     "path": "src/tensorfold/kernels/qwen/flash_next/v1/row_tiles.py",
@@ -701,7 +777,7 @@
   },
   {
     "path": "src/tensorfold/kernels/threads.py",
-    "sha256": "b735aa57892d1318e7478bb27989bbc98920ab45286876b62b58ca567ec17899"
+    "sha256": "52e09eb44eb28b8230e4d98a2c11130466dddba8a6350a0307df36d5b3a3f753"
   },
   {
     "path": "src/tensorfold/quantization.py",
@@ -709,7 +785,7 @@
   },
   {
     "path": "src/tensorfold/serve_options.py",
-    "sha256": "74e7af99a3e7b305f72ce4b5bc09a5246168240a0033e534e6fa1c60f2e5add6"
+    "sha256": "5f55aef1c63092c19ec04215b20f0acc87f4b441c4e3761f609566aa087dfb8b"
   },
   {
     "path": "src/tensorfold/server/__init__.py",
@@ -720,12 +796,20 @@
     "sha256": "f2bfda8b15f1673531de42c07378a90f2de71210fced6a757874c9f719b2e3ed"
   },
   {
+    "path": "src/tensorfold/server/anthropic.py",
+    "sha256": "3a3947820c605707ec66321214bdb86b9be77b26ffb99884228e5fbbd1ae8955"
+  },
+  {
+    "path": "src/tensorfold/server/anthropic_translate.py",
+    "sha256": "fe825651e921581684b12450f4b43061c61b5e7b5ec5fef4fa712da412c3aa95"
+  },
+  {
     "path": "src/tensorfold/server/app.py",
-    "sha256": "8109f2ee78fa1001047c20b550e00f05e309538415c0618cf6975a96160fe990"
+    "sha256": "29823205bde1cf7ceafdcb338559dfcaf7f2cb47e2798716f36eb934dbd8efd8"
   },
   {
     "path": "src/tensorfold/server/cancellation.py",
-    "sha256": "29ce7f34b971a3fed7d125b8a0f4bcbcd7f33056ae23f26d491f745a901692db"
+    "sha256": "46883bcf644fa03d3ecf6d80612fd8258b7a8740e16f9e2d066607702fd32eca"
   },
   {
     "path": "src/tensorfold/server/checkpoints.py",
@@ -741,15 +825,15 @@
   },
   {
     "path": "src/tensorfold/server/errors.py",
-    "sha256": "5ff4904487e42c5995adaa7efd21b8c8d2fa0ead65f3e7896547cf5b0f44ac49"
+    "sha256": "7e424274b47d3e4cea1880f8e080e86382d93c84a3823581d971d19f98301dc7"
   },
   {
     "path": "src/tensorfold/server/http.py",
-    "sha256": "0adf6ae131b8c66d5e4195f193cbc9a05d2aeca03aa0c156dcfef6b1cafed1fa"
+    "sha256": "26837002922059e45881fcee2b49fc04ebb92f4d2119d641b406c74529603962"
   },
   {
     "path": "src/tensorfold/server/live.py",
-    "sha256": "a39c27fead0857eeff2f6658b24fd3739b4548f84bd5a2fce01fc344acb928c0"
+    "sha256": "5b3376e0674d4c13d3e5e97970548c2fa0ceb54d8ecee80f85ecb909af3a52df"
   },
   {
     "path": "src/tensorfold/server/memory_budget.py",
@@ -757,11 +841,11 @@
   },
   {
     "path": "src/tensorfold/server/messages.py",
-    "sha256": "b0850158d35f4f7a44fcbe8b6c0fedabc9182bf8bdf23e676c40506a56919944"
+    "sha256": "5ec8a7fd07b046587114e69432343310edf3cf31d7b323dfd1827a5c0d704f6c"
   },
   {
     "path": "src/tensorfold/server/metrics.py",
-    "sha256": "5f44c9806b78572f56675fb2b0b203346a071a44135b10cfec3d51441d4c2e04"
+    "sha256": "7cd9406582dc32bc353e5c3f9e970c358033f8dcf65f7c9a62849ef6ee10d65a"
   },
   {
     "path": "src/tensorfold/server/probabilities.py",
@@ -781,11 +865,15 @@
   },
   {
     "path": "src/tensorfold/server/prompts.py",
-    "sha256": "e653ce4ca6b8e4786341791f97812324843f7432b5627b4202c686fafa28f0a9"
+    "sha256": "7e4365cc531bac219ec861f7dd2eb4bb91bdcad53999935bb883f273d9ada882"
+  },
+  {
+    "path": "src/tensorfold/server/request_body.py",
+    "sha256": "12f677642b9cc9e51603396a21bf914710d55ebac770d6eda6a1e0921176dbf1"
   },
   {
     "path": "src/tensorfold/server/request_options.py",
-    "sha256": "9a93da2e6b7d3f2a9f5a341f944467cca5ea07374b927b3029b1706f2d2c35d0"
+    "sha256": "8e26db210af48ecfb435e7d4a0250370921095c0760e9de5ca542ab1868f6368"
   },
   {
     "path": "src/tensorfold/server/residency.py",
@@ -793,15 +881,15 @@
   },
   {
     "path": "src/tensorfold/server/responses.py",
-    "sha256": "158b4d9dff46af3b0b49e858409777cfb025bb0196b47105a9ed103d60dab4f6"
+    "sha256": "8288493cc03ed68838c9a35cc496912f0c5266781b5ec2994f7f017ddcb32a9f"
   },
   {
     "path": "src/tensorfold/server/responses_translate.py",
-    "sha256": "bcbda16a90b357c8375a4b9e907b5262658029cd974f9b3aa44e1ef7f23b4276"
+    "sha256": "9da81dff3473e1fc26b3096b69434468c1f8f6a1ecb2c4af09dd15a6a8971c52"
   },
   {
     "path": "src/tensorfold/server/scheduler.py",
-    "sha256": "8ef51c386ebca66214988cbe87d6988e437e416749fc20baf9484402789f698b"
+    "sha256": "07ae6d1b214789a450163b54c8e734d64b20be324147938f9c9a69eee453ad2d"
   },
   {
     "path": "src/tensorfold/server/stacks.py",
@@ -809,7 +897,7 @@
   },
   {
     "path": "src/tensorfold/server/stopping.py",
-    "sha256": "f92a962065d31ff13a6680e876562ecff1fcd672a1988754008595ead9030de4"
+    "sha256": "b3e8a8703134627fa260b652d2342d3ec0fe2f86a891e972ed8bff38ca4a38b1"
   },
   {
     "path": "src/tensorfold/server/stream_gate.py",
@@ -818,6 +906,10 @@
   {
     "path": "src/tensorfold/server/text.py",
     "sha256": "c07b60d17e966e5d568f87dcc7d85e532d553089a23e6580e5982cce8c4c58ad"
+  },
+  {
+    "path": "src/tensorfold/server/token_routes.py",
+    "sha256": "ec973485eb6504cb7fa3d93e00e7095aa7101aa9f7c6ab128fd7715a2178312a"
   },
   {
     "path": "src/tensorfold/server/tool_policy.py",
@@ -881,15 +973,15 @@
   },
   {
     "path": "src/tensorfold/vision/glm_processing.py",
-    "sha256": "eccad40923a9e60c2be630a5cf4d6af004687e19c51c8433a2bbf9ac08fa6662"
+    "sha256": "cea5c4cf2edbf7a1f8ce9227d6b9146d928439163a400537d4f833fc391f8390"
   },
   {
     "path": "src/tensorfold/vision/images.py",
-    "sha256": "68935fa95e57633419088a7b48ee3445c5815a5d3715fcd6594279e3a79906ff"
+    "sha256": "58c26d1e3c929dec3faa6397fdb0534bba1b1a5ee640de5e67e16c0e6e9aed37"
   },
   {
     "path": "src/tensorfold/vision/images_http.py",
-    "sha256": "42c5c0c80c56ef281c4474b0c084ad041518c3bb7a9ce950fb78f67de2dde9ef"
+    "sha256": "b4e6f94fe8c18fa1a22a884654911bc8d2851534c4677c47ea70760c8655e56c"
   },
   {
     "path": "src/tensorfold/vision/qwen_checkpoint.py",
@@ -901,10 +993,14 @@
   },
   {
     "path": "src/tensorfold/vision/qwen_processing.py",
-    "sha256": "0870cee0acd4c168c7bb51be4173c49d00c254fb24ce20868d6616d7d3afef2b"
+    "sha256": "e27b2128aad770180354a6793220589ee34b8fd1e5280122d7efeb24a14a99ad"
   },
   {
     "path": "src/tensorfold/vision/rotary.py",
     "sha256": "e1eb3eff11d195bbeb2b0009f1106cd593f94dd23638081f9b750925c6d7f69f"
+  },
+  {
+    "path": "src/tensorfold/vision/videos.py",
+    "sha256": "30ed97dee515b0e6b41afb81d9ac6ebd2525943879a9df539b757ca9d5de7a92"
   }
 ]

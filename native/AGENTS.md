@@ -28,6 +28,16 @@
   runs large tests; it never rebases or pushes. Review and submit changes through
   a PR against `ashhart/TensorFold:zig`, using a GitHub noreply commit address.
   Do not schedule sync or use it as a setup shortcut. Use SSH Git remotes.
+- After every upstream merge or rebase, including manual branch syncs, handle
+  native drift before committing or pushing. Verify dependency pins, regenerate
+  with `.venv/bin/python tools/export_native_kernels.py`, and review the diff.
+  Update native callers and fixtures when kernel inputs, templates or layouts
+  change; regeneration alone does not establish runtime parity. Review source
+  changes and feature bindings before `record-upstream-coverage`; never refresh
+  hashes merely to silence a failure. Run the affected Metal oracles, setup
+  checks and every verification step in `.github/workflows/native-macos.yml`
+  through Latch. Resolve failures without disabling checks, then inspect the
+  resulting GitHub CI run after the authorized push and address any failures.
 - Preserve upstream arithmetic, dtype, layout, sampling positions and cache
   commit/rollback semantics. Compare intermediate arrays when output diverges;
   do not widen tolerances to conceal numerical drift.
