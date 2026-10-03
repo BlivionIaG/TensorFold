@@ -276,6 +276,7 @@ pub const Coordinator = struct {
     noinline fn stepShared(c: *Coordinator, m: anytype, requests: []const *session.Generation(@TypeOf(m.*)), results: []Result, shared_drafter: ?*@import("drafter.zig").Drafter) !void {
         const M = @TypeOf(m.*);
         const S = Shared(M);
+        const array_targets = M == @import("nemotron.zig").Model or M == @import("gemma.zig").Model;
         const capacity = comptime modelStreamLimit(M);
         const Generation = session.Generation(M);
         const Pass = @typeInfo(@typeInfo(@TypeOf(M.forward)).@"fn".return_type.?).error_union.payload;
@@ -365,25 +366,25 @@ pub const Coordinator = struct {
                 drafting += 1;
             };
             if (drafting > 0) {
-                var gpu_targets = M == @import("nemotron.zig").Model;
+                var gpu_targets = array_targets;
                 for (indexes[0..count]) |index| {
                     const cfg = requests[index].settings;
                     gpu_targets = gpu_targets and (cfg.metal or cfg.temperature == 0);
                 }
                 if (M == model.Model) {
                     try drafter.?.proposeStreams(m, draft_streams[0..drafting], proposals[0..drafting]);
-                } else if (M == @import("gemma.zig").Model) {
-                    for (draft_streams[0..drafting], proposals[0..drafting]) |stream, *proposal| {
-                        stream.state.swap(m);
-                        defer stream.state.swap(m);
-                        proposal.* = try neural.propose(m, stream.state, null, stream.first, stream.budget, stream.settings);
-                    }
                 } else if (gpu_targets) {
                     pending_proposals = try neural.proposeStreamsLazy(m, draft_streams[0..drafting]);
                     try pending_proposals.metadata(proposals[0..drafting]);
                     for (draft_indexes[0..drafting], 0..) |j, i| {
                         pending_windows[i] = j;
                         pending_slots[j] = i;
+                    }
+                } else if (M == @import("gemma.zig").Model) {
+                    for (draft_streams[0..drafting], proposals[0..drafting]) |stream, *proposal| {
+                        stream.state.swap(m);
+                        defer stream.state.swap(m);
+                        proposal.* = try neural.propose(m, stream.state, null, stream.first, stream.budget, stream.settings);
                     }
                 } else try neural.proposeStreams(m, draft_streams[0..drafting], proposals[0..drafting]);
                 for (draft_indexes[0..drafting], proposals[0..drafting]) |j, proposal| {
@@ -411,7 +412,7 @@ pub const Coordinator = struct {
         defer if (allocated) |granted| mx.allocator.free(granted);
         const granted: []const usize = allocated orelse &singleton_grant;
         var streams: [capacity]S.Stream = undefined;
-        var array_streams: [capacity]@import("nemotron_shared.zig").ArrayStream = undefined;
+        var array_streams: [capacity]if (array_targets) S.ArrayStream else void = undefined;
         var token_parts: [capacity]mx.Array = undefined;
         for (windows[0..count], granted, 0..) |*w, extra, i| {
             const g = requests[indexes[i]];
@@ -422,7 +423,7 @@ pub const Coordinator = struct {
             w.draft.len = extra;
             w.count = extra + 1;
             streams[i] = .{ .state = &g.state, .tokens = w.tokens[0..w.count], .parents = w.parents[0..w.count] };
-            if (M == @import("nemotron.zig").Model and pending_proposals.count > 0) {
+            if (array_targets and pending_proposals.count > 0) {
                 array_streams[i] = .{ .state = &g.state, .count = w.count, .parents = w.parents[0..w.count] };
                 const host = try input_scope.cast(try input_scope.ints(if (pending_slots[i] != null) w.tokens[0..1] else w.tokens[0..w.count]), mx.c.MLX_UINT32);
                 token_parts[i] = if (pending_slots[i]) |slot| (if (extra > 0) try input_scope.cat(&.{ host, try input_scope.slice(pending_proposals.tokens[slot], 0, 0, @intCast(extra)) }, 0) else host) else host;
@@ -436,8 +437,8 @@ pub const Coordinator = struct {
         var paths: [capacity][]const i32 = undefined;
         const forward_started = @import("server_live.zig").now(std.Options.debug_io);
         c.timing.prepare_seconds = forward_started - started;
-        var pass = if (M == @import("nemotron.zig").Model and pending_proposals.count > 0)
-            try @import("nemotron_shared.zig").forwardArray(m, array_streams[0..count], try input_scope.cat(token_parts[0..count], 0))
+        var pass = if (array_targets and pending_proposals.count > 0)
+            try S.forwardArray(m, array_streams[0..count], try input_scope.cat(token_parts[0..count], 0))
         else if (M == model.Model)
             try @import("qwen_shared.zig").forwardQueued(m, streams[0..count])
         else
@@ -457,12 +458,12 @@ pub const Coordinator = struct {
             sampled_rows += w.count;
         }
         const logits = try sample_scope.reshape(pass.logits, &.{ @intCast(sampled_rows), mx.dim(pass.logits, -1) });
-        var head_gpu_targets = M == @import("nemotron.zig").Model;
+        var head_gpu_targets = array_targets;
         for (indexes[0..count]) |index| {
             const cfg = requests[index].settings;
             head_gpu_targets = head_gpu_targets and (cfg.metal or cfg.temperature == 0);
         }
-        const ids = if (M == @import("nemotron.zig").Model and head_gpu_targets) blk: {
+        const ids = if (array_targets and head_gpu_targets) blk: {
             const selected = try @import("gpu_sampling.zig").sampleRows(&m.kernels, &sample_scope, logits, positions[0..sampled_rows], settings[0..sampled_rows], null);
             var proposal_arrays: [max_streams]mx.Array = undefined;
             const ready = pending_proposals.arrays(&proposal_arrays);

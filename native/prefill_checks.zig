@@ -5,6 +5,7 @@ const ops = @import("prefill_ops.zig");
 pub fn check(io: std.Io, dir: []const u8) !void {
     try mx.init();
     defer mx.shutdown();
+    try @import("qwen_prefill_gdn.zig").check();
     var store = @import("checkpoint.zig").Store.init(64);
     defer store.deinit();
     var path: [4096]u8 = undefined;

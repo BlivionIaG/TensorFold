@@ -157,6 +157,7 @@ pub const Model = struct {
     position: i32 = 0,
     rope_delta: i32 = 0,
     prefill_ops: @import("prefill_ops.zig").Ops = .{},
+    prefill_gdn: @import("qwen_prefill_gdn.zig").Fusion = .{},
     trace_dir: ?[]const u8 = null,
     pub fn init(io: std.Io, dir: []const u8) !Model {
         var m = Model{ .weights = Weights.init(), .kernels = mx.Kernels.init() };
@@ -175,6 +176,7 @@ pub const Model = struct {
         m.weights.deinit();
         m.kernels.deinit();
         m.prefill_ops.deinit();
+        m.prefill_gdn.deinit();
     }
     pub fn weight(m: *Model, index: usize, suffix: []const u8) !A {
         var buf: [192]u8 = undefined;

@@ -459,14 +459,22 @@ pub const Model = struct {
     pub fn propose(m: *Model, _: A, anchor: i32, output: []i32, _: @import("sampling.zig").Sampling) !void {
         output[0] = anchor;
         if (output.len <= 1) return;
+        const selected = try m.proposeLazy(anchor, output.len - 1);
+        defer mx.free(selected);
+        try mx.eval(selected);
+        for (output[1..], mx.c.mlx_array_data_uint32(selected)[0 .. output.len - 1]) |*token, id| token.* = @intCast(id);
+    }
+
+    pub fn proposeLazy(m: *Model, anchor: i32, count: usize) !A {
+        if (anchor < 0 or anchor >= vocab) return error.InvalidToken;
         const d = if (m.draft) |*value| value else return error.MissingDraft;
-        if (d.position != m.position or output.len - 1 > m.maxDrafts()) return error.InvalidDraftBlock;
+        if (d.position != m.position or count == 0 or count > m.maxDrafts()) return error.InvalidDraftBlock;
         var s = mx.Scope{};
         defer s.deinit();
         const cfg = d.parsed.value.dflash_config;
         var ids: [128]i32 = @splat(cfg.mask_token_id);
         ids[0] = anchor;
-        const embeddings = try s.reshape(try s.binary(mx.c.mlx_multiply, try m.weights.embed(&s, "model.embed_tokens", ids[0..output.len]), try s.cast(try s.scalar(@floatCast(@sqrt(@as(f64, 2816)) * cfg.input_embedding_scale)), mx.bf16)), &.{ 1, @intCast(output.len), 2816 });
+        const embeddings = try s.reshape(try s.binary(mx.c.mlx_multiply, try m.weights.embed(&s, "model.embed_tokens", ids[0 .. count + 1]), try s.cast(try s.scalar(@floatCast(@sqrt(@as(f64, 2816)) * cfg.input_embedding_scale)), mx.bf16)), &.{ 1, @intCast(count + 1), 2816 });
         const hidden = try d.forward(&s, embeddings);
         var logits = try s.binary(mx.c.mlx_multiply, try m.weights.linear(&m.kernels, &s, "model.embed_tokens", hidden, false), try s.cast(try s.scalar(cfg.output_multiplier), mx.bf16));
         if (cfg.final_logit_softcapping orelse d.parsed.value.final_logit_softcapping) |cap| if (cap > 0) {
@@ -474,9 +482,7 @@ pub const Model = struct {
         };
         var selected = mx.c.mlx_array_new();
         const rc = mx.c.mlx_argmax_axis(&selected, logits, -1, false, mx.stream);
-        selected = try s.cast(try s.result(rc, selected), mx.c.MLX_INT32);
-        try mx.eval(selected);
-        @memcpy(output[1..], mx.c.mlx_array_data_int32(selected)[0 .. output.len - 1]);
+        return mx.retain(try s.reshape(try s.result(rc, selected), &.{@intCast(count)}));
     }
     pub fn sliding(i: usize) bool {
         return i % 6 != 5;
@@ -591,6 +597,15 @@ pub const Model = struct {
         var scope = mx.Scope{};
         defer scope.deinit();
         return m.forwardInput(cache, position, generation, try scope.ints(tokens), tokens.len);
+    }
+
+    // Internal entry point for IDs produced by the validated GPU sampler.
+    pub fn forwardStateArray(m: *Model, cache: []Cache, position: i32, generation: u64, tokens: A) !Pass {
+        if (tokens.ctx == null or (mx.dtype(tokens) != mx.i32t and mx.dtype(tokens) != mx.c.MLX_UINT32)) return error.InvalidToken;
+        if (mx.shape(tokens).len != 1) return error.InvalidSamplingShape;
+        const count: usize = @intCast(mx.dim(tokens, 0));
+        if (count == 0 or count > max_decode_rows or position < 0 or position > 262144 - count) return error.ContextLimitExceeded;
+        return m.forwardInput(cache, position, generation, tokens, count);
     }
 
     pub fn forwardAfter(m: *Model, previous: *Pass, sampled: A) !Pass {

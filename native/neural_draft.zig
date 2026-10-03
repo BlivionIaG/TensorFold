@@ -584,6 +584,17 @@ pub fn proposeStreamsLazy(m: anytype, streams: []const Stream(@TypeOf(m.*))) !Pe
     }
     var pending = PendingProposals{ .count = streams.len };
     errdefer pending.deinit();
+    if (M == @import("gemma.zig").Model) {
+        for (streams, 0..) |stream, i| {
+            const budget = @min(stream.budget, m.maxDrafts());
+            pending.lengths[i] = budget;
+            if (budget == 0) continue;
+            stream.state.swap(m);
+            defer stream.state.swap(m);
+            pending.tokens[i] = try m.proposeLazy(stream.first, budget);
+        }
+        return pending;
+    }
     var caches: [capacity]M.DraftCache = undefined;
     var initialized: usize = 0;
     defer for (caches[0..initialized]) |*cache| cache.deinit();

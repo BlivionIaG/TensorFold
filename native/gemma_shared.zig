@@ -9,6 +9,7 @@ const stream_limit = gemma.Model.max_shared_streams;
 const window_limit = gemma.Model.max_decode_rows;
 pub const State = @import("request_state.zig").State(gemma.Model);
 pub const Stream = struct { state: *State, tokens: []const i32, parents: []const i32 };
+pub const ArrayStream = struct { state: *State, count: usize, parents: []const i32 };
 const Entry = struct { state: *State, first: i32, pass: gemma.Pass };
 
 // The model and request states must remain at stable addresses until deinit.
@@ -90,14 +91,41 @@ pub const Pass = struct {
 pub fn forward(m: *gemma.Model, streams: []const Stream) !Pass {
     if (m.round_owner.stage != .idle) return error.ModelRoundActive;
     if (streams.len == 0 or streams.len > stream_limit) return error.InvalidStreams;
+    var descriptors: [stream_limit]ArrayStream = undefined;
+    for (streams, descriptors[0..streams.len]) |stream, *descriptor| {
+        descriptor.* = .{ .state = stream.state, .count = stream.tokens.len, .parents = stream.parents };
+    }
+    const rows = try validateArrays(m, descriptors[0..streams.len]);
+    var tokens: [limit]i32 = undefined;
+    var first: usize = 0;
+    for (streams) |stream| {
+        for (stream.tokens) |token| if (token < 0 or token >= gemma.Model.vocab) return error.InvalidToken;
+        @memcpy(tokens[first..][0..stream.tokens.len], stream.tokens);
+        first += stream.tokens.len;
+    }
+    var scope = mx.Scope{};
+    defer scope.deinit();
+    return forwardInput(m, descriptors[0..streams.len], rows, try scope.ints(tokens[0..rows]));
+}
+
+// Internal entry point for IDs produced by the validated GPU sampler.
+pub fn forwardArray(m: *gemma.Model, streams: []const ArrayStream, tokens: A) !Pass {
+    const rows = try validateArrays(m, streams);
+    if (tokens.ctx == null or (mx.dtype(tokens) != mx.i32t and mx.dtype(tokens) != mx.c.MLX_UINT32)) return error.InvalidToken;
+    if (!std.mem.eql(i32, mx.shape(tokens), &.{@intCast(rows)})) return error.InvalidStreams;
+    return forwardInput(m, streams, rows, tokens);
+}
+
+fn validateArrays(m: *gemma.Model, streams: []const ArrayStream) !usize {
+    if (m.round_owner.stage != .idle) return error.ModelRoundActive;
+    if (streams.len == 0 or streams.len > stream_limit) return error.InvalidStreams;
     var rows: usize = 0;
     for (streams, 0..) |stream, index| {
         if (stream.state.borrowed) return error.RequestRoundActive;
-        if (stream.state.cache.len != 30 or stream.tokens.len == 0 or stream.tokens.len > window_limit or stream.tokens.len != stream.parents.len or stream.tokens.len > limit - rows) return error.InvalidStreams;
+        if (stream.state.cache.len != 30 or stream.count == 0 or stream.count > window_limit or stream.count != stream.parents.len or stream.count > limit - rows) return error.InvalidStreams;
         for (streams[0..index]) |other| if (other.state == stream.state) return error.DuplicateStream;
-        for (stream.tokens) |token| if (token < 0 or token >= gemma.Model.vocab) return error.InvalidToken;
         for (stream.parents, 0..) |parent, i| if (parent != @as(i32, @intCast(i)) - 1) return error.UnsupportedTree;
-        if (stream.state.position < 0 or stream.state.position > 262144 - stream.tokens.len) return error.InvalidStreams;
+        if (stream.state.position < 0 or stream.state.position > 262144 - stream.count) return error.InvalidStreams;
         for (stream.state.cache, 0..) |cache, layer| {
             if (cache.keys.ctx == null or cache.values.ctx == null) {
                 if (cache.keys.ctx != null or cache.values.ctx != null or stream.state.position != 0) return error.InvalidCacheState;
@@ -107,18 +135,20 @@ pub fn forward(m: *gemma.Model, streams: []const Stream) !Pass {
             const shape = [_]i32{ 1, g.kv_heads, if (gemma.Model.sliding(layer)) 1152 else stream.state.position, g.head_dim };
             if (!std.mem.eql(i32, mx.shape(cache.keys), &shape) or !std.mem.eql(i32, mx.shape(cache.values), &shape) or mx.dtype(cache.keys) != mx.bf16 or mx.dtype(cache.values) != mx.bf16) return error.InvalidCacheState;
         }
-        rows += stream.tokens.len;
+        rows += stream.count;
     }
+    return rows;
+}
+
+fn forwardInput(m: *gemma.Model, streams: []const ArrayStream, rows: usize, tokens: A) !Pass {
     const entries = try mx.allocator.alloc(Entry, streams.len);
     errdefer mx.allocator.free(entries);
-    var tokens: [limit]i32 = undefined;
     var positions: [limit]i32 = undefined;
     var first: usize = 0;
     for (streams, entries) |stream, *entry| {
-        entry.* = .{ .state = stream.state, .first = @intCast(first), .pass = .{ .position = stream.state.position, .generation = stream.state.generation, .rows = stream.tokens.len } };
-        @memcpy(tokens[first..][0..stream.tokens.len], stream.tokens);
-        for (0..stream.tokens.len) |i| positions[first + i] = stream.state.position + @as(i32, @intCast(i));
-        first += stream.tokens.len;
+        entry.* = .{ .state = stream.state, .first = @intCast(first), .pass = .{ .position = stream.state.position, .generation = stream.state.generation, .rows = stream.count } };
+        for (0..stream.count) |i| positions[first + i] = stream.state.position + @as(i32, @intCast(i));
+        first += stream.count;
     }
     const ticket = try m.round_owner.begin();
     for (streams) |stream| stream.state.borrowed = true;
@@ -132,7 +162,7 @@ pub fn forward(m: *gemma.Model, streams: []const Stream) !Pass {
     const s = &p.scope;
     if (entries.len == 1) {
         const state = entries[0].state;
-        entries[0].pass = try m.forwardState(state.cache, state.position, state.generation, streams[0].tokens);
+        entries[0].pass = try m.forwardStateArray(state.cache, state.position, state.generation, tokens);
         for (entries[0].pass.records, 0..) |record, layer| entries[0].pass.record_bytes[layer] = .{ mx.c.mlx_array_nbytes(record.keys), mx.c.mlx_array_nbytes(record.values) };
         p.hidden = entries[0].pass.hidden;
         p.logits = entries[0].pass.logits;
@@ -146,7 +176,7 @@ pub fn forward(m: *gemma.Model, streams: []const Stream) !Pass {
         const span = positions[first_row..][0..entry.pass.rows];
         prepared.* = .{ try ops.Rows.init(s, span, 0, 0, 512), try ops.Rows.init(s, span, 1024, 1152, 256) };
     }
-    var h = try s.binary(mx.c.mlx_multiply, try m.weights.embed(s, "model.embed_tokens", tokens[0..rows]), try s.cast(try s.scalar(@floatCast(@sqrt(@as(f64, 2816)))), mx.bf16));
+    var h = try s.binary(mx.c.mlx_multiply, try m.weights.embedArray(s, "model.embed_tokens", tokens), try s.cast(try s.scalar(@floatCast(@sqrt(@as(f64, 2816)))), mx.bf16));
     var normed = try s.rms(h, try m.weight(0, "input_layernorm.weight"));
     var carried = [_]A{ mx.empty, mx.empty };
     defer for (carried) |array| mx.free(array);
@@ -395,7 +425,17 @@ fn checkBasic(m: *gemma.Model, memory: *const CheckMemory) !void {
             stream.* = .{ .state = &states[j], .tokens = ids[j][0..counts[j]], .parents = parents[0..counts[j]] };
         }
         try memory.progress("shared forward", counts[0] + counts[1], iteration);
-        var pass = try forward(m, &streams);
+        var scope = mx.Scope{};
+        defer scope.deinit();
+        const tokens = try scope.cast(try scope.cat(&.{ try scope.ints(streams[0].tokens), try scope.ints(streams[1].tokens) }, 0), mx.c.MLX_UINT32);
+        const descriptors = [_]ArrayStream{
+            .{ .state = &states[0], .count = counts[0], .parents = streams[0].parents },
+            .{ .state = &states[1], .count = counts[1], .parents = streams[1].parents },
+        };
+        try std.testing.expectError(error.InvalidToken, forwardArray(m, &descriptors, try scope.cast(tokens, mx.f32t)));
+        try std.testing.expectError(error.InvalidStreams, forwardArray(m, &descriptors, try scope.reshape(tokens, &.{ 1, @intCast(counts[0] + counts[1]) })));
+        try std.testing.expectError(error.DuplicateStream, forwardArray(m, &.{ descriptors[0], descriptors[0] }, tokens));
+        var pass = if (iteration % 2 == 0) try forwardArray(m, &descriptors, tokens) else try forward(m, &streams);
         defer pass.deinit();
         for (pass.entries) |entry| {
             try std.testing.expect(entry.pass.staged_ready);

@@ -171,18 +171,15 @@ fn gdn(m: *model.Model, s: *mx.Scope, i: usize, x: A, p: *model.Pass) !A {
     const cs = if (m.cache[i].a.ctx != null) m.cache[i].a else try s.zeros(&.{ 1, 3, 10240 }, mx.bf16);
     const state = if (m.cache[i].b.ctx != null) m.cache[i].b else try s.zeros(&.{ 1, 48, 128, 128 }, mx.f32t);
     const seq = try s.cat(&.{ cs, qkv }, 1);
-    var conv = c.mlx_array_new();
-    const rc = c.mlx_conv1d(&conv, seq, try m.weight(i, "linear_attn.conv1d.weight"), 1, 0, 1, 10240, mx.stream);
-    const activated = try m.prefill_ops.call(s, .silu, &.{try s.result(rc, conv)});
-    if (i == 16) {
+    const mixed = try m.prefill_gdn.prework(&m.kernels, &m.prefill_ops, s, seq, try m.weight(i, "linear_attn.conv1d.weight"));
+    if (i == 16 and m.trace_dir != null) {
+        var conv = c.mlx_array_new();
+        const rc = c.mlx_conv1d(&conv, seq, try m.weight(i, "linear_attn.conv1d.weight"), 1, 0, 1, 10240, mx.stream);
+        conv = try s.result(rc, conv);
         try m.trace(s, m.position, i, "qkv", qkv);
         try m.trace(s, m.position, i, "conv", conv);
     }
-    const q0 = try s.reshape(try s.slice(activated, 2, 0, 2048), &.{ 1, n, 16, 128 });
-    const k0 = try s.reshape(try s.slice(activated, 2, 2048, 4096), &.{ 1, n, 16, 128 });
-    const v = try s.reshape(try s.slice(activated, 2, 4096, 10240), &.{ 1, n, 48, 128 });
-    const q = try s.binary(c.mlx_multiply, try s.rmsEpsilon(q0, mx.empty, 1e-6 / 128.0), try s.cast(try s.scalar(1.0 / 128.0), mx.bf16));
-    const k = try s.binary(c.mlx_multiply, try s.rmsEpsilon(k0, mx.empty, 1e-6 / 128.0), try s.cast(try s.scalar(0.08838834764831845), mx.bf16));
+    const q, const k, const v = mixed;
     const g = try m.prefill_ops.call(s, .decay, &.{ try m.weight(i, "linear_attn.A_log"), a, try m.weight(i, "linear_attn.dt_bias") });
     const beta = try s.unary(c.mlx_sigmoid, b);
     if (i == 16) {
@@ -197,8 +194,7 @@ fn gdn(m: *model.Model, s: *mx.Scope, i: usize, x: A, p: *model.Pass) !A {
     } else {
         p.records[i].values = .{ q, k, v, g, beta, try s.own(try mx.retain(state)), seq, recurrence[1] };
     }
-    const normalized = try s.rms(out, try m.weight(i, "linear_attn.norm.weight"));
-    const gated = try m.prefill_ops.call(s, .gated, &.{ try s.reshape(z, &.{ 1, n, 48, 128 }), normalized });
+    const gated = try m.prefill_gdn.normGate(&m.kernels, &m.prefill_ops, s, out, z, try m.weight(i, "linear_attn.norm.weight"));
     return m.prefillProject(s, i, "linear_attn.out_proj", try s.reshape(gated, &.{ 1, n, 6144 }));
 }
 
