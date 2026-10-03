@@ -1,7 +1,7 @@
 # ROCm implementation
 
-`--backend rocm` serves Qwen3.5 / Qwen3.8 dense MLX affine checkpoints on AMD Radeon GPUs, behind the same torch
-server as CUDA. `auto` picks it where `/dev/kfd` exists and the family has a ROCm engine (`rocm_engine`). Text only.
+`--backend rocm` serves Qwen3.5 / Qwen3.8 dense and Qwen3.6-35B-A3B MoE MLX affine checkpoints on AMD Radeon GPUs,
+behind the same torch server as CUDA. `auto` picks it where `/dev/kfd` exists and the family has a ROCm engine (`rocm_engine`). Text only.
 
 ## Setup
 
@@ -21,7 +21,7 @@ An extension rebuilds when any of its sources, the headers beside them or its fl
 | GPUs measured | Radeon PRO W7800 (gfx1100, RDNA3, BF16 activations), Radeon PRO V620 (gfx1030, RDNA2, FP16 activations) |
 | GPUs built for | gfx1030-1036, gfx1100-1103, gfx1150-1153, gfx1200-1201; RDNA1 is refused |
 | Weights | MLX affine 2, 3, 4, 5, 6 and 8 bits, groups 32, 64 and 128; scales and biases fp32, bf16 or fp16 as stored |
-| Checkpoints served | `mlx-community/Qwen3.5-0.8B-MLX-8bit`, `mlx-community/Qwen3.5-9B-MLX-8bit`, `mlx-community/Qwen3.5-9B-6bit`, `Vontra/Qwen3.8-27B-MLX-4bit` |
+| Checkpoints served | `mlx-community/Qwen3.5-0.8B-MLX-8bit`, `mlx-community/Qwen3.5-9B-MLX-8bit`, `mlx-community/Qwen3.5-9B-6bit`, `Vontra/Qwen3.8-27B-MLX-4bit`, `Vontra/Qwen3.6-35B-A3B-MLX-4bit-MTP` |
 | Tested stacks | W7800: ROCm 7.2, torch 2.12.0+rocm7.2. V620: ROCm 7.14, torch 2.12.0+rocm7.14.0 |
 
 The server takes one request at a time on ROCm. Chat completions, completions, the Responses API, `response_format`
@@ -46,8 +46,10 @@ rows share the launch.
 
 One process a rank, RCCL between them. `--tp 2`, `4` or `8` are ROCm only. Heads, KV heads and MLP columns are
 split per rank; o, out and down are split by input groups and their fp32 shares are summed before each residual
-add; the vocabulary is split for the head. Heads, KV heads and the vocabulary must split evenly: the 0.8B runs at
-tp=2 at most, the 9B and 27B at tp=4.
+add; the vocabulary is split for the head. Heads and the vocabulary must split evenly; with fewer KV heads than
+ranks each KV head is kept by the ranks whose query heads read it. The 0.8B runs at tp=2 at most. A MoE layer
+splits by expert: each rank holds `E / tp` routed experts (the shared one on rank 0), every rank routes every
+token, and the ranks' fp32 shares are summed like a down projection.
 
 On one host, give each rank its own card. With every card visible, rank r takes card r:
 
@@ -56,10 +58,15 @@ tensorfold serve Vontra/Qwen3.8-27B-MLX-4bit --backend rocm --tp 2 --rank 1 --ma
 tensorfold serve Vontra/Qwen3.8-27B-MLX-4bit --backend rocm --tp 2 --rank 0 --master 127.0.0.1 --name local-model
 ```
 
-Rank 0 serves HTTP; the other ranks follow it. `--p2p` opts in to RCCL peer-to-peer. tp has run on one machine
-(eight V620s on PCIe); tp=8 is untested.
+Rank 0 serves HTTP; the other ranks follow it. Two ranks on one card are refused. `--p2p` / `--no-p2p` force RCCL
+peer-to-peer on or off; unset, RCCL decides. tp has run on one machine (eight V620s on PCIe, two W7800s).
 
-MTP drafting is not supported on ROCm yet: a checkpoint's MTP head loads, but pass `--no-drafts`.
+## MTP drafting
+
+A checkpoint's MTP head (the model's own `mtp.*` tensors or a side `mtp*.safetensors`) drafts 4 tokens a round;
+`--no-drafts` turns it off. Each draft is verified with the serial step's own sampling key, so a drafted reply is
+the serial reply token for token, greedy or sampled, at any tp. Verification is one main forward a draft, so
+drafting does not speed decode up yet.
 
 ## Measurements
 

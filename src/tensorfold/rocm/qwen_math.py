@@ -36,6 +36,22 @@ class Packed:
 
 
 @dataclass
+class GptqPacked:
+    """A projection packed as W4A16 GPTQ for the RDNA2 fp16 dot, not MLX affine.
+
+    ``qweight`` is (K / 8, N) int32, ``qzeros`` (K / group, N / 8) int32 and ``scales``
+    (K / group, N) fp16. ``v2`` is True for AWQ, whose zeros are literal, and False for
+    GPTQ, whose zeros are stored +1 and recovered by the kernel.
+    """
+
+    qweight: torch.Tensor
+    qzeros: torch.Tensor
+    scales: torch.Tensor
+    g_idx: torch.Tensor | None = None
+    v2: bool = False
+
+
+@dataclass
 class Spec:
     hidden: int
     intermediate: int
@@ -55,6 +71,9 @@ class Spec:
     full_every: int
     bits: int
     group: int
+    experts: int = 0
+    top_k: int = 0
+    moe_width: int = 0
 
     def full(self, index: int) -> bool:
         return (index + 1) % self.full_every == 0
@@ -487,6 +506,8 @@ def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos
 
 
 def _mlp(spec: Spec, layer, x: torch.Tensor, linear) -> torch.Tensor:
+    if layer.moe is not None:
+        return _moe_mlp(layer.moe, x)
     # Gate and up are the wide tensors. A long prefill computes them a chunk at a time.
     batch, length, hidden = x.shape
     flat = x.reshape(-1, hidden)
@@ -505,6 +526,22 @@ def _mlp(spec: Spec, layer, x: torch.Tensor, linear) -> torch.Tensor:
         up = _project(piece, layer.up, linear)
         out[start:stop] = _project(torch.nn.functional.silu(gate) * up, layer.down, linear)
     return out.view(batch, length, hidden)
+
+
+def _moe_mlp(routed, x: torch.Tensor) -> torch.Tensor:
+    """Routed experts plus the shared one, one row's bits at any width, in the row's activation dtype.
+
+    Every row is an independent pick, so the block runs on the flattened rows and the engine's
+    per-shape scratch buffers are reused across layers and steps.
+    """
+
+    from tensorfold.rocm.moe import run
+
+    batch, length, hidden = x.shape
+    y = run(x.reshape(-1, hidden), routed, prefill=length > 1)
+    if routed.partial:                     # a tp rank's fp32 share: the all-reduce rounds once, after the sum
+        return y.view(batch, length, hidden)
+    return y.view(batch, length, hidden).to(dtype=x.dtype)
 
 
 def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, exact: bool):
