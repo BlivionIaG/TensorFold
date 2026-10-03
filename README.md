@@ -17,7 +17,8 @@ for installation and a first request. On NVIDIA GPUs the CUDA kernels need compu
 series), Hopper and Blackwell, including the DGX Spark's GB10 and the RTX 50 series. NVFP4 and FP8 checkpoints run from
 8.9: their own math where the GPU has each mma (FP4 on 12.x, FP8 from 8.9), W4A16 elsewhere; the RTX 40, Hopper and
 B200 builds are compiled and bit-checked on Blackwell but not yet run on those cards. RTX 30 cards (8.6) aren't
-supported, and the server refuses a GPU below 8.9 at startup.
+supported, and the server refuses a GPU below 8.9 at startup. On AMD Radeon GPUs (RDNA2 to RDNA4), `--backend rocm`
+serves Qwen3.5 / Qwen3.8 dense MLX checkpoints on one GPU or with tensor parallel; see [ROCm](docs/recipes/rocm.md).
 
 ## Image input
 
