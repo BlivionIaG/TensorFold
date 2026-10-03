@@ -72,36 +72,23 @@ def test_windows_refuses_librccl(monkeypatch):
         comm._library()
 
 
-def test_p2p_default_off_for_discrete():
-    from tensorfold.rocm.engine import _resolve_p2p
+@pytest.mark.parametrize("apu,want", [(False, None), (True, True)])
+def test_p2p_is_rccls_choice_unless_asked(monkeypatch, apu, want):
+    """Unset, a discrete card leaves P2P to RCCL and a multi-die APU turns it on; --p2p / --no-p2p win."""
+
+    import tensorfold.rocm.engine as engine_mod
 
     class _Props:
-        multi_gpu_capable = False
-        is_integrated = False
+        multi_gpu_capable = apu
+        is_integrated = apu
 
     fake_torch = type("Torch", (), {
         "cuda": type("CUDA", (), {"get_device_properties": staticmethod(lambda index: _Props())}),
     })
-    import tensorfold.rocm.engine as engine_mod
-    engine_mod.torch = fake_torch
-    assert _resolve_p2p("gfx1100", None) is False
-    assert _resolve_p2p("gfx1100", True) is True
-    assert _resolve_p2p("gfx1100", False) is False
-
-
-def test_p2p_default_on_for_multi_mgpu_apu():
-    from tensorfold.rocm.engine import _resolve_p2p
-
-    class _Props:
-        multi_gpu_capable = True
-        is_integrated = True
-
-    fake_torch = type("Torch", (), {
-        "cuda": type("CUDA", (), {"get_device_properties": staticmethod(lambda index: _Props())}),
-    })
-    import tensorfold.rocm.engine as engine_mod
-    engine_mod.torch = fake_torch
-    assert _resolve_p2p("gfx1151", None) is True
+    monkeypatch.setattr(engine_mod, "torch", fake_torch)
+    assert engine_mod._resolve_p2p("gfx1100", None) is want
+    assert engine_mod._resolve_p2p("gfx1100", True) is True
+    assert engine_mod._resolve_p2p("gfx1100", False) is False
 
 
 def test_cli_extends_tp_choices_to_eight():
