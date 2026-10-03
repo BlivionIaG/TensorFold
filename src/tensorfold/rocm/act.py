@@ -40,3 +40,32 @@ def rope_decode(x: torch.Tensor, pos: int, rotary: int, theta: float) -> torch.T
     y = torch.empty_like(x)
     _ext().rope_decode(x, y, int(pos), int(rotary), float(theta))
     return y
+
+
+def moe_router(x: torch.Tensor, rows: torch.Tensor, out: torch.Tensor) -> None:
+    """``out`` [R, E + 1] fp32 = ``x`` [R, D] fp16 or bf16 . ``rows`` [E + 1, D] fp32, a row's bits whatever R."""
+
+    _ext().moe_router(x, rows, out)
+
+
+def moe_select(logits: torch.Tensor, pick: torch.Tensor, wts: torch.Tensor, top_k: int,
+               items: torch.Tensor | None = None, members: torch.Tensor | None = None) -> None:
+    """The routing rule in one launch; with ``items`` (one row) the plan too: item k is pair k alone."""
+
+    _ext().moe_select(logits, pick, wts, int(top_k), items, members)
+
+
+def moe_act(both: torch.Tensor, dtype: torch.dtype, limit: float = 0.0) -> torch.Tensor:
+    """``both`` [P, 2 NI] fp32 (gate, then up) -> silu(gate) * up [P, NI] in ``dtype``."""
+
+    out = torch.empty((both.shape[0], both.shape[1] // 2), dtype=dtype, device=both.device)
+    _ext().moe_act(both, out, float(limit))
+    return out
+
+
+def moe_combine(y: torch.Tensor, wts: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+    """``y`` [R, S, D] fp32 times ``wts`` [R, S], the slots summed in order and rounded once to ``dtype``."""
+
+    out = torch.empty((y.shape[0], y.shape[2]), dtype=dtype, device=y.device)
+    _ext().moe_combine(y, wts, out)
+    return out

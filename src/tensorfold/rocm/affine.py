@@ -69,6 +69,23 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
     return out if f32 else out.to(x.dtype)
 
 
+def matmul_routed(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torch.Tensor, items: torch.Tensor,
+                  members: torch.Tensor, *, pairs: int, x_div: int, rows: int, bits: int, group: int) -> torch.Tensor:
+    """Every item of an expert plan in one launch: (pairs, N) fp32, row ``p`` pair ``p``'s product.
+
+    ``words`` (E, N, K * bits / 32) and ``scale`` / ``bias`` (E, N, K / group) stack the experts; an item (expert,
+    first, count) multiplies x rows ``members[first:first + count] // x_div`` by its expert. ``rows`` bounds an
+    item's count. Each row's bits are those of the expert's own launch. FP16 activations: the RDNA2 schedule.
+    """
+
+    if bits not in BITS or group not in GROUPS:
+        raise ValueError("RDNA affine weights require 2/3/4/5/6/8 bits and groups of 32/64/128")
+    scale, bias = _tables(scale, bias)
+    out = torch.empty((pairs, words.shape[1]), dtype=torch.float32, device=x.device)
+    _ext().affine_routed(x.contiguous(), words, scale, bias, out, items, members, x_div, rows, bits, group)
+    return out
+
+
 def _one_type(tables: list[torch.Tensor]) -> list[torch.Tensor]:
     """One launch reads one scale type. Mixed sides widen to fp32."""
 

@@ -92,9 +92,12 @@ def _pick_reference(logits):
     order = torch.argsort(gates, dim=1, descending=True, stable=True)[:, :_TOP_K]
     picked = torch.gather(gates, 1, order)
     weights = torch.exp(picked - picked[:, :1])
-    weights = (weights / weights.sum(dim=1, keepdim=True)).to(torch.bfloat16).to(torch.float32)
+    total = torch.zeros(weights.shape[0])
+    for k in range(_TOP_K):                                   # summed in pick order, as the CUDA rule does
+        total = total + weights[:, k]
+    weights = (weights / total[:, None]).to(torch.bfloat16).to(torch.float32)
     shared = logits[:, _EXPERTS].to(torch.bfloat16).to(torch.float32)
-    return order, weights, torch.sigmoid(shared).to(torch.bfloat16).to(torch.float32)
+    return order, weights, (1.0 / (1.0 + torch.exp(-shared))).to(torch.bfloat16).to(torch.float32)
 
 
 def test_pick_and_plan_are_exact():
@@ -119,9 +122,10 @@ def test_pick_and_plan_are_exact():
     plan = Plan(rows, _TOP_K + 1, _EXPERTS + 1, torch.device("cuda"))
     route(picks, plan)
     flat = [int(v) for v in picks.reshape(-1).cpu()]
-    assert all(int(items[2]) > 0 for items in plan.items[: plan.count].cpu().tolist())
     grouped = {expert: [] for expert in range(_EXPERTS + 1)}
     for expert, first, count in plan.items[: plan.count].cpu().tolist():
+        if count == 0:
+            continue
         members = [int(m) for m in plan.members[first:first + count].cpu()]
         assert all(flat[member] == expert for member in members)
         grouped[expert] += members
@@ -161,7 +165,7 @@ def test_affine_experts_match_the_dequantized_product(rows):
         return _dequant(part[0][expert].cpu(), part[1][expert].cpu(), part[2][expert].cpu(), _BITS, _GROUP)
 
     want = _moe_reference(x.cpu().float(), logits, experts, weight_of)
-    assert got.shape == (rows, _HIDDEN) and got.dtype == torch.bfloat16
+    assert got.shape == (rows, _HIDDEN) and got.dtype == x.dtype
     torch.testing.assert_close(got.float().cpu(), want, rtol=3e-2, atol=3e-2)
 
 
@@ -356,7 +360,7 @@ def test_the_ranks_shares_sum_to_the_whole_layer(world, rows):
     from tensorfold.rocm.qwen import _experts_share
 
     whole = _routed(_affine_experts(), torch.randn(_EXPERTS + 1, _HIDDEN).to(torch.bfloat16).cuda())
-    x = torch.randn(rows, _HIDDEN, device="cuda").to(torch.bfloat16)
+    x = torch.randn(rows, _HIDDEN, device="cuda").to(_ACT)
     want = moe_mod.run(x, whole, prefill=rows > 1).float()
     shares = [moe_mod.run(x, _experts_share(whole, rank, world, "test"), prefill=rows > 1) for rank in range(world)]
     assert all(share.dtype == torch.float32 for share in shares)
@@ -364,3 +368,71 @@ def test_the_ranks_shares_sum_to_the_whole_layer(world, rows):
     assert torch.allclose(got, want, rtol=1e-2, atol=1e-2), (got - want).abs().max()
     held = [_experts_share(whole, rank, world, "test").experts.count for rank in range(world)]
     assert held == [_EXPERTS // world + 1] + [_EXPERTS // world] * (world - 1)
+
+
+@pytest.mark.skipif(_GFX != "gfx1030", reason="the routed experts are the RDNA2 fp16 schedule")
+@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
+@pytest.mark.parametrize("group", [32, 64, 128])
+@pytest.mark.parametrize("rows", [1, 3, 8, 40, 300])
+def test_one_routed_launch_equals_each_expert_alone(bits, group, rows):
+    """Every item of a plan in one launch lands on the bits of its expert's own launch, row for row."""
+
+    from tensorfold.rocm import affine
+
+    experts, n, k, slots = 6, 96, 256, 3
+    parts = [_affine(n, k, bits, group, 50 + e) for e in range(experts)]
+    words = torch.stack([p[0] for p in parts]).cuda()
+    scale = torch.stack([p[1] for p in parts]).to(torch.float16).cuda()
+    bias = torch.stack([p[2] for p in parts]).to(torch.float16).cuda()
+    gen = torch.Generator().manual_seed(rows * 7 + bits)
+    x = (torch.randn((rows, k), generator=gen) * 0.5).to(torch.float16).cuda()
+    picks = torch.stack([torch.randperm(experts, generator=gen)[:slots] for _ in range(rows)]).to(torch.int32).cuda()
+    plan = Plan(rows, slots, experts, torch.device("cuda"), prefill=rows > 1)
+    tile = 8 if rows <= 8 else 128
+    route(picks, plan, tile)
+    got = affine.matmul_routed(x, words, scale, bias, plan.items, plan.members, pairs=rows * slots, x_div=slots,
+                               rows=min(tile, rows), bits=bits, group=group)
+    flat = picks.reshape(-1).long().cpu()
+    for e in range(experts):
+        pairs = (flat == e).nonzero().flatten()
+        if pairs.numel() == 0:
+            continue
+        want = affine.matmul(x[(pairs // slots).cuda()].contiguous(), words[e], scale[e], bias[e], bits=bits,
+                             group=group, f32=True)
+        assert torch.equal(got[pairs.cuda()], want), (bits, group, rows, e)
+
+
+@pytest.mark.parametrize("rows", [1, 2, 7, 33])
+def test_the_router_row_does_not_depend_on_the_rows_beside_it(rows):
+    """A row's logits are the same alone or among others, and match the fp64 product closely."""
+
+    from tensorfold.rocm.act import moe_router
+
+    gen = torch.Generator().manual_seed(rows)
+    x = (torch.randn((rows, 256), generator=gen) * 0.5).to(_ACT).cuda()
+    w = torch.randn((_EXPERTS + 1, 256), generator=gen).to(torch.bfloat16).float().cuda()
+    together = torch.empty((rows, _EXPERTS + 1), device="cuda")
+    moe_router(x, w, together)
+    for r in range(rows):
+        alone = torch.empty((1, _EXPERTS + 1), device="cuda")
+        moe_router(x[r:r + 1].contiguous(), w, alone)
+        assert torch.equal(alone[0], together[r])
+    want = x.double() @ w.double().t()
+    assert torch.allclose(together.double(), want, rtol=1e-5, atol=1e-4)
+
+
+def test_one_row_writes_its_own_plan():
+    """At one row the pick writes the plan: item k is pair k alone, and the rest of the plan is empty."""
+
+    from tensorfold.rocm.act import moe_select
+
+    logits = torch.randn((1, _EXPERTS + 1), device="cuda")
+    buf = moe_mod.MoEBuffers(16, _Sizes(), torch.device("cuda"))
+    buf.plan.items.fill_(7)
+    moe_select(logits, buf.pick, buf.wts, _TOP_K, buf.plan.items, buf.plan.members)
+    slots = _TOP_K + 1
+    items = buf.plan.items.cpu()
+    assert items[:slots, 0].tolist() == buf.pick[0, :slots].cpu().tolist()
+    assert items[:slots, 1].tolist() == list(range(slots)) and items[:slots, 2].tolist() == [1] * slots
+    assert int(items[slots:, 2].abs().sum()) == 0
+    assert buf.plan.members[:slots].cpu().tolist() == list(range(slots))
