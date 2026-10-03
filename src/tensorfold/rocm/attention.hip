@@ -95,7 +95,8 @@ causal_kernel(const float* __restrict__ q, const Cache* __restrict__ k, const Ca
 template <typename Cache>
 __global__ void score_keys(const float* __restrict__ q, const Cache* __restrict__ k, float* __restrict__ scores,
                            int span, int heads, int kv_heads, int d, float scale, int visible, long long k_sb,
-                           long long k_sh, long long k_ss) {
+                           long long k_sh, long long k_ss, const int* pos) {
+    if (pos != nullptr) visible = min(*pos + 1, span);
     int lane = threadIdx.x & 31;
     int key = blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5);
     int head = blockIdx.y;
@@ -124,7 +125,9 @@ __global__ void score_keys(const float* __restrict__ q, const Cache* __restrict_
     }
 }
 
-__global__ void softmax_stats(const float* __restrict__ scores, float* __restrict__ stats, int span, int visible) {
+__global__ void softmax_stats(const float* __restrict__ scores, float* __restrict__ stats, int span, int visible,
+                              const int* pos) {
+    if (pos != nullptr) visible = min(*pos + 1, span);
     int head = blockIdx.x;
     int batch = blockIdx.y;
     const float* row = scores + (static_cast<long long>(batch) * gridDim.x + head) * span;
@@ -156,13 +159,19 @@ __global__ void softmax_stats(const float* __restrict__ scores, float* __restric
 template <typename Cache>
 __global__ void apply_values(const float* __restrict__ scores, const float* __restrict__ stats,
                              const Cache* __restrict__ v, float* __restrict__ partials, int span, int heads,
-                             int kv_heads, int d, int visible, long long v_sb, long long v_sh, long long v_ss) {
+                             int kv_heads, int d, int visible, long long v_sb, long long v_sh, long long v_ss,
+                             const int* pos) {
+    if (pos != nullptr) visible = min(*pos + 1, span);
     int tile = blockIdx.x;
     int head = blockIdx.y;
     int batch = blockIdx.z;
     int lane = threadIdx.x;
     int key0 = tile * 128;
-    if (lane >= d || key0 >= visible) return;
+    if (lane >= d) return;
+    if (key0 >= visible) {  // a tile past the keys in use (the graph's grid covers the whole cache) adds zero
+        partials[(((static_cast<long long>(batch) * heads + head) * gridDim.x) + tile) * d + lane] = 0.f;
+        return;
+    }
     int kv = head / (heads / kv_heads);
     const float* row = scores + (static_cast<long long>(batch) * heads + head) * span;
     float max_score = stats[(static_cast<long long>(batch) * heads + head) * 2];
@@ -193,7 +202,7 @@ __global__ void sum_partials(const float* __restrict__ partials, float* __restri
 void causal_launch(const float* q, const void* k, const void* v, float* out, int batch, int qlen, int span,
                    int heads, int kv_heads, int d, float scale, int q_pos0, long long k_sb, long long k_sh,
                    long long k_ss, long long v_sb, long long v_sh, long long v_ss, int cache_kind,
-                   float* scores, float* stats, float* partials, void* stream) {
+                   float* scores, float* stats, float* partials, void* stream, const int* pos) {
     if (d < 1 || d > 256 || heads < 1 || kv_heads < 1 || heads % kv_heads != 0 || batch < 1 || qlen < 1 ||
         span < 1 || q_pos0 < 0) {
         throw std::invalid_argument("causal attention wants d <= 256 and heads a multiple of kv heads");
@@ -204,30 +213,31 @@ void causal_launch(const float* q, const void* k, const void* v, float* out, int
     if (qlen == 1) {
         if (scores == nullptr || stats == nullptr) throw std::invalid_argument("decode attention needs workspace");
         if (partials == nullptr) throw std::invalid_argument("decode attention needs partials");
-        int tiles = (visible + 127) / 128;
+        // With a device position the keys in use are read on the device and the grid covers the whole cache.
+        int tiles = pos != nullptr ? (span + 127) / 128 : (visible + 127) / 128;
         dim3 score_block(128);  // four warps, one key each
         dim3 score_grid((span + 3) / 4, heads, batch);
         dim3 head_grid(heads, batch);
         dim3 tile_grid(tiles, heads, batch);
         if (cache_kind == 0) {
             score_keys<__half><<<score_grid, score_block, 0, hip_stream>>>(q, static_cast<const __half*>(k), scores, span, heads,
-                                                            kv_heads, d, scale, visible, k_sb, k_sh, k_ss);
-            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible);
+                                                            kv_heads, d, scale, visible, k_sb, k_sh, k_ss, pos);
+            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible, pos);
             apply_values<__half><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const __half*>(v), partials, span,
-                                                     heads, kv_heads, d, visible, v_sb, v_sh, v_ss);
+                                                     heads, kv_heads, d, visible, v_sb, v_sh, v_ss, pos);
         } else if (cache_kind == 1) {
             score_keys<hip_bfloat16><<<score_grid, score_block, 0, hip_stream>>>(
                 q, static_cast<const hip_bfloat16*>(k), scores, span, heads, kv_heads, d, scale, visible, k_sb, k_sh,
-                k_ss);
-            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible);
+                k_ss, pos);
+            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible, pos);
             apply_values<hip_bfloat16><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const hip_bfloat16*>(v), partials,
-                                                           span, heads, kv_heads, d, visible, v_sb, v_sh, v_ss);
+                                                           span, heads, kv_heads, d, visible, v_sb, v_sh, v_ss, pos);
         } else if (cache_kind == 2) {
             score_keys<float><<<score_grid, score_block, 0, hip_stream>>>(q, static_cast<const float*>(k), scores, span, heads,
-                                                           kv_heads, d, scale, visible, k_sb, k_sh, k_ss);
-            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible);
+                                                           kv_heads, d, scale, visible, k_sb, k_sh, k_ss, pos);
+            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible, pos);
             apply_values<float><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const float*>(v), partials, span, heads,
-                                                    kv_heads, d, visible, v_sb, v_sh, v_ss);
+                                                    kv_heads, d, visible, v_sb, v_sh, v_ss, pos);
         } else {
             throw std::invalid_argument("cache kind is fp16, bf16, or fp32");
         }

@@ -58,4 +58,38 @@ void causal(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, at::T
                   v.stride(2), kind, scores, stats, partials, stream.stream());
 }
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("causal", &causal); }
+// One query at the device position ``pos`` (int32, one element) over the whole cache ``k`` / ``v``: the launch reads
+// the position when it runs, so a captured graph replays it at every step. Same bits as ``causal`` at that position.
+void causal_at(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, at::Tensor& out, double scale,
+               const at::Tensor& pos) {
+    TORCH_CHECK(q.is_cuda() && q.is_contiguous() && q.scalar_type() == at::kFloat && q.dim() == 4 && q.size(2) == 1,
+                "q: (batch, heads, 1, d) fp32");
+    const int64_t batch = q.size(0), heads = q.size(1), d = q.size(3), span = k.size(2);
+    TORCH_CHECK(k.is_cuda() && v.is_cuda() && k.scalar_type() == v.scalar_type() && k.sizes() == v.sizes() &&
+                    k.dim() == 4 && k.size(0) == batch && k.size(3) == d,
+                "k and v: (batch, kv heads, span, d), same dtype");
+    int kind = k.scalar_type() == at::kHalf ? 0 : k.scalar_type() == at::kBFloat16 ? 1 : 2;
+    TORCH_CHECK(kind != 2 || k.scalar_type() == at::kFloat, "k and v are fp16, bf16, or fp32");
+    TORCH_CHECK(out.is_cuda() && out.is_contiguous() && out.scalar_type() == at::kFloat && out.sizes() == q.sizes(),
+                "out matches q");
+    TORCH_CHECK(d <= 256 && heads % k.size(1) == 0, "d <= 256 and heads are a multiple of kv heads");
+    TORCH_CHECK(pos.is_cuda() && pos.scalar_type() == at::kInt && pos.numel() == 1, "pos: one int32 on the device");
+    c10::cuda::CUDAGuard guard(q.device());
+    at::Tensor score_buf = at::empty({batch, heads, span}, q.options());
+    at::Tensor stat_buf = at::empty({batch, heads, 2}, q.options());
+    at::Tensor partial_buf = at::empty({batch, heads, (span + 127) / 128, d}, q.options());
+    auto stream = c10::cuda::getCurrentCUDAStream();
+    for (const at::Tensor& tensor : {q, k, v, out, score_buf, stat_buf, partial_buf, pos}) {
+        c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
+    }
+    causal_launch(q.data_ptr<float>(), k.data_ptr(), v.data_ptr(), out.data_ptr<float>(), static_cast<int>(batch), 1,
+                  static_cast<int>(span), static_cast<int>(heads), static_cast<int>(k.size(1)), static_cast<int>(d),
+                  static_cast<float>(scale), 0, k.stride(0), k.stride(1), k.stride(2), v.stride(0), v.stride(1),
+                  v.stride(2), kind, score_buf.data_ptr<float>(), stat_buf.data_ptr<float>(),
+                  partial_buf.data_ptr<float>(), stream.stream(), pos.data_ptr<int>());
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("causal", &causal);
+    m.def("causal_at", &causal_at);
+}

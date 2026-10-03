@@ -436,3 +436,21 @@ def test_one_row_writes_its_own_plan():
     assert items[:slots, 1].tolist() == list(range(slots)) and items[:slots, 2].tolist() == [1] * slots
     assert int(items[slots:, 2].abs().sum()) == 0
     assert buf.plan.members[:slots].cpu().tolist() == list(range(slots))
+
+
+def test_graph_decode_equals_eager_through_the_experts(tmp_path):
+    """The MoE engine's captured steps give the eager steps' tokens, greedy and sampled."""
+
+    from tensorfold.engine.exact_sampling import Sampling
+    from tensorfold.families.qwen3_5_moe import rocm_engine
+
+    engine = rocm_engine(_checkpoint(tmp_path, gptq=False), context=128, keep=0)
+    for temperature in (0.0, 0.8):
+        runs = {}
+        for graphs in (False, True):
+            engine.graphs = graphs
+            got = []
+            engine.generate([1, 2, 3, 4, 5], 20, Sampling(seed=9, temperature=temperature), got.extend,
+                            stop_eos=False, draft=False)
+            runs[graphs] = got
+        assert len(runs[True]) == 20 and runs[True] == runs[False], temperature

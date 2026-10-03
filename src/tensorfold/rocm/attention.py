@@ -65,3 +65,14 @@ def causal(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_po
         raise ValueError("k and v must be fp16, bf16, or fp32, and they must match")
     _ext().causal(q, k, v, out, float(scale), int(q_pos0))
     return out
+
+
+def causal_at(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, pos: torch.Tensor) -> torch.Tensor:
+    """One query at device position ``pos`` (int32, one element) over the whole cache: graph-capturable decode."""
+
+    if k.dtype not in _KIND or k.dtype != v.dtype:
+        raise ValueError("k and v must be fp16, bf16, or fp32, and they must match")
+    q = q.contiguous()
+    out = torch.empty_like(q)
+    _ext().causal_at(q, k, v, out, float(scale), pos)
+    return out
