@@ -62,11 +62,14 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
         raise ValueError("scale and bias must be (N, K / group)")
     if not all(t.is_cuda and t.device == x.device for t in (words, scale, bias)):
         raise ValueError("affine operands must share the input's device")
-    out = torch.empty((m, n), dtype=torch.float32, device=x.device)
     # None follows the column grid. False is one launch. True splits K on group boundaries.
     split_mode = 0 if dot2_split is None else (2 if dot2_split else 1)
+    # The RDNA2 decode tile rounds its fp16 output itself: the same bits as the fp32 result cast after.
+    half = (not f32 and x.dtype == torch.float16 and m <= 8 and which == 0 and split_mode != 2
+            and gfx_name() not in WMMA)
+    out = torch.empty((m, n), dtype=torch.float16 if half else torch.float32, device=x.device)
     _ext().affine(x, words.contiguous(), scale, bias, out, bits, group, which, split_mode)
-    return out if f32 else out.to(x.dtype)
+    return out if f32 or half else out.to(x.dtype)
 
 
 def matmul_routed(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torch.Tensor, items: torch.Tensor,

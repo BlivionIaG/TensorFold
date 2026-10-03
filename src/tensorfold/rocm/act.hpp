@@ -30,3 +30,7 @@ void moe_act_launch(const float* both, void* out, int kind, int pairs, int width
 // 1 fp16, 2 bf16).
 void moe_combine_launch(const float* y, const float* wts, void* out, int kind, int r, int slots, int d,
                         hipStream_t stream);
+// Gated DeltaNet gate and beta for `count` (row, head) values, heads the period of a_log / dt_bias:
+// beta = 1 / (1 + exp(-b)), gate = exp(-exp(a_log) * softplus(a + dt_bias)), softplus linear past 20. fp32 out.
+void gdn_gate_launch(const void* a, const void* b, int kind, const float* a_log, const float* dt_bias, float* gate,
+                     float* beta, int count, int heads, hipStream_t stream);

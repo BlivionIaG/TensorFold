@@ -208,6 +208,19 @@ __global__ void moe_combine_kernel(const float* __restrict__ y, const float* __r
     narrow(acc, out + static_cast<long long>(row) * d + c);
 }
 
+template <typename T>
+__global__ void gdn_gate_kernel(const T* __restrict__ a, const T* __restrict__ b, const float* __restrict__ a_log,
+                                const float* __restrict__ dt_bias, float* __restrict__ gate, float* __restrict__ beta,
+                                int count, int heads) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= count) return;
+    const int h = i % heads;
+    beta[i] = 1.f / (1.f + expf(-widen(b[i])));
+    const float x = widen(a[i]) + dt_bias[h];
+    const float soft = x > 20.f ? x : log1pf(expf(x));
+    gate[i] = expf(-expf(a_log[h]) * soft);
+}
+
 }  // namespace rocm
 }  // namespace tf
 
@@ -291,4 +304,24 @@ void moe_combine_launch(const float* y, const float* wts, void* out, int kind, i
     }
     hipError_t err = hipGetLastError();
     if (err != hipSuccess) throw std::runtime_error(std::string("moe combine kernel: ") + hipGetErrorString(err));
+}
+
+void gdn_gate_launch(const void* a, const void* b, int kind, const float* a_log, const float* dt_bias, float* gate,
+                     float* beta, int count, int heads, hipStream_t stream) {
+    const int blocks = (count + 255) / 256;
+    if (kind == 1) {
+        tf::rocm::gdn_gate_kernel<__half><<<blocks, 256, 0, stream>>>(static_cast<const __half*>(a),
+                                                                      static_cast<const __half*>(b), a_log, dt_bias,
+                                                                      gate, beta, count, heads);
+    } else if (kind == 2) {
+        tf::rocm::gdn_gate_kernel<hip_bfloat16><<<blocks, 256, 0, stream>>>(
+            static_cast<const hip_bfloat16*>(a), static_cast<const hip_bfloat16*>(b), a_log, dt_bias, gate, beta, count,
+            heads);
+    } else {
+        tf::rocm::gdn_gate_kernel<float><<<blocks, 256, 0, stream>>>(static_cast<const float*>(a),
+                                                                     static_cast<const float*>(b), a_log, dt_bias,
+                                                                     gate, beta, count, heads);
+    }
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) throw std::runtime_error(std::string("gdn gate kernel: ") + hipGetErrorString(err));
 }
