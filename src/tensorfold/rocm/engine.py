@@ -9,6 +9,8 @@ those ids uses.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -19,7 +21,7 @@ from tensorfold.engine.exact_sampling import MARGIN, Sampling, choose
 from tensorfold.rocm.prefix import PrefixCache, entry_end, trim_bytes
 from tensorfold.rocm.qwen import Engine as Kernels
 from tensorfold.rocm.qwen import activation_dtype, load, slice_for_tp
-from tensorfold.rocm.qwen_math import _blank_caches, _project, forward_hidden
+from tensorfold.rocm.qwen_math import DevicePos, _blank_caches, _project, forward_hidden
 from tensorfold.rocm.qwen_tp import tp_forward_hidden, vocab_gather
 from tensorfold.rocm.mtp import MTPEngine
 
@@ -107,6 +109,22 @@ def _grow(caches: list[dict], total: int, dtype: torch.dtype, device: torch.devi
     return grown
 
 
+class _StepGraph:
+    """One request's one-token forward as a HIP graph: the token and the position live in device buffers.
+
+    The first step runs eagerly through the same device-position code (it settles every state into a fixed
+    fp32 buffer and fills the per-shape scratch); the next one captures; every later one replays.
+    """
+
+    def __init__(self, caches: list[dict], device: torch.device) -> None:
+        self.caches = caches
+        self.ids = torch.zeros((1, 1), dtype=torch.long, device=device)
+        self.at = DevicePos(device)
+        self.graph: torch.cuda.CUDAGraph | None = None
+        self.hidden: torch.Tensor | None = None
+        self.warm = False
+
+
 def _caches_equal(left: list[dict], right: list[dict]) -> bool:
     for one, two in zip(left, right, strict=True):
         if "k" in one:
@@ -152,6 +170,9 @@ class QwenEngine:
         head = getattr(model, "mtp", None)
         self.mtp = MTPEngine(model, head, linear=kernels.linear, rccl=rccl) if head is not None else None
         self.mtp_depth = int(mtp_depth)
+        # One-token steps replay a captured graph (one rank; TENSORFOLD_GRAPH=0 keeps them eager).
+        self.graphs = self.tp == 1 and os.environ.get("TENSORFOLD_GRAPH", "1") != "0"
+        self._step: _StepGraph | None = None
 
     @classmethod
     def load(cls, model_dir: Path | str, *, schedule: str = "auto", keep: int = 8,
@@ -200,17 +221,73 @@ class QwenEngine:
     def _device(self) -> torch.device:
         return self.model.embed.words.device
 
-    def _forward(self, tokens: Sequence[int], caches: list[dict] | None, pos0: int) -> tuple[torch.Tensor, list[dict]]:
+    def _forward(self, tokens: Sequence[int], caches: list[dict] | None, pos0: int, *,
+                 decode: bool = False) -> tuple[torch.Tensor, list[dict]]:
+        """A prefill span, or with ``decode`` one generated token.
+
+        A prefill span of any length keeps the prefill conv and rope, so a prompt split at stored cuts matches
+        one forward. A decode step takes the one-row HIP conv and rope (prefill never resumes from a decoded
+        state), and on one rank replays a captured graph.
+        """
+
         device, dtype = self._device(), self._dtype()
         if caches is None:
             caches = _blank_caches(self.model, 1, len(tokens), device, dtype)
+        elif decode and self.graphs and len(tokens) == 1:
+            return self._graph_forward(int(tokens[0]), caches, pos0)
         ids = torch.tensor([list(tokens)], dtype=torch.long, device=device)
         with torch.inference_mode():
-            # Prefill and the one-token step share the prefill conv and rope, so a split matches one forward.
             if self.tp > 1:
                 return tp_forward_hidden(self.model, ids, caches, self.kernels.linear, pos0, self.rccl,
-                                         act_dtype=dtype, exact_short=True)
-            return forward_hidden(self.model, ids, caches, self.kernels.linear, pos0, dtype, exact_short=True)
+                                         act_dtype=dtype, exact_short=not decode)
+            return forward_hidden(self.model, ids, caches, self.kernels.linear, pos0, dtype, exact_short=not decode)
+
+    def _graph_forward(self, token: int, caches: list[dict], pos0: int) -> tuple[torch.Tensor, list[dict]]:
+        """The one-token forward of ``token`` at ``pos0``: eager once, captured once, then replayed.
+
+        Same bits as the eager step: the position is read on the device by the same formulas, and the key and
+        value land at ``pos0`` in the request's fixed buffers. A capture that fails leaves graphs off.
+        """
+
+        step = self._step
+        if step is None or step.caches is not caches:
+            step = self._step = _StepGraph(caches, self._device())
+        step.ids.fill_(token)
+        step.at.set(pos0)
+
+        def run() -> tuple[torch.Tensor, list[dict]]:
+            return forward_hidden(self.model, step.ids, caches, self.kernels.linear, pos0, self._dtype(),
+                                  at=step.at)
+
+        with torch.inference_mode():
+            if step.graph is not None:
+                step.graph.replay()
+                hidden = step.hidden
+            elif not step.warm:
+                hidden, fresh = run()
+                for held, new in zip(caches, fresh):      # a state that was not yet an fp32 buffer now is one
+                    held.update(new)
+                step.warm = True
+            else:
+                graph = torch.cuda.CUDAGraph()
+                try:
+                    with torch.cuda.graph(graph):
+                        step.hidden = run()[0]
+                except Exception as exc:  # noqa: BLE001 - any capture failure: this engine stays eager
+                    print(f"[tensorfold] decode graph capture failed, decoding eagerly: {exc}", file=sys.stderr)
+                    self.graphs, self._step = False, None
+                    torch.cuda.synchronize()
+                    hidden = forward_hidden(self.model, step.ids, caches, self.kernels.linear, pos0,
+                                            self._dtype())[0]
+                    return hidden, caches
+                step.graph = graph
+                graph.replay()
+                hidden = step.hidden
+            hidden = hidden.clone()               # the graph's output is overwritten by the next replay
+        for cache in caches:
+            if "len" in cache:
+                cache["len"] = pos0 + 1
+        return hidden, caches
 
     def _span(self, tokens: Sequence[int], caches: list[dict] | None, pos0: int, total: int,
               ) -> tuple[torch.Tensor, list[dict]]:
@@ -366,6 +443,7 @@ class QwenEngine:
                 done = bool(self._share([int(done)])[0])
             if done:
                 break
+        self._step = None                         # the reply's graph holds its caches
         return {"cached": cached}
 
     def _decode_step(self, hidden: torch.Tensor, caches: list[dict], position: int, last_token: int, *,
@@ -378,13 +456,13 @@ class QwenEngine:
         caller emits it and the next round forwards it exactly once. ``position`` is ``nxt``'s slot.
         """
         if self.mtp is None or depth <= 0:
-            hidden, caches = self._forward([last_token], caches, position)
+            hidden, caches = self._forward([last_token], caches, position, decode=True)
             position += 1
             nxt = self._sample(hidden, sampling, position, constraint)
             return [], hidden, caches, position, nxt
 
         dtype = self._dtype()
-        hidden, caches = self._forward([last_token], caches, position)
+        hidden, caches = self._forward([last_token], caches, position, decode=True)
         position += 1
         mtp_state = self.mtp.fresh_cache(batch=1,
                                          total=position + max(0, depth) + 1,
@@ -405,7 +483,7 @@ class QwenEngine:
             nxt = self._sample(cur_hidden, sampling, position + i, constraint)
             if nxt != d:
                 return extra, cur_hidden, caches, position + i, nxt
-            cur_hidden, caches = self._forward([d], caches, position + i)
+            cur_hidden, caches = self._forward([d], caches, position + i, decode=True)
             extra.append(d)
         nxt = self._sample(cur_hidden, sampling, position + depth, constraint)
         return extra, cur_hidden, caches, position + depth, nxt

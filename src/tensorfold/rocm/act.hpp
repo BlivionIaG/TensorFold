@@ -9,8 +9,9 @@ void rms_launch(const void* x, const float* weight, void* y, int kind, int rows,
                 hipStream_t stream);
 void conv_decode_launch(const float* x, const float* weight, float* state, float* y, int batch, int channels,
                         int kernel, hipStream_t stream);
+// pos_dev, when set, is the position on the device (read when the kernel runs) and pos is ignored.
 void rope_decode_launch(const float* x, float* y, int rows, int width, int rotary, int pos, float theta,
-                        hipStream_t stream);
+                        hipStream_t stream, const int* pos_dev = nullptr);
 
 // MoE glue, one launch each. x kind: 1 fp16, 2 bf16. router: logits[r, e] = sum_d x[r, d] * rows[e, d] in fp32,
 // lane l of a wave adding d = l, l + 32, ... in order then the warp tree, so a row's bits do not depend on R.
