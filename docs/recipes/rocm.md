@@ -68,11 +68,20 @@ A checkpoint's MTP head (the model's own `mtp.*` tensors or a side `mtp*.safeten
 the serial reply token for token, greedy or sampled, at any tp. Verification is one main forward a draft, so
 drafting does not speed decode up yet.
 
+## Decode
+
+On one rank a request's one-token decode step is captured as a HIP graph after its first step and replayed
+(`TENSORFOLD_GRAPH=0` keeps it eager). Decode attention and RoPE read the position on the device, so a replay
+gives the eager step's bits. On RDNA2 one row takes its own tile, which reads weight rows contiguously.
+
+V620, one rank, the served engine, 1,024-token prompt, 256 tokens generated (prefill / decode tok/s):
+`Qwen3.6-35B-A3B-MLX-4bit-MTP` 1,160 / 59.7, `Qwen3.8-27B-MLX-4bit` 254 / 12.4.
+
 ## Measurements
 
 `python -m tensorfold.rocm.bench MODEL_DIR [PROMPT GENERATED CONCURRENCY] [--runs N] [--tp N --rank R --master
 ADDR]`. One run a cell, one shared wall for the concurrent requests, end tokens ignored. Prefill tok/s / decode
-tok/s.
+tok/s. It drives the batched generate, which does not replay the decode graph; the tables below predate it.
 
 V620, `Vontra/Qwen3.8-27B-MLX-4bit`, 1,024-token prompt, 512 tokens generated:
 
