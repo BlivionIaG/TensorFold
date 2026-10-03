@@ -128,8 +128,9 @@ halves, the gated attention, the input and post norms, and one MLP, dense or rou
 last). A drafted reply equals the serial one token for token; `--no-drafts` turns drafting off, and a
 conversion that dropped the head decodes serially. `--tp` 2, 4 and 8 split the routed experts by rank (the
 shared expert on rank 0) and replicate the two KV heads past tp=2. A GPTQ export's `embed_tokens` has to stay
-MLX affine, since the RDNA embedding gather reads affine rows, and a GPTQ export runs on one rank. The affine
-experts run one expert at a time, so decode is launch-bound (about 5 tok/s on a V620).
+MLX affine, since the RDNA embedding gather reads affine rows, and a GPTQ export runs on one rank. On RDNA2 each
+expert projection is one launch over every routed pair. V620, one rank, 1,024-token prompt: prefill 1,160 tok/s,
+decode 59.7 tok/s. RDNA3 still runs the experts one at a time (W7800: 2.5 tok/s).
 
 ## Measurements
 
