@@ -25,7 +25,8 @@ def test_mtp_head_dataclass_has_expected_fields():
     fields = {f.name for f in MTPHead.__dataclass_fields__.values()}
     assert fields == {"fc_e_norm", "fc_h_norm", "fc_e", "fc_h",
                       "q_norm", "k_norm", "q", "k", "v", "o",
-                      "final_norm", "head"}
+                      "final_norm", "head",
+                      "input_norm", "post_norm", "gate", "up", "down", "moe", "gated"}
 
 
 def test_text_model_carries_optional_mtp_head():
@@ -41,7 +42,7 @@ def test_load_mtp_head_returns_none_when_no_mtp_file(tmp_path, monkeypatch):
     spec = qwen_mod.Spec(hidden=4096, intermediate=14336, heads=24, kv_heads=4, head_dim=128,
                          key_heads=4, value_heads=4, key_dim=128, value_dim=128,
                          conv=4, vocab=100000, eps=1e-6, rope_theta=1000000.0, rotary_dim=32,
-                         full_ep=4, n_layers=2, bits=4, group=64)
+                         full_every=4, n_layers=2, bits=4, group=64)
     assert qwen_mod.load_mtp_head(tmp_path, spec, bits=4, group=64, device="cpu") is None
 
 
@@ -51,7 +52,7 @@ def test_load_mtp_head_refuses_partial_mtp_file(tmp_path, monkeypatch):
     spec = qwen_mod.Spec(hidden=4096, intermediate=14336, heads=24, kv_heads=4, head_dim=128,
                          key_heads=4, value_heads=4, key_dim=128, value_dim=128,
                          conv=4, vocab=100000, eps=1e-6, rope_theta=1000000.0, rotary_dim=32,
-                         full_ep=4, n_layers=2, bits=4, group=64)
+                         full_every=4, n_layers=2, bits=4, group=64)
 
     class _FakeShards:
         def __init__(self, paths):
@@ -71,7 +72,7 @@ def test_load_mtp_head_refuses_partial_mtp_file(tmp_path, monkeypatch):
 
     shard = tmp_path / "mtp-4bit.safetensors"
     shard.touch()
-    monkeypatch.setattr(qwen_mod, "_Shards", lambda paths: _FakeShards(paths))
+    monkeypatch.setattr(qwen_mod, "_Shards", lambda paths, strip="": _FakeShards(paths))
 
     with pytest.raises(ValueError, match="incomplete"):
         qwen_mod.load_mtp_head(tmp_path, spec, bits=4, group=64, device="cpu")

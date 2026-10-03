@@ -28,10 +28,10 @@ def _packed(n: int, k: int, g: torch.Generator) -> Packed:
     return Packed(words, scale, bias, BITS, GROUP)
 
 
-def _model(tied: bool) -> TextModel:
+def _model(tied: bool, kv_heads: int = 4) -> TextModel:
     """One linear-attention layer and one full-attention layer. Every K splits into whole groups 4 ways."""
 
-    spec = Spec(hidden=64, intermediate=128, n_layers=2, heads=4, kv_heads=4, head_dim=32, key_heads=4,
+    spec = Spec(hidden=64, intermediate=128, n_layers=2, heads=4, kv_heads=kv_heads, head_dim=32, key_heads=4,
                 value_heads=4, key_dim=16, value_dim=32, conv=4, vocab=64, eps=1e-6, rope_theta=10000.0,
                 rotary_dim=8, full_every=2, bits=BITS, group=GROUP)
     g = torch.Generator().manual_seed(3)
@@ -119,10 +119,11 @@ def _run_ranks(model: TextModel, world: int, tokens: torch.Tensor):
     return out
 
 
+@pytest.mark.parametrize("kv_heads", [4, 2, 1])
 @pytest.mark.parametrize("tied", [False, True])
 @pytest.mark.parametrize("world", [2, 4])
-def test_ranks_together_give_the_one_rank_model(world, tied):
-    model = _model(tied)
+def test_ranks_together_give_the_one_rank_model(world, tied, kv_heads):
+    model = _model(tied, kv_heads)
     tokens = torch.tensor([[3, 17, 41, 8, 60, 2, 33]])
     hidden, _ = qwen_math.forward_hidden(copy.deepcopy(model), tokens, None, _linear, 0, torch.float32)
     logits = qwen_math._project(hidden[:, -1], model.output_head(), _linear)
@@ -164,12 +165,27 @@ def test_a_tied_head_keeps_the_full_embedding_for_the_lookup():
     assert rank1.spec.vocab == model.spec.vocab
 
 
-@pytest.mark.parametrize("field,value,world", [("heads", 6, 4), ("kv_heads", 2, 4), ("vocab", 63, 2)])
+@pytest.mark.parametrize("field,value,world", [("heads", 6, 4), ("vocab", 63, 2)])
 def test_a_shape_that_does_not_split_is_refused(field, value, world):
     model = _model(tied=False)
     setattr(model.spec, field, value)
     with pytest.raises(ValueError, match=f"{field}: {value} does not split into {world}"):
         slice_for_tp(model, 0, world)
+
+
+def test_fewer_kv_heads_than_ranks_replicate_each_head_on_its_query_ranks():
+    model = _model(tied=False, kv_heads=2)
+    full = model.layers[1].k.words
+    for rank in range(4):
+        mine = slice_for_tp(copy.deepcopy(model), rank, 4)
+        assert mine.spec.kv_heads == 1
+        assert torch.equal(mine.layers[1].k.words, full[(rank // 2) * 32:(rank // 2 + 1) * 32])
+
+
+def test_kv_heads_that_do_not_divide_the_ranks_are_refused():
+    model = _model(tied=False, kv_heads=3)
+    with pytest.raises(ValueError, match="3 KV heads do not divide 4 ranks"):
+        slice_for_tp(model, 0, 4)
 
 
 def test_a_rank_outside_the_world_is_refused():

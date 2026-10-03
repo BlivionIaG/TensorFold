@@ -1,6 +1,7 @@
 # Qwen3.6-35B-A3B
 
-The `qwen3_5_moe` family serves Qwen3.6-35B-A3B on one NVIDIA GPU. Its layers are the 27B's (Gated DeltaNet
+The `qwen3_5_moe` family serves Qwen3.6-35B-A3B on one NVIDIA GPU, and on one RDNA GPU through its ROCm
+engine. Its layers are the 27B's (Gated DeltaNet
 and gated full attention, every fourth layer attention) with routed experts in place of the dense MLP, and it
 drafts with the checkpoint's own MTP layer.
 
@@ -72,6 +73,24 @@ checkpoint revision 81169a9), with 8 client threads over HTTP:
 Every reply's token SHA-256 is the same at each N and with `"draft": false`. The label replies repeat their JSON,
 so copied continuations keep 9.3 tokens a round per stream; chats keep 2.9. One client at a time gets 912 tok/s
 on the label requests at `--parallel 8`, as a lone stream replays the graphs.
+
+## ROCm execution
+
+`--backend rocm` (auto-selected where `/dev/kfd` exists) serves this checkpoint on one gfx1030/gfx1100 GPU.
+The routed experts run as the checkpoint's own kind: the MLX 4-bit stacks' packed affine words through the
+affine kernel, or a GPTQ / AWQ export's W4A16 stack through the grouped int4 kernel, picked per checkpoint by
+what its safetensors carry. The router's rows are dequantized to bf16 once at load, and the pick, the
+renormalized weights, the shared expert as the last of the 257 slots and the slot-order sum follow the CUDA
+rule ([`tensorfold/rocm/experts.py`](../../src/tensorfold/rocm/experts.py), `rocm/moe.py`).
+
+Both MTP layouts are read: Qwen3.6's side `mtp-4bit.safetensors` (`Vontra/Qwen3.6-35B-A3B-MLX-4bit-MTP`) and
+the `mtp.*` tensors the Qwen3.5 and Qwen3.8 conversions keep among the model's own (a fused `fc` split in
+halves, the gated attention, the input and post norms, and one MLP, dense or routed with the shared expert
+last). A drafted reply equals the serial one token for token; `--no-drafts` turns drafting off, and a
+conversion that dropped the head decodes serially. `--tp` 2, 4 and 8 split the routed experts by rank (the
+shared expert on rank 0) and replicate the two KV heads past tp=2. A GPTQ export's `embed_tokens` has to stay
+MLX affine, since the RDNA embedding gather reads affine rows, and a GPTQ export runs on one rank. The affine
+experts run one expert at a time, so decode is launch-bound (about 5 tok/s on a V620).
 
 ## Measurements
 

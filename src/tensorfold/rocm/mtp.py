@@ -56,16 +56,19 @@ def _attention(head: MTPHead, x: torch.Tensor, cache: dict | None, position: int
     qg = linear(x, head.q)
     keys = linear(x, head.k)
     values = linear(x, head.v)
-    qg = qg.view(batch, length, heads, spec.head_dim)
+    if head.gated:
+        queries, gate = qg.view(batch, length, heads, spec.head_dim * 2).split(spec.head_dim, dim=-1)
+    else:
+        queries, gate = qg.view(batch, length, heads, spec.head_dim), None
     keys = keys.view(batch, length, kv_heads, spec.head_dim)
     values = values.view(batch, length, kv_heads, spec.head_dim)
-    queries = qwen_math.rms_norm(qg, head.q_norm, spec.eps).permute(0, 2, 1, 3)
+    queries = qwen_math.rms_norm(queries, head.q_norm, spec.eps).permute(0, 2, 1, 3)
     keys = qwen_math.rms_norm(keys, head.k_norm, spec.eps).permute(0, 2, 1, 3)
     values = values.permute(0, 2, 1, 3)
     queries = qwen_math.apply_rope(queries, position, spec.rope_theta, spec.rotary_dim, exact=False)
     keys = qwen_math.apply_rope(keys, position, spec.rope_theta, spec.rotary_dim, exact=False)
     if cache is None:
-        shape = (batch, spec.kv_heads, length + position, spec.head_dim)
+        shape = (batch, kv_heads, length + position, spec.head_dim)
         cache = {"k": torch.empty(shape, device=x.device, dtype=dtype),
                  "v": torch.empty(shape, device=x.device, dtype=dtype),
                  "len": 0}
@@ -84,6 +87,8 @@ def _attention(head: MTPHead, x: torch.Tensor, cache: dict | None, position: int
         queries_f = queries
     attended = qwen_math._attend(queries_f, kept_k, kept_v, scale, position)
     attended = attended.permute(0, 2, 1, 3).reshape(batch, length, -1)
+    if gate is not None:
+        attended = attended * torch.sigmoid(gate.reshape(batch, length, -1).float())
     if attended.dtype != dtype:
         attended = attended.to(dtype=dtype)
     out = linear(attended, head.o)
@@ -102,19 +107,37 @@ def _vocab_logits(head: MTPHead, model: TextModel, x: torch.Tensor, dtype: torch
 
 class MTPEngine:
     def __init__(self, model: TextModel, head: MTPHead, *,
-                 linear: Callable[[torch.Tensor, Packed], torch.Tensor]):
+                 linear: Callable[[torch.Tensor, Packed], torch.Tensor], rccl=None):
         self.model = model
         self.head = head
         self.linear = linear
+        self.rccl = rccl
         # The head's q/k/v row counts encode its heads; spec.head_dim lets us derive them. Spec may be
         # sliced under TP, so the head's own q/k/v shapes are the truth - read them here once.
         spec = model.spec
-        self._heads = int(head.q.words.shape[0]) // int(spec.head_dim)
+        self._heads = int(head.q.words.shape[0]) // int(spec.head_dim) // (2 if head.gated else 1)
         self._kv_heads = int(head.k.words.shape[0]) // int(spec.head_dim)
 
     def fresh_cache(self, *, batch: int, total: int, device: torch.device, dtype: torch.dtype) -> dict:
         # The head's own kv_heads; spec.kv_heads may be sliced under TP.
         return _alloc_cache(self.model.spec, batch, total, device, dtype, self._kv_heads)
+
+    def _logits(self, x: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+        """Draft logits. Under tp the ranks must agree on the draft ids, so a vocabulary slice is joined.
+
+        Every rank runs the chain and advances its cache by how many drafts matched, so ranks that draft
+        different ids desynchronise the decode loop. The head's own projection is the rank's rows under tp;
+        the vocabulary join puts the whole row back before sampling.
+        """
+
+        target = self.head.head if self.head.head is not None else self.model.output_head()
+        out = _vocab_logits(self.head, self.model, x, dtype)
+        if self.rccl is None or self.rccl.world <= 1 or target.words.shape[0] == self.model.spec.vocab:
+            return out
+        from tensorfold.rocm.qwen_tp import vocab_gather
+
+        rows = vocab_gather(self.rccl, out.reshape(-1, out.shape[-1]))
+        return rows.view(*out.shape[:-1], -1)
 
     def forward(self, hidden: torch.Tensor, next_token: torch.Tensor, position: int, cache: dict, *,
                 dtype: torch.dtype | None = None) -> torch.Tensor:
@@ -131,11 +154,16 @@ class MTPEngine:
         e_proj = self.linear(emb_e.view(-1, emb_e.shape[-1]), self.head.fc_e).view(*emb_e.shape[:-1], -1)
         h_proj = self.linear(emb_h.view(-1, emb_h.shape[-1]), self.head.fc_h).view(*emb_h.shape[:-1], -1)
         x = e_proj + h_proj
+        if self.head.input_norm is not None:
+            x = qwen_math.rms_norm(x, self.head.input_norm, spec.eps)
         attn_out, cache = _attention(self.head, x, cache, position, dtype, self.linear, spec,
                                      self._heads, self._kv_heads)
         x = x + attn_out
+        if self.head.post_norm is not None:
+            x = x + qwen_math._mlp(spec, self.head, qwen_math.rms_norm(x, self.head.post_norm, spec.eps),
+                                   self.linear)
         residual = qwen_math.rms_norm(x, self.head.final_norm, spec.eps)
-        return _vocab_logits(self.head, self.model, residual, dtype), residual
+        return self._logits(residual, dtype), residual
 
     def draft_chain(self, hidden: torch.Tensor, last_token: int, position: int, depth: int, cache: dict, *,
                     sampling, dtype: torch.dtype) -> list[int]:
@@ -143,7 +171,8 @@ class MTPEngine:
 
         ``position`` is the absolute position of the input row (``hidden`` and ``last_token``);
         the head writes its K/V at RoPE offset ``position`` and predicts at ``position + 1``.
-        Step ``i`` predicts at ``position + i + 1`` with sampling key ``position + i``.
+        Step ``i`` predicts at ``position + i + 1`` with sampling key ``position + i + 1``, the target's
+        own rule: a token is keyed by the slot it goes into, so a drafter's sample matches the verifier's.
         """
         if depth < 1:
             raise ValueError(f"depth must be >= 1, got {depth}")
@@ -156,7 +185,7 @@ class MTPEngine:
             logits, residual = self.forward(cur_hidden, tok_input, position + step, cache, dtype=dtype)
             row = logits.detach().float().reshape(-1)
             k = int(sampling.top_k)
-            sample_key = position + step
+            sample_key = position + step + 1
             if sampling is None or float(sampling.temperature) <= 0.0:
                 nxt = int(torch.argmax(row).item())
             elif k:

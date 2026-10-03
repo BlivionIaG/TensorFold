@@ -150,7 +150,7 @@ class QwenEngine:
         self.tp, self.rank, self.rccl, self.no_drafts = int(tp), int(rank), rccl, bool(no_drafts)
         self._posted = 0          # requests rank 0 has published (tp > 1)
         head = getattr(model, "mtp", None)
-        self.mtp = MTPEngine(model, head, linear=kernels.linear) if head is not None else None
+        self.mtp = MTPEngine(model, head, linear=kernels.linear, rccl=rccl) if head is not None else None
         self.mtp_depth = int(mtp_depth)
 
     @classmethod
@@ -317,32 +317,38 @@ class QwenEngine:
             room = min(room, self.context_window - len(prompt))
         if room < 1:
             raise ValueError("max_tokens must leave room for one token")
+        depth = self.mtp_depth if self.mtp is not None and not self.no_drafts else 0
         if self.tp > 1:
-            self._post(list(prompt), room, draft)
-        return self._run(list(prompt), room, sampling, on_tokens, stop_eos, draft, constraint)
+            self._post(list(prompt), room, draft, depth)
+        return self._run(list(prompt), room, sampling, on_tokens, stop_eos, draft, constraint, depth)
 
     def _run(self, prompt: list[int], room: int, sampling: Sampling | None, on_tokens, stop_eos: bool,
-             draft: bool, constraint) -> dict[str, int]:
+             draft: bool, constraint, depth: int) -> dict[str, int]:
         hit = self.cache.longest(prompt) if draft else None
         cached = len(hit[0]) if hit is not None else 0
         held = clone_caches(hit[1]) if hit is not None else None
-        depth = self.mtp_depth if self.mtp is not None and not self.no_drafts else 0
-        # An MTP step may advance the main cache by ``depth + 1`` tokens (one initial plus the chain).
-        # Size for that worst case so the decode loop never has to grow on the hot path.
-        total = len(prompt) + room * (depth + 1)
+        # The reply ends at ``room`` tokens and a round forwards at most ``depth + 1``: the cache never holds more.
+        total = len(prompt) + room + depth + 1
         hidden, caches = self._prefill(prompt, held, cached, total, store=draft)
         ends = set(self.eos)
         position = len(prompt)
         nxt = self._sample(hidden, sampling, position, constraint)
-        for step in range(room):
-            done = step + 1 == room
-            if self.rank == 0 and not done:
-                stop = bool(on_tokens([nxt])) if on_tokens is not None else False
-                ended = stop_eos and nxt in ends
-                grammar_done = constraint is not None and bool(getattr(constraint, "finished", False))
-                done = stop or ended or grammar_done
-            elif self.rank == 0 and on_tokens is not None:
-                on_tokens([nxt])
+        emitted = 0
+
+        def emit(token: int) -> bool:
+            """Count one token against ``room`` and hand it to the client on rank 0. True ends the reply."""
+
+            nonlocal emitted
+            emitted += 1
+            if self.rank != 0:
+                return emitted >= room
+            stop = bool(on_tokens([token])) if on_tokens is not None else False
+            ended = stop_eos and token in ends
+            grammar_done = constraint is not None and bool(getattr(constraint, "finished", False))
+            return emitted >= room or stop or ended or grammar_done
+
+        while True:
+            done = emit(nxt)
             if self.tp > 1:
                 done = bool(self._share([int(done)])[0])
             if done:
@@ -352,26 +358,24 @@ class QwenEngine:
                 sampling=sampling, constraint=constraint, depth=depth,
             )
             for tok in extra:
-                if self.rank == 0 and not done:
-                    stop = bool(on_tokens([tok])) if on_tokens is not None else False
-                    ended = stop_eos and tok in ends
-                    grammar_done = constraint is not None and bool(getattr(constraint, "finished", False))
-                    done = stop or ended or grammar_done
-                    if self.tp > 1:
-                        done = bool(self._share([int(done)])[0])
-                    if done:
-                        break
+                done = emit(tok)
+                if done:
+                    break
+            # Every rank joins one vote a round, so a stop inside the drafts ends the reply on every rank.
+            if self.tp > 1:
+                done = bool(self._share([int(done)])[0])
+            if done:
+                break
         return {"cached": cached}
 
     def _decode_step(self, hidden: torch.Tensor, caches: list[dict], position: int, last_token: int, *,
-                     sampling: Sampling | None, constraint, depth: int) -> tuple[list[int], torch.Tensor, list[dict], int, int]:
-        """One decode round. Entry: ``hidden`` at ``position - 1``, ``last_token`` at ``position - 1``.
+                     sampling: Sampling | None, constraint,
+                     depth: int) -> tuple[list[int], torch.Tensor, list[dict], int, int]:
+        """One decode round. ``hidden`` ends at ``position - 1`` and ``last_token`` is the token for ``position``.
 
-        Returns ``(extra, hidden, caches, position, nxt)``. ``extra`` is the tokens to emit AFTER
-        ``last_token`` (which ``_run`` already emitted at the top of the loop). For serial decoding
-        ``extra`` is empty: ``_run``'s pre-step emit is the only token this round produces. With
-        MTP, ``extra`` is the accepted drafter chain plus the verifier's rejection token or the
-        final sample on full-chain acceptance.
+        Returns ``(extra, hidden, caches, position, nxt)``. ``extra`` is the round's accepted drafts, each
+        forwarded and emitted exactly once. ``nxt`` is the next token: sampled but never forwarded, so the
+        caller emits it and the next round forwards it exactly once. ``position`` is ``nxt``'s slot.
         """
         if self.mtp is None or depth <= 0:
             hidden, caches = self._forward([last_token], caches, position)
@@ -385,38 +389,41 @@ class QwenEngine:
         mtp_state = self.mtp.fresh_cache(batch=1,
                                          total=position + max(0, depth) + 1,
                                          device=self._device(), dtype=dtype)
-        # Followers (tp>1, rank!=0) run this with sampling=None from follow(); the drafter's samples
-        # are discarded by the follower, so default to a deterministic Sampling so the chain can run.
+        # Followers (tp>1, rank!=0) run this with sampling=None from follow(); their drafts are replaced by
+        # rank 0's chain below, so a deterministic Sampling is enough to keep the chain's collectives in step.
         if sampling is None:
             sampling = Sampling(seed=0)
         drafts = self.mtp.draft_chain(hidden[:, -1:], last_token, position - 1, depth, mtp_state,
                                       sampling=sampling, dtype=dtype)
+        if self.tp > 1:
+            # A rank's cache advances by how many drafts matched, so every rank takes rank 0's chain.
+            drafts = self._share(drafts)
         extra: list[int] = []
         cur_hidden = hidden
         for i, d in enumerate(drafts):
-            sample_key = position + i - 1
-            nxt_main = self._sample(cur_hidden, sampling, sample_key, constraint)
-            advance = nxt_main if nxt_main != d else d
-            cur_hidden, caches = self._forward([advance], caches, position + i)
-            if nxt_main != d:
-                extra.append(nxt_main)
-                return extra, cur_hidden, caches, position + i + 1, nxt_main
+            # The serial path keys a token by its own slot; the verifier has to draw the same way.
+            nxt = self._sample(cur_hidden, sampling, position + i, constraint)
+            if nxt != d:
+                return extra, cur_hidden, caches, position + i, nxt
+            cur_hidden, caches = self._forward([d], caches, position + i)
             extra.append(d)
-        nxt = self._sample(cur_hidden, sampling, position + depth - 1, constraint)
-        extra.append(nxt)
+        nxt = self._sample(cur_hidden, sampling, position + depth, constraint)
         return extra, cur_hidden, caches, position + depth, nxt
 
-    def _post(self, prompt: list[int], room: int, draft: bool) -> None:
-        """Rank 0 publishes a request on the rendezvous store. The previous one has been read by every rank."""
+    def _post(self, prompt: list[int], room: int, draft: bool, depth: int) -> None:
+        """Rank 0 publishes a request on the rendezvous store. The previous one has been read by every rank.
+
+        ``depth`` is rank 0's drafts a round: every rank runs the same collectives, whatever its own setting.
+        """
 
         store = self.rccl.store
-        store.set(f"tf_request/{self._posted}", json.dumps([prompt, room, bool(draft)]))
+        store.set(f"tf_request/{self._posted}", json.dumps([prompt, room, bool(draft), int(depth)]))
         if self._posted:
             store.delete_key(f"tf_request/{self._posted - 1}")
         self._posted += 1
 
     def follow(self) -> None:
-        """Ranks above 0: run each of rank 0's requests in step with it, until the process ends."""
+        """Ranks above 0: run each of rank 0's requests in step with it. Returns once rank 0's store closes."""
 
         if self.rank == 0:
             raise RuntimeError("rank 0 serves requests; follow() is for the other ranks")
@@ -425,12 +432,15 @@ class QwenEngine:
             try:
                 self.rccl.store.wait([key])
             except Exception as exc:  # noqa: BLE001 - the store's wait timeout: rank 0 is idle
-                if "timeout" in str(exc).lower():
+                text = str(exc).lower()
+                if "timeout" in text:
                     continue
+                if "recv" in text or "connection" in text or "broken pipe" in text:
+                    return                                  # rank 0 closed the store: the server stopped
                 raise
-            prompt, room, draft = json.loads(self.rccl.store.get(key))
+            prompt, room, draft, depth = json.loads(self.rccl.store.get(key))
             self._posted += 1
-            self._run(prompt, room, None, None, False, draft, None)
+            self._run(prompt, room, None, None, False, draft, None, depth if self.mtp is not None else 0)
 
     def prefill_caches(self, prompt: Sequence[int]) -> list[dict]:
         """Caches after one forward of ``prompt``. A stored prefix of that length matches this."""
