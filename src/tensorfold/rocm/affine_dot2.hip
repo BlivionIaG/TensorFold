@@ -689,6 +689,121 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
     }
 }
 
+// Decode tile for one row, every width. A lane owns a group and a wave walks 32 columns: the lanes of a wave read
+// one weight row's groups side by side, so a load is one contiguous span instead of 32 rows far apart. With fewer
+// groups than lanes a wave takes several columns a pass (`lpc` lanes a column). Each group keeps the one-thread
+// kernel's pair chain and x sum, and lane c folds column c's groups in order: affine_dot2_lanes' bits.
+constexpr int kRowWaves = 4;
+constexpr int kRowCols = 32;
+
+template <int BITS, int PIECES>
+__global__ void __launch_bounds__(32 * kRowWaves) affine_dot2_row(Affine a, int lpc) {
+    if (!take_item(a, blockIdx.z)) return;
+    constexpr int kGroup = 32 * PIECES;
+    __shared__ float dots[kRowWaves][kRowCols][33];
+    __shared__ float sums[kRowWaves][32];
+    const int lane = threadIdx.x & 31;
+    const int wave = threadIdx.x >> 5;
+    const int slots = 32 / lpc;                 // columns a pass
+    const int slot = lane / lpc;
+    const int j = lane % lpc;
+    const int col0 = (blockIdx.x * kRowWaves + wave) * kRowCols;
+    const int mine = col0 + lane;               // the column this lane folds
+    const int groups = a.k / kGroup;
+    const long long words_row = static_cast<long long>(a.k) * BITS / 32;
+    const __half2* x = reinterpret_cast<const __half2*>(static_cast<const __half*>(a.x) + x_row(a, 0) * a.k);
+    float acc = 0.f;
+    for (int g0 = 0; g0 < groups; g0 += lpc) {
+        const int g = g0 + j;
+        const bool live = g < groups;
+        __half2 xv[PIECES * 16];
+        float sum = 0.f;
+#pragma unroll
+        for (int i = 0; i < PIECES * 16; ++i) {
+            xv[i] = live ? x[g * (kGroup / 2) + i] : __float2half2_rn(0.f);
+            sum += __low2float(xv[i]);
+            sum += __high2float(xv[i]);
+        }
+        if (slot == 0) sums[wave][j] = sum;
+#pragma unroll 2
+        for (int pass = 0; pass < kRowCols / slots; ++pass) {
+            const int c = pass * slots + slot;
+            const int col = col0 + c;
+            float dot = 0.f;
+            if (live && col < a.n) {
+                const uint32_t* wrow = a.words + static_cast<long long>(col) * words_row +
+                                       static_cast<long long>(g) * PIECES * BITS;
+#pragma unroll
+                for (int p = 0; p < PIECES; ++p) {
+                    uint32_t w[BITS];
+                    load_piece<BITS>(wrow + p * BITS, w);
+#pragma unroll
+                    for (int t = 0; t < 32; t += 2) {
+                        const __half2 q = __halves2half2(piece_code<BITS>(w, t), piece_code<BITS>(w, t + 1));
+                        dot = __builtin_amdgcn_fdot2(xv[p * 16 + t / 2], q, dot, false);
+                    }
+                }
+            }
+            dots[wave][c][j] = dot;
+        }
+        __syncthreads();
+        if (mine < a.n) {
+            const int round = groups - g0 < lpc ? groups - g0 : lpc;
+            for (int i = 0; i < round; ++i) {
+                const long long at = static_cast<long long>(mine) * groups + g0 + i;
+                acc = fmaf(dots[wave][lane][i], a.scale[at], acc);
+                acc = fmaf(sums[wave][i], a.bias[at], acc);
+            }
+        }
+        __syncthreads();
+    }
+    if (mine < a.n) {
+        if (a.out16 != nullptr) {
+            a.out16[out_row(a, 0) * a.n + mine] = __float2half_rn(acc);
+        } else {
+            a.out[out_row(a, 0) * a.n + mine] = acc;
+        }
+    }
+}
+
+// Lanes a column for the one-row tile: the groups, rounded up to a power of two, at most 32. Fewer than four groups
+// keep the column tile.
+inline int row_lanes(int groups) {
+    if (groups < 4) return 0;
+    int lpc = 4;
+    while (lpc < groups && lpc < 32) lpc <<= 1;
+    return lpc;
+}
+
+template <int BITS>
+hipError_t launch_row(const Affine& a, int lpc, hipStream_t stream, int items) {
+    const dim3 block(32 * kRowWaves);
+    const dim3 grid((a.n + kRowWaves * kRowCols - 1) / (kRowWaves * kRowCols), 1, items);
+    switch (a.group) {
+        case 32: affine_dot2_row<BITS, 1><<<grid, block, 0, stream>>>(a, lpc); break;
+        case 64: affine_dot2_row<BITS, 2><<<grid, block, 0, stream>>>(a, lpc); break;
+        default: affine_dot2_row<BITS, 4><<<grid, block, 0, stream>>>(a, lpc); break;
+    }
+    return hipGetLastError();
+}
+
+// One row on the row tile; false when the shape keeps the column tile.
+bool launch_affine_dot2_row(const Affine& a, hipStream_t stream, int items, hipError_t* err) {
+    if (a.m != 1 || a.group % 32 || a.group > kLaneGroupMax || a.k % a.group) return false;
+    const int lpc = row_lanes(a.k / a.group);
+    if (lpc == 0) return false;
+    switch (a.bits) {
+        case 2: *err = launch_row<2>(a, lpc, stream, items); break;
+        case 3: *err = launch_row<3>(a, lpc, stream, items); break;
+        case 4: *err = launch_row<4>(a, lpc, stream, items); break;
+        case 5: *err = launch_row<5>(a, lpc, stream, items); break;
+        case 6: *err = launch_row<6>(a, lpc, stream, items); break;
+        case 8: *err = launch_row<8>(a, lpc, stream, items); break;
+        default: return false;
+    }
+    return true;
+}
+
 template <int BITS, int PIECES>
 hipError_t launch_lanes_rows(const Affine& a, hipStream_t stream, int items = 1) {
     const dim3 block(kLaneCols * kLaneWaves);
@@ -718,6 +833,8 @@ hipError_t launch_affine_dot2_lanes(const Affine& a, hipStream_t stream, int ite
     if (a.m < 1 || a.m > kLaneRows || a.n < 1 || a.group % 32 || a.group > kLaneGroupMax || a.k % a.group) {
         return hipErrorInvalidValue;
     }
+    hipError_t row = hipSuccess;
+    if (launch_affine_dot2_row(a, stream, items, &row)) return row;
     switch (a.bits) {
         case 2: return launch_lanes<2>(a, stream, items);
         case 3: return launch_lanes<3>(a, stream, items);
