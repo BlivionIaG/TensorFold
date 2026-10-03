@@ -379,11 +379,13 @@ def test_python_reference_identity_rejects_changed_code_and_ignores_bytecode(tmp
         select_python_source(tmp_path, identity)
 
 
-def test_native_flash_uses_golden_resident_setting(tmp_path):
+def test_native_flash_requires_explicit_gpu_residency(tmp_path):
     args = SimpleNamespace(binary=tmp_path / "tensorfold", resident_ple=False, native_arg=[], native_driver="serving")
     manifest = dict(checkpoint=dict(path="checkpoint"), seed=5678, top_k=12, top_p=0.8,
                     load_options=dict(ple_on_ssd=False))
     case = dict(tokens=[1], temperature=0, drafts=False, measurements=[dict(tokens=[2, 3])])
+    assert "--resident-ple" not in golden_native_command(args, "flash", manifest, case, tmp_path / "report")
+    args.resident_ple = True
     assert "--resident-ple" in golden_native_command(args, "flash", manifest, case, tmp_path / "report")
 
 

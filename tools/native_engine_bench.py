@@ -530,7 +530,8 @@ def golden_native_command(args, family, manifest, case, report):
                 command += ["--drafter", str(directory / "drafter")]
     if not case["drafts"]:
         command.append("--no-drafts")
-    if family == "flash" and (args.resident_ple or not manifest["load_options"]["ple_on_ssd"]):
+    # Python can keep PLE on the host even with ple_on_ssd=False.
+    if family == "flash" and args.resident_ple:
         command.append("--resident-ple")
     return command + args.native_arg
 

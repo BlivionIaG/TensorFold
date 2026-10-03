@@ -102,7 +102,7 @@ pub const Resident = struct {
         return r;
     }
     pub fn gather(r: *const Resident, kernels: *mx.Kernels, s: *mx.Scope, ids: mx.Array) !mx.Array {
-        if (ids.ctx == null or mx.dtype(ids) != mx.c.MLX_UINT32 or mx.shape(ids).len != 2 or mx.dim(ids, 1) != 16 or mx.dim(ids, 0) < 1 or mx.dim(ids, 0) > 16) return error.InvalidPLEIds;
+        if (ids.ctx == null or mx.dtype(ids) != mx.c.MLX_UINT32 or mx.shape(ids).len != 2 or mx.dim(ids, 1) != 16 or mx.dim(ids, 0) < 1) return error.InvalidPLEIds;
         const rows = mx.dim(ids, 0);
         var inputs: [26]mx.Array = undefined;
         inputs[0] = ids;

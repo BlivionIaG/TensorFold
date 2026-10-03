@@ -229,8 +229,8 @@ Start GPU verification with:
 
 Fixtures and oracle outputs go under `build/native-checks`. Python fixture writes
 and native array dumps preserve 64 GiB of free disk space. Python tensor writes
-have a 256 GiB budget per invocation, shared across families in a golden suite;
-golden arrays use lossless compression and retain BF16 bits without widening.
+have a 256 GiB budget per invocation; golden suites use a 64 GiB shared budget.
+Golden arrays are deduplicated, losslessly compressed and retain BF16 bits without widening.
 Prune obsolete generated fixtures before retrying a storage-limit failure.
 Tests do not download missing models.
 Metadata checks read safetensors headers and file lengths; they do not establish

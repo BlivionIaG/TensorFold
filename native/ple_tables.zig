@@ -225,7 +225,21 @@ pub const Tables = struct {
             try mx.check(mx.c.mlx_get_peak_memory(&peak));
             const packed_bytes: usize = @intCast(tables.starts[128] * (20 * tables.format.bits + @divExact(@as(i64, 640), tables.format.group_size)));
             if (peak > packed_bytes + 32 * 1024 * 1024) return error.ResidentLoadingPeakExceeded;
-            std.debug.print("PASS: resident/bounded PLE at 640 shard boundary/interior rows; peak MLX bytes {d}, packed bytes {d}\n", .{ peak, packed_bytes });
+            for ([_]usize{ 16, 17, 64, 128, 2048 }) |rows| {
+                var s = mx.Scope{};
+                defer s.deinit();
+                const ids = try mx.allocator.alloc(i64, rows * 16);
+                defer mx.allocator.free(ids);
+                for (ids, 0..) |*id, i| {
+                    const shard = i % 128;
+                    id.* = tables.starts[shard + 1] - 1;
+                }
+                const input = try s.cast(try s.data(ids, &.{ @intCast(rows), 16 }, mx.c.MLX_INT64), mx.c.MLX_UINT32);
+                const actual = try tables.resident.?.gather(&kernels, &s, input);
+                const expected = try s.reshape(try tables.gather(&s, ids), &.{ @intCast(rows), 2560 });
+                try @import("sampling_checks.zig").equal(&s, actual, expected);
+            }
+            std.debug.print("PASS: resident/bounded PLE at 640 shard boundary/interior rows and batches up to 2048 rows; loading peak MLX bytes {d}, packed bytes {d}\n", .{ peak, packed_bytes });
         }
         try mx.check(mx.c.mlx_synchronize(mx.stream));
         var active: usize = 0;
