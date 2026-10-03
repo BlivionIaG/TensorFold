@@ -80,7 +80,8 @@ __global__ void conv_decode_kernel(const float* __restrict__ x, const float* __r
 }
 
 __global__ void rope_decode_kernel(const float* __restrict__ x, float* __restrict__ y, int width, int rotary,
-                                   int pos, float theta) {
+                                   int pos, float theta, const int* __restrict__ pos_dev) {
+    if (pos_dev != nullptr) pos = *pos_dev;
     int row = blockIdx.x;
     int lane = threadIdx.x;
     const float* in = x + static_cast<long long>(row) * width;
@@ -236,8 +237,8 @@ void conv_decode_launch(const float* x, const float* weight, float* state, float
 }
 
 void rope_decode_launch(const float* x, float* y, int rows, int width, int rotary, int pos, float theta,
-                        hipStream_t stream) {
-    tf::rocm::rope_decode_kernel<<<rows, 32, 0, stream>>>(x, y, width, rotary, pos, theta);
+                        hipStream_t stream, const int* pos_dev) {
+    tf::rocm::rope_decode_kernel<<<rows, 32, 0, stream>>>(x, y, width, rotary, pos, theta, pos_dev);
     hipError_t err = hipGetLastError();
     if (err != hipSuccess) throw std::runtime_error(std::string("rope kernel: ") + hipGetErrorString(err));
 }

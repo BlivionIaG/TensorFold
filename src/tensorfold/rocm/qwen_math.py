@@ -134,10 +134,27 @@ def normalize_qk(q: torch.Tensor, k: torch.Tensor, head_k: int, eps: float) -> t
     return (inv * inv) * rms_norm(q, None, rms_eps), inv * rms_norm(k, None, rms_eps)
 
 
-def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int, *, exact: bool = False) -> torch.Tensor:
+class DevicePos:
+    """A decode step's position on the device (int32 and int64 copies), read when the kernels run.
+
+    A step that takes it records the same launches at every position, so one captured graph replays them.
+    """
+
+    def __init__(self, device: torch.device) -> None:
+        self.i32 = torch.zeros(1, dtype=torch.int32, device=device)
+        self.i64 = torch.zeros(1, dtype=torch.int64, device=device)
+
+    def set(self, pos: int) -> None:
+        self.i32.fill_(pos)
+        self.i64.fill_(pos)
+
+
+def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int, *, exact: bool = False,
+               at: DevicePos | None = None) -> torch.Tensor:
     """Rotate the first ``rotary_dim`` features. Text positions use one index, so interleaved mrope matches this.
 
-    ``exact`` keeps the prefill formula. The one-row HIP rope is for decode and is not bit-identical.
+    ``exact`` keeps the prefill formula. The one-row HIP rope is for decode and is not bit-identical. ``at``
+    (one row) reads the position on the device, in either formula, with the same bits as ``pos0``.
     """
 
     width = x.shape[-1]
@@ -147,11 +164,16 @@ def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int, *, exa
         from tensorfold.rocm.act import rope_decode
 
         flat = x.reshape(rows, width).float().contiguous()
-        y = rope_decode(flat, pos0, rotary_dim, theta).reshape(x.shape)
+        y = rope_decode(flat, pos0 if at is None else at.i32, rotary_dim, theta).reshape(x.shape)
         return y if y.dtype == x.dtype else y.to(dtype=x.dtype)
     half = rotary_dim // 2
     freq = 1.0 / (theta ** (torch.arange(half, device=x.device, dtype=torch.float32) / half))
-    pos = torch.arange(pos0, pos0 + x.shape[2], device=x.device, dtype=torch.float32)
+    if at is not None:
+        if x.shape[2] != 1:
+            raise ValueError("a device position is one row")
+        pos = at.i64.to(torch.float32)
+    else:
+        pos = torch.arange(pos0, pos0 + x.shape[2], device=x.device, dtype=torch.float32)
     ang = pos[:, None] * freq[None, :]
     cos = ang.cos()[None, None]
     sin = ang.sin()[None, None]
@@ -188,10 +210,11 @@ def causal_attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: floa
 
 
 def causal_conv(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor | None, *,
-                exact: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
+                exact: bool = False, in_place: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
     """Depthwise causal convolution. ``weight`` is (channels, kernel).
 
     ``exact`` keeps the prefill loop. The one-token HIP kernel uses ``expf`` and does not match it bit for bit.
+    ``in_place`` writes the new state into ``state`` (an fp32 buffer), so a captured step keeps its addresses.
     """
 
     batch, length, channels = x.shape
@@ -213,6 +236,9 @@ def causal_conv(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor | Non
     taps = weight.float()
     for tap in range(kernel):
         out.add_(window[:, tap:tap + length] * taps[:, tap].view(1, 1, channels))
+    if in_place and state.dtype == torch.float32:
+        state.copy_(window[:, length:])
+        return torch.nn.functional.silu(out), state
     return torch.nn.functional.silu(out), window[:, length:].contiguous()
 
 
@@ -468,11 +494,14 @@ def _residual(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 
 def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos0: int,
-                   act_dtype: torch.dtype | None = None, *, exact_short: bool = False, reduce=None):
+                   act_dtype: torch.dtype | None = None, *, exact_short: bool = False, reduce=None,
+                   at: DevicePos | None = None):
     """One prefill or decode step. ``tokens`` is (batch, length). Returns hidden states and new caches.
 
     ``reduce`` sums the ranks' shares of each attention and MLP output before the residual add (tensor
-    parallel); None is one rank.
+    parallel); None is one rank. ``at`` (one token, caches with fixed key/value buffers) reads the position on
+    the device and leaves each cache's ``len`` to the caller: the step records the same launches whatever the
+    position, for a graph.
     """
 
     spec = model.spec
@@ -491,9 +520,9 @@ def forward_hidden(model, tokens: torch.Tensor, caches: list | None, linear, pos
             stop = min(length, start + SPAN)
             normed = rms_norm(x[:, start:stop], layer.input_norm, spec.eps)
             if spec.full(index):
-                y, cache = _attention(spec, layer, normed, cache, linear, pos0 + start, exact_short)
+                y, cache = _attention(spec, layer, normed, cache, linear, pos0 + start, exact_short, at)
             else:
-                y, cache = _linear_attn(spec, layer, normed, cache, linear, exact_short)
+                y, cache = _linear_attn(spec, layer, normed, cache, linear, exact_short, at is not None)
             if reduce is not None:
                 y = reduce(y)
             x[:, start:stop] = _residual(x[:, start:stop], y)
@@ -544,7 +573,7 @@ def _moe_mlp(routed, x: torch.Tensor) -> torch.Tensor:
     return y.view(batch, length, hidden).to(dtype=x.dtype)
 
 
-def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, exact: bool):
+def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, exact: bool, in_place: bool = False):
     batch, length, _ = x.shape
     grouped = _project_group(x, (layer.qkv, layer.z, layer.a, layer.b), linear)
     if grouped is None:
@@ -555,7 +584,7 @@ def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, ex
     else:
         qkv, z, a, b = grouped
     z = z.view(batch, length, spec.value_heads, spec.value_dim)
-    mixed, conv_state = causal_conv(qkv, layer.conv, conv_state, exact=exact)
+    mixed, conv_state = causal_conv(qkv, layer.conv, conv_state, exact=exact, in_place=in_place)
     q, k, v = mixed.split((spec.key_width, spec.key_width, spec.value_width), dim=-1)
     q = q.view(batch, length, spec.key_heads, spec.key_dim)
     k = k.view(batch, length, spec.key_heads, spec.key_dim)
@@ -569,12 +598,12 @@ def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, ex
     return _project(y.reshape(batch, length, -1), layer.out, linear), conv_state, rec
 
 
-def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear, exact: bool):
+def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear, exact: bool, in_place: bool = False):
     batch, length, hidden = x.shape
     conv_state = None if cache is None else cache["conv"]
     rec = None if cache is None else cache["state"]
     if length <= SPAN:
-        y, conv_state, rec = _linear_span(spec, layer, x, conv_state, rec, linear, exact)
+        y, conv_state, rec = _linear_span(spec, layer, x, conv_state, rec, linear, exact, in_place)
         return y, {"conv": conv_state, "state": rec}
     y = torch.empty(batch, length, hidden, dtype=torch.float32 if layer.out.partial else x.dtype, device=x.device)
     for start in range(0, length, SPAN):
@@ -584,10 +613,11 @@ def _linear_attn(spec: Spec, layer, x: torch.Tensor, cache, linear, exact: bool)
     return y, {"conv": conv_state, "state": rec}
 
 
-def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exact: bool):
+def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exact: bool,
+               at: DevicePos | None = None):
     batch, length, hidden = x.shape
     if length <= SPAN:
-        return _attention_span(spec, layer, x, cache, linear, pos0, exact)
+        return _attention_span(spec, layer, x, cache, linear, pos0, exact, at)
     y = torch.empty(batch, length, hidden, dtype=x.dtype, device=x.device)
     for start in range(0, length, SPAN):
         stop = min(length, start + SPAN)
@@ -596,7 +626,8 @@ def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exa
     return y, cache
 
 
-def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exact: bool):
+def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exact: bool,
+                    at: DevicePos | None = None):
     batch, length, _ = x.shape
     grouped = _project_group(x, (layer.q, layer.k, layer.v), linear)
     if grouped is None:
@@ -611,9 +642,15 @@ def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int
     queries = rms_norm(queries, layer.q_norm, spec.eps).permute(0, 2, 1, 3)
     keys = rms_norm(keys, layer.k_norm, spec.eps).permute(0, 2, 1, 3)
     values = values.permute(0, 2, 1, 3)
-    queries = apply_rope(queries, pos0, spec.rope_theta, spec.rotary_dim, exact=exact)
-    keys = apply_rope(keys, pos0, spec.rope_theta, spec.rotary_dim, exact=exact)
-    if cache is not None and "len" in cache:
+    queries = apply_rope(queries, pos0, spec.rope_theta, spec.rotary_dim, exact=exact, at=at)
+    keys = apply_rope(keys, pos0, spec.rope_theta, spec.rotary_dim, exact=exact, at=at)
+    if at is not None:
+        if length != 1 or cache is None or "len" not in cache:
+            raise ValueError("a device position is one token over a fixed key/value buffer")
+        cache["k"].index_copy_(2, at.i64, keys.to(dtype=cache["k"].dtype))
+        cache["v"].index_copy_(2, at.i64, values.to(dtype=cache["v"].dtype))
+        kept_k, kept_v, new_cache = cache["k"], cache["v"], cache
+    elif cache is not None and "len" in cache:
         end = cache["len"] + length
         if end > cache["k"].shape[2]:
             raise RuntimeError("kv cache is shorter than the tokens written into it")
@@ -631,7 +668,12 @@ def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int
         kept_v = torch.cat((cache["v"], values), dim=2)
         new_cache = {"k": kept_k, "v": kept_v}
     query = queries if queries.dtype == torch.float32 else queries.float()
-    attended = _attend(query, kept_k, kept_v, spec.head_dim ** -0.5, pos0)
+    if at is not None:
+        from tensorfold.rocm.attention import causal_at
+
+        attended = causal_at(query, kept_k, kept_v, spec.head_dim ** -0.5, at.i32)
+    else:
+        attended = _attend(query, kept_k, kept_v, spec.head_dim ** -0.5, pos0)
     attended = attended.permute(0, 2, 1, 3).reshape(batch, length, -1)
     gated = attended * torch.sigmoid(gate.reshape(batch, length, -1).float())
     if gated.dtype != x.dtype:
