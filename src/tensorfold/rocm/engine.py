@@ -27,21 +27,17 @@ _DEFAULT_EOS = (151645,)
 _DEFAULT_MTP_DEPTH = 4
 
 
-def _resolve_p2p(gfx: str, p2p: bool | None) -> bool:
-    """ROCm P2P gating: opt-in only for RDNA 2/3/4 discrete; default-on for multi-mgpu-capable APUs.
+def _resolve_p2p(gfx: str, p2p: bool | None) -> bool | None:
+    """``--p2p`` / ``--no-p2p`` as given; on for a multi-die APU; otherwise ``None``: RCCL decides."""
 
-    The user passes ``--p2p`` to opt in (or opt out). When unset, the default depends on whether the
-    device is an integrated multi-mgpu APU. PCIe peer access is BIOS/ACS/driver-dependent; we don't
-    autodetect — the CLI refuses with a name when ``--p2p`` is set and ``hipDeviceCanAccessPeer`` is 0.
-    """
     if p2p is not None:
         return bool(p2p)
     try:
         multi = bool(torch.cuda.get_device_properties(0).multi_gpu_capable)
         integrated = bool(torch.cuda.get_device_properties(0).is_integrated)
-        return multi and integrated
     except (AttributeError, AssertionError, RuntimeError):
-        return False
+        return None
+    return True if multi and integrated else None
 
 
 def read_eos(model_dir: Path) -> tuple[int, ...]:
