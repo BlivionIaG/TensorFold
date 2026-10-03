@@ -691,9 +691,14 @@ hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream) {
 
 void affine_launch(const void* x, const void* words, const void* scale, const void* bias, int scale_kind, void* out,
                    int m, int n, int k, int bits, int group, int schedule, int fp16, void* stream, float* partial,
-                   int splits) {
+                   int splits, int out_half) {
     tf::rocm::Affine a{x, static_cast<const uint32_t*>(words), {scale, scale_kind}, {bias, scale_kind},
                        static_cast<float*>(out), m, n, k, bits, group, fp16};
+    if (out_half) {
+        if (!fp16 || schedule != 0 || splits > 1) throw std::runtime_error("affine kernel: fp16 output is the decode tile");
+        a.out = nullptr;
+        a.out16 = static_cast<__half*>(out);
+    }
     hipStream_t hip_stream = static_cast<hipStream_t>(stream);
     hipError_t err = (partial != nullptr && splits > 1)
                          ? tf::rocm::launch_affine_dot2_split(a, partial, splits, hip_stream)

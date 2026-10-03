@@ -165,7 +165,30 @@ void moe_combine(const at::Tensor& y, const at::Tensor& wts, at::Tensor& out) {
                        static_cast<int>(r), static_cast<int>(slots), static_cast<int>(d), stream.stream());
 }
 
+void gdn_gate(const at::Tensor& a, const at::Tensor& b, const at::Tensor& a_log, const at::Tensor& dt_bias,
+              at::Tensor& gate, at::Tensor& beta) {
+    TORCH_CHECK(a.is_cuda() && a.is_contiguous() && b.is_cuda() && b.is_contiguous() &&
+                    a.scalar_type() == b.scalar_type() && a.numel() == b.numel(),
+                "a and b: contiguous, one dtype, one size");
+    const int64_t heads = a_log.numel();
+    TORCH_CHECK(a_log.is_cuda() && a_log.is_contiguous() && a_log.scalar_type() == at::kFloat &&
+                    dt_bias.is_cuda() && dt_bias.is_contiguous() && dt_bias.scalar_type() == at::kFloat &&
+                    dt_bias.numel() == heads && heads >= 1 && a.numel() % heads == 0,
+                "a_log and dt_bias: fp32 (heads), a and b whole rows of heads");
+    TORCH_CHECK(gate.is_cuda() && gate.is_contiguous() && gate.scalar_type() == at::kFloat &&
+                    gate.numel() == a.numel() && beta.is_cuda() && beta.is_contiguous() &&
+                    beta.scalar_type() == at::kFloat && beta.numel() == a.numel(),
+                "gate and beta: fp32, a's size");
+    c10::cuda::CUDAGuard guard(a.device());
+    auto stream = c10::cuda::getCurrentCUDAStream();
+    for (const at::Tensor& tensor : {a, b, a_log, dt_bias, gate, beta}) keep(tensor, stream);
+    gdn_gate_launch(a.data_ptr(), b.data_ptr(), act_kind(a), a_log.data_ptr<float>(), dt_bias.data_ptr<float>(),
+                    gate.data_ptr<float>(), beta.data_ptr<float>(), static_cast<int>(a.numel()),
+                    static_cast<int>(heads), stream.stream());
+}
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("gdn_gate", &gdn_gate);
     m.def("moe_router", &moe_router);
     m.def("moe_select", &moe_select);
     m.def("moe_act", &moe_act);
