@@ -58,11 +58,10 @@ bash scripts/fetch-zig.sh
 zig-out/bin/tensorfold --help
 ```
 
-The initial build can take several minutes. `fetch-zig.sh` stages the exact
-nightly in [`.zig-version`](../.zig-version), verified before extraction against
-[`.zig-archive.sha256`](../.zig-archive.sha256), matching the pin used by
-`mlx-serve`. It refuses to silently replace an incompatible `.zig-toolchain`.
-Use the staged compiler; a global stable Zig is not compatible.
+The initial build can take several minutes. `fetch-zig.sh` reuses an installed
+stable Zig matching [`.zig-version`](../.zig-version), or downloads its release
+archive and verifies [`.zig-archive.sha256`](../.zig-archive.sha256) before
+extraction. It refuses to silently replace an incompatible `.zig-toolchain`.
 **No neighboring repository or model download is required.**
 
 The [setup tool](../tools/setup_native.zig):
@@ -116,7 +115,7 @@ The executable is `zig-out/bin/tensorfold`. Keep its linked libraries in
 `build/mlx/lib`; copying only the executable to another machine is not a
 standalone distribution. Rebuild after moving the checkout or changing pins.
 
-Format edited files with `.zig-toolchain/zig fmt <files>`. This nightly uses
+Format edited files with `.zig-toolchain/zig fmt <files>`. Zig 0.17.0 uses
 optimization names `debug`, `safe`, `fast` and `small`; use `safe` for
 correctness work. The default is `fast`. List targets with
 `.zig-toolchain/zig build --help`.

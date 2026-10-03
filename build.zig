@@ -2,9 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 comptime {
-    const minimum = std.SemanticVersion.parse(std.mem.trim(u8, @embedFile(".zig-version"), "\r\n")) catch unreachable;
-    if (builtin.zig_version.order(minimum) == .lt)
-        @compileError("TensorFold requires Zig 0.17.0-dev.2248+3f6a02acd or newer; run bash scripts/fetch-zig.sh, then .zig-toolchain/zig build");
+    const required = std.mem.trim(u8, @embedFile(".zig-version"), "\r\n");
+    if (!std.mem.eql(u8, builtin.zig_version_string, required))
+        @compileError("TensorFold requires Zig " ++ required ++ "; run bash scripts/fetch-zig.sh, then .zig-toolchain/zig build");
 }
 
 pub fn build(b: *std.Build) void {

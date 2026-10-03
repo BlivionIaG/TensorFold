@@ -1,7 +1,7 @@
 # Native Zig contributor instructions
 
 - Run commands from the repository root. Follow `native/README.md` for setup.
-  Use `.zig-toolchain/zig` and the exact nightly in `.zig-version`.
+  Use `.zig-toolchain/zig` and the stable release in `.zig-version`.
 - Inspect `git status` and preserve other work. Prefer the codebase graph for
   discovery when available.
 - Bootstrap with `bash scripts/fetch-zig.sh`, then
