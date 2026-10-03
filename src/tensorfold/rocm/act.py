@@ -72,3 +72,14 @@ def moe_combine(y: torch.Tensor, wts: torch.Tensor, dtype: torch.dtype) -> torch
     out = torch.empty((y.shape[0], y.shape[2]), dtype=dtype, device=y.device)
     _ext().moe_combine(y, wts, out)
     return out
+
+
+def gdn_gate(a: torch.Tensor, b: torch.Tensor, a_log: torch.Tensor, dt_bias: torch.Tensor,
+             ) -> tuple[torch.Tensor, torch.Tensor]:
+    """The Gated DeltaNet decay gate and beta in one launch, fp32 in ``a``'s shape."""
+
+    a, b = a.contiguous(), b.contiguous()
+    gate = torch.empty(a.shape, dtype=torch.float32, device=a.device)
+    beta = torch.empty(a.shape, dtype=torch.float32, device=a.device)
+    _ext().gdn_gate(a, b, a_log.float().contiguous(), dt_bias.float().contiguous(), gate, beta)
+    return gate, beta

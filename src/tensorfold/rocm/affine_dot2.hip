@@ -679,7 +679,12 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
     if (wave == 0 && col < a.n) {
 #pragma unroll
         for (int r = 0; r < ROWS; ++r) {
-            if (r < a.m) a.out[out_row(a, r) * a.n + col] = acc[r];
+            if (r >= a.m) continue;
+            if (a.out16 != nullptr) {
+                a.out16[out_row(a, r) * a.n + col] = __float2half_rn(acc[r]);
+            } else {
+                a.out[out_row(a, r) * a.n + col] = acc[r];
+            }
         }
     }
 }
@@ -915,6 +920,7 @@ hipError_t launch_affine_dot2(const Affine& a, bool reference, hipStream_t strea
     if (a.m <= kLaneRows && (a.group == 32 || a.group == 64 || a.group == 128)) {
         return launch_affine_dot2_lanes(a, stream);
     }
+    if (a.out16 != nullptr) return hipErrorInvalidValue;  // fp16 output is the decode tile's
     if (a.group == 32 || a.group == 64 || a.group == 128) {
         hipError_t lut = ensure_byte_lut(stream);
         if (lut != hipSuccess) return lut;
