@@ -141,6 +141,7 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                 try mx.check(mx.c.mlx_get_peak_memory(&peak));
                 const bytes = try std.json.Stringify.valueAlloc(a, .{
                     .driver = "Session/shared-round",
+                    .optimization_mode = @tagName(@import("builtin").mode),
                     .prompt_tokens = prompt.items,
                     .tokens = g.reply.tokens.items,
                     .seed = g.settings.seed,
@@ -164,6 +165,7 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                     .mtp_step_ms = if (coordinator.mtp_costs) |policy| policy.mtp_ms else 0,
                     .overhead_ms = measured.overhead_ms,
                     .phase_seconds = phase_seconds,
+                    .prefill_phase_seconds = g.prefill_timing,
                     .prefill_seconds = first - begin,
                     .decode_seconds = finished - first,
                     .resident_mlx_bytes = resident,

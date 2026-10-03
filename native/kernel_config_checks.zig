@@ -58,6 +58,7 @@ pub fn exercise(kernels: *mx.Kernels) !void {
     try pendingGraphs(kernels);
     try std.testing.expectEqual(@as(usize, 1), kernels.items.count());
     try keyIdentity();
+    try runtimeTemplates();
 }
 
 const key_probe = @import("kernel_sources.zig").Spec{
@@ -116,9 +117,39 @@ fn keyIdentity() !void {
     try std.testing.expectEqual(@as(usize, 8), kernels.items.count());
     var runtime = key_probe;
     runtime.bake_templates = false;
-    try keyResult(&kernels, runtime, &.{ mx.ti("A", 1), mx.ti("B", 2) }, 21);
+    a[0] = 'A';
+    b[0] = 'B';
+    try keyResult(&kernels, runtime, &.{ mx.ti(&a, 1), mx.ti(&b, 2) }, 21);
+    a[0] = 'C';
+    b[0] = 'D';
+    inline for (cases) |case| try keyResult(&kernels, runtime, case[0], case[1]);
     try keyResult(&kernels, runtime, &.{ mx.ti("A", 2), mx.ti("B", 3) }, 32);
     try std.testing.expectEqual(@as(usize, 9), kernels.items.count());
+}
+
+fn runtimeTemplates() !void {
+    var kernels = mx.Kernels.init();
+    defer kernels.deinit();
+    var scope = mx.Scope{};
+    defer scope.deinit();
+    var spec = key_probe;
+    spec.name = "native_runtime_template_probe";
+    spec.bake_templates = false;
+    spec.source = "uint i = thread_position_in_grid.x; Y[i] = X[i] + float(T(1.75f)) + float(A) + 10.0f * float(B);";
+    const x = try scope.zeros(&.{32}, mx.f32t);
+    var results: [4]mx.Array = undefined;
+    const types = [_]mx.c.mlx_dtype{ mx.f32t, mx.c.MLX_INT32, mx.c.MLX_INT32, mx.f32t };
+    for (types, 0..) |dtype, i| {
+        var name: [1:0]u8 = .{'T'};
+        const templates = [_]mx.Template{ mx.td(&name, dtype), mx.ti("A", @intCast(i)), mx.tb("B", i % 2 == 0) };
+        try kernels.runInto(&scope, spec, &.{x}, &templates, .{ 32, 1, 1 }, .{ 32, 1, 1 }, &.{.{ .shape = &.{32}, .dtype = mx.f32t }}, results[i..][0..1], null);
+        name[0] = 'X';
+    }
+    try mx.evalMany(&results, false);
+    for (results, [_]f32{ 11.75, 2, 13, 4.75 }) |result, expected| {
+        for (mx.c.mlx_array_data_float32(result)[0..32]) |value| try std.testing.expectEqual(expected, value);
+    }
+    try std.testing.expectEqual(@as(usize, 1), kernels.items.count());
 }
 
 fn verify(scope: *mx.Scope, case: Case, values: *const [32]f32, results: []const mx.Array) !void {

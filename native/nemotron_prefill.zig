@@ -180,6 +180,7 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
             const value = @field(pass.records[index], field);
             if (value.ctx != null) @field(pass.records[index], field) = try s.own(try mx.retain(value));
         }
+        layer_scope.clear();
         if (index + 1 == m.kinds.len or (evaluation_stride > 0 and (index + 1) % evaluation_stride == 0)) {
             var pending: [1 + 2 * pass.records.len]A = undefined;
             pending[0] = h;

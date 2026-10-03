@@ -66,6 +66,19 @@ pub const Cache = struct {
         out.recurrent = try cache.recurrent.clone();
         return out;
     }
+    fn retainRecord(cache: *Cache, scope: *mx.Scope) !void {
+        inline for (.{ "a", "b" }) |field| {
+            const value = @field(cache, field);
+            if (value.ctx != null) @field(cache, field) = try scope.own(try mx.retain(value));
+        }
+        inline for (.{ "key_write", "value_write" }) |field| {
+            const write = &@field(cache, field);
+            inline for (.{ "capacity", "added", "view" }) |part| {
+                const value = @field(write, part);
+                if (value.ctx != null) @field(write, part) = try scope.own(try mx.retain(value));
+            }
+        }
+    }
     pub fn deinit(cache: *Cache) void {
         mx.free(cache.a);
         mx.free(cache.b);
@@ -553,35 +566,52 @@ pub const Model = struct {
         var h = try m.weights.embedArray(s, "backbone.embeddings", tokens);
         var x = try m.norm(s, h, "backbone.layers.0.norm");
         var sums: ?A = null;
+        var carried: [3]A = @splat(mx.empty);
+        defer for (carried) |value| mx.free(value);
         var buf: [256]u8 = undefined;
         var nb: [256]u8 = undefined;
         for (m.kinds, 0..) |kind, i| {
+            var layer = mx.Scope{};
+            defer layer.deinit();
             const base = try std.fmt.bufPrint(&buf, "backbone.layers.{d}.mixer", .{i});
             const next = if (i + 1 == 52) "backbone.norm_f" else try std.fmt.bufPrint(&nb, "backbone.layers.{d}.norm", .{i + 1});
             const nw = try m.weights.field(next, "weight");
             if (kind == 'M') {
-                const both = try m.blockSums(s, i, x, h, cache[i], sums);
+                const both = try m.blockSums(&layer, i, x, h, cache[i], sums);
                 p.records[i] = .{ .a = both[2], .b = both[3] };
                 h = both[0];
                 x = both[1];
                 sums = if (both[4].ctx != null) both[4] else null;
             } else if (kind == '*') {
-                const delta = try m.attentionSums(s, base, x, &cache[i], &p.records[i], sums);
-                const both = try m.addNormSums(s, h, delta, nw);
+                const delta = try m.attentionSums(&layer, base, x, &cache[i], &p.records[i], sums);
+                const both = try m.addNormSums(&layer, h, delta, nw);
                 h = both[0];
                 x = both[1];
                 sums = if (both[4].ctx != null) both[4] else null;
             } else {
-                const both = try m.blockSums(s, i, x, h, .{}, sums);
+                const both = try m.blockSums(&layer, i, x, h, .{}, sums);
                 h = both[0];
                 x = both[1];
                 sums = if (both[4].ctx != null) both[4] else null;
             }
-            try m.traceLayer(s, position, i, "hidden", h);
-            try m.traceLayer(s, position, i, "normed", x);
+            try m.traceLayer(&layer, position, i, "hidden", h);
+            try m.traceLayer(&layer, position, i, "normed", x);
+            try p.records[i].retainRecord(s);
+            var retained_values: [3]A = @splat(mx.empty);
+            errdefer for (retained_values) |value| mx.free(value);
+            for ([_]A{ h, x, sums orelse mx.empty }, &retained_values) |value, *retained| if (value.ctx != null) {
+                retained.* = try mx.retain(value);
+            };
+            for (carried) |value| mx.free(value);
+            carried = retained_values;
+            retained_values = @splat(mx.empty);
+            h = carried[0];
+            x = carried[1];
+            sums = if (carried[2].ctx != null) carried[2] else null;
+            layer.clear();
             if ((i + 1) % 8 == 0) try mx.evalMany(&.{ h, x }, true);
         }
-        p.hidden = x;
+        p.hidden = try s.own(try mx.retain(x));
         p.logits = if (last_logits and p.count > 1)
             try m.lin(s, "lm_head", try s.slice(x, 0, @intCast(p.count - 1), @intCast(p.count)))
         else
@@ -1142,7 +1172,7 @@ pub const Model = struct {
         var total: usize = 0;
         for (caches, lengths, 0..) |cache, count, i| {
             for (caches[0..i]) |other| if (cache == other) return error.DuplicateStream;
-            if (count > 16 or total > max_shared_rows - count) return error.InvalidDraftRows;
+            if (count > max_shared_rows or total > max_shared_rows - count) return error.InvalidDraftRows;
             total += count;
             if ((cache.a.ctx == null) != (cache.b.ctx == null)) return error.InvalidCacheState;
             if (cache.a.ctx != null) {

@@ -83,11 +83,15 @@ fn checkModel(comptime M: type, io: std.Io) !void {
     var tree: @import("drafter.zig").Drafter = undefined;
     tree.cache = @splat(.{});
     tree.offset = 73;
+    tree.pending = try mx.retain(original);
+    defer mx.free(tree.pending);
     for (&tree.cache) |*cache| try fill(cache, original);
     defer for (&tree.cache) |*cache| cache.deinit();
     saved.swapDFlash(&tree);
     try std.testing.expectEqual(@as(i32, 0), tree.offset);
     try std.testing.expectEqual(@as(i32, 73), saved.dflash_offset);
+    try equalArray(saved.dflash_pending, original);
+    try equalArray(tree.pending, mx.empty);
     saved.swap(&m);
     try std.testing.expectEqual(@as(i32, 0), m.position);
     for (m.cache[0..]) |*cache| {
@@ -108,10 +112,13 @@ fn checkModel(comptime M: type, io: std.Io) !void {
     try equalArray(snapshot.draft_hidden, other);
     if (@hasDecl(M, "DraftCache")) try equal(snapshot.head_cache, other);
     try std.testing.expectEqual(@as(i32, 73), snapshot.dflash_offset);
+    try equalArray(snapshot.dflash_pending, original);
     for (snapshot.dflash_cache) |cache| try equal(cache, original);
     try mx.replace(&saved.draft_hidden, original);
     saved.swapDFlash(&tree);
     try std.testing.expectEqual(@as(i32, 73), tree.offset);
+    try equalArray(tree.pending, original);
+    try equalArray(snapshot.dflash_pending, original);
     for (snapshot.dflash_cache) |cache| try equal(cache, original);
     try equalArray(snapshot.draft_hidden, other);
     for (saved.cache) |*cache| {
@@ -123,6 +130,8 @@ fn checkModel(comptime M: type, io: std.Io) !void {
     saved.swap(&m);
     var full = try saved.clone();
     defer full.deinit();
+    full.dflash_pending = try mx.retain(original);
+    try mx.replace(&saved.dflash_pending, original);
     try std.testing.expectEqual(saved.nbytes(), full.nbytes());
     if (@hasField(M, "mtp_cache")) try equal(full.mtp_cache, original);
     if (full.draft) |draft| {
@@ -140,6 +149,7 @@ fn checkModel(comptime M: type, io: std.Io) !void {
     var restored = try reader.load(@TypeOf(full));
     defer restored.deinit();
     try std.testing.expectEqual(full.position, restored.position);
+    try equalArray(restored.dflash_pending, full.dflash_pending);
     inline for (.{ "rope_delta", "generation", "mtp_position", "mtp_generation", "dflash_offset" }) |field| try std.testing.expectEqual(@field(full, field), @field(restored, field));
     for (restored.cache) |cache| try equal(cache, original);
     if (@hasField(M, "mtp_cache")) try equal(restored.mtp_cache, original);

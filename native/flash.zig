@@ -150,6 +150,19 @@ pub const Cache = struct {
     key_write: kv.Write = .{},
     value_write: kv.Write = .{},
     index_write: kv.Write = .{},
+    fn retainRecord(c: *Cache, s: *mx.Scope) !void {
+        inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
+            const value = @field(c, field);
+            if (value.ctx != null) @field(c, field) = try s.own(try mx.retain(value));
+        }
+        inline for (.{ "key_write", "value_write", "index_write" }) |field| {
+            const write = &@field(c, field);
+            inline for (.{ "capacity", "added", "view" }) |part| {
+                const value = @field(write, part);
+                if (value.ctx != null) @field(write, part) = try s.own(try mx.retain(value));
+            }
+        }
+    }
     pub fn deinit(c: *Cache) void {
         inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |f| mx.free(@field(c, f));
         c.keys.deinit();
@@ -829,17 +842,7 @@ pub const Model = struct {
             hn = next;
             const record = &p.records[i];
             if (i == 1 and final_state) record.ple = try s.slice(record.ple, 0, @intCast(tokens.len), @intCast(tokens.len + 9));
-            inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
-                const value = @field(record, field);
-                if (value.ctx != null) @field(record, field) = try p.scope.own(try mx.retain(value));
-            }
-            inline for (.{ "key_write", "value_write", "index_write" }) |field| {
-                const write = &@field(record, field);
-                inline for (.{ "capacity", "added", "view" }) |part| {
-                    const value = @field(write, part);
-                    if (value.ctx != null) @field(write, part) = try p.scope.own(try mx.retain(value));
-                }
-            }
+            try record.retainRecord(&p.scope);
             if ((i + 1) % 4 == 0 and i + 1 < 48) try mx.evalMany(&.{hn[0]}, true);
         }
         const last: i32 = @intCast(tokens.len - 1);
@@ -883,21 +886,33 @@ pub const Model = struct {
         var p = Pass{ .count = @intCast(mx.dim(tokens, 0)), .start = m.position };
         errdefer p.deinit();
         if (host) |ids| @memcpy(p.tokens[0..ids.len], ids);
-        const s = &p.scope;
-        var hn = try m.hcNorm(s, try m.embedResidual(s, tokens), null, mx.empty);
+        var hn: [2]A = @splat(mx.empty);
+        defer for (hn) |value| mx.free(value);
+        {
+            var s = mx.Scope{};
+            defer s.deinit();
+            hn = try retainPair(try m.hcNorm(&s, try m.embedResidual(&s, tokens), null, mx.empty));
+        }
         var buf: [256]u8 = undefined;
         for (0..48) |i| {
+            var s = mx.Scope{};
+            defer s.deinit();
             m.trace_layer = i;
+            var input = hn;
             if (i == 1) {
-                const h = if (m.gpuTokensEnabled()) try m.pleArray(s, hn[0], tokens, m.cache[i], &p.records[i]) else try m.ple(s, hn[0], host.?, m.cache[i], &p.records[i]);
-                hn = try m.hcNorm(s, h, null, mx.empty);
+                const h = if (m.gpuTokensEnabled()) try m.pleArray(&s, hn[0], tokens, m.cache[i], &p.records[i]) else try m.ple(&s, hn[0], host.?, m.cache[i], &p.records[i]);
+                input = try m.hcNorm(&s, h, null, mx.empty);
             }
-            try m.trace(s, "input", hn[0]);
-            hn = try m.layer(s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), hn, &m.cache[i], &p.records[i], i % 4 != 3, false);
+            try m.trace(&s, "input", input[0]);
+            const next = try retainPair(try m.layer(&s, try std.fmt.bufPrint(&buf, "model.layers.{d}", .{i}), input, &m.cache[i], &p.records[i], i % 4 != 3, false));
+            for (hn) |value| mx.free(value);
+            hn = next;
+            try p.records[i].retainRecord(&p.scope);
+            s.clear();
             if (i < 2 or (i + 1) % 3 == 0) try mx.evalMany(&.{hn[0]}, true);
         }
-        p.hidden = hn[0];
-        p.logits = try m.headWithNorm(s, hn);
+        p.hidden = try p.scope.own(try mx.retain(hn[0]));
+        p.logits = try m.headWithNorm(&p.scope, hn);
         return p;
     }
     pub fn head(m: *Model, s: *mx.Scope, h: A) !A {

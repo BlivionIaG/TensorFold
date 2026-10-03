@@ -103,7 +103,7 @@ pub fn forwardChunk(m: *flash.Model, tokens: []const i32, last: bool) !flash.Pas
     var pending: ?hc.Pending = null;
     var queued = mx.Scope{};
     defer queued.deinit();
-    var queued_arrays: [33]A = undefined;
+    var queued_arrays: [18]A = undefined;
     var queued_count: usize = 0;
     var buf: [256]u8 = undefined;
     for (0..48) |i| {
@@ -137,6 +137,7 @@ pub fn forwardChunk(m: *flash.Model, tokens: []const i32, last: bool) !flash.Pas
             }
         }
         if (i == 47 and !last) {
+            scratch.clear();
             var arrays: [48 * 15]A = undefined;
             var count: usize = 0;
             for (pass.records) |state| {
@@ -163,13 +164,14 @@ pub fn forwardChunk(m: *flash.Model, tokens: []const i32, last: bool) !flash.Pas
         carry = .{};
         h = try carry.own(try mx.retain(h));
         pending = .{ .branch = try carry.own(try mx.retain(pending.?.branch)), .inject = try carry.own(try mx.retain(pending.?.inject)) };
-        if ((i + 1) % 2 == 0) {
+        scratch.clear();
+        {
             var next = mx.Scope{};
             errdefer next.deinit();
-            var arrays: [33]A = undefined;
+            var arrays: [18]A = undefined;
             for ([_]A{ h, pending.?.branch, pending.?.inject }, 0..) |value, j| arrays[j] = try next.own(try mx.retain(value));
             var count: usize = 3;
-            for (pass.records[i - 1 .. i + 1]) |state| {
+            for (pass.records[i .. i + 1]) |state| {
                 inline for (.{ "a", "b", "raw", "pooled", "ple", "token_history" }) |field| {
                     const value = @field(state, field);
                     if (value.ctx != null) {

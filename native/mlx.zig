@@ -104,8 +104,12 @@ pub fn opt(n: c_int) c.mlx_optional_int {
 pub const Scope = struct {
     arrays: std.ArrayList(Array) = .empty,
     pub fn deinit(s: *Scope) void {
-        for (s.arrays.items) |a| free(a);
+        s.clear();
         s.arrays.deinit(allocator);
+    }
+    pub fn clear(s: *Scope) void {
+        for (s.arrays.items) |a| free(a);
+        s.arrays.clearRetainingCapacity();
     }
     pub fn own(s: *Scope, a: Array) !Array {
         errdefer free(a);
@@ -300,8 +304,10 @@ const LaunchConfig = struct {
     init_bits: ?u32,
     outputs: []Output,
     shapes: []c_int,
+    templates: []Template,
+    names: []u8,
 
-    fn init(grid: [3]c_int, group: [3]c_int, outputs: []const Output, init_value: ?f32) !LaunchConfig {
+    fn init(grid: [3]c_int, group: [3]c_int, outputs: []const Output, templates: []const Template, init_value: ?f32) !LaunchConfig {
         var shape_count: usize = 0;
         for (outputs) |output| shape_count = try std.math.add(usize, shape_count, output.shape.len);
         const owned_outputs = try allocator.dupe(Output, outputs);
@@ -315,13 +321,28 @@ const LaunchConfig = struct {
             owned.shape = dims;
             at += dims.len;
         }
+        var name_bytes: usize = 0;
+        for (templates) |t| name_bytes = try std.math.add(usize, name_bytes, try std.math.add(usize, t.name.len, 1));
+        const names = try allocator.alloc(u8, name_bytes);
+        errdefer allocator.free(names);
+        const owned_templates = try allocator.dupe(Template, templates);
+        errdefer allocator.free(owned_templates);
+        at = 0;
+        for (owned_templates) |*t| {
+            @memcpy(names[at..][0..t.name.len], t.name);
+            names[at + t.name.len] = 0;
+            t.name = names[at..][0..t.name.len :0];
+            at += t.name.len + 1;
+        }
         return .{
-            .handle = try newLaunchConfig(grid, group, outputs, &.{}, init_value),
+            .handle = try newLaunchConfig(grid, group, outputs, templates, init_value),
             .grid = grid,
             .group = group,
             .init_bits = if (init_value) |value| @bitCast(value) else null,
             .outputs = owned_outputs,
             .shapes = shapes,
+            .templates = owned_templates,
+            .names = names,
         };
     }
 
@@ -329,11 +350,19 @@ const LaunchConfig = struct {
         c.mlx_fast_metal_kernel_config_free(config.handle);
         allocator.free(config.outputs);
         allocator.free(config.shapes);
+        allocator.free(config.templates);
+        allocator.free(config.names);
     }
 
-    fn matches(config: *const LaunchConfig, grid: [3]c_int, group: [3]c_int, outputs: []const Output, init_value: ?f32) bool {
+    fn matches(config: *const LaunchConfig, grid: [3]c_int, group: [3]c_int, outputs: []const Output, templates: []const Template, init_value: ?f32) bool {
         const init_bits: ?u32 = if (init_value) |value| @bitCast(value) else null;
-        if (!std.mem.eql(c_int, &config.grid, &grid) or !std.mem.eql(c_int, &config.group, &group) or config.init_bits != init_bits or config.outputs.len != outputs.len) return false;
+        if (!std.mem.eql(c_int, &config.grid, &grid) or !std.mem.eql(c_int, &config.group, &group) or config.init_bits != init_bits or config.outputs.len != outputs.len or config.templates.len != templates.len) return false;
+        for (config.templates, templates) |cached, t| {
+            if (!std.mem.eql(u8, cached.name, t.name) or std.meta.activeTag(cached.value) != std.meta.activeTag(t.value)) return false;
+            switch (cached.value) {
+                inline else => |value, tag| if (value != @field(t.value, @tagName(tag))) return false,
+            }
+        }
         for (config.outputs, outputs) |cached, output| {
             if (cached.dtype != output.dtype or !std.mem.eql(c_int, cached.shape, output.shape)) return false;
         }
@@ -361,9 +390,9 @@ const Kernel = struct {
     handle: c.mlx_fast_metal_kernel,
     launch: ?LaunchConfig = null,
 
-    fn config(kernel: *Kernel, grid: [3]c_int, group: [3]c_int, outputs: []const Output, init_value: ?f32) !c.mlx_fast_metal_kernel_config {
-        if (kernel.launch) |*cached| if (cached.matches(grid, group, outputs, init_value)) return cached.handle;
-        const replacement = try LaunchConfig.init(grid, group, outputs, init_value);
+    fn config(kernel: *Kernel, grid: [3]c_int, group: [3]c_int, outputs: []const Output, templates: []const Template, init_value: ?f32) !c.mlx_fast_metal_kernel_config {
+        if (kernel.launch) |*cached| if (cached.matches(grid, group, outputs, templates, init_value)) return cached.handle;
+        const replacement = try LaunchConfig.init(grid, group, outputs, templates, init_value);
         if (kernel.launch) |*previous| previous.deinit();
         kernel.launch = replacement;
         return replacement.handle;
@@ -537,8 +566,7 @@ pub const Kernels = struct {
             try k.items.putNoClobber(owned_key, .{ .handle = handle });
             break :blk k.items.getPtr(key).?;
         };
-        const cfg = if (specialize) try kernel.config(grid, group, outputs, init_value) else try newLaunchConfig(grid, group, outputs, templates, init_value);
-        defer if (!specialize) c.mlx_fast_metal_kernel_config_free(cfg);
+        const cfg = try kernel.config(grid, group, outputs, if (specialize) &.{} else templates, init_value);
         try k.vectors.prepare();
         defer k.vectors.clear();
         // Direct Metal apply constructs graph nodes without invoking host closures.

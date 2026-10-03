@@ -119,6 +119,7 @@ pub fn State(comptime M: type) type {
         head_prediction: if (@hasDecl(M, "HeadPrediction")) M.HeadPrediction else void = if (@hasDecl(M, "HeadPrediction")) .{} else {},
         dflash_cache: [5]@import("model.zig").Cache = @splat(.{}),
         dflash_offset: i32 = 0,
+        dflash_pending: mx.Array = mx.empty,
         draft: ?DFlash = null,
         dspark: ?DSpark = null,
 
@@ -145,6 +146,7 @@ pub fn State(comptime M: type) type {
             if (@hasDecl(M, "DraftCache")) s.head_cache.deinit();
             if (@hasDecl(M, "HeadPrediction")) s.head_prediction.deinit();
             for (&s.dflash_cache) |*cache| cache.deinit();
+            mx.free(s.dflash_pending);
             if (s.draft) |*draft| draft.deinit();
             if (s.dspark) |*draft| draft.deinit();
             s.* = undefined;
@@ -159,6 +161,7 @@ pub fn State(comptime M: type) type {
             out.draft_hidden = try retained(s.draft_hidden);
             if (@hasDecl(M, "DraftCache")) out.head_cache = try s.head_cache.clone();
             out.dflash_offset = s.dflash_offset;
+            out.dflash_pending = try retained(s.dflash_pending);
             for (s.dflash_cache, &out.dflash_cache) |source, *copy| copy.* = try source.clone();
             for (s.cache, out.cache) |source, *copy| copy.* = try source.clone();
             if (@hasField(M, "mtp_cache")) out.mtp_cache = try s.mtp_cache.clone();
@@ -174,6 +177,7 @@ pub fn State(comptime M: type) type {
             total +|= arrayBytes(s.draft_hidden);
             if (@hasDecl(M, "DraftCache")) total +|= cacheBytes(s.head_cache);
             for (s.dflash_cache) |cache| total +|= cacheBytes(cache);
+            total +|= arrayBytes(s.dflash_pending);
             if (s.draft) |draft| {
                 for (draft.cache) |cache| total +|= cacheBytes(cache);
                 total +|= arrayBytes(draft.pending);
@@ -189,6 +193,7 @@ pub fn State(comptime M: type) type {
             std.debug.assert(!s.borrowed);
             std.mem.swap(@TypeOf(s.dflash_cache), &s.dflash_cache, &d.cache);
             std.mem.swap(i32, &s.dflash_offset, &d.offset);
+            std.mem.swap(mx.Array, &s.dflash_pending, &d.pending);
         }
 
         pub fn swap(s: *Self, m: *M) void {

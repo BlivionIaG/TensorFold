@@ -96,8 +96,9 @@ pub fn absorb(m: anytype, state: anytype, d: ?*Drafter, pass: anytype, tokens: [
             pending.head_cache = try state.head_cache.clone();
             if (state.draft_hidden.ctx != null) pending.draft_hidden = try mx.retain(state.draft_hidden);
             var offset: usize = 0;
+            const chunk_rows = if (M == nemotron.Model) M.max_shared_rows else 16;
             while (offset < rows.len) {
-                const end = @min(offset + 16, rows.len);
+                const end = @min(offset + chunk_rows, rows.len);
                 try absorbStreams(m, &.{.{ .state = &pending, .hidden = hidden, .tokens = tokens, .rows = rows[offset..end] }});
                 offset = end;
             }
@@ -254,7 +255,7 @@ pub fn absorbStreams(m: anytype, streams: []const AbsorbStream(@TypeOf(m.*))) !v
         try cacheArrays(caches[i], &arrays);
         try arrays.append(mx.allocator, last[i]);
     };
-    if (arrays.items.len > 0) try mx.evalMany(arrays.items, M == @import("flash.zig").Model);
+    if (arrays.items.len > 0) try mx.evalMany(arrays.items, true);
     for (streams, 0..) |stream, i| if (stream.rows.len > 0) {
         std.mem.swap(M.DraftCache, &stream.state.head_cache, &caches[i]);
         std.mem.swap(mx.Array, &stream.state.draft_hidden, &last[i]);

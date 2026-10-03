@@ -108,9 +108,9 @@ pub const Linear = struct {
         errdefer mx.free(own_w);
         const own_sb = try mx.retain(sb);
         errdefer mx.free(own_sb);
-        const own_sc = if (!mx.tensor_units) try mx.retain(scales) else mx.empty;
+        const own_sc = try mx.retain(scales);
         errdefer mx.free(own_sc);
-        return .{ .weight = own_w, .sb = own_sb, .n = n, .k = k, .tiled = tiled, .tile_width = nt, .scales = own_sc, .biases = if (!mx.tensor_units) try mx.retain(biases) else mx.empty };
+        return .{ .weight = own_w, .sb = own_sb, .n = n, .k = k, .tiled = tiled, .tile_width = nt, .scales = own_sc, .biases = try mx.retain(biases) };
     }
     pub fn deinit(l: *Linear) void {
         mx.free(l.weight);
@@ -169,11 +169,8 @@ pub const Linear = struct {
         }
         if (mx.tensor_units and mx.dim(x, 1) <= 128) return l.apply(kernels, s, .{ .x = x });
         const w = try l.untiledWeight(s);
-        const sb = try s.transpose(l.sb, &.{ 1, 0, 2 });
-        const sc = try s.contiguous(try s.reshape(try s.slice(sb, 2, 0, 1), &.{ l.n, @divExact(l.k, 64) }));
-        const bs = try s.contiguous(try s.reshape(try s.slice(sb, 2, 1, 2), &.{ l.n, @divExact(l.k, 64) }));
         var result = mx.c.mlx_array_new();
-        const rc = mx.c.mlx_quantized_matmul(&result, x, w, sc, bs, true, mx.opt(64), mx.opt(4), "affine", mx.stream);
+        const rc = mx.c.mlx_quantized_matmul(&result, x, w, l.scales, l.biases, true, mx.opt(64), mx.opt(4), "affine", mx.stream);
         return s.result(rc, result);
     }
 

@@ -386,6 +386,14 @@ pub fn Generation(comptime M: type) type {
         preview: ?Preview = null,
         round_rows: usize = 0,
         round_timing: @import("server_live.zig").RoundTiming = .{},
+        prefill_timing: struct {
+            forward_seconds: f64 = 0,
+            sample_seconds: f64 = 0,
+            commit_seconds: f64 = 0,
+            absorb_seconds: f64 = 0,
+            publish_seconds: f64 = 0,
+            release_seconds: f64 = 0,
+        } = .{},
 
         pub fn init(m: *M, tok: *tokenizer.Tokenizer, a: std.mem.Allocator, prompt: []const i32, options: Options, sink: Sink, image: ?*@import("vision.zig").Prompt) !Self {
             const vocab: i32 = if (M == qwen.Model) 248320 else if (@hasField(M, "vocab")) m.vocab else M.vocab;
@@ -480,7 +488,7 @@ pub fn Generation(comptime M: type) type {
             g.round_timing = .{};
             if (g.phase == .finished) return true;
             errdefer g.discardPreview();
-            const started = if (pipelined) @import("server_live.zig").now(std.Options.debug_io) else 0;
+            const started = @import("server_live.zig").now(std.Options.debug_io);
             var round = try g.beginRound(m);
             defer round.deinit();
             if (g.phase == .prefill) {
@@ -490,16 +498,12 @@ pub fn Generation(comptime M: type) type {
                 g.round_rows = round.window.?.count;
                 if (pipelined and g.canPipeline() and round.window.?.count == 1) {
                     try round.pipeline(started);
-                } else if (pipelined) {
+                } else {
                     const forwarded = @import("server_live.zig").now(std.Options.debug_io);
                     g.round_timing.prepare_seconds = forwarded - started;
                     try round.forward();
                     const sampled = @import("server_live.zig").now(std.Options.debug_io);
                     g.round_timing.forward_seconds = sampled - forwarded;
-                    try round.settle();
-                    g.round_timing.sample_seconds = @import("server_live.zig").now(std.Options.debug_io) - sampled;
-                } else {
-                    try round.forward();
                     try round.settle();
                 }
             }
@@ -612,9 +616,11 @@ pub fn Generation(comptime M: type) type {
                 try r.request.sink.check();
                 const w = &r.window.?;
                 const pass = &r.pass.?;
+                const started = @import("server_live.zig").now(std.Options.debug_io);
                 const ids = try sampling.rows(&r.model.kernels, &pass.scope, pass.logits, w.positions[0..w.count], r.request.settings);
                 defer mx.allocator.free(ids);
                 if (@hasDecl(M, "observeBuffers")) try M.observeBuffers(pass);
+                r.request.round_timing.sample_seconds = @import("server_live.zig").now(std.Options.debug_io) - started;
                 try r.request.settleDecode(r.model, w, pass, ids);
                 try r.ticket.advance(.forwarded, .settled);
             }
@@ -626,9 +632,9 @@ pub fn Generation(comptime M: type) type {
                     g.phase = .failed;
                     g.discardPreview();
                 }
-                const releasing = if (pipelined) @import("server_live.zig").now(std.Options.debug_io) else 0;
+                const releasing = @import("server_live.zig").now(std.Options.debug_io);
                 if (r.pass) |*pass| pass.deinit();
-                if (pipelined) g.round_timing.release_seconds += @import("server_live.zig").now(std.Options.debug_io) - releasing;
+                g.round_timing.release_seconds += @import("server_live.zig").now(std.Options.debug_io) - releasing;
                 r.pass = null;
                 if (g.sink.drafter) |d| g.state.swapDFlash(d);
                 g.state.swap(r.model);
@@ -638,6 +644,8 @@ pub fn Generation(comptime M: type) type {
         };
 
         fn prefill(g: *Self, m: *M) !void {
+            const live = @import("server_live.zig");
+            const started = live.now(std.Options.debug_io);
             const count = g.chunks.next(g.offset) - g.offset;
             const tokens = g.prompt[g.offset..][0..count];
             const last = g.offset + count == g.prompt.len;
@@ -648,7 +656,13 @@ pub fn Generation(comptime M: type) type {
                 if (g.image) |p| break :blk try prompt_pass.forwardChunk(m, tokens, try image_scope.slice(p.embeddings, 1, @intCast(g.offset), @intCast(g.offset + count)), try p.positions.chunk(&image_scope, g.offset, g.offset + count), p.positions.delta, last);
                 break :blk try prompt_pass.forwardChunk(m, tokens, mx.empty, mx.empty, m.rope_delta, last);
             } else if (@hasDecl(M, "prefillChunk")) try m.prefillChunk(tokens, last) else if (@hasDecl(M, "prefill")) try m.prefill(tokens) else try m.forward(tokens);
-            defer pass.deinit();
+            defer {
+                const releasing = live.now(std.Options.debug_io);
+                pass.deinit();
+                g.prefill_timing.release_seconds += live.now(std.Options.debug_io) - releasing;
+            }
+            const forwarded = live.now(std.Options.debug_io);
+            g.prefill_timing.forward_seconds += forwarded - started;
             if (last) {
                 const vocab: i32 = if (M == qwen.Model) 248320 else if (@hasField(M, "vocab")) m.vocab else M.vocab;
                 const logits = try pass.scope.reshape(pass.logits, &.{ -1, vocab });
@@ -657,19 +671,30 @@ pub fn Generation(comptime M: type) type {
                 defer mx.allocator.free(ids);
                 g.next = ids[0];
             }
+            const sampled = live.now(std.Options.debug_io);
+            g.prefill_timing.sample_seconds += sampled - forwarded;
             if (M == qwen.Model) {
                 var kept: [2048]i32 = undefined;
                 for (kept[0..count], 0..) |*row, j| row.* = @intCast(j);
                 try m.commit(&pass, kept[0..count]);
             } else try m.commit(&pass, count);
+            const committed = live.now(std.Options.debug_io);
+            g.prefill_timing.commit_seconds += committed - sampled;
             var rows_kept: [2048]i32 = undefined;
             for (rows_kept[0..count], 0..) |*row, j| row.* = @intCast(j);
-            if (g.sink.draft_budget > 0) try neural.absorb(m, &g.state, g.sink.drafter, &pass, tokens, rows_kept[0..count]);
+            if (g.sink.draft_budget > 0) {
+                if (M == qwen.Model) {
+                    if (g.sink.drafter) |d| try d.queuePrefill(m, &pass, tokens);
+                } else try neural.absorb(m, &g.state, g.sink.drafter, &pass, tokens, rows_kept[0..count]);
+            }
+            const absorbed = live.now(std.Options.debug_io);
+            g.prefill_timing.absorb_seconds += absorbed - committed;
             g.offset += count;
             if (g.offset == g.prompt.len) {
                 g.phase = .decode;
                 try g.publishPending(m);
             }
+            g.prefill_timing.publish_seconds += live.now(std.Options.debug_io) - absorbed;
         }
 
         fn eos(m: *M, id: i32) bool {
@@ -708,14 +733,20 @@ pub fn Generation(comptime M: type) type {
         }
 
         fn settleDecode(g: *Self, m: *M, w: *const rounds.Window, pass: *Pass, ids: []const i32) !void {
+            const started = @import("server_live.zig").now(std.Options.debug_io);
             const selected = try g.selectDecode(m, w, ids);
+            const selected_at = @import("server_live.zig").now(std.Options.debug_io);
+            g.round_timing.select_seconds = selected_at - started;
             const kept = selected.rows[0..selected.count];
             if (M == qwen.Model) {
                 if (w.count == 1 and !g.options.draft) try m.commitSerialQueued(pass) else try m.commit(pass, kept);
             } else if (M == @import("flash.zig").Model) {
                 if (w.count == 1 and !g.options.draft) try m.commitSerialQueued(pass) else try m.commit(pass, kept.len);
             } else try m.commit(pass, kept.len);
+            const committed = @import("server_live.zig").now(std.Options.debug_io);
+            g.round_timing.commit_seconds = committed - selected_at;
             try g.finishDecode(m, w, pass, selected, true);
+            g.round_timing.finish_seconds = @import("server_live.zig").now(std.Options.debug_io) - committed;
         }
 
         pub const Selection = struct { rows: [16]i32 = undefined, count: usize = 1, accepted: usize = 0 };

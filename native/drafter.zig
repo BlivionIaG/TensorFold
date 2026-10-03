@@ -236,6 +236,7 @@ pub const Drafter = struct {
     parts: [5][2]CompiledPart = @splat(@splat(.{})),
     cache: [5]model.Cache = @splat(.{}),
     offset: i32 = 0,
+    pending: A = mx.empty,
     head: lanes.Linear,
     head_checked: bool = false,
     full_head: bool = false,
@@ -272,6 +273,8 @@ pub const Drafter = struct {
         d.capture = null;
         for (&d.cache) |*v| v.deinit();
         d.offset = 0;
+        mx.free(d.pending);
+        d.pending = mx.empty;
     }
     pub fn deinit(d: *Drafter) void {
         d.reset();
@@ -317,25 +320,77 @@ pub const Drafter = struct {
     }
     /// Only committed target rows enter the drafter cache; rejected siblings never do.
     pub fn absorb(d: *Drafter, target: *model.Model, p: *model.Pass, rows: []const i32, tokens: []const i32) !void {
+        try d.flushContext(target);
         const s = &p.scope;
-        const k = &target.kernels;
         const ids = try s.ints(rows);
         var taps: [5]A = undefined;
         for (p.taps, 0..) |v, i| taps[i] = try s.take(v, ids, 1);
-        const ctx = try s.rms(try (try d.weights.linear("fc")).apply(k, s, .{ .x = try s.cat(&taps, -1) }), try d.weights.get("hidden_norm.weight"));
-        const count: i32 = @intCast(rows.len);
+        const ctx = try d.appendContext(target, s, try s.cat(&taps, -1), &d.cache, d.offset);
+        if (d.capture) |writer| if (!writer.failed.load(.acquire)) {
+            d.captureContext(s, ctx, rows, tokens, d.offset) catch |err| writer.disable(err);
+        };
+        d.offset += @intCast(rows.len);
+    }
+
+    pub fn queuePrefill(d: *Drafter, target: *model.Model, p: *model.Pass, tokens: []const i32) !void {
+        if (d.capture != null) {
+            var start: usize = 0;
+            while (start < tokens.len) {
+                const end = @min(start + 128, tokens.len);
+                var rows: [128]i32 = undefined;
+                for (rows[0 .. end - start], start..) |*row, i| row.* = @intCast(i);
+                try d.absorb(target, p, rows[0 .. end - start], tokens);
+                start = end;
+            }
+            return;
+        }
+        const s = &p.scope;
+        var context = try s.cat(&p.taps, -1);
+        if (d.pending.ctx != null) context = try s.cat(&.{ d.pending, context }, 1);
+        const rows = mx.dim(context, 1);
+        if (rows > 2047) context = try s.slice(context, 1, rows - 2047, rows);
+        context = try s.contiguous(context);
+        try mx.evalMany(&.{context}, true);
+        try mx.replace(&d.pending, context);
+        d.offset += @intCast(tokens.len);
+    }
+
+    fn flushContext(d: *Drafter, target: *model.Model) !void {
+        if (d.pending.ctx == null) return;
+        const shape = mx.shape(d.pending);
+        if (shape.len != 3 or shape[0] != 1 or shape[1] < 1 or shape[1] > 2047 or shape[2] != 25600 or mx.dtype(d.pending) != mx.bf16 or d.offset < shape[1]) return error.InvalidDraftContext;
+        const count = shape[1];
+        var next: [5]model.Cache = @splat(.{});
+        defer for (&next) |*cache| cache.deinit();
+        for (d.cache, &next) |cache, *copy| copy.* = try cache.clone();
+        var start: i32 = 0;
+        while (start < count) : (start += 128) {
+            var s = mx.Scope{};
+            defer s.deinit();
+            _ = try d.appendContext(target, &s, try s.slice(d.pending, 1, start, @min(start + 128, count)), &next, d.offset - count + start);
+        }
+        std.mem.swap(@TypeOf(d.cache), &d.cache, &next);
+        mx.free(d.pending);
+        d.pending = mx.empty;
+    }
+
+    fn appendContext(d: *Drafter, target: *model.Model, s: *mx.Scope, taps: A, cache: *[5]model.Cache, offset: i32) !A {
+        const count = mx.dim(taps, 1);
+        if (count < 1 or count > 128) return error.InvalidDraftRows;
+        const k = &target.kernels;
+        const ctx = try s.rms(try (try d.weights.linear("fc")).apply(k, s, .{ .x = taps }), try d.weights.get("hidden_norm.weight"));
         var positions: [128]i32 = undefined;
-        for (rows, 0..) |_, j| positions[j] = d.offset + @as(i32, @intCast(j));
-        const pos = try s.ints(positions[0..rows.len]);
+        for (positions[0..@intCast(count)], 0..) |*position, j| position.* = offset + @as(i32, @intCast(j));
+        const pos = try s.ints(positions[0..@intCast(count)]);
         var next: [5]model.Cache = @splat(.{});
         errdefer for (&next) |*v| v.deinit();
         for (0..5) |i| {
             var keys = try s.rms(try s.reshape(try d.project(k, s, i, "self_attn.k_proj", ctx), &.{ 1, count, 8, 128 }), try d.get(i, "self_attn.k_norm.weight"));
             keys = try s.transpose(try s.rope(try s.transpose(keys, &.{ 1, 2, 0, 3 }), pos, 128), &.{ 2, 1, 0, 3 });
             var values = try s.transpose(try s.reshape(try d.project(k, s, i, "self_attn.v_proj", ctx), &.{ 1, count, 8, 128 }), &.{ 0, 2, 1, 3 });
-            if (d.cache[i].a.ctx != null) {
-                keys = try s.cat(&.{ d.cache[i].a, keys }, 2);
-                values = try s.cat(&.{ d.cache[i].b, values }, 2);
+            if (cache[i].a.ctx != null) {
+                keys = try s.cat(&.{ cache[i].a, keys }, 2);
+                values = try s.cat(&.{ cache[i].b, values }, 2);
             }
             const n = mx.dim(keys, 2);
             if (n > 2047) {
@@ -351,12 +406,9 @@ pub const Drafter = struct {
             arrays[i * 2 + 1] = v.b;
         }
         try mx.evalMany(&arrays, false);
-        for (&d.cache) |*v| v.deinit();
-        d.cache = next;
-        if (d.capture) |writer| if (!writer.failed.load(.acquire)) {
-            d.captureContext(s, ctx, rows, tokens, d.offset) catch |err| writer.disable(err);
-        };
-        d.offset += count;
+        for (cache) |*v| v.deinit();
+        cache.* = next;
+        return ctx;
     }
     pub fn absorbStreams(d: *Drafter, target: *model.Model, streams: []const AbsorbStream) !void {
         if (streams.len > model.Model.max_shared_streams) return error.InvalidDraftStreams;
@@ -381,6 +433,11 @@ pub const Drafter = struct {
             if (total > 128) return error.InvalidDraftStreams;
         }
         if (total == 0) return;
+        for (streams) |stream| if (stream.rows.len > 0 and stream.state.dflash_pending.ctx != null) {
+            stream.state.swapDFlash(d);
+            defer stream.state.swapDFlash(d);
+            try d.flushContext(target);
+        };
         var scope = mx.Scope{};
         defer scope.deinit();
         var inputs: [model.Model.max_shared_streams]A = undefined;
@@ -614,8 +671,14 @@ pub const Drafter = struct {
             if (stream.state.borrowed) return error.RequestRoundActive;
             for (streams[0..j]) |previous| if (stream.state == previous.state) return error.DuplicateDraftStream;
             common_depth = @max(common_depth, @min(15, stream.budget));
-            if (stream.budget == 0 or stream.state.dflash_cache[0].a.ctx == null) continue;
+            if (stream.budget == 0) continue;
             if (stream.anchor < 0 or stream.anchor >= 248320 or stream.state.dflash_offset < 0 or stream.state.dflash_offset > std.math.maxInt(i32) - 16) return error.InvalidDraftStream;
+            if (stream.state.dflash_pending.ctx != null) {
+                stream.state.swapDFlash(d);
+                defer stream.state.swapDFlash(d);
+                try d.flushContext(target);
+            }
+            if (stream.state.dflash_cache[0].a.ctx == null) continue;
             for (stream.state.dflash_cache) |cache| {
                 if (cache.a.ctx == null or cache.b.ctx == null or mx.shape(cache.a).len != 4 or !std.mem.eql(i32, mx.shape(cache.a), mx.shape(cache.b)) or mx.dim(cache.a, 0) != 1 or mx.dim(cache.a, 1) != 8 or mx.dim(cache.a, 2) < 1 or mx.dim(cache.a, 2) > 2047 or mx.dim(cache.a, 3) != 128 or mx.dtype(cache.a) != mx.bf16 or mx.dtype(cache.b) != mx.bf16) return error.InvalidDraftCache;
             }
@@ -963,6 +1026,49 @@ pub const Drafter = struct {
         };
         std.debug.print("PASS: DFlash pre/post compiled arrays match uncompiled through24 shapes/partitions repeated twice; retained growth={d} bytes\n", .{largest_growth});
     }
+    fn checkQueuedContext(d: *Drafter, target: *model.Model, taps: [5]A, tokens: []const i32) !void {
+        const State = @import("request_state.zig").State(model.Model);
+        var eager = try State.init(target);
+        defer eager.deinit();
+        var queued = try State.init(target);
+        defer queued.deinit();
+        var rows: [16]i32 = undefined;
+        for (&rows, 0..) |*row, i| row.* = @intCast(i);
+        for (0..130) |_| {
+            var pass = model.Pass{ .count = tokens.len, .taps = taps };
+            defer pass.deinit();
+            {
+                eager.swapDFlash(d);
+                defer eager.swapDFlash(d);
+                try d.absorb(target, &pass, &rows, tokens);
+            }
+            {
+                queued.swapDFlash(d);
+                defer queued.swapDFlash(d);
+                try d.queuePrefill(target, &pass, tokens);
+            }
+        }
+        try std.testing.expectEqual(@as(i32, 2047), mx.dim(queued.dflash_pending, 1));
+        try std.testing.expectEqual(@as(?*anyopaque, null), queued.dflash_cache[0].a.ctx);
+        var copy = try queued.clone();
+        defer copy.deinit();
+        {
+            copy.swapDFlash(d);
+            defer copy.swapDFlash(d);
+            try d.flushContext(target);
+        }
+        try std.testing.expect(queued.dflash_pending.ctx != null);
+        try std.testing.expect(copy.dflash_pending.ctx == null);
+        try std.testing.expectEqual(eager.dflash_offset, copy.dflash_offset);
+        var scope = mx.Scope{};
+        defer scope.deinit();
+        for (eager.dflash_cache, copy.dflash_cache) |expected, actual| {
+            try @import("variant_checks.zig").equalBits(&scope, expected.a, actual.a);
+            try @import("variant_checks.zig").equalBits(&scope, expected.b, actual.b);
+        }
+        std.debug.print("PASS: deferred DFlash context matches eager caches after sliding rollover and independent cloning\n", .{});
+    }
+
     fn checkAbsorbStreams(d: *Drafter, target: *model.Model, states: []@import("request_state.zig").State(model.Model)) !void {
         const State = @import("request_state.zig").State(model.Model);
         const equal = @import("variant_checks.zig").equalBits;
@@ -1002,6 +1108,7 @@ pub const Drafter = struct {
             for (&tokens[j], 0..) |*token, row| token.* = @intCast(1000 + j * 17 + row);
         }
         const lengths = [_]usize{ 0, 1, 2, 3, 5, 7, 8, 16 };
+        try d.checkQueuedContext(target, passes[0].taps, &tokens[0]);
         for (0..2) |round| {
             for (&streams, states, &passes, lengths, 0..) |*stream, *state, *pass, ragged, j| {
                 const count: usize = if (round == 0) 16 else ragged;
@@ -1180,6 +1287,7 @@ pub const Drafter = struct {
         std.debug.print("Saved shared Qwen DFlash layers, lattice and proposals for upstream comparison\n", .{});
     }
     pub fn propose(d: *Drafter, target: *model.Model, anchor: i32, budget: usize, settings: sampling.Sampling) !Proposal {
+        if (budget > 0) try d.flushContext(target);
         if (budget == 0 or d.cache[0].a.ctx == null) return .{};
         const n: usize = @min(16, budget + 1);
         var block: [16]i32 = @splat(248070);

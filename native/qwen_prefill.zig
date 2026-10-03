@@ -106,6 +106,7 @@ fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A
             }
         }
         if (i == 63 and !last) {
+            scope.clear();
             var pending: [129]A = undefined;
             var count: usize = 0;
             for (p.records[queued_layers..], queued_layers..) |record, layer| {
@@ -129,6 +130,11 @@ fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A
         for ([_]usize{ 5, 19, 33, 47, 61 }, 0..) |layer, j| if (i == layer) {
             p.taps[j] = try s.own(try mx.retain(h));
         };
+        const next = try mx.retain(h);
+        mx.free(carried);
+        carried = next;
+        h = carried;
+        scope.clear();
         if (i == 63 or (evaluation_stride > 0 and (i == 0 or (i + 1) % evaluation_stride == 0))) {
             var pending: [129]A = undefined;
             pending[0] = h;
@@ -144,10 +150,6 @@ fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A
             try mx.evalMany(pending[0..count], true);
             queued_layers = i + 1;
         }
-        const next = try mx.retain(h);
-        mx.free(carried);
-        carried = next;
-        h = carried;
     }
     const norm = try s.rms(h, try m.weights.get("model.norm.weight"));
     p.logits = try (try m.weights.linear("lm_head")).apply(&m.kernels, s, .{ .x = try s.slice(norm, 1, @intCast(tokens.len - 1), @intCast(tokens.len)) });

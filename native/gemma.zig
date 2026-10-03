@@ -643,15 +643,8 @@ pub const Model = struct {
                 taps[tap_count] = try s.own(try mx.retain(h));
                 tap_count += 1;
             };
-            if ((i + 1) % 8 == 0) {
-                var pending: [17]A = undefined;
-                pending[0] = normed;
-                for (p.staged[i - 7 .. i + 1], 0..) |staged, j| {
-                    pending[1 + 2 * j] = staged.keys;
-                    pending[2 + 2 * j] = staged.values;
-                }
-                try mx.evalMany(&pending, true);
-            }
+            layer_scope.clear();
+            if ((i + 1) % 8 == 0) try mx.evalMany(&.{normed}, true);
         }
         p.hidden = try s.own(try mx.retain(normed));
         if (tap_count > 0) p.taps = try s.cat(taps[0..tap_count], -1);
