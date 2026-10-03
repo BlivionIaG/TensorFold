@@ -3,6 +3,7 @@
 #include <hip/hip_bfloat16.h>
 #include <hip/hip_fp16.h>
 
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -98,6 +99,114 @@ __global__ void rope_decode_kernel(const float* __restrict__ x, float* __restric
     for (int i = rotary + lane; i < width; i += 32) out[i] = in[i];
 }
 
+template <typename T>
+__global__ void __launch_bounds__(256) moe_router_kernel(const T* __restrict__ x, const float* __restrict__ rows,
+                                                         float* __restrict__ logits, int d, int e) {
+    const int lane = threadIdx.x & 31;
+    const int expert = blockIdx.x * 8 + (threadIdx.x >> 5);
+    const int row = blockIdx.y;
+    if (expert >= e) return;
+    const T* xr = x + static_cast<long long>(row) * d;
+    const float* w = rows + static_cast<long long>(expert) * d;
+    float acc = 0.f;
+    for (int i = lane; i < d; i += 32) acc = fmaf(widen(xr[i]), w[i], acc);
+    acc = warp_sum(acc);
+    if (lane == 0) logits[static_cast<long long>(row) * e + expert] = acc;
+}
+
+constexpr int kSelectMax = 1024;
+
+__device__ inline float round_bf16(float v) { return static_cast<float>(hip_bfloat16(v)); }
+
+__global__ void __launch_bounds__(32) moe_select_kernel(const float* __restrict__ logits, int* __restrict__ pick,
+                                                        float* __restrict__ wts, int* __restrict__ items,
+                                                        int* __restrict__ members, int capacity, int experts,
+                                                        int top_k) {
+    __shared__ float v[kSelectMax];
+    __shared__ float ex[32];
+    const int lane = threadIdx.x;
+    const int row = blockIdx.x;
+    const int slots = top_k + 1;
+    const float* l = logits + static_cast<long long>(row) * (experts + 1);
+    for (int i = lane; i < experts; i += 32) v[i] = l[i];
+    __syncthreads();
+    float top = 0.f, total = 0.f;
+    for (int k = 0; k < top_k; ++k) {
+        float best = -INFINITY;
+        int idx = 0x7fffffff;
+        for (int i = lane; i < experts; i += 32) {
+            const float value = v[i];
+            if (value > best || (value == best && i < idx)) {
+                best = value;
+                idx = i;
+            }
+        }
+#pragma unroll
+        for (int mask = 16; mask > 0; mask >>= 1) {
+            const float other = __shfl_xor(best, mask, 32);
+            const int at = __shfl_xor(idx, mask, 32);
+            if (other > best || (other == best && at < idx)) {
+                best = other;
+                idx = at;
+            }
+        }
+        if (k == 0) top = best;
+        const float e = expf(best - top);
+        total += e;
+        if (lane == 0) {
+            pick[row * slots + k] = idx;
+            ex[k] = e;
+            v[idx] = -INFINITY;
+        }
+        __syncthreads();
+    }
+    if (lane == 0) {
+        for (int k = 0; k < top_k; ++k) wts[row * slots + k] = round_bf16(ex[k] / total);
+        const float gate = round_bf16(l[experts]);
+        pick[row * slots + top_k] = experts;
+        wts[row * slots + top_k] = round_bf16(1.f / (1.f + expf(-gate)));
+    }
+    if (items != nullptr) {
+        __syncthreads();
+        for (int k = lane; k < capacity; k += 32) {
+            const bool real = k < slots;
+            items[3 * k] = real ? pick[k] : 0;
+            items[3 * k + 1] = real ? k : 0;
+            items[3 * k + 2] = real ? 1 : 0;
+            if (real) members[k] = k;
+        }
+    }
+}
+
+template <typename T>
+__global__ void moe_act_kernel(const float* __restrict__ both, T* __restrict__ out, int width, float limit,
+                               long long total) {
+    const long long i = static_cast<long long>(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (i >= total) return;
+    const long long p = i / width;
+    const int c = static_cast<int>(i - p * width);
+    float g = both[p * 2 * width + c];
+    float u = both[p * 2 * width + width + c];
+    if (limit > 0.f) {
+        g = fminf(g, limit);
+        u = fminf(fmaxf(u, -limit), limit);
+    }
+    narrow(g / (1.f + expf(-g)) * u, out + i);
+}
+
+template <typename T>
+__global__ void moe_combine_kernel(const float* __restrict__ y, const float* __restrict__ wts, T* __restrict__ out,
+                                   int slots, int d) {
+    const int row = blockIdx.y;
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= d) return;
+    float acc = 0.f;
+    for (int s = 0; s < slots; ++s) {
+        acc += y[(static_cast<long long>(row) * slots + s) * d + c] * wts[row * slots + s];
+    }
+    narrow(acc, out + static_cast<long long>(row) * d + c);
+}
+
 }  // namespace rocm
 }  // namespace tf
 
@@ -131,4 +240,54 @@ void rope_decode_launch(const float* x, float* y, int rows, int width, int rotar
     tf::rocm::rope_decode_kernel<<<rows, 32, 0, stream>>>(x, y, width, rotary, pos, theta);
     hipError_t err = hipGetLastError();
     if (err != hipSuccess) throw std::runtime_error(std::string("rope kernel: ") + hipGetErrorString(err));
+}
+
+void moe_router_launch(const void* x, int kind, const float* rows, float* logits, int r, int d, int e,
+                       hipStream_t stream) {
+    dim3 grid((e + 7) / 8, r);
+    if (kind == 1) {
+        tf::rocm::moe_router_kernel<__half><<<grid, 256, 0, stream>>>(static_cast<const __half*>(x), rows, logits, d, e);
+    } else {
+        tf::rocm::moe_router_kernel<hip_bfloat16><<<grid, 256, 0, stream>>>(static_cast<const hip_bfloat16*>(x), rows,
+                                                                           logits, d, e);
+    }
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) throw std::runtime_error(std::string("moe router kernel: ") + hipGetErrorString(err));
+}
+
+void moe_select_launch(const float* logits, int* pick, float* wts, int* items, int* members, int capacity, int r,
+                       int experts, int top_k, hipStream_t stream) {
+    if (experts > tf::rocm::kSelectMax || top_k < 1 || top_k > 31) throw std::runtime_error("moe select: shape");
+    tf::rocm::moe_select_kernel<<<r, 32, 0, stream>>>(logits, pick, wts, items, members, capacity, experts, top_k);
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) throw std::runtime_error(std::string("moe select kernel: ") + hipGetErrorString(err));
+}
+
+void moe_act_launch(const float* both, void* out, int kind, int pairs, int width, float limit, hipStream_t stream) {
+    const long long total = static_cast<long long>(pairs) * width;
+    const int blocks = static_cast<int>((total + 255) / 256);
+    if (kind == 1) {
+        tf::rocm::moe_act_kernel<__half><<<blocks, 256, 0, stream>>>(both, static_cast<__half*>(out), width, limit,
+                                                                     total);
+    } else {
+        tf::rocm::moe_act_kernel<hip_bfloat16><<<blocks, 256, 0, stream>>>(both, static_cast<hip_bfloat16*>(out), width,
+                                                                           limit, total);
+    }
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) throw std::runtime_error(std::string("moe act kernel: ") + hipGetErrorString(err));
+}
+
+void moe_combine_launch(const float* y, const float* wts, void* out, int kind, int r, int slots, int d,
+                        hipStream_t stream) {
+    dim3 grid((d + 255) / 256, r);
+    if (kind == 1) {
+        tf::rocm::moe_combine_kernel<__half><<<grid, 256, 0, stream>>>(y, wts, static_cast<__half*>(out), slots, d);
+    } else if (kind == 2) {
+        tf::rocm::moe_combine_kernel<hip_bfloat16><<<grid, 256, 0, stream>>>(y, wts, static_cast<hip_bfloat16*>(out),
+                                                                             slots, d);
+    } else {
+        tf::rocm::moe_combine_kernel<float><<<grid, 256, 0, stream>>>(y, wts, static_cast<float*>(out), slots, d);
+    }
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) throw std::runtime_error(std::string("moe combine kernel: ") + hipGetErrorString(err));
 }

@@ -28,6 +28,16 @@ struct GroupTable {
     }
 };
 
+// Grouped experts: one launch runs every item of a plan. Item z is (expert, first, count): its rows are the pairs
+// members[first .. first + count), its x row a pair's id over x_div (slots for gate/up, 1 for down) and its
+// output row the pair's id, its weight the expert's (n, k * bits / 32) slice of a stacked (E, n, ...) tensor.
+struct Routing {
+    const int* items = nullptr;  // (count, 3) int32; nullptr is one plain (m, n) product
+    const int* members = nullptr;
+    int x_div = 1;
+    int first = 0;  // set by the kernel from its item
+};
+
 struct Affine {
     const void* x;           // (m, k) row major, bf16 or fp16
     const uint32_t* words;   // (n, k * bits / 32) row major
@@ -36,7 +46,33 @@ struct Affine {
     float* out;  // (m, n)
     int m, n, k, bits, group;
     int fp16;  // 0 is bf16, 1 is fp16
+    Routing route = {};
 };
+
+// Row r of this block's x and out: the plain matrix's r, or the routed item's r-th pair.
+__device__ inline long long x_row(const Affine& a, int r) {
+    return a.route.items ? a.route.members[a.route.first + r] / a.route.x_div : r;
+}
+__device__ inline long long out_row(const Affine& a, int r) {
+    return a.route.items ? a.route.members[a.route.first + r] : r;
+}
+
+// A routed block takes item ``z``: its expert's weights and its rows. False when the item has no rows.
+__device__ inline bool take_item(Affine& a, int z) {
+    if (!a.route.items) return true;
+    const int* item = a.route.items + 3 * z;
+    const int count = item[2];
+    if (count <= 0) return false;
+    const long long expert = item[0];
+    const long long groups = a.k / a.group;
+    const int table = a.scale.kind == kScaleF32 ? 4 : 2;
+    a.words += expert * a.n * (static_cast<long long>(a.k) * a.bits / 32);
+    a.scale.p = static_cast<const char*>(a.scale.p) + expert * a.n * groups * table;
+    a.bias.p = static_cast<const char*>(a.bias.p) + expert * a.n * groups * table;
+    a.route.first = item[1];
+    a.m = count;
+    return true;
+}
 
 __host__ __device__ inline uint32_t affine_code(const uint32_t* row, int k, int bits, int words) {
     int bit = k * bits;
@@ -74,6 +110,9 @@ hipError_t launch_affine_dot2_split(const Affine& a, float* partial, int splits,
 // schedule 0 is WMMA on a build that has it, else the GEMV. 1 is the GEMV, 2 is WMMA, 3 is the
 // column stream. fp16 is the RDNA2 v_dot2 schedule, and a WMMA build refuses it.
 hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream);
+// Every item of a routed plan (a.route set, a.m the most rows an item holds): the decode tile up to 8 rows, the
+// prefill GEMM tile past that. FP16 only.
+hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t stream);
 
 }  // namespace rocm
 }  // namespace tf

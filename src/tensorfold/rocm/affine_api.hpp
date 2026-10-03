@@ -17,3 +17,9 @@ void affine_pair_launch(const void* x, const void* words0, const void* scale0, c
 void affine_group_launch(const void* x, const void* const* words, const void* const* scale, const void* const* bias,
                          int scale_kind, void* const* out, const int* ns, int nsides, int m, int k, int bits,
                          int group, void* stream);
+// Every item of a routed plan in one FP16 launch: items (count, 3) int32 (expert, first, rows), members the pair
+// ids sorted by expert, a pair's x row its id over x_div. words (E, n, k * bits / 32), scale and bias (E, n, k /
+// group), out (pairs, n) fp32 by pair id. rows is the most rows an item holds.
+void affine_routed_launch(const void* x, const void* words, const void* scale, const void* bias, int scale_kind,
+                          void* out, const int* items, int count, const int* members, int x_div, int rows, int n,
+                          int k, int bits, int group, void* stream);
