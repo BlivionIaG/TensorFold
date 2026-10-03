@@ -4,6 +4,8 @@
 // hfma2 chain to that instruction on gfx1030. Scale and bias stay fp32, outside
 // the group sum.
 
+#include <stdexcept>
+#include <string>
 #include "affine.hpp"
 #include "arch.hpp"
 
@@ -583,6 +585,7 @@ constexpr int lane_groups(int bits, int rows, int pieces) {
 
 template <int BITS, int ROWS, int PIECES>
 __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affine a) {
+    if (!take_item(a, blockIdx.z)) return;
     constexpr int kGroup = 32 * PIECES;
     constexpr int kPer = lane_groups(BITS, ROWS, PIECES);
     constexpr int kRound = kLaneWaves * kPer;
@@ -606,7 +609,7 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
             const int r = e / kSpan;
             const int kk = e - r * kSpan;
             const int gk = g0 * kGroup + kk;
-            xs[r][kk] = (r < a.m && gk < a.k) ? x[static_cast<long long>(r) * a.k + gk] : __float2half(0.f);
+            xs[r][kk] = (r < a.m && gk < a.k) ? x[x_row(a, r) * a.k + gk] : __float2half(0.f);
         }
         // 6- and 8-bit lanes request every code word of their groups before the first product. Narrower widths
         // read a piece just before its products: up front was slower for them on the 27B 4-bit decode step.
@@ -676,15 +679,15 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
     if (wave == 0 && col < a.n) {
 #pragma unroll
         for (int r = 0; r < ROWS; ++r) {
-            if (r < a.m) a.out[static_cast<long long>(r) * a.n + col] = acc[r];
+            if (r < a.m) a.out[out_row(a, r) * a.n + col] = acc[r];
         }
     }
 }
 
 template <int BITS, int PIECES>
-hipError_t launch_lanes_rows(const Affine& a, hipStream_t stream) {
+hipError_t launch_lanes_rows(const Affine& a, hipStream_t stream, int items = 1) {
     const dim3 block(kLaneCols * kLaneWaves);
-    const dim3 grid((a.n + kLaneCols - 1) / kLaneCols);
+    const dim3 grid((a.n + kLaneCols - 1) / kLaneCols, 1, items);
     if (a.m == 1) {
         affine_dot2_lanes<BITS, 1, PIECES><<<grid, block, 0, stream>>>(a);
     } else if (a.m == 2) {
@@ -698,25 +701,25 @@ hipError_t launch_lanes_rows(const Affine& a, hipStream_t stream) {
 }
 
 template <int BITS>
-hipError_t launch_lanes(const Affine& a, hipStream_t stream) {
+hipError_t launch_lanes(const Affine& a, hipStream_t stream, int items) {
     switch (a.group) {
-        case 32: return launch_lanes_rows<BITS, 1>(a, stream);
-        case 64: return launch_lanes_rows<BITS, 2>(a, stream);
-        default: return launch_lanes_rows<BITS, 4>(a, stream);
+        case 32: return launch_lanes_rows<BITS, 1>(a, stream, items);
+        case 64: return launch_lanes_rows<BITS, 2>(a, stream, items);
+        default: return launch_lanes_rows<BITS, 4>(a, stream, items);
     }
 }
 
-hipError_t launch_affine_dot2_lanes(const Affine& a, hipStream_t stream) {
+hipError_t launch_affine_dot2_lanes(const Affine& a, hipStream_t stream, int items = 1) {
     if (a.m < 1 || a.m > kLaneRows || a.n < 1 || a.group % 32 || a.group > kLaneGroupMax || a.k % a.group) {
         return hipErrorInvalidValue;
     }
     switch (a.bits) {
-        case 2: return launch_lanes<2>(a, stream);
-        case 3: return launch_lanes<3>(a, stream);
-        case 4: return launch_lanes<4>(a, stream);
-        case 5: return launch_lanes<5>(a, stream);
-        case 6: return launch_lanes<6>(a, stream);
-        case 8: return launch_lanes<8>(a, stream);
+        case 2: return launch_lanes<2>(a, stream, items);
+        case 3: return launch_lanes<3>(a, stream, items);
+        case 4: return launch_lanes<4>(a, stream, items);
+        case 5: return launch_lanes<5>(a, stream, items);
+        case 6: return launch_lanes<6>(a, stream, items);
+        case 8: return launch_lanes<8>(a, stream, items);
         default: return hipErrorInvalidValue;
     }
 }
@@ -741,7 +744,7 @@ __device__ inline void stage_block(__half* xs, __half* ws, const Affine& a, int 
         uint4 lo = make_uint4(0u, 0u, 0u, 0u);
         uint4 hi = lo;
         if (gr < a.m) {
-            const uint4* src = reinterpret_cast<const uint4*>(x + static_cast<long long>(gr) * a.k + k0 + half);
+            const uint4* src = reinterpret_cast<const uint4*>(x + x_row(a, gr) * a.k + k0 + half);
             lo = src[0];
             hi = src[1];
         }
@@ -770,6 +773,8 @@ __device__ inline void stage_block(__half* xs, __half* ws, const Affine& a, int 
 
 template <int BITS>
 __global__ void __launch_bounds__(256, 1) affine_dot2_block(Affine a) {
+    if (!take_item(a, blockIdx.z)) return;
+    if (static_cast<int>(blockIdx.y) * kBlockM >= a.m) return;
     __shared__ __half xs[2][kBlockM * kBlockLd];
     __shared__ __half ws[2][kBlockN * kBlockLd];
     const int tx = threadIdx.x & 15;
@@ -842,30 +847,41 @@ __global__ void __launch_bounds__(256, 1) affine_dot2_block(Affine a) {
 #pragma unroll
         for (int j = 0; j < 8; ++j) {
             const int col = n0 + tx + 16 * j;
-            if (col < a.n) a.out[static_cast<long long>(row) * a.n + col] = acc[i][j];
+            if (col < a.n) a.out[out_row(a, row) * a.n + col] = acc[i][j];
         }
     }
 }
 
 template <int BITS>
-hipError_t launch_block(const Affine& a, hipStream_t stream) {
+hipError_t launch_block(const Affine& a, hipStream_t stream, int items = 1) {
     const dim3 block(256);
-    const dim3 grid((a.n + kBlockN - 1) / kBlockN, (a.m + kBlockM - 1) / kBlockM);
+    const dim3 grid((a.n + kBlockN - 1) / kBlockN, (a.m + kBlockM - 1) / kBlockM, items);
     affine_dot2_block<BITS><<<grid, block, 0, stream>>>(a);
     return hipGetLastError();
 }
 
-hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream) {
+hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int items = 1) {
     if (a.m < 1 || a.n < 1 || a.group % kBlockK || a.k % a.group || a.k % 16) return hipErrorInvalidValue;
     switch (a.bits) {
-        case 2: return launch_block<2>(a, stream);
-        case 3: return launch_block<3>(a, stream);
-        case 4: return launch_block<4>(a, stream);
-        case 5: return launch_block<5>(a, stream);
-        case 6: return launch_block<6>(a, stream);
-        case 8: return launch_block<8>(a, stream);
+        case 2: return launch_block<2>(a, stream, items);
+        case 3: return launch_block<3>(a, stream, items);
+        case 4: return launch_block<4>(a, stream, items);
+        case 5: return launch_block<5>(a, stream, items);
+        case 6: return launch_block<6>(a, stream, items);
+        case 8: return launch_block<8>(a, stream, items);
         default: return hipErrorInvalidValue;
     }
+}
+
+hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t stream) {
+    if (!a.fp16 || a.route.items == nullptr || a.route.members == nullptr || items < 1 || a.route.x_div < 1) {
+        return hipErrorInvalidValue;
+    }
+    if (a.group != 32 && a.group != 64 && a.group != 128) return hipErrorInvalidValue;
+    if (a.m <= kLaneRows) return launch_affine_dot2_lanes(a, stream, items);
+    hipError_t lut = ensure_byte_lut(stream);
+    if (lut != hipSuccess) return lut;
+    return launch_affine_dot2_block(a, stream, items);
 }
 
 hipError_t launch_affine_dot2_split(const Affine& a, float* partial, int splits, hipStream_t stream) {
@@ -935,4 +951,16 @@ hipError_t launch_affine_dot2(const Affine& a, bool reference, hipStream_t strea
 
 int affine_dot2_splits(int m, int n, int k, int group, int mode) {
     return tf::rocm::affine_dot2_splits(m, n, k, group, mode);
+}
+
+void affine_routed_launch(const void* x, const void* words, const void* scale, const void* bias, int scale_kind,
+                          void* out, const int* items, int count, const int* members, int x_div, int rows, int n,
+                          int k, int bits, int group, void* stream) {
+    tf::rocm::Affine a{x, static_cast<const uint32_t*>(words), {scale, scale_kind}, {bias, scale_kind},
+                       static_cast<float*>(out), rows, n, k, bits, group, 1};
+    a.route.items = items;
+    a.route.members = members;
+    a.route.x_div = x_div;
+    hipError_t err = tf::rocm::launch_affine_dot2_routed(a, count, static_cast<hipStream_t>(stream));
+    if (err != hipSuccess) throw std::runtime_error(std::string("affine routed kernel: ") + hipGetErrorString(err));
 }
