@@ -126,12 +126,29 @@ def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.
     return _rms_torch(x, weight, eps)
 
 
+_FILLED: dict[tuple, torch.Tensor] = {}
+
+
+def _filled(width: int, value: float, device: torch.device) -> torch.Tensor:
+    """A constant fp32 weight, made once per shape (a prefill makes it before any decode graph is captured)."""
+
+    key = (width, value, str(device))
+    weight = _FILLED.get(key)
+    if weight is None:
+        weight = _FILLED[key] = torch.full((width,), value, dtype=torch.float32, device=device)
+    return weight
+
+
 def normalize_qk(q: torch.Tensor, k: torch.Tensor, head_k: int, eps: float) -> tuple[torch.Tensor, torch.Tensor]:
-    """L2-normalize q and k and fold ``head_k ** -0.5`` into q, matching the MLX helper."""
+    """L2-normalize q and k and fold ``head_k ** -0.5`` into q, matching the MLX helper.
+
+    The scale rides in as the norm's weight: ``(x * r) * w`` is the scalar product's value, without a launch.
+    """
 
     inv = head_k ** -0.5
     rms_eps = eps * inv * inv
-    return (inv * inv) * rms_norm(q, None, rms_eps), inv * rms_norm(k, None, rms_eps)
+    return (rms_norm(q, _filled(q.shape[-1], inv * inv, q.device), rms_eps),
+            rms_norm(k, _filled(k.shape[-1], inv, k.device), rms_eps))
 
 
 class DevicePos:
@@ -310,15 +327,21 @@ def gated_delta_reference(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, gat
 
 
 def gated_delta(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tensor, b: torch.Tensor,
-                a_log: torch.Tensor, dt_bias: torch.Tensor, state: torch.Tensor | None,
+                a_log: torch.Tensor, dt_bias: torch.Tensor, state: torch.Tensor | None, *, fused: bool = False,
                 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Scalar-gate delta rule. State is fp32 and each request keeps its own.
 
     Decay, then the value residual, then the q readout. On device the wave kernel runs that
-    order; ``gated_delta_reference`` is the same Dk reduction for the test.
+    order; ``gated_delta_reference`` is the same Dk reduction for the test. ``fused`` takes the gate
+    and beta from one HIP launch (decode), not the PyTorch formula.
     """
 
-    gate, beta = _gate_beta(a, b, a_log, dt_bias)
+    if fused and a.is_cuda:
+        from tensorfold.rocm.act import gdn_gate
+
+        gate, beta = gdn_gate(a, b, a_log, dt_bias)
+    else:
+        gate, beta = _gate_beta(a, b, a_log, dt_bias)
     batch, length, key_heads, key_dim = q.shape
     value_heads, value_dim = v.shape[-2:]
     if state is None:
@@ -590,7 +613,7 @@ def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, ex
     k = k.view(batch, length, spec.key_heads, spec.key_dim)
     v = v.view(batch, length, spec.value_heads, spec.value_dim)
     q, k = normalize_qk(q, k, spec.key_dim, spec.eps)
-    y, rec = gated_delta(q, k, v, a, b, layer.a_log, layer.dt_bias, rec)
+    y, rec = gated_delta(q, k, v, a, b, layer.a_log, layer.dt_bias, rec, fused=not exact and length == 1)
     # silu(z) widened first: the same product as the promoting multiply, on the same-dtype kernel.
     y = rms_norm(y, layer.gnorm, spec.eps) * torch.nn.functional.silu(z).float()
     if y.dtype != x.dtype:

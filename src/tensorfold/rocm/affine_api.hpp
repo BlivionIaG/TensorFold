@@ -7,7 +7,8 @@
 // fp16 selects v_dot2_f32_f16. A WMMA build refuses it.
 void affine_launch(const void* x, const void* words, const void* scale, const void* bias, int scale_kind, void* out,
                    int m, int n, int k, int bits, int group, int schedule, int fp16, void* stream, float* partial,
-                   int splits);
+                   int splits, int out_half = 0);
+// out_half: out is (m, n) fp16, written by the RDNA2 decode tile (fp16 x, m <= 8, schedule 0, one launch).
 // 0 splits a short FP16 column grid on group boundaries. 1 is one launch. 2 forces the split.
 int affine_dot2_splits(int m, int n, int k, int group, int mode);
 void affine_pair_launch(const void* x, const void* words0, const void* scale0, const void* bias0, void* out0,
