@@ -224,6 +224,7 @@ pub const Cache = struct {
     }
 };
 pub const Pass = struct {
+    absorb_draft: bool = true,
     scope: mx.Scope = .{},
     logits: A = mx.empty,
     hidden: A = mx.empty,
@@ -675,10 +676,10 @@ pub const Model = struct {
         }
         if (!staged or keep < p.rows) try mx.evalMany(&arrays, false);
         for (next) |cache| try cache.observe();
-        if (m.draft) |*d| {
+        if (p.absorb_draft) if (m.draft) |*d| {
             if (d.position != m.position or p.taps.ctx == null) return error.InvalidDraftContext;
             try d.absorb(try s.slice(p.taps, 0, 0, @intCast(keep)));
-        }
+        };
         for (&m.cache) |*cache| cache.deinit();
         m.cache = next;
         m.position += @intCast(keep);

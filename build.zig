@@ -257,7 +257,7 @@ pub fn build(b: *std.Build) void {
         }
         oracle.step.dependOn(bonsai_previous);
         check.step.dependOn(&oracle.step);
-        const compare = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_qwen_prefill_reference.py", oracle_dir, "--compare", native_dir });
+        const compare = b.addSystemCommand(&.{ ".venv/bin/python", "tools/native_qwen_prefill_reference.py", oracle_dir, "--compare", native_dir, "--prune-compared" });
         compare.step.dependOn(&check.step);
         bonsai_previous = &compare.step;
     }

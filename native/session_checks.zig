@@ -579,6 +579,10 @@ fn previewRequests(s: *session.Session, m: anytype, prompt: []const i32) !void {
         while (!try unqueuedStep(&expected, m)) {}
         while (!try actual.step(m)) {}
         try std.testing.expect(actual.preview == null);
+        if (M == @import("gemma.zig").Model) {
+            if (actual.state.draft) |draft| try std.testing.expectEqual(@as(i32, @intCast(prompt.len)), draft.position);
+            if (expected.state.draft) |draft| try std.testing.expectEqual(@as(i32, @intCast(prompt.len)), draft.position);
+        }
         try samePreviewCaches(M, &expected.state, &actual.state);
         try samePreviewCaches(M, &saved_expected, &saved_actual);
         var before = try expected.takeReply();

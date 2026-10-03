@@ -319,6 +319,11 @@ pub const Model = struct {
             try m.weights.put("decode.limits", try scope.data(&[_]f32{ 0, std.math.inf(f32) }, &.{2}, mx.f32t));
             try m.weights.put("decode.scaling", try scope.scalar(2.5));
             try m.weights.put("decode.no_sums", try scope.scalar(0));
+            const conv = try scope.zeros(&.{ 1, 3, 6144 }, mx.bf16);
+            const ssm = try scope.zeros(&.{ 1, 64, 64, 128 }, mx.f32t);
+            try mx.evalMany(&.{ conv, ssm }, false);
+            try m.weights.put("decode.empty_conv", conv);
+            try m.weights.put("decode.empty_ssm", ssm);
         }
         // Small constants are prepared once; expert tables remain in their packed format.
         for (m.kinds, 0..) |kind, i| if (kind == 'M') {
@@ -644,8 +649,8 @@ pub const Model = struct {
         }
         var arguments = [_]A{ x, h, mx.empty, mx.empty, mx.empty };
         if (recurrent) {
-            arguments[2] = if (cache.a.ctx != null) cache.a else try s.zeros(&.{ 1, 3, 6144 }, mx.bf16);
-            arguments[3] = if (cache.b.ctx != null) cache.b else try s.zeros(&.{ 1, 64, 64, 128 }, mx.f32t);
+            arguments[2] = if (cache.a.ctx != null) cache.a else try m.weights.get("decode.empty_conv");
+            arguments[3] = if (cache.b.ctx != null) cache.b else try m.weights.get("decode.empty_ssm");
         }
         const count: usize = if (recurrent) 5 else 3;
         arguments[count - 1] = sums orelse try m.weights.get("decode.no_sums");

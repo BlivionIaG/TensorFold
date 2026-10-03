@@ -49,6 +49,22 @@ pub const ProjectionCache = struct {
         cache.output_next = (cache.output_next + 1) % cache.outputs.len;
         return value;
     }
+
+    pub fn prefill(cache: *ProjectionCache, l: Linear, kernels: *mx.Kernels, s: *mx.Scope, input: A) !A {
+        if (l.signs.ctx == null or l.rotation_id == 0) return l.prefill(kernels, s, input);
+        const rotated = blk: {
+            for (cache.rotations) |entry| if (entry) |hit| {
+                if (hit.input.ctx == input.ctx and hit.identity == l.rotation_id and hit.group == -1) break :blk hit.act.x;
+            };
+            const value = try l.rotate(kernels, s, input);
+            cache.rotations[cache.rotation_next] = .{ .input = input, .identity = l.rotation_id, .group = -1, .act = .{ .x = value } };
+            cache.rotation_next = (cache.rotation_next + 1) % cache.rotations.len;
+            break :blk value;
+        };
+        var prepared = l;
+        prepared.signs = mx.empty;
+        return prepared.prefill(kernels, s, rotated);
+    }
 };
 pub const Linear = struct {
     weight: A,

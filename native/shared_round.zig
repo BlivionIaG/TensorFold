@@ -525,7 +525,7 @@ pub const Coordinator = struct {
                 retained[j].start = view.start;
                 retained[j].count = view.count;
             }
-            const needs_draft = (g.options.draft and g.sink.draft_budget > 0) or (if (M == @import("gemma.zig").Model) m.draft != null else false);
+            const needs_draft = g.options.draft and g.sink.draft_budget > 0;
             if (needs_draft and results[i].failure == null) {
                 if (M == model.Model) {
                     if (g.sink.drafter != null) for (view.taps, &retained[j].taps) |tap, *out| {
@@ -764,7 +764,7 @@ test "Nemotron forward cost probes every serial width and wide shared boundaries
 
 fn finishShared(g: anytype, m: anytype, window: *const rounds.Window, pass: anytype, selected: anytype) !void {
     const M = @TypeOf(m.*);
-    if (M == @import("gemma.zig").Model) {
+    if (M == @import("gemma.zig").Model and g.options.draft and g.sink.draft_budget > 0) {
         if (m.draft) |*draft| {
             if (draft.position != pass.position or pass.taps.ctx == null) return error.InvalidDraftContext;
             try draft.absorb(try pass.scope.slice(pass.taps, 0, 0, @intCast(selected.count)));

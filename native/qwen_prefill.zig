@@ -92,6 +92,10 @@ fn forwardImpl(m: *model.Model, tokens: []const i32, embeddings: A, positions: A
     for (0..64) |i| {
         var scope = mx.Scope{};
         defer scope.deinit();
+        var projection_cache = lanes.ProjectionCache{};
+        const previous_cache = m.projection_cache;
+        m.projection_cache = &projection_cache;
+        defer m.projection_cache = previous_cache;
         const work = &scope;
         const x = try work.rms(h, try m.weight(i, "input_layernorm.weight"));
         const residual = if (i % 4 == 3) try attention(m, work, i, x, positions, &p.records[i], final) else try gdn(m, work, i, x, &p);

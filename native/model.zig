@@ -279,6 +279,7 @@ pub const Model = struct {
     pub fn prefillProject(m: *Model, s: *mx.Scope, index: usize, suffix: []const u8, x: A) !A {
         var buf: [192]u8 = undefined;
         const l = try m.weights.linear(try std.fmt.bufPrint(&buf, "model.layers.{d}.{s}", .{ index, suffix }));
+        if (m.projection_cache) |cache| return cache.prefill(l, &m.kernels, s, x);
         return l.prefill(&m.kernels, s, x);
     }
     pub fn prefill(m: *Model, tokens: []const i32) !Pass {

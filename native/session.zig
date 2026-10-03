@@ -597,6 +597,7 @@ pub fn Generation(comptime M: type) type {
                 const selected = try g.selectDecode(m, w, &ids);
                 const select_ended = live.now(std.Options.debug_io);
                 g.round_timing.select_seconds = select_ended - sample_ended;
+                if (M == @import("gemma.zig").Model) r.pass.?.absorb_draft = g.options.draft and g.sink.draft_budget > 0;
                 try m.commit(&r.pass.?, selected.count);
                 const committed = live.now(std.Options.debug_io);
                 g.round_timing.commit_seconds = committed - select_ended;
@@ -738,6 +739,7 @@ pub fn Generation(comptime M: type) type {
             const selected_at = @import("server_live.zig").now(std.Options.debug_io);
             g.round_timing.select_seconds = selected_at - started;
             const kept = selected.rows[0..selected.count];
+            if (M == @import("gemma.zig").Model) pass.absorb_draft = g.options.draft and g.sink.draft_budget > 0;
             if (M == qwen.Model) {
                 if (w.count == 1 and !g.options.draft) try m.commitSerialQueued(pass) else try m.commit(pass, kept);
             } else if (M == @import("flash.zig").Model) {
