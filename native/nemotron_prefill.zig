@@ -147,6 +147,13 @@ fn attention(m: *nemotron.Model, s: *mx.Scope, base: []const u8, x: A, index: us
     return linear(m, s, base, "o_proj", try s.reshape(try s.transpose(attended, &.{ 0, 2, 1, 3 }), &.{ 1, rows, 4096 }));
 }
 pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
+    var pass = try forwardChunk(m, tokens, true);
+    errdefer pass.deinit();
+    try mx.eval(pass.logits);
+    return pass;
+}
+
+pub fn forwardChunk(m: *nemotron.Model, tokens: []const i32, final: bool) !nemotron.Pass {
     if (tokens.len < 17 or tokens.len > 2048 or tokens.len > 262144 - m.position) return error.ContextLimitExceeded;
     for (tokens) |token| if (token < 0 or token >= nemotron.Model.vocab) return error.InvalidToken;
     var pass = nemotron.Pass{ .prefilled = true, .start = m.position, .count = tokens.len };
@@ -196,8 +203,7 @@ pub fn forward(m: *nemotron.Model, tokens: []const i32) !nemotron.Pass {
         }
     }
     pass.hidden = try s.reshape(try cp.norm(s, h, try m.weights.get("backbone.norm_f.weight"), 1e-5), &.{ rows, 2688 });
-    pass.logits = try m.weights.linear(&m.kernels, s, "lm_head", try s.slice(pass.hidden, 0, rows - 1, rows), true);
-    try mx.eval(pass.logits);
+    if (final) pass.logits = try m.weights.linear(&m.kernels, s, "lm_head", try s.slice(pass.hidden, 0, rows - 1, rows), true);
     return pass;
 }
 

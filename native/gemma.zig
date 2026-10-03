@@ -625,10 +625,11 @@ pub const Model = struct {
             const local = sliding(i);
             const g = geometry(i);
             const qkv = try m.front(layer_s, i, normed, at);
-            const keys = if (cache[i].keys.ctx != null) cache[i].attention("keys") else try layer_s.zeros(&.{ 1, g.kv_heads, if (local) 1152 else 1, g.head_dim }, mx.bf16);
-            const values = if (cache[i].values.ctx != null) cache[i].attention("values") else try layer_s.zeros(mx.shape(keys), mx.bf16);
             p.records[i] = .{ .keys = try s.reshape(qkv[1], &.{ 1, g.kv_heads, rows, g.head_dim }), .values = try s.reshape(qkv[2], &.{ 1, g.kv_heads, rows, g.head_dim }) };
             try stageCacheLayer(cache, &p, i);
+            const attended_cache = if (local) cache[i] else p.staged[i];
+            const keys = if (attended_cache.keys.ctx != null) attended_cache.attention("keys") else try layer_s.zeros(&.{ 1, g.kv_heads, 1152, g.head_dim }, mx.bf16);
+            const values = if (attended_cache.values.ctx != null) attended_cache.attention("values") else try layer_s.zeros(mx.shape(keys), mx.bf16);
             const attended = try m.attentions[0][@intFromBool(local)].apply(&m.kernels, layer_s, qkv[0], keys, values, qkv[1], qkv[2], attention_rows[@intFromBool(local)], 1);
             const end = try m.back(layer_s, i, attended, h);
             const next_h = try mx.retain(end[0]);
@@ -650,12 +651,6 @@ pub const Model = struct {
         p.hidden = try s.own(try mx.retain(normed));
         if (tap_count > 0) p.taps = try s.cat(taps[0..tap_count], -1);
         p.logits = try m.activations.call(s, .softcap, &.{ try m.project(s, normed, try m.weights.triple("model.embed_tokens")), try s.scalar(30) });
-        var writes: [60]A = undefined;
-        for (p.staged, 0..) |staged, i| {
-            writes[2 * i] = staged.keys;
-            writes[2 * i + 1] = staged.values;
-        }
-        p.logits = try cacheDependency(s, p.logits, &writes);
         return p;
     }
     pub fn prefill(m: *Model, tokens: []const i32) !Pass {

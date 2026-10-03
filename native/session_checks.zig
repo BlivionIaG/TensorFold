@@ -141,6 +141,7 @@ pub fn bench(init: std.process.Init, args: []const []const u8) !void {
                 try mx.check(mx.c.mlx_get_peak_memory(&peak));
                 const bytes = try std.json.Stringify.valueAlloc(a, .{
                     .driver = "Session/shared-round",
+                    .zig_version = @import("builtin").zig_version_string,
                     .optimization_mode = @tagName(@import("builtin").mode),
                     .prompt_tokens = prompt.items,
                     .tokens = g.reply.tokens.items,

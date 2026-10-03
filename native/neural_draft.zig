@@ -75,6 +75,15 @@ pub fn enabled(m: anytype, d: ?*Drafter) bool {
     return if (M == qwen.Model) d != null else if (@hasField(M, "mtp")) m.mtp else m.has_mtp;
 }
 
+fn hiddenRows(scope: *mx.Scope, hidden: mx.Array, rows: []const i32) !mx.Array {
+    if (rows.len > 0 and rows[0] >= 0 and rows[rows.len - 1] < mx.dim(hidden, 0)) {
+        for (rows, 0..) |row, i| {
+            if (@as(i64, row) != @as(i64, rows[0]) + @as(i64, @intCast(i))) break;
+        } else return scope.slice(hidden, 0, rows[0], rows[rows.len - 1] + 1);
+    }
+    return scope.take(hidden, try scope.ints(rows), 0);
+}
+
 pub fn absorb(m: anytype, state: anytype, d: ?*Drafter, pass: anytype, tokens: []const i32, rows: []const i32) !void {
     const M = @TypeOf(m.*);
     if (!enabled(m, d)) return;
@@ -109,7 +118,7 @@ pub fn absorb(m: anytype, state: anytype, d: ?*Drafter, pass: anytype, tokens: [
         }
         if (comptime @hasDecl(M, "absorbDraftContext")) {
             if (rows.len == 0) return;
-            const selected = try pass.scope.take(hidden, try pass.scope.ints(rows), 0);
+            const selected = try hiddenRows(&pass.scope, hidden, rows);
             const n: i32 = @intCast(rows.len);
             const prefix = try pass.scope.slice(selected, 0, 0, n - 1);
             const previous = state.draft_hidden.ctx != null;
@@ -233,7 +242,7 @@ pub fn absorbStreams(m: anytype, streams: []const AbsorbStream(@TypeOf(m.*))) !v
         pointers[i] = &caches[i];
         if (stream.rows.len == 0) continue;
         caches[i] = try stream.state.head_cache.clone();
-        const selected = try scope.take(stream.hidden, try scope.ints(stream.rows), 0);
+        const selected = try hiddenRows(&scope, stream.hidden, stream.rows);
         const n: i32 = @intCast(stream.rows.len);
         last[i] = try mx.retain(try scope.slice(selected, 0, n - 1, n));
         const previous = stream.state.draft_hidden.ctx != null;
@@ -286,6 +295,9 @@ pub fn checkAbsorbStreams(m: anytype, hidden: mx.Array, tokens: []const i32, see
     const rows = [_]i32{ 0, 1, 2, 3 };
     var scope = mx.Scope{};
     defer scope.deinit();
+    for ([_][]const i32{ &.{0}, &.{ 0, 1, 2, 3 }, &.{ 1, 2, 3 }, &.{ 0, 2, 3 } }) |selected| {
+        try @import("variant_checks.zig").equalBits(&scope, try scope.take(hidden, try scope.ints(selected), 0), try hiddenRows(&scope, hidden, selected));
+    }
     var states: [8]State = undefined;
     var references: [8]State = undefined;
     var initialized: usize = 0;

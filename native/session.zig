@@ -664,6 +664,12 @@ pub fn Generation(comptime M: type) type {
             }
             const forwarded = live.now(std.Options.debug_io);
             g.prefill_timing.forward_seconds += forwarded - started;
+            var rows_kept: [2048]i32 = undefined;
+            for (rows_kept[0..count], 0..) |*row, j| row.* = @intCast(j);
+            const early_absorb = M == @import("nemotron.zig").Model;
+            if (early_absorb and g.sink.draft_budget > 0) try neural.absorb(m, &g.state, g.sink.drafter, &pass, tokens, rows_kept[0..count]);
+            const sampling_started = live.now(std.Options.debug_io);
+            g.prefill_timing.absorb_seconds += sampling_started - forwarded;
             if (last) {
                 const vocab: i32 = if (M == qwen.Model) 248320 else if (@hasField(M, "vocab")) m.vocab else M.vocab;
                 const logits = try pass.scope.reshape(pass.logits, &.{ -1, vocab });
@@ -673,17 +679,16 @@ pub fn Generation(comptime M: type) type {
                 g.next = ids[0];
             }
             const sampled = live.now(std.Options.debug_io);
-            g.prefill_timing.sample_seconds += sampled - forwarded;
+            g.prefill_timing.sample_seconds += sampled - sampling_started;
             if (M == qwen.Model) {
                 var kept: [2048]i32 = undefined;
                 for (kept[0..count], 0..) |*row, j| row.* = @intCast(j);
                 try m.commit(&pass, kept[0..count]);
             } else try m.commit(&pass, count);
+            if (early_absorb) try M.observeBuffers(&pass);
             const committed = live.now(std.Options.debug_io);
             g.prefill_timing.commit_seconds += committed - sampled;
-            var rows_kept: [2048]i32 = undefined;
-            for (rows_kept[0..count], 0..) |*row, j| row.* = @intCast(j);
-            if (g.sink.draft_budget > 0) {
+            if (!early_absorb and g.sink.draft_budget > 0) {
                 if (M == qwen.Model) {
                     if (g.sink.drafter) |d| try d.queuePrefill(m, &pass, tokens);
                 } else try neural.absorb(m, &g.state, g.sink.drafter, &pass, tokens, rows_kept[0..count]);

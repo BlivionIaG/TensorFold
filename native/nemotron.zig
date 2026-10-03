@@ -141,8 +141,9 @@ const Block = struct {
     base: []const u8,
     next: A,
     kind: u8,
+    final_state: bool,
 
-    fn init(m: *Model, layer: usize) !*Block {
+    fn init(m: *Model, layer: usize, final_state: bool) !*Block {
         const p = try mx.allocator.create(Block);
         errdefer mx.allocator.destroy(p);
         const base = try std.fmt.allocPrint(mx.allocator, "backbone.layers.{d}.mixer", .{layer});
@@ -169,7 +170,7 @@ const Block = struct {
             const name = try std.fmt.bufPrint(&buffer, "{s}.{s}", .{ base, suffix });
             try capturedLinear(m, &weights, &kernels, &scope, name);
         }
-        p.* = .{ .weights = weights, .kernels = kernels, .base = base, .next = next, .kind = m.kinds[layer] };
+        p.* = .{ .weights = weights, .kernels = kernels, .base = base, .next = next, .kind = m.kinds[layer], .final_state = final_state };
         return p;
     }
     fn destroy(raw: ?*anyopaque) callconv(.c) void {
@@ -202,7 +203,7 @@ const Block = struct {
         const sums: ?A = if (mx.shape(previous_sums).len == 2) previous_sums else null;
         if (p.kind == 'M') {
             var record = Cache{};
-            const delta = try model.mambaSums(&scope, p.base, args[0], .{ .a = args[2], .b = args[3] }, &record, sums);
+            const delta = try model.mambaSumsMode(&scope, p.base, args[0], .{ .a = args[2], .b = args[3] }, &record, sums, p.final_state);
             const normalized = try model.addNormSums(&scope, args[1], delta, p.next);
             const values = [_]A{ normalized[0], normalized[1], record.a, record.b, if (normalized[4].ctx != null) normalized[4] else previous_sums };
             return mx.c.mlx_vector_array_set_data(out, &values, values.len);
@@ -280,6 +281,7 @@ pub const Model = struct {
     weights: cp.Store,
     kernels: mx.Kernels,
     blocks: [52]mx.c.mlx_closure = @splat(.{ .ctx = null }),
+    prefill_blocks: [52]mx.c.mlx_closure = @splat(.{ .ctx = null }),
     head_plans: [2]mx.c.mlx_closure = @splat(.{ .ctx = null }),
     cache: [52]Cache = @splat(.{}),
     kinds: [52]u8 = undefined,
@@ -319,11 +321,6 @@ pub const Model = struct {
             try m.weights.put("decode.limits", try scope.data(&[_]f32{ 0, std.math.inf(f32) }, &.{2}, mx.f32t));
             try m.weights.put("decode.scaling", try scope.scalar(2.5));
             try m.weights.put("decode.no_sums", try scope.scalar(0));
-            const conv = try scope.zeros(&.{ 1, 3, 6144 }, mx.bf16);
-            const ssm = try scope.zeros(&.{ 1, 64, 64, 128 }, mx.f32t);
-            try mx.evalMany(&.{ conv, ssm }, false);
-            try m.weights.put("decode.empty_conv", conv);
-            try m.weights.put("decode.empty_ssm", ssm);
         }
         // Small constants are prepared once; expert tables remain in their packed format.
         for (m.kinds, 0..) |kind, i| if (kind == 'M') {
@@ -419,6 +416,9 @@ pub const Model = struct {
     pub fn deinit(m: *Model) void {
         m.reset();
         for (m.blocks) |fun| if (fun.ctx != null) {
+            _ = mx.c.mlx_closure_free(fun);
+        };
+        for (m.prefill_blocks) |fun| if (fun.ctx != null) {
             _ = mx.c.mlx_closure_free(fun);
         };
         for (m.head_plans) |fun| if (fun.ctx != null) {
@@ -526,15 +526,18 @@ pub const Model = struct {
         return @import("nemotron_shared.zig").forward(m, streams);
     }
     pub fn prefill(m: *Model, tokens: []const i32) !Pass {
-        if (tokens.len > 16) return @import("nemotron_prefill.zig").forward(m, tokens);
-        if (tokens.len == 0) return error.InvalidLaneWidth;
-        var scope = mx.Scope{};
-        defer scope.deinit();
-        var pass = try m.forwardInput(try scope.ints(tokens), &m.cache, m.position, true);
+        var pass = try m.prefillChunk(tokens, true);
         errdefer pass.deinit();
         try mx.eval(pass.logits);
         try observeBuffers(&pass);
         return pass;
+    }
+    pub fn prefillChunk(m: *Model, tokens: []const i32, final: bool) !Pass {
+        if (tokens.len > 16) return @import("nemotron_prefill.zig").forwardChunk(m, tokens, final);
+        if (tokens.len == 0) return error.InvalidLaneWidth;
+        var scope = mx.Scope{};
+        defer scope.deinit();
+        return m.forwardInput(try scope.ints(tokens), &m.cache, m.position, true);
     }
     pub fn observeBuffers(p: *Pass) !void {
         if (!kv.track_reuse) return;
@@ -565,7 +568,7 @@ pub const Model = struct {
         return m.forwardInput(sampled, &previous.staged, position, false);
     }
     fn forwardInput(m: *Model, tokens: A, cache: []Cache, position: i32, last_logits: bool) !Pass {
-        var p = Pass{ .start = position, .count = @intCast(mx.dim(tokens, 0)) };
+        var p = Pass{ .prefilled = last_logits, .start = position, .count = @intCast(mx.dim(tokens, 0)) };
         errdefer p.deinit();
         const s = &p.scope;
         var h = try m.weights.embedArray(s, "backbone.embeddings", tokens);
@@ -582,7 +585,7 @@ pub const Model = struct {
             const next = if (i + 1 == 52) "backbone.norm_f" else try std.fmt.bufPrint(&nb, "backbone.layers.{d}.norm", .{i + 1});
             const nw = try m.weights.field(next, "weight");
             if (kind == 'M') {
-                const both = try m.blockSums(&layer, i, x, h, cache[i], sums);
+                const both = try m.blockSumsMode(&layer, i, x, h, cache[i], sums, last_logits);
                 p.records[i] = .{ .a = both[2], .b = both[3] };
                 h = both[0];
                 x = both[1];
@@ -614,7 +617,7 @@ pub const Model = struct {
             x = carried[1];
             sums = if (carried[2].ctx != null) carried[2] else null;
             layer.clear();
-            if ((i + 1) % 8 == 0) try mx.evalMany(&.{ h, x }, true);
+            if ((i + 1) % 8 == 0) try mx.evalMany(&.{x}, true);
         }
         p.hidden = try s.own(try mx.retain(x));
         p.logits = if (last_logits and p.count > 1)
@@ -631,31 +634,35 @@ pub const Model = struct {
         return m.blockSums(s, layer, x, h, cache, null);
     }
     pub fn blockSums(m: *Model, s: *mx.Scope, layer: usize, x: A, h: A, cache: Cache, sums: ?A) ![5]A {
+        return m.blockSumsMode(s, layer, x, h, cache, sums, false);
+    }
+    fn blockSumsMode(m: *Model, s: *mx.Scope, layer: usize, x: A, h: A, cache: Cache, sums: ?A, final_state: bool) ![5]A {
         if (layer >= m.kinds.len or (m.kinds[layer] != 'M' and m.kinds[layer] != 'E')) return error.InvalidLayerKind;
         const recurrent = m.kinds[layer] == 'M';
         if (x.ctx == null or h.ctx == null or mx.shape(x).len != 2 or mx.dim(x, 0) < 1 or mx.dim(x, 0) > (if (recurrent) @as(i32, 16) else max_shared_rows) or mx.dim(x, 1) != 2688 or !std.mem.eql(i32, mx.shape(x), mx.shape(h)) or mx.dtype(x) != mx.bf16 or mx.dtype(h) != mx.bf16) return error.InvalidBlockInputs;
         if (sums) |value| if (value.ctx == null or !std.mem.eql(i32, mx.shape(value), &.{ 42, @divTrunc(mx.dim(x, 0) + 15, 16) * 16 }) or mx.dtype(value) != mx.f32t) return error.InvalidBlockInputs;
         if (recurrent and ((cache.a.ctx == null) != (cache.b.ctx == null))) return error.InvalidCacheState;
         if (recurrent and cache.a.ctx != null and (!std.mem.eql(i32, mx.shape(cache.a), &.{ 1, 3, 6144 }) or !std.mem.eql(i32, mx.shape(cache.b), &.{ 1, 64, 64, 128 }) or mx.dtype(cache.a) != mx.bf16 or mx.dtype(cache.b) != mx.f32t)) return error.InvalidCacheState;
-        if (m.blocks[layer].ctx == null) {
-            const payload = try Block.init(m, layer);
+        const closure = if (recurrent and final_state) &m.prefill_blocks[layer] else &m.blocks[layer];
+        if (closure.ctx == null) {
+            const payload = try Block.init(m, layer, recurrent and final_state);
             const fun = mx.c.mlx_closure_new_func_payload(Block.callback, payload, Block.destroy);
             if (fun.ctx == null) {
                 Block.destroy(payload);
                 return error.MlxFailure;
             }
             defer _ = mx.c.mlx_closure_free(fun);
-            try mx.check(mx.c.mlx_compile(&m.blocks[layer], fun, false));
+            try mx.check(mx.c.mlx_compile(closure, fun, false));
         }
         var arguments = [_]A{ x, h, mx.empty, mx.empty, mx.empty };
         if (recurrent) {
-            arguments[2] = if (cache.a.ctx != null) cache.a else try m.weights.get("decode.empty_conv");
-            arguments[3] = if (cache.b.ctx != null) cache.b else try m.weights.get("decode.empty_ssm");
+            arguments[2] = if (cache.a.ctx != null) cache.a else try s.zeros(&.{ 1, 3, 6144 }, mx.bf16);
+            arguments[3] = if (cache.b.ctx != null) cache.b else try s.zeros(&.{ 1, 64, 64, 128 }, mx.f32t);
         }
         const count: usize = if (recurrent) 5 else 3;
         arguments[count - 1] = sums orelse try m.weights.get("decode.no_sums");
         var values: [5]A = undefined;
-        try m.kernels.call(s, m.blocks[layer], arguments[0..count], values[0..count]);
+        try m.kernels.call(s, closure.*, arguments[0..count], values[0..count]);
         var result: [5]A = @splat(mx.empty);
         for (values[0..count], 0..) |value, index| {
             if (index == count - 1) {
@@ -726,6 +733,12 @@ pub const Model = struct {
                     if (kind == 'M') {
                         try @import("variant_checks.zig").equalBits(&scope, record.a, actual[2]);
                         try @import("variant_checks.zig").equalBits(&scope, record.b, actual[3]);
+                        const final = try m.blockSumsMode(&scope, layer, x, hidden, cache, null, true);
+                        try @import("variant_checks.zig").equalBits(&scope, actual[0], final[0]);
+                        try @import("variant_checks.zig").equalBits(&scope, actual[1], final[1]);
+                        const last: i32 = @intCast(rows - 1);
+                        try @import("variant_checks.zig").equalBits(&scope, try scope.slice(actual[2], 0, last, last + 1), final[2]);
+                        try @import("variant_checks.zig").equalBits(&scope, try scope.slice(actual[3], 0, last, last + 1), final[3]);
                     }
                     if (mx.tensor_units) {
                         const width: i32 = @intCast(rows);
@@ -864,12 +877,16 @@ pub const Model = struct {
         return m.mambaSums(s, base, x, cache, record, null);
     }
     fn mambaSums(m: *Model, s: *mx.Scope, base: []const u8, x: A, cache: Cache, record: *Cache, sums: ?A) !A {
+        return m.mambaSumsMode(s, base, x, cache, record, sums, false);
+    }
+    fn mambaSumsMode(m: *Model, s: *mx.Scope, base: []const u8, x: A, cache: Cache, record: *Cache, sums: ?A, final_state: bool) !A {
         const r = mx.dim(x, 0);
         const p = try m.projectSums(s, base, "in_proj", x, sums);
         const cs = if (cache.a.ctx != null) cache.a else try s.zeros(&.{ 3, 6144 }, mx.bf16);
         const st = if (cache.b.ctx != null) cache.b else try s.zeros(&.{ 64, 64, 128 }, mx.f32t);
-        const out = try m.kernels.run(s, src.nemotron_mamba_step, &.{ p, cs, st, try m.f(base, "conv1d.weight"), try m.f(base, "conv1d.bias_f32"), try m.f(base, "A_log_f32"), try m.f(base, "D_f32"), try m.f(base, "dt_bias_f32"), try m.weights.get("decode.limits"), try s.ints(&.{r}) }, &.{ ti("H", 64), ti("DH", 64), ti("NG", 8), ti("DS", 128), ti("XD", 4096), ti("KC", 4), ti("PROJ", 10304), ti("XOFF", 4096), ti("DTOFF", 10240), ti("MAXR", 16), ti("TGY", 8), ti("SSZ", 524288) }, .{ 32, 64, 64 }, .{ 32, 8, 1 }, &.{ .{ .shape = &.{ r, 4096 } }, .{ .shape = &.{ r, 3, 6144 } }, .{ .shape = &.{ r, 64, 64, 128 }, .dtype = mx.f32t } });
-        record.* = .{ .a = out[1], .b = out[2] };
+        // A zero output stride overwrites one state in row order; prefill commits only the final row.
+        const out = try m.kernels.run(s, src.nemotron_mamba_step, &.{ p, cs, st, try m.f(base, "conv1d.weight"), try m.f(base, "conv1d.bias_f32"), try m.f(base, "A_log_f32"), try m.f(base, "D_f32"), try m.f(base, "dt_bias_f32"), try m.weights.get("decode.limits"), try s.ints(&.{r}) }, &.{ ti("H", 64), ti("DH", 64), ti("NG", 8), ti("DS", 128), ti("XD", 4096), ti("KC", 4), ti("PROJ", 10304), ti("XOFF", 4096), ti("DTOFF", 10240), ti("MAXR", 16), ti("TGY", 8), ti("SSZ", if (final_state) 0 else 524288) }, .{ 32, 64, 64 }, .{ 32, 8, 1 }, &.{ .{ .shape = &.{ r, 4096 } }, .{ .shape = &.{ r, 3, 6144 } }, .{ .shape = &.{ if (final_state) 1 else r, 64, 64, 128 }, .dtype = mx.f32t } });
+        record.* = .{ .a = if (final_state) try s.slice(out[1], 0, r - 1, r) else out[1], .b = out[2] };
         const normed = (try m.kernels.run(s, src.nemotron_group_norm, &.{ out[0], try m.f(base, "norm.weight"), try m.weights.get("decode.eps") }, &.{ ti("XD", 4096), ti("GS", 512) }, .{ 1024, r, 1 }, .{ 128, 1, 1 }, &.{.{ .shape = &.{ r, 4096 } }}))[0];
         return m.project(s, base, "out_proj", normed);
     }

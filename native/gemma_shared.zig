@@ -165,12 +165,12 @@ pub fn forward(m: *gemma.Model, streams: []const Stream) !Pass {
             const q = try layer_s.slice(qkv[0], 0, entry.first, end);
             const k = if (entry.pass.rows == rows) qkv[1] else try layer_s.slice(qkv[1], 1, entry.first, end);
             const v = if (entry.pass.rows == rows) qkv[2] else try layer_s.slice(qkv[2], 1, entry.first, end);
-            const old = entry.state.cache[layer];
-            const keys = if (old.keys.ctx != null) old.attention("keys") else try layer_s.zeros(&.{ 1, g.kv_heads, if (local) 1152 else 1, g.head_dim }, mx.bf16);
-            const values = if (old.values.ctx != null) old.attention("values") else try layer_s.zeros(mx.shape(keys), mx.bf16);
             entry.pass.records[layer] = .{ .keys = try entry.pass.scope.reshape(k, &.{ 1, g.kv_heads, @as(i32, @intCast(entry.pass.rows)), g.head_dim }), .values = try entry.pass.scope.reshape(v, &.{ 1, g.kv_heads, @as(i32, @intCast(entry.pass.rows)), g.head_dim }) };
             entry.pass.record_bytes[layer] = .{ mx.c.mlx_array_nbytes(qkv[1]), mx.c.mlx_array_nbytes(qkv[2]) };
             try gemma.Model.stageCacheLayer(entry.state.cache, &entry.pass, layer);
+            const attended_cache = if (local) entry.state.cache[layer] else entry.pass.staged[layer];
+            const keys = if (attended_cache.keys.ctx != null) attended_cache.attention("keys") else try layer_s.zeros(&.{ 1, g.kv_heads, 1152, g.head_dim }, mx.bf16);
+            const values = if (attended_cache.values.ctx != null) attended_cache.attention("values") else try layer_s.zeros(mx.shape(keys), mx.bf16);
             outputs[j] = try m.attentions[j][@intFromBool(local)].apply(&m.kernels, layer_s, q, keys, values, k, v, attention_rows[j][@intFromBool(local)], 1);
         }
         const attended = if (entries.len == 1) outputs[0] else try layer_s.cat(outputs[0..entries.len], 0);
@@ -202,14 +202,6 @@ pub fn forward(m: *gemma.Model, streams: []const Stream) !Pass {
     }
     p.hidden = try s.own(try mx.retain(normed));
     p.logits = try m.activations.call(s, .softcap, &.{ try m.project(s, normed, try m.weights.triple("model.embed_tokens")), try s.scalar(30) });
-    var writes: [stream_limit * 60]A = undefined;
-    for (entries, 0..) |*entry, i| {
-        for (entry.pass.staged, 0..) |cache, layer| {
-            writes[i * 60 + layer * 2] = cache.keys;
-            writes[i * 60 + layer * 2 + 1] = cache.values;
-        }
-    }
-    p.logits = try gemma.Model.cacheDependency(s, p.logits, writes[0 .. entries.len * 60]);
     const captured = if (tap_count > 0) try s.cat(taps[0..tap_count], -1) else mx.empty;
     for (entries) |*entry| {
         const end = entry.first + @as(i32, @intCast(entry.pass.rows));
