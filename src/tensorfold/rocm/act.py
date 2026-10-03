@@ -34,11 +34,14 @@ def conv_decode(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor) -> t
     return y
 
 
-def rope_decode(x: torch.Tensor, pos: int, rotary: int, theta: float) -> torch.Tensor:
-    """Rotate the first ``rotary`` columns of one position."""
+def rope_decode(x: torch.Tensor, pos: "int | torch.Tensor", rotary: int, theta: float) -> torch.Tensor:
+    """Rotate the first ``rotary`` columns of one position: an int, or an int32 device scalar read at run time."""
 
     y = torch.empty_like(x)
-    _ext().rope_decode(x, y, int(pos), int(rotary), float(theta))
+    if isinstance(pos, torch.Tensor):
+        _ext().rope_decode(x, y, 0, int(rotary), float(theta), pos)
+    else:
+        _ext().rope_decode(x, y, int(pos), int(rotary), float(theta), None)
     return y
 
 
