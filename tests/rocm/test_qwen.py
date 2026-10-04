@@ -6,7 +6,7 @@ RDNA3 part is WMMA and is not this bit reference; the measurement entry uses ``a
 """
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)

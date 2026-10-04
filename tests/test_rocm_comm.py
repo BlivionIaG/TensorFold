@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("torch")
+
 
 def test_dtype_enum_has_bf16_and_fp32():
     from tensorfold.rocm import comm
