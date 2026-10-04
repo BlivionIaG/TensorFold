@@ -146,14 +146,57 @@ __device__ inline void load_piece(const uint32_t* src, uint32_t (&w)[BITS]) {
 
 // Code t of a 32-code piece as FP16. Codes are below 256, exact in BF16 and FP16, so this is code_f16(code).
 template <int BITS>
-__device__ inline __half piece_code(const uint32_t (&w)[BITS], int t) {
+__device__ inline uint32_t piece_bits(const uint32_t (&w)[BITS], int t) {
     const int bit = t * BITS;
     const int word = bit >> 5;
     const int shift = bit & 31;
     uint32_t value = w[word] >> shift;
     if (shift + BITS > 32) value |= w[word + 1] << (32 - shift);
-    return __ushort2half_rn(static_cast<unsigned short>(value & ((1u << BITS) - 1u)));
+    return value & ((1u << BITS) - 1u);
 }
+
+template <int BITS>
+__device__ inline __half piece_code(const uint32_t (&w)[BITS], int t) {
+    return __ushort2half_rn(static_cast<unsigned short>(piece_bits<BITS>(w, t)));
+}
+
+// The activation types of the routed and decode tiles. FP16 is RDNA2's v_dot2_f32_f16; BF16 is gfx11/gfx12's
+// v_dot2_f32_bf16 (the MoE experts on RDNA3). Codes are below 256, exact in both. A type keeps one pair chain and
+// one fold order on every tile, so a row's bits do not depend on the rows beside it.
+struct DotF16 {
+    using elem = __half;
+    using pair = __half2;
+    __device__ static elem zero() { return __float2half(0.f); }
+    __device__ static pair two(elem a, elem b) { return __halves2half2(a, b); }
+    __device__ static float lo(pair p) { return __low2float(p); }
+    __device__ static float hi(pair p) { return __high2float(p); }
+    template <int BITS>
+    __device__ static elem code(const uint32_t (&w)[BITS], int t) { return piece_code<BITS>(w, t); }
+    __device__ static float dot(pair x, pair q, float acc) { return __builtin_amdgcn_fdot2(x, q, acc, false); }
+};
+
+typedef __bf16 bf16x2 __attribute__((ext_vector_type(2)));
+
+struct DotBF16 {
+    using elem = __bf16;
+    using pair = bf16x2;
+    __device__ static elem zero() { return static_cast<__bf16>(0.f); }
+    __device__ static pair two(elem a, elem b) { return pair{a, b}; }
+    __device__ static float lo(pair p) { return static_cast<float>(p.x); }
+    __device__ static float hi(pair p) { return static_cast<float>(p.y); }
+    template <int BITS>
+    __device__ static elem code(const uint32_t (&w)[BITS], int t) {
+        return static_cast<__bf16>(static_cast<float>(piece_bits<BITS>(w, t)));
+    }
+    __device__ static float dot(pair x, pair q, float acc) {
+#if TF_DEVICE_BF16_DOT2
+        return __builtin_amdgcn_fdot2_f32_bf16(x, q, acc, false);
+#else
+        __builtin_trap();
+        return acc;
+#endif
+    }
+};
 
 // One column's chunk of codes in LDS for any width: a lane reads each 32-code piece in one pass. 8-bit keeps
 // the four-words-a-load byte path.
@@ -583,13 +626,13 @@ constexpr int lane_groups(int bits, int rows, int pieces) {
     return per;
 }
 
-template <int BITS, int ROWS, int PIECES>
+template <typename T, int BITS, int ROWS, int PIECES>
 __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affine a) {
     if (!take_item(a, blockIdx.z)) return;
     constexpr int kGroup = 32 * PIECES;
     constexpr int kPer = lane_groups(BITS, ROWS, PIECES);
     constexpr int kRound = kLaneWaves * kPer;
-    __shared__ __half xs[ROWS][kRound * kGroup];
+    __shared__ typename T::elem xs[ROWS][kRound * kGroup];
     __shared__ float part[kRound][ROWS][2][kLaneCols];
     const int lane = threadIdx.x % kLaneCols;
     const int wave = threadIdx.x / kLaneCols;
@@ -598,7 +641,7 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
     const int words_row = a.k * BITS / 32;
     // A lane past N reads the last column and stores nothing, so every lane reaches every barrier.
     const uint32_t* wrow = a.words + static_cast<long long>(col < a.n ? col : a.n - 1) * words_row;
-    const __half* x = static_cast<const __half*>(a.x);
+    const typename T::elem* x = static_cast<const typename T::elem*>(a.x);
     float acc[ROWS];
 #pragma unroll
     for (int r = 0; r < ROWS; ++r) acc[r] = 0.f;
@@ -609,7 +652,7 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
             const int r = e / kSpan;
             const int kk = e - r * kSpan;
             const int gk = g0 * kGroup + kk;
-            xs[r][kk] = (r < a.m && gk < a.k) ? x[x_row(a, r) * a.k + gk] : __float2half(0.f);
+            xs[r][kk] = (r < a.m && gk < a.k) ? x[x_row(a, r) * a.k + gk] : T::zero();
         }
         // 6- and 8-bit lanes request every code word of their groups before the first product. Narrower widths
         // read a piece just before its products: up front was slower for them on the 27B 4-bit decode step.
@@ -643,14 +686,14 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
                 const int xk = local * kGroup + 32 * p;
 #pragma unroll
                 for (int t = 0; t < 32; t += 2) {
-                    const __half2 q = __halves2half2(piece_code<BITS>(w[j][p], t), piece_code<BITS>(w[j][p], t + 1));
+                    const typename T::pair q = T::two(T::template code<BITS>(w[j][p], t),
+                                                      T::template code<BITS>(w[j][p], t + 1));
 #pragma unroll
                     for (int r = 0; r < ROWS; ++r) {
-                        const __half x0 = xs[r][xk + t];
-                        const __half x1 = xs[r][xk + t + 1];
-                        dot[r] = __builtin_amdgcn_fdot2(__halves2half2(x0, x1), q, dot[r], false);
-                        sum[r] += static_cast<float>(x0);
-                        sum[r] += static_cast<float>(x1);
+                        const typename T::pair xp = T::two(xs[r][xk + t], xs[r][xk + t + 1]);
+                        dot[r] = T::dot(xp, q, dot[r]);
+                        sum[r] += T::lo(xp);
+                        sum[r] += T::hi(xp);
                     }
                 }
             }
@@ -696,7 +739,7 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
 constexpr int kRowWaves = 4;
 constexpr int kRowCols = 32;
 
-template <int BITS, int PIECES>
+template <typename T, int BITS, int PIECES>
 __global__ void __launch_bounds__(32 * kRowWaves) affine_dot2_row(Affine a, int lpc) {
     if (!take_item(a, blockIdx.z)) return;
     constexpr int kGroup = 32 * PIECES;
@@ -711,18 +754,19 @@ __global__ void __launch_bounds__(32 * kRowWaves) affine_dot2_row(Affine a, int 
     const int mine = col0 + lane;               // the column this lane folds
     const int groups = a.k / kGroup;
     const long long words_row = static_cast<long long>(a.k) * BITS / 32;
-    const __half2* x = reinterpret_cast<const __half2*>(static_cast<const __half*>(a.x) + x_row(a, 0) * a.k);
+    const typename T::pair* x = reinterpret_cast<const typename T::pair*>(
+        static_cast<const typename T::elem*>(a.x) + x_row(a, 0) * a.k);
     float acc = 0.f;
     for (int g0 = 0; g0 < groups; g0 += lpc) {
         const int g = g0 + j;
         const bool live = g < groups;
-        __half2 xv[PIECES * 16];
+        typename T::pair xv[PIECES * 16];
         float sum = 0.f;
 #pragma unroll
         for (int i = 0; i < PIECES * 16; ++i) {
-            xv[i] = live ? x[g * (kGroup / 2) + i] : __float2half2_rn(0.f);
-            sum += __low2float(xv[i]);
-            sum += __high2float(xv[i]);
+            xv[i] = live ? x[g * (kGroup / 2) + i] : T::two(T::zero(), T::zero());
+            sum += T::lo(xv[i]);
+            sum += T::hi(xv[i]);
         }
         if (slot == 0) sums[wave][j] = sum;
 #pragma unroll 2
@@ -739,8 +783,8 @@ __global__ void __launch_bounds__(32 * kRowWaves) affine_dot2_row(Affine a, int 
                     load_piece<BITS>(wrow + p * BITS, w);
 #pragma unroll
                     for (int t = 0; t < 32; t += 2) {
-                        const __half2 q = __halves2half2(piece_code<BITS>(w, t), piece_code<BITS>(w, t + 1));
-                        dot = __builtin_amdgcn_fdot2(xv[p * 16 + t / 2], q, dot, false);
+                        const typename T::pair q = T::two(T::template code<BITS>(w, t), T::template code<BITS>(w, t + 1));
+                        dot = T::dot(xv[p * 16 + t / 2], q, dot);
                     }
                 }
             }
@@ -775,16 +819,24 @@ inline int row_lanes(int groups) {
     return lpc;
 }
 
-template <int BITS>
-hipError_t launch_row(const Affine& a, int lpc, hipStream_t stream, int items) {
+template <typename T, int BITS>
+hipError_t launch_row_as(const Affine& a, int lpc, hipStream_t stream, int items) {
     const dim3 block(32 * kRowWaves);
     const dim3 grid((a.n + kRowWaves * kRowCols - 1) / (kRowWaves * kRowCols), 1, items);
     switch (a.group) {
-        case 32: affine_dot2_row<BITS, 1><<<grid, block, 0, stream>>>(a, lpc); break;
-        case 64: affine_dot2_row<BITS, 2><<<grid, block, 0, stream>>>(a, lpc); break;
-        default: affine_dot2_row<BITS, 4><<<grid, block, 0, stream>>>(a, lpc); break;
+        case 32: affine_dot2_row<T, BITS, 1><<<grid, block, 0, stream>>>(a, lpc); break;
+        case 64: affine_dot2_row<T, BITS, 2><<<grid, block, 0, stream>>>(a, lpc); break;
+        default: affine_dot2_row<T, BITS, 4><<<grid, block, 0, stream>>>(a, lpc); break;
     }
     return hipGetLastError();
+}
+
+template <int BITS>
+hipError_t launch_row(const Affine& a, int lpc, hipStream_t stream, int items) {
+#if TENSORFOLD_RDNA_WMMA
+    if (!a.fp16) return launch_row_as<DotBF16, BITS>(a, lpc, stream, items);
+#endif
+    return launch_row_as<DotF16, BITS>(a, lpc, stream, items);
 }
 
 // One row on the row tile; false when the shape keeps the column tile.
@@ -804,20 +856,28 @@ bool launch_affine_dot2_row(const Affine& a, hipStream_t stream, int items, hipE
     return true;
 }
 
-template <int BITS, int PIECES>
-hipError_t launch_lanes_rows(const Affine& a, hipStream_t stream, int items = 1) {
+template <typename T, int BITS, int PIECES>
+hipError_t launch_lanes_as(const Affine& a, hipStream_t stream, int items) {
     const dim3 block(kLaneCols * kLaneWaves);
     const dim3 grid((a.n + kLaneCols - 1) / kLaneCols, 1, items);
     if (a.m == 1) {
-        affine_dot2_lanes<BITS, 1, PIECES><<<grid, block, 0, stream>>>(a);
+        affine_dot2_lanes<T, BITS, 1, PIECES><<<grid, block, 0, stream>>>(a);
     } else if (a.m == 2) {
-        affine_dot2_lanes<BITS, 2, PIECES><<<grid, block, 0, stream>>>(a);
+        affine_dot2_lanes<T, BITS, 2, PIECES><<<grid, block, 0, stream>>>(a);
     } else if (a.m <= 4) {
-        affine_dot2_lanes<BITS, 4, PIECES><<<grid, block, 0, stream>>>(a);
+        affine_dot2_lanes<T, BITS, 4, PIECES><<<grid, block, 0, stream>>>(a);
     } else {
-        affine_dot2_lanes<BITS, kLaneRows, PIECES><<<grid, block, 0, stream>>>(a);
+        affine_dot2_lanes<T, BITS, kLaneRows, PIECES><<<grid, block, 0, stream>>>(a);
     }
     return hipGetLastError();
+}
+
+template <int BITS, int PIECES>
+hipError_t launch_lanes_rows(const Affine& a, hipStream_t stream, int items = 1) {
+#if TENSORFOLD_RDNA_WMMA
+    if (!a.fp16) return launch_lanes_as<DotBF16, BITS, PIECES>(a, stream, items);
+#endif
+    return launch_lanes_as<DotF16, BITS, PIECES>(a, stream, items);
 }
 
 template <int BITS>
@@ -855,9 +915,10 @@ constexpr int kBlockK = 32;
 constexpr int kBlockLd = kBlockK + 2;  // 17 words a row: the 16 column threads of a wave read 16 banks
 constexpr int kBlockRows = 64;         // from here the GEMM tile beats the 128-row column tile
 
-template <int BITS>
-__device__ inline void stage_block(__half* xs, __half* ws, const Affine& a, int m0, int n0, int k0, int words_row) {
-    const __half* x = static_cast<const __half*>(a.x);
+template <typename T, int BITS>
+__device__ inline void stage_block(typename T::elem* xs, typename T::elem* ws, const Affine& a, int m0, int n0, int k0,
+                                   int words_row) {
+    const typename T::elem* x = static_cast<const typename T::elem*>(a.x);
     // x: 128 rows x 32 halves, 16 halves (two 16-byte loads) a thread.
     {
         const int r = threadIdx.x >> 1;
@@ -878,27 +939,28 @@ __device__ inline void stage_block(__half* xs, __half* ws, const Affine& a, int 
     if (threadIdx.x < kBlockN) {
         const int c = threadIdx.x;
         const int gc = n0 + c;
-        __half* dst = ws + c * kBlockLd;
+        typename T::elem* dst = ws + c * kBlockLd;
         if (gc < a.n) {
             uint32_t w[BITS];
             load_piece<BITS>(a.words + static_cast<long long>(gc) * words_row + k0 / 32 * BITS, w);
 #pragma unroll
             for (int t = 0; t < 32; t += 2) {
-                *reinterpret_cast<__half2*>(dst + t) = __halves2half2(piece_code<BITS>(w, t), piece_code<BITS>(w, t + 1));
+                *reinterpret_cast<typename T::pair*>(dst + t) =
+                    T::two(T::template code<BITS>(w, t), T::template code<BITS>(w, t + 1));
             }
         } else {
 #pragma unroll
-            for (int t = 0; t < 32; t += 2) *reinterpret_cast<__half2*>(dst + t) = __float2half2_rn(0.f);
+            for (int t = 0; t < 32; t += 2) *reinterpret_cast<typename T::pair*>(dst + t) = T::two(T::zero(), T::zero());
         }
     }
 }
 
-template <int BITS>
+template <typename T, int BITS>
 __global__ void __launch_bounds__(256, 1) affine_dot2_block(Affine a) {
     if (!take_item(a, blockIdx.z)) return;
     if (static_cast<int>(blockIdx.y) * kBlockM >= a.m) return;
-    __shared__ __half xs[2][kBlockM * kBlockLd];
-    __shared__ __half ws[2][kBlockN * kBlockLd];
+    __shared__ typename T::elem xs[2][kBlockM * kBlockLd];
+    __shared__ typename T::elem ws[2][kBlockN * kBlockLd];
     const int tx = threadIdx.x & 15;
     const int ty = threadIdx.x >> 4;
     const int m0 = blockIdx.y * kBlockM;
@@ -919,27 +981,31 @@ __global__ void __launch_bounds__(256, 1) affine_dot2_block(Affine a) {
             dot[i][j] = 0.f;
         }
     }
-    stage_block<BITS>(xs[0], ws[0], a, m0, n0, 0, words_row);
+    stage_block<T, BITS>(xs[0], ws[0], a, m0, n0, 0, words_row);
     __syncthreads();
     for (int s = 0; s < stages; ++s) {
         const int cur = s & 1;
-        if (s + 1 < stages) stage_block<BITS>(xs[cur ^ 1], ws[cur ^ 1], a, m0, n0, (s + 1) * kBlockK, words_row);
-        const __half* xb = xs[cur];
-        const __half* wb = ws[cur];
+        if (s + 1 < stages) stage_block<T, BITS>(xs[cur ^ 1], ws[cur ^ 1], a, m0, n0, (s + 1) * kBlockK, words_row);
+        const typename T::elem* xb = xs[cur];
+        const typename T::elem* wb = ws[cur];
 #pragma unroll 4
         for (int t = 0; t < kBlockK; t += 2) {
-            __half2 xv[8];
-            __half2 wv[8];
+            typename T::pair xv[8];
+            typename T::pair wv[8];
 #pragma unroll
-            for (int i = 0; i < 8; ++i) xv[i] = *reinterpret_cast<const __half2*>(xb + (ty + 16 * i) * kBlockLd + t);
+            for (int i = 0; i < 8; ++i) {
+                xv[i] = *reinterpret_cast<const typename T::pair*>(xb + (ty + 16 * i) * kBlockLd + t);
+            }
 #pragma unroll
-            for (int j = 0; j < 8; ++j) wv[j] = *reinterpret_cast<const __half2*>(wb + (tx + 16 * j) * kBlockLd + t);
+            for (int j = 0; j < 8; ++j) {
+                wv[j] = *reinterpret_cast<const typename T::pair*>(wb + (tx + 16 * j) * kBlockLd + t);
+            }
 #pragma unroll
             for (int i = 0; i < 8; ++i) {
 #pragma unroll
-                for (int j = 0; j < 8; ++j) dot[i][j] = __builtin_amdgcn_fdot2(xv[i], wv[j], dot[i][j], false);
-                sumx[i] += __low2float(xv[i]);
-                sumx[i] += __high2float(xv[i]);
+                for (int j = 0; j < 8; ++j) dot[i][j] = T::dot(xv[i], wv[j], dot[i][j]);
+                sumx[i] += T::lo(xv[i]);
+                sumx[i] += T::hi(xv[i]);
             }
         }
         if (s % per == per - 1) {
@@ -978,7 +1044,13 @@ template <int BITS>
 hipError_t launch_block(const Affine& a, hipStream_t stream, int items = 1) {
     const dim3 block(256);
     const dim3 grid((a.n + kBlockN - 1) / kBlockN, (a.m + kBlockM - 1) / kBlockM, items);
-    affine_dot2_block<BITS><<<grid, block, 0, stream>>>(a);
+#if TENSORFOLD_RDNA_WMMA
+    if (!a.fp16) {
+        affine_dot2_block<DotBF16, BITS><<<grid, block, 0, stream>>>(a);
+        return hipGetLastError();
+    }
+#endif
+    affine_dot2_block<DotF16, BITS><<<grid, block, 0, stream>>>(a);
     return hipGetLastError();
 }
 
@@ -996,7 +1068,8 @@ hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int ite
 }
 
 hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t stream) {
-    if (!a.fp16 || a.route.items == nullptr || a.route.members == nullptr || items < 1 || a.route.x_div < 1) {
+    // BF16 activations are the gfx11 / gfx12 dot2 (the RDNA3 experts); FP16 the RDNA2 one.
+    if ((!a.fp16 && !TENSORFOLD_RDNA_WMMA) || a.route.items == nullptr || a.route.members == nullptr || items < 1 || a.route.x_div < 1) {
         return hipErrorInvalidValue;
     }
     if (a.group != 32 && a.group != 64 && a.group != 128) return hipErrorInvalidValue;
@@ -1024,6 +1097,21 @@ hipError_t launch_affine_dot2_split(const Affine& a, float* partial, int splits,
     dim3 fold((a.n + kFastN - 1) / kFastN, a.m);
     affine_dot2_fold<<<fold, block, 0, stream>>>(partial, a.scale, a.bias, a.out, a.m, a.n, groups);
     return hipGetLastError();
+}
+
+// BF16 x on gfx11 / gfx12, every width but 8 (whose WMMA tiles are tuned): the decode tiles up to 8 rows, the GEMM
+// tile past them. One pair chain and fold order across the three, so a row's bits do not depend on the row count.
+hipError_t launch_affine_dot2_bf16(const Affine& a, hipStream_t stream) {
+#if TENSORFOLD_RDNA_WMMA
+    if (a.fp16 || a.m < 1 || a.n < 1 || a.k % a.group || a.k % 16) return hipErrorInvalidValue;
+    if (a.group != 32 && a.group != 64 && a.group != 128) return hipErrorInvalidValue;
+    if (a.m <= kLaneRows) return launch_affine_dot2_lanes(a, stream);
+    return launch_affine_dot2_block(a, stream);
+#else
+    (void)a;
+    (void)stream;
+    return hipErrorNotSupported;
+#endif
 }
 
 hipError_t launch_affine_dot2(const Affine& a, bool reference, hipStream_t stream) {
@@ -1078,9 +1166,9 @@ int affine_dot2_splits(int m, int n, int k, int group, int mode) {
 
 void affine_routed_launch(const void* x, const void* words, const void* scale, const void* bias, int scale_kind,
                           void* out, const int* items, int count, const int* members, int x_div, int rows, int n,
-                          int k, int bits, int group, void* stream) {
+                          int k, int bits, int group, int fp16, void* stream) {
     tf::rocm::Affine a{x, static_cast<const uint32_t*>(words), {scale, scale_kind}, {bias, scale_kind},
-                       static_cast<float*>(out), rows, n, k, bits, group, 1};
+                       static_cast<float*>(out), rows, n, k, bits, group, fp16};
     a.route.items = items;
     a.route.members = members;
     a.route.x_div = x_div;
