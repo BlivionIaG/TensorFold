@@ -22,6 +22,20 @@ def all_reduce_local(rccl: RCCL, local: torch.Tensor) -> torch.Tensor:
     return out
 
 
+def ordered_sum(rccl: RCCL, local: torch.Tensor) -> torch.Tensor:
+    """The ranks' fp32 shares added in rank order, so a row's sum does not depend on how many rows share the call."""
+
+    if rccl.world <= 2:                     # one add: the same bits in any order
+        return all_reduce_local(rccl, local)
+    local = local.float().contiguous()
+    parts = torch.empty((rccl.world, *local.shape), dtype=local.dtype, device=local.device)
+    rccl.all_gather(local, parts)
+    out = parts[0] + parts[1]
+    for share in parts[2:]:
+        out += share
+    return out
+
+
 def vocab_gather(rccl: RCCL, local_logits: torch.Tensor) -> torch.Tensor:
     """(rows, vocab / world) slices joined to (rows, vocab) in rank order, on every rank."""
 
@@ -42,8 +56,10 @@ def tp_forward_hidden(model: TextModel, tokens: torch.Tensor, caches: list | Non
     if rccl.world <= 1:
         return forward.forward_hidden(model, tokens, caches, linear, pos0, act_dtype,
                                         exact_short=exact_short, at=at)
+    # Past two ranks RCCL's add order follows the message size: prefill sums in rank order, decode keeps RCCL's.
+    reduce = partial(ordered_sum if exact_short else all_reduce_local, rccl)
     return forward.forward_hidden(model, tokens, caches, linear, pos0, act_dtype, exact_short=exact_short,
-                                    reduce=partial(all_reduce_local, rccl), at=at)
+                                    reduce=reduce, at=at)
 
 
-__all__ = ["RCCL", "all_reduce_local", "tp_forward_hidden", "vocab_gather"]
+__all__ = ["RCCL", "all_reduce_local", "ordered_sum", "tp_forward_hidden", "vocab_gather"]
