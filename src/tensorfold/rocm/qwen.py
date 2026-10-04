@@ -15,13 +15,13 @@ _RDNA2 = {f"gfx103{i}" for i in range(7)}
 
 
 def activation_dtype(gfx: str) -> torch.dtype:
-    """FP16 on RDNA2 (the FP16 dot2), BF16 on gfx11 / gfx12 (the BF16 dot2)."""
+    """FP16 on RDNA2, where the affine schedule is the FP16 dot. BF16 on an RDNA3 WMMA part."""
 
-    from tensorfold.rocm.build import BF16_DOT2
+    from tensorfold.rocm.build import WMMA
 
     if gfx in _RDNA2:
         return torch.float16
-    if gfx in BF16_DOT2:
+    if gfx in WMMA:
         return torch.bfloat16
     raise RuntimeError(f"no activation dtype for {gfx}")
 
@@ -64,6 +64,50 @@ class Engine:
             stop = min(start + span, flat.shape[0])
             out[start:stop] = affine_mod.matmul(flat[start:stop], words, scale, bias, **kwargs)
         return out
+
+    def linear_pair(self, x: torch.Tensor, first: Packed, second: Packed):
+        """Gate and up, or k and v: one shared activation load when both widths match."""
+
+        if not isinstance(first, Packed) or not isinstance(second, Packed):
+            return self.linear(x, first), self.linear(x, second)
+        from tensorfold.rocm import affine as affine_mod
+        from tensorfold.rocm.build import WMMA, gfx_name
+
+        if self.dtype is None:
+            self.dtype = activation_dtype(gfx_name())
+        flat = x.reshape(-1, x.shape[-1]).to(dtype=self.dtype).contiguous()
+        same = (first.words.shape[0] == second.words.shape[0] and first.bits == second.bits == 8
+                and first.group == second.group and self.schedule == "wmma" and self.dtype == torch.bfloat16
+                and gfx_name() in WMMA)
+        if not same:
+            return self.linear(flat, first), self.linear(flat, second)
+        self._note(flat, first)
+        self._note(flat, second)
+        left, right = affine_mod.matmul_pair(
+            flat, first.words, first.scale, first.bias, second.words, second.scale, second.bias,
+            bits=first.bits, group=first.group)
+        return left, right
+
+    def linear_group(self, x: torch.Tensor, packeds: tuple):
+        """Several projections of one short activation. None means the caller uses solo or pair launches."""
+
+        if not all(isinstance(p, Packed) for p in packeds):
+            return None
+        from tensorfold.rocm import affine as affine_mod
+        from tensorfold.rocm.build import WMMA, gfx_name
+
+        if self.dtype is None:
+            self.dtype = activation_dtype(gfx_name())
+        flat = x.reshape(-1, x.shape[-1]).to(dtype=self.dtype).contiguous()
+        same = (2 <= len(packeds) <= 4 and flat.shape[0] <= 16 and self.schedule == "wmma"
+                and self.dtype == torch.bfloat16 and gfx_name() in WMMA
+                and all(p.bits == 8 and p.group == packeds[0].group for p in packeds))
+        if not same:
+            return None
+        for packed in packeds:
+            self._note(flat, packed)
+        return affine_mod.matmul_group(
+            flat, tuple((p.words, p.scale, p.bias) for p in packeds), bits=8, group=packeds[0].group)
 
     def _note(self, flat: torch.Tensor, packed: Packed) -> None:
         words = packed.words
