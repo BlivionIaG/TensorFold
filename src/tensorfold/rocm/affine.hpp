@@ -114,6 +114,8 @@ hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream);
 // Every item of a routed plan (a.route set, a.m the most rows an item holds): the decode tile up to 8 rows, the
 // prefill GEMM tile past that. FP16 only.
 hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t stream);
+// BF16 x on a gfx11 / gfx12 build, widths other than 8: the dot2 tiles with v_dot2_f32_bf16.
+hipError_t launch_affine_dot2_bf16(const Affine& a, hipStream_t stream);
 
 }  // namespace rocm
 }  // namespace tf

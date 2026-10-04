@@ -38,4 +38,13 @@ inline constexpr bool kWmma = false;
 #endif
 
 }  // namespace rocm
+
+// v_dot2_f32_bf16 (gfx11 and gfx12 device code): the BF16 dot2 tiles of the RDNA3 experts.
+#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) \
+    || defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1152__) || defined(__gfx1153__) \
+    || defined(__gfx11_generic__) || defined(__gfx1200__) || defined(__gfx1201__) || defined(__gfx12_generic__)
+#define TF_DEVICE_BF16_DOT2 1
+#else
+#define TF_DEVICE_BF16_DOT2 0
+#endif
 }  // namespace tf
