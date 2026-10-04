@@ -7,8 +7,9 @@
 
 // q is made contiguous by the caller. k and v keep the cache strides, including a short prefix of a longer buffer.
 
+// ``tile`` keeps one query on the prefill tile, so a one-row prefill span has the bits of a longer one.
 void causal(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, at::Tensor& out, double scale,
-            int64_t q_pos0) {
+            int64_t q_pos0, bool tile) {
     TORCH_CHECK(q.is_cuda() && q.is_contiguous() && q.scalar_type() == at::kFloat && q.dim() == 4,
                 "q: (batch, heads, qlen, d) fp32");
     const int64_t batch = q.size(0), heads = q.size(1), qlen = q.size(2), d = q.size(3);
@@ -27,7 +28,7 @@ void causal(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, at::T
     at::Tensor score_buf;
     at::Tensor stat_buf;
     at::Tensor partial_buf;
-    if (qlen == 1) {
+    if (qlen == 1 && !tile) {
         int64_t visible = q_pos0 + 1;
         if (visible > k.size(2)) visible = k.size(2);
         int64_t tiles = (visible + 127) / 128;

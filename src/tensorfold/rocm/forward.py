@@ -234,7 +234,7 @@ def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int
 
         attended = causal_at(query, kept_k, kept_v, spec.head_dim ** -0.5, at.i32)
     else:
-        attended = _attend(query, kept_k, kept_v, spec.head_dim ** -0.5, pos0)
+        attended = _attend(query, kept_k, kept_v, spec.head_dim ** -0.5, pos0, exact)
     attended = attended.permute(0, 2, 1, 3).reshape(batch, length, -1)
     gated = attended * torch.sigmoid(gate.reshape(batch, length, -1).float())
     if gated.dtype != x.dtype:
@@ -242,15 +242,16 @@ def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int
     return _project(gated, layer.o, linear), new_cache
 
 
-def _attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_pos0: int) -> torch.Tensor:
-    """Device attention reads the cache dtype directly. The Python path is the spec for the test."""
+def _attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_pos0: int,
+            prefill: bool = False) -> torch.Tensor:
+    """Device attention reads the cache dtype directly; ``prefill`` rows take the prefill kernel at any length."""
 
     # Even head sizes take the device kernels; odd ones the chunked matmul.
     even = q.shape[-1] <= 256 and q.shape[-1] % 2 == 0 and q.shape[1] % k.shape[1] == 0
     if q.is_cuda and k.is_cuda and even:
         from tensorfold.rocm.attention import causal
 
-        return causal(q, k, v, scale, q_pos0)
+        return causal(q, k, v, scale, q_pos0, prefill=prefill)
     return causal_attend(q, k, v, scale, q_pos0)
 
 

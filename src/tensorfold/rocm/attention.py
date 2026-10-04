@@ -28,36 +28,33 @@ def _gfx() -> str:
     return gfx_name()
 
 
-def triton_prefill(gfx: str, batch: int, qlen: int) -> bool:
-    """True where the Triton tile serves this gfx, batch and query length; the HIP tile otherwise."""
+def triton_prefill(gfx: str) -> bool:
+    """True where every prefill row takes the Triton tile; gfx11's WMMA product lets masked values move the last bit."""
 
-    if gfx.startswith("gfx103"):
-        return qlen >= 1024 or (batch >= 8 and qlen >= 384)
-    if gfx.startswith("gfx110"):
-        return qlen >= (64 if batch >= 8 else 128)
-    return False
+    return gfx.startswith("gfx103")
 
 
-def causal(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_pos0: int) -> torch.Tensor:
+def causal(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_pos0: int, *,
+           prefill: bool = False) -> torch.Tensor:
     """``q`` is (batch, heads, qlen, d) fp32. ``k`` and ``v`` are (batch, kv heads, span, d)."""
 
     q = q.contiguous()
-    # One query stays the HIP split over keys. Longer rows take Triton only where it was faster.
+    # Prefill rows take one kernel whatever their span, so a resumed prompt repeats a fresh one's bits.
     mode = os.environ.get("TENSORFOLD_ATTN", "auto")
     gfx = _gfx()
-    if q.shape[2] > 1 and mode != "hip" and (mode == "triton" or triton_prefill(gfx, q.shape[0], q.shape[2])):
-        from tensorfold.rocm.attention_triton import prefill
+    if prefill and mode != "hip" and (mode == "triton" or triton_prefill(gfx)):
+        from tensorfold.rocm.attention_triton import prefill as tiled_prefill
 
         dot = os.environ.get("TENSORFOLD_ATTN_DOT")
         if dot not in ("bf16", "fp16"):
             dot = "bf16" if gfx.startswith("gfx110") else "fp16"
-        tiled = prefill(q, k, v, scale, q_pos0, dot=dot)
+        tiled = tiled_prefill(q, k, v, scale, q_pos0, dot=dot)
         if tiled is not None:
             return tiled
     out = torch.empty_like(q)
     if k.dtype not in _KIND or k.dtype != v.dtype:
         raise ValueError("k and v must be fp16, bf16, or fp32, and they must match")
-    _ext().causal(q, k, v, out, float(scale), int(q_pos0))
+    _ext().causal(q, k, v, out, float(scale), int(q_pos0), bool(prefill))
     return out
 
 

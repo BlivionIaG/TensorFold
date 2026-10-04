@@ -50,6 +50,15 @@ def test_short_rms_matches_the_formula():
     assert torch.allclose(bare, _rms_torch(x, None, 1e-6), rtol=1e-4, atol=1e-4)
 
 
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_rms_rows_do_not_depend_on_the_row_count(dtype):
+    x = torch.randn(1, 600, 16, 128, device="cuda").to(dtype)
+    weight = torch.randn(128, device="cuda")
+    whole = rms_norm(x, weight, 1e-6)
+    for start, stop in ((0, 1), (0, 16), (16, 22), (22, 600)):
+        assert torch.equal(rms_norm(x[:, start:stop].contiguous(), weight, 1e-6), whole[:, start:stop])
+
+
 def test_decode_conv_matches_the_loop():
     g = torch.Generator(device="cuda").manual_seed(4)
     weight = torch.randn(32, 4, generator=g, device="cuda")

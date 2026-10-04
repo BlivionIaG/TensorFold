@@ -104,12 +104,12 @@ def _rms_torch(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torc
 
 
 def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.Tensor:
-    """fp32 RMSNorm. A short device row uses one HIP launch; a long prefill stays on PyTorch."""
+    """fp32 RMSNorm. Device rows take one HIP block each at any row count, so a row's bits do not depend on its span."""
 
     width = x.shape[-1]
     rows = x.numel() // width
     weight_ok = weight is None or weight.numel() == width
-    if x.is_cuda and weight_ok and 1 <= rows <= 256 and 1 <= width <= 8192:
+    if x.is_cuda and weight_ok and rows >= 1 and 1 <= width <= 8192:
         from tensorfold.rocm.act import rms
 
         # The kernel reads and writes the activation dtype and computes in fp32: no cast either side.
