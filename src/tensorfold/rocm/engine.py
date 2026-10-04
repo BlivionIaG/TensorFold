@@ -172,13 +172,17 @@ class QwenEngine:
         self._step: _StepGraph | None = None
 
     @classmethod
-    def load(cls, model_dir: Path | str, *, schedule: str = "auto", keep: int = 8,
+    def load(cls, model_dir: Path | str, *, schedule: str | None = None, keep: int = 8,
              context: int | None = None, byte_budget: int | None = None,
              tp: int = 1, rank: int = 0, master: str = "", master_port: int = 29551,
              p2p: bool | None = None, no_drafts: bool = False,
              mtp_depth: int = _DEFAULT_MTP_DEPTH) -> QwenEngine:
         from tensorfold.rocm.build import gfx_name
 
+        # TENSORFOLD_ROCM_SCHEDULE=wmma runs every projection on the gfx11 WMMA tiles (opt-in; auto is dot2).
+        schedule = schedule or os.environ.get("TENSORFOLD_ROCM_SCHEDULE", "auto")
+        if schedule not in ("auto", "gemv", "wmma"):
+            raise ValueError(f"TENSORFOLD_ROCM_SCHEDULE is auto, gemv or wmma, not {schedule!r}")
         path = Path(model_dir)
         if tp == 1:
             if rank != 0:
