@@ -22,6 +22,7 @@ from tensorfold.rocm.qwen_tp import tp_forward_hidden, vocab_gather
 
 _DEFAULT_EOS = (151645,)
 _DEFAULT_MTP_DEPTH = 4
+_LONG_PROMPT = 8192            # past this many prompt tokens a request hands its freed memory back
 
 
 def _resolve_p2p(gfx: str, p2p: bool | None) -> bool | None:
@@ -173,7 +174,7 @@ class QwenEngine:
 
     @classmethod
     def load(cls, model_dir: Path | str, *, schedule: str | None = None, keep: int = 8,
-             context: int | None = None, byte_budget: int | None = None,
+             context: int | None = None, context_explicit: bool = False, byte_budget: int | None = None,
              tp: int = 1, rank: int = 0, master: str = "", master_port: int = 29551,
              p2p: bool | None = None, no_drafts: bool = False,
              mtp_depth: int = _DEFAULT_MTP_DEPTH) -> QwenEngine:
@@ -190,10 +191,9 @@ class QwenEngine:
             model = load(path)
             from tensorfold.rocm.prefix import message_points
 
-            return cls(model, Kernels(model, schedule=schedule), read_eos(path),
-                       keep=keep, context=context, byte_budget=byte_budget,
-                       points=message_points(path), tp=1, rank=0, no_drafts=no_drafts,
-                       mtp_depth=mtp_depth)
+            engine = cls(model, Kernels(model, schedule=schedule), read_eos(path), keep=keep,
+                         points=message_points(path), tp=1, rank=0, no_drafts=no_drafts, mtp_depth=mtp_depth)
+            return engine._planned(path, context, context_explicit, byte_budget)
 
         from tensorfold.rocm.comm import RCCL
 
@@ -207,10 +207,28 @@ class QwenEngine:
         slice_for_tp(model, rank, tp)
         from tensorfold.rocm.prefix import message_points
 
-        return cls(model, Kernels(model, schedule=schedule), read_eos(path),
-                   keep=keep, context=context, byte_budget=byte_budget,
-                   points=message_points(path), tp=tp, rank=rank, rccl=rccl, no_drafts=no_drafts,
-                   mtp_depth=mtp_depth)
+        engine = cls(model, Kernels(model, schedule=schedule), read_eos(path), keep=keep,
+                     points=message_points(path), tp=tp, rank=rank, rccl=rccl, no_drafts=no_drafts,
+                     mtp_depth=mtp_depth)
+        return engine._planned(path, context, context_explicit, byte_budget)
+
+    def _planned(self, path: Path, context: int | None, explicit: bool, byte_budget: int | None) -> QwenEngine:
+        """Fit the context window and the prompt cache to this GPU's memory (every rank agrees)."""
+
+        from tensorfold.rocm import memory
+
+        config = json.loads((path / "config.json").read_text())
+        native = int((config.get("text_config") or config).get("max_position_embeddings") or 0)
+        self.context_window, self.byte_budget = memory.plan(self, native, context, explicit, byte_budget, self.rccl)
+        return self
+
+    def warm(self) -> None:
+        """One prefill span, nothing stored: every prefill kernel is built and its workspace allocated once."""
+
+        from tensorfold.rocm.qwen_math import SPAN
+
+        vocab = self.model.spec.vocab
+        self._prefill([1 + index % (vocab - 1) for index in range(SPAN)], None, 0, SPAN + 1, store=False)
 
     def _dtype(self) -> torch.dtype:
         if self.kernels.dtype is None:
@@ -443,6 +461,8 @@ class QwenEngine:
             if done:
                 break
         self._step = None                         # the reply's graph holds its caches
+        if len(prompt) > _LONG_PROMPT:
+            torch.cuda.empty_cache()              # a long prefill's freed blocks go back to the runtime's scratch
         return {"cached": cached}
 
     def _decode_step(self, hidden: torch.Tensor, caches: list[dict], position: int, last_token: int, *,
