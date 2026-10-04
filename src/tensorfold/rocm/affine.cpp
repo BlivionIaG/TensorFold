@@ -158,8 +158,9 @@ void affine_routed(const at::Tensor& x, const at::Tensor& words, const at::Tenso
                    int64_t bits, int64_t group) {
     TORCH_CHECK(bits == 2 || bits == 3 || bits == 4 || bits == 5 || bits == 6 || bits == 8, "bits 2/3/4/5/6/8");
     TORCH_CHECK(group == 32 || group == 64 || group == 128, "groups of 32, 64 or 128");
-    TORCH_CHECK(x.is_cuda() && x.is_contiguous() && x.dim() == 2 && x.scalar_type() == at::kHalf,
-                "x: (rows, K) fp16, contiguous: the routed experts are the RDNA2 schedule");
+    TORCH_CHECK(x.is_cuda() && x.is_contiguous() && x.dim() == 2 &&
+                    (x.scalar_type() == at::kHalf || x.scalar_type() == at::kBFloat16),
+                "x: (rows, K) fp16 (RDNA2) or bf16 (gfx11 / gfx12), contiguous");
     const int64_t k = x.size(1);
     TORCH_CHECK(k % group == 0 && (k * bits) % 32 == 0, "K is whole groups and whole packed words");
     TORCH_CHECK(words.is_cuda() && words.is_contiguous() && words.scalar_type() == at::kInt && words.dim() == 3 &&
@@ -188,7 +189,7 @@ void affine_routed(const at::Tensor& x, const at::Tensor& words, const at::Tenso
                          out.data_ptr(), items.data_ptr<int>(), static_cast<int>(items.size(0)),
                          members.data_ptr<int>(), static_cast<int>(x_div), static_cast<int>(rows),
                          static_cast<int>(n), static_cast<int>(k), static_cast<int>(bits), static_cast<int>(group),
-                         stream.stream());
+                         x.scalar_type() == at::kHalf ? 1 : 0, stream.stream());
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

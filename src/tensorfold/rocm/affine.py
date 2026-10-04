@@ -78,7 +78,8 @@ def matmul_routed(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bia
 
     ``words`` (E, N, K * bits / 32) and ``scale`` / ``bias`` (E, N, K / group) stack the experts; an item (expert,
     first, count) multiplies x rows ``members[first:first + count] // x_div`` by its expert. ``rows`` bounds an
-    item's count. Each row's bits are those of the expert's own launch. FP16 activations: the RDNA2 schedule.
+    item's count. A row's bits do not depend on the rows beside it. FP16 activations on RDNA2 (v_dot2_f32_f16), BF16
+    on gfx11 / gfx12 (v_dot2_f32_bf16).
     """
 
     if bits not in BITS or group not in GROUPS:
