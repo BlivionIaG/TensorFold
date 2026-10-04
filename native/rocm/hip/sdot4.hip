@@ -1,5 +1,5 @@
 // gfx1030 packed-int product. Four signed bytes per word, v_dot4_i32_i8 via sdot4.
-// Compile: hipcc --offload-arch=gfx1030 -O3 -cb 3inst -mno-wavefrontsize64 --cuda-device-only
+// Produce: hipcc --offload-arch=gfx1030 -O3 -cb 3inst -mno-wavefrontsize64 --genco, through gfx1030.hip.
 #include <hip/hip_runtime.h>
 
 #if defined(__HIP_DEVICE_COMPILE__) && !defined(__gfx1030__)

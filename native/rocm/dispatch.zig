@@ -1,5 +1,5 @@
-//! gfx1030 ROCm host dispatch. Zig checks the launch. hipcc 7.14.0 compiles the device code.
-//! Metal stays the Mac backend. Family runtimes, MoE, attention, and MTP are not ported here.
+//! gfx1030 ROCm host dispatch. Mac stays Metal. gfx1030 selects this backend.
+//! hipcc 7.14.0 compiles the device code. Family runtimes, MoE, attention, and MTP are not ported here.
 const std = @import("std");
 const produce = @import("produce.zig");
 const graph = @import("graph.zig");
@@ -16,9 +16,13 @@ pub const Residual = struct {
     adds_attention: bool,
 };
 
+pub const Backend = enum { metal, rocm };
+
 pub const Error = error{
     ArchRefused,
     FatbinArchMismatch,
+    FatbinMissing,
+    FatbinRefused,
     Bf16Refused,
     ActivationNotFp16,
     ActivationNotPackedInt,
@@ -49,7 +53,16 @@ pub const Request = struct {
     codebook: []const u8,
     /// Packed ints widened to fp16 and then dotted. That is not a produce path.
     dequant_then_fdot2: bool = false,
+    /// Clang offload bundle bytes. Empty means the fatbin was not built.
+    bundle: []const u8 = "",
 };
+
+/// Mac keeps Metal. Any other host selects the Zig ROCm backend only for gfx1030.
+pub fn select(macos: bool, arch_name: []const u8) Error!Backend {
+    if (macos) return .metal;
+    produce.acceptArch(arch_name) catch return error.ArchRefused;
+    return .rocm;
+}
 
 pub fn prepare(req: Request) Error!Launch {
     produce.acceptArch(req.arch) catch return error.ArchRefused;
@@ -60,29 +73,35 @@ pub fn prepare(req: Request) Error!Launch {
     if (req.schedule == .fdot2_bf16 or req.activation == .bf16) return error.Bf16Refused;
     if (req.dequant_then_fdot2) return error.DequantThenFdot2Refused;
     if (!std.mem.eql(u8, req.codebook, produce.codebook)) return error.CodebookRefused;
-    switch (req.op) {
-        .w4a16 => {
+    const launch: Launch = switch (req.op) {
+        .w4a16 => blk: {
             if (req.activation != .fp16) return error.ActivationNotFp16;
             if (req.schedule != .fdot2_f16) return error.ScheduleRefused;
-            return .{
+            break :blk .{
                 .symbol = "tf_gfx1030_w4a16_fdot2",
-                .fatbin = "build/rocm/fatbin/gfx1030/w4a16_fdot2.hipfb",
+                .fatbin = produce.fatbin_rel,
                 .schedule = .fdot2_f16,
             };
         },
-        .packed_int => {
+        .packed_int => blk: {
             if (req.activation != .i8) return error.ActivationNotPackedInt;
             if (req.schedule != .sdot4) return error.PackedIntNotSdot4;
-            return .{
+            break :blk .{
                 .symbol = "tf_gfx1030_sdot4",
-                .fatbin = "build/rocm/fatbin/gfx1030/sdot4.hipfb",
+                .fatbin = produce.fatbin_rel,
                 .schedule = .sdot4,
             };
         },
-    }
+    };
+    if (req.bundle.len == 0) return error.FatbinMissing;
+    produce.acceptBundle(req.bundle) catch |err| switch (err) {
+        error.ForeignArch => return error.ArchRefused,
+        else => return error.FatbinRefused,
+    };
+    return launch;
 }
 
-pub fn bindW4A16(m: i32, n: i32, k: i32, activation: DType, arch_name: []const u8) Error!Launch {
+pub fn bindW4A16(m: i32, n: i32, k: i32, activation: DType, arch_name: []const u8, bundle: []const u8) Error!Launch {
     if (m < 1 or n < 1 or k < 2 or (k & 1) != 0) return error.ShapeRefused;
     return prepare(.{
         .arch = arch_name,
@@ -91,10 +110,11 @@ pub fn bindW4A16(m: i32, n: i32, k: i32, activation: DType, arch_name: []const u
         .activation = activation,
         .schedule = .fdot2_f16,
         .codebook = produce.codebook,
+        .bundle = bundle,
     });
 }
 
-pub fn bindPackedInt(arch_name: []const u8) Error!Launch {
+pub fn bindPackedInt(arch_name: []const u8, bundle: []const u8) Error!Launch {
     return prepare(.{
         .arch = arch_name,
         .fatbin_arch = arch_name,
@@ -102,6 +122,7 @@ pub fn bindPackedInt(arch_name: []const u8) Error!Launch {
         .activation = .i8,
         .schedule = .sdot4,
         .codebook = produce.codebook,
+        .bundle = bundle,
     });
 }
 
@@ -125,16 +146,29 @@ fn expectAbsent(src: []const u8, needle: []const u8) !void {
     }
 }
 
+test "macOS stays Metal and gfx1030 selects ROCm only with one fatbin" {
+    try std.testing.expectEqual(Backend.metal, try select(true, "gfx1030"));
+    try std.testing.expectEqual(Backend.metal, try select(true, "gfx900"));
+    try std.testing.expectEqual(Backend.rocm, try select(false, "gfx1030"));
+    try std.testing.expectError(error.ArchRefused, select(false, "gfx900"));
+    try std.testing.expectError(error.ArchRefused, select(false, "gfx906"));
+    try std.testing.expectError(error.ArchRefused, select(false, "gfx1013"));
+}
+
 test "fp16 W4A16 launches fdot2; bf16, scalar gemv, and WMMA do not" {
-    const launch = try bindW4A16(2, 32, 64, .fp16, "gfx1030");
+    var storage: [256]u8 = undefined;
+    const bundle = try produce.gfx1030Bundle(&storage);
+    const launch = try bindW4A16(2, 32, 64, .fp16, "gfx1030", bundle);
     try std.testing.expectEqualStrings("tf_gfx1030_w4a16_fdot2", launch.symbol);
-    try std.testing.expectEqualStrings("build/rocm/fatbin/gfx1030/w4a16_fdot2.hipfb", launch.fatbin);
-    try std.testing.expectError(error.Bf16Refused, bindW4A16(2, 32, 64, .bf16, "gfx1030"));
-    try std.testing.expectError(error.ActivationNotFp16, bindW4A16(2, 32, 64, .fp32, "gfx1030"));
-    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx900"));
-    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx906"));
-    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx1013"));
-    try std.testing.expectError(error.ShapeRefused, bindW4A16(1, 8, 31, .fp16, "gfx1030"));
+    try std.testing.expectEqualStrings(produce.fatbin_rel, launch.fatbin);
+    try std.testing.expectError(error.FatbinMissing, bindW4A16(2, 32, 64, .fp16, "gfx1030", ""));
+    try std.testing.expectError(error.FatbinRefused, bindW4A16(2, 32, 64, .fp16, "gfx1030", &[_]u8{ 0x7f, 'E', 'L', 'F' }));
+    try std.testing.expectError(error.Bf16Refused, bindW4A16(2, 32, 64, .bf16, "gfx1030", bundle));
+    try std.testing.expectError(error.ActivationNotFp16, bindW4A16(2, 32, 64, .fp32, "gfx1030", bundle));
+    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx900", bundle));
+    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx906", bundle));
+    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx1013", bundle));
+    try std.testing.expectError(error.ShapeRefused, bindW4A16(1, 8, 31, .fp16, "gfx1030", bundle));
     try std.testing.expectError(error.ScalarGemvRefused, prepare(.{
         .arch = "gfx1030",
         .fatbin_arch = "gfx1030",
@@ -171,7 +205,10 @@ test "fp16 W4A16 launches fdot2; bf16, scalar gemv, and WMMA do not" {
 }
 
 test "packed int is sdot4, not a widened fdot2" {
-    const launch = try bindPackedInt("gfx1030");
+    var storage: [256]u8 = undefined;
+    const bundle = try produce.gfx1030Bundle(&storage);
+    const launch = try bindPackedInt("gfx1030", bundle);
+    try std.testing.expectEqualStrings(produce.fatbin_rel, launch.fatbin);
     try std.testing.expectEqualStrings("tf_gfx1030_sdot4", launch.symbol);
     try std.testing.expect(launch.schedule == .sdot4);
     try std.testing.expectError(error.DequantThenFdot2Refused, prepare(.{

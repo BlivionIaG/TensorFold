@@ -534,18 +534,24 @@ See [`AGENTS.md`](AGENTS.md) for native agent instructions.
 
 ## ROCm dispatch (gfx1030)
 
-The Mac executable stays Metal through MLX-C. `native/rocm` is a separate host
-dispatch for gfx1030 only. Zig checks the launch. Device code is compiled by
-ROCm 7.14.0 `hipcc`, not by Zig's LLVM:
+The Mac executable stays Metal through MLX-C. On any other host, gfx1030 selects
+the Zig ROCm backend in `native/rocm`. Other architectures are refused. Zig
+checks the launch. Device code is compiled by ROCm 7.14.0 `hipcc`, not by Zig's
+LLVM:
 
 ```sh
 .zig-toolchain/zig build test-rocm-dispatch -Doptimize=safe -j1
 ```
 
-The produce line is `hipcc --offload-arch=gfx1030 -O3 -cb 3inst`, wave32, one
-fatbin under `build/rocm/fatbin/gfx1030/`. `-ffp-contract=off` is not passed.
-The fp16 W4A16 product emits `v_dot2_f32_f16` explicitly. Packed int is `sdot4`.
-bf16, WMMA, and a scalar GEMV fallback are refused before launch.
+The produce line is `hipcc --offload-arch=gfx1030 -O3 -cb 3inst`, wave32
+(`-mno-wavefrontsize64`), and `hipcc --genco` is the step that would write one
+fatbin at `build/rocm/fatbin/gfx1030/tensorfold.hipfb`. ROCm 7.14.0 hipcc
+rejects `-cb` (`unknown argument: '-cb'`), so that locked line does not write
+the fatbin. `--cuda-device-only` is not a fatbin and is refused.
+`-ffp-contract=off` is not passed. The fp16 W4A16 product emits `v_dot2_f32_f16`
+explicitly. Packed int is `sdot4`. bf16, WMMA, and a scalar GEMV fallback are
+refused before launch. A ROCm launch also refuses an empty or foreign bundle,
+so the backend cannot be selected onto a module that was never built.
 
 This step does not run a model. Gemma's fused GDN stays on Metal. Qwen GDN plus
 QSA, GLM KDA, and DeepSeek CSA2 are separate heaps and are not ported. Leftover
