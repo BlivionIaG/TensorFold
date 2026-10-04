@@ -10,8 +10,8 @@ import torch
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.affine import matmul, matmul_group, matmul_pair  # noqa: E402
-from tensorfold.rocm.build import WMMA, gfx_name  # noqa: E402
+from tensorfold.rocm.affine import matmul  # noqa: E402
+from tensorfold.rocm.build import BF16_DOT2, gfx_name  # noqa: E402
 
 ROWS = [1, 2, 7, 15, 16, 17, 31, 32]
 
@@ -83,11 +83,6 @@ def _reference(x, codes, scale, bias, group):
     return torch.from_numpy(np.ascontiguousarray(acc))
 
 
-def _skip_wmma(schedule):
-    if schedule == "wmma" and gfx_name() not in WMMA:
-        pytest.skip("this RDNA part has no WMMA; auto stays on the GEMV")
-
-
 def test_visible_device_when_pinned():
     import os
     want = os.environ.get("EXPECT_BUS")
@@ -115,9 +110,8 @@ def test_gemv_matches_the_formula(bits, group, k):
     assert torch.equal(got.cpu(), _reference(x, codes, scale, bias, group))
 
 
-@pytest.mark.parametrize("schedule", ["auto", "gemv", "wmma"])
+@pytest.mark.parametrize("schedule", ["auto", "gemv"])
 def test_rows_do_not_depend_on_row_count(schedule):
-    _skip_wmma(schedule)
     _, words, scale, bias = _pack(48, 192, 8, 64, 3)
     words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
     g = torch.Generator(device="cuda").manual_seed(7)
@@ -128,17 +122,12 @@ def test_rows_do_not_depend_on_row_count(schedule):
         assert torch.equal(matmul(x[:m], words, scale, bias, bits=8, group=64, schedule=schedule, f32=True), alone[:m])
     perm = torch.randperm(max(ROWS), device="cuda")
     assert torch.equal(matmul(x[perm], words, scale, bias, bits=8, group=64, schedule=schedule, f32=True), alone[perm])
-    if schedule == "auto" and gfx_name() in WMMA:
-        wmma = torch.cat([matmul(x[r:r + 1], words, scale, bias, bits=8, group=64, schedule="wmma", f32=True)
-                          for r in range(max(ROWS))])
-        assert torch.equal(alone, wmma)
 
 
-@pytest.mark.parametrize("schedule", ["auto", "gemv", "wmma"])
+@pytest.mark.parametrize("schedule", ["auto", "gemv"])
 def test_word_spanning_rows_do_not_depend_on_row_count(schedule):
     """3-bit codes cross the 32-bit word. The same row in a wide launch matches the row alone."""
 
-    _skip_wmma(schedule)
     _, words, scale, bias = _pack(32, 96, 3, 32, 9)
     words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
     x = torch.randn((17, 96), device="cuda", dtype=torch.bfloat16)
@@ -147,18 +136,16 @@ def test_word_spanning_rows_do_not_depend_on_row_count(schedule):
 
 
 def test_fp16_is_the_rdna2_schedule():
-    """A WMMA part keeps one BF16 formula. RDNA2 FP16 auto matches its gemv and does not depend on M."""
+    """gfx11 / gfx12 refuse FP16 activations. RDNA2 FP16 auto matches its gemv and does not depend on M."""
 
     _, words, scale, bias = _pack(48, 192, 8, 64, 11)
     words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
     g = torch.Generator(device="cuda").manual_seed(11)
     x = torch.randn((max(ROWS), 192), generator=g, device="cuda", dtype=torch.float16)
-    if gfx_name() in WMMA:
+    if gfx_name() in BF16_DOT2:
         with pytest.raises(ValueError, match="RDNA2"):
             matmul(x[:1], words, scale, bias, bits=8, group=64)
         return
-    with pytest.raises(RuntimeError):
-        matmul(x[:1], words, scale, bias, bits=8, group=64, schedule="wmma", f32=True)
     stored = matmul(x[:1], words, scale, bias, bits=8, group=64)
     assert stored.dtype == torch.float16
     alone = torch.cat([matmul(x[r:r + 1], words, scale, bias, bits=8, group=64, schedule="auto", f32=True)
@@ -173,60 +160,10 @@ def test_fp16_is_the_rdna2_schedule():
     assert torch.equal(matmul(x[perm], words, scale, bias, bits=8, group=64, f32=True), alone[perm])
 
 
-def test_pair_matches_two_wmma_launches():
-    if gfx_name() not in WMMA:
-        pytest.skip("the paired matmul is the WMMA schedule")
-    _, words_a, scale_a, bias_a = _pack(64, 256, 8, 64, 21)
-    _, words_b, scale_b, bias_b = _pack(64, 256, 8, 64, 22)
-    tensors = [t.cuda() for t in (words_a, scale_a, bias_a, words_b, scale_b, bias_b)]
-    words_a, scale_a, bias_a, words_b, scale_b, bias_b = tensors
-    x = torch.randn(17, 256, device="cuda", dtype=torch.bfloat16)
-    for rows in (1, 8, 17):
-        got_a, got_b = matmul_pair(x[:rows], words_a, scale_a, bias_a, words_b, scale_b, bias_b, bits=8, group=64,
-                                   f32=True)
-        one_a = matmul(x[:rows], words_a, scale_a, bias_a, bits=8, group=64, schedule="wmma", f32=True)
-        one_b = matmul(x[:rows], words_b, scale_b, bias_b, bits=8, group=64, schedule="wmma", f32=True)
-        assert torch.equal(got_a, one_a)
-        assert torch.equal(got_b, one_b)
-
-
-@pytest.mark.parametrize("group,k", [(32, 128), (64, 256), (128, 256)])
-def test_group_matches_solo_wmma(group, k):
-    """Columns of different widths in one launch match the same columns launched alone."""
-
-    if gfx_name() not in WMMA:
-        pytest.skip("the grouped matmul is the WMMA schedule")
-    packs = []
-    for n, seed in ((40, 31), (16, 32), (64, 33)):
-        packs.append(_pack(n, k, 8, group, seed))
-    tensors = []
-    for _, words, scale, bias in packs:
-        tensors.append((words.cuda(), scale.cuda(), bias.cuda()))
-    x = torch.randn(17, k, device="cuda", dtype=torch.bfloat16)
-    for rows in (1, 8, 17):
-        got = matmul_group(x[:rows], tensors, bits=8, group=group, f32=True)
-        for (words, scale, bias), part in zip(tensors, got):
-            solo = matmul(x[:rows], words, scale, bias, bits=8, group=group, schedule="wmma", f32=True)
-            assert torch.equal(part, solo)
-
-
-def test_wmma_partial_tile_matches_one_row():
-    """The last 16-column tile is short. Its row still matches that row launched alone."""
-
-    if gfx_name() not in WMMA:
-        pytest.skip("partial-tile WMMA is the gfx11 schedule")
-    _, words, scale, bias = _pack(40, 128, 8, 64, 5)
-    words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
-    x = torch.randn(17, 128, device="cuda", dtype=torch.bfloat16)
-    alone = matmul(x[:1], words, scale, bias, bits=8, group=64, schedule="wmma", f32=True)
-    wide = matmul(x, words, scale, bias, bits=8, group=64, schedule="wmma", f32=True)
-    assert torch.equal(wide[:1], alone)
-
-
 def test_fp16_split_k_matches_one_launch():
     """Group-boundary K splits fold in group order, so the bits match one launch, including M=1 against a wide grid."""
 
-    if gfx_name() in WMMA:
+    if gfx_name() in BF16_DOT2:
         pytest.skip("FP16 activations are the RDNA2 schedule")
     specs = (
         (1, 512, 256, 8, 64, 3),
@@ -253,7 +190,7 @@ def test_fp16_split_k_matches_one_launch():
 
 
 def test_fp16_word_spanning_rows_do_not_depend_on_row_count():
-    if gfx_name() in WMMA:
+    if gfx_name() in BF16_DOT2:
         pytest.skip("FP16 activations are the RDNA2 schedule")
     _, words, scale, bias = _pack(32, 96, 3, 32, 13)
     words, scale, bias = words.cuda(), scale.cuda(), bias.cuda()
@@ -265,8 +202,8 @@ def test_fp16_word_spanning_rows_do_not_depend_on_row_count():
 def _schedules():
     """Every schedule this part runs, with its activation dtype."""
 
-    if gfx_name() in WMMA:
-        return [(schedule, torch.bfloat16) for schedule in ("auto", "gemv", "wmma", "decode")]
+    if gfx_name() in BF16_DOT2:
+        return [(schedule, torch.bfloat16) for schedule in ("auto", "gemv")]
     return [("auto", torch.float16), ("gemv", torch.bfloat16)]
 
 
@@ -279,12 +216,8 @@ def test_bf16_and_fp16_tables_match_the_same_values_in_fp32(table, bits, group, 
     words, scale, bias = words.cuda(), scale.to(table).cuda(), bias.to(table).cuda()
     wide_scale, wide_bias = scale.float(), bias.float()
     for schedule, act in _schedules():
-        if schedule == "decode" and bits != 8:
-            continue
         x = torch.randn(17, k, device="cuda", dtype=act)
         for rows in (1, 8, 17):
-            if schedule == "decode" and rows > 16:
-                continue
             splits = (None, True) if act == torch.float16 else (None,)
             for split in splits:
                 kw = dict(bits=bits, group=group, schedule=schedule, f32=True, dot2_split=split)
@@ -292,30 +225,12 @@ def test_bf16_and_fp16_tables_match_the_same_values_in_fp32(table, bits, group, 
                 assert torch.equal(got, matmul(x[:rows], words, wide_scale, wide_bias, **kw)), (schedule, rows, split)
 
 
-def test_pair_and_group_read_bf16_tables():
-    """Paired and grouped launches read bf16 tables too. Sides of mixed types widen to fp32 together."""
-
-    if gfx_name() not in WMMA:
-        pytest.skip("the paired and grouped matmuls are the WMMA schedule")
-    packs = [_pack(n, 256, 8, 64, seed) for n, seed in ((64, 51), (64, 52), (16, 53))]
-    half = [(w.cuda(), s.to(torch.bfloat16).cuda(), b.to(torch.bfloat16).cuda()) for _, w, s, b in packs]
-    wide = [(w, s.float(), b.float()) for w, s, b in half]
-    x = torch.randn(9, 256, device="cuda", dtype=torch.bfloat16)
-    got = matmul_pair(x, *half[0], *half[1], bits=8, group=64, f32=True)
-    want = matmul_pair(x, *wide[0], *wide[1], bits=8, group=64, f32=True)
-    assert all(torch.equal(a, b) for a, b in zip(got, want))
-    want = matmul_group(x, wide, bits=8, group=64, f32=True)
-    for sides in (half, [half[0], wide[1], half[2]]):
-        got = matmul_group(x, sides, bits=8, group=64, f32=True)
-        assert all(torch.equal(a, b) for a, b in zip(got, want))
-
-
 @pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
 @pytest.mark.parametrize("group", [32, 64, 128])
 def test_fp16_decode_tile_matches_the_one_thread_kernel(bits, group):
     """The 1-8 row decode tile gives the one-thread kernel's bits, a tail round of fewer than 8 groups included."""
 
-    if gfx_name() in WMMA:
+    if gfx_name() in BF16_DOT2:
         pytest.skip("FP16 activations are the RDNA2 schedule")
     k = group * 12
     for n in (77, 300):
@@ -337,7 +252,7 @@ def test_fp16_one_row_tile_matches_the_one_thread_kernel(bits, group, groups):
     """One row reads a weight row's groups side by side: every lane mapping and tail round keeps the bits, and the
     fp16 output is the fp32 one rounded."""
 
-    if gfx_name() in WMMA:
+    if gfx_name() in BF16_DOT2:
         pytest.skip("FP16 activations are the RDNA2 schedule")
     k = group * groups
     n = 157
@@ -356,7 +271,7 @@ def test_fp16_one_row_tile_matches_the_one_thread_kernel(bits, group, groups):
 def test_fp16_prefill_tile_matches_the_one_thread_kernel(bits, group):
     """The 128-row prefill tile reads every width and gives the one-thread kernel's bits at any row count."""
 
-    if gfx_name() in WMMA:
+    if gfx_name() in BF16_DOT2:
         pytest.skip("FP16 activations are the RDNA2 schedule")
     k = group * 6
     _, words, scale, bias = _pack(70, k, bits, group, bits * 100 + group)
@@ -372,7 +287,7 @@ def test_fp16_prefill_tile_matches_the_one_thread_kernel(bits, group):
 def test_fp16_gemm_tile_matches_the_one_thread_kernel(bits, group):
     """From 64 rows the 128x128 GEMM tile runs: ragged rows and columns keep the one-thread kernel's bits."""
 
-    if gfx_name() in WMMA:
+    if gfx_name() in BF16_DOT2:
         pytest.skip("FP16 activations are the RDNA2 schedule")
     k = group * 5
     _, words, scale, bias = _pack(200, k, bits, group, bits * 10 + group)
@@ -384,13 +299,12 @@ def test_fp16_gemm_tile_matches_the_one_thread_kernel(bits, group):
     assert torch.equal(matmul(x[5:6], words, scale, bias, bits=bits, group=group, f32=True), want[5:6])
 
 
-@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6])
+@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
 @pytest.mark.parametrize("group", [32, 64, 128])
 def test_bf16_dot2_rows_keep_their_bits_on_gfx11(bits, group):
-    """gfx11 runs widths other than 8 on the BF16 dot2 tiles: a row's bits are the same alone, in a short batch and in
-    a prefill tile, and match the GEMV formula."""
+    """gfx11 BF16 dot2 tiles: a row's bits are the same alone, in a short batch and in a prefill tile."""
 
-    if gfx_name() not in WMMA:
+    if gfx_name() not in BF16_DOT2:
         pytest.skip("the BF16 dot2 tiles are the gfx11 / gfx12 schedule")
     k = group * 10
     codes, words, scale, bias = _pack(150, k, bits, group, bits * 31 + group)
