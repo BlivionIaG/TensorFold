@@ -19,7 +19,7 @@ from tensorfold.rocm import (
 )
 from tensorfold.rocm.qwen import FullLayer, LinearLayer, TextModel, slice_for_tp  # noqa: E402
 from tensorfold.rocm.qwen_math import Packed, Spec  # noqa: E402
-from tensorfold.rocm.qwen_tp import all_reduce_local, tp_forward_hidden, vocab_gather  # noqa: E402
+from tensorfold.rocm.qwen_tp import all_reduce_local, ordered_sum, tp_forward_hidden, vocab_gather  # noqa: E402
 
 BITS, GROUP = 8, 32
 
@@ -204,3 +204,24 @@ def test_one_rank_keeps_its_tensors():
     tensor = torch.ones(2)
     assert all_reduce_local(One(), tensor) is tensor
     assert vocab_gather(One(), tensor) is tensor
+
+
+def test_past_two_ranks_a_rows_sum_is_its_own():
+    """Four ranks: the shares are added in rank order, so a row sums alike in a call of one row or of many."""
+
+    g = torch.Generator().manual_seed(9)
+    shares = torch.randn(4, 1, 7, 33, generator=g) * torch.logspace(-6, 6, 33)
+
+    class Four:
+        world = 4
+
+        def __init__(self, rows):
+            self.rows = rows
+
+        def all_gather(self, send, recv):
+            recv.copy_(shares[:, :, self.rows])
+
+    whole = ordered_sum(Four(slice(0, 7)), shares[0])
+    assert torch.equal(whole, ((shares[0] + shares[1]) + shares[2]) + shares[3])
+    for row in range(7):
+        assert torch.equal(ordered_sum(Four(slice(row, row + 1)), shares[0][:, row:row + 1]), whole[:, row:row + 1])
