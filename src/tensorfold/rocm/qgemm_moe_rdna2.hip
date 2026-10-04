@@ -1,14 +1,6 @@
-// Grouped-expert W4A16 GPTQ for RDNA2 (gfx1030), on TensorFold's MoE plan.
-// Ported from vLLM-rdna (opengfx1030/vllm-rdna, branch rdna_extras)
-// csrc/rocm/moe_q_gemm_rdna2.cu, re-shaped to TensorFold's contract.
+// Grouped-expert W4A16 for gfx1030 on TensorFold's plan, ported from vLLM-rdna moe_q_gemm_rdna2.cu; no atomics.
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-//
-// TensorFold's plan gives one item per expert run: (expert, first, count) over a
-// members list of pair rows. Each item owns distinct output rows, so unlike the
-// vLLM kernel this writes them directly: no atomics, no K-split, and the pair's
-// activation folds into the epilogue. Activations are bf16 (TensorFold's MoE
-// dtype) and widen exactly to fp16 for the v_dot2 dot.
 
 #include "qgemm.hpp"
 #include "qgemm_common.hpp"
@@ -43,8 +35,7 @@ __device__ __forceinline__ float swiglu_bf(float g, float u, float limit) {
     return bf16_rn(gv / (1.0f + expf(-gv))) * uv;
 }
 
-// mats is 2 for a fused gate+up (SwiGLU) and 1 otherwise. EPI 0 writes fp32 rows
-// (down), 1 bf16 relu^2, 2 bf16 SwiGLU.
+// mats 2 is a fused gate+up; EPI 0 fp32 rows (down), 1 bf16 relu^2, 2 bf16 SwiGLU.
 template <int MATS, int EPI, int BLOCK_M>
 __global__ __launch_bounds__(kThreads) void moe_gptq_kernel(
     const hip_bfloat16* __restrict__ a, void* __restrict__ out, const uint32_t* __restrict__ qweight,
@@ -97,8 +88,7 @@ __global__ __launch_bounds__(kThreads) void moe_gptq_kernel(
             }
             __syncthreads();
 
-            // An inactive thread keeps taking part in the barriers the K loop runs, or the
-            // survivors would sync against a partial block; it just skips the work.
+            // An inactive thread still reaches every barrier of the K loop.
             if (!active) {
                 __syncthreads();
                 continue;

@@ -1,11 +1,6 @@
-// W4A16 GPTQ decode kernel for RDNA2 (gfx1030). Ported from vLLM-rdna
-// (opengfx1030/vllm-rdna, branch rdna_extras) csrc/rocm/q_gemm_rdna2.cu.
+// W4A16 GPTQ decode kernel for gfx1030, ported from vLLM-rdna (opengfx1030/vllm-rdna) q_gemm_rdna2.cu.
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-//
-// One M_COUNT x 4-column tile per thread group over a K-split, accumulated into a
-// zeroed fp16 output with the packed CAS (qgemm_common.hpp). M_COUNT in {1,2,4,8}
-// covers M in [1, 15]. fp16 dot only: gfx1030 has no bf16 dot and no WMMA.
 
 #include "qgemm.hpp"
 #include "qgemm_common.hpp"
@@ -17,9 +12,7 @@
 namespace tf {
 namespace rocm {
 
-// BLOCK_KN_SIZE == THREADS_X, so each thread stages exactly one K element per M row
-// and computes 4 N columns. 256 K per block halves gridDim.z (and the atomic count
-// per output) against the exllama default of 128; 512 regressed the fp16 decode.
+// A thread stages one K element a row and computes 4 columns, 256 K a block.
 constexpr int kBlockKn = 256;
 constexpr int kThreads = 256;
 
@@ -36,8 +29,7 @@ __global__ void __launch_bounds__(kThreads) gptq_decode_kernel(
     const int end_k = min(offset_k + kBlockKn, size_k);
     const int n = offset_n + t * 4;
 
-    // The PAD breaks the 256-element / 512-byte alignment that would collide on one LDS
-    // bank when a thread reads block_a[0..M_COUNT-1][k] at the same k, different m.
+    // PAD keeps rows of block_a off one LDS bank.
     constexpr int kLdsPad = 8;
     __shared__ __half block_a[M_COUNT][kBlockKn + kLdsPad];
 
@@ -84,8 +76,7 @@ __global__ void __launch_bounds__(kThreads) gptq_decode_kernel(
             refresh_group<4>(group, n, qzeros, scales, size_n, zero_offset, z, y);
         }
 
-        // All four weight words are issued up front so their latency overlaps the
-        // dequant + FMA of earlier iterations.
+        // The four weight words are issued up front to overlap the earlier dequant.
         int4 b_w[4];
 #pragma unroll
         for (int j = 0; j < 4; ++j) b_w[j] = *reinterpret_cast<const int4*>(b_ptr + j * size_n);

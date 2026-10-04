@@ -1,9 +1,4 @@
-"""Host-side prompt cache and the stop rule for one ROCm request.
-
-The cache is the CUDA ``PrefixCache``: a hit must leave at least one token to prefill,
-and an entry that a later prompt resumed from is evicted last. ``entry_end`` is one
-token before the prompt ends, because a following turn renders a different newline there.
-"""
+"""Host-side prompt cache and the stop rule for one ROCm request."""
 
 from __future__ import annotations
 
@@ -55,11 +50,7 @@ def message_points(model_dir) -> Callable[[Sequence[int]], list[int]] | None:
 
 def decode_ids(prompt: Sequence[int], step: Callable[[Sequence[int]], int], max_tokens: int, eos: Sequence[int],
                *, stop_eos: bool = True, on_tokens: Callable[[list[int]], bool | None] | None = None) -> list[int]:
-    """Sample until ``max_tokens``, an end token, or ``on_tokens`` asking to stop.
-
-    ``step`` sees the prompt plus tokens already produced and returns the next id. Requests of
-    different lengths each call this with their own step, so a pad token never enters a state.
-    """
+    """Sample until ``max_tokens``, an end token, or ``on_tokens`` asking to stop."""
 
     if max_tokens < 1:
         raise ValueError("max_tokens must be positive")

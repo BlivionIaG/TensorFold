@@ -1,10 +1,4 @@
-// Flash Attention 2 prefill. The sequence is not the tile: one block owns 16 query rows and
-// walks the whole key range in order, 64 keys at a time (32 for fp32). The score matrix is
-// never stored. Each thread keeps one head column of the running output in registers and
-// rescales it as the online softmax moves, which is the Flash Attention 2.2 accumulator.
-// fp16 and bf16 keys widen to fp32 and multiply an fp32 query.
-// Decode (one query, long cache) stays the split over keys in attention.hip.
-// Odd d falls back to that file's one-wave kernel.
+// Flash Attention 2 prefill: a block owns 16 query rows and walks the keys in order with an online softmax.
 
 #include <hip/hip_bfloat16.h>
 #include <hip/hip_fp16.h>
@@ -19,8 +13,7 @@ constexpr int kFaThreads = 256;
 constexpr int kFaBc = 32;
 constexpr int kFaMaxD = 256;
 
-// The query stays fp32. fp16 and bf16 keys are widened in the product so the dot
-// matches the fp32 spec. v_dot2_f32_f16 rounds the query and was about 8e-4 off on gfx1030.
+// The query stays fp32 and the keys widen in the product: dot2 would round the query.
 template <typename Cache>
 using fa_q_t = float;
 

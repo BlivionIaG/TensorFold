@@ -22,13 +22,7 @@ def _ext():
 def matmul(x: torch.Tensor, qweight: torch.Tensor, qzeros: torch.Tensor, scales: torch.Tensor,
            g_idx: torch.Tensor | None = None, *, use_v2_format: bool = True,
            prefill: bool = False) -> torch.Tensor:
-    """``x`` (M, K) fp16 times a GPTQ int4 weight ``qweight`` (K / 8, N).
-
-    ``qzeros`` is (K / group, N / 8) packed 4-bit zeros and ``scales`` is (K / group, N) fp16.
-    ``g_idx`` is the (K,) act-order permutation, or None for the identity. ``use_v2_format`` says
-    the zeros carry no GPTQv1 +1 offset. ``prefill`` picks the split-K tiled kernel over the
-    decode kernel. Only gfx1030 runs this: both kernels are the fp16 dot.
-    """
+    """``x`` (M, K) fp16 times a GPTQ int4 ``qweight`` (K / 8, N); gfx1030 only."""
 
     from tensorfold.rocm.build import gfx_name
 
@@ -53,14 +47,7 @@ def matmul(x: torch.Tensor, qweight: torch.Tensor, qzeros: torch.Tensor, scales:
 def moe(x: torch.Tensor, qweight: torch.Tensor, qzeros: torch.Tensor, scales: torch.Tensor,
         items: torch.Tensor, members: torch.Tensor, rows: int, slots: int, *, epi: int,
         block_m: int = 4, use_v2_format: bool = True, limit: float = 0.0) -> torch.Tensor:
-    """One layer's experts over TensorFold's routing plan (pair rows, grouped by expert).
-
-    ``x`` is (rows, D) bf16, ``qweight`` (mats, experts, D / 8, N) int32 with ``qzeros``
-    (mats, experts, D / group, N / 8) and ``scales`` of the same leading shape. ``items`` (I, 3)
-    is each expert run as (expert, first, count) and ``members`` (pairs) the pair rows it covers.
-    ``epi`` is 0 (fp32 rows, the down projection), 1 (bf16 relu^2) or 2 (bf16 SwiGLU over a
-    fused gate+up, mats = 2). ``limit`` clips SwiGLU before the gate. Returns (rows * slots, N).
-    """
+    """One layer's W4A16 experts over a routing plan; ``epi`` 0 down, 1 relu^2, 2 SwiGLU."""
 
     from tensorfold.rocm.build import gfx_name
 

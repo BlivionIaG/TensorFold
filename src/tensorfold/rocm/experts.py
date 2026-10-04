@@ -1,9 +1,4 @@
-"""Grouped MoE experts on RDNA, grouped by TensorFold's plan: MLX affine or W4A16 GPTQ, dispatched per checkpoint.
-
-Same plan contract as ``tensorfold.cuda.experts`` (``members`` and ``items``), so a router and a combine
-built for the group path drive either weight kind. Affine experts run the packed affine matmul one expert
-item at a time; W4A16 experts run the grouped fp16 kernels. An item owns its output rows, so no atomics.
-"""
+"""MoE experts over TensorFold's plan (``members``, ``items``): MLX affine or W4A16 GPTQ / AWQ."""
 
 from __future__ import annotations
 
@@ -48,13 +43,7 @@ def tile_for(ex: "Experts", rows: int, prefill: bool) -> int:
 
 
 def route(picks: torch.Tensor, plan: Plan, tile: int = PREFILL_TILE) -> None:
-    """``picks`` [R, slots] int32, contiguous: each pair's expert; the runs land in ``plan.items``.
-
-    ``members`` is the pair ids sorted by expert, so an item's rows are contiguous. Every slot is routed,
-    so the items partition ``0 .. pairs - 1`` exactly once. Every row of ``items`` is written without a host
-    sync: the ones past the plan's runs get count 0, which every kernel reads as an item it skips. ``tile``
-    has to fit the plan: at most ``max_items(pairs, experts, TILE)`` runs.
-    """
+    """Group the pairs of ``picks`` [R, slots] by expert into ``plan`` without a host sync."""
 
     rows, slots = picks.shape
     if slots != plan.slots or rows > plan.rows:
@@ -78,11 +67,7 @@ def route(picks: torch.Tensor, plan: Plan, tile: int = PREFILL_TILE) -> None:
 
 @dataclass
 class AffineExperts:
-    """One layer's MLX affine experts, the shared expert last.
-
-    Each side is a (words, scales, biases) triple whose leading dim is E + 1: ``up`` is the expert's up (or
-    its single relu^2 projection), ``gate`` the gate of a SwiGLU pair or None, and ``down`` the output side.
-    """
+    """A layer's MLX affine experts, shared expert last; gate and up stacked once at load."""
 
     up: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
     down: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
@@ -90,11 +75,15 @@ class AffineExperts:
     bits: int
     group: int
     limit: float = 0.0
+    down_bits: int = 0                 # the down side's width and group when they differ (0: bits / group)
+    down_group: int = 0
     kind: str = field(default="affine", init=False)
     fused: tuple[torch.Tensor, torch.Tensor, torch.Tensor] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Gate and up stacked as one (E + 1, 2 NI, ...) weight for one launch; ``gate`` and ``up`` view its halves."""
+
+        self.down_bits, self.down_group = self.down_bits or self.bits, self.down_group or self.group
 
         if self.gate is None:
             self.fused = tuple(t.contiguous() for t in self.up)
@@ -124,11 +113,7 @@ class AffineExperts:
 
 @dataclass
 class GptqExperts:
-    """One layer's W4A16 GPTQ experts, the shared expert last.
-
-    ``up`` is (mats, E + 1, D / 8, NI) int32 with ``mats`` 2 for a fused gate+up and 1 for relu^2, and
-    ``down`` is (1, E + 1, NI / 8, D). ``v2`` is True for AWQ's literal zeros and False for GPTQ's +1.
-    """
+    """A layer's W4A16 GPTQ / AWQ experts, shared expert last; ``v2`` is AWQ's literal zeros."""
 
     up: torch.Tensor
     up_z: torch.Tensor
@@ -193,11 +178,7 @@ def _activate(u: torch.Tensor, g: torch.Tensor | None, limit: float) -> torch.Te
 
 
 def gate_up(x: torch.Tensor, ex, plan: Plan, rows: int, *, block_m: int = 4) -> torch.Tensor:
-    """``x`` [R, D] bf16 or fp16 -> [R * slots, NI], each pair's activated expert output.
-
-    The W4A16 kernels take bf16, so that kind is normalized here; the affine kind keeps the caller's
-    activation dtype, which is fp16 on RDNA2, and returns it.
-    """
+    """``x`` [R, D] -> [R * slots, NI], each pair's activated expert output."""
 
     if isinstance(ex, GptqExperts):
         from tensorfold.rocm import qgemm
@@ -242,10 +223,10 @@ def down(act: torch.Tensor, ex, plan: Plan, rows: int, *, block_m: int = 4) -> t
 
     if one_launch(ex, act):
         return affine_mod.matmul_routed(act, *ex.down, plan.items[:plan.count], plan.members, pairs=rows * plan.slots,
-                                        x_div=1, rows=min(plan.tile, rows), bits=ex.bits, group=ex.group)
+                                        x_div=1, rows=min(plan.tile, rows), bits=ex.down_bits, group=ex.down_group)
     out = torch.empty((rows * plan.slots, ex.dims), dtype=torch.float32, device=act.device)
     for expert, first, count in _items(ex, plan):
         idx = plan.members[first:first + count].to(torch.int64)
         out.index_copy_(0, idx, affine_mod.matmul(act.index_select(0, idx), *_affine(ex.down, expert),
-                                                  bits=ex.bits, group=ex.group, f32=True))
+                                                  bits=ex.down_bits, group=ex.down_group, f32=True))
     return out

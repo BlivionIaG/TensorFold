@@ -30,7 +30,7 @@ def test_mtp_head_dataclass_has_expected_fields():
 
 
 def test_text_model_carries_optional_mtp_head():
-    from tensorfold.rocm.qwen import MTPHead, TextModel
+    from tensorfold.rocm.qwen import TextModel
 
     assert "mtp" in TextModel.__dataclass_fields__
     assert TextModel.__dataclass_fields__["mtp"].default is None
@@ -72,7 +72,9 @@ def test_load_mtp_head_refuses_partial_mtp_file(tmp_path, monkeypatch):
 
     shard = tmp_path / "mtp-4bit.safetensors"
     shard.touch()
-    monkeypatch.setattr(qwen_mod, "_Shards", lambda paths, strip="": _FakeShards(paths))
+    from tensorfold.rocm import checkpoint
+
+    monkeypatch.setattr(checkpoint, "_Shards", lambda paths, strip="", quant=None: _FakeShards(paths))
 
     with pytest.raises(ValueError, match="incomplete"):
         qwen_mod.load_mtp_head(tmp_path, spec, bits=4, group=64, device="cpu")

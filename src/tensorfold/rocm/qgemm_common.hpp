@@ -1,13 +1,8 @@
 #pragma once
 
-// Shared W4A16 GPTQ primitives for qgemm_rdna2.hip and qgemm_rdna2_prefill.hip.
-// Ported from vLLM-rdna csrc/rocm/q_gemm_rdna2_common.cuh and qdq_4_rdna2.cuh.
+// W4A16 GPTQ primitives (exllamav2 fp16 dequant), ported from vLLM-rdna q_gemm_rdna2_common.cuh and qdq_4_rdna2.cuh.
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-//
-// fp16 only. The dequant is the exllamav2 bit-trick: the mantissa of half is
-// wide enough to hold a nibble shifted by 4 bits, so the upper-nibble pairs are
-// read as `q * 16 + 1024` and divided by 16 inside the FMA.
 
 #include <hip/hip_fp16.h>
 
@@ -16,9 +11,7 @@
 namespace tf {
 namespace rocm {
 
-// 4 V_DOT2_F32_F16 calls covering 8 consecutive K positions. hipcc does not
-// lower an hfma2 chain to v_dot2 on gfx1030, so the builtin is written out and
-// the accumulator stays fp32 (fp16 accumulation loses ~3 bits).
+// Four v_dot2_f32_f16 over 8 K positions into an fp32 accumulator (hipcc does not lower hfma2 chains to it).
 __device__ __forceinline__ float dot8(const __half2 (&dq)[4], const __half* a) {
     float r = 0.0f;
     const __half2* a2 = reinterpret_cast<const __half2*>(a);
@@ -27,10 +20,7 @@ __device__ __forceinline__ float dot8(const __half2 (&dq)[4], const __half* a) {
     return r;
 }
 
-// Scale-baked constants for one (zero, scale) pair:
-//   z[0] = scale * (-1024 - zero)  for the low pairs  (q + 1024)
-//   z[1] = scale * (-64   - zero)  for the high pairs (q * 16 + 1024)
-//   y[0] = scale                   y[1] = scale / 16
+// Scale-baked constants: z = scale * (-1024 - zero), scale * (-64 - zero); y = scale, scale / 16.
 __device__ __forceinline__ void prep_zero_scale(uint32_t zero, __half scale, __half2 (&z)[2],
                                                 __half2 (&y)[2]) {
     // half bits 0xE400 are -1024.0; ORing the zero into the mantissa subtracts it.
@@ -66,9 +56,7 @@ __device__ __forceinline__ void dequant4x8(uint32_t qa, __half2 (&dq)[4], const 
     dq[3] = __hfma2(q3.h2, y[1], z[1]);
 }
 
-// gfx1030 has no v_global_atomic_pk_add_f16 and HIP exposes no atomicAdd(__half*),
-// so both are CAS loops. The 4-column form needs n % 4 == 0 and an 8-byte-aligned
-// target (n a multiple of 4, N a multiple of 8).
+// fp16 atomic adds as CAS loops (gfx1030 has no packed fp16 atomic); the 4-column form needs n % 4 == 0.
 __device__ __forceinline__ void atomic_add_pk4(__half* addr, __half2 v01, __half2 v23) {
     auto* p = reinterpret_cast<unsigned long long*>(addr);
     unsigned long long old = *p;
@@ -100,8 +88,7 @@ __device__ __forceinline__ void atomic_add_h(__half* addr, __half v) {
     }
 }
 
-// Precondition: n % 4 == 0, so the four nibbles for columns n..n+3 are one word of
-// the (groups, N / 8) packed-zeros tensor.
+// n % 4 == 0: the zeros of columns n..n+3 are one packed word.
 __device__ __forceinline__ void load4_zeros(const uint32_t* qzeros_row, int n, int (&zeros)[4]) {
     const int qcol = n / 8;
     const int shift = (n & 0x07) * 4;

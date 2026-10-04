@@ -7,9 +7,7 @@ import os
 import threading
 from typing import Any
 
-# gfx11 WMMA (RDNA3 and RDNA 3.5) and gfx12 WMMA (RDNA4). RDNA2 BF16 uses the GEMV.
-# RDNA2 FP16 uses v_dot2_f32_f16.
-# RDNA1 is not a target. gfx1010 has no v_dot2; gfx1011 and gfx1012 have only the f16 form.
+# gfx11 WMMA (RDNA3, RDNA 3.5) and gfx12 WMMA (RDNA4); RDNA2 uses dot2, and RDNA1 is not a target.
 WMMA = {
     "gfx1100", "gfx1101", "gfx1102", "gfx1103",
     "gfx1150", "gfx1151", "gfx1152", "gfx1153",
@@ -49,24 +47,13 @@ def gfx_name() -> str:
 
 
 def load(name: str, sources: list[str], **kwargs: Any) -> Any:
-    """torch's JIT load, compiling with hipcc for this GPU only.
-
-    One architecture: ``PYTORCH_ROCM_ARCH`` is that gfx for the duration of the build, which is what
-    torch reads when the flags do not already name a target. A leftover list would compile gfx this
-    translation unit does not share.
-
-    The module name carries a digest of the sources, the headers beside them and the flags. ninja does not
-    see a .hip file's headers, so a header change alone would otherwise keep an object built against the old
-    layout.
-    """
+    """torch's JIT load for this GPU only, named by a digest of the sources, their headers and the flags."""
 
     from torch.utils import cpp_extension
 
     gfx = gfx_name()
     wmma = gfx in WMMA
-    # torch defines the HIP half-operator macros, which remove the float constructor rocWMMA uses
-    # while registering its vector types. This translation unit does not include ATen, so put them back.
-    # Some ROCm trees keep the device bitcode beside clang's resource dir, and hipcc does not find it.
+    # Undo torch's HIP half-operator macros (rocWMMA needs the float constructor) and point hipcc at device bitcode.
     kwargs["extra_cuda_cflags"] = ["-mno-wavefrontsize64", "-ffp-contract=off",
                                    "-U__HIP_NO_HALF_OPERATORS__", "-U__HIP_NO_HALF_CONVERSIONS__",
                                    f"-DTENSORFOLD_RDNA_WMMA={1 if wmma else 0}",

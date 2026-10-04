@@ -80,7 +80,8 @@ void affine_pair(const at::Tensor& x, const at::Tensor& words0, const at::Tensor
     const int64_t m = x.size(0), k = x.size(1);
     auto check = [&](const at::Tensor& words, const at::Tensor& scale, const at::Tensor& bias, const at::Tensor& out) {
         TORCH_CHECK(words.is_cuda() && words.is_contiguous() && words.scalar_type() == at::kInt, "words");
-        TORCH_CHECK(scale.is_cuda() && bias.is_cuda() && out.is_cuda() && out.is_contiguous() && scale.is_contiguous() &&
+        TORCH_CHECK(scale.is_cuda() && bias.is_cuda() && out.is_cuda() && out.is_contiguous() &&
+                        scale.is_contiguous() &&
                         bias.is_contiguous() && scale.scalar_type() == scale0.scalar_type() &&
                         bias.scalar_type() == scale0.scalar_type(),
                     "pair tensors: contiguous, one scale type");

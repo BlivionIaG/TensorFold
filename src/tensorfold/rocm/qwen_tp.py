@@ -1,10 +1,4 @@
-"""Tensor-parallel forward for the ROCm Qwen engine.
-
-:func:`tensorfold.rocm.qwen.slice_for_tp` keeps each rank's heads and input groups. The hidden state stays
-replicated: projections that write the residual return fp32 shares, ``all_reduce_local`` sums them on every
-rank before the residual add, and ``vocab_gather`` joins each rank's vocabulary slice of the logits in rank
-order. Every rank runs every call; a collective only some ranks reach would wait forever.
-"""
+"""Tensor-parallel forward: fp32 shares summed before each residual add, vocabulary joined in rank order."""
 
 from __future__ import annotations
 
@@ -12,7 +6,7 @@ from functools import partial
 
 import torch
 
-from tensorfold.rocm import qwen_math
+from tensorfold.rocm import forward
 from tensorfold.rocm.comm import RCCL
 from tensorfold.rocm.qwen import TextModel
 
@@ -43,12 +37,12 @@ def vocab_gather(rccl: RCCL, local_logits: torch.Tensor) -> torch.Tensor:
 def tp_forward_hidden(model: TextModel, tokens: torch.Tensor, caches: list | None, linear,
                       pos0: int, rccl: RCCL, *, act_dtype: torch.dtype | None = None,
                       exact_short: bool = False, at=None) -> tuple[torch.Tensor, list]:
-    """:func:`qwen_math.forward_hidden` with the ranks' residual shares summed. ``at`` as there."""
+    """:func:`forward.forward_hidden` with the ranks' residual shares summed. ``at`` as there."""
 
     if rccl.world <= 1:
-        return qwen_math.forward_hidden(model, tokens, caches, linear, pos0, act_dtype,
+        return forward.forward_hidden(model, tokens, caches, linear, pos0, act_dtype,
                                         exact_short=exact_short, at=at)
-    return qwen_math.forward_hidden(model, tokens, caches, linear, pos0, act_dtype, exact_short=exact_short,
+    return forward.forward_hidden(model, tokens, caches, linear, pos0, act_dtype, exact_short=exact_short,
                                     reduce=partial(all_reduce_local, rccl), at=at)
 
 

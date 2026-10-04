@@ -1,12 +1,4 @@
-"""RDNA serving cells: ``python -m tensorfold.rocm.bench MODEL_DIR [PROMPT GENERATED CONCURRENCY] [--runs N]``.
-
-Tensor parallel: start one process a rank with ``--tp N --rank R --master ADDR [--master-port P]``; every rank
-runs the same cells and rank 0 prints them.
-
-Each cell reports prefill tok/s, decode tok/s, ttft, itil and peak GiB for prompt/generated loads 1024/512 and
-16384/1024 at concurrency 1 and 8. A cell runs ``--runs`` times (3 by default); the ``median`` line is the
-number the plan compares.
-"""
+"""RDNA serving cells: ``python -m tensorfold.rocm.bench MODEL_DIR [PROMPT GENERATED CONCURRENCY]``."""
 
 from __future__ import annotations
 
@@ -141,8 +133,7 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: 
         f"bits={model.spec.bits} group={model.spec.group} "
         f"embed_words={model.embed.words.shape[0]}x{model.embed.words.shape[1]} dtype=int32 "
         f"rank_weights_gib={torch.cuda.memory_allocated() / 1024**3:.2f}")
-    # One short generate per prompt length (a prefill span at most) compiles every kernel a cell will launch,
-    # including the Triton attention tile, before any cell is timed.
+    # One generate per prompt length compiles every kernel a cell launches before any cell is timed.
     from tensorfold.rocm.qwen_math import SPAN
 
     for length in sorted({8, *(min(prompt_len, SPAN) for prompt_len, _, _ in cells)}):
@@ -171,11 +162,7 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: 
 
 def measure_served(path: str | Path, prompt_len: int, generated: int, runs: int = 3, *, mtp: int = 0, tp: int = 1,
                    rank: int = 0, master: str = "", master_port: int = 29551) -> str | None:
-    """The engine ``tensorfold serve`` runs, one request at a time: decode graph, ``mtp`` drafts a round (0: none).
-
-    Prefill is the prompt over the time to the first token; decode the other tokens over the time after it. Rank 0
-    prints one line a run and the median; the other ranks follow.
-    """
+    """One request at a time through the engine ``tensorfold serve`` runs; rank 0 prints, the others follow."""
 
     from tensorfold.engine.exact_sampling import Sampling
     from tensorfold.rocm.build import gfx_name

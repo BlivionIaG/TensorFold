@@ -7,7 +7,7 @@ from typing import Callable, Sequence
 
 import torch
 
-from tensorfold.rocm import qwen_math
+from tensorfold.rocm import forward, qwen_math
 from tensorfold.rocm.qwen import MTPHead, Packed, TextModel
 
 
@@ -85,7 +85,7 @@ def _attention(head: MTPHead, x: torch.Tensor, cache: dict | None, position: int
         queries_f = queries.float()
     else:
         queries_f = queries
-    attended = qwen_math._attend(queries_f, kept_k, kept_v, scale, position)
+    attended = forward._attend(queries_f, kept_k, kept_v, scale, position)
     attended = attended.permute(0, 2, 1, 3).reshape(batch, length, -1)
     if gate is not None:
         attended = attended * torch.sigmoid(gate.reshape(batch, length, -1).float())
@@ -112,8 +112,7 @@ class MTPEngine:
         self.head = head
         self.linear = linear
         self.rccl = rccl
-        # The head's q/k/v row counts encode its heads; spec.head_dim lets us derive them. Spec may be
-        # sliced under TP, so the head's own q/k/v shapes are the truth - read them here once.
+        # The head's own q/k/v shapes give its heads: spec may be sliced under tp.
         spec = model.spec
         self._heads = int(head.q.words.shape[0]) // int(spec.head_dim) // (2 if head.gated else 1)
         self._kv_heads = int(head.k.words.shape[0]) // int(spec.head_dim)
@@ -123,12 +122,7 @@ class MTPEngine:
         return _alloc_cache(self.model.spec, batch, total, device, dtype, self._kv_heads)
 
     def _logits(self, x: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
-        """Draft logits. Under tp the ranks must agree on the draft ids, so a vocabulary slice is joined.
-
-        Every rank runs the chain and advances its cache by how many drafts matched, so ranks that draft
-        different ids desynchronise the decode loop. The head's own projection is the rank's rows under tp;
-        the vocabulary join puts the whole row back before sampling.
-        """
+        """Draft logits; under tp the vocabulary slices are joined so every rank drafts the same ids."""
 
         target = self.head.head if self.head.head is not None else self.model.output_head()
         out = _vocab_logits(self.head, self.model, x, dtype)
@@ -160,20 +154,14 @@ class MTPEngine:
                                      self._heads, self._kv_heads)
         x = x + attn_out
         if self.head.post_norm is not None:
-            x = x + qwen_math._mlp(spec, self.head, qwen_math.rms_norm(x, self.head.post_norm, spec.eps),
+            x = x + forward._mlp(spec, self.head, qwen_math.rms_norm(x, self.head.post_norm, spec.eps),
                                    self.linear)
         residual = qwen_math.rms_norm(x, self.head.final_norm, spec.eps)
         return self._logits(residual, dtype), residual
 
     def draft_chain(self, hidden: torch.Tensor, last_token: int, position: int, depth: int, cache: dict, *,
                     sampling, dtype: torch.dtype) -> list[int]:
-        """Chain ``depth`` drafts starting at ``position``.
-
-        ``position`` is the absolute position of the input row (``hidden`` and ``last_token``);
-        the head writes its K/V at RoPE offset ``position`` and predicts at ``position + 1``.
-        Step ``i`` predicts at ``position + i + 1`` with sampling key ``position + i + 1``, the target's
-        own rule: a token is keyed by the slot it goes into, so a drafter's sample matches the verifier's.
-        """
+        """``depth`` drafts from ``position``; draft i is keyed by its slot, as the verifier keys it."""
         if depth < 1:
             raise ValueError(f"depth must be >= 1, got {depth}")
         from tensorfold.engine.exact_sampling import MARGIN, choose
