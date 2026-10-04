@@ -234,6 +234,18 @@ def test_drafting_equals_serial_token_for_token(tmp_path):
     assert len(want) == room and got == want
 
 
+def test_a_greedy_request_without_sampling_drafts_the_serial_reply(tmp_path):
+    """The server sends ``sampling=None`` for greedy: drafted output is still the serial argmax chain."""
+
+    prompt, room = [1, 2, 3, 4], 12
+    drafted, model = _served(tmp_path)
+    serial = _engine(model, drafted.kernels, no_drafts=True, depth=0)
+    want, got = [], []
+    serial.generate(prompt, room, None, want.extend, stop_eos=False)
+    drafted.generate(prompt, room, None, got.extend, stop_eos=False)
+    assert len(want) == room and got == want
+
+
 def test_draft_false_decodes_serially(tmp_path):
     """``"draft": false`` is the serial reference: the head drafts nothing and the reply is no_drafts' reply."""
 
