@@ -148,9 +148,9 @@ class MTPEngine:
         e_proj = self.linear(emb_e.view(-1, emb_e.shape[-1]), self.head.fc_e).view(*emb_e.shape[:-1], -1)
         h_proj = self.linear(emb_h.view(-1, emb_h.shape[-1]), self.head.fc_h).view(*emb_h.shape[:-1], -1)
         x = e_proj + h_proj
-        if self.head.input_norm is not None:
-            x = qwen_math.rms_norm(x, self.head.input_norm, spec.eps)
-        attn_out, cache = _attention(self.head, x, cache, position, dtype, self.linear, spec,
+        # The residual is the fc output; the input norm only feeds attention, as in the MLX layer.
+        normed = x if self.head.input_norm is None else qwen_math.rms_norm(x, self.head.input_norm, spec.eps)
+        attn_out, cache = _attention(self.head, normed, cache, position, dtype, self.linear, spec,
                                      self._heads, self._kv_heads)
         x = x + attn_out
         if self.head.post_norm is not None:
