@@ -303,7 +303,7 @@ def _serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, context:
     p2p = getattr(args, "p2p", None)
     engine = family.package.rocm_engine(model_dir,
                                        context=context if context is not None else args.context,
-                                       keep=keep, byte_budget=budget,
+                                       context_explicit=args.context is not None, keep=keep, byte_budget=budget,
                                        tp=int(args.tp), rank=int(args.rank),
                                        master=args.master, master_port=int(args.master_port),
                                        p2p=p2p)
@@ -318,7 +318,7 @@ def _serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, context:
         if value is not None:
             sampling[key] = value
     app = App(engine, model_dir, served, default_thinking=bool(args.thinking), sampling=sampling,
-              max_tokens=int(args.max_tokens), context_window=context if context is not None else args.context,
+              max_tokens=int(args.max_tokens), context_window=engine.context_window,
               reasoning_effort=args.reasoning_effort, thinking_budget=int(args.thinking_budget))
     shown = "greedy" if float(sampling.get("temperature", 1.0)) <= 0 else ", ".join(
         f"{k} {v}" for k, v in sampling.items())

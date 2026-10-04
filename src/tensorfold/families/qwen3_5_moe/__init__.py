@@ -112,17 +112,13 @@ def cuda_engine(model_dir: str | Path, *, drafter: str = "", tp: int = 1, rank: 
                         streams=streams)
 
 
-def rocm_engine(model_dir: str | Path, *, context: int | None = None, keep: int = 8,
+def rocm_engine(model_dir: str | Path, *, context: int | None = None, context_explicit: bool = False, keep: int = 8,
                 byte_budget: int | None = None, tp: int = 1, rank: int = 0, master: str = "",
                 master_port: int = 29551, p2p: bool | None = None, no_drafts: bool = False, **options: Any):
-    """The ROCm engine for ``tensorfold serve --backend rocm``: routed experts on RDNA 2/3.
-
-    With ``tp`` above 1 each rank holds ``E / tp`` of the routed experts (the shared one on rank 0) beside its
-    attention heads; the checkpoint's MTP layer drafts unless ``no_drafts``.
-    """
+    """The ROCm engine for ``tensorfold serve --backend rocm``: routed experts on RDNA, one GPU or ``tp`` ranks."""
 
     from tensorfold.rocm.engine import QwenEngine
 
-    return QwenEngine.load(Path(model_dir), context=context, keep=keep, byte_budget=byte_budget,
-                           tp=int(tp), rank=int(rank), master=master, master_port=master_port, p2p=p2p,
-                           no_drafts=no_drafts)
+    return QwenEngine.load(Path(model_dir), context=context, context_explicit=context_explicit, keep=keep,
+                           byte_budget=byte_budget, tp=int(tp), rank=int(rank), master=master,
+                           master_port=master_port, p2p=p2p, no_drafts=no_drafts)
