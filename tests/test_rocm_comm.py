@@ -92,11 +92,9 @@ def test_p2p_is_rccls_choice_unless_asked(monkeypatch, apu, want):
 
 
 def test_cli_extends_tp_choices_to_eight():
-    from tensorfold import cli_args
+    from tensorfold import cli
 
-    parser = cli_args.build_parser({"serve": lambda args: None, "pull": lambda args: None,
-                                    "models": lambda args: None, "update": lambda args: None,
-                                    "info": lambda args: None})
+    parser = cli.build_parser()
     args = parser.parse_args(["serve", "x", "--tp", "4"])
     assert args.tp == 4
     args = parser.parse_args(["serve", "x", "--tp", "8", "--rank", "7"])

@@ -160,7 +160,7 @@ def _run_share(x: torch.Tensor, m: Routed, buf: MoEBuffers, prefill: bool) -> to
     picks = torch.where(mine, local, torch.full_like(local, skip)).to(torch.int32).contiguous()
     grouped.route(picks, buf.plan, grouped.tile_for(m.experts, rows, prefill))
     items = buf.plan.items[:buf.plan.count]
-    items[items[:, 0] == skip, 2] = 0
+    items[:, 2] = torch.where(items[:, 0] == skip, 0, items[:, 2])     # no mask write: no host sync in a graph
     hidden = grouped.gate_up(x, m.experts, buf.plan, rows)
     y = grouped.down(hidden, m.experts, buf.plan, rows).view(rows, buf.slots, -1)
     y = torch.where(mine.unsqueeze(-1), y, torch.zeros((), dtype=y.dtype, device=y.device))

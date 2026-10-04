@@ -43,17 +43,25 @@ def _resolve_p2p(gfx: str, p2p: bool | None) -> bool | None:
 
 
 def read_eos(model_dir: Path) -> tuple[int, ...]:
-    path = Path(model_dir) / "config.json"
-    if not path.is_file():
-        return _DEFAULT_EOS
-    config = json.loads(path.read_text())
-    text = config.get("text_config", config)
-    raw = text.get("eos_token_id", config.get("eos_token_id"))
-    if raw is None:
-        return _DEFAULT_EOS
-    if isinstance(raw, int):
-        return (raw,)
-    return tuple(int(token) for token in raw)
+    """Every end id the checkpoint names: ``config.json`` (top level and ``text_config``) and
+    ``generation_config.json``. Qwen3.6 lists ``<|im_end|>`` at the top level and only ``<|endoftext|>`` in
+    ``text_config``; a chat turn ends on the first."""
+
+    found: list[int] = []
+
+    def take(raw) -> None:
+        for token in [raw] if isinstance(raw, int) else (raw or []):
+            if int(token) not in found:
+                found.append(int(token))
+
+    root = Path(model_dir)
+    for name in ("config.json", "generation_config.json"):
+        path = root / name
+        if path.is_file():
+            config = json.loads(path.read_text())
+            take(config.get("eos_token_id"))
+            take(config.get("text_config", {}).get("eos_token_id"))
+    return tuple(found) or _DEFAULT_EOS
 
 
 def cache_bytes(caches: list[dict]) -> int:
@@ -170,8 +178,9 @@ class QwenEngine:
         head = getattr(model, "mtp", None)
         self.mtp = MTPEngine(model, head, linear=kernels.linear, rccl=rccl) if head is not None else None
         self.mtp_depth = int(mtp_depth)
-        # One-token steps replay a captured graph (one rank; TENSORFOLD_GRAPH=0 keeps them eager).
-        self.graphs = self.tp == 1 and os.environ.get("TENSORFOLD_GRAPH", "1") != "0"
+        # One-token steps replay a captured graph (every rank captures the same one; TENSORFOLD_GRAPH=0 keeps them
+        # eager).
+        self.graphs = os.environ.get("TENSORFOLD_GRAPH", "1") != "0"
         self._step: _StepGraph | None = None
 
     @classmethod
@@ -227,7 +236,7 @@ class QwenEngine:
 
         A prefill span of any length keeps the prefill conv and rope, so a prompt split at stored cuts matches
         one forward. A decode step takes the one-row HIP conv and rope (prefill never resumes from a decoded
-        state), and on one rank replays a captured graph.
+        state), and replays a captured graph (every rank captures the same one).
         """
 
         device, dtype = self._device(), self._dtype()
@@ -255,9 +264,11 @@ class QwenEngine:
         step.ids.fill_(token)
         step.at.set(pos0)
 
-        def run() -> tuple[torch.Tensor, list[dict]]:
-            return forward_hidden(self.model, step.ids, caches, self.kernels.linear, pos0, self._dtype(),
-                                  at=step.at)
+        def run(at: DevicePos | None = step.at) -> tuple[torch.Tensor, list[dict]]:
+            if self.tp > 1:
+                return tp_forward_hidden(self.model, step.ids, caches, self.kernels.linear, pos0, self.rccl,
+                                         act_dtype=self._dtype(), at=at)
+            return forward_hidden(self.model, step.ids, caches, self.kernels.linear, pos0, self._dtype(), at=at)
 
         with torch.inference_mode():
             if step.graph is not None:
@@ -270,16 +281,17 @@ class QwenEngine:
                 step.warm = True
             else:
                 graph = torch.cuda.CUDAGraph()
+                failed = None
                 try:
                     with torch.cuda.graph(graph):
                         step.hidden = run()[0]
                 except Exception as exc:  # noqa: BLE001 - any capture failure: this engine stays eager
-                    print(f"[tensorfold] decode graph capture failed, decoding eagerly: {exc}", file=sys.stderr)
+                    failed = exc
+                if self._any_rank(failed is not None):   # the ranks replay together or not at all
+                    print(f"[tensorfold] decode graph capture failed, decoding eagerly: {failed}", file=sys.stderr)
                     self.graphs, self._step = False, None
                     torch.cuda.synchronize()
-                    hidden = forward_hidden(self.model, step.ids, caches, self.kernels.linear, pos0,
-                                            self._dtype())[0]
-                    return hidden, caches
+                    return run(None)[0], caches              # the eager step advances each cache itself
                 step.graph = graph
                 graph.replay()
                 hidden = step.hidden
@@ -288,6 +300,15 @@ class QwenEngine:
             if "len" in cache:
                 cache["len"] = pos0 + 1
         return hidden, caches
+
+    def _any_rank(self, flag: bool) -> bool:
+        """True on every rank when ``flag`` is true on one (one rank: ``flag``)."""
+
+        if self.tp <= 1:
+            return flag
+        value = torch.tensor([int(flag)], dtype=torch.int32, device=self._device())
+        self.rccl.all_reduce(value, value, op="max")
+        return bool(value.item())
 
     def _span(self, tokens: Sequence[int], caches: list[dict] | None, pos0: int, total: int,
               ) -> tuple[torch.Tensor, list[dict]]:
@@ -491,14 +512,24 @@ class QwenEngine:
     def _post(self, prompt: list[int], room: int, draft: bool, depth: int) -> None:
         """Rank 0 publishes a request on the rendezvous store. The previous one has been read by every rank.
 
-        ``depth`` is rank 0's drafts a round: every rank runs the same collectives, whatever its own setting.
+        ``depth`` (drafts a round) and ``graphs`` are rank 0's: every rank runs the same collectives, whatever its
+        own settings.
         """
 
         store = self.rccl.store
-        store.set(f"tf_request/{self._posted}", json.dumps([prompt, room, bool(draft), int(depth)]))
+        store.set(f"tf_request/{self._posted}", json.dumps([prompt, room, bool(draft), int(depth), bool(self.graphs)]))
         if self._posted:
             store.delete_key(f"tf_request/{self._posted - 1}")
         self._posted += 1
+
+    def close(self) -> None:
+        """Rank 0 tells the other ranks there are no more requests, so their ``follow`` returns before the store
+        goes away."""
+
+        if self.tp > 1 and self.rank == 0:
+            store = self.rccl.store
+            store.set(f"tf_request/{self._posted}", json.dumps(None))
+            self._posted += 1
 
     def follow(self) -> None:
         """Ranks above 0: run each of rank 0's requests in step with it. Returns once rank 0's store closes."""
@@ -516,7 +547,10 @@ class QwenEngine:
                 if "recv" in text or "connection" in text or "broken pipe" in text:
                     return                                  # rank 0 closed the store: the server stopped
                 raise
-            prompt, room, draft, depth = json.loads(self.rccl.store.get(key))
+            request = json.loads(self.rccl.store.get(key))
+            if request is None:                             # rank 0 closed: no more requests
+                return
+            prompt, room, draft, depth, self.graphs = request
             self._posted += 1
             self._run(prompt, room, None, None, False, draft, None, depth if self.mtp is not None else 0)
 
