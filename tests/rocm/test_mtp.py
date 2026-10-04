@@ -5,7 +5,7 @@ thing under test, and the draft chain is checked for determinism on the greedy p
 """
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
@@ -298,3 +298,30 @@ def test_the_head_drafts_a_deterministic_chain(tmp_path, routed):
     plain, _ = engine.forward(hidden, torch.tensor([7], device=device), 0,
                               engine.fresh_cache(batch=1, total=64, device=device, dtype=dtype), dtype=dtype)
     assert not torch.equal(logits, plain)
+
+
+def test_the_head_residual_is_the_fc_output(tmp_path):
+    """The input norm feeds the head's attention only; the residual is the fc output, as in the MLX layer."""
+
+    from tensorfold.rocm import forward
+    from tensorfold.rocm import mtp as mtp_mod
+    from tensorfold.rocm.qwen_math import gather_rows, rms_norm
+
+    model, head, engine, device = _loaded(tmp_path, routed=False)
+    spec, dtype = model.spec, qwen_mod.activation_dtype(gfx_name())
+    hidden = torch.randn(1, 1, spec.hidden, generator=torch.Generator().manual_seed(5)).to(device, dtype)
+    token = torch.tensor([7], device=device)
+    _, got = engine.forward(hidden, token, 0, engine.fresh_cache(batch=1, total=8, device=device, dtype=dtype),
+                            dtype=dtype)
+
+    def project(x, norm, weight):
+        return engine.linear(rms_norm(x, norm, spec.eps).view(-1, spec.hidden), weight).view(1, 1, -1)
+
+    emb = gather_rows(model.embed, token, dtype=dtype).view(1, 1, -1)
+    x = project(emb, head.fc_e_norm, head.fc_e) + project(hidden, head.fc_h_norm, head.fc_h)
+    cache = engine.fresh_cache(batch=1, total=8, device=device, dtype=dtype)
+    attended, _ = mtp_mod._attention(head, rms_norm(x, head.input_norm, spec.eps), cache, 0, dtype, engine.linear,
+                                     spec, engine._heads, engine._kv_heads)
+    x = x + attended
+    x = x + forward._mlp(spec, head, rms_norm(x, head.post_norm, spec.eps), engine.linear)
+    assert torch.equal(got, rms_norm(x, head.final_norm, spec.eps))
