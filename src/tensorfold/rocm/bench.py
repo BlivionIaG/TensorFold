@@ -169,21 +169,85 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: 
     return lines
 
 
+def measure_served(path: str | Path, prompt_len: int, generated: int, runs: int = 3, *, mtp: int = 0, tp: int = 1,
+                   rank: int = 0, master: str = "", master_port: int = 29551) -> str | None:
+    """The engine ``tensorfold serve`` runs, one request at a time: decode graph, ``mtp`` drafts a round (0: none).
+
+    Prefill is the prompt over the time to the first token; decode the other tokens over the time after it. Rank 0
+    prints one line a run and the median; the other ranks follow.
+    """
+
+    from tensorfold.engine.exact_sampling import Sampling
+    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.engine import QwenEngine
+
+    engine = QwenEngine.load(path, keep=0, tp=tp, rank=rank, master=master or "127.0.0.1",
+                             master_port=master_port, mtp_depth=max(1, mtp), no_drafts=mtp == 0)
+    if rank != 0:
+        engine.follow()
+        return None
+    if mtp and engine.mtp is None:
+        engine.close()
+        raise ValueError(f"--mtp {mtp}: this checkpoint has no MTP head")
+    gfx, dtype = gfx_name(), engine._dtype()
+    prompt = _prompts(prompt_len, generated, 1, engine.model.spec.vocab)[0]
+    greedy = Sampling(seed=1, temperature=0.0)
+    # The full prompt once: every prefill tile (the Triton attention tile included) compiles before a timed run.
+    engine.generate(prompt, 4, greedy, lambda tokens: None, stop_eos=False, draft=False)
+    rows = []
+    for run in range(runs):
+        stamps = []
+
+        def seen(tokens, stamps=stamps):
+            torch.cuda.synchronize()
+            stamps.extend([time.perf_counter()] * len(tokens))
+
+        torch.cuda.synchronize()
+        start = time.perf_counter()
+        engine.generate(prompt, generated, greedy, seen, stop_eos=False, draft=False)
+        if len(stamps) != generated:
+            raise RuntimeError(f"generated {len(stamps)} tokens, requested {generated}")
+        rows.append({"prefill_tok_s": prompt_len / (stamps[0] - start),
+                     "decode_tok_s": (generated - 1) / (stamps[-1] - stamps[0])})
+        print(f"served gfx={gfx} tp={tp} mtp={mtp} prompt={prompt_len} generated={generated} "
+              f"prefill_tok_s={rows[-1]['prefill_tok_s']:.6g} decode_tok_s={rows[-1]['decode_tok_s']:.6g}",
+              flush=True)
+    engine.close()
+    middle = {key: statistics.median(row[key] for row in rows) for key in rows[0]}
+    line = (f"median-served gfx={gfx} activation={'bf16' if dtype == torch.bfloat16 else 'fp16'} tp={tp} mtp={mtp} "
+            f"prompt={prompt_len} generated={generated} prefill_tok_s={middle['prefill_tok_s']:.6g} "
+            f"decode_tok_s={middle['decode_tok_s']:.6g} peak_gib={torch.cuda.max_memory_allocated() / 1024**3:.2f}")
+    print(line, flush=True)
+    return line
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    options = {"--runs": 3, "--tp": 1, "--rank": 0, "--master": "", "--master-port": 29551}
+    options = {"--runs": 3, "--tp": 1, "--rank": 0, "--master": "", "--master-port": 29551, "--mtp": -1}
     for flag, default in options.items():
         if flag in args:
             at = args.index(flag)
             options[flag] = type(default)(args[at + 1])
             del args[at:at + 2]
+    served = "--served" in args or options["--mtp"] >= 0
+    if "--served" in args:
+        args.remove("--served")
     cells = CELLS
     if len(args) == 4:
         cells = ((int(args[1]), int(args[2]), int(args[3])),)
     elif len(args) != 1:
         print("usage: python -m tensorfold.rocm.bench MODEL_DIR [PROMPT GENERATED CONCURRENCY] [--runs N] "
-              "[--tp N --rank R --master ADDR [--master-port P]]", file=sys.stderr)
+              "[--tp N --rank R --master ADDR [--master-port P]] [--served [--mtp N]]", file=sys.stderr)
         return 2
+    if served:
+        prompt_len, generated, concurrency = cells[0] if len(args) == 4 else (1024, 512, 1)
+        if concurrency != 1:
+            print("--served measures one request at a time, as the server runs them", file=sys.stderr)
+            return 2
+        measure_served(args[0], prompt_len, generated, options["--runs"], mtp=max(0, options["--mtp"]),
+                       tp=options["--tp"], rank=options["--rank"], master=options["--master"],
+                       master_port=options["--master-port"])
+        return 0
     measure(args[0], cells, options["--runs"], tp=options["--tp"], rank=options["--rank"],
             master=options["--master"], master_port=options["--master-port"])
     return 0
