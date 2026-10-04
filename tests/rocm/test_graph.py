@@ -66,3 +66,25 @@ def test_graph_decode_equals_eager_on_a_real_checkpoint():
         engine.generate(prompt, 24, Sampling(seed=3, temperature=0.0), got.extend, stop_eos=False, draft=False)
         runs[graphs] = got
     assert len(runs[True]) == 24 and runs[True] == runs[False]
+
+
+def test_the_opt_in_wmma_schedule_keeps_graph_and_eager_equal():
+    """TENSORFOLD_ROCM_SCHEDULE=wmma runs WMMA at every row count, so its replayed steps equal its eager ones."""
+
+    from tensorfold.rocm.build import WMMA
+
+    model_dir = os.environ.get("TENSORFOLD_GOLDEN_MODEL")
+    if not model_dir or gfx_name() not in WMMA:
+        pytest.skip("set TENSORFOLD_GOLDEN_MODEL on a gfx11 / gfx12 part")
+    from tensorfold.engine.exact_sampling import Sampling
+    from tensorfold.rocm.engine import QwenEngine
+
+    engine = QwenEngine.load(model_dir, keep=0, no_drafts=True, schedule="wmma")
+    runs = {}
+    for graphs in (False, True):
+        engine.graphs = graphs
+        got = []
+        engine.generate(list(range(1000, 1037)), 16, Sampling(seed=3, temperature=0.0), got.extend, stop_eos=False,
+                        draft=False)
+        runs[graphs] = got
+    assert len(runs[True]) == 16 and runs[True] == runs[False]

@@ -18,6 +18,6 @@ def test_a_header_change_alone_changes_the_build(tmp_path):
 def test_flags_change_the_build(tmp_path):
     source = tmp_path / "kernel.hip"
     source.write_text("\n")
-    one = _digest([str(source)], {"extra_cuda_cflags": ["-DTENSORFOLD_BF16_DOT2=1"]})
-    assert one != _digest([str(source)], {"extra_cuda_cflags": ["-DTENSORFOLD_BF16_DOT2=0"]})
-    assert one == _digest([str(source)], {"extra_cuda_cflags": ["-DTENSORFOLD_BF16_DOT2=1"], "verbose": True})
+    one = _digest([str(source)], {"extra_cuda_cflags": ["-DTENSORFOLD_RDNA_WMMA=1"]})
+    assert one != _digest([str(source)], {"extra_cuda_cflags": ["-DTENSORFOLD_RDNA_WMMA=0"]})
+    assert one == _digest([str(source)], {"extra_cuda_cflags": ["-DTENSORFOLD_RDNA_WMMA=1"], "verbose": True})

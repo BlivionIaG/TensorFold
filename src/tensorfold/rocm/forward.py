@@ -27,6 +27,35 @@ def _project(x: torch.Tensor, packed: Packed, linear) -> torch.Tensor:
     return y.reshape(*x.shape[:-1], -1)
 
 
+def _project_pair(x: torch.Tensor, first: Packed, second: Packed, linear):
+    """Two projections of one activation. Falls back to two solo launches."""
+
+    owner = getattr(linear, "__self__", None)
+    pair = getattr(owner, "linear_pair", None) if owner is not None else None
+    if pair is None:
+        return _project(x, first, linear), _project(x, second, linear)
+    left, right = pair(x, first, second)
+    if left.dtype != x.dtype:
+        left = left.to(dtype=x.dtype)
+    if right.dtype != x.dtype:
+        right = right.to(dtype=x.dtype)
+    return left.reshape(*x.shape[:-1], -1), right.reshape(*x.shape[:-1], -1)
+
+
+def _project_group(x: torch.Tensor, packeds: tuple, linear):
+    """One launch for several projections of a short activation. None keeps the solo or pair path."""
+
+    owner = getattr(linear, "__self__", None)
+    group = getattr(owner, "linear_group", None) if owner is not None else None
+    if group is None:
+        return None
+    outs = group(x, packeds)
+    if outs is None:
+        return None
+    return tuple(y.reshape(*x.shape[:-1], -1) if y.dtype == x.dtype else y.to(dtype=x.dtype).reshape(*x.shape[:-1], -1)
+                 for y in outs)
+
+
 def _residual(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """``x + y``; a ranks' fp32 sum is added to a widened residual and rounded once."""
 
@@ -77,7 +106,11 @@ def _mlp(spec: Spec, layer, x: torch.Tensor, linear) -> torch.Tensor:
     batch, length, hidden = x.shape
     flat = x.reshape(-1, hidden)
     if flat.shape[0] <= SPAN:
-        gate, up = _project(x, layer.gate, linear), _project(x, layer.up, linear)
+        grouped = _project_group(x, (layer.gate, layer.up), linear)
+        if grouped is None:
+            gate, up = _project_pair(x, layer.gate, layer.up, linear)
+        else:
+            gate, up = grouped
         return _project(torch.nn.functional.silu(gate) * up, layer.down, linear)
     out = torch.empty(flat.shape, dtype=torch.float32 if layer.down.partial else flat.dtype, device=flat.device)
     for start in range(0, flat.shape[0], SPAN):
@@ -103,7 +136,14 @@ def _moe_mlp(routed, x: torch.Tensor) -> torch.Tensor:
 
 def _linear_span(spec: Spec, layer, x: torch.Tensor, conv_state, rec, linear, exact: bool, in_place: bool = False):
     batch, length, _ = x.shape
-    qkv, z, a, b = (_project(x, packed, linear) for packed in (layer.qkv, layer.z, layer.a, layer.b))
+    grouped = _project_group(x, (layer.qkv, layer.z, layer.a, layer.b), linear)
+    if grouped is None:
+        qkv = _project(x, layer.qkv, linear)
+        z = _project(x, layer.z, linear)
+        a = _project(x, layer.a, linear)
+        b = _project(x, layer.b, linear)
+    else:
+        qkv, z, a, b = grouped
     z = z.view(batch, length, spec.value_heads, spec.value_dim)
     mixed, conv_state = causal_conv(qkv, layer.conv, conv_state, exact=exact, in_place=in_place)
     q, k, v = mixed.split((spec.key_width, spec.key_width, spec.value_width), dim=-1)
@@ -150,7 +190,12 @@ def _attention(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exa
 def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int, exact: bool,
                     at: DevicePos | None = None):
     batch, length, _ = x.shape
-    qg, keys, values = (_project(x, packed, linear) for packed in (layer.q, layer.k, layer.v))
+    grouped = _project_group(x, (layer.q, layer.k, layer.v), linear)
+    if grouped is None:
+        qg = _project(x, layer.q, linear)
+        keys, values = _project_pair(x, layer.k, layer.v, linear)
+    else:
+        qg, keys, values = grouped
     qg = qg.view(batch, length, spec.heads, spec.head_dim * 2)
     queries, gate = qg.split(spec.head_dim, dim=-1)
     keys = keys.view(batch, length, spec.kv_heads, spec.head_dim)
