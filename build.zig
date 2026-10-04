@@ -8,6 +8,14 @@ comptime {
 }
 
 pub fn build(b: *std.Build) void {
+    const rocm_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("native/rocm/dispatch.zig"),
+            .target = b.graph.host,
+            .optimize = .safe,
+        }),
+    });
+    b.step("test-rocm-dispatch", "Host gates for the gfx1030 Zig ROCm dispatch").dependOn(&b.addRunArtifact(rocm_tests).step);
     const target = b.standardTargetOptions(.{});
     const coverage_module = b.createModule(.{ .root_source_file = b.path("tools/upstream_coverage.zig"), .target = b.graph.host, .optimize = .safe });
     const coverage_exe = b.addExecutable(.{ .name = "upstream-coverage", .root_module = coverage_module });

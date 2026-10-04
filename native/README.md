@@ -531,3 +531,32 @@ Separate passes from unrun checks. Benchmark only after correctness succeeds and
 other load is controlled.
 
 See [`AGENTS.md`](AGENTS.md) for native agent instructions.
+
+## ROCm dispatch (gfx1030)
+
+The Mac executable stays Metal through MLX-C. On any other host, gfx1030 selects
+the Zig ROCm backend in `native/rocm`. Other architectures are refused. Zig
+checks the launch. Device code is compiled by ROCm 7.14.0 `hipcc`, not by Zig's
+LLVM:
+
+```sh
+.zig-toolchain/zig build test-rocm-dispatch -Doptimize=safe -j1
+```
+
+The compile line is `hipcc --offload-arch=gfx1030 -O3 -mno-wavefrontsize64`.
+`hipcc --genco` writes one fatbin at `native/rocm/fatbin/gfx1030/tensorfold.hipfb`,
+a clang offload bundle with one gfx1030 code object. The host loads that file.
+`-cb` and `3inst` are the EXL3 weight codebook, not hipcc flags.
+`--cuda-device-only` is not a fatbin and is refused. `-ffp-contract=off` is not
+passed. The fp16 W4A16 product emits `v_dot2_f32_f16` explicitly. Packed int is
+`sdot4`. bf16, WMMA, and a scalar GEMV fallback are refused before launch. A
+ROCm launch also refuses an empty or foreign bundle.
+
+This step does not run a model. Gemma's fused GDN stays on Metal. Qwen GDN plus
+QSA, GLM KDA, and DeepSeek CSA2 are separate heaps and are not ported. Leftover
+mixers stay dense, and that dense kernel is not ported either. A full-span KV
+scored as dense causal is refused. So is an MTP head that norms `e_proj + h_proj`
+and then adds attention. GDN and KDA rings are not replayed after an in-place
+update. Device LUTs are warmed before capture. Pinned copies stay on a side
+stream. An RCCL collective inside a graph is not mixed with an eager broadcast
+on that communicator.
