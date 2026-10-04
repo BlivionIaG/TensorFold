@@ -1,6 +1,4 @@
-// One wave per query row. The key-value head is head / (heads / kv_heads), so the
-// two cached heads are not repeated in memory. Scores and the softmax stay fp32.
-// The dot is a lane tree: lane i owns elements i, i+32, ... and lane 0's sum is kept.
+// Causal attention, fp32 scores and softmax; KV heads are read as head / (heads / kv_heads), never repeated.
 
 #include "attention.hpp"
 
@@ -88,10 +86,7 @@ causal_kernel(const float* __restrict__ q, const Cache* __restrict__ k, const Ca
 }  // namespace rocm
 }  // namespace tf
 
-// Decode: many blocks score the keys, one block per head reduces the softmax, one block per head
-// streams V. A single query does not fill the machine if one wave walks the whole span.
-// One warp owns one key. Lanes read consecutive head elements, so the key vector is coalesced.
-// Every lane enters the xor tree, including warps whose key is past the visible span.
+// Decode: a warp scores a key, a block per head reduces the softmax, then V streams in 128-key tiles.
 template <typename Cache>
 __global__ void score_keys(const float* __restrict__ q, const Cache* __restrict__ k, float* __restrict__ scores,
                            int span, int heads, int kv_heads, int d, float scale, int visible, long long k_sb,
@@ -199,6 +194,38 @@ __global__ void sum_partials(const float* __restrict__ partials, float* __restri
     out[(static_cast<long long>(batch) * gridDim.x + head) * d + lane] = acc;
 }
 
+namespace {
+
+struct Walk {
+    dim3 score_grid, score_block, head_grid, tile_grid;
+    hipStream_t stream;
+    const float* q;
+    const void* k;
+    const void* v;
+    float* scores;
+    float* stats;
+    float* partials;
+    int span, heads, kv_heads, d;
+    float scale;
+    int visible;
+    long long k_sb, k_sh, k_ss, v_sb, v_sh, v_ss;
+    const int* pos;
+};
+
+// Score the keys, reduce the softmax, then stream V, for one cache type.
+template <typename Cache>
+void decode_walk(const Walk& w) {
+    score_keys<Cache><<<w.score_grid, w.score_block, 0, w.stream>>>(
+        w.q, static_cast<const Cache*>(w.k), w.scores, w.span, w.heads, w.kv_heads, w.d, w.scale, w.visible, w.k_sb,
+        w.k_sh, w.k_ss, w.pos);
+    softmax_stats<<<w.head_grid, 256, 0, w.stream>>>(w.scores, w.stats, w.span, w.visible, w.pos);
+    apply_values<Cache><<<w.tile_grid, 256, 0, w.stream>>>(
+        w.scores, w.stats, static_cast<const Cache*>(w.v), w.partials, w.span, w.heads, w.kv_heads, w.d, w.visible,
+        w.v_sb, w.v_sh, w.v_ss, w.pos);
+}
+
+}  // namespace
+
 void causal_launch(const float* q, const void* k, const void* v, float* out, int batch, int qlen, int span,
                    int heads, int kv_heads, int d, float scale, int q_pos0, long long k_sb, long long k_sh,
                    long long k_ss, long long v_sb, long long v_sh, long long v_ss, int cache_kind,
@@ -219,25 +246,14 @@ void causal_launch(const float* q, const void* k, const void* v, float* out, int
         dim3 score_grid((span + 3) / 4, heads, batch);
         dim3 head_grid(heads, batch);
         dim3 tile_grid(tiles, heads, batch);
+        const Walk walk{score_grid, score_block, head_grid, tile_grid, hip_stream, q, k, v, scores, stats, partials,
+                        span, heads, kv_heads, d, scale, visible, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss, pos};
         if (cache_kind == 0) {
-            score_keys<__half><<<score_grid, score_block, 0, hip_stream>>>(q, static_cast<const __half*>(k), scores, span, heads,
-                                                            kv_heads, d, scale, visible, k_sb, k_sh, k_ss, pos);
-            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible, pos);
-            apply_values<__half><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const __half*>(v), partials, span,
-                                                     heads, kv_heads, d, visible, v_sb, v_sh, v_ss, pos);
+            decode_walk<__half>(walk);
         } else if (cache_kind == 1) {
-            score_keys<hip_bfloat16><<<score_grid, score_block, 0, hip_stream>>>(
-                q, static_cast<const hip_bfloat16*>(k), scores, span, heads, kv_heads, d, scale, visible, k_sb, k_sh,
-                k_ss, pos);
-            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible, pos);
-            apply_values<hip_bfloat16><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const hip_bfloat16*>(v), partials,
-                                                           span, heads, kv_heads, d, visible, v_sb, v_sh, v_ss, pos);
+            decode_walk<hip_bfloat16>(walk);
         } else if (cache_kind == 2) {
-            score_keys<float><<<score_grid, score_block, 0, hip_stream>>>(q, static_cast<const float*>(k), scores, span, heads,
-                                                           kv_heads, d, scale, visible, k_sb, k_sh, k_ss, pos);
-            softmax_stats<<<head_grid, 256, 0, hip_stream>>>(scores, stats, span, visible, pos);
-            apply_values<float><<<tile_grid, 256, 0, hip_stream>>>(scores, stats, static_cast<const float*>(v), partials, span, heads,
-                                                    kv_heads, d, visible, v_sb, v_sh, v_ss, pos);
+            decode_walk<float>(walk);
         } else {
             throw std::invalid_argument("cache kind is fp16, bf16, or fp32");
         }

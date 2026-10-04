@@ -1,10 +1,6 @@
 #pragma once
 
-// MLX affine words, little-endian, matching tensorfold/cuda/kernels/affine_kernels.py.
-// y[m, n] = sum_groups (scale[n, g] * sum_k x[m, k] * bf16(code[n, k])
-//                       + bias[n, g] * sum_k x[m, k])
-// with k ranging over the group and code rounded through BF16 before the product.
-// scale and bias are read as stored (fp32, bf16 or fp16) and widen exactly to fp32.
+// MLX affine words: y[m, n] = sum_g (scale[n, g] * sum_k x[m, k] * code[n, k] + bias[n, g] * sum_k x[m, k]).
 
 #include <hip/hip_bfloat16.h>
 #include <hip/hip_fp16.h>
@@ -28,9 +24,7 @@ struct GroupTable {
     }
 };
 
-// Grouped experts: one launch runs every item of a plan. Item z is (expert, first, count): its rows are the pairs
-// members[first .. first + count), its x row a pair's id over x_div (slots for gate/up, 1 for down) and its
-// output row the pair's id, its weight the expert's (n, k * bits / 32) slice of a stacked (E, n, ...) tensor.
+// Item z = (expert, first, count) of a plan: pairs members[first..first+count), x row pair / x_div, out row pair.
 struct Routing {
     const int* items = nullptr;  // (count, 3) int32; nullptr is one plain (m, n) product
     const int* members = nullptr;
@@ -108,11 +102,9 @@ hipError_t launch_affine_wmma_pair(const Affine& a, AffineSide first, AffineSide
 // reference is the one-thread kernel (schedule 1); otherwise the decode tile up to 8 rows, then the prefill tiles.
 hipError_t launch_affine_dot2(const Affine& a, bool reference, hipStream_t stream);
 hipError_t launch_affine_dot2_split(const Affine& a, float* partial, int splits, hipStream_t stream);
-// schedule 0 is WMMA on a build that has it, else the GEMV. 1 is the GEMV, 2 is WMMA, 3 is the
-// column stream. fp16 is the RDNA2 v_dot2 schedule, and a WMMA build refuses it.
+// schedule 0 auto, 1 GEMV, 2 WMMA, 3 column stream; fp16 x is the RDNA2 dot2 schedule.
 hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream);
-// Every item of a routed plan (a.route set, a.m the most rows an item holds): the decode tile up to 8 rows, the
-// prefill GEMM tile past that. FP16 only.
+// Every item of a routed plan in one launch; a.m is the most rows an item holds.
 hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t stream);
 // BF16 x on a gfx11 / gfx12 build, widths other than 8: the dot2 tiles with v_dot2_f32_bf16.
 hipError_t launch_affine_dot2_bf16(const Affine& a, hipStream_t stream);

@@ -23,10 +23,7 @@ __device__ inline void narrow(float v, float* out) { *out = v; }
 __device__ inline void narrow(float v, __half* out) { *out = __float2half_rn(v); }
 __device__ inline void narrow(float v, hip_bfloat16* out) { *out = hip_bfloat16(v); }
 
-// Sequential squares along the row, then one scale, all in fp32. Input and output are the activation dtype: the
-// result is rounded once, as the fp32 kernel followed by a cast was. The block stages the row in LDS and writes it
-// back with 256 threads; the sum stays one wave's, lane l adding elements l, l + 32, ... in order, then the warp
-// tree, so the bits do not depend on the block size.
+// fp32 sum of squares by one wave (lane l adds l, l + 32, ... then the xor tree), so bits do not depend on blockDim.
 constexpr int kRmsThreads = 256;
 constexpr int kRmsWidth = 8192;
 
@@ -230,7 +227,8 @@ void rms_launch(const void* x, const float* weight, void* y, int kind, int rows,
         tf::rocm::rms_kernel<__half><<<rows, tf::rocm::kRmsThreads, 0, stream>>>(static_cast<const __half*>(x), weight,
                                                                static_cast<__half*>(y), width, eps);
     } else if (kind == 2) {
-        tf::rocm::rms_kernel<hip_bfloat16><<<rows, tf::rocm::kRmsThreads, 0, stream>>>(static_cast<const hip_bfloat16*>(x), weight,
+        tf::rocm::rms_kernel<hip_bfloat16><<<rows, tf::rocm::kRmsThreads, 0, stream>>>(
+            static_cast<const hip_bfloat16*>(x), weight,
                                                                      static_cast<hip_bfloat16*>(y), width, eps);
     } else {
         tf::rocm::rms_kernel<float><<<rows, tf::rocm::kRmsThreads, 0, stream>>>(static_cast<const float*>(x), weight,
@@ -260,7 +258,8 @@ void moe_router_launch(const void* x, int kind, const float* rows, float* logits
                        hipStream_t stream) {
     dim3 grid((e + 7) / 8, r);
     if (kind == 1) {
-        tf::rocm::moe_router_kernel<__half><<<grid, 256, 0, stream>>>(static_cast<const __half*>(x), rows, logits, d, e);
+        tf::rocm::moe_router_kernel<__half><<<grid, 256, 0, stream>>>(static_cast<const __half*>(x), rows, logits, d,
+                                                                       e);
     } else {
         tf::rocm::moe_router_kernel<hip_bfloat16><<<grid, 256, 0, stream>>>(static_cast<const hip_bfloat16*>(x), rows,
                                                                            logits, d, e);

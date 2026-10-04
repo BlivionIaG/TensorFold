@@ -13,7 +13,10 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from tensorfold.rocm import qwen_math  # noqa: E402
+from tensorfold.rocm import (
+    forward,  # noqa: E402
+    qwen_math,  # noqa: E402
+)
 from tensorfold.rocm.qwen import FullLayer, LinearLayer, TextModel, slice_for_tp  # noqa: E402
 from tensorfold.rocm.qwen_math import Packed, Spec  # noqa: E402
 from tensorfold.rocm.qwen_tp import all_reduce_local, tp_forward_hidden, vocab_gather  # noqa: E402
@@ -55,7 +58,8 @@ def _model(tied: bool, kv_heads: int = 4) -> TextModel:
                      _packed(spec.hidden, spec.heads * spec.head_dim, g), vec(spec.head_dim), vec(spec.head_dim),
                      *mlp())
     embed = _packed(spec.vocab, spec.hidden, g)
-    return TextModel(spec, embed, [linear, full], vec(spec.hidden), None if tied else _packed(spec.vocab, spec.hidden, g))
+    head = None if tied else _packed(spec.vocab, spec.hidden, g)
+    return TextModel(spec, embed, [linear, full], vec(spec.hidden), head)
 
 
 def _linear(flat: torch.Tensor, packed: Packed) -> torch.Tensor:
@@ -103,7 +107,7 @@ def _run_ranks(model: TextModel, world: int, tokens: torch.Tensor):
             mine = slice_for_tp(copy.deepcopy(model), rank, world)
             comm = ring.rank(rank)
             hidden, _ = tp_forward_hidden(mine, tokens, None, _linear, 0, comm, act_dtype=torch.float32)
-            local = qwen_math._project(hidden[:, -1], mine.output_head(), _linear)
+            local = forward._project(hidden[:, -1], mine.output_head(), _linear)
             out[rank] = (hidden, vocab_gather(comm, local))
         except Exception as exc:  # noqa: BLE001 - surfaced below, the barrier is broken for the others
             errors.append(exc)
@@ -125,8 +129,8 @@ def _run_ranks(model: TextModel, world: int, tokens: torch.Tensor):
 def test_ranks_together_give_the_one_rank_model(world, tied, kv_heads):
     model = _model(tied, kv_heads)
     tokens = torch.tensor([[3, 17, 41, 8, 60, 2, 33]])
-    hidden, _ = qwen_math.forward_hidden(copy.deepcopy(model), tokens, None, _linear, 0, torch.float32)
-    logits = qwen_math._project(hidden[:, -1], model.output_head(), _linear)
+    hidden, _ = forward.forward_hidden(copy.deepcopy(model), tokens, None, _linear, 0, torch.float32)
+    logits = forward._project(hidden[:, -1], model.output_head(), _linear)
     for rank_hidden, rank_logits in _run_ranks(model, world, tokens):
         assert torch.allclose(rank_hidden, hidden, rtol=1e-4, atol=1e-4)
         assert torch.allclose(rank_logits, logits, rtol=1e-4, atol=1e-4)

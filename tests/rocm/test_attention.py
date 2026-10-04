@@ -1,7 +1,7 @@
 """HIP causal attention matches the fp32 spec on the activation dtype, including a short cache prefix."""
 
-import torch
 import pytest
+import torch
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
@@ -103,6 +103,7 @@ def test_triton_is_selected_only_where_it_was_faster():
 def test_triton_prefill_matches_the_spec_and_the_decode_walk():
     """gfx1030 and gfx11 prefill use the 64-row tile. It stays within the fp32 spec."""
 
+    pytest.importorskip("triton", reason="the 64-row tile is Triton; without it prefill keeps the HIP tile")
     from tensorfold.rocm.attention_triton import prefill
     from tensorfold.rocm.build import gfx_name
 

@@ -1,9 +1,4 @@
-"""Softmax top-k MoE with a sigmoid-gated shared expert on RDNA2, eager torch control over W4A16 experts.
-
-Parallel to ``tensorfold.cuda.moe``: same slots, same weights, same combine, but the control path is
-eager torch on this backend (no triton), and the experts are the checkpoint's kind through
-``tensorfold.rocm.experts``: the packed affine matmul or the grouped W4A16 kernels.
-"""
+"""Softmax top-k MoE with a sigmoid-gated shared expert: the CUDA routing rule on RDNA."""
 
 from __future__ import annotations
 
@@ -16,21 +11,13 @@ from tensorfold.rocm import experts as grouped
 
 
 def router(x: torch.Tensor, rows: torch.Tensor, out: torch.Tensor) -> None:
-    """``out`` [R, E + 1] fp32 = ``x`` [R, D] . ``rows`` [E + 1, D] fp32, the shared gate row last.
-
-    A fixed-order dot per logit, so a row's logits do not depend on how many rows share the launch.
-    """
+    """``out`` [R, E + 1] fp32 = ``x`` [R, D] . ``rows`` [E + 1, D]; a row's logits do not depend on R."""
 
     act.moe_router(x, rows, out)
 
 
 def select_rows(logits: torch.Tensor, buf: "MoEBuffers", top_k: int, experts: int) -> None:
-    """Each row's top-k experts and weights (buf.pick, buf.wts); slot ``top_k`` is the shared expert.
-
-    The CUDA rule: largest fp32 logit first, the lower id among equal logits, the weights exp(l_k - l_0)
-    over their sum in pick order, rounded through bf16, and the shared slot's weight the sigmoid of the
-    bf16-rounded shared gate logit, rounded through bf16.
-    """
+    """Each row's top-k experts and weights by the CUDA rule; slot ``top_k`` is the shared expert."""
 
     if logits.shape[1] != experts + 1:
         raise ValueError(f"logits carry {logits.shape[1]} columns, want {experts + 1}")
@@ -87,8 +74,7 @@ class MoEBuffers:
     plan: grouped.Plan
 
     def __init__(self, rows: int, cfg, device: torch.device | str, *, prefill: bool = False) -> None:
-        # Normal tensors, not inference ones: the engine forwards inside inference_mode and these buffers
-        # are cached process-wide, so a caller outside that mode could not update them in place otherwise.
+        # Not inference tensors: these buffers outlive the inference_mode block that makes them.
         with torch.inference_mode(False):
             slots = cfg.num_experts_per_tok + 1
             self.rows, self.slots = rows, slots
@@ -100,11 +86,7 @@ class MoEBuffers:
 
 @dataclass
 class Routed:
-    """A layer's router rows [E + 1, D] bf16 (the shared expert's gate row last) and its E + 1 experts.
-
-    Under tp a rank holds some of the experts: ``remap`` [E + 1] int32 maps a global expert id to its row in
-    ``experts`` or -1, and ``partial`` makes :func:`run` return the rank's fp32 share for the all-reduce.
-    """
+    """A layer's router rows (shared gate last) and experts; ``remap`` and ``partial`` mark a tp rank's share."""
 
     router: torch.Tensor
     experts: grouped.Experts
@@ -131,10 +113,7 @@ _scratch: dict[tuple, MoEBuffers] = {}
 
 
 def run(x: torch.Tensor, m: Routed, *, prefill: bool = False) -> torch.Tensor:
-    """``x`` [R, D] -> [R, D] in ``x``'s dtype: its top-k experts by renormalized softmax weight, plus the shared one.
-
-    With ``m.remap`` (a tp rank) only the rank's experts run, and the result is its fp32 share, unrounded.
-    """
+    """``x`` [R, D] -> [R, D]: the top-k experts plus the shared one; a tp rank returns its fp32 share."""
 
     rows = x.shape[0]
     size = 1 << max(4, (rows - 1).bit_length())

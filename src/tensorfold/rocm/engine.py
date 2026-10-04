@@ -1,10 +1,4 @@
-"""ROCm Qwen engine for the existing torch server.
-
-``generate(prompt, max_tokens, sampling, on_tokens)`` returns ``{"cached": n}``. A prompt that
-strictly extends a kept prefix prefills only the suffix. Entries are the state after a message
-start and one token before the prompt ends, each produced by the same forward a fresh prefill of
-those ids uses.
-"""
+"""ROCm Qwen engine for the torch server: one request at a time, prefix cache, MTP drafts, tp ranks."""
 
 from __future__ import annotations
 
@@ -18,12 +12,13 @@ import numpy as np
 import torch
 
 from tensorfold.engine.exact_sampling import MARGIN, Sampling, choose
+from tensorfold.rocm.forward import _blank_caches, _project, forward_hidden
+from tensorfold.rocm.mtp import MTPEngine
 from tensorfold.rocm.prefix import PrefixCache, entry_end, trim_bytes
 from tensorfold.rocm.qwen import Engine as Kernels
 from tensorfold.rocm.qwen import activation_dtype, load, slice_for_tp
-from tensorfold.rocm.qwen_math import DevicePos, _blank_caches, _project, forward_hidden
+from tensorfold.rocm.qwen_math import DevicePos
 from tensorfold.rocm.qwen_tp import tp_forward_hidden, vocab_gather
-from tensorfold.rocm.mtp import MTPEngine
 
 _DEFAULT_EOS = (151645,)
 _DEFAULT_MTP_DEPTH = 4
@@ -43,9 +38,7 @@ def _resolve_p2p(gfx: str, p2p: bool | None) -> bool | None:
 
 
 def read_eos(model_dir: Path) -> tuple[int, ...]:
-    """Every end id the checkpoint names: ``config.json`` (top level and ``text_config``) and
-    ``generation_config.json``. Qwen3.6 lists ``<|im_end|>`` at the top level and only ``<|endoftext|>`` in
-    ``text_config``; a chat turn ends on the first."""
+    """Every end id in config.json (top level and text_config) and generation_config.json."""
 
     found: list[int] = []
 
@@ -118,11 +111,7 @@ def _grow(caches: list[dict], total: int, dtype: torch.dtype, device: torch.devi
 
 
 class _StepGraph:
-    """One request's one-token forward as a HIP graph: the token and the position live in device buffers.
-
-    The first step runs eagerly through the same device-position code (it settles every state into a fixed
-    fp32 buffer and fills the per-shape scratch); the next one captures; every later one replays.
-    """
+    """One request's one-token forward: eager once, then captured and replayed with device token and position."""
 
     def __init__(self, caches: list[dict], device: torch.device) -> None:
         self.caches = caches
@@ -178,8 +167,7 @@ class QwenEngine:
         head = getattr(model, "mtp", None)
         self.mtp = MTPEngine(model, head, linear=kernels.linear, rccl=rccl) if head is not None else None
         self.mtp_depth = int(mtp_depth)
-        # One-token steps replay a captured graph (every rank captures the same one; TENSORFOLD_GRAPH=0 keeps them
-        # eager).
+        # One-token steps replay a captured graph; TENSORFOLD_GRAPH=0 keeps them eager.
         self.graphs = os.environ.get("TENSORFOLD_GRAPH", "1") != "0"
         self._step: _StepGraph | None = None
 
@@ -232,12 +220,7 @@ class QwenEngine:
 
     def _forward(self, tokens: Sequence[int], caches: list[dict] | None, pos0: int, *,
                  decode: bool = False) -> tuple[torch.Tensor, list[dict]]:
-        """A prefill span, or with ``decode`` one generated token.
-
-        A prefill span of any length keeps the prefill conv and rope, so a prompt split at stored cuts matches
-        one forward. A decode step takes the one-row HIP conv and rope (prefill never resumes from a decoded
-        state), and replays a captured graph (every rank captures the same one).
-        """
+        """A prefill span (prefill rope and conv), or with ``decode`` one token (HIP rope and conv, graph replay)."""
 
         device, dtype = self._device(), self._dtype()
         if caches is None:
@@ -252,11 +235,7 @@ class QwenEngine:
             return forward_hidden(self.model, ids, caches, self.kernels.linear, pos0, dtype, exact_short=not decode)
 
     def _graph_forward(self, token: int, caches: list[dict], pos0: int) -> tuple[torch.Tensor, list[dict]]:
-        """The one-token forward of ``token`` at ``pos0``: eager once, captured once, then replayed.
-
-        Same bits as the eager step: the position is read on the device by the same formulas, and the key and
-        value land at ``pos0`` in the request's fixed buffers. A capture that fails leaves graphs off.
-        """
+        """The one-token forward at ``pos0`` with the eager step's bits; a failed capture turns graphs off."""
 
         step = self._step
         if step is None or step.caches is not caches:
@@ -396,12 +375,7 @@ class QwenEngine:
     def generate(self, prompt: list[int], max_tokens: int, sampling: Sampling | None,
                  on_tokens: Callable[[list[int]], bool | None], *, stop_eos: bool = True, draft: bool = True,
                  constraint=None, vision=None, background: bool = False) -> dict[str, int]:
-        """One prompt. ``draft=False`` ignores the prefix cache. ``stats['cached']`` is the reused length.
-
-        ``constraint`` is the server's grammar. ``vision`` is refused. ``background`` is accepted and
-        unused: this engine serves one request at a time, and the server orders those requests. With
-        ``tp > 1`` this runs on rank 0, and every other rank runs the same request in :meth:`follow`.
-        """
+        """One prompt; ``draft=False`` skips the prefix cache. Returns ``{'cached': reused length}``."""
 
         del background
         if vision is not None:
@@ -470,12 +444,7 @@ class QwenEngine:
     def _decode_step(self, hidden: torch.Tensor, caches: list[dict], position: int, last_token: int, *,
                      sampling: Sampling | None, constraint,
                      depth: int) -> tuple[list[int], torch.Tensor, list[dict], int, int]:
-        """One decode round. ``hidden`` ends at ``position - 1`` and ``last_token`` is the token for ``position``.
-
-        Returns ``(extra, hidden, caches, position, nxt)``. ``extra`` is the round's accepted drafts, each
-        forwarded and emitted exactly once. ``nxt`` is the next token: sampled but never forwarded, so the
-        caller emits it and the next round forwards it exactly once. ``position`` is ``nxt``'s slot.
-        """
+        """One round: returns accepted drafts, hidden, caches, the next token's slot and the next token."""
         if self.mtp is None or depth <= 0:
             hidden, caches = self._forward([last_token], caches, position, decode=True)
             position += 1
@@ -488,8 +457,7 @@ class QwenEngine:
         mtp_state = self.mtp.fresh_cache(batch=1,
                                          total=position + max(0, depth) + 1,
                                          device=self._device(), dtype=dtype)
-        # Followers (tp>1, rank!=0) run this with sampling=None from follow(); their drafts are replaced by
-        # rank 0's chain below, so a deterministic Sampling is enough to keep the chain's collectives in step.
+        # Followers draft with a fixed Sampling: rank 0's chain replaces their drafts below.
         if sampling is None:
             sampling = Sampling(seed=0)
         drafts = self.mtp.draft_chain(hidden[:, -1:], last_token, position - 1, depth, mtp_state,
@@ -510,11 +478,7 @@ class QwenEngine:
         return extra, cur_hidden, caches, position + depth, nxt
 
     def _post(self, prompt: list[int], room: int, draft: bool, depth: int) -> None:
-        """Rank 0 publishes a request on the rendezvous store. The previous one has been read by every rank.
-
-        ``depth`` (drafts a round) and ``graphs`` are rank 0's: every rank runs the same collectives, whatever its
-        own settings.
-        """
+        """Rank 0 publishes a request with its draft depth and graph choice, so every rank runs the same calls."""
 
         store = self.rccl.store
         store.set(f"tf_request/{self._posted}", json.dumps([prompt, room, bool(draft), int(depth), bool(self.graphs)]))
@@ -523,8 +487,7 @@ class QwenEngine:
         self._posted += 1
 
     def close(self) -> None:
-        """Rank 0 tells the other ranks there are no more requests, so their ``follow`` returns before the store
-        goes away."""
+        """Rank 0 tells the other ranks there are no more requests."""
 
         if self.tp > 1 and self.rank == 0:
             store = self.rccl.store

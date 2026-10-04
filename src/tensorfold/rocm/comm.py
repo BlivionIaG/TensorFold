@@ -1,16 +1,4 @@
-"""RCCL all-gather / all-reduce on the current HIP stream so HIP graphs capture it.
-
-Every rank receives the same ``all_reduce`` result; ``ready`` and ``barrier`` are the
-rendezvous that the follower rank uses to wait for the leader. Same shape as ``tensorfold.cuda.comm``
-because librccl exports NCCL's C API under NCCL's names (ncclGetUniqueId, ncclCommInitRank, ncclAllReduce, ...).
-
-Hardware support:
-- RDNA 3.5 / RDNA 4 integrated (``multi_gpu_capable=True``): dies on one APU package; P2P over
-  package-local HBM; the user may set ``prefer_p2p=True`` and the engine turns on ``RCCL_USE_P2P=1``.
-- RDNA 2 / RDNA 3 / RDNA 4 discrete (multi-card via motherboard): PCIe P2P is BIOS-, ACS- and
-  driver-dependent. ``prefer_p2p`` defaults to ``False``; the engine refuses with a clear error if
-  the user passes ``--p2p`` and ``hipDeviceCanAccessPeer`` returns 0 for the pair.
-"""
+"""RCCL collectives on the current HIP stream, so a captured graph replays them."""
 
 from __future__ import annotations
 
@@ -60,21 +48,7 @@ def _library() -> ctypes.CDLL:
 
 
 class RCCL:
-    """One rank of an RCCL ring. Stream-aware so HIP-graph capture works.
-
-    Args:
-        rank: this process's rank in ``[0, world)``.
-        world: total ranks (``tp``); 1 disables multi-rank and is not constructed here.
-        master: rank-0's reachable address (used by ``torch.distributed.TCPStore``).
-        port: rendezvous port. ``0`` (the default) makes rank 0 pick a free port at runtime via
-            ``socket.bind(('', 0))`` - the chosen port is exposed as ``self.port`` - so concurrent
-            agents on overlapping port ranges don't collide. Multi-host runs pass a fixed port.
-        prefer_p2p: ``True`` allows RCCL peer-to-peer (``NCCL_P2P_DISABLE=0``), ``False`` stages through host
-            memory (``NCCL_P2P_DISABLE=1``), ``None`` (the default) leaves the choice to RCCL. On eight V620s
-            on PCIe RCCL picks P2P, 24-32 us an all-reduce of one 5120-wide fp32 row.
-
-    Each rank must hold its own GPU: two ranks on one card are refused at startup.
-    """
+    """One rank's RCCL communicator; ``prefer_p2p`` None leaves peer-to-peer to RCCL."""
 
     def __init__(self, rank: int, world: int, master: str, port: int = 0, *, prefer_p2p: bool | None = None) -> None:
         if world < 2:
@@ -88,9 +62,7 @@ class RCCL:
 
         from torch.distributed import TCPStore
 
-        # port=0 (the new default) lets rank 0 pick a free port at runtime so concurrent agents on
-        # overlapping port ranges don't collide. The caller passes the chosen port back into every
-        # other rank on the same host; multi-host runs pass a fixed port from the launcher.
+        # port 0: rank 0 picks a free port and exposes it as self.port; the other ranks need the real one.
         if port == 0 and rank == 0:
             import socket as _socket
             with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
@@ -170,11 +142,7 @@ class RCCL:
         ))
 
     def all_reduce(self, send: torch.Tensor, recv: torch.Tensor, *, op: str = "sum") -> None:
-        """``send`` summed (or ``op``) across ranks into ``recv``, on this stream. Same shape and dtype.
-
-        The ring decides the order of the adds. With two ranks that is one add; past two, fp32 sums can
-        differ in the last bit from a rank-order sum.
-        """
+        """``send`` reduced across ranks into ``recv`` on this stream; past two ranks the add order is RCCL's."""
         if op not in _OPS:
             raise ValueError(f"all_reduce: op must be one of {list(_OPS)}, not {op!r}")
         if send.dtype != recv.dtype or send.numel() != recv.numel():
@@ -234,18 +202,4 @@ class RCCL:
         torch.cuda.synchronize()
 
 
-__all__ = ["RCCL", "gather_ints"]
-
-
-def gather_ints(rccl: RCCL | None, torch, values: list[int]) -> list[list[int]]:
-    """Concatenate ``values`` across ranks in rank order; rccl=None keeps the local list (tp=1).
-
-    Same shape as ``tensorfold.cuda.comm.gather_ints`` so the per-rank capacity module can be
-    shared between backends: the gather callable abstracts RCCL / NCCL / no-op.
-    """
-    if rccl is None:
-        return [list(values)]
-    send = torch.tensor(values, dtype=torch.int64, device="cuda")
-    receive = torch.empty((rccl.world * len(values),), dtype=torch.int64, device="cuda")
-    rccl.all_gather(send, receive)
-    return receive.view(rccl.world, -1).tolist()
+__all__ = ["RCCL"]

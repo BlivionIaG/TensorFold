@@ -371,7 +371,7 @@ def test_the_family_rocm_engine_loads_a_moe_checkpoint(tmp_path):
 def test_the_ranks_shares_sum_to_the_whole_layer(world, rows):
     """Under tp each rank runs its own experts; the fp32 shares summed give the one-rank layer."""
 
-    from tensorfold.rocm.qwen import _experts_share
+    from tensorfold.rocm.slicing import _experts_share
 
     whole = _routed(_affine_experts(), torch.randn(_EXPERTS + 1, _HIDDEN).to(torch.bfloat16).cuda())
     x = torch.randn(rows, _HIDDEN, device="cuda").to(_ACT)

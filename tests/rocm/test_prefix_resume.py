@@ -1,7 +1,7 @@
 """A prompt resumed from the token before its end matches a fresh prefill of the same ids."""
 
-import torch
 import pytest
+import torch
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
