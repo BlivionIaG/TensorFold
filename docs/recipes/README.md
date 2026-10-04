@@ -25,7 +25,7 @@ Quoted from the family pages, not measured per card.
 
 Contributor guides cover [adding an MLX family](adding-a-family.md),
 [adding a CUDA family](adding-a-cuda-family.md) and [CUDA implementation rules](cuda.md).
-[ROCm](rocm.md) covers AMD Radeon GPUs: Qwen3.5 / Qwen3.8 dense on RDNA2 to RDNA4, one GPU or tensor parallel.
+[ROCm](rocm.md) covers AMD Radeon GPUs: Qwen3.5 / Qwen3.8 dense and Qwen3.6-35B-A3B MoE on RDNA2 to RDNA4, one GPU or tensor parallel.
 [EXL3 weights](exl3.md) and [universal EXL3 experts](exl3-universal-experts.md) describe the shared EXL3
 module every CUDA family can read: any codebook, any width per tensor, one grouped launch per MoE projection.
 
