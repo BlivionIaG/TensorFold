@@ -234,6 +234,23 @@ def test_drafting_equals_serial_token_for_token(tmp_path):
     assert len(want) == room and got == want
 
 
+def test_draft_false_decodes_serially(tmp_path):
+    """``"draft": false`` is the serial reference: the head drafts nothing and the reply is no_drafts' reply."""
+
+    prompt, sampling, room = [1, 2, 3, 4], Sampling(seed=11, temperature=1.0), 12
+    drafted, model = _served(tmp_path)
+    serial = _engine(model, drafted.kernels, no_drafts=True, depth=0)
+
+    def refuse(*_args, **_kwargs):
+        raise AssertionError("draft=False drafted")
+
+    drafted.mtp.draft_chain = refuse
+    want, got = [], []
+    serial.generate(prompt, room, sampling, want.extend, stop_eos=False)
+    drafted.generate(prompt, room, sampling, got.extend, stop_eos=False, draft=False)
+    assert len(want) == room and got == want
+
+
 def test_a_stop_token_ends_generation_at_that_token(tmp_path):
     """An eos ends a drafted run at its first appearance: the third token's id, inside the first drafted round.
 
