@@ -23,7 +23,7 @@ _off = False
 if tl is not None:
 
     @triton.jit
-    def _attend(Q, K, V, OUT, q_pos0, qlen, span, scale,
+    def _attend(Q, K, V, OUT, q_pos0, qlen, span, scale, shift,
                 stride_qb, stride_qh, stride_qs, stride_qd,
                 stride_kb, stride_kh, stride_ks, stride_kd,
                 stride_vb, stride_vh, stride_vs, stride_vd,
@@ -33,8 +33,9 @@ if tl is not None:
         head = tl.program_id(1)
         block = tl.program_id(2)
         hk = head // (H // HK)
-        rows = block * BM + tl.arange(0, BM)
-        ok = rows < qlen
+        # Tiles start at multiples of BM in absolute positions: a row sits at the same tile row in every span.
+        rows = block * BM - shift + tl.arange(0, BM)
+        ok = (rows >= 0) & (rows < qlen)
         pos = q_pos0 + rows
         offs_d = tl.arange(0, D)
         q = tl.load(Q + batch * stride_qb + head * stride_qh + rows[:, None] * stride_qs
@@ -42,8 +43,8 @@ if tl is not None:
         m_i = tl.full((BM,), float("-inf"), tl.float32)
         l_i = tl.zeros((BM,), tl.float32)
         acc = tl.zeros((BM, D), tl.float32)
-        q0 = block * BM
-        visible = tl.minimum(span, q_pos0 + q0 + tl.minimum(BM, qlen - q0))
+        q0 = block * BM - shift
+        visible = tl.minimum(span, q_pos0 + tl.minimum(q0 + BM, qlen))
         n_tiles = (visible + BN - 1) // BN
         tile = 0
         while tile < n_tiles:
@@ -96,7 +97,7 @@ def prefill(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_p
         return None
     if triton is None:
         raise RuntimeError("Triton attention needs the Triton package next to this ROCm PyTorch")
-    if q.shape[2] <= 1 or q.shape[-1] < 16 or q.shape[-1] > 256 or q.shape[-1] % 16 != 0:
+    if q.shape[2] < 1 or q.shape[-1] < 16 or q.shape[-1] > 256 or q.shape[-1] % 16 != 0:
         return None
     if q.shape[1] % k.shape[1] != 0 or k.shape != v.shape or not q.is_cuda:
         return None
@@ -105,9 +106,10 @@ def prefill(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_p
     if dot is None:
         dot = "bf16" if os.environ.get("TENSORFOLD_ATTN_DOT") == "bf16" else "fp16"
     dot_id = 1 if dot == "bf16" else 0
-    grid = (q.shape[0], heads, triton.cdiv(q.shape[2], BM))
+    shift = int(q_pos0) % BM
+    grid = (q.shape[0], heads, triton.cdiv(q.shape[2] + shift, BM))
     try:
-        _attend[grid](q, k, v, out, int(q_pos0), int(q.shape[2]), int(k.shape[2]), float(scale),
+        _attend[grid](q, k, v, out, int(q_pos0), int(q.shape[2]), int(k.shape[2]), float(scale), shift,
                       q.stride(0), q.stride(1), q.stride(2), q.stride(3),
                       k.stride(0), k.stride(1), k.stride(2), k.stride(3),
                       v.stride(0), v.stride(1), v.stride(2), v.stride(3),

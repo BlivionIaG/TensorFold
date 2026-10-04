@@ -237,9 +237,10 @@ void causal_launch(const float* q, const void* k, const void* v, float* out, int
     hipStream_t hip_stream = static_cast<hipStream_t>(stream);
     int visible = q_pos0 + 1;
     if (visible > span) visible = span;
-    if (qlen == 1) {
-        if (scores == nullptr || stats == nullptr) throw std::invalid_argument("decode attention needs workspace");
-        if (partials == nullptr) throw std::invalid_argument("decode attention needs partials");
+    if (scores != nullptr) {
+        if (qlen != 1 || stats == nullptr || partials == nullptr) {
+            throw std::invalid_argument("the decode walk is one query with scores, stats and partials");
+        }
         // With a device position the keys in use are read on the device and the grid covers the whole cache.
         int tiles = pos != nullptr ? (span + 127) / 128 : (visible + 127) / 128;
         dim3 score_block(128);  // four warps, one key each

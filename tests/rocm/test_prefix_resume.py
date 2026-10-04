@@ -38,6 +38,22 @@ def test_resumed_prefill_matches_a_fresh_one():
     assert caches_equal(held[1], fresh.prefill_caches(extended[:len(held[0])]))
 
 
+@pytest.mark.parametrize("cuts", [(16,), (16, 22), (1, 65, 137), (199,)])
+def test_a_prompt_prefilled_in_pieces_matches_one_span(cuts):
+    """Every prefill row's bits are its own: a resume from any cut repeats a fresh prefill."""
+
+    model = _tiny(torch.device("cuda"))
+    engine = QwenEngine(model, Engine(model, schedule="gemv", dtype=torch.bfloat16), eos=(0,))
+    prompt = [1 + (index * 7) % 47 for index in range(200)]
+    whole, fresh = engine._span(prompt, None, 0, len(prompt))
+    caches, start = None, 0
+    for stop in (*cuts, len(prompt)):
+        hidden, caches = engine._span(prompt[start:stop], caches, start, len(prompt))
+        start = stop
+    assert torch.equal(hidden[0, -1], whole[0, -1])
+    assert caches_equal(caches, fresh)
+
+
 def test_a_message_start_matches_a_fresh_prefix_and_the_next_turn():
     prompt = [3, 5, 7, 9, 11, 13, 15, 17]
     first = _engine()

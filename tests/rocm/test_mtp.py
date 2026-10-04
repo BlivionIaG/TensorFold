@@ -10,7 +10,7 @@ import torch
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from test_moe import _EXPERTS, _GROUP, _HIDDEN, _TOP_K, _WIDTH, _affine, _checkpoint  # noqa: E402
+from tests.rocm.test_moe import _EXPERTS, _GROUP, _HIDDEN, _TOP_K, _WIDTH, _affine, _checkpoint  # noqa: E402
 
 from tensorfold.engine.exact_sampling import Sampling  # noqa: E402
 from tensorfold.rocm import qwen as qwen_mod  # noqa: E402

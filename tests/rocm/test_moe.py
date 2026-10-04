@@ -198,7 +198,7 @@ def test_the_shared_expert_is_the_last_slot():
 def test_gptq_experts_match_the_fp32_reference():
     """The W4A16 kind takes bf16 activations, stacks gate first, and lands on the int4 product."""
 
-    from test_qgemm import _expert_weight, _pack_experts, _plan
+    from tests.rocm.test_qgemm import _expert_weight, _pack_experts, _plan
 
     from tensorfold.rocm.qgemm import moe as gptq_moe
 
@@ -229,7 +229,7 @@ def test_gptq_experts_match_the_fp32_reference():
 
 
 def _gptq_projection(n, k, group, seed):
-    from test_qgemm import _pack
+    from tests.rocm.test_qgemm import _pack
 
     _, _, qweight, qzeros, scales = _pack(n, k, group, seed)
     return {".qweight": qweight, ".qzeros": qzeros, ".scales": scales}
@@ -239,7 +239,7 @@ def _checkpoint(root, *, gptq):
     """Write a one-layer ``qwen3_5_moe`` checkpoint: 4-bit experts, 8-bit routers, the shared expert last."""
 
     from safetensors.torch import save_file
-    from test_qgemm import _pack_experts
+    from tests.rocm.test_qgemm import _pack_experts
 
     hidden, width, group, vocab, conv = _HIDDEN, _WIDTH, _GROUP, 48, 4
     heads, head_dim, key_width, value_width, value_heads = 4, 16, 4 * 16, 16 * 16, 16

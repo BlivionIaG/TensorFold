@@ -81,23 +81,38 @@ def test_flash_prefill_matches_the_decode_walk(dtype, monkeypatch):
         assert torch.allclose(one, pre2[:, :, local:local + 1], rtol=1e-4, atol=1e-4), gap
 
 
-def test_triton_is_selected_only_where_it_was_faster():
+def test_triton_is_selected_by_gfx_only():
     from tensorfold.rocm.attention import triton_prefill
 
-    assert triton_prefill("gfx1030", 1, 512) is False
-    assert triton_prefill("gfx1030", 1, 1024) is True
-    assert triton_prefill("gfx1030", 1, 32768) is True
-    assert triton_prefill("gfx1030", 8, 256) is False
-    assert triton_prefill("gfx1030", 8, 384) is True
-    assert triton_prefill("gfx1100", 1, 64) is False
-    assert triton_prefill("gfx1100", 1, 128) is True
-    assert triton_prefill("gfx1100", 1, 32768) is True
-    assert triton_prefill("gfx1100", 8, 32) is False
-    assert triton_prefill("gfx1100", 8, 64) is True
-    assert triton_prefill("gfx1100", 8, 32768) is True
-    assert triton_prefill("gfx1100", 2, 64) is False
-    assert triton_prefill("gfx1100", 2, 128) is True
-    assert triton_prefill("gfx1151", 1, 4096) is False
+    assert triton_prefill("gfx1030") is True
+    assert triton_prefill("gfx1031") is True
+    assert triton_prefill("gfx1100") is False
+    assert triton_prefill("gfx1151") is False
+    assert triton_prefill("gfx1201") is False
+
+
+def _gfx_name() -> str:
+    from tensorfold.rocm.build import gfx_name
+
+    return gfx_name()
+
+
+@pytest.mark.parametrize("cuts", [(16,), (16, 22), (1, 65, 66), (100, 137)])
+def test_prefill_rows_do_not_depend_on_their_span(cuts):
+    """A prompt prefilled in pieces gives every row the bits of one whole span, on either prefill kernel."""
+
+    g = torch.Generator(device="cuda").manual_seed(80)
+    heads, kv, dim, total = 8, 2, 256, 210
+    dtype = torch.bfloat16 if _gfx_name().startswith("gfx11") else torch.float16
+    q = torch.randn(1, heads, total, dim, generator=g, device="cuda")
+    k = torch.randn(1, kv, total, dim, generator=g, device="cuda", dtype=dtype)
+    v = torch.randn(1, kv, total, dim, generator=g, device="cuda", dtype=dtype)
+    scale = dim ** -0.5
+    whole = causal(q, k, v, scale, 0, prefill=True)
+    bounds = (0, *cuts, total)
+    for start, stop in zip(bounds, bounds[1:]):
+        piece = causal(q[:, :, start:stop].contiguous(), k[:, :, :stop], v[:, :, :stop], scale, start, prefill=True)
+        assert torch.equal(piece, whole[:, :, start:stop]), (start, stop)
 
 
 def test_triton_prefill_matches_the_spec_and_the_decode_walk():
@@ -119,6 +134,7 @@ def test_triton_prefill_matches_the_spec_and_the_decode_walk():
     v = torch.randn(1, kv, 160, dim, generator=g, device="cuda", dtype=dtype)
     got = prefill(q, k, v, scale, 8, force=True)
     assert got is not None
+    assert torch.equal(prefill(q[:, :, 5:6].contiguous(), k, v, scale, 13, force=True), got[:, :, 5:6])
     ref = _spec(q, k, v, scale, 8)
     gap = (got - ref).abs().max().item()
     assert torch.allclose(got, ref, rtol=1e-3, atol=1e-3), gap
