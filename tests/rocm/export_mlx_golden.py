@@ -14,7 +14,6 @@ from pathlib import Path
 
 import numpy as np
 
-
 PROMPT = [151643, 198, 15, 279, 1196]  # a short fixed id list, not a chat string
 
 

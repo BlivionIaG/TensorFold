@@ -58,8 +58,7 @@ void causal(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, at::T
                   v.stride(2), kind, scores, stats, partials, stream.stream());
 }
 
-// One query at the device position ``pos`` (int32, one element) over the whole cache ``k`` / ``v``: the launch reads
-// the position when it runs, so a captured graph replays it at every step. Same bits as ``causal`` at that position.
+// One query at device position pos over the whole cache: a captured graph replays it at every step.
 void causal_at(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, at::Tensor& out, double scale,
                const at::Tensor& pos) {
     TORCH_CHECK(q.is_cuda() && q.is_contiguous() && q.scalar_type() == at::kFloat && q.dim() == 4 && q.size(2) == 1,

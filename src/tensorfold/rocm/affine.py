@@ -28,18 +28,14 @@ def _ext():
 
     here = Path(__file__).parent
     return load(name="tensorfold_rocm_affine",
-                sources=[str(here / "affine.cpp"), str(here / "affine_gemv.hip"), str(here / "affine_wmma.hip"),
-                         str(here / "affine_dot2.hip")],
+                sources=[str(here / name) for name in ("affine.cpp", "affine_gemv.hip", "affine_wmma.hip",
+                                                       "affine_wmma_pair.hip", "affine_dot2.hip", "affine_tiles.hip")],
                 extra_include_paths=[str(here)], verbose=False)
 
 
 def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torch.Tensor, *, bits: int,
            group: int, schedule: str = "auto", f32: bool = False, dot2_split: bool | None = None) -> torch.Tensor:
-    """``x`` (M, K) times packed words (N, K * bits / 32). ``x`` is BF16, or FP16 on RDNA2.
-
-    ``schedule`` is ``auto``, ``gemv``, ``wmma`` or ``decode`` (the 8-bit column stream, up to 16 rows, whose
-    sum order differs from WMMA). FP16 ``auto`` and ``gemv`` are ``v_dot2_f32_f16``.
-    """
+    """``x`` (M, K) BF16, or FP16 on RDNA2, times packed words (N, K * bits / 32)."""
 
     from tensorfold.rocm.build import WMMA, gfx_name
 
@@ -74,13 +70,7 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
 
 def matmul_routed(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torch.Tensor, items: torch.Tensor,
                   members: torch.Tensor, *, pairs: int, x_div: int, rows: int, bits: int, group: int) -> torch.Tensor:
-    """Every item of an expert plan in one launch: (pairs, N) fp32, row ``p`` pair ``p``'s product.
-
-    ``words`` (E, N, K * bits / 32) and ``scale`` / ``bias`` (E, N, K / group) stack the experts; an item (expert,
-    first, count) multiplies x rows ``members[first:first + count] // x_div`` by its expert. ``rows`` bounds an
-    item's count. A row's bits do not depend on the rows beside it. FP16 activations on RDNA2 (v_dot2_f32_f16), BF16
-    on gfx11 / gfx12 (v_dot2_f32_bf16).
-    """
+    """Every item (expert, first, count) of a plan in one launch: (pairs, N) fp32 by pair id."""
 
     if bits not in BITS or group not in GROUPS:
         raise ValueError("RDNA affine weights require 2/3/4/5/6/8 bits and groups of 32/64/128")

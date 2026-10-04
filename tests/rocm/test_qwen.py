@@ -5,15 +5,16 @@ GEMV with BF16 activations is the scalar kernel, which matches that fmaf order. 
 RDNA3 part is WMMA and is not this bit reference; the measurement entry uses ``auto``.
 """
 
-import torch
 import pytest
+import torch
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
 from tensorfold.rocm import affine as affine_mod  # noqa: E402
+from tensorfold.rocm.forward import greedy  # noqa: E402
 from tensorfold.rocm.qwen import Engine, FullLayer, LinearLayer, TextModel  # noqa: E402
-from tensorfold.rocm.qwen_math import Packed, Spec, affine_reference, greedy  # noqa: E402
+from tensorfold.rocm.qwen_math import Packed, Spec, affine_reference  # noqa: E402
 
 
 def _pack(n, k, bits, group, seed):

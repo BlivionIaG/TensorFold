@@ -1,12 +1,12 @@
 """Short-row norm, conv, and RoPE match the PyTorch formulas. Spanning affine codes match the bit reader."""
 
-import torch
 import pytest
+import torch
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.qwen import _affine_quant  # noqa: E402
+from tensorfold.rocm.checkpoint import _affine_quant  # noqa: E402
 from tensorfold.rocm.qwen_math import _codes, _rms_torch, apply_rope, causal_conv, rms_norm  # noqa: E402
 
 

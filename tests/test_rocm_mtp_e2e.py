@@ -12,7 +12,14 @@ torch = pytest.importorskip("torch")
 
 from tensorfold.rocm.mtp import MTPEngine  # noqa: E402
 from tensorfold.rocm.qwen import (  # noqa: E402
-    Engine as Kernels, FullLayer, LinearLayer, MTPHead, Packed, Spec, TextModel,
+    Engine as Kernels,
+)
+from tensorfold.rocm.qwen import (
+    FullLayer,
+    MTPHead,
+    Packed,
+    Spec,
+    TextModel,
     activation_dtype,
 )
 from tensorfold.rocm.qwen_math import _codes  # noqa: E402
@@ -54,7 +61,6 @@ def _model_and_mtp(*, hidden: int, vocab: int, heads: int, kv_heads: int, head_d
                 _packed(spec.intermediate, spec.hidden, g, device),
                 _packed(spec.hidden, spec.intermediate, g, device))
 
-    width = spec.key_width * 2 + spec.value_width
     full = FullLayer(_vec(spec.hidden, g, device), _vec(spec.hidden, g, device),
                      _packed(spec.heads * spec.head_dim * 2, spec.hidden, g, device),
                      _packed(spec.kv_heads * spec.head_dim, spec.hidden, g, device),

@@ -55,16 +55,7 @@ def test_rccl_rejects_negative_world():
         comm.RCCL(rank=0, world=0, master="127.0.0.1", port=29551)
 
 
-def test_gather_ints_local_when_no_rccl():
-    from tensorfold.rocm import comm
-
-    fake_torch = type("Torch", (), {"tensor": lambda *args, **kwargs: "values"})
-    assert comm.gather_ints(None, fake_torch, [1, 2, 3]) == [[1, 2, 3]]
-
-
 def test_windows_refuses_librccl(monkeypatch):
-    import sys as _sys
-
     from tensorfold.rocm import comm
 
     monkeypatch.setattr(comm.os, "name", "nt")
@@ -124,7 +115,8 @@ def test_family_rocm_engine_passes_kwargs(monkeypatch):
         seen["model_dir"] = str(model_dir)
         return object()
 
-    monkeypatch.setattr(engine.QwenEngine, "load", classmethod(lambda cls, model_dir, **kwargs: fake_load(model_dir, **kwargs)))
+    monkeypatch.setattr(engine.QwenEngine, "load",
+                        classmethod(lambda cls, model_dir, **kwargs: fake_load(model_dir, **kwargs)))
     qwen3_5.rocm_engine("/tmp/fake", tp=2, rank=1, master="192.0.2.1", master_port=29552, p2p=True, no_drafts=True)
     assert seen["tp"] == 2
     assert seen["rank"] == 1

@@ -1,8 +1,4 @@
-// One wave per (batch, value head, value row) walks the sequence in order.
-// State for that row stays in registers. Dk is 16 or 128, so each lane owns
-// elements lane, lane+32, ... and adds them in that index order. The warp
-// sum is a xor-shuffle of 16, 8, 4, 2, 1, and every lane then uses lane 0's
-// sum, which is the reduction the Python reference repeats.
+// Gated DeltaNet: a wave per (batch, value head, value row) walks the sequence, lane sums as the Python reference.
 
 #include "gated_delta.hpp"
 
@@ -90,9 +86,7 @@ gated_delta_kernel(const float* __restrict__ q, const float* __restrict__ k, con
     }
 }
 
-// Several value rows share one staged tile of k and q. The scan order is the wave kernel's:
-// each lane still owns lane, lane+32, ... and the sum is still lane0_sum. -ffp-contract=off
-// keeps those products from folding, so a tile matches one step and a split sequence.
+// Value rows share a staged tile of k and q, in the wave kernel's order (-ffp-contract=off keeps it).
 template <int DK, int ROWS, int STEPS>
 __global__ void __launch_bounds__(32 * ROWS)
 gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,

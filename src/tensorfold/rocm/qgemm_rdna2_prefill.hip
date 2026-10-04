@@ -1,14 +1,6 @@
-// W4A16 GPTQ prefill kernel for RDNA2 (gfx1030). Ported from vLLM-rdna
-// (opengfx1030/vllm-rdna, branch rdna_extras) csrc/rocm/q_gemm_rdna2_prefill.cu.
+// W4A16 GPTQ prefill kernel for gfx1030, ported from vLLM-rdna (opengfx1030/vllm-rdna) q_gemm_rdna2_prefill.cu.
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-//
-// One algorithm, three compile-time tiles. Each block owns an M_TILE x N_TILE
-// output tile over a K-split: A is staged in LDS (so the backend emits
-// ds_read_b128), int4 weights stream from global and dequantize on the fly, the
-// inner dot is v_dot2_f32_f16, and the epilogue is the packed CAS atomic-add.
-// K_PER_SPLIT is templated so LDS is a true 2-D static array; odd splits take the
-// dynamic-stride variant.
 
 #include "qgemm.hpp"
 #include "qgemm_common.hpp"
@@ -25,8 +17,7 @@
 namespace tf {
 namespace rocm {
 
-// N_PER_THREAD is 4 everywhere so the pk4 epilogue is shared. LDS_PAD is 0 for the
-// wider-M tiles to keep the static A tile inside gfx1030's 64 KiB.
+// N_PER_THREAD 4 shares the pk4 epilogue; LDS_PAD 0 keeps the wide-M A tile inside 64 KiB of LDS.
 template <int Threads_, int NPerThread_, int KStep_, int MTile_, int LdsPad_>
 struct Config {
     static constexpr int kThreads = Threads_;
@@ -96,7 +87,8 @@ __global__ __launch_bounds__(Config::kThreads) void gemm_static_kernel(
             const int m = idx / (kPerSplit / 4);
             const int m_row = m_tile + m;
             if (m_row < size_m) {
-                const float2 a4 = *reinterpret_cast<const float2*>(a + static_cast<long long>(m_row) * size_k + k_start + quad * 4);
+                const float2 a4 =
+                    *reinterpret_cast<const float2*>(a + static_cast<long long>(m_row) * size_k + k_start + quad * 4);
                 *reinterpret_cast<float2*>(&block_a[m][quad * 4]) = a4;
             }
         }
@@ -115,8 +107,7 @@ __global__ __launch_bounds__(Config::kThreads) void gemm_static_kernel(
 
 #pragma unroll
             for (int j = 0; j < kKStep / 8; ++j) {
-                // K_STEP may span several quantization groups, so the refresh fires
-                // mid-block. k and nextgroup are block-uniform, so this is warp-uniform.
+                // A K_STEP may cross groups, so the (block-uniform) refresh fires mid-block.
                 if (k + 8 * j == nextgroup) {
                     group++;
                     nextgroup += groupsize;
@@ -196,7 +187,9 @@ __global__ __launch_bounds__(Config::kThreads) void gemm_dynamic_kernel(
             const int m = idx / k_per_split;
             const int kk = idx % k_per_split;
             const int m_row = m_tile + m;
-            if (m_row < size_m) block_a[m * row_stride + kk] = (a + static_cast<long long>(m_row) * size_k)[g_idx[k_start + kk]];
+            if (m_row < size_m) {
+                block_a[m * row_stride + kk] = (a + static_cast<long long>(m_row) * size_k)[g_idx[k_start + kk]];
+            }
         }
     } else if (k_per_split % 4 == 0) {
         const int quads = (kMTile * k_per_split) / 4;
@@ -206,7 +199,8 @@ __global__ __launch_bounds__(Config::kThreads) void gemm_dynamic_kernel(
             const int m = idx / (k_per_split / 4);
             const int m_row = m_tile + m;
             if (m_row < size_m) {
-                const float2 a4 = *reinterpret_cast<const float2*>(a + static_cast<long long>(m_row) * size_k + k_start + quad * 4);
+                const float2 a4 =
+                    *reinterpret_cast<const float2*>(a + static_cast<long long>(m_row) * size_k + k_start + quad * 4);
                 *reinterpret_cast<float2*>(block_a + m * row_stride + quad * 4) = a4;
             }
         }
@@ -218,7 +212,8 @@ __global__ __launch_bounds__(Config::kThreads) void gemm_dynamic_kernel(
             const int m = idx / (k_per_split / 2);
             const int m_row = m_tile + m;
             if (m_row < size_m) {
-                const __half2 a2 = *reinterpret_cast<const __half2*>(a + static_cast<long long>(m_row) * size_k + k_start + pair * 2);
+                const __half2 a2 =
+                    *reinterpret_cast<const __half2*>(a + static_cast<long long>(m_row) * size_k + k_start + pair * 2);
                 *reinterpret_cast<__half2*>(block_a + m * row_stride + pair * 2) = a2;
             }
         }
@@ -257,7 +252,8 @@ __global__ __launch_bounds__(Config::kThreads) void gemm_dynamic_kernel(
                     const int m_row = m_tile + m;
                     if (m_row >= size_m) continue;
                     // The dynamic stride is a multiple of 8 halfs, so this is 16-byte aligned.
-                    const float4 a8 = *reinterpret_cast<const float4*>(block_a + m * row_stride + (k - k_start) + a_off);
+                    const float4 a8 =
+                        *reinterpret_cast<const float4*>(block_a + m * row_stride + (k - k_start) + a_off);
                     const __half* a_ptr = reinterpret_cast<const __half*>(&a8);
 #pragma unroll
                     for (int col = 0; col < kNPerThread; ++col) block_c[m][col] += dot8(dq[col], a_ptr);
@@ -320,11 +316,7 @@ void launch_for_config(const Gptq& g, int split_k, hipStream_t stream) {
     }
 }
 
-// Split-K search over gfx1030's 64 KiB LDS. The legacy powers-of-two walk is kept
-// whenever its choice is usable, so shapes that never hit the tail bug keep their
-// exact split. The legacy choice is unusable only when k_per_split is not a K_STEP
-// multiple, because the kernel advances K in K_STEP chunks and does not clamp the
-// final chunk to the split's LDS row (observed NaN at k=4352, split=16 at ConfigV1).
+// Split-K within 64 KiB of LDS; a split must be a K_STEP multiple, since the last chunk is not clamped.
 template <typename Config>
 int compute_split_k(int size_m, int size_n, int size_k) {
     constexpr int kNTile = Config::kNTile;
@@ -374,9 +366,7 @@ int compute_split_k(int size_m, int size_n, int size_k) {
     return result;
 }
 
-// Empirical tile choice. Small M (<= 32) comes from the microbench sweep; M > 256
-// from the Qwen3.8-27B-AWQ profile, where the M_TILE=16 tiles halve the M-blocks
-// and the atomic contention per output tile.
+// Tile choice by M.
 int select_config(int size_m, int size_n, int size_k) {
     static const int force = []() {
         const char* e = std::getenv("TENSORFOLD_RDNA2_PREFILL_FORCE_CONFIG");

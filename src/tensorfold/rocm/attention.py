@@ -29,13 +29,7 @@ def _gfx() -> str:
 
 
 def triton_prefill(gfx: str, batch: int, qlen: int) -> bool:
-    """Where the Triton tile beat the HIP tile.
-
-    gfx1100 uses the bf16 WMMA tile. It is faster from 128 queries through 32k,
-    and from 64 queries when the batch is 8 or more. Shorter rows stay on HIP.
-    gfx1030 has no WMMA, so it keeps the fp16 tile: from 1024 queries, or from
-    384 when the batch is 8 or more. The chunked matmul is not a choice.
-    """
+    """True where the Triton tile serves this gfx, batch and query length; the HIP tile otherwise."""
 
     if gfx.startswith("gfx103"):
         return qlen >= 1024 or (batch >= 8 and qlen >= 384)

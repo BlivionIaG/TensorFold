@@ -49,6 +49,7 @@ def test_mixed_lengths_are_separate_chains():
     assert parents == [[-1, 0], [-1, 0, 1, 2, 3], [-1]]
     try:
         import torch  # noqa: F401
+
         from tensorfold.cuda.kernels.gdn import plan_host
     except ImportError:
         return

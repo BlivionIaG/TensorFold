@@ -10,12 +10,13 @@ import torch
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
+from test_moe import _EXPERTS, _GROUP, _HIDDEN, _TOP_K, _WIDTH, _affine, _checkpoint  # noqa: E402
+
 from tensorfold.engine.exact_sampling import Sampling  # noqa: E402
 from tensorfold.rocm import qwen as qwen_mod  # noqa: E402
 from tensorfold.rocm.build import gfx_name  # noqa: E402
 from tensorfold.rocm.moe import Routed  # noqa: E402
 from tensorfold.rocm.mtp import MTPEngine  # noqa: E402
-from test_moe import _EXPERTS, _GROUP, _HIDDEN, _TOP_K, _WIDTH, _affine, _checkpoint  # noqa: E402
 
 _BITS = 4
 _MLP = {"gate_proj": (_WIDTH, _HIDDEN), "up_proj": (_WIDTH, _HIDDEN), "down_proj": (_HIDDEN, _WIDTH)}
@@ -176,7 +177,7 @@ def test_the_head_loads_from_the_checkpoints_own_shards(tmp_path):
 def test_slicing_takes_the_head_rows_and_keeps_a_routed_head_whole(tmp_path):
     """Under tp the head's logits projection takes the rank's rows, the rest stays whole, routed is refused."""
 
-    from tensorfold.rocm.qwen import _slice_mtp
+    from tensorfold.rocm.slicing import _slice_mtp
 
     cpu = torch.device("cpu")
     root = _checkpoint(tmp_path, gptq=False)

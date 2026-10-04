@@ -1,10 +1,4 @@
-"""Prefill attention as a 64-row Flash Attention 2 tile on ROCm Triton.
-
-The schedule follows Dao-AILab/flash-attention's AMD Triton kernel, on the Triton the ROCm torch wheel ships.
-gfx1100 uses a bf16 WMMA dot. gfx1030 uses fp16. ``causal`` calls the tile
-only on the lengths where that dot beat the HIP tile. One new token stays the
-HIP split-key walk.
-"""
+"""Prefill attention as a 64-row Flash Attention 2 tile on ROCm Triton (Dao-AILab's AMD schedule)."""
 
 from __future__ import annotations
 
@@ -94,11 +88,7 @@ def _rdna() -> bool:
 
 def prefill(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_pos0: int, *,
             force: bool = False, dot: str | None = None) -> torch.Tensor | None:
-    """The 64-row tile. ``None`` means the caller keeps the HIP tile.
-
-    ``force`` is the direct test. ``TENSORFOLD_ATTN=hip`` keeps the HIP tile, and
-    ``TENSORFOLD_ATTN=triton`` reports a launch failure instead of falling back.
-    """
+    """The 64-row tile, or None to keep the HIP tile; ``force`` is the direct test."""
 
     global _off
     mode = os.environ.get("TENSORFOLD_ATTN", "auto")

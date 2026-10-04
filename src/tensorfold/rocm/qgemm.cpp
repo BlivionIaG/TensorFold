@@ -5,8 +5,7 @@
 
 #include "qgemm.hpp"
 
-// W4A16 GPTQ on RDNA2. The output is fp16 and zeroed here, because the kernel
-// accumulates into it with atomics. Ported from vLLM-rdna csrc/rocm/q_gemm_rdna2.cu.
+// W4A16 GPTQ on RDNA2, ported from vLLM-rdna csrc/rocm/q_gemm_rdna2.cu; the fp16 output is zeroed for atomics.
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 

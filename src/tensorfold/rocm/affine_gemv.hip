@@ -1,10 +1,4 @@
-// Wave32 GEMV. This is the BF16 schedule on RDNA2, which has no WMMA,
-// and it is the explicit scalar formula on every part. FP16 activations on
-// RDNA2 use the v_dot2 kernel instead.
-// One thread owns one output and dequantizes the packed word in registers.
-// The group dot is an ordered f32 fma of BF16 factors, so a row's bits do not
-// depend on any other row. RDNA3, RDNA 3.5 and RDNA4 do not take this path for
-// "auto": those builds always use the WMMA, including a single row padded with zeros.
+// Wave32 GEMV: the scalar formula, one thread an output, an ordered fp32 fma of BF16 factors (the reference).
 
 #include "affine.hpp"
 #include "arch.hpp"
@@ -46,8 +40,7 @@ hipError_t launch_affine_gemv(const Affine& a, hipStream_t stream) {
     return hipGetLastError();
 }
 
-// One warp streams one output column, 8-bit only. Up to 16 rows share that read. The warp
-// sums the products in its own order, so a row's bits differ from the same row on WMMA.
+// 8-bit column stream: a warp an output column, up to 16 rows a read; its sum order is its own.
 __global__ void __launch_bounds__(32) affine_gemv_cols_kernel(Affine a) {
     const int col = blockIdx.x;
     const int lane = threadIdx.x;
