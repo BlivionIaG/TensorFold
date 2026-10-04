@@ -42,14 +42,14 @@ def vocab_gather(rccl: RCCL, local_logits: torch.Tensor) -> torch.Tensor:
 
 def tp_forward_hidden(model: TextModel, tokens: torch.Tensor, caches: list | None, linear,
                       pos0: int, rccl: RCCL, *, act_dtype: torch.dtype | None = None,
-                      exact_short: bool = False) -> tuple[torch.Tensor, list]:
-    """:func:`qwen_math.forward_hidden` with the ranks' residual shares summed."""
+                      exact_short: bool = False, at=None) -> tuple[torch.Tensor, list]:
+    """:func:`qwen_math.forward_hidden` with the ranks' residual shares summed. ``at`` as there."""
 
     if rccl.world <= 1:
         return qwen_math.forward_hidden(model, tokens, caches, linear, pos0, act_dtype,
-                                        exact_short=exact_short)
+                                        exact_short=exact_short, at=at)
     return qwen_math.forward_hidden(model, tokens, caches, linear, pos0, act_dtype, exact_short=exact_short,
-                                    reduce=partial(all_reduce_local, rccl))
+                                    reduce=partial(all_reduce_local, rccl), at=at)
 
 
 __all__ = ["RCCL", "all_reduce_local", "tp_forward_hidden", "vocab_gather"]
