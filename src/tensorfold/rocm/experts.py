@@ -172,9 +172,15 @@ def _items(ex: "AffineExperts | GptqExperts", plan: Plan) -> list[tuple[int, int
 
 
 def one_launch(ex, x: torch.Tensor) -> bool:
-    """Affine experts on the RDNA2 schedule run every item in one launch a projection."""
+    """Affine experts run every item in one launch a projection: FP16 dot2 on RDNA2, BF16 dot2 on gfx11 / gfx12."""
 
-    return isinstance(ex, AffineExperts) and x.dtype == torch.float16
+    if not isinstance(ex, AffineExperts):
+        return False
+    if x.dtype == torch.float16:
+        return True
+    from tensorfold.rocm.build import WMMA, gfx_name
+
+    return x.dtype == torch.bfloat16 and gfx_name() in WMMA
 
 
 def _activate(u: torch.Tensor, g: torch.Tensor | None, limit: float) -> torch.Tensor:

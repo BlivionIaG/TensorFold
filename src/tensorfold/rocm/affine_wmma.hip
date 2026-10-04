@@ -676,6 +676,11 @@ hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream) {
 #endif
     }
 #if TENSORFOLD_RDNA_WMMA
+    // Widths other than 8 run the BF16 dot2 tiles: the generic WMMA tile re-unpacks every code per K step.
+    if (schedule == 0 && a.bits != 8 && (a.group == 32 || a.group == 64 || a.group == 128) && a.k % a.group == 0 &&
+        a.k % 16 == 0) {
+        return launch_affine_dot2_bf16(a, stream);
+    }
     bool tile = schedule != 1 && a.group % 16 == 0 && a.k % a.group == 0;
 #else
     bool tile = false;

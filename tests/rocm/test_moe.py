@@ -62,6 +62,20 @@ def _dequant(words, scale, bias, bits, group):
     return unpacked * scale.float().repeat_interleave(group, -1) + bias.float().repeat_interleave(group, -1)
 
 
+def _dequant_any(words, scale, bias, bits, group):
+    """Any width, codes that straddle two words included: fp64 (N, K)."""
+
+    w = words.to(torch.int64) & 0xFFFFFFFF
+    k = scale.shape[-1] * group
+    at = torch.arange(k) * bits
+    word, shift = at // 32, at % 32
+    low = w[:, word] >> shift
+    high = torch.where(shift + bits > 32, w[:, torch.clamp(word + 1, max=w.shape[1] - 1)] << (32 - shift),
+                       torch.zeros_like(low))
+    codes = ((low | high) & ((1 << bits) - 1)).double()
+    return codes * scale.double().repeat_interleave(group, -1) + bias.double().repeat_interleave(group, -1)
+
+
 def _stack(seed, tag=0.0):
     """``_EXPERTS`` routed stacks with the shared expert last, its scale tagged so it can be told apart."""
 
@@ -454,3 +468,38 @@ def test_graph_decode_equals_eager_through_the_experts(tmp_path):
                             stop_eos=False, draft=False)
             runs[graphs] = got
         assert len(runs[True]) == 20 and runs[True] == runs[False], temperature
+
+
+@pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
+@pytest.mark.parametrize("group", [32, 64, 128])
+def test_a_routed_row_has_its_bits_alone_or_among_others(bits, group):
+    """The routed tiles of this card (FP16 on RDNA2, BF16 on gfx11): a row's products are the same alone, in a short
+    batch or in a prefill, and they are the dequantized product."""
+
+    from tensorfold.rocm import affine
+
+    experts, n, k, slots = 5, 72, group * 6, 3
+    parts = [_affine(n, k, bits, group, 70 + e) for e in range(experts)]
+    words = torch.stack([p[0] for p in parts]).cuda()
+    scale = torch.stack([p[1] for p in parts]).to(torch.bfloat16).cuda()
+    bias = torch.stack([p[2] for p in parts]).to(torch.bfloat16).cuda()
+    gen = torch.Generator().manual_seed(bits * 3 + group)
+    rows = 300
+    x = (torch.randn((rows, k), generator=gen) * 0.5).to(_ACT).cuda()
+    picks = torch.stack([torch.randperm(experts, generator=gen)[:slots] for _ in range(rows)]).to(torch.int32).cuda()
+
+    def routed(count):
+        plan = Plan(count, slots, experts, torch.device("cuda"), prefill=count > 1)
+        tile = 8 if count < 64 else 128
+        route(picks[:count].contiguous(), plan, tile)
+        return affine.matmul_routed(x[:count].contiguous(), words, scale, bias, plan.items, plan.members,
+                                    pairs=count * slots, x_div=slots, rows=min(tile, count), bits=bits, group=group)
+
+    whole = routed(rows)
+    for count in (1, 3, 40):
+        assert torch.equal(routed(count), whole[:count * slots]), count
+    flat = picks.reshape(-1).long().cpu()
+    dense = torch.stack([_dequant_any(p[0], p[1].to(torch.bfloat16), p[2].to(torch.bfloat16), bits, group)
+                         for p in parts])
+    want = torch.einsum("pk,pnk->pn", x.double().cpu().repeat_interleave(slots, 0), dense[flat])
+    assert torch.allclose(whole.double().cpu(), want, rtol=2e-2, atol=2e-2)
