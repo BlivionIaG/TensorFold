@@ -1,7 +1,7 @@
 """W4A16 GPTQ on RDNA2: the packed int4 weight reproduces the fp16 dot's reference."""
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)

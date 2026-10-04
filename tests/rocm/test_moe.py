@@ -9,7 +9,7 @@ routers are 8-bit, as Qwen3.6 is, and tells the shared expert apart by its scale
 import json
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)

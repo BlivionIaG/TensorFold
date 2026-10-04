@@ -20,8 +20,7 @@ def state_bytes(spec, tokens: int, act_bytes: int) -> int:
 
 def plan(engine, native: int, requested: int | None, explicit: bool, byte_budget: int | None,
          rccl) -> tuple[int, int | None]:
-    """(window, prompt-cache bytes) for this rank's memory, the ranks' least; an explicit window that does not fit
-    is refused. The window leaves room for one request and one kept copy of its prompt, as on Macs."""
+    """(window, prompt-cache bytes), the ranks' least: one request and one kept copy of its prompt fit the window."""
 
     if not torch.cuda.is_available():
         return requested or native, byte_budget

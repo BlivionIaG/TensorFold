@@ -1,7 +1,7 @@
 """HIP causal attention matches the fp32 spec on the activation dtype, including a short cache prefix."""
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)

@@ -1,7 +1,7 @@
 """The HIP gated delta matches its lane reduction, and a row does not change with a longer batch or sequence."""
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+pytest.importorskip("torch")
+
 
 def test_mtp_state_default_is_unallocated():
     from tensorfold.rocm.mtp import MTPState

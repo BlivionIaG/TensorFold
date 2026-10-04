@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gc
+import math
 import statistics
 import sys
 import time
@@ -74,7 +75,7 @@ def median_row(rows: list[dict]) -> dict:
 def _finite_positive(row: dict) -> None:
     for key in RATES:
         value = row[key]
-        if not (value > 0) or value != value or value == float("inf"):
+        if not (value > 0 and math.isfinite(value)):
             raise RuntimeError(f"{key} is not a finite positive rate ({value})")
 
 

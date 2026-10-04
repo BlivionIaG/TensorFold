@@ -1,7 +1,7 @@
 """Short-row norm, conv, and RoPE match the PyTorch formulas. Spanning affine codes match the bit reader."""
 
 import pytest
-import torch
+torch = pytest.importorskip("torch")
 
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
