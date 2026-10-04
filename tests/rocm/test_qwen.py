@@ -1,9 +1,4 @@
-"""The RDNA text forward, on a tiny stack, matches an independent fmaf reference.
-
-The reference calls ``affine_reference`` and never the ROCm forward or the affine extension.
-GEMV with BF16 activations is the scalar kernel, which matches that fmaf order. ``auto`` on an
-RDNA3 part is WMMA and is not this bit reference; the measurement entry uses ``auto``.
-"""
+"""The RDNA text forward on a tiny stack matches an independent fmaf reference (the GEMV schedule's order)."""
 
 import pytest
 import torch
