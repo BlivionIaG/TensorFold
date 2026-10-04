@@ -219,7 +219,7 @@ hipError_t launch_row_as(const Affine& a, int lpc, hipStream_t stream, int items
 
 template <int BITS>
 hipError_t launch_row(const Affine& a, int lpc, hipStream_t stream, int items) {
-#if TENSORFOLD_RDNA_WMMA
+#if TENSORFOLD_BF16_DOT2
     if (!a.fp16) return launch_row_as<DotBF16, BITS>(a, lpc, stream, items);
 #endif
     return launch_row_as<DotF16, BITS>(a, lpc, stream, items);
@@ -260,7 +260,7 @@ hipError_t launch_lanes_as(const Affine& a, hipStream_t stream, int items) {
 
 template <int BITS, int PIECES>
 hipError_t launch_lanes_rows(const Affine& a, hipStream_t stream, int items = 1) {
-#if TENSORFOLD_RDNA_WMMA
+#if TENSORFOLD_BF16_DOT2
     if (!a.fp16) return launch_lanes_as<DotBF16, BITS, PIECES>(a, stream, items);
 #endif
     return launch_lanes_as<DotF16, BITS, PIECES>(a, stream, items);
@@ -429,7 +429,7 @@ template <int BITS>
 hipError_t launch_block(const Affine& a, hipStream_t stream, int items = 1) {
     const dim3 block(256);
     const dim3 grid((a.n + kBlockN - 1) / kBlockN, (a.m + kBlockM - 1) / kBlockM, items);
-#if TENSORFOLD_RDNA_WMMA
+#if TENSORFOLD_BF16_DOT2
     if (!a.fp16) {
         affine_dot2_block<DotBF16, BITS><<<grid, block, 0, stream>>>(a);
         return hipGetLastError();
@@ -454,7 +454,7 @@ hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int ite
 
 hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t stream) {
     // BF16 activations are the gfx11 / gfx12 dot2 (the RDNA3 experts); FP16 the RDNA2 one.
-    if ((!a.fp16 && !TENSORFOLD_RDNA_WMMA) || a.route.items == nullptr || a.route.members == nullptr || items < 1 ||
+    if ((!a.fp16 && !TENSORFOLD_BF16_DOT2) || a.route.items == nullptr || a.route.members == nullptr || items < 1 ||
         a.route.x_div < 1) {
         return hipErrorInvalidValue;
     }
@@ -465,9 +465,9 @@ hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t str
     return launch_affine_dot2_block(a, stream, items);
 }
 
-// gfx11 / gfx12 BF16 x, widths other than 8: the decode tiles up to 8 rows, the GEMM tile past them.
+// gfx11 / gfx12 BF16 x: the decode tiles up to 8 rows, the GEMM tile past them.
 hipError_t launch_affine_dot2_bf16(const Affine& a, hipStream_t stream) {
-#if TENSORFOLD_RDNA_WMMA
+#if TENSORFOLD_BF16_DOT2
     if (a.fp16 || a.m < 1 || a.n < 1 || a.k % a.group || a.k % 16) return hipErrorInvalidValue;
     if (a.group != 32 && a.group != 64 && a.group != 128) return hipErrorInvalidValue;
     if (a.m <= kLaneRows) return launch_affine_dot2_lanes(a, stream);

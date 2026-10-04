@@ -163,9 +163,9 @@ def one_launch(ex, x: torch.Tensor) -> bool:
         return False
     if x.dtype == torch.float16:
         return True
-    from tensorfold.rocm.build import WMMA, gfx_name
+    from tensorfold.rocm.build import BF16_DOT2, gfx_name
 
-    return x.dtype == torch.bfloat16 and gfx_name() in WMMA
+    return x.dtype == torch.bfloat16 and gfx_name() in BF16_DOT2
 
 
 def _activate(u: torch.Tensor, g: torch.Tensor | None, limit: float) -> torch.Tensor:

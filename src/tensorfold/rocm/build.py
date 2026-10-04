@@ -7,13 +7,13 @@ import os
 import threading
 from typing import Any
 
-# gfx11 WMMA (RDNA3, RDNA 3.5) and gfx12 WMMA (RDNA4); RDNA2 uses dot2, and RDNA1 is not a target.
-WMMA = {
+# gfx11 (RDNA3, RDNA 3.5) and gfx12 (RDNA4) run BF16 activations; RDNA2 FP16, and RDNA1 is not a target.
+BF16_DOT2 = {
     "gfx1100", "gfx1101", "gfx1102", "gfx1103",
     "gfx1150", "gfx1151", "gfx1152", "gfx1153",
     "gfx1200", "gfx1201",
 }
-RDNA = WMMA | {
+RDNA = BF16_DOT2 | {
     "gfx1030", "gfx1031", "gfx1032", "gfx1033", "gfx1034", "gfx1035", "gfx1036",
 }
 RDNA1 = {"gfx1010", "gfx1011", "gfx1012"}
@@ -52,16 +52,16 @@ def load(name: str, sources: list[str], **kwargs: Any) -> Any:
     from torch.utils import cpp_extension
 
     gfx = gfx_name()
-    wmma = gfx in WMMA
-    # Undo torch's HIP half-operator macros (rocWMMA needs the float constructor) and point hipcc at device bitcode.
+    bf16 = gfx in BF16_DOT2
+    # Undo torch's HIP half-operator macros (the kernels use half arithmetic) and point hipcc at device bitcode.
     kwargs["extra_cuda_cflags"] = ["-mno-wavefrontsize64", "-ffp-contract=off",
                                    "-U__HIP_NO_HALF_OPERATORS__", "-U__HIP_NO_HALF_CONVERSIONS__",
-                                   f"-DTENSORFOLD_RDNA_WMMA={1 if wmma else 0}",
+                                   f"-DTENSORFOLD_BF16_DOT2={1 if bf16 else 0}",
                                    *_rocm_lib_flags(),
                                    *kwargs.get("extra_cuda_cflags", [])]
     kwargs.setdefault("with_cuda", True)
     name = f"{name}_{gfx}_{_digest(sources, kwargs)}"
-    held = _announce(cpp_extension, name, sources, kwargs.get("build_directory"), gfx, wmma)
+    held = _announce(cpp_extension, name, sources, kwargs.get("build_directory"), gfx, bf16)
     timer = None
     if held is not None:
         timer = threading.Timer(LOCK_WAIT_SECONDS, _still_waiting, held)
@@ -96,7 +96,7 @@ def _digest(sources: list[str], kwargs: dict[str, Any]) -> str:
 
 
 def _announce(cpp_extension: Any, name: str, sources: list[str], directory: str | None, gfx: str,
-              wmma: bool) -> tuple[str, tuple[int, int]] | None:
+              bf16: bool) -> tuple[str, tuple[int, int]] | None:
     """Say whether ``name`` builds or waits on a lock; return (lock path, (inode, mtime)) when it waits."""
 
     try:
@@ -112,7 +112,7 @@ def _announce(cpp_extension: Any, name: str, sources: list[str], directory: str 
         _say(f"RDNA extension {name} waits on the build lock {lock}; {HINT}")
         return lock, (seen.st_ino, seen.st_mtime_ns)
     if _needs_build(os.path.join(directory, name + getattr(cpp_extension, "LIB_EXT", ".so")), sources):
-        _say(f"building RDNA extension {name} for {gfx} ({'wmma' if wmma else 'gemv'}) "
+        _say(f"building RDNA extension {name} for {gfx} ({'bf16' if bf16 else 'fp16'}) "
              "(first start after an install or update; later starts reuse it)")
     return None
 
@@ -150,4 +150,4 @@ def _say(text: str) -> None:
     print(f"[tensorfold] {text}", flush=True)
 
 
-__all__ = ["RDNA", "WMMA", "gfx_name", "load"]
+__all__ = ["BF16_DOT2", "RDNA", "gfx_name", "load"]

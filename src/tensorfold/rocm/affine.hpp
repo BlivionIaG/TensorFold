@@ -86,27 +86,16 @@ __host__ __device__ inline float code_bf16(uint32_t code) {
 }
 
 hipError_t launch_affine_gemv(const Affine& a, hipStream_t stream);
-hipError_t launch_affine_gemv_cols(const Affine& a, hipStream_t stream);
-hipError_t launch_affine_wmma(const Affine& a, hipStream_t stream);
 
-struct AffineSide {
-    const uint32_t* words;
-    GroupTable scale;
-    GroupTable bias;
-    float* out;
-    int n;
-};
 
-// Two same-shape WMMA products that share x. Each side matches a solo launch.
-hipError_t launch_affine_wmma_pair(const Affine& a, AffineSide first, AffineSide second, hipStream_t stream);
 // reference is the one-thread kernel (schedule 1); otherwise the decode tile up to 8 rows, then the prefill tiles.
 hipError_t launch_affine_dot2(const Affine& a, bool reference, hipStream_t stream);
 hipError_t launch_affine_dot2_split(const Affine& a, float* partial, int splits, hipStream_t stream);
-// schedule 0 auto, 1 GEMV, 2 WMMA, 3 column stream; fp16 x is the RDNA2 dot2 schedule.
+// schedule 0 auto (the dot2 tiles), 1 the GEMV reference.
 hipError_t launch_affine(const Affine& a, int schedule, hipStream_t stream);
 // Every item of a routed plan in one launch; a.m is the most rows an item holds.
 hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t stream);
-// BF16 x on a gfx11 / gfx12 build, widths other than 8: the dot2 tiles with v_dot2_f32_bf16.
+// BF16 x on a gfx11 / gfx12 build: the dot2 tiles with v_dot2_f32_bf16.
 hipError_t launch_affine_dot2_bf16(const Affine& a, hipStream_t stream);
 
 }  // namespace rocm
