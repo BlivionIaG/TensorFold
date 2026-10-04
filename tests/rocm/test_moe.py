@@ -198,7 +198,8 @@ def test_the_shared_expert_is_the_last_slot():
 def test_gptq_experts_match_the_fp32_reference():
     """The W4A16 kind takes bf16 activations, stacks gate first, and lands on the int4 product."""
 
-    from tests.rocm.test_qgemm import _expert_weight, _pack_experts, _plan
+    helpers = _qgemm()
+    _expert_weight, _pack_experts, _plan = helpers._expert_weight, helpers._pack_experts, helpers._plan
 
     from tensorfold.rocm.qgemm import moe as gptq_moe
 
@@ -228,8 +229,20 @@ def test_gptq_experts_match_the_fp32_reference():
     torch.testing.assert_close(got.float().cpu(), ref, rtol=6e-2, atol=2.5)
 
 
+def _qgemm():
+    """The W4A16 test helpers; they are gfx1030 only, so a GPTQ test skips elsewhere."""
+
+    try:
+        from tests.rocm import test_qgemm
+    except ImportError:
+        pytest.skip("the W4A16 GPTQ path is gfx1030 only")
+    if not hasattr(test_qgemm, "_pack_experts"):
+        pytest.skip("the W4A16 GPTQ path is gfx1030 only")
+    return test_qgemm
+
+
 def _gptq_projection(n, k, group, seed):
-    from tests.rocm.test_qgemm import _pack
+    _pack = _qgemm()._pack
 
     _, _, qweight, qzeros, scales = _pack(n, k, group, seed)
     return {".qweight": qweight, ".qzeros": qzeros, ".scales": scales}
@@ -239,7 +252,6 @@ def _checkpoint(root, *, gptq):
     """Write a one-layer ``qwen3_5_moe`` checkpoint: 4-bit experts, 8-bit routers, the shared expert last."""
 
     from safetensors.torch import save_file
-    from tests.rocm.test_qgemm import _pack_experts
 
     hidden, width, group, vocab, conv = _HIDDEN, _WIDTH, _GROUP, 48, 4
     heads, head_dim, key_width, value_width, value_heads = 4, 16, 4 * 16, 16 * 16, 16
@@ -281,7 +293,7 @@ def _checkpoint(root, *, gptq):
     for stack, count in (("switch_mlp", _EXPERTS), ("shared_expert", 1)):
         for index, (name, (n, k)) in enumerate(shapes.items()):
             if gptq:
-                parts = _pack_experts(1, count, n, k, group, seed=100 + index)
+                parts = _qgemm()._pack_experts(1, count, n, k, group, seed=100 + index)
                 for suffix, tensor in zip((".qweight", ".qzeros", ".scales"), parts[2:]):
                     tensors[f"{mlp}{stack}.{name}{suffix}"] = tensor[0]
                 continue
