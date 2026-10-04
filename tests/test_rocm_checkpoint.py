@@ -26,6 +26,12 @@ def test_a_named_tensor_loads_at_its_own_width(tmp_path):
     assert (packed.bits, packed.group) == (4, 64)
 
 
+def test_an_override_without_a_mode_is_affine(tmp_path):
+    key, path = _file(tmp_path)
+    quant = {"bits": 3, "group_size": 64, "mode": "affine", key: {"bits": 4, "group_size": 64}}
+    assert _packed(_Shards([path], quant=quant), key, 3, 64, torch.device("cpu")).bits == 4
+
+
 def test_a_width_the_config_does_not_name_is_refused(tmp_path):
     key, path = _file(tmp_path)
     with pytest.raises(ValueError, match="does not match K"):

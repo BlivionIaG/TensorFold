@@ -122,7 +122,7 @@ def _affine_quant(quant: dict) -> tuple[int, int]:
     """MLX affine widths. 2, 4 and 8 sit inside a word; 3, 5 and 6 may cross into the next one."""
 
     bits, group = quant.get("bits"), quant.get("group_size")
-    if quant.get("mode") != "affine" or bits not in (2, 3, 4, 5, 6, 8) or group not in (32, 64, 128):
+    if quant.get("mode", "affine") != "affine" or bits not in (2, 3, 4, 5, 6, 8) or group not in (32, 64, 128):
         raise ValueError(f"the RDNA text path loads affine 2/3/4/5/6/8-bit groups 32/64/128, got {quant}")
     return int(bits), int(group)
 
