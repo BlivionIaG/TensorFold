@@ -481,11 +481,9 @@ class QwenEngine:
         mtp_state = self.mtp.fresh_cache(batch=1,
                                          total=position + max(0, depth) + 1,
                                          device=self._device(), dtype=dtype)
-        # Followers draft with a fixed Sampling: rank 0's chain replaces their drafts below.
-        if sampling is None:
-            sampling = Sampling(seed=0)
+        # A greedy request and a follower draft greedily; verification keeps the request's own sampling.
         drafts = self.mtp.draft_chain(hidden[:, -1:], last_token, position - 1, depth, mtp_state,
-                                      sampling=sampling, dtype=dtype)
+                                      sampling=sampling or Sampling(seed=0, temperature=0.0), dtype=dtype)
         if self.tp > 1:
             # A rank's cache advances by how many drafts matched, so every rank takes rank 0's chain.
             drafts = self._share(drafts)
