@@ -1,6 +1,6 @@
 // gfx1030 fp16 W4A16 product. 3inst states become fp16, then an explicit v_dot2_f32_f16.
 // hipcc does not form that dot from the 3inst half2 chain, so the builtin is written out.
-// Produce: hipcc --offload-arch=gfx1030 -O3 -cb 3inst -mno-wavefrontsize64 --genco, through gfx1030.hip.
+// Produce: hipcc --offload-arch=gfx1030 -O3 -mno-wavefrontsize64 --genco, through gfx1030.hip.
 #include <hip/hip_runtime.h>
 #include <hip/hip_fp16.h>
 

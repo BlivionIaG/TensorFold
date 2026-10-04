@@ -101,7 +101,14 @@ pub fn prepare(req: Request) Error!Launch {
     return launch;
 }
 
-pub fn bindW4A16(m: i32, n: i32, k: i32, activation: DType, arch_name: []const u8, bundle: []const u8) Error!Launch {
+fn loadedBundle() Error![]const u8 {
+    return produce.loadFatbin() catch |err| switch (err) {
+        error.ArchRefused, error.ForeignArch => return error.ArchRefused,
+        else => return error.FatbinRefused,
+    };
+}
+
+pub fn bindW4A16(m: i32, n: i32, k: i32, activation: DType, arch_name: []const u8) Error!Launch {
     if (m < 1 or n < 1 or k < 2 or (k & 1) != 0) return error.ShapeRefused;
     return prepare(.{
         .arch = arch_name,
@@ -110,11 +117,11 @@ pub fn bindW4A16(m: i32, n: i32, k: i32, activation: DType, arch_name: []const u
         .activation = activation,
         .schedule = .fdot2_f16,
         .codebook = produce.codebook,
-        .bundle = bundle,
+        .bundle = try loadedBundle(),
     });
 }
 
-pub fn bindPackedInt(arch_name: []const u8, bundle: []const u8) Error!Launch {
+pub fn bindPackedInt(arch_name: []const u8) Error!Launch {
     return prepare(.{
         .arch = arch_name,
         .fatbin_arch = arch_name,
@@ -122,7 +129,7 @@ pub fn bindPackedInt(arch_name: []const u8, bundle: []const u8) Error!Launch {
         .activation = .i8,
         .schedule = .sdot4,
         .codebook = produce.codebook,
-        .bundle = bundle,
+        .bundle = try loadedBundle(),
     });
 }
 
@@ -156,19 +163,32 @@ test "macOS stays Metal and gfx1030 selects ROCm only with one fatbin" {
 }
 
 test "fp16 W4A16 launches fdot2; bf16, scalar gemv, and WMMA do not" {
-    var storage: [256]u8 = undefined;
-    const bundle = try produce.gfx1030Bundle(&storage);
-    const launch = try bindW4A16(2, 32, 64, .fp16, "gfx1030", bundle);
+    const launch = try bindW4A16(2, 32, 64, .fp16, "gfx1030");
     try std.testing.expectEqualStrings("tf_gfx1030_w4a16_fdot2", launch.symbol);
     try std.testing.expectEqualStrings(produce.fatbin_rel, launch.fatbin);
-    try std.testing.expectError(error.FatbinMissing, bindW4A16(2, 32, 64, .fp16, "gfx1030", ""));
-    try std.testing.expectError(error.FatbinRefused, bindW4A16(2, 32, 64, .fp16, "gfx1030", &[_]u8{ 0x7f, 'E', 'L', 'F' }));
-    try std.testing.expectError(error.Bf16Refused, bindW4A16(2, 32, 64, .bf16, "gfx1030", bundle));
-    try std.testing.expectError(error.ActivationNotFp16, bindW4A16(2, 32, 64, .fp32, "gfx1030", bundle));
-    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx900", bundle));
-    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx906", bundle));
-    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx1013", bundle));
-    try std.testing.expectError(error.ShapeRefused, bindW4A16(1, 8, 31, .fp16, "gfx1030", bundle));
+    try std.testing.expectError(error.FatbinMissing, prepare(.{
+        .arch = "gfx1030",
+        .fatbin_arch = "gfx1030",
+        .op = .w4a16,
+        .activation = .fp16,
+        .schedule = .fdot2_f16,
+        .codebook = "3inst",
+    }));
+    try std.testing.expectError(error.FatbinRefused, prepare(.{
+        .arch = "gfx1030",
+        .fatbin_arch = "gfx1030",
+        .op = .w4a16,
+        .activation = .fp16,
+        .schedule = .fdot2_f16,
+        .codebook = "3inst",
+        .bundle = &[_]u8{ 0x7f, 'E', 'L', 'F' },
+    }));
+    try std.testing.expectError(error.Bf16Refused, bindW4A16(2, 32, 64, .bf16, "gfx1030"));
+    try std.testing.expectError(error.ActivationNotFp16, bindW4A16(2, 32, 64, .fp32, "gfx1030"));
+    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx900"));
+    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx906"));
+    try std.testing.expectError(error.ArchRefused, bindW4A16(2, 32, 64, .fp16, "gfx1013"));
+    try std.testing.expectError(error.ShapeRefused, bindW4A16(1, 8, 31, .fp16, "gfx1030"));
     try std.testing.expectError(error.ScalarGemvRefused, prepare(.{
         .arch = "gfx1030",
         .fatbin_arch = "gfx1030",
@@ -205,9 +225,7 @@ test "fp16 W4A16 launches fdot2; bf16, scalar gemv, and WMMA do not" {
 }
 
 test "packed int is sdot4, not a widened fdot2" {
-    var storage: [256]u8 = undefined;
-    const bundle = try produce.gfx1030Bundle(&storage);
-    const launch = try bindPackedInt("gfx1030", bundle);
+    const launch = try bindPackedInt("gfx1030");
     try std.testing.expectEqualStrings(produce.fatbin_rel, launch.fatbin);
     try std.testing.expectEqualStrings("tf_gfx1030_sdot4", launch.symbol);
     try std.testing.expect(launch.schedule == .sdot4);

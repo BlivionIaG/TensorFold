@@ -6,11 +6,9 @@ pub const rocm_pin = "7.14.0";
 pub const hip_banner = "HIP version: 7.14.60850";
 pub const arch = "gfx1030";
 pub const codebook = "3inst";
-pub const produce_line = "hipcc --offload-arch=gfx1030 -O3 -cb 3inst";
-pub const fatbin_rel = "build/rocm/fatbin/gfx1030/tensorfold.hipfb";
+pub const produce_line = "hipcc --offload-arch=gfx1030 -O3 -mno-wavefrontsize64";
+pub const fatbin_rel = "native/rocm/fatbin/gfx1030/tensorfold.hipfb";
 pub const unity_source = "native/rocm/hip/gfx1030.hip";
-/// hipcc 7.14.0 forwards `-cb` to clang, which rejects it. That run writes no fatbin.
-pub const hipcc_cb_error = "clang++: error: unknown argument: '-cb'";
 
 pub const refused_archs = [_][]const u8{ "gfx900", "gfx906", "gfx1013" };
 
@@ -20,7 +18,7 @@ pub const Error = error{
     ForeignArch,
     MultipleArch,
     ContractOff,
-    CodebookRefused,
+    QuantizerSwitchRefused,
     Wave32Required,
     FatbinRefused,
     CudaDeviceOnly,
@@ -33,8 +31,7 @@ const prefix = [_][]const u8{
     "hipcc",
     "--offload-arch=gfx1030",
     "-O3",
-    "-cb",
-    "3inst",
+    "-mno-wavefrontsize64",
 };
 
 const bundle_magic = "__CLANG_OFFLOAD_BUNDLE__";
@@ -50,16 +47,8 @@ pub fn acceptArch(name: []const u8) Error!void {
     return error.ArchRefused;
 }
 
-/// A non-zero exit, or clang's rejection of `-cb`, did not produce a fatbin.
-pub fn produceSucceeded(exit_code: u8, stderr: []const u8) bool {
-    if (exit_code != 0) return false;
-    if (std.mem.indexOf(u8, stderr, hipcc_cb_error) != null) return false;
-    if (std.mem.indexOf(u8, stderr, "no such file or directory: '3inst'") != null) return false;
-    return true;
-}
-
 pub const Argv = struct {
-    tokens: [10][]const u8,
+    tokens: [8][]const u8,
 
     pub fn line(self: Argv, buf: []u8) []const u8 {
         var used: usize = 0;
@@ -76,15 +65,14 @@ pub const Argv = struct {
     }
 };
 
-/// Locked prefix, wave32, then --genco into the one gfx1030 fatbin. Not --cuda-device-only.
+/// Compile line, then --genco into the one gfx1030 fatbin. `-cb` is not a hipcc flag.
 pub fn deviceArgv() Error!Argv {
     var argv = Argv{ .tokens = undefined };
     @memcpy(argv.tokens[0..prefix.len], &prefix);
-    argv.tokens[prefix.len] = "-mno-wavefrontsize64";
-    argv.tokens[prefix.len + 1] = "--genco";
-    argv.tokens[prefix.len + 2] = "-o";
-    argv.tokens[prefix.len + 3] = fatbin_rel;
-    argv.tokens[prefix.len + 4] = unity_source;
+    argv.tokens[prefix.len] = "--genco";
+    argv.tokens[prefix.len + 1] = "-o";
+    argv.tokens[prefix.len + 2] = fatbin_rel;
+    argv.tokens[prefix.len + 3] = unity_source;
     try validate(&argv.tokens);
     return argv;
 }
@@ -100,9 +88,9 @@ pub fn validate(tokens: []const []const u8) Error!void {
     var wave32 = false;
     var genco = false;
     var outputs: usize = 0;
-    var saw_cb = false;
     var out: ?[]const u8 = null;
     for (tokens, 0..) |token, i| {
+        if (std.mem.eql(u8, token, "-cb") or std.mem.eql(u8, token, codebook)) return error.QuantizerSwitchRefused;
         if (std.mem.eql(u8, token, "--cuda-device-only")) return error.CudaDeviceOnly;
         if (std.mem.indexOf(u8, token, "-ffp-contract=off") != null) return error.ContractOff;
         if (std.mem.eql(u8, token, "-ffp-contract") and i + 1 < tokens.len and std.mem.eql(u8, tokens[i + 1], "off"))
@@ -121,15 +109,10 @@ pub fn validate(tokens: []const []const u8) Error!void {
             if (i + 1 >= tokens.len) return error.FatbinRefused;
             out = tokens[i + 1];
         }
-        if (std.mem.eql(u8, token, "-cb")) {
-            saw_cb = true;
-            if (i + 1 >= tokens.len or !std.mem.eql(u8, tokens[i + 1], codebook)) return error.CodebookRefused;
-        }
         if (std.mem.eql(u8, token, "zig") or std.mem.endsWith(u8, token, "/zig")) return error.CompilerRefused;
     }
     if (archs != 1) return error.MultipleArch;
     if (!wave32) return error.Wave32Required;
-    if (!saw_cb) return error.CodebookRefused;
     if (!genco or outputs != 1) return error.FatbinRefused;
     const produced = out orelse return error.FatbinRefused;
     if (!std.mem.eql(u8, produced, fatbin_rel)) return error.FatbinRefused;
@@ -207,6 +190,13 @@ pub fn encodeBundle(buf: []u8, entries: []const BundlePart) Error![]const u8 {
     return buf[0..cursor];
 }
 
+const built_fatbin = @embedFile("fatbin/gfx1030/tensorfold.hipfb");
+
+pub fn loadFatbin() Error![]const u8 {
+    try acceptBundle(built_fatbin);
+    return built_fatbin;
+}
+
 pub fn gfx1030Bundle(buf: []u8) Error![]const u8 {
     const entries = [_]BundlePart{
         .{ .triple = "host-x86_64-unknown-linux-gnu-", .code_object = false },
@@ -221,17 +211,20 @@ pub fn mix3inst(s: u32) u32 {
     return (x & 0x8FFF8FFF) ^ 0x3B603B60;
 }
 
-test "produce line is hipcc gfx1030 -O3 -cb 3inst, one fatbin, wave32" {
+test "produce line is hipcc gfx1030 -O3 wave32, one fatbin" {
     const argv = try deviceArgv();
     var text: [256]u8 = undefined;
     const rendered = argv.line(&text);
     try std.testing.expect(std.mem.startsWith(u8, rendered, produce_line));
+    try std.testing.expect(std.mem.indexOf(u8, rendered, "-cb") == null);
+    try std.testing.expect(std.mem.indexOf(u8, rendered, codebook) == null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "-ffp-contract=off") == null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "--cuda-device-only") == null);
     try std.testing.expect(std.mem.indexOf(u8, rendered, "--genco") != null);
-    try std.testing.expect(std.mem.indexOf(u8, rendered, "-mno-wavefrontsize64") != null);
     try std.testing.expect(std.mem.endsWith(u8, rendered, fatbin_rel ++ " " ++ unity_source));
     try validate(&argv.tokens);
+    const loaded = try loadFatbin();
+    try std.testing.expect(std.mem.startsWith(u8, loaded, bundle_magic));
 }
 
 test "refused archs, contraction-off, and cuda-device-only never join the produce line" {
@@ -240,19 +233,21 @@ test "refused archs, contraction-off, and cuda-device-only never join the produc
     try std.testing.expectError(error.ArchRefused, acceptArch("gfx1013"));
     try std.testing.expectError(error.ArchRefused, acceptArch("gfx1100"));
     try acceptArch("gfx1030");
-    const bad = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-cb", "3inst", "-ffp-contract=off", "-mno-wavefrontsize64", "--genco", "-o", fatbin_rel, unity_source };
+    const bad = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-mno-wavefrontsize64", "-ffp-contract=off", "--genco", "-o", fatbin_rel, unity_source };
     try std.testing.expectError(error.ContractOff, validate(&bad));
-    const device_only = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-cb", "3inst", "-mno-wavefrontsize64", "--cuda-device-only", "-o", fatbin_rel, unity_source };
+    const quantizer = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-mno-wavefrontsize64", "-cb", "3inst", "--genco", "-o", fatbin_rel, unity_source };
+    try std.testing.expectError(error.QuantizerSwitchRefused, validate(&quantizer));
+    const device_only = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-mno-wavefrontsize64", "--cuda-device-only", "--genco", "-o", fatbin_rel, unity_source };
     try std.testing.expectError(error.CudaDeviceOnly, validate(&device_only));
-    const foreign = [_][]const u8{ "hipcc", "--offload-arch=gfx900", "-O3", "-cb", "3inst", "-mno-wavefrontsize64", "--genco", "-o", fatbin_rel, unity_source };
+    const foreign = [_][]const u8{ "hipcc", "--offload-arch=gfx900", "-O3", "-mno-wavefrontsize64", "--genco", "-o", fatbin_rel, unity_source };
     try std.testing.expectError(error.CompilerRefused, validate(&foreign));
-    const smuggled = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-cb", "3inst", "-mno-wavefrontsize64", "--genco", "-o", "build/rocm/fatbin/gfx1030/gfx906.hipfb", unity_source };
+    const smuggled = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-mno-wavefrontsize64", "--genco", "-o", "native/rocm/fatbin/gfx1030/gfx906.hipfb", unity_source };
     try std.testing.expectError(error.ForeignArch, validate(&smuggled));
-    const bundled = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-cb", "3inst", "--offload-arch=gfx1013", "-mno-wavefrontsize64", "--genco", "-o", fatbin_rel, unity_source };
+    const bundled = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-mno-wavefrontsize64", "--offload-arch=gfx1013", "--genco", "-o", fatbin_rel, unity_source };
     try std.testing.expectError(error.ForeignArch, validate(&bundled));
-    const zig_cc = [_][]const u8{ "zig", "--offload-arch=gfx1030", "-O3", "-cb", "3inst", "-mno-wavefrontsize64", "--genco", "-o", fatbin_rel, unity_source };
+    const zig_cc = [_][]const u8{ "zig", "--offload-arch=gfx1030", "-O3", "-mno-wavefrontsize64", "--genco", "-o", fatbin_rel, unity_source };
     try std.testing.expectError(error.CompilerRefused, validate(&zig_cc));
-    const no_genco = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-cb", "3inst", "-mno-wavefrontsize64", "-o", fatbin_rel, unity_source };
+    const no_genco = [_][]const u8{ "hipcc", "--offload-arch=gfx1030", "-O3", "-mno-wavefrontsize64", "-o", fatbin_rel, unity_source };
     try std.testing.expectError(error.FatbinRefused, validate(&no_genco));
 }
 
@@ -263,8 +258,6 @@ test "ROCm pin is 7.14.0 and the 3inst mix is stable" {
     try std.testing.expect(!rocmVersionOk("HIP version: 7.2.0\n"));
     try std.testing.expect(!rocmVersionOk("HIP version: 7.14.1\n"));
     try std.testing.expect(!rocmVersionOk("clang 18.0.0"));
-    try std.testing.expect(!produceSucceeded(1, hipcc_cb_error));
-    try std.testing.expect(!produceSucceeded(1, "clang++: error: no such file or directory: '3inst'"));
     try std.testing.expectEqual(@as(u32, 0x38b431c4), mix3inst(0));
     try std.testing.expectEqual(@as(u32, 0x3245bc76), mix3inst(1));
     try std.testing.expectEqual(@as(u32, 0x3194b552), mix3inst(0xffff));
