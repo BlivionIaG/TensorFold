@@ -411,7 +411,7 @@ class QwenEngine:
             room = min(room, self.context_window - len(prompt))
         if room < 1:
             raise ValueError("max_tokens must leave room for one token")
-        depth = self.mtp_depth if self.mtp is not None and not self.no_drafts else 0
+        depth = self.mtp_depth if draft and self.mtp is not None and not self.no_drafts else 0
         if self.tp > 1:
             self._post(list(prompt), room, draft, depth)
         return self._run(list(prompt), room, sampling, on_tokens, stop_eos, draft, constraint, depth)
