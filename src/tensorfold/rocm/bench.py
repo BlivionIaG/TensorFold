@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gc
 import math
+import os
 import statistics
 import sys
 import time
@@ -122,7 +123,8 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: 
         from tensorfold.rocm.qwen import slice_for_tp
 
         slice_for_tp(model, rank, tp)
-    engine = Engine(model, schedule="auto", dtype=dtype, rccl=rccl)
+    # The schedule the server would run, so a batched cell measures the same tiles.
+    engine = Engine(model, schedule=os.environ.get("TENSORFOLD_ROCM_SCHEDULE", "auto"), dtype=dtype, rccl=rccl)
     probe = model.layers[0]
     packed = probe.qkv if isinstance(probe, LinearLayer) else probe.q
     sample = torch.zeros(1, model.spec.hidden, device=packed.words.device, dtype=dtype)
