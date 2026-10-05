@@ -6,8 +6,8 @@ torch = pytest.importorskip("torch")
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.gated_delta import recurrence  # noqa: E402
-from tensorfold.rocm.qwen_math import _gate_beta, gated_delta, gated_delta_reference  # noqa: E402
+from tensorfold.rocm.kernels.gated_delta import recurrence  # noqa: E402
+from tensorfold.rocm.model.qwen_math import _gate_beta, gated_delta, gated_delta_reference  # noqa: E402
 
 
 def _args(batch, length, key_heads, key_dim, value_heads, value_dim, seed):

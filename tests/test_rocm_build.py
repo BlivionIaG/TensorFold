@@ -1,6 +1,6 @@
 """The RDNA extension name follows its sources, headers and flags, so a header change rebuilds (any machine)."""
 
-from tensorfold.rocm.build import _digest
+from tensorfold.rocm.kernels.build import _digest
 
 
 def test_a_header_change_alone_changes_the_build(tmp_path):

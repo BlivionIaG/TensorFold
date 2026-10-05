@@ -1,6 +1,6 @@
 """Host checks for the ROCm prompt cache and the per-request stop rule. No GPU."""
 
-from tensorfold.rocm.prefix import PrefixCache, decode_ids, entry_end
+from tensorfold.rocm.serving.prefix import PrefixCache, decode_ids, entry_end
 
 
 def test_entry_end_leaves_the_last_token():
@@ -43,7 +43,7 @@ def test_on_tokens_can_stop_before_eos():
 
 
 def test_mixed_lengths_are_separate_chains():
-    from tensorfold.rocm.prefix import request_parents
+    from tensorfold.rocm.serving.prefix import request_parents
 
     parents = request_parents([2, 5, 1])
     assert parents == [[-1, 0], [-1, 0, 1, 2, 3], [-1]]
@@ -63,7 +63,7 @@ def test_mixed_lengths_are_separate_chains():
 
 
 def test_a_resumed_prefix_outlives_the_byte_budget():
-    from tensorfold.rocm.prefix import trim_bytes
+    from tensorfold.rocm.serving.prefix import trim_bytes
 
     cache = PrefixCache(keep=4)
     cache.add([1, 2], "state", 10)
@@ -86,7 +86,7 @@ def test_a_follow_up_resumes_at_the_assistant_header():
         pytest.skip("set TENSORFOLD_CHAT_MODEL to a Qwen checkpoint with tokenizer.json")
 
     from tensorfold.cuda.chat_template import ChatTemplate
-    from tensorfold.rocm.prefix import message_points
+    from tensorfold.rocm.serving.prefix import message_points
 
     points = message_points(model)
     assert points is not None

@@ -12,5 +12,5 @@ venv/
 *.swp
 *.log
 # hipify writes these beside the RDNA sources when the extension builds
-src/tensorfold/rocm/*_hip.hip
-src/tensorfold/rocm/*_hip.cpp
+src/tensorfold/rocm/kernels/*_hip.hip
+src/tensorfold/rocm/kernels/*_hip.cpp

@@ -10,7 +10,7 @@ import torch
 
 @lru_cache(maxsize=1)
 def _ext():
-    from tensorfold.rocm.build import load
+    from tensorfold.rocm.kernels.build import load
 
     here = Path(__file__).parent
     return load(name="tensorfold_rocm_qgemm",
@@ -24,7 +24,7 @@ def matmul(x: torch.Tensor, qweight: torch.Tensor, qzeros: torch.Tensor, scales:
            prefill: bool = False) -> torch.Tensor:
     """``x`` (M, K) fp16 times a GPTQ int4 ``qweight`` (K / 8, N); gfx1030 only."""
 
-    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.kernels.build import gfx_name
 
     if gfx_name() != "gfx1030":
         raise ValueError("the W4A16 GPTQ path is the RDNA2 (gfx1030) fp16 schedule")
@@ -49,7 +49,7 @@ def moe(x: torch.Tensor, qweight: torch.Tensor, qzeros: torch.Tensor, scales: to
         block_m: int = 4, use_v2_format: bool = True, limit: float = 0.0) -> torch.Tensor:
     """One layer's W4A16 experts over a routing plan; ``epi`` 0 down, 1 relu^2, 2 SwiGLU."""
 
-    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.kernels.build import gfx_name
 
     if gfx_name() != "gfx1030":
         raise ValueError("the W4A16 GPTQ path is the RDNA2 (gfx1030) fp16 schedule")

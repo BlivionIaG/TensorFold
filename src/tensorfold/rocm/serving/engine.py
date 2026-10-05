@@ -12,13 +12,13 @@ import numpy as np
 import torch
 
 from tensorfold.engine.exact_sampling import MARGIN, Sampling, choose
-from tensorfold.rocm.forward import _blank_caches, _project, forward_hidden
-from tensorfold.rocm.mtp import MTPEngine
-from tensorfold.rocm.prefix import PrefixCache, entry_end, trim_bytes
-from tensorfold.rocm.qwen import Engine as Kernels
-from tensorfold.rocm.qwen import activation_dtype, load, slice_for_tp
-from tensorfold.rocm.qwen_math import DevicePos
-from tensorfold.rocm.qwen_tp import tp_forward_hidden, vocab_gather
+from tensorfold.rocm.model.forward import _blank_caches, _project, forward_hidden
+from tensorfold.rocm.model.mtp import MTPEngine
+from tensorfold.rocm.serving.prefix import PrefixCache, entry_end, trim_bytes
+from tensorfold.rocm.model.qwen import Engine as Kernels
+from tensorfold.rocm.model.qwen import activation_dtype, load, slice_for_tp
+from tensorfold.rocm.model.qwen_math import DevicePos
+from tensorfold.rocm.model.qwen_tp import tp_forward_hidden, vocab_gather
 
 _DEFAULT_EOS = (151645,)
 _DEFAULT_MTP_DEPTH = 4
@@ -178,7 +178,7 @@ class QwenEngine:
              tp: int = 1, rank: int = 0, master: str = "", master_port: int = 29551,
              p2p: bool | None = None, no_drafts: bool = False,
              mtp_depth: int = _DEFAULT_MTP_DEPTH) -> QwenEngine:
-        from tensorfold.rocm.build import gfx_name
+        from tensorfold.rocm.kernels.build import gfx_name
 
         # TENSORFOLD_ROCM_SCHEDULE=wmma runs every projection on the gfx11 WMMA tiles (opt-in; auto is dot2).
         schedule = schedule or os.environ.get("TENSORFOLD_ROCM_SCHEDULE", "auto")
@@ -189,13 +189,13 @@ class QwenEngine:
             if rank != 0:
                 raise ValueError("rank must be 0 when tp=1")
             model = load(path)
-            from tensorfold.rocm.prefix import message_points
+            from tensorfold.rocm.serving.prefix import message_points
 
             engine = cls(model, Kernels(model, schedule=schedule), read_eos(path), keep=keep,
                          points=message_points(path), tp=1, rank=0, no_drafts=no_drafts, mtp_depth=mtp_depth)
             return engine._planned(path, context, context_explicit, byte_budget)
 
-        from tensorfold.rocm.comm import RCCL
+        from tensorfold.rocm.serving.comm import RCCL
 
         # One GPU a rank: with every card visible, rank r takes card r; with one card per process, that card.
         torch.cuda.set_device(rank % torch.cuda.device_count())
@@ -205,7 +205,7 @@ class QwenEngine:
         rccl.ready("startup")
         model = load(path)
         slice_for_tp(model, rank, tp)
-        from tensorfold.rocm.prefix import message_points
+        from tensorfold.rocm.serving.prefix import message_points
 
         engine = cls(model, Kernels(model, schedule=schedule), read_eos(path), keep=keep,
                      points=message_points(path), tp=tp, rank=rank, rccl=rccl, no_drafts=no_drafts,
@@ -215,7 +215,7 @@ class QwenEngine:
     def _planned(self, path: Path, context: int | None, explicit: bool, byte_budget: int | None) -> QwenEngine:
         """Fit the context window and the prompt cache to this GPU's memory (every rank agrees)."""
 
-        from tensorfold.rocm import memory
+        from tensorfold.rocm.serving import memory
 
         config = json.loads((path / "config.json").read_text())
         native = int((config.get("text_config") or config).get("max_position_embeddings") or 0)
@@ -225,14 +225,14 @@ class QwenEngine:
     def warm(self) -> None:
         """One prefill span, nothing stored: every prefill kernel is built and its workspace allocated once."""
 
-        from tensorfold.rocm.qwen_math import SPAN
+        from tensorfold.rocm.model.qwen_math import SPAN
 
         vocab = self.model.spec.vocab
         self._prefill([1 + index % (vocab - 1) for index in range(SPAN)], None, 0, SPAN + 1, store=False)
 
     def _dtype(self) -> torch.dtype:
         if self.kernels.dtype is None:
-            from tensorfold.rocm.build import gfx_name
+            from tensorfold.rocm.kernels.build import gfx_name
 
             self.kernels.dtype = activation_dtype(gfx_name())
         return self.kernels.dtype

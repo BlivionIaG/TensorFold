@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from tensorfold.rocm.model import FullLayer, MTPHead, TextModel
-from tensorfold.rocm.qwen_math import Packed, Spec
+from tensorfold.rocm.model.model import FullLayer, MTPHead, TextModel
+from tensorfold.rocm.model.qwen_math import Packed, Spec
 
 if TYPE_CHECKING:
-    from tensorfold.rocm.moe import Routed
+    from tensorfold.rocm.model.moe import Routed
 
 
 def _even(size: int, world: int, name: str) -> int:
@@ -117,8 +117,8 @@ def slice_for_tp(model: TextModel, rank: int, world: int) -> TextModel:
 def _experts_share(routed: "Routed", rank: int, world: int, name: str) -> "Routed":
     """A rank's routed experts: a contiguous ``E / world`` of them, and the shared one on rank 0."""
 
-    from tensorfold.rocm.experts import AffineExperts, GptqExperts
-    from tensorfold.rocm.moe import Routed
+    from tensorfold.rocm.model.experts import AffineExperts, GptqExperts
+    from tensorfold.rocm.model.moe import Routed
 
     total = routed.count                               # routed experts; the shared one is id ``total``
     part = _even(total, world, name)

@@ -6,8 +6,8 @@ torch = pytest.importorskip("torch")
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.attention import causal  # noqa: E402
-from tensorfold.rocm.qwen_math import causal_attend  # noqa: E402
+from tensorfold.rocm.kernels.attention import causal  # noqa: E402
+from tensorfold.rocm.model.qwen_math import causal_attend  # noqa: E402
 
 
 def _spec(q, k, v, scale, q_pos0):
@@ -82,7 +82,7 @@ def test_flash_prefill_matches_the_decode_walk(dtype, monkeypatch):
 
 
 def test_triton_is_selected_by_gfx_only():
-    from tensorfold.rocm.attention import triton_prefill
+    from tensorfold.rocm.kernels.attention import triton_prefill
 
     assert triton_prefill("gfx1030") is True
     assert triton_prefill("gfx1031") is True
@@ -92,7 +92,7 @@ def test_triton_is_selected_by_gfx_only():
 
 
 def _gfx_name() -> str:
-    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.kernels.build import gfx_name
 
     return gfx_name()
 
@@ -119,8 +119,8 @@ def test_triton_prefill_matches_the_spec_and_the_decode_walk():
     """gfx1030 and gfx11 prefill use the 64-row tile. It stays within the fp32 spec."""
 
     pytest.importorskip("triton", reason="the 64-row tile is Triton; without it prefill keeps the HIP tile")
-    from tensorfold.rocm.attention_triton import prefill
-    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.kernels.attention_triton import prefill
+    from tensorfold.rocm.kernels.build import gfx_name
 
     name = gfx_name()
     if not (name.startswith("gfx103") or name.startswith("gfx11")):

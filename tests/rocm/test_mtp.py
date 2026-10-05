@@ -9,10 +9,10 @@ if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
 from tests.rocm.test_moe import _EXPERTS, _GROUP, _HIDDEN, _TOP_K, _WIDTH, _affine, _checkpoint  # noqa: E402
 
 from tensorfold.engine.exact_sampling import Sampling  # noqa: E402
-from tensorfold.rocm import qwen as qwen_mod  # noqa: E402
-from tensorfold.rocm.build import gfx_name  # noqa: E402
-from tensorfold.rocm.moe import Routed  # noqa: E402
-from tensorfold.rocm.mtp import MTPEngine  # noqa: E402
+from tensorfold.rocm.model import qwen as qwen_mod  # noqa: E402
+from tensorfold.rocm.kernels.build import gfx_name  # noqa: E402
+from tensorfold.rocm.model.moe import Routed  # noqa: E402
+from tensorfold.rocm.model.mtp import MTPEngine  # noqa: E402
 
 _BITS = 4
 _MLP = {"gate_proj": (_WIDTH, _HIDDEN), "up_proj": (_WIDTH, _HIDDEN), "down_proj": (_HIDDEN, _WIDTH)}
@@ -169,7 +169,7 @@ def test_the_head_loads_from_the_checkpoints_own_shards(tmp_path):
 def test_slicing_takes_the_head_rows_and_keeps_a_routed_head_whole(tmp_path):
     """Under tp the head's logits projection takes the rank's rows, the rest stays whole, routed is refused."""
 
-    from tensorfold.rocm.slicing import _slice_mtp
+    from tensorfold.rocm.model.slicing import _slice_mtp
 
     cpu = torch.device("cpu")
     root = _checkpoint(tmp_path, gptq=False)
@@ -193,8 +193,8 @@ def test_slicing_takes_the_head_rows_and_keeps_a_routed_head_whole(tmp_path):
 def _served(tmp_path, *, no_drafts=False, eos=(0,)):
     """The tiny MoE checkpoint with its own MTP head, served through the real engine on one rank."""
 
-    from tensorfold.rocm.engine import QwenEngine
-    from tensorfold.rocm.qwen import Engine as Kernels
+    from tensorfold.rocm.serving.engine import QwenEngine
+    from tensorfold.rocm.model.qwen import Engine as Kernels
 
     device = torch.device("cuda")
     root = _checkpoint(tmp_path, gptq=False)
@@ -209,7 +209,7 @@ def _served(tmp_path, *, no_drafts=False, eos=(0,)):
 def _engine(model, kernels, *, eos=(0,), no_drafts=False, depth=4):
     """An engine over weights already loaded, so a second one cannot see a rebuilt model."""
 
-    from tensorfold.rocm.engine import QwenEngine
+    from tensorfold.rocm.serving.engine import QwenEngine
 
     return QwenEngine(model, kernels, eos, tp=1, rank=0, rccl=None, no_drafts=no_drafts, mtp_depth=depth)
 
@@ -321,9 +321,9 @@ def test_the_head_drafts_a_deterministic_chain(tmp_path, routed):
 def test_the_head_residual_is_the_fc_output(tmp_path):
     """The input norm feeds the head's attention only; the residual is the fc output, as in the MLX layer."""
 
-    from tensorfold.rocm import forward
-    from tensorfold.rocm import mtp as mtp_mod
-    from tensorfold.rocm.qwen_math import gather_rows, rms_norm
+    from tensorfold.rocm.model import forward
+    from tensorfold.rocm.model import mtp as mtp_mod
+    from tensorfold.rocm.model.qwen_math import gather_rows, rms_norm
 
     model, head, engine, device = _loaded(tmp_path, routed=False)
     spec, dtype = model.spec, qwen_mod.activation_dtype(gfx_name())

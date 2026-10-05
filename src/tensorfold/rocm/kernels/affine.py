@@ -24,7 +24,7 @@ def _tables(scale: torch.Tensor, bias: torch.Tensor) -> tuple[torch.Tensor, torc
 
 @lru_cache(maxsize=1)
 def _ext():
-    from tensorfold.rocm.build import load
+    from tensorfold.rocm.kernels.build import load
 
     here = Path(__file__).parent
     return load(name="tensorfold_rocm_affine",
@@ -37,7 +37,7 @@ def matmul(x: torch.Tensor, words: torch.Tensor, scale: torch.Tensor, bias: torc
            group: int, schedule: str = "auto", f32: bool = False, dot2_split: bool | None = None) -> torch.Tensor:
     """``x`` (M, K) BF16, or FP16 on RDNA2, times packed words (N, K * bits / 32)."""
 
-    from tensorfold.rocm.build import WMMA, gfx_name
+    from tensorfold.rocm.kernels.build import WMMA, gfx_name
 
     if bits not in BITS or group not in GROUPS:
         raise ValueError("RDNA affine weights require 2/3/4/5/6/8 bits and groups of 32/64/128")
@@ -104,7 +104,7 @@ def matmul_pair(x: torch.Tensor, words_a: torch.Tensor, scale_a: torch.Tensor, b
                 f32: bool = False):
     """Two packed products that share ``x``. Each side matches a solo WMMA launch. 8-bit only."""
 
-    from tensorfold.rocm.build import WMMA, gfx_name
+    from tensorfold.rocm.kernels.build import WMMA, gfx_name
 
     if x.dtype != torch.bfloat16 or gfx_name() not in WMMA or bits != 8:
         raise ValueError("the paired matmul is the BF16 WMMA 8-bit schedule")
@@ -129,7 +129,7 @@ def matmul_pair(x: torch.Tensor, words_a: torch.Tensor, scale_a: torch.Tensor, b
 def matmul_group(x: torch.Tensor, packeds: tuple, *, bits: int, group: int, f32: bool = False):
     """Up to four packed products that share ``x``. Each side matches a solo WMMA launch."""
 
-    from tensorfold.rocm.build import WMMA, gfx_name
+    from tensorfold.rocm.kernels.build import WMMA, gfx_name
 
     if not 1 <= len(packeds) <= 4:
         raise ValueError("a grouped matmul takes 1 to 4 weights")

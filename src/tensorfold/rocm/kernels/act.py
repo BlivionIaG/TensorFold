@@ -10,7 +10,7 @@ import torch
 
 @lru_cache(maxsize=1)
 def _ext():
-    from tensorfold.rocm.build import load
+    from tensorfold.rocm.kernels.build import load
 
     here = Path(__file__).parent
     return load(name="tensorfold_rocm_act",

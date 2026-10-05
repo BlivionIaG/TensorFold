@@ -7,8 +7,8 @@ from pathlib import Path
 
 import torch
 
-from tensorfold.rocm.model import FullLayer, LinearLayer, MTPHead, TextModel
-from tensorfold.rocm.qwen_math import Dense, GptqPacked, Packed, Spec
+from tensorfold.rocm.model.model import FullLayer, LinearLayer, MTPHead, TextModel
+from tensorfold.rocm.model.qwen_math import Dense, GptqPacked, Packed, Spec
 
 # AWQ stores literal zeros, GPTQ stores them +1; set by load() and read by _packed_gptq.
 _V2 = False
@@ -202,7 +202,7 @@ def _gptq_side(table, routed: str, shared: str, device: torch.device) -> tuple:
 def _experts(table, prefix: str, spec: Spec, bits: int, group: int, device: torch.device):
     """A layer's ``E + 1`` experts, shared last, in the checkpoint's kind (affine or GPTQ / AWQ)."""
 
-    from tensorfold.rocm.experts import AffineExperts, GptqExperts
+    from tensorfold.rocm.model.experts import AffineExperts, GptqExperts
 
     mine, shared = prefix + "switch_mlp.", prefix + "shared_expert."
     if f"{mine}up_proj.weight" in table:
@@ -232,7 +232,7 @@ def _experts(table, prefix: str, spec: Spec, bits: int, group: int, device: torc
 def _routed(table, prefix: str, spec: Spec, bits: int, group: int, device: torch.device):
     """A layer's router rows [E + 1, D] bf16 (the shared expert's gate row last) and its E + 1 experts."""
 
-    from tensorfold.rocm.moe import Routed
+    from tensorfold.rocm.model.moe import Routed
 
     router = torch.cat([_router_rows(table, prefix + "gate", group, device),
                         _router_rows(table, prefix + "shared_expert_gate", group, device)])

@@ -11,9 +11,9 @@ if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
 
 import numpy as np  # noqa: E402
 
-from tensorfold.rocm.build import gfx_name  # noqa: E402
-from tensorfold.rocm.forward import _project, forward_hidden  # noqa: E402
-from tensorfold.rocm.qwen import Engine, activation_dtype, load  # noqa: E402
+from tensorfold.rocm.kernels.build import gfx_name  # noqa: E402
+from tensorfold.rocm.model.forward import _project, forward_hidden  # noqa: E402
+from tensorfold.rocm.model.qwen import Engine, activation_dtype, load  # noqa: E402
 
 FIXTURE = Path(__file__).parent / "fixtures" / "qwen35_0_8b_prompt.npz"
 # Against mlx-lm 0.31.3 on this prompt, schedule auto. The Mac row decoder refuses this tied checkpoint,

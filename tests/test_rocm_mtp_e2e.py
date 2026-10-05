@@ -6,11 +6,11 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from tensorfold.rocm.mtp import MTPEngine  # noqa: E402
-from tensorfold.rocm.qwen import (  # noqa: E402
+from tensorfold.rocm.model.mtp import MTPEngine  # noqa: E402
+from tensorfold.rocm.model.qwen import (  # noqa: E402
     Engine as Kernels,
 )
-from tensorfold.rocm.qwen import (
+from tensorfold.rocm.model.qwen import (
     FullLayer,
     MTPHead,
     Packed,
@@ -18,7 +18,7 @@ from tensorfold.rocm.qwen import (
     TextModel,
     activation_dtype,
 )
-from tensorfold.rocm.qwen_math import _codes  # noqa: E402
+from tensorfold.rocm.model.qwen_math import _codes  # noqa: E402
 
 BITS, GROUP = 8, 32
 
@@ -28,7 +28,7 @@ DEVICE = torch.device("cuda", 0) if torch.cuda.is_available() else torch.device(
 def _act_dtype() -> torch.dtype:
     if not torch.cuda.is_available():
         return torch.float32
-    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.kernels.build import gfx_name
 
     return activation_dtype(gfx_name())
 
@@ -164,7 +164,7 @@ def test_mtp_engine_cache_grows_across_steps():
 def test_qwen_engine_generate_with_mtp_emits_tokens():
     """QwenEngine.generate runs to ``max_tokens`` both with and without MTP drafting."""
 
-    from tensorfold.rocm.engine import QwenEngine
+    from tensorfold.rocm.serving.engine import QwenEngine
 
     if not torch.cuda.is_available():
         pytest.skip("no HIP device")

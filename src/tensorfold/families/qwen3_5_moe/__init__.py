@@ -117,7 +117,7 @@ def rocm_engine(model_dir: str | Path, *, context: int | None = None, context_ex
                 master_port: int = 29551, p2p: bool | None = None, no_drafts: bool = False, **options: Any):
     """The ROCm engine for ``tensorfold serve --backend rocm``: routed experts on RDNA, one GPU or ``tp`` ranks."""
 
-    from tensorfold.rocm.engine import QwenEngine
+    from tensorfold.rocm.serving.engine import QwenEngine
 
     return QwenEngine.load(Path(model_dir), context=context, context_explicit=context_explicit, keep=keep,
                            byte_budget=byte_budget, tp=int(tp), rank=int(rank), master=master,

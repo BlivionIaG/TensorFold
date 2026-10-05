@@ -110,7 +110,7 @@ def rms_norm(x: torch.Tensor, weight: torch.Tensor | None, eps: float) -> torch.
     rows = x.numel() // width
     weight_ok = weight is None or weight.numel() == width
     if x.is_cuda and weight_ok and rows >= 1 and 1 <= width <= 8192:
-        from tensorfold.rocm.act import rms
+        from tensorfold.rocm.kernels.act import rms
 
         # The kernel reads and writes the activation dtype and computes in fp32: no cast either side.
         flat = x.reshape(rows, width)
@@ -164,7 +164,7 @@ def apply_rope(x: torch.Tensor, pos0: int, theta: float, rotary_dim: int, *, exa
     rows = x.numel() // width
     short = not exact and x.is_cuda and x.shape[-2] == 1 and rows <= 256 and width <= 8192
     if short and 0 < rotary_dim <= width and rotary_dim % 2 == 0:
-        from tensorfold.rocm.act import rope_decode
+        from tensorfold.rocm.kernels.act import rope_decode
 
         flat = x.reshape(rows, width).float().contiguous()
         y = rope_decode(flat, pos0 if at is None else at.i32, rotary_dim, theta).reshape(x.shape)
@@ -219,7 +219,7 @@ def causal_conv(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor | Non
     batch, length, channels = x.shape
     kernel = weight.shape[1]
     if not exact and x.is_cuda and length == 1 and 1 <= kernel <= 8:
-        from tensorfold.rocm.act import conv_decode
+        from tensorfold.rocm.kernels.act import conv_decode
 
         if state is None:
             state = torch.zeros(batch, kernel - 1, channels, device=x.device, dtype=torch.float32)
@@ -314,7 +314,7 @@ def gated_delta(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tens
     """Scalar-gate delta rule over fp32 state; ``fused`` takes gate and beta from one HIP launch."""
 
     if fused and a.is_cuda:
-        from tensorfold.rocm.act import gdn_gate
+        from tensorfold.rocm.kernels.act import gdn_gate
 
         gate, beta = gdn_gate(a, b, a_log, dt_bias)
     else:
@@ -331,7 +331,7 @@ def gated_delta(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tens
     gate = gate.reshape(batch, length, value_heads).contiguous()
     beta = beta.reshape(batch, length, value_heads).contiguous()
     if qf.is_cuda:
-        from tensorfold.rocm.gated_delta import recurrence
+        from tensorfold.rocm.kernels.gated_delta import recurrence
 
         return recurrence(qf, kf, vf, gate, beta, state.contiguous())
     return gated_delta_reference(qf, kf, vf, gate, beta, state)

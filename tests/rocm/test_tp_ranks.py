@@ -21,13 +21,13 @@ STEPS = 12
 
 RANK = """
 import json, sys, torch
-from tensorfold.rocm.build import gfx_name
-from tensorfold.rocm.qwen import Engine, activation_dtype, load, slice_for_tp
+from tensorfold.rocm.kernels.build import gfx_name
+from tensorfold.rocm.model.qwen import Engine, activation_dtype, load, slice_for_tp
 model_dir, world, rank, port, prompts, steps = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), \\
     json.loads(sys.argv[5]), int(sys.argv[6])
 rccl = None
 if world > 1:
-    from tensorfold.rocm.comm import RCCL
+    from tensorfold.rocm.serving.comm import RCCL
     torch.cuda.set_device(rank)
     rccl = RCCL(rank, world, "127.0.0.1", port)
     rccl.ready("startup")

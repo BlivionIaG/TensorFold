@@ -6,7 +6,7 @@ pytest.importorskip("torch")
 
 
 def test_mtp_state_default_is_unallocated():
-    from tensorfold.rocm.mtp import MTPState
+    from tensorfold.rocm.model.mtp import MTPState
 
     state = MTPState()
     assert state.k is None
@@ -16,13 +16,13 @@ def test_mtp_state_default_is_unallocated():
 
 
 def test_mtp_state_reset_with_no_cache_is_safe():
-    from tensorfold.rocm.mtp import MTPState
+    from tensorfold.rocm.model.mtp import MTPState
 
     MTPState().reset()
 
 
 def test_mtp_head_dataclass_has_expected_fields():
-    from tensorfold.rocm.qwen import MTPHead
+    from tensorfold.rocm.model.qwen import MTPHead
 
     fields = {f.name for f in MTPHead.__dataclass_fields__.values()}
     assert fields == {"fc_e_norm", "fc_h_norm", "fc_e", "fc_h",
@@ -32,14 +32,14 @@ def test_mtp_head_dataclass_has_expected_fields():
 
 
 def test_text_model_carries_optional_mtp_head():
-    from tensorfold.rocm.qwen import TextModel
+    from tensorfold.rocm.model.qwen import TextModel
 
     assert "mtp" in TextModel.__dataclass_fields__
     assert TextModel.__dataclass_fields__["mtp"].default is None
 
 
 def test_load_mtp_head_returns_none_when_no_mtp_file(tmp_path, monkeypatch):
-    from tensorfold.rocm import qwen as qwen_mod
+    from tensorfold.rocm.model import qwen as qwen_mod
 
     spec = qwen_mod.Spec(hidden=4096, intermediate=14336, heads=24, kv_heads=4, head_dim=128,
                          key_heads=4, value_heads=4, key_dim=128, value_dim=128,
@@ -49,7 +49,7 @@ def test_load_mtp_head_returns_none_when_no_mtp_file(tmp_path, monkeypatch):
 
 
 def test_load_mtp_head_refuses_partial_mtp_file(tmp_path, monkeypatch):
-    from tensorfold.rocm import qwen as qwen_mod
+    from tensorfold.rocm.model import qwen as qwen_mod
 
     spec = qwen_mod.Spec(hidden=4096, intermediate=14336, heads=24, kv_heads=4, head_dim=128,
                          key_heads=4, value_heads=4, key_dim=128, value_dim=128,
@@ -74,7 +74,7 @@ def test_load_mtp_head_refuses_partial_mtp_file(tmp_path, monkeypatch):
 
     shard = tmp_path / "mtp-4bit.safetensors"
     shard.touch()
-    from tensorfold.rocm import checkpoint
+    from tensorfold.rocm.model import checkpoint
 
     monkeypatch.setattr(checkpoint, "_Shards", lambda paths, strip="", quant=None: _FakeShards(paths))
 

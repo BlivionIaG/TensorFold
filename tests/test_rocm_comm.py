@@ -6,21 +6,21 @@ pytest.importorskip("torch")
 
 
 def test_dtype_enum_has_bf16_and_fp32():
-    from tensorfold.rocm import comm
+    from tensorfold.rocm.serving import comm
 
     assert comm._DTYPES[__import__("torch").float32] == 7
     assert comm._DTYPES[__import__("torch").bfloat16] == 9
 
 
 def test_ops_enum_uses_sum_zero():
-    from tensorfold.rocm import comm
+    from tensorfold.rocm.serving import comm
 
     assert comm._OPS["sum"] == 0
     assert "prod" in comm._OPS
 
 
 def test_library_refuses_when_no_rccl(monkeypatch):
-    from tensorfold.rocm import comm
+    from tensorfold.rocm.serving import comm
 
     monkeypatch.setattr(comm.glob, "glob", lambda pattern: [])
     monkeypatch.setattr(comm.ctypes.util, "find_library", lambda name: None)
@@ -30,35 +30,35 @@ def test_library_refuses_when_no_rccl(monkeypatch):
 
 
 def test_rccl_rejects_world_one():
-    from tensorfold.rocm import comm
+    from tensorfold.rocm.serving import comm
 
     with pytest.raises(ValueError, match="multi-rank"):
         comm.RCCL(rank=0, world=1, master="127.0.0.1", port=29551)
 
 
 def test_rccl_rejects_rank_out_of_range():
-    from tensorfold.rocm import comm
+    from tensorfold.rocm.serving import comm
 
     with pytest.raises(ValueError, match="not in"):
         comm.RCCL(rank=4, world=4, master="127.0.0.1", port=29551)
 
 
 def test_rccl_rejects_empty_master():
-    from tensorfold.rocm import comm
+    from tensorfold.rocm.serving import comm
 
     with pytest.raises(ValueError, match="rank 0"):
         comm.RCCL(rank=0, world=2, master="", port=29551)
 
 
 def test_rccl_rejects_negative_world():
-    from tensorfold.rocm import comm
+    from tensorfold.rocm.serving import comm
 
     with pytest.raises(ValueError, match="multi-rank"):
         comm.RCCL(rank=0, world=0, master="127.0.0.1", port=29551)
 
 
 def test_windows_refuses_librccl(monkeypatch):
-    from tensorfold.rocm import comm
+    from tensorfold.rocm.serving import comm
 
     monkeypatch.setattr(comm.os, "name", "nt")
     with pytest.raises(RuntimeError, match="Windows"):
@@ -69,7 +69,7 @@ def test_windows_refuses_librccl(monkeypatch):
 def test_p2p_is_rccls_choice_unless_asked(monkeypatch, apu, want):
     """Unset, a discrete card leaves P2P to RCCL and a multi-die APU turns it on; --p2p / --no-p2p win."""
 
-    import tensorfold.rocm.engine as engine_mod
+    import tensorfold.rocm.serving.engine as engine_mod
 
     class _Props:
         multi_gpu_capable = apu
@@ -108,7 +108,7 @@ def test_family_rocm_engine_rejects_bad_world_size():
 
 def test_family_rocm_engine_passes_kwargs(monkeypatch):
     from tensorfold.families import qwen3_5
-    from tensorfold.rocm import engine
+    from tensorfold.rocm.serving import engine
 
     seen = {}
 
@@ -135,7 +135,7 @@ def test_serve_passes_no_drafts_to_the_engine(no_drafts, tmp_path):
     import argparse
     from types import SimpleNamespace
 
-    from tensorfold.rocm.serve import serve_rocm
+    from tensorfold.rocm.serving.serve import serve_rocm
 
     seen = {}
 

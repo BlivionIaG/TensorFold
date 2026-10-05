@@ -7,8 +7,8 @@ from typing import Callable, Sequence
 
 import torch
 
-from tensorfold.rocm import forward, qwen_math
-from tensorfold.rocm.qwen import MTPHead, Packed, TextModel
+from tensorfold.rocm.model import forward, qwen_math
+from tensorfold.rocm.model.qwen import MTPHead, Packed, TextModel
 
 
 @dataclass
@@ -98,7 +98,7 @@ def _attention(head: MTPHead, x: torch.Tensor, cache: dict | None, position: int
 def _vocab_logits(head: MTPHead, model: TextModel, x: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
     target = head.head if head.head is not None else model.output_head()
     flat = x.reshape(-1, x.shape[-1]).to(dtype=dtype).contiguous()
-    from tensorfold.rocm import affine as affine_mod
+    from tensorfold.rocm.kernels import affine as affine_mod
 
     out = affine_mod.matmul(flat, target.words, target.scale, target.bias,
                             bits=target.bits, group=target.group, schedule="auto")
@@ -128,7 +128,7 @@ class MTPEngine:
         out = _vocab_logits(self.head, self.model, x, dtype)
         if self.rccl is None or self.rccl.world <= 1 or target.words.shape[0] == self.model.spec.vocab:
             return out
-        from tensorfold.rocm.qwen_tp import vocab_gather
+        from tensorfold.rocm.model.qwen_tp import vocab_gather
 
         rows = vocab_gather(self.rccl, out.reshape(-1, out.shape[-1]))
         return rows.view(*out.shape[:-1], -1)

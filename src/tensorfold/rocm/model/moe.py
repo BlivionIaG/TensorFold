@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 
 import torch
 
-from tensorfold.rocm import act
-from tensorfold.rocm import experts as grouped
+from tensorfold.rocm.kernels import act
+from tensorfold.rocm.model import experts as grouped
 
 
 def router(x: torch.Tensor, rows: torch.Tensor, out: torch.Tensor) -> None:

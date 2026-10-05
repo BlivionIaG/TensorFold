@@ -13,7 +13,7 @@ _KIND = {torch.float16: 0, torch.bfloat16: 1, torch.float32: 2}
 
 @lru_cache(maxsize=1)
 def _ext():
-    from tensorfold.rocm.build import load
+    from tensorfold.rocm.kernels.build import load
 
     here = Path(__file__).parent
     return load(name="tensorfold_rocm_attn",
@@ -23,7 +23,7 @@ def _ext():
 
 @lru_cache(maxsize=1)
 def _gfx() -> str:
-    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.kernels.build import gfx_name
 
     return gfx_name()
 
@@ -43,7 +43,7 @@ def causal(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_po
     mode = os.environ.get("TENSORFOLD_ATTN", "auto")
     gfx = _gfx()
     if prefill and mode != "hip" and (mode == "triton" or triton_prefill(gfx)):
-        from tensorfold.rocm.attention_triton import prefill as tiled_prefill
+        from tensorfold.rocm.kernels.attention_triton import prefill as tiled_prefill
 
         dot = os.environ.get("TENSORFOLD_ATTN_DOT")
         if dot not in ("bf16", "fp16"):

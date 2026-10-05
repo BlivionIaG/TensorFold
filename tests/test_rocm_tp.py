@@ -9,13 +9,10 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from tensorfold.rocm import (
-    forward,  # noqa: E402
-    qwen_math,  # noqa: E402
-)
-from tensorfold.rocm.qwen import FullLayer, LinearLayer, TextModel, slice_for_tp  # noqa: E402
-from tensorfold.rocm.qwen_math import Packed, Spec  # noqa: E402
-from tensorfold.rocm.qwen_tp import all_reduce_local, ordered_sum, tp_forward_hidden, vocab_gather  # noqa: E402
+from tensorfold.rocm.model import forward, qwen_math  # noqa: E402
+from tensorfold.rocm.model.qwen import FullLayer, LinearLayer, TextModel, slice_for_tp  # noqa: E402
+from tensorfold.rocm.model.qwen_math import Packed, Spec  # noqa: E402
+from tensorfold.rocm.model.qwen_tp import all_reduce_local, ordered_sum, tp_forward_hidden, vocab_gather  # noqa: E402
 
 BITS, GROUP = 8, 32
 

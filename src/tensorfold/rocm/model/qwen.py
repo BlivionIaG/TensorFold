@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import torch
 
-from tensorfold.rocm import qwen_math
-from tensorfold.rocm.checkpoint import load, load_mtp_head  # noqa: F401 - the package's entry points
-from tensorfold.rocm.forward import greedy
-from tensorfold.rocm.model import FullLayer, LinearLayer, MTPHead, TextModel  # noqa: F401
-from tensorfold.rocm.qwen_math import Dense, GptqPacked, Packed, Spec  # noqa: F401 - Spec for callers
-from tensorfold.rocm.slicing import slice_for_tp  # noqa: F401
+from tensorfold.rocm.model import qwen_math
+from tensorfold.rocm.model.checkpoint import load, load_mtp_head  # noqa: F401 - the package's entry points
+from tensorfold.rocm.model.forward import greedy
+from tensorfold.rocm.model.model import FullLayer, LinearLayer, MTPHead, TextModel  # noqa: F401
+from tensorfold.rocm.model.qwen_math import Dense, GptqPacked, Packed, Spec  # noqa: F401 - Spec for callers
+from tensorfold.rocm.model.slicing import slice_for_tp  # noqa: F401
 
 _RDNA2 = {f"gfx103{i}" for i in range(7)}
 
@@ -17,7 +17,7 @@ _RDNA2 = {f"gfx103{i}" for i in range(7)}
 def activation_dtype(gfx: str) -> torch.dtype:
     """FP16 on RDNA2, where the affine schedule is the FP16 dot. BF16 on an RDNA3 WMMA part."""
 
-    from tensorfold.rocm.build import WMMA
+    from tensorfold.rocm.kernels.build import WMMA
 
     if gfx in _RDNA2:
         return torch.float16
@@ -37,10 +37,10 @@ class Engine:
         self.projections = 0
 
     def linear(self, flat: torch.Tensor, packed: Packed) -> torch.Tensor:
-        from tensorfold.rocm import affine as affine_mod
+        from tensorfold.rocm.kernels import affine as affine_mod
 
         if self.dtype is None:
-            from tensorfold.rocm.build import gfx_name
+            from tensorfold.rocm.kernels.build import gfx_name
 
             self.dtype = activation_dtype(gfx_name())
         flat = flat.reshape(-1, flat.shape[-1]).contiguous()
@@ -70,8 +70,8 @@ class Engine:
 
         if not isinstance(first, Packed) or not isinstance(second, Packed):
             return self.linear(x, first), self.linear(x, second)
-        from tensorfold.rocm import affine as affine_mod
-        from tensorfold.rocm.build import WMMA, gfx_name
+        from tensorfold.rocm.kernels import affine as affine_mod
+        from tensorfold.rocm.kernels.build import WMMA, gfx_name
 
         if self.dtype is None:
             self.dtype = activation_dtype(gfx_name())
@@ -93,8 +93,8 @@ class Engine:
 
         if not all(isinstance(p, Packed) for p in packeds):
             return None
-        from tensorfold.rocm import affine as affine_mod
-        from tensorfold.rocm.build import WMMA, gfx_name
+        from tensorfold.rocm.kernels import affine as affine_mod
+        from tensorfold.rocm.kernels.build import WMMA, gfx_name
 
         if self.dtype is None:
             self.dtype = activation_dtype(gfx_name())
@@ -120,7 +120,7 @@ class Engine:
     def _gptq(self, flat: torch.Tensor, packed: GptqPacked) -> torch.Tensor:
         """A W4A16 GPTQ projection: the RDNA2 fp16 dot, tiled by the prefill row counts."""
 
-        from tensorfold.rocm import qgemm
+        from tensorfold.rocm.kernels import qgemm
 
         if packed.g_idx is not None:
             raise ValueError("the RDNA W4A16 path does not carry an act-order permutation yet")
@@ -139,14 +139,14 @@ class Engine:
     def generate(self, prompts: list[list[int]], n_new: int, after_token=None) -> list[list[int]]:
         device = self.model.embed.words.device
         if self.dtype is None:
-            from tensorfold.rocm.build import gfx_name
+            from tensorfold.rocm.kernels.build import gfx_name
 
             self.dtype = activation_dtype(gfx_name())
         hooks = {}
         if self.rccl is not None and self.rccl.world > 1:
             from functools import partial
 
-            from tensorfold.rocm.qwen_tp import all_reduce_local, vocab_gather
+            from tensorfold.rocm.model.qwen_tp import all_reduce_local, vocab_gather
 
             hooks = {"reduce": partial(all_reduce_local, self.rccl), "gather": partial(vocab_gather, self.rccl)}
         with torch.inference_mode():

@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("torch")
 
-from tensorfold.rocm.engine import read_eos  # noqa: E402
+from tensorfold.rocm.serving.engine import read_eos  # noqa: E402
 
 
 def test_top_level_text_config_and_generation_config_are_all_read(tmp_path):

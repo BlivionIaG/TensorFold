@@ -5,7 +5,7 @@ import pytest
 torch = pytest.importorskip("torch")
 safetensors_torch = pytest.importorskip("safetensors.torch")
 
-from tensorfold.rocm.checkpoint import _packed, _Shards  # noqa: E402
+from tensorfold.rocm.model.checkpoint import _packed, _Shards  # noqa: E402
 
 
 def _file(tmp_path):
@@ -42,7 +42,7 @@ def test_a_width_the_config_does_not_name_is_refused(tmp_path):
 def test_a_hugging_face_gptq_export_is_refused_by_name(tmp_path):
     import json
 
-    from tensorfold.rocm.checkpoint import load
+    from tensorfold.rocm.model.checkpoint import load
 
     (tmp_path / "config.json").write_text(json.dumps({"model_type": "qwen3_5_moe", "text_config": {},
                                                       "quantization_config": {"quant_method": "gptq", "bits": 4}}))

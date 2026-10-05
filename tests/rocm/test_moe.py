@@ -8,10 +8,10 @@ torch = pytest.importorskip("torch")
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm import moe as moe_mod  # noqa: E402
-from tensorfold.rocm import qwen as qwen_mod  # noqa: E402
-from tensorfold.rocm.build import gfx_name  # noqa: E402
-from tensorfold.rocm.experts import AffineExperts, GptqExperts, Plan, route  # noqa: E402
+from tensorfold.rocm.model import moe as moe_mod  # noqa: E402
+from tensorfold.rocm.model import qwen as qwen_mod  # noqa: E402
+from tensorfold.rocm.kernels.build import gfx_name  # noqa: E402
+from tensorfold.rocm.model.experts import AffineExperts, GptqExperts, Plan, route  # noqa: E402
 
 try:
     _GFX = gfx_name()
@@ -195,7 +195,7 @@ def test_gptq_experts_match_the_fp32_reference():
     helpers = _qgemm()
     _expert_weight, _pack_experts, _plan = helpers._expert_weight, helpers._pack_experts, helpers._plan
 
-    from tensorfold.rocm.qgemm import moe as gptq_moe
+    from tensorfold.rocm.kernels.qgemm import moe as gptq_moe
 
     mats, k, n, group = 2, _HIDDEN, _WIDTH, _GROUP
     codes, zeros, qweight, qzeros, scales = _pack_experts(mats, _EXPERTS + 1, n, k, group, seed=31)
@@ -341,7 +341,7 @@ def test_loader_dispatches_the_expert_kind(tmp_path):
 def test_the_engine_serves_a_moe_checkpoint(tmp_path):
     """The whole engine runs a MoE stack: a greedy continuation comes back and the experts are on the path."""
 
-    from tensorfold.rocm.qwen import Engine
+    from tensorfold.rocm.model.qwen import Engine
 
     model = qwen_mod.load(_checkpoint(tmp_path, gptq=False), torch.device("cuda"))
     engine = Engine(model)
@@ -354,7 +354,7 @@ def test_the_engine_serves_a_moe_checkpoint(tmp_path):
 def test_the_engine_serves_gptq_experts(tmp_path):
     """A GPTQ checkpoint's experts run through the same engine, so the dispatch is not just a load-time pick."""
 
-    from tensorfold.rocm.qwen import Engine
+    from tensorfold.rocm.model.qwen import Engine
 
     model = qwen_mod.load(_checkpoint(tmp_path, gptq=True), torch.device("cuda"))
     assert isinstance(model.layers[0].moe.experts, GptqExperts)
@@ -377,7 +377,7 @@ def test_the_family_rocm_engine_loads_a_moe_checkpoint(tmp_path):
 def test_the_ranks_shares_sum_to_the_whole_layer(world, rows):
     """Under tp each rank runs its own experts; the fp32 shares summed give the one-rank layer."""
 
-    from tensorfold.rocm.slicing import _experts_share
+    from tensorfold.rocm.model.slicing import _experts_share
 
     whole = _routed(_affine_experts(), torch.randn(_EXPERTS + 1, _HIDDEN).to(torch.bfloat16).cuda())
     x = torch.randn(rows, _HIDDEN, device="cuda").to(_ACT)
@@ -397,7 +397,7 @@ def test_the_ranks_shares_sum_to_the_whole_layer(world, rows):
 def test_one_routed_launch_equals_each_expert_alone(bits, group, rows):
     """Every item of a plan in one launch lands on the bits of its expert's own launch, row for row."""
 
-    from tensorfold.rocm import affine
+    from tensorfold.rocm.kernels import affine
 
     experts, n, k, slots = 6, 96, 256, 3
     parts = [_affine(n, k, bits, group, 50 + e) for e in range(experts)]
@@ -426,7 +426,7 @@ def test_one_routed_launch_equals_each_expert_alone(bits, group, rows):
 def test_the_router_row_does_not_depend_on_the_rows_beside_it(rows):
     """A row's logits are the same alone or among others, and match the fp64 product closely."""
 
-    from tensorfold.rocm.act import moe_router
+    from tensorfold.rocm.kernels.act import moe_router
 
     gen = torch.Generator().manual_seed(rows)
     x = (torch.randn((rows, 256), generator=gen) * 0.5).to(_ACT).cuda()
@@ -444,7 +444,7 @@ def test_the_router_row_does_not_depend_on_the_rows_beside_it(rows):
 def test_one_row_writes_its_own_plan():
     """At one row the pick writes the plan: item k is pair k alone, and the rest of the plan is empty."""
 
-    from tensorfold.rocm.act import moe_select
+    from tensorfold.rocm.kernels.act import moe_select
 
     logits = torch.randn((1, _EXPERTS + 1), device="cuda")
     buf = moe_mod.MoEBuffers(16, _Sizes(), torch.device("cuda"))
@@ -481,7 +481,7 @@ def test_graph_decode_equals_eager_through_the_experts(tmp_path):
 def test_a_routed_row_has_its_bits_alone_or_among_others(bits, group):
     """A routed row's products are the same alone, in a batch or in a prefill, and equal the dequantized product."""
 
-    from tensorfold.rocm import affine
+    from tensorfold.rocm.kernels import affine
 
     experts, n, k, slots = 5, 72, group * 6, 3
     parts = [_affine(n, k, bits, group, 70 + e) for e in range(experts)]

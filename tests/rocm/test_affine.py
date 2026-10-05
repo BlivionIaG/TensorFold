@@ -10,8 +10,8 @@ torch = pytest.importorskip("torch")
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.affine import matmul, matmul_group, matmul_pair  # noqa: E402
-from tensorfold.rocm.build import WMMA, gfx_name  # noqa: E402
+from tensorfold.rocm.kernels.affine import matmul, matmul_group, matmul_pair  # noqa: E402
+from tensorfold.rocm.kernels.build import WMMA, gfx_name  # noqa: E402
 
 ROWS = [1, 2, 7, 15, 16, 17, 31, 32]
 

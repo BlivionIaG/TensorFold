@@ -163,7 +163,7 @@ def one_launch(ex, x: torch.Tensor) -> bool:
         return False
     if x.dtype == torch.float16:
         return True
-    from tensorfold.rocm.build import WMMA, gfx_name
+    from tensorfold.rocm.kernels.build import WMMA, gfx_name
 
     return x.dtype == torch.bfloat16 and gfx_name() in WMMA
 
@@ -181,20 +181,20 @@ def gate_up(x: torch.Tensor, ex, plan: Plan, rows: int, *, block_m: int = 4) -> 
     """``x`` [R, D] -> [R * slots, NI], each pair's activated expert output."""
 
     if isinstance(ex, GptqExperts):
-        from tensorfold.rocm import qgemm
+        from tensorfold.rocm.kernels import qgemm
 
         return qgemm.moe(x.to(torch.bfloat16), ex.up.contiguous(), ex.up_z.contiguous(), ex.up_s.contiguous(),
                          plan.items, plan.members, rows, plan.slots, epi=2 if ex.swiglu else 1, block_m=block_m,
                          use_v2_format=ex.v2, limit=ex.limit)
 
-    from tensorfold.rocm import affine as affine_mod
+    from tensorfold.rocm.kernels import affine as affine_mod
 
     if one_launch(ex, x):
         both = affine_mod.matmul_routed(x, *ex.fused, plan.items[:plan.count], plan.members, pairs=rows * plan.slots,
                                         x_div=plan.slots, rows=min(plan.tile, rows), bits=ex.bits, group=ex.group)
         if ex.gate is None:
             return _activate(both, None, ex.limit).to(x.dtype)
-        from tensorfold.rocm.act import moe_act
+        from tensorfold.rocm.kernels.act import moe_act
 
         return moe_act(both, x.dtype, ex.limit)
     out = torch.empty((rows * plan.slots, ex.width), dtype=x.dtype, device=x.device)
@@ -214,12 +214,12 @@ def down(act: torch.Tensor, ex, plan: Plan, rows: int, *, block_m: int = 4) -> t
     """``act`` [R * slots, NI] -> [R * slots, D] fp32, each pair's expert output."""
 
     if isinstance(ex, GptqExperts):
-        from tensorfold.rocm import qgemm
+        from tensorfold.rocm.kernels import qgemm
 
         return qgemm.moe(act, ex.down.contiguous(), ex.down_z.contiguous(), ex.down_s.contiguous(), plan.items,
                          plan.members, rows, plan.slots, epi=0, block_m=block_m, use_v2_format=ex.v2)
 
-    from tensorfold.rocm import affine as affine_mod
+    from tensorfold.rocm.kernels import affine as affine_mod
 
     if one_launch(ex, act):
         return affine_mod.matmul_routed(act, *ex.down, plan.items[:plan.count], plan.members, pairs=rows * plan.slots,

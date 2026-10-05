@@ -405,7 +405,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     stacks.start()          # `kill -USR1 <pid>` prints every thread's Python stack: where a silent server waits
     if backend == "rocm":
-        from tensorfold.rocm.serve import serve_rocm
+        from tensorfold.rocm.serving.serve import serve_rocm
 
         return serve_rocm(args, family, model_dir, _generation_config(model_dir), context)
     if backend == "cuda":

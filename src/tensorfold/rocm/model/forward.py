@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from tensorfold.rocm.qwen_math import (
+from tensorfold.rocm.model.qwen_math import (
     SPAN,
     DevicePos,
     Packed,
@@ -125,7 +125,7 @@ def _mlp(spec: Spec, layer, x: torch.Tensor, linear) -> torch.Tensor:
 def _moe_mlp(routed, x: torch.Tensor) -> torch.Tensor:
     """Routed experts plus the shared one over the flattened rows, in the activation dtype."""
 
-    from tensorfold.rocm.moe import run
+    from tensorfold.rocm.model.moe import run
 
     batch, length, hidden = x.shape
     y = run(x.reshape(-1, hidden), routed, prefill=length > 1)
@@ -230,7 +230,7 @@ def _attention_span(spec: Spec, layer, x: torch.Tensor, cache, linear, pos0: int
         new_cache = {"k": kept_k, "v": kept_v}
     query = queries if queries.dtype == torch.float32 else queries.float()
     if at is not None:
-        from tensorfold.rocm.attention import causal_at
+        from tensorfold.rocm.kernels.attention import causal_at
 
         attended = causal_at(query, kept_k, kept_v, spec.head_dim ** -0.5, at.i32)
     else:
@@ -249,7 +249,7 @@ def _attend(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_p
     # Even head sizes take the device kernels; odd ones the chunked matmul.
     even = q.shape[-1] <= 256 and q.shape[-1] % 2 == 0 and q.shape[1] % k.shape[1] == 0
     if q.is_cuda and k.is_cuda and even:
-        from tensorfold.rocm.attention import causal
+        from tensorfold.rocm.kernels.attention import causal
 
         return causal(q, k, v, scale, q_pos0, prefill=prefill)
     return causal_attend(q, k, v, scale, q_pos0)

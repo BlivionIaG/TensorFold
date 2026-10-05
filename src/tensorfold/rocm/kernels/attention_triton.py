@@ -81,7 +81,7 @@ if tl is not None:
 def _rdna() -> bool:
     """gfx1030 and gfx11. gfx12 is a different WMMA ABI and is not this tile."""
 
-    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.kernels.build import gfx_name
 
     name = gfx_name()
     return name.startswith("gfx103") or name.startswith("gfx11")

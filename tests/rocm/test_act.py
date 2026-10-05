@@ -6,8 +6,8 @@ torch = pytest.importorskip("torch")
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.checkpoint import _affine_quant  # noqa: E402
-from tensorfold.rocm.qwen_math import _codes, _rms_torch, apply_rope, causal_conv, rms_norm  # noqa: E402
+from tensorfold.rocm.model.checkpoint import _affine_quant  # noqa: E402
+from tensorfold.rocm.model.qwen_math import _codes, _rms_torch, apply_rope, causal_conv, rms_norm  # noqa: E402
 
 
 def _code(row, k, bits):
@@ -94,7 +94,7 @@ def test_decode_rope_matches_the_formula():
 def test_rms_in_the_activation_dtype_matches_fp32_then_cast():
     """FP16 and BF16 rows give the bits of the fp32 kernel followed by one cast, which is what the forward ran."""
 
-    from tensorfold.rocm.act import rms
+    from tensorfold.rocm.kernels.act import rms
 
     g = torch.Generator(device="cuda").manual_seed(9)
     weight = torch.randn(5120, generator=g, device="cuda")

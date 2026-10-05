@@ -308,7 +308,7 @@ def rocm_engine(model_dir: str | Path, *, context: int | None = None, context_ex
                 master_port: int = 29551, p2p: bool | None = None, no_drafts: bool = False, **options: Any):
     """The ROCm engine for ``tensorfold serve --backend rocm``: packed affine text on RDNA, one GPU or ``tp`` ranks."""
 
-    from tensorfold.rocm.engine import QwenEngine
+    from tensorfold.rocm.serving.engine import QwenEngine
 
     if tp not in (1, 2, 4, 8):
         raise ValueError(f"--tp {tp} is not a supported ROCm world size; choose 1, 2, 4 or 8")

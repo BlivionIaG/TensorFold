@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from tensorfold.rocm.qwen_math import Packed, Spec
+from tensorfold.rocm.model.qwen_math import Packed, Spec
 
 if TYPE_CHECKING:
-    from tensorfold.rocm.moe import Routed
+    from tensorfold.rocm.model.moe import Routed
 
 
 @dataclass

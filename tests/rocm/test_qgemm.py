@@ -6,8 +6,8 @@ torch = pytest.importorskip("torch")
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.build import gfx_name  # noqa: E402
-from tensorfold.rocm.qgemm import matmul, moe  # noqa: E402
+from tensorfold.rocm.kernels.build import gfx_name  # noqa: E402
+from tensorfold.rocm.kernels.qgemm import matmul, moe  # noqa: E402
 
 try:
     _GFX = gfx_name()

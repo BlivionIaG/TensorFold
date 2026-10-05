@@ -6,10 +6,10 @@ torch = pytest.importorskip("torch")
 if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm import affine as affine_mod  # noqa: E402
-from tensorfold.rocm.forward import greedy  # noqa: E402
-from tensorfold.rocm.qwen import Engine, FullLayer, LinearLayer, TextModel  # noqa: E402
-from tensorfold.rocm.qwen_math import Packed, Spec, affine_reference  # noqa: E402
+from tensorfold.rocm.kernels import affine as affine_mod  # noqa: E402
+from tensorfold.rocm.model.forward import greedy  # noqa: E402
+from tensorfold.rocm.model.qwen import Engine, FullLayer, LinearLayer, TextModel  # noqa: E402
+from tensorfold.rocm.model.qwen_math import Packed, Spec, affine_reference  # noqa: E402
 
 
 def _pack(n, k, bits, group, seed):

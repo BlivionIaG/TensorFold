@@ -8,9 +8,9 @@ torch = pytest.importorskip("torch")
 if not torch.cuda.is_available():
     pytest.skip("RDNA only", allow_module_level=True)
 
-from tensorfold.rocm.build import gfx_name  # noqa: E402
-from tensorfold.rocm.qwen import activation_dtype  # noqa: E402
-from tensorfold.rocm.qwen_math import DevicePos, apply_rope  # noqa: E402
+from tensorfold.rocm.kernels.build import gfx_name  # noqa: E402
+from tensorfold.rocm.model.qwen import activation_dtype  # noqa: E402
+from tensorfold.rocm.model.qwen_math import DevicePos, apply_rope  # noqa: E402
 
 try:
     _ACT = activation_dtype(gfx_name())
@@ -23,7 +23,7 @@ except RuntimeError:
 def test_attention_at_a_device_position_equals_the_sliced_cache(pos, dtype):
     """Keys past the position are never read, and the extra zero tiles leave every bit of the output alone."""
 
-    from tensorfold.rocm.attention import causal, causal_at
+    from tensorfold.rocm.kernels.attention import causal, causal_at
 
     gen = torch.Generator().manual_seed(pos)
     heads, kv_heads, d, span = 8, 2, 128, 300
@@ -55,7 +55,7 @@ def test_graph_decode_equals_eager_on_a_real_checkpoint():
     if not model_dir:
         pytest.skip("set TENSORFOLD_GOLDEN_MODEL to a Qwen3.5 checkpoint")
     from tensorfold.engine.exact_sampling import Sampling
-    from tensorfold.rocm.engine import QwenEngine
+    from tensorfold.rocm.serving.engine import QwenEngine
 
     engine = QwenEngine.load(model_dir, keep=0, no_drafts=True)
     prompt = list(range(1000, 1037))
@@ -71,13 +71,13 @@ def test_graph_decode_equals_eager_on_a_real_checkpoint():
 def test_the_opt_in_wmma_schedule_keeps_graph_and_eager_equal():
     """TENSORFOLD_ROCM_SCHEDULE=wmma runs WMMA at every row count, so its replayed steps equal its eager ones."""
 
-    from tensorfold.rocm.build import WMMA
+    from tensorfold.rocm.kernels.build import WMMA
 
     model_dir = os.environ.get("TENSORFOLD_GOLDEN_MODEL")
     if not model_dir or gfx_name() not in WMMA:
         pytest.skip("set TENSORFOLD_GOLDEN_MODEL on a gfx11 / gfx12 part")
     from tensorfold.engine.exact_sampling import Sampling
-    from tensorfold.rocm.engine import QwenEngine
+    from tensorfold.rocm.serving.engine import QwenEngine
 
     engine = QwenEngine.load(model_dir, keep=0, no_drafts=True, schedule="wmma")
     runs = {}

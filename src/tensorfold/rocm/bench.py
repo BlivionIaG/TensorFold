@@ -12,7 +12,7 @@ from pathlib import Path
 
 import torch
 
-from tensorfold.rocm.qwen import Engine, LinearLayer, activation_dtype, load
+from tensorfold.rocm.model.qwen import Engine, LinearLayer, activation_dtype, load
 
 CELLS = ((1024, 512, 1), (1024, 512, 8), (16384, 1024, 1), (16384, 1024, 8))
 RATES = ("prefill_tok_s", "decode_tok_s", "ttft_s", "itil_s", "peak_gib")
@@ -98,7 +98,7 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: 
             master_port: int = 29551) -> list[str]:
     """Load the checkpoint and print each run and one median line per cell (rank 0 prints)."""
 
-    from tensorfold.rocm.build import gfx_name
+    from tensorfold.rocm.kernels.build import gfx_name
 
     if not torch.cuda.is_available() or getattr(torch.version, "hip", None) is None:
         raise RuntimeError("no HIP device is visible")
@@ -111,7 +111,7 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: 
 
     rccl = None
     if tp > 1:
-        from tensorfold.rocm.comm import RCCL
+        from tensorfold.rocm.serving.comm import RCCL
 
         torch.cuda.set_device(rank % torch.cuda.device_count())
         rccl = RCCL(rank, tp, master, master_port)
@@ -120,7 +120,7 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: 
     dtype = activation_dtype(gfx)
     model = load(path)
     if rccl is not None:
-        from tensorfold.rocm.qwen import slice_for_tp
+        from tensorfold.rocm.model.qwen import slice_for_tp
 
         slice_for_tp(model, rank, tp)
     # The schedule the server would run, so a batched cell measures the same tiles.
@@ -137,7 +137,7 @@ def measure(path: str | Path, cells=CELLS, runs: int = 3, *, tp: int = 1, rank: 
         f"embed_words={model.embed.words.shape[0]}x{model.embed.words.shape[1]} dtype=int32 "
         f"rank_weights_gib={torch.cuda.memory_allocated() / 1024**3:.2f}")
     # One generate per prompt length compiles every kernel a cell launches before any cell is timed.
-    from tensorfold.rocm.qwen_math import SPAN
+    from tensorfold.rocm.model.qwen_math import SPAN
 
     for length in sorted({8, *(min(prompt_len, SPAN) for prompt_len, _, _ in cells)}):
         engine.generate(_prompts(length, 2, 1, model.spec.vocab), 2)
@@ -168,8 +168,8 @@ def measure_served(path: str | Path, prompt_len: int, generated: int, runs: int 
     """One request at a time through the engine ``tensorfold serve`` runs; rank 0 prints, the others follow."""
 
     from tensorfold.engine.exact_sampling import Sampling
-    from tensorfold.rocm.build import gfx_name
-    from tensorfold.rocm.engine import QwenEngine
+    from tensorfold.rocm.kernels.build import gfx_name
+    from tensorfold.rocm.serving.engine import QwenEngine
 
     engine = QwenEngine.load(path, keep=0, tp=tp, rank=rank, master=master or "127.0.0.1",
                              master_port=master_port, mtp_depth=max(1, mtp), no_drafts=mtp == 0)

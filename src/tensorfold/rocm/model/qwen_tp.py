@@ -6,9 +6,9 @@ from functools import partial
 
 import torch
 
-from tensorfold.rocm import forward
-from tensorfold.rocm.comm import RCCL
-from tensorfold.rocm.qwen import TextModel
+from tensorfold.rocm.model import forward
+from tensorfold.rocm.serving.comm import RCCL
+from tensorfold.rocm.model.qwen import TextModel
 
 
 def all_reduce_local(rccl: RCCL, local: torch.Tensor) -> torch.Tensor:
