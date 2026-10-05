@@ -35,7 +35,8 @@ def plan(engine, native: int, requested: int | None, explicit: bool, byte_budget
     room = free - reserve_bytes(total) - workspace
     per_token = max(1, state_bytes(spec, 1, act) - state_bytes(spec, 0, act))
     fixed = state_bytes(spec, 0, act)
-    fitting = max(0, (room - 2 * fixed) // (2 * per_token))
+    copies = getattr(engine, "streams", 1) + 1          # every lane's request, and one kept prompt copy
+    fitting = max(0, (room - copies * fixed) // (copies * per_token))
     target = requested or native
     window = min(target, fitting) if target else fitting
     cache = byte_budget if byte_budget is not None else max(0, room - state_bytes(spec, window, act))

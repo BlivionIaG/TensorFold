@@ -80,7 +80,7 @@ def test_each_request_stops_on_its_own_end_token():
     engine = _engine()
     engine.eos = (9,)
     script = iter([1, 9, 2, 2, 9])
-    engine._sample = lambda *_args, **_kwargs: next(script)
+    engine._draw_rows = lambda _logits, positions, *_args: [next(script) for _ in positions]
     greedy = Sampling(seed=1, temperature=0)
     short, long = [], []
     engine.generate([3, 5, 7], 5, greedy, lambda tokens: short.extend(tokens) or False)

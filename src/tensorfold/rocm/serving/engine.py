@@ -1,10 +1,11 @@
-"""ROCm Qwen engine for the torch server: one request at a time, prefix cache, MTP drafts, tp ranks."""
+"""ROCm Qwen engine for the torch server: lane rounds, prefix cache, MTP drafts, tp ranks."""
 
 from __future__ import annotations
 
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -36,6 +37,20 @@ def _resolve_p2p(gfx: str, p2p: bool | None) -> bool | None:
     except (AttributeError, AssertionError, RuntimeError):
         return None
     return True if multi and integrated else None
+
+
+def draw(logits: torch.Tensor, sampling: Sampling | None, position: int) -> int:
+    """One row's token: argmax for greedy, else the keyed draw at ``position`` over the top-k candidates."""
+
+    row = logits.detach().float().reshape(-1)
+    if sampling is None or float(sampling.temperature) <= 0.0:
+        return int(torch.argmax(row).item())
+    width = int(row.shape[0])
+    k = int(sampling.top_k)
+    if k:
+        values, index = torch.topk(row, min(width, k + MARGIN), sorted=False)
+        return choose(values.cpu().numpy(), index.cpu().numpy().astype(np.int64), position, sampling)
+    return choose(row.cpu().numpy(), np.arange(width, dtype=np.int64), position, sampling)
 
 
 def read_eos(model_dir: Path) -> tuple[int, ...]:
@@ -155,7 +170,7 @@ class QwenEngine:
                  context: int | None = None, byte_budget: int | None = None,
                  points: Callable[[Sequence[int]], list[int]] | None = None,
                  tp: int = 1, rank: int = 0, rccl: Any = None, no_drafts: bool = False,
-                 mtp_depth: int = _DEFAULT_MTP_DEPTH):
+                 mtp_depth: int = _DEFAULT_MTP_DEPTH, streams: int = 1):
         self.model = model
         self.kernels = kernels
         self.eos = tuple(int(token) for token in eos)
@@ -171,13 +186,18 @@ class QwenEngine:
         # One-token steps replay a captured graph; TENSORFOLD_GRAPH=0 keeps them eager.
         self.graphs = os.environ.get("TENSORFOLD_GRAPH", "1") != "0"
         self._step: _StepGraph | None = None
+        # Requests decode in lane rounds; ``streams`` > 1 takes that many at once (``--parallel``).
+        self.streams = max(1, int(streams))
+        self.concurrent = self.streams > 1
+        self.scheduler = None
+        self._starting = threading.Lock()
 
     @classmethod
     def load(cls, model_dir: Path | str, *, schedule: str | None = None, keep: int = 8,
              context: int | None = None, context_explicit: bool = False, byte_budget: int | None = None,
              tp: int = 1, rank: int = 0, master: str = "", master_port: int = 29551,
              p2p: bool | None = None, no_drafts: bool = False,
-             mtp_depth: int = _DEFAULT_MTP_DEPTH) -> QwenEngine:
+             mtp_depth: int = _DEFAULT_MTP_DEPTH, streams: int = 1) -> QwenEngine:
         from tensorfold.rocm.kernels.build import gfx_name
 
         # TENSORFOLD_ROCM_SCHEDULE=wmma runs every projection on the gfx11 WMMA tiles (opt-in; auto is dot2).
@@ -192,7 +212,8 @@ class QwenEngine:
             from tensorfold.rocm.serving.prefix import message_points
 
             engine = cls(model, Kernels(model, schedule=schedule), read_eos(path), keep=keep,
-                         points=message_points(path), tp=1, rank=0, no_drafts=no_drafts, mtp_depth=mtp_depth)
+                         points=message_points(path), tp=1, rank=0, no_drafts=no_drafts, mtp_depth=mtp_depth,
+                         streams=streams)
             return engine._planned(path, context, context_explicit, byte_budget)
 
         from tensorfold.rocm.serving.comm import RCCL
@@ -209,7 +230,7 @@ class QwenEngine:
 
         engine = cls(model, Kernels(model, schedule=schedule), read_eos(path), keep=keep,
                      points=message_points(path), tp=tp, rank=rank, rccl=rccl, no_drafts=no_drafts,
-                     mtp_depth=mtp_depth)
+                     mtp_depth=mtp_depth, streams=streams)
         return engine._planned(path, context, context_explicit, byte_budget)
 
     def _planned(self, path: Path, context: int | None, explicit: bool, byte_budget: int | None) -> QwenEngine:
@@ -369,21 +390,18 @@ class QwenEngine:
             return self._share([0])[0]
         if constraint is not None:
             constraint.mask(logits)
-        row = logits.detach().float().reshape(-1)
-        if sampling is None or float(sampling.temperature) <= 0.0:
-            token = int(torch.argmax(row).item())
-        else:
-            width = int(row.shape[0])
-            k = int(sampling.top_k)
-            if k:
-                count = min(width, k + MARGIN)
-                values, index = torch.topk(row, count, sorted=False)
-                token = choose(values.cpu().numpy(), index.cpu().numpy().astype(np.int64), position, sampling)
-            else:
-                token = choose(row.cpu().numpy(), np.arange(width, dtype=np.int64), position, sampling)
+        token = draw(logits, sampling, position)
         if constraint is not None:
             constraint.advance([token])
         return self._share([token])[0]
+
+    def _draw_rows(self, logits: torch.Tensor, positions: list[int], sampling: Sampling | None, constraint,
+                   window) -> list[int]:
+        """Each row's token at its slot; a grammar masks the rows first (``window``: the rows' accepted prefixes)."""
+
+        if constraint is not None:
+            constraint.mask(logits, window)
+        return [draw(logits[i:i + 1], sampling, position) for i, position in enumerate(positions)]
 
     def _share(self, values: list[int]) -> list[int]:
         """Rank 0's ``values`` on every rank. Other ranks pass placeholders of the same length."""
@@ -399,7 +417,6 @@ class QwenEngine:
                  constraint=None, vision=None, background: bool = False) -> dict[str, int]:
         """One prompt; ``draft=False`` skips the prefix cache. Returns ``{'cached': reused length}``."""
 
-        del background
         if vision is not None:
             raise ValueError("image inputs are not served on ROCm")
         if not prompt:
@@ -411,6 +428,22 @@ class QwenEngine:
             room = min(room, self.context_window - len(prompt))
         if room < 1:
             raise ValueError("max_tokens must leave room for one token")
+        if self.tp == 1:
+            with self._starting:                  # requests arriving together start one worker, not one each
+                if self.scheduler is None:
+                    from tensorfold.cuda.scheduler import Scheduler
+                    from tensorfold.rocm.serving.lanes import Lanes
+
+                    self.scheduler = Scheduler(Lanes(self), max_streams=self.streams)
+            def one_at_a_time(tokens: list[int]) -> bool:
+                # A round's accepted drafts reach the caller one by one, so a stop inside them ends the reply there.
+                return any(bool(on_tokens([token])) for token in tokens)
+
+            stats = self.scheduler.submit(list(prompt), room, sampling, draft, one_at_a_time, stop_eos=stop_eos,
+                                          constraint=constraint, background=background)
+            if len(prompt) > _LONG_PROMPT:
+                torch.cuda.empty_cache()          # a long prefill's freed blocks go back to the runtime's scratch
+            return stats
         depth = self.mtp_depth if draft and self.mtp is not None and not self.no_drafts else 0
         if self.tp > 1:
             self._post(list(prompt), room, draft, depth)
@@ -509,8 +542,11 @@ class QwenEngine:
         self._posted += 1
 
     def close(self) -> None:
-        """Rank 0 tells the other ranks there are no more requests."""
+        """Stop the lane worker; rank 0 tells the other ranks there are no more requests."""
 
+        if self.scheduler is not None:
+            self.scheduler.close()
+            self.scheduler = None
         if self.tp > 1 and self.rank == 0:
             store = self.rccl.store
             store.set(f"tf_request/{self._posted}", json.dumps(None))

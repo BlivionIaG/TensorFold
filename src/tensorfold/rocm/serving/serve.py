@@ -23,6 +23,18 @@ def cache_budget(args: argparse.Namespace) -> tuple[int, int | None]:
     return keep, budget
 
 
+def _streams(args: argparse.Namespace) -> int:
+    """``--parallel``: auto is one lane, a number that many lanes."""
+
+    value = str(getattr(args, "parallel", "auto")).strip().lower()
+    if value == "auto":
+        return 1
+    try:
+        return max(1, int(value))
+    except ValueError:
+        raise SystemExit(f"--parallel takes a number or auto, not {value!r}") from None
+
+
 def serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, sampling: dict,
                context: int | None = None) -> int:
     """Serve with the family's ROCm engine (``rocm_engine``) behind the same torch server the CUDA lane uses."""
@@ -52,7 +64,8 @@ def serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, sampling:
                                        context_explicit=args.context is not None, keep=keep, byte_budget=budget,
                                        tp=int(args.tp), rank=int(args.rank),
                                        master=args.master, master_port=int(args.master_port),
-                                       p2p=p2p, no_drafts=bool(getattr(args, "no_drafts", False)))
+                                       p2p=p2p, no_drafts=bool(getattr(args, "no_drafts", False)),
+                                       parallel=_streams(args))
     if args.tp > 1 and args.rank > 0:
         print(f"[tensorfold] rank {args.rank} of {args.tp} loaded in {time.perf_counter() - started:.1f}s; "
               f"following rank 0 at {args.master}:{args.master_port}", flush=True)

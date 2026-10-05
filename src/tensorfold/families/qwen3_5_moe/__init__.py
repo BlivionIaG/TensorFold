@@ -121,4 +121,5 @@ def rocm_engine(model_dir: str | Path, *, context: int | None = None, context_ex
 
     return QwenEngine.load(Path(model_dir), context=context, context_explicit=context_explicit, keep=keep,
                            byte_budget=byte_budget, tp=int(tp), rank=int(rank), master=master,
-                           master_port=master_port, p2p=p2p, no_drafts=no_drafts)
+                           master_port=master_port, p2p=p2p, no_drafts=no_drafts,
+                           streams=max(1, int(options.get("parallel") or 1)))

@@ -316,7 +316,7 @@ def rocm_engine(model_dir: str | Path, *, context: int | None = None, context_ex
         raise ValueError(f"--rank {rank} not in [0, --tp {tp})")
     return QwenEngine.load(Path(model_dir), context=context, context_explicit=context_explicit, keep=keep,
                            byte_budget=byte_budget, tp=tp, rank=rank, master=master, master_port=master_port, p2p=p2p,
-                           no_drafts=no_drafts)
+                           no_drafts=no_drafts, streams=max(1, int(options.get("parallel") or 1)))
 
 
 def cuda_engine(model_dir: str | Path, *, drafter: str = "", tp: int = 1, rank: int = 0, master: str = "",
