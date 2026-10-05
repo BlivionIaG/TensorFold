@@ -160,7 +160,7 @@ class MTPEngine:
         return self._logits(residual, dtype), residual
 
     def draft_chain(self, hidden: torch.Tensor, last_token: int, position: int, depth: int, cache: dict, *,
-                    sampling, dtype: torch.dtype, confidence: float = 0.0) -> list[int]:
+                    sampling, dtype: torch.dtype, confidence: float = 0.0, share=None) -> list[int]:
         """Up to ``depth`` drafts keyed by their slots; the chain ends after a draft the head gives < ``confidence``."""
         if depth < 1:
             raise ValueError(f"depth must be >= 1, got {depth}")
@@ -186,8 +186,11 @@ class MTPEngine:
                 nxt = int(choose(row.cpu().numpy(),
                                  torch.arange(int(row.shape[0]), dtype=torch.int64).numpy(),
                                  sample_key, sampling))
+            stop = confidence > 0.0 and step + 1 < depth and float(torch.softmax(row, -1)[nxt]) < confidence
+            if share is not None:                     # ranks step together on rank 0's draft and its stop
+                nxt, stop = share([nxt, int(stop)])
             ids.append(nxt)
-            if confidence > 0.0 and step + 1 < depth and float(torch.softmax(row, -1)[nxt]) < confidence:
+            if stop:
                 break
             cur_token = nxt
             cur_hidden = residual[:, -1:, :]

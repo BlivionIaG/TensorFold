@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -13,13 +12,12 @@ import numpy as np
 import torch
 
 from tensorfold.engine.exact_sampling import MARGIN, Sampling, choose
-from tensorfold.rocm.model.forward import _blank_caches, _project, forward_hidden
+from tensorfold.rocm.model.forward import _blank_caches, forward_hidden
 from tensorfold.rocm.model.mtp import MTPEngine
 from tensorfold.rocm.serving.prefix import PrefixCache, entry_end, trim_bytes
 from tensorfold.rocm.model.qwen import Engine as Kernels
 from tensorfold.rocm.model.qwen import activation_dtype, load, slice_for_tp
-from tensorfold.rocm.model.qwen_math import DevicePos
-from tensorfold.rocm.model.qwen_tp import tp_forward_hidden, vocab_gather
+from tensorfold.rocm.model.qwen_tp import tp_forward_hidden
 
 _DEFAULT_EOS = (151645,)
 _DEFAULT_MTP_DEPTH = 3       # most MTP drafts a round, as the CUDA Qwen3.6 engine
@@ -126,18 +124,6 @@ def _grow(caches: list[dict], total: int, dtype: torch.dtype, device: torch.devi
     return grown
 
 
-class _StepGraph:
-    """One request's one-token forward: eager once, then captured and replayed with device token and position."""
-
-    def __init__(self, caches: list[dict], device: torch.device) -> None:
-        self.caches = caches
-        self.ids = torch.zeros((1, 1), dtype=torch.long, device=device)
-        self.at = DevicePos(device)
-        self.graph: torch.cuda.CUDAGraph | None = None
-        self.hidden: torch.Tensor | None = None
-        self.warm = False
-
-
 def _caches_equal(left: list[dict], right: list[dict]) -> bool:
     for one, two in zip(left, right, strict=True):
         if "k" in one:
@@ -179,17 +165,16 @@ class QwenEngine:
         self.byte_budget = byte_budget
         self.points = points
         self.tp, self.rank, self.rccl, self.no_drafts = int(tp), int(rank), rccl, bool(no_drafts)
-        self._posted = 0          # requests rank 0 has published (tp > 1)
         head = getattr(model, "mtp", None)
         self.mtp = MTPEngine(model, head, linear=kernels.linear, rccl=rccl) if head is not None else None
         self.mtp_depth = int(mtp_depth)
-        # One-token steps replay a captured graph; TENSORFOLD_GRAPH=0 keeps them eager.
+        # A lone stream's windows replay a captured graph; TENSORFOLD_GRAPH=0 keeps them eager.
         self.graphs = os.environ.get("TENSORFOLD_GRAPH", "1") != "0"
-        self._step: _StepGraph | None = None
         # Requests decode in lane rounds; ``streams`` > 1 takes that many at once (``--parallel``).
         self.streams = max(1, int(streams))
         self.concurrent = self.streams > 1
         self.scheduler = None
+        self.lanes = None
         self._starting = threading.Lock()
 
     @classmethod
@@ -263,74 +248,17 @@ class QwenEngine:
 
     def _forward(self, tokens: Sequence[int], caches: list[dict] | None, pos0: int, *,
                  decode: bool = False) -> tuple[torch.Tensor, list[dict]]:
-        """A prefill span (prefill rope and conv), or with ``decode`` one token (HIP rope and conv, graph replay)."""
+        """A prefill span, or with ``decode`` the one-token decode step's arithmetic, eager (a window row's reference)."""
 
         device, dtype = self._device(), self._dtype()
         if caches is None:
             caches = _blank_caches(self.model, 1, len(tokens), device, dtype)
-        elif decode and self.graphs and len(tokens) == 1:
-            return self._graph_forward(int(tokens[0]), caches, pos0)
         ids = torch.tensor([list(tokens)], dtype=torch.long, device=device)
         with torch.inference_mode():
             if self.tp > 1:
                 return tp_forward_hidden(self.model, ids, caches, self.kernels.linear, pos0, self.rccl,
                                          act_dtype=dtype, exact_short=not decode)
             return forward_hidden(self.model, ids, caches, self.kernels.linear, pos0, dtype, exact_short=not decode)
-
-    def _graph_forward(self, token: int, caches: list[dict], pos0: int) -> tuple[torch.Tensor, list[dict]]:
-        """The one-token forward at ``pos0`` with the eager step's bits; a failed capture turns graphs off."""
-
-        step = self._step
-        if step is None or step.caches is not caches:
-            step = self._step = _StepGraph(caches, self._device())
-        step.ids.fill_(token)
-        step.at.set(pos0)
-
-        def run(at: DevicePos | None = step.at) -> tuple[torch.Tensor, list[dict]]:
-            if self.tp > 1:
-                return tp_forward_hidden(self.model, step.ids, caches, self.kernels.linear, pos0, self.rccl,
-                                         act_dtype=self._dtype(), at=at)
-            return forward_hidden(self.model, step.ids, caches, self.kernels.linear, pos0, self._dtype(), at=at)
-
-        with torch.inference_mode():
-            if step.graph is not None:
-                step.graph.replay()
-                hidden = step.hidden
-            elif not step.warm:
-                hidden, fresh = run()
-                for held, new in zip(caches, fresh):      # a state that was not yet an fp32 buffer now is one
-                    held.update(new)
-                step.warm = True
-            else:
-                graph = torch.cuda.CUDAGraph()
-                failed = None
-                try:
-                    with torch.cuda.graph(graph):
-                        step.hidden = run()[0]
-                except Exception as exc:  # noqa: BLE001 - any capture failure: this engine stays eager
-                    failed = exc
-                if self._any_rank(failed is not None):   # the ranks replay together or not at all
-                    print(f"[tensorfold] decode graph capture failed, decoding eagerly: {failed}", file=sys.stderr)
-                    self.graphs, self._step = False, None
-                    torch.cuda.synchronize()
-                    return run(None)[0], caches              # the eager step advances each cache itself
-                step.graph = graph
-                graph.replay()
-                hidden = step.hidden
-            hidden = hidden.clone()               # the graph's output is overwritten by the next replay
-        for cache in caches:
-            if "len" in cache:
-                cache["len"] = pos0 + 1
-        return hidden, caches
-
-    def _any_rank(self, flag: bool) -> bool:
-        """True on every rank when ``flag`` is true on one (one rank: ``flag``)."""
-
-        if self.tp <= 1:
-            return flag
-        value = torch.tensor([int(flag)], dtype=torch.int32, device=self._device())
-        self.rccl.all_reduce(value, value, op="max")
-        return bool(value.item())
 
     def _span(self, tokens: Sequence[int], caches: list[dict] | None, pos0: int, total: int,
               ) -> tuple[torch.Tensor, list[dict]]:
@@ -383,18 +311,6 @@ class QwenEngine:
             raise RuntimeError("a prefill received no tokens")
         return hidden, caches
 
-    def _sample(self, hidden: torch.Tensor, sampling: Sampling | None, position: int, constraint) -> int:
-        local = _project(hidden[:, -1], self.model.output_head(), self.kernels.linear)
-        logits = vocab_gather(self.rccl, local) if self.tp > 1 else local     # every rank joins the gather
-        if self.rank != 0:
-            return self._share([0])[0]
-        if constraint is not None:
-            constraint.mask(logits)
-        token = draw(logits, sampling, position)
-        if constraint is not None:
-            constraint.advance([token])
-        return self._share([token])[0]
-
     def _draw_rows(self, logits: torch.Tensor, positions: list[int], sampling: Sampling | None, constraint,
                    window) -> list[int]:
         """Each row's token at its slot; a grammar masks the rows first (``window``: the rows' accepted prefixes)."""
@@ -402,15 +318,6 @@ class QwenEngine:
         if constraint is not None:
             constraint.mask(logits, window)
         return [draw(logits[i:i + 1], sampling, position) for i, position in enumerate(positions)]
-
-    def _share(self, values: list[int]) -> list[int]:
-        """Rank 0's ``values`` on every rank. Other ranks pass placeholders of the same length."""
-
-        if self.tp <= 1:
-            return values
-        buffer = torch.tensor(values, dtype=torch.int64, device=self._device())
-        self.rccl.broadcast(buffer, buffer, root=0)
-        return [int(value) for value in buffer.tolist()]
 
     def generate(self, prompt: list[int], max_tokens: int, sampling: Sampling | None,
                  on_tokens: Callable[[list[int]], bool | None], *, stop_eos: bool = True, draft: bool = True,
@@ -428,152 +335,46 @@ class QwenEngine:
             room = min(room, self.context_window - len(prompt))
         if room < 1:
             raise ValueError("max_tokens must leave room for one token")
-        if self.tp == 1:
-            with self._starting:                  # requests arriving together start one worker, not one each
-                if self.scheduler is None:
-                    from tensorfold.cuda.scheduler import Scheduler
-                    from tensorfold.rocm.serving.lanes import Lanes
+        with self._starting:                      # requests arriving together start one worker, not one each
+            if self.scheduler is None:
+                from tensorfold.cuda.scheduler import Scheduler
+                from tensorfold.rocm.serving.lanes import Lanes
 
-                    self.scheduler = Scheduler(Lanes(self), max_streams=self.streams)
-            def one_at_a_time(tokens: list[int]) -> bool:
-                # A round's accepted drafts reach the caller one by one, so a stop inside them ends the reply there.
-                return any(bool(on_tokens([token])) for token in tokens)
+                self.lanes = Lanes(self)
+                self.scheduler = Scheduler(self.lanes, max_streams=self.streams)
 
-            stats = self.scheduler.submit(list(prompt), room, sampling, draft, one_at_a_time, stop_eos=stop_eos,
-                                          constraint=constraint, background=background)
-            if len(prompt) > _LONG_PROMPT:
-                torch.cuda.empty_cache()          # a long prefill's freed blocks go back to the runtime's scratch
-            return stats
-        depth = self.mtp_depth if draft and self.mtp is not None and not self.no_drafts else 0
-        if self.tp > 1:
-            self._post(list(prompt), room, draft, depth)
-        return self._run(list(prompt), room, sampling, on_tokens, stop_eos, draft, constraint, depth)
+        def one_at_a_time(tokens: list[int]) -> bool:
+            # A round's accepted drafts reach the caller one by one, so a stop inside them ends the reply there.
+            return any(bool(on_tokens([token])) for token in tokens)
 
-    def _run(self, prompt: list[int], room: int, sampling: Sampling | None, on_tokens, stop_eos: bool,
-             draft: bool, constraint, depth: int) -> dict[str, int]:
-        hit = self.cache.longest(prompt) if draft else None
-        cached = len(hit[0]) if hit is not None else 0
-        held = clone_caches(hit[1]) if hit is not None else None
-        # The reply ends at ``room`` tokens and a round forwards at most ``depth + 1``: the cache never holds more.
-        total = len(prompt) + room + depth + 1
-        hidden, caches = self._prefill(prompt, held, cached, total, store=draft)
-        ends = set(self.eos)
-        position = len(prompt)
-        nxt = self._sample(hidden, sampling, position, constraint)
-        emitted = 0
-
-        def emit(token: int) -> bool:
-            """Count one token against ``room`` and hand it to the client on rank 0. True ends the reply."""
-
-            nonlocal emitted
-            emitted += 1
-            if self.rank != 0:
-                return emitted >= room
-            stop = bool(on_tokens([token])) if on_tokens is not None else False
-            ended = stop_eos and token in ends
-            grammar_done = constraint is not None and bool(getattr(constraint, "finished", False))
-            return emitted >= room or stop or ended or grammar_done
-
-        while True:
-            done = emit(nxt)
-            if self.tp > 1:
-                done = bool(self._share([int(done)])[0])
-            if done:
-                break
-            extra, hidden, caches, position, nxt = self._decode_step(
-                hidden, caches, position, nxt,
-                sampling=sampling, constraint=constraint, depth=depth,
-            )
-            for tok in extra:
-                done = emit(tok)
-                if done:
-                    break
-            # Every rank joins one vote a round, so a stop inside the drafts ends the reply on every rank.
-            if self.tp > 1:
-                done = bool(self._share([int(done)])[0])
-            if done:
-                break
-        self._step = None                         # the reply's graph holds its caches
+        stats = self.scheduler.submit(list(prompt), room, sampling, draft, one_at_a_time, stop_eos=stop_eos,
+                                      constraint=constraint, background=background)
         if len(prompt) > _LONG_PROMPT:
             torch.cuda.empty_cache()              # a long prefill's freed blocks go back to the runtime's scratch
-        return {"cached": cached}
-
-    def _decode_step(self, hidden: torch.Tensor, caches: list[dict], position: int, last_token: int, *,
-                     sampling: Sampling | None, constraint,
-                     depth: int) -> tuple[list[int], torch.Tensor, list[dict], int, int]:
-        """One round: returns accepted drafts, hidden, caches, the next token's slot and the next token."""
-        if self.mtp is None or depth <= 0:
-            hidden, caches = self._forward([last_token], caches, position, decode=True)
-            position += 1
-            nxt = self._sample(hidden, sampling, position, constraint)
-            return [], hidden, caches, position, nxt
-
-        dtype = self._dtype()
-        hidden, caches = self._forward([last_token], caches, position, decode=True)
-        position += 1
-        mtp_state = self.mtp.fresh_cache(batch=1,
-                                         total=position + max(0, depth) + 1,
-                                         device=self._device(), dtype=dtype)
-        # A greedy request and a follower draft greedily; verification keeps the request's own sampling.
-        drafts = self.mtp.draft_chain(hidden[:, -1:], last_token, position - 1, depth, mtp_state,
-                                      sampling=sampling or Sampling(seed=0, temperature=0.0), dtype=dtype)
-        if self.tp > 1:
-            # A rank's cache advances by how many drafts matched, so every rank takes rank 0's chain.
-            drafts = self._share(drafts)
-        extra: list[int] = []
-        cur_hidden = hidden
-        for i, d in enumerate(drafts):
-            # The serial path keys a token by its own slot; the verifier has to draw the same way.
-            nxt = self._sample(cur_hidden, sampling, position + i, constraint)
-            if nxt != d:
-                return extra, cur_hidden, caches, position + i, nxt
-            cur_hidden, caches = self._forward([d], caches, position + i, decode=True)
-            extra.append(d)
-        nxt = self._sample(cur_hidden, sampling, position + depth, constraint)
-        return extra, cur_hidden, caches, position + depth, nxt
-
-    def _post(self, prompt: list[int], room: int, draft: bool, depth: int) -> None:
-        """Rank 0 publishes a request with its draft depth and graph choice, so every rank runs the same calls."""
-
-        store = self.rccl.store
-        store.set(f"tf_request/{self._posted}", json.dumps([prompt, room, bool(draft), int(depth), bool(self.graphs)]))
-        if self._posted:
-            store.delete_key(f"tf_request/{self._posted - 1}")
-        self._posted += 1
+        return stats
 
     def close(self) -> None:
-        """Stop the lane worker; rank 0 tells the other ranks there are no more requests."""
+        """Stop the lane worker; under tp, rank 0 tells the other ranks there are no more rounds."""
 
         if self.scheduler is not None:
             self.scheduler.close()
             self.scheduler = None
         if self.tp > 1 and self.rank == 0:
-            store = self.rccl.store
-            store.set(f"tf_request/{self._posted}", json.dumps(None))
-            self._posted += 1
+            if self.lanes is None:
+                from tensorfold.rocm.serving.lanes import Lanes
+
+                self.lanes = Lanes(self)
+            self.lanes.close()
 
     def follow(self) -> None:
-        """Ranks above 0: run each of rank 0's requests in step with it. Returns once rank 0's store closes."""
+        """Ranks above 0: run rank 0's lane rounds in step with it until rank 0 closes."""
 
         if self.rank == 0:
             raise RuntimeError("rank 0 serves requests; follow() is for the other ranks")
-        while True:
-            key = f"tf_request/{self._posted}"
-            try:
-                self.rccl.store.wait([key])
-            except Exception as exc:  # noqa: BLE001 - the store's wait timeout: rank 0 is idle
-                text = str(exc).lower()
-                if "timeout" in text:
-                    continue
-                if "recv" in text or "connection" in text or "broken pipe" in text:
-                    return                                  # rank 0 closed the store: the server stopped
-                raise
-            request = json.loads(self.rccl.store.get(key))
-            if request is None:                             # rank 0 closed: no more requests
-                return
-            prompt, room, draft, depth, self.graphs = request
-            self._posted += 1
-            self._run(prompt, room, None, None, False, draft, None, depth if self.mtp is not None else 0)
+        from tensorfold.rocm.serving.lanes import Lanes
+
+        self.lanes = Lanes(self)
+        self.lanes.follow()
 
     def prefill_caches(self, prompt: Sequence[int]) -> list[dict]:
         """Caches after one forward of ``prompt``. A stored prefix of that length matches this."""
