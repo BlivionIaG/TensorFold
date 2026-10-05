@@ -105,8 +105,8 @@ class Lanes:
     def _verify(self, live: list[Stream]) -> tuple[list[Window], torch.Tensor, torch.Tensor]:
         e = self.e
         windows = [Window([s.out[-1]] + s.drafts, s.st.caches, s.st.pos) for s in live]
-        if len(live) == 1 and e.graphs and e.tp == 1:
-            hidden = self.graphs.forward(live[0].sid, windows[0])
+        if len(live) == 1 and e.graphs:
+            hidden = self.graphs.forward(live[0].sid, windows[0], self._reduce())
         else:
             hidden = window_forward(e.model, windows, e.kernels.linear, e._dtype(), reduce=self._reduce())
         return windows, hidden, self._logits(hidden[0])

@@ -34,7 +34,7 @@ class WindowGraphs:
     def reset(self) -> None:
         self.sid, self.entries, self.pool = None, {}, None
 
-    def forward(self, sid: int, window: Window) -> torch.Tensor:
+    def forward(self, sid: int, window: Window, reduce=None) -> torch.Tensor:
         """The window's hidden rows: eager the first time a length is seen, captured the second, replayed after."""
 
         e = self.e
@@ -50,7 +50,8 @@ class WindowGraphs:
         entry.ids.copy_(torch.tensor([window.tokens], dtype=torch.long))
         entry.slots.copy_(torch.arange(window.pos, window.pos + rows, dtype=torch.int64))
         window.slots = entry.slots
-        run = lambda: window_forward(e.model, [window], e.kernels.linear, e._dtype(), ids=entry.ids)  # noqa: E731
+        run = lambda: window_forward(e.model, [window], e.kernels.linear, e._dtype(), ids=entry.ids,  # noqa: E731
+                                     reduce=reduce)
         with torch.inference_mode():
             if entry.graph is not None:
                 entry.graph.replay()
@@ -62,12 +63,15 @@ class WindowGraphs:
             graph = torch.cuda.CUDAGraph()
             if self.pool is None:
                 self.pool = torch.cuda.graph_pool_handle()
+            failed = None
             try:
                 with torch.cuda.graph(graph, pool=self.pool):
                     entry.hidden = run()
                     entry.states = window.states
             except Exception as exc:  # noqa: BLE001 - any capture failure: this engine stays eager
-                print(f"[tensorfold] window graph capture failed, decoding eagerly: {exc}", file=sys.stderr)
+                failed = exc
+            if self._any_rank(failed is not None):    # the ranks replay together or not at all
+                print(f"[tensorfold] window graph capture failed, decoding eagerly: {failed}", file=sys.stderr)
                 e.graphs = False
                 self.reset()
                 torch.cuda.synchronize()
@@ -76,6 +80,17 @@ class WindowGraphs:
             graph.replay()
             window.states = entry.states
             return entry.hidden
+
+
+    def _any_rank(self, flag: bool) -> bool:
+        """True on every rank when ``flag`` is true on one (one rank: ``flag``)."""
+
+        e = self.e
+        if e.tp <= 1:
+            return flag
+        value = torch.tensor([int(flag)], dtype=torch.int32, device=e._device())
+        e.rccl.all_reduce(value, value, op="max")
+        return bool(value.item())
 
 
 __all__ = ["WindowGraphs"]
