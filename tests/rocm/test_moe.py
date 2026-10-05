@@ -1,10 +1,4 @@
-"""Routed experts on RDNA: the pick is exact, and both weight kinds land on the dequantized product.
-
-The routing reference consumes the very logits the buffer was filled from, so the picks, the weights and
-the plan compare exactly. The expert reference dequantizes the pack the test itself wrote, so a mismatch is
-the kernel's. The loader test writes a one-layer checkpoint whose routed experts are 4-bit and whose
-routers are 8-bit, as Qwen3.6 is, and tells the shared expert apart by its scale.
-"""
+"""Routed experts on RDNA: the pick is exact, and both weight kinds land on the dequantized product."""
 
 import json
 
@@ -485,8 +479,7 @@ def test_graph_decode_equals_eager_through_the_experts(tmp_path):
 @pytest.mark.parametrize("bits", [2, 3, 4, 5, 6, 8])
 @pytest.mark.parametrize("group", [32, 64, 128])
 def test_a_routed_row_has_its_bits_alone_or_among_others(bits, group):
-    """The routed tiles of this card (FP16 on RDNA2, BF16 on gfx11): a row's products are the same alone, in a short
-    batch or in a prefill, and they are the dequantized product."""
+    """A routed row's products are the same alone, in a batch or in a prefill, and equal the dequantized product."""
 
     from tensorfold.rocm import affine
 

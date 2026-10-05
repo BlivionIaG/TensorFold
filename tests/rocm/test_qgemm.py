@@ -38,14 +38,7 @@ def _pack(n, k, group, seed):
 
 
 def _reference(x, codes, zeros, scales, zero_offset):
-    """w[n, k] = (code - (zero + offset)) * scale, in the group that owns k, computed exactly in fp32.
-
-    The kernel computes the same product through exllamav2's fp16 bit-trick, whose (q + 1024) and
-    -(1024 + zero) terms cancel at the 1024 offset -- that cancellation costs about scale * 2**-11
-    per weight element, which is the gap the comparison tolerance covers. This reference is exact,
-    so a mismatch beyond it is a bug, and the decode/prefill agreement test pins the two kernels
-    against each other with no such slack.
-    """
+    """w[n, k] = (code - (zero + offset)) * scale in fp32; the kernel's fp16 offset trick costs about scale * 2**-11."""
 
     k, n = codes.shape
     groupsize = k // scales.shape[0]
@@ -147,8 +140,7 @@ def _bf(v):
 
 @pytest.mark.parametrize("epi", [0, 1, 2])
 def test_moe_matches_reference(epi):
-    """epi 0 checks the grouped GEMM against exact fp32; epi 1 and 2 check the epilogue against the
-    kernel's own accumulators, so squaring or gating cannot turn a precision gap into a failure."""
+    """epi 0 against exact fp32; epi 1 and 2 against the kernel's own accumulators."""
 
     experts, k, n, group = 4, 256, 128, 64
     mats = 2 if epi == 2 else 1

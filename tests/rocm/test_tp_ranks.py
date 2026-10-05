@@ -1,7 +1,4 @@
-"""Tensor parallel on real GPUs: ``TENSORFOLD_TP_WORLD`` ranks, one process each, give one GPU's greedy ids.
-
-Set ``TENSORFOLD_TP_MODEL`` to a Qwen3.5 MLX checkpoint and make that many GPUs visible (rank r takes card r).
-"""
+"""Tensor parallel on real GPUs (TENSORFOLD_TP_WORLD ranks, TENSORFOLD_TP_MODEL) gives one GPU's greedy ids."""
 
 from __future__ import annotations
 

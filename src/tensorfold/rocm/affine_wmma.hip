@@ -1,5 +1,4 @@
-// gfx11 / gfx12 WMMA tile, a wave a 16x16 output; odd rows are replayed in even rows of a second WMMA, whose
-// rounding row 0 shares, so a row's bits do not depend on the rows beside it.
+// gfx11 / gfx12 WMMA tiles; odd rows replay in a second WMMA's even rows so a row's bits ignore its neighbours.
 
 #include "affine_api.hpp"
 #include "affine_wmma.hpp"

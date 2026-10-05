@@ -1,8 +1,4 @@
-"""The Qwen3 MTP head on RDNA: both checkpoint shapes load, the gated attention runs, and the head drafts.
-
-The checkpoint is written here, so the loader's fused ``fc`` split and its dense / routed MLP pick are the
-thing under test, and the draft chain is checked for determinism on the greedy path.
-"""
+"""The Qwen3 MTP head on RDNA: both checkpoint shapes load, the gated attention runs, and the head drafts."""
 
 import pytest
 torch = pytest.importorskip("torch")
@@ -30,11 +26,7 @@ def _put(tensors, name, n, k, seed):
 
 
 def _write_qwen3_mtp(root, spec, *, routed, embedded=False, head_proj=False):
-    """A Qwen3-layout MTP layer: pre norms, a fused ``fc``, ``layers.0``, and ``mtp.norm``.
-
-    ``embedded`` merges the tensors into the checkpoint's own shard, which is how the Qwen3.5 and Qwen3.8
-    conversions keep the head; otherwise it lands in ``mtp-4bit.safetensors`` beside the weights.
-    """
+    """A Qwen3-layout MTP layer, in mtp-4bit.safetensors or, with ``embedded``, in the checkpoint's own shard."""
 
     from safetensors.torch import load_file, save_file
 
@@ -264,10 +256,7 @@ def test_draft_false_decodes_serially(tmp_path):
 
 
 def test_a_stop_token_ends_generation_at_that_token(tmp_path):
-    """An eos ends a drafted run at its first appearance: the third token's id, inside the first drafted round.
-
-    The client-stop test below pins the other arm of the same ``done`` decision.
-    """
+    """An eos ends a drafted run at its first appearance, inside the first drafted round."""
 
     prompt, sampling, room = [1, 2, 3, 4], Sampling(seed=11, temperature=0.0), 12
     drafted, model = _served(tmp_path)

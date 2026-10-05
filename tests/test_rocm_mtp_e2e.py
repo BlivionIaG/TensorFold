@@ -1,8 +1,4 @@
-"""End-to-end MTP draft-then-verify on a synthetic one-layer model.
-
-The check is the drafter shape, the chain's deterministic draw against the
-same keyed samples the verifier uses, and the cache growing with each step.
-"""
+"""MTP draft-then-verify on a synthetic one-layer model: shapes, keyed deterministic drafts, a growing cache."""
 
 from __future__ import annotations
 

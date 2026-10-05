@@ -1,8 +1,4 @@
-"""Tensor-parallel slicing on the host: two ranks in threads, joined by an in-process ring, give the one-rank model.
-
-No GPU. The projection is a dense fp64 dequantization, so the check is the slicing, the K split, where the
-ranks' shares are summed, and the order of the vocabulary slices, not the kernels.
-"""
+"""Tensor-parallel slicing on the host: two ranks in threads give the one-rank model, no GPU."""
 
 from __future__ import annotations
 

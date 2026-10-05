@@ -330,8 +330,7 @@ def test_fp16_decode_tile_matches_the_one_thread_kernel(bits, group):
 @pytest.mark.parametrize("group", [32, 64, 128])
 @pytest.mark.parametrize("groups", [4, 8, 32, 80, 160])
 def test_fp16_one_row_tile_matches_the_one_thread_kernel(bits, group, groups):
-    """One row reads a weight row's groups side by side: every lane mapping and tail round keeps the bits, and the
-    fp16 output is the fp32 one rounded."""
+    """The one-row FP16 tile keeps the one-thread kernel's bits at every lane mapping; fp16 out is fp32 rounded."""
 
     if gfx_name() in WMMA:
         pytest.skip("FP16 activations are the RDNA2 schedule")

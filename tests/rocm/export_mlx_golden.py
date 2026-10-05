@@ -1,11 +1,4 @@
-"""Write the golden fixture from MLX. Run on Apple Silicon, not on ROCm.
-
-    python tests/rocm/export_mlx_golden.py /path/to/Qwen3.5-0.8B-MLX-8bit
-
-TensorFold's Qwen row decoder refuses a tied embedding, and Qwen3.5-0.8B ties the head to the
-embedding. The fixture is mlx-lm's forward of that checkpoint, which is the MLX implementation
-that actually runs these weights. ``lane_kernels=off`` cannot load them.
-"""
+"""Write the golden fixture with mlx-lm on Apple Silicon: `python tests/rocm/export_mlx_golden.py MODEL_DIR`."""
 
 from __future__ import annotations
 
