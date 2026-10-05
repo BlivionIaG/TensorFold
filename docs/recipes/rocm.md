@@ -99,33 +99,31 @@ requests in one batched generate.
 
 | Model | tp=1 | tp=2 | tp=4 | tp=8 | tp=1 MTP 2 | tp=2 MTP 2 | tp=4 MTP 2 | tp=8 MTP 2 | tp=1 batched x8 | tp=2 batched x8 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 0.8B 8-bit | 3,933 / 127 | 4,735 / 77.0 | 4,744 / 101 | 3,902 / 67.0 | - | - | - | - | 6,326 / 316 | 9,915 / 160 |
-| 4B 3-bit | 1,185 / 51.6 | 1,724 / 51.1 | 1,779 / 52.4 | 1,392 / 40.6 | - | - | - | - | 1,497 / 212 | 2,535 / 219 |
-| 9B 4-bit + MTP head | 697 / 28.7 | 1,079 / 39.2 | 1,208 / 44.7 | 1,200 / 37.3 | 685 / 25.5 | 1,089 / 35.2 | 1,190 / 38.7 | 1,202 / 34.5 | 822 / 113 | 1,434 / 171 |
-| 9B 6-bit | 694 / 28.3 | 1,092 / 37.7 | 1,193 / 42.5 | 1,195 / 36.2 | - | - | - | - | 796 / 113 | 1,417 / 177 |
-| 9B 8-bit | 634 / 19.5 | 1,000 / 31.7 | 1,139 / 38.3 | 1,193 / 35.7 | - | - | - | - | 754 / 78.7 | 1,323 / 124 |
-| 27B 4-bit | 243 / 12.4 | 411 / 15.8 | 511 / 18.2 | 401 / 16.5 | - | - | - | - | 250 / 43.6 | 454 / 74.4 |
-| 27B 3-bit + MTP head | 256 / 12.4 | 469 / 16.0 | 590 / 18.5 | 630 / 16.4 | re-measuring | re-measuring | re-measuring | re-measuring | 255 / 44.8 | 447 / 73.3 |
-| 35B-A3B 4-bit + MTP head | 819 / 58.7 | 964 / 36.7 | 1,296 / 36.0 | 1,243 / 28.5 | 846 / 50.9 | 1,207 / 31.4 | 1,312 / 31.5 | 1,329 / 25.8 | 1,409 / 130 | 2,009 / 101 |
+| 0.8B 8-bit | 7,266 / 129 | 10,283 / 104 | 5,893 / 101 | 2,893 / 66.5 | - | - | - | - | 6,891 / 328 | 11,137 / 296 |
+| 4B 3-bit | 1,622 / 51.8 | 2,685 / 52.0 | 1,744 / 51.8 | 881 / 39.9 | - | - | - | - | 1,507 / 207 | 2,590 / 219 |
+| 9B 4-bit + MTP head | 829 / 28.9 | 1,418 / 39.5 | 1,067 / 44.5 | 545 / 36.2 | 840 / 28.8 | 1,415 / 39.8 | 1,056 / 43.4 | 544 / 36.2 | 840 / 112 | 1,434 / 166 |
+| 9B 6-bit | 805 / 27.8 | 1,411 / 37.4 | 1,061 / 41.3 | 543 / 35.7 | - | - | - | - | 798 / 111 | 1,475 / 178 |
+| 9B 8-bit | 773 / 19.6 | 1,336 / 31.1 | 1,028 / 38.7 | 544 / 35.3 | - | - | - | - | 781 / 80.6 | 1,367 / 124 |
+| 27B 4-bit | 260 / 12.4 | 470 / 15.8 | 402 / 18.1 | 214 / 16.3 | - | - | - | - | 244 / 42.2 | 456 / 73.4 |
+| 27B 3-bit + MTP head | 264 / 12.7 | 481 / 15.9 | 404 / 18.7 | 214 / 16.5 | 257 / 12.4 | 471 / 16.1 | 402 / 18.1 | 214 / 16.5 | 257 / 44.8 | 456 / 70.4 |
+| 35B-A3B 4-bit + MTP head | 1,217 / 59.5 | 1,807 / 36.4 | 1,493 / 35.4 | 815 / 28.0 | 1,221 / 59.2 | 1,864 / 36.3 | 1,489 / 34.2 | 813 / 28.0 | 1,514 / 128 | 2,052 / 108 |
 
-Mode gates (graphs off/on x serial/drafted, greedy and t=0.7, identical replies): 24/25 pass
-- The failing cell is `Qwen3.6-35B-A3B-GPTQ-Int4`: it does not load (a Hugging Face GPTQ export; the loader refuses
-  it with `ValueError: Hugging Face GPTQ / AWQ exports (quantization_config) are not served on ROCm`).
+Mode gates (graphs off/on x serial/drafted, greedy and t=0.7, identical replies): 32/32 pass
+
+The GPTQ-Int4 35B-A3B export does not load (Hugging Face GPTQ exports are refused at load).
 
 **W7800 (gfx1100), up to 2 cards**, served engine, 1,024-token prompt, 256 tokens, prefill / decode tok/s (MTP: the checkpoint's head drafting 2 a round; batched: 8 requests in one generate)
 
 | Model | tp=1 | tp=2 | tp=1 MTP 2 | tp=2 MTP 2 | tp=1 batched x8 | tp=2 batched x8 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0.8B 8-bit | re-measuring | re-measuring | re-measuring | re-measuring | re-measuring | re-measuring |
-| 4B 3-bit | 1,642 / 38.0 | 2,321 / 42.0 | - | - | 1,627 / 224 | 2,536 / 237 |
-| 9B 4-bit + MTP head | 895 / 35.6 | 1,438 / 46.5 | 903 / 31.9 | 1,434 / 42.3 | 841 / 135 | 1,471 / 205 |
-| 9B 6-bit | 918 / 33.0 | 1,465 / 42.8 | - | - | 929 / 136 | 1,495 / 210 |
-| 9B 8-bit | re-measuring | re-measuring | re-measuring | re-measuring | re-measuring | re-measuring |
-| 27B 4-bit | 263 / 12.9 | 452 / 17.0 | - | - | 269 / 47.8 | 453 / 79.3 |
-| 27B 3-bit + MTP head | 273 / 10.9 | 470 / 13.9 | re-measuring | re-measuring | 278 / 48.4 | 473 / 81.1 |
-| 35B-A3B 4-bit + MTP head | 1,238 / 60.1 | 1,759 / 38.3 | 1,235 / 53.0 | 1,752 / 35.0 | 1,612 / 143 | 2,059 / 146 |
+| 0.8B 8-bit | 7,616 / 121 | 9,996 / 121 | - | - | 7,730 / 393 | 10,952 / 352 |
+| 4B 3-bit | 1,680 / 38.0 | 2,472 / 41.8 | - | - | 1,682 / 223 | 2,580 / 258 |
+| 9B 4-bit + MTP head | 903 / 35.6 | 1,437 / 46.4 | 754 / 35.7 | 1,440 / 46.5 | 864 / 135 | 1,486 / 201 |
+| 9B 6-bit | 926 / 33.0 | 1,473 / 42.8 | - | - | 941 / 136 | 1,513 / 207 |
+| 9B 8-bit | 917 / 35.3 | 1,450 / 45.5 | - | - | 957 / 131 | 1,506 / 189 |
+| 27B 4-bit | 265 / 12.8 | 452 / 16.9 | - | - | 270 / 48.3 | 461 / 79.6 |
+| 27B 3-bit + MTP head | 273 / 10.8 | 472 / 13.9 | 276 / 10.7 | 470 / 13.9 | 279 / 48.9 | 474 / 80.5 |
+| 35B-A3B 4-bit + MTP head | 1,247 / 60.0 | 1,801 / 38.3 | 1,248 / 60.1 | 1,797 / 38.2 | 1,652 / 148 | 2,174 / 146 |
 
 Mode gates (graphs off/on x serial/drafted, greedy and t=0.7, identical replies): 16/16 pass
 
-Being re-measured: the 8-bit W7800 rows (taken on the WMMA tiles) and the 27B 3-bit MTP cells (taken before its
-unquantized `fc` loaded).
