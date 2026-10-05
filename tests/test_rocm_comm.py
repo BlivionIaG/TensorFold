@@ -127,3 +127,29 @@ def test_family_rocm_engine_passes_kwargs(monkeypatch):
     assert seen["p2p"] is True
     assert seen["no_drafts"] is True
     assert seen["model_dir"] == "/tmp/fake"
+
+@pytest.mark.parametrize("no_drafts", [False, True])
+def test_serve_passes_no_drafts_to_the_engine(no_drafts, tmp_path):
+    """``tensorfold serve --backend rocm --no-drafts`` reaches the ROCm engine, so the server decodes serially."""
+
+    import argparse
+    from types import SimpleNamespace
+
+    from tensorfold.rocm.serve import serve_rocm
+
+    seen = {}
+
+    class Loaded(Exception):
+        pass
+
+    def rocm_engine(model_dir, **kwargs):
+        seen.update(kwargs)
+        raise Loaded
+
+    family = SimpleNamespace(title="Qwen3.5", model_type="qwen3_5", package=SimpleNamespace(rocm_engine=rocm_engine))
+    args = argparse.Namespace(tp=1, rank=0, master="", master_port=29551, host="127.0.0.1", port=8080, name="m",
+                              model=str(tmp_path), checkpoint_slots=None, prompt_cache_gib=None, context=None,
+                              p2p=None, no_drafts=no_drafts)
+    with pytest.raises(Loaded):
+        serve_rocm(args, family, tmp_path, {})
+    assert seen["no_drafts"] is no_drafts

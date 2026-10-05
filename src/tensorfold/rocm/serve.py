@@ -52,7 +52,7 @@ def serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, sampling:
                                        context_explicit=args.context is not None, keep=keep, byte_budget=budget,
                                        tp=int(args.tp), rank=int(args.rank),
                                        master=args.master, master_port=int(args.master_port),
-                                       p2p=p2p)
+                                       p2p=p2p, no_drafts=bool(getattr(args, "no_drafts", False)))
     if args.tp > 1 and args.rank > 0:
         print(f"[tensorfold] rank {args.rank} of {args.tp} loaded in {time.perf_counter() - started:.1f}s; "
               f"following rank 0 at {args.master}:{args.master_port}", flush=True)
@@ -75,7 +75,8 @@ def serve_rocm(args: argparse.Namespace, family: Any, model_dir: Path, sampling:
     else:
         kept = f"{keep} slots, {budget / 1024**3:.1f} GiB"
     print(f"[tensorfold] serving {served} at http://{args.host}:{args.port}/v1 on ROCm "
-          f"(sampling: {shown}; context: {'unlimited' if effective is None else effective}; "
+          f"(sampling: {shown}; drafts: {'off' if getattr(args, 'no_drafts', False) else 'on'}; "
+          f"context: {'unlimited' if effective is None else effective}; "
           f"prefix cache: {kept}; loaded in {time.perf_counter() - started:.1f}s)", flush=True)
     serve(app, args.host, int(args.port))
     return 0
