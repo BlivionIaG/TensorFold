@@ -160,8 +160,8 @@ class MTPEngine:
         return self._logits(residual, dtype), residual
 
     def draft_chain(self, hidden: torch.Tensor, last_token: int, position: int, depth: int, cache: dict, *,
-                    sampling, dtype: torch.dtype) -> list[int]:
-        """``depth`` drafts from ``position``; draft i is keyed by its slot, as the verifier keys it."""
+                    sampling, dtype: torch.dtype, confidence: float = 0.0) -> list[int]:
+        """Up to ``depth`` drafts keyed by their slots; the chain ends after a draft the head gives < ``confidence``."""
         if depth < 1:
             raise ValueError(f"depth must be >= 1, got {depth}")
         from tensorfold.engine.exact_sampling import MARGIN, choose
@@ -187,6 +187,8 @@ class MTPEngine:
                                  torch.arange(int(row.shape[0]), dtype=torch.int64).numpy(),
                                  sample_key, sampling))
             ids.append(nxt)
+            if confidence > 0.0 and step + 1 < depth and float(torch.softmax(row, -1)[nxt]) < confidence:
+                break
             cur_token = nxt
             cur_hidden = residual[:, -1:, :]
         return ids

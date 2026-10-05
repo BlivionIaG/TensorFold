@@ -58,7 +58,7 @@ void conv_decode(const at::Tensor& x, const at::Tensor& weight, at::Tensor& stat
 }
 
 void rope_decode(const at::Tensor& x, at::Tensor& y, int64_t pos, int64_t rotary, double theta,
-                 const c10::optional<at::Tensor>& pos_dev) {
+                 const c10::optional<at::Tensor>& pos_dev, int64_t per) {
     TORCH_CHECK(x.is_cuda() && x.is_contiguous() && x.scalar_type() == at::kFloat && x.dim() == 2, "x: (rows, d) fp32");
     TORCH_CHECK(y.is_cuda() && y.is_contiguous() && y.sizes() == x.sizes(), "y");
     const int64_t rows = x.size(0), width = x.size(1);
@@ -69,13 +69,43 @@ void rope_decode(const at::Tensor& x, at::Tensor& y, int64_t pos, int64_t rotary
     keep(y, stream);
     const int* at = nullptr;
     if (pos_dev.has_value()) {
-        TORCH_CHECK(pos_dev->is_cuda() && pos_dev->scalar_type() == at::kInt && pos_dev->numel() == 1,
-                    "pos_dev: one int32 on the device");
+        TORCH_CHECK(pos_dev->is_cuda() && pos_dev->scalar_type() == at::kInt && pos_dev->is_contiguous() &&
+                        (per > 0 ? pos_dev->numel() * per == rows : pos_dev->numel() == 1),
+                    "pos_dev: one int32 on the device, or one a ``per`` rows");
         keep(*pos_dev, stream);
         at = pos_dev->data_ptr<int>();
     }
     rope_decode_launch(x.data_ptr<float>(), y.data_ptr<float>(), static_cast<int>(rows), static_cast<int>(width),
-                       static_cast<int>(rotary), static_cast<int>(pos), static_cast<float>(theta), stream.stream(), at);
+                       static_cast<int>(rotary), static_cast<int>(pos), static_cast<float>(theta), stream.stream(), at,
+                       static_cast<int>(per));
+}
+
+void conv_rows(const at::Tensor& x, const at::Tensor& weight, at::Tensor& state, at::Tensor& y,
+               const c10::optional<at::Tensor>& states) {
+    TORCH_CHECK(x.is_cuda() && x.is_contiguous() && x.scalar_type() == at::kFloat && x.dim() == 2,
+                "x: (rows, channels) fp32");
+    const int64_t rows = x.size(0), channels = x.size(1);
+    TORCH_CHECK(weight.is_cuda() && weight.is_contiguous() && weight.scalar_type() == at::kFloat && weight.dim() == 2 &&
+                    weight.size(0) == channels && weight.size(1) >= 1 && weight.size(1) <= 8,
+                "weight: (channels, kernel) fp32, kernel 1..8");
+    const int64_t kernel = weight.size(1);
+    TORCH_CHECK(state.is_cuda() && state.is_contiguous() && state.scalar_type() == at::kFloat &&
+                    state.numel() == (kernel - 1) * channels,
+                "state: (1, kernel - 1, channels) fp32");
+    TORCH_CHECK(y.is_cuda() && y.is_contiguous() && y.scalar_type() == at::kFloat && y.sizes() == x.sizes(), "y");
+    float* snaps = nullptr;
+    if (states.has_value()) {
+        TORCH_CHECK(states->is_cuda() && states->is_contiguous() && states->scalar_type() == at::kFloat &&
+                        states->numel() == rows * (kernel - 1) * channels,
+                    "states: (rows, kernel - 1, channels) fp32");
+        snaps = states->data_ptr<float>();
+    }
+    c10::cuda::CUDAGuard guard(x.device());
+    auto stream = c10::cuda::getCurrentCUDAStream();
+    for (const at::Tensor& tensor : {x, weight, state, y}) keep(tensor, stream);
+    if (states.has_value()) keep(*states, stream);
+    conv_rows_launch(x.data_ptr<float>(), weight.data_ptr<float>(), state.data_ptr<float>(), y.data_ptr<float>(), snaps,
+                     static_cast<int>(rows), static_cast<int>(channels), static_cast<int>(kernel), stream.stream());
 }
 
 int act_kind(const at::Tensor& t) {
@@ -196,4 +226,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("rms", &rms);
     m.def("conv_decode", &conv_decode);
     m.def("rope_decode", &rope_decode);
+    m.def("conv_rows", &conv_rows);
 }

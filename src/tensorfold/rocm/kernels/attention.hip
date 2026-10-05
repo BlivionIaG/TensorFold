@@ -91,7 +91,7 @@ template <typename Cache>
 __global__ void score_keys(const float* __restrict__ q, const Cache* __restrict__ k, float* __restrict__ scores,
                            int span, int heads, int kv_heads, int d, float scale, int visible, long long k_sb,
                            long long k_sh, long long k_ss, const int* pos) {
-    if (pos != nullptr) visible = min(*pos + 1, span);
+    if (pos != nullptr) visible = min(pos[blockIdx.z] + 1, span);
     int lane = threadIdx.x & 31;
     int key = blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5);
     int head = blockIdx.y;
@@ -122,7 +122,7 @@ __global__ void score_keys(const float* __restrict__ q, const Cache* __restrict_
 
 __global__ void softmax_stats(const float* __restrict__ scores, float* __restrict__ stats, int span, int visible,
                               const int* pos) {
-    if (pos != nullptr) visible = min(*pos + 1, span);
+    if (pos != nullptr) visible = min(pos[blockIdx.y] + 1, span);
     int head = blockIdx.x;
     int batch = blockIdx.y;
     const float* row = scores + (static_cast<long long>(batch) * gridDim.x + head) * span;
@@ -156,7 +156,7 @@ __global__ void apply_values(const float* __restrict__ scores, const float* __re
                              const Cache* __restrict__ v, float* __restrict__ partials, int span, int heads,
                              int kv_heads, int d, int visible, long long v_sb, long long v_sh, long long v_ss,
                              const int* pos) {
-    if (pos != nullptr) visible = min(*pos + 1, span);
+    if (pos != nullptr) visible = min(pos[blockIdx.z] + 1, span);
     int tile = blockIdx.x;
     int head = blockIdx.y;
     int batch = blockIdx.z;

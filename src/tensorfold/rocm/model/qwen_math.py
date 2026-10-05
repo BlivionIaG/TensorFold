@@ -310,8 +310,8 @@ def gated_delta_reference(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, gat
 
 def gated_delta(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tensor, b: torch.Tensor,
                 a_log: torch.Tensor, dt_bias: torch.Tensor, state: torch.Tensor | None, *, fused: bool = False,
-                ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Scalar-gate delta rule over fp32 state; ``fused`` takes gate and beta from one HIP launch."""
+                states: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    """Scalar-gate delta rule over fp32 state; ``fused``: gate and beta in one launch; ``states``: each step's."""
 
     if fused and a.is_cuda:
         from tensorfold.rocm.kernels.act import gdn_gate
@@ -333,7 +333,7 @@ def gated_delta(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, a: torch.Tens
     if qf.is_cuda:
         from tensorfold.rocm.kernels.gated_delta import recurrence
 
-        return recurrence(qf, kf, vf, gate, beta, state.contiguous())
+        return recurrence(qf, kf, vf, gate, beta, state.contiguous(), states)
     return gated_delta_reference(qf, kf, vf, gate, beta, state)
 
 

@@ -22,7 +22,7 @@ from tensorfold.rocm.model.qwen_math import DevicePos
 from tensorfold.rocm.model.qwen_tp import tp_forward_hidden, vocab_gather
 
 _DEFAULT_EOS = (151645,)
-_DEFAULT_MTP_DEPTH = 4
+_DEFAULT_MTP_DEPTH = 3       # most MTP drafts a round, as the CUDA Qwen3.6 engine
 _LONG_PROMPT = 8192            # past this many prompt tokens a request hands its freed memory back
 
 

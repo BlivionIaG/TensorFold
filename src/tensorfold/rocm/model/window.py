@@ -6,8 +6,10 @@ from dataclasses import dataclass, field
 
 import torch
 
-from tensorfold.rocm.model.forward import _attend, _mlp, _project, _project_group, _project_pair, _residual
-from tensorfold.rocm.model.qwen_math import apply_rope, causal_conv, gated_delta, gather_rows, normalize_qk, rms_norm
+from tensorfold.rocm.kernels.act import conv_rows, rope_decode
+from tensorfold.rocm.kernels.attention import causal_at
+from tensorfold.rocm.model.forward import _mlp, _project, _project_group, _project_pair, _residual
+from tensorfold.rocm.model.qwen_math import gated_delta, gather_rows, normalize_qk, rms_norm
 
 
 @dataclass
@@ -17,15 +19,23 @@ class Window:
     tokens: list[int]
     caches: list[dict]
     pos: int
-    states: dict = field(default_factory=dict)   # linear layer index -> [(conv, state) after each row]
+    states: dict = field(default_factory=dict)   # linear layer index -> (conv states, delta states) after each row
+    slots: torch.Tensor | None = None            # the rows' positions on the device, int64 (a graph sets them)
+
+    def positions(self, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.slots is None:
+            self.slots = torch.arange(self.pos, self.pos + len(self.tokens), dtype=torch.int64, device=device)
+        return self.slots, self.slots.to(torch.int32)
 
 
-def window_forward(model, windows: list[Window], linear, act_dtype: torch.dtype, *, reduce=None) -> torch.Tensor:
+def window_forward(model, windows: list[Window], linear, act_dtype: torch.dtype, *, reduce=None,
+                   ids: torch.Tensor | None = None) -> torch.Tensor:
     """The final-normed hidden rows of every window, concatenated in order; ``reduce`` sums tp shares."""
 
     spec = model.spec
     device = model.embed.words.device if hasattr(model.embed, "words") else model.final_norm.device
-    ids = torch.tensor([[t for w in windows for t in w.tokens]], dtype=torch.long, device=device)
+    if ids is None:
+        ids = torch.tensor([[t for w in windows for t in w.tokens]], dtype=torch.long, device=device)
     x = gather_rows(model.embed, ids, dtype=act_dtype)
     if x.device != device:
         x = x.to(device=device)
@@ -34,10 +44,11 @@ def window_forward(model, windows: list[Window], linear, act_dtype: torch.dtype,
     for w in windows:
         w.states = {}
         starts.append(starts[-1] + len(w.tokens))
+    slots = [w.positions(device) for w in windows]
     for index, layer in enumerate(model.layers):
         normed = rms_norm(x, layer.input_norm, spec.eps)
         if spec.full(index):
-            y = _attention_rows(spec, layer, normed, windows, starts, index, linear)
+            y = _attention_rows(spec, layer, normed, windows, starts, slots, index, linear)
         else:
             y = _linear_rows(spec, layer, normed, windows, starts, index, linear)
         if reduce is not None:
@@ -57,11 +68,15 @@ def commit(model, window: Window, rows: int) -> None:
         if model.spec.full(index):
             cache["len"] = window.pos + rows
         else:
-            cache["conv"], cache["state"] = window.states[index][rows - 1]
+            # Copied into the stream's own buffers, which a captured window reads and writes in place.
+            convs, deltas = window.states[index]
+            cache["conv"][0].copy_(convs[rows - 1])
+            cache["state"][0].copy_(deltas[0, rows - 1])
     window.states = {}
 
 
-def _attention_rows(spec, layer, x: torch.Tensor, windows: list[Window], starts: list[int], index: int, linear):
+def _attention_rows(spec, layer, x: torch.Tensor, windows: list[Window], starts: list[int], slots, index: int,
+                    linear):
     batch, length, _ = x.shape
     grouped = _project_group(x, (layer.q, layer.k, layer.v), linear)
     if grouped is None:
@@ -73,30 +88,33 @@ def _attention_rows(spec, layer, x: torch.Tensor, windows: list[Window], starts:
     queries, gate = qg.split(spec.head_dim, dim=-1)
     keys = keys.view(batch, length, spec.kv_heads, spec.head_dim)
     values = values.view(batch, length, spec.kv_heads, spec.head_dim)
-    queries = rms_norm(queries, layer.q_norm, spec.eps).permute(0, 2, 1, 3)
-    keys = rms_norm(keys, layer.k_norm, spec.eps).permute(0, 2, 1, 3)
-    values = values.permute(0, 2, 1, 3)
+    queries = rms_norm(queries, layer.q_norm, spec.eps)
+    keys = rms_norm(keys, layer.k_norm, spec.eps)
     attended = []
-    scale = spec.head_dim ** -0.5
-    for w, start in zip(windows, starts):
-        cache = w.caches[index]
-        for i in range(len(w.tokens)):
-            # The serial step's calls, one row at a time: rope, the cache write, the decode walk over its keys.
-            row, pos = start + i, w.pos + i
-            q = apply_rope(queries[:, :, row:row + 1], pos, spec.rope_theta, spec.rotary_dim, exact=False)
-            k = apply_rope(keys[:, :, row:row + 1], pos, spec.rope_theta, spec.rotary_dim, exact=False)
-            if pos + 1 > cache["k"].shape[2]:
-                raise RuntimeError("kv cache is shorter than the tokens written into it")
-            cache["k"][:, :, pos:pos + 1] = k.to(dtype=cache["k"].dtype)
-            cache["v"][:, :, pos:pos + 1] = values[:, :, row:row + 1].to(dtype=cache["v"].dtype)
-            query = q if q.dtype == torch.float32 else q.float()
-            attended.append(_attend(query, cache["k"][:, :, :pos + 1], cache["v"][:, :, :pos + 1], scale, pos))
-        cache["len"] = w.pos + len(w.tokens)
-    out = torch.cat(attended, dim=2).permute(0, 2, 1, 3).reshape(batch, length, -1)
+    for w, start, (at64, at32) in zip(windows, starts, slots):
+        # The serial step's calls with a position a row: rope, the cache write, the decode walk.
+        cache, rows = w.caches[index], len(w.tokens)
+        q = _rope_rows(queries[0, start:start + rows], at32, spec)
+        k = _rope_rows(keys[0, start:start + rows], at32, spec)
+        cache["k"].index_copy_(2, at64, k.permute(1, 0, 2).unsqueeze(0).to(dtype=cache["k"].dtype))
+        cache["v"].index_copy_(2, at64, values[0, start:start + rows].permute(1, 0, 2).unsqueeze(0)
+                               .to(dtype=cache["v"].dtype))
+        query = q.float().unsqueeze(2).contiguous()                  # (rows, heads, 1, d): a query a row
+        attended.append(causal_at(query, cache["k"], cache["v"], spec.head_dim ** -0.5, at32).reshape(rows, -1))
+    out = torch.cat(attended, dim=0).unsqueeze(0)
     gated = out * torch.sigmoid(gate.reshape(batch, length, -1).float())
     if gated.dtype != x.dtype:
         gated = gated.to(dtype=x.dtype)
     return _project(gated, layer.o, linear)
+
+
+def _rope_rows(x: torch.Tensor, at32: torch.Tensor, spec) -> torch.Tensor:
+    """(rows, heads, d) rotated row by row at the device positions, in the one-row decode's arithmetic."""
+
+    rows, heads, width = x.shape
+    flat = x.reshape(rows * heads, width).float().contiguous()
+    y = rope_decode(flat, at32, spec.rotary_dim, spec.rope_theta, per=heads).reshape(rows, heads, width)
+    return y if y.dtype == x.dtype else y.to(dtype=x.dtype)
 
 
 def _linear_rows(spec, layer, x: torch.Tensor, windows: list[Window], starts: list[int], index: int, linear):
@@ -110,26 +128,24 @@ def _linear_rows(spec, layer, x: torch.Tensor, windows: list[Window], starts: li
     else:
         qkv, z, a, b = grouped
     z = z.view(batch, length, spec.value_heads, spec.value_dim)
+    weight = layer.conv.float().contiguous()
     ys = []
     for w, start in zip(windows, starts):
-        cache = w.caches[index]
+        # The serial step's conv and fused delta step over the window's rows, each row's states kept for the commit.
+        cache, rows = w.caches[index], len(w.tokens)
         conv, state = cache["conv"], cache["state"]
-        kept = []
-        for i in range(len(w.tokens)):
-            # The serial step's conv and fused delta step; each row's states are kept for the commit.
-            row = start + i
-            mixed, conv = causal_conv(qkv[:, row:row + 1], layer.conv, conv, exact=False)
-            q, k, v = mixed.split((spec.key_width, spec.key_width, spec.value_width), dim=-1)
-            q = q.reshape(batch, 1, spec.key_heads, spec.key_dim)
-            k = k.reshape(batch, 1, spec.key_heads, spec.key_dim)
-            v = v.reshape(batch, 1, spec.value_heads, spec.value_dim)
-            q, k = normalize_qk(q, k, spec.key_dim, spec.eps)
-            y, state = gated_delta(q, k, v, a[:, row:row + 1], b[:, row:row + 1], layer.a_log, layer.dt_bias, state,
-                                   fused=True)
-            kept.append((conv.clone(), state.clone()))
-            ys.append(y)
-        cache["conv"], cache["state"] = conv, state
-        w.states[index] = kept
+        convs = torch.empty((rows, *conv.shape[1:]), dtype=torch.float32, device=x.device)
+        mixed = conv_rows(qkv[0, start:start + rows].float().contiguous(), weight, conv, convs).unsqueeze(0)
+        q, k, v = mixed.split((spec.key_width, spec.key_width, spec.value_width), dim=-1)
+        q = q.reshape(batch, rows, spec.key_heads, spec.key_dim)
+        k = k.reshape(batch, rows, spec.key_heads, spec.key_dim)
+        v = v.reshape(batch, rows, spec.value_heads, spec.value_dim)
+        q, k = normalize_qk(q, k, spec.key_dim, spec.eps)
+        deltas = torch.empty((1, rows, *state.shape[1:]), dtype=torch.float32, device=x.device)
+        y, _ = gated_delta(q, k, v, a[:, start:start + rows], b[:, start:start + rows], layer.a_log, layer.dt_bias,
+                           state, fused=True, states=deltas)
+        w.states[index] = (convs, deltas)
+        ys.append(y)
     y = torch.cat(ys, dim=1)
     y = rms_norm(y, layer.gnorm, spec.eps) * torch.nn.functional.silu(z).float()
     if y.dtype != x.dtype:

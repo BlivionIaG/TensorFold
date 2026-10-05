@@ -12,6 +12,9 @@ from tensorfold.engine.exact_sampling import Sampling
 from tensorfold.engine.grammar import GrammarError
 from tensorfold.rocm.model.forward import _project
 from tensorfold.rocm.model.window import Window, commit, window_forward
+from tensorfold.rocm.serving.graphs import WindowGraphs
+
+CONFIDENCE = 0.3     # a draft chain ends after a draft the MTP head gives less than this
 
 STEP = 1024          # prompt rows a prefill step takes while other streams decode
 
@@ -36,6 +39,7 @@ class Lanes:
         self.streams: dict[int, Stream] = {}         # decoding
         self.filling: list[Stream] = []              # admitted, prompts still prefilling (oldest first)
         self.next_id = 0
+        self.graphs = WindowGraphs(engine)           # a lone stream's windows replay a captured graph
 
     def live(self) -> int:
         return len(self.streams) + len(self.filling)
@@ -115,9 +119,10 @@ class Lanes:
         cache = e.mtp.fresh_cache(batch=1, total=lane.pos + depth + 1, device=e._device(), dtype=dtype)
         # A greedy request drafts greedily; verification keeps the request's own sampling.
         return e.mtp.draft_chain(lane.hidden, s.out[-1], lane.pos, depth, cache,
-                                 sampling=s.sampling or Sampling(seed=0, temperature=0.0), dtype=dtype)
+                                 sampling=s.sampling or Sampling(seed=0, temperature=0.0), dtype=dtype,
+                                 confidence=CONFIDENCE)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def round(self) -> list[Stream]:
         """A prefill step for the next queued prompt, then one forward over every decoding stream's window."""
 
@@ -142,7 +147,10 @@ class Lanes:
         e = self.e
         windows = [Window([s.out[-1]] + s.drafts, s.st.caches, s.st.pos) for s in live]
         with torch.inference_mode():
-            hidden = window_forward(e.model, windows, e.kernels.linear, e._dtype())
+            if len(live) == 1 and e.graphs and e.tp == 1:
+                hidden = self.graphs.forward(live[0].sid, windows[0])
+            else:
+                hidden = window_forward(e.model, windows, e.kernels.linear, e._dtype())
             logits = _project(hidden[0], e.model.output_head(), e.kernels.linear)
         start = 0
         for s, w in zip(live, windows):
@@ -158,7 +166,7 @@ class Lanes:
             path, end = accept(w.tokens, list(range(-1, rows - 1)), sampled, s.count - len(s.out), self._ends(s))
             commit(e.model, w, len(path))
             s.st.pos += len(path)
-            s.st.hidden = hidden[:, start + path[-1]:start + path[-1] + 1]
+            s.st.hidden = hidden[:, start + path[-1]:start + path[-1] + 1].clone()   # a replay rewrites hidden
             new = [w.tokens[r] for r in path[1:]] + [end]
             s.committed.extend(w.tokens[r] for r in path)
             s.counted(rows)
@@ -179,12 +187,15 @@ class Lanes:
     def finish(self, done: list[Stream]) -> None:
         for s in done:
             self.streams.pop(s.sid, None)
+            if s.sid == self.graphs.sid:
+                self.graphs.reset()
 
     def drop(self) -> list[Stream]:
         """After an error in a round: forget the live streams and the queued prompts."""
 
         live = [s for s in self.streams.values() if not s.done] + self.filling
         self.streams, self.filling = {}, []
+        self.graphs.reset()
         return live
 
 

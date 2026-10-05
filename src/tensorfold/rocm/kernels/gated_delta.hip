@@ -20,7 +20,8 @@ template <int DK>
 __global__ void __launch_bounds__(32)
 gated_delta_kernel(const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
                    const float* __restrict__ gate, const float* __restrict__ beta, float* __restrict__ state,
-                   float* __restrict__ y, int length, int key_heads, int value_heads, int dv) {
+                   float* __restrict__ y, int length, int key_heads, int value_heads, int dv,
+                   float* __restrict__ states) {
     constexpr int SPAN = (DK + 31) / 32;
     const int lane = threadIdx.x;
     const int row = blockIdx.x;
@@ -64,6 +65,14 @@ gated_delta_kernel(const float* __restrict__ q, const float* __restrict__ k, con
             const int idx = lane + i * 32;
             if (idx < DK) s[i] = s[i] + ks[i] * delta;
         }
+        if (states != nullptr) {
+            const size_t snap = (((static_cast<size_t>(batch) * length + t) * value_heads + head) * dv + row) * DK;
+#pragma unroll
+            for (int i = 0; i < SPAN; ++i) {
+                const int idx = lane + i * 32;
+                if (idx < DK) states[snap + idx] = s[i];
+            }
+        }
 
         float readout = 0.f;
 #pragma unroll
@@ -91,7 +100,8 @@ template <int DK, int ROWS, int STEPS>
 __global__ void __launch_bounds__(32 * ROWS)
 gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
                  const float* __restrict__ gate, const float* __restrict__ beta, float* __restrict__ state,
-                 float* __restrict__ y, int length, int key_heads, int value_heads, int dv) {
+                 float* __restrict__ y, int length, int key_heads, int value_heads, int dv,
+                 float* __restrict__ states) {
     constexpr int SPAN = (DK + 31) / 32;
     constexpr int WIDTH = 32 * ROWS;
     const int lane = threadIdx.x;
@@ -170,6 +180,15 @@ gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const
                 const int idx = lane + i * 32;
                 if (idx < DK) s[i] = s[i] + held[i] * delta;
             }
+            if (states != nullptr) {
+                const size_t snap =
+                    (((static_cast<size_t>(batch) * length + (t0 + tt)) * value_heads + head) * dv + row) * DK;
+#pragma unroll
+                for (int i = 0; i < SPAN; ++i) {
+                    const int idx = lane + i * 32;
+                    if (idx < DK) states[snap + idx] = s[i];
+                }
+            }
             float readout = 0.f;
 #pragma unroll
             for (int i = 0; i < SPAN; ++i) {
@@ -196,7 +215,7 @@ gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const
 
 void gated_delta_launch(const float* q, const float* k, const float* v, const float* gate, const float* beta,
                         float* state, float* y, int batch, int length, int key_heads, int value_heads, int dk,
-                        int dv, void* stream) {
+                        int dv, void* stream, float* states) {
     if ((dk != 16 && dk != 128) || dv < 1 || key_heads < 1 || value_heads % key_heads != 0 || batch < 1 ||
         length < 1) {
         throw std::invalid_argument("gated delta wants dk 16 or 128 and value heads a multiple of key heads");
@@ -209,21 +228,21 @@ void gated_delta_launch(const float* q, const float* k, const float* v, const fl
         dim3 grid(dv / 8, value_heads, batch);
         if (dk == 128) {
             tf::rocm::gated_delta_tile<128, 8, 16><<<grid, block, 0, hip_stream>>>(
-                q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv);
+                q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv, states);
         } else {
             tf::rocm::gated_delta_tile<16, 8, 16><<<grid, block, 0, hip_stream>>>(
-                q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv);
+                q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv, states);
         }
     } else if (dk == 128) {
         dim3 block(32);
         dim3 grid(dv, value_heads, batch);
         tf::rocm::gated_delta_kernel<128><<<grid, block, 0, hip_stream>>>(
-            q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv);
+            q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv, states);
     } else {
         dim3 block(32);
         dim3 grid(dv, value_heads, batch);
         tf::rocm::gated_delta_kernel<16><<<grid, block, 0, hip_stream>>>(
-            q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv);
+            q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv, states);
     }
     err = hipGetLastError();
     if (err != hipSuccess) throw std::runtime_error(std::string("gated delta kernel: ") + hipGetErrorString(err));

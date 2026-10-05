@@ -59,7 +59,7 @@ def causal(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, q_po
 
 
 def causal_at(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, scale: float, pos: torch.Tensor) -> torch.Tensor:
-    """One query at device position ``pos`` (int32, one element) over the whole cache: graph-capturable decode."""
+    """Queries (batch, heads, 1, d) at device positions ``pos`` (int32, one a query) over a shared or own cache."""
 
     if k.dtype not in _KIND or k.dtype != v.dtype:
         raise ValueError("k and v must be fp16, bf16, or fp32, and they must match")

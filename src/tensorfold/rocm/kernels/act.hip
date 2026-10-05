@@ -76,10 +76,39 @@ __global__ void conv_decode_kernel(const float* __restrict__ x, const float* __r
     if (kept > 0) state[(static_cast<long long>(batch) * kept + kept - 1) * channels + channel] = sample;
 }
 
+// A window's rows in one launch: conv_decode's step for each row in turn, the state after each kept in ``states``.
+__global__ void conv_rows_kernel(const float* __restrict__ x, const float* __restrict__ weight,
+                                 float* __restrict__ state, float* __restrict__ y, float* __restrict__ states,
+                                 int channels, int kernel, int rows) {
+    int channel = blockIdx.x * blockDim.x + threadIdx.x;
+    if (channel >= channels) return;
+    const float* row = weight + static_cast<long long>(channel) * kernel;
+    float history[7];
+    int kept = kernel - 1;
+    for (int tap = 0; tap < kept; ++tap) history[tap] = state[static_cast<long long>(tap) * channels + channel];
+    for (int r = 0; r < rows; ++r) {
+        float acc = 0.f;
+        for (int tap = 0; tap < kept; ++tap) acc += history[tap] * row[tap];
+        float sample = x[static_cast<long long>(r) * channels + channel];
+        acc += sample * row[kept];
+        float gate = 1.f / (1.f + expf(-acc));
+        y[static_cast<long long>(r) * channels + channel] = acc * gate;
+        for (int tap = 0; tap < kept - 1; ++tap) history[tap] = history[tap + 1];
+        if (kept > 0) history[kept - 1] = sample;
+        if (states != nullptr) {
+            for (int tap = 0; tap < kept; ++tap) {
+                states[(static_cast<long long>(r) * kept + tap) * channels + channel] = history[tap];
+            }
+        }
+    }
+    for (int tap = 0; tap < kept; ++tap) state[static_cast<long long>(tap) * channels + channel] = history[tap];
+}
+
+// ``per`` > 0: rows of a window, ``per`` rows to a position, row r at ``pos_dev[r / per]``.
 __global__ void rope_decode_kernel(const float* __restrict__ x, float* __restrict__ y, int width, int rotary,
-                                   int pos, float theta, const int* __restrict__ pos_dev) {
-    if (pos_dev != nullptr) pos = *pos_dev;
+                                   int pos, float theta, const int* __restrict__ pos_dev, int per) {
     int row = blockIdx.x;
+    if (pos_dev != nullptr) pos = per > 0 ? pos_dev[row / per] : *pos_dev;
     int lane = threadIdx.x;
     const float* in = x + static_cast<long long>(row) * width;
     float* out = y + static_cast<long long>(row) * width;
@@ -247,9 +276,17 @@ void conv_decode_launch(const float* x, const float* weight, float* state, float
     if (err != hipSuccess) throw std::runtime_error(std::string("conv kernel: ") + hipGetErrorString(err));
 }
 
+void conv_rows_launch(const float* x, const float* weight, float* state, float* y, float* states, int rows,
+                      int channels, int kernel, hipStream_t stream) {
+    tf::rocm::conv_rows_kernel<<<(channels + 127) / 128, 128, 0, stream>>>(x, weight, state, y, states, channels,
+                                                                           kernel, rows);
+    hipError_t err = hipGetLastError();
+    if (err != hipSuccess) throw std::runtime_error(std::string("conv rows kernel: ") + hipGetErrorString(err));
+}
+
 void rope_decode_launch(const float* x, float* y, int rows, int width, int rotary, int pos, float theta,
-                        hipStream_t stream, const int* pos_dev) {
-    tf::rocm::rope_decode_kernel<<<rows, 32, 0, stream>>>(x, y, width, rotary, pos, theta, pos_dev);
+                        hipStream_t stream, const int* pos_dev, int per) {
+    tf::rocm::rope_decode_kernel<<<rows, 32, 0, stream>>>(x, y, width, rotary, pos, theta, pos_dev, per);
     hipError_t err = hipGetLastError();
     if (err != hipSuccess) throw std::runtime_error(std::string("rope kernel: ") + hipGetErrorString(err));
 }

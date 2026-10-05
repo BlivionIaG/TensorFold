@@ -1,4 +1,4 @@
-"""Short-row RMSNorm, length-1 causal conv, and length-1 RoPE. Prefill keeps the PyTorch ops."""
+"""RMSNorm, the decode conv and RoPE (one row or a window's rows), MoE routing and the DeltaNet gate."""
 
 from __future__ import annotations
 
@@ -34,14 +34,23 @@ def conv_decode(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor) -> t
     return y
 
 
-def rope_decode(x: torch.Tensor, pos: "int | torch.Tensor", rotary: int, theta: float) -> torch.Tensor:
-    """Rotate the first ``rotary`` columns of one position: an int, or an int32 device scalar read at run time."""
+def rope_decode(x: torch.Tensor, pos: "int | torch.Tensor", rotary: int, theta: float, per: int = 0) -> torch.Tensor:
+    """Rotate the first ``rotary`` columns at one position, or with ``per`` row r at device ``pos[r // per]``."""
 
     y = torch.empty_like(x)
     if isinstance(pos, torch.Tensor):
-        _ext().rope_decode(x, y, 0, int(rotary), float(theta), pos)
+        _ext().rope_decode(x, y, 0, int(rotary), float(theta), pos, int(per))
     else:
-        _ext().rope_decode(x, y, int(pos), int(rotary), float(theta), None)
+        _ext().rope_decode(x, y, int(pos), int(rotary), float(theta), None, 0)
+    return y
+
+
+def conv_rows(x: torch.Tensor, weight: torch.Tensor, state: torch.Tensor,
+              states: torch.Tensor | None = None) -> torch.Tensor:
+    """``conv_decode`` over (rows, channels) in turn; ``state`` advances in place, ``states`` takes each row's."""
+
+    y = torch.empty_like(x)
+    _ext().conv_rows(x, weight, state, y, states)
     return y
 
 

@@ -90,3 +90,27 @@ def _gfx() -> str:
     from tensorfold.rocm.kernels.build import gfx_name
 
     return gfx_name()
+
+
+def test_a_lone_streams_graphed_windows_keep_the_serial_bits():
+    """Eager, captured, then replayed windows of one length: every row and every commit as the serial steps."""
+
+    from tensorfold.rocm.serving.graphs import WindowGraphs
+
+    engine = _engine()
+    engine.graphs = True
+    prompt = [1 + (i * 7) % 40 for i in range(37)]
+    _, caches = engine._span(prompt, None, 0, len(prompt) + 32)
+    serial = _copy(engine, caches, len(prompt) + 32)
+    lane = _copy(engine, caches, len(prompt) + 32)
+    graphs, pos = WindowGraphs(engine), len(prompt)
+    for round_, (tokens, keep) in enumerate([([5, 9, 13], 2), ([2, 7, 11], 3), ([4, 8, 3], 1), ([6, 1, 10], 2)]):
+        want, _ = _serial(engine, serial, tokens[:keep], pos)
+        window = Window(tokens, lane, pos)
+        got = graphs.forward(0, window)
+        for i in range(keep):
+            assert torch.equal(got[0, i], want[i]), (round_, i)
+        commit(engine.model, window, keep)
+        pos += keep
+    assert graphs.entries[3].graph is not None
+    assert caches_equal(lane, serial)

@@ -19,8 +19,8 @@ def _ext():
 
 
 def recurrence(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, gate: torch.Tensor, beta: torch.Tensor,
-               state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """Run the wave kernel. ``state`` is updated in place and returned."""
+               state: torch.Tensor, states: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    """Run the wave kernel. ``state`` is updated in place and returned; ``states`` takes the state after each step."""
 
     q = q.contiguous()
     k = k.contiguous()
@@ -29,5 +29,5 @@ def recurrence(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, gate: torch.Te
     beta = beta.contiguous()
     state = state.contiguous()
     y = torch.empty_like(v)
-    _ext().gdn(q, k, v, gate, beta, state, y)
+    _ext().gdn(q, k, v, gate, beta, state, y, states)
     return y, state

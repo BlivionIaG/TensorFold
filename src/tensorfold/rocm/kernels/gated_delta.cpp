@@ -8,7 +8,7 @@
 // The kernel updates state in place. q and k stay packed by key head; the wave maps a value head itself.
 
 void gdn(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const at::Tensor& gate,
-         const at::Tensor& beta, at::Tensor& state, at::Tensor& y) {
+         const at::Tensor& beta, at::Tensor& state, at::Tensor& y, const c10::optional<at::Tensor>& states) {
     TORCH_CHECK(q.is_cuda() && q.is_contiguous() && q.scalar_type() == at::kFloat && q.dim() == 4,
                 "q: (batch, length, key heads, dk) fp32");
     const int64_t batch = q.size(0), length = q.size(1), key_heads = q.size(2), dk = q.size(3);
@@ -29,6 +29,13 @@ void gdn(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const at
     TORCH_CHECK(y.is_cuda() && y.is_contiguous() && y.scalar_type() == at::kFloat && y.sizes() == v.sizes(),
                 "y matches v");
     TORCH_CHECK(dk == 16 || dk == 128, "dk is 16 or 128");
+    float* snaps = nullptr;
+    if (states.has_value()) {
+        TORCH_CHECK(states->is_cuda() && states->is_contiguous() && states->scalar_type() == at::kFloat &&
+                        states->numel() == batch * length * value_heads * dv * dk,
+                    "states: (batch, length, value heads, dv, dk) fp32");
+        snaps = states->data_ptr<float>();
+    }
     TORCH_CHECK(value_heads % key_heads == 0, "value heads are a multiple of key heads");
     c10::cuda::CUDAGuard guard(q.device());
     // Mark the tensors used on this stream, so a caller that frees them from another stream waits.
@@ -36,10 +43,11 @@ void gdn(const at::Tensor& q, const at::Tensor& k, const at::Tensor& v, const at
     for (const at::Tensor& tensor : {q, k, v, gate, beta, state, y}) {
         c10::cuda::CUDACachingAllocator::recordStream(tensor.storage().data_ptr(), stream);
     }
+    if (states.has_value()) c10::cuda::CUDACachingAllocator::recordStream(states->storage().data_ptr(), stream);
     gated_delta_launch(q.data_ptr<float>(), k.data_ptr<float>(), v.data_ptr<float>(), gate.data_ptr<float>(),
                        beta.data_ptr<float>(), state.data_ptr<float>(), y.data_ptr<float>(), static_cast<int>(batch),
                        static_cast<int>(length), static_cast<int>(key_heads), static_cast<int>(value_heads),
-                       static_cast<int>(dk), static_cast<int>(dv), stream.stream());
+                       static_cast<int>(dk), static_cast<int>(dv), stream.stream(), snaps);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) { m.def("gdn", &gdn); }
