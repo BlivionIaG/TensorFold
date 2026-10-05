@@ -112,18 +112,35 @@ Mode gates (graphs off/on x serial/drafted, greedy and t=0.7, identical replies)
 
 The GPTQ-Int4 35B-A3B export does not load (Hugging Face GPTQ exports are refused at load).
 
-**W7800 (gfx1100), up to 2 cards**, served engine, 1,024-token prompt, 256 tokens, prefill / decode tok/s (MTP: the checkpoint's head drafting 2 a round; batched: 8 requests in one generate)
+**W7800 (gfx1100), up to 2 cards, 180 W**, served engine, 1,024-token prompt, 256 tokens, prefill / decode tok/s (MTP: the checkpoint's head drafting 2 a round; batched: 8 requests in one generate)
 
 | Model | tp=1 | tp=2 | tp=1 MTP 2 | tp=2 MTP 2 | tp=1 batched x8 | tp=2 batched x8 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0.8B 8-bit | 7,616 / 121 | 9,996 / 121 | - | - | 7,730 / 393 | 10,952 / 352 |
-| 4B 3-bit | 1,680 / 38.0 | 2,472 / 41.8 | - | - | 1,682 / 223 | 2,580 / 258 |
-| 9B 4-bit + MTP head | 903 / 35.6 | 1,437 / 46.4 | 754 / 35.7 | 1,440 / 46.5 | 864 / 135 | 1,486 / 201 |
-| 9B 6-bit | 926 / 33.0 | 1,473 / 42.8 | - | - | 941 / 136 | 1,513 / 207 |
-| 9B 8-bit | 917 / 35.3 | 1,450 / 45.5 | - | - | 957 / 131 | 1,506 / 189 |
-| 27B 4-bit | 265 / 12.8 | 452 / 16.9 | - | - | 270 / 48.3 | 461 / 79.6 |
-| 27B 3-bit + MTP head | 273 / 10.8 | 472 / 13.9 | 276 / 10.7 | 470 / 13.9 | 279 / 48.9 | 474 / 80.5 |
-| 35B-A3B 4-bit + MTP head | 1,247 / 60.0 | 1,801 / 38.3 | 1,248 / 60.1 | 1,797 / 38.2 | 1,652 / 148 | 2,174 / 146 |
+| 0.8B 8-bit | 6,911 / 121 | 9,614 / 121 | - | - | 6,848 / 397 | 10,111 / 362 |
+| 4B 3-bit | 1,474 / 35.4 | 2,232 / 41.2 | - | - | 1,481 / 201 | 2,350 / 259 |
+| 9B 4-bit + MTP head | 800 / 34.2 | 1,296 / 44.7 | 797 / 33.8 | 1,303 / 45.0 | 817 / 124 | 1,357 / 186 |
+| 9B 6-bit | 822 / 31.1 | 1,345 / 41.3 | - | - | 834 / 123 | 1,389 / 192 |
+| 9B 8-bit | 815 / 32.9 | 1,314 / 42.1 | - | - | 838 / 118 | 1,371 / 176 |
+| 27B 4-bit | 235 / 11.7 | 406 / 15.9 | - | - | 240 / 43.3 | 417 / 72.3 |
+| 27B 3-bit + MTP head | 243 / 10.1 | 422 / 13.2 | 245 / 10.0 | 424 / 13.3 | 247 / 43.7 | 430 / 73.1 |
+| 35B-A3B 4-bit + MTP head | 1,108 / 59.1 | 1,513 / 38.2 | 1,102 / 58.8 | 1,617 / 38.2 | 1,465 / 136 | 2,012 / 149 |
 
 Mode gates (graphs off/on x serial/drafted, greedy and t=0.7, identical replies): 16/16 pass
+
+**W7800 (gfx1100), 180 W, TENSORFOLD_ROCM_SCHEDULE=wmma**, served engine, 1,024-token prompt, 256 tokens, prefill / decode tok/s (MTP: the checkpoint's head drafting 2 a round; batched: 8 requests in one generate)
+
+| Model | tp=1 | tp=2 | tp=1 MTP 2 | tp=2 MTP 2 | tp=1 batched x8 | tp=2 batched x8 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0.8B 8-bit | 3,165 / 48.2 | 5,298 / 62.7 | - | - | 1,957 / 248 | 5,931 / 387 |
+| 4B 3-bit | 211 / 6.3 | 415 / 8.6 | - | - | 103 / 32.3 | 333 / 49.3 |
+| 9B 4-bit + MTP head | 104 / 3.6 | 205 / 5.3 | 103 / 3.6 | 204 / 5.3 | 52.5 / 17.4 | 105 / 29.3 |
+| 9B 6-bit | 99.9 / 3.5 | 201 / 5.2 | - | - | 50.6 / 16.7 | 101 / 28.4 |
+| 9B 8-bit | 235 / 8.3 | 479 / 13.9 | - | - | 151 / 35.2 | 283 / 60.3 |
+| 27B 4-bit | 29.0 / 1.3 | 58.4 / 2.1 | - | - | - / - | 32.4 / 9.1 |
+| 27B 3-bit + MTP head | 29.1 / 1.3 | 59.2 / 2.1 | 28.6 / 1.3 | 59.4 / 2.1 | - / - | 31.2 / 10.1 |
+| 35B-A3B 4-bit + MTP head | 431 / 11.2 | 766 / 12.4 | 429 / 11.2 | 763 / 12.4 | - / - | 457 / 55.5 |
+
+Mode gates (graphs off/on x serial/drafted, greedy and t=0.7, identical replies): 16/16 pass
+
+WMMA is opt-in and slower than the dot2 tiles today; `-`: not measured.
 
