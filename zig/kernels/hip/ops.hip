@@ -240,6 +240,17 @@ __global__ void moe_route_kernel(const int* picks, int pairs, int experts, int t
     }
 }
 
+// y[r, n] = x[r, :] . w[n, :] over fp32 weights (an unquantized MTP fc), the product rounded to out kind; one wave a
+// value. Drafts only: the verify decides every token, so this sum's order need not be torch's.
+__global__ void dense_rows_kernel(const void* x, int kind, const float* w, void* out, int rows, int n, int k) {
+    int col = blockIdx.x, r = blockIdx.y;
+    if (col >= n || r >= rows) return;
+    float acc = 0.0f;
+    for (int i = threadIdx.x; i < k; i += 32) acc += load(x, kind, static_cast<long long>(r) * k + i) * w[static_cast<long long>(col) * k + i];
+    for (int off = 16; off > 0; off >>= 1) acc += __shfl_xor(acc, off, 32);
+    if (threadIdx.x == 0) store(out, kind, static_cast<long long>(r) * n + col, acc);
+}
+
 thread_local char op_error[256] = "";
 
 int finish() {
@@ -335,6 +346,11 @@ int tf_gdn_gate_prefill(const void* a, const void* b, int kind, const float* a_l
     long long n = static_cast<long long>(count) * heads;
     if (n == 0) return 0;
     gdn_gate_prefill_kernel<<<blocks(n, 256), 256, 0, s>>>(a, b, kind, a_log, dt_bias, gate, beta, count, heads);
+    return finish();
+}
+
+int tf_dense_rows(const void* x, int kind, const float* w, void* out, int rows, int n, int k, hipStream_t s) {
+    dense_rows_kernel<<<dim3(n, rows), 32, 0, s>>>(x, kind, w, out, rows, n, k);
     return finish();
 }
 

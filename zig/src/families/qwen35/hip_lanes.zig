@@ -8,6 +8,7 @@ const Engine = @import("engine.zig").Engine;
 const state = @import("state.zig");
 const win = @import("window.zig");
 const sample = @import("sample.zig");
+const mtp = @import("mtp.zig");
 
 const be = lanes.backend;
 
@@ -16,16 +17,24 @@ const ring = 1024;
 
 const Lane = struct {
     caches: state.Caches,
+    /// The last kept row's final hidden row: the draft head's input.
+    hidden: hip.DeviceBuffer,
+    /// Drafts the head holds for the next window.
+    held: [mtp.max_depth]u32 = undefined,
+    held_n: usize = 0,
     /// Slots written and kept: the next window starts here.
     len: usize,
     /// The last verify's window and rows: kept whole unless keep drops some first.
-    pending: ?struct { window: usize, rows: usize } = null,
+    pending: ?struct { window: usize, rows: usize, start: usize } = null,
 };
 
 pub const Hip = struct {
     gpa: std.mem.Allocator,
     e: *Engine,
     lanes: std.AutoHashMapUnmanaged(*const lanes.Stream, *Lane) = .empty,
+    head: ?*mtp.Head = null,
+    /// The last verify's final rows, for the kept rows' hidden row.
+    round_hidden: u64 = 0,
     drawn: [ring]u32 = undefined,
     next: u64 = 0,
     /// The last verify's windows and snapshots, for keep.
@@ -42,15 +51,15 @@ pub const Hip = struct {
         h.snaps = try gpa.alloc(win.Snapshot, rows * e.model().spec.n_layers);
         errdefer gpa.free(h.snaps);
         h.order = try gpa.alloc(*const lanes.Stream, rows);
+        errdefer gpa.free(h.order);
+        h.head = try mtp.Head.init(gpa, &e.driver, &e.weights, e.model());
         return h;
     }
 
     pub fn deinit(h: *Hip) void {
         var it = h.lanes.valueIterator();
-        while (it.next()) |l| {
-            l.*.caches.deinit(h.gpa);
-            h.gpa.destroy(l.*);
-        }
+        while (it.next()) |l| h.free(l.*);
+        if (h.head) |hd| hd.deinit();
         h.lanes.deinit(h.gpa);
         h.gpa.free(h.order);
         h.gpa.free(h.snaps);
@@ -74,17 +83,26 @@ pub const Hip = struct {
     /// Rows a window holds: every width keeps a row's bits (the window forward), drafts come from the core.
     pub const max_window = 16;
 
-    /// The facts the round loop reads at setup: shared rounds of exact windows, no draft head yet.
+    /// The facts the round loop reads at setup: shared rounds of exact windows, the MTP head's chains when it has one.
     pub fn facts(h: *const Hip) lanes.Model {
+        const drafting = h.head != null;
         return .{
             .exact_width = max_window,
             .gpu_tokens = false,
-            .mtp = false,
-            .speculate = false,
+            .mtp = drafting,
+            .speculate = drafting,
+            .speculate_early = false,
+            .drafts = mtp.max_depth,
             .hidden_rows = true,
             .batch_rows = @intCast(h.e.o.batch_rows),
             .max_streams = @intCast(h.e.o.batch_rows),
         };
+    }
+
+    fn free(h: *Hip, l: *Lane) void {
+        l.caches.deinit(h.gpa);
+        l.hidden.free();
+        h.gpa.destroy(l);
     }
 
     fn of(ptr: *anyopaque) *Hip {
@@ -101,8 +119,16 @@ pub const Hip = struct {
     /// A verify the round loop did not trim keeps every row (the core keeps only on drops).
     fn settle(h: *Hip, lane: *Lane) !void {
         const p = lane.pending orelse return;
-        try h.e.keep(h.wins[p.window], p.rows);
-        lane.len += p.rows;
+        try h.commit(lane, p.rows);
+    }
+
+    /// Keep the pending window's first `rows` rows, and its last kept final row for the head.
+    fn commit(h: *Hip, lane: *Lane, rows: usize) !void {
+        const p = lane.pending.?;
+        try h.e.keep(h.wins[p.window], rows);
+        const width = h.e.model().spec.hidden * h.e.model().act.size();
+        try lane.hidden.copyFrom(0, h.round_hidden + (p.start + rows - 1) * width, width, h.e.stream.handle);
+        lane.len += rows;
         lane.pending = null;
     }
 
@@ -115,21 +141,23 @@ pub const Hip = struct {
         const prompt = s.prompt();
         if (prompt.len == 0 or prompt.len + s.max_new + 1 > h.e.o.capacity) return error.PromptTooLong;
         const gop = try h.lanes.getOrPut(h.gpa, s);
-        if (gop.found_existing) {
-            gop.value_ptr.*.caches.deinit(h.gpa);
-            h.gpa.destroy(gop.value_ptr.*);
-        }
+        if (gop.found_existing) h.free(gop.value_ptr.*);
         const lane = h.gpa.create(Lane) catch |err| {
             h.lanes.removeByPtr(gop.key_ptr);
             return err;
         };
+        const width = h.e.model().spec.hidden * h.e.model().act.size();
         lane.* = .{ .caches = h.e.newCaches() catch |err| {
+            h.gpa.destroy(lane);
+            h.lanes.removeByPtr(gop.key_ptr);
+            return err;
+        }, .hidden = hip.DeviceBuffer.alloc(&h.e.driver, width) catch |err| {
             h.gpa.destroy(lane);
             h.lanes.removeByPtr(gop.key_ptr);
             return err;
         }, .len = prompt.len };
         gop.value_ptr.* = lane;
-        const row = try h.e.prefill(&lane.caches, prompt, 0, null);
+        const row = try h.e.prefill(&lane.caches, prompt, 0, lane.hidden);
         _ = h.take(try sample.draw(h.gpa, row, h.e.dtype, sampling(s), prompt.len));
     }
 
@@ -165,8 +193,8 @@ pub const Hip = struct {
         if (windows.len > rows.len) return error.WindowTooWide;
         for (windows, 0..) |w, i| {
             if (w.parents != null) return error.TreesNotBuilt;
-            if (w.held > 0) return error.NoHeldDrafts;
             const lane = h.lanes.get(w.stream) orelse return error.UnknownStream;
+            if (w.held > lane.held_n or (w.held > 0 and w.tokens.len > 0)) return error.NoHeldDrafts;
             const n = w.rows();
             if (n > tokens[i].len) return error.WindowTooWide;
             try h.settle(lane);
@@ -175,18 +203,20 @@ pub const Hip = struct {
                 return error.PositionMismatch;
             };
             tokens[i][0] = w.pending;
-            @memcpy(tokens[i][1..n], w.tokens);
+            if (w.held > 0) @memcpy(tokens[i][1..n], lane.held[0..w.held]) else @memcpy(tokens[i][1..n], w.tokens);
             rows[i] = .{ .caches = &lane.caches, .pos = lane.len, .tokens = tokens[i][0..n] };
             h.order[i] = w.stream;
         }
         const r = try h.e.verify(rows[0..windows.len], h.wins[0..windows.len], h.snaps);
+        h.round_hidden = r.hidden.ptr;
         const vocab = h.e.model().head.n;
         var at: usize = 0;
         for (windows, out, 0..) |w, *o, i| {
             for (o.sampled, 0..) |*t, row| t.* = try sample.draw(h.gpa, r.logits[(at + row) * vocab ..][0..vocab], h.e.dtype, sampling(w.stream), w.positions[row]);
-            @memcpy(o.drafts, w.tokens);
             const lane = h.lanes.get(w.stream).?;
-            lane.pending = .{ .window = i, .rows = w.rows() };
+            @memcpy(o.drafts, if (w.held > 0) lane.held[0..w.held] else w.tokens);
+            lane.held_n = 0;
+            lane.pending = .{ .window = i, .rows = w.rows(), .start = at };
             at += w.rows();
         }
     }
@@ -196,24 +226,44 @@ pub const Hip = struct {
         const h = of(ptr);
         for (windows, paths) |w, path| {
             const lane = h.lanes.get(w.stream) orelse return error.UnknownStream;
-            const p = lane.pending orelse return error.NothingToKeep;
             for (path, 0..) |r, j| if (r != j) return error.TreesNotBuilt;
-            try h.e.keep(h.wins[p.window], path.len);
-            lane.len += path.len;
-            lane.pending = null;
+            // the draft request of the same round may have kept these rows already
+            if (lane.pending == null) continue;
+            try h.commit(lane, path.len);
         }
     }
 
+    /// The head drafts `depth` from the stream's last kept row and the token after it (its pending one).
     fn draftFn(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
-        _ = ptr;
-        if (requests.len > 0) return error.NoDraftHead;
+        const h = of(ptr);
+        const head = h.head orelse return error.NoDraftHead;
+        const m = h.e.model();
+        for (requests) |r| {
+            const lane = h.lanes.get(r.stream) orelse return error.UnknownStream;
+            // a shared round asks for drafts before its keep: the request names the kept rows
+            if (lane.pending != null) {
+                if (r.rows) |kept| try h.commit(lane, kept.len) else try h.settle(lane);
+            }
+            if (r.position != lane.len + 1) {
+                std.log.err("draft for {s} at {d}, the stream holds {d} slots (rows {any}, depth {d})", .{ r.stream.id, r.position, lane.len, r.rows, r.depth });
+                return error.PositionMismatch;
+            }
+            const token: u32 = if (r.rows != null) r.follow[r.follow.len - 1] else switch (r.first orelse return error.NoFirstToken) {
+                .handle => |at| h.drawn[at % ring],
+                .value => |v| v,
+            };
+            lane.held_n = 0;
+            if (r.depth == 0) continue;
+            // the core holds every depth it asks for, so the chain runs it whole (no confidence cut yet)
+            lane.held_n = try head.chain(&h.e.lib, h.e.stream, m, h.e.dtype, .{ .ptr = lane.hidden.ptr, .kind = m.act }, token, lane.len, r.depth, sampling(r.stream), &lane.held);
+            if (lane.held_n != r.depth) return error.ShortChain;
+        }
     }
 
     fn releaseFn(ptr: *anyopaque, s: *lanes.Stream) void {
         const h = of(ptr);
         const kv = h.lanes.fetchRemove(s) orelse return;
         h.e.stream.synchronize() catch {};
-        kv.value.caches.deinit(h.gpa);
-        h.gpa.destroy(kv.value);
+        h.free(kv.value);
     }
 };

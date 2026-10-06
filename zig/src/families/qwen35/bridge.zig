@@ -38,7 +38,8 @@ fn side(s: weights.Side, bits: u8, group: u16) Error!view.Affine {
     return .{ .words = s.words.ptr, .scale = s.scales.ptr, .bias = s.biases.ptr, .tables = try tables(s.scales.dtype), .n = @intCast(n), .k = @intCast(k), .bits = bits, .group = group };
 }
 
-fn mlp(m: weights.Mlp) Error!view.Mlp {
+/// An uploaded MLP as the forward reads it: a dense one's projections, or the routed experts.
+pub fn mlpView(m: weights.Mlp) Error!view.Mlp {
     return switch (m) {
         .dense => |d| .{ .dense = .{ .gate = try projection(d.gate), .up = try projection(d.up), .down = try projection(d.down) } },
         .routed => |r| .{ .moe = .{
@@ -71,8 +72,8 @@ pub const Bridge = struct {
         b.layers = try gpa.alloc(view.Layer, m.layers.len);
         errdefer gpa.free(b.layers);
         for (m.layers, b.layers) |l, *out| out.* = switch (l) {
-            .full => |f| .{ .full = .{ .input_norm = f.input_norm.ptr, .post_norm = f.post_norm.ptr, .q = try projection(f.q), .k = try projection(f.k), .v = try projection(f.v), .o = try projection(f.o), .q_norm = f.q_norm.ptr, .k_norm = f.k_norm.ptr, .mlp = try mlp(f.mlp) } },
-            .linear => |x| .{ .linear = .{ .input_norm = x.input_norm.ptr, .post_norm = x.post_norm.ptr, .qkv = try projection(x.qkv), .z = try projection(x.z), .a = try projection(x.a), .b = try projection(x.b), .out = try projection(x.out), .conv = x.conv.ptr, .a_log = x.a_log.ptr, .dt_bias = x.dt_bias.ptr, .gnorm = x.gnorm.ptr, .mlp = try mlp(x.mlp) } },
+            .full => |f| .{ .full = .{ .input_norm = f.input_norm.ptr, .post_norm = f.post_norm.ptr, .q = try projection(f.q), .k = try projection(f.k), .v = try projection(f.v), .o = try projection(f.o), .q_norm = f.q_norm.ptr, .k_norm = f.k_norm.ptr, .mlp = try mlpView(f.mlp) } },
+            .linear => |x| .{ .linear = .{ .input_norm = x.input_norm.ptr, .post_norm = x.post_norm.ptr, .qkv = try projection(x.qkv), .z = try projection(x.z), .a = try projection(x.a), .b = try projection(x.b), .out = try projection(x.out), .conv = x.conv.ptr, .a_log = x.a_log.ptr, .dt_bias = x.dt_bias.ptr, .gnorm = x.gnorm.ptr, .mlp = try mlpView(x.mlp) } },
         };
         const c = view.qkConstants(s.key_dim, s.eps);
         const qs = try gpa.alloc(f32, s.key_dim);

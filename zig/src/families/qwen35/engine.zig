@@ -63,7 +63,11 @@ pub const Engine = struct {
         const rows = o.batch_rows;
         // causal_at's scores over a whole cache a query, then a forward's activations, plans and expert products
         const per_row = s.heads * o.capacity * 4 + 64 * s.hidden * 4 + (s.top_k + 1) * (3 * @max(s.moe_width, 1) + s.hidden) * 4 * 2;
-        e.rounds = try hip.Arena.init(&e.driver, (256 << 20) + rows * per_row * 2);
+        // a window of several rows keeps every linear layer's conv and DeltaNet state after each row
+        var linear: usize = 0;
+        for (0..s.n_layers) |i| linear += @intFromBool(!s.full(i));
+        const snapshot = linear * ((s.conv - 1) * view.convChannels(s) + s.value_heads * s.value_dim * s.key_dim) * 4;
+        e.rounds = try hip.Arena.init(&e.driver, (256 << 20) + rows * (per_row * 2 + snapshot));
         errdefer e.rounds.deinit();
         // a prompt's residual and final rows, plus one SPAN step's temporaries
         e.prompts = try hip.Arena.init(&e.driver, (768 << 20) + 2 * o.capacity * s.hidden * 2 + fwd.SPAN * per_row / 4);

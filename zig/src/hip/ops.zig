@@ -219,6 +219,11 @@ pub const Ops = struct {
         try o.lib.check(o.lib.api.tf_causal(f(q), p(c.k), p(c.v), f(out), int(rows), 1, int(span), int(heads), int(c.kv_heads), int(c.d), scale, 0, 0, sh, ss, 0, sh, ss, c.kind.cache(), f(scores), f(stats), f(partials), o.stream, @ptrFromInt(pos)), "causal_at");
     }
 
+    /// x (rows, k) of x's kind times fp32 weights (n, k), out (rows, n) in x's kind: an unquantized draft projection.
+    pub fn denseRows(o: Ops, x: Tensor, w: u64, out: Tensor, rows: usize, n: usize, k: usize) Error!void {
+        try o.lib.check(o.lib.api.tf_dense_rows(p(x.ptr), @backingInt(x.kind), f(w), p(out.ptr), int(rows), int(n), int(k), o.stream), "dense_rows");
+    }
+
     pub fn moeRouter(o: Ops, x: Tensor, rows32: u64, logits: u64, r: usize, d: usize, e: usize) Error!void {
         try o.lib.check(o.lib.api.tf_moe_router(p(x.ptr), @backingInt(x.kind), f(rows32), f(logits), int(r), int(d), int(e), o.stream), "moe_router");
     }

@@ -18,6 +18,7 @@ pub const sample = @import("sample.zig");
 pub const bridge = @import("bridge.zig");
 pub const engine = @import("engine.zig");
 pub const hip_lanes = @import("hip_lanes.zig");
+pub const mtp = @import("mtp.zig");
 
 test {
     _ = config;
