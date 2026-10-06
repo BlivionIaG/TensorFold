@@ -11,6 +11,7 @@ const usage =
     \\  smoke                     copies, fills, launches, argument packing, module globals, refusals
     \\  graph                     stream capture, explicit graphs, node and whole-exec updates
     \\  cooperative               a cooperative grid of one block per CU
+    \\  library                   this GPU family's embedded kernel library: open, build switch, one kernel
     \\  image                     an offload bundle without this GPU's target, and a broken image, refused
     \\  overhead [n] [reps]       dependent one-thread kernels: plain stream vs one graph
     \\
@@ -43,6 +44,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "graph")) return runtime_tests.graphs(gpu);
     if (std.mem.eql(u8, cmd, "cooperative")) return runtime_tests.cooperative(gpu);
     if (std.mem.eql(u8, cmd, "image")) return runtime_tests.image(gpu);
+    if (std.mem.eql(u8, cmd, "library")) return runtime_tests.library(gpu);
     if (std.mem.eql(u8, cmd, "overhead")) {
         const n = if (rest.len > 0) try std.fmt.parseInt(usize, rest[0], 10) else 1000;
         const reps = if (rest.len > 1) try std.fmt.parseInt(usize, rest[1], 10) else 20;

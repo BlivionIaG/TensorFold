@@ -16,8 +16,10 @@ pub const Config = launch.Config;
 pub const Dim3 = launch.Dim3;
 pub const graph = @import("graph.zig");
 pub const kernels = @import("kernels.zig");
+pub const rocm = @import("rocm.zig");
 
 test {
     _ = launch;
     _ = abi;
+    _ = rocm;
 }
