@@ -230,7 +230,10 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
     constexpr int CT = 64 / RT;
     const int lane = tid & 31;
     // A wave whose 16 rows are all past the end (a short last tile, a routed item's few rows) skips its dots.
-    const bool live = wave * 16 < a.m - m0;
+    // The row groups go to the waves turned by 2 on every other block when 3 groups or fewer are live, so the two blocks
+    // of a WGP keep all four SIMDs busy (a wave runs on SIMD wave % 4).
+    const int rg = (wave + ((a.m - m0 <= 48 && (bx & 1)) ? 6 : 0)) & 7;
+    const bool live = rg * 16 < a.m - m0;
     const int hrow = RT == 8 ? (lane >> 4) * 8 : 0;
     constexpr int kCStride = RT == 8 ? 16 : 32;
     const int cbase = RT == 8 ? lane & 15 : lane;
@@ -249,7 +252,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
     auto apply_bias = [&](int slot, int g) {
         float s_x[RT];
 #pragma unroll
-        for (int r = 0; r < RT; ++r) s_x[r] = sx[g][wave * 16 + hrow + r];
+        for (int r = 0; r < RT; ++r) s_x[r] = sx[g][rg * 16 + hrow + r];
 #pragma unroll
         for (int j = 0; j < CT; ++j) {
             const float bias = bi[slot][cbase + kCStride * j];
@@ -267,7 +270,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
         if constexpr (P == 1) fetch(s + 1);
         if (live) {
             constexpr int kXRegs = RT / 4;  // x words (4 pairs each) a lane loads a chunk
-            const uint32_t* xb = xs[cur] + (wave * 16 + hrow + (lane & 3)) * kLdw;
+            const uint32_t* xb = xs[cur] + (rg * 16 + hrow + (lane & 3)) * kLdw;
             const uint32_t* wb = ws[cur] + cbase * kLdw;
             u32x4 xr[2][kXRegs];
             u32x4 wr[2][CT];
@@ -329,7 +332,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
     if (live && (stages - 1) % per == per - 1) apply_bias(((stages - 1) / per) % 3, ((stages - 1) / per) & 1);
 #pragma unroll
     for (int r = 0; r < RT; ++r) {
-        const int row = m0 + wave * 16 + hrow + r;
+        const int row = m0 + rg * 16 + hrow + r;
         if (row >= a.m) continue;
 #pragma unroll
         for (int j = 0; j < CT; ++j) {

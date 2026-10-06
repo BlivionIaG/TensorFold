@@ -59,6 +59,7 @@ const lane_rows = 8; // kLaneRows
 const fast_m = 8;
 const fast_n = 256;
 const block_rows = 64; // kBlockRows
+const wmma_rows = 16; // the matrix-core GEMM tile from here (a routed item's rows too)
 const lane_group_max = 128;
 const stream_cbs = [_]c_int{ 2, 4, 8 }; // columns a lane carries in the stream tile
 const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
@@ -69,8 +70,35 @@ const streams_wanted = 1152; // kStreamWavesWanted
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
 pub const Tile = enum { gemm, block };
 
+/// TF_WMMA on gfx11: `off` runs every affine product on the dot2 tiles, `on` on the matrix cores wherever a tile exists
+/// (decode through the library's WMMA tiles, the GEMM tile for the products of 16 rows or more, routed items too);
+/// unset is `auto`, what measured fastest.
+pub const WmmaMode = enum { auto, on, off };
+
+pub fn wmmaMode() WmmaMode {
+    const v = std.c.getenv("TF_WMMA") orelse return .auto;
+    const text = std.mem.span(v);
+    if (std.mem.eql(u8, text, "1")) return .on;
+    if (std.mem.eql(u8, text, "0")) return .off;
+    return .auto;
+}
+
+/// The gfx major and minor as 10 * major + minor of the current device.
+fn capability(d: *const driver.Driver) Error!u32 {
+    var dev: c_int = 0;
+    try d.check(d.api.hipGetDevice(&dev), "hipGetDevice");
+    var major: c_int = 0;
+    var minor: c_int = 0;
+    try d.check(d.api.hipDeviceGetAttribute(&major, .compute_capability_major, dev), "hipDeviceGetAttribute");
+    try d.check(d.api.hipDeviceGetAttribute(&minor, .compute_capability_minor, dev), "hipDeviceGetAttribute");
+    return @intCast(10 * major + minor);
+}
+
 pub const Kernels = struct {
     wmma: bool,
+    /// gfx11: the matrix-core GEMM tile runs (gfx12's WMMA has other layouts).
+    matrix: bool,
+    mode: WmmaMode,
     /// Which GEMM tile the products take; TF_AFFINE_GEMM=old picks the previous one.
     tile: Tile,
     lanes: [bit_widths.len][row_counts.len][piece_counts.len]Function,
@@ -83,6 +111,7 @@ pub const Kernels = struct {
     stream_on: bool,
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
+    wmma_gemm: [bit_widths.len]Function,
     fast: [2]Function, // rows 1, 8
     span: [2]Function,
     fold: Function,
@@ -93,9 +122,12 @@ pub const Kernels = struct {
 
     /// `tiles` holds affine_tiles.hip's kernels, `dot2` affine_dot2.hip's; one activation type a family: bf16 on the
     /// WMMA build (v_dot2_f32_bf16), fp16 on RDNA2.
-    pub fn load(tiles_obj: Module, dot2_obj: Module, wmma: bool) Error!Kernels {
+    pub fn load(d: *const driver.Driver, tiles_obj: Module, dot2_obj: Module, wmma: bool) Error!Kernels {
         var k: Kernels = undefined;
         k.wmma = wmma;
+        const cap = try capability(d);
+        k.matrix = wmma and (cap == 110 or cap == 115);
+        k.mode = wmmaMode();
         k.tile = .gemm;
         k.stream_on = true;
         if (std.c.getenv("TF_AFFINE_GEMV")) |v| {
@@ -121,6 +153,7 @@ pub const Kernels = struct {
         @setEvalBranchQuota(200_000);
         inline for (bit_widths, 0..) |bits, b| {
             k.block[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_dot2_blockINS0_{s}ELi{d}EEEvNS0_6AffineE", .{ dot, bits }));
+            if (k.matrix) k.wmma_gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_wmma_gemmILi{d}EEEvNS0_6AffineE", .{bits}));
             k.gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_gemm_blockINS0_{s}ELi{d}E{s}EEvNS0_6AffineE", .{ dot, bits, shape }));
             inline for (piece_counts, 0..) |pieces, p| {
                 k.row[b][p] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm15affine_dot2_rowINS0_{s}ELi{d}ELi{d}EEEvNS0_6AffineEi", .{ dot, bits, pieces }));
@@ -192,7 +225,9 @@ pub const Kernels = struct {
     }
 
     pub fn streamTakes(k: *const Kernels, m: c_int, n: c_int, kk: c_int, bits: c_int, group: c_int, scale_kind: c_int, bias_kind: c_int, x: u64) bool {
-        if (!k.stream_on or m < 1 or m > stream_max_rows or n < 1 or @rem(group, 32) != 0 or group > lane_group_max) return false;
+        // 16 rows or more of BF16 are the matrix tile's on gfx11
+        const most: c_int = if (k.matrix and k.mode != .off) wmma_rows - 1 else stream_max_rows;
+        if (!k.stream_on or m < 1 or m > most or n < 1 or @rem(group, 32) != 0 or group > lane_group_max) return false;
         return @rem(kk, group) == 0 and x % 16 == 0 and scale_kind != 0 and bias_kind == scale_kind and bitIndex(bits) != null;
     }
 
@@ -305,6 +340,11 @@ pub const Kernels = struct {
         return a.words % align_bytes == 0 and a.scale.kind == a.bias.kind;
     }
 
+    /// The matrix-core GEMM tile takes this product: gfx11, BF16, not switched off, 16 rows or more (TF_WMMA=1 is the same as unset: decode stays on the dot2 tiles).
+    fn wmmaTile(k: *const Kernels, a: Arg) bool {
+        return k.matrix and k.mode != .off and a.fp16 == 0 and gemmFits(a) and a.m >= wmma_rows;
+    }
+
     fn blockLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
         return k.blockWith(d, a, s, items, k.tile);
     }
@@ -315,7 +355,8 @@ pub const Kernels = struct {
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
         args.add(a);
-        const f = if (tile == .gemm and gemmFits(a)) k.gemm[b] else k.block[b];
+        const matrix = tile == .gemm and k.wmmaTile(a);
+        const f = if (matrix) k.wmma_gemm[b] else if (tile == .gemm and gemmFits(a)) k.gemm[b] else k.block[b];
         try go(d, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
     }
 
@@ -392,7 +433,8 @@ pub const Kernels = struct {
         // the family's own activation type: bf16 on the WMMA build, fp16 on RDNA2
         if ((arg.fp16 != 0) == k.wmma or arg.route.items == 0 or arg.route.members == 0 or items < 1 or arg.route.x_div < 1) return refuse("routed plan");
         if (!groupOk(arg.group)) return refuse("routed group");
-        if (arg.m <= lane_rows) return k.lanesLaunch(d, arg, s, items);
+        if (arg.m <= lane_rows and !(k.tile == .gemm and k.wmmaTile(arg))) return k.lanesLaunch(d, arg, s, items);
+        if (try k.streamLaunch(d, arg, s, items)) return;
         try k.blockWith(d, arg, s, items, tile);
     }
 

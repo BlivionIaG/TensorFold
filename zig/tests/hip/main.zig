@@ -9,6 +9,7 @@ const launch_cost = @import("launch_cost.zig");
 const gemm_bench = @import("gemm_bench.zig");
 const gemv_bench = @import("gemv_bench.zig");
 const decode_bench = @import("decode_bench.zig");
+const gdn_tests = @import("gdn_tests.zig");
 
 const usage =
     \\usage: tf-hip-test <command>
@@ -22,7 +23,8 @@ const usage =
     \\  gemm [reps] [filter] | sweep   the prefill GEMM tile against the previous one: bytes equal, ms and TFLOPS
     \\  gemv [reps] [filter]      the decode stream tile against the previous tiles: us, GB/s and error on decode shapes
     \\  decode [reps] [filter]    decode.hip's kernels against the launches they replace: us and error
-    \\  launches [n] [reps]      host cost of one kernel call: the library's C launchers vs the Zig launches
+    \\  gdn [bench [rows]]        the chunked DeltaNet prefill against a float64 recurrence; its time against the serial kernel's
+    \\  launches [n] [reps]       host cost of one kernel call: the library's C launchers vs the Zig launches
     \\  overhead [n] [reps]       dependent one-thread kernels: plain stream vs one graph
     \\
 ;
@@ -59,6 +61,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "gemm")) return gemm_bench.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "gemv")) return gemv_bench.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "decode")) return decode_bench.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "gdn")) return gdn_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "launches")) {
         const n = if (rest.len > 0) try std.fmt.parseInt(usize, rest[0], 10) else 2000;
         const reps = if (rest.len > 1) try std.fmt.parseInt(usize, rest[1], 10) else 15;

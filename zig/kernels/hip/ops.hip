@@ -173,28 +173,38 @@ __global__ void kv_write_at_kernel(const void* src, void* cache, int kind, int l
 }
 
 // causal_conv's prefill loop: window = [state | x], out = sum over taps in order of window * weight from a zero,
-// then silu; one thread a (row, channel), so every row runs at once with the same sum. new_state = the window's last
-// kernel - 1 rows, written by the first kept * channels threads; it must not be `state` (other rows still read it).
+// then silu; every row runs at once with the same sum. new_state = the window's last kernel - 1 rows, written by the
+// first row block; it must not be `state` (other rows still read it).
+constexpr int kConvRows = 16;   // rows a conv_prefill thread slides over
+constexpr int kConvTaps = 8;    // most taps it holds
+
 __global__ void conv_prefill_kernel(const void* x, int kind, const float* weight, const float* state, float* out,
                                     float* new_state, int len, int channels, int kernel) {
-    long long i = gid();
-    int kept = kernel - 1;
-    auto window = [&](int t, int c) -> float {
+    // a thread one channel over kConvRows rows, the window sliding in registers (each input read once)
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= channels) return;
+    const int r0 = blockIdx.y * kConvRows;
+    const int kept = kernel - 1;
+    auto window = [&](int t) -> float {
         if (t < kept) return state ? state[static_cast<long long>(t) * channels + c] : 0.0f;
         return load(x, kind, static_cast<long long>(t - kept) * channels + c);
     };
-    if (i < static_cast<long long>(kept) * channels) {
-        int t = static_cast<int>(i / channels), c = static_cast<int>(i % channels);
-        new_state[i] = window(len + t, c);
+    if (blockIdx.y == 0)
+        for (int t = 0; t < kept; ++t) new_state[static_cast<long long>(t) * channels + c] = window(len + t);
+    float w[kConvTaps], win[kConvTaps];
+    for (int tap = 0; tap < kernel; ++tap) w[tap] = weight[static_cast<long long>(c) * kernel + tap];
+    for (int tap = 0; tap + 1 < kernel; ++tap) win[tap] = window(r0 + tap);
+    const int r1 = r0 + kConvRows < len ? r0 + kConvRows : len;
+    for (int r = r0; r < r1; ++r) {
+        win[kernel - 1] = window(r + kernel - 1);
+        float acc = 0.0f;
+        for (int tap = 0; tap < kernel; ++tap) {
+            float p = win[tap] * w[tap];
+            acc = acc + p;
+        }
+        out[static_cast<long long>(r) * channels + c] = silu(acc);
+        for (int tap = 0; tap + 1 < kernel; ++tap) win[tap] = win[tap + 1];
     }
-    if (i >= static_cast<long long>(len) * channels) return;
-    int r = static_cast<int>(i / channels), c = static_cast<int>(i % channels);
-    float acc = 0.0f;
-    for (int tap = 0; tap < kernel; ++tap) {
-        float p = window(r + tap, c) * weight[static_cast<long long>(c) * kernel + tap];
-        acc = acc + p;
-    }
-    out[i] = silu(acc);
 }
 
 // _gate_beta: beta = sigmoid(b), gate = exp(-exp(a_log) * softplus(a + dt_bias)) with torch's softplus (beta 1,
@@ -329,24 +339,34 @@ __device__ void router_rows(const void* x, const float* rows, float* logits, int
     }
 }
 
-// The router's logits for many rows: a 64 x 64 tile of (row, expert) a block over 16-wide steps of the hidden size,
-// each thread 4 x 4 of them in fp32.
+// The router's logits for many rows: a 64 x 64 tile of (row, expert) a block over 32-wide steps of the hidden size
+// (16-byte loads: 8 activations or 4 router weights a thread each), each thread 4 x 4 of them in fp32.
 template <int KIND>
 __device__ void router_tile(const void* x, const float* rows, float* logits, int r, int d, int e) {
-    constexpr int kTile = 64, kStep = 16, kLd = kTile + 4;
+    constexpr int kTile = 64, kStep = 32, kLd = kTile + 4;
     __shared__ alignas(16) float xs[kStep][kLd];
     __shared__ alignas(16) float ws[kStep][kLd];
     const int row0 = blockIdx.y * kTile, expert0 = blockIdx.x * kTile;
     const int ty = threadIdx.x / 16, tx = threadIdx.x % 16;
+    // the staging: activation row ar at steps ak .. ak + 7, router rows wr and wr + 32 at steps wk .. wk + 3
+    const int ar = threadIdx.x / 4, ak = (threadIdx.x % 4) * 8;
+    const int wr = threadIdx.x / 8, wk = (threadIdx.x % 8) * 4;
+    const uint16_t* xh = static_cast<const uint16_t*>(x);
     float acc[4][4] = {};
     for (int base = 0; base < d; base += kStep) {
+        uint4 xv = {0, 0, 0, 0};
+        if (row0 + ar < r) xv = *reinterpret_cast<const uint4*>(xh + static_cast<long long>(row0 + ar) * d + base + ak);
+        float4 w0 = {0, 0, 0, 0}, w1 = {0, 0, 0, 0};
+        if (expert0 + wr < e) w0 = *reinterpret_cast<const float4*>(rows + static_cast<long long>(expert0 + wr) * d + base + wk);
+        if (expert0 + wr + 32 < e)
+            w1 = *reinterpret_cast<const float4*>(rows + static_cast<long long>(expert0 + wr + 32) * d + base + wk);
         __syncthreads();
-        for (int q = threadIdx.x; q < kTile * kStep; q += 256) {
-            const int t = q / kStep, i = q % kStep;
-            const bool in = base + i < d;
-            xs[i][t] = (row0 + t < r && in) ? load(x, KIND, static_cast<long long>(row0 + t) * d + base + i) : 0.f;
-            ws[i][t] = (expert0 + t < e && in) ? rows[static_cast<long long>(expert0 + t) * d + base + i] : 0.f;
-        }
+        const uint16_t* h = reinterpret_cast<const uint16_t*>(&xv);
+#pragma unroll
+        for (int j = 0; j < 8; ++j) xs[ak + j][ar] = KIND == 1 ? __half2float(__ushort_as_half(h[j])) : bf16_to_float(h[j]);
+        const float a0[4] = {w0.x, w0.y, w0.z, w0.w}, a1[4] = {w1.x, w1.y, w1.z, w1.w};
+#pragma unroll
+        for (int j = 0; j < 4; ++j) ws[wk + j][wr] = a0[j], ws[wk + j][wr + 32] = a1[j];
         __syncthreads();
 #pragma unroll
         for (int i = 0; i < kStep; ++i) {
@@ -646,8 +666,13 @@ int tf_kv_write_at(const void* src, void* cache, int kind, int len, int kv_heads
 
 int tf_conv_prefill(const void* x, int kind, const float* weight, const float* state, float* out, float* new_state,
                     int len, int channels, int kernel, hipStream_t s) {
-    long long n = static_cast<long long>(len > kernel - 1 ? len : kernel - 1) * channels;
-    conv_prefill_kernel<<<blocks(n, 256), 256, 0, s>>>(x, kind, weight, state, out, new_state, len, channels, kernel);
+    if (channels == 0) return 0;
+    if (kernel > kConvTaps) {
+        std::strncpy(op_error, "conv_prefill: more taps than it holds", sizeof(op_error) - 1);
+        return 1;
+    }
+    conv_prefill_kernel<<<dim3((channels + 255) / 256, len > 0 ? (len + kConvRows - 1) / kConvRows : 1), 256, 0, s>>>(
+        x, kind, weight, state, out, new_state, len, channels, kernel);
     return finish();
 }
 
