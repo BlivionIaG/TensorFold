@@ -409,10 +409,10 @@ pub const Launcher = struct {
         a.add(v_sb);
         a.add(v_sh);
         a.add(v_ss);
-        // A 16-bit cache and whole 64-wide head chunks take the 64-row tile (fa_prefill's bits, TF_FA_WIDE=0 keeps the
-        // 16-row one); other even head sizes the 16-row tile; odd ones stay on one wave per query.
+        // A 16-bit cache, whole 64-wide head chunks and 16-byte rows take the 64-row tile (dot2 on fp16, TF_FA_WIDE=0
+        // keeps the 16-row fp32 one); other even head sizes the 16-row tile; odd ones stay on one wave per query.
         const wide_off = if (std.c.getenv("TF_FA_WIDE")) |text| text[0] == '0' else false;
-        if (kind < 2 and @rem(d, 64) == 0 and d <= 256 and !wide_off) {
+        if (kind < 2 and @rem(d, 64) == 0 and d <= 256 and @rem(k_ss, 8) == 0 and @rem(v_ss, 8) == 0 and !wide_off) {
             try l.go(l.fa_wide[kind], dim(cdiv(qlen, 64), heads, batch), dim(256, 1, 1), 0, s, &a);
         } else if (d >= 2 and @rem(d, 2) == 0) {
             try l.go(l.fa_prefill[kind], dim(cdiv(qlen, 16), heads, batch), dim(256, 1, 1), 0, s, &a);
