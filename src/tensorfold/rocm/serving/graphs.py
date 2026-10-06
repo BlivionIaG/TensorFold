@@ -65,7 +65,8 @@ class WindowGraphs:
                 self.pool = torch.cuda.graph_pool_handle()
             failed = None
             try:
-                with torch.cuda.graph(graph, pool=self.pool):
+                # thread_local: a request thread syncing the GPU meanwhile does not break the lane worker's capture.
+                with torch.cuda.graph(graph, pool=self.pool, capture_error_mode="thread_local"):
                     entry.hidden = run()
                     entry.states = window.states
             except Exception as exc:  # noqa: BLE001 - any capture failure: this engine stays eager
