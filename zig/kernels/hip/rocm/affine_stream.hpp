@@ -276,10 +276,11 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift, in
         }
     };
 
-    // One row keeps two rounds of loads in flight: the next is fetched before this one's dots. Waves start on different
-    // rounds: rows a power of two bytes apart would otherwise send every wave to the same memory channels at once.
+    // One row keeps two rounds of loads in flight: the next is fetched before this one's dots. Columns start on different
+    // rounds, by their group of 8 (so a column's sum has one order whatever the launch's shape): rows a power of two bytes
+    // apart would otherwise send every wave to the same memory channels at once.
     const int rounds = (nch + lpc - 1) >> lpc_log2;
-    const int rot = rounds > 1 ? (bx * kStreamWaves + (threadIdx.x >> 5) + blockIdx.z) % rounds : 0;
+    const int rot = rounds > 1 ? (col0 >> 3) % rounds : 0;
     auto at = [&](int r) {
         const int ri = r + rot >= rounds ? r + rot - rounds : r + rot;
         return ri << lpc_log2;

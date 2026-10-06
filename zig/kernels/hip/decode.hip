@@ -25,9 +25,9 @@ __device__ __forceinline__ float4 widen4(uint2 v) {
 
 constexpr int kRouterWaves = 4;
 constexpr int kRouterSteps = 16;  // float4 loads a lane keeps in flight
-constexpr int kRouterRows = 8;
+constexpr int kRouterRows = 16;
 
-// logits[r, e] = x[r] . rows[e] for up to 8 rows: a wave an expert, a lane four consecutive weights a step, every load
+// logits[r, e] = x[r] . rows[e] for up to 16 rows: a wave an expert, a lane four consecutive weights a step, every load
 // of the expert's row in flight at once. d is a multiple of 4 and the weights' rows are 16-byte aligned.
 template <int KIND>
 __device__ void router_decode(const void* x, const float* rows, float* logits, int r, int d, int e) {
