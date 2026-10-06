@@ -211,6 +211,24 @@ def _remember_originals() -> None:
 _ORIGINAL: dict = {}
 
 
+def generate(model: str, prompts_path: Path, max_tokens: int, out: Path, seed: int | None, temperature: float) -> None:
+    """Each prompt's reply from the engine's own generate, serial (draft False), no end token: the lanes' reference."""
+
+    from tensorfold.engine.exact_sampling import Sampling
+    from tensorfold.rocm.serving.engine import QwenEngine
+
+    prompts = json.loads(Path(prompts_path).read_text())
+    engine = QwenEngine.load(model, keep=0, no_drafts=True)
+    sampling = Sampling(seed=seed, temperature=temperature) if seed is not None else None
+    replies = []
+    for name, ids in prompts.items():
+        got: list[int] = []
+        engine.generate(ids, max_tokens, sampling, got.extend, stop_eos=False, draft=False)
+        replies.append({"name": name, "tokens": got})
+    engine.close()
+    Path(out).write_text(json.dumps(replies) + "\n")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -221,10 +239,19 @@ def main() -> None:
     d.add_argument("tokens", help="comma separated token ids")
     d.add_argument("out")
     d.add_argument("--decode", type=int, default=0)
+    g = sub.add_parser("generate", help="each prompt's serial reply from the engine's generate")
+    g.add_argument("model")
+    g.add_argument("prompts", help="a JSON object of names to token id lists")
+    g.add_argument("max_tokens", type=int)
+    g.add_argument("out")
+    g.add_argument("--seed", type=int)
+    g.add_argument("--temperature", type=float, default=1.0)
     args = p.parse_args()
     _remember_originals()
     if args.cmd == "affine":
         affine(Path(args.out))
+    elif args.cmd == "generate":
+        generate(args.model, Path(args.prompts), args.max_tokens, Path(args.out), args.seed, args.temperature)
     else:
         layers(args.model, [int(t) for t in args.tokens.split(",")], Path(args.out), args.decode)
 

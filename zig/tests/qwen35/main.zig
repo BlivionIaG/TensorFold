@@ -23,6 +23,13 @@ pub fn main(init: std.process.Init) !u8 {
         };
         return 0;
     }
+    if (std.mem.eql(u8, args[1], "lanes")) {
+        @import("lanes_run.zig").run(init.gpa, init.io, args[2..]) catch |e| {
+            std.debug.print("FAIL {t}\n", .{e});
+            return 1;
+        };
+        return 0;
+    }
     if (std.mem.eql(u8, args[1], "layers") and args.len > 3) {
         var d = try hip.Driver.open();
         defer d.close();
