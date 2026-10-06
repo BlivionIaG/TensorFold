@@ -109,6 +109,31 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const upload_exe = b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = upload });
     b.installArtifact(upload_exe);
     b.step("tf-qwen35-test", "Qwen3.5 / 3.6 checkpoint upload check (GPU)").dependOn(&b.addInstallArtifact(upload_exe, .{}).step);
+    nativeServer(b, target, optimize, hip, lanes, qwen);
+}
+
+/// `zig build native` on Linux: tensorfold-native with the HIP engines into zig-out/native/bin.
+fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module, qwen: *std.Build.Module) void {
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const engines = b.createModule(.{
+        .root_source_file = b.path("zig/src/native/hip.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "hip", .module = hip }, .{ .name = "engine_api", .module = api }, .{ .name = "lanes", .module = lanes }, .{ .name = "qwen35", .module = qwen } },
+    });
+    // the HTTP side keeps its safety checks; the engine below it runs at `optimize`
+    const tokenizer = b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
+    const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
+    const exe = b.addExecutable(.{ .name = "tensorfold-native", .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/server/main.zig"),
+        .target = target,
+        .optimize = .ReleaseSafe,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines } },
+    }) });
+    const install = b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = .{ .custom = "native/bin" } } });
+    b.step("native", "tensorfold-native with the HIP engines into zig-out/native/bin").dependOn(&install.step);
 }
 
 /// The lane core, one module a target (the family and the programs share it).
@@ -118,10 +143,11 @@ fn lanesModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
 
 /// The Qwen3.5 / Qwen3.6 family over the HIP runtime and the core's safetensors reader.
 fn qwen35(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module) *std.Build.Module {
-    const core = b.createModule(.{ .root_source_file = b.path("zig/src/core/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    // the safetensors reader alone: the server's tokenizer is core's too, and a file lives in one module
+    const safetensors = b.createModule(.{ .root_source_file = b.path("zig/src/core/safetensors.zig"), .target = target, .optimize = optimize, .link_libc = true });
     const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen35/qwen35.zig"), .target = target, .optimize = optimize, .link_libc = true });
     family.addImport("hip", hip);
-    family.addImport("core", core);
+    family.addImport("safetensors", safetensors);
     family.addImport("lanes", lanes);
     return family;
 }

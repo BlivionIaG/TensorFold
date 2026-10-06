@@ -3,9 +3,8 @@
 
 const std = @import("std");
 const Io = std.Io;
-const core = @import("core");
+const st = @import("safetensors");
 
-const st = core.safetensors;
 pub const Tensor = st.Tensor;
 
 pub const Shard = struct {

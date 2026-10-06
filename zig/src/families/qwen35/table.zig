@@ -2,10 +2,9 @@
 
 const std = @import("std");
 const Io = std.Io;
-const core = @import("core");
+const st = @import("safetensors");
 const config = @import("config.zig");
 
-const st = core.safetensors;
 const Shard = @import("shard.zig").Shard;
 pub const Tensor = st.Tensor;
 pub const DType = st.DType;

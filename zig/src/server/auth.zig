@@ -1,5 +1,6 @@
 //! API keys held as SHA-256 digests with labels; a restricted key file reread on change or SIGHUP.
 const std = @import("std");
+const builtin = @import("builtin");
 const posix = std.posix;
 const log = @import("log.zig");
 const Allocator = std.mem.Allocator;
@@ -77,8 +78,7 @@ pub const Store = struct {
         defer s.gpa.free(pathz);
         const fd = posix.openatZ(posix.AT.FDCWD, pathz, .{ .ACCMODE = .RDONLY, .NOFOLLOW = true, .NONBLOCK = true }, 0) catch return error.Unsafe;
         defer _ = posix.system.close(fd);
-        var st: posix.Stat = undefined;
-        if (posix.errno(posix.system.fstat(fd, &st)) != .SUCCESS) return error.Unsafe;
+        const st = meta(fd, null) orelse return error.Unsafe;
         if ((st.mode & posix.S.IFMT) != posix.S.IFREG or st.mode & 0o044 != 0) {
             problem.* = "API key file must be a regular file unreadable by other users; use chmod 600";
             return error.Invalid;
@@ -130,15 +130,33 @@ pub const Store = struct {
         if (s.file_arena) |*old| old.deinit();
         s.file_arena = arena;
         s.file = keys.items;
-        s.stamp = .{ st.dev, st.ino, std.math.lossyCast(i128, st.mtime().nsec) + @as(i128, st.mtime().sec) * std.time.ns_per_s, st.size, st.mode };
+        s.stamp = .{ st.dev, st.ino, st.mtime_ns, st.size, st.mode };
+    }
+
+    /// A file's identity and kind as the key file's checks read them: statx on Linux, stat and fstat elsewhere.
+    const Meta = struct { dev: i128, ino: i128, mtime_ns: i128, size: i128, mode: i128 };
+
+    /// The open descriptor's (no `path`) or the path's metadata, null on an OS error.
+    fn meta(fd: posix.fd_t, path: ?[*:0]const u8) ?Meta {
+        if (builtin.os.tag == .linux) {
+            const linux = std.os.linux;
+            var sx: linux.Statx = undefined;
+            const empty_path: u32 = 0x1000; // AT_EMPTY_PATH: the descriptor itself
+            const rc = linux.statx(fd, path orelse "", if (path == null) empty_path else 0, .{ .TYPE = true, .MODE = true, .INO = true, .SIZE = true, .MTIME = true }, &sx);
+            if (linux.errno(rc) != .SUCCESS) return null;
+            return .{ .dev = (@as(i128, sx.dev_major) << 32) | sx.dev_minor, .ino = sx.ino, .mtime_ns = @as(i128, sx.mtime.sec) * std.time.ns_per_s + sx.mtime.nsec, .size = sx.size, .mode = sx.mode };
+        }
+        var st: posix.Stat = undefined;
+        const rc = if (path) |p| posix.system.stat(p, &st) else posix.system.fstat(fd, &st);
+        if (posix.errno(rc) != .SUCCESS) return null;
+        return .{ .dev = st.dev, .ino = st.ino, .mtime_ns = std.math.lossyCast(i128, st.mtime().nsec) + @as(i128, st.mtime().sec) * std.time.ns_per_s, .size = st.size, .mode = st.mode };
     }
 
     fn statStamp(s: *Store) ?[5]i128 {
         const pathz = s.gpa.dupeSentinel(u8, s.path.?, 0) catch return null;
         defer s.gpa.free(pathz);
-        var st: posix.Stat = undefined;
-        if (posix.errno(posix.system.stat(pathz, &st)) != .SUCCESS) return null;
-        return .{ st.dev, st.ino, std.math.lossyCast(i128, st.mtime().nsec) + @as(i128, st.mtime().sec) * std.time.ns_per_s, st.size, st.mode };
+        const st = meta(posix.AT.FDCWD, pathz) orelse return null;
+        return .{ st.dev, st.ino, st.mtime_ns, st.size, st.mode };
     }
 
     /// Rereads the key file when SIGHUP asked or, at most once a second, when its stamp changed.
