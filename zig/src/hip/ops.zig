@@ -118,7 +118,10 @@ pub const Ops = struct {
         var splits: c_int = 1;
         if (fp16) splits = launches.affineSplits(int(m), int(n), int(w.k), int(w.group), 0);
         const partial: u64 = if (splits > 1) try o.arena.of(f32, m * n * groups * 2) else 0;
-        try o.lib.call("tf_affine", .{ p(x.ptr), p(w.words), p(w.scale), p(w.bias), w.tables.table(), p(out), int(m), int(n), int(w.k), w.bits, w.group, 0, @intFromBool(fp16), o.stream, f(partial), splits, @intFromBool(half) });
+        // TF_WMMA=1: the decode products run on the library's WMMA tiles (schedule 2) instead of the dot2 tiles
+        const schedule: c_int = if (o.wmma() and m <= 8 and launches.wmmaMode() == .on) 2 else 0;
+        const args = .{ p(x.ptr), p(w.words), p(w.scale), p(w.bias), w.tables.table(), p(out), int(m), int(n), int(w.k), w.bits, w.group, schedule, @intFromBool(fp16), o.stream, f(partial), splits, @intFromBool(half) };
+        if (schedule == 0) try o.lib.call("tf_affine", args) else try o.lib.check(@call(.auto, o.lib.api.tf_affine, args), "tf_affine");
         if (half) return .{ .ptr = out, .kind = .f16 };
         if (f32_out) return .{ .ptr = out, .kind = .f32 };
         const narrow = try o.arena.take(m * n * 2);

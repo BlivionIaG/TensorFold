@@ -10,7 +10,8 @@ const launch = @import("launch.zig");
 const Module = @import("module.zig").Module;
 const Function = @import("module.zig").Function;
 const Stream = @import("stream.zig").Stream;
-const Affine = @import("affine_launch.zig").Kernels;
+const affine_launch = @import("affine_launch.zig");
+const Affine = affine_launch.Kernels;
 
 pub const Error = driver.Error;
 
@@ -41,6 +42,7 @@ fn cdiv(n: anytype, by: anytype) usize {
 
 /// affine_dot2_splits: the split count of a decode launch (1 unless mode is 2).
 pub const affineSplits = Affine.splitCount;
+pub const wmmaMode = affine_launch.wmmaMode;
 
 /// The kernel of a triple for an activation kind: fp16 and bf16 by number, anything else the first.
 fn tri(kind: c_int) usize {
@@ -206,7 +208,7 @@ pub const Launcher = struct {
         };
         l.softmax_stats = try att.function("_Z13softmax_statsPKfPfiiPKi");
         l.sum_partials = try att.function("_Z12sum_partialsPKfPfii");
-        l.affine = try Affine.load(l.mods[@backingInt(kernels.Group.affine_tiles)], l.mods[@backingInt(kernels.Group.affine_dot2)], wmma);
+        l.affine = try Affine.load(d, l.mods[@backingInt(kernels.Group.affine_tiles)], l.mods[@backingInt(kernels.Group.affine_dot2)], wmma);
         try l.affine.fillByteLut(d, l.mods[@backingInt(kernels.Group.affine_dot2)]);
         return l;
     }

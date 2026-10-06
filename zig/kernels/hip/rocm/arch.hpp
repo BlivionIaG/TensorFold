@@ -37,4 +37,13 @@ inline constexpr bool kWmma = false;
 #else
 #define TF_DEVICE_BF16_DOT2 0
 #endif
+
+// gfx11 device code: v_wmma_f32_16x16x16_bf16 with its wave32 layouts (gfx12's differs).
+#if defined(__gfx1100__) || defined(__gfx1101__) || defined(__gfx1102__) || defined(__gfx1103__) \
+    || defined(__gfx1150__) || defined(__gfx1151__) || defined(__gfx1152__) || defined(__gfx1153__) \
+    || defined(__gfx11_generic__)
+#define TF_DEVICE_WMMA_GFX11 1
+#else
+#define TF_DEVICE_WMMA_GFX11 0
+#endif
 }  // namespace tf
