@@ -124,13 +124,53 @@ __device__ inline void stream_dots(const typename T::pair (&xp)[RG][16], const u
      ...);
 }
 
+// A float as the activation type, rounded to nearest even.
+template <typename T>
+__device__ inline typename T::elem stream_narrow(float v) {
+    if constexpr (std::is_same_v<typename T::elem, __half>) {
+        return __float2half_rn(v);
+    } else {
+        const uint32_t u = __float_as_uint(v);
+        const uint32_t bits = v != v ? 0x7fc0u : (u + (((u >> 16) & 1u) + 0x7fffu)) >> 16;
+        return __builtin_bit_cast(typename T::elem, static_cast<unsigned short>(bits));
+    }
+}
+
 // A 16-bit table entry (BF16 or FP16) as a float.
 __device__ inline float stream_table(unsigned short raw, bool half_tab) {
     return half_tab ? __half2float(__ushort_as_half(raw)) : __uint_as_float(static_cast<uint32_t>(raw) << 16);
 }
 
-template <typename T, int BITS, int R, int CB, bool WIDE>
-__device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
+// Up to four products that share x, K, width and group in one launch: block bx of the launch belongs to the side whose
+// blocks [first[s], first[s + 1]) hold it. out is each side's (rows, n) output: fp32, or the activation type when out_half.
+constexpr int kStreamSides = 4;
+
+struct StreamSides {
+    const uint32_t* words[kStreamSides];
+    const void* scale[kStreamSides];
+    const void* bias[kStreamSides];
+    void* out[kStreamSides];
+    int n[kStreamSides];
+    int first[kStreamSides + 1];
+    int count;  // 0 is the plain product of the Affine
+    int out_half;
+    int pair_cols;  // > 0: the (gate | up) rows of a stacked product with this many columns each, out is its activation
+    float limit;    // the activation's clamp when above 0
+};
+
+// silu(gate) * up, both clamped by limit first when it is above 0 (moe_act_kernel's arithmetic).
+__device__ inline float stream_act(float g, float u, float limit) {
+    if (limit > 0.f) {
+        g = fminf(g, limit);
+        u = fminf(fmaxf(u, -limit), limit);
+    }
+    return g / (1.f + expf(-g)) * u;
+}
+
+// PAIR: a lane's CB columns are CB / 2 gate columns and the same columns of the up half (rows pair_cols on), and the
+// output is silu(gate) * up in the activation type, (rows, pair_cols).
+template <typename T, int BITS, int R, int CB, bool WIDE, bool PAIR>
+__device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift, int bx, int pair_cols, float limit) {
     using pair = typename T::pair;
     constexpr int RG = R < 4 ? R : 4;  // rows a pass keeps in registers
     constexpr int NG = R / RG;
@@ -140,8 +180,10 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
     const int lane = threadIdx.x & 31;
     const int j = lane & (lpc - 1);
     const int slot = lane >> lpc_log2;
-    const int per_wave = (32 >> lpc_log2) * CB;
-    const int col0 = (blockIdx.x * kStreamWaves + (threadIdx.x >> 5)) * per_wave + slot * CB;
+    constexpr int CH = PAIR ? CB / 2 : CB;  // output columns a lane
+    const int cols = PAIR ? pair_cols : a.n;
+    const int per_wave = (32 >> lpc_log2) * CH;
+    const int col0 = (bx * kStreamWaves + (threadIdx.x >> 5)) * per_wave + slot * CH;
     const int nch = a.k >> 5;
     const long long words_row = static_cast<long long>(a.k) * BITS / 32;
     const long long groups = a.k / a.group;
@@ -149,7 +191,8 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
     long long sb[CB];
 #pragma unroll
     for (int c = 0; c < CB; ++c) {
-        const long long col = col0 + c < a.n ? col0 + c : a.n - 1;
+        const int cj = PAIR ? c % CH : c;
+        const long long col = (col0 + cj < cols ? col0 + cj : cols - 1) + (PAIR && c >= CH ? pair_cols : 0);
         wp[c] = a.words + col * words_row;
         sb[c] = col * groups;
     }
@@ -236,7 +279,7 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
     // One row keeps two rounds of loads in flight: the next is fetched before this one's dots. Waves start on different
     // rounds: rows a power of two bytes apart would otherwise send every wave to the same memory channels at once.
     const int rounds = (nch + lpc - 1) >> lpc_log2;
-    const int rot = rounds > 1 ? (blockIdx.x * kStreamWaves + (threadIdx.x >> 5) + blockIdx.z) % rounds : 0;
+    const int rot = rounds > 1 ? (bx * kStreamWaves + (threadIdx.x >> 5) + blockIdx.z) % rounds : 0;
     auto at = [&](int r) {
         const int ri = r + rot >= rounds ? r + rot - rounds : r + rot;
         return ri << lpc_log2;
@@ -264,37 +307,62 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
 
 #pragma unroll
     for (int r = 0; r < R; ++r) {
+        float v[CB];
 #pragma unroll
         for (int c = 0; c < CB; ++c) {
-            float v = acc[r][c];
-            for (int d = lpc >> 1; d > 0; d >>= 1) v += __shfl_xor(v, d, 32);
+            v[c] = acc[r][c];
+            for (int d = lpc >> 1; d > 0; d >>= 1) v[c] += __shfl_xor(v[c], d, 32);
+        }
+        if (j != 0 || row0 + r >= a.m) continue;
+#pragma unroll
+        for (int c = 0; c < CH; ++c) {
             const int col = col0 + c;
-            if (j == 0 && col < a.n && row0 + r < a.m) {
-                if (a.out16 != nullptr) {
-                    a.out16[out_row(a, row0 + r) * a.n + col] = __float2half_rn(v);
-                } else {
-                    a.out[out_row(a, row0 + r) * a.n + col] = v;
-                }
+            if (col >= cols) continue;
+            if constexpr (PAIR) {
+                static_cast<typename T::elem*>(static_cast<void*>(a.out16))[out_row(a, row0 + r) * pair_cols + col] =
+                    stream_narrow<T>(stream_act(v[c], v[c + CH], limit));
+            } else if (a.out16 != nullptr) {
+                static_cast<typename T::elem*>(static_cast<void*>(a.out16))[out_row(a, row0 + r) * a.n + col] =
+                    stream_narrow<T>(v[c]);
+            } else {
+                a.out[out_row(a, row0 + r) * a.n + col] = v[c];
             }
         }
     }
 }
 
-// Item z of the plan (or the plain product) at CB columns a lane and R rows; the chunks' group is q >> gshift.
-template <typename T, int BITS, int R, int CB>
-__global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a, int lpc_log2, int gshift) {
+// Item z of the plan (or the plain product, or one side of a group) at CB columns a lane and R rows; the chunks'
+// group is q >> gshift.
+template <typename T, int BITS, int R, int CB, bool PAIR>
+__global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a, StreamSides sides, int lpc_log2,
+                                                                       int gshift) {
+    int bx = blockIdx.x;
+    if (sides.count > 0) {
+        int s = 0;
+        while (s + 1 < sides.count && bx >= sides.first[s + 1]) ++s;
+        bx -= sides.first[s];
+        a.words = sides.words[s];
+        a.scale.p = sides.scale[s];
+        a.bias.p = sides.bias[s];
+        a.n = sides.n[s];
+        if (sides.out_half) {
+            a.out16 = static_cast<__half*>(sides.out[s]);
+        } else {
+            a.out = static_cast<float*>(sides.out[s]);
+        }
+    }
     if (!take_item(a, blockIdx.z) || static_cast<int>(blockIdx.y) * R >= a.m) return;
     constexpr int kWide = BITS % 4 == 0 ? 16 : BITS % 2 == 0 ? 8 : 4;
     if constexpr (kWide == 4) {
-        stream_body<T, BITS, R, CB, false>(a, lpc_log2, gshift);
+        stream_body<T, BITS, R, CB, false, PAIR>(a, lpc_log2, gshift, bx, sides.pair_cols, sides.limit);
     } else {
         // every chunk is wide-aligned when the words and the row stride are
         const long long words_row = static_cast<long long>(a.k) * BITS / 32;
         const bool wide = ((reinterpret_cast<uintptr_t>(a.words) | static_cast<uintptr_t>(words_row * 4)) & (kWide - 1)) == 0;
         if (wide) {
-            stream_body<T, BITS, R, CB, true>(a, lpc_log2, gshift);
+            stream_body<T, BITS, R, CB, true, PAIR>(a, lpc_log2, gshift, bx, sides.pair_cols, sides.limit);
         } else {
-            stream_body<T, BITS, R, CB, false>(a, lpc_log2, gshift);
+            stream_body<T, BITS, R, CB, false, PAIR>(a, lpc_log2, gshift, bx, sides.pair_cols, sides.limit);
         }
     }
 }
@@ -307,7 +375,8 @@ hipError_t stream_launch_as(const Affine& a, int lpc_log2, int items, hipStream_
     const int per_block = kStreamWaves * (32 >> lpc_log2) * CB;
     const dim3 grid((a.n + per_block - 1) / per_block, (a.m + R - 1) / R, items);
     const int gshift = a.group == 32 ? 0 : a.group == 64 ? 1 : 2;
-    affine_dot2_stream<T, BITS, R, CB><<<grid, 32 * kStreamWaves, 0, stream>>>(a, lpc_log2, gshift);
+    StreamSides plain = {};
+    affine_dot2_stream<T, BITS, R, CB, false><<<grid, 32 * kStreamWaves, 0, stream>>>(a, plain, lpc_log2, gshift);
     return hipGetLastError();
 }
 
@@ -352,6 +421,57 @@ hipError_t stream_launch_type(const Affine& a, int lpc_log2, int items, hipStrea
     return stream_launch_bits<DotF16, BITS>(a, lpc_log2, items, stream);
 }
 
+// The activation of a stacked (gate | up) product: out (rows, pair_cols) = silu(gate) * up in the activation type, the
+// kernel's `a.n` the stacked width. Same columns a lane, half of them gate and half up.
+template <typename T, int BITS, int R, int CB>
+hipError_t stream_pair_as(const Affine& a, int pair_cols, float limit, int lpc_log2, int items, hipStream_t stream) {
+    const int per_block = kStreamWaves * (32 >> lpc_log2) * (CB / 2);
+    const dim3 grid((pair_cols + per_block - 1) / per_block, (a.m + R - 1) / R, items);
+    StreamSides sides = {};
+    sides.pair_cols = pair_cols;
+    sides.limit = limit;
+    const int gshift = a.group == 32 ? 0 : a.group == 64 ? 1 : 2;
+    affine_dot2_stream<T, BITS, R, CB, true><<<grid, 32 * kStreamWaves, 0, stream>>>(a, sides, lpc_log2, gshift);
+    return hipGetLastError();
+}
+
+template <typename T, int BITS, int R>
+hipError_t stream_pair_rows(const Affine& a, int pair_cols, float limit, int lpc_log2, int items, hipStream_t stream) {
+    // the widest columns a lane carries (a gate and an up for each pair) that still give the card enough waves
+    const int cbs[3] = {8, 4, 2};
+    int cb = 2;
+    for (int c : cbs) {
+        if (!stream_shape(R, c)) continue;
+        cb = c;
+        const int per_block = kStreamWaves * (32 >> lpc_log2) * (c / 2);
+        if (((pair_cols + per_block - 1) / per_block) * kStreamWaves * items * ((a.m + R - 1) / R) >= kStreamWavesWanted) {
+            break;
+        }
+    }
+    if constexpr (stream_shape(R, 8)) {
+        if (cb == 8) return stream_pair_as<T, BITS, R, 8>(a, pair_cols, limit, lpc_log2, items, stream);
+    }
+    if constexpr (stream_shape(R, 4)) {
+        if (cb == 4) return stream_pair_as<T, BITS, R, 4>(a, pair_cols, limit, lpc_log2, items, stream);
+    }
+    return stream_pair_as<T, BITS, R, 2>(a, pair_cols, limit, lpc_log2, items, stream);
+}
+
+template <typename T, int BITS>
+hipError_t stream_pair_bits(const Affine& a, int pair_cols, float limit, int lpc_log2, int items, hipStream_t stream) {
+    if (a.m == 1) return stream_pair_rows<T, BITS, 1>(a, pair_cols, limit, lpc_log2, items, stream);
+    if (a.m == 2) return stream_pair_rows<T, BITS, 2>(a, pair_cols, limit, lpc_log2, items, stream);
+    return stream_pair_rows<T, BITS, 4>(a, pair_cols, limit, lpc_log2, items, stream);
+}
+
+template <int BITS>
+hipError_t stream_pair_type(const Affine& a, int pair_cols, float limit, int lpc_log2, int items, hipStream_t stream) {
+#if TENSORFOLD_RDNA_WMMA
+    if (!a.fp16) return stream_pair_bits<DotBF16, BITS>(a, pair_cols, limit, lpc_log2, items, stream);
+#endif
+    return stream_pair_bits<DotF16, BITS>(a, pair_cols, limit, lpc_log2, items, stream);
+}
+
 // TF_AFFINE_GEMV=old keeps the previous decode tiles.
 inline bool stream_enabled() {
     static const bool on = [] {
@@ -377,6 +497,29 @@ inline bool launch_affine_dot2_stream(const Affine& a, hipStream_t stream, int i
         case 5: *err = stream_launch_type<5>(a, lpc_log2, items, stream); break;
         case 6: *err = stream_launch_type<6>(a, lpc_log2, items, stream); break;
         case 8: *err = stream_launch_type<8>(a, lpc_log2, items, stream); break;
+        default: return false;
+    }
+    return true;
+}
+
+// out (m, n / 2) = silu(gate) * up of the stacked (gate | up) product of `a`, in the activation type; false when the
+// shape keeps the separate products. Plain or routed (items).
+inline bool launch_affine_dot2_stream_pair(const Affine& a, float limit, hipStream_t stream, int items, hipError_t* err) {
+    if (a.n % 2 != 0 || a.out16 == nullptr || a.n < 2 || !stream_enabled() || a.m < 1 || a.m > kStreamRows ||
+        a.group % 32 || a.group > kLaneGroupMax || a.k % a.group || (reinterpret_cast<uintptr_t>(a.x) & 15) != 0 ||
+        a.scale.kind == kScaleF32 || a.bias.kind != a.scale.kind) {
+        return false;
+    }
+    int lpc_log2 = 0;
+    while ((1 << lpc_log2) < (a.k >> 5) && lpc_log2 < 5) ++lpc_log2;
+    const int cols = a.n / 2;
+    switch (a.bits) {
+        case 2: *err = stream_pair_type<2>(a, cols, limit, lpc_log2, items, stream); break;
+        case 3: *err = stream_pair_type<3>(a, cols, limit, lpc_log2, items, stream); break;
+        case 4: *err = stream_pair_type<4>(a, cols, limit, lpc_log2, items, stream); break;
+        case 5: *err = stream_pair_type<5>(a, cols, limit, lpc_log2, items, stream); break;
+        case 6: *err = stream_pair_type<6>(a, cols, limit, lpc_log2, items, stream); break;
+        case 8: *err = stream_pair_type<8>(a, cols, limit, lpc_log2, items, stream); break;
         default: return false;
     }
     return true;

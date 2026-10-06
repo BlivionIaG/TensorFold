@@ -169,8 +169,11 @@ pub fn mlpRows(o: Ops, m: *const view.Model, mlp: view.Mlp, x: Tensor, rows: usi
     switch (mlp) {
         .moe => |r| return moe.run(o, m, r, x, rows, prefill and rows > 1),
         .dense => |d| {
-            const gate = try o.affine(x, d.gate, rows, false);
-            const up = try o.affine(x, d.up, rows, false);
+            var outs: [4]Tensor = undefined;
+            const gate, const up = if (try o.affineGroup(x, &.{ d.gate, d.up }, rows, &outs))
+                .{ outs[0], outs[1] }
+            else
+                .{ try o.affine(x, d.gate, rows, false), try o.affine(x, d.up, rows, false) };
             const act = try take(o, m.act, rows * d.gate.n);
             try o.siluMul(gate, up, act, rows * d.gate.n);
             return o.affine(act, d.down, rows, d.down.partial);

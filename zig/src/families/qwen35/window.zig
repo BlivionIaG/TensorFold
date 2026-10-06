@@ -117,9 +117,11 @@ pub fn commit(o: Ops, m: *const view.Model, w: Window, rows: usize) hip.Error!vo
 fn attentionRows(o: Ops, m: *const view.Model, f: view.Full, windows: []Window, index: usize, x: Tensor, total: usize) fwd.Error!Tensor {
     const s = m.spec;
     const hd = s.head_dim;
-    const qg = try o.affine(x, f.q, total, false);
-    const keys = try o.affine(x, f.k, total, false);
-    const values = try o.affine(x, f.v, total, false);
+    var outs: [4]Tensor = undefined;
+    const qg, const keys, const values = if (try o.affineGroup(x, &.{ f.q, f.k, f.v }, total, &outs))
+        .{ outs[0], outs[1], outs[2] }
+    else
+        .{ try o.affine(x, f.q, total, false), try o.affine(x, f.k, total, false), try o.affine(x, f.v, total, false) };
     const q_rows = total * s.heads;
     const qc = try fwd.take(o, m.act, q_rows * hd);
     try o.copyCols(qg, 2 * hd, 0, qc.ptr, q_rows, hd);
@@ -161,10 +163,11 @@ fn rope(o: Ops, m: *const view.Model, x: Tensor, w: Window, heads: usize) fwd.Er
 
 fn linearRows(o: Ops, m: *const view.Model, l: view.Linear, windows: []Window, index: usize, x: Tensor, total: usize) fwd.Error!Tensor {
     const s = m.spec;
-    const qkv = try o.affine(x, l.qkv, total, false);
-    const z = try o.affine(x, l.z, total, false);
-    const a = try o.affine(x, l.a, total, false);
-    const b = try o.affine(x, l.b, total, false);
+    var outs: [4]Tensor = undefined;
+    const qkv, const z, const a, const b = if (try o.affineGroup(x, &.{ l.qkv, l.z, l.a, l.b }, total, &outs))
+        .{ outs[0], outs[1], outs[2], outs[3] }
+    else
+        .{ try o.affine(x, l.qkv, total, false), try o.affine(x, l.z, total, false), try o.affine(x, l.a, total, false), try o.affine(x, l.b, total, false) };
     const ch = view.convChannels(s);
     const y = try o.arena.of(f32, total * s.valueWidth());
     var start: usize = 0;

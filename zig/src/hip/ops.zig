@@ -5,6 +5,7 @@ const std = @import("std");
 const abi = @import("abi.zig");
 const rocm = @import("rocm.zig");
 const launches = @import("launches.zig");
+const affine_launch = @import("affine_launch.zig");
 const Arena = @import("arena.zig").Arena;
 
 /// act.hpp's numbering: the activation and fp32 buffers the torch-op kernels read and write.
@@ -102,7 +103,9 @@ pub const Ops = struct {
         if (m == 0) return error.BadShape;
         const fp16 = x.kind == .f16;
         if (x.kind == .f32 or (fp16 and o.wmma()) or (!fp16 and !o.wmma())) return error.BadShape;
-        const half = !f32_out and fp16 and m <= 8 and !o.wmma();
+        // the decode tiles round to the activation type themselves: RDNA2's up to 8 rows, and the stream tile's either type
+        const stream = if (o.lib.zig) |z| z.affine.streamTakes(int(m), int(w.n), int(w.k), int(w.bits), int(w.group), w.tables.table(), w.tables.table(), x.ptr) else false;
+        const half = !f32_out and ((fp16 and m <= 8 and !o.wmma()) or stream);
         const n: usize = w.n;
         const out = try o.arena.take(m * n * @as(usize, if (half) 2 else 4));
         const groups: usize = w.k / w.group;
@@ -110,11 +113,47 @@ pub const Ops = struct {
         if (fp16) splits = launches.affineSplits(int(m), int(n), int(w.k), int(w.group), 0);
         const partial: u64 = if (splits > 1) try o.arena.of(f32, m * n * groups * 2) else 0;
         try o.lib.call("tf_affine", .{ p(x.ptr), p(w.words), p(w.scale), p(w.bias), w.tables.table(), p(out), int(m), int(n), int(w.k), w.bits, w.group, 0, @intFromBool(fp16), o.stream, f(partial), splits, @intFromBool(half) });
-        if (half) return .{ .ptr = out, .kind = .f16 };
+        if (half) return .{ .ptr = out, .kind = x.kind };
         if (f32_out) return .{ .ptr = out, .kind = .f32 };
         const narrow = try o.arena.take(m * n * 2);
         try o.cast(.{ .ptr = out, .kind = .f32 }, .{ .ptr = narrow, .kind = x.kind }, m * n);
         return .{ .ptr = narrow, .kind = x.kind };
+    }
+
+    /// Up to four products of the same `m` rows of x in one launch of the stream tile, each rounded to x's kind into
+    /// `outs`; false (nothing launched) when the products differ in K, width, group or tables, or the tile does not take
+    /// them, and the caller launches them one by one.
+    pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tensor) Error!bool {
+        const z = o.lib.zig orelse return false;
+        if (!o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or m > 16 or x.kind == .f32) return false;
+        var widest: u32 = 0;
+        for (ws) |w| {
+            try w.check();
+            if (w.k != ws[0].k or w.bits != ws[0].bits or w.group != ws[0].group or w.tables != ws[0].tables or w.partial) return false;
+            widest = @max(widest, w.n);
+        }
+        const kind = ws[0].tables.table();
+        if (!z.affine.streamTakes(int(m), int(widest), int(ws[0].k), int(ws[0].bits), int(ws[0].group), kind, kind, x.ptr)) return false;
+        var sides: [4]affine_launch.Side = undefined;
+        for (ws, outs[0..ws.len], sides[0..ws.len]) |w, *out, *side| {
+            out.* = .{ .ptr = try o.arena.take(m * w.n * 2), .kind = x.kind };
+            side.* = .{ .words = w.words, .scale = w.scale, .bias = w.bias, .n = int(w.n), .out = out.ptr };
+        }
+        const arg: affine_launch.Arg = .{
+            .x = x.ptr,
+            .words = 0,
+            .scale = .{ .p = 0, .kind = kind },
+            .bias = .{ .p = 0, .kind = kind },
+            .out = 0,
+            .m = int(m),
+            .n = int(widest),
+            .k = int(ws[0].k),
+            .bits = int(ws[0].bits),
+            .group = int(ws[0].group),
+            .fp16 = @intFromBool(x.kind == .f16),
+        };
+        try z.affine.groupRun(z.d, arg, sides[0..ws.len], true, o.stream);
+        return true;
     }
 
     /// Whether decode.hip's merged launches are on: Zig launches, and TF_DECODE_FUSE is not `old`.
@@ -135,6 +174,34 @@ pub const Ops = struct {
         if (x.kind != normed.kind or x.kind == .f32 or slots == 0) return error.BadShape;
         const z = o.lib.zig orelse return error.BadShape;
         try z.tf_tail(p(x.ptr), f(y), f(wts), f(weight), p(normed.ptr), @backingInt(x.kind), int(rows), int(slots), int(width), eps, o.stream);
+    }
+
+    /// The routed gate and up in one launch with the activation as its epilogue: every item's stacked (gate | up) product
+    /// and silu(gate) * up in x's kind, out (pairs, width). Null (nothing launched) when the tile does not take the shape.
+    pub fn affineRoutedAct(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize, limit: f32) Error!?Tensor {
+        const z = o.lib.zig orelse return null;
+        if (!o.fused() or x.kind == .f32 or w.n % 2 != 0) return null;
+        try w.check();
+        const kind = w.tables.table();
+        if (!z.affine.streamTakes(int(rows), int(w.n), int(w.k), int(w.bits), int(w.group), kind, kind, x.ptr)) return null;
+        const out = try o.arena.take(pairs * (w.n / 2) * 2);
+        const arg: affine_launch.Arg = .{
+            .x = x.ptr,
+            .words = w.words,
+            .scale = .{ .p = w.scale, .kind = kind },
+            .bias = .{ .p = w.bias, .kind = kind },
+            .out = 0,
+            .m = int(rows),
+            .n = int(w.n),
+            .k = int(w.k),
+            .bits = int(w.bits),
+            .group = int(w.group),
+            .fp16 = @intFromBool(x.kind == .f16),
+            .route = .{ .items = items, .members = members, .x_div = int(x_div) },
+            .out16 = out,
+        };
+        if (!try z.affine.pairRun(z.d, arg, limit, int(count), o.stream)) return null;
+        return .{ .ptr = out, .kind = x.kind };
     }
 
     /// matmul_routed: every item (expert, first, count) in one launch over stacked weights; out (pairs, N) fp32.
