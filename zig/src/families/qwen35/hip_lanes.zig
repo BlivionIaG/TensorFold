@@ -17,6 +17,9 @@ const be = lanes.backend;
 /// Drawn tokens a handle names, newest last.
 const ring = 1024;
 
+/// Most chains one draft request runs (the head batches as many as the engine has rows, up to this).
+const max_jobs = 64;
+
 const Lane = struct {
     caches: state.Caches,
     /// The last kept row's final hidden row: the draft head's input.
@@ -65,7 +68,7 @@ pub const Hip = struct {
         h.order = try gpa.alloc(*const lanes.Stream, rows);
         errdefer gpa.free(h.order);
         // under tensor parallelism only rank 0 holds the head (whole): drafts only choose the rows every rank verifies
-        h.head = try mtp.Head.init(gpa, &e.driver, &e.weights, e.model());
+        h.head = try mtp.Head.init(gpa, &e.driver, &e.weights, e.model(), @min(rows, max_jobs));
         return h;
     }
 
@@ -127,7 +130,7 @@ pub const Hip = struct {
     /// Rows a window holds: every width keeps a row's bits (the window forward), drafts come from the core.
     pub const max_window = 16;
 
-    /// The facts the round loop reads at setup: shared rounds of exact windows, the MTP head's chains when it has one.
+    /// The facts the round loop reads at setup: shared rounds of exact windows, the MTP head's chains (every stream's in one batch) when it has one.
     pub fn facts(h: *const Hip) lanes.Model {
         const drafting = h.head != null;
         return .{
@@ -140,6 +143,7 @@ pub const Hip = struct {
             .hidden_rows = true,
             .batch_rows = @intCast(h.e.o.batch_rows),
             .max_streams = @intCast(h.e.o.batch_rows),
+            .draft_streams = drafting,
         };
     }
 
@@ -336,11 +340,15 @@ pub const Hip = struct {
         }
     }
 
-    /// The head drafts `depth` from the stream's last kept row and the token after it (its pending one).
+    /// The head drafts `depth` from each stream's last kept row and the token after it (its pending one): every chain
+    /// together, one head forward a step for all the streams.
     fn draftFn(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         const h = of(ptr);
         const head = h.head orelse return error.NoDraftHead;
         const m = h.e.model();
+        var jobs: [max_jobs]mtp.Job = undefined;
+        var chained: [max_jobs]*Lane = undefined;
+        var n: usize = 0;
         for (requests) |r| {
             const lane = h.lanes.get(r.stream) orelse return error.UnknownStream;
             // a shared round asks for drafts before its keep: the request names the kept rows
@@ -357,10 +365,21 @@ pub const Hip = struct {
             };
             lane.held_n = 0;
             if (r.depth == 0) continue;
+            if (n == max_jobs) return error.WindowTooWide;
             // a chain ends after a draft the head gives under the confidence (`heldFn` tells the core how many it holds);
             // the prompt's first drafts are asked for before any hook reads the count, so they run whole
             const stop_under: f64 = if (r.rows != null) mtp.confidence else 0.0;
-            lane.held_n = try head.chain(&h.e.lib, h.e.stream, &h.e.drawer, m, .{ .ptr = lane.hidden.ptr, .kind = m.act }, token, lane.len, r.depth, sampling(r.stream), stop_under, &lane.held);
+            jobs[n] = .{ .hidden = lane.hidden.ptr, .token = token, .position = lane.len, .depth = r.depth, .sampling = sampling(r.stream), .stop_under = stop_under, .out = &lane.held };
+            chained[n] = lane;
+            n += 1;
+        }
+        try head.chains(&h.e.lib, h.e.stream, &h.e.drawer, m, jobs[0..n]);
+        var k: usize = 0;
+        for (requests) |r| {
+            if (r.depth == 0) continue;
+            const lane = chained[k];
+            lane.held_n = jobs[k].kept;
+            k += 1;
             if (lane.held_n > r.depth or (lane.held_n < r.depth and r.rows == null)) return error.ShortChain;
         }
     }

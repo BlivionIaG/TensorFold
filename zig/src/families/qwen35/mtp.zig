@@ -1,6 +1,7 @@
-//! The checkpoint's MTP head drafting a chain (mtp.py): each step reads the last final row and the token after it,
+//! The checkpoint's MTP head drafting chains (mtp.py): each step reads the last final row and the token after it,
 //! runs the head's gated attention over the chain's own cache and its MLP, and draws the next draft (greedy chains
-//! on the device without a host sync, sampled ones over downloaded candidates).
+//! on the device without a host sync, sampled ones over downloaded candidates). Step n of every stream's chain is one
+//! head forward over a row each, so a round costs one chain's steps and one sync however many streams draft.
 //! Drafts only choose which rows a window verifies; the verify draws every token, so a draft's bits are free.
 
 const std = @import("std");
@@ -19,9 +20,18 @@ const Tensor = hip.ops.Tensor;
 pub const max_depth = 3;
 pub const confidence = 0.3;
 
-/// Byte offsets of the drafts and of their probabilities in the scalars (the token, then each slot, come first).
-const drafts_at = 32;
-const probs_at = 48;
+/// One stream's chain: its last kept final row (device), the token after it and that token's slot, the drafts asked
+/// for and how each is drawn; `out` takes the drafts, `kept` the count the confidence cut leaves.
+pub const Job = struct {
+    hidden: u64,
+    token: u32,
+    position: usize,
+    depth: usize,
+    sampling: ?lanes.Sampling,
+    stop_under: f64,
+    out: []u32,
+    kept: usize = 0,
+};
 
 pub const Head = struct {
     gpa: std.mem.Allocator,
@@ -31,45 +41,56 @@ pub const Head = struct {
     kv_heads: usize,
     mlp: ?view.Mlp,
     logits_head: view.Affine,
+    /// Most chains a batch runs together; each has its own cache of `max_depth + 1` slots.
+    cap: usize,
+    cache_bytes: usize,
     k: hip.DeviceBuffer,
     v: hip.DeviceBuffer,
     arena: hip.Arena,
-    scalars: hip.HostBuffer, // the first token, the chain's slots, then the drafts (at `drafts_at`), pinned
+    /// The chains' last kept final rows gathered, (cap, hidden).
+    rows: hip.DeviceBuffer,
+    scalars: hip.HostBuffer, // `Layout`'s words, pinned
     scalars_dev: hip.DeviceBuffer,
-    last: u64 = 0, // the last step's final row, the next step's hidden input
+    last: u64 = 0, // the last step's final rows, the next step's hidden input
 
-    /// The head of `m`, or null when the checkpoint has none.
-    pub fn init(gpa: std.mem.Allocator, d: *const hip.Driver, m: *const weights.Model, model: *const view.Model) !?*Head {
+    /// The head of `m`, or null when the checkpoint has none; `cap` chains at most run in one batch.
+    pub fn init(gpa: std.mem.Allocator, d: *const hip.Driver, m: *const weights.Model, model: *const view.Model, cap: usize) !?*Head {
         const w = if (m.mtp) |*x| x else return null;
         const s = m.spec;
         const qa = try affineOf(w.q);
         const ka = try affineOf(w.k);
         const h = try gpa.create(Head);
         errdefer gpa.destroy(h);
+        const kv_heads = ka.n / s.head_dim;
+        const cache = kv_heads * (max_depth + 1) * s.head_dim * model.act.size();
         h.* = .{
             .gpa = gpa,
             .d = d,
             .w = w,
             .heads = qa.n / s.head_dim / @as(usize, if (w.gated) 2 else 1),
-            .kv_heads = ka.n / s.head_dim,
+            .kv_heads = kv_heads,
             .mlp = if (w.mlp) |x| try bridge.mlpView(x, false) else null,
             .logits_head = if (w.head) |hp| try affineOf(hp) else model.head,
+            .cap = cap,
+            .cache_bytes = cache,
             .k = undefined,
             .v = undefined,
             .arena = undefined,
+            .rows = undefined,
             .scalars = undefined,
             .scalars_dev = undefined,
         };
-        const cache = h.kv_heads * (max_depth + 1) * s.head_dim * model.act.size();
-        h.k = try hip.DeviceBuffer.alloc(d, cache);
+        h.k = try hip.DeviceBuffer.alloc(d, cache * cap);
         errdefer h.k.free();
-        h.v = try hip.DeviceBuffer.alloc(d, cache);
+        h.v = try hip.DeviceBuffer.alloc(d, cache * cap);
         errdefer h.v.free();
         h.arena = try hip.Arena.init(d, 256 << 20);
         errdefer h.arena.deinit();
-        h.scalars = try hip.HostBuffer.alloc(d, 64);
+        h.rows = try hip.DeviceBuffer.alloc(d, cap * s.hidden * model.act.size());
+        errdefer h.rows.free();
+        h.scalars = try hip.HostBuffer.alloc(d, h.layout().total);
         errdefer h.scalars.free();
-        h.scalars_dev = try hip.DeviceBuffer.alloc(d, 64);
+        h.scalars_dev = try hip.DeviceBuffer.alloc(d, h.layout().total);
         errdefer h.scalars_dev.free();
         return h;
     }
@@ -77,10 +98,23 @@ pub const Head = struct {
     pub fn deinit(h: *Head) void {
         h.scalars_dev.free();
         h.scalars.free();
+        h.rows.free();
         h.arena.deinit();
         h.v.free();
         h.k.free();
         h.gpa.destroy(h);
+    }
+
+    /// Byte offsets in the scalars: each chain's first token, then the steps' slots, the steps' positions (these
+    /// uploaded together), then each step's drafts and probabilities (downloaded together), `cap` chains a step.
+    const Layout = struct { slots: usize, pos: usize, drafts: usize, probs: usize, total: usize };
+
+    fn layout(h: *const Head) Layout {
+        const slots = 4 * h.cap;
+        const pos = slots + 4 * max_depth;
+        const drafts = pos + 4 * max_depth * h.cap;
+        const probs = drafts + 4 * max_depth * h.cap;
+        return .{ .slots = slots, .pos = pos, .drafts = drafts, .probs = probs, .total = probs + 4 * max_depth * h.cap };
     }
 
     fn affineOf(p: weights.Projection) !view.Affine {
@@ -103,125 +137,157 @@ pub const Head = struct {
         }
     }
 
-    /// Up to `depth` drafts from `hidden` (the last kept final row) and `token` (the one after it), the first at slot
-    /// `position + 1`; each drawn with `sampling` at its slot, the chain cut after a draft the head gives less than
-    /// `stop_under` (0: never), as mtp.py's draft_chain cuts it; the drafts' count.
-    pub fn chain(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, hidden: Tensor, token: u32, position: usize, depth: usize, sampling: ?lanes.Sampling, stop_under: f64, out: []u32) !usize {
+    /// Every job's chain, `cap` of them at a time: step n of all the chains is one head forward over a row each, a
+    /// greedy draft feeding the next step from the device and a sampled one through the host, and one download after
+    /// the last step. A job gets up to `depth` drafts, the first at slot `position + 1`, each drawn with its sampling at
+    /// its slot, its chain cut after a draft the head gives less than `stop_under` (0: never), as mtp.py's draft_chain
+    /// cuts it; `kept` is the drafts' count.
+    pub fn chains(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, jobs: []Job) !void {
+        var at: usize = 0;
+        while (at < jobs.len) : (at += h.cap) try h.batch(lib, stream, drawer, m, jobs[at..][0..@min(h.cap, jobs.len - at)]);
+    }
+
+    fn batch(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, jobs: []Job) !void {
         const o: Ops = .{ .lib = lib, .stream = stream.handle, .arena = &h.arena };
         h.arena.reset();
-        const count: usize = @min(depth, max_depth, out.len);
+        const rows = jobs.len;
+        const at = h.layout();
+        const width = m.spec.hidden * m.act.size();
+        var most: usize = 0;
+        var greedy = true;
+        var cut = false;
+        for (jobs) |j| {
+            most = @max(most, @min(j.depth, max_depth, j.out.len));
+            if (j.sampling) |s| greedy = greedy and s.temperature <= 0.0;
+            cut = cut or j.stop_under > 0.0;
+        }
         const sc = h.scalars.slice(i32);
-        sc[0] = @intCast(token);
-        for (0..max_depth) |i| sc[1 + i] = @intCast(i);
-        try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0 .. 4 * (1 + max_depth)], o.stream);
-        const greedy = if (sampling) |s| s.temperature <= 0.0 else true;
-        const drafts = h.scalars_dev.ptr + drafts_at;
-        const probs = h.scalars_dev.ptr + probs_at;
-        // a draft's probability is read only where a later draft would follow it
-        const cut = stop_under > 0.0;
-        var cur_hidden = hidden;
-        for (0..count) |n| {
+        for (0..max_depth) |n| sc[h.cap + n] = @intCast(n);
+        for (jobs, 0..) |j, r| {
+            sc[r] = @intCast(j.token);
+            for (0..max_depth) |n| sc[at.pos / 4 + n * h.cap + r] = @intCast(j.position + n);
+            try h.rows.copyFrom(r * width, j.hidden, width, o.stream);
+        }
+        try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0..at.drafts], o.stream);
+        const dev = h.scalars_dev.ptr;
+        var cur: Tensor = .{ .ptr = h.rows.ptr, .kind = m.act };
+        var reqs: [64]draw.Request = undefined;
+        var drawn: [64]u32 = undefined;
+        for (0..most) |n| {
             // a greedy draft feeds the next step from the device; a sampled one comes back through the host
-            const ids = if (n == 0) h.scalars_dev.ptr else if (greedy) drafts + 4 * (n - 1) else h.scalars_dev.ptr;
-            const logits = try h.step(o, m, cur_hidden, ids, h.scalars_dev.ptr + 4 * (1 + n), position + n, n);
+            const drafts = dev + at.drafts + 4 * h.cap * n;
+            const ids = if (n == 0 or !greedy) dev else drafts - 4 * h.cap;
+            const logits = try h.step(o, m, cur, ids, rows, dev + at.slots + 4 * n, dev + at.pos + 4 * h.cap * n, n);
+            // a draft's probability is read only where a later draft would follow it
+            const chance = dev + at.probs + 4 * h.cap * n;
             if (greedy) {
-                try o.argmaxRows(logits, 1, h.logits_head.n, drafts + 4 * n);
-                if (cut and n + 1 < count) try o.tokenProb(logits, 1, h.logits_head.n, 0, probs + 4 * n);
+                try o.argmaxRows(logits, rows, h.logits_head.n, drafts);
+                if (cut and n + 1 < most) try o.tokenProb(logits, rows, h.logits_head.n, 0, chance);
             } else {
-                try drawer.draw(o, stream, logits, &.{.{ .sampling = sampling, .position = position + n + 1 }}, out[n..][0..1]);
-                if (n + 1 < count) {
-                    sc[0] = @intCast(out[n]);
-                    try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0..4], o.stream);
-                    if (cut) try o.tokenProb(logits, 1, h.logits_head.n, h.scalars_dev.ptr, probs + 4 * n);
+                for (jobs, 0..) |j, r| reqs[r] = .{ .sampling = j.sampling, .position = j.position + n + 1 };
+                try drawer.draw(o, stream, logits, reqs[0..rows], drawn[0..rows]);
+                for (jobs, 0..) |j, r| if (n < j.out.len) {
+                    j.out[n] = drawn[r];
+                };
+                if (n + 1 < most) {
+                    for (0..rows) |r| sc[r] = @intCast(drawn[r]);
+                    try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0 .. 4 * rows], o.stream);
+                    if (cut) try o.tokenProb(logits, rows, h.logits_head.n, dev, chance);
                 }
             }
-            cur_hidden = .{ .ptr = h.last, .kind = m.act };
+            cur = .{ .ptr = h.last, .kind = m.act };
         }
-        if (greedy or (cut and count > 1)) {
-            const bytes = h.scalars.bytes[drafts_at .. probs_at + 4 * max_depth];
-            try h.scalars_dev.downloadAsync(drafts_at, bytes, o.stream);
+        if (greedy or cut) {
+            try h.scalars_dev.downloadAsync(at.drafts, h.scalars.bytes[at.drafts..at.total], o.stream);
             try stream.synchronize();
         }
-        if (greedy) @memcpy(out[0..count], h.scalars.slice(u32)[drafts_at / 4 ..][0..count]);
-        var kept = count;
-        if (cut) {
-            const chance = h.scalars.slice(f32)[probs_at / 4 ..];
-            for (chance[0..count -| 1], 0..) |p, n| if (p < stop_under) {
-                kept = n + 1;
+        const words = h.scalars.slice(u32);
+        const chance = h.scalars.slice(f32);
+        for (jobs, 0..) |*j, r| {
+            const count = @min(j.depth, max_depth, j.out.len);
+            if (greedy) for (0..count) |n| {
+                j.out[n] = words[at.drafts / 4 + n * h.cap + r];
+            };
+            j.kept = count;
+            if (j.stop_under > 0.0) for (0..count -| 1) |n| if (chance[at.probs / 4 + n * h.cap + r] < j.stop_under) {
+                j.kept = n + 1;
                 break;
             };
         }
-        return kept;
     }
 
-    /// One head step at rope position `pos`, writing chain slot `slot` (its last visible slot at device `slot_at`), its
-    /// token at device `ids`: its logits (one row, activation dtype).
-    fn step(h: *Head, o: Ops, m: *const view.Model, hidden: Tensor, ids: u64, slot_at: u64, pos: usize, slot: usize) !Tensor {
+    /// One head step over `rows` chains, a row each, at their rope positions (device int32s at `pos`), writing each
+    /// chain's slot `slot` (its last visible slot at device `slot_at`), the tokens at device `ids`: the logits rows
+    /// (activation dtype).
+    fn step(h: *Head, o: Ops, m: *const view.Model, hidden: Tensor, ids: u64, rows: usize, slot_at: u64, pos: u64, slot: usize) !Tensor {
         const s = m.spec;
         const w = h.w;
         const eps: f32 = @floatCast(s.eps);
         const hd = s.head_dim;
-        const emb = try fwd.take(o, m.act, s.hidden);
-        try o.embedRows(m.embed, ids, 1, emb);
-        const emb_e = try fwd.take(o, m.act, s.hidden);
-        try o.rms(emb, w.fc_e_norm.ptr, emb_e, 1, s.hidden, eps);
-        const emb_h = try fwd.take(o, m.act, s.hidden);
-        try o.rms(hidden, w.fc_h_norm.ptr, emb_h, 1, s.hidden, eps);
-        const e_proj = try project(o, w.fc_e, emb_e, 1);
-        const h_proj = try project(o, w.fc_h, emb_h, 1);
-        const x = try fwd.take(o, m.act, s.hidden);
-        try o.add(e_proj, h_proj, x, s.hidden);
+        const emb = try fwd.take(o, m.act, rows * s.hidden);
+        try o.embedRows(m.embed, ids, rows, emb);
+        const emb_e = try fwd.take(o, m.act, rows * s.hidden);
+        try o.rms(emb, w.fc_e_norm.ptr, emb_e, rows, s.hidden, eps);
+        const emb_h = try fwd.take(o, m.act, rows * s.hidden);
+        try o.rms(hidden, w.fc_h_norm.ptr, emb_h, rows, s.hidden, eps);
+        const e_proj = try project(o, w.fc_e, emb_e, rows);
+        const h_proj = try project(o, w.fc_h, emb_h, rows);
+        const x = try fwd.take(o, m.act, rows * s.hidden);
+        try o.add(e_proj, h_proj, x, rows * s.hidden);
         var normed = x;
         if (w.input_norm) |n| {
-            normed = try fwd.take(o, m.act, s.hidden);
-            try o.rms(x, n.ptr, normed, 1, s.hidden, eps);
+            normed = try fwd.take(o, m.act, rows * s.hidden);
+            try o.rms(x, n.ptr, normed, rows, s.hidden, eps);
         }
-        // the head's gated attention over the chain's cache (slots 0 .. slot), rope at the chain's position
-        const qg = try project(o, w.q, normed, 1);
-        const keys = try project(o, w.k, normed, 1);
-        const values = try project(o, w.v, normed, 1);
-        const qc = try fwd.take(o, m.act, h.heads * hd);
-        try o.copyCols(qg, if (w.gated) 2 * hd else hd, 0, qc.ptr, h.heads, hd);
-        const qn = try fwd.take(o, m.act, h.heads * hd);
-        try o.rms(qc, w.q_norm.ptr, qn, h.heads, hd, eps);
-        const kn = try fwd.take(o, m.act, h.kv_heads * hd);
-        try o.rms(keys, w.k_norm.ptr, kn, h.kv_heads, hd, eps);
-        const q32 = try ropeOne(o, m, qn, h.heads, pos);
-        const k32 = try ropeOne(o, m, kn, h.kv_heads, pos);
-        const kr = try fwd.take(o, m.act, h.kv_heads * hd);
-        try o.cast(.{ .ptr = k32, .kind = .f32 }, kr, h.kv_heads * hd);
-        const c: Ops.Cache = .{ .k = h.k.ptr, .v = h.v.ptr, .kind = m.act, .kv_heads = h.kv_heads, .total = max_depth + 1, .d = hd };
-        try o.kvWrite(kr, c.k, 1, h.kv_heads, hd, c.total, slot);
-        try o.kvWrite(values, c.v, 1, h.kv_heads, hd, c.total, slot);
-        const att = try o.arena.of(f32, h.heads * hd);
-        try o.causalAt(q32, c, att, 1, h.heads, fwd.scaleOf(hd), slot_at);
-        const gated = try fwd.take(o, m.act, h.heads * hd);
+        // the head's gated attention over each chain's cache (slots 0 .. slot), rope at the chain's position
+        const qg = try project(o, w.q, normed, rows);
+        const keys = try project(o, w.k, normed, rows);
+        const values = try project(o, w.v, normed, rows);
+        const qc = try fwd.take(o, m.act, rows * h.heads * hd);
+        try o.copyCols(qg, if (w.gated) 2 * hd else hd, 0, qc.ptr, rows * h.heads, hd);
+        const qn = try fwd.take(o, m.act, rows * h.heads * hd);
+        try o.rms(qc, w.q_norm.ptr, qn, rows * h.heads, hd, eps);
+        const kn = try fwd.take(o, m.act, rows * h.kv_heads * hd);
+        try o.rms(keys, w.k_norm.ptr, kn, rows * h.kv_heads, hd, eps);
+        const q32 = try ropeRows(o, m, qn, rows, h.heads, pos);
+        const k32 = try ropeRows(o, m, kn, rows, h.kv_heads, pos);
+        const kr = try fwd.take(o, m.act, rows * h.kv_heads * hd);
+        try o.cast(.{ .ptr = k32, .kind = .f32 }, kr, rows * h.kv_heads * hd);
+        const att = try o.arena.of(f32, rows * h.heads * hd);
+        for (0..rows) |r| {
+            const c: Ops.Cache = .{ .k = h.k.ptr + r * h.cache_bytes, .v = h.v.ptr + r * h.cache_bytes, .kind = m.act, .kv_heads = h.kv_heads, .total = max_depth + 1, .d = hd };
+            try o.kvWrite(fwd.at(kr, r * h.kv_heads * hd), c.k, 1, h.kv_heads, hd, c.total, slot);
+            try o.kvWrite(fwd.at(values, r * h.kv_heads * hd), c.v, 1, h.kv_heads, hd, c.total, slot);
+            try o.causalAt(q32 + r * h.heads * hd * 4, c, att + r * h.heads * hd * 4, 1, h.heads, fwd.scaleOf(hd), slot_at);
+        }
+        const gated = try fwd.take(o, m.act, rows * h.heads * hd);
         if (w.gated) {
-            try o.attnGate(att, qg, gated, 1, h.heads, hd, true);
-        } else try o.cast(.{ .ptr = att, .kind = .f32 }, gated, h.heads * hd);
-        const attn_out = try project(o, w.o, gated, 1);
-        try o.add(x, attn_out, x, s.hidden);
+            try o.attnGate(att, qg, gated, rows, h.heads, hd, true);
+        } else try o.cast(.{ .ptr = att, .kind = .f32 }, gated, rows * h.heads * hd);
+        const attn_out = try project(o, w.o, gated, rows);
+        try o.add(x, attn_out, x, rows * s.hidden);
         if (w.post_norm) |pn| if (h.mlp) |mlp| {
-            const xn = try fwd.take(o, m.act, s.hidden);
-            try o.rms(x, pn.ptr, xn, 1, s.hidden, eps);
-            const y = try fwd.mlpRows(o, m, mlp, xn, 1, false);
-            try o.add(x, y, x, s.hidden);
+            const xn = try fwd.take(o, m.act, rows * s.hidden);
+            try o.rms(x, pn.ptr, xn, rows, s.hidden, eps);
+            const y = try fwd.mlpRows(o, m, mlp, xn, rows, false);
+            try o.add(x, y, x, rows * s.hidden);
         };
-        const residual = try fwd.take(o, m.act, s.hidden);
-        try o.rms(x, w.final_norm.ptr, residual, 1, s.hidden, eps);
+        const residual = try fwd.take(o, m.act, rows * s.hidden);
+        try o.rms(x, w.final_norm.ptr, residual, rows, s.hidden, eps);
         h.last = residual.ptr;
-        return o.affine(residual, h.logits_head, 1, false);
+        return o.affine(residual, h.logits_head, rows, false);
     }
 };
 
-/// The decode RoPE of one row's heads at `pos`: widened, rotated, rounded to the activation dtype, widened again.
-fn ropeOne(o: Ops, m: *const view.Model, x: Tensor, heads: usize, pos: usize) !u64 {
+/// The decode RoPE of `rows` rows of `heads` heads, each row at its device position: widened, rotated, rounded to the
+/// activation dtype, widened again.
+fn ropeRows(o: Ops, m: *const view.Model, x: Tensor, rows: usize, heads: usize, pos: u64) !u64 {
     const s = m.spec;
-    const n = heads * s.head_dim;
+    const n = rows * heads * s.head_dim;
     const wide = try o.arena.of(f32, n);
     try o.cast(x, .{ .ptr = wide, .kind = .f32 }, n);
     const turned = try o.arena.of(f32, n);
-    try o.ropeDecode(wide, turned, heads, s.head_dim, s.rotary_dim, pos, @floatCast(s.rope_theta), null, 0);
+    try o.ropeDecode(wide, turned, rows * heads, s.head_dim, s.rotary_dim, 0, @floatCast(s.rope_theta), pos, heads);
     const narrow = try fwd.take(o, m.act, n);
     try o.cast(.{ .ptr = turned, .kind = .f32 }, narrow, n);
     const back = try o.arena.of(f32, n);
