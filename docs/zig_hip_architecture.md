@@ -245,6 +245,47 @@ them.
 - The share of rounds replayed is reported, with a target of over 99% in steady state.
 - Host time per round is measured and recorded.
 
+### 3.7 Prefix reuse: a radix cache over paged KV
+
+Today (prefix.zig) a kept prompt is a whole copy of its caches at a cut point, found by the longest matching ids.
+Each copy costs a full KV prefix, and two requests that share a system prompt each hold their own copy. The target is
+that requests share prefix memory, and resuming copies nothing.
+
+**Paged KV.**
+
+- Full-attention layers keep K and V in pages of 64 tokens: the same 64 as the chunked recurrence and the prefix
+  cuts, so a page edge is always a chunk edge.
+- A stream's KV is a page table in the round plan (3.6). Attention (decode and the prefill tile) and the KV write
+  read through it.
+- Pages are reference-counted. A partly filled last page is copied on write when a second request extends a
+  shared prefix.
+
+**Radix tree over token pages.**
+
+- A node is a run of whole pages, keyed by their tokens.
+- A request walks the tree to its longest match, takes references on those pages, and prefills only its remainder.
+- Eviction is LRU on unreferenced leaves under a byte budget (`--prompt-cache-gib`). An entry that was hit outlives
+  entries that never were, as today.
+
+**Linear-attention state** (Qwen3.5's gated-delta layers) is not a per-token cache. Resuming from a node needs that
+layer's conv window and recurrent state as of the node's last token. So nodes carry state snapshots at chosen
+boundaries only:
+
+- the end of a shared system block;
+- the end of rendered history;
+- a prompt's last whole page.
+
+A snapshot is large (35B-A3B: about 60 MB across its 30 linear layers), which is why it is kept only where a request
+can actually resume, and counted in the byte budget. A match resumes from the deepest node on its path that holds a
+snapshot. Pages below that node are shared even when the state is not.
+
+**Exactness.** Pages hold the same K and V a fresh prefill writes. Resumed spans start on a page (and chunk) edge,
+and snapshots are exact copies. So resumed == fresh holds as today; the tests are tpcheck with long prompts, plus a
+radix stress test (many requests branching from shared prefixes, against each one prefilled fresh).
+
+**Under tp**, rank 0 owns the tree and decides every match, insertion and eviction. The followers apply the same page
+operations from the round messages, as they mirror prefix cuts today.
+
 ## 4. Testing
 
 | Level | What | When |
@@ -270,7 +311,8 @@ The matrix runs on one script, writes one table, and that table is published wit
   streams; tp 1, 2, 4 and 8; graphs at every tp.
 - **Correctness:** every invariant, plus fp64 accuracy for every model.
 - **Speed:** prefill ≥ 2x Python, decode ≥ 2x the port's baseline, and MTP gains with concurrent streams too.
-- **Structure:** steps 1-5b below (Policy, Caps, the Quant interface, plug-in tiles, the registry, graphs everywhere),
+- **Structure:** steps 1-5b below (Policy, Caps, the Quant interface, plug-in tiles, the registry, graphs everywhere, the
+  radix prefix cache),
   done with MLX as the only format. Each step is proven by MLX's own tests.
 
 **Phase 2: the other formats** (steps 6-9), each added as decoder plug-ins once the structure is in place.
@@ -288,6 +330,7 @@ The matrix runs on one script, writes one table, and that table is published wit
 | 4 | **Decoder-templated tiles**: MLX unpacking moves out of stream/gemm/matrix/routed | `tf-hip-test kernels` byte-identity old vs new; speed unchanged |
 | 5 | **Registry** replaces the m-rules in affine_launch/launches/ops; tuning tables for gfx1030 and gfx1100 | family check; byte-identical logits; speed unchanged |
 | 5b | **Graphs everywhere** (3.6): device round plan, shape buckets, fixed speculative windows with device-side accept/keep, prefill steps, tp | graph = eager byte for byte; > 99% rounds replayed; MTP beats no-drafts with 4 streams |
+| 5c | **Radix prefix cache** (3.7): paged KV with page tables in the round plan, the radix tree with state snapshots at chosen nodes, copy-on-write tails, tp mirroring | resumed = fresh; radix stress test; memory per shared prefix; time to first token on a shared system prompt |
 | 6 | **FP16 / BF16** (identity decoder) and **MLX 5-bit** | truth scores; speed |
 | 7 | **AWQ INT4** (and GPTQ by flag): detect, load, slice, reference, decoder; then the vLLM qgemm ports as native RDNA2 entries | truth scores; bit-exact against Python qgemm fixtures for the native kernels; the model matrix on AWQ checkpoints |
 | 8 | **FP8** (tensor/channel scales), then **MXFP4 / MXFP8** decoders | truth scores |
