@@ -192,6 +192,59 @@ Policy {
   `TF_AFFINE_GEMM/GEMV=old` and `TF_DECODE_FUSE=old` become `kernels=reference` (or named families once there are
   several). `TF_GDN_CHUNKED=0` becomes a reference recurrence.
 
+### 3.6 Graphs: every round replays, whatever its streams and drafts
+
+Today a round's graph is keyed by its streams' caches and row counts. A new stream, a different number of accepted
+drafts, or a confidence cut makes a new shape, and that round either captures a graph or runs eager (about 1,000
+launches with 5-9 µs gaps). MTP rounds rarely replay, which is a large part of why drafting loses with concurrent
+streams. The target is that graphs cover prefill steps, decode rounds and speculative rounds, at every tp.
+
+**Kernels read the round from device memory, not from launch arguments.** A round plan buffer on the device holds:
+
+- per row: the stream slot, position, token and window index;
+- per stream slot: cache descriptors (KV base pointers, the linear-attention states, their capacity);
+- the round's counts.
+
+Kernels index through it. Launch arguments then depend only on the shape bucket, and one graph serves any streams,
+any positions and any caches.
+
+**Shapes come in buckets.**
+
+- Rows are padded up to a bucket (1, 2, 4, 8, 16, 32, 64, ...). Padding rows point at a scratch slot and are
+  dropped. Every kernel is row-independent (section 1), so padding never changes a real row's bits; that is checked
+  like any other invariant.
+- Speculative rounds use a fixed window per stream: the pending token plus D draft slots. Unused draft slots are
+  padding.
+
+**Speculative rounds have no host trip between draft and verify.** One graph per (bucket, D) does all of it:
+
+1. The MTP head drafts D tokens for every stream at once: greedy argmax or keyed sampling on the device.
+2. Verify runs every window.
+3. The draws are made on the device.
+4. Acceptance runs on the device: the accepted count per stream is the first mismatch between drafts and draws.
+5. The keep step uses that count to restore each linear-attention state from its per-row snapshot and to advance
+   the KV lengths.
+6. The next pending token is written.
+
+The host reads back only the emitted tokens and counts, once per round, and can queue the next round before reading
+them.
+
+**Prefill steps replay too.**
+
+- A prompt advances in fixed steps (`prefill_step`, a multiple of 64), plus one tail bucket.
+- The step's span (keys visible) is a device scalar the attention reads, so one graph serves every position.
+- Prefill is compute-heavy, so its gain is mostly for short prompts and for steps interleaved with decode.
+
+**Under tp**, rank 0's round plan, including the graph key, goes to the followers with the round message. Every rank
+replays the same graph, collectives captured inside. A capture failure on any rank turns that key eager on all of
+them.
+
+**Proof.**
+
+- Graph = eager byte for byte, for every bucket and mode: `rows`, tpcheck, and a graph/eager toggle in the matrix.
+- The share of rounds replayed is reported, with a target of over 99% in steady state.
+- Host time per round is measured and recorded.
+
 ## 4. Testing
 
 | Level | What | When |
@@ -217,8 +270,8 @@ The matrix runs on one script, writes one table, and that table is published wit
   streams; tp 1, 2, 4 and 8; graphs at every tp.
 - **Correctness:** every invariant, plus fp64 accuracy for every model.
 - **Speed:** prefill ≥ 2x Python, decode ≥ 2x the port's baseline, and MTP gains with concurrent streams too.
-- **Structure:** steps 1-5 below (Policy, Caps, the Quant interface, plug-in tiles, the registry), done with MLX as
-  the only format. Each step is proven by MLX's own tests.
+- **Structure:** steps 1-5b below (Policy, Caps, the Quant interface, plug-in tiles, the registry, graphs everywhere),
+  done with MLX as the only format. Each step is proven by MLX's own tests.
 
 **Phase 2: the other formats** (steps 6-9), each added as decoder plug-ins once the structure is in place.
 
@@ -234,6 +287,7 @@ The matrix runs on one script, writes one table, and that table is published wit
 | 3 | **Quant interface** with mlx: `quant.Projection`, `ops.project` | byte-identical logits (prefill and decode) on 0.8B/9B/35B |
 | 4 | **Decoder-templated tiles**: MLX unpacking moves out of stream/gemm/matrix/routed | `tf-hip-test kernels` byte-identity old vs new; speed unchanged |
 | 5 | **Registry** replaces the m-rules in affine_launch/launches/ops; tuning tables for gfx1030 and gfx1100 | family check; byte-identical logits; speed unchanged |
+| 5b | **Graphs everywhere** (3.6): device round plan, shape buckets, fixed speculative windows with device-side accept/keep, prefill steps, tp | graph = eager byte for byte; > 99% rounds replayed; MTP beats no-drafts with 4 streams |
 | 6 | **FP16 / BF16** (identity decoder) and **MLX 5-bit** | truth scores; speed |
 | 7 | **AWQ INT4** (and GPTQ by flag): detect, load, slice, reference, decoder; then the vLLM qgemm ports as native RDNA2 entries | truth scores; bit-exact against Python qgemm fixtures for the native kernels; the model matrix on AWQ checkpoints |
 | 8 | **FP8** (tensor/channel scales), then **MXFP4 / MXFP8** decoders | truth scores |
