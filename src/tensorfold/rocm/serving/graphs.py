@@ -14,12 +14,20 @@ from tensorfold.rocm.model.window import Window, window_forward
 class _Entry:
     """One window length's buffers: token ids and row positions on the device, and the captured graph's outputs."""
 
-    ids: torch.Tensor
-    slots: torch.Tensor
+    device: torch.Tensor                 # (2, rows) int64: the token ids, then the rows' positions
+    host: torch.Tensor                   # the same, pinned, so one copy sets both without blocking
     warm: bool = False
     graph: torch.cuda.CUDAGraph | None = None
     hidden: torch.Tensor | None = None
     states: dict = field(default_factory=dict)
+
+    @property
+    def ids(self) -> torch.Tensor:
+        return self.device[0:1]
+
+    @property
+    def slots(self) -> torch.Tensor:
+        return self.device[1]
 
 
 class WindowGraphs:
@@ -45,12 +53,18 @@ class WindowGraphs:
         entry = self.entries.get(rows)
         if entry is None:
             device = e._device()
-            entry = self.entries[rows] = _Entry(torch.zeros((1, rows), dtype=torch.long, device=device),
-                                                torch.zeros(rows, dtype=torch.int64, device=device))
-        entry.ids.copy_(torch.tensor([window.tokens], dtype=torch.long))
-        entry.slots.copy_(torch.arange(window.pos, window.pos + rows, dtype=torch.int64))
+            entry = self.entries[rows] = _Entry(torch.zeros((2, rows), dtype=torch.int64, device=device),
+                                                torch.zeros((2, rows), dtype=torch.int64, pin_memory=True))
+        if rows == 1:                                         # two fills cost less than a copy
+            entry.device[0].fill_(window.tokens[0])
+            entry.device[1].fill_(window.pos)
+        else:
+            host = entry.host.numpy()
+            host[0] = window.tokens
+            host[1] = range(window.pos, window.pos + rows)
+            entry.device.copy_(entry.host, non_blocking=True)  # the last round's copy is done: its logits were read
         window.slots = entry.slots
-        run = lambda: window_forward(e.model, [window], e.kernels.linear, e._dtype(), ids=entry.ids,  # noqa: E731
+        run = lambda: window_forward(e.model, [window], e.kernels.linear, e._dtype(), ids=entry.ids,
                                      reduce=reduce)
         with torch.inference_mode():
             if entry.graph is not None:

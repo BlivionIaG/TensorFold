@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import torch
 
-from tensorfold.rocm.kernels.act import conv_rows, rope_decode
+from tensorfold.rocm.kernels.act import conv_decode, conv_rows, rope_decode
 from tensorfold.rocm.kernels.attention import causal_at
 from tensorfold.rocm.model.forward import _mlp, _project, _project_group, _project_pair, _residual
 from tensorfold.rocm.model.qwen_math import gated_delta, gather_rows, normalize_qk, rms_norm
@@ -64,10 +64,11 @@ def window_forward(model, windows: list[Window], linear, act_dtype: torch.dtype,
 def commit(model, window: Window, rows: int) -> None:
     """Keep the window's first ``rows`` rows: attention lengths and linear states as after the serial steps."""
 
+    every = rows == len(window.tokens)              # the linear states already advanced in place to the last row
     for index, cache in enumerate(window.caches):
         if model.spec.full(index):
             cache["len"] = window.pos + rows
-        else:
+        elif not every:
             # Copied into the stream's own buffers, which a captured window reads and writes in place.
             convs, deltas = window.states[index]
             cache["conv"][0].copy_(convs[rows - 1])
@@ -101,7 +102,7 @@ def _attention_rows(spec, layer, x: torch.Tensor, windows: list[Window], starts:
                                .to(dtype=cache["v"].dtype))
         query = q.float().unsqueeze(2).contiguous()                  # (rows, heads, 1, d): a query a row
         attended.append(causal_at(query, cache["k"], cache["v"], spec.head_dim ** -0.5, at32).reshape(rows, -1))
-    out = torch.cat(attended, dim=0).unsqueeze(0)
+    out = (attended[0] if len(attended) == 1 else torch.cat(attended, dim=0)).unsqueeze(0)
     gated = out * torch.sigmoid(gate.reshape(batch, length, -1).float())
     if gated.dtype != x.dtype:
         gated = gated.to(dtype=x.dtype)
@@ -134,19 +135,24 @@ def _linear_rows(spec, layer, x: torch.Tensor, windows: list[Window], starts: li
         # The serial step's conv and fused delta step over the window's rows, each row's states kept for the commit.
         cache, rows = w.caches[index], len(w.tokens)
         conv, state = cache["conv"], cache["state"]
-        convs = torch.empty((rows, *conv.shape[1:]), dtype=torch.float32, device=x.device)
-        mixed = conv_rows(qkv[0, start:start + rows].float().contiguous(), weight, conv, convs).unsqueeze(0)
+        # A row's states are kept only for a commit short of the window's last row.
+        convs = torch.empty((rows, *conv.shape[1:]), dtype=torch.float32, device=x.device) if rows > 1 else None
+        x_rows = qkv[0, start:start + rows].float().contiguous()
+        if rows == 1:                                # the serial step's own conv launch
+            mixed = conv_decode(x_rows.view(1, 1, -1), weight, conv).view(1, 1, -1)
+        else:
+            mixed = conv_rows(x_rows, weight, conv, convs).unsqueeze(0)
         q, k, v = mixed.split((spec.key_width, spec.key_width, spec.value_width), dim=-1)
         q = q.reshape(batch, rows, spec.key_heads, spec.key_dim)
         k = k.reshape(batch, rows, spec.key_heads, spec.key_dim)
         v = v.reshape(batch, rows, spec.value_heads, spec.value_dim)
         q, k = normalize_qk(q, k, spec.key_dim, spec.eps)
-        deltas = torch.empty((1, rows, *state.shape[1:]), dtype=torch.float32, device=x.device)
+        deltas = torch.empty((1, rows, *state.shape[1:]), dtype=torch.float32, device=x.device) if rows > 1 else None
         y, _ = gated_delta(q, k, v, a[:, start:start + rows], b[:, start:start + rows], layer.a_log, layer.dt_bias,
                            state, fused=True, states=deltas)
         w.states[index] = (convs, deltas)
         ys.append(y)
-    y = torch.cat(ys, dim=1)
+    y = ys[0] if len(ys) == 1 else torch.cat(ys, dim=1)
     y = rms_norm(y, layer.gnorm, spec.eps) * torch.nn.functional.silu(z).float()
     if y.dtype != x.dtype:
         y = y.to(dtype=x.dtype)

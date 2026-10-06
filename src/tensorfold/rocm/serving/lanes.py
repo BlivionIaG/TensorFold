@@ -31,6 +31,17 @@ class Lane:
     stops: tuple = ()
 
 
+class _Later:
+    """A stream's ``emit`` held until the next forward is on the GPU: the request thread then wakes while it works."""
+
+    def __init__(self, held: list, emit) -> None:
+        self.held, self.emit, self.stop = held, emit, False
+
+    def __call__(self, new: list[int]) -> bool:
+        self.held.append((self, list(new)))
+        return self.stop
+
+
 class Lanes:
     """The ``Scheduler``'s decoder over a ``QwenEngine``; under tp, rank 0 decides and the other ranks follow."""
 
@@ -43,6 +54,7 @@ class Lanes:
         self.graphs = WindowGraphs(engine)           # a lone stream's windows replay a captured graph
         self.asleep = True                           # tp: the other ranks wait on the store until a round
         self.wakes = 0
+        self.held: list[tuple[_Later, list[int]]] = []   # tokens emitted after the next launch
 
     def live(self) -> int:
         return len(self.streams) + len(self.filling)
@@ -62,6 +74,8 @@ class Lanes:
         stops = tuple(e._cuts(s.prompt, s.cached)) if s.draft else ()
         self._open(s, depth, stops, hit[1] if hit is not None else None)
         self.admitted.append(s)
+        if s.emit is not None and not isinstance(s.emit, _Later):
+            s.emit = _Later(self.held, s.emit)
 
     def _open(self, s: Stream, depth: int, stops: tuple, held) -> None:
         from tensorfold.rocm.serving.engine import clone_caches
@@ -106,7 +120,8 @@ class Lanes:
         e = self.e
         windows = [Window([s.out[-1]] + s.drafts, s.st.caches, s.st.pos) for s in live]
         if len(live) == 1 and e.graphs:
-            hidden = self.graphs.forward(live[0].sid, windows[0], self._reduce())
+            # Copied before the sampling sync: a replay rewrites the graph's output.
+            hidden = self.graphs.forward(live[0].sid, windows[0], self._reduce()).clone()
         else:
             hidden = window_forward(e.model, windows, e.kernels.linear, e._dtype(), reduce=self._reduce())
         return windows, hidden, self._logits(hidden[0])
@@ -124,7 +139,7 @@ class Lanes:
     def _keep(self, s: Stream, w: Window, hidden: torch.Tensor, start: int, rows: int) -> None:
         commit(self.e.model, w, rows)
         s.st.pos += rows
-        s.st.hidden = hidden[:, start + rows - 1:start + rows].clone()   # a replay rewrites hidden
+        s.st.hidden = hidden[:, start + rows - 1:start + rows]
 
     # --- rank 0 ------------------------------------------------------------------------------------------------
 
@@ -173,6 +188,7 @@ class Lanes:
                 self._close_round([])
             return done
         windows, hidden, logits = self._verify(live)
+        self._release()
         report, start = [], 0
         for s, w in zip(live, windows):
             rows = len(w.tokens)
@@ -285,7 +301,7 @@ class Lanes:
             key = f"tf_lanes/{self.wakes}"
             try:
                 e.rccl.store.wait([key])
-            except Exception as exc:  # noqa: BLE001 - the store's wait timeout: rank 0 is idle
+            except Exception as exc:                      # the store's wait timeout: rank 0 is idle
                 text = str(exc).lower()
                 if "timeout" in text:
                     continue
@@ -369,7 +385,13 @@ class Lanes:
     def _ends(self, s: Stream) -> tuple[int, ...]:
         return self.e.eos if s.stop_eos else ()
 
+    def _release(self) -> None:
+        held, self.held[:] = list(self.held), []
+        for later, new in held:
+            later.stop = bool(later.emit(new)) or later.stop
+
     def finish(self, done: list[Stream]) -> None:
+        self._release()                              # a stream's tokens before its reply
         for s in done:
             self.streams.pop(s.sid, None)
             if s.sid == self.graphs.sid:
@@ -378,10 +400,11 @@ class Lanes:
     def drop(self) -> list[Stream]:
         """After an error in a round: forget the live streams and the queued prompts."""
 
+        self._release()
         live = [s for s in self.streams.values() if not s.done] + self.filling
         self.streams, self.filling = {}, []
         self.graphs.reset()
         return live
 
 
-__all__ = ["Lane", "Lanes", "STEP"]
+__all__ = ["STEP", "Lane", "Lanes"]
