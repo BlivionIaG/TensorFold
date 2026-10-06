@@ -224,6 +224,18 @@ pub const Ops = struct {
         try o.lib.check(o.lib.api.tf_dense_rows(p(x.ptr), @backingInt(x.kind), f(w), p(out.ptr), int(rows), int(n), int(k), o.stream), "dense_rows");
     }
 
+    /// torch.argmax of each of `rows` logits rows (width `n`, fp16 or bf16) into device i32 `out`.
+    pub fn argmaxRows(o: Ops, logits: Tensor, rows: usize, n: usize, out: u64) Error!void {
+        if (logits.kind == .f32) return error.BadShape;
+        try o.lib.check(o.lib.api.tf_argmax_rows(p(logits.ptr), @backingInt(logits.kind), int(rows), int(n), i(out), o.stream), "argmax_rows");
+    }
+
+    /// Each row's `ks[r]` largest by (value desc, id asc): ids (i32) and the values' 16-bit patterns, `stride` apart.
+    pub fn topkRows(o: Ops, logits: Tensor, rows: usize, n: usize, ks: u64, stride: usize, ids: u64, values: u64) Error!void {
+        if (logits.kind == .f32) return error.BadShape;
+        try o.lib.check(o.lib.api.tf_topk_rows(p(logits.ptr), int(rows), int(n), i(ks), int(stride), i(ids), p(values), o.stream), "topk_rows");
+    }
+
     pub fn moeRouter(o: Ops, x: Tensor, rows32: u64, logits: u64, r: usize, d: usize, e: usize) Error!void {
         try o.lib.check(o.lib.api.tf_moe_router(p(x.ptr), @backingInt(x.kind), f(rows32), f(logits), int(r), int(d), int(e), o.stream), "moe_router");
     }

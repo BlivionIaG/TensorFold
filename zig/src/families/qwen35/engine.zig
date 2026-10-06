@@ -1,5 +1,5 @@
 //! One loaded Qwen3.5 / 3.6 model on one HIP device: the kernel library, a stream, the forward's scratch, and the
-//! pinned buffers rounds read and write through; prompts and lane windows run here, draws on the host.
+//! pinned buffers rounds read and write through; prompts and lane windows run here, draws on the device and host.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -11,6 +11,7 @@ const weights = @import("weights.zig");
 const bridge = @import("bridge.zig");
 const sample = @import("sample.zig");
 const memory = @import("memory.zig");
+const draw = @import("draw.zig");
 
 pub const Options = struct {
     /// Most positions a stream's caches hold (its prompt, its reply and a window's rows).
@@ -42,7 +43,7 @@ pub const Engine = struct {
     prompts: hip.Arena,
     ids: hip.HostBuffer,
     ids_dev: hip.DeviceBuffer,
-    logits: hip.HostBuffer,
+    drawer: draw.Drawer,
 
     /// The model on the device, its scratch not yet sized: `size` takes the capacity the memory plan fits.
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
@@ -82,7 +83,7 @@ pub const Engine = struct {
         errdefer e.ids.free();
         e.ids_dev = try hip.DeviceBuffer.alloc(&e.driver, need.ids);
         errdefer e.ids_dev.free();
-        e.logits = try hip.HostBuffer.alloc(&e.driver, rows * e.bridge.model.head.n * 2);
+        e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, e.bridge.model.head.n, rows);
         e.sized = true;
     }
 
@@ -103,7 +104,7 @@ pub const Engine = struct {
     pub fn deinit(e: *Engine) void {
         e.stream.synchronize() catch {};
         if (e.sized) {
-            e.logits.free();
+            e.drawer.deinit();
             e.ids_dev.free();
             e.ids.free();
             e.prompts.deinit();
@@ -131,14 +132,10 @@ pub const Engine = struct {
         return state.Caches.init(e.gpa, &e.driver, e.model(), @min(total, e.o.capacity));
     }
 
-    /// The logits of `rows` final rows at `hidden`, one projection as the engine's _logits, read into `logits`.
-    fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize) ![]const u16 {
-        const m = e.model();
-        const y = try o.affine(hidden, m.head, rows, false);
-        const n = rows * m.head.n;
-        try e.driver.check(e.driver.api.hipMemcpyDtoHAsync(e.logits.bytes.ptr, y.ptr, n * 2, e.stream.handle), "logits");
-        try e.stream.synchronize();
-        return e.logits.slice(u16)[0..n];
+    /// The tokens of `rows` final rows at `hidden`: one projection as the engine's _logits, each row drawn per `reqs`.
+    fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
+        const y = try o.affine(hidden, e.model().head, rows, false);
+        try e.drawer.draw(o, e.stream, y, reqs[0..rows], out);
     }
 
     /// Run `prompt[pos0..end]` into `caches`, its logits not read: a cut where the caches are kept.
@@ -152,8 +149,8 @@ pub const Engine = struct {
         try e.stream.synchronize();
     }
 
-    /// Prefill `prompt[pos0..]` into `caches`; the last row's logits, and its final row copied to `last` (MTP's input).
-    pub fn prefill(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, last: ?hip.DeviceBuffer) ![]const u16 {
+    /// Prefill `prompt[pos0..]` into `caches`; the token drawn per `req` from the last row, whose final row is copied to `last` (MTP's input).
+    pub fn prefill(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, last: ?hip.DeviceBuffer, req: draw.Request) !u32 {
         const m = e.model();
         const len = prompt.len - pos0;
         if (len == 0 or prompt.len > caches.total) return error.PromptTooLong;
@@ -165,15 +162,17 @@ pub const Engine = struct {
         const hidden = try fwd.span(o, m, caches, e.ids_dev.ptr, len, pos0, null);
         const row = fwd.at(hidden, (len - 1) * m.spec.hidden);
         if (last) |b| try b.copyFrom(0, row.ptr, m.spec.hidden * m.act.size(), e.stream.handle);
-        return e.project(o, row, 1);
+        var token: [1]u32 = undefined;
+        try e.project(o, row, 1, &.{req}, &token);
+        return token[0];
     }
 
     /// One stream's rows of a round: tokens (the pending one, then drafts) from slot `pos` over its caches.
     pub const Rows = struct { caches: *state.Caches, pos: usize, tokens: []const u32 };
 
-    /// Every window in one forward; their logits (all rows, in order) and final rows. The windows' snapshots live in
+    /// Every window in one forward; `out` the token of every row (in order) per `reqs`, and the final rows. The windows' snapshots live in
     /// the round's scratch until the next round, so `keep` commits from them.
-    pub fn verify(e: *Engine, rows: []const Rows, wins: []win.Window, snaps: []win.Snapshot) !struct { logits: []const u16, hidden: hip.ops.Tensor } {
+    pub fn verify(e: *Engine, rows: []const Rows, wins: []win.Window, snaps: []win.Snapshot, reqs: []const draw.Request, out: []u32) !struct { hidden: hip.ops.Tensor } {
         const m = e.model();
         var total: usize = 0;
         for (rows) |r| total += r.tokens.len;
@@ -199,7 +198,8 @@ pub const Engine = struct {
         }
         const o = e.ops(&e.rounds);
         const hidden = try win.forward(o, m, wins, e.ids_dev.ptr, null);
-        return .{ .logits = try e.project(o, hidden, total), .hidden = hidden };
+        try e.project(o, hidden, total, reqs, out);
+        return .{ .hidden = hidden };
     }
 
     /// Keep a verified window's first `rows` rows.

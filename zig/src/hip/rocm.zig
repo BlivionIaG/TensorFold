@@ -47,6 +47,8 @@ pub const Api = struct {
     tf_conv_prefill: *const fn (C, c_int, CF, CF, F, F, c_int, c_int, c_int, S) callconv(.c) c_int,
     tf_gdn_gate_prefill: *const fn (C, C, c_int, CF, CF, F, F, c_int, c_int, S) callconv(.c) c_int,
     tf_dense_rows: *const fn (C, c_int, CF, P, c_int, c_int, c_int, S) callconv(.c) c_int,
+    tf_argmax_rows: *const fn (C, c_int, c_int, c_int, I, S) callconv(.c) c_int,
+    tf_topk_rows: *const fn (C, c_int, c_int, CI, c_int, I, P, S) callconv(.c) c_int,
     tf_moe_route: *const fn (CI, c_int, c_int, c_int, I, I, c_int, S) callconv(.c) c_int,
 };
 

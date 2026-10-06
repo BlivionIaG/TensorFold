@@ -1,5 +1,6 @@
 //! The checkpoint's MTP head drafting a chain (mtp.py): each step reads the last final row and the token after it,
-//! runs the head's gated attention over the chain's own cache and its MLP, and draws the next draft on the host.
+//! runs the head's gated attention over the chain's own cache and its MLP, and draws the next draft (greedy chains
+//! on the device without a host sync, sampled ones over downloaded candidates).
 //! Drafts only choose which rows a window verifies; the verify draws every token, so a draft's bits are free.
 
 const std = @import("std");
@@ -9,7 +10,7 @@ const view = @import("view.zig");
 const weights = @import("weights.zig");
 const bridge = @import("bridge.zig");
 const fwd = @import("forward.zig");
-const sample = @import("sample.zig");
+const draw = @import("draw.zig");
 
 const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
@@ -17,6 +18,9 @@ const Tensor = hip.ops.Tensor;
 /// Most drafts a chain (the Python engine's depth) and the confidence below which it stops.
 pub const max_depth = 3;
 pub const confidence = 0.3;
+
+/// Byte offset of the drafts in the scalars (the token, then each slot, come first).
+const drafts_at = 32;
 
 pub const Head = struct {
     gpa: std.mem.Allocator,
@@ -29,9 +33,8 @@ pub const Head = struct {
     k: hip.DeviceBuffer,
     v: hip.DeviceBuffer,
     arena: hip.Arena,
-    scalars: hip.HostBuffer, // the step's token and the attention's last visible slot, pinned
+    scalars: hip.HostBuffer, // the first token, the chain's slots, then the drafts (at `drafts_at`), pinned
     scalars_dev: hip.DeviceBuffer,
-    row: hip.HostBuffer, // a step's logits, read back
     last: u64 = 0, // the last step's final row, the next step's hidden input
 
     /// The head of `m`, or null when the checkpoint has none.
@@ -55,7 +58,6 @@ pub const Head = struct {
             .arena = undefined,
             .scalars = undefined,
             .scalars_dev = undefined,
-            .row = undefined,
         };
         const cache = h.kv_heads * (max_depth + 1) * s.head_dim * model.act.size();
         h.k = try hip.DeviceBuffer.alloc(d, cache);
@@ -68,12 +70,10 @@ pub const Head = struct {
         errdefer h.scalars.free();
         h.scalars_dev = try hip.DeviceBuffer.alloc(d, 64);
         errdefer h.scalars_dev.free();
-        h.row = try hip.HostBuffer.alloc(d, h.logits_head.n * 2);
         return h;
     }
 
     pub fn deinit(h: *Head) void {
-        h.row.free();
         h.scalars_dev.free();
         h.scalars.free();
         h.arena.deinit();
@@ -104,41 +104,50 @@ pub const Head = struct {
 
     /// Up to `depth` drafts from `hidden` (the last kept final row) and `token` (the one after it), the first at slot
     /// `position + 1`; each drawn with `sampling` at its slot, the chain cut after a draft below `confidence`.
-    pub fn chain(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, m: *const view.Model, dtype: sample.Dtype, hidden: Tensor, token: u32, position: usize, depth: usize, sampling: ?lanes.Sampling, out: []u32) !usize {
-        const cut = false; // the lane core holds every depth it asks for
+    pub fn chain(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, hidden: Tensor, token: u32, position: usize, depth: usize, sampling: ?lanes.Sampling, out: []u32) !usize {
         const o: Ops = .{ .lib = lib, .stream = stream.handle, .arena = &h.arena };
         h.arena.reset();
+        const count = @min(depth, max_depth, out.len);
+        const sc = h.scalars.slice(i32);
+        sc[0] = @intCast(token);
+        for (0..max_depth) |i| sc[1 + i] = @intCast(i);
+        try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0 .. 4 * (1 + max_depth)], o.stream);
+        const greedy = if (sampling) |s| s.temperature <= 0.0 else true;
+        const drafts = h.scalars_dev.ptr + drafts_at;
         var cur_hidden = hidden;
-        var cur = token;
-        var n: usize = 0;
-        while (n < @min(depth, max_depth, out.len)) {
-            const logits = try h.step(o, m, cur_hidden, cur, position + n, n);
-            const vocab = h.logits_head.n;
-            try h.d.check(h.d.api.hipMemcpyDtoHAsync(h.row.bytes.ptr, logits.ptr, vocab * 2, stream.handle), "draft logits");
-            try stream.synchronize();
-            const row = h.row.slice(u16)[0..vocab];
-            const next = try sample.draw(h.gpa, row, dtype, sampling orelse lanes.Sampling{ .seed = 0, .temperature = 0 }, position + n + 1);
-            out[n] = next;
-            n += 1;
-            if (cut and n < depth and sample.probability(row, dtype, next) < confidence) break;
-            cur = next;
+        for (0..count) |n| {
+            // a greedy draft feeds the next step from the device; a sampled one comes back through the host
+            const ids = if (n == 0) h.scalars_dev.ptr else if (greedy) drafts + 4 * (n - 1) else h.scalars_dev.ptr;
+            const logits = try h.step(o, m, cur_hidden, ids, h.scalars_dev.ptr + 4 * (1 + n), position + n, n);
+            if (greedy) {
+                try o.argmaxRows(logits, 1, h.logits_head.n, drafts + 4 * n);
+            } else {
+                try drawer.draw(o, stream, logits, &.{.{ .sampling = sampling, .position = position + n + 1 }}, out[n..][0..1]);
+                if (n + 1 < count) {
+                    sc[0] = @intCast(out[n]);
+                    try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0..4], o.stream);
+                }
+            }
             cur_hidden = .{ .ptr = h.last, .kind = m.act };
         }
-        return n;
+        if (greedy) {
+            const got = h.scalars.slice(u32)[drafts_at / 4 ..][0..count];
+            try h.scalars_dev.downloadAsync(drafts_at, std.mem.sliceAsBytes(got), o.stream);
+            try stream.synchronize();
+            @memcpy(out[0..count], got);
+        }
+        return count;
     }
 
-    /// One head step at rope position `pos`, writing chain slot `slot`: its logits (one row, activation dtype).
-    fn step(h: *Head, o: Ops, m: *const view.Model, hidden: Tensor, token: u32, pos: usize, slot: usize) !Tensor {
+    /// One head step at rope position `pos`, writing chain slot `slot` (its last visible slot at device `slot_at`), its
+    /// token at device `ids`: its logits (one row, activation dtype).
+    fn step(h: *Head, o: Ops, m: *const view.Model, hidden: Tensor, ids: u64, slot_at: u64, pos: usize, slot: usize) !Tensor {
         const s = m.spec;
         const w = h.w;
         const eps: f32 = @floatCast(s.eps);
         const hd = s.head_dim;
-        const sc = h.scalars.slice(i32);
-        sc[0] = @intCast(token);
-        sc[1] = @intCast(slot);
-        try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0..8], o.stream);
         const emb = try fwd.take(o, m.act, s.hidden);
-        try o.embedRows(m.embed, h.scalars_dev.ptr, 1, emb);
+        try o.embedRows(m.embed, ids, 1, emb);
         const emb_e = try fwd.take(o, m.act, s.hidden);
         try o.rms(emb, w.fc_e_norm.ptr, emb_e, 1, s.hidden, eps);
         const emb_h = try fwd.take(o, m.act, s.hidden);
@@ -170,7 +179,7 @@ pub const Head = struct {
         try o.kvWrite(kr, c.k, 1, h.kv_heads, hd, c.total, slot);
         try o.kvWrite(values, c.v, 1, h.kv_heads, hd, c.total, slot);
         const att = try o.arena.of(f32, h.heads * hd);
-        try o.causalAt(q32, c, att, 1, h.heads, fwd.scaleOf(hd), h.scalars_dev.ptr + 4);
+        try o.causalAt(q32, c, att, 1, h.heads, fwd.scaleOf(hd), slot_at);
         const gated = try fwd.take(o, m.act, h.heads * hd);
         if (w.gated) {
             try o.attnGate(att, qg, gated, 1, h.heads, hd, true);

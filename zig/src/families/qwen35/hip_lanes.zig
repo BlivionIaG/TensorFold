@@ -7,7 +7,7 @@ const lanes = @import("lanes");
 const Engine = @import("engine.zig").Engine;
 const state = @import("state.zig");
 const win = @import("window.zig");
-const sample = @import("sample.zig");
+const draw = @import("draw.zig");
 const mtp = @import("mtp.zig");
 const prefix = @import("prefix.zig");
 
@@ -190,8 +190,7 @@ pub const Hip = struct {
             at = stop;
             h.remember(prompt[0..at], &lane.caches);
         }
-        const row = try h.e.prefill(&lane.caches, prompt, at, lane.hidden);
-        _ = h.take(try sample.draw(h.gpa, row, h.e.dtype, sampling(s), prompt.len));
+        _ = h.take(try h.e.prefill(&lane.caches, prompt, at, lane.hidden, .{ .sampling = sampling(s), .position = prompt.len }));
     }
 
     fn firstFn(ptr: *anyopaque, s: *lanes.Stream, position: u64) anyerror!u64 {
@@ -240,12 +239,21 @@ pub const Hip = struct {
             rows[i] = .{ .caches = &lane.caches, .pos = lane.len, .tokens = tokens[i][0..n] };
             h.order[i] = w.stream;
         }
-        const r = try h.e.verify(rows[0..windows.len], h.wins[0..windows.len], h.snaps);
+        var reqs: [64]draw.Request = undefined;
+        var drawn: [64]u32 = undefined;
+        var total: usize = 0;
+        for (windows) |w| {
+            if (total + w.positions.len > reqs.len) return error.WindowTooWide;
+            for (w.positions) |p| {
+                reqs[total] = .{ .sampling = sampling(w.stream), .position = p };
+                total += 1;
+            }
+        }
+        const r = try h.e.verify(rows[0..windows.len], h.wins[0..windows.len], h.snaps, reqs[0..total], &drawn);
         h.round_hidden = r.hidden.ptr;
-        const vocab = h.e.model().head.n;
         var at: usize = 0;
         for (windows, out, 0..) |w, *o, i| {
-            for (o.sampled, 0..) |*t, row| t.* = try sample.draw(h.gpa, r.logits[(at + row) * vocab ..][0..vocab], h.e.dtype, sampling(w.stream), w.positions[row]);
+            @memcpy(o.sampled, drawn[at..][0..o.sampled.len]);
             const lane = h.lanes.get(w.stream).?;
             @memcpy(o.drafts, if (w.held > 0) lane.held[0..w.held] else w.tokens);
             lane.held_n = 0;
@@ -288,7 +296,7 @@ pub const Hip = struct {
             lane.held_n = 0;
             if (r.depth == 0) continue;
             // the core holds every depth it asks for, so the chain runs it whole (no confidence cut yet)
-            lane.held_n = try head.chain(&h.e.lib, h.e.stream, m, h.e.dtype, .{ .ptr = lane.hidden.ptr, .kind = m.act }, token, lane.len, r.depth, sampling(r.stream), &lane.held);
+            lane.held_n = try head.chain(&h.e.lib, h.e.stream, &h.e.drawer, m, .{ .ptr = lane.hidden.ptr, .kind = m.act }, token, lane.len, r.depth, sampling(r.stream), &lane.held);
             if (lane.held_n != r.depth) return error.ShortChain;
         }
     }
