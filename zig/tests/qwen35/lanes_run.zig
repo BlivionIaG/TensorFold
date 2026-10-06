@@ -86,6 +86,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     defer h.deinit();
     if (resume_to != null) h.keepPrompts(8, 1 << 30);
     if (world > 1) h.withLink(&link);
+    if (world == 1) h.measure();
     const rows = qwen35.hip_lanes.Hip.max_window;
     var cfg = try lanes.Config.init(gpa, h.facts(), rows, rows - 1);
     defer cfg.deinit(gpa);

@@ -9,6 +9,7 @@ const state = @import("state.zig");
 const win = @import("window.zig");
 const draw = @import("draw.zig");
 const mtp = @import("mtp.zig");
+const costs = @import("hip_costs.zig");
 const prefix = @import("prefix.zig");
 const worker = @import("worker.zig");
 
@@ -53,6 +54,8 @@ pub const Hip = struct {
     /// Tensor parallelism: the other ranks, which get every step before this rank runs it (`worker.follow`).
     link: ?*const hip.link.Link = null,
     msg: std.ArrayList(u32) = .empty,
+    /// This engine's forward and head timings, filled by `measure` (none: the rule drafts the deepest it may).
+    costs: costs.Costs = .{},
     /// Each stream's id on every rank.
     ids: std.AutoHashMapUnmanaged(*const lanes.Stream, u32) = .empty,
     next_id: u32 = 0,
@@ -70,6 +73,14 @@ pub const Hip = struct {
         // under tensor parallelism only rank 0 holds the head (whole): drafts only choose the rows every rank verifies
         h.head = try mtp.Head.init(gpa, &e.driver, &e.weights, e.model(), @min(rows, max_jobs));
         return h;
+    }
+
+    /// Time the forwards and the head on scratch caches, for the depth rule; before `facts`, on a lone rank.
+    pub fn measure(h: *Hip) void {
+        costs.measure(h.gpa, h.e, h.head, &h.costs) catch |err| {
+            std.log.warn("lane costs not timed: {s}", .{@errorName(err)});
+            h.costs = .{};
+        };
     }
 
     /// Keep up to `entries` prompt caches within `budget` bytes of device memory.
@@ -133,6 +144,8 @@ pub const Hip = struct {
     /// The facts the round loop reads at setup: shared rounds of exact windows, the MTP head's chains (every stream's in one batch) when it has one.
     pub fn facts(h: *const Hip) lanes.Model {
         const drafting = h.head != null;
+        // plain rounds compete with drafted ones once the forwards are timed
+        const plain_guard = drafting and h.costs.windows > 0;
         return .{
             .exact_width = max_window,
             .gpu_tokens = false,
@@ -144,6 +157,10 @@ pub const Hip = struct {
             .batch_rows = @intCast(h.e.o.batch_rows),
             .max_streams = @intCast(h.e.o.batch_rows),
             .draft_streams = drafting,
+            .plain_guard = plain_guard,
+            .window_costs = h.costs.window[0..h.costs.windows],
+            .shared_costs = h.costs.shared[0..h.costs.shareds],
+            .mtp_step_ms = h.costs.step_ms,
         };
     }
 
