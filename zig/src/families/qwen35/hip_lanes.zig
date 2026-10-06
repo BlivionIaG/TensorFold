@@ -8,6 +8,7 @@ const Engine = @import("engine.zig").Engine;
 const state = @import("state.zig");
 const win = @import("window.zig");
 const sample = @import("sample.zig");
+const prefix = @import("prefix.zig");
 
 const be = lanes.backend;
 
@@ -32,12 +33,14 @@ pub const Hip = struct {
     wins: []win.Window,
     snaps: []win.Snapshot,
     order: []*const lanes.Stream,
+    /// Caches kept at prompt cuts for later turns (no entries until `keepPrompts`).
+    kept: prefix.Cache,
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine) !*Hip {
         const h = try gpa.create(Hip);
         errdefer gpa.destroy(h);
         const rows = e.o.batch_rows;
-        h.* = .{ .gpa = gpa, .e = e, .wins = try gpa.alloc(win.Window, rows), .snaps = undefined, .order = undefined };
+        h.* = .{ .gpa = gpa, .e = e, .wins = try gpa.alloc(win.Window, rows), .snaps = undefined, .order = undefined, .kept = prefix.Cache.init(gpa, 0, 0) };
         errdefer gpa.free(h.wins);
         h.snaps = try gpa.alloc(win.Snapshot, rows * e.model().spec.n_layers);
         errdefer gpa.free(h.snaps);
@@ -45,7 +48,15 @@ pub const Hip = struct {
         return h;
     }
 
+    /// Keep up to `entries` prompt caches within `budget` bytes of device memory.
+    pub fn keepPrompts(h: *Hip, entries: usize, budget: usize) void {
+        h.kept.keep = entries;
+        h.kept.budget = budget;
+    }
+
     pub fn deinit(h: *Hip) void {
+        h.e.stream.synchronize() catch {};
+        h.kept.deinit();
         var it = h.lanes.valueIterator();
         while (it.next()) |l| {
             l.*.caches.deinit(h.gpa);
@@ -110,6 +121,14 @@ pub const Hip = struct {
         return s.sampling;
     }
 
+    /// Copy of `caches` at its first `len` positions, kept under the prompt's first `len` ids; a failure keeps nothing.
+    fn remember(h: *Hip, ids: []const u32, caches: *const state.Caches) void {
+        if (h.kept.keep == 0 or h.kept.has(ids)) return;
+        var snap = state.Caches.blank(h.gpa, &h.e.driver, h.e.model(), ids.len) catch return;
+        snap.copyPrefix(caches, h.e.model(), ids.len, h.e.stream.handle) catch return snap.deinit(h.gpa);
+        h.kept.add(ids, snap) catch {};
+    }
+
     fn prefillFn(ptr: *anyopaque, s: *lanes.Stream) anyerror!void {
         const h = of(ptr);
         const prompt = s.prompt();
@@ -123,13 +142,27 @@ pub const Hip = struct {
             h.lanes.removeByPtr(gop.key_ptr);
             return err;
         };
-        lane.* = .{ .caches = h.e.newCaches() catch |err| {
+        lane.* = .{ .caches = h.e.newCaches(prompt.len + s.max_new + max_window + 1) catch |err| {
             h.gpa.destroy(lane);
             h.lanes.removeByPtr(gop.key_ptr);
             return err;
         }, .len = prompt.len };
         gop.value_ptr.* = lane;
-        const row = try h.e.prefill(&lane.caches, prompt, 0, null);
+        // a drafted request resumes from the longest kept prompt it extends and keeps its own cuts; a serial one neither
+        var at: usize = 0;
+        if (s.drafts) if (h.kept.longest(prompt)) |hit| {
+            at = hit.ids.len;
+            try lane.caches.copyPrefix(&hit.caches, h.e.model(), at, h.e.stream.handle);
+        };
+        s.cached = @intCast(at);
+        var cut_ids: [16]u32 = undefined;
+        const stops: []const u32 = if (s.drafts) prefix.cuts(&cut_ids, prompt.len, at, s.history_len, s.shared_prefixes) else &.{};
+        for (stops) |stop| {
+            try h.e.advance(&lane.caches, prompt, at, stop);
+            at = stop;
+            h.remember(prompt[0..at], &lane.caches);
+        }
+        const row = try h.e.prefill(&lane.caches, prompt, at, null);
         _ = h.take(try sample.draw(h.gpa, row, h.e.dtype, sampling(s), prompt.len));
     }
 

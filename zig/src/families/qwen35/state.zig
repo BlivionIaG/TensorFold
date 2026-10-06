@@ -17,6 +17,15 @@ pub const Caches = struct {
 
     /// Buffers for `total` positions; every byte zeroed.
     pub fn init(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, total: usize) !Caches {
+        return make(gpa, d, m, total, true);
+    }
+
+    /// Buffers for `total` positions, contents left as the allocator gave them (a copy fills them).
+    pub fn blank(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, total: usize) !Caches {
+        return make(gpa, d, m, total, false);
+    }
+
+    fn make(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, total: usize, zero: bool) !Caches {
         const s = m.spec;
         const layers = try gpa.alloc(LayerCache, s.n_layers);
         var made: usize = 0;
@@ -31,16 +40,20 @@ pub const Caches = struct {
                 errdefer k.free();
                 var v = try hip.DeviceBuffer.alloc(d, bytes);
                 errdefer v.free();
-                try k.fill8(0, null);
-                try v.fill8(0, null);
+                if (zero) {
+                    try k.fill8(0, null);
+                    try v.fill8(0, null);
+                }
                 l.* = .{ .full = .{ .k = k, .v = v, .len = 0 } };
             } else {
                 var conv = try hip.DeviceBuffer.alloc(d, (s.conv - 1) * view.convChannels(s) * 4);
                 errdefer conv.free();
                 var state = try hip.DeviceBuffer.alloc(d, s.value_heads * s.value_dim * s.key_dim * 4);
                 errdefer state.free();
-                try conv.fill8(0, null);
-                try state.fill8(0, null);
+                if (zero) {
+                    try conv.fill8(0, null);
+                    try state.fill8(0, null);
+                }
                 l.* = .{ .linear = .{ .conv = conv, .state = state } };
             }
             made += 1;
@@ -65,6 +78,38 @@ pub const Caches = struct {
         for (c.layers) |*l| free(l);
         gpa.free(c.layers);
         c.* = undefined;
+    }
+
+    /// Bytes the buffers hold.
+    pub fn held(c: *const Caches) usize {
+        var n: usize = 0;
+        for (c.layers) |l| switch (l) {
+            .full => |f| n += f.k.len + f.v.len,
+            .linear => |x| n += x.conv.len + x.state.len,
+        };
+        return n;
+    }
+
+    /// Copy the first `len` positions of every attention layer and the whole linear state of `src` into `dst` (either may
+    /// be the longer buffer); `dst` then holds `len` positions.
+    pub fn copyPrefix(dst: *Caches, src: *const Caches, m: *const view.Model, len: usize, stream: hip.abi.Stream) !void {
+        const s = m.spec;
+        const row = s.head_dim * m.act.size();
+        for (dst.layers, src.layers) |*to, from| switch (to.*) {
+            .full => |*f| {
+                const g = from.full;
+                for (0..s.kv_heads) |h| {
+                    try f.k.copyFrom(h * dst.total * row, g.k.ptr + h * src.total * row, len * row, stream);
+                    try f.v.copyFrom(h * dst.total * row, g.v.ptr + h * src.total * row, len * row, stream);
+                }
+                f.len = len;
+            },
+            .linear => |*x| {
+                const g = from.linear;
+                try x.conv.copyFrom(0, g.conv.ptr, g.conv.len, stream);
+                try x.state.copyFrom(0, g.state.ptr, g.state.len, stream);
+            },
+        };
     }
 
     /// The attention kernels' view of a full layer's cache.

@@ -35,6 +35,13 @@ fn modelContext(a: Allocator, io: std.Io, dir: []const u8) i64 {
     return if (limit == .integer and limit.integer > 0) limit.integer else 0;
 }
 
+/// Prompt caches kept for later turns, within the plan's byte budget.
+const kept_prompts = 8;
+
+fn gibs(bytes: usize) f64 {
+    return @as(f64, @floatFromInt(bytes)) / (1 << 30);
+}
+
 /// Positions a stream holds when neither --context nor memory says otherwise.
 const default_context = 32768;
 
@@ -72,23 +79,43 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     }
     const rows = qwen35.hip_lanes.Hip.max_window;
     const streams = @max(o.lanes, 1);
-    const e = qwen35.engine.Engine.open(gpa, io, o.dir, .{ .capacity = @as(usize, @intCast(window)) + rows + 1, .batch_rows = @max(32, @min(streams * rows, 128)) }) catch |err| {
+    const e = qwen35.engine.Engine.load(gpa, io, o.dir, .{ .batch_rows = @max(32, @min(streams * rows, 128)), .slack = rows + 1 }) catch |err| {
         problem.* = try std.fmt.allocPrint(a, "the native HIP engine cannot load {s} ({s})", .{ o.dir, @errorName(err) });
         return null;
     };
-    errdefer e.deinit();
+    var served = false;
+    defer if (!served) e.deinit();
+    const plan = e.plan(streams, @intCast(window)) catch |err| {
+        problem.* = try std.fmt.allocPrint(a, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)});
+        return null;
+    };
+    if (plan.window == 0) {
+        problem.* = try std.fmt.allocPrint(a, "the weights leave no room for a request on this GPU ({d:.2} GiB of {d:.2} GiB); use a smaller checkpoint or --lanes", .{ gibs(plan.weights), gibs(plan.total) });
+        return null;
+    }
+    if (o.context != null and plan.window < @as(usize, @intCast(window))) {
+        problem.* = try std.fmt.allocPrint(a, "--context {d} does not fit this GPU's memory: {d} lanes and a kept copy of a prompt fit {d} tokens beside the weights; lower --context or --lanes", .{ window, streams, plan.window });
+        return null;
+    }
+    e.size(plan.capacity) catch |err| {
+        problem.* = try std.fmt.allocPrint(a, "the native HIP engine cannot allocate its scratch ({s})", .{@errorName(err)});
+        return null;
+    };
+    std.debug.print("[tensorfold] HIP: weights {d:.2} GiB, scratch {d:.2} GiB, context window {d} tokens, prompt cache {d:.2} GiB, reserve {d:.2} GiB of {d:.2} GiB\n", .{ gibs(plan.weights), gibs(plan.scratch), plan.window, gibs(plan.cache_budget), gibs(plan.reserve), gibs(plan.total) });
     const h = try gpa.create(Host);
     errdefer gpa.destroy(h);
     h.gpa = gpa;
     h.e = e;
     h.backend = try qwen35.hip_lanes.Hip.init(gpa, e);
     errdefer h.backend.deinit();
+    h.backend.keepPrompts(kept_prompts, plan.cache_budget);
     h.cfg = try lanes.Config.init(gpa, h.backend.facts(), rows, rows - 1);
     errdefer h.cfg.deinit(gpa);
     h.clock = .{ .io = io };
     h.core = lanes.Engine.init(gpa, &h.cfg, h.backend.backend(), h.clock.clock());
     errdefer h.core.deinit();
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = streams, .context_window = @intCast(window) });
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = streams, .context_window = @intCast(plan.window), .context_fitted = plan.window < @as(usize, @intCast(window)) });
     try h.host.start();
+    served = true;
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
 }

@@ -17,6 +17,8 @@ pub const moe = @import("moe.zig");
 pub const sample = @import("sample.zig");
 pub const bridge = @import("bridge.zig");
 pub const engine = @import("engine.zig");
+pub const memory = @import("memory.zig");
+pub const prefix = @import("prefix.zig");
 pub const hip_lanes = @import("hip_lanes.zig");
 
 test {
@@ -30,4 +32,5 @@ test {
     _ = view;
     _ = moe;
     _ = sample;
+    _ = prefix;
 }

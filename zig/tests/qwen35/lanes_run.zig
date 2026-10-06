@@ -1,5 +1,7 @@
-//! `lanes <model dir> <prompts.json> <max tokens> [--seed S --temperature T] [--solo] [--report out.json]`: prompts
-//! through the lane core on the HIP backend, every stream at once or one at a time, no end token (replies run out).
+//! `lanes <model dir> <prompts.json> <max tokens> [--seed S --temperature T] [--solo] [--report out.json]
+//! [--resume PREFIX]`: prompts through the lane core on the HIP backend, every stream at once or one at a time, no end
+//! token (replies run out). With --resume each prompt then runs again as itself, its reply and a few more tokens, on
+//! the caches the first run kept; PREFIX-prompts.json and PREFIX-replies.json hold what that second run read and said.
 
 const std = @import("std");
 const lanes = @import("lanes");
@@ -18,9 +20,13 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     var solo = false;
     var drafts = true;
     var report: ?[]const u8 = null;
+    var resume_to: ?[]const u8 = null;
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
-        if (std.mem.eql(u8, args[i], "--solo")) solo = true else if (std.mem.eql(u8, args[i], "--no-drafts")) drafts = false else if (std.mem.eql(u8, args[i], "--report")) {
+        if (std.mem.eql(u8, args[i], "--solo")) solo = true else if (std.mem.eql(u8, args[i], "--resume")) {
+            i += 1;
+            resume_to = args[i];
+        } else if (std.mem.eql(u8, args[i], "--no-drafts")) drafts = false else if (std.mem.eql(u8, args[i], "--report")) {
             i += 1;
             report = args[i];
         } else if (std.mem.eql(u8, args[i], "--seed")) {
@@ -39,17 +45,18 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     const ids = prompts.value.map.values();
     var longest: usize = 0;
     for (ids) |p| longest = @max(longest, p.len);
-    const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + max_tokens + 32, .batch_rows = @max(32, names.len * qwen35.hip_lanes.Hip.max_window) });
+    const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + 2 * max_tokens + 64, .batch_rows = @max(32, names.len * qwen35.hip_lanes.Hip.max_window) });
     defer e.deinit();
     const h = try qwen35.hip_lanes.Hip.init(gpa, e);
     defer h.deinit();
+    if (resume_to != null) h.keepPrompts(8, 1 << 30);
     const rows = qwen35.hip_lanes.Hip.max_window;
     var cfg = try lanes.Config.init(gpa, h.facts(), rows, rows - 1);
     defer cfg.deinit(gpa);
     var clock = lanes.backend.WallClock{ .io = io };
     const streams = try gpa.alloc(lanes.Stream, names.len);
     defer gpa.free(streams);
-    for (streams, names, ids) |*s, name, p| s.* = try lanes.Stream.init(gpa, .{ .id = name, .prompt = p, .max_new = max_tokens, .sampling = sampling, .drafts = drafts });
+    for (streams, names, ids) |*s, name, p| s.* = try lanes.Stream.init(gpa, .{ .id = name, .prompt = p, .max_new = max_tokens, .sampling = sampling, .drafts = drafts, .history_len = @intCast(p.len / 2) });
     defer for (streams) |*s| s.deinit(gpa);
     const t0 = std.Io.Clock.awake.now(io);
     if (solo) {
@@ -70,11 +77,34 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
         std.debug.print("{s}: {d} tokens, rounds {d}, accepted {d}\n", .{ name, s.emitted().len, s.rounds, s.accepted });
     }
     std.debug.print("{s}: {d} streams, {d} tokens in {d:.3} s, {d:.1} tok/s\n", .{ if (solo) "solo" else "together", streams.len, total, seconds, @as(f64, @floatFromInt(total)) / seconds });
-    if (report) |path| {
-        const json = try std.json.Stringify.valueAlloc(gpa, out.items, .{});
-        defer gpa.free(json);
-        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = json });
+    if (report) |path| try writeJson(gpa, io, path, out.items);
+    if (resume_to) |prefix| try again(gpa, io, &cfg, h, clock.clock(), prefix, names, ids, streams, max_tokens, sampling, drafts);
+}
+
+fn writeJson(gpa: std.mem.Allocator, io: std.Io, path: []const u8, value: anytype) !void {
+    const json = try std.json.Stringify.valueAlloc(gpa, value, .{});
+    defer gpa.free(json);
+    try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = path, .data = json });
+}
+
+/// Each prompt again, extended by its reply and its own first tokens, one at a time on the kept caches.
+fn again(gpa: std.mem.Allocator, io: std.Io, cfg: *const lanes.Config, h: *qwen35.hip_lanes.Hip, clock: lanes.backend.Clock, prefix: []const u8, names: []const []const u8, ids: []const []u32, first: []const lanes.Stream, max_tokens: u32, sampling: ?lanes.Sampling, drafts: bool) !void {
+    var arena = std.heap.ArenaAllocator.init(gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var prompts: std.ArrayList(struct { name: []const u8, tokens: []const u32 }) = .empty;
+    var replies: std.ArrayList(struct { name: []const u8, cached: u32, tokens: []const u32 }) = .empty;
+    for (names, ids, first) |name, p, *s| {
+        const extended = try std.mem.concat(a, u32, &.{ p, s.emitted(), p[0..@min(p.len, 4)] });
+        try prompts.append(a, .{ .name = name, .tokens = extended });
+        var second = try lanes.Stream.init(gpa, .{ .id = name, .prompt = extended, .max_new = max_tokens, .sampling = sampling, .drafts = drafts, .history_len = @intCast(extended.len / 2) });
+        defer second.deinit(gpa);
+        try finish(gpa, cfg, h, clock, &.{&second});
+        std.debug.print("{s} again: {d} prompt tokens, {d} from the kept caches, {d} tokens\n", .{ name, extended.len, second.cached, second.emitted().len });
+        try replies.append(a, .{ .name = name, .cached = second.cached, .tokens = try a.dupe(u32, second.emitted()) });
     }
+    try writeJson(gpa, io, try std.fmt.allocPrint(a, "{s}-prompts.json", .{prefix}), prompts.items);
+    try writeJson(gpa, io, try std.fmt.allocPrint(a, "{s}-replies.json", .{prefix}), replies.items);
 }
 
 fn finish(gpa: std.mem.Allocator, cfg: *const lanes.Config, h: *qwen35.hip_lanes.Hip, clock: lanes.backend.Clock, streams: []const *lanes.Stream) !void {
