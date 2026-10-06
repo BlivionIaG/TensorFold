@@ -95,15 +95,35 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const hip = runtime(b, target, optimize, if (hipcc != null or prebuilt != null) &images else &.{}, &libs, gfx);
     const runner = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
     runner.addImport("hip", hip);
+    runner.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = target, .optimize = optimize }));
     const exe = b.addExecutable(.{ .name = "tf-hip-test", .root_module = runner });
     b.installArtifact(exe);
     b.step("tf-hip-test", "The HIP runtime's GPU test program").dependOn(&b.addInstallArtifact(exe, .{}).step);
+    const qwen = qwen35(b, target, optimize, hip);
+    const upload = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    upload.addImport("hip", hip);
+    upload.addImport("qwen35", qwen);
+    const upload_exe = b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = upload });
+    b.installArtifact(upload_exe);
+    b.step("tf-qwen35-test", "Qwen3.5 / 3.6 checkpoint upload check (GPU)").dependOn(&b.addInstallArtifact(upload_exe, .{}).step);
+}
+
+/// The Qwen3.5 / Qwen3.6 family over the HIP runtime and the core's safetensors reader.
+fn qwen35(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module) *std.Build.Module {
+    const core = b.createModule(.{ .root_source_file = b.path("zig/src/core/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen35/qwen35.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    family.addImport("hip", hip);
+    family.addImport("core", core);
+    return family;
 }
 
 /// Host unit tests of the HIP runtime (no GPU), on any host.
 pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, "");
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
+    const family = b.addRunArtifact(b.addTest(.{ .root_module = qwen35(b, b.graph.host, .debug, hip) }));
+    step.dependOn(&family.step);
+    b.step("test-qwen35", "Qwen3.5 / 3.6 host tests; TF_QWEN_DIR indexes a real checkpoint").dependOn(&family.step);
 }
 
 /// The gfx targets of `gfx` that belong to family `f`.

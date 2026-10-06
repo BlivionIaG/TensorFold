@@ -17,9 +17,12 @@ pub const Dim3 = launch.Dim3;
 pub const graph = @import("graph.zig");
 pub const kernels = @import("kernels.zig");
 pub const rocm = @import("rocm.zig");
+pub const ops = @import("ops.zig");
+pub const Arena = @import("arena.zig").Arena;
 
 test {
     _ = launch;
     _ = abi;
     _ = rocm;
+    _ = ops;
 }
