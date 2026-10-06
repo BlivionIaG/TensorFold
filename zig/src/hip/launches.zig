@@ -87,6 +87,7 @@ pub const Launcher = struct {
         gdn_gate_prefill: Function,
         dense_rows: Function,
         moe_route: Function,
+        router_rows: [2]Function, // fp16, bf16
     };
 
     /// Loads the family's code objects on the current device and resolves every kernel the launchers use.
@@ -118,6 +119,7 @@ pub const Launcher = struct {
             .gdn_gate_prefill = try ops.function(anon ++ "23gdn_gate_prefill_kernelEPKvS1_iPKfS3_PfS4_ii"),
             .dense_rows = try ops.function(anon ++ "17dense_rows_kernelEPKviPKfPviii"),
             .moe_route = try ops.function(anon ++ "16moe_route_kernelEPKiiiiPiS2_i"),
+            .router_rows = .{ try ops.function("tf_router_rows_f16"), try ops.function("tf_router_rows_bf16") },
         };
         const r = "_ZN2tf4rocm";
         l.rms = .{
@@ -243,13 +245,15 @@ pub const Launcher = struct {
     }
 
     pub fn tf_moe_router(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S) Error!void {
+        // a wave an expert over 8 rows: each logit's sum as moe_router_kernel's, the expert row read once for 8 rows
         var a: Args = .{};
         a.add(ad(x));
         a.add(ad(rows));
         a.add(ad(logits));
+        a.add(r);
         a.add(d);
         a.add(e);
-        try l.go(l.moe_router[if (kind == 1) 0 else 1], dim(cdiv(e, 8), r, 1), dim(256, 1, 1), 0, s, &a);
+        try l.go(l.op.router_rows[if (kind == 1) 0 else 1], dim(cdiv(e, 8), cdiv(r, 8), 1), dim(256, 1, 1), 0, s, &a);
     }
 
     pub fn tf_moe_select(l: *const Launcher, logits: CF, pick: I, wts: F, items: I, members: I, capacity: c_int, r: c_int, experts: c_int, top_k: c_int, s: S) Error!void {
@@ -585,7 +589,10 @@ pub const Launcher = struct {
         a.add(ad(members));
         a.add(ad(items));
         a.add(capacity);
-        // the counts, starts and ends of every expert in dynamic shared memory
-        try l.go(l.op.moe_route, dim(1, 1, 1), dim(256, 1, 1), @intCast(3 * @as(usize, @intCast(experts)) * 4), s, &a);
+        // every expert's count, start and end, and each pair segment's 16-bit counts, in dynamic shared memory
+        const ex: usize = @intCast(experts);
+        const segs: usize = if (ex <= 256) 64 else 16;
+        if (ex > 1024) return invalid("moe_route");
+        try l.go(l.op.moe_route, dim(1, 1, 1), dim(256, 1, 1), @intCast(3 * ex * 4 + segs * ex * 2), s, &a);
     }
 };

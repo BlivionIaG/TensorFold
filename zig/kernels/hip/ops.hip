@@ -213,17 +213,36 @@ __global__ void gdn_gate_prefill_kernel(const void* a, const void* b, int kind, 
 }
 
 // experts.route: members = the pairs sorted by expert (stable), items = (expert, first, count) of at most `tile`
-// pairs, one slot of `capacity` each; one block, the counts in shared memory.
+// pairs, one slot of `capacity` each. One block: the pairs cut into `segs` segments; each segment's counts by expert
+// (16-bit, in shared memory), an expert's prefix over the segments, then each segment places its pairs in order.
 __global__ void moe_route_kernel(const int* picks, int pairs, int experts, int tile, int* members, int* items,
                                  int capacity) {
     extern __shared__ int shared[];
     int* counts = shared;
     int* starts = shared + experts;
     int* ends = shared + 2 * experts;
-    for (int e = threadIdx.x; e < experts; e += blockDim.x) counts[e] = 0;
+    unsigned short* seg = reinterpret_cast<unsigned short*>(shared + 3 * experts);
+    const int segs = experts <= 256 ? 64 : 16;
+    const int span = (pairs + segs - 1) / segs;
+    const int t = threadIdx.x;
+    for (int i = t; i < segs * experts; i += blockDim.x) seg[i] = 0;
     __syncthreads();
-    if (threadIdx.x == 0) {
-        for (int p = 0; p < pairs; ++p) counts[picks[p]] += 1;
+    if (t < segs) {
+        for (int p = t * span; p < pairs && p < (t + 1) * span; ++p) seg[t * experts + picks[p]] += 1;
+    }
+    __syncthreads();
+    // an expert's total and each segment's first place for it (still relative to the expert's start)
+    for (int e = t; e < experts; e += blockDim.x) {
+        int run = 0;
+        for (int g = 0; g < segs; ++g) {
+            int c = seg[g * experts + e];
+            seg[g * experts + e] = static_cast<unsigned short>(run);
+            run += c;
+        }
+        counts[e] = run;
+    }
+    __syncthreads();
+    if (t == 0) {
         int start = 0, end = 0;
         for (int e = 0; e < experts; ++e) {
             starts[e] = start;
@@ -233,14 +252,14 @@ __global__ void moe_route_kernel(const int* picks, int pairs, int experts, int t
         }
     }
     __syncthreads();
-    // Stable order in one pass: each expert's cursor walks from its start (the counts' buffer reused as cursors).
-    if (threadIdx.x == 0) {
-        for (int e = 0; e < experts; ++e) counts[e] = starts[e];
-        for (int p = 0; p < pairs; ++p) members[counts[picks[p]]++] = p;
-        for (int e = 0; e < experts; ++e) counts[e] -= starts[e];
+    if (t < segs) {
+        for (int p = t * span; p < pairs && p < (t + 1) * span; ++p) {
+            int e = picks[p];
+            members[starts[e] + seg[t * experts + e]] = p;
+            seg[t * experts + e] += 1;
+        }
     }
-    __syncthreads();
-    for (int slot = threadIdx.x; slot < capacity; slot += blockDim.x) {
+    for (int slot = t; slot < capacity; slot += blockDim.x) {
         int lo = 0, hi = experts;
         while (lo < hi) {                       // searchsorted(ends, slot, right=True)
             int mid = (lo + hi) / 2;
@@ -266,6 +285,48 @@ __global__ void dense_rows_kernel(const void* x, int kind, const float* w, void*
     for (int i = threadIdx.x; i < k; i += 32) acc += load(x, kind, static_cast<long long>(r) * k + i) * w[static_cast<long long>(col) * k + i];
     for (int off = 16; off > 0; off >>= 1) acc += __shfl_xor(acc, off, 32);
     if (threadIdx.x == 0) store(out, kind, static_cast<long long>(r) * n + col, acc);
+}
+
+// moe_router_kernel's logits (act.hip) with a wave's expert row read once for 8 token rows: lane l adds rows' x[i] *
+// w[i] for i = l, l + 32, ... with fmaf in order, then the same xor tree, so every logit keeps its bits.
+__device__ __forceinline__ float router_sum(float x) {
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) x += __shfl_xor(x, mask, 32);
+    return __shfl(x, 0, 32);
+}
+
+template <int KIND>
+__device__ void router_rows(const void* x, const float* rows, float* logits, int r, int d, int e) {
+    constexpr int kChunk = 1024;
+    __shared__ float xs[8][kChunk];
+    const int lane = threadIdx.x & 31;
+    const int expert = blockIdx.x * 8 + (threadIdx.x >> 5);
+    const int row0 = blockIdx.y * 8;
+    const float* w = rows + static_cast<long long>(expert < e ? expert : 0) * d;
+    float acc[8];
+#pragma unroll
+    for (int k = 0; k < 8; ++k) acc[k] = 0.f;
+    for (int base = 0; base < d; base += kChunk) {
+        const int n = d - base < kChunk ? d - base : kChunk;
+        __syncthreads();
+        for (int q = threadIdx.x; q < 8 * kChunk; q += blockDim.x) {
+            const int k = q / kChunk, i = q % kChunk;
+            xs[k][i] = (row0 + k < r && i < n) ? load(x, KIND, static_cast<long long>(row0 + k) * d + base + i) : 0.f;
+        }
+        __syncthreads();
+        // lane l keeps adding i = l, l + 32, ... in order across the chunks
+        for (int i = lane; i < n; i += 32) {
+            const float wv = w[base + i];
+#pragma unroll
+            for (int k = 0; k < 8; ++k) acc[k] = fmaf(xs[k][i], wv, acc[k]);
+        }
+    }
+    if (expert >= e) return;
+#pragma unroll
+    for (int k = 0; k < 8; ++k) {
+        const float sum = router_sum(acc[k]);
+        if (lane == 0 && row0 + k < r) logits[static_cast<long long>(row0 + k) * e + expert] = sum;
+    }
 }
 
 thread_local char op_error[256] = "";
@@ -409,6 +470,16 @@ unsigned blocks(long long n, int threads) { return static_cast<unsigned>((n + th
 
 }  // namespace
 
+extern "C" __global__ void __launch_bounds__(256) tf_router_rows_f16(const void* x, const float* rows, float* logits,
+                                                                     int r, int d, int e) {
+    router_rows<1>(x, rows, logits, r, d, e);
+}
+
+extern "C" __global__ void __launch_bounds__(256) tf_router_rows_bf16(const void* x, const float* rows, float* logits,
+                                                                      int r, int d, int e) {
+    router_rows<2>(x, rows, logits, r, d, e);
+}
+
 extern "C" {
 
 const char* tf_op_error() { return op_error; }
@@ -509,7 +580,9 @@ int tf_dense_rows(const void* x, int kind, const float* w, void* out, int rows, 
 
 int tf_moe_route(const int* picks, int pairs, int experts, int tile, int* members, int* items, int capacity,
                  hipStream_t s) {
-    moe_route_kernel<<<1, 256, 3 * experts * sizeof(int), s>>>(picks, pairs, experts, tile, members, items, capacity);
+    int segs = experts <= 256 ? 64 : 16;
+    moe_route_kernel<<<1, 256, 3 * experts * sizeof(int) + segs * experts * 2, s>>>(picks, pairs, experts, tile,
+                                                                                   members, items, capacity);
     return finish();
 }
 
