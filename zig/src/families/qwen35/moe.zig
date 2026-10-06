@@ -45,7 +45,7 @@ pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize,
     const items = try o.arena.of(i32, cap * 3);
     const members = try o.arena.of(i32, size * slots);
     try o.moeRouter(x, r.rows32, logits, rows, ex.dims, r.rows);
-    var count: usize = cap;
+    const count: usize = cap;
     var tile: usize = undefined;
     if (r.remap != 0) {
         // every rank picks the same pairs, runs the ones it holds (the others group under an id past its experts)
@@ -65,6 +65,37 @@ pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize,
         try o.moeCombine(y, wts, .{ .ptr = share, .kind = .f32 }, rows, slots, ex.dims);
         return .{ .ptr = share, .kind = .f32 };
     }
+    const p = try expertParts(o, m, r, x, rows, logits, pick, wts, items, members, cap);
+    const out = try o.arena.take(rows * ex.dims * m.act.size());
+    try o.moeCombine(p.y, wts, .{ .ptr = out, .kind = m.act }, rows, slots, ex.dims);
+    return .{ .ptr = out, .kind = m.act };
+}
+
+/// The routed experts' slots a row (fp32, (rows * slots, dims)) and the slots' weights (rows, slots), before they are
+/// summed: a single rank only (no remap).
+pub const Parts = struct { y: u64, wts: u64, slots: usize };
+
+pub fn parts(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize) hip.ops.Error!Parts {
+    const slots = r.top_k + 1;
+    const size = bucket(rows);
+    const cap = capacity(size * slots, r.rows);
+    const logits = try o.arena.of(f32, rows * r.rows);
+    const pick = try o.arena.of(i32, size * slots);
+    const wts = try o.arena.of(f32, size * slots);
+    const items = try o.arena.of(i32, cap * 3);
+    const members = try o.arena.of(i32, size * slots);
+    try o.moeRouter(x, r.rows32, logits, rows, r.experts.dims, r.rows);
+    const p = try expertParts(o, m, r, x, rows, logits, pick, wts, items, members, cap);
+    return .{ .y = p.y, .wts = wts, .slots = slots };
+}
+
+/// Select, plan, gate and up, the activation and down: the rows' slots before the combine.
+fn expertParts(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize, logits: u64, pick: u64, wts: u64, items: u64, members: u64, cap: usize) hip.ops.Error!struct { y: u64 } {
+    const ex = r.experts;
+    const slots = r.top_k + 1;
+    const pairs = rows * slots;
+    var count: usize = cap;
+    var tile: usize = undefined;
     if (rows == 1) {
         try o.moeSelect(logits, pick, wts, .{ .items = items, .members = members }, cap, 1, r.count(), r.top_k);
         tile = 1;
@@ -74,14 +105,16 @@ pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize,
         tile = tileFor(rows);
         try o.moeRoute(pick, pairs, r.rows, tile, members, items, cap);
     }
-    const both = try o.affineRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
-    const act = try o.arena.take(pairs * ex.width * m.act.size());
-    const act_t: Tensor = .{ .ptr = act, .kind = m.act };
-    try o.moeAct(both, act_t, pairs, ex.width, ex.limit);
+    // the gate and up's activation is the launch's epilogue when the tile takes the shape
+    const act_t: Tensor = if (try o.affineRoutedAct(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows), ex.limit)) |t| t else blk: {
+        const both = try o.affineRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
+        const act = try o.arena.take(pairs * ex.width * m.act.size());
+        const t: Tensor = .{ .ptr = act, .kind = m.act };
+        try o.moeAct(both, t, pairs, ex.width, ex.limit);
+        break :blk t;
+    };
     const y = try o.affineRouted(act_t, ex.down, items, count, members, pairs, 1, @min(tile, rows));
-    const out = try o.arena.take(rows * ex.dims * m.act.size());
-    try o.moeCombine(y, wts, .{ .ptr = out, .kind = m.act }, rows, slots, ex.dims);
-    return .{ .ptr = out, .kind = m.act };
+    return .{ .y = y };
 }
 
 test "buffer sizes follow moe.run and max_items" {

@@ -52,6 +52,35 @@ fn tri(kind: c_int) usize {
 /// By kind (0 fp32, 1 fp16, 2 bf16) or by cache kind (0 fp16, 1 bf16, 2 fp32), the kernel one instantiation.
 const Triple = [3]Function;
 
+/// decode.hip's ConvArgs: the linear attention's conv launch.
+pub const ConvArgs = extern struct {
+    x: u64,
+    kind: c_int,
+    weight: u64,
+    state: u64,
+    states: u64 = 0,
+    qn: u64,
+    kn: u64,
+    v: u64,
+    channels: c_int,
+    kernel: c_int,
+    rows: c_int,
+    kw: c_int,
+    vw: c_int,
+    qw: u64 = 0,
+    kw_w: u64 = 0,
+    eps: f32 = 0,
+    norm: c_int = 0,
+    ga: u64 = 0,
+    gb: u64 = 0,
+    a_log: u64 = 0,
+    dt_bias: u64 = 0,
+    gate: u64 = 0,
+    beta: u64 = 0,
+    gcount: c_int = 0,
+    heads: c_int = 0,
+};
+
 /// The chunked DeltaNet's chunk, in rows.
 pub const gdn_chunk = 64;
 
@@ -92,7 +121,20 @@ pub const Launcher = struct {
     softmax_stats: Function,
     sum_partials: Function,
     op: Ops,
+    /// decode.hip's kernels: a round's few rows, and the launches that merge several small ones.
+    dec: Decode,
+    /// TF_DECODE_FUSE=old keeps the launches decode.hip replaces.
+    fuse: bool,
     affine: Affine,
+
+    const Decode = struct {
+        router: [2]Function, // fp16, bf16
+        tail: Function,
+        conv_split: Function,
+        rms2: Function,
+        gnorm_out: Function,
+        select: Function,
+    };
 
     const Ops = struct {
         embed_rows: Function,
@@ -129,6 +171,12 @@ pub const Launcher = struct {
         const att = l.mods[@backingInt(kernels.Group.attention)];
         const gd = l.mods[@backingInt(kernels.Group.gated_delta)];
         const pre = l.mods[@backingInt(kernels.Group.prefill)];
+        const dec = l.mods[@backingInt(kernels.Group.decode)];
+        l.fuse = true;
+        if (std.c.getenv("TF_DECODE_FUSE")) |v| {
+            if (std.mem.eql(u8, std.mem.span(v), "old")) l.fuse = false;
+        }
+        l.dec = .{ .router = .{ try dec.function("tf_router_decode_f16"), try dec.function("tf_router_decode_bf16") }, .tail = try dec.function("tf_tail"), .conv_split = try dec.function("tf_conv_split"), .rms2 = try dec.function("tf_rms2"), .gnorm_out = try dec.function("tf_gnorm_out"), .select = try dec.function("tf_select_decode") };
         l.fa_wide = .{ try pre.function("tf_fa_wide_f16"), try pre.function("tf_fa_wide_bf16") };
         const gp = l.mods[@backingInt(kernels.Group.gdn_prefill)];
         l.gdn_chunked = .{ try gp.function("tf_gdn_prep"), try gp.function("tf_gdn_kt"), try gp.function("tf_gdn_wy"), try gp.function("tf_gdn_h"), try gp.function("tf_gdn_o") };
@@ -318,8 +366,69 @@ pub const Launcher = struct {
         a.add(d);
         a.add(e);
         const k: usize = if (kind == 1) 0 else 1;
+        if (l.fuse and r <= 16 and @rem(d, 4) == 0 and ad(rows) % 16 == 0 and ad(x) % 8 == 0) {
+            return l.go(l.dec.router[k], dim(cdiv(e, 4), 1, 1), dim(128, 1, 1), 0, s, &a);
+        }
         if (r >= 64 and @rem(d, 32) == 0) return l.go(l.op.router_tile[k], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
         try l.go(l.op.router_rows[k], dim(cdiv(e, 8), cdiv(r, 8), 1), dim(256, 1, 1), 0, s, &a);
+    }
+
+    /// decode.hip's tail: x = round(x + t) with t = y (the activation kind) or, with `slots` > 0, the weighted sum of the
+    /// row's slots of fp32 y; normed = rms(x) * weight. One block a row.
+    pub fn tf_tail(l: *const Launcher, x: P, y: C, wts: CF, weight: CF, normed: P, kind: c_int, rows: c_int, slots: c_int, width: c_int, eps: f32, s: S) Error!void {
+        if (width > 8192 or rows < 1) return invalid("tail");
+        var a: Args = .{};
+        a.add(ad(x));
+        a.add(ad(y));
+        a.add(ad(wts));
+        a.add(ad(weight));
+        a.add(ad(normed));
+        a.add(kind);
+        a.add(slots);
+        a.add(width);
+        a.add(eps);
+        try l.go(l.dec.tail, dim(rows, 1, 1), dim(512, 1, 1), 0, s, &a);
+    }
+
+    /// decode.hip's conv: a window's rows through the linear attention's conv, split into q, k and v (fp32), the q and k
+    /// heads normed and the gate and beta computed when `c` asks.
+    pub fn tf_conv_split(l: *const Launcher, c: ConvArgs, s: S) Error!void {
+        if (c.kernel < 1 or c.kernel > 8 or (c.norm != 0 and (c.norm != 128 or @rem(c.kw, 128) != 0))) return invalid("conv split");
+        var a: Args = .{};
+        a.add(c);
+        const gate_blocks = if (c.ga != 0) cdiv(c.gcount, 128) else 0;
+        try l.go(l.dec.conv_split, dim(cdiv(c.channels, 128) + gate_blocks, 1, 1), dim(128, 1, 1), 0, s, &a);
+    }
+
+    /// Two sets of fp32 rows of `width` (at most 1024), each with its own weight, normed in one launch.
+    pub fn tf_rms2(l: *const Launcher, x0: CF, w0: CF, y0: F, x1: CF, w1: CF, y1: F, rows: c_int, width: c_int, eps: f32, s: S) Error!void {
+        if (width > 1024) return invalid("rms2");
+        var a: Args = .{};
+        a.add(ad(x0));
+        a.add(ad(w0));
+        a.add(ad(y0));
+        a.add(ad(x1));
+        a.add(ad(w1));
+        a.add(ad(y1));
+        a.add(rows);
+        a.add(width);
+        a.add(eps);
+        try l.go(l.dec.rms2, dim(cdiv(rows, 8), 2, 1), dim(256, 1, 1), 0, s, &a);
+    }
+
+    /// out = rms(y) * weight * round(silu(z)) rounded to the kind, rows of `width` (at most 1024).
+    pub fn tf_gnorm_out(l: *const Launcher, y: CF, weight: CF, z: C, out: P, kind: c_int, rows: c_int, width: c_int, eps: f32, s: S) Error!void {
+        if (width > 1024) return invalid("gnorm out");
+        var a: Args = .{};
+        a.add(ad(y));
+        a.add(ad(weight));
+        a.add(ad(z));
+        a.add(ad(out));
+        a.add(kind);
+        a.add(rows);
+        a.add(width);
+        a.add(eps);
+        try l.go(l.dec.gnorm_out, dim(cdiv(rows, 8), 1, 1), dim(256, 1, 1), 0, s, &a);
     }
 
     pub fn tf_moe_select(l: *const Launcher, logits: CF, pick: I, wts: F, items: I, members: I, capacity: c_int, r: c_int, experts: c_int, top_k: c_int, s: S) Error!void {
@@ -333,6 +442,7 @@ pub const Launcher = struct {
         a.add(capacity);
         a.add(experts);
         a.add(top_k);
+        if (l.fuse) return l.go(l.dec.select, dim(r, 1, 1), dim(256, 1, 1), 0, s, &a);
         try l.go(l.moe_select, dim(r, 1, 1), dim(32, 1, 1), 0, s, &a);
     }
 
