@@ -121,10 +121,10 @@ fn plan(srv: *Server, cx: *Cx, is_chat: bool, raw: Value) errors.Refused!Plan {
     if (srv.config.request_log) |path| request_log.append(cx.a, path, body);
     var input: chat.Input = .{ .fields = undefined };
     if (is_chat) {
-        input.messages = try messages.normalize(cx, body.get("messages"), "system");
+        input.messages = try messages.normalize(cx, body.get("messages"), "system", srv.needs_user_after_tool);
         input.tools = try tool_specs.active(cx, body.get("tools"), body.get("tool_choice"));
     } else if (body.get("messages")) |m| if (m == .array and m.array.len > 0) {
-        input.messages = try messages.normalize(cx, m, "system");
+        input.messages = try messages.normalize(cx, m, "system", srv.needs_user_after_tool);
     };
     if (!is_chat and input.messages.array.len == 0) input.prompt = try legacyPrompt(srv, cx, body.get("prompt"));
     // ``body.get("max_tokens") or body.get("max_completion_tokens")``: both are ints or None by now
@@ -203,15 +203,24 @@ fn promptText(srv: *Server, cx: *Cx, p: Value) errors.Refused![]const u8 {
 /// The chat or completion reply to ``raw`` (already decoded), written to ``out``.
 pub fn run(srv: *Server, a: Allocator, out: Out, gone: Gone, is_chat: bool, raw: Value) void {
     const field: []const u8 = if (is_chat) "messages" else "prompt";
+    const id = ids.make(a, if (is_chat) "chatcmpl-" else "cmpl-", 32) catch return;
     var cx: Cx = .{ .a = a };
-    const p = plan(srv, &cx, is_chat, raw) catch |e| {
+    var p = plan(srv, &cx, is_chat, raw) catch |e| {
         if (e == error.OutOfMemory) cx.message = "out of memory";
+        logRefused(id, cx.message);
         const body = (if (cx.kind == .other) errorOther(a, cx.message) else errorBody(a, &cx, field)) catch return;
         out.vt.reply(out.ctx, cx.status(), wrapError(a, body) catch return);
         return;
     };
-    var r: Run = .{ .srv = srv, .a = a, .out = out, .is_chat = is_chat, .plan = p, .id = (ids.make(a, if (is_chat) "chatcmpl-" else "cmpl-", 32) catch return), .created = std.Io.Clock.real.now(srv.io).toSeconds() };
+    p.input.id = id;
+    var r: Run = .{ .srv = srv, .a = a, .out = out, .is_chat = is_chat, .plan = p, .id = id, .created = std.Io.Clock.real.now(srv.io).toSeconds() };
     if (p.stream) r.stream(gone, field) else r.whole(gone, field);
+}
+
+/// Why a request got an error reply, logged before it: its access line shows only the status.
+fn logRefused(id: []const u8, message: []const u8) void {
+    var buf: [1400]u8 = undefined;
+    log.line("{s}", .{log.refused(&buf, id, message)});
 }
 
 fn errorOther(a: Allocator, message: []const u8) Allocator.Error!Value {
@@ -229,6 +238,7 @@ const Run = struct {
     id: []const u8,
     created: i64,
     streamed_prose: bool = false,
+    prose_sent: std.ArrayList(u8) = .empty, // the content a tool stream sent
 
     fn chunk(r: *Run, delta: ?Value, finish: ?[]const u8) Allocator.Error!Value {
         const a = r.a;
@@ -287,10 +297,10 @@ const Run = struct {
         if (tools.len == 0) return null;
         const parsed = try tool_parse.parse(r.a, reply.content, tools, r.plan.policy.maxCalls());
         const calls = parsed.calls orelse {
-            if (r.plan.policy.single) reply.content = try r.plan.policy.content(r.a, parsed.content);
+            if (r.plan.policy.single) reply.content = try r.plan.policy.parsedContent(r.a, parsed.content);
             return null;
         };
-        reply.content = try r.plan.policy.content(r.a, parsed.content);
+        reply.content = try r.plan.policy.parsedContent(r.a, parsed.content);
         reply.finish_reason = "tool_calls";
         if (r.plan.policy.single) reply.tool_calls_streamed = false;
         return if (r.plan.policy.single and calls.len > 1) calls[0..1] else calls;
@@ -303,18 +313,24 @@ const Run = struct {
         r.out.vt.reply(r.out.ctx, if (kind_ok) 400 else 500, wrapError(a, body) catch return);
     }
 
+    /// A reply that ended before anything was sent: a refusal's 400, a failure's 500, nothing when the client left.
+    fn unsent(r: *Run, cx: *Cx, e: chat.Failure, field: []const u8) void {
+        switch (e) {
+            error.Cancelled => {},
+            error.OutOfMemory => r.fail(&.{ .a = r.a, .kind = .server, .message = "out of memory" }, field),
+            error.Failed => r.fail(&.{ .a = r.a, .kind = .server, .message = "the reply failed" }, field),
+            error.Refused => {
+                if (cx.kind == .other) cx.kind = .server;
+                if (cx.kind != .server) logRefused(r.id, cx.message); // a 500 is a failure, not a refusal
+                r.fail(cx, field);
+            },
+        }
+    }
+
     fn whole(r: *Run, gone: Gone, field: []const u8) void {
         const a = r.a;
         var cx: Cx = .{ .a = a };
-        var reply = chat.run(r.srv, &cx, r.plan.input, null, gone) catch |e| switch (e) {
-            error.Cancelled => return,
-            error.OutOfMemory => return r.fail(&.{ .a = a, .kind = .server, .message = "out of memory" }, field),
-            error.Failed => return r.fail(&.{ .a = a, .kind = .server, .message = "the reply failed" }, field),
-            error.Refused => {
-                if (cx.kind == .other) cx.kind = .server;
-                return r.fail(&cx, field);
-            },
-        };
+        var reply = chat.run(r.srv, &cx, r.plan.input, null, gone) catch |e| return r.unsent(&cx, e, field);
         const calls = r.attachCalls(&reply) catch return;
         const o = json.newObject(a) catch return;
         r.wholeBody(o, &reply, calls) catch return;
@@ -363,6 +379,7 @@ const Run = struct {
             const filtered = r.policyDelta(delta) catch return error.Closed;
             const d = filtered orelse return;
             try r.prose();
+            r.prose_sent.appendSlice(r.a, if (d == .string) d.string else d.strField("content") orelse "") catch return error.Closed;
             return r.emit(r.chunk(d, null) catch return error.Closed);
         }
     };
@@ -401,15 +418,21 @@ const Run = struct {
 
     fn stream(r: *Run, gone: Gone, field: []const u8) void {
         const a = r.a;
-        r.out.vt.open(r.out.ctx) catch return;
         const tools = r.plan.input.tools.len > 0;
+        var cx: Cx = .{ .a = a };
+        // every refusal comes before the stream opens, so it gets the same 400 as a whole reply
+        const prepared = chat.prepare(r.srv, &cx, r.plan.input, gone) catch |e| return r.unsent(&cx, e, field);
+        var handed = false; // generate gives the preparing count back from here on
+        defer if (!handed) chat.release(r.srv, prepared.preparing);
+        r.out.vt.open(r.out.ctx) catch return;
         if (!tools and r.is_chat) r.emit(r.chunk(roleDelta(a) catch return, null) catch return) catch return;
         var sink_state: StreamSink = .{ .run = r, .tools = tools };
-        var cx: Cx = .{ .a = a };
-        var reply = chat.run(r.srv, &cx, r.plan.input, .{ .ctx = &sink_state, .call = StreamSink.call }, gone) catch |e| {
+        handed = true;
+        var reply = chat.generate(r.srv, &cx, prepared, .{ .ctx = &sink_state, .call = StreamSink.call }, gone) catch |e| {
             switch (e) {
                 error.Cancelled => return,
                 error.Refused => if (cx.kind != .other and cx.kind != .server) {
+                    logRefused(r.id, cx.message);
                     const body = errorBody(a, &cx, field) catch return;
                     r.emit(wrapError(a, body) catch return) catch return;
                     r.out.vt.event(r.out.ctx, null) catch {};
@@ -431,6 +454,7 @@ const Run = struct {
             const tail = r.plan.policy.flush();
             if (tail.len > 0) {
                 r.prose() catch return;
+                r.prose_sent.appendSlice(a, tail) catch return;
                 r.emit(r.chunk(.{ .string = tail }, null) catch return) catch return;
             }
             if (calls != null and !reply.tool_calls_streamed) {
@@ -439,6 +463,8 @@ const Run = struct {
                 for (deltas) |d| r.emit(r.chunk(d, null) catch return) catch return;
             } else if (reply.content.len > 0 and !r.streamed_prose) {
                 r.emit(r.chunk(.{ .string = reply.content }, null) catch return) catch return;
+            } else if (r.plan.policy.kept(reply.content, r.prose_sent.items)) |rest| {
+                r.emit(r.chunk(.{ .string = rest }, null) catch return) catch return;
             }
         }
         const last = r.chunk(.{ .string = "" }, if (reply.finish_reason.len > 0) reply.finish_reason else "length") catch return;

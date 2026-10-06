@@ -79,7 +79,14 @@ pub const Engine = struct {
     pub fn addStream(e: *Engine, s: *Stream) !void {
         _ = e.arena.reset(.retain_capacity);
         try trail.event(e, &.{ f("ev", str("add")), f("stream", str(s.id)) });
-        try e.backend.prefill(s);
+        e.backend.prefill(s) catch |err| {
+            if (err == error.Cancelled) e.backend.release(s); // the host finishes a cancelled stream without the core
+            return err;
+        };
+        if (s.isCancelled()) { // cancelled in its last chunk: no first token
+            e.backend.release(s);
+            return error.Cancelled;
+        }
         s.context.shrinkRetainingCapacity(s.prompt_len);
         s.pending = null;
         s.cache_len = s.prompt_len;
@@ -373,8 +380,16 @@ pub const Engine = struct {
                 }
             }
         }
-        const cut = s.thinkCut(committed.items);
-        if (cut) |c| {
+        const budget_cut = s.thinkCut(committed.items);
+        const loop_cut = sm.loopCut(s, committed.items);
+        const loop_wins = if (loop_cut) |c| budget_cut == null or c < budget_cut.? else false;
+        var cut: ?usize = null;
+        if (loop_wins) {
+            cut = loop_cut;
+            path = path[0 .. loop_cut.? + 1];
+            committed.shrinkRetainingCapacity(loop_cut.? + 1);
+        } else if (budget_cut) |c| {
+            cut = c;
             path = path[0 .. c + 1];
             committed.shrinkRetainingCapacity(c);
             try committed.append(a, try s.startClose(e.gpa));

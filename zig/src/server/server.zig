@@ -30,6 +30,8 @@ pub const Config = struct {
     enable_thinking: bool = true,
     reasoning_effort: ?[]const u8 = null,
     thinking_budget: i64 = 0,
+    loop_guard: bool = false,
+    dashboard: bool = false,
     /// Sampling when a request names none (generation_config.json and the serve flags), or null for greedy.
     default_sampling: ?Value = null,
     use_drafts: bool = true,
@@ -48,6 +50,7 @@ pub const Server = struct {
     config: Config,
     keys: ?*auth.Store,
     late_system: []const u8 = "system",
+    needs_user_after_tool: bool = false,
     markers: reply_text.Markers = reply_text.think_markers,
     chunks: chunk_plan.Plan = .{},
     effort_levels: []const []const u8 = &.{},
@@ -71,6 +74,7 @@ pub const Server = struct {
         if (text.tokenId(reply_text.channel_markers.close) != null) srv.markers = reply_text.channel_markers;
         srv.effort_levels = try fields.effortLevels(a, text.templateSource());
         srv.late_system = try lateSystem(a, text);
+        srv.needs_user_after_tool = needsUserAfterTool(text.templateSource());
         if (text.tokenId("</think>")) |end| {
             const lead = try text.encode(a, "\n", false);
             const trail = try text.encode(a, "\n\n", false);
@@ -166,9 +170,10 @@ pub const Server = struct {
     }
 
     /// Counts one finished request for /metrics.
-    pub fn noteRequest(srv: *Server, prompt_len: usize, generated: usize, drafted: u64, accepted: u64, received: i96, first: ?i96) void {
+    pub fn noteRequest(srv: *Server, prompt_len: usize, generated: usize, drafted: u64, accepted: u64, rounds: u64, received: i96, first: ?i96, last: ?i96, prefill: ?f64) void {
         const now = clock.nowNs(srv.io);
-        srv.metrics.note(srv.io, prompt_len, generated, drafted, accepted, @max(0, clock.seconds(now - received)), if (first) |f| clock.seconds(f - received) else null, if (first) |f| @max(0, clock.seconds(now - f)) else null);
+        const tpot = srv.metrics.tpotValue(first, last, generated);
+        srv.metrics.note(srv.io, prompt_len, generated, drafted, accepted, rounds, @max(0, clock.seconds(now - received)), if (first) |f| clock.seconds(f - received) else null, if (first) |f| @max(0, clock.seconds(now - f)) else null, prefill, tpot);
     }
 
     /// Accepts connections until ``stop`` is set, each on its own thread.
@@ -270,4 +275,11 @@ fn lateSystem(a: Allocator, text: model_text.Text) ![]const u8 {
     var problem: []const u8 = "";
     const rendered = text.render(a, probe, .{ .add_generation_prompt = false }, &problem) catch return "user";
     return if (std.mem.indexOf(u8, rendered, probe_text) != null) "system" else "user";
+}
+
+/// ``needs_user_after_tool``: the template demands a user query (Qwen's raises "No user query found" when the
+/// conversation has none), which a conversation whose user turn became tool results no longer has; such a
+/// template gains a user turn after a trailing tool message. Templates without the raise are untouched.
+fn needsUserAfterTool(source: []const u8) bool {
+    return std.mem.indexOf(u8, source, "No user query found") != null;
 }

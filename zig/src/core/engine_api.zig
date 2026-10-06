@@ -65,6 +65,8 @@ pub const Request = struct {
     /// Set only when ``Info`` says the engine enforces it.
     call: ?CallGate = null,
     structure: ?Structure = null,
+    /// Stop a short exact cycle while the think block is open.
+    loop_guard: bool = false,
 };
 
 pub const Reason = enum { stop, length, cancelled, failed };
@@ -78,6 +80,10 @@ pub const Stats = struct {
     min_rows: u32 = 0,
     prefill_widths: []const u32 = &.{},
     prefill_raised: []const bool = &.{},
+    /// The loop period that ended or interrupted the think block, if any.
+    loop_period: ?u32 = null,
+    /// Prompt prefill duration measured by the engine host, in seconds.
+    prefill_seconds: ?f64 = null,
     /// The drafter's own counters as a JSON object, or empty.
     telemetry_json: []const u8 = "",
 };
@@ -106,6 +112,8 @@ pub const Info = struct {
     context_fitted: bool = false,
     /// What the engine enforces; the server refuses requests that need more.
     call_gates: bool = false,
+    /// The engine observes loop_guard requests in its lane stream.
+    loop_guard: bool = false,
     structures: bool = false,
     /// Prompt rows a prefill chunk at most, for the server's chunk starts (0: the engine cuts prompts itself).
     prefill_step: u32 = 0,
@@ -115,7 +123,7 @@ pub const Info = struct {
 pub const Family = struct { model_type: []const u8, formats: []const []const u8 };
 
 /// What a server asks of the engine it opens: the checkpoint, and the serve flags an engine reads.
-pub const Open = struct { dir: []const u8, model_type: []const u8, context: ?i64 = null, lanes: u32 = 8, drafts: bool = true };
+pub const Open = struct { dir: []const u8, model_type: []const u8, context: ?i64 = null, lanes: u32 = 8, drafts: bool = true, speed_up: ?[]const u8 = null, prompt_cache_gib: ?f64 = null, prompt_cache_over_cap: bool = false };
 
 /// An opened engine; ``close`` stops its thread and frees its backend.
 pub const Opened = struct { engine: Engine, close: *const fn (ctx: *anyopaque) void, ctx: *anyopaque };
@@ -133,6 +141,8 @@ pub const Status = struct {
     warming: bool = false,
     /// Live streams written to the caller's buffer: tokens each holds.
     streams: usize = 0,
+    /// Generated tokens held by live streams, excluding their prompts.
+    generation_tokens: u64 = 0,
 };
 
 pub const SubmitError = error{ Closed, Busy };
@@ -185,6 +195,11 @@ pub const LoneHooks = struct {
 /// The lane core served to the HTTP threads (lane_host.zig).
 pub const LaneHost = @import("lane_host.zig").LaneHost;
 
+/// Exact prompt reuse between requests, for any family (prompt_cache.zig).
+pub const prompt_cache = @import("prompt_cache.zig");
+
 test {
     _ = @import("lane_host.zig");
+    _ = @import("lane_host_reuse_test.zig");
+    _ = prompt_cache;
 }

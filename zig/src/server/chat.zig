@@ -6,6 +6,7 @@ const errors = @import("errors.zig");
 const fields_mod = @import("fields.zig");
 const reply_text = @import("reply_text.zig");
 const tool_stream = @import("tool_stream.zig");
+const tool_parse = @import("tool_parse.zig");
 const prompt_mod = @import("prompt.zig");
 const log = @import("log.zig");
 const ids = @import("ids.zig");
@@ -26,6 +27,8 @@ pub const Input = struct {
     temperature: f64 = 0,
     /// The sampling fields: the request's own (``k in body``), its thinking switches and ``tool_call_required``.
     fields: Value,
+    /// The reply's id as its client gets it, so the server's lines for the request carry the same id.
+    id: []const u8 = "",
 };
 
 /// A streamed piece: content text (a string) or a delta object (reasoning or tool calls).
@@ -114,8 +117,22 @@ fn flag(f: Value, key: []const u8) ?bool {
     return v.truthy();
 }
 
-/// The reply to ``input``; ``sink`` hears the stream (null: not streamed). ``gone`` says the client left.
-pub fn run(srv: *Server, cx: *Cx, input: Input, sink: ?Sink, gone: anytype) Failure!Reply {
+/// A request rendered and checked but not submitted; it holds the preparing count until generate or release.
+pub const Prepared = struct {
+    input: Input,
+    request: api.Request,
+    prompt_len: usize,
+    received: i96,
+    thinking: bool,
+    effort: ?[]const u8,
+    sampled: bool, // a sampling config, which the reply labels "exact"; greedy otherwise
+    drafts: bool,
+    stops: fields_mod.Stops,
+    preparing: bool,
+};
+
+/// Render ``input`` and run every check that can refuse it, before anything reaches the client or the engine.
+pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepared {
     const a = cx.a;
     const io = srv.io;
     const received = nowNs(io);
@@ -125,11 +142,9 @@ pub fn run(srv: *Server, cx: *Cx, input: Input, sink: ?Sink, gone: anytype) Fail
     const priority = f.get("priority");
     const background = prompt_mod.isTitle(input.messages, input.tools.len > 0) or
         (priority != null and priority.? == .string and std.mem.eql(u8, priority.?.string, "background"));
-    var preparing = !background;
+    const preparing = !background;
     if (preparing) _ = srv.preparing.fetchAdd(1, .acq_rel);
-    defer if (preparing) {
-        _ = srv.preparing.fetchSub(1, .acq_rel);
-    };
+    errdefer release(srv, preparing);
     if (gone.check()) return error.Cancelled;
     var thinking = flag(f, "enable_thinking") orelse srv.config.enable_thinking;
     if (input.prompt != null) thinking = false;
@@ -169,13 +184,29 @@ pub fn run(srv: *Server, cx: *Cx, input: Input, sink: ?Sink, gone: anytype) Fail
     if (thinking) {
         const budget_field = f.get("thinking_budget");
         const budget: i64 = if (budget_field != null and budget_field.?.truthy()) budget_field.?.int64() orelse 0 else srv.config.thinking_budget;
-        if (budget > 0 and srv.think_close.len > 0) {
-            request.think_budget = @intCast(@min(budget, std.math.maxInt(u32)));
+        if (srv.think_close.len > 0) request.loop_guard = srv.config.loop_guard;
+        if ((budget > 0 or request.loop_guard) and srv.think_close.len > 0) {
+            if (budget > 0) request.think_budget = @intCast(@min(budget, std.math.maxInt(u32)));
             request.think_close = srv.think_close;
             request.think_end = srv.think_close_end;
         }
     }
-    if (background) {
+    return .{ .input = input, .request = request, .prompt_len = rendered.ids.len, .received = received, .thinking = thinking, .effort = effort, .sampled = sampling != null, .drafts = drafts, .stops = stops_opt, .preparing = preparing };
+}
+
+/// Submit a prepared request and collect its reply; ``sink`` hears the stream (null: not streamed).
+pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: anytype) Failure!Reply {
+    const a = cx.a;
+    const io = srv.io;
+    var request = prepared.request;
+    const input = prepared.input;
+    const received = prepared.received;
+    const thinking = prepared.thinking;
+    const effort = prepared.effort;
+    const stops_opt = prepared.stops;
+    var preparing = prepared.preparing;
+    defer release(srv, preparing);
+    if (request.background) {
         while (true) {
             const now = nowNs(io);
             const waiting = now < received + 150 * std.time.ns_per_ms or (srv.preparing.load(.acquire) > 0 and now < received + 2 * std.time.ns_per_s);
@@ -195,16 +226,39 @@ pub fn run(srv: *Server, cx: *Cx, input: Input, sink: ?Sink, gone: anytype) Fail
         error.Busy => cx.fail(.capacity, "the engine is busy; retry shortly", .{}),
         error.Closed => cx.fail(.other, "the scheduler is closed", .{}),
     };
-    if (preparing) {
-        _ = srv.preparing.fetchSub(1, .acq_rel);
-        preparing = false;
-    }
-    var gen: Generation = .{ .srv = srv, .a = a, .box = &box, .id = id, .sink = sink, .thinking = thinking or reply_text.isChannel(srv.markers), .stops = .{ .strings = stops_opt.strings }, .ignore_eos = stops_opt.ignore_eos, .max_tokens = request.max_tokens, .tools = input.tools };
-    defer srv.noteRequest(rendered.ids.len, gen.collected.items.len, box.stats.drafted, box.stats.accepted, received, gen.first_ns);
+    release(srv, preparing); // a background request waits only while a foreground one prepares
+    preparing = false;
+    var gen: Generation = .{ .srv = srv, .a = a, .box = &box, .id = id, .reply_id = input.id, .sink = sink, .thinking = thinking or reply_text.isChannel(srv.markers), .stops = .{ .strings = stops_opt.strings }, .ignore_eos = stops_opt.ignore_eos, .max_tokens = request.max_tokens, .tools = input.tools };
+    defer srv.noteRequest(prepared.prompt_len, gen.collected.items.len, box.stats.drafted, box.stats.accepted, box.stats.rounds, received, gen.first_ns, gen.last_ns, box.stats.prefill_seconds);
     errdefer if (!gen.engine_done) gen.cancel(); // the engine writes to the mailbox until it says finished
-    if (sink != null and input.tools.len > 0) gen.calls = try tool_stream.Streamer.init(a, input.tools);
-    try gen.loop(gone);
-    return gen.finish(cx, rendered.ids.len, received, submitted, thinking, effort, sampling != null, drafts);
+    const result: Failure!Reply = blk: {
+        if (sink != null and input.tools.len > 0) gen.calls = tool_stream.Streamer.init(a, input.tools) catch |e| break :blk e;
+        gen.loop(gone) catch |e| break :blk e;
+        break :blk gen.finish(cx, prepared.prompt_len, received, submitted, thinking, effort, prepared.sampled, prepared.drafts);
+    };
+    if (result) |_| {} else |e| logEnded(input.id, e, cx.message, prepared.prompt_len, gen.collected.items.len, seconds(nowNs(io) - received));
+    return result;
+}
+
+/// The ``ended`` line of a submitted reply that ends without one: its client left, or it failed.
+fn logEnded(id: []const u8, e: Failure, message: []const u8, prompt: usize, tokens: usize, after: f64) void {
+    const why: ?[]const u8 = switch (e) {
+        error.Cancelled => null,
+        error.Refused => message, // once submitted, only the engine's own failure refuses
+        else => @errorName(e),
+    };
+    var buf: [1024]u8 = undefined;
+    log.line("{s}", .{log.ended(&buf, id, why, prompt, tokens, after)});
+}
+
+/// The reply to ``input``; ``sink`` hears the stream (null: not streamed). ``gone`` says the client left.
+pub fn run(srv: *Server, cx: *Cx, input: Input, sink: ?Sink, gone: anytype) Failure!Reply {
+    return generate(srv, cx, try prepare(srv, cx, input, gone), sink, gone);
+}
+
+/// Give back a foreground request's preparing count: at its submit, or when it is never generated.
+pub fn release(srv: *Server, preparing: bool) void {
+    if (preparing) _ = srv.preparing.fetchSub(1, .acq_rel);
 }
 
 /// The text a stream has sent: Python's ``streamed = visible``, grown by its delta while it only grows.
@@ -242,6 +296,7 @@ const Generation = struct {
     a: Allocator,
     box: *Mailbox,
     id: api.Id,
+    reply_id: []const u8, // the id the client gets, which the done line prints
     sink: ?Sink,
     thinking: bool,
     stops: reply_text.Stops,
@@ -256,6 +311,7 @@ const Generation = struct {
     streamed_reasoning: Shown = .{},
     streaming_done: bool = false,
     first_ns: ?i96 = null,
+    last_ns: ?i96 = null,
     reason: ?[]const u8 = null, // the server ended the reply (a stop string, the length) before the engine said so
     engine_done: bool = false,
     consumed: usize = 0,
@@ -263,6 +319,14 @@ const Generation = struct {
 
     fn eos(g: *const Generation, t: u32) bool {
         return !g.ignore_eos and std.mem.indexOfScalar(u32, g.srv.eos, t) != null;
+    }
+
+    /// What closes a call the model's end token left open (``tool_parse.closeCall``); nothing when a stop string, the
+    /// length or ``ignore_eos`` ended the reply instead.
+    fn closeCall(g: *const Generation, text: []const u8) Allocator.Error![]const u8 {
+        const t = g.collected.items;
+        if (g.tools.len == 0 or t.len == 0 or !g.eos(t[t.len - 1])) return "";
+        return tool_parse.closeCall(g.a, text, g.tools);
     }
 
     /// The engine's stop check, here: the newest tokens' text holds a stop string.
@@ -290,7 +354,9 @@ const Generation = struct {
             } else if (g.collected.items.len >= g.max_tokens) g.reason = "length";
         }
         if (landed == 0) return;
-        if (g.first_ns == null) g.first_ns = nowNs(g.srv.io);
+        const arrived = nowNs(g.srv.io);
+        if (g.first_ns == null) g.first_ns = arrived;
+        g.last_ns = arrived;
         const sink = g.sink orelse return;
         if (g.streaming_done) return;
         var fresh: std.ArrayList(u32) = .empty;
@@ -396,7 +462,10 @@ const Generation = struct {
         const finished_ns = nowNs(g.srv.io);
         const content_tokens = if (g.ignore_eos) g.collected.items else reply_text.stripTrailing(g.collected.items, g.srv.eos);
         const raw = try g.srv.text.decode(a, content_tokens);
-        const text = g.stops.visible(raw, false);
+        const visible = g.stops.visible(raw, false);
+        // closed before the think split, so a call ending an unclosed think block is the answer
+        const close = try g.closeCall(visible);
+        const text = if (close.len > 0) try std.mem.concat(a, u8, &.{ visible, close }) else visible;
         var content: []const u8 = text;
         var reasoning: ?[]const u8 = null;
         if (g.thinking) {
@@ -416,6 +485,12 @@ const Generation = struct {
             const shown = if (g.calls != null) try reply_text.hideToolCalls(a, content, true) else content;
             const sent = g.streamed.text.items;
             if (std.mem.startsWith(u8, shown, sent) and shown.len > sent.len) try g.emit(sink, .{ .string = shown[sent.len..] });
+            if (g.calls) |*c| if (close.len > 0) {
+                // the streamer reads the closers as markup the model wrote, so the call ends with the same deltas
+                var out: std.ArrayList(Value) = .empty;
+                try c.feed(if (g.thinking) content else text, &out);
+                for (out.items) |d| try g.emit(sink, d);
+            };
         }
         const prefilled = m.prefilled_ns;
         const total = seconds(finished_ns - submitted);
@@ -427,7 +502,7 @@ const Generation = struct {
         try runtime.put(a, "engine", .{ .string = g.srv.info.name });
         try runtime.put(a, "tokens_per_second", .{ .float = if (decode_s > 0) @as(f64, @floatFromInt(decode_tokens)) / decode_s else 0 });
         try runtime.put(a, "seconds", .{ .float = @max(0, total) });
-        try runtime.put(a, "prefill_seconds", if (prefilled) |p| .{ .float = @max(0, seconds(p - submitted)) } else .null);
+        try runtime.put(a, "prefill_seconds", if (m.stats.prefill_seconds) |p| .{ .float = p } else .null);
         const widths = try a.alloc(Value, m.widths.len);
         for (m.widths, widths) |w, *slot| slot.* = try json.intValue(a, w);
         try runtime.put(a, "prefill_widths", .{ .array = widths });
@@ -440,6 +515,11 @@ const Generation = struct {
         const sha = tokenSha(g.collected.items);
         try runtime.put(a, "token_sha", .{ .string = try a.dupe(u8, &sha) });
         try runtime.put(a, "min_rows", try json.intValue(a, m.stats.min_rows));
+        if (m.stats.loop_period) |period| {
+            const loop_field = try json.newObject(a);
+            try loop_field.put(a, "period", try json.intValue(a, period));
+            try runtime.put(a, "loop", .{ .object = loop_field });
+        }
         const s = m.stats;
         const spec = try json.newObject(a);
         try spec.put(a, "rounds", try json.intValue(a, s.rounds));
@@ -464,7 +544,9 @@ const Generation = struct {
         };
         if (std.mem.eql(u8, reason, "length") and thinking and reply_text.pyStrip(content).len == 0)
             log.line("warning: a reply reached max_tokens while still thinking, so its content is empty and its text is all in reasoning_content; raise max_tokens, or send chat_template_kwargs {{\"enable_thinking\": false}} (server: --no-thinking)", .{});
-        log.line("done req-{d} prompt={d} cached={d} thinking={s} tokens={d} sha={s} finish={s} rounds={d} accepted={d}/{d}", .{ g.id, prompt_len, reply.cached_tokens, if (thinking) "True" else "False", g.collected.items.len, sha, reason, s.rounds, s.accepted, s.drafted });
+        var cycle_text: [32]u8 = undefined;
+        const cycle = if (s.loop_period) |period| std.fmt.bufPrint(&cycle_text, " loop=period:{d}", .{period}) catch "" else "";
+        log.line("done {s} prompt={d} cached={d} thinking={s} effort={s} tokens={d} sha={s} finish={s}{s} rounds={d} accepted={d}/{d}", .{ g.reply_id, prompt_len, reply.cached_tokens, if (thinking) "True" else "False", if (thinking) effort orelse "none" else "none", g.collected.items.len, sha, reason, cycle, s.rounds, s.accepted, s.drafted });
         return reply;
     }
 };

@@ -25,7 +25,7 @@ Q_HEADS, KV_HEADS, ATT_DIM, VOCAB = 32, 2, 128, 131072
 QKV = (Q_HEADS + 2 * KV_HEADS) * ATT_DIM
 NORM_THREADS = 896
 # (key, N, K) of every lane-tiled 64-wide projection; out_proj and o_proj share a shape and so a kernel
-DRAFT_IDS = Path(__file__).resolve().parents[2] / "src/tensorfold/families/nemotron_h/draft_ids.txt"
+DRAFT_IDS = Path(__file__).resolve().parents[2] / "zig/src/families/nemotron/draft_ids.txt"
 DRAFT_VOCAB = len(DRAFT_IDS.read_text().split())  # the MTP head's draft vocabulary, as long as its list
 PROJECTIONS = (("in", PROJ, HIDDEN), ("out", HIDDEN, XD), ("down", HIDDEN, SHARED), ("qkv", QKV, HIDDEN),
                ("head", VOCAB, HIDDEN), ("eh", HIDDEN, 2 * HIDDEN), ("draft", DRAFT_VOCAB, HIDDEN),
@@ -73,6 +73,16 @@ def _split(body: str) -> str:
         "    const int m = rb + erow[i], n = n0 + ecol[i];\n"
         "    if (m < M) PART[((int64_t)slice * MP + m) * N + n] = C[i];\n"
         "  }\n")
+
+
+def _chunk_guard(body: str) -> str:
+    """The partial with threadgroups past the dims' chunk count returning first: they'd store over the next head's."""
+
+    line = "const int L = dims[0], NCH = dims[1], NQ = dims[2], SGA = dims[4];"
+    assert body.count(line) == 1
+    i = body.index(line)
+    end = body.index("\n", i)
+    return body[:end + 1] + "  if (int(c) >= NCH) return;\n" + body[end + 1:]
 
 
 def specs() -> list[Spec]:
@@ -173,7 +183,7 @@ def specs() -> list[Spec]:
         out.append(Spec(key, f"tf_gpu_sample{'_ids' if ids else ''}_{_sha(header + source)}", source, ins,
                         [Arg("TOK", u32, 8)], header))
 
-    partial = la._PARTIAL_DIRECT_128 if la.DIRECT_P else la._PARTIAL_128
+    partial = _chunk_guard(la._PARTIAL_DIRECT_128 if la.DIRECT_P else la._PARTIAL_128)
     pname = "partial_direct_128" if la.DIRECT_P else "partial_128"
     for sg in ATTENTION_SG:
         out.append(Spec(f"attn_partial_{sg}", f"lane_attention_{pname}_{_sha(la._HEADER + partial)}", partial,

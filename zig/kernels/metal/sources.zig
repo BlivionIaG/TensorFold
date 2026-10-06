@@ -18,8 +18,20 @@ pub const nemotron_round = @embedFile("nemotron_round.metal");
 /// The MTP head's one-row kernels fused (bit-identical to the kernels they replace).
 pub const nemotron_head = @embedFile("nemotron_head.metal");
 
+/// Keyed draws over the whole vocabulary where tf_gpu_sample would keep only its 1,024 candidates.
+pub const nemotron_sample = @embedFile("nemotron_sample.metal");
+
 /// The NAX helpers the prefill files include (`#include "../nax.h"`, inlined before compiling).
 pub const nax = @embedFile("nax.h");
+
+/// Flash Next 6-bit (group 32) prompt projections on the tensor units: dense and sorted-expert gather.
+pub const flashnext_qmm6 = @embedFile("prefill/qmm6_nax.metal");
+/// Flash Next prompt-chunk glue: hyper-connection pieces, router rows, top-k, the expert sort, gathers and scatters.
+pub const flashnext_prompt = @embedFile("prefill/fn_prompt.metal");
+/// Flash Next block selection in GPU-side rounds: per-row metadata from the arena and pooling at absolute blocks.
+pub const flashnext_select = @embedFile("prefill/fn_select.metal");
+/// Flash Next prompt rows' block scores and sparse attention on the tensor units.
+pub const flashnext_attn = @embedFile("prefill/fn_attn.metal");
 
 /// A source file of MLX-exact kernels: compiled as one library, its kernels found by name.
 pub const File = struct { name: []const u8, text: []const u8 };
@@ -39,3 +51,8 @@ pub const prefill = [_]File{
     .{ .name = "route", .text = @embedFile("ops/route.metal") },
     .{ .name = "qmv", .text = @embedFile("ops/qmv.metal") },
 };
+
+/// Flash Next decode: the lane projection (lane_qmm's sums, the next group read ahead) for the target's dense rows.
+pub const flashnext_lane = @embedFile("decode/fn_lane.metal");
+/// Flash Next decode: the DeltaNet window step with every row's independent work at once.
+pub const flashnext_gdn = @embedFile("decode/fn_gdn.metal");

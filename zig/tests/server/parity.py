@@ -31,6 +31,15 @@ EXPECTED = {
     ("errors", "stream-structured"): "structured output: Python's test app has no grammar compiler, the Zig engine reports none",
     ("anthropic", "refuse-format"): "structured output: Python's test app has no grammar compiler, the Zig engine reports none",
     ("framing", "decisions"): "/v1/decisions scores labels in the engine; the Zig engine has no scoring yet, so the route is unknown",
+    ("cancel", "metrics-after"): "#367/#407's families (TPOT, live tokens, decode rounds, prefill time) are Zig-only; the Python server is frozen",
+    ("metrics-open", "metrics"): "the same #367/#407 Zig-only families",
+    ("metrics-open", "v1-metrics"): "the same #367/#407 Zig-only families",
+    ("keys", "metrics-counted"): "the same #367/#407 Zig-only families",
+    ("tools", "bad_tool"): "a call to a tool the request did not offer goes out under its own name (PR #415); Python keeps the old rule",
+    ("tools", "bad_tool-stream"): "a call to a tool the request did not offer goes out under its own name (PR #415); Python keeps the old rule",
+    ("tools", "bad_tool-single"): "a call to a tool the request did not offer goes out under its own name (PR #415); Python keeps the old rule",
+    ("tools", "bad_tool-single-stream"): "a call to a tool the request did not offer goes out under its own name (PR #415); Python keeps the old rule",
+    ("errors", "stream-context"): "a refused streamed request answers 400 before its stream opens (#388); Python answers 200 and an error event",
 }
 
 

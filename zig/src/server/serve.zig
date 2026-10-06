@@ -32,6 +32,38 @@ pub fn stopping() bool {
     return stop_requested.load(.acquire);
 }
 
+/// The hard limit macOS reads as unlimited.
+const rlim_infinity: u64 = std.c.RLIM.INFINITY;
+
+/// The targets to try, in order: the hard limit when it is finite; when it reads as unlimited, the PR's fallbacks,
+/// 65536 then 10240, first that works (PR #294). The soft limit is never set to unlimited: anything that loops over
+/// every possible descriptor would do absurd work. `out` holds the list; the caller gives room for two.
+fn fillTargets(max: u64, out: *[2]u64) []const u64 {
+    if (max != rlim_infinity) {
+        out[0] = max;
+        return out[0..1];
+    }
+    out[0] = 65536;
+    out[1] = 10240;
+    return out;
+}
+
+/// Raises the soft open-file limit toward the hard limit, so idle keep-alive connections cannot exhaust a default
+/// 1024 (PR #294). Best effort: a failure keeps the current limits, and an unlimited soft limit, or one already at
+/// every target, does nothing. Returns the old and new soft limits, or null when nothing changed; the caller logs.
+fn raiseOpenFileLimit() ?[2]u64 {
+    const limit = posix.getrlimit(.NOFILE) catch return null;
+    const cur: u64 = @intCast(limit.cur);
+    if (cur == rlim_infinity) return null; // already unlimited
+    var buf: [2]u64 = undefined;
+    for (fillTargets(@intCast(limit.max), &buf)) |target| {
+        if (target <= cur) continue;
+        posix.setrlimit(.NOFILE, .{ .cur = @intCast(target), .max = limit.max }) catch continue;
+        return .{ cur, target };
+    }
+    return null;
+}
+
 /// What a server needs besides its flags.
 pub const Setup = struct {
     engine: api.Engine,
@@ -80,16 +112,23 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
         .enable_thinking = args.thinking,
         .reasoning_effort = args.reasoning_effort,
         .thinking_budget = args.thinking_budget,
+        .loop_guard = args.loop_guard,
         .default_sampling = s.sampling,
         .use_drafts = !args.no_drafts,
         .seed_salt = salt,
         .request_log = env(s, "TENSORFOLD_REQUEST_LOG"),
+        .dashboard = args.dashboard,
     };
     const srv = server_mod.Server.init(gpa, io, s.engine, s.text, config, if (store.enabled()) &store else null) catch {
         std.debug.print("tensorfold: the server could not start\n", .{});
         return 1;
     };
     defer srv.deinit();
+    if (args.loop_guard and !srv.info.loop_guard) {
+        std.debug.print("tensorfold: --loop-guard is not supported by this native engine\n", .{});
+        return 2;
+    }
+    if (raiseOpenFileLimit()) |r| log.line("open-file limit raised: soft {d} -> {d}", .{ r[0], r[1] });
     const address = resolve(io, args.host, args.port) orelse {
         std.debug.print("tensorfold: cannot resolve --host {s}\n", .{args.host});
         return 1;
@@ -106,9 +145,8 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
     const loaded = if (s.started > 0) @as(f64, @floatFromInt(now - s.started)) / 1e9 else 0;
     var window_text: [24]u8 = undefined;
     log.line("serving {s} at http://{s}:{d}/v1 (sampling: {s}; drafts: {s}; context: {s}; loaded in {d:.1}s)", .{
-        s.served,                                           args.host, port, shownSampling(a, s.sampling),
-        if (args.no_drafts) "off" else "on",                if (window > 0) std.fmt.bufPrint(&window_text, "{d}", .{window}) catch "?" else "unlimited",
-        loaded,
+        s.served,                            args.host,                                                                                   port,   shownSampling(a, s.sampling),
+        if (args.no_drafts) "off" else "on", if (window > 0) std.fmt.bufPrint(&window_text, "{d}", .{window}) catch "?" else "unlimited", loaded,
     });
     if (args.thinking and std.mem.indexOf(u8, s.text.templateSource(), "enable_thinking") != null)
         log.line("thinking on (the chat template's default): replies reason in reasoning_content before the answer in content, and max_tokens counts both. --no-thinking turns it off; a request can send chat_template_kwargs {{\"enable_thinking\": false}}", .{});
@@ -155,4 +193,21 @@ fn shownSampling(a: Allocator, sampling: ?json.Value) []const u8 {
         parts.append(a, std.fmt.allocPrint(a, "{s} {s}", .{ k, text }) catch return "greedy") catch return "greedy";
     }
     return std.mem.join(a, ", ", parts.items) catch "greedy";
+}
+
+test "the targets are the hard limit, or the fallbacks under an unlimited one" {
+    var buf: [2]u64 = undefined;
+    try std.testing.expectEqualSlices(u64, &.{524288}, fillTargets(524288, &buf));
+    try std.testing.expectEqualSlices(u64, &.{ 65536, 10240 }, fillTargets(rlim_infinity, &buf));
+}
+
+test "the raise lifts a low soft limit, and a second raise does nothing" {
+    const before = try posix.getrlimit(.NOFILE);
+    defer posix.setrlimit(.NOFILE, before) catch {};
+    if (@as(u64, @intCast(before.max)) <= 256) return error.SkipZigTest;
+    try posix.setrlimit(.NOFILE, .{ .cur = 256, .max = before.max });
+    const raised = raiseOpenFileLimit() orelse return error.TestExpectedRaise;
+    try std.testing.expectEqual(@as(u64, 256), raised[0]);
+    try std.testing.expectEqual(raised[1], @as(u64, @intCast((try posix.getrlimit(.NOFILE)).cur)));
+    try std.testing.expect(raiseOpenFileLimit() == null);
 }
