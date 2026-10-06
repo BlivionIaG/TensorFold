@@ -24,11 +24,12 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
     // the score pass's q and k chunks, or the value tile (64 keys x 256 dims): one buffer
     constexpr int kQLd = kChunk + 1;
     constexpr int kKLd = kChunk + 2;
-    constexpr int kVLd = 256 + 2;
+    constexpr int kVLd = 256 + 8;
     constexpr int kScoreBytes = kRows * kQLd * 4 + kKeys * kKLd * static_cast<int>(sizeof(Cache));
     constexpr int kValueBytes = kKeys * kVLd * static_cast<int>(sizeof(Cache));
     __shared__ alignas(16) unsigned char stage[kScoreBytes > kValueBytes ? kScoreBytes : kValueBytes];
-    __shared__ float sP[kRows * (kKeys + 1)];
+    constexpr int kPLd = kRows + 4;   // probabilities key-major: a thread's four rows of a key in one read
+    __shared__ alignas(16) float sP[kKeys * kPLd];
     __shared__ float sM[kRows];
     __shared__ float sL[kRows];
     __shared__ float sA[kRows];
@@ -51,14 +52,14 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
     const Cache* kbase = k + static_cast<long long>(batch) * k_sb + static_cast<long long>(kv) * k_sh;
     const Cache* vbase = v + static_cast<long long>(batch) * v_sb + static_cast<long long>(kv) * v_sh;
 
-    // score pass: rows sr .. sr + 3 against keys sk .. sk + 3; PV pass: rows pr .. pr + 15 at dims pd .. pd + 3
+    // score pass: rows sr .. sr + 3 against keys sk .. sk + 3; PV pass: rows pr .. pr + 3 at dims pd .. pd + 15
     const int sr = (tid / 16) * 4, sk = (tid % 16) * 4;
-    const int pr = (tid / 64) * 16, pd = (tid % 64) * 4;
-    float o[16][4];
+    const int pr = (tid / 16) * 4, pd = (tid % 16) * 16;
+    float o[4][16];
 #pragma unroll
-    for (int i = 0; i < 16; ++i)
+    for (int i = 0; i < 4; ++i)
 #pragma unroll
-        for (int m = 0; m < 4; ++m) o[i][m] = 0.f;
+        for (int m = 0; m < 16; ++m) o[i][m] = 0.f;
     if (tid < kRows) {
         sM[tid] = -INFINITY;
         sL[tid] = 0.f;
@@ -115,7 +116,7 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
                 float s = (acc[i][j][0] + acc[i][j][1]) + (acc[i][j][2] + acc[i][j][3]);
                 s *= scale;
                 if (k0 + sk + j >= vis) s = -INFINITY;
-                sP[row * (kKeys + 1) + sk + j] = row < q_hi ? s : 0.f;
+                sP[(sk + j) * kPLd + row] = row < q_hi ? s : 0.f;
             }
         }
         __syncthreads();
@@ -124,12 +125,12 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
         __shared__ float sN[kRows];   // the tile's next max, -inf when the row has no visible key in it
         if (tid < kRows) {
             const int row = tid;
-            const float* p = sP + row * (kKeys + 1);
+            const float* p = sP + row;
             float tile_max = -INFINITY;
             bool any = false;
             if (row < q_hi) {
                 for (int key = 0; key < kKeys; ++key) {
-                    const float score = p[key];
+                    const float score = p[key * kPLd];
                     if (score != -INFINITY) {
                         tile_max = fmaxf(tile_max, score);
                         any = true;
@@ -141,7 +142,7 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
         __syncthreads();
         for (int e = tid; e < kRows * kKeys; e += kThreads) {
             const int row = e / kKeys, key = e % kKeys;
-            float* slot = sP + row * (kKeys + 1) + key;
+            float* slot = sP + key * kPLd + row;
             const float next_m = sN[row];
             *slot = (next_m == -INFINITY || *slot == -INFINITY) ? 0.f : expf(*slot - next_m);
         }
@@ -152,10 +153,10 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
             if (next_m == -INFINITY) {
                 sA[row] = 1.f;
             } else {
-                const float* p = sP + row * (kKeys + 1);
+                const float* p = sP + row;
                 const float alpha = sM[row] == -INFINITY ? 0.f : expf(sM[row] - next_m);
                 float sum = 0.f;
-                for (int key = 0; key < kKeys; ++key) sum += p[key];
+                for (int key = 0; key < kKeys; ++key) sum += p[key * kPLd];
                 sL[row] = fmaf(alpha, sL[row], sum);
                 sM[row] = next_m;
                 sA[row] = alpha;
@@ -168,37 +169,37 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
         __syncthreads();
         // fa_prefill's PV: an output's products over the tile's keys in order, then the rescale of what came before
         if (pd < d) {
-            float pv[16][4];
+            float pv[4][16];
 #pragma unroll
-            for (int i = 0; i < 16; ++i)
+            for (int i = 0; i < 4; ++i)
 #pragma unroll
-                for (int m = 0; m < 4; ++m) pv[i][m] = 0.f;
+                for (int m = 0; m < 16; ++m) pv[i][m] = 0.f;
             for (int key = 0; key < kKeys; ++key) {
-                float vv[4];
+                const float4 p4 = *reinterpret_cast<const float4*>(sP + key * kPLd + pr);
+                const float prob[4] = {p4.x, p4.y, p4.z, p4.w};
+                float vv[16];
 #pragma unroll
-                for (int m = 0; m < 4; ++m) vv[m] = wide(sV[key * kVLd + pd + m]);
+                for (int m = 0; m < 16; ++m) vv[m] = wide(sV[key * kVLd + pd + m]);
 #pragma unroll
-                for (int i = 0; i < 16; ++i) {
-                    const float prob = sP[(pr + i) * (kKeys + 1) + key];
+                for (int i = 0; i < 4; ++i)
 #pragma unroll
-                    for (int m = 0; m < 4; ++m) pv[i][m] = fmaf(prob, vv[m], pv[i][m]);
-                }
+                    for (int m = 0; m < 16; ++m) pv[i][m] = fmaf(prob[i], vv[m], pv[i][m]);
             }
 #pragma unroll
-            for (int i = 0; i < 16; ++i)
+            for (int i = 0; i < 4; ++i)
 #pragma unroll
-                for (int m = 0; m < 4; ++m) o[i][m] = fmaf(sA[pr + i], o[i][m], pv[i][m]);
+                for (int m = 0; m < 16; ++m) o[i][m] = fmaf(sA[pr + i], o[i][m], pv[i][m]);
         }
     }
     __syncthreads();
     if (pd < d) {
 #pragma unroll
-        for (int i = 0; i < 16; ++i) {
+        for (int i = 0; i < 4; ++i) {
             const int row = pr + i;
             if (row >= q_hi) continue;
             const float inv = sL[row] == 0.f ? 0.f : 1.f / sL[row];
 #pragma unroll
-            for (int m = 0; m < 4; ++m) orows[static_cast<long long>(row) * d + pd + m] = o[i][m] * inv;
+            for (int m = 0; m < 16; ++m) orows[static_cast<long long>(row) * d + pd + m] = o[i][m] * inv;
         }
     }
 }
