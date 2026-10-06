@@ -30,7 +30,7 @@ const lib_sources = [_][]const u8{
 
 /// What the library sources include, so an edit to one rebuilds the libraries.
 const lib_headers = [_][]const u8{
-    "rocm/act.hpp",         "rocm/affine.hpp", "rocm/affine_api.hpp", "rocm/affine_dot2.hpp",  "rocm/affine_gemm.hpp",
+    "rocm/act.hpp",         "rocm/affine.hpp", "rocm/affine_api.hpp", "rocm/affine_dot2.hpp",  "rocm/affine_gemm.hpp", "rocm/affine_wmma_gemm.hpp",
     "rocm/affine_wmma.hpp", "rocm/arch.hpp",   "rocm/attention.hpp",  "rocm/attention_fa.hip", "rocm/gated_delta.hpp",
 };
 
