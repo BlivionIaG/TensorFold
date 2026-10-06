@@ -1,9 +1,12 @@
 //! `lanes <model dir> <prompts.json> <max tokens> [--seed S --temperature T] [--solo] [--report out.json]
-//! [--resume PREFIX]`: prompts through the lane core on the HIP backend, every stream at once or one at a time, no end
-//! token (replies run out). With --resume each prompt then runs again as itself, its reply and a few more tokens, on
-//! the caches the first run kept; PREFIX-prompts.json and PREFIX-replies.json hold what that second run read and said.
+//! [--resume PREFIX] [--tp N --rank R [--master HOST] [--port P]]`: prompts through the lane core on the HIP backend,
+//! every stream at once or one at a time, no end token (replies run out). With --resume each prompt then runs again
+//! as itself, its reply and a few more tokens, on the caches the first run kept; PREFIX-prompts.json and
+//! PREFIX-replies.json hold what that second run read and said. With --tp one process runs each rank on the visible
+//! device of its number; rank 0 runs the core and the others follow it, so every rank gets the same arguments.
 
 const std = @import("std");
+const hip = @import("hip");
 const lanes = @import("lanes");
 const qwen35 = @import("qwen35");
 
@@ -21,12 +24,28 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     var drafts = true;
     var report: ?[]const u8 = null;
     var resume_to: ?[]const u8 = null;
+    var world: usize = 1;
+    var rank: usize = 0;
+    var master: []const u8 = "127.0.0.1";
+    var port: u16 = 29551;
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
-        if (std.mem.eql(u8, args[i], "--solo")) solo = true else if (std.mem.eql(u8, args[i], "--resume")) {
+        if (std.mem.eql(u8, args[i], "--tp")) {
+            i += 1;
+            world = try std.fmt.parseInt(usize, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--rank")) {
+            i += 1;
+            rank = try std.fmt.parseInt(usize, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--master")) {
+            i += 1;
+            master = args[i];
+        } else if (std.mem.eql(u8, args[i], "--port")) {
+            i += 1;
+            port = try std.fmt.parseInt(u16, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--resume")) {
             i += 1;
             resume_to = args[i];
-        } else if (std.mem.eql(u8, args[i], "--no-drafts")) drafts = false else if (std.mem.eql(u8, args[i], "--report")) {
+        } else if (std.mem.eql(u8, args[i], "--solo")) solo = true else if (std.mem.eql(u8, args[i], "--no-drafts")) drafts = false else if (std.mem.eql(u8, args[i], "--report")) {
             i += 1;
             report = args[i];
         } else if (std.mem.eql(u8, args[i], "--seed")) {
@@ -45,11 +64,28 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     const ids = prompts.value.map.values();
     var longest: usize = 0;
     for (ids) |p| longest = @max(longest, p.len);
-    const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + 2 * max_tokens + 64, .batch_rows = @max(32, names.len * qwen35.hip_lanes.Hip.max_window) });
+    var link: hip.link.Link = undefined;
+    var id: ?hip.rccl.UniqueId = null;
+    // the unique id starts RCCL's bootstrap thread: the library stays loaded until the engine is gone
+    var rccl: ?hip.rccl.Rccl = null;
+    defer if (rccl) |*r| r.close();
+    if (world > 1) {
+        rccl = try hip.rccl.Rccl.open();
+        const pair = try hip.link.Link.open(io, rank, world, master, port, if (rank == 0) try rccl.?.uniqueId() else undefined);
+        link, id = pair;
+    }
+    defer if (world > 1) link.close();
+    const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + 2 * max_tokens + 64, .batch_rows = @max(32, names.len * qwen35.hip_lanes.Hip.max_window), .device = @intCast(rank), .rank = rank, .world = world, .id = id });
     defer e.deinit();
+    if (rank > 0) {
+        var w = try qwen35.worker.Worker.init(gpa, e);
+        defer w.deinit();
+        return w.follow(&link);
+    }
     const h = try qwen35.hip_lanes.Hip.init(gpa, e);
     defer h.deinit();
     if (resume_to != null) h.keepPrompts(8, 1 << 30);
+    if (world > 1) h.withLink(&link);
     const rows = qwen35.hip_lanes.Hip.max_window;
     var cfg = try lanes.Config.init(gpa, h.facts(), rows, rows - 1);
     defer cfg.deinit(gpa);

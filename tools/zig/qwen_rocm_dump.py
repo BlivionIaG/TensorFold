@@ -24,9 +24,13 @@ class Dump:
         self.out = Path(out)
         self.out.mkdir(parents=True, exist_ok=True)
         self.manifest = {"kind": kind, **meta, "files": [], "cases": []}
+        self.quiet = False        # a tensor-parallel rank above 0 runs the forwards and writes nothing
 
     def save(self, name: str, tensor: torch.Tensor, meaning: str) -> str:
         """Write one tensor with its raw dtype; bf16 is stored as uint16 bits under a .bf16.npy name."""
+
+        if self.quiet:
+            return ""
 
         t = tensor.detach().cpu().contiguous()
         dtype = str(t.dtype).replace("torch.", "")
@@ -39,6 +43,8 @@ class Dump:
         return fname
 
     def close(self) -> None:
+        if self.quiet:
+            return
         (self.out / "manifest.json").write_text(json.dumps(self.manifest, indent=1) + "\n")
 
 
@@ -118,13 +124,26 @@ def _packed_info(layer) -> dict:
             for name, v in vars(layer).items() if isinstance(v, Packed)}
 
 
-def layers(model_dir: str, tokens: list[int], out: Path, decode: int) -> None:
+def layers(model_dir: str, tokens: list[int], out: Path, decode: int, tp: int = 1, rank: int = 0,
+           master: str = "127.0.0.1", master_port: int = 29551) -> None:
+    """With ``tp`` > 1 one process runs each rank in step; rank 0 writes the dump, the others follow its generate."""
+
+    from functools import partial
+
     from tensorfold.rocm.model import forward, window
     from tensorfold.rocm.model.forward import _blank_caches, _project, forward_hidden
+    from tensorfold.rocm.model.qwen_tp import all_reduce_local, ordered_sum, tp_forward_hidden, vocab_gather
     from tensorfold.rocm.serving.engine import QwenEngine, draw
 
     gfx, dtype = _engine_env()
-    engine = QwenEngine.load(model_dir, keep=0, no_drafts=True)
+    engine = QwenEngine.load(model_dir, keep=0, no_drafts=True, tp=tp, rank=rank, master=master if tp > 1 else "",
+                             master_port=master_port)
+    reduce = partial(ordered_sum if tp > 2 else all_reduce_local, engine.rccl) if tp > 1 else None
+
+    def head(hidden):
+        logits = _project(hidden, model.output_head(), linear)
+        return vocab_gather(engine.rccl, logits.reshape(-1, logits.shape[-1])) if tp > 1 else logits
+
     model, linear, device = engine.model, engine.kernels.linear, engine._device()
     spec = model.spec
     dtype = engine._dtype()
@@ -135,6 +154,7 @@ def layers(model_dir: str, tokens: list[int], out: Path, decode: int) -> None:
             "layer0_projections": _packed_info(model.layers[0]),
             "layer_full_projections": _packed_info(model.layers[full[0]]) if full else {}}
     dump = Dump(out, "layers", meta)
+    dump.quiet = rank > 0
     dump.save("tokens", torch.tensor(tokens, dtype=torch.int64), "prompt token ids")
 
     records, embeds = Residuals(), []
@@ -154,8 +174,12 @@ def layers(model_dir: str, tokens: list[int], out: Path, decode: int) -> None:
             total = len(tokens) + decode + 1
             caches = _blank_caches(model, 1, total, device, dtype)
             ids = torch.tensor([tokens], dtype=torch.long, device=device)
-            hidden, caches = forward_hidden(model, ids, caches, linear, 0, dtype, exact_short=True)
-            logits = _project(hidden[:, -1], model.output_head(), linear)
+            if tp > 1:
+                hidden, caches = tp_forward_hidden(model, ids, caches, linear, 0, engine.rccl, act_dtype=dtype,
+                                                   exact_short=True)
+            else:
+                hidden, caches = forward_hidden(model, ids, caches, linear, 0, dtype, exact_short=True)
+            logits = head(hidden[:, -1])
             token = draw(logits, None, len(tokens))
             dump.save("prefill.embed", embeds.pop()[0], "embedding rows, (rows, hidden), before layer 0")
             dump.save("prefill.layers", records.take(spec.n_layers), "residual x after each layer, (layers, rows, hidden)")
@@ -165,9 +189,9 @@ def layers(model_dir: str, tokens: list[int], out: Path, decode: int) -> None:
             for step in range(decode):
                 pos = len(tokens) + step
                 w = window.Window([sampled[-1]], caches, pos)
-                h = window.window_forward(model, [w], linear, dtype)
+                h = window.window_forward(model, [w], linear, dtype, reduce=reduce)
                 window.commit(model, w, 1)
-                lg = _project(h[0], model.output_head(), linear)
+                lg = head(h[0])
                 token = draw(lg, None, pos + 1)
                 tag = f"decode{step}"
                 dump.save(f"{tag}.embed", embeds.pop()[0], f"embedding row of token {sampled[-1]} at pos {pos}")
@@ -182,6 +206,9 @@ def layers(model_dir: str, tokens: list[int], out: Path, decode: int) -> None:
               "greedy tokens: [0] from the prefill logits, [i] from decode step i-1")
     dump.manifest["sampled"] = sampled
     dump.manifest["decode_note"] = "decode step i feeds sampled[i] at position len(tokens)+i through window_forward"
+    if rank > 0:
+        engine.follow()
+        return
     # The engine's own generate, same prompt, same GPU, drafts off.
     got: list[int] = []
     engine.generate(list(tokens), decode + 1, None, lambda ts: got.extend(ts) and False, stop_eos=False, draft=False)
@@ -211,14 +238,22 @@ def _remember_originals() -> None:
 _ORIGINAL: dict = {}
 
 
-def generate(model: str, prompts_path: Path, max_tokens: int, out: Path, seed: int | None, temperature: float) -> None:
-    """Each prompt's reply from the engine's own generate, serial (draft False), no end token: the lanes' reference."""
+def generate(model: str, prompts_path: Path, max_tokens: int, out: Path, seed: int | None, temperature: float,
+             tp: int = 1, rank: int = 0, master: str = "127.0.0.1", master_port: int = 29551) -> None:
+    """Each prompt's reply from the engine's own generate, serial (draft False), no end token: the lanes' reference.
+
+    With ``tp`` > 1 one process runs each rank: rank 0 writes the replies, the others follow it.
+    """
 
     from tensorfold.engine.exact_sampling import Sampling
     from tensorfold.rocm.serving.engine import QwenEngine
 
     prompts = json.loads(Path(prompts_path).read_text())
-    engine = QwenEngine.load(model, keep=0, no_drafts=True)
+    engine = QwenEngine.load(model, keep=0, no_drafts=True, tp=tp, rank=rank, master=master if tp > 1 else "",
+                             master_port=master_port)
+    if rank > 0:
+        engine.follow()
+        return
     sampling = Sampling(seed=seed, temperature=temperature) if seed is not None else None
     replies = []
     for name, ids in prompts.items():
@@ -239,6 +274,10 @@ def main() -> None:
     d.add_argument("tokens", help="comma separated token ids")
     d.add_argument("out")
     d.add_argument("--decode", type=int, default=0)
+    d.add_argument("--tp", type=int, default=1)
+    d.add_argument("--rank", type=int, default=0)
+    d.add_argument("--master", default="127.0.0.1")
+    d.add_argument("--master-port", type=int, default=29551)
     g = sub.add_parser("generate", help="each prompt's serial reply from the engine's generate")
     g.add_argument("model")
     g.add_argument("prompts", help="a JSON object of names to token id lists")
@@ -246,14 +285,20 @@ def main() -> None:
     g.add_argument("out")
     g.add_argument("--seed", type=int)
     g.add_argument("--temperature", type=float, default=1.0)
+    g.add_argument("--tp", type=int, default=1)
+    g.add_argument("--rank", type=int, default=0)
+    g.add_argument("--master", default="127.0.0.1")
+    g.add_argument("--master-port", type=int, default=29551)
     args = p.parse_args()
     _remember_originals()
     if args.cmd == "affine":
         affine(Path(args.out))
     elif args.cmd == "generate":
-        generate(args.model, Path(args.prompts), args.max_tokens, Path(args.out), args.seed, args.temperature)
+        generate(args.model, Path(args.prompts), args.max_tokens, Path(args.out), args.seed, args.temperature,
+                 args.tp, args.rank, args.master, args.master_port)
     else:
-        layers(args.model, [int(t) for t in args.tokens.split(",")], Path(args.out), args.decode)
+        layers(args.model, [int(t) for t in args.tokens.split(",")], Path(args.out), args.decode, args.tp, args.rank,
+               args.master, args.master_port)
 
 
 if __name__ == "__main__":

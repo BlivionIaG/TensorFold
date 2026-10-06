@@ -51,6 +51,8 @@ pub const Affine = struct {
     k: u32,
     bits: u8,
     group: u16,
+    /// A tensor-parallel slice along K: the product stays fp32, one rank's share of a sum.
+    partial: bool = false,
 
     fn check(a: Affine) Error!void {
         const ok_bits = switch (a.bits) {
@@ -256,6 +258,27 @@ pub const Ops = struct {
 
     pub fn moeCombine(o: Ops, y: u64, wts: u64, out: Tensor, r: usize, slots: usize, d: usize) Error!void {
         try o.lib.call("tf_moe_combine", .{ f(y), f(wts), p(out.ptr), @backingInt(out.kind), int(r), int(slots), int(d), o.stream });
+    }
+
+    /// out = round(x + y): an activation `x` plus an fp32 sum `y`, rounded once to x's kind (a tp residual).
+    pub fn addWide(o: Ops, x: Tensor, y: u64, out: Tensor, n: usize) Error!void {
+        if (x.kind == .f32 or x.kind != out.kind) return error.BadShape;
+        try o.lib.check(o.lib.api.tf_add_wide(p(x.ptr), f(y), p(out.ptr), @backingInt(out.kind), @intCast(n), o.stream), "add_wide");
+    }
+
+    /// out[i] = remap[pick[i]], or `skip` where it is negative: a tp rank's local expert ids.
+    pub fn moeLocalize(o: Ops, pick: u64, remap: u64, out: u64, n: usize, skip: usize) Error!void {
+        try o.lib.check(o.lib.api.tf_moe_localize(i(pick), i(remap), i(out), int(n), int(skip), o.stream), "moe_localize");
+    }
+
+    /// Zeroes the pair count of every plan item of the `skip` expert.
+    pub fn moeForeignItems(o: Ops, items: u64, count: usize, skip: usize) Error!void {
+        try o.lib.check(o.lib.api.tf_moe_foreign_items(i(items), int(count), int(skip), o.stream), "moe_foreign_items");
+    }
+
+    /// Zeroes the rows of `y` (pairs, d) fp32 whose pick is `skip`.
+    pub fn moeZeroForeign(o: Ops, y: u64, picks: u64, skip: usize, pairs: usize, d: usize) Error!void {
+        try o.lib.check(o.lib.api.tf_moe_zero_foreign(f(y), i(picks), int(skip), @intCast(pairs), int(d), o.stream), "moe_zero_foreign");
     }
 };
 

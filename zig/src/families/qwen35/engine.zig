@@ -12,6 +12,8 @@ const bridge = @import("bridge.zig");
 const sample = @import("sample.zig");
 const memory = @import("memory.zig");
 const draw = @import("draw.zig");
+const slicing = @import("slicing.zig");
+const reduce = @import("reduce.zig");
 
 pub const Options = struct {
     /// Most positions a stream's caches hold (its prompt, its reply and a window's rows).
@@ -22,6 +24,11 @@ pub const Options = struct {
     device: c_int = 0,
     /// Positions past a reply a verify writes (the window's rows and one more).
     slack: usize = 0,
+    /// Tensor parallelism: this rank of `world` (the model split across them; every rank runs every forward). `id` is
+    /// the communicator's unique id, the same on every rank.
+    rank: usize = 0,
+    world: usize = 1,
+    id: ?hip.rccl.UniqueId = null,
 };
 
 pub const Engine = struct {
@@ -44,6 +51,9 @@ pub const Engine = struct {
     ids: hip.HostBuffer,
     ids_dev: hip.DeviceBuffer,
     drawer: draw.Drawer,
+    /// Tensor parallelism: RCCL and this rank's communicator.
+    rccl: hip.rccl.Rccl = undefined,
+    comm: hip.rccl.Comm = undefined,
 
     /// The model on the device, its scratch not yet sized: `size` takes the capacity the memory plan fits.
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
@@ -63,9 +73,21 @@ pub const Engine = struct {
         e.dtype = if (family == .rdna2) .f16 else .bf16;
         e.stream = try hip.Stream.init(&e.driver, true);
         errdefer e.stream.deinit();
-        e.weights = try weights.Model.load(gpa, io, &e.driver, dir);
+        const group: ?slicing.Rank = if (o.world > 1) .{ .rank = o.rank, .world = o.world } else null;
+        if (group != null) {
+            e.rccl = try hip.rccl.Rccl.open();
+            errdefer e.rccl.close();
+            e.comm = try hip.rccl.Comm.init(&e.rccl, o.id orelse return error.NoUniqueId, o.rank, o.world);
+        }
+        errdefer if (group != null) {
+            e.comm.deinit();
+            e.rccl.close();
+        };
+        e.weights = try weights.Model.loadRank(gpa, io, &e.driver, dir, group);
         errdefer e.weights.deinit();
         e.bridge = try bridge.Bridge.init(gpa, &e.driver, &e.weights, e.act);
+        errdefer e.bridge.deinit();
+        if (group != null) e.bridge.model.tp = e.comm;
         return e;
     }
 
@@ -83,7 +105,7 @@ pub const Engine = struct {
         errdefer e.ids.free();
         e.ids_dev = try hip.DeviceBuffer.alloc(&e.driver, need.ids);
         errdefer e.ids_dev.free();
-        e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, e.bridge.model.head.n, rows);
+        e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, e.bridge.model.head.n * e.o.world, rows);
         e.sized = true;
     }
 
@@ -114,6 +136,10 @@ pub const Engine = struct {
         e.weights.deinit();
         e.stream.deinit();
         e.lib.close();
+        if (e.o.world > 1) {
+            e.comm.deinit();
+            e.rccl.close();
+        }
         e.ctx.deinit();
         e.driver.close();
         e.gpa.destroy(e);
@@ -132,10 +158,29 @@ pub const Engine = struct {
         return state.Caches.init(e.gpa, &e.driver, e.model(), @min(total, e.o.capacity));
     }
 
-    /// The tokens of `rows` final rows at `hidden`: one projection as the engine's _logits, each row drawn per `reqs`.
+    /// The tokens of `rows` final rows at `hidden`: one projection as the engine's _logits (the ranks' vocabulary
+    /// slices joined in rank order under tensor parallelism), each row drawn per `reqs`.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
-        const y = try o.affine(hidden, e.model().head, rows, false);
+        const m = e.model();
+        var y = try o.affine(hidden, m.head, rows, false);
+        if (m.tp) |c| y = try e.joined(o, c, y, rows);
         try e.drawer.draw(o, e.stream, y, reqs[0..rows], out);
+    }
+
+    /// vocab_gather: every rank's slice of `rows` logits rows, joined on the device into whole rows in rank order.
+    fn joined(e: *Engine, o: hip.ops.Ops, c: hip.rccl.Comm, slice: hip.ops.Tensor, rows: usize) !hip.ops.Tensor {
+        const width = e.model().head.n;
+        const n = rows * width;
+        const size_of = slice.kind.size();
+        const parts = try o.arena.take(c.world * n * size_of);
+        try reduce.gather(o, c, slice, parts, n);
+        const whole = try o.arena.take(c.world * n * size_of);
+        for (0..rows) |row| for (0..c.world) |r| {
+            const to = whole + (row * c.world + r) * width * size_of;
+            const from = parts + (r * rows + row) * width * size_of;
+            try e.driver.check(e.driver.api.hipMemcpyDtoDAsync(to, from, width * size_of, e.stream.handle), "join logits");
+        };
+        return .{ .ptr = whole, .kind = slice.kind };
     }
 
     /// Run `prompt[pos0..end]` into `caches`, its logits not read: a cut where the caches are kept.

@@ -56,6 +56,11 @@ pub const Api = struct {
     tf_argmax_rows: *const fn (C, c_int, c_int, c_int, I, S) callconv(.c) c_int,
     tf_topk_rows: *const fn (C, c_int, c_int, CI, c_int, I, P, S) callconv(.c) c_int,
     tf_moe_route: *const fn (CI, c_int, c_int, c_int, I, I, c_int, S) callconv(.c) c_int,
+    tf_tp_error: *const fn () callconv(.c) [*:0]const u8,
+    tf_add_wide: *const fn (C, CF, P, c_int, c_longlong, S) callconv(.c) c_int,
+    tf_moe_localize: *const fn (CI, CI, I, c_int, c_int, S) callconv(.c) c_int,
+    tf_moe_foreign_items: *const fn (I, c_int, c_int, S) callconv(.c) c_int,
+    tf_moe_zero_foreign: *const fn (F, CI, c_int, c_longlong, c_int, S) callconv(.c) c_int,
 };
 
 pub const Family = enum { rdna2, rdna3 };
@@ -163,7 +168,8 @@ pub const Library = struct {
         if (rc == 0) return;
         const kernel = std.mem.span(self.api.tf_last_error());
         const op = std.mem.span(self.api.tf_op_error());
-        std.log.err("{s}: {s}", .{ what, if (kernel.len > 0) kernel else op });
+        const tp = std.mem.span(self.api.tf_tp_error());
+        std.log.err("{s}: {s}", .{ what, if (kernel.len > 0) kernel else if (op.len > 0) op else tp });
         return error.KernelFailed;
     }
 };

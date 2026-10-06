@@ -6,6 +6,7 @@ const hip = @import("hip");
 const view = @import("view.zig");
 const state = @import("state.zig");
 const moe = @import("moe.zig");
+const reduce = @import("reduce.zig");
 
 const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
@@ -14,7 +15,9 @@ const Kind = hip.ops.Kind;
 /// Rows of one prefill step (qwen_math.SPAN).
 pub const SPAN = 2048;
 
-pub const Error = hip.ops.Error;
+pub const Error = reduce.Error;
+
+pub const residual = reduce.residual;
 
 /// A device buffer of `n` values of `kind` from the arena.
 pub fn take(o: Ops, kind: Kind, n: usize) Error!Tensor {
@@ -58,10 +61,10 @@ pub fn span(o: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: 
                 .full => |f| try attention(o, m, f, caches, index, normed, rows, pos0 + start),
                 .linear => |l| try linear(o, m, l, caches, index, normed, rows),
             };
-            try o.add(xs, y, xs, rows * s.hidden);
+            try residual(o, m, xs, y, rows * s.hidden);
             try o.rms(xs, post_norm, normed, rows, s.hidden, @floatCast(s.eps));
             const z = try mlpRows(o, m, mlp, normed, rows, true);
-            try o.add(xs, z, xs, rows * s.hidden);
+            try residual(o, m, xs, z, rows * s.hidden);
         }
         if (trace) |t| t.layer(t.ctx, index, x, len) catch return error.KernelFailed;
     }
@@ -103,7 +106,7 @@ fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, 
     try o.causalPrefill(q32, c, att, rows, pos + rows, s.heads, scaleOf(hd), pos);
     const gated = try take(o, m.act, q_rows * hd);
     try o.attnGate(att, qg, gated, rows, s.heads, hd, false);
-    return o.affine(gated, f.o, rows, false);
+    return o.affine(gated, f.o, rows, f.o.partial);
 }
 
 /// _linear_span with exact: qkv, z, a and b; the conv loop over [state | rows]; q and k normalized; the torch gate;
@@ -154,7 +157,7 @@ pub fn gatedOut(o: Ops, m: *const view.Model, l: view.Linear, y: u64, z: Tensor,
     try o.rms(.{ .ptr = y, .kind = .f32 }, l.gnorm, .{ .ptr = yn, .kind = .f32 }, rows * s.value_heads, s.value_dim, @floatCast(s.eps));
     const out = try take(o, m.act, n);
     try o.gnormSilu(yn, z, out, n);
-    return o.affine(out, l.out, rows, false);
+    return o.affine(out, l.out, rows, l.out.partial);
 }
 
 /// _mlp: gate and up, silu(gate) * up, down; or the routed experts (`prefill` is the span's length above one).
@@ -166,7 +169,7 @@ pub fn mlpRows(o: Ops, m: *const view.Model, mlp: view.Mlp, x: Tensor, rows: usi
             const up = try o.affine(x, d.up, rows, false);
             const act = try take(o, m.act, rows * d.gate.n);
             try o.siluMul(gate, up, act, rows * d.gate.n);
-            return o.affine(act, d.down, rows, false);
+            return o.affine(act, d.down, rows, d.down.partial);
         },
     }
 }

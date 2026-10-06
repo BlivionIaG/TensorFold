@@ -22,6 +22,9 @@ pub const memory = @import("memory.zig");
 pub const prefix = @import("prefix.zig");
 pub const hip_lanes = @import("hip_lanes.zig");
 pub const mtp = @import("mtp.zig");
+pub const worker = @import("worker.zig");
+pub const slicing = @import("slicing.zig");
+pub const reduce = @import("reduce.zig");
 
 test {
     _ = config;
@@ -35,4 +38,5 @@ test {
     _ = moe;
     _ = sample;
     _ = prefix;
+    _ = slicing;
 }

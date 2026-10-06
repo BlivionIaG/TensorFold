@@ -30,10 +30,15 @@ pub const Routed = struct {
     rows32: u64,
     experts: Experts,
     top_k: usize,
+    /// The router's rows, E + 1: the model's expert count, whatever share of the experts this rank holds.
+    rows: usize,
+    /// A tensor-parallel rank's expert ids (int32, E + 1): each id's place among its own experts, -1 for another rank's;
+    /// zero on one rank.
+    remap: u64 = 0,
 
     /// Routed experts, the shared one not counted.
     pub fn count(r: Routed) usize {
-        return r.experts.count - 1;
+        return r.rows - 1;
     }
 };
 
@@ -95,7 +100,10 @@ pub const Mtp = struct {
 pub const QkNorm = struct { q_weight: u64, k_weight: u64, eps: f32 };
 
 pub const Model = struct {
+    /// What this rank sees: under tp its heads and value heads.
     spec: Spec,
+    /// The tensor-parallel communicator; null on one rank.
+    tp: ?hip.rccl.Comm = null,
     act: Kind,
     embed: Affine,
     layers: []const Layer,

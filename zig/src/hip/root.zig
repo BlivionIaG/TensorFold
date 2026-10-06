@@ -19,10 +19,14 @@ pub const kernels = @import("kernels.zig");
 pub const rocm = @import("rocm.zig");
 pub const ops = @import("ops.zig");
 pub const Arena = @import("arena.zig").Arena;
+pub const rccl = @import("rccl.zig");
+pub const link = @import("link.zig");
 
 test {
     _ = launch;
     _ = abi;
     _ = rocm;
     _ = ops;
+    _ = rccl;
+    _ = link;
 }

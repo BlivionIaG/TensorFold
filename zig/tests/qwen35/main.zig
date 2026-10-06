@@ -1,5 +1,6 @@
 //! Qwen3.5 / 3.6 loader checks: `check <model dir> [first layers]` uploads the model and reads every buffer back (GPU);
-//! `digest <model dir>` prints a SHA-256 per host tensor, to compare with the Python loader's.
+//! `digest <model dir> [--tp N --rank R]` prints a SHA-256 per host tensor (of one tensor-parallel rank's share with
+//! --tp), to compare with the Python loader's.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -8,7 +9,11 @@ const qwen35 = @import("qwen35");
 const Buf = qwen35.weights.Buf;
 const Tensor = qwen35.table.Tensor;
 
-const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> | layers <model dir> <fixture dir> | draw x\n";
+/// No per-thread alternate signal stack: its 256 KiB thread-local leaves the threads RCCL and the HIP runtime start too
+/// little stack for glibc to create them.
+pub const std_options: std.Options = .{ .signal_stack_size = null };
+
+const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> [--tp N --rank R] | layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]] | lanes ... | draw x\n";
 
 pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -17,7 +22,9 @@ pub fn main(init: std.process.Init) !u8 {
         return 2;
     }
     if (std.mem.eql(u8, args[1], "digest")) {
-        digest(init.gpa, init.io, args[2]) catch |e| {
+        var rank: ?qwen35.slicing.Rank = null;
+        if (args.len > 6 and std.mem.eql(u8, args[3], "--tp")) rank = .{ .world = try std.fmt.parseInt(usize, args[4], 10), .rank = try std.fmt.parseInt(usize, args[6], 10) };
+        digest(init.gpa, init.io, args[2], rank) catch |e| {
             std.debug.print("FAIL {t}\n", .{e});
             return 1;
         };
@@ -40,7 +47,12 @@ pub fn main(init: std.process.Init) !u8 {
     if (std.mem.eql(u8, args[1], "layers") and args.len > 3) {
         var d = try hip.Driver.open();
         defer d.close();
-        @import("layers.zig").run(.{ .d = &d, .gpa = init.gpa, .io = init.io }, args[2], args[3]) catch |e| {
+        var group: @import("layers.zig").Group = .{};
+        var i: usize = 4;
+        while (i + 1 < args.len) : (i += 2) {
+            if (std.mem.eql(u8, args[i], "--tp")) group.world = try std.fmt.parseInt(usize, args[i + 1], 10) else if (std.mem.eql(u8, args[i], "--rank")) group.rank = try std.fmt.parseInt(usize, args[i + 1], 10) else if (std.mem.eql(u8, args[i], "--master")) group.master = args[i + 1] else if (std.mem.eql(u8, args[i], "--port")) group.port = try std.fmt.parseInt(u16, args[i + 1], 10) else return 2;
+        }
+        @import("layers.zig").run(.{ .d = &d, .gpa = init.gpa, .io = init.io }, args[2], args[3], group) catch |e| {
             std.debug.print("FAIL {t}\n", .{e});
             return 1;
         };
@@ -91,23 +103,31 @@ fn emit(gpa: std.mem.Allocator, path: []const u8, v: anytype) !void {
     }
 }
 
-fn digest(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !void {
+fn digest(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, rank: ?qwen35.slicing.Rank) !void {
     var ck = try qwen35.Checkpoint.open(gpa, io, dir);
     defer ck.close();
     var scratch: std.heap.ArenaAllocator = .init(gpa);
     defer scratch.deinit();
-    try emit(gpa, "embed", qwen35.host.Projection{ .affine = try ck.embed(scratch.allocator()) });
+    const embed = try ck.embed(scratch.allocator());
+    try emit(gpa, "embed", qwen35.host.Projection{ .affine = embed });
     try emit(gpa, "final_norm", try ck.finalNorm(scratch.allocator()));
-    try emit(gpa, "head", try ck.head(scratch.allocator()));
+    const head = try ck.head(scratch.allocator());
+    if (rank) |r| {
+        try emit(gpa, "head", try qwen35.slicing.vocabRows(scratch.allocator(), head orelse .{ .affine = embed }, ck.spec().vocab, r));
+    } else try emit(gpa, "head", head);
     for (0..ck.spec().n_layers) |i| {
         var layer = try ck.layer(i);
         defer layer.deinit();
+        if (rank) |r| try qwen35.slicing.layer(&layer, ck.spec(), r);
         const path = try std.fmt.allocPrint(gpa, "L{d}", .{i});
         defer gpa.free(path);
         try emit(gpa, path, layer.body);
     }
     var mtp = try ck.mtp();
     defer if (mtp) |*m| m.deinit();
+    if (rank) |r| if (mtp) |*m| if (m.head) |p| {
+        m.head = try qwen35.slicing.vocabRows(m.arena.allocator(), p, ck.spec().vocab, r);
+    };
     try emit(gpa, "mtp", mtp);
 }
 
