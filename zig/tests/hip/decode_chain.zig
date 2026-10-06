@@ -86,8 +86,8 @@ pub fn select(t: *Rig, rows: usize, experts: usize, top_k: usize) !void {
     std.debug.print("RESULT decode select rows{d} experts{d} top{d}: old {d:.1} us, new {d:.1} us, x{d:.2}; picks, weights and plan equal\n", .{ rows, experts, top_k, us[0], us[1], us[0] / us[1] });
 }
 
-/// A window's conv: cast, conv and three column copies against the one launch that splits the output, then the q and k
-/// norms as two launches against one. State, snapshots and outputs must be equal bytes.
+/// A window's conv: cast, conv, three column copies, the q and k norms and the gate against one launch. State,
+/// snapshots, outputs, gate and beta must be equal bytes.
 pub fn conv(t: *Rig, rows: usize) !void {
     const gpa = t.gpu.gpa;
     const kw: usize = 2048;
@@ -108,12 +108,38 @@ pub fn conv(t: *Rig, rows: usize) !void {
     const hn = try gpa.alloc(f32, 128 * 2);
     defer gpa.free(hn);
     for (hn) |*v| v.* = 1.0 + t.rng.unit() / 4.0;
+    const vheads: usize = 32;
+    const ha = try gpa.alloc(u16, rows * vheads);
+    defer gpa.free(ha);
+    for (ha) |*v| v.* = t.bits(t.rng.unit() * 3.0);
+    const hb = try gpa.alloc(u16, rows * vheads);
+    defer gpa.free(hb);
+    for (hb) |*v| v.* = t.bits(t.rng.unit() * 3.0);
+    const hlog = try gpa.alloc(f32, vheads * 2);
+    defer gpa.free(hlog);
+    for (hlog) |*v| v.* = t.rng.unit();
     var x = try upload(t, hx);
     defer x.free();
     var weight = try upload(t, hw);
     defer weight.free();
     var norm = try upload(t, hn);
     defer norm.free();
+    var dev_a = try upload(t, ha);
+    defer dev_a.free();
+    var dev_b = try upload(t, hb);
+    defer dev_b.free();
+    var dev_log = try upload(t, hlog);
+    defer dev_log.free();
+    var gates: [2]hip.DeviceBuffer = undefined;
+    var betas: [2]hip.DeviceBuffer = undefined;
+    for (0..2) |v| {
+        gates[v] = try hip.DeviceBuffer.alloc(t.gpu.d, rows * vheads * 4);
+        betas[v] = try hip.DeviceBuffer.alloc(t.gpu.d, rows * vheads * 4);
+    }
+    defer for (0..2) |v| {
+        gates[v].free();
+        betas[v].free();
+    };
     var state: [2]hip.DeviceBuffer = undefined;
     var snaps: [2]hip.DeviceBuffer = undefined;
     var qc: [2]hip.DeviceBuffer = undefined;
@@ -157,6 +183,11 @@ pub fn conv(t: *Rig, rows: usize) !void {
         vv: u64,
         qn: u64,
         kn: u64,
+        a: u64,
+        b: u64,
+        a_log: u64,
+        gate: u64,
+        beta: u64,
         xr: u64,
         mixed: u64,
         rows: usize,
@@ -182,30 +213,56 @@ pub fn conv(t: *Rig, rows: usize) !void {
                 try l.tf_copy_cols(@ptrFromInt(c.mixed), @intCast(c.ch), @intCast(2 * c.kw), @ptrFromInt(c.vv), 0, @intCast(c.rows), @intCast(c.vw), s);
                 try l.tf_rms(@ptrFromInt(c.qc), @ptrFromInt(c.norm), @ptrFromInt(c.qn), 0, @intCast(heads), 128, c.eps, s);
                 try l.tf_rms(@ptrFromInt(c.kc), @ptrFromInt(c.norm + 512), @ptrFromInt(c.kn), 0, @intCast(heads), 128, c.eps, s);
+                try l.tf_gdn_gate(@ptrFromInt(c.a), @ptrFromInt(c.b), c.kind, @ptrFromInt(c.a_log), @ptrFromInt(c.a_log + 128), @ptrFromInt(c.gate), @ptrFromInt(c.beta), @intCast(c.rows * 32), 32, s);
             } else {
-                try l.tf_conv_split(@ptrFromInt(c.x), c.kind, @ptrFromInt(c.weight), @ptrFromInt(c.state), if (c.rows > 1) @ptrFromInt(c.snaps) else null, @ptrFromInt(c.qc), @ptrFromInt(c.kc), @ptrFromInt(c.vv), @intCast(c.ch), @intCast(c.kernel), @intCast(c.rows), @intCast(c.kw), @intCast(c.vw), s);
-                try l.tf_rms2(@ptrFromInt(c.qc), @ptrFromInt(c.norm), @ptrFromInt(c.qn), @ptrFromInt(c.kc), @ptrFromInt(c.norm + 512), @ptrFromInt(c.kn), @intCast(heads), 128, c.eps, s);
+                try l.tf_conv_split(.{
+                    .x = c.x,
+                    .kind = c.kind,
+                    .weight = c.weight,
+                    .state = c.state,
+                    .states = if (c.rows > 1) c.snaps else 0,
+                    .qn = c.qn,
+                    .kn = c.kn,
+                    .v = c.vv,
+                    .channels = @intCast(c.ch),
+                    .kernel = @intCast(c.kernel),
+                    .rows = @intCast(c.rows),
+                    .kw = @intCast(c.kw),
+                    .vw = @intCast(c.vw),
+                    .qw = c.norm,
+                    .kw_w = c.norm + 512,
+                    .eps = c.eps,
+                    .norm = 128,
+                    .ga = c.a,
+                    .gb = c.b,
+                    .a_log = c.a_log,
+                    .dt_bias = c.a_log + 128,
+                    .gate = c.gate,
+                    .beta = c.beta,
+                    .gcount = @intCast(c.rows * 32),
+                    .heads = 32,
+                }, s);
             }
         }
     };
     var us: [2]f64 = undefined;
     for (0..2) |v| {
-        const ctx: Ctx = .{ .t = t, .old = v == 0, .v = v, .x = x.ptr, .weight = weight.ptr, .norm = norm.ptr, .state = state[v].ptr, .snaps = snaps[v].ptr, .qc = qc[v].ptr, .kc = kc[v].ptr, .vv = vv[v].ptr, .qn = qn[v].ptr, .kn = kn[v].ptr, .xr = xr.ptr, .mixed = mixed.ptr, .rows = rows, .ch = ch, .kw = kw, .vw = vw, .kernel = kernel, .kind = kind, .eps = eps };
+        const ctx: Ctx = .{ .t = t, .old = v == 0, .v = v, .x = x.ptr, .weight = weight.ptr, .norm = norm.ptr, .state = state[v].ptr, .snaps = snaps[v].ptr, .qc = qc[v].ptr, .kc = kc[v].ptr, .vv = vv[v].ptr, .qn = qn[v].ptr, .kn = kn[v].ptr, .a = dev_a.ptr, .b = dev_b.ptr, .a_log = dev_log.ptr, .gate = gates[v].ptr, .beta = betas[v].ptr, .xr = xr.ptr, .mixed = mixed.ptr, .rows = rows, .ch = ch, .kw = kw, .vw = vw, .kernel = kernel, .kind = kind, .eps = eps };
         try Ctx.go(ctx, 0);
         try t.stream.synchronize();
     }
     try same(t, "conv state", state[0], state[1]);
     if (rows > 1) try same(t, "conv snapshots", snaps[0], snaps[1]);
-    try same(t, "conv q", qc[0], qc[1]);
-    try same(t, "conv k", kc[0], kc[1]);
     try same(t, "conv v", vv[0], vv[1]);
     try same(t, "q norm", qn[0], qn[1]);
     try same(t, "k norm", kn[0], kn[1]);
+    try same(t, "gate", gates[0], gates[1]);
+    try same(t, "beta", betas[0], betas[1]);
     for (0..2) |v| {
-        const ctx: Ctx = .{ .t = t, .old = v == 0, .v = v, .x = x.ptr, .weight = weight.ptr, .norm = norm.ptr, .state = state[v].ptr, .snaps = snaps[v].ptr, .qc = qc[v].ptr, .kc = kc[v].ptr, .vv = vv[v].ptr, .qn = qn[v].ptr, .kn = kn[v].ptr, .xr = xr.ptr, .mixed = mixed.ptr, .rows = rows, .ch = ch, .kw = kw, .vw = vw, .kernel = kernel, .kind = kind, .eps = eps };
+        const ctx: Ctx = .{ .t = t, .old = v == 0, .v = v, .x = x.ptr, .weight = weight.ptr, .norm = norm.ptr, .state = state[v].ptr, .snaps = snaps[v].ptr, .qc = qc[v].ptr, .kc = kc[v].ptr, .vv = vv[v].ptr, .qn = qn[v].ptr, .kn = kn[v].ptr, .a = dev_a.ptr, .b = dev_b.ptr, .a_log = dev_log.ptr, .gate = gates[v].ptr, .beta = betas[v].ptr, .xr = xr.ptr, .mixed = mixed.ptr, .rows = rows, .ch = ch, .kw = kw, .vw = vw, .kernel = kernel, .kind = kind, .eps = eps };
         us[v] = try t.time(100 * t.reps, ctx, Ctx.go);
     }
-    std.debug.print("RESULT decode conv rows{d}: cast, conv, 3 copies and 2 norms {d:.1} us, 2 launches {d:.1} us, x{d:.2}; state, snapshots, q, k and v equal bytes\n", .{ rows, us[0], us[1], us[0] / us[1] });
+    std.debug.print("RESULT decode conv rows{d}: cast, conv, 3 copies, 2 norms and the gate {d:.1} us, one launch {d:.1} us, x{d:.2}; state, snapshots, q, k, v, gate and beta equal bytes\n", .{ rows, us[0], us[1], us[0] / us[1] });
 }
 
 /// The gated norm of the linear attention: rms and gnorm_silu against one launch, equal bytes.

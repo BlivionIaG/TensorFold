@@ -137,40 +137,106 @@ __device__ void tail_body(void* x, const void* y, const float* wts, const float*
     }
 }
 
+// What the linear attention's conv launch takes: x (rows, channels) in `kind`; the conv's taps, state and snapshots;
+// q and k (rows, kw) and v (rows, vw) out; with norm = 128 the q and k heads are normed with qw and kw_w; with ga the
+// gate and beta of the delta rule from a and b (rows * heads values of `kind`).
+struct ConvArgs {
+    const void* x;
+    int kind;
+    const float* weight;
+    float* state;
+    float* states;
+    float* qn;
+    float* kn;
+    float* v;
+    int channels, kernel, rows, kw, vw;
+    const float* qw;
+    const float* kw_w;
+    float eps;
+    int norm;
+    const void* ga;
+    const void* gb;
+    const float* a_log;
+    const float* dt_bias;
+    float* gate;
+    float* beta;
+    int gcount, heads;
+};
+
 // The linear-attention conv for a window's rows with the activation widened on load and the output split into q, k and
-// v: channel c of row r goes to qc / kc (rows, kw) or v (rows, vw). conv_rows_kernel's taps, in order, silu after; the
-// state moves on in place, and `states` (optional) keeps the state after every row.
-__device__ void
-    conv_split_body(const void* x, int kind, const float* weight, float* state, float* states, float* qc, float* kc,
-                      float* v, int channels, int kernel, int rows, int kw, int vw) {
-    const int channel = blockIdx.x * blockDim.x + threadIdx.x;
-    if (channel >= channels) return;
-    const float* taps = weight + static_cast<long long>(channel) * kernel;
-    const int kept = kernel - 1;
+// v: channel c of row r goes to qn / kn (rows, kw) or v (rows, vw). conv_rows_kernel's taps, in order, silu after; the
+// state moves on in place, and `states` (optional) keeps the state after every row. A block of 128 channels is one
+// head: a q or k head is normed by rms_rows' sums (lane l adds elements l, l + 32, ... in order, then the xor tree).
+// The blocks past the channels' compute the gate and beta (gdn_gate_kernel's arithmetic).
+__device__ void conv_split_body(const ConvArgs& c) {
+    __shared__ float sq[128];
+    __shared__ float inv_s;
+    const int conv_blocks = (c.channels + 127) / 128;
+    if (blockIdx.x >= conv_blocks) {
+        const int i = (blockIdx.x - conv_blocks) * 128 + threadIdx.x;
+        if (c.ga == nullptr || i >= c.gcount) return;
+        const int h = i % c.heads;
+        c.beta[i] = 1.f / (1.f + expf(-load_kind(c.gb, c.kind, i)));
+        const float xg = load_kind(c.ga, c.kind, i) + c.dt_bias[h];
+        const float soft = xg > 20.f ? xg : log1pf(expf(xg));
+        c.gate[i] = expf(-expf(c.a_log[h]) * soft);
+        return;
+    }
+    const int channel = blockIdx.x * 128 + threadIdx.x;
+    const bool live = channel < c.channels;
+    const bool head = c.norm == 128 && static_cast<int>(blockIdx.x) * 128 < 2 * c.kw;
+    const float* taps = c.weight + static_cast<long long>(live ? channel : 0) * c.kernel;
+    const int kept = c.kernel - 1;
     float history[7];
-    for (int tap = 0; tap < kept; ++tap) history[tap] = state[static_cast<long long>(tap) * channels + channel];
-    for (int r = 0; r < rows; ++r) {
-        float acc = 0.f;
-        for (int tap = 0; tap < kept; ++tap) acc += history[tap] * taps[tap];
-        const float sample = load_kind(x, kind, static_cast<long long>(r) * channels + channel);
-        acc += sample * taps[kept];
-        const float y = acc * (1.f / (1.f + expf(-acc)));
-        if (channel < kw) {
-            qc[static_cast<long long>(r) * kw + channel] = y;
-        } else if (channel < 2 * kw) {
-            kc[static_cast<long long>(r) * kw + channel - kw] = y;
-        } else {
-            v[static_cast<long long>(r) * vw + channel - 2 * kw] = y;
+    if (live) {
+        for (int tap = 0; tap < kept; ++tap) history[tap] = c.state[static_cast<long long>(tap) * c.channels + channel];
+    }
+    for (int r = 0; r < c.rows; ++r) {
+        float y = 0.f;
+        float sample = 0.f;
+        if (live) {
+            float acc = 0.f;
+            for (int tap = 0; tap < kept; ++tap) acc += history[tap] * taps[tap];
+            sample = load_kind(c.x, c.kind, static_cast<long long>(r) * c.channels + channel);
+            acc += sample * taps[kept];
+            y = acc * (1.f / (1.f + expf(-acc)));
         }
-        for (int tap = 0; tap < kept - 1; ++tap) history[tap] = history[tap + 1];
-        if (kept > 0) history[kept - 1] = sample;
-        if (states != nullptr) {
-            for (int tap = 0; tap < kept; ++tap) {
-                states[(static_cast<long long>(r) * kept + tap) * channels + channel] = history[tap];
+        if (head) {
+            // the norm of the head's 128 values, then the scale by its weight
+            __syncthreads();
+            sq[threadIdx.x] = y * y;
+            __syncthreads();
+            if (threadIdx.x < 32) {
+                float sum = 0.f;
+                for (int j = 0; j < 4; ++j) sum += sq[threadIdx.x + 32 * j];
+#pragma unroll
+                for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+                if (threadIdx.x == 0) inv_s = rsqrtf(sum / 128.f + c.eps);
+            }
+            __syncthreads();
+            const bool is_q = channel < c.kw;
+            y = y * inv_s * (is_q ? c.qw : c.kw_w)[threadIdx.x];
+        }
+        if (live) {
+            if (channel < c.kw) {
+                c.qn[static_cast<long long>(r) * c.kw + channel] = y;
+            } else if (channel < 2 * c.kw) {
+                c.kn[static_cast<long long>(r) * c.kw + channel - c.kw] = y;
+            } else {
+                c.v[static_cast<long long>(r) * c.vw + channel - 2 * c.kw] = y;
+            }
+            for (int tap = 0; tap < kept - 1; ++tap) history[tap] = history[tap + 1];
+            if (kept > 0) history[kept - 1] = sample;
+            if (c.states != nullptr) {
+                for (int tap = 0; tap < kept; ++tap) {
+                    c.states[(static_cast<long long>(r) * kept + tap) * c.channels + channel] = history[tap];
+                }
             }
         }
     }
-    for (int tap = 0; tap < kept; ++tap) state[static_cast<long long>(tap) * channels + channel] = history[tap];
+    if (live) {
+        for (int tap = 0; tap < kept; ++tap) c.state[static_cast<long long>(tap) * c.channels + channel] = history[tap];
+    }
 }
 
 // rms over rows of `width` (at most 1024) fp32 values a wave a row, 8 rows a block, as rms_rows in ops.hip; blockIdx.y
@@ -317,11 +383,7 @@ extern "C" __global__ void __launch_bounds__(kTailThreads)
     tail_body(x, y, wts, weight, normed, kind, slots, width, eps);
 }
 
-extern "C" __global__ void __launch_bounds__(128)
-    tf_conv_split(const void* x, int kind, const float* weight, float* state, float* states, float* qc, float* kc, float* v,
-                  int channels, int kernel, int rows, int kw, int vw) {
-    conv_split_body(x, kind, weight, state, states, qc, kc, v, channels, kernel, rows, kw, vw);
-}
+extern "C" __global__ void __launch_bounds__(128) tf_conv_split(ConvArgs c) { conv_split_body(c); }
 
 extern "C" __global__ void __launch_bounds__(256)
     tf_rms2(const float* x0, const float* w0, float* y0, const float* x1, const float* w1, float* y1, int rows, int width,

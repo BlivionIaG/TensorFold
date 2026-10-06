@@ -50,6 +50,35 @@ fn tri(kind: c_int) usize {
 /// By kind (0 fp32, 1 fp16, 2 bf16) or by cache kind (0 fp16, 1 bf16, 2 fp32), the kernel one instantiation.
 const Triple = [3]Function;
 
+/// decode.hip's ConvArgs: the linear attention's conv launch.
+pub const ConvArgs = extern struct {
+    x: u64,
+    kind: c_int,
+    weight: u64,
+    state: u64,
+    states: u64 = 0,
+    qn: u64,
+    kn: u64,
+    v: u64,
+    channels: c_int,
+    kernel: c_int,
+    rows: c_int,
+    kw: c_int,
+    vw: c_int,
+    qw: u64 = 0,
+    kw_w: u64 = 0,
+    eps: f32 = 0,
+    norm: c_int = 0,
+    ga: u64 = 0,
+    gb: u64 = 0,
+    a_log: u64 = 0,
+    dt_bias: u64 = 0,
+    gate: u64 = 0,
+    beta: u64 = 0,
+    gcount: c_int = 0,
+    heads: c_int = 0,
+};
+
 pub const Launcher = struct {
     d: *const driver.Driver,
     mods: [kernels.group_count]Module,
@@ -315,24 +344,14 @@ pub const Launcher = struct {
         try l.go(l.dec.tail, dim(rows, 1, 1), dim(512, 1, 1), 0, s, &a);
     }
 
-    /// decode.hip's conv: a window's rows through the linear attention's conv, split into q, k and v (fp32).
-    pub fn tf_conv_split(l: *const Launcher, x: C, kind: c_int, weight: CF, state: F, states: F, qc: F, kc: F, v: F, channels: c_int, kernel: c_int, rows: c_int, kw: c_int, vw: c_int, s: S) Error!void {
-        if (kernel < 1 or kernel > 8) return invalid("conv split");
+    /// decode.hip's conv: a window's rows through the linear attention's conv, split into q, k and v (fp32), the q and k
+    /// heads normed and the gate and beta computed when `c` asks.
+    pub fn tf_conv_split(l: *const Launcher, c: ConvArgs, s: S) Error!void {
+        if (c.kernel < 1 or c.kernel > 8 or (c.norm != 0 and (c.norm != 128 or @rem(c.kw, 128) != 0))) return invalid("conv split");
         var a: Args = .{};
-        a.add(ad(x));
-        a.add(kind);
-        a.add(ad(weight));
-        a.add(ad(state));
-        a.add(ad(states));
-        a.add(ad(qc));
-        a.add(ad(kc));
-        a.add(ad(v));
-        a.add(channels);
-        a.add(kernel);
-        a.add(rows);
-        a.add(kw);
-        a.add(vw);
-        try l.go(l.dec.conv_split, dim(cdiv(channels, 128), 1, 1), dim(128, 1, 1), 0, s, &a);
+        a.add(c);
+        const gate_blocks = if (c.ga != 0) cdiv(c.gcount, 128) else 0;
+        try l.go(l.dec.conv_split, dim(cdiv(c.channels, 128) + gate_blocks, 1, 1), dim(128, 1, 1), 0, s, &a);
     }
 
     /// Two sets of fp32 rows of `width` (at most 1024), each with its own weight, normed in one launch.
