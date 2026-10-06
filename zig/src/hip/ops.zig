@@ -36,6 +36,15 @@ pub const Kind = enum(c_int) {
     }
 };
 
+/// Rows from which the DeltaNet prefill runs chunked, and the rows of one chunked segment (a multiple of the chunk).
+const gdn_min_rows = 64;
+const gdn_segment = 4096;
+
+fn chunkedOff() bool {
+    const text = std.c.getenv("TF_GDN_CHUNKED") orelse return false;
+    return text[0] == '0';
+}
+
 pub const Error = rocm.Error || error{ OutOfDeviceMemory, BadShape };
 
 /// A device buffer of `kind` values.
@@ -199,8 +208,28 @@ pub const Ops = struct {
         try o.lib.call("tf_gdn_gate", .{ p(a.ptr), p(b.ptr), @backingInt(a.kind), f(a_log), f(dt_bias), f(gate), f(beta), int(elements), int(heads), o.stream });
     }
 
+    /// The chunked recurrence in segments of `gdn_segment` rows, whose scratch the arena hands back after each.
+    fn gatedDeltaChunked(o: Ops, z: *const launches.Launcher, q: u64, k: u64, v: u64, gate: u64, beta: u64, state: u64, y: u64, length: usize, key_heads: usize, value_heads: usize) Error!void {
+        var start: usize = 0;
+        while (start < length) : (start += gdn_segment) {
+            const rows = @min(gdn_segment, length - start);
+            const mark = o.arena.mark();
+            defer o.arena.release(mark);
+            const scratch = try o.arena.take(launches.gdnScratch(rows, key_heads, value_heads).total);
+            const qk = start * key_heads * 128 * 4;
+            const vy = start * value_heads * 128 * 4;
+            const gb = start * value_heads * 4;
+            try z.gdnChunked(f(q + qk), f(k + qk), f(v + vy), f(gate + gb), f(beta + gb), f(state), f(y + vy), rows, key_heads, value_heads, scratch, o.stream);
+        }
+    }
+
     /// The DeltaNet recurrence: q, k (L, Hk, dk), v, y (L, Hv, dv), gate and beta (L, Hv) fp32; state in place.
+    /// A prefill (no snapshots) of at least `gdn_min_rows` rows runs chunked on the Zig launches; TF_GDN_CHUNKED=0 keeps
+    /// the token-serial kernel.
     pub fn gatedDelta(o: Ops, q: u64, k: u64, v: u64, gate: u64, beta: u64, state: u64, y: u64, length: usize, key_heads: usize, value_heads: usize, dk: usize, dv: usize, states: ?u64) Error!void {
+        if (states == null and length >= gdn_min_rows and dk == 128 and dv == 128 and value_heads % key_heads == 0) {
+            if (o.lib.zig) |*z| if (!chunkedOff()) return o.gatedDeltaChunked(z, q, k, v, gate, beta, state, y, length, key_heads, value_heads);
+        }
         try o.lib.call("tf_gated_delta", .{ f(q), f(k), f(v), f(gate), f(beta), f(state), f(y), 1, int(length), int(key_heads), int(value_heads), int(dk), int(dv), o.stream, if (states) |s| f(s) else null });
     }
 
