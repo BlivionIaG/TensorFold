@@ -546,7 +546,8 @@ pub const Launcher = struct {
         a.add(len);
         a.add(channels);
         a.add(kernel);
-        try l.go(l.op.conv_prefill, dim(cdiv(channels, 128), 1, 1), dim(128, 1, 1), 0, s, &a);
+        const n = @as(i64, @max(len, kernel - 1)) * channels;
+        try l.go(l.op.conv_prefill, dim(cdiv(n, 256), 1, 1), dim(256, 1, 1), 0, s, &a);
     }
 
     pub fn tf_gdn_gate_prefill(l: *const Launcher, av: C, bv: C, kind: c_int, a_log: CF, dt_bias: CF, gate: F, beta: F, count: c_int, heads: c_int, s: S) Error!void {

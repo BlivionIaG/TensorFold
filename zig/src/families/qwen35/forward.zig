@@ -120,7 +120,11 @@ fn linear(o: Ops, m: *const view.Model, l: view.Linear, caches: *state.Caches, i
     const cache = caches.layers[index].linear;
     const ch = view.convChannels(s);
     const mixed = try o.arena.of(f32, rows * ch);
-    try o.convPrefill(qkv, l.conv, cache.conv.ptr, mixed, cache.conv.ptr, rows, ch, s.conv);
+    // the new window lands beside the old one (every row reads the old), then replaces it
+    const conv_bytes = (s.conv - 1) * ch * 4;
+    const window = try o.arena.take(conv_bytes);
+    try o.convPrefill(qkv, l.conv, cache.conv.ptr, mixed, window, rows, ch, s.conv);
+    try cache.conv.copyFrom(0, window, conv_bytes, o.stream);
     const q, const k, const v = try splitQkv(o, m, .{ .ptr = mixed, .kind = .f32 }, rows);
     const gate = try o.arena.of(f32, rows * s.value_heads);
     const beta = try o.arena.of(f32, rows * s.value_heads);

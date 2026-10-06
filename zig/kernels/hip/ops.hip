@@ -173,25 +173,28 @@ __global__ void kv_write_at_kernel(const void* src, void* cache, int kind, int l
 }
 
 // causal_conv's prefill loop: window = [state | x], out = sum over taps in order of window * weight from a zero,
-// then silu; new_state = the window's last kernel - 1 rows. state null: zeros.
+// then silu; one thread a (row, channel), so every row runs at once with the same sum. new_state = the window's last
+// kernel - 1 rows, written by the first kept * channels threads; it must not be `state` (other rows still read it).
 __global__ void conv_prefill_kernel(const void* x, int kind, const float* weight, const float* state, float* out,
                                     float* new_state, int len, int channels, int kernel) {
-    int c = blockIdx.x * blockDim.x + threadIdx.x;
-    if (c >= channels) return;
+    long long i = gid();
     int kept = kernel - 1;
-    auto window = [&](int t) -> float {
+    auto window = [&](int t, int c) -> float {
         if (t < kept) return state ? state[static_cast<long long>(t) * channels + c] : 0.0f;
         return load(x, kind, static_cast<long long>(t - kept) * channels + c);
     };
-    for (int r = 0; r < len; ++r) {
-        float acc = 0.0f;
-        for (int tap = 0; tap < kernel; ++tap) {
-            float p = window(r + tap) * weight[static_cast<long long>(c) * kernel + tap];
-            acc = acc + p;
-        }
-        out[static_cast<long long>(r) * channels + c] = silu(acc);
+    if (i < static_cast<long long>(kept) * channels) {
+        int t = static_cast<int>(i / channels), c = static_cast<int>(i % channels);
+        new_state[i] = window(len + t, c);
     }
-    for (int t = 0; t < kept; ++t) new_state[static_cast<long long>(t) * channels + c] = window(len + t);
+    if (i >= static_cast<long long>(len) * channels) return;
+    int r = static_cast<int>(i / channels), c = static_cast<int>(i % channels);
+    float acc = 0.0f;
+    for (int tap = 0; tap < kernel; ++tap) {
+        float p = window(r + tap, c) * weight[static_cast<long long>(c) * kernel + tap];
+        acc = acc + p;
+    }
+    out[i] = silu(acc);
 }
 
 // _gate_beta: beta = sigmoid(b), gate = exp(-exp(a_log) * softplus(a + dt_bias)) with torch's softplus (beta 1,
@@ -230,12 +233,13 @@ __global__ void moe_route_kernel(const int* picks, int pairs, int experts, int t
         }
     }
     __syncthreads();
-    // Stable order: a pair's place is its expert's start plus the earlier pairs of that expert.
-    for (int p = threadIdx.x; p < pairs; p += blockDim.x) {
-        int e = picks[p], before = 0;
-        for (int q = 0; q < p; ++q) before += picks[q] == e;
-        members[starts[e] + before] = p;
+    // Stable order in one pass: each expert's cursor walks from its start (the counts' buffer reused as cursors).
+    if (threadIdx.x == 0) {
+        for (int e = 0; e < experts; ++e) counts[e] = starts[e];
+        for (int p = 0; p < pairs; ++p) members[counts[picks[p]]++] = p;
+        for (int e = 0; e < experts; ++e) counts[e] -= starts[e];
     }
+    __syncthreads();
     for (int slot = threadIdx.x; slot < capacity; slot += blockDim.x) {
         int lo = 0, hi = experts;
         while (lo < hi) {                       // searchsorted(ends, slot, right=True)
@@ -485,8 +489,8 @@ int tf_kv_write_at(const void* src, void* cache, int kind, int len, int kv_heads
 
 int tf_conv_prefill(const void* x, int kind, const float* weight, const float* state, float* out, float* new_state,
                     int len, int channels, int kernel, hipStream_t s) {
-    conv_prefill_kernel<<<blocks(channels, 128), 128, 0, s>>>(x, kind, weight, state, out, new_state, len, channels,
-                                                              kernel);
+    long long n = static_cast<long long>(len > kernel - 1 ? len : kernel - 1) * channels;
+    conv_prefill_kernel<<<blocks(n, 256), 256, 0, s>>>(x, kind, weight, state, out, new_state, len, channels, kernel);
     return finish();
 }
 
