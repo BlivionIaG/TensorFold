@@ -119,6 +119,7 @@ pub const Hip = struct {
             .verify = verifyFn,
             .keep = keepFn,
             .draft = draftFn,
+            .tree = heldFn,
             .release = releaseFn,
         } };
     }
@@ -349,10 +350,18 @@ pub const Hip = struct {
             };
             lane.held_n = 0;
             if (r.depth == 0) continue;
-            // the core holds every depth it asks for, so the chain runs it whole (no confidence cut yet)
-            lane.held_n = try head.chain(&h.e.lib, h.e.stream, &h.e.drawer, m, .{ .ptr = lane.hidden.ptr, .kind = m.act }, token, lane.len, r.depth, sampling(r.stream), &lane.held);
-            if (lane.held_n != r.depth) return error.ShortChain;
+            // a chain ends after a draft the head gives under the confidence (`heldFn` tells the core how many it holds);
+            // the prompt's first drafts are asked for before any hook reads the count, so they run whole
+            const stop_under: f64 = if (r.rows != null) mtp.confidence else 0.0;
+            lane.held_n = try head.chain(&h.e.lib, h.e.stream, &h.e.drawer, m, .{ .ptr = lane.hidden.ptr, .kind = m.act }, token, lane.len, r.depth, sampling(r.stream), stop_under, &lane.held);
+            if (lane.held_n > r.depth or (lane.held_n < r.depth and r.rows == null)) return error.ShortChain;
         }
+    }
+
+    /// The drafts the head holds for the stream after its last chain: fewer than asked when a draft cut it.
+    fn heldFn(ptr: *anyopaque, s: *lanes.Stream, _: std.mem.Allocator) anyerror!?lanes.stream.Held {
+        const lane = of(ptr).lanes.get(s) orelse return error.UnknownStream;
+        return .{ .count = @intCast(lane.held_n) };
     }
 
     fn releaseFn(ptr: *anyopaque, s: *lanes.Stream) void {

@@ -270,6 +270,12 @@ pub const Ops = struct {
         try o.lib.check(o.lib.api.tf_argmax_rows(p(logits.ptr), @backingInt(logits.kind), int(rows), int(n), i(out), o.stream), "argmax_rows");
     }
 
+    /// softmax of each of `rows` logits rows at the token the device i32 `ids` names (0: the row's largest), into f32 `out`.
+    pub fn tokenProb(o: Ops, logits: Tensor, rows: usize, n: usize, ids: u64, out: u64) Error!void {
+        if (logits.kind == .f32) return error.BadShape;
+        try o.lib.check(o.lib.api.tf_token_prob(p(logits.ptr), @backingInt(logits.kind), int(rows), int(n), if (ids == 0) null else @ptrFromInt(ids), f(out), o.stream), "token_prob");
+    }
+
     /// Each row's `ks[r]` largest by (value desc, id asc): ids (i32) and the values' 16-bit patterns, `stride` apart.
     pub fn topkRows(o: Ops, logits: Tensor, rows: usize, n: usize, ks: u64, stride: usize, ids: u64, values: u64) Error!void {
         if (logits.kind == .f32) return error.BadShape;

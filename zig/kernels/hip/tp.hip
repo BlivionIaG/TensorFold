@@ -1,5 +1,6 @@
 // The tensor-parallel forward's own ops: a residual add of an fp32 sum (rounded once to the activation dtype, as torch's
-// widened add into the residual) and the expert share's id remapping and masks. kind: 0 fp32, 1 fp16, 2 bf16.
+// widened add into the residual) and the expert share's id remapping and masks; and the MTP chain's token probability.
+// kind: 0 fp32, 1 fp16, 2 bf16.
 
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
@@ -55,6 +56,49 @@ __global__ void zero_foreign_kernel(float* y, const int* picks, int skip, long l
     if (picks[i / d] == skip) y[i] = 0.f;
 }
 
+constexpr int kProbThreads = 256;
+
+__device__ __forceinline__ float widen_row(uint16_t bits, int kind) {
+    return kind == 1 ? __half2float(__ushort_as_half(bits)) : bf16_to_float(bits);
+}
+
+// out[r] = softmax(row r)[id[r]] of a row of `kind` (1 fp16, 2 bf16), or of the row's largest value when `id` is null:
+// the draft head's probability for the token it drafted. One block a row; a row with a NaN gives NaN.
+__global__ void token_prob_kernel(const uint16_t* logits, int kind, int n, const int* id, float* out) {
+    const uint16_t* row = logits + static_cast<long long>(blockIdx.x) * n;
+    __shared__ float shared[kProbThreads];
+    float top = -INFINITY;
+    bool nan = false;
+    for (int i = threadIdx.x; i < n; i += kProbThreads) {
+        float v = widen_row(row[i], kind);
+        nan |= v != v;
+        top = fmaxf(top, v);
+    }
+    shared[threadIdx.x] = nan ? NAN : top;
+    __syncthreads();
+    for (int stride = kProbThreads / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) {
+            float a = shared[threadIdx.x], b = shared[threadIdx.x + stride];
+            shared[threadIdx.x] = (a != a || b != b) ? NAN : fmaxf(a, b);
+        }
+        __syncthreads();
+    }
+    const float peak = shared[0];
+    __syncthreads();
+    float total = 0.f;
+    for (int i = threadIdx.x; i < n; i += kProbThreads) total += expf(widen_row(row[i], kind) - peak);
+    shared[threadIdx.x] = total;
+    __syncthreads();
+    for (int stride = kProbThreads / 2; stride > 0; stride >>= 1) {
+        if (threadIdx.x < stride) shared[threadIdx.x] += shared[threadIdx.x + stride];
+        __syncthreads();
+    }
+    if (threadIdx.x == 0) {
+        const float chosen = id ? expf(widen_row(row[id[blockIdx.x]], kind) - peak) : 1.f;
+        out[blockIdx.x] = chosen / shared[0];
+    }
+}
+
 thread_local char tp_error[256] = "";
 
 int finish() {
@@ -93,6 +137,12 @@ int tf_moe_foreign_items(int* items, int count, int skip, hipStream_t s) {
 int tf_moe_zero_foreign(float* y, const int* picks, int skip, long long pairs, int d, hipStream_t s) {
     if (pairs == 0) return 0;
     zero_foreign_kernel<<<blocks(pairs * d, 256), 256, 0, s>>>(y, picks, skip, pairs, d);
+    return finish();
+}
+
+int tf_token_prob(const void* logits, int kind, int rows, int n, const int* id, float* out, hipStream_t s) {
+    if (rows == 0) return 0;
+    token_prob_kernel<<<rows, kProbThreads, 0, s>>>(static_cast<const uint16_t*>(logits), kind, n, id, out);
     return finish();
 }
 
