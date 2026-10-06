@@ -86,14 +86,16 @@ __global__ void add_kernel(const void* x, const void* y, void* out, int kind, lo
     if (i < n) store(out, kind, i, load(x, kind, i) + load(y, kind, i));
 }
 
-// out[r, h * d + j] = att[h, r, j] * sigmoid(gate[r, h * 2d + d + j]) rounded to kind (gated attention's o input).
-__global__ void attn_gate_kernel(const float* att, const void* qg, void* out, int kind, int len, int heads, int d) {
+// out[r, h * d + j] = att * sigmoid(gate[r, h * 2d + d + j]) rounded to kind (gated attention's o input); att is
+// (heads, len, d) from the prefill tile, or (len, heads, d) with rows_major from a window's queries.
+__global__ void attn_gate_kernel(const float* att, const void* qg, void* out, int kind, int len, int heads, int d,
+                                 int rows_major) {
     long long i = gid();
     if (i >= static_cast<long long>(len) * heads * d) return;
     int j = static_cast<int>(i % d);
     int h = static_cast<int>((i / d) % heads);
     int r = static_cast<int>(i / (static_cast<long long>(d) * heads));
-    float a = att[(static_cast<long long>(h) * len + r) * d + j];
+    float a = rows_major ? att[i] : att[(static_cast<long long>(h) * len + r) * d + j];
     float g = load(qg, kind, (static_cast<long long>(r) * heads + h) * 2 * d + d + j);
     store(out, kind, i, a * sigmoid(g));
 }
@@ -282,10 +284,11 @@ int tf_add(const void* x, const void* y, void* out, int kind, long long n, hipSt
     return finish();
 }
 
-int tf_attn_gate(const float* att, const void* qg, void* out, int kind, int len, int heads, int d, hipStream_t s) {
+int tf_attn_gate(const float* att, const void* qg, void* out, int kind, int len, int heads, int d, int rows_major,
+                 hipStream_t s) {
     long long n = static_cast<long long>(len) * heads * d;
     if (n == 0) return 0;
-    attn_gate_kernel<<<blocks(n, 256), 256, 0, s>>>(att, qg, out, kind, len, heads, d);
+    attn_gate_kernel<<<blocks(n, 256), 256, 0, s>>>(att, qg, out, kind, len, heads, d, rows_major);
     return finish();
 }
 

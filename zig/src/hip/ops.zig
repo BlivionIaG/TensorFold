@@ -142,9 +142,9 @@ pub const Ops = struct {
         try o.lib.check(o.lib.api.tf_add(p(x.ptr), p(y.ptr), p(out.ptr), @backingInt(out.kind), @intCast(n), o.stream), "add");
     }
 
-    /// The gated attention's o input from att (heads, len, d) fp32 and the q projection's gate half.
-    pub fn attnGate(o: Ops, att: u64, qg: Tensor, out: Tensor, len: usize, heads: usize, d: usize) Error!void {
-        try o.lib.check(o.lib.api.tf_attn_gate(f(att), p(qg.ptr), p(out.ptr), @backingInt(out.kind), int(len), int(heads), int(d), o.stream), "attn_gate");
+    /// The gated attention's o input from att fp32, (heads, len, d) or with `rows_major` (len, heads, d), and the gate half.
+    pub fn attnGate(o: Ops, att: u64, qg: Tensor, out: Tensor, len: usize, heads: usize, d: usize, rows_major: bool) Error!void {
+        try o.lib.check(o.lib.api.tf_attn_gate(f(att), p(qg.ptr), p(out.ptr), @backingInt(out.kind), int(len), int(heads), int(d), @intFromBool(rows_major), o.stream), "attn_gate");
     }
 
     pub fn gnormSilu(o: Ops, y: u64, z: Tensor, out: Tensor, n: usize) Error!void {
@@ -186,8 +186,9 @@ pub const Ops = struct {
         try o.lib.check(o.lib.api.tf_gdn_gate_prefill(p(a.ptr), p(b.ptr), @backingInt(a.kind), f(a_log), f(dt_bias), f(gate), f(beta), int(count), int(heads), o.stream), "gdn_gate_prefill");
     }
 
-    pub fn gdnGate(o: Ops, a: Tensor, b: Tensor, a_log: u64, dt_bias: u64, gate: u64, beta: u64, count: usize, heads: usize) Error!void {
-        try o.lib.check(o.lib.api.tf_gdn_gate(p(a.ptr), p(b.ptr), @backingInt(a.kind), f(a_log), f(dt_bias), f(gate), f(beta), int(count), int(heads), o.stream), "gdn_gate");
+    /// The fused gate over `elements` values of a and b (rows times heads).
+    pub fn gdnGate(o: Ops, a: Tensor, b: Tensor, a_log: u64, dt_bias: u64, gate: u64, beta: u64, elements: usize, heads: usize) Error!void {
+        try o.lib.check(o.lib.api.tf_gdn_gate(p(a.ptr), p(b.ptr), @backingInt(a.kind), f(a_log), f(dt_bias), f(gate), f(beta), int(elements), int(heads), o.stream), "gdn_gate");
     }
 
     /// The DeltaNet recurrence: q, k (L, Hk, dk), v, y (L, Hv, dv), gate and beta (L, Hv) fp32; state in place.

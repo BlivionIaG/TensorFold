@@ -1,0 +1,118 @@
+//! The device weights the HIP forward reads, as the Python ROCm forward reads them: affine projections, fp32 norms,
+//! conv taps and DeltaNet tables, dense or routed MLPs, and the optional MTP head.
+
+const std = @import("std");
+const hip = @import("hip");
+
+pub const Affine = hip.ops.Affine;
+pub const Kind = hip.ops.Kind;
+
+/// The text model's dimensions (Python's Spec), as the checkpoint's config gives them.
+pub const Spec = @import("config.zig").Spec;
+
+/// The conv's channels: q, k and v of the linear attention.
+pub fn convChannels(s: Spec) usize {
+    return 2 * s.keyWidth() + s.valueWidth();
+}
+
+/// A layer's experts, shared expert last: gate and up stacked as one (E + 1, 2 NI, ...) weight, down (E + 1, D, ...).
+pub const Experts = struct {
+    fused: Affine,
+    down: Affine,
+    count: usize,
+    width: usize,
+    dims: usize,
+    limit: f32 = 0,
+};
+
+/// The router's rows in fp32 (E + 1, D), the shared expert's gate last, and the experts.
+pub const Routed = struct {
+    rows32: u64,
+    experts: Experts,
+    top_k: usize,
+
+    /// Routed experts, the shared one not counted.
+    pub fn count(r: Routed) usize {
+        return r.experts.count - 1;
+    }
+};
+
+pub const Mlp = union(enum) {
+    dense: struct { gate: Affine, up: Affine, down: Affine },
+    moe: Routed,
+};
+
+pub const Full = struct {
+    input_norm: u64,
+    post_norm: u64,
+    q: Affine,
+    k: Affine,
+    v: Affine,
+    o: Affine,
+    q_norm: u64,
+    k_norm: u64,
+    mlp: Mlp,
+};
+
+pub const Linear = struct {
+    input_norm: u64,
+    post_norm: u64,
+    qkv: Affine,
+    z: Affine,
+    a: Affine,
+    b: Affine,
+    out: Affine,
+    conv: u64,
+    a_log: u64,
+    dt_bias: u64,
+    gnorm: u64,
+    mlp: Mlp,
+};
+
+pub const Layer = union(enum) { full: Full, linear: Linear };
+
+/// The MTP head: the Qwen3 shape (gated attention, an MLP or experts) with its own or the model's output head.
+pub const Mtp = struct {
+    fc_e_norm: u64,
+    fc_h_norm: u64,
+    fc_e: Affine,
+    fc_h: Affine,
+    q_norm: u64,
+    k_norm: u64,
+    q: Affine,
+    k: Affine,
+    v: Affine,
+    o: Affine,
+    final_norm: u64,
+    head: ?Affine,
+    input_norm: ?u64,
+    post_norm: ?u64,
+    mlp: ?Mlp,
+    gated: bool,
+};
+
+/// normalize_qk's constant norm weights (key_dim ** -0.5 squared for q, once for k) and its eps.
+pub const QkNorm = struct { q_weight: u64, k_weight: u64, eps: f32 };
+
+pub const Model = struct {
+    spec: Spec,
+    act: Kind,
+    embed: Affine,
+    layers: []const Layer,
+    final_norm: u64,
+    head: Affine,
+    qk: QkNorm,
+    mtp: ?Mtp = null,
+};
+
+/// q and k's normalize_qk weights and eps exactly as Python makes them: double arithmetic, then fp32.
+pub fn qkConstants(key_dim: usize, eps: f64) struct { q: f32, k: f32, eps: f32 } {
+    const inv = std.math.pow(f64, @floatFromInt(key_dim), -0.5);
+    return .{ .q = @floatCast(inv * inv), .k = @floatCast(inv), .eps = @floatCast(eps * inv * inv) };
+}
+
+test "normalize_qk constants for a 128-wide key" {
+    const c = qkConstants(128, 1e-6);
+    try std.testing.expectEqual(@as(f32, 0.0078125), c.q);
+    try std.testing.expect(@abs(c.k - 0.08838834764) < 1e-8);
+}

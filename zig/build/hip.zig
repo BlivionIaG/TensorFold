@@ -103,6 +103,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const upload = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
     upload.addImport("hip", hip);
     upload.addImport("qwen35", qwen);
+    upload.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = target, .optimize = optimize }));
     const upload_exe = b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = upload });
     b.installArtifact(upload_exe);
     b.step("tf-qwen35-test", "Qwen3.5 / 3.6 checkpoint upload check (GPU)").dependOn(&b.addInstallArtifact(upload_exe, .{}).step);
@@ -114,6 +115,7 @@ fn qwen35(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
     const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen35/qwen35.zig"), .target = target, .optimize = optimize, .link_libc = true });
     family.addImport("hip", hip);
     family.addImport("core", core);
+    family.addImport("lanes", b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = target, .optimize = optimize, .link_libc = true }));
     return family;
 }
 
@@ -122,6 +124,8 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, "");
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
     const family = b.addRunArtifact(b.addTest(.{ .root_module = qwen35(b, b.graph.host, .debug, hip) }));
+    // TF_QWEN_DIR is not a cached input
+    family.has_side_effects = true;
     step.dependOn(&family.step);
     b.step("test-qwen35", "Qwen3.5 / 3.6 host tests; TF_QWEN_DIR indexes a real checkpoint").dependOn(&family.step);
 }
