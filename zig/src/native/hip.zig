@@ -204,7 +204,8 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.backend = try qwen35.hip_lanes.Hip.init(gpa, p.e);
     errdefer h.backend.deinit();
     h.backend.keepPrompts(if (p.plan.cache_budget == 0) 0 else p.keep, p.plan.cache_budget);
-    if (p.group) |g| h.backend.withLink(&g.link);
+    // a lone rank times its forwards for the depth rule; the ranks of a group draft without costs
+    if (p.group) |g| h.backend.withLink(&g.link) else h.backend.measure();
     h.cfg = try lanes.Config.init(gpa, h.backend.facts(), qwen35.hip_lanes.Hip.max_window, qwen35.hip_lanes.Hip.max_window - 1);
     errdefer h.cfg.deinit(gpa);
     h.clock = .{ .io = io };
