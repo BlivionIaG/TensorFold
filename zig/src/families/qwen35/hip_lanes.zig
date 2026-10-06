@@ -143,6 +143,7 @@ pub const Hip = struct {
     }
 
     fn free(h: *Hip, l: *Lane) void {
+        h.e.forget(&l.caches);
         l.caches.deinit(h.gpa);
         l.hidden.free();
         h.gpa.destroy(l);

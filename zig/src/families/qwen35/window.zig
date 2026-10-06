@@ -99,8 +99,8 @@ fn attentionRows(o: Ops, m: *const view.Model, f: view.Full, windows: []Window, 
         // the decode RoPE on fp32 rows (one position a row's heads), rounded to the activation dtype
         const q = try rope(o, m, fwd.at(qn, start * s.heads * hd), w, s.heads);
         const k = try rope(o, m, fwd.at(kn, start * s.kv_heads * hd), w, s.kv_heads);
-        try o.kvWrite(k, c.k, w.rows, s.kv_heads, hd, c.total, w.pos);
-        try o.kvWrite(fwd.at(values, start * s.kv_heads * hd), c.v, w.rows, s.kv_heads, hd, c.total, w.pos);
+        try o.kvWriteAt(k, c.k, w.rows, s.kv_heads, hd, c.total, w.at32);
+        try o.kvWriteAt(fwd.at(values, start * s.kv_heads * hd), c.v, w.rows, s.kv_heads, hd, c.total, w.at32);
         const q32 = try o.arena.of(f32, w.rows * s.heads * hd);
         try o.cast(q, .{ .ptr = q32, .kind = .f32 }, w.rows * s.heads * hd);
         try o.causalAt(q32, c, att + start * s.heads * hd * 4, w.rows, s.heads, fwd.scaleOf(hd), w.at32);

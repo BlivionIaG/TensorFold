@@ -172,6 +172,11 @@ pub const Ops = struct {
         try o.lib.call("tf_kv_write", .{ p(src.ptr), p(cache), @backingInt(src.kind), int(len), int(kv_heads), int(d), int(total), int(pos0), o.stream });
     }
 
+    /// kv_write with the first slot read from the device (one int32), for graphs replayed at new positions.
+    pub fn kvWriteAt(o: Ops, src: Tensor, cache: u64, len: usize, kv_heads: usize, d: usize, total: usize, pos: u64) Error!void {
+        try o.lib.check(o.lib.api.tf_kv_write_at(p(src.ptr), p(cache), @backingInt(src.kind), int(len), int(kv_heads), int(d), int(total), @ptrFromInt(pos), o.stream), "kv_write_at");
+    }
+
     pub fn convPrefill(o: Ops, x: Tensor, weight: u64, state: ?u64, out: u64, new_state: u64, len: usize, channels: usize, kernel: usize) Error!void {
         if (kernel < 1 or kernel > 8) return error.BadShape;
         try o.lib.call("tf_conv_prefill", .{ p(x.ptr), @backingInt(x.kind), f(weight), if (state) |s| f(s) else null, f(out), f(new_state), int(len), int(channels), int(kernel), o.stream });
