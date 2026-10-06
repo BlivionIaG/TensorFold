@@ -48,6 +48,7 @@ pub const Hip = struct {
     pub fn deinit(h: *Hip) void {
         var it = h.lanes.valueIterator();
         while (it.next()) |l| {
+            h.e.forget(&l.*.caches);
             l.*.caches.deinit(h.gpa);
             h.gpa.destroy(l.*);
         }
@@ -116,6 +117,7 @@ pub const Hip = struct {
         if (prompt.len == 0 or prompt.len + s.max_new + 1 > h.e.o.capacity) return error.PromptTooLong;
         const gop = try h.lanes.getOrPut(h.gpa, s);
         if (gop.found_existing) {
+            h.e.forget(&gop.value_ptr.*.caches);
             gop.value_ptr.*.caches.deinit(h.gpa);
             h.gpa.destroy(gop.value_ptr.*);
         }
@@ -212,7 +214,7 @@ pub const Hip = struct {
     fn releaseFn(ptr: *anyopaque, s: *lanes.Stream) void {
         const h = of(ptr);
         const kv = h.lanes.fetchRemove(s) orelse return;
-        h.e.stream.synchronize() catch {};
+        h.e.forget(&kv.value.caches);
         kv.value.caches.deinit(h.gpa);
         h.gpa.destroy(kv.value);
     }

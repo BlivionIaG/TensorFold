@@ -159,6 +159,19 @@ __global__ void kv_write_kernel(const void* src, void* cache, int kind, int len,
     else static_cast<uint16_t*>(cache)[to] = static_cast<const uint16_t*>(src)[i];
 }
 
+// kv_write with the first slot read from the device (`pos`, one int32), so a captured graph replays at any position.
+__global__ void kv_write_at_kernel(const void* src, void* cache, int kind, int len, int kv_heads, int d, int total,
+                                   const int* pos) {
+    long long i = gid();
+    if (i >= static_cast<long long>(len) * kv_heads * d) return;
+    int j = static_cast<int>(i % d);
+    int h = static_cast<int>((i / d) % kv_heads);
+    int r = static_cast<int>(i / (static_cast<long long>(d) * kv_heads));
+    long long to = (static_cast<long long>(h) * total + *pos + r) * d + j;
+    if (kind == 0) static_cast<float*>(cache)[to] = static_cast<const float*>(src)[i];
+    else static_cast<uint16_t*>(cache)[to] = static_cast<const uint16_t*>(src)[i];
+}
+
 // causal_conv's prefill loop: window = [state | x], out = sum over taps in order of window * weight from a zero,
 // then silu; new_state = the window's last kernel - 1 rows. state null: zeros.
 __global__ void conv_prefill_kernel(const void* x, int kind, const float* weight, const float* state, float* out,
@@ -320,6 +333,14 @@ int tf_kv_write(const void* src, void* cache, int kind, int len, int kv_heads, i
     long long n = static_cast<long long>(len) * kv_heads * d;
     if (n == 0) return 0;
     kv_write_kernel<<<blocks(n, 256), 256, 0, s>>>(src, cache, kind, len, kv_heads, d, total, pos0);
+    return finish();
+}
+
+int tf_kv_write_at(const void* src, void* cache, int kind, int len, int kv_heads, int d, int total, const int* pos,
+                   hipStream_t s) {
+    long long n = static_cast<long long>(len) * kv_heads * d;
+    if (n == 0) return 0;
+    kv_write_at_kernel<<<blocks(n, 256), 256, 0, s>>>(src, cache, kind, len, kv_heads, d, total, pos);
     return finish();
 }
 

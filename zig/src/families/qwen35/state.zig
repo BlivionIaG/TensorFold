@@ -14,6 +14,8 @@ pub const LayerCache = union(enum) {
 pub const Caches = struct {
     layers: []LayerCache,
     total: usize,
+    /// Which stream's buffers these are, for graphs bound to them (set by the engine).
+    serial: u64 = 0,
 
     /// Buffers for `total` positions; every byte zeroed.
     pub fn init(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, total: usize) !Caches {

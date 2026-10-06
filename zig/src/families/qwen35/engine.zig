@@ -10,6 +10,7 @@ const win = @import("window.zig");
 const weights = @import("weights.zig");
 const bridge = @import("bridge.zig");
 const sample = @import("sample.zig");
+const round_graphs = @import("round_graphs.zig");
 
 pub const Options = struct {
     /// Positions a stream's caches hold (its prompt, its reply and a window's rows).
@@ -18,6 +19,8 @@ pub const Options = struct {
     batch_rows: usize = 32,
     /// The device ordinal among the visible ones.
     device: c_int = 0,
+    /// Replay rounds from captured graphs (TF_HIP_GRAPHS=0 turns it off).
+    graphs: bool = true,
 };
 
 pub const Engine = struct {
@@ -38,12 +41,20 @@ pub const Engine = struct {
     ids: hip.HostBuffer,
     ids_dev: hip.DeviceBuffer,
     logits: hip.HostBuffer,
+    graphs: round_graphs.Graphs,
+    /// The serial of the next caches made, for graphs keyed by stream.
+    serial: u64 = 1,
 
     pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
         const e = try gpa.create(Engine);
         errdefer gpa.destroy(e);
         e.gpa = gpa;
         e.o = o;
+        if (std.c.getenv("TF_HIP_GRAPHS")) |v| if (std.mem.eql(u8, std.mem.span(v), "0")) {
+            e.o.graphs = false;
+        };
+        e.graphs = .{ .gpa = gpa };
+        e.serial = 1;
         e.driver = try hip.Driver.open();
         errdefer e.driver.close();
         e.ctx = try hip.Context.init(&e.driver, o.device);
@@ -78,6 +89,8 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         e.stream.synchronize() catch {};
+        if (e.graphs.captured > 0) std.log.info("graphs: {d} captured, {d} rounds replayed", .{ e.graphs.captured, e.graphs.replayed });
+        e.graphs.deinit();
         e.logits.free();
         e.ids_dev.free();
         e.ids.free();
@@ -101,14 +114,26 @@ pub const Engine = struct {
     }
 
     pub fn newCaches(e: *Engine) !state.Caches {
-        return state.Caches.init(e.gpa, &e.driver, e.model(), e.o.capacity);
+        var c = try state.Caches.init(e.gpa, &e.driver, e.model(), e.o.capacity);
+        c.serial = e.serial;
+        e.serial += 1;
+        return c;
+    }
+
+    /// Drops the graphs over `caches`, before they are freed.
+    pub fn forget(e: *Engine, caches: *const state.Caches) void {
+        e.stream.synchronize() catch {};
+        e.graphs.forget(caches.serial);
     }
 
     /// The logits of `rows` final rows at `hidden`, one projection as the engine's _logits, read into `logits`.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize) ![]const u16 {
-        const m = e.model();
-        const y = try o.affine(hidden, m.head, rows, false);
-        const n = rows * m.head.n;
+        return e.readLogits(try o.affine(hidden, e.model().head, rows, false), rows);
+    }
+
+    /// `rows` rows of the projection `y`, copied to the host.
+    fn readLogits(e: *Engine, y: hip.ops.Tensor, rows: usize) ![]const u16 {
+        const n = rows * e.model().head.n;
         try e.driver.check(e.driver.api.hipMemcpyDtoHAsync(e.logits.bytes.ptr, y.ptr, n * 2, e.stream.handle), "logits");
         try e.stream.synchronize();
         return e.logits.slice(u16)[0..n];
@@ -159,9 +184,69 @@ pub const Engine = struct {
             w.* = .{ .caches = r.caches, .pos = r.pos, .rows = r.tokens.len, .at32 = e.ids_dev.ptr + (total + at) * 4, .snaps = snaps[i * layers ..][0..layers] };
             at += r.tokens.len;
         }
+        const out = try e.round(rows, wins, snaps[0 .. rows.len * layers], total);
+        return .{ .logits = try e.readLogits(out.y, total), .hidden = out.hidden };
+    }
+
+    /// The forward and its logits projection.
+    fn body(e: *Engine, wins: []win.Window, total: usize) !round_graphs.Out {
         const o = e.ops(&e.rounds);
-        const hidden = try win.forward(o, m, wins, e.ids_dev.ptr, null);
-        return .{ .logits = try e.project(o, hidden, total), .hidden = hidden };
+        const hidden = try win.forward(o, e.model(), wins, e.ids_dev.ptr, null);
+        const y = try o.affine(hidden, e.model().head, total, false);
+        return .{ .hidden = hidden, .y = y, .used = e.rounds.used };
+    }
+
+    /// One round's forward: replayed from the shape's graph when it has one, captured on its second sighting, else eager.
+    fn round(e: *Engine, rows: []const Rows, wins: []win.Window, snaps: []win.Snapshot, total: usize) !round_graphs.Out {
+        if (!e.o.graphs or rows.len > 64) return e.body(wins, total);
+        var parts: [64]round_graphs.Part = undefined;
+        for (rows, 0..) |r, i| parts[i] = .{ .serial = r.caches.serial, .rows = @intCast(r.tokens.len) };
+        const entry = try e.graphs.find(parts[0..rows.len]);
+        switch (entry.state) {
+            .failed => return e.body(wins, total),
+            .ready => {
+                @memcpy(snaps, entry.snaps);
+                e.rounds.used = entry.out.used;
+                try entry.exec.?.launchOn(e.stream);
+                e.graphs.replayed += 1;
+                return entry.out;
+            },
+            .seen => {
+                if (!entry.again) {
+                    entry.again = true;
+                    return e.body(wins, total);
+                }
+                return e.capture(entry, wins, snaps, total);
+            },
+        }
+    }
+
+    /// Records the round into a graph and launches it; a capture that fails runs the round eagerly from then on.
+    fn capture(e: *Engine, entry: *round_graphs.Entry, wins: []win.Window, snaps: []win.Snapshot, total: usize) !round_graphs.Out {
+        hip.graph.beginCapture(e.stream, .thread_local) catch {
+            entry.state = .failed;
+            return e.body(wins, total);
+        };
+        const recorded = e.body(wins, total);
+        var graph = hip.graph.endCapture(e.stream) catch {
+            entry.state = .failed;
+            e.rounds.reset();
+            return e.body(wins, total);
+        };
+        const out = recorded catch |err| {
+            graph.deinit();
+            entry.state = .failed;
+            e.rounds.reset();
+            if (err == error.OutOfDeviceMemory) return err;
+            return e.body(wins, total);
+        };
+        e.graphs.keep(entry, graph, e.stream, snaps, out) catch {
+            entry.state = .failed;
+            e.rounds.reset();
+            return e.body(wins, total);
+        };
+        try entry.exec.?.launchOn(e.stream);
+        return out;
     }
 
     /// Keep a verified window's first `rows` rows.
