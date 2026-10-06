@@ -100,6 +100,15 @@ pub const Cache = struct {
 /// Cuts sit on multiples of the chunked recurrence's chunk: a resumed span then chunks a prompt as a fresh one does.
 pub const step = 64;
 
+/// Rows a prompt pass advances between two rounds; its steps end on multiples of this (and on the cuts), so a prompt is
+/// cut the same way whatever else runs.
+pub const chunk = 1024;
+
+/// Where the step from `at` ends: the next multiple of `chunk`, or `limit` when that comes first.
+pub fn chunkEnd(at: usize, limit: usize) usize {
+    return @min(limit, (at / chunk + 1) * chunk);
+}
+
 /// Where a prefill past `cached` keeps a state: the request's shared system blocks and rendered history, then one
 /// token before the prompt's end unless a cut already sits within `min_gap` of it, each down to a multiple of `step`.
 /// Ascending; written into `out`.

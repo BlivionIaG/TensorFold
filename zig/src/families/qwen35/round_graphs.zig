@@ -46,10 +46,17 @@ pub const Graphs = struct {
         gpa.free(e.snaps);
     }
 
+    /// Field by field: the struct's padding bytes are not part of the shape.
+    fn same(a: []const Part, b: []const Part) bool {
+        if (a.len != b.len) return false;
+        for (a, b) |x, y| if (x.serial != y.serial or x.rows != y.rows) return false;
+        return true;
+    }
+
     /// The entry for `parts`, made (state `seen`) if new.
     pub fn find(g: *Graphs, parts: []const Part) !*Entry {
         g.clock += 1;
-        for (g.entries.items) |*e| if (std.mem.eql(u8, std.mem.sliceAsBytes(e.parts), std.mem.sliceAsBytes(parts))) {
+        for (g.entries.items) |*e| if (same(e.parts, parts)) {
             e.tick = g.clock;
             return e;
         };
@@ -79,10 +86,21 @@ pub const Graphs = struct {
         }
     }
 
+    /// Drops a shape's graph (a rank could not capture it): the shape runs eagerly from now on.
+    pub fn revoke(g: *Graphs, e: *Entry) void {
+        if (e.exec) |*x| x.deinit();
+        e.exec = null;
+        g.gpa.free(e.snaps);
+        e.snaps = &.{};
+        e.state = .failed;
+        if (g.captured > 0) g.captured -= 1;
+    }
+
     /// Instantiates a capture that just ended, keeps it with the round's outputs, and uploads it.
     pub fn keep(g: *Graphs, e: *Entry, graph: hip.graph.Graph, stream: hip.Stream, snaps: []const win.Snapshot, out: Out) !void {
         var tmp = graph;
         defer tmp.deinit();
+        errdefer e.state = .failed;
         var exec = try tmp.instantiate();
         errdefer exec.deinit();
         try exec.upload(stream);

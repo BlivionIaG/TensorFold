@@ -39,10 +39,10 @@ not by bit equality with Python.
 | Prefix cache: cuts at shared blocks, history and prompt end - 1, eviction order | yes | yes (prefix.zig), mirrored on every rank | none | | |
 | Resumed == fresh, solo == together, drafted == serial | yes | yes, checked under tp 2 | none | | |
 | tp: sums in rank order past two ranks, one add at two | yes | yes (reduce.zig) | none | | |
-| tp: lone stream replays a graph on every rank | yes | graphs are off under tp | yes | P2 | capture the collectives in the graph, rank 0's choice sent with each round |
+| tp: lone stream replays a graph on every rank | yes | the collectives are captured on every rank, rank 0's pick (eager, replay, capture) goes with each round and a capture failure on any rank runs eagerly on all; off by default (`TF_HIP_GRAPHS_TP=1`), the replays are slower than eager rounds on RCCL 2.30 | measured slower | P3 | none; the eager rounds are the faster path on the V620s |
 | Graph replay at tp 1 | a lone stream's windows | any round shape, second sighting | none | | |
-| Prompts interleaved with decode (1,024 rows a round while others decode) | yes | a prompt prefills whole before the next round; other streams wait | latency | P2 | needs the core to ask for a prefill step per round (core change, shared with Metal) |
-| A cancelled request stops its prefill | the next step | not until the prompt ends | yes | P2 | cancel checked between the engine's 2,048-row spans |
+| Prompts interleaved with decode (1,024 rows a round while others decode) | yes | yes: a prompt goes in 1,024-row chunks (ending on multiples of 1,024 and on the prefix cuts), one chunk before each round; under tp rank 0 sends each chunk's end and the others run it | none | | |
+| A cancelled request stops its prefill | the next step | between chunks, on every rank (`Op.release`) | none | | |
 | Start-up warm prefill | `warm()` | none (kernels load on first use) | first request is slower | P3 | `Engine.warm` |
 | Memory plan: reserve, scratch, lanes' caches, one kept copy | `memory.plan` | `memory.zig`, the same terms | none | | |
 | `response_format`, `guided_*`, `tool_choice` required / named | yes (grammar constraint over the window) | `Info.structures` and `call_gates` are false: the server refuses the request | yes, shared with every native engine | P2 | needs a grammar mask in the lane core; not a HIP change |
@@ -74,9 +74,11 @@ use; the HIP port adds none and removes none. `POST /v1/decisions` is the Mac's 
 | tp in the server, `--tp/--rank/--master/--master-port/--p2p`, `--backend rocm`, `--checkpoint-slots`, `--prompt-cache-gib`, `--parallel auto`, default window, agreed plan | closed (6c0e968) |
 | tp 4 | run through the native server on four V620s: 9B + MTP, 27B 3-bit + MTP and 35B-A3B + MTP, drafted == serial, solo == together |
 | MTP confidence cut | closed (dc91a99); the prompt's first drafts run whole, because the core reads no hook there |
-| Cancel during prefill | closed (9b23cdf) at tp 1; at tp > 1 a prompt runs to its end |
+| Cancel during prefill | closed: between chunks at any tp |
 | `TF_RCCL_LIB`, `TENSORFOLD_GRAPH` | closed (0562c9d, 9b23cdf); `--master` takes an IPv4 literal or `localhost` |
-| Graph replay under tp, prompts interleaved with decode, grammar and call gates, start-up warm prefill | open |
+| Graph replay under tp | built, off by default: slower than eager rounds |
+| Prompts interleaved with decode | closed |
+| Grammar and call gates, start-up warm prefill | open |
 
 Known, not from this work: on the 35B-A3B at tp 4 a prompt of 69 tokens run whole and the same prompt cut at 13 can
 draw a different token. The cut run's spans are under 64 rows and take the serial DeltaNet; the whole one takes the

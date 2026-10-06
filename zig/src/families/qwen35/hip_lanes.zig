@@ -17,6 +17,9 @@ const be = lanes.backend;
 /// Drawn tokens a handle names, newest last.
 const ring = 1024;
 
+/// Where a prompt pass stands: the row it has reached, and the cuts it still keeps a state at.
+const Fill = struct { at: usize, stops: [16]u32, count: usize, next: usize };
+
 const Lane = struct {
     caches: state.Caches,
     /// The last kept row's final hidden row: the draft head's input.
@@ -28,6 +31,8 @@ const Lane = struct {
     len: usize,
     /// The stream's id on every rank.
     id: u32 = 0,
+    /// The prompt pass in progress, a chunk a call (null once it is in).
+    fill: ?Fill = null,
     /// The last verify's window and rows: kept whole unless keep drops some first.
     pending: ?struct { window: usize, rows: usize, start: usize } = null,
 };
@@ -113,6 +118,7 @@ pub const Hip = struct {
     pub fn backend(h: *Hip) be.Backend {
         return .{ .ptr = h, .vtable = &.{
             .prefill = prefillFn,
+            .prefill_step = prefillStepFn,
             .first = firstFn,
             .queue = queueFn,
             .read = readFn,
@@ -190,8 +196,13 @@ pub const Hip = struct {
         h.kept.add(ids, snap) catch {};
     }
 
+    /// The whole prompt pass, chunk by chunk (a driver of its own, with no rounds between).
     fn prefillFn(ptr: *anyopaque, s: *lanes.Stream) anyerror!void {
-        const h = of(ptr);
+        while (!try prefillStepFn(ptr, s)) {}
+    }
+
+    /// The stream's lane and its prompt pass begun: caches, the resume from a kept prompt, the cuts, the other ranks told.
+    fn begin(h: *Hip, s: *lanes.Stream) !*Lane {
         const prompt = s.prompt();
         if (prompt.len == 0 or prompt.len + s.max_new + 1 > h.e.o.capacity) return error.PromptTooLong;
         const gop = try h.lanes.getOrPut(h.gpa, s);
@@ -220,30 +231,44 @@ pub const Hip = struct {
             try lane.caches.copyPrefix(&hit.caches, h.e.model(), at, h.e.stream.handle);
         };
         s.cached = @intCast(at);
-        var cut_ids: [16]u32 = undefined;
-        const stops: []const u32 = if (s.drafts) prefix.cuts(&cut_ids, prompt.len, at, s.history_len, s.shared_prefixes) else &.{};
+        var fill: Fill = .{ .at = at, .stops = undefined, .count = 0, .next = 0 };
+        if (s.drafts) fill.count = prefix.cuts(&fill.stops, prompt.len, at, s.history_len, s.shared_prefixes).len;
+        lane.fill = fill;
         if (h.link != null) {
             // the other ranks keep the same prompts: where this one resumed and cut, and the cache's limits
             h.msg.clearRetainingCapacity();
             const budget: u64 = h.kept.budget;
-            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.prefill), lane.id, @intCast(total), @intCast(prompt.len), @intCast(at), @intCast(stops.len), @intCast(h.kept.keep), @truncate(budget), @truncate(budget >> 32) });
-            try h.msg.appendSlice(h.gpa, stops);
+            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.prefill), lane.id, @intCast(total), @intCast(prompt.len), @intCast(at), @intCast(fill.count), @intCast(h.kept.keep), @truncate(budget), @truncate(budget >> 32) });
+            try h.msg.appendSlice(h.gpa, fill.stops[0..fill.count]);
             try h.msg.appendSlice(h.gpa, prompt);
             try h.send(h.msg.items);
         }
-        // a long prompt ends between layers when its request is cancelled
-        const cancel: Engine.Cancel = .{ .ctx = s, .check = cancelled };
-        for (stops) |stop| {
-            try h.e.advance(&lane.caches, prompt, at, stop, cancel);
-            at = stop;
-            h.remember(prompt[0..at], &lane.caches);
-        }
-        _ = h.take(try h.e.prefill(&lane.caches, prompt, at, lane.hidden, .{ .sampling = sampling(s), .position = prompt.len }, cancel));
+        return lane;
     }
 
-    fn cancelled(ctx: *anyopaque) bool {
-        const s: *const lanes.Stream = @ptrCast(@alignCast(ctx));
-        return s.isCancelled();
+    /// One chunk of the prompt pass: up to `prefix.chunk` rows, ending on the next cut or the prompt's end. The last
+    /// chunk draws the first token. A cancelled request stops between chunks, on every rank.
+    fn prefillStepFn(ptr: *anyopaque, s: *lanes.Stream) anyerror!bool {
+        const h = of(ptr);
+        if (s.isCancelled()) return error.Cancelled;
+        const lane = if (h.lanes.get(s)) |l| (if (l.fill != null) l else try h.begin(s)) else try h.begin(s);
+        const prompt = s.prompt();
+        const f = &lane.fill.?;
+        const limit: usize = if (f.next < f.count) f.stops[f.next] else prompt.len;
+        const to = prefix.chunkEnd(f.at, limit);
+        if (h.link != null) try h.send(&.{ @backingInt(worker.Op.fill), lane.id, @intCast(to) });
+        if (to == prompt.len) {
+            _ = h.take(try h.e.prefill(&lane.caches, prompt, f.at, lane.hidden, .{ .sampling = sampling(s), .position = prompt.len }, null));
+            lane.fill = null;
+            return true;
+        }
+        try h.e.advance(&lane.caches, prompt, f.at, to, null);
+        f.at = to;
+        if (f.next < f.count and to == f.stops[f.next]) {
+            h.remember(prompt[0..to], &lane.caches);
+            f.next += 1;
+        }
+        return false;
     }
 
     fn firstFn(ptr: *anyopaque, s: *lanes.Stream, position: u64) anyerror!u64 {
@@ -302,9 +327,11 @@ pub const Hip = struct {
                 total += 1;
             }
         }
+        // the graph choice is rank 0's, and goes with the round
+        const pick = try h.e.choose(rows[0..windows.len], null);
         if (h.link != null) {
             h.msg.clearRetainingCapacity();
-            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.verify), @intCast(windows.len) });
+            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.verify), @backingInt(pick), @intCast(windows.len) });
             for (windows, rows[0..windows.len]) |w, r| {
                 try h.msg.appendSlice(h.gpa, &.{ h.lanes.get(w.stream).?.id, @intCast(r.tokens.len) });
                 try h.msg.appendSlice(h.gpa, r.tokens);

@@ -34,6 +34,11 @@ pub const Options = struct {
     graphs: bool = true,
 };
 
+/// What a round does with its shape's graph: run eagerly, replay it, or capture it (every rank does the same).
+pub const Pick = enum(u32) { eager, replay, capture };
+
+const Chosen = struct { pick: Pick, entry: ?*round_graphs.Entry };
+
 pub const Engine = struct {
     gpa: std.mem.Allocator,
     driver: hip.Driver,
@@ -58,6 +63,8 @@ pub const Engine = struct {
     rccl: hip.rccl.Rccl = undefined,
     comm: hip.rccl.Comm = undefined,
     graphs: round_graphs.Graphs,
+    /// The round's graph choice, made before its forward (rank 0 sends it to the others).
+    chosen: ?Chosen = null,
     /// The serial of the next caches made, for graphs keyed by stream.
     serial: u64 = 1,
 
@@ -68,14 +75,18 @@ pub const Engine = struct {
         e.gpa = gpa;
         e.o = o;
         e.sized = false;
-        // rounds replay captured graphs unless TF_HIP_GRAPHS=0 (the Python engine's TENSORFOLD_GRAPH=0); not under tensor
-        // parallelism (its collectives run between)
+        // rounds replay captured graphs unless TF_HIP_GRAPHS=0 (the Python engine's TENSORFOLD_GRAPH=0); under tensor
+        // parallelism the collectives are captured too, rank 0's pick goes to every rank with the round, and the
+        // replays are slower than the eager rounds on RCCL 2.30 (V620 x2-4), so TF_HIP_GRAPHS_TP=1 turns them on
         for ([_][*:0]const u8{ "TF_HIP_GRAPHS", "TENSORFOLD_GRAPH" }) |name| {
             if (std.c.getenv(name)) |v| if (std.mem.eql(u8, std.mem.span(v), "0")) {
                 e.o.graphs = false;
             };
         }
-        if (o.world > 1) e.o.graphs = false;
+        if (o.world > 1) {
+            const on = if (std.c.getenv("TF_HIP_GRAPHS_TP")) |v| std.mem.eql(u8, std.mem.span(v), "1") else false;
+            if (!on) e.o.graphs = false;
+        }
         e.graphs = .{ .gpa = gpa };
         e.serial = 1;
         e.driver = try hip.Driver.open();
@@ -302,6 +313,8 @@ pub const Engine = struct {
         var total: usize = 0;
         for (rows) |r| total += r.tokens.len;
         if (total > e.o.batch_rows) return error.WindowTooWide;
+        if (e.chosen == null) _ = try e.choose(rows, null);
+        defer e.chosen = null;
         e.rounds.reset();
         // ids, then each row's position, in one pinned copy
         const host = e.ids.slice(u32);
@@ -321,7 +334,7 @@ pub const Engine = struct {
             w.* = .{ .caches = r.caches, .pos = r.pos, .rows = r.tokens.len, .at32 = e.ids_dev.ptr + (total + at) * 4, .snaps = snaps[i * layers ..][0..layers] };
             at += r.tokens.len;
         }
-        const out_round = try e.round(rows, wins, snaps[0 .. rows.len * layers], total);
+        const out_round = try e.round(wins, snaps[0 .. rows.len * layers], total);
         try e.drawRows(e.ops(&e.rounds), out_round.y, total, reqs, out);
         return .{ .hidden = out_round.hidden };
     }
@@ -334,57 +347,96 @@ pub const Engine = struct {
         return .{ .hidden = hidden, .y = y, .used = e.rounds.used };
     }
 
-    /// One round's forward: replayed from the shape's graph when it has one, captured on its second sighting, else eager.
-    fn round(e: *Engine, rows: []const Rows, wins: []win.Window, snaps: []win.Snapshot, total: usize) !round_graphs.Out {
-        if (!e.o.graphs or rows.len > 64) return e.body(wins, total);
+    /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys). Looks
+    /// the shape up once, so every rank's table moves the same way.
+    pub fn choose(e: *Engine, rows: []const Rows, forced: ?Pick) !Pick {
+        e.chosen = .{ .pick = .eager, .entry = null };
+        if (!e.o.graphs or rows.len > 64) {
+            if ((forced orelse .eager) != .eager) return error.GraphsDisagree;
+            return .eager;
+        }
         var parts: [64]round_graphs.Part = undefined;
         for (rows, 0..) |r, i| parts[i] = .{ .serial = r.caches.serial, .rows = @intCast(r.tokens.len) };
         const entry = try e.graphs.find(parts[0..rows.len]);
-        switch (entry.state) {
-            .failed => return e.body(wins, total),
-            .ready => {
+        const mine: Pick = switch (entry.state) {
+            .failed => .eager,
+            .ready => .replay,
+            .seen => if (entry.again) .capture else .eager,
+        };
+        const pick = forced orelse mine;
+        if (pick == .replay and entry.state != .ready) return error.GraphsDisagree;
+        if (pick == .eager and entry.state == .seen) entry.again = true;
+        e.chosen = .{ .pick = pick, .entry = entry };
+        return pick;
+    }
+
+    /// One round's forward as `choose` picked: replayed from the shape's graph, captured, or eager.
+    fn round(e: *Engine, wins: []win.Window, snaps: []win.Snapshot, total: usize) !round_graphs.Out {
+        const c = e.chosen.?;
+        const entry = c.entry orelse return e.body(wins, total);
+        switch (c.pick) {
+            .eager => return e.body(wins, total),
+            .replay => {
                 @memcpy(snaps, entry.snaps);
                 e.rounds.used = entry.out.used;
                 try entry.exec.?.launchOn(e.stream);
                 e.graphs.replayed += 1;
                 return entry.out;
             },
-            .seen => {
-                if (!entry.again) {
-                    entry.again = true;
-                    return e.body(wins, total);
-                }
-                return e.capture(entry, wins, snaps, total);
-            },
+            .capture => return e.capture(entry, wins, snaps, total),
         }
     }
 
-    /// Records the round into a graph and launches it; a capture that fails runs the round eagerly from then on.
+    /// Records the round into a graph and launches it. A capture that fails on any rank runs the round eagerly on every
+    /// rank, and the shape stays eager.
     fn capture(e: *Engine, entry: *round_graphs.Entry, wins: []win.Window, snaps: []win.Snapshot, total: usize) !round_graphs.Out {
-        hip.graph.beginCapture(e.stream, .thread_local) catch {
-            entry.state = .failed;
-            return e.body(wins, total);
+        var kept = false;
+        var fatal: ?anyerror = null;
+        var out: round_graphs.Out = undefined;
+        if (hip.graph.beginCapture(e.stream, .thread_local)) {
+            const recorded = e.body(wins, total);
+            if (hip.graph.endCapture(e.stream)) |graph| {
+                if (recorded) |o| {
+                    out = o;
+                    kept = if (e.graphs.keep(entry, graph, e.stream, snaps, o)) true else |_| false;
+                } else |err| {
+                    var g = graph;
+                    g.deinit();
+                    if (err == error.OutOfDeviceMemory) fatal = err;
+                }
+            } else |_| {}
+        } else |_| {}
+        if (fatal) |err| return err;
+        // TF_HIP_GRAPH_FAIL=R makes rank R's capture fail, to check that every rank falls back
+        if (std.c.getenv("TF_HIP_GRAPH_FAIL")) |v| if (std.fmt.parseInt(usize, std.mem.span(v), 10) catch null == e.o.rank) {
+            kept = false;
         };
-        const recorded = e.body(wins, total);
-        var graph = hip.graph.endCapture(e.stream) catch {
-            entry.state = .failed;
+        const all = if (e.o.world > 1) try e.agreed(kept) else kept;
+        if (!all) {
+            e.graphs.revoke(entry);
             e.rounds.reset();
             return e.body(wins, total);
-        };
-        const out = recorded catch |err| {
-            graph.deinit();
-            entry.state = .failed;
-            e.rounds.reset();
-            if (err == error.OutOfDeviceMemory) return err;
-            return e.body(wins, total);
-        };
-        e.graphs.keep(entry, graph, e.stream, snaps, out) catch {
-            entry.state = .failed;
-            e.rounds.reset();
-            return e.body(wins, total);
-        };
+        }
         try entry.exec.?.launchOn(e.stream);
         return out;
+    }
+
+    /// Whether every rank says yes (an all-gather of one word each).
+    fn agreed(e: *Engine, yes: bool) !bool {
+        const world = e.o.world;
+        var host = try hip.HostBuffer.alloc(&e.driver, 8 * (1 + world));
+        defer host.free();
+        var send = try hip.DeviceBuffer.alloc(&e.driver, 8);
+        defer send.free();
+        var recv = try hip.DeviceBuffer.alloc(&e.driver, 8 * world);
+        defer recv.free();
+        host.slice(u64)[0] = @intFromBool(yes);
+        try send.uploadAsync(0, host.bytes[0..8], e.stream.handle);
+        try e.comm.allGather(send.ptr, recv.ptr, 1, .i64, e.stream.handle);
+        try recv.downloadAsync(0, host.bytes[8 .. 8 * (1 + world)], e.stream.handle);
+        try e.stream.synchronize();
+        for (host.slice(u64)[1 .. 1 + world]) |v| if (v == 0) return false;
+        return true;
     }
 
     /// Keep a verified window's first `rows` rows.
