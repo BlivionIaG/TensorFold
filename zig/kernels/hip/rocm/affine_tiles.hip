@@ -7,6 +7,7 @@
 
 #include "affine_dot2.hpp"
 #include "affine_gemm.hpp"
+#include "affine_wmma_gemm.hpp"
 
 namespace tf {
 namespace rocm {
@@ -456,12 +457,32 @@ hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int
     }
 }
 
+// TF_WMMA=0 keeps the dot2 tiles on gfx11, 1 puts every product of the GEMM tiles on the matrix cores, unset (auto)
+// takes them from 16 rows; gfx12's matrix cores have other layouts and always stay on dot2.
+static int wmma_rows_from() {
+    static const int rows = [] {
+        int dev = 0, major = 0, minor = 0;
+        if (hipGetDevice(&dev) != hipSuccess) return 1 << 30;
+        hipDeviceGetAttribute(&major, hipDeviceAttributeComputeCapabilityMajor, dev);
+        hipDeviceGetAttribute(&minor, hipDeviceAttributeComputeCapabilityMinor, dev);
+        if (!TENSORFOLD_RDNA_WMMA || major != 11) return 1 << 30;
+        (void)minor;
+        const char* v = std::getenv("TF_WMMA");
+        if (v != nullptr && std::strcmp(v, "0") == 0) return 1 << 30;
+        return v != nullptr && std::strcmp(v, "1") == 0 ? 1 : 16;
+    }();
+    return rows;
+}
+
 hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int items) {
     static const bool old = [] {
         const char* v = std::getenv("TF_AFFINE_GEMM");
         return v != nullptr && std::strcmp(v, "old") == 0;
     }();
-    if (a.k % 16 == 0 && !old && affine_gemm_supported(a)) return launch_affine_gemm(a, stream, items);
+    if (a.k % 16 == 0 && !old && affine_gemm_supported(a)) {
+        if (!a.fp16 && a.m >= wmma_rows_from()) return launch_affine_wmma_gemm(a, stream, items);
+        return launch_affine_gemm(a, stream, items);
+    }
     return launch_affine_dot2_block_old(a, stream, items);
 }
 

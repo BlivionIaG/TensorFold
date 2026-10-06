@@ -8,7 +8,7 @@ const check = @import("check.zig");
 const ref = @import("gemm_ref.zig");
 const Gpu = check.Gpu;
 
-const Case = struct { name: []const u8, m: usize, n: usize, k: usize, bits: c_int = 4, group: c_int = 64, experts: usize = 0, x_div: c_int = 1 };
+const Case = struct { name: []const u8, m: usize, n: usize, k: usize, bits: c_int = 4, group: c_int = 64, experts: usize = 0, x_div: c_int = 1, even: bool = false };
 
 // Qwen3.6-35B-A3B (hidden 2048), Qwen3.5-9B (4096) and Qwen3.8-27B (5120) prefill projections, 4-bit groups of 64
 // unless named; the expert rows are a prompt's pairs over 256 experts (m * 8 / 256).
@@ -23,6 +23,8 @@ const cases = [_]Case{
     .{ .name = "35b expert down", .m = 256, .n = 2048, .k = 512 },
     .{ .name = "35b routed gate_up", .m = 2048 * 8, .n = 1024, .k = 2048, .experts = 256, .x_div = 8 },
     .{ .name = "35b routed gate_up", .m = 8192 * 8, .n = 1024, .k = 2048, .experts = 256, .x_div = 8 },
+    .{ .name = "35b routed even 32", .m = 256 * 32, .n = 1024, .k = 2048, .experts = 256, .x_div = 8, .even = true },
+    .{ .name = "35b routed even 64", .m = 256 * 64, .n = 1024, .k = 2048, .experts = 256, .x_div = 8, .even = true },
     .{ .name = "35b routed down", .m = 2048 * 8, .n = 2048, .k = 512, .experts = 256 },
     .{ .name = "35b routed down", .m = 8192 * 8, .n = 2048, .k = 512, .experts = 256 },
     .{ .name = "9b qkv", .m = 2048, .n = 8192, .k = 4096 },
@@ -90,12 +92,19 @@ fn makeBias(r: *Rng) u16 {
     return bf16Bits(r.unit() / 2.0);
 }
 
+/// A full-mantissa activation in [-1, 1) at one of six scales: sums of products then round, in any order.
+fn fine(r: *Rng) f32 {
+    const v = r.next();
+    const m: i32 = @intCast(v >> 41 & 0x3fffff);
+    return @as(f32, @floatFromInt(m - 0x200000)) / 2097152.0 * std.math.ldexp(@as(f32, 1), -@as(i32, @intCast(v % 6)));
+}
+
 fn makeX16(r: *Rng) u16 {
-    return f16Bits(r.unit());
+    return f16Bits(fine(r));
 }
 
 fn makeXB(r: *Rng) u16 {
-    return bf16Bits(r.unit());
+    return bf16Bits(fine(r));
 }
 
 /// Words of two device buffers that differ, compared through 32 MiB windows.
@@ -213,7 +222,7 @@ fn runCase(t: *Rig, c: Case, reps: usize, quiet: bool) !f64 {
         defer gpa.free(counts);
         total = 0;
         for (counts) |*n| {
-            n.* = mean / 4 + t.rng.next() % (mean * 3 / 2 + 1);
+            n.* = if (c.even) mean else mean / 4 + t.rng.next() % (mean * 3 / 2 + 1);
             total += n.*;
         }
         const items = try gpa.alloc(i32, (total / 128 + 2 * experts) * 3);
@@ -283,8 +292,20 @@ fn runCase(t: *Rig, c: Case, reps: usize, quiet: bool) !f64 {
     var job_new = job;
     job_new.arg = new;
     job_new.tile = .gemm;
-    const t_old = try time(t.gpu, t.stream, reps, job, launch);
-    const t_new = try time(t.gpu, t.stream, reps, job_new, launch);
+    // old and new in turn, twice: the card's clocks fall as it stays busy, so none of them goes last alone
+    var t_old: Timing = undefined;
+    var t_new: Timing = undefined;
+    for (0..2) |round| {
+        const o = try time(t.gpu, t.stream, reps, job, launch);
+        const n = try time(t.gpu, t.stream, reps, job_new, launch);
+        if (round == 0) {
+            t_old = o;
+            t_new = n;
+        } else {
+            t_old.best = @min(t_old.best, o.best);
+            t_new.best = @min(t_new.best, n.best);
+        }
+    }
     const diff = try sameOnDevice(t.gpu, out_old, out_new, total * c.n * 4);
     // a race shows between launches: launch the new tile again from a cleared output a few times
     var again: usize = 0;
@@ -304,8 +325,8 @@ fn runCase(t: *Rig, c: Case, reps: usize, quiet: bool) !f64 {
     const tf_old = flops / t_old.best / 1e9;
     const tf_new = flops / t_new.best / 1e9;
     if (!quiet) std.debug.print("RESULT gemm {s} m{d} n{d} k{d} b{d} g{d}: old {d:.3} ms {d:.1} TFLOPS, new {d:.3} ms {d:.1} TFLOPS, x{d:.2}; max|y-ref|/sum|terms| old {e:.1} new {e:.1}, rms old {e:.2} new {e:.2}, {d} words differ\n", .{
-        c.name,      total,       c.n,           c.k,           c.bits,        c.group,
-        t_old.best,  tf_old,      t_new.best,    tf_new,        tf_new / tf_old, err[0].max_rel,
+        c.name,         total,        c.n,          c.k,    c.bits,          c.group,
+        t_old.best,     tf_old,       t_new.best,   tf_new, tf_new / tf_old, err[0].max_rel,
         err[1].max_rel, err[0].rms(), err[1].rms(), diff,
     });
     const what = .{ c.name, total, c.n, c.k, c.bits, c.group };
