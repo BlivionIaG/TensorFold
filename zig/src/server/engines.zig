@@ -12,14 +12,36 @@ pub fn capabilities(a: Allocator) cli.Engines {
     return .{ .version = "0.6.5", .chip = if (native.families.len > 0) native.chip(a) else null, .backends = native.backends, .families = native.families };
 }
 
-/// The engine for the checkpoint in ``dir``, or null with ``problem`` set.
-pub fn open(a: Allocator, gpa: Allocator, io: std.Io, dir: []const u8, model_type: []const u8, args: cli.Args, problem: *[]const u8) !?Opened {
-    return native.open(a, gpa, io, .{
+/// What a server asks of an engine, from its flags.
+fn request(dir: []const u8, model_type: []const u8, args: cli.Args) api.Open {
+    return .{
         .dir = dir,
         .model_type = model_type,
         .context = args.context,
         .lanes = cli.parallel(args.parallel) orelse 8,
+        .lanes_auto = std.ascii.eqlIgnoreCase(std.mem.trim(u8, args.parallel, " "), "auto"),
         .drafts = !args.no_drafts,
         .speed_up = args.speed_up,
-    }, problem);
+        .keep = args.checkpoint_slots,
+        .cache_gib = args.prompt_cache_gib,
+        .tp = args.tp,
+        .rank = args.rank,
+        .master = args.master,
+        .master_port = args.master_port,
+        .p2p = args.p2p,
+    };
+}
+
+/// The engine for the checkpoint in ``dir``, or null with ``problem`` set.
+pub fn open(a: Allocator, gpa: Allocator, io: std.Io, dir: []const u8, model_type: []const u8, args: cli.Args, problem: *[]const u8) !?Opened {
+    return native.open(a, gpa, io, request(dir, model_type, args), problem);
+}
+
+/// A tensor-parallel rank above 0: runs rank 0's steps until it stops; false with ``problem`` set when it cannot.
+pub fn follow(a: Allocator, gpa: Allocator, io: std.Io, dir: []const u8, model_type: []const u8, args: cli.Args, problem: *[]const u8) !bool {
+    if (!@hasDecl(native, "follow")) {
+        problem.* = "this build has no tensor-parallel ranks";
+        return false;
+    }
+    return native.follow(a, gpa, io, request(dir, model_type, args), problem);
 }

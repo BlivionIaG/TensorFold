@@ -15,12 +15,13 @@ const draw = @import("draw.zig");
 const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
 
-/// Most drafts a chain (the Python engine's depth) and the confidence below which it stops.
+/// Most drafts a chain (the Python engine's depth) and the probability below which a draft ends it.
 pub const max_depth = 3;
 pub const confidence = 0.3;
 
-/// Byte offset of the drafts in the scalars (the token, then each slot, come first).
+/// Byte offsets of the drafts and of their probabilities in the scalars (the token, then each slot, come first).
 const drafts_at = 32;
+const probs_at = 48;
 
 pub const Head = struct {
     gpa: std.mem.Allocator,
@@ -103,17 +104,21 @@ pub const Head = struct {
     }
 
     /// Up to `depth` drafts from `hidden` (the last kept final row) and `token` (the one after it), the first at slot
-    /// `position + 1`; each drawn with `sampling` at its slot, the chain cut after a draft below `confidence`.
-    pub fn chain(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, hidden: Tensor, token: u32, position: usize, depth: usize, sampling: ?lanes.Sampling, out: []u32) !usize {
+    /// `position + 1`; each drawn with `sampling` at its slot, the chain cut after a draft the head gives less than
+    /// `stop_under` (0: never), as mtp.py's draft_chain cuts it; the drafts' count.
+    pub fn chain(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, hidden: Tensor, token: u32, position: usize, depth: usize, sampling: ?lanes.Sampling, stop_under: f64, out: []u32) !usize {
         const o: Ops = .{ .lib = lib, .stream = stream.handle, .arena = &h.arena };
         h.arena.reset();
-        const count = @min(depth, max_depth, out.len);
+        const count: usize = @min(depth, max_depth, out.len);
         const sc = h.scalars.slice(i32);
         sc[0] = @intCast(token);
         for (0..max_depth) |i| sc[1 + i] = @intCast(i);
         try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0 .. 4 * (1 + max_depth)], o.stream);
         const greedy = if (sampling) |s| s.temperature <= 0.0 else true;
         const drafts = h.scalars_dev.ptr + drafts_at;
+        const probs = h.scalars_dev.ptr + probs_at;
+        // a draft's probability is read only where a later draft would follow it
+        const cut = stop_under > 0.0;
         var cur_hidden = hidden;
         for (0..count) |n| {
             // a greedy draft feeds the next step from the device; a sampled one comes back through the host
@@ -121,22 +126,32 @@ pub const Head = struct {
             const logits = try h.step(o, m, cur_hidden, ids, h.scalars_dev.ptr + 4 * (1 + n), position + n, n);
             if (greedy) {
                 try o.argmaxRows(logits, 1, h.logits_head.n, drafts + 4 * n);
+                if (cut and n + 1 < count) try o.tokenProb(logits, 1, h.logits_head.n, 0, probs + 4 * n);
             } else {
                 try drawer.draw(o, stream, logits, &.{.{ .sampling = sampling, .position = position + n + 1 }}, out[n..][0..1]);
                 if (n + 1 < count) {
                     sc[0] = @intCast(out[n]);
                     try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0..4], o.stream);
+                    if (cut) try o.tokenProb(logits, 1, h.logits_head.n, h.scalars_dev.ptr, probs + 4 * n);
                 }
             }
             cur_hidden = .{ .ptr = h.last, .kind = m.act };
         }
-        if (greedy) {
-            const got = h.scalars.slice(u32)[drafts_at / 4 ..][0..count];
-            try h.scalars_dev.downloadAsync(drafts_at, std.mem.sliceAsBytes(got), o.stream);
+        if (greedy or (cut and count > 1)) {
+            const bytes = h.scalars.bytes[drafts_at .. probs_at + 4 * max_depth];
+            try h.scalars_dev.downloadAsync(drafts_at, bytes, o.stream);
             try stream.synchronize();
-            @memcpy(out[0..count], got);
         }
-        return count;
+        if (greedy) @memcpy(out[0..count], h.scalars.slice(u32)[drafts_at / 4 ..][0..count]);
+        var kept = count;
+        if (cut) {
+            const chance = h.scalars.slice(f32)[probs_at / 4 ..];
+            for (chance[0..count -| 1], 0..) |p, n| if (p < stop_under) {
+                kept = n + 1;
+                break;
+            };
+        }
+        return kept;
     }
 
     /// One head step at rope position `pos`, writing chain slot `slot` (its last visible slot at device `slot_at`), its

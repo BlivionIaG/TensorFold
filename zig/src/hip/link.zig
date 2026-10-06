@@ -16,7 +16,7 @@ pub const Link = struct {
     fds: [max_world - 1]posix.socket_t = undefined,
 
     /// Joins the ranks: rank 0 listens on `host:port` for the other ranks and sends each the `id`; the others connect
-    /// (retrying for a minute) and return the id they receive.
+    /// (retrying for ten minutes) and return the id they receive.
     pub fn open(io: std.Io, rank: usize, world: usize, host: []const u8, port: u16, id: rccl.UniqueId) Error!struct { Link, rccl.UniqueId } {
         if (world < 2 or world > max_world or rank >= world) return error.BadRank;
         const ip = std.Io.net.IpAddress.parse(host, port) catch return error.ConnectFailed;
@@ -51,7 +51,7 @@ pub const Link = struct {
                 break;
             }
             _ = posix.system.close(fd);
-            if (tries >= 600) return error.ConnectFailed;
+            if (tries >= 6000) return error.ConnectFailed;
             std.Io.sleep(io, .fromMilliseconds(100), .awake) catch {};
         }
         const mine: u32 = @intCast(rank);

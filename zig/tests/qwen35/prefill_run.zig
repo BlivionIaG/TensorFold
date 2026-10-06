@@ -20,7 +20,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
             var caches = try e.newCaches(len + 8);
             defer caches.deinit(gpa);
             const t0 = std.Io.Clock.awake.now(io);
-            _ = try e.prefill(&caches, prompt[0..len], 0, null, .{ .sampling = null, .position = len });
+            _ = try e.prefill(&caches, prompt[0..len], 0, null, .{ .sampling = null, .position = len }, null);
             const dt = @as(f64, @floatFromInt(std.Io.Clock.awake.now(io).toNanoseconds() - t0.toNanoseconds())) / 1e9;
             if (rep > 0) times[rep - 1] = dt;
         }

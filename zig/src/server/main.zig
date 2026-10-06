@@ -8,7 +8,10 @@ const engines = @import("engines.zig");
 const serve = @import("serve.zig");
 const hf_text = @import("hf_text.zig");
 
-const usage_line = "usage: tensorfold serve [-h] [--host HOST] [--port PORT] [--name NAME] [--alias ALIAS] [--api-key API_KEY] [--api-key-file API_KEY_FILE] [--metrics-open] [--dashboard] [--context CONTEXT] [--speed-up SETTINGS] [--max-tokens MAX_TOKENS] [--temperature TEMPERATURE] [--top-p TOP_P] [--top-k TOP_K] [--min-p MIN_P] [--thinking | --no-thinking] [--reasoning-effort {low,medium,high,xhigh}] [--thinking-budget THINKING_BUDGET] [--loop-guard] [--no-drafts] [--parallel PARALLEL] [--no-update-check] [--backend {auto,mlx,cuda}] model\n";
+const usage_line = "usage: tensorfold serve [-h] [--host HOST] [--port PORT] [--name NAME] [--alias ALIAS] [--api-key API_KEY] [--api-key-file API_KEY_FILE] [--metrics-open] [--dashboard] [--context CONTEXT] [--speed-up SETTINGS] [--max-tokens MAX_TOKENS] [--temperature TEMPERATURE] [--top-p TOP_P] [--top-k TOP_K] [--min-p MIN_P] [--thinking | --no-thinking] [--reasoning-effort {low,medium,high,xhigh}] [--thinking-budget THINKING_BUDGET] [--loop-guard] [--no-drafts] [--prompt-cache-gib PROMPT_CACHE_GIB] [--checkpoint-slots CHECKPOINT_SLOTS] [--parallel PARALLEL] [--no-update-check] [--backend {auto,mlx,cuda,rocm}] [--tp {1,2,4,8}] [--rank RANK] [--master MASTER] [--master-port MASTER_PORT] [--p2p | --no-p2p] model\n";
+
+/// RCCL starts threads of its own: they need glibc's signal stacks, not Zig's.
+pub const std_options: std.Options = .{ .signal_stack_size = null };
 
 pub fn main(init: std.process.Init) !u8 {
     const gpa = init.gpa;
@@ -37,6 +40,11 @@ pub fn main(init: std.process.Init) !u8 {
     };
     var problem: []const u8 = "";
     const dir = try hub.resolve(a, io, init.environ_map, args.model, &problem) orelse return fail(problem);
+    if (args.rank > 0) {
+        // a tensor-parallel rank above 0 serves no HTTP: it runs rank 0's steps, so it needs no tokenizer
+        if (!try engines.follow(a, gpa, io, dir, modelType(a, io, dir), args, &problem)) return fail(problem);
+        return 0;
+    }
     const text = hf_text.HfText.load(gpa, io, dir, &problem) catch return fail(problem);
     defer text.deinit();
     const model_type = modelType(a, io, dir);

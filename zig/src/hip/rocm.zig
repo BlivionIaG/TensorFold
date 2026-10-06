@@ -63,6 +63,7 @@ pub const Api = struct {
     tf_moe_localize: *const fn (CI, CI, I, c_int, c_int, S) callconv(.c) c_int,
     tf_moe_foreign_items: *const fn (I, c_int, c_int, S) callconv(.c) c_int,
     tf_moe_zero_foreign: *const fn (F, CI, c_int, c_longlong, c_int, S) callconv(.c) c_int,
+    tf_token_prob: *const fn (C, c_int, c_int, c_int, CI, F, S) callconv(.c) c_int,
 };
 
 pub const Family = enum { rdna2, rdna3 };

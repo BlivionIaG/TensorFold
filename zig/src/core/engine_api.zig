@@ -123,7 +123,26 @@ pub const Info = struct {
 pub const Family = struct { model_type: []const u8, formats: []const []const u8 };
 
 /// What a server asks of the engine it opens: the checkpoint, and the serve flags an engine reads.
-pub const Open = struct { dir: []const u8, model_type: []const u8, context: ?i64 = null, lanes: u32 = 8, drafts: bool = true, speed_up: ?[]const u8 = null };
+pub const Open = struct {
+    dir: []const u8,
+    model_type: []const u8,
+    context: ?i64 = null,
+    lanes: u32 = 8,
+    /// `--parallel auto`: the engine picks its own number of lanes (`lanes` is then the Mac's).
+    lanes_auto: bool = false,
+    drafts: bool = true,
+    speed_up: ?[]const u8 = null,
+    /// Kept prompt entries and their bytes (`--checkpoint-slots`, `--prompt-cache-gib`); null: the engine's plan.
+    keep: ?i64 = null,
+    cache_gib: ?f64 = null,
+    /// Tensor parallelism: this process is `rank` of `tp`; rank 0 listens on `master`:`master_port` for the others.
+    tp: u32 = 1,
+    rank: u32 = 0,
+    master: []const u8 = "",
+    master_port: u16 = 29551,
+    /// Peer-to-peer between the cards: on, off, or null for the library's choice.
+    p2p: ?bool = null,
+};
 
 /// An opened engine; ``close`` stops its thread and frees its backend.
 pub const Opened = struct { engine: Engine, close: *const fn (ctx: *anyopaque) void, ctx: *anyopaque };

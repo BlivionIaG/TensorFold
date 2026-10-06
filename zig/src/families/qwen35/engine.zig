@@ -68,10 +68,13 @@ pub const Engine = struct {
         e.gpa = gpa;
         e.o = o;
         e.sized = false;
-        // rounds replay captured graphs unless TF_HIP_GRAPHS=0; not under tensor parallelism (its collectives run between)
-        if (std.c.getenv("TF_HIP_GRAPHS")) |v| if (std.mem.eql(u8, std.mem.span(v), "0")) {
-            e.o.graphs = false;
-        };
+        // rounds replay captured graphs unless TF_HIP_GRAPHS=0 (the Python engine's TENSORFOLD_GRAPH=0); not under tensor
+        // parallelism (its collectives run between)
+        for ([_][*:0]const u8{ "TF_HIP_GRAPHS", "TENSORFOLD_GRAPH" }) |name| {
+            if (std.c.getenv(name)) |v| if (std.mem.eql(u8, std.mem.span(v), "0")) {
+                e.o.graphs = false;
+            };
+        }
         if (o.world > 1) e.o.graphs = false;
         e.graphs = .{ .gpa = gpa };
         e.serial = 1;
@@ -126,6 +129,26 @@ pub const Engine = struct {
     pub fn plan(e: *Engine, streams: usize, target: usize) !memory.Plan {
         const info = try e.ctx.memInfo();
         return memory.plan(.{ .spec = e.weights.spec, .act_bytes = e.act.size(), .streams = streams, .rows = e.o.batch_rows, .slack = e.o.slack, .target = target, .free = info.free, .total = info.total });
+    }
+
+    /// The least of each value over the ranks, the same on every rank (a window and a prompt cache they all fit).
+    pub fn least(e: *Engine, mine: [2]u64) ![2]u64 {
+        if (e.o.world < 2) return mine;
+        const world = e.o.world;
+        var host = try hip.HostBuffer.alloc(&e.driver, 16 * (1 + world));
+        defer host.free();
+        var send = try hip.DeviceBuffer.alloc(&e.driver, 16);
+        defer send.free();
+        var recv = try hip.DeviceBuffer.alloc(&e.driver, 16 * world);
+        defer recv.free();
+        host.slice(u64)[0..2].* = mine;
+        try send.uploadAsync(0, host.bytes[0..16], e.stream.handle);
+        try e.comm.allGather(send.ptr, recv.ptr, 2, .i64, e.stream.handle);
+        try recv.downloadAsync(0, host.bytes[16 .. 16 * (1 + world)], e.stream.handle);
+        try e.stream.synchronize();
+        var out = mine;
+        for (host.slice(u64)[2 .. 2 * (1 + world)], 0..) |v, i| out[i % 2] = @min(out[i % 2], v);
+        return out;
     }
 
     /// Load and size in one: `o.capacity` positions.
@@ -212,19 +235,46 @@ pub const Engine = struct {
         return .{ .ptr = whole, .kind = slice.kind };
     }
 
+    /// Asked after each layer of a long prompt (the stream is idle then): true ends the pass with `error.Cancelled`.
+    pub const Cancel = struct {
+        ctx: *anyopaque,
+        check: *const fn (ctx: *anyopaque) bool,
+    };
+
+    const Poll = struct {
+        stream: hip.Stream,
+        cancel: Cancel,
+
+        fn layer(ctx: *anyopaque, _: usize, _: hip.ops.Tensor, _: usize) anyerror!void {
+            const p: *Poll = @ptrCast(@alignCast(ctx));
+            try p.stream.synchronize();
+            if (p.cancel.check(p.cancel.ctx)) return error.Cancelled;
+        }
+    };
+
+    /// The pass over `len` rows with the cancel polled after each layer; null where it cannot stop (a prompt shorter
+    /// than a span, or tensor parallelism, where the other ranks would wait in a collective).
+    fn poll(e: *Engine, cancel: ?Cancel, len: usize, p: *Poll) ?fwd.Trace {
+        const c = cancel orelse return null;
+        if (e.o.world > 1 or len < fwd.SPAN) return null;
+        p.* = .{ .stream = e.stream, .cancel = c };
+        return .{ .ctx = p, .layer = Poll.layer };
+    }
+
     /// Run `prompt[pos0..end]` into `caches`, its logits not read: a cut where the caches are kept.
-    pub fn advance(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, end: usize) !void {
+    pub fn advance(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, end: usize, cancel: ?Cancel) !void {
         if (end <= pos0 or end > caches.total) return error.PromptTooLong;
         e.prompts.reset();
         const ids = e.ids.slice(u32)[0 .. end - pos0];
         @memcpy(ids, prompt[pos0..end]);
         try e.ids_dev.uploadAsync(0, std.mem.sliceAsBytes(ids), e.stream.handle);
-        _ = try fwd.span(e.ops(&e.prompts), e.model(), caches, e.ids_dev.ptr, end - pos0, pos0, null);
+        var p: Poll = undefined;
+        _ = try fwd.span(e.ops(&e.prompts), e.model(), caches, e.ids_dev.ptr, end - pos0, pos0, e.poll(cancel, end - pos0, &p));
         try e.stream.synchronize();
     }
 
     /// Prefill `prompt[pos0..]` into `caches`; the token drawn per `req` from the last row, whose final row is copied to `last` (MTP's input).
-    pub fn prefill(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, last: ?hip.DeviceBuffer, req: draw.Request) !u32 {
+    pub fn prefill(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, last: ?hip.DeviceBuffer, req: draw.Request, cancel: ?Cancel) !u32 {
         const m = e.model();
         const len = prompt.len - pos0;
         if (len == 0 or prompt.len > caches.total) return error.PromptTooLong;
@@ -233,7 +283,8 @@ pub const Engine = struct {
         @memcpy(ids, prompt[pos0..]);
         try e.ids_dev.uploadAsync(0, std.mem.sliceAsBytes(ids), e.stream.handle);
         const o = e.ops(&e.prompts);
-        const hidden = try fwd.span(o, m, caches, e.ids_dev.ptr, len, pos0, null);
+        var p: Poll = undefined;
+        const hidden = try fwd.span(o, m, caches, e.ids_dev.ptr, len, pos0, e.poll(cancel, len, &p));
         const row = fwd.at(hidden, (len - 1) * m.spec.hidden);
         if (last) |b| try b.copyFrom(0, row.ptr, m.spec.hidden * m.act.size(), e.stream.handle);
         var token: [1]u32 = undefined;

@@ -81,11 +81,11 @@ pub const Worker = struct {
         }
         var from = at;
         for (stops) |stop| {
-            try w.e.advance(&lane.caches, prompt, from, stop);
+            try w.e.advance(&lane.caches, prompt, from, stop, null);
             from = stop;
             try w.remember(prompt[0..from], &lane.caches);
         }
-        _ = try w.e.prefill(&lane.caches, prompt, from, null, w.reqs[0]);
+        _ = try w.e.prefill(&lane.caches, prompt, from, null, w.reqs[0], null);
     }
 
     /// A copy of the caches at a cut, as rank 0's `remember` keeps it.
