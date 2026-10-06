@@ -119,16 +119,15 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
             }
         }
         __syncthreads();
-        // fa_prefill's online softmax, a row a thread over the tile's keys in order
+        // fa_prefill's online softmax: the tile max a row a thread (fmaxf is exact in any order), every probability
+        // at once (an exp of its own score), then each row's sum a thread over its keys in order
+        __shared__ float sN[kRows];   // the tile's next max, -inf when the row has no visible key in it
         if (tid < kRows) {
             const int row = tid;
-            float* p = sP + row * (kKeys + 1);
-            if (row >= q_hi) {
-                sA[row] = 1.f;
-                for (int key = 0; key < kKeys; ++key) p[key] = 0.f;
-            } else {
-                float tile_max = -INFINITY;
-                bool any = false;
+            const float* p = sP + row * (kKeys + 1);
+            float tile_max = -INFINITY;
+            bool any = false;
+            if (row < q_hi) {
                 for (int key = 0; key < kKeys; ++key) {
                     const float score = p[key];
                     if (score != -INFINITY) {
@@ -136,23 +135,30 @@ __device__ void fa_wide(const float* __restrict__ q, const Cache* __restrict__ k
                         any = true;
                     }
                 }
-                if (!any) {
-                    sA[row] = 1.f;
-                    for (int key = 0; key < kKeys; ++key) p[key] = 0.f;
-                } else {
-                    const float next_m = fmaxf(sM[row], tile_max);
-                    const float alpha = sM[row] == -INFINITY ? 0.f : expf(sM[row] - next_m);
-                    float sum = 0.f;
-                    for (int key = 0; key < kKeys; ++key) {
-                        const float score = p[key];
-                        const float prob = score == -INFINITY ? 0.f : expf(score - next_m);
-                        p[key] = prob;
-                        sum += prob;
-                    }
-                    sL[row] = fmaf(alpha, sL[row], sum);
-                    sM[row] = next_m;
-                    sA[row] = alpha;
-                }
+            }
+            sN[row] = any ? fmaxf(sM[row], tile_max) : -INFINITY;
+        }
+        __syncthreads();
+        for (int e = tid; e < kRows * kKeys; e += kThreads) {
+            const int row = e / kKeys, key = e % kKeys;
+            float* slot = sP + row * (kKeys + 1) + key;
+            const float next_m = sN[row];
+            *slot = (next_m == -INFINITY || *slot == -INFINITY) ? 0.f : expf(*slot - next_m);
+        }
+        __syncthreads();
+        if (tid < kRows) {
+            const int row = tid;
+            const float next_m = sN[row];
+            if (next_m == -INFINITY) {
+                sA[row] = 1.f;
+            } else {
+                const float* p = sP + row * (kKeys + 1);
+                const float alpha = sM[row] == -INFINITY ? 0.f : expf(sM[row] - next_m);
+                float sum = 0.f;
+                for (int key = 0; key < kKeys; ++key) sum += p[key];
+                sL[row] = fmaf(alpha, sL[row], sum);
+                sM[row] = next_m;
+                sA[row] = alpha;
             }
         }
         for (int e = tid; e < kKeys * d; e += kThreads) {
