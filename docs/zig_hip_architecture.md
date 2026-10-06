@@ -296,6 +296,44 @@ radix stress test (many requests branching from shared prefixes, against each on
 **Under tp**, rank 0 owns the tree and decides every match, insertion and eviction. The followers apply the same page
 operations from the round messages, as they mirror prefix cuts today.
 
+### 3.8 Layout: folders by job
+
+Upstream keeps a backend's runtime flat (`zig/src/cuda/`) and its kernels one file per job (`zig/kernels/cuda/`). The
+HIP port follows that and adds one level where it carries more: formats, tiles and the registry. A file stays under
+about 600 lines unless splitting would cut one job in two: a tile template, or a launcher table that must read as one
+list. In that case the PR says so. Comments are one line, unless a longer one says something the code cannot (an
+exactness rule, a hardware fact).
+
+```
+zig/src/hip/
+  root.zig                     the backend's public surface
+  runtime/                     driver, context, stream, memory, arena, module, graph, abi (as zig/src/cuda/)
+  comm/                        rccl, link (tp transport)
+  caps.zig  policy.zig         what the GPU can do; what the run may use (3.1, 3.5)
+  launch/                      args, code objects, registry, tuning/<gfx>.zon (3.4)
+  ops/                         the Ops facade split by job: project (dense + routed), attention, recurrence,
+                               norms, moe (router, select, plan, combine), draw, tp (sums, gathers)
+  quant/                       mlx.zig; later awq, fp8, mx, exl3 (3.2)
+zig/kernels/hip/
+  common/                      caps macros, wave helpers, Dot plug-ins
+  quant/                       one WeightDecoder header a format (mlx.hpp first), ActEncoders
+  tiles/                       stream, gemm, matrix, routed: templates over decoder × encoder × dot
+  attention/                   prefill tile, decode (causal_at), qk_rope
+  recurrence/                  gated delta: serial (decode), chunked (prefill)
+  ops/                         norms, conv, rope, moe route/select/combine, casts, the fused decode tails
+  comm/                        tp kernels
+  capi/                        the library's C ABI (the bring-up path)
+zig/src/families/qwen35/
+  model/                       config, checkpoint, host, table, weights, view, bridge, convert, shard, slicing
+  forward/                     forward (prefill span), window (decode round), moe, experts, reduce, state
+  engine/                      engine, hip_lanes, worker, round_graphs (-> round plan), memory, prefix (-> radix), mtp, draw, sample
+zig/tests/hip/                 kernels/, runtime/, bench/ (4.2)
+zig/tests/qwen35/              check/ (invariants, accuracy, speed), matrix.sh
+```
+
+`zig/kernels/hip/rocm/` (the kernels copied from the Python ROCm engine) is absorbed: each file moves to the folder
+of its job and is split into decoder plus tile as step 4 reaches it.
+
 ## 4. Testing
 
 ### 4.1 Today: grown one tool at a time
@@ -375,7 +413,7 @@ How they compose:
 |---|---|---|
 | 0 | this plan; owners and file ownership | review |
 | 0c | **Tests regrouped** (4.2): `tf-hip-test kernels` and `runtime`, `tf-qwen35-test check`, the in-repo matrix script; host scripts retired | the same cases pass; nothing loses coverage (a mapping table in the PR) |
-| 0b | **CONTRIBUTING pass**, before any refactor:<br>- `launches.zig` and `ops.hip` split by job under 600 lines;<br>- one-line comments everywhere;<br>- receipts from tools/bench_concurrent.py, bench_openai.py and prefill_cold.py against tensorfold-native;<br>- authorship under the GitHub noreply address | truth scores; rows/tpcheck; speed recorded (32k prefill expected lower) |
+| 0b | **CONTRIBUTING pass**, before any refactor (one owner, after the branches in flight land):<br>- the layout of 3.8 (moves first, as their own commits, then splits);<br>- `launches.zig` and `ops.hip` split by job under 600 lines;<br>- one-line comments everywhere;<br>- receipts from tools/bench_concurrent.py, bench_openai.py and prefill_cold.py against tensorfold-native;<br>- authorship under the GitHub noreply address (set) | truth scores; rows/tpcheck; speed recorded (32k prefill expected lower) |
 | 1 | **Policy**: struct, resolution, flags, `TF_POLICY`, the old variables as aliases, start-up line and server info; ops/registry read Policy instead of env | all variables' behaviors unchanged (matrix of on/off runs) |
 | 2 | **Caps** replace `Family`; target table; gfx1151 and gfx1200 build | fixtures, rows, tpcheck, speed unchanged |
 | 3 | **Quant interface** with mlx: `quant.Projection`, `ops.project` | byte-identical logits (prefill and decode) on 0.8B/9B/35B |
