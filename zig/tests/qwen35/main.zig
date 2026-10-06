@@ -13,7 +13,7 @@ const Tensor = qwen35.table.Tensor;
 /// little stack for glibc to create them.
 pub const std_options: std.Options = .{ .signal_stack_size = null };
 
-const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> [--tp N --rank R] | layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]] | lanes ... | prefill <model dir> <length>... | logits <model dir> <ids.npy> <out.npy> [--f32] [--decode] | draw x\n";
+const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> [--tp N --rank R] | layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]] | lanes ... | prefill <model dir> <length>... | logits <model dir> <ids.npy> <out.npy> [--f32] [--decode] | rows <model dir> <ids.npy> [n] | draw x\n";
 
 pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -32,6 +32,13 @@ pub fn main(init: std.process.Init) !u8 {
     }
     if (std.mem.eql(u8, args[1], "draw")) {
         @import("draw_run.zig").run(init.gpa) catch |e| {
+            std.debug.print("FAIL {t}\n", .{e});
+            return 1;
+        };
+        return 0;
+    }
+    if (std.mem.eql(u8, args[1], "rows")) {
+        @import("rows_run.zig").run(init.gpa, init.io, args[2..]) catch |e| {
             std.debug.print("FAIL {t}\n", .{e});
             return 1;
         };
