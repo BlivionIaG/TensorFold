@@ -1,0 +1,259 @@
+# Zig HIP port: architecture plan (draft)
+
+Where the HIP backend goes next: support for more numeric formats (MLX affine today; then GPTQ/AWQ W4A16, W4A8, W8A8, MXFP4/MXFP8, plain fp16/bf16 and
+EXL3) and more GPUs (RDNA2 today, RDNA3, RDNA3.5, RDNA4, maybe gfx900), with kernel choice in one place and switches
+that a user, a test and a tensor-parallel group all see the same way. The code stays small: each new format or GPU
+should add a small module, not another copy of the kernels.
+
+## 0. Goal: the formats to support
+
+| Format | Weights | Bits | Activations | Notes |
+|---|---|---|---|---|
+| **MLX affine** | int, scale and bias a group (32/64/128) | 2, 3, 4, 5, 6, 8 | fp16 / bf16 | today (2, 3, 4, 6, 8 checked; 5 to add) |
+| **FP16 / BF16** | unquantized | 16 | fp16 / bf16 | identity decoder |
+| **AWQ INT4** | int4, scale and literal zero a group (GPTQ's +1 zeros are the same decoder with a flag) | 4 | fp16 / bf16 | W4A16; the vLLM qgemm kernels as native RDNA2 entries |
+| **FP8** | e4m3 (e5m2 if met), scale a tensor or a channel | 8 | fp16 / bf16; fp8 on RDNA4 | decode to f16/bf16 on RDNA2/3; native fp8 WMMA on RDNA4 |
+| **MXFP4** | e2m1, e8m0 exponent a 32 block | 4 | fp16 / bf16 | OCP microscaling |
+| **MXFP8** | e4m3, e8m0 exponent a 32 block | 8 | fp16 / bf16; fp8 on RDNA4 | OCP microscaling |
+| **EXL3** | trellis-coded, 3INST and MUL1 codebooks, Hadamard-rotated, scale a channel | 2, 3, 4, 5, 6, 8 bpw | fp16 / bf16 | x and y take the input/output Hadamard rotations; the vLLM fork's `exl3_dot2_*` kernels as a reference |
+| later: W4A8, W8A8 | int4 / int8 | 4 / 8 | int8 a token | an int8 ActEncoder and the sdot4 / wmma-iu8 Dots; not in the goal list, the design keeps room for them |
+
+Every one of these runs on every supported GPU, through one design: the decoder of section 3.2 plus the shared
+tiles, with native kernels only where they are measured faster.
+
+## 1. What must hold
+
+- **Correct output.** Each format/GPU/mode is measured against an fp64 CPU forward of the same checkpoint
+  (tools/truth): KL, top-1 and perplexity. Matching Python's bits is not the bar.
+- **Row-exact arithmetic.** A row's bits do not depend on what it shares a launch with. drafted == serial,
+  solo == together, resumed == fresh and tp runs consistent, greedy and sampled. In practice this means **one kernel
+  family per op and path at any row count**. (Commit a6762a3 fixed the last violation: prefill kernels chosen by m.)
+- **No speed regressions.** Prefill and decode tok/s for each model and GPU are recorded; a change that loses on any
+  of them needs a reason.
+- **Lean.** A format adds a weight decoder, an activation precision adds an encoder, and a GPU instruction adds a Dot.
+  Tiles and epilogues are written once, and a code object only holds the modes its GPU can run.
+
+## 2. Today (hip-port a6762a3)
+
+| Layer | Where | Problem |
+|---|---|---|
+| Runtime | `zig/src/hip/` driver, context, stream, arena, graph, rccl, link | fine as is |
+| GPU identity | `rocm.Family { rdna2, rdna3 }`, build flag `TENSORFOLD_RDNA_WMMA` | two fixed families; kernels test the family, not what the GPU can do |
+| Kernels | `zig/kernels/hip/{ops,prefill,decode,gdn_prefill,tp}.hip`, `rocm/affine_*.hpp/hip` | MLX unpacking is mixed into every tile; tiles exist per GPU |
+| Launch | `launches.zig` (fixed struct of functions), `affine_launch.zig` (rules by m) | kernel choice is spread across ops.zig, launches.zig and affine_launch.zig |
+| Weights | `weights.Affine` / `view.Affine` (MLX only) | no place for another format |
+| Switches | about 13 env vars read where they are used (`TF_WMMA`, `TF_AFFINE_GEMM`, `TF_AFFINE_GEMV`, `TF_DECODE_FUSE`, `TF_FA_WIDE`, `TF_GDN_CHUNKED`, `TF_HIP_GRAPHS`, `TENSORFOLD_GRAPH`, `TF_HIP_LAUNCH`, `TF_HIP_GRAPHS_TP`, `TF_HIP_GRAPH_FAIL`, `TF_RCCL_LIB`, ...) | nothing records which were active, ranks can disagree, tests depend on the process env, a server can't report its config |
+
+## 3. Target layers
+
+```
+ engine / lanes / server            (unchanged: windows, rounds, MTP, prefix, tp)
+ model forward (qwen35/*.zig)       calls ops.project / ops.attention / ...; knows nothing of formats or GPUs
+ ── Policy ── resolved once at open: what the run may use
+ Ops + Registry                     (op, format, path, shape) -> one kernel, chosen under Caps and Policy
+ Quant formats                      mlx | gptq | awq | exl3 ...: load, slice, reference dequant, Decoder, native kernels
+ Shared tiles                       stream (decode), gemm (prefill), routed, wmma: templates over Decoder x Caps
+ Caps                               what this GPU has: wave, dot2 f16/bf16, sdot4/8, matrix cores, LDS
+ Runtime                            (unchanged)
+```
+
+### 3.1 Caps: what a GPU can do, not its name
+
+`hip/caps.zig`, built from the gfx id at open and compiled into each code object as macros (`TF_WAVE`, `TF_DOT2_F16`,
+`TF_DOT2_BF16`, `TF_SDOT4`, `TF_SDOT8`, `TF_MATRIX`):
+
+| GPU | wave | dot2 f16 | dot2 bf16 | sdot4/8 | matrix | activations |
+|---|---|---|---|---|---|---|
+| gfx900 (Vega 10) | 64 | no (packed fp16 FMA) | no | no | none | fp16 |
+| gfx906 (Vega 20) | 64 | yes | no | yes | none | fp16 |
+| gfx1030 (RDNA2) | 32 | yes | no | yes | none | fp16 |
+| gfx1100 (RDNA3) | 32 | yes | yes | yes | wmma11 | bf16 (fp16 possible) |
+| gfx1151 (RDNA3.5) | 32 | yes | yes | yes | wmma11 | bf16 |
+| gfx1200/1201 (RDNA4) | 32 | yes | yes | yes | wmma12 | bf16 |
+
+- The build reads a target table (gfx id → caps) and makes one code object per target.
+  `-Dgfx=gfx1030,gfx1100,...` picks the targets.
+- Kernels test caps macros, never GPU names. Warp code (shuffles, reductions, lane layouts) uses `TF_WAVE`. Wave64
+  (gfx900/906) is a separate pass when hardware is available, but new code is written wave-generic from now on.
+- A GPU outside the table is refused at open with its gfx id. There is no silent fallback.
+- Under tp every rank must have the same caps. Ranks exchange a caps hash at join and refuse a mixed group.
+
+### 3.2 Numeric formats: three small plug-ins, not kernels
+
+A product `y = x · Wᵀ` in any format comes down to three choices, and the tiles take each one as a plug-in:
+
+| Plug-in | What it does | Examples |
+|---|---|---|
+| **WeightDecoder** | unpacks one K chunk of one column from its stored layout into dot operands, plus the per-group terms (scale, zero/bias, shared exponent) | identity (fp16/bf16), MLX affine 2-8 bit, GPTQ/AWQ int4 (+zero), int8, mxfp4 / mxfp8 (e2m1 / e4m3 with an e8m0 exponent a 32 block), EXL3 trellis |
+| **ActEncoder** | turns the activation rows into dot operands once per launch (or per row block): pass-through, or quantize with per-token / per-group scales | f16, bf16 (identity); int8 per token or per group (the A8 formats); fp8 later |
+| **Dot** | the multiply-accumulate unit and its accumulator, chosen from Caps | `dot2 f16→f32`, `dot2 bf16→f32`, `sdot4 i8→i32`, `sdot8 i4→i32`, `wmma f16/bf16→f32`, `wmma iu8/iu4→i32`, `wmma fp8→f32` (RDNA4), packed-fp16 FMA (gfx900) |
+
+A precision **mode** is a (WeightDecoder, ActEncoder, Dot) triple plus its epilogue: rescale an integer accumulator
+by the weight and activation scales, then add a bias, an activation or a residual. Lean means:
+
+- adding a weight format is one decoder (tens of lines) plus its `quant` module on the host;
+- adding an activation precision is one encoder;
+- a new GPU instruction is one Dot;
+- the tiles (stream, gemm, matrix, routed) and their epilogues are written once.
+
+Modes, as (decoder, encoder, dot):
+
+| Mode | WeightDecoder | ActEncoder | Dot by GPU | Host module |
+|---|---|---|---|---|
+| FP16 / BF16 | identity | f16 / bf16 | dot2 f16/bf16; wmma f16/bf16 | `quant/dense.zig` |
+| MLX affine 2/3/4/5/6/8 | bit unpack (packed across words for 3/5/6), scale and bias a group | f16 / bf16 | dot2; wmma bf16 | `quant/mlx.zig` |
+| AWQ INT4 (and GPTQ) | int4 unpack, `(q − z) · s` a group (literal or +1 zero), optional g_idx | f16 / bf16 | dot2; wmma; native qgemm on RDNA2 | `quant/awq.zig` |
+| FP8 | e4m3/e5m2 to f16/bf16 (table or bit ops), scale a tensor or channel | f16 / bf16 (fp8 on RDNA4) | dot2; wmma; wmma fp8 on RDNA4 | `quant/fp8.zig` |
+| MXFP4 / MXFP8 | e2m1 / e4m3 to f16/bf16, times 2^e8m0 a 32 block | f16 / bf16 | dot2; wmma; wmma fp8 on RDNA4 (MXFP8) | `quant/mx.zig` |
+| EXL3 3INST / MUL1, 2-8 bpw | trellis state stream (16-bit shift register a tile) decoded through the 3INST or MUL1 codebook, scale a channel | f16 / bf16 after the input Hadamard | dot2; wmma | `quant/exl3.zig` |
+| later W4A8 / W8A8 | int4 / int8 | int8 a token or group | sdot4; wmma iu8 | `quant/awq.zig`, `quant/int8.zig` |
+
+EXL3 needs more than a decoder:
+
+- The input and output Hadamard rotations, and the channel scales, are pre/post steps of the projection. They become
+  ActEncoder/Epilogue pieces: a rotation of x before the product and of y after it.
+- The trellis decodes a 16×16 weight tile at a time, so its K chunk is a whole tile.
+- If the shared tiles cannot keep up with the trellis decode cost, EXL3 keeps native kernels, registered like any
+  other.
+
+Every host module provides:
+
+| Piece | What it is |
+|---|---|
+| `detect` | recognizes the checkpoint's config (`quantization` for MLX, `quantization_config.quant_method` for gptq/awq/mx, exl3's own) |
+| `load` | uploads its tensors, optionally repacked into the layout its decoder reads best |
+| `slice` | tp rules: which axes cut and the alignment (MLX: N rows, K groups; GPTQ: N by 8-column packs, K by groups, g_idx along; MX: K by 32 blocks) |
+| `reference` | fp64 dequant (and fp64 activation quantization for A8) for tools/truth and the kernel harness |
+| native kernels (optional) | a format's own kernels (vLLM qgemm for GPTQ on RDNA2, EXL3's), registered next to the shared tiles and kept only where they win |
+
+`weights.Affine` / `view.Affine` become `quant.Projection`: a mode tag plus a handle. The model code calls
+`ops.project(x, proj, m)`. Precision rules for A8 modes: activation scales are computed by the ActEncoder in one fixed
+order per row, so the row-exact rule holds for them as for everything else.
+
+### 3.3 Shared tiles: written once, parameterized by the plug-ins and Caps
+
+| Tile | Path | Rows | Notes |
+|---|---|---|---|
+| stream | decode | any (1-16 in a block, more blocks past 16) | one sum order per column whatever the launch |
+| gemm | prefill | any (small-row and 128-row blocks give the same bits) | dot2 / sdot; byte-identical to the previous tile |
+| matrix | prefill | any | wmma11 / wmma12 (f16, bf16, iu8, iu4, fp8 per GPU) |
+| routed | both | items of the plan | the stream or gemm tile reading pairs through items/members |
+
+Each tile is `template <class WeightDecoder, class ActEncoder, class Dot, class Epilogue>`, built per Caps target, and
+only the modes a target's Dots support are compiled into it. That keeps code objects small: gfx1030 gets no wmma, and
+gfx900 gets no sdot. Epilogues (int rescale, activation, combine, residual, rms) are template parameters, so the fused
+decode tails stay fused in every mode.
+
+### 3.4 Registry: kernel choice in one place
+
+```zig
+Entry { op, format, path: .decode | .prefill, family: FamilyId, caps: CapsPredicate, policy: PolicyPredicate,
+        fits: fn (Shape) bool, cost: fn (Shape, Caps) f32, launch: fn (...) }
+```
+
+- `select(op, format, path, shape)` returns the cheapest entry that fits, under Caps and Policy.
+- **Family rule:** for a given (op, format, path, caps, policy), every row count must select the same `family`.
+  Entries in one family must be byte-identical for every row; that is proven by the harness and declared in the
+  entry. The registry checks this at open by enumerating representative shapes, and the tests check it for m = 1..256.
+- `cost` comes from a **tuning table** in the repo (`zig/src/hip/tuning/<gfx>.zon`), measured by `tf-hip-test tune`
+  and reviewed like code. There is no runtime autotuning: it would make choices differ between runs and between
+  ranks.
+- `--explain-kernels` (and a field of the server's info) lists what each (op, path) chose and why.
+
+### 3.5 Policy: what a run may use, chosen once
+
+The env vars are replaced by a **Policy** value resolved at `Engine.open`, logged on one line, reported by the
+server, and passed explicitly to the registry and the engine. Nothing below the engine reads the environment.
+
+```zig
+Policy {
+    matrix: .auto | .on | .off,            // matrix cores (WMMA/MFMA) where the registry has entries
+    activations: .auto | .f16 | .bf16,     // auto: f16 on RDNA2, bf16 where dot2/wmma bf16 exists
+    attention: .auto | .f16 | .bf16 | .f32 // the prefill attention operands (int8 later)
+    kernels: .auto | .shared | .native | .reference, // native: a format's own kernels when registered; reference: the slow exact ones for bisecting
+    graphs: .auto | .off,                  // HIP graph replay of rounds (tp included)
+    prefill_step: u32 = 1024,              // rows a prompt advances a round while others decode (a multiple of 64)
+    mtp: { drafts: 0..3, confidence: f32 }, // drafts 0 = off
+    prefix: { slots: u32, bytes: u64 },
+    exact: .strict | .relaxed,             // strict refuses any entry not proven row-exact; relaxed may use faster non-exact ones (none exist today)
+}
+```
+
+- **Precedence (lowest first):** built-in default for the caps < tuning table < model-directory config
+  (`tensorfold.zon` next to the checkpoint, optional) < CLI/server flags (`--matrix off`, `--activations f16`,
+  `--kernels shared`, `--mtp-drafts 2`, `--prefill-step 2048`, `--no-graphs`) < debug overrides.
+- **Debug overrides** stay possible through one variable, `TF_POLICY="matrix=off,kernels=reference"`, parsed by
+  the same code as the flags. When it is set, the start-up line says so. The current scattered variables are read
+  once as aliases of it during the migration, then removed.
+- **tp:** rank 0 resolves the Policy and sends it to the followers at join. Every rank uses that Policy. A follower
+  only adds its local caps check.
+- **Tests** build a Policy directly, so the test matrix never touches the environment.
+- What `TF_WMMA` meant becomes `matrix=off|on|auto`. `TF_FA_WIDE=0` becomes `attention=f32`.
+  `TF_AFFINE_GEMM/GEMV=old` and `TF_DECODE_FUSE=old` become `kernels=reference` (or named families once there are
+  several). `TF_GDN_CHUNKED=0` becomes a reference recurrence.
+
+## 4. Testing
+
+| Level | What | When |
+|---|---|---|
+| decoder × tile | fp64 reference error, and byte-identity across row counts and block sizes within a family | every kernel change (`tf-hip-test kernels`) |
+| registry | one family per (op, format, path) for m = 1..256 under every Policy, every caps target | every build |
+| model invariants | `rows` (window vs one row, streams, partial keep), tpcheck (drafted/solo/resumed), tp 1/2/4/8 | every merge |
+| accuracy | `logits` and `logits --decode` scored against the fp64 truth: KL mean, top-1, perplexity, within each model's recorded band | every merge |
+| speed | prefill 13/100/2k/8k/32k, decode 1 and 4 streams, MTP on/off, recorded per GPU | every merge; regressions flagged |
+| matrix | caps target × Policy (matrix, activations, kernels, mtp, graphs) × format × model (0.8B, 9B, 27B, 35B-A3B; 2-8 bits) × tp | nightly / before a release |
+
+The matrix runs on one script, writes one table, and that table is published with the PR.
+
+## 5. Phases
+
+**Phase 1: the MLX path, complete.** MLX affine is the only format until all of this holds:
+
+- **Bits and models:** every MLX width (2, 3, 4, 5, 6, 8; groups 32/64/128 at kernel level) on Qwen3.5-0.8B and
+  Qwen3.5-9B. Qwen3.8-27B and Qwen3.6-35B-A3B at the widths their checkpoints come in. Widths missing on the host are
+  made with tools/mlx_requant.py (MLX's own quantization rules, checked byte for byte against an official checkpoint),
+  and each gets its own fp64 truth.
+- **GPUs and modes:** RDNA2 fp16, and RDNA3 bf16 with the matrix cores on and off; MTP on and off; concurrent
+  streams; tp 1, 2, 4 and 8; graphs at every tp.
+- **Correctness:** every invariant, plus fp64 accuracy for every model.
+- **Speed:** prefill ≥ 2x Python, decode ≥ 2x the port's baseline, and MTP gains with concurrent streams too.
+- **Structure:** steps 1-5 below (Policy, Caps, the Quant interface, plug-in tiles, the registry), done with MLX as
+  the only format. Each step is proven by MLX's own tests.
+
+**Phase 2: the other formats** (steps 6-9), each added as decoder plug-ins once the structure is in place.
+
+**Phase 3: new GPUs** (steps 10-11) as hardware becomes reachable.
+
+## 6. Migration (each step keeps today's bits and speed)
+
+| Step | Change | Proof |
+|---|---|---|
+| 0 | this plan; owners and file ownership | review |
+| 1 | **Policy**: struct, resolution, flags, `TF_POLICY`, the old variables as aliases, start-up line and server info; ops/registry read Policy instead of env | all variables' behaviors unchanged (matrix of on/off runs) |
+| 2 | **Caps** replace `Family`; target table; gfx1151 and gfx1200 build | fixtures, rows, tpcheck, speed unchanged |
+| 3 | **Quant interface** with mlx: `quant.Projection`, `ops.project` | byte-identical logits (prefill and decode) on 0.8B/9B/35B |
+| 4 | **Decoder-templated tiles**: MLX unpacking moves out of stream/gemm/matrix/routed | `tf-hip-test kernels` byte-identity old vs new; speed unchanged |
+| 5 | **Registry** replaces the m-rules in affine_launch/launches/ops; tuning tables for gfx1030 and gfx1100 | family check; byte-identical logits; speed unchanged |
+| 6 | **FP16 / BF16** (identity decoder) and **MLX 5-bit** | truth scores; speed |
+| 7 | **AWQ INT4** (and GPTQ by flag): detect, load, slice, reference, decoder; then the vLLM qgemm ports as native RDNA2 entries | truth scores; bit-exact against Python qgemm fixtures for the native kernels; the model matrix on AWQ checkpoints |
+| 8 | **FP8** (tensor/channel scales), then **MXFP4 / MXFP8** decoders | truth scores |
+| 9 | **EXL3** 3INST / MUL1 at 2-8 bpw: trellis decoder, Hadamard pre/post steps, native kernels where faster | truth scores against an fp64 decode of the same trellis; speed vs the vLLM fork's kernels |
+| 10 | **RDNA3.5 / RDNA4 bring-up** (when hardware is reachable): caps rows, matrix12 tile, fp8 Dot | the matrix on that GPU |
+| 11 | **gfx900/906**: wave64 pass over warp code; packed-fp16 Dot where dot2 is missing | as step 10 |
+| later | W4A8 / W8A8 (int8 ActEncoder, sdot4 / wmma-iu8 Dots) | as step 7 |
+
+Steps 1-5 are refactors with no new features and sit on the files the decode work changes now (ops.zig,
+launches.zig, affine_launch.zig, the affine tiles). They start once agent/decode2 merges, one owner at a time for
+those files. Step 1 can start earlier because it only adds the Policy and reroutes reads.
+
+## 7. Open questions
+
+1. **Act-order GPTQ:** support it in step 6 (reorder K at load plus an x gather a layer), or refuse it at first?
+2. **Checkpoints to test with:** AWQ, FP8, MXFP4/MXFP8 and EXL3 (3INST and MUL1, several bpw) versions of
+   0.8B/9B/27B/35B-A3B. On the host now: Qwen3.6-35B-A3B-GPTQ-Int4, Qwen3.5-0.8B-exl3-3inst, Qwen3.8-27B-exl3-3.00bpw.
+   Fetch or make the rest?
+3. **MLX 2-bit and 5-bit:** neither is on the host. Quantize them locally with mlx-style tooling for the matrix?
+4. **Policy file next to the checkpoint** (`tensorfold.zon`): wanted, or flags only?
+5. **`exact=relaxed`:** keep the slot for a future faster-but-not-row-exact mode (e.g. int8 attention), or leave it
+   out until a kernel needs it?
+6. **Wave64 hardware:** is a gfx900/906 card available to test on, or is that design-only for now?
