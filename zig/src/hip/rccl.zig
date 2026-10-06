@@ -36,7 +36,18 @@ pub const Rccl = struct {
     api: Api,
 
     pub fn open() Error!Rccl {
+        // TF_RCCL_LIB names the library first, as the Python engine reads it
+        var candidates: [paths.len + 1][]const u8 = undefined;
+        var n: usize = 0;
+        if (std.c.getenv("TF_RCCL_LIB")) |v| if (v[0] != 0) {
+            candidates[0] = std.mem.span(v);
+            n = 1;
+        };
         for (paths) |path| {
+            candidates[n] = path;
+            n += 1;
+        }
+        for (candidates[0..n]) |path| {
             var lib = std.DynLib.open(path) catch continue;
             errdefer lib.close();
             var api: Api = undefined;
