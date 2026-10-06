@@ -302,9 +302,11 @@ pub const Hip = struct {
                 total += 1;
             }
         }
+        // the graph choice is rank 0's, and goes with the round
+        const pick = try h.e.choose(rows[0..windows.len], null);
         if (h.link != null) {
             h.msg.clearRetainingCapacity();
-            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.verify), @intCast(windows.len) });
+            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.verify), @backingInt(pick), @intCast(windows.len) });
             for (windows, rows[0..windows.len]) |w, r| {
                 try h.msg.appendSlice(h.gpa, &.{ h.lanes.get(w.stream).?.id, @intCast(r.tokens.len) });
                 try h.msg.appendSlice(h.gpa, r.tokens);

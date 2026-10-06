@@ -4,13 +4,14 @@
 const std = @import("std");
 const hip = @import("hip");
 const Engine = @import("engine.zig").Engine;
+const Pick = @import("engine.zig").Pick;
 const state = @import("state.zig");
 const win = @import("window.zig");
 const draw = @import("draw.zig");
 const prefix = @import("prefix.zig");
 
 /// A step rank 0 sends the other ranks (the first word of a message).
-/// prefill: id, total, len, resumed at, cut count, kept entries, byte budget (low, high), cuts..., prompt...; verify: count, then id, rows, tokens... each; keep: count, then id, rows each;
+/// prefill: id, total, len, resumed at, cut count, kept entries, byte budget (low, high), cuts..., prompt...; verify: graph pick, count, then id, rows, tokens... each; keep: count, then id, rows each;
 /// release: id; stop.
 pub const Op = enum(u32) { stop, prefill, verify, keep, release };
 
@@ -97,9 +98,10 @@ pub const Worker = struct {
         try w.kept.add(ids, snap);
     }
 
-    fn verify(w: *Worker, ids: []const u32, rows: []const Engine.Rows) !void {
+    fn verify(w: *Worker, ids: []const u32, rows: []const Engine.Rows, pick: Pick) !void {
         var total: usize = 0;
         for (rows) |r| total += r.tokens.len;
+        _ = try w.e.choose(rows, pick);
         _ = try w.e.verify(rows, w.wins[0..rows.len], w.snaps, w.reqs[0..total], w.out[0..total]);
         for (ids, 0..) |id, i| w.lanes.get(id).?.pending = .{ .window = i, .rows = rows[i].tokens.len };
     }
@@ -136,16 +138,17 @@ pub const Worker = struct {
                     try w.prefill(m[1], m[2], m[9 + m[5] ..][0..m[3]], m[4], stops);
                 },
                 .verify => {
-                    const n = m[1];
+                    const pick: Pick = @fromBackingInt(m[1]);
+                    const n = m[2];
                     if (n > max_windows) return error.WindowTooWide;
-                    var at: usize = 2;
+                    var at: usize = 3;
                     for (0..n) |i| {
                         const lane = w.lanes.get(m[at]) orelse return error.UnknownStream;
                         ids[i] = m[at];
                         rows[i] = .{ .caches = &lane.caches, .pos = lane.len, .tokens = m[at + 2 ..][0..m[at + 1]] };
                         at += 2 + m[at + 1];
                     }
-                    try w.verify(ids[0..n], rows[0..n]);
+                    try w.verify(ids[0..n], rows[0..n], pick);
                 },
                 .keep => for (0..m[1]) |i| try w.keep(m[2 + 2 * i], m[3 + 2 * i]),
                 .release => w.release(m[1]),
