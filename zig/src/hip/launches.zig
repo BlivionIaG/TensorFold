@@ -292,7 +292,7 @@ pub const Launcher = struct {
         a.add(d);
         a.add(e);
         const k: usize = if (kind == 1) 0 else 1;
-        if (r >= 64) return l.go(l.op.router_tile[k], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
+        if (r >= 64 and @rem(d, 32) == 0) return l.go(l.op.router_tile[k], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
         try l.go(l.op.router_rows[k], dim(cdiv(e, 8), cdiv(r, 8), 1), dim(256, 1, 1), 0, s, &a);
     }
 

@@ -329,24 +329,34 @@ __device__ void router_rows(const void* x, const float* rows, float* logits, int
     }
 }
 
-// The router's logits for many rows: a 64 x 64 tile of (row, expert) a block over 16-wide steps of the hidden size,
-// each thread 4 x 4 of them in fp32.
+// The router's logits for many rows: a 64 x 64 tile of (row, expert) a block over 32-wide steps of the hidden size
+// (16-byte loads: 8 activations or 4 router weights a thread each), each thread 4 x 4 of them in fp32.
 template <int KIND>
 __device__ void router_tile(const void* x, const float* rows, float* logits, int r, int d, int e) {
-    constexpr int kTile = 64, kStep = 16, kLd = kTile + 4;
+    constexpr int kTile = 64, kStep = 32, kLd = kTile + 4;
     __shared__ alignas(16) float xs[kStep][kLd];
     __shared__ alignas(16) float ws[kStep][kLd];
     const int row0 = blockIdx.y * kTile, expert0 = blockIdx.x * kTile;
     const int ty = threadIdx.x / 16, tx = threadIdx.x % 16;
+    // the staging: activation row ar at steps ak .. ak + 7, router rows wr and wr + 32 at steps wk .. wk + 3
+    const int ar = threadIdx.x / 4, ak = (threadIdx.x % 4) * 8;
+    const int wr = threadIdx.x / 8, wk = (threadIdx.x % 8) * 4;
+    const uint16_t* xh = static_cast<const uint16_t*>(x);
     float acc[4][4] = {};
     for (int base = 0; base < d; base += kStep) {
+        uint4 xv = {0, 0, 0, 0};
+        if (row0 + ar < r) xv = *reinterpret_cast<const uint4*>(xh + static_cast<long long>(row0 + ar) * d + base + ak);
+        float4 w0 = {0, 0, 0, 0}, w1 = {0, 0, 0, 0};
+        if (expert0 + wr < e) w0 = *reinterpret_cast<const float4*>(rows + static_cast<long long>(expert0 + wr) * d + base + wk);
+        if (expert0 + wr + 32 < e)
+            w1 = *reinterpret_cast<const float4*>(rows + static_cast<long long>(expert0 + wr + 32) * d + base + wk);
         __syncthreads();
-        for (int q = threadIdx.x; q < kTile * kStep; q += 256) {
-            const int t = q / kStep, i = q % kStep;
-            const bool in = base + i < d;
-            xs[i][t] = (row0 + t < r && in) ? load(x, KIND, static_cast<long long>(row0 + t) * d + base + i) : 0.f;
-            ws[i][t] = (expert0 + t < e && in) ? rows[static_cast<long long>(expert0 + t) * d + base + i] : 0.f;
-        }
+        const uint16_t* h = reinterpret_cast<const uint16_t*>(&xv);
+#pragma unroll
+        for (int j = 0; j < 8; ++j) xs[ak + j][ar] = KIND == 1 ? __half2float(__ushort_as_half(h[j])) : bf16_to_float(h[j]);
+        const float a0[4] = {w0.x, w0.y, w0.z, w0.w}, a1[4] = {w1.x, w1.y, w1.z, w1.w};
+#pragma unroll
+        for (int j = 0; j < 4; ++j) ws[wk + j][wr] = a0[j], ws[wk + j][wr + 32] = a1[j];
         __syncthreads();
 #pragma unroll
         for (int i = 0; i < kStep; ++i) {
