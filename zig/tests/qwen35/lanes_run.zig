@@ -16,10 +16,11 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     const max_tokens = try std.fmt.parseInt(u32, args[2], 10);
     var sampling: ?lanes.Sampling = null;
     var solo = false;
+    var drafts = true;
     var report: ?[]const u8 = null;
     var i: usize = 3;
     while (i < args.len) : (i += 1) {
-        if (std.mem.eql(u8, args[i], "--solo")) solo = true else if (std.mem.eql(u8, args[i], "--report")) {
+        if (std.mem.eql(u8, args[i], "--solo")) solo = true else if (std.mem.eql(u8, args[i], "--no-drafts")) drafts = false else if (std.mem.eql(u8, args[i], "--report")) {
             i += 1;
             report = args[i];
         } else if (std.mem.eql(u8, args[i], "--seed")) {
@@ -38,16 +39,17 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     const ids = prompts.value.map.values();
     var longest: usize = 0;
     for (ids) |p| longest = @max(longest, p.len);
-    const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + max_tokens + 32, .batch_rows = @max(16, names.len * 4) });
+    const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + max_tokens + 32, .batch_rows = @max(32, names.len * qwen35.hip_lanes.Hip.max_window) });
     defer e.deinit();
     const h = try qwen35.hip_lanes.Hip.init(gpa, e);
     defer h.deinit();
-    var cfg = try lanes.Config.init(gpa, h.facts(), 1, 0);
+    const rows = qwen35.hip_lanes.Hip.max_window;
+    var cfg = try lanes.Config.init(gpa, h.facts(), rows, rows - 1);
     defer cfg.deinit(gpa);
     var clock = lanes.backend.WallClock{ .io = io };
     const streams = try gpa.alloc(lanes.Stream, names.len);
     defer gpa.free(streams);
-    for (streams, names, ids) |*s, name, p| s.* = try lanes.Stream.init(gpa, .{ .id = name, .prompt = p, .max_new = max_tokens, .sampling = sampling, .drafts = false });
+    for (streams, names, ids) |*s, name, p| s.* = try lanes.Stream.init(gpa, .{ .id = name, .prompt = p, .max_new = max_tokens, .sampling = sampling, .drafts = drafts });
     defer for (streams) |*s| s.deinit(gpa);
     const t0 = std.Io.Clock.awake.now(io);
     if (solo) {
@@ -65,7 +67,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     for (streams, names) |*s, name| {
         try out.append(gpa, .{ .name = name, .tokens = s.emitted() });
         total += s.emitted().len;
-        std.debug.print("{s}: {d} tokens, rounds {d}\n", .{ name, s.emitted().len, s.rounds });
+        std.debug.print("{s}: {d} tokens, rounds {d}, accepted {d}\n", .{ name, s.emitted().len, s.rounds, s.accepted });
     }
     std.debug.print("{s}: {d} streams, {d} tokens in {d:.3} s, {d:.1} tok/s\n", .{ if (solo) "solo" else "together", streams.len, total, seconds, @as(f64, @floatFromInt(total)) / seconds });
     if (report) |path| {

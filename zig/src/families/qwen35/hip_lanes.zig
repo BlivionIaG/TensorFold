@@ -71,10 +71,13 @@ pub const Hip = struct {
         } };
     }
 
-    /// The facts the round loop reads at setup: shared rounds of one-row windows until the draft head is in.
+    /// Rows a window holds: every width keeps a row's bits (the window forward), drafts come from the core.
+    pub const max_window = 16;
+
+    /// The facts the round loop reads at setup: shared rounds of exact windows, no draft head yet.
     pub fn facts(h: *const Hip) lanes.Model {
         return .{
-            .exact_width = 1,
+            .exact_width = max_window,
             .gpu_tokens = false,
             .mtp = false,
             .speculate = false,

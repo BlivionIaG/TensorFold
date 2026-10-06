@@ -44,15 +44,26 @@ pub fn draw(gpa: Allocator, row: []const u16, dtype: Dtype, sampling: ?lanes.Sam
     if (s.temperature <= 0.0) return argmax(row, dtype);
     const width = row.len;
     const count = if (s.top_k != 0) @min(width, @as(usize, s.top_k) + MARGIN) else width;
-    const all = try gpa.alloc(Candidate, width);
-    defer gpa.free(all);
-    for (all, 0..) |*c, i| c.* = .{ .value = widen(row, dtype, i), .id = @intCast(i) };
-    if (count < width) std.mem.sort(Candidate, all, {}, larger);
+    const best = try gpa.alloc(Candidate, count);
+    defer gpa.free(best);
+    var filled: usize = 0;
+    // the whole row when top_k is 0 (choose orders it), else the top `count` by value then id in one pass
+    if (count == width) {
+        for (best, 0..) |*c, i| c.* = .{ .value = widen(row, dtype, i), .id = @intCast(i) };
+        filled = width;
+    } else for (0..width) |i| {
+        const c: Candidate = .{ .value = widen(row, dtype, i), .id = @intCast(i) };
+        if (filled == count and !larger({}, c, best[count - 1])) continue;
+        var at = if (filled < count) filled else count - 1;
+        if (filled < count) filled += 1;
+        while (at > 0 and larger({}, c, best[at - 1])) : (at -= 1) best[at] = best[at - 1];
+        best[at] = c;
+    }
     const values = try gpa.alloc(f64, count);
     defer gpa.free(values);
     const ids = try gpa.alloc(u64, count);
     defer gpa.free(ids);
-    for (all[0..count], values, ids) |c, *v, *id| {
+    for (best, values, ids) |c, *v, *id| {
         v.* = c.value;
         id.* = c.id;
     }
