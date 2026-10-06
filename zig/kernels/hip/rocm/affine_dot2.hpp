@@ -19,6 +19,7 @@ constexpr int kBlockRows = 64;  // from here the GEMM tile beats the 128-row col
 hipError_t ensure_byte_lut(hipStream_t stream);
 hipError_t launch_affine_dot2_lanes(const Affine& a, hipStream_t stream, int items = 1);
 hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int items = 1);
+hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int items = 1);
 
 // 32 codes are exactly BITS words: 16-byte loads when aligned and BITS % 4 == 0, 8-byte for even BITS.
 template <int BITS>

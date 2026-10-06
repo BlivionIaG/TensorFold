@@ -44,11 +44,17 @@ const fast_n = 256;
 const block_rows = 64; // kBlockRows
 const lane_group_max = 128;
 
+/// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
+pub const Tile = enum { gemm, block };
+
 pub const Kernels = struct {
     wmma: bool,
+    /// Which GEMM tile the products take; TF_AFFINE_GEMM=old picks the previous one.
+    tile: Tile,
     lanes: [bit_widths.len][row_counts.len][piece_counts.len]Function,
     row: [bit_widths.len][piece_counts.len]Function,
     block: [bit_widths.len]Function,
+    gemm: [bit_widths.len]Function,
     fast: [2]Function, // rows 1, 8
     span: [2]Function,
     fold: Function,
@@ -62,7 +68,12 @@ pub const Kernels = struct {
     pub fn load(tiles_obj: Module, dot2_obj: Module, wmma: bool) Error!Kernels {
         var k: Kernels = undefined;
         k.wmma = wmma;
-        if (wmma) try k.resolve("7DotBF16", tiles_obj) else try k.resolve("6DotF16", tiles_obj);
+        k.tile = .gemm;
+        if (std.c.getenv("TF_AFFINE_GEMM")) |v| {
+            if (std.mem.eql(u8, std.mem.span(v), "old")) k.tile = .block;
+        }
+        // the GEMM tile's rows of x a lane keeps (rocm/affine_gemm.hpp GemmShape): 8 for BF16, 16 for FP16
+        if (wmma) try k.resolve("7DotBF16", "Li8E", tiles_obj) else try k.resolve("6DotF16", "Li16E", tiles_obj);
         const r = "_ZN2tf4rocm";
         k.fast = .{ try dot2_obj.function(r ++ "16affine_dot2_fastILi1EEEvNS0_6AffineE"), try dot2_obj.function(r ++ "16affine_dot2_fastILi8EEEvNS0_6AffineE") };
         k.span = .{ try dot2_obj.function(r ++ "16affine_dot2_spanILi1EEEvNS0_6AffineEPfi"), try dot2_obj.function(r ++ "16affine_dot2_spanILi8EEEvNS0_6AffineEPfi") };
@@ -74,9 +85,11 @@ pub const Kernels = struct {
         return k;
     }
 
-    fn resolve(k: *Kernels, comptime dot: []const u8, m: Module) Error!void {
+    fn resolve(k: *Kernels, comptime dot: []const u8, comptime shape: []const u8, m: Module) Error!void {
+        @setEvalBranchQuota(200_000);
         inline for (bit_widths, 0..) |bits, b| {
             k.block[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_dot2_blockINS0_{s}ELi{d}EEEvNS0_6AffineE", .{ dot, bits }));
+            k.gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_gemm_blockINS0_{s}ELi{d}E{s}EEvNS0_6AffineE", .{ dot, bits, shape }));
             inline for (piece_counts, 0..) |pieces, p| {
                 k.row[b][p] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm15affine_dot2_rowINS0_{s}ELi{d}ELi{d}EEEvNS0_6AffineEi", .{ dot, bits, pieces }));
                 inline for (row_counts, 0..) |rows, r| {
@@ -146,12 +159,28 @@ pub const Kernels = struct {
         try go(d, k.lanes[b][r][p], .{ .x = cdiv(a.n, 32), .z = z }, .{ .x = 256 }, s, &args);
     }
 
+    /// The GEMM tile's piece loads read the code words 16, 8 or 4 bytes at a time by width; the tables are one kind.
+    fn gemmFits(a: Arg) bool {
+        const align_bytes: u64 = switch (a.bits) {
+            4, 8 => 16,
+            2, 6 => 8,
+            else => 4,
+        };
+        return a.words % align_bytes == 0 and a.scale.kind == a.bias.kind;
+    }
+
     fn blockLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
+        return k.blockWith(d, a, s, items, k.tile);
+    }
+
+    /// The m >= 64 tile of `tile` (the GEMM tile falls back to the previous one for words it cannot load wide).
+    pub fn blockWith(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tile: Tile) Error!void {
         if (a.m < 1 or a.n < 1 or @rem(a.group, 32) != 0 or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0) return refuse("block shape");
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
         args.add(a);
-        try go(d, k.block[b], .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
+        const f = if (tile == .gemm and gemmFits(a)) k.gemm[b] else k.block[b];
+        try go(d, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
     }
 
     fn groupOk(group: c_int) bool {
@@ -217,11 +246,15 @@ pub const Kernels = struct {
 
     /// affine_routed_launch: every item of a plan in one launch; `arg.m` is the most rows an item holds.
     pub fn routed(k: *const Kernels, d: *const driver.Driver, arg: Arg, items: c_int, s: abi.Stream) Error!void {
+        return k.routedWith(d, arg, items, s, k.tile);
+    }
+
+    pub fn routedWith(k: *const Kernels, d: *const driver.Driver, arg: Arg, items: c_int, s: abi.Stream, tile: Tile) Error!void {
         // the family's own activation type: bf16 on the WMMA build, fp16 on RDNA2
         if ((arg.fp16 != 0) == k.wmma or arg.route.items == 0 or arg.route.members == 0 or items < 1 or arg.route.x_div < 1) return refuse("routed plan");
         if (!groupOk(arg.group)) return refuse("routed group");
         if (arg.m <= lane_rows) return k.lanesLaunch(d, arg, s, items);
-        try k.blockLaunch(d, arg, s, items);
+        try k.blockWith(d, arg, s, items, tile);
     }
 
     /// The split count of a decode launch: 1 unless `mode` is 2 (the tests' forced comparison) and the groups divide.
