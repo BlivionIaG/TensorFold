@@ -81,6 +81,10 @@ pub const Launcher = struct {
     const Decode = struct {
         router: [2]Function, // fp16, bf16
         tail: Function,
+        conv_split: Function,
+        rms2: Function,
+        gnorm_out: Function,
+        select: Function,
     };
 
     const Ops = struct {
@@ -122,7 +126,7 @@ pub const Launcher = struct {
         if (std.c.getenv("TF_DECODE_FUSE")) |v| {
             if (std.mem.eql(u8, std.mem.span(v), "old")) l.fuse = false;
         }
-        l.dec = .{ .router = .{ try dec.function("tf_router_decode_f16"), try dec.function("tf_router_decode_bf16") }, .tail = try dec.function("tf_tail") };
+        l.dec = .{ .router = .{ try dec.function("tf_router_decode_f16"), try dec.function("tf_router_decode_bf16") }, .tail = try dec.function("tf_tail"), .conv_split = try dec.function("tf_conv_split"), .rms2 = try dec.function("tf_rms2"), .gnorm_out = try dec.function("tf_gnorm_out"), .select = try dec.function("tf_select_decode") };
         l.fa_wide = .{ try pre.function("tf_fa_wide_f16"), try pre.function("tf_fa_wide_bf16") };
         const anon = "_ZN12_GLOBAL__N_1";
         l.op = .{
@@ -311,6 +315,57 @@ pub const Launcher = struct {
         try l.go(l.dec.tail, dim(rows, 1, 1), dim(512, 1, 1), 0, s, &a);
     }
 
+    /// decode.hip's conv: a window's rows through the linear attention's conv, split into q, k and v (fp32).
+    pub fn tf_conv_split(l: *const Launcher, x: C, kind: c_int, weight: CF, state: F, states: F, qc: F, kc: F, v: F, channels: c_int, kernel: c_int, rows: c_int, kw: c_int, vw: c_int, s: S) Error!void {
+        if (kernel < 1 or kernel > 8) return invalid("conv split");
+        var a: Args = .{};
+        a.add(ad(x));
+        a.add(kind);
+        a.add(ad(weight));
+        a.add(ad(state));
+        a.add(ad(states));
+        a.add(ad(qc));
+        a.add(ad(kc));
+        a.add(ad(v));
+        a.add(channels);
+        a.add(kernel);
+        a.add(rows);
+        a.add(kw);
+        a.add(vw);
+        try l.go(l.dec.conv_split, dim(cdiv(channels, 128), 1, 1), dim(128, 1, 1), 0, s, &a);
+    }
+
+    /// Two sets of fp32 rows of `width` (at most 1024), each with its own weight, normed in one launch.
+    pub fn tf_rms2(l: *const Launcher, x0: CF, w0: CF, y0: F, x1: CF, w1: CF, y1: F, rows: c_int, width: c_int, eps: f32, s: S) Error!void {
+        if (width > 1024) return invalid("rms2");
+        var a: Args = .{};
+        a.add(ad(x0));
+        a.add(ad(w0));
+        a.add(ad(y0));
+        a.add(ad(x1));
+        a.add(ad(w1));
+        a.add(ad(y1));
+        a.add(rows);
+        a.add(width);
+        a.add(eps);
+        try l.go(l.dec.rms2, dim(cdiv(rows, 8), 2, 1), dim(256, 1, 1), 0, s, &a);
+    }
+
+    /// out = rms(y) * weight * round(silu(z)) rounded to the kind, rows of `width` (at most 1024).
+    pub fn tf_gnorm_out(l: *const Launcher, y: CF, weight: CF, z: C, out: P, kind: c_int, rows: c_int, width: c_int, eps: f32, s: S) Error!void {
+        if (width > 1024) return invalid("gnorm out");
+        var a: Args = .{};
+        a.add(ad(y));
+        a.add(ad(weight));
+        a.add(ad(z));
+        a.add(ad(out));
+        a.add(kind);
+        a.add(rows);
+        a.add(width);
+        a.add(eps);
+        try l.go(l.dec.gnorm_out, dim(cdiv(rows, 8), 1, 1), dim(256, 1, 1), 0, s, &a);
+    }
+
     pub fn tf_moe_select(l: *const Launcher, logits: CF, pick: I, wts: F, items: I, members: I, capacity: c_int, r: c_int, experts: c_int, top_k: c_int, s: S) Error!void {
         if (experts > 1024 or top_k < 1 or top_k > 31) return invalid("moe select");
         var a: Args = .{};
@@ -322,6 +377,7 @@ pub const Launcher = struct {
         a.add(capacity);
         a.add(experts);
         a.add(top_k);
+        if (l.fuse) return l.go(l.dec.select, dim(r, 1, 1), dim(256, 1, 1), 0, s, &a);
         try l.go(l.moe_select, dim(r, 1, 1), dim(32, 1, 1), 0, s, &a);
     }
 

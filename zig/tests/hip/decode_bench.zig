@@ -2,27 +2,28 @@
 //! (TF_DECODE_FUSE=old): the router's logits, the residual tails, products that share x in one launch and the routed
 //! activation as an epilogue, each against a float64 reference on random data, with microseconds a launch. Weights
 //! rotate over many copies where it matters so each launch reads them from DRAM.
-//! `tf-hip-test decode [reps] [router|tail|group|pair]`.
+//! `tf-hip-test decode [reps] [router|tail|group|pair|chain]`.
 
 const std = @import("std");
 const hip = @import("hip");
 const check = @import("check.zig");
 const ref = @import("gemm_ref.zig");
+const chain = @import("decode_chain.zig");
 const Gpu = check.Gpu;
-const L = @typeInfo(@FieldType(hip.rocm.Library, "zig")).optional.child;
+pub const L = @typeInfo(@FieldType(hip.rocm.Library, "zig")).optional.child;
 const P = ?*anyopaque;
 
-const Rng = struct {
+pub const Rng = struct {
     state: u64,
 
-    fn next(r: *Rng) u64 {
+    pub fn next(r: *Rng) u64 {
         r.state ^= r.state >> 12;
         r.state ^= r.state << 25;
         r.state ^= r.state >> 27;
         return r.state *% 0x2545F4914F6CDD1D;
     }
 
-    fn unit(r: *Rng) f32 {
+    pub fn unit(r: *Rng) f32 {
         const v: i32 = @intCast(r.next() >> 40 & 0x7ff);
         return @as(f32, @floatFromInt(v - 1024)) / 1024.0;
     }
@@ -46,7 +47,7 @@ fn bf16Value(b: u16) f64 {
     return @as(f32, @bitCast(@as(u32, b) << 16));
 }
 
-const Rig = struct {
+pub const Rig = struct {
     gpu: Gpu,
     fast: L,
     old: L,
@@ -57,16 +58,16 @@ const Rig = struct {
     start: hip.Event,
     stop: hip.Event,
 
-    fn bits(t: *const Rig, v: f32) u16 {
+    pub fn bits(t: *const Rig, v: f32) u16 {
         return if (t.fp16) f16Bits(v) else bf16Bits(v);
     }
 
-    fn value(t: *const Rig, b: u16) f64 {
+    pub fn value(t: *const Rig, b: u16) f64 {
         return if (t.fp16) f16Value(b) else bf16Value(b);
     }
 
     /// Microseconds a call of `go`, best of rounds after one warm-up; `go` takes the rig and the iteration.
-    fn time(t: *Rig, iters: usize, ctx: anytype, comptime go: fn (@TypeOf(ctx), usize) hip.Error!void) !f64 {
+    pub fn time(t: *Rig, iters: usize, ctx: anytype, comptime go: fn (@TypeOf(ctx), usize) hip.Error!void) !f64 {
         var best: f64 = std.math.inf(f64);
         for (0..3) |round| {
             try t.start.record(t.stream);
@@ -487,6 +488,10 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
         for ([_]usize{ 1, 2, 4 }) |rows| try pair(&t, rows, 512, 2048, 4, 64);
         try pair(&t, 1, 768, 2048, 6, 64);
         try pair(&t, 1, 512, 2048, 4, 128);
+        ran += 1;
+    }
+    if (all or std.mem.eql(u8, filter, "chain")) {
+        try chain.run(&t);
         ran += 1;
     }
     try check.expect(ran > 0, "decode: no case matches '{s}'", .{filter});

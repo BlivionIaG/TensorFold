@@ -157,10 +157,14 @@ pub fn splitQkv(o: Ops, m: *const view.Model, mixed: Tensor, rows: usize) Error!
 pub fn gatedOut(o: Ops, m: *const view.Model, l: view.Linear, y: u64, z: Tensor, rows: usize) Error!Tensor {
     const s = m.spec;
     const n = rows * s.valueWidth();
-    const yn = try o.arena.of(f32, n);
-    try o.rms(.{ .ptr = y, .kind = .f32 }, l.gnorm, .{ .ptr = yn, .kind = .f32 }, rows * s.value_heads, s.value_dim, @floatCast(s.eps));
     const out = try take(o, m.act, n);
-    try o.gnormSilu(yn, z, out, n);
+    if (o.fused() and s.value_dim <= 1024 and z.kind == m.act) {
+        try o.gnormOut(y, l.gnorm, z, out, rows * s.value_heads, s.value_dim, @floatCast(s.eps));
+    } else {
+        const yn = try o.arena.of(f32, n);
+        try o.rms(.{ .ptr = y, .kind = .f32 }, l.gnorm, .{ .ptr = yn, .kind = .f32 }, rows * s.value_heads, s.value_dim, @floatCast(s.eps));
+        try o.gnormSilu(yn, z, out, n);
+    }
     return o.affine(out, l.out, rows, l.out.partial);
 }
 

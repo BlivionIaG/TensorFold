@@ -174,16 +174,29 @@ fn linearRows(o: Ops, m: *const view.Model, l: view.Linear, windows: []Window, i
     for (windows) |w| {
         const cache = w.caches.layers[index].linear;
         const rows = w.rows;
-        const xr = try o.arena.of(f32, rows * ch);
-        try o.cast(fwd.at(qkv, start * ch), .{ .ptr = xr, .kind = .f32 }, rows * ch);
-        const mixed = try o.arena.of(f32, rows * ch);
         const snap = w.snaps[index];
-        if (rows == 1) {
-            try o.convDecode(xr, l.conv, cache.conv.ptr, mixed, ch, s.conv);
-        } else {
-            try o.convRows(xr, l.conv, cache.conv.ptr, mixed, snap.convs, rows, ch, s.conv);
-        }
-        const q, const k, const v = try fwd.splitQkv(o, m, .{ .ptr = mixed, .kind = .f32 }, rows);
+        const q, const k, const v = if (o.fused() and s.key_dim <= 1024 and s.conv <= 8) blk: {
+            // the cast, the conv and the split of its output in one launch, q and k normed together
+            const kw = s.keyWidth();
+            const qc = try o.arena.of(f32, rows * kw);
+            const kc = try o.arena.of(f32, rows * kw);
+            const vv = try o.arena.of(f32, rows * s.valueWidth());
+            try o.convSplit(fwd.at(qkv, start * ch), l.conv, cache.conv.ptr, if (rows > 1) snap.convs else null, qc, kc, vv, rows, ch, s.conv, kw, s.valueWidth());
+            const qn = try o.arena.of(f32, rows * kw);
+            const kn = try o.arena.of(f32, rows * kw);
+            try o.rms2(qc, m.qk.q_weight, qn, kc, m.qk.k_weight, kn, rows * s.key_heads, s.key_dim, m.qk.eps);
+            break :blk .{ qn, kn, vv };
+        } else blk: {
+            const xr = try o.arena.of(f32, rows * ch);
+            try o.cast(fwd.at(qkv, start * ch), .{ .ptr = xr, .kind = .f32 }, rows * ch);
+            const mixed = try o.arena.of(f32, rows * ch);
+            if (rows == 1) {
+                try o.convDecode(xr, l.conv, cache.conv.ptr, mixed, ch, s.conv);
+            } else {
+                try o.convRows(xr, l.conv, cache.conv.ptr, mixed, snap.convs, rows, ch, s.conv);
+            }
+            break :blk try fwd.splitQkv(o, m, .{ .ptr = mixed, .kind = .f32 }, rows);
+        };
         const gate = try o.arena.of(f32, rows * s.value_heads);
         const beta = try o.arena.of(f32, rows * s.value_heads);
         try o.gdnGate(fwd.at(a, start * s.value_heads), fwd.at(b, start * s.value_heads), l.a_log, l.dt_bias, gate, beta, rows * s.value_heads, s.value_heads);

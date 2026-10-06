@@ -137,6 +137,168 @@ __device__ void tail_body(void* x, const void* y, const float* wts, const float*
     }
 }
 
+// The linear-attention conv for a window's rows with the activation widened on load and the output split into q, k and
+// v: channel c of row r goes to qc / kc (rows, kw) or v (rows, vw). conv_rows_kernel's taps, in order, silu after; the
+// state moves on in place, and `states` (optional) keeps the state after every row.
+__device__ void
+    conv_split_body(const void* x, int kind, const float* weight, float* state, float* states, float* qc, float* kc,
+                      float* v, int channels, int kernel, int rows, int kw, int vw) {
+    const int channel = blockIdx.x * blockDim.x + threadIdx.x;
+    if (channel >= channels) return;
+    const float* taps = weight + static_cast<long long>(channel) * kernel;
+    const int kept = kernel - 1;
+    float history[7];
+    for (int tap = 0; tap < kept; ++tap) history[tap] = state[static_cast<long long>(tap) * channels + channel];
+    for (int r = 0; r < rows; ++r) {
+        float acc = 0.f;
+        for (int tap = 0; tap < kept; ++tap) acc += history[tap] * taps[tap];
+        const float sample = load_kind(x, kind, static_cast<long long>(r) * channels + channel);
+        acc += sample * taps[kept];
+        const float y = acc * (1.f / (1.f + expf(-acc)));
+        if (channel < kw) {
+            qc[static_cast<long long>(r) * kw + channel] = y;
+        } else if (channel < 2 * kw) {
+            kc[static_cast<long long>(r) * kw + channel - kw] = y;
+        } else {
+            v[static_cast<long long>(r) * vw + channel - 2 * kw] = y;
+        }
+        for (int tap = 0; tap < kept - 1; ++tap) history[tap] = history[tap + 1];
+        if (kept > 0) history[kept - 1] = sample;
+        if (states != nullptr) {
+            for (int tap = 0; tap < kept; ++tap) {
+                states[(static_cast<long long>(r) * kept + tap) * channels + channel] = history[tap];
+            }
+        }
+    }
+    for (int tap = 0; tap < kept; ++tap) state[static_cast<long long>(tap) * channels + channel] = history[tap];
+}
+
+// rms over rows of `width` (at most 1024) fp32 values a wave a row, 8 rows a block, as rms_rows in ops.hip; blockIdx.y
+// picks the first or the second set of rows (q and k of the linear attention, each with its own weight).
+__device__ void
+    rms2_body(const float* x0, const float* w0, float* y0, const float* x1, const float* w1, float* y1, int rows,
+                int width, float eps) {
+    constexpr int kMost = 1024 / 32;
+    const float* x = blockIdx.y == 0 ? x0 : x1;
+    const float* weight = blockIdx.y == 0 ? w0 : w1;
+    float* y = blockIdx.y == 0 ? y0 : y1;
+    const int lane = threadIdx.x & 31;
+    const int row = blockIdx.x * 8 + (threadIdx.x >> 5);
+    if (row >= rows) return;
+    const long long at = static_cast<long long>(row) * width;
+    float v[kMost];
+    float sum = 0.f;
+#pragma unroll
+    for (int j = 0; j < kMost; ++j) {
+        const int i = lane + 32 * j;
+        v[j] = i < width ? x[at + i] : 0.f;
+        if (i < width) sum += v[j] * v[j];
+    }
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+    const float inv = rsqrtf(__shfl(sum, 0, 32) / static_cast<float>(width) + eps);
+#pragma unroll
+    for (int j = 0; j < kMost; ++j) {
+        const int i = lane + 32 * j;
+        if (i >= width) break;
+        float value = v[j] * inv;
+        if (weight != nullptr) value *= weight[i];
+        y[at + i] = value;
+    }
+}
+
+// The gated norm of the linear attention's output: out = rms(y) * weight * round(silu(z)), rounded to the kind, a wave
+// a (row, head) of `width` (at most 1024) values: rms_rows on y, then gnorm_silu, with no fp32 round trip between.
+__device__ void
+    gnorm_out_body(const float* y, const float* weight, const void* z, void* out, int kind, int rows, int width,
+                     float eps) {
+    constexpr int kMost = 1024 / 32;
+    const int lane = threadIdx.x & 31;
+    const int row = blockIdx.x * 8 + (threadIdx.x >> 5);
+    if (row >= rows) return;
+    const long long at = static_cast<long long>(row) * width;
+    float v[kMost];
+    float sum = 0.f;
+#pragma unroll
+    for (int j = 0; j < kMost; ++j) {
+        const int i = lane + 32 * j;
+        v[j] = i < width ? y[at + i] : 0.f;
+        if (i < width) sum += v[j] * v[j];
+    }
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+    const float inv = rsqrtf(__shfl(sum, 0, 32) / static_cast<float>(width) + eps);
+#pragma unroll
+    for (int j = 0; j < kMost; ++j) {
+        const int i = lane + 32 * j;
+        if (i >= width) break;
+        float value = v[j] * inv;
+        if (weight != nullptr) value *= weight[i];
+        const float zv = load_kind(z, kind, at + i);
+        store_kind(out, kind, at + i, value * round_kind(zv / (1.f + expf(-zv)), kind));
+    }
+}
+
+constexpr int kSelectThreads = 256;
+constexpr int kSelectMax = 1024;
+
+__device__ __forceinline__ float round_bf16_f(float v) { return round_kind(v, 2); }
+
+// act.hip's moe_select_kernel with the picks found by rank instead of one after another: expert i is in the top k when
+// fewer than k experts beat it (a larger value, or an equal one with a lower index), at slot = the number that do. A
+// block a row; with `items` (one row) it also writes the plan of single-pair items.
+__device__ void select_body(const float* logits, int* pick, float* wts, int* items, int* members, int capacity,
+                            int experts, int top_k) {
+    __shared__ float v[kSelectMax];
+    __shared__ float top_v[32];
+    __shared__ int top_i[32];
+    const int row = blockIdx.x;
+    const int slots = top_k + 1;
+    const float* l = logits + static_cast<long long>(row) * (experts + 1);
+    for (int i = threadIdx.x; i < experts; i += kSelectThreads) v[i] = l[i];
+    __syncthreads();
+    for (int i = threadIdx.x; i < experts; i += kSelectThreads) {
+        const float vi = v[i];
+        int rank = 0;
+#pragma unroll 16
+        for (int j = 0; j < experts; ++j) {
+            const float vj = v[j];
+            rank += (vj > vi) || (vj == vi && j < i);
+        }
+        if (rank < top_k) {
+            top_v[rank] = vi;
+            top_i[rank] = i;
+        }
+    }
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        const float top = top_v[0];
+        float ex[32];
+        float total = 0.f;
+        for (int k = 0; k < top_k; ++k) {
+            ex[k] = expf(top_v[k] - top);
+            total += ex[k];
+        }
+        for (int k = 0; k < top_k; ++k) {
+            pick[row * slots + k] = top_i[k];
+            wts[row * slots + k] = round_bf16_f(ex[k] / total);
+        }
+        const float gate = round_bf16_f(l[experts]);
+        pick[row * slots + top_k] = experts;
+        wts[row * slots + top_k] = round_bf16_f(1.f / (1.f + expf(-gate)));
+    }
+    if (items != nullptr) {
+        __syncthreads();
+        for (int k = threadIdx.x; k < capacity; k += kSelectThreads) {
+            const bool real = k < slots;
+            items[3 * k] = real ? pick[k] : 0;
+            items[3 * k + 1] = real ? k : 0;
+            items[3 * k + 2] = real ? 1 : 0;
+            if (real) members[k] = k;
+        }
+    }
+}
+
 }  // namespace
 
 extern "C" __global__ void __launch_bounds__(32 * kRouterWaves)
@@ -153,4 +315,27 @@ extern "C" __global__ void __launch_bounds__(kTailThreads)
     tf_tail(void* x, const void* y, const float* wts, const float* weight, void* normed, int kind, int slots, int width,
             float eps) {
     tail_body(x, y, wts, weight, normed, kind, slots, width, eps);
+}
+
+extern "C" __global__ void __launch_bounds__(128)
+    tf_conv_split(const void* x, int kind, const float* weight, float* state, float* states, float* qc, float* kc, float* v,
+                  int channels, int kernel, int rows, int kw, int vw) {
+    conv_split_body(x, kind, weight, state, states, qc, kc, v, channels, kernel, rows, kw, vw);
+}
+
+extern "C" __global__ void __launch_bounds__(256)
+    tf_rms2(const float* x0, const float* w0, float* y0, const float* x1, const float* w1, float* y1, int rows, int width,
+            float eps) {
+    rms2_body(x0, w0, y0, x1, w1, y1, rows, width, eps);
+}
+
+extern "C" __global__ void __launch_bounds__(256)
+    tf_gnorm_out(const float* y, const float* weight, const void* z, void* out, int kind, int rows, int width, float eps) {
+    gnorm_out_body(y, weight, z, out, kind, rows, width, eps);
+}
+
+extern "C" __global__ void __launch_bounds__(kSelectThreads)
+    tf_select_decode(const float* logits, int* pick, float* wts, int* items, int* members, int capacity, int experts,
+                     int top_k) {
+    select_body(logits, pick, wts, items, members, capacity, experts, top_k);
 }
