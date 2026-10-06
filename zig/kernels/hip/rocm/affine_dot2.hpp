@@ -17,6 +17,8 @@ constexpr int kLaneGroupMax = 128;
 constexpr int kBlockRows = 64;  // from here the GEMM tile beats the 128-row column tile
 
 hipError_t ensure_byte_lut(hipStream_t stream);
+// The stream tile for 9 to 16 rows (affine_stream.hpp); false when the shape keeps the other tiles.
+bool launch_affine_dot2_stream_wide(const Affine& a, hipStream_t stream, hipError_t* err);
 hipError_t launch_affine_dot2_lanes(const Affine& a, hipStream_t stream, int items = 1);
 hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int items = 1);
 hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int items = 1);

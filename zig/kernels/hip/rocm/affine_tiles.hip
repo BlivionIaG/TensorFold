@@ -279,6 +279,10 @@ hipError_t launch_lanes(const Affine& a, hipStream_t stream, int items) {
     }
 }
 
+bool launch_affine_dot2_stream_wide(const Affine& a, hipStream_t stream, hipError_t* err) {
+    return a.m > kLaneRows && launch_affine_dot2_stream(a, stream, 1, err);
+}
+
 hipError_t launch_affine_dot2_lanes(const Affine& a, hipStream_t stream, int items) {
     if (a.m < 1 || a.m > kLaneRows || a.n < 1 || a.group % 32 || a.group > kLaneGroupMax || a.k % a.group) {
         return hipErrorInvalidValue;
@@ -486,6 +490,8 @@ hipError_t launch_affine_dot2_bf16(const Affine& a, hipStream_t stream) {
     if (a.fp16 || a.m < 1 || a.n < 1 || a.k % a.group || a.k % 16) return hipErrorInvalidValue;
     if (a.group != 32 && a.group != 64 && a.group != 128) return hipErrorInvalidValue;
     if (a.m <= kLaneRows) return launch_affine_dot2_lanes(a, stream);
+    hipError_t wide = hipSuccess;
+    if (launch_affine_dot2_stream_wide(a, stream, &wide)) return wide;
     return launch_affine_dot2_block(a, stream);
 #else
     (void)a;

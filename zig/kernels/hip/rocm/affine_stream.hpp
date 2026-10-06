@@ -23,6 +23,7 @@ constexpr int kStreamWaves = 4;
 
 // Tile shapes that exist: CB columns a lane times R rows at most 16 accumulators.
 constexpr bool stream_shape(int rows, int cb) { return cb * rows <= 16; }
+constexpr int kStreamRows = 16;  // the most rows a launch takes
 
 // Codes of pair i of a 32-code chunk: codes 16 bits apart in one word when the width divides 16, else neighbours.
 template <int BITS>
@@ -134,6 +135,7 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
     constexpr int RG = R < 4 ? R : 4;  // rows a pass keeps in registers
     constexpr int NG = R / RG;
     constexpr uint32_t kOne = std::is_same_v<typename T::elem, __half> ? 0x3c003c00u : 0x3f803f80u;
+    const int row0 = blockIdx.y * R;  // a block's rows: more than 8 rows are 8-row blocks on the grid's y
     const int lpc = 1 << lpc_log2;
     const int lane = threadIdx.x & 31;
     const int j = lane & (lpc - 1);
@@ -154,7 +156,7 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
     const typename T::elem* xr[R];
 #pragma unroll
     for (int r = 0; r < R; ++r) {
-        xr[r] = static_cast<const typename T::elem*>(a.x) + x_row(a, r < a.m ? r : 0) * a.k;
+        xr[r] = static_cast<const typename T::elem*>(a.x) + x_row(a, row0 + r < a.m ? row0 + r : 0) * a.k;
     }
     float acc[R][CB];
 #pragma unroll
@@ -192,7 +194,7 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
         }
 #pragma unroll
         for (int g = 0; g < NG; ++g) {
-            if (g * RG >= a.m) break;
+            if (row0 + g * RG >= a.m) break;
             pair xp[RG][16];
             float sx[RG];
 #pragma unroll
@@ -231,7 +233,7 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
         }
     };
 
-    // Two rounds of loads in flight: the next round is fetched before this one's dots. Waves start on different
+    // One row keeps two rounds of loads in flight: the next is fetched before this one's dots. Waves start on different
     // rounds: rows a power of two bytes apart would otherwise send every wave to the same memory channels at once.
     const int rounds = (nch + lpc - 1) >> lpc_log2;
     const int rot = rounds > 1 ? (blockIdx.x * kStreamWaves + (threadIdx.x >> 5) + blockIdx.z) % rounds : 0;
@@ -239,15 +241,25 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
         const int ri = r + rot >= rounds ? r + rot - rounds : r + rot;
         return ri << lpc_log2;
     };
-    uint32_t wa[CB][BITS], wb[CB][BITS];
-    unsigned short sa[CB], ba[CB], sbb[CB], bbb[CB];
-    fetch(at(0), wa, sa, ba);
-    for (int r = 0; r < rounds; r += 2) {
-        if (r + 1 < rounds) fetch(at(r + 1), wb, sbb, bbb);
-        work(at(r), wa, sa, ba);
-        if (r + 1 >= rounds) break;
-        if (r + 2 < rounds) fetch(at(r + 2), wa, sa, ba);
-        work(at(r + 1), wb, sbb, bbb);
+    uint32_t wa[CB][BITS];
+    unsigned short sa[CB], ba[CB];
+    if constexpr (R == 1) {
+        uint32_t wb[CB][BITS];
+        unsigned short sbb[CB], bbb[CB];
+        fetch(at(0), wa, sa, ba);
+        for (int r = 0; r < rounds; r += 2) {
+            if (r + 1 < rounds) fetch(at(r + 1), wb, sbb, bbb);
+            work(at(r), wa, sa, ba);
+            if (r + 1 >= rounds) break;
+            if (r + 2 < rounds) fetch(at(r + 2), wa, sa, ba);
+            work(at(r + 1), wb, sbb, bbb);
+        }
+    } else {
+        // several rows: the dots cover the loads' latency, and registers go to the rows' x
+        for (int r = 0; r < rounds; ++r) {
+            fetch(at(r), wa, sa, ba);
+            work(at(r), wa, sa, ba);
+        }
     }
 
 #pragma unroll
@@ -257,11 +269,11 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
             float v = acc[r][c];
             for (int d = lpc >> 1; d > 0; d >>= 1) v += __shfl_xor(v, d, 32);
             const int col = col0 + c;
-            if (j == 0 && col < a.n && r < a.m) {
+            if (j == 0 && col < a.n && row0 + r < a.m) {
                 if (a.out16 != nullptr) {
-                    a.out16[out_row(a, r) * a.n + col] = __float2half_rn(v);
+                    a.out16[out_row(a, row0 + r) * a.n + col] = __float2half_rn(v);
                 } else {
-                    a.out[out_row(a, r) * a.n + col] = v;
+                    a.out[out_row(a, row0 + r) * a.n + col] = v;
                 }
             }
         }
@@ -271,7 +283,7 @@ __device__ inline void stream_body(const Affine& a, int lpc_log2, int gshift) {
 // Item z of the plan (or the plain product) at CB columns a lane and R rows; the chunks' group is q >> gshift.
 template <typename T, int BITS, int R, int CB>
 __global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a, int lpc_log2, int gshift) {
-    if (!take_item(a, blockIdx.z)) return;
+    if (!take_item(a, blockIdx.z) || static_cast<int>(blockIdx.y) * R >= a.m) return;
     constexpr int kWide = BITS % 4 == 0 ? 16 : BITS % 2 == 0 ? 8 : 4;
     if constexpr (kWide == 4) {
         stream_body<T, BITS, R, CB, false>(a, lpc_log2, gshift);
@@ -293,7 +305,7 @@ constexpr int kStreamWavesWanted = 1152;
 template <typename T, int BITS, int R, int CB>
 hipError_t stream_launch_as(const Affine& a, int lpc_log2, int items, hipStream_t stream) {
     const int per_block = kStreamWaves * (32 >> lpc_log2) * CB;
-    const dim3 grid((a.n + per_block - 1) / per_block, 1, items);
+    const dim3 grid((a.n + per_block - 1) / per_block, (a.m + R - 1) / R, items);
     const int gshift = a.group == 32 ? 0 : a.group == 64 ? 1 : 2;
     affine_dot2_stream<T, BITS, R, CB><<<grid, 32 * kStreamWaves, 0, stream>>>(a, lpc_log2, gshift);
     return hipGetLastError();
@@ -315,7 +327,7 @@ int stream_cb(const Affine& a, int lpc_log2, int items) {
 
 template <typename T, int BITS, int R>
 hipError_t stream_launch_rows(const Affine& a, int lpc_log2, int items, hipStream_t stream) {
-    const int cb = stream_cb<R>(a, lpc_log2, items);
+    const int cb = stream_cb<R>(a, lpc_log2, items * ((a.m + R - 1) / R));
     if constexpr (stream_shape(R, 8)) {
         if (cb == 8) return stream_launch_as<T, BITS, R, 8>(a, lpc_log2, items, stream);
     }
@@ -329,8 +341,7 @@ template <typename T, int BITS>
 hipError_t stream_launch_bits(const Affine& a, int lpc_log2, int items, hipStream_t stream) {
     if (a.m == 1) return stream_launch_rows<T, BITS, 1>(a, lpc_log2, items, stream);
     if (a.m == 2) return stream_launch_rows<T, BITS, 2>(a, lpc_log2, items, stream);
-    if (a.m <= 4) return stream_launch_rows<T, BITS, 4>(a, lpc_log2, items, stream);
-    return stream_launch_rows<T, BITS, 8>(a, lpc_log2, items, stream);
+    return stream_launch_rows<T, BITS, 4>(a, lpc_log2, items, stream);
 }
 
 template <int BITS>
@@ -352,7 +363,7 @@ inline bool stream_enabled() {
 
 // The stream tile of 1 to 8 rows; false when the shape keeps the previous tiles.
 inline bool launch_affine_dot2_stream(const Affine& a, hipStream_t stream, int items, hipError_t* err) {
-    if (!stream_enabled() || a.m < 1 || a.m > kLaneRows || a.n < 1 || a.group % 32 || a.group > kLaneGroupMax ||
+    if (!stream_enabled() || a.m < 1 || a.m > kStreamRows || a.n < 1 || a.group % 32 || a.group > kLaneGroupMax ||
         a.k % a.group || (reinterpret_cast<uintptr_t>(a.x) & 15) != 0 || a.scale.kind == kScaleF32 ||
         a.bias.kind != a.scale.kind) {
         return false;

@@ -44,6 +44,8 @@ const fast_n = 256;
 const block_rows = 64; // kBlockRows
 const lane_group_max = 128;
 const stream_cbs = [_]c_int{ 2, 4, 8 }; // columns a lane carries in the stream tile
+const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
+const stream_max_rows = 16; // kStreamRows
 const stream_waves = 4; // kStreamWaves
 const streams_wanted = 1152; // kStreamWavesWanted
 
@@ -57,7 +59,7 @@ pub const Kernels = struct {
     lanes: [bit_widths.len][row_counts.len][piece_counts.len]Function,
     row: [bit_widths.len][piece_counts.len]Function,
     /// The stream tile (rocm/affine_stream.hpp) by width, rows and columns a lane; null where columns * rows > 16.
-    stream: [bit_widths.len][row_counts.len][stream_cbs.len]?Function,
+    stream: [bit_widths.len][stream_rows.len][stream_cbs.len]?Function,
     /// TF_AFFINE_GEMV=old keeps the decode tiles before the stream tile.
     stream_on: bool,
     block: [bit_widths.len]Function,
@@ -107,7 +109,7 @@ pub const Kernels = struct {
                     k.lanes[b][r][p] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_dot2_lanesINS0_{s}ELi{d}ELi{d}ELi{d}EEEvNS0_6AffineE", .{ dot, bits, rows, pieces }));
                 }
             }
-            inline for (row_counts, 0..) |rows, r| {
+            inline for (stream_rows, 0..) |rows, r| {
                 inline for (stream_cbs, 0..) |cb, c| {
                     k.stream[b][r][c] = if (cb * rows <= 16)
                         try m.function(std.fmt.comptimePrint("_ZN2tf4rocm18affine_dot2_streamINS0_{s}ELi{d}ELi{d}ELi{d}EEEvNS0_6AffineEii", .{ dot, bits, rows, cb }))
@@ -163,20 +165,20 @@ pub const Kernels = struct {
 
     /// The stream tile of 1 to 8 rows; false when the shape keeps the previous tiles.
     fn streamLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!bool {
-        if (!k.stream_on or a.m < 1 or a.m > lane_rows or a.n < 1 or @rem(a.group, 32) != 0 or a.group > lane_group_max or @rem(a.k, a.group) != 0 or a.x % 16 != 0 or a.scale.kind == 0 or a.bias.kind != a.scale.kind) return false;
+        if (!k.stream_on or a.m < 1 or a.m > stream_max_rows or a.n < 1 or @rem(a.group, 32) != 0 or a.group > lane_group_max or @rem(a.k, a.group) != 0 or a.x % 16 != 0 or a.scale.kind == 0 or a.bias.kind != a.scale.kind) return false;
         const b = bitIndex(a.bits) orelse return false;
         var lpc_log2: u5 = 0;
         while ((@as(c_int, 1) << lpc_log2) < (a.k >> 5) and lpc_log2 < 5) lpc_log2 += 1;
-        const r: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else if (a.m <= 4) 2 else 3;
+        const r: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else 2;
         // the widest column count that still gives the card enough waves
         var pick: usize = 0;
         var c: usize = stream_cbs.len;
         while (c > 0) {
             c -= 1;
-            if (stream_cbs[c] * row_counts[r] > 16) continue;
+            if (stream_cbs[c] * stream_rows[r] > 16) continue;
             pick = c;
             const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * stream_cbs[c];
-            if (@as(u64, cdiv(a.n, per_block)) * stream_waves * @as(u64, @intCast(items)) >= streams_wanted) break;
+            if (@as(u64, cdiv(a.n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[r]) >= streams_wanted) break;
         }
         const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * stream_cbs[pick];
         var args: hl.Args = .{};
@@ -187,7 +189,7 @@ pub const Kernels = struct {
             64 => 1,
             else => 2,
         }));
-        try go(d, k.stream[b][r][pick].?, .{ .x = cdiv(a.n, per_block), .z = @intCast(items) }, .{ .x = 32 * stream_waves }, s, &args);
+        try go(d, k.stream[b][r][pick].?, .{ .x = cdiv(a.n, per_block), .y = cdiv(a.m, stream_rows[r]), .z = @intCast(items) }, .{ .x = 32 * stream_waves }, s, &args);
         return true;
     }
 
@@ -251,6 +253,7 @@ pub const Kernels = struct {
             // BF16 x on a gfx11 / gfx12 build: the decode tiles up to 8 rows, the GEMM tile past them.
             if (a.m < 1 or a.n < 1 or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0 or !groupOk(a.group)) return refuse("bf16 shape");
             if (a.m <= lane_rows) return k.lanesLaunch(d, a, s, 1);
+            if (try k.streamLaunch(d, a, s, 1)) return;
             return k.blockLaunch(d, a, s, 1);
         }
         if (a.fp16 == 0 or schedule == 2) return refuse("this schedule stays in the library");
@@ -263,6 +266,7 @@ pub const Kernels = struct {
         args.add(a);
         if (!reference) {
             if (a.m <= lane_rows and groupOk(a.group)) return k.lanesLaunch(d, a, s, 1);
+            if (groupOk(a.group) and try k.streamLaunch(d, a, s, 1)) return;
             if (a.out16 != 0) return refuse("fp16 output is the decode tile's");
             if (groupOk(a.group)) {
                 if (a.m >= block_rows and @rem(a.k, 16) == 0) return k.blockLaunch(d, a, s, 1);
