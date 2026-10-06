@@ -49,7 +49,7 @@ pub const Engine = struct {
         e.ctx = try hip.Context.init(&e.driver, o.device);
         errdefer e.ctx.deinit();
         const family = hip.rocm.familyOf(try e.ctx.capability()) orelse return error.UnsupportedGpu;
-        e.lib = try hip.rocm.Library.open(family);
+        e.lib = try hip.rocm.Library.open(e.ctx.d, family);
         errdefer e.lib.close();
         e.act = if (family == .rdna2) .f16 else .bf16;
         e.dtype = if (family == .rdna2) .f16 else .bf16;

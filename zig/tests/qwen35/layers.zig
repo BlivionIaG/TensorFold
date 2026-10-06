@@ -57,7 +57,7 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8) !void {
     var ctx = try hip.Context.init(g.d, 0);
     defer ctx.deinit();
     const family = hip.rocm.familyOf(try ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(family);
+    var lib = try hip.rocm.Library.open(g.d, family);
     defer lib.close();
     const act: view.Kind = if (family == .rdna2) .f16 else .bf16;
     const dtype: qwen35.sample.Dtype = if (act == .f16) .f16 else .bf16;

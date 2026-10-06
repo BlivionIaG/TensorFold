@@ -371,7 +371,7 @@ pub fn overhead(gpu: Gpu, n: usize, reps: usize) !void {
 pub fn library(gpu: Gpu) !void {
     const cap = try gpu.ctx.capability();
     const family = hip.rocm.familyOf(cap) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(family);
+    var lib = try hip.rocm.Library.open(gpu.d, family);
     defer lib.close();
     try expect(lib.api.tf_wmma_build() == @intFromBool(family == .rdna3), "the {t} library's WMMA switch", .{family});
     const d = gpu.d;
@@ -384,7 +384,7 @@ pub fn library(gpu: Gpu) !void {
     defer x.free();
     var y = try hip.DeviceBuffer.alloc(d, xs.len * 4);
     defer y.free();
-    try lib.check(lib.api.tf_rms(@ptrFromInt(x.ptr), null, @ptrFromInt(y.ptr), 0, 2, width, 1e-6, stream.handle), "tf_rms");
+    try lib.call("tf_rms", .{ @ptrFromInt(x.ptr), null, @ptrFromInt(y.ptr), 0, 2, width, 1e-6, stream.handle });
     try stream.synchronize();
     var ys: [2 * width]f32 = undefined;
     try y.download(0, std.mem.asBytes(&ys));
@@ -392,5 +392,5 @@ pub fn library(gpu: Gpu) !void {
     for (xs[0..width]) |v| ss += v * v;
     const want = xs[1] / @sqrt(ss / width + 1e-6);
     try expect(@abs(ys[1] - want) < 1e-5, "rms row 0 element 1: {d} vs {d}", .{ ys[1], want });
-    check.pass("kernel library: {t} opened from memory, WMMA {d}, rms runs", .{ family, lib.api.tf_wmma_build() });
+    check.pass("kernel library: {t} opened from memory, WMMA {d}, rms runs launched from {s}", .{ family, lib.api.tf_wmma_build(), if (lib.zig != null) "Zig" else "the library" });
 }

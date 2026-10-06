@@ -1,12 +1,18 @@
-//! The ROCm kernel library of this GPU's family, embedded in the binary and opened from memory: the Python ROCm
-//! engine's kernels and the torch-op kernels behind one C ABI, each call checked.
+//! The ROCm kernels of this GPU's family, embedded in the binary: the Python ROCm engine's kernels and the torch-op
+//! kernels launched from Zig on code objects (launches.zig), or through the library of C launchers opened from memory
+//! (TF_HIP_LAUNCH=library), each call checked.
 
 const std = @import("std");
 const builtin = @import("builtin");
 const abi = @import("abi.zig");
 const kernels = @import("kernels.zig");
+const driver = @import("driver.zig");
+const launches = @import("launches.zig");
 
-pub const Error = error{ LibraryUnavailable, MissingSymbol, KernelFailed };
+pub const Error = error{ LibraryUnavailable, MissingSymbol, KernelFailed } || driver.Error;
+
+/// How the kernels are launched: from Zig on the family's code objects, or by the embedded library's C launchers.
+pub const Launch = enum { zig, library };
 
 const S = abi.Stream;
 const P = ?*anyopaque;
@@ -65,9 +71,39 @@ pub const Library = struct {
     lib: std.DynLib,
     api: Api,
     family: Family,
+    /// The Zig launches on the current device; null runs every call through `api`.
+    zig: ?launches.Launcher = null,
 
-    /// The embedded library of `family`, written to an anonymous file and opened; every export resolved.
-    pub fn open(family: Family) Error!Library {
+    /// TF_HIP_LAUNCH picks the path: `zig` (the default) or `library`.
+    pub fn launchMode() Launch {
+        const v = std.c.getenv("TF_HIP_LAUNCH") orelse return .zig;
+        return std.meta.stringToEnum(Launch, std.mem.span(v)) orelse .zig;
+    }
+
+    /// The embedded library of `family`, written to an anonymous file and opened; every export resolved. The Zig
+    /// launches load their code objects on the calling thread's current device.
+    pub fn open(d: *const driver.Driver, family: Family) Error!Library {
+        return openMode(d, family, launchMode());
+    }
+
+    pub fn openMode(d: *const driver.Driver, family: Family, mode: Launch) Error!Library {
+        var lib = try openLibrary(family);
+        errdefer lib.close();
+        if (mode == .zig) {
+            const images = switch (family) {
+                .rdna2 => kernels.rdna2_modules,
+                .rdna3 => kernels.rdna3_modules,
+            };
+            if (images[0].len == 0) {
+                std.log.warn("no {t} code objects in this binary: launching through the library", .{family});
+            } else {
+                lib.zig = try launches.Launcher.load(d, family == .rdna3, images);
+            }
+        }
+        return lib;
+    }
+
+    fn openLibrary(family: Family) Error!Library {
         const bytes = switch (family) {
             .rdna2 => kernels.rdna2,
             .rdna3 => kernels.rdna3,
@@ -104,7 +140,20 @@ pub const Library = struct {
     }
 
     pub fn close(self: *Library) void {
+        if (self.zig) |*z| z.unload();
         self.lib.close();
+    }
+
+    fn ArgsOf(comptime name: []const u8) type {
+        return std.meta.ArgsTuple(@typeInfo(@FieldType(Api, name)).pointer.child);
+    }
+
+    /// One launcher by its C name: the Zig launch when this build has it, else the library's, checked.
+    pub fn call(self: *const Library, comptime name: []const u8, args: ArgsOf(name)) Error!void {
+        if (self.zig) |*z| {
+            if (@hasDecl(launches.Launcher, name)) return @call(.auto, @field(launches.Launcher, name), .{z} ++ args);
+        }
+        try self.check(@call(.auto, @field(self.api, name), args), name);
     }
 
     /// A launcher's status: 0 passes, else the library's message is logged under `what`.
