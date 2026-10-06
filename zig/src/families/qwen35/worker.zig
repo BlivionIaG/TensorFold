@@ -11,17 +11,22 @@ const draw = @import("draw.zig");
 const prefix = @import("prefix.zig");
 
 /// A step rank 0 sends the other ranks (the first word of a message).
-/// prefill: id, total, len, resumed at, cut count, kept entries, byte budget (low, high), cuts..., prompt...; verify: graph pick, count, then id, rows, tokens... each; keep: count, then id, rows each;
+/// prefill (begins a prompt pass): id, total, len, resumed at, cut count, kept entries, byte budget (low, high), cuts..., prompt...;
+/// fill: id, end of the next chunk of the prompt pass; verify: graph pick, count, then id, rows, tokens... each; keep: count, then id, rows each;
 /// release: id; stop.
-pub const Op = enum(u32) { stop, prefill, verify, keep, release };
+pub const Op = enum(u32) { stop, prefill, verify, keep, release, fill };
 
 /// Windows a round holds at most.
 const max_windows = 128;
+
+const Fill = struct { prompt: []u32, at: usize, stops: []u32, next: usize };
 
 const Lane = struct {
     caches: state.Caches,
     /// Slots written and kept: the next window starts here.
     len: usize,
+    /// The prompt pass in progress: the prompt, the row it has reached, the cuts it keeps a state at.
+    fill: ?Fill = null,
     /// The last verify's window and rows, until rank 0's keep.
     pending: ?struct { window: usize, rows: usize } = null,
 };
@@ -63,6 +68,11 @@ pub const Worker = struct {
     }
 
     fn destroy(w: *Worker, l: *Lane) void {
+        if (l.fill) |f| {
+            w.gpa.free(f.prompt);
+            w.gpa.free(f.stops);
+        }
+        w.e.forget(&l.caches);
         l.caches.deinit(w.gpa);
         w.gpa.destroy(l);
     }
@@ -80,13 +90,28 @@ pub const Worker = struct {
             if (hit.ids.len != at) return error.PrefixMismatch;
             try lane.caches.copyPrefix(&hit.caches, w.e.model(), at, w.e.stream.handle);
         }
-        var from = at;
-        for (stops) |stop| {
-            try w.e.advance(&lane.caches, prompt, from, stop, null);
-            from = stop;
-            try w.remember(prompt[0..from], &lane.caches);
+        const own = try w.gpa.dupe(u32, prompt);
+        errdefer w.gpa.free(own);
+        lane.fill = .{ .prompt = own, .at = at, .stops = try w.gpa.dupe(u32, stops), .next = 0 };
+    }
+
+    /// The next chunk of a prompt pass, to row `to`: rank 0's cuts and chunk ends, run the same way.
+    fn fill(w: *Worker, id: u32, to: usize) !void {
+        const lane = w.lanes.get(id) orelse return error.UnknownStream;
+        const f = &(lane.fill orelse return error.NoPromptPass);
+        if (to == f.prompt.len) {
+            _ = try w.e.prefill(&lane.caches, f.prompt, f.at, null, w.reqs[0], null);
+            w.gpa.free(f.prompt);
+            w.gpa.free(f.stops);
+            lane.fill = null;
+            return;
         }
-        _ = try w.e.prefill(&lane.caches, prompt, from, null, w.reqs[0], null);
+        try w.e.advance(&lane.caches, f.prompt, f.at, to, null);
+        f.at = to;
+        if (f.next < f.stops.len and to == f.stops[f.next]) {
+            try w.remember(f.prompt[0..to], &lane.caches);
+            f.next += 1;
+        }
     }
 
     /// A copy of the caches at a cut, as rank 0's `remember` keeps it.
@@ -152,6 +177,7 @@ pub const Worker = struct {
                 },
                 .keep => for (0..m[1]) |i| try w.keep(m[2 + 2 * i], m[3 + 2 * i]),
                 .release => w.release(m[1]),
+                .fill => try w.fill(m[1], m[2]),
             }
         }
     }

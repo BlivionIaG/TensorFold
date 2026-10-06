@@ -25,6 +25,7 @@ pub const LaneHost = struct {
     wake: std.Io.Condition = .init,
     queued: std.ArrayList(*Job) = .empty,
     admitted: std.ArrayList(*Job) = .empty,
+    filling: std.ArrayList(*Job) = .empty, // admitted jobs whose prompt is still going in, a chunk a round, oldest first
     cancels: std.ArrayList(Id) = .empty,
     closing: bool = false,
     thread: ?std.Thread = null,
@@ -49,6 +50,7 @@ pub const LaneHost = struct {
         delivered: usize = 0,
         started: bool = false,
         prefill_sent: bool = false, // a lone driver's prefilled event went out
+        fill_began: bool = false, // its first prompt chunk ran
         began: i96 = 0,
         prefilled: ?i96 = null,
     };
@@ -73,6 +75,7 @@ pub const LaneHost = struct {
         h.thread = null;
         h.queued.deinit(h.gpa);
         h.admitted.deinit(h.gpa);
+        h.filling.deinit(h.gpa);
         h.cancels.deinit(h.gpa);
         h.decoded.deinit(h.gpa);
         h.live_tokens.deinit(h.gpa);
@@ -224,6 +227,7 @@ pub const LaneHost = struct {
         dropped.deinit(h.gpa);
         for (ids) |id| {
             for (h.admitted.items, 0..) |job, i| if (job.id == id) {
+                h.unfill(job);
                 if (!job.stream.finished) h.core.discard(&job.stream);
                 h.lock();
                 _ = h.admitted.orderedRemove(i);
@@ -284,10 +288,37 @@ pub const LaneHost = struct {
         const began = std.Io.Clock.awake.now(h.io).toNanoseconds();
         job.began = began;
         if (h.loneFits(job)) return h.runLone(job, began);
+        if (h.core.fills()) {
+            h.filling.append(h.gpa, job) catch return h.drop(job, "out of memory");
+            return true;
+        }
         h.core.addStream(&job.stream) catch |e| return if (e == error.Cancelled) h.cancel(job) else h.drop(job, @errorName(e));
         h.prefilled(job, began);
         if (h.deliver(job)) h.remove(job);
         return true;
+    }
+
+    /// The oldest filling job's next prompt chunk: the other streams' rounds run between chunks, not after the prompt.
+    fn fillOne(h: *LaneHost) void {
+        if (h.filling.items.len == 0) return;
+        const job = h.filling.items[0];
+        const first = !job.fill_began;
+        job.fill_began = true;
+        const done = h.core.fillStream(&job.stream, first) catch |e| {
+            _ = if (e == error.Cancelled) h.cancel(job) else h.drop(job, @errorName(e));
+            return;
+        };
+        if (!done) return;
+        _ = h.filling.orderedRemove(0);
+        h.prefilled(job, job.began);
+        if (h.deliver(job)) h.remove(job);
+    }
+
+    fn unfill(h: *LaneHost, job: *Job) void {
+        for (h.filling.items, 0..) |j, i| if (j == job) {
+            _ = h.filling.orderedRemove(i);
+            return;
+        };
     }
 
     fn prefilled(h: *LaneHost, job: *Job, began: i96) void {
@@ -366,6 +397,7 @@ pub const LaneHost = struct {
     }
 
     fn remove(h: *LaneHost, job: *Job) void {
+        h.unfill(job);
         h.lock();
         defer h.unlock();
         for (h.admitted.items, 0..) |j, i| if (j == job) {
@@ -389,6 +421,7 @@ pub const LaneHost = struct {
         while (true) {
             h.takeCancels();
             while (h.admitOne()) {}
+            h.fillOne();
             h.noteLive();
             h.lock();
             if (h.closing) {
@@ -399,6 +432,10 @@ pub const LaneHost = struct {
                 continue;
             }
             if (h.core.activeCount() == 0) {
+                if (h.filling.items.len > 0) {
+                    h.unlock();
+                    continue;
+                }
                 if (h.cancels.items.len == 0 and (h.queued.items.len == 0 or h.admitted.items.len >= h.info_.lanes))
                     h.wake.waitTimeout(h.io, &h.mutex, .{ .duration = .{ .raw = .fromMilliseconds(100), .clock = .awake } }) catch {};
                 h.unlock();
@@ -426,6 +463,7 @@ pub const LaneHost = struct {
         h.lock();
         const jobs = h.gpa.dupe(*Job, h.admitted.items) catch &.{};
         h.admitted.clearRetainingCapacity();
+        h.filling.clearRetainingCapacity();
         h.unlock();
         for (jobs) |job| {
             if (!job.stream.finished) h.core.discard(&job.stream);
@@ -543,6 +581,82 @@ test "a lane host serves the core's own tokens, in order, and cancels between ro
     target.prefill_count = 0;
     try e.submit(4, &chunked_request, .{ .ctx = &lone, .event = Box.event });
     try std.testing.expectEqual(Reason.cancelled, lone.wait());
+    try std.testing.expect(target.prefill_count <= 3);
+    try std.testing.expectEqual(@as(usize, 0), target.lanes.count());
+}
+
+test "a lane host fills a prompt a chunk a round, serves its tokens, and cancels between chunks" {
+    const gpa = std.testing.allocator;
+    var cfg = try lanes.Config.init(gpa, .{ .exact_width = 8, .gpu_tokens = true, .hidden_rows = true }, 8, 7);
+    defer cfg.deinit(gpa);
+    var target: lanes.fake.Fake = .{ .gpa = gpa, .prefill_chunks = 4 };
+    defer target.deinit();
+    var clock: lanes.fake.FixedClock = .{};
+    var core = lanes.Engine.init(gpa, &cfg, target.stepped(), clock.clock());
+    defer core.deinit();
+    var host = LaneHost.init(gpa, std.testing.io, &core, .{ .lanes = 2 });
+    try host.start();
+    defer host.stop();
+    const Box = struct {
+        mutex: std.Io.Mutex = .init,
+        tokens: std.ArrayList(u32) = .empty,
+        done: ?Reason = null,
+        fn event(ctx: *anyopaque, _: Id, e: *const Event) void {
+            const b: *@This() = @ptrCast(@alignCast(ctx));
+            b.mutex.lockUncancelable(std.testing.io);
+            defer b.mutex.unlock(std.testing.io);
+            switch (e.*) {
+                .tokens => |t| b.tokens.appendSlice(gpa, t) catch {},
+                .finished => |f| b.done = f.reason,
+                else => {},
+            }
+        }
+        fn wait(b: *@This()) Reason {
+            while (true) {
+                b.mutex.lockUncancelable(std.testing.io);
+                const d = b.done;
+                b.mutex.unlock(std.testing.io);
+                if (d) |r| return r;
+                std.Io.sleep(std.testing.io, .fromMilliseconds(1), .awake) catch {};
+            }
+        }
+    };
+    const prompt = [_]u32{ 3, 1, 4, 1, 5, 9, 2, 6 };
+    var box: Box = .{};
+    defer box.tokens.deinit(gpa);
+    const request: Request = .{ .prompt = &prompt, .max_tokens = 24 };
+    const e = host.engine();
+    try e.submit(1, &request, .{ .ctx = &box, .event = Box.event });
+    try std.testing.expectEqual(Reason.length, box.wait());
+    var history: std.ArrayList(u32) = .empty;
+    defer history.deinit(gpa);
+    try history.appendSlice(gpa, &prompt);
+    for (box.tokens.items) |t| {
+        try std.testing.expectEqual(lanes.fake.next(history.items, null, history.items.len), t);
+        try history.append(gpa, t);
+    }
+    try std.testing.expectEqual(@as(usize, 24), box.tokens.items.len);
+    try std.testing.expectEqual(@as(usize, 4), target.prefill_count);
+
+    const CancelPrefill = struct {
+        engine: Engine,
+        id: Id,
+        at: usize,
+
+        fn call(ctx: *anyopaque, _: *lanes.Stream, chunk: usize) void {
+            const c: *@This() = @ptrCast(@alignCast(ctx));
+            if (chunk == c.at) c.engine.cancel(c.id);
+        }
+    };
+    var chunked: Box = .{};
+    defer chunked.tokens.deinit(gpa);
+    var prefill_cancel = CancelPrefill{ .engine = e, .id = 2, .at = 1 };
+    target.prefill_chunks = 10;
+    target.prefill_count = 0;
+    target.prefill_hook = CancelPrefill.call;
+    target.prefill_hook_ctx = &prefill_cancel;
+    try e.submit(2, &request, .{ .ctx = &chunked, .event = Box.event });
+    try std.testing.expectEqual(Reason.cancelled, chunked.wait());
     try std.testing.expect(target.prefill_count <= 3);
     try std.testing.expectEqual(@as(usize, 0), target.lanes.count());
 }
