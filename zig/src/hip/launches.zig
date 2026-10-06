@@ -72,7 +72,16 @@ pub const Launcher = struct {
     softmax_stats: Function,
     sum_partials: Function,
     op: Ops,
+    /// decode.hip's kernels: a round's few rows, and the launches that merge several small ones.
+    dec: Decode,
+    /// TF_DECODE_FUSE=old keeps the launches decode.hip replaces.
+    fuse: bool,
     affine: Affine,
+
+    const Decode = struct {
+        router: [2]Function, // fp16, bf16
+        tail: Function,
+    };
 
     const Ops = struct {
         embed_rows: Function,
@@ -108,6 +117,12 @@ pub const Launcher = struct {
         const att = l.mods[@backingInt(kernels.Group.attention)];
         const gd = l.mods[@backingInt(kernels.Group.gated_delta)];
         const pre = l.mods[@backingInt(kernels.Group.prefill)];
+        const dec = l.mods[@backingInt(kernels.Group.decode)];
+        l.fuse = true;
+        if (std.c.getenv("TF_DECODE_FUSE")) |v| {
+            if (std.mem.eql(u8, std.mem.span(v), "old")) l.fuse = false;
+        }
+        l.dec = .{ .router = .{ try dec.function("tf_router_decode_f16"), try dec.function("tf_router_decode_bf16") }, .tail = try dec.function("tf_tail") };
         l.fa_wide = .{ try pre.function("tf_fa_wide_f16"), try pre.function("tf_fa_wide_bf16") };
         const anon = "_ZN12_GLOBAL__N_1";
         l.op = .{
@@ -272,8 +287,28 @@ pub const Launcher = struct {
         a.add(d);
         a.add(e);
         const k: usize = if (kind == 1) 0 else 1;
+        if (l.fuse and r <= 8 and @rem(d, 4) == 0 and ad(rows) % 16 == 0 and ad(x) % 8 == 0) {
+            return l.go(l.dec.router[k], dim(cdiv(e, 4), 1, 1), dim(128, 1, 1), 0, s, &a);
+        }
         if (r >= 64) return l.go(l.op.router_tile[k], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
         try l.go(l.op.router_rows[k], dim(cdiv(e, 8), cdiv(r, 8), 1), dim(256, 1, 1), 0, s, &a);
+    }
+
+    /// decode.hip's tail: x = round(x + t) with t = y (the activation kind) or, with `slots` > 0, the weighted sum of the
+    /// row's slots of fp32 y; normed = rms(x) * weight. One block a row.
+    pub fn tf_tail(l: *const Launcher, x: P, y: C, wts: CF, weight: CF, normed: P, kind: c_int, rows: c_int, slots: c_int, width: c_int, eps: f32, s: S) Error!void {
+        if (width > 8192 or rows < 1) return invalid("tail");
+        var a: Args = .{};
+        a.add(ad(x));
+        a.add(ad(y));
+        a.add(ad(wts));
+        a.add(ad(weight));
+        a.add(ad(normed));
+        a.add(kind);
+        a.add(slots);
+        a.add(width);
+        a.add(eps);
+        try l.go(l.dec.tail, dim(rows, 1, 1), dim(512, 1, 1), 0, s, &a);
     }
 
     pub fn tf_moe_select(l: *const Launcher, logits: CF, pick: I, wts: F, items: I, members: I, capacity: c_int, r: c_int, experts: c_int, top_k: c_int, s: S) Error!void {

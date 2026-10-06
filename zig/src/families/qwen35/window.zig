@@ -7,6 +7,7 @@ const hip = @import("hip");
 const view = @import("view.zig");
 const state = @import("state.zig");
 const fwd = @import("forward.zig");
+const moe = @import("moe.zig");
 
 const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
@@ -41,27 +42,61 @@ pub fn forward(o: Ops, m: *const view.Model, windows: []Window, ids: u64, trace:
         snap.deltas = try o.arena.of(f32, w.rows * s.value_heads * s.value_dim * s.key_dim);
     };
     const normed = try fwd.take(o, m.act, total * s.hidden);
+    const out = try fwd.take(o, m.act, total * s.hidden);
+    const eps: f32 = @floatCast(s.eps);
+    try o.rms(x, inputNorm(m.layers[0]), normed, total, s.hidden, eps);
     for (m.layers, 0..) |layer, index| {
         const mark = o.arena.mark();
         defer o.arena.release(mark);
-        const input_norm, const post_norm, const mlp = switch (layer) {
-            .full => |f| .{ f.input_norm, f.post_norm, f.mlp },
-            .linear => |l| .{ l.input_norm, l.post_norm, l.mlp },
+        const post_norm, const mlp = switch (layer) {
+            .full => |f| .{ f.post_norm, f.mlp },
+            .linear => |l| .{ l.post_norm, l.mlp },
         };
-        try o.rms(x, input_norm, normed, total, s.hidden, @floatCast(s.eps));
         const y = switch (layer) {
             .full => |f| try attentionRows(o, m, f, windows, index, normed, total),
             .linear => |l| try linearRows(o, m, l, windows, index, normed, total),
         };
-        try fwd.residual(o, m, x, y, total * s.hidden);
-        try o.rms(x, post_norm, normed, total, s.hidden, @floatCast(s.eps));
-        const z = try fwd.mlpRows(o, m, mlp, normed, total, true);
-        try fwd.residual(o, m, x, z, total * s.hidden);
+        // the launches of a layer's two tails merge when the rows stay on this rank: add and norm, then the MLP's sum, add
+        // and the next layer's norm (the last layer's is the final norm)
+        const merge = o.fused() and y.kind == m.act;
+        const last = index + 1 == m.layers.len;
+        const next_norm = if (last) m.final_norm else inputNorm(m.layers[index + 1]);
+        const dest = if (last) out else normed;
+        if (merge) {
+            try o.addRms(x, y, post_norm, normed, total, s.hidden, eps);
+        } else {
+            try fwd.residual(o, m, x, y, total * s.hidden);
+            try o.rms(x, post_norm, normed, total, s.hidden, eps);
+        }
+        switch (mlp) {
+            .moe => |r| if (merge and r.remap == 0) {
+                const parts = try moe.parts(o, m, r, normed, total);
+                try o.moeTail(x, parts.y, parts.wts, next_norm, dest, total, parts.slots, s.hidden, eps);
+            } else {
+                const z = try fwd.mlpRows(o, m, mlp, normed, total, true);
+                try fwd.residual(o, m, x, z, total * s.hidden);
+                try o.rms(x, next_norm, dest, total, s.hidden, eps);
+            },
+            .dense => {
+                const z = try fwd.mlpRows(o, m, mlp, normed, total, true);
+                if (merge and z.kind == m.act) {
+                    try o.addRms(x, z, next_norm, dest, total, s.hidden, eps);
+                } else {
+                    try fwd.residual(o, m, x, z, total * s.hidden);
+                    try o.rms(x, next_norm, dest, total, s.hidden, eps);
+                }
+            },
+        }
         if (trace) |t| t.layer(t.ctx, index, x, total) catch return error.KernelFailed;
     }
-    const out = try fwd.take(o, m.act, total * s.hidden);
-    try o.rms(x, m.final_norm, out, total, s.hidden, @floatCast(s.eps));
     return out;
+}
+
+fn inputNorm(layer: view.Layer) u64 {
+    return switch (layer) {
+        .full => |f| f.input_norm,
+        .linear => |l| l.input_norm,
+    };
 }
 
 /// Keep a window's first `rows` rows: attention lengths, and the linear states as after those serial steps.

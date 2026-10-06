@@ -117,6 +117,26 @@ pub const Ops = struct {
         return .{ .ptr = narrow, .kind = x.kind };
     }
 
+    /// Whether decode.hip's merged launches are on: Zig launches, and TF_DECODE_FUSE is not `old`.
+    pub fn fused(o: Ops) bool {
+        return if (o.lib.zig) |z| z.fuse else false;
+    }
+
+    /// x = round(x + y) and normed = rms(x) * weight (fp32) in one launch: a residual and the norm after it.
+    pub fn addRms(o: Ops, x: Tensor, y: Tensor, weight: u64, normed: Tensor, rows: usize, width: usize, eps: f32) Error!void {
+        if (x.kind != y.kind or x.kind != normed.kind or x.kind == .f32) return error.BadShape;
+        const z = o.lib.zig orelse return error.BadShape;
+        try z.tf_tail(p(x.ptr), p(y.ptr), null, f(weight), p(normed.ptr), @backingInt(x.kind), int(rows), 0, int(width), eps, o.stream);
+    }
+
+    /// The MoE combine, the residual and the next norm in one launch: x = round(x + round(sum_s wts[r, s] * y[r, s])),
+    /// y (rows * slots, width) fp32, then normed = rms(x) * weight.
+    pub fn moeTail(o: Ops, x: Tensor, y: u64, wts: u64, weight: u64, normed: Tensor, rows: usize, slots: usize, width: usize, eps: f32) Error!void {
+        if (x.kind != normed.kind or x.kind == .f32 or slots == 0) return error.BadShape;
+        const z = o.lib.zig orelse return error.BadShape;
+        try z.tf_tail(p(x.ptr), f(y), f(wts), f(weight), p(normed.ptr), @backingInt(x.kind), int(rows), int(slots), int(width), eps, o.stream);
+    }
+
     /// matmul_routed: every item (expert, first, count) in one launch over stacked weights; out (pairs, N) fp32.
     pub fn affineRouted(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize) Error!u64 {
         try w.check();

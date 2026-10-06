@@ -37,8 +37,8 @@ const lib_headers = [_][]const u8{
 
 /// The source groups launched from Zig, one code object each (the order of kernels.zig's Group): the device code of the
 /// library sources above, built by hipcc --genco with the library's flags. gemv and the WMMA schedules stay out.
-/// The code-object groups: ops.hip and prefill.hip (ours), and the ROCm sources by name.
-const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill" };
+/// The code-object groups: ops.hip, prefill.hip and decode.hip (ours), and the ROCm sources by name.
+const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill", "decode" };
 
 /// A GPU family's library: its gfx targets and whether its host dispatch takes the WMMA schedules.
 const Family = struct { name: []const u8, prefixes: []const []const u8, wmma: bool };
@@ -231,7 +231,7 @@ fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: 
     for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
     run.addArg("-o");
     const out = run.addOutputFileArg(b.fmt("{s}_{s}.hsaco", .{ f.name, group }));
-    const ours = std.mem.eql(u8, group, "ops") or std.mem.eql(u8, group, "prefill");
+    const ours = std.mem.eql(u8, group, "ops") or std.mem.eql(u8, group, "prefill") or std.mem.eql(u8, group, "decode");
     const source = if (ours) b.fmt("{s}.hip", .{group}) else b.fmt("rocm/{s}.hip", .{group});
     run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}", .{source})));
     return out;

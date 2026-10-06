@@ -22,7 +22,7 @@ pub const rdna3: []const u8 = if (options.with_rdna3) &Blob("lib_rdna3").bytes e
 
 /// The ROCm kernels' code objects: one offload bundle a source group of zig/kernels/hip, a GPU family each, launched
 /// from Zig (the libraries above hold the same kernels behind C launchers).
-pub const Group = enum { ops, act, attention, gated_delta, affine_tiles, affine_dot2, prefill };
+pub const Group = enum { ops, act, attention, gated_delta, affine_tiles, affine_dot2, prefill, decode };
 pub const group_count = @typeInfo(Group).@"enum".field_names.len;
 
 fn modules(comptime family: []const u8, comptime built: bool) [group_count][]const u8 {
