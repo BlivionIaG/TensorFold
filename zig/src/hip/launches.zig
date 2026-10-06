@@ -68,6 +68,7 @@ pub const Launcher = struct {
     apply_values: Triple,
     causal: Triple,
     fa_prefill: Triple,
+    fa_wide: [2]Function, // the 64-row prefill tile, fp16 and bf16 caches
     softmax_stats: Function,
     sum_partials: Function,
     op: Ops,
@@ -104,6 +105,8 @@ pub const Launcher = struct {
         const act = l.mods[@backingInt(kernels.Group.act)];
         const att = l.mods[@backingInt(kernels.Group.attention)];
         const gd = l.mods[@backingInt(kernels.Group.gated_delta)];
+        const pre = l.mods[@backingInt(kernels.Group.prefill)];
+        l.fa_wide = .{ try pre.function("tf_fa_wide_f16"), try pre.function("tf_fa_wide_bf16") };
         const anon = "_ZN12_GLOBAL__N_1";
         l.op = .{
             .embed_rows = try ops.function(anon ++ "17embed_rows_kernelEPKjPKvS3_iPKiiiiiPvi"),
@@ -406,8 +409,12 @@ pub const Launcher = struct {
         a.add(v_sb);
         a.add(v_sh);
         a.add(v_ss);
-        // Even head sizes take the flash query tile; odd ones stay on one wave per query.
-        if (d >= 2 and @rem(d, 2) == 0) {
+        // A 16-bit cache and whole 64-wide head chunks take the 64-row tile (fa_prefill's bits, TF_FA_WIDE=0 keeps the
+        // 16-row one); other even head sizes the 16-row tile; odd ones stay on one wave per query.
+        const wide_off = if (std.c.getenv("TF_FA_WIDE")) |text| text[0] == '0' else false;
+        if (kind < 2 and @rem(d, 64) == 0 and d <= 256 and !wide_off) {
+            try l.go(l.fa_wide[kind], dim(cdiv(qlen, 64), heads, batch), dim(256, 1, 1), 0, s, &a);
+        } else if (d >= 2 and @rem(d, 2) == 0) {
             try l.go(l.fa_prefill[kind], dim(cdiv(qlen, 16), heads, batch), dim(256, 1, 1), 0, s, &a);
         } else {
             try l.go(l.causal[kind], dim(qlen, heads, batch), dim(32, 1, 1), 0, s, &a);
