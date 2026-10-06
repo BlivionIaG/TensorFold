@@ -15,6 +15,7 @@ pub const forward = @import("forward.zig");
 pub const window = @import("window.zig");
 pub const moe = @import("moe.zig");
 pub const sample = @import("sample.zig");
+pub const draw = @import("draw.zig");
 pub const bridge = @import("bridge.zig");
 pub const engine = @import("engine.zig");
 pub const hip_lanes = @import("hip_lanes.zig");

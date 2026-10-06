@@ -8,7 +8,7 @@ const qwen35 = @import("qwen35");
 const Buf = qwen35.weights.Buf;
 const Tensor = qwen35.table.Tensor;
 
-const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> | layers <model dir> <fixture dir>\n";
+const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> | layers <model dir> <fixture dir> | draw x\n";
 
 pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -18,6 +18,13 @@ pub fn main(init: std.process.Init) !u8 {
     }
     if (std.mem.eql(u8, args[1], "digest")) {
         digest(init.gpa, init.io, args[2]) catch |e| {
+            std.debug.print("FAIL {t}\n", .{e});
+            return 1;
+        };
+        return 0;
+    }
+    if (std.mem.eql(u8, args[1], "draw")) {
+        @import("draw_run.zig").run(init.gpa) catch |e| {
             std.debug.print("FAIL {t}\n", .{e});
             return 1;
         };
