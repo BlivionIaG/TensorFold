@@ -86,42 +86,23 @@ fn attentionRows(o: Ops, m: *const view.Model, f: view.Full, windows: []Window, 
     const keys = try o.affine(x, f.k, total, false);
     const values = try o.affine(x, f.v, total, false);
     const q_rows = total * s.heads;
-    const qc = try fwd.take(o, m.act, q_rows * hd);
-    try o.copyCols(qg, 2 * hd, 0, qc.ptr, q_rows, hd);
-    const qn = try fwd.take(o, m.act, q_rows * hd);
-    try o.rms(qc, f.q_norm, qn, q_rows, hd, @floatCast(s.eps));
-    const kn = try fwd.take(o, m.act, total * s.kv_heads * hd);
-    try o.rms(keys, f.k_norm, kn, total * s.kv_heads, hd, @floatCast(s.eps));
+    const eps: f32 = @floatCast(s.eps);
+    const theta: f32 = @floatCast(s.rope_theta);
     const att = try o.arena.of(f32, q_rows * hd);
     var start: usize = 0;
     for (windows) |w| {
         const c = w.caches.attention(m, index);
-        // the decode RoPE on fp32 rows (one position a row's heads), rounded to the activation dtype
-        const q = try rope(o, m, fwd.at(qn, start * s.heads * hd), w, s.heads);
-        const k = try rope(o, m, fwd.at(kn, start * s.kv_heads * hd), w, s.kv_heads);
-        try o.kvWriteAt(k, c.k, w.rows, s.kv_heads, hd, c.total, w.at32);
-        try o.kvWriteAt(fwd.at(values, start * s.kv_heads * hd), c.v, w.rows, s.kv_heads, hd, c.total, w.at32);
+        // q and k each normed, rotated at the rows' positions and rounded in one launch: q into fp32, k into the cache
         const q32 = try o.arena.of(f32, w.rows * s.heads * hd);
-        try o.cast(q, .{ .ptr = q32, .kind = .f32 }, w.rows * s.heads * hd);
+        try o.qkRope(fwd.at(qg, start * s.heads * 2 * hd), s.heads * 2 * hd, 2 * hd, f.q_norm, eps, w.rows, s.heads, hd, s.rotary_dim, theta, w.at32, q32, null, 0);
+        try o.qkRope(fwd.at(keys, start * s.kv_heads * hd), s.kv_heads * hd, hd, f.k_norm, eps, w.rows, s.kv_heads, hd, s.rotary_dim, theta, w.at32, null, c.k, c.total);
+        try o.kvWriteAt(fwd.at(values, start * s.kv_heads * hd), c.v, w.rows, s.kv_heads, hd, c.total, w.at32);
         try o.causalAt(q32, c, att + start * s.heads * hd * 4, w.rows, s.heads, fwd.scaleOf(hd), w.at32);
         start += w.rows;
     }
     const gated = try fwd.take(o, m.act, q_rows * hd);
     try o.attnGate(att, qg, gated, total, s.heads, hd, true);
     return o.affine(gated, f.o, total, f.o.partial);
-}
-
-/// _rope_rows: (rows, heads, d) widened to fp32, rotated row by row at the window's positions, rounded back.
-fn rope(o: Ops, m: *const view.Model, x: Tensor, w: Window, heads: usize) fwd.Error!Tensor {
-    const s = m.spec;
-    const n = w.rows * heads * s.head_dim;
-    const wide = try o.arena.of(f32, n);
-    try o.cast(x, .{ .ptr = wide, .kind = .f32 }, n);
-    const turned = try o.arena.of(f32, n);
-    try o.ropeDecode(wide, turned, w.rows * heads, s.head_dim, s.rotary_dim, 0, @floatCast(s.rope_theta), w.at32, heads);
-    const out = try fwd.take(o, m.act, n);
-    try o.cast(.{ .ptr = turned, .kind = .f32 }, out, n);
-    return out;
 }
 
 fn linearRows(o: Ops, m: *const view.Model, l: view.Linear, windows: []Window, index: usize, x: Tensor, total: usize) fwd.Error!Tensor {

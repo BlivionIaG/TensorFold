@@ -48,6 +48,7 @@ pub const Api = struct {
     tf_attn_gate: *const fn (CF, C, P, c_int, c_int, c_int, c_int, c_int, S) callconv(.c) c_int,
     tf_gnorm_silu: *const fn (CF, C, P, c_int, c_longlong, S) callconv(.c) c_int,
     tf_copy_cols: *const fn (C, c_longlong, c_int, P, c_int, c_int, c_int, S) callconv(.c) c_int,
+    tf_qk_rope: *const fn (C, c_int, c_longlong, c_int, CF, f32, c_int, c_int, c_int, c_int, f32, CI, F, P, c_int, S) callconv(.c) c_int,
     tf_rope_prefill: *const fn (C, c_int, P, c_int, c_longlong, c_longlong, c_int, c_int, c_int, c_int, c_int, f32, S) callconv(.c) c_int,
     tf_kv_write: *const fn (C, P, c_int, c_int, c_int, c_int, c_int, c_int, S) callconv(.c) c_int,
     tf_kv_write_at: *const fn (C, P, c_int, c_int, c_int, c_int, c_int, CI, S) callconv(.c) c_int,
