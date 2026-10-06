@@ -97,6 +97,8 @@ pub const Spec = struct {
     think_open: ?bool = null, // null: open when a budget is set (the server's rule)
     loop_guard: bool = false,
     chunks: []const u32 = &.{}, // where prefill chunks start after 0 (Python's PrefillPlan); empty: the backend's step
+    history_len: u32 = 0, // prompt prefix lengths a backend may keep for a later turn: the rendered history,
+    shared_prefixes: []const u32 = &.{}, // then shared system blocks
 };
 
 pub const Stream = struct {
@@ -116,6 +118,9 @@ pub const Stream = struct {
     loop_guard: bool,
     loop_period: ?u32 = null,
     chunks: []const u32,
+    history_len: u32,
+    shared_prefixes: []const u32,
+    cached: u32 = 0, // prompt tokens the backend took from a kept prefix
     context: std.ArrayList(u32) = .empty,
     pending: ?u32 = null,
     force: std.ArrayList(u32) = .empty,
@@ -165,6 +170,8 @@ pub const Stream = struct {
             .think_open = spec.think_open orelse (spec.think_budget > 0 or (spec.loop_guard and spec.think_end >= 0)),
             .loop_guard = spec.loop_guard,
             .chunks = spec.chunks,
+            .history_len = spec.history_len,
+            .shared_prefixes = spec.shared_prefixes,
         };
         try s.context.appendSlice(gpa, spec.prompt);
         return s;

@@ -274,6 +274,8 @@ pub const LaneHost = struct {
             .think_end = if (r.think_end) |t| t else -1,
             .loop_guard = r.loop_guard,
             .chunks = r.chunks,
+            .history_len = r.history_len,
+            .shared_prefixes = r.shared_prefixes,
         }) catch {
             job.proposer.deinit();
             return h.drop(job, "out of memory");
@@ -295,7 +297,7 @@ pub const LaneHost = struct {
         h.prefill_at = done;
         job.prefilled = done;
         h.unlock();
-        emit(job, .{ .prefilled = 0 });
+        emit(job, .{ .prefilled = job.stream.cached });
     }
 
     /// A greedy drafted request alone in the engine, with nothing waiting: the backend's own driver takes it.

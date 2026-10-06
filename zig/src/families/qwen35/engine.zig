@@ -10,14 +10,17 @@ const win = @import("window.zig");
 const weights = @import("weights.zig");
 const bridge = @import("bridge.zig");
 const sample = @import("sample.zig");
+const memory = @import("memory.zig");
 
 pub const Options = struct {
-    /// Positions a stream's caches hold (its prompt, its reply and a window's rows).
-    capacity: usize,
+    /// Most positions a stream's caches hold (its prompt, its reply and a window's rows).
+    capacity: usize = 0,
     /// Rows a shared forward holds at most.
     batch_rows: usize = 32,
     /// The device ordinal among the visible ones.
     device: c_int = 0,
+    /// Positions past a reply a verify writes (the window's rows and one more).
+    slack: usize = 0,
 };
 
 pub const Engine = struct {
@@ -29,6 +32,8 @@ pub const Engine = struct {
     weights: weights.Model,
     bridge: *bridge.Bridge,
     o: Options,
+    /// The scratch below exists (`size` ran).
+    sized: bool,
     act: view.Kind,
     dtype: sample.Dtype,
     /// A window's scratch, kept from its verify to its keep (the commit reads the per-row states).
@@ -39,11 +44,13 @@ pub const Engine = struct {
     ids_dev: hip.DeviceBuffer,
     logits: hip.HostBuffer,
 
-    pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
+    /// The model on the device, its scratch not yet sized: `size` takes the capacity the memory plan fits.
+    pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
         const e = try gpa.create(Engine);
         errdefer gpa.destroy(e);
         e.gpa = gpa;
         e.o = o;
+        e.sized = false;
         e.driver = try hip.Driver.open();
         errdefer e.driver.close();
         e.ctx = try hip.Context.init(&e.driver, o.device);
@@ -58,35 +65,50 @@ pub const Engine = struct {
         e.weights = try weights.Model.load(gpa, io, &e.driver, dir);
         errdefer e.weights.deinit();
         e.bridge = try bridge.Bridge.init(gpa, &e.driver, &e.weights, e.act);
-        errdefer e.bridge.deinit();
+        return e;
+    }
+
+    /// Allocate the scratch for streams of `capacity` positions (`o.batch_rows` rows a shared forward).
+    pub fn size(e: *Engine, capacity: usize) !void {
         const s = e.weights.spec;
-        const rows = o.batch_rows;
-        // causal_at's scores over a whole cache a query, then a forward's activations, plans and expert products
-        const per_row = s.heads * o.capacity * 4 + 64 * s.hidden * 4 + (s.top_k + 1) * (3 * @max(s.moe_width, 1) + s.hidden) * 4 * 2;
-        // a window of several rows keeps every linear layer's conv and DeltaNet state after each row
-        var linear: usize = 0;
-        for (0..s.n_layers) |i| linear += @intFromBool(!s.full(i));
-        const snapshot = linear * ((s.conv - 1) * view.convChannels(s) + s.value_heads * s.value_dim * s.key_dim) * 4;
-        e.rounds = try hip.Arena.init(&e.driver, (256 << 20) + rows * (per_row * 2 + snapshot));
+        const rows = e.o.batch_rows;
+        const need = memory.Scratch.of(s, capacity, rows);
+        e.o.capacity = capacity;
+        e.rounds = try hip.Arena.init(&e.driver, need.rounds);
         errdefer e.rounds.deinit();
-        // a prompt's residual and final rows, plus one SPAN step's temporaries
-        e.prompts = try hip.Arena.init(&e.driver, (768 << 20) + 2 * o.capacity * s.hidden * 2 + fwd.SPAN * per_row / 4);
+        e.prompts = try hip.Arena.init(&e.driver, need.prompts);
         errdefer e.prompts.deinit();
-        e.ids = try hip.HostBuffer.alloc(&e.driver, @max(o.capacity, 2 * rows) * 4);
+        e.ids = try hip.HostBuffer.alloc(&e.driver, need.ids);
         errdefer e.ids.free();
-        e.ids_dev = try hip.DeviceBuffer.alloc(&e.driver, @max(o.capacity, 2 * rows) * 4);
+        e.ids_dev = try hip.DeviceBuffer.alloc(&e.driver, need.ids);
         errdefer e.ids_dev.free();
         e.logits = try hip.HostBuffer.alloc(&e.driver, rows * e.bridge.model.head.n * 2);
+        e.sized = true;
+    }
+
+    /// The memory plan for `streams` at once and a window of `target` tokens, from the memory free now.
+    pub fn plan(e: *Engine, streams: usize, target: usize) !memory.Plan {
+        const info = try e.ctx.memInfo();
+        return memory.plan(.{ .spec = e.weights.spec, .act_bytes = e.act.size(), .streams = streams, .rows = e.o.batch_rows, .slack = e.o.slack, .target = target, .free = info.free, .total = info.total });
+    }
+
+    /// Load and size in one: `o.capacity` positions.
+    pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
+        const e = try load(gpa, io, dir, o);
+        errdefer e.deinit();
+        try e.size(o.capacity);
         return e;
     }
 
     pub fn deinit(e: *Engine) void {
         e.stream.synchronize() catch {};
-        e.logits.free();
-        e.ids_dev.free();
-        e.ids.free();
-        e.prompts.deinit();
-        e.rounds.deinit();
+        if (e.sized) {
+            e.logits.free();
+            e.ids_dev.free();
+            e.ids.free();
+            e.prompts.deinit();
+            e.rounds.deinit();
+        }
         e.bridge.deinit();
         e.weights.deinit();
         e.stream.deinit();
@@ -104,8 +126,9 @@ pub const Engine = struct {
         return .{ .lib = &e.lib, .stream = e.stream.handle, .arena = arena };
     }
 
-    pub fn newCaches(e: *Engine) !state.Caches {
-        return state.Caches.init(e.gpa, &e.driver, e.model(), e.o.capacity);
+    /// Zeroed caches for `total` positions (at most the capacity).
+    pub fn newCaches(e: *Engine, total: usize) !state.Caches {
+        return state.Caches.init(e.gpa, &e.driver, e.model(), @min(total, e.o.capacity));
     }
 
     /// The logits of `rows` final rows at `hidden`, one projection as the engine's _logits, read into `logits`.
@@ -118,11 +141,22 @@ pub const Engine = struct {
         return e.logits.slice(u16)[0..n];
     }
 
+    /// Run `prompt[pos0..end]` into `caches`, its logits not read: a cut where the caches are kept.
+    pub fn advance(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, end: usize) !void {
+        if (end <= pos0 or end > caches.total) return error.PromptTooLong;
+        e.prompts.reset();
+        const ids = e.ids.slice(u32)[0 .. end - pos0];
+        @memcpy(ids, prompt[pos0..end]);
+        try e.ids_dev.uploadAsync(0, std.mem.sliceAsBytes(ids), e.stream.handle);
+        _ = try fwd.span(e.ops(&e.prompts), e.model(), caches, e.ids_dev.ptr, end - pos0, pos0, null);
+        try e.stream.synchronize();
+    }
+
     /// Prefill `prompt[pos0..]` into `caches`; the last row's logits, and its final row copied to `last` (MTP's input).
     pub fn prefill(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, last: ?hip.DeviceBuffer) ![]const u16 {
         const m = e.model();
         const len = prompt.len - pos0;
-        if (len == 0 or prompt.len > e.o.capacity) return error.PromptTooLong;
+        if (len == 0 or prompt.len > caches.total) return error.PromptTooLong;
         e.prompts.reset();
         const ids = e.ids.slice(u32)[0..len];
         @memcpy(ids, prompt[pos0..]);
@@ -159,7 +193,7 @@ pub const Engine = struct {
         at = 0;
         const layers = m.spec.n_layers;
         for (rows, wins, 0..) |r, *w, i| {
-            if (r.pos + r.tokens.len > e.o.capacity) return error.ContextFull;
+            if (r.pos + r.tokens.len > r.caches.total) return error.ContextFull;
             w.* = .{ .caches = r.caches, .pos = r.pos, .rows = r.tokens.len, .at32 = e.ids_dev.ptr + (total + at) * 4, .snaps = snaps[i * layers ..][0..layers] };
             at += r.tokens.len;
         }
