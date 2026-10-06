@@ -266,13 +266,12 @@ pub const Model = struct {
             try list.append(gpa, try u.layer(host_layer));
         }
         m.layers = try list.toOwnedSlice(gpa);
-        if (m.layers.len == m.spec.n_layers) if (try ck.mtp()) |head_layer| {
+        // under tp only rank 0 drafts: its head is whole, logits rows included (its own or the model's whole head)
+        const drafts = if (rank) |r| r.rank == 0 else true;
+        if (drafts and m.layers.len == m.spec.n_layers) if (try ck.mtp()) |head_layer| {
             var h = head_layer;
             defer h.deinit();
-            // under tp the draft head stays whole on every rank but its logits rows
-            if (rank) |r| if (h.head) |p| {
-                h.head = try slicing.vocabRows(h.arena.allocator(), p, whole.vocab, r);
-            };
+            if (rank != null and h.head == null) h.head = head orelse .{ .affine = embed };
             m.mtp = try u.mtp(h);
         };
         return m;

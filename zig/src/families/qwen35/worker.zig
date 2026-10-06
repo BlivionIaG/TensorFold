@@ -7,9 +7,10 @@ const Engine = @import("engine.zig").Engine;
 const state = @import("state.zig");
 const win = @import("window.zig");
 const draw = @import("draw.zig");
+const prefix = @import("prefix.zig");
 
 /// A step rank 0 sends the other ranks (the first word of a message).
-/// prefill: id, total, len, prompt...; verify: count, then id, rows, tokens... each; keep: count, then id, rows each;
+/// prefill: id, total, len, resumed at, cut count, kept entries, byte budget (low, high), cuts..., prompt...; verify: count, then id, rows, tokens... each; keep: count, then id, rows each;
 /// release: id; stop.
 pub const Op = enum(u32) { stop, prefill, verify, keep, release };
 
@@ -32,6 +33,8 @@ pub const Worker = struct {
     snaps: []win.Snapshot,
     reqs: []draw.Request,
     out: []u32,
+    /// rank 0's kept prompts, mirrored: the same cuts in the same order keep the same entries
+    kept: prefix.Cache,
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine) !Worker {
         const rows = e.o.batch_rows;
@@ -43,11 +46,12 @@ pub const Worker = struct {
         errdefer gpa.free(reqs);
         // a follower's draws are greedy and unread: the forward and its collectives are what it shares
         @memset(reqs, .{ .sampling = null, .position = 0 });
-        return .{ .gpa = gpa, .e = e, .wins = wins, .snaps = snaps, .reqs = reqs, .out = try gpa.alloc(u32, rows) };
+        return .{ .gpa = gpa, .e = e, .wins = wins, .snaps = snaps, .reqs = reqs, .out = try gpa.alloc(u32, rows), .kept = prefix.Cache.init(gpa, 0, 0) };
     }
 
     pub fn deinit(w: *Worker) void {
         w.e.stream.synchronize() catch {};
+        w.kept.deinit();
         var it = w.lanes.valueIterator();
         while (it.next()) |l| w.destroy(l.*);
         w.lanes.deinit(w.gpa);
@@ -62,7 +66,7 @@ pub const Worker = struct {
         w.gpa.destroy(l);
     }
 
-    fn prefill(w: *Worker, id: u32, total: usize, prompt: []const u32) !void {
+    fn prefill(w: *Worker, id: u32, total: usize, prompt: []const u32, at: usize, stops: []const u32) !void {
         const gop = try w.lanes.getOrPut(w.gpa, id);
         if (gop.found_existing) w.destroy(gop.value_ptr.*);
         errdefer w.lanes.removeByPtr(gop.key_ptr);
@@ -70,7 +74,27 @@ pub const Worker = struct {
         errdefer w.gpa.destroy(lane);
         lane.* = .{ .caches = try w.e.newCaches(total), .len = prompt.len };
         gop.value_ptr.* = lane;
-        _ = try w.e.prefill(&lane.caches, prompt, 0, null, w.reqs[0]);
+        if (at > 0) {
+            const hit = w.kept.longest(prompt) orelse return error.PrefixMissing;
+            if (hit.ids.len != at) return error.PrefixMismatch;
+            try lane.caches.copyPrefix(&hit.caches, w.e.model(), at, w.e.stream.handle);
+        }
+        var from = at;
+        for (stops) |stop| {
+            try w.e.advance(&lane.caches, prompt, from, stop);
+            from = stop;
+            try w.remember(prompt[0..from], &lane.caches);
+        }
+        _ = try w.e.prefill(&lane.caches, prompt, from, null, w.reqs[0]);
+    }
+
+    /// A copy of the caches at a cut, as rank 0's `remember` keeps it.
+    fn remember(w: *Worker, ids: []const u32, caches: *const state.Caches) !void {
+        if (w.kept.keep == 0 or w.kept.has(ids)) return;
+        var snap = try state.Caches.blank(w.gpa, &w.e.driver, w.e.model(), ids.len);
+        errdefer snap.deinit(w.gpa);
+        try snap.copyPrefix(caches, w.e.model(), ids.len, w.e.stream.handle);
+        try w.kept.add(ids, snap);
     }
 
     fn verify(w: *Worker, ids: []const u32, rows: []const Engine.Rows) !void {
@@ -105,7 +129,12 @@ pub const Worker = struct {
             const m = msg.items;
             switch (@as(Op, @fromBackingInt(@as(u32, @intCast(m[0]))))) {
                 .stop => return,
-                .prefill => try w.prefill(m[1], m[2], m[4..][0..m[3]]),
+                .prefill => {
+                    w.kept.keep = m[6];
+                    w.kept.budget = @intCast(@as(u64, m[7]) | @as(u64, m[8]) << 32);
+                    const stops = m[9..][0..m[5]];
+                    try w.prefill(m[1], m[2], m[9 + m[5] ..][0..m[3]], m[4], stops);
+                },
                 .verify => {
                     const n = m[1];
                     if (n > max_windows) return error.WindowTooWide;

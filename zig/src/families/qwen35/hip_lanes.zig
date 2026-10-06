@@ -64,8 +64,8 @@ pub const Hip = struct {
         errdefer gpa.free(h.snaps);
         h.order = try gpa.alloc(*const lanes.Stream, rows);
         errdefer gpa.free(h.order);
-        // under tensor parallelism the head does not draft yet (its forward has no rank shares)
-        if (e.o.world == 1) h.head = try mtp.Head.init(gpa, &e.driver, &e.weights, e.model());
+        // under tensor parallelism only rank 0 holds the head (whole): drafts only choose the rows every rank verifies
+        h.head = try mtp.Head.init(gpa, &e.driver, &e.weights, e.model());
         return h;
     }
 
@@ -212,22 +212,24 @@ pub const Hip = struct {
         gop.value_ptr.* = lane;
         lane.id = try h.idOf(s);
         const total = prompt.len + s.max_new + max_window + 1;
-        if (h.link != null) {
-            h.msg.clearRetainingCapacity();
-            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.prefill), lane.id, @intCast(total), @intCast(prompt.len) });
-            try h.msg.appendSlice(h.gpa, prompt);
-            try h.send(h.msg.items);
-        }
         // a drafted request resumes from the longest kept prompt it extends and keeps its own cuts; a serial one neither
         var at: usize = 0;
-        // (not under tensor parallelism yet: the other ranks keep no prompts)
-        if (s.drafts and h.link == null) if (h.kept.longest(prompt)) |hit| {
+        if (s.drafts) if (h.kept.longest(prompt)) |hit| {
             at = hit.ids.len;
             try lane.caches.copyPrefix(&hit.caches, h.e.model(), at, h.e.stream.handle);
         };
         s.cached = @intCast(at);
         var cut_ids: [16]u32 = undefined;
-        const stops: []const u32 = if (s.drafts and h.link == null) prefix.cuts(&cut_ids, prompt.len, at, s.history_len, s.shared_prefixes) else &.{};
+        const stops: []const u32 = if (s.drafts) prefix.cuts(&cut_ids, prompt.len, at, s.history_len, s.shared_prefixes) else &.{};
+        if (h.link != null) {
+            // the other ranks keep the same prompts: where this one resumed and cut, and the cache's limits
+            h.msg.clearRetainingCapacity();
+            const budget: u64 = h.kept.budget;
+            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.prefill), lane.id, @intCast(total), @intCast(prompt.len), @intCast(at), @intCast(stops.len), @intCast(h.kept.keep), @truncate(budget), @truncate(budget >> 32) });
+            try h.msg.appendSlice(h.gpa, stops);
+            try h.msg.appendSlice(h.gpa, prompt);
+            try h.send(h.msg.items);
+        }
         for (stops) |stop| {
             try h.e.advance(&lane.caches, prompt, at, stop);
             at = stop;
