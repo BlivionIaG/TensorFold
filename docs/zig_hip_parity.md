@@ -66,3 +66,31 @@ Both engines read `qwen3_5` and `qwen3_5_moe` MLX affine checkpoints at 2, 3, 4,
 The routes, request fields, errors, streaming and the tool parsers are the native server's, which both Metal and HIP
 use; the HIP port adds none and removes none. `POST /v1/decisions` is the Mac's only. The structured-output and
 `tool_choice` gaps above are the only API differences that come from the ROCm engine.
+
+## Status after the parity work
+
+| Gap | State |
+| --- | --- |
+| tp in the server, `--tp/--rank/--master/--master-port/--p2p`, `--backend rocm`, `--checkpoint-slots`, `--prompt-cache-gib`, `--parallel auto`, default window, agreed plan | closed (6c0e968) |
+| tp 4 | run through the native server on four V620s: 9B + MTP, 27B 3-bit + MTP and 35B-A3B + MTP, drafted == serial, solo == together |
+| MTP confidence cut | closed (dc91a99); the prompt's first drafts run whole, because the core reads no hook there |
+| Cancel during prefill | closed (9b23cdf) at tp 1; at tp > 1 a prompt runs to its end |
+| `TF_RCCL_LIB`, `TENSORFOLD_GRAPH` | closed (0562c9d, 9b23cdf); `--master` takes an IPv4 literal or `localhost` |
+| Graph replay under tp, prompts interleaved with decode, grammar and call gates, start-up warm prefill | open |
+
+Known, not from this work: on the 35B-A3B at tp 4 a prompt of 69 tokens run whole and the same prompt cut at 13 can
+draw a different token. The cut run's spans are under 64 rows and take the serial DeltaNet; the whole one takes the
+chunked prefill (`TF_GDN_CHUNKED=0` moves the whole run's tokens too), so the two paths differ in the last bits.
+
+## Serving at tp
+
+One process a rank, the same command with its own `--rank`; with every card visible rank r takes card r.
+
+```bash
+tensorfold-native serve MODEL --tp 4 --rank 1 --master 127.0.0.1 &
+tensorfold-native serve MODEL --tp 4 --rank 2 --master 127.0.0.1 &
+tensorfold-native serve MODEL --tp 4 --rank 3 --master 127.0.0.1 &
+tensorfold-native serve MODEL --tp 4 --rank 0 --master 127.0.0.1 --name local-model
+```
+
+`zig/tests/qwen35/serve_tp.sh DEVS WORLD MODEL_DIR PORT` starts that and checks it with `serve_check.py`.
