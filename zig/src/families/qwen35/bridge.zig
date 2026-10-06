@@ -31,6 +31,13 @@ fn projection(p: weights.Projection) Error!view.Affine {
     };
 }
 
+/// A projection split along K: its fp32 output is one rank's share of the sum.
+fn share(p: weights.Projection, sliced: bool) Error!view.Affine {
+    var a = try projection(p);
+    a.partial = sliced;
+    return a;
+}
+
 /// A stacked side (E + 1, N, ...): one expert's (N, K) shape with the stack's addresses.
 fn side(s: weights.Side, bits: u8, group: u16) Error!view.Affine {
     const n = s.words.dim(1);
@@ -38,12 +45,14 @@ fn side(s: weights.Side, bits: u8, group: u16) Error!view.Affine {
     return .{ .words = s.words.ptr, .scale = s.scales.ptr, .bias = s.biases.ptr, .tables = try tables(s.scales.dtype), .n = @intCast(n), .k = @intCast(k), .bits = bits, .group = group };
 }
 
-fn mlp(m: weights.Mlp) Error!view.Mlp {
+fn mlp(m: weights.Mlp, sliced: bool) Error!view.Mlp {
     return switch (m) {
-        .dense => |d| .{ .dense = .{ .gate = try projection(d.gate), .up = try projection(d.up), .down = try projection(d.down) } },
+        .dense => |d| .{ .dense = .{ .gate = try projection(d.gate), .up = try projection(d.up), .down = try share(d.down, sliced) } },
         .routed => |r| .{ .moe = .{
             .rows32 = r.rows32.ptr,
             .top_k = r.top_k,
+            .rows = r.router.dim(0),
+            .remap = if (r.remap) |b| b.ptr else 0,
             .experts = .{
                 .fused = try side(r.experts.fused, r.experts.bits, r.experts.group),
                 .down = try side(r.experts.down, r.experts.down_bits, r.experts.down_group),
@@ -71,8 +80,8 @@ pub const Bridge = struct {
         b.layers = try gpa.alloc(view.Layer, m.layers.len);
         errdefer gpa.free(b.layers);
         for (m.layers, b.layers) |l, *out| out.* = switch (l) {
-            .full => |f| .{ .full = .{ .input_norm = f.input_norm.ptr, .post_norm = f.post_norm.ptr, .q = try projection(f.q), .k = try projection(f.k), .v = try projection(f.v), .o = try projection(f.o), .q_norm = f.q_norm.ptr, .k_norm = f.k_norm.ptr, .mlp = try mlp(f.mlp) } },
-            .linear => |x| .{ .linear = .{ .input_norm = x.input_norm.ptr, .post_norm = x.post_norm.ptr, .qkv = try projection(x.qkv), .z = try projection(x.z), .a = try projection(x.a), .b = try projection(x.b), .out = try projection(x.out), .conv = x.conv.ptr, .a_log = x.a_log.ptr, .dt_bias = x.dt_bias.ptr, .gnorm = x.gnorm.ptr, .mlp = try mlp(x.mlp) } },
+            .full => |f| .{ .full = .{ .input_norm = f.input_norm.ptr, .post_norm = f.post_norm.ptr, .q = try projection(f.q), .k = try projection(f.k), .v = try projection(f.v), .o = try share(f.o, m.sliced), .q_norm = f.q_norm.ptr, .k_norm = f.k_norm.ptr, .mlp = try mlp(f.mlp, m.sliced) } },
+            .linear => |x| .{ .linear = .{ .input_norm = x.input_norm.ptr, .post_norm = x.post_norm.ptr, .qkv = try projection(x.qkv), .z = try projection(x.z), .a = try projection(x.a), .b = try projection(x.b), .out = try share(x.out, m.sliced), .conv = x.conv.ptr, .a_log = x.a_log.ptr, .dt_bias = x.dt_bias.ptr, .gnorm = x.gnorm.ptr, .mlp = try mlp(x.mlp, m.sliced) } },
         };
         const c = view.qkConstants(s.key_dim, s.eps);
         const qs = try gpa.alloc(f32, s.key_dim);

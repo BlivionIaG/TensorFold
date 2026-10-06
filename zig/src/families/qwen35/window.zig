@@ -53,10 +53,10 @@ pub fn forward(o: Ops, m: *const view.Model, windows: []Window, ids: u64, trace:
             .full => |f| try attentionRows(o, m, f, windows, index, normed, total),
             .linear => |l| try linearRows(o, m, l, windows, index, normed, total),
         };
-        try o.add(x, y, x, total * s.hidden);
+        try fwd.residual(o, m, x, y, total * s.hidden);
         try o.rms(x, post_norm, normed, total, s.hidden, @floatCast(s.eps));
         const z = try fwd.mlpRows(o, m, mlp, normed, total, true);
-        try o.add(x, z, x, total * s.hidden);
+        try fwd.residual(o, m, x, z, total * s.hidden);
         if (trace) |t| t.layer(t.ctx, index, x, total) catch return error.KernelFailed;
     }
     const out = try fwd.take(o, m.act, total * s.hidden);
@@ -108,7 +108,7 @@ fn attentionRows(o: Ops, m: *const view.Model, f: view.Full, windows: []Window, 
     }
     const gated = try fwd.take(o, m.act, q_rows * hd);
     try o.attnGate(att, qg, gated, total, s.heads, hd, true);
-    return o.affine(gated, f.o, total, false);
+    return o.affine(gated, f.o, total, f.o.partial);
 }
 
 /// _rope_rows: (rows, heads, d) widened to fp32, rotated row by row at the window's positions, rounded back.

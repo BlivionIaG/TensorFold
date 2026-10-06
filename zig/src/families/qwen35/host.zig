@@ -45,7 +45,8 @@ pub const Experts = struct {
 };
 
 /// The router rows [E + 1, D], the shared expert's gate row last: bf16 as the Python holds them, and `rows32` widened.
-pub const Routed = struct { router: Tensor, rows32: Tensor, experts: Experts, top_k: usize };
+/// A tensor-parallel rank holds some of the experts: `remap` (int32, E + 1) gives each id's place among them, -1 for another rank's.
+pub const Routed = struct { router: Tensor, rows32: Tensor, experts: Experts, top_k: usize, remap: ?Tensor = null };
 
 pub const DenseMlp = struct { gate: Projection, up: Projection, down: Projection };
 

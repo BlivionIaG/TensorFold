@@ -25,7 +25,7 @@ const torch_flags = [_][]const u8{
 const lib_sources = [_][]const u8{
     "capi.hip",             "ops.hip",               "rocm/act.hip",         "rocm/attention.hip",
     "rocm/gated_delta.hip", "rocm/affine_gemv.hip",  "rocm/affine_wmma.hip", "rocm/affine_wmma_pair.hip",
-    "rocm/affine_dot2.hip", "rocm/affine_tiles.hip",
+    "rocm/affine_dot2.hip", "rocm/affine_tiles.hip", "tp.hip",
 };
 
 /// What the library sources include, so an edit to one rebuilds the libraries.

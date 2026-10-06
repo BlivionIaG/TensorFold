@@ -1,5 +1,7 @@
-//! `layers <model dir> <fixture dir>`: the prompt and greedy decode steps of tools/zig/qwen_rocm_dump.py's `layers`
-//! run on the HIP forward, every layer's residual, the final rows, the logits and the tokens compared byte for byte.
+//! `layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]]`: the prompt and greedy decode steps of
+//! tools/zig/qwen_rocm_dump.py's `layers` run on the HIP forward, every layer's residual, the final rows, the logits and
+//! the tokens compared byte for byte. With --tp every rank runs the forward in step against the dump of the Python
+//! engine's same tp group (`layers --tp N --rank R`).
 
 const std = @import("std");
 const hip = @import("hip");
@@ -10,6 +12,9 @@ const view = qwen35.view;
 const Tensor = hip.ops.Tensor;
 
 const Gpu = struct { d: *const hip.Driver, gpa: std.mem.Allocator, io: std.Io };
+
+/// The tensor-parallel group of this process: one rank of `world`, joined at `master:port`.
+pub const Group = struct { rank: usize = 0, world: usize = 1, master: []const u8 = "127.0.0.1", port: u16 = 29551 };
 
 /// One fixture file's data (the caller frees `bytes`).
 fn read(g: Gpu, dir: []const u8, stem: []const u8, act: view.Kind) !struct { bytes: []u8, data: []const u8 } {
@@ -53,18 +58,34 @@ const Check = struct {
     }
 };
 
-pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8) !void {
-    var ctx = try hip.Context.init(g.d, 0);
+pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
+    var ctx = try hip.Context.init(g.d, @intCast(group.rank));
     defer ctx.deinit();
+    // the unique id starts RCCL's bootstrap thread: the library stays loaded to the end
+    var rccl: ?hip.rccl.Rccl = null;
+    defer if (rccl) |*r| r.close();
+    var link: hip.link.Link = undefined;
+    var comm: hip.rccl.Comm = undefined;
+    if (group.world > 1) {
+        rccl = try hip.rccl.Rccl.open();
+        const pair = try hip.link.Link.open(g.io, group.rank, group.world, group.master, group.port, if (group.rank == 0) try rccl.?.uniqueId() else undefined);
+        link = pair[0];
+        comm = try hip.rccl.Comm.init(&rccl.?, pair[1], group.rank, group.world);
+    }
+    defer if (group.world > 1) {
+        comm.deinit();
+        link.close();
+    };
     const family = hip.rocm.familyOf(try ctx.capability()) orelse return error.UnsupportedGpu;
     var lib = try hip.rocm.Library.open(family);
     defer lib.close();
     const act: view.Kind = if (family == .rdna2) .f16 else .bf16;
     const dtype: qwen35.sample.Dtype = if (act == .f16) .f16 else .bf16;
-    var model = try qwen35.Model.load(g.gpa, g.io, g.d, model_dir);
+    var model = try qwen35.Model.loadRank(g.gpa, g.io, g.d, model_dir, if (group.world > 1) .{ .rank = group.rank, .world = group.world } else null);
     defer model.deinit();
     const br = try qwen35.bridge.Bridge.init(g.gpa, g.d, &model, act);
     defer br.deinit();
+    if (group.world > 1) br.model.tp = comm;
     const m = &br.model;
     const s = m.spec;
     var stream = try hip.Stream.init(g.d, true);
@@ -148,10 +169,16 @@ fn compare(g: Gpu, dir: []const u8, stem: []const u8, act: view.Kind, ptr: u64, 
 fn logitsToken(g: Gpu, o: hip.ops.Ops, m: *const view.Model, dir: []const u8, stem: []const u8, act: view.Kind, dtype: qwen35.sample.Dtype, hidden: Tensor, row: usize) !u32 {
     const s = m.spec;
     const x: Tensor = .{ .ptr = hidden.ptr + row * s.hidden * 2, .kind = act };
-    const logits = try o.affine(x, m.head, 1, false);
+    var logits = try o.affine(x, m.head, 1, false);
+    if (m.tp) |c| {
+        // one row: the ranks' slices in rank order are the vocabulary
+        const parts = try o.arena.take(c.world * m.head.n * 2);
+        try qwen35.reduce.gather(o, c, logits, parts, m.head.n);
+        logits.ptr = parts;
+    }
     try g.d.check(g.d.api.hipStreamSynchronize(o.stream), "sync");
-    try compare(g, dir, stem, act, logits.ptr, m.head.n * 2);
-    const bytes = try download(g, logits.ptr, m.head.n * 2);
+    try compare(g, dir, stem, act, logits.ptr, s.vocab * 2);
+    const bytes = try download(g, logits.ptr, s.vocab * 2);
     defer g.gpa.free(bytes);
     return qwen35.sample.argmax(std.mem.bytesAsSlice(u16, @as([]align(2) u8, @alignCast(bytes))), dtype);
 }

@@ -18,6 +18,9 @@ pub const sample = @import("sample.zig");
 pub const bridge = @import("bridge.zig");
 pub const engine = @import("engine.zig");
 pub const hip_lanes = @import("hip_lanes.zig");
+pub const worker = @import("worker.zig");
+pub const slicing = @import("slicing.zig");
+pub const reduce = @import("reduce.zig");
 
 test {
     _ = config;
@@ -30,4 +33,5 @@ test {
     _ = view;
     _ = moe;
     _ = sample;
+    _ = slicing;
 }

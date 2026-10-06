@@ -5,8 +5,7 @@ const std = @import("std");
 const hip = @import("hip");
 const lanes = @import("lanes");
 const Engine = @import("engine.zig").Engine;
-const state = @import("state.zig");
-const win = @import("window.zig");
+const worker = @import("worker.zig");
 const sample = @import("sample.zig");
 
 const be = lanes.backend;
@@ -14,48 +13,42 @@ const be = lanes.backend;
 /// Drawn tokens a handle names, newest last.
 const ring = 1024;
 
-const Lane = struct {
-    caches: state.Caches,
-    /// Slots written and kept: the next window starts here.
-    len: usize,
-    /// The last verify's window and rows: kept whole unless keep drops some first.
-    pending: ?struct { window: usize, rows: usize } = null,
-};
-
 pub const Hip = struct {
     gpa: std.mem.Allocator,
     e: *Engine,
-    lanes: std.AutoHashMapUnmanaged(*const lanes.Stream, *Lane) = .empty,
+    w: worker.Worker,
+    /// Each stream's id on every rank.
+    ids: std.AutoHashMapUnmanaged(*const lanes.Stream, u32) = .empty,
+    next_id: u32 = 0,
     drawn: [ring]u32 = undefined,
     next: u64 = 0,
-    /// The last verify's windows and snapshots, for keep.
-    wins: []win.Window,
-    snaps: []win.Snapshot,
-    order: []*const lanes.Stream,
+    /// Tensor parallelism: the other ranks, which get every step before this rank runs it.
+    link: ?*const hip.link.Link = null,
+    msg: std.ArrayList(u32) = .empty,
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine) !*Hip {
         const h = try gpa.create(Hip);
         errdefer gpa.destroy(h);
-        const rows = e.o.batch_rows;
-        h.* = .{ .gpa = gpa, .e = e, .wins = try gpa.alloc(win.Window, rows), .snaps = undefined, .order = undefined };
-        errdefer gpa.free(h.wins);
-        h.snaps = try gpa.alloc(win.Snapshot, rows * e.model().spec.n_layers);
-        errdefer gpa.free(h.snaps);
-        h.order = try gpa.alloc(*const lanes.Stream, rows);
+        h.* = .{ .gpa = gpa, .e = e, .w = try worker.Worker.init(gpa, e) };
         return h;
     }
 
+    /// Rank 0 of a tensor-parallel group: every step also goes to the ranks behind `link` (`worker.follow`).
+    pub fn withLink(h: *Hip, link: *const hip.link.Link) void {
+        h.link = link;
+    }
+
     pub fn deinit(h: *Hip) void {
-        var it = h.lanes.valueIterator();
-        while (it.next()) |l| {
-            l.*.caches.deinit(h.gpa);
-            h.gpa.destroy(l.*);
-        }
-        h.lanes.deinit(h.gpa);
-        h.gpa.free(h.order);
-        h.gpa.free(h.snaps);
-        h.gpa.free(h.wins);
+        if (h.link != null) h.send(&.{@backingInt(worker.Op.stop)}) catch {};
+        h.w.deinit();
+        h.ids.deinit(h.gpa);
+        h.msg.deinit(h.gpa);
         h.gpa.destroy(h);
+    }
+
+    /// `words` to the other ranks, when there are any.
+    fn send(h: *Hip, words: []const u32) !void {
+        if (h.link) |l| try l.send(words);
     }
 
     pub fn backend(h: *Hip) be.Backend {
@@ -98,14 +91,6 @@ pub const Hip = struct {
         return at;
     }
 
-    /// A verify the round loop did not trim keeps every row (the core keeps only on drops).
-    fn settle(h: *Hip, lane: *Lane) !void {
-        const p = lane.pending orelse return;
-        try h.e.keep(h.wins[p.window], p.rows);
-        lane.len += p.rows;
-        lane.pending = null;
-    }
-
     fn sampling(s: *const lanes.Stream) ?lanes.Sampling {
         return s.sampling;
     }
@@ -114,22 +99,17 @@ pub const Hip = struct {
         const h = of(ptr);
         const prompt = s.prompt();
         if (prompt.len == 0 or prompt.len + s.max_new + 1 > h.e.o.capacity) return error.PromptTooLong;
-        const gop = try h.lanes.getOrPut(h.gpa, s);
-        if (gop.found_existing) {
-            gop.value_ptr.*.caches.deinit(h.gpa);
-            h.gpa.destroy(gop.value_ptr.*);
+        const gop = try h.ids.getOrPut(h.gpa, s);
+        if (!gop.found_existing) {
+            gop.value_ptr.* = h.next_id;
+            h.next_id += 1;
         }
-        const lane = h.gpa.create(Lane) catch |err| {
-            h.lanes.removeByPtr(gop.key_ptr);
-            return err;
-        };
-        lane.* = .{ .caches = h.e.newCaches() catch |err| {
-            h.gpa.destroy(lane);
-            h.lanes.removeByPtr(gop.key_ptr);
-            return err;
-        }, .len = prompt.len };
-        gop.value_ptr.* = lane;
-        const row = try h.e.prefill(&lane.caches, prompt, 0, null);
+        const id = gop.value_ptr.*;
+        h.msg.clearRetainingCapacity();
+        try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.prefill), id, @intCast(prompt.len) });
+        try h.msg.appendSlice(h.gpa, prompt);
+        try h.send(h.msg.items);
+        const row = try h.w.prefill(id, prompt);
         _ = h.take(try sample.draw(h.gpa, row, h.e.dtype, sampling(s), prompt.len));
     }
 
@@ -159,34 +139,35 @@ pub const Hip = struct {
     /// Each stream's window from its kept length: the pending token, then the host's drafts; one forward for all.
     fn verifyFn(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) anyerror!void {
         const h = of(ptr);
-        if (windows.len > h.wins.len) return error.WindowTooWide;
-        var rows: [64]Engine.Rows = undefined;
+        var items: [64]worker.Item = undefined;
         var tokens: [64][16]u32 = undefined;
-        if (windows.len > rows.len) return error.WindowTooWide;
+        if (windows.len > items.len or windows.len > h.e.o.batch_rows) return error.WindowTooWide;
+        h.msg.clearRetainingCapacity();
+        try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.verify), @intCast(windows.len) });
         for (windows, 0..) |w, i| {
             if (w.parents != null) return error.TreesNotBuilt;
             if (w.held > 0) return error.NoHeldDrafts;
-            const lane = h.lanes.get(w.stream) orelse return error.UnknownStream;
+            const id = h.ids.get(w.stream) orelse return error.UnknownStream;
             const n = w.rows();
             if (n > tokens[i].len) return error.WindowTooWide;
-            try h.settle(lane);
-            for (w.positions, 0..) |p, r| if (p != lane.len + 1 + r) {
-                std.log.err("row {d} keyed at {d}, the stream holds {d} slots", .{ r, p, lane.len });
+            const held = try h.w.settled(id);
+            for (w.positions, 0..) |p, r| if (p != held + 1 + r) {
+                std.log.err("row {d} keyed at {d}, the stream holds {d} slots", .{ r, p, held });
                 return error.PositionMismatch;
             };
             tokens[i][0] = w.pending;
             @memcpy(tokens[i][1..n], w.tokens);
-            rows[i] = .{ .caches = &lane.caches, .pos = lane.len, .tokens = tokens[i][0..n] };
-            h.order[i] = w.stream;
+            items[i] = .{ .id = id, .tokens = tokens[i][0..n] };
+            try h.msg.appendSlice(h.gpa, &.{ id, @intCast(n) });
+            try h.msg.appendSlice(h.gpa, items[i].tokens);
         }
-        const r = try h.e.verify(rows[0..windows.len], h.wins[0..windows.len], h.snaps);
-        const vocab = h.e.model().head.n;
+        try h.send(h.msg.items);
+        const logits = try h.w.verify(items[0..windows.len]);
+        const vocab = h.e.model().spec.vocab;
         var at: usize = 0;
-        for (windows, out, 0..) |w, *o, i| {
-            for (o.sampled, 0..) |*t, row| t.* = try sample.draw(h.gpa, r.logits[(at + row) * vocab ..][0..vocab], h.e.dtype, sampling(w.stream), w.positions[row]);
+        for (windows, out) |w, *o| {
+            for (o.sampled, 0..) |*t, row| t.* = try sample.draw(h.gpa, logits[(at + row) * vocab ..][0..vocab], h.e.dtype, sampling(w.stream), w.positions[row]);
             @memcpy(o.drafts, w.tokens);
-            const lane = h.lanes.get(w.stream).?;
-            lane.pending = .{ .window = i, .rows = w.rows() };
             at += w.rows();
         }
     }
@@ -194,14 +175,14 @@ pub const Hip = struct {
     /// Keep each stream's accepted prefix: lengths, and the linear states of its last kept row.
     fn keepFn(ptr: *anyopaque, windows: []const be.Window, paths: []const []const u32) anyerror!void {
         const h = of(ptr);
+        h.msg.clearRetainingCapacity();
+        try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.keep), @intCast(windows.len) });
         for (windows, paths) |w, path| {
-            const lane = h.lanes.get(w.stream) orelse return error.UnknownStream;
-            const p = lane.pending orelse return error.NothingToKeep;
             for (path, 0..) |r, j| if (r != j) return error.TreesNotBuilt;
-            try h.e.keep(h.wins[p.window], path.len);
-            lane.len += path.len;
-            lane.pending = null;
+            try h.msg.appendSlice(h.gpa, &.{ h.ids.get(w.stream) orelse return error.UnknownStream, @intCast(path.len) });
         }
+        try h.send(h.msg.items);
+        for (windows, paths) |w, path| try h.w.keep(h.ids.get(w.stream).?, path.len);
     }
 
     fn draftFn(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
@@ -211,9 +192,8 @@ pub const Hip = struct {
 
     fn releaseFn(ptr: *anyopaque, s: *lanes.Stream) void {
         const h = of(ptr);
-        const kv = h.lanes.fetchRemove(s) orelse return;
-        h.e.stream.synchronize() catch {};
-        kv.value.caches.deinit(h.gpa);
-        h.gpa.destroy(kv.value);
+        const kv = h.ids.fetchRemove(s) orelse return;
+        h.send(&.{ @backingInt(worker.Op.release), kv.value }) catch {};
+        h.w.release(kv.value);
     }
 };

@@ -6,6 +6,7 @@ const config = @import("config.zig");
 const table = @import("table.zig");
 const host = @import("host.zig");
 const checkpoint = @import("checkpoint.zig");
+const slicing = @import("slicing.zig");
 
 const Tensor = table.Tensor;
 pub const DType = table.DType;
@@ -48,7 +49,7 @@ pub const Experts = struct {
 };
 
 /// Router rows [E + 1, D], the shared gate row last: bf16 as the Python holds them and `rows32` widened.
-pub const Routed = struct { router: Buf, rows32: Buf, experts: Experts, top_k: usize };
+pub const Routed = struct { router: Buf, rows32: Buf, experts: Experts, top_k: usize, remap: ?Buf = null };
 
 pub const DenseMlp = struct { gate: Projection, up: Projection, down: Projection };
 
@@ -152,6 +153,7 @@ const Uploader = struct {
                         .count = e.count,
                     },
                     .top_k = r.top_k,
+                    .remap = if (r.remap) |t| try u.tensor(t) else null,
                 } };
             },
         }
@@ -219,35 +221,58 @@ pub const Model = struct {
     /// `null` ties the output head with `embed`.
     head: ?Projection = null,
     mtp: ?MtpHead = null,
+    /// A tensor-parallel rank's share: the output projections hold fp32 shares of a sum.
+    sliced: bool = false,
 
     /// The text tower of the checkpoint in `dir`, one layer at a time through host memory.
     pub fn load(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Driver, dir: []const u8) !Model {
+        return loadRank(gpa, io, d, dir, null);
+    }
+
+    /// As `load`, keeping only tensor-parallel rank `rank`'s share (null: the whole model).
+    pub fn loadRank(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Driver, dir: []const u8, rank: ?slicing.Rank) !Model {
         var ck = try checkpoint.Checkpoint.open(gpa, io, dir);
         defer ck.close();
-        return fromCheckpoint(gpa, d, &ck, std.math.maxInt(usize));
+        return fromCheckpointRank(gpa, d, &ck, std.math.maxInt(usize), rank);
     }
 
     /// The first `limit` layers of `ck` (all of them when `limit` is large), with the MTP head only when every layer loads.
     pub fn fromCheckpoint(gpa: std.mem.Allocator, d: *const hip.Driver, ck: *const checkpoint.Checkpoint, limit: usize) !Model {
-        var m: Model = .{ .gpa = gpa, .spec = ck.spec() };
+        return fromCheckpointRank(gpa, d, ck, limit, null);
+    }
+
+    /// `fromCheckpoint` for one tensor-parallel rank: its heads, columns, input groups, experts and vocabulary rows are
+    /// cut from the host tensors before upload, and `spec` is what the rank sees (its heads).
+    pub fn fromCheckpointRank(gpa: std.mem.Allocator, d: *const hip.Driver, ck: *const checkpoint.Checkpoint, limit: usize, rank: ?slicing.Rank) !Model {
+        const whole = ck.spec();
+        var m: Model = .{ .gpa = gpa, .spec = if (rank) |r| try slicing.localSpec(whole, r) else whole, .sliced = rank != null };
         errdefer m.deinit();
         const u: Uploader = .{ .d = d, .buffers = &m.buffers, .gpa = gpa };
         var scratch: std.heap.ArenaAllocator = .init(gpa);
         defer scratch.deinit();
-        m.embed = try u.affine(try ck.embed(scratch.allocator()));
+        const embed = try ck.embed(scratch.allocator());
+        m.embed = try u.affine(embed);
         m.final_norm = try u.tensor(try ck.finalNorm(scratch.allocator()));
-        if (try ck.head(scratch.allocator())) |h| m.head = try u.projection(h);
+        const head = try ck.head(scratch.allocator());
+        if (rank) |r| {
+            m.head = try u.projection(try slicing.vocabRows(scratch.allocator(), head orelse .{ .affine = embed }, whole.vocab, r));
+        } else if (head) |h| m.head = try u.projection(h);
         var list: std.ArrayList(Layer) = .empty;
         errdefer list.deinit(gpa);
         for (0..@min(limit, m.spec.n_layers)) |i| {
             var host_layer = try ck.layer(i);
             defer host_layer.deinit();
+            if (rank) |r| try slicing.layer(&host_layer, whole, r);
             try list.append(gpa, try u.layer(host_layer));
         }
         m.layers = try list.toOwnedSlice(gpa);
-        if (m.layers.len == m.spec.n_layers) if (try ck.mtp()) |head| {
-            var h = head;
+        if (m.layers.len == m.spec.n_layers) if (try ck.mtp()) |head_layer| {
+            var h = head_layer;
             defer h.deinit();
+            // under tp the draft head stays whole on every rank but its logits rows
+            if (rank) |r| if (h.head) |p| {
+                h.head = try slicing.vocabRows(h.arena.allocator(), p, whole.vocab, r);
+            };
             m.mtp = try u.mtp(h);
         };
         return m;

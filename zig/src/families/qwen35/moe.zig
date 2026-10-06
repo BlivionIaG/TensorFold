@@ -30,22 +30,41 @@ fn tileFor(rows: usize) usize {
     return if (rows < BLOCK_FROM) LANE_ROWS else BLOCK_ROWS;
 }
 
-/// `x` (rows, D) in the activation dtype -> (rows, D) in it: the top-k experts plus the shared one.
+/// `x` (rows, D) in the activation dtype -> (rows, D) in it: the top-k experts plus the shared one. A tensor-parallel
+/// rank returns its fp32 share instead.
 pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize, prefill: bool) hip.ops.Error!Tensor {
     _ = prefill; // the affine experts' arithmetic does not depend on it (the plan's tile comes from tile_for)
     const ex = r.experts;
     const slots = r.top_k + 1;
     const size = bucket(rows);
     const pairs = rows * slots;
-    const cap = capacity(size * slots, ex.count);
-    const logits = try o.arena.of(f32, rows * ex.count);
+    const cap = capacity(size * slots, r.rows);
+    const logits = try o.arena.of(f32, rows * r.rows);
     const pick = try o.arena.of(i32, size * slots);
     const wts = try o.arena.of(f32, size * slots);
     const items = try o.arena.of(i32, cap * 3);
     const members = try o.arena.of(i32, size * slots);
-    try o.moeRouter(x, r.rows32, logits, rows, ex.dims, ex.count);
+    try o.moeRouter(x, r.rows32, logits, rows, ex.dims, r.rows);
     var count: usize = cap;
     var tile: usize = undefined;
+    if (r.remap != 0) {
+        // every rank picks the same pairs, runs the ones it holds (the others group under an id past its experts)
+        try o.moeSelect(logits, pick, wts, null, 0, rows, r.count(), r.top_k);
+        const local = try o.arena.of(i32, size * slots);
+        try o.moeLocalize(pick, r.remap, local, pairs, ex.count);
+        tile = tileFor(rows);
+        try o.moeRoute(local, pairs, r.rows, tile, members, items, cap);
+        try o.moeForeignItems(items, cap, ex.count);
+        const both = try o.affineRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
+        const act = try o.arena.take(pairs * ex.width * m.act.size());
+        const act_t: Tensor = .{ .ptr = act, .kind = m.act };
+        try o.moeAct(both, act_t, pairs, ex.width, ex.limit);
+        const y = try o.affineRouted(act_t, ex.down, items, count, members, pairs, 1, @min(tile, rows));
+        try o.moeZeroForeign(y, local, ex.count, pairs, ex.dims);
+        const share = try o.arena.of(f32, rows * ex.dims);
+        try o.moeCombine(y, wts, .{ .ptr = share, .kind = .f32 }, rows, slots, ex.dims);
+        return .{ .ptr = share, .kind = .f32 };
+    }
     if (rows == 1) {
         try o.moeSelect(logits, pick, wts, .{ .items = items, .members = members }, cap, 1, r.count(), r.top_k);
         tile = 1;
@@ -53,7 +72,7 @@ pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize,
     } else {
         try o.moeSelect(logits, pick, wts, null, 0, rows, r.count(), r.top_k);
         tile = tileFor(rows);
-        try o.moeRoute(pick, pairs, ex.count, tile, members, items, cap);
+        try o.moeRoute(pick, pairs, r.rows, tile, members, items, cap);
     }
     const both = try o.affineRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
     const act = try o.arena.take(pairs * ex.width * m.act.size());
