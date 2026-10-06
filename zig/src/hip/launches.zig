@@ -666,8 +666,9 @@ pub const Launcher = struct {
         a.add(len);
         a.add(channels);
         a.add(kernel);
-        const n = @as(i64, @max(len, kernel - 1)) * channels;
-        try l.go(l.op.conv_prefill, dim(cdiv(n, 256), 1, 1), dim(256, 1, 1), 0, s, &a);
+        // a thread a channel over 16 rows (conv_prefill_kernel's kConvRows), at most 8 taps
+        if (kernel > 8) return invalid("conv_prefill");
+        try l.go(l.op.conv_prefill, dim(cdiv(channels, 256), @max(1, cdiv(len, 16)), 1), dim(256, 1, 1), 0, s, &a);
     }
 
     pub fn tf_gdn_gate_prefill(l: *const Launcher, av: C, bv: C, kind: c_int, a_log: CF, dt_bias: CF, gate: F, beta: F, count: c_int, heads: c_int, s: S) Error!void {

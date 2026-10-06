@@ -173,28 +173,38 @@ __global__ void kv_write_at_kernel(const void* src, void* cache, int kind, int l
 }
 
 // causal_conv's prefill loop: window = [state | x], out = sum over taps in order of window * weight from a zero,
-// then silu; one thread a (row, channel), so every row runs at once with the same sum. new_state = the window's last
-// kernel - 1 rows, written by the first kept * channels threads; it must not be `state` (other rows still read it).
+// then silu; every row runs at once with the same sum. new_state = the window's last kernel - 1 rows, written by the
+// first row block; it must not be `state` (other rows still read it).
+constexpr int kConvRows = 16;   // rows a conv_prefill thread slides over
+constexpr int kConvTaps = 8;    // most taps it holds
+
 __global__ void conv_prefill_kernel(const void* x, int kind, const float* weight, const float* state, float* out,
                                     float* new_state, int len, int channels, int kernel) {
-    long long i = gid();
-    int kept = kernel - 1;
-    auto window = [&](int t, int c) -> float {
+    // a thread one channel over kConvRows rows, the window sliding in registers (each input read once)
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= channels) return;
+    const int r0 = blockIdx.y * kConvRows;
+    const int kept = kernel - 1;
+    auto window = [&](int t) -> float {
         if (t < kept) return state ? state[static_cast<long long>(t) * channels + c] : 0.0f;
         return load(x, kind, static_cast<long long>(t - kept) * channels + c);
     };
-    if (i < static_cast<long long>(kept) * channels) {
-        int t = static_cast<int>(i / channels), c = static_cast<int>(i % channels);
-        new_state[i] = window(len + t, c);
+    if (blockIdx.y == 0)
+        for (int t = 0; t < kept; ++t) new_state[static_cast<long long>(t) * channels + c] = window(len + t);
+    float w[kConvTaps], win[kConvTaps];
+    for (int tap = 0; tap < kernel; ++tap) w[tap] = weight[static_cast<long long>(c) * kernel + tap];
+    for (int tap = 0; tap + 1 < kernel; ++tap) win[tap] = window(r0 + tap);
+    const int r1 = r0 + kConvRows < len ? r0 + kConvRows : len;
+    for (int r = r0; r < r1; ++r) {
+        win[kernel - 1] = window(r + kernel - 1);
+        float acc = 0.0f;
+        for (int tap = 0; tap < kernel; ++tap) {
+            float p = win[tap] * w[tap];
+            acc = acc + p;
+        }
+        out[static_cast<long long>(r) * channels + c] = silu(acc);
+        for (int tap = 0; tap + 1 < kernel; ++tap) win[tap] = win[tap + 1];
     }
-    if (i >= static_cast<long long>(len) * channels) return;
-    int r = static_cast<int>(i / channels), c = static_cast<int>(i % channels);
-    float acc = 0.0f;
-    for (int tap = 0; tap < kernel; ++tap) {
-        float p = window(r + tap, c) * weight[static_cast<long long>(c) * kernel + tap];
-        acc = acc + p;
-    }
-    out[i] = silu(acc);
 }
 
 // _gate_beta: beta = sigmoid(b), gate = exp(-exp(a_log) * softplus(a + dt_bias)) with torch's softplus (beta 1,
@@ -656,8 +666,13 @@ int tf_kv_write_at(const void* src, void* cache, int kind, int len, int kv_heads
 
 int tf_conv_prefill(const void* x, int kind, const float* weight, const float* state, float* out, float* new_state,
                     int len, int channels, int kernel, hipStream_t s) {
-    long long n = static_cast<long long>(len > kernel - 1 ? len : kernel - 1) * channels;
-    conv_prefill_kernel<<<blocks(n, 256), 256, 0, s>>>(x, kind, weight, state, out, new_state, len, channels, kernel);
+    if (channels == 0) return 0;
+    if (kernel > kConvTaps) {
+        std::strncpy(op_error, "conv_prefill: more taps than it holds", sizeof(op_error) - 1);
+        return 1;
+    }
+    conv_prefill_kernel<<<dim3((channels + 255) / 256, len > 0 ? (len + kConvRows - 1) / kConvRows : 1), 256, 0, s>>>(
+        x, kind, weight, state, out, new_state, len, channels, kernel);
     return finish();
 }
 
