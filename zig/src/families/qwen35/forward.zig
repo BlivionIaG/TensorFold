@@ -15,7 +15,7 @@ const Kind = hip.ops.Kind;
 /// Rows of one prefill step (qwen_math.SPAN).
 pub const SPAN = 2048;
 
-pub const Error = reduce.Error;
+pub const Error = reduce.Error || error{Cancelled};
 
 pub const residual = reduce.residual;
 
@@ -66,7 +66,7 @@ pub fn span(o: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: 
             const z = try mlpRows(o, m, mlp, normed, rows, true);
             try residual(o, m, xs, z, rows * s.hidden);
         }
-        if (trace) |t| t.layer(t.ctx, index, x, len) catch return error.KernelFailed;
+        if (trace) |t| t.layer(t.ctx, index, x, len) catch |err| return if (err == error.Cancelled) error.Cancelled else error.KernelFailed;
     }
     const out = try take(o, m.act, len * s.hidden);
     try o.rms(x, m.final_norm, out, len, s.hidden, @floatCast(s.eps));
