@@ -33,6 +33,9 @@ pub const Job = struct {
     kept: usize = 0,
 };
 
+/// A greedy chain reads the head over the first ids of the vocabulary alone (the common tokens): a draft only guesses.
+const draft_vocab = 65536;
+
 pub const Head = struct {
     gpa: std.mem.Allocator,
     d: *const hip.Driver,
@@ -41,6 +44,8 @@ pub const Head = struct {
     kv_heads: usize,
     mlp: ?view.Mlp,
     logits_head: view.Affine,
+    /// The same weights over the first `draft_vocab` ids.
+    draft_head: view.Affine,
     /// Most chains a batch runs together; each has its own cache of `max_depth + 1` slots.
     cap: usize,
     cache_bytes: usize,
@@ -62,6 +67,9 @@ pub const Head = struct {
         const h = try gpa.create(Head);
         errdefer gpa.destroy(h);
         const kv_heads = ka.n / s.head_dim;
+        const full = if (w.head) |hp| try affineOf(hp) else model.head;
+        var narrow = full;
+        narrow.n = @min(full.n, draft_vocab);
         const cache = kv_heads * (max_depth + 1) * s.head_dim * model.act.size();
         h.* = .{
             .gpa = gpa,
@@ -70,7 +78,8 @@ pub const Head = struct {
             .heads = qa.n / s.head_dim / @as(usize, if (w.gated) 2 else 1),
             .kv_heads = kv_heads,
             .mlp = if (w.mlp) |x| try bridge.mlpView(x, false) else null,
-            .logits_head = if (w.head) |hp| try affineOf(hp) else model.head,
+            .logits_head = full,
+            .draft_head = narrow,
             .cap = cap,
             .cache_bytes = cache,
             .k = undefined,
@@ -170,20 +179,14 @@ pub const Head = struct {
         }
         try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0..at.drafts], o.stream);
         const dev = h.scalars_dev.ptr;
-        var cur: Tensor = .{ .ptr = h.rows.ptr, .kind = m.act };
-        var reqs: [64]draw.Request = undefined;
-        var drawn: [64]u32 = undefined;
-        for (0..most) |n| {
-            // a greedy draft feeds the next step from the device; a sampled one comes back through the host
-            const drafts = dev + at.drafts + 4 * h.cap * n;
-            const ids = if (n == 0 or !greedy) dev else drafts - 4 * h.cap;
-            const logits = try h.step(o, m, cur, ids, rows, dev + at.slots + 4 * n, dev + at.pos + 4 * h.cap * n, n);
-            // a draft's probability is read only where a later draft would follow it
-            const chance = dev + at.probs + 4 * h.cap * n;
-            if (greedy) {
-                try o.argmaxRows(logits, rows, h.logits_head.n, drafts);
-                if (cut and n + 1 < most) try o.tokenProb(logits, rows, h.logits_head.n, 0, chance);
-            } else {
+        if (greedy) {
+            try h.steps(o, m, rows, most, cut);
+        } else {
+            var cur: Tensor = .{ .ptr = h.rows.ptr, .kind = m.act };
+            var reqs: [64]draw.Request = undefined;
+            var drawn: [64]u32 = undefined;
+            for (0..most) |n| {
+                const logits = try h.step(o, m, h.logits_head, cur, dev, rows, dev + at.slots + 4 * n, dev + at.pos + 4 * h.cap * n, n);
                 for (jobs, 0..) |j, r| reqs[r] = .{ .sampling = j.sampling, .position = j.position + n + 1 };
                 try drawer.draw(o, stream, logits, reqs[0..rows], drawn[0..rows]);
                 for (jobs, 0..) |j, r| if (n < j.out.len) {
@@ -192,10 +195,10 @@ pub const Head = struct {
                 if (n + 1 < most) {
                     for (0..rows) |r| sc[r] = @intCast(drawn[r]);
                     try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0 .. 4 * rows], o.stream);
-                    if (cut) try o.tokenProb(logits, rows, h.logits_head.n, dev, chance);
+                    if (cut) try o.tokenProb(logits, rows, h.logits_head.n, dev, dev + at.probs + 4 * h.cap * n);
                 }
+                cur = .{ .ptr = h.last, .kind = m.act };
             }
-            cur = .{ .ptr = h.last, .kind = m.act };
         }
         if (greedy or cut) {
             try h.scalars_dev.downloadAsync(at.drafts, h.scalars.bytes[at.drafts..at.total], o.stream);
@@ -216,10 +219,25 @@ pub const Head = struct {
         }
     }
 
+    /// The greedy chains' steps on the device alone: each step's drafts feed the next, with the probabilities of those a later one follows.
+    fn steps(h: *Head, o: Ops, m: *const view.Model, rows: usize, most: usize, cut: bool) !void {
+        const at = h.layout();
+        const dev = h.scalars_dev.ptr;
+        var cur: Tensor = .{ .ptr = h.rows.ptr, .kind = m.act };
+        for (0..most) |n| {
+            const drafts = dev + at.drafts + 4 * h.cap * n;
+            const ids = if (n == 0) dev else drafts - 4 * h.cap;
+            const logits = try h.step(o, m, h.draft_head, cur, ids, rows, dev + at.slots + 4 * n, dev + at.pos + 4 * h.cap * n, n);
+            try o.argmaxRows(logits, rows, h.draft_head.n, drafts);
+            if (cut and n + 1 < most) try o.tokenProb(logits, rows, h.draft_head.n, 0, dev + at.probs + 4 * h.cap * n);
+            cur = .{ .ptr = h.last, .kind = m.act };
+        }
+    }
+
     /// One head step over `rows` chains, a row each, at their rope positions (device int32s at `pos`), writing each
     /// chain's slot `slot` (its last visible slot at device `slot_at`), the tokens at device `ids`: the logits rows
     /// (activation dtype).
-    fn step(h: *Head, o: Ops, m: *const view.Model, hidden: Tensor, ids: u64, rows: usize, slot_at: u64, pos: u64, slot: usize) !Tensor {
+    fn step(h: *Head, o: Ops, m: *const view.Model, head: view.Affine, hidden: Tensor, ids: u64, rows: usize, slot_at: u64, pos: u64, slot: usize) !Tensor {
         const s = m.spec;
         const w = h.w;
         const eps: f32 = @floatCast(s.eps);
@@ -275,7 +293,7 @@ pub const Head = struct {
         const residual = try fwd.take(o, m.act, rows * s.hidden);
         try o.rms(x, w.final_norm.ptr, residual, rows, s.hidden, eps);
         h.last = residual.ptr;
-        return o.affine(residual, h.logits_head, rows, false);
+        return o.affine(residual, head, rows, false);
     }
 };
 
