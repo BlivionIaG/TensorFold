@@ -50,6 +50,23 @@ fn tri(kind: c_int) usize {
 /// By kind (0 fp32, 1 fp16, 2 bf16) or by cache kind (0 fp16, 1 bf16, 2 fp32), the kernel one instantiation.
 const Triple = [3]Function;
 
+/// The chunked DeltaNet's chunk, in rows.
+pub const gdn_chunk = 64;
+
+/// Byte sizes of the chunked DeltaNet's scratch, rows padded to whole chunks: q, k, k transposed and v as fp16 (q, k and v
+/// in tiles of a chunk), the cumulative log gate, w, u and v_new transposed, each chunk's start state.
+pub const GdnScratch = struct { qk: usize, gc: usize, wu: usize, h: usize, total: usize };
+
+pub fn gdnScratch(length: usize, key_heads: usize, value_heads: usize) GdnScratch {
+    const chunks = cdiv(length, gdn_chunk);
+    const rows = chunks * gdn_chunk;
+    const qk = std.mem.alignForward(usize, rows * key_heads * 128 * 2, 256);
+    const gc = std.mem.alignForward(usize, length * value_heads * 4, 256);
+    const wu = std.mem.alignForward(usize, rows * value_heads * 128 * 2, 256);
+    const h = chunks * value_heads * 128 * 128 * 2;
+    return .{ .qk = qk, .gc = gc, .wu = wu, .h = h, .total = 3 * qk + gc + 4 * wu + h };
+}
+
 pub const Launcher = struct {
     d: *const driver.Driver,
     mods: [kernels.group_count]Module,
@@ -69,6 +86,7 @@ pub const Launcher = struct {
     causal: Triple,
     fa_prefill: Triple,
     fa_wide: [2]Function, // the 64-row prefill tile, fp16 and bf16 caches
+    gdn_chunked: [5]Function, // prep, kt, wy, h, o
     softmax_stats: Function,
     sum_partials: Function,
     op: Ops,
@@ -109,6 +127,8 @@ pub const Launcher = struct {
         const gd = l.mods[@backingInt(kernels.Group.gated_delta)];
         const pre = l.mods[@backingInt(kernels.Group.prefill)];
         l.fa_wide = .{ try pre.function("tf_fa_wide_f16"), try pre.function("tf_fa_wide_bf16") };
+        const gp = l.mods[@backingInt(kernels.Group.gdn_prefill)];
+        l.gdn_chunked = .{ try gp.function("tf_gdn_prep"), try gp.function("tf_gdn_kt"), try gp.function("tf_gdn_wy"), try gp.function("tf_gdn_h"), try gp.function("tf_gdn_o") };
         const anon = "_ZN12_GLOBAL__N_1";
         l.op = .{
             .embed_rows = try ops.function(anon ++ "17embed_rows_kernelEPKjPKvS3_iPKiiiiiPvi"),
@@ -348,6 +368,78 @@ pub const Launcher = struct {
         } else {
             try l.go(l.gated_delta_wave[wide], dim(dv, value_heads, batch), dim(32, 1, 1), 0, s, &a);
         }
+    }
+
+    /// The chunked DeltaNet prefill of `length` rows (dk = dv = 128, batch 1, `scratch` of `gdnScratch` bytes): the
+    /// recurrence's outputs and final state in 64-row chunks.
+    pub fn gdnChunked(l: *const Launcher, q: CF, k: CF, v: CF, gate: CF, beta: CF, state: F, y: F, length: usize, key_heads: usize, value_heads: usize, scratch: u64, s: S) Error!void {
+        if (length < 1 or key_heads < 1 or @rem(value_heads, key_heads) != 0) return invalid("gdn chunked");
+        const sc = gdnScratch(length, key_heads, value_heads);
+        const qh = scratch;
+        const kh = qh + sc.qk;
+        const kt = kh + sc.qk;
+        const vh = kt + sc.qk;
+        const gc = vh + sc.wu;
+        const w = gc + sc.gc;
+        const u = w + sc.wu;
+        const vt = u + sc.wu;
+        const hb = vt + sc.wu;
+        const chunks = cdiv(length, gdn_chunk);
+        const len: c_int = @intCast(length);
+        const hk: c_int = @intCast(key_heads);
+        const hv: c_int = @intCast(value_heads);
+        var a: Args = .{};
+        a.add(ad(q));
+        a.add(ad(k));
+        a.add(ad(v));
+        a.add(qh);
+        a.add(kh);
+        a.add(vh);
+        a.add(len);
+        a.add(hk);
+        a.add(hv);
+        try l.go(l.gdn_chunked[0], dim(cdiv(length * (key_heads + value_heads) * 32, 256), 1, 1), dim(256, 1, 1), 0, s, &a);
+        var t: Args = .{};
+        t.add(kh);
+        t.add(kt);
+        t.add(len);
+        t.add(hk);
+        try l.go(l.gdn_chunked[1], dim(chunks, key_heads, 1), dim(256, 1, 1), 0, s, &t);
+        var b: Args = .{};
+        b.add(kh);
+        b.add(vh);
+        b.add(ad(beta));
+        b.add(ad(gate));
+        b.add(gc);
+        b.add(w);
+        b.add(u);
+        b.add(len);
+        b.add(hk);
+        b.add(hv);
+        try l.go(l.gdn_chunked[2], dim(chunks, value_heads, 1), dim(256, 1, 1), 0, s, &b);
+        var c: Args = .{};
+        c.add(kt);
+        c.add(w);
+        c.add(u);
+        c.add(vt);
+        c.add(gc);
+        c.add(ad(state));
+        c.add(hb);
+        c.add(len);
+        c.add(hk);
+        c.add(hv);
+        try l.go(l.gdn_chunked[3], dim(8, value_heads, 1), dim(256, 1, 1), 0, s, &c);
+        var d: Args = .{};
+        d.add(qh);
+        d.add(kh);
+        d.add(vt);
+        d.add(hb);
+        d.add(gc);
+        d.add(ad(y));
+        d.add(len);
+        d.add(hk);
+        d.add(hv);
+        try l.go(l.gdn_chunked[4], dim(chunks, value_heads, 1), dim(256, 1, 1), 0, s, &d);
     }
 
     pub fn tf_causal(l: *const Launcher, q: CF, k: C, v: C, out: F, batch: c_int, qlen: c_int, span: c_int, heads: c_int, kv_heads: c_int, d: c_int, scale: f32, q_pos0: c_int, k_sb: c_longlong, k_sh: c_longlong, k_ss: c_longlong, v_sb: c_longlong, v_sh: c_longlong, v_ss: c_longlong, cache_kind: c_int, scores: F, stats: F, partials: F, s: S, pos: CI) Error!void {
