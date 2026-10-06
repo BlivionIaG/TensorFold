@@ -7,6 +7,7 @@
 
 #include "affine_dot2.hpp"
 #include "affine_gemm.hpp"
+#include "affine_stream.hpp"
 
 namespace tf {
 namespace rocm {
@@ -283,6 +284,7 @@ hipError_t launch_affine_dot2_lanes(const Affine& a, hipStream_t stream, int ite
         return hipErrorInvalidValue;
     }
     hipError_t row = hipSuccess;
+    if (launch_affine_dot2_stream(a, stream, items, &row)) return row;
     if (launch_affine_dot2_row(a, stream, items, &row)) return row;
     switch (a.bits) {
         case 2: return launch_lanes<2>(a, stream, items);
