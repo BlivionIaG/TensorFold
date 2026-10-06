@@ -329,6 +329,77 @@ __device__ void router_rows(const void* x, const float* rows, float* logits, int
     }
 }
 
+// The router's logits for many rows: a 64 x 64 tile of (row, expert) a block over 16-wide steps of the hidden size,
+// each thread 4 x 4 of them in fp32.
+template <int KIND>
+__device__ void router_tile(const void* x, const float* rows, float* logits, int r, int d, int e) {
+    constexpr int kTile = 64, kStep = 16, kLd = kTile + 4;
+    __shared__ alignas(16) float xs[kStep][kLd];
+    __shared__ alignas(16) float ws[kStep][kLd];
+    const int row0 = blockIdx.y * kTile, expert0 = blockIdx.x * kTile;
+    const int ty = threadIdx.x / 16, tx = threadIdx.x % 16;
+    float acc[4][4] = {};
+    for (int base = 0; base < d; base += kStep) {
+        __syncthreads();
+        for (int q = threadIdx.x; q < kTile * kStep; q += 256) {
+            const int t = q / kStep, i = q % kStep;
+            const bool in = base + i < d;
+            xs[i][t] = (row0 + t < r && in) ? load(x, KIND, static_cast<long long>(row0 + t) * d + base + i) : 0.f;
+            ws[i][t] = (expert0 + t < e && in) ? rows[static_cast<long long>(expert0 + t) * d + base + i] : 0.f;
+        }
+        __syncthreads();
+#pragma unroll
+        for (int i = 0; i < kStep; ++i) {
+            const float4 a = *reinterpret_cast<const float4*>(&xs[i][4 * ty]);
+            const float4 b = *reinterpret_cast<const float4*>(&ws[i][4 * tx]);
+            const float av[4] = {a.x, a.y, a.z, a.w}, bv[4] = {b.x, b.y, b.z, b.w};
+#pragma unroll
+            for (int u = 0; u < 4; ++u)
+#pragma unroll
+                for (int w = 0; w < 4; ++w) acc[u][w] = fmaf(av[u], bv[w], acc[u][w]);
+        }
+    }
+#pragma unroll
+    for (int u = 0; u < 4; ++u) {
+        const int row = row0 + 4 * ty + u;
+        if (row >= r) continue;
+#pragma unroll
+        for (int w = 0; w < 4; ++w) {
+            const int expert = expert0 + 4 * tx + w;
+            if (expert < e) logits[static_cast<long long>(row) * e + expert] = acc[u][w];
+        }
+    }
+}
+
+// rms_kernel's arithmetic a wave a row (its lanes' strided sums, the same xor tree), 8 rows a block: short rows such
+// as a head's q or k no longer hold a 256-thread block each.
+__device__ void rms_rows(const void* x, int kind, const float* weight, void* y, int rows, int width, float eps) {
+    constexpr int kMost = 1024 / 32;
+    const int lane = threadIdx.x & 31;
+    const int row = blockIdx.x * 8 + (threadIdx.x >> 5);
+    if (row >= rows) return;
+    const long long at = static_cast<long long>(row) * width;
+    float v[kMost];
+    float sum = 0.f;
+#pragma unroll
+    for (int j = 0; j < kMost; ++j) {
+        const int i = lane + 32 * j;
+        v[j] = i < width ? load(x, kind, at + i) : 0.f;
+        if (i < width) sum += v[j] * v[j];
+    }
+#pragma unroll
+    for (int mask = 16; mask > 0; mask >>= 1) sum += __shfl_xor(sum, mask, 32);
+    const float inv = rsqrtf(__shfl(sum, 0, 32) / static_cast<float>(width) + eps);
+#pragma unroll
+    for (int j = 0; j < kMost; ++j) {
+        const int i = lane + 32 * j;
+        if (i >= width) break;
+        float value = v[j] * inv;
+        if (weight != nullptr) value *= weight[i];
+        store(y, kind, at + i, value);
+    }
+}
+
 thread_local char op_error[256] = "";
 
 constexpr int kThreads = 1024;
@@ -469,6 +540,21 @@ int finish() {
 unsigned blocks(long long n, int threads) { return static_cast<unsigned>((n + threads - 1) / threads); }
 
 }  // namespace
+
+extern "C" __global__ void __launch_bounds__(256) tf_rms_rows(const void* x, int kind, const float* weight, void* y,
+                                                              int rows, int width, float eps) {
+    rms_rows(x, kind, weight, y, rows, width, eps);
+}
+
+extern "C" __global__ void __launch_bounds__(256) tf_router_tile_f16(const void* x, const float* rows, float* logits,
+                                                                     int r, int d, int e) {
+    router_tile<1>(x, rows, logits, r, d, e);
+}
+
+extern "C" __global__ void __launch_bounds__(256) tf_router_tile_bf16(const void* x, const float* rows, float* logits,
+                                                                      int r, int d, int e) {
+    router_tile<2>(x, rows, logits, r, d, e);
+}
 
 extern "C" __global__ void __launch_bounds__(256) tf_router_rows_f16(const void* x, const float* rows, float* logits,
                                                                      int r, int d, int e) {

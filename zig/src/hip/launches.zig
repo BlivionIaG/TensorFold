@@ -89,6 +89,8 @@ pub const Launcher = struct {
         dense_rows: Function,
         moe_route: Function,
         router_rows: [2]Function, // fp16, bf16
+        router_tile: [2]Function,
+        rms_rows: Function,
     };
 
     /// Loads the family's code objects on the current device and resolves every kernel the launchers use.
@@ -123,6 +125,8 @@ pub const Launcher = struct {
             .dense_rows = try ops.function(anon ++ "17dense_rows_kernelEPKviPKfPviii"),
             .moe_route = try ops.function(anon ++ "16moe_route_kernelEPKiiiiPiS2_i"),
             .router_rows = .{ try ops.function("tf_router_rows_f16"), try ops.function("tf_router_rows_bf16") },
+            .router_tile = .{ try ops.function("tf_router_tile_f16"), try ops.function("tf_router_tile_bf16") },
+            .rms_rows = try ops.function("tf_rms_rows"),
         };
         const r = "_ZN2tf4rocm";
         l.rms = .{
@@ -203,6 +207,16 @@ pub const Launcher = struct {
     pub fn tf_rms(l: *const Launcher, x: C, weight: CF, y: P, kind: c_int, rows: c_int, width: c_int, eps: f32, s: S) Error!void {
         var a: Args = .{};
         a.add(ad(x));
+        if (width <= 1024) {
+            // a wave a row, rms_kernel's sums
+            a.add(kind);
+            a.add(ad(weight));
+            a.add(ad(y));
+            a.add(rows);
+            a.add(width);
+            a.add(eps);
+            return l.go(l.op.rms_rows, dim(cdiv(rows, 8), 1, 1), dim(256, 1, 1), 0, s, &a);
+        }
         a.add(ad(weight));
         a.add(ad(y));
         a.add(width);
@@ -248,7 +262,8 @@ pub const Launcher = struct {
     }
 
     pub fn tf_moe_router(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S) Error!void {
-        // a wave an expert over 8 rows: each logit's sum as moe_router_kernel's, the expert row read once for 8 rows
+        // a prompt's rows: 64 x 64 tiles of fp32 products; a round's few rows: a wave an expert over 8 rows, each logit's
+        // sum as moe_router_kernel's
         var a: Args = .{};
         a.add(ad(x));
         a.add(ad(rows));
@@ -256,7 +271,9 @@ pub const Launcher = struct {
         a.add(r);
         a.add(d);
         a.add(e);
-        try l.go(l.op.router_rows[if (kind == 1) 0 else 1], dim(cdiv(e, 8), cdiv(r, 8), 1), dim(256, 1, 1), 0, s, &a);
+        const k: usize = if (kind == 1) 0 else 1;
+        if (r >= 64) return l.go(l.op.router_tile[k], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
+        try l.go(l.op.router_rows[k], dim(cdiv(e, 8), cdiv(r, 8), 1), dim(256, 1, 1), 0, s, &a);
     }
 
     pub fn tf_moe_select(l: *const Launcher, logits: CF, pick: I, wts: F, items: I, members: I, capacity: c_int, r: c_int, experts: c_int, top_k: c_int, s: S) Error!void {
