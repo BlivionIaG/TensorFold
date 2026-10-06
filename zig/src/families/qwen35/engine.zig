@@ -341,7 +341,9 @@ pub const Engine = struct {
 
     /// The forward and its logits projection.
     fn body(e: *Engine, wins: []win.Window, total: usize) !round_graphs.Out {
-        const o = e.ops(&e.rounds);
+        var o = e.ops(&e.rounds);
+        // a round's rows keep their decode kernels however many share it
+        o.window = true;
         const hidden = try win.forward(o, e.model(), wins, e.ids_dev.ptr, null);
         const y = try o.affine(hidden, e.model().head, total, false);
         return .{ .hidden = hidden, .y = y, .used = e.rounds.used };
