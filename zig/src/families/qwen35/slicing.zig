@@ -219,8 +219,8 @@ test "a column split keeps whole groups and a row split its own rows" {
         .words = .{ .dtype = .i32, .rank = 2, .shape = .{ 4, 4, 1, 1 }, .bytes = std.mem.sliceAsBytes(&words) },
         .scales = .{ .dtype = .bf16, .rank = 2, .shape = .{ 4, 2, 1, 1 }, .bytes = std.mem.sliceAsBytes(&scales) },
         .biases = .{ .dtype = .bf16, .rank = 2, .shape = .{ 4, 2, 1, 1 }, .bytes = std.mem.sliceAsBytes(&scales) },
-        .bits = 4,
-        .group = 32,
+        .bits = 8, // four words a row: sixteen codes, two groups of eight
+        .group = 8,
     } };
     const c = try cols(a, p, .{ .rank = 1, .world = 2 }, "test");
     try std.testing.expectEqual(@as(usize, 2), c.affine.words.shape[1]);
