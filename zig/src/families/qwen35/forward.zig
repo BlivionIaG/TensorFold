@@ -36,7 +36,10 @@ pub const Trace = struct {
 };
 
 /// The span's final-normed rows (len, hidden) in the activation dtype; `ids` are int32 token ids on the device.
-pub fn span(o: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: usize, pos0: usize, trace: ?Trace) Error!Tensor {
+pub fn span(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: usize, pos0: usize, trace: ?Trace) Error!Tensor {
+    // prefill's kernels at any row count: a prompt's rows have the same bits fresh, resumed or in steps
+    var o = ops;
+    o.prefill = true;
     const s = m.spec;
     const x = try take(o, m.act, len * s.hidden);
     var start: usize = 0;

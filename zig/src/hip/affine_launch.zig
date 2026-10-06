@@ -360,6 +360,18 @@ pub const Kernels = struct {
         try go(d, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
     }
 
+    /// Prefill's tile at any row count, so a prompt's rows have the same bits however it is cut: the matrix tile on
+    /// gfx11 unless switched off, else the dot2 GEMM tile (the previous one for words it cannot load wide).
+    pub fn prefillLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
+        if (a.m < 1 or a.n < 1 or !groupOk(a.group) or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0) return refuse("prefill shape");
+        const b = bitIndex(a.bits) orelse return refuse("bits");
+        var args: hl.Args = .{};
+        args.add(a);
+        const matrix = k.tile == .gemm and k.matrix and k.mode != .off and a.fp16 == 0 and gemmFits(a);
+        const f = if (matrix) k.wmma_gemm[b] else if (k.tile == .gemm and gemmFits(a)) k.gemm[b] else k.block[b];
+        try go(d, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
+    }
+
     fn groupOk(group: c_int) bool {
         return group == 32 or group == 64 or group == 128;
     }
@@ -373,6 +385,7 @@ pub const Kernels = struct {
             a.out16 = a.out;
             a.out = 0;
         }
+        if (schedule == 3) return k.prefillLaunch(d, a, s, 1);
         if (partial != 0 and parts > 1) return k.split(d, a, partial, parts, s);
         if (k.wmma) {
             if (schedule != 0 or a.fp16 != 0) return refuse("this schedule stays in the library");

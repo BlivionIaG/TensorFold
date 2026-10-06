@@ -355,6 +355,18 @@ pub const Launcher = struct {
         try l.go(l.rope_decode, dim(rows, 1, 1), dim(32, 1, 1), 0, s, &a);
     }
 
+    /// The router's 64 x 64 tiles at any row count (prefill's, so a prompt's rows do not depend on its cuts).
+    pub fn routerTile(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S) Error!void {
+        var a: Args = .{};
+        a.add(ad(x));
+        a.add(ad(rows));
+        a.add(ad(logits));
+        a.add(r);
+        a.add(d);
+        a.add(e);
+        try l.go(l.op.router_tile[if (kind == 1) 0 else 1], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
+    }
+
     pub fn tf_moe_router(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S) Error!void {
         // a prompt's rows: 64 x 64 tiles of fp32 products; a round's few rows: a wave an expert over 8 rows, each logit's
         // sum as moe_router_kernel's

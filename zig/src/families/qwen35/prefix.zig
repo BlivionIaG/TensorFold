@@ -97,21 +97,26 @@ pub const Cache = struct {
     }
 };
 
+/// Cuts sit on multiples of the chunked recurrence's chunk: a resumed span then chunks a prompt as a fresh one does.
+pub const step = 64;
+
 /// Where a prefill past `cached` keeps a state: the request's shared system blocks and rendered history, then one
-/// token before the prompt's end unless a cut already sits within `min_gap` of it. Ascending; written into `out`.
+/// token before the prompt's end unless a cut already sits within `min_gap` of it, each down to a multiple of `step`.
+/// Ascending; written into `out`.
 pub fn cuts(out: []u32, prompt_len: usize, cached: usize, history: u32, shared: []const u32) []const u32 {
     var n: usize = 0;
     const found = [_]u32{history};
-    for ([_][]const u32{ shared, &found }) |list| for (list) |p| {
+    for ([_][]const u32{ shared, &found }) |list| for (list) |raw| {
+        const p = raw - raw % step;
         if (p <= cached or p >= prompt_len or n == out.len) continue;
         if (std.mem.indexOfScalar(u32, out[0..n], p) != null) continue;
         out[n] = p;
         n += 1;
     };
     std.mem.sort(u32, out[0..n], {}, std.sort.asc(u32));
-    const end = @max(1, prompt_len - 1);
+    const end = (@max(1, prompt_len - 1) / step) * step;
     const near = n > 0 and prompt_len - out[n - 1] < min_gap;
-    if (cached < end and end < prompt_len and !near and n < out.len) {
+    if (cached < end and end < prompt_len and !near and n < out.len and std.mem.indexOfScalar(u32, out[0..n], @intCast(end)) == null) {
         out[n] = @intCast(end);
         n += 1;
     }
@@ -120,8 +125,9 @@ pub fn cuts(out: []u32, prompt_len: usize, cached: usize, history: u32, shared: 
 
 test "cuts keep shared blocks, the history and the entry end" {
     var buf: [8]u32 = undefined;
-    try std.testing.expectEqualSlices(u32, &.{ 600, 1000, 1999 }, cuts(&buf, 2000, 0, 1000, &.{ 600, 600 }));
-    try std.testing.expectEqualSlices(u32, &.{1000}, cuts(&buf, 1100, 600, 1000, &.{600}));
-    try std.testing.expectEqualSlices(u32, &.{9}, cuts(&buf, 10, 0, 0, &.{}));
+    try std.testing.expectEqualSlices(u32, &.{ 576, 960, 1984 }, cuts(&buf, 2000, 0, 1000, &.{ 600, 600 }));
+    try std.testing.expectEqualSlices(u32, &.{960}, cuts(&buf, 1100, 600, 1000, &.{600}));
+    try std.testing.expectEqualSlices(u32, &.{64}, cuts(&buf, 100, 0, 0, &.{}));
+    try std.testing.expectEqualSlices(u32, &.{}, cuts(&buf, 10, 0, 0, &.{}));
     try std.testing.expectEqualSlices(u32, &.{}, cuts(&buf, 1, 0, 0, &.{}));
 }

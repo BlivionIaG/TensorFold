@@ -94,6 +94,9 @@ pub const Ops = struct {
     lib: *const rocm.Library,
     stream: abi.Stream,
     arena: *Arena,
+    /// A prompt's span: every product, the router and the recurrence take prefill's one kernel at any row count, so a
+    /// prompt's rows have the same bits however it is cut (fresh, resumed or in steps).
+    prefill: bool = false,
 
     fn wmma(o: Ops) bool {
         return o.lib.family == .rdna3;
@@ -113,17 +116,18 @@ pub const Ops = struct {
         const fp16 = x.kind == .f16;
         if (x.kind == .f32 or (fp16 and o.wmma()) or (!fp16 and !o.wmma())) return error.BadShape;
         // the decode tiles round to the activation type themselves: RDNA2's up to 8 rows, and the stream tile's either type
-        const stream = if (o.lib.zig) |z| z.affine.streamTakes(int(m), int(w.n), int(w.k), int(w.bits), int(w.group), w.tables.table(), w.tables.table(), x.ptr) else false;
-        const half = !f32_out and ((fp16 and m <= 8 and !o.wmma()) or stream);
+        const stream = if (o.prefill) false else if (o.lib.zig) |z| z.affine.streamTakes(int(m), int(w.n), int(w.k), int(w.bits), int(w.group), w.tables.table(), w.tables.table(), x.ptr) else false;
+        const half = !f32_out and !o.prefill and ((fp16 and m <= 8 and !o.wmma()) or stream);
         const n: usize = w.n;
         const out = try o.arena.take(m * n * @as(usize, if (half) 2 else 4));
         const groups: usize = w.k / w.group;
         var splits: c_int = 1;
-        if (fp16) splits = launches.affineSplits(int(m), int(n), int(w.k), int(w.group), 0);
+        if (fp16 and !o.prefill) splits = launches.affineSplits(int(m), int(n), int(w.k), int(w.group), 0);
         const partial: u64 = if (splits > 1) try o.arena.of(f32, m * n * groups * 2) else 0;
-        const schedule: c_int = 0;
+        // prefill's tile at any row count is the Zig launches' (schedule 3); the library keeps its own rule
+        const schedule: c_int = if (o.prefill and o.lib.zig != null) 3 else 0;
         const args = .{ p(x.ptr), p(w.words), p(w.scale), p(w.bias), w.tables.table(), p(out), int(m), int(n), int(w.k), w.bits, w.group, schedule, @intFromBool(fp16), o.stream, f(partial), splits, @intFromBool(half) };
-        if (schedule == 0) try o.lib.call("tf_affine", args) else try o.lib.check(@call(.auto, o.lib.api.tf_affine, args), "tf_affine");
+        try o.lib.call("tf_affine", args);
         if (half) return .{ .ptr = out, .kind = x.kind };
         if (f32_out) return .{ .ptr = out, .kind = .f32 };
         const narrow = try o.arena.take(m * n * 2);
@@ -136,7 +140,7 @@ pub const Ops = struct {
     /// them, and the caller launches them one by one.
     pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tensor) Error!bool {
         const z = o.lib.zig orelse return false;
-        if (!o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or m > 16 or x.kind == .f32) return false;
+        if (o.prefill or !o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or m > 16 or x.kind == .f32) return false;
         var widest: u32 = 0;
         for (ws) |w| {
             try w.check();
@@ -248,7 +252,7 @@ pub const Ops = struct {
     /// and silu(gate) * up in x's kind, out (pairs, width). Null (nothing launched) when the tile does not take the shape.
     pub fn affineRoutedAct(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize, limit: f32) Error!?Tensor {
         const z = o.lib.zig orelse return null;
-        if (!o.fused() or x.kind == .f32 or w.n % 2 != 0) return null;
+        if (o.prefill or !o.fused() or x.kind == .f32 or w.n % 2 != 0) return null;
         try w.check();
         const kind = w.tables.table();
         if (!z.affine.streamTakes(int(rows), int(w.n), int(w.k), int(w.bits), int(w.group), kind, kind, x.ptr)) return null;
@@ -276,6 +280,11 @@ pub const Ops = struct {
     pub fn affineRouted(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize) Error!u64 {
         try w.check();
         const out = try o.arena.of(f32, pairs * w.n);
+        if (o.prefill) if (o.lib.zig) |*z| {
+            const kind = w.tables.table();
+            try z.affine.prefillLaunch(z.d, .{ .x = x.ptr, .words = w.words, .scale = .{ .p = w.scale, .kind = kind }, .bias = .{ .p = w.bias, .kind = kind }, .out = out, .m = int(rows), .n = int(w.n), .k = int(w.k), .bits = int(w.bits), .group = int(w.group), .fp16 = @intFromBool(x.kind == .f16), .route = .{ .items = items, .members = members, .x_div = int(x_div) } }, o.stream, int(count));
+            return out;
+        };
         try o.lib.call("tf_affine_routed", .{ p(x.ptr), p(w.words), p(w.scale), p(w.bias), w.tables.table(), p(out), i(items), int(count), i(members), int(x_div), int(rows), int(w.n), int(w.k), w.bits, w.group, @intFromBool(x.kind == .f16), o.stream });
         return out;
     }
@@ -381,7 +390,7 @@ pub const Ops = struct {
     /// A prefill (no snapshots) of at least `gdn_min_rows` rows runs chunked on the Zig launches; TF_GDN_CHUNKED=0 keeps
     /// the token-serial kernel.
     pub fn gatedDelta(o: Ops, q: u64, k: u64, v: u64, gate: u64, beta: u64, state: u64, y: u64, length: usize, key_heads: usize, value_heads: usize, dk: usize, dv: usize, states: ?u64) Error!void {
-        if (states == null and length >= gdn_min_rows and dk == 128 and dv == 128 and value_heads % key_heads == 0) {
+        if (states == null and (length >= gdn_min_rows or o.prefill) and dk == 128 and dv == 128 and value_heads % key_heads == 0) {
             if (o.lib.zig) |*z| if (!chunkedOff()) return o.gatedDeltaChunked(z, q, k, v, gate, beta, state, y, length, key_heads, value_heads);
         }
         try o.lib.call("tf_gated_delta", .{ f(q), f(k), f(v), f(gate), f(beta), f(state), f(y), 1, int(length), int(key_heads), int(value_heads), int(dk), int(dv), o.stream, if (states) |s| f(s) else null });
@@ -434,6 +443,7 @@ pub const Ops = struct {
     }
 
     pub fn moeRouter(o: Ops, x: Tensor, rows32: u64, logits: u64, r: usize, d: usize, e: usize) Error!void {
+        if (o.prefill) if (o.lib.zig) |*z| if (d % 32 == 0) return z.routerTile(p(x.ptr), @backingInt(x.kind), f(rows32), f(logits), int(r), int(d), int(e), o.stream);
         try o.lib.call("tf_moe_router", .{ p(x.ptr), @backingInt(x.kind), f(rows32), f(logits), int(r), int(d), int(e), o.stream });
     }
 
