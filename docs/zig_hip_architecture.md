@@ -298,16 +298,56 @@ operations from the round messages, as they mirror prefix cuts today.
 
 ## 4. Testing
 
-| Level | What | When |
-|---|---|---|
-| decoder × tile | fp64 reference error, and byte-identity across row counts and block sizes within a family | every kernel change (`tf-hip-test kernels`) |
-| registry | one family per (op, format, path) for m = 1..256 under every Policy, every caps target | every build |
-| model invariants | `rows` (window vs one row, streams, partial keep), tpcheck (drafted/solo/resumed), tp 1/2/4/8 | every merge |
-| accuracy | `logits` and `logits --decode` scored against the fp64 truth: KL mean, top-1, perplexity, within each model's recorded band | every merge |
-| speed | prefill 13/100/2k/8k/32k, decode 1 and 4 streams, MTP on/off, recorded per GPU | every merge; regressions flagged |
-| matrix | caps target × Policy (matrix, activations, kernels, mtp, graphs) × format × model (0.8B, 9B, 27B, 35B-A3B; 2-8 bits) × tp | nightly / before a release |
+### 4.1 Today: grown one tool at a time
 
-The matrix runs on one script, writes one table, and that table is published with the PR.
+| Entry point | Commands | Kind |
+|---|---|---|
+| `zig build test` | 27 unit tests (cuts, sizes, slicing, flags) | host only |
+| `tf-hip-test` | `info smoke graph cooperative library image` | runtime |
+| | `affine` (Python fixtures), `gemm`, `gemv`, `decode`, `gdn` | kernels: each has its own harness, reference and output format |
+| | `launches`, `overhead` | benchmarks |
+| `tf-qwen35-test` | `check digest layers draw` | weights, Python-oracle layers, device draws |
+| | `lanes rows logits prefill` | engine runs, invariants, logits dumps, speed |
+| host scripts (outside the repo) | `tpcheck.sh replies.sh verify.sh compare.py decode.sh acc.sh prefill_ab.sh matrix.sh run_dump.sh py_prefill.py kstats.py` | wrappers that re-run `lanes`/`logits` and compare JSON |
+| `zig/tests/qwen35/serve_check.py`, `serve_tp.sh` | HTTP invariants under tp | server |
+
+The same questions get asked in several places with different outputs: is the row exact, is the output accurate,
+how fast is it.
+
+### 4.2 Target: four entry points, one question each
+
+| Entry point | Answers | Replaces | Needs |
+|---|---|---|---|
+| `zig build test` | host logic is right | unchanged | nothing |
+| `tf-hip-test kernels [--filter F] [--bench]` | each registered kernel against an fp64 reference, and byte-identity within each family across row counts and block sizes | `affine gemm gemv decode gdn` (one harness; `--bench` gives the timings the separate benches gave) | one GPU |
+| `tf-hip-test runtime` | the HIP runtime works on this GPU | `info smoke graph cooperative library image` (one command, subtests by filter) | one GPU |
+| `tf-qwen35-test check MODEL [--tp N] [--truth T]` | **invariants** (window vs one row by layer; drafted = serial, solo = together, resumed = fresh, greedy and sampled, short and long prompts; graph = eager), **accuracy** (prefill and decode logits scored against the fp64 truth in-process, if given), **speed** (prefill lengths, decode 1/4 streams, MTP depths) | `rows lanes logits prefill draw digest check`, and the scripts tpcheck/replies/verify/compare/decode/acc/prefill_ab | one model, N GPUs |
+
+Plus the official server tools, unchanged, for receipts (CONTRIBUTING): `tools/bench_concurrent.py --alone --serial`,
+`bench_openai.py`, `prefill_cold.py` against `tensorfold-native`. `serve_check.py` folds into them: what they lack
+(resumed = fresh, tp) is added to `bench_concurrent.py` as options, or stays a short check of its own.
+
+How they compose:
+
+- **The kernel harness is driven by the registry** (3.4). Every entry declares its family, its shapes and its
+  reference, so a new format, GPU or tile is tested by being registered, with no new command.
+- **`check` is driven by the Policy** (3.5). The matrix is `check` run over a list of Policies × models × tp, and
+  one in-repo script (`zig/tests/hip/matrix.sh`, taking model directories and device lists as arguments, no hosts or
+  paths in it) writes the PR's table.
+- **The Python-oracle tests** (`affine` fixtures, `layers`) become an optional `--oracle DIR` of `kernels` and
+  `check`. The Python engine is frozen and the fp64 truth is the bar, so they only matter as a regression check of
+  the fp32 reference paths.
+- **Benchmarks** (`launches`, `overhead`, the old `--bench` timings) move under `tf-hip-test bench` and are not
+  tests.
+- **Every test fails before its fix and passes after**, as CONTRIBUTING asks. The regression cases found so far
+  (prefill cut vs whole, follower prefix mirroring, the confidence cut, padded rows) become named cases of `check`.
+
+| Level | Run when |
+|---|---|
+| `zig build test` | every build |
+| `tf-hip-test kernels` (+ runtime) | every kernel change; once per GPU per merge |
+| `tf-qwen35-test check` on 0.8B and 35B-A3B, tp 1 and 2 | every merge |
+| matrix (every Policy × model × tp, both GPUs) and the official tools | before a PR update or a release |
 
 ## 5. Phases
 
@@ -334,6 +374,7 @@ The matrix runs on one script, writes one table, and that table is published wit
 | Step | Change | Proof |
 |---|---|---|
 | 0 | this plan; owners and file ownership | review |
+| 0c | **Tests regrouped** (4.2): `tf-hip-test kernels` and `runtime`, `tf-qwen35-test check`, the in-repo matrix script; host scripts retired | the same cases pass; nothing loses coverage (a mapping table in the PR) |
 | 0b | **CONTRIBUTING pass**, before any refactor:<br>- full-precision defaults: fp32 q and probabilities in prefill attention, fp32 operands in the chunked recurrence, the fp16/bf16-operand kernels behind `attention=f16`;<br>- `launches.zig` and `ops.hip` split by job under 600 lines;<br>- one-line comments everywhere;<br>- receipts from tools/bench_concurrent.py, bench_openai.py and prefill_cold.py against tensorfold-native;<br>- authorship under the GitHub noreply address | truth scores; rows/tpcheck; speed recorded (32k prefill expected lower) |
 | 1 | **Policy**: struct, resolution, flags, `TF_POLICY`, the old variables as aliases, start-up line and server info; ops/registry read Policy instead of env | all variables' behaviors unchanged (matrix of on/off runs) |
 | 2 | **Caps** replace `Family`; target table; gfx1151 and gfx1200 build | fixtures, rows, tpcheck, speed unchanged |
