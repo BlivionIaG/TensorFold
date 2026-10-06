@@ -30,8 +30,9 @@ Checkpoints measured below: `mlx-community/Qwen3.5-0.8B-MLX-8bit`, `mlx-communit
 `TensorFold/Qwen3.8-27B-MLX-4bit`, `leonsarmiento/Qwen3.8-27B-3bit-mtp-mlx` (3 bits, embeddings at 4, an
 unquantized MTP `fc`) and `TensorFold/Qwen3.6-35B-A3B-MLX-4bit-MTP`.
 
-The server takes one request at a time on ROCm. Chat completions, completions, the Responses API, `response_format`
-grammars, tool calls, keyed sampling and the prefix cache work as on CUDA.
+Requests decode in lane rounds; `--parallel N` decodes up to N together (`auto` is 1, as on CUDA). Chat completions,
+completions, the Responses API, `response_format` grammars, tool calls, keyed sampling and the prefix cache work as on
+CUDA.
 
 ## Kernels
 
@@ -51,18 +52,22 @@ rows share the launch.
   bits. The KV cache is the activation dtype.
 - The Gated DeltaNet recurrence of the linear-attention layers, bit-exact against its PyTorch reference.
 
-## Decode
+## Lane rounds
 
-A request's one-token decode step is captured as a HIP graph after its first step and replayed, on every rank
-(`TENSORFOLD_GRAPH=0` keeps it eager). Decode attention and RoPE read the position on the device, so a replay gives
-the eager step's bits.
+Every token goes through a round. A round prefills one queued prompt a step (1,024 rows while others decode, or to its
+next kept state), then verifies every decoding stream's window, its last token and MTP drafts (one row for
+`"draft": false`), in one forward, and each stream keeps the accepted path of its own window. Projections, norms and
+experts take all rows of all windows together; RoPE, the cache write, the decode attention walk, the conv and the
+delta step take a stream's rows in one launch each with the one-token step's arithmetic, so a row's bits are the same
+in a window of any length or alone, and each stream equals its serial run whoever shares its rounds. A stream decoding
+alone replays a HIP graph captured per window length, on every rank (`TENSORFOLD_GRAPH=0` keeps it eager).
 
 ## MTP drafting
 
 A checkpoint's MTP head (its `mtp.*` tensors, with or without the `language_model.` prefix, or a side
-`mtp*.safetensors`) drafts 4 tokens a round; `--no-drafts` turns it off. Each draft is verified with the serial
-step's own sampling key, so a drafted reply is the serial reply token for token, greedy or sampled, at any tp.
-Verification is one main forward a draft, so drafting does not speed decode up yet.
+`mtp*.safetensors`) drafts up to 3 tokens a round, and a chain ends after a draft the head gives less than 0.3;
+`--no-drafts` turns it off. Each window row is sampled with the serial step's own key, so a drafted reply is the serial
+reply token for token, greedy or sampled, at any tp.
 
 ## Tensor parallel
 
@@ -70,7 +75,10 @@ One process a rank, RCCL between them. `--tp 2`, `4` or `8` are ROCm only. Heads
 o, out and down are split by input groups and their fp32 shares are summed before each residual add; the vocabulary is
 split for the head. With fewer KV heads than ranks each KV head is kept by the ranks whose query heads read it. A MoE
 layer splits by expert: each rank holds `E / tp` routed experts (the shared one on rank 0), every rank routes every
-token, and the ranks' fp32 shares are summed like a down projection.
+token, and the ranks' fp32 shares are summed like a down projection. Two ranks' shares are one add; past two, prompt
+spans and windows add them in rank order, so a row sums the same in a span or window of any length (RCCL's own order
+follows the message size). Rank 0 runs the rounds and sends each round's admissions, prefill step, drafts, windows and
+kept rows to the other ranks, which run the same forwards in step.
 
 On one host, give each rank its own card. With every card visible, rank r takes card r:
 
@@ -91,7 +99,7 @@ per-expert tensors, unquantized dense layers) are refused at load.
 ## Measurements
 
 `python -m tensorfold.rocm.bench MODEL_DIR 1024 256 1 --served [--mtp N] [--tp N --rank R --master ADDR]` times the
-engine `tensorfold serve` runs, one request at a time: prefill is the prompt over the time to the first token,
+engine `tensorfold serve` runs, one request alone: prefill is the prompt over the time to the first token,
 decode the other tokens over the time after it, median of two runs. `... 1024 256 8` (without `--served`) is eight
 requests in one batched generate.
 

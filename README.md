@@ -121,7 +121,7 @@ between MLX and CUDA, different quantizations, or different tensor-parallel rank
 | `--reasoning-effort` | Template effort when a request sets none; default: the template's own | Both |
 | `--thinking-budget N` | Token-count limit inside reasoning | Both |
 | `--backend auto`, `mlx`, `cuda` | Select backend; auto uses MLX on macOS | Both |
-| `--parallel N` | MLX `auto` admits up to 8 within budget; CUDA `auto` is 1, explicit N enables supported shared rounds | Both |
+| `--parallel N` | MLX `auto` admits up to 8 within budget; CUDA and ROCm `auto` is 1, explicit N enables supported shared rounds | Both |
 | `--no-drafts` | Decode serially | Both |
 | `--drafter auto`, `none`, or model ID | Select an optional draft model where the family supports it | Both |
 | `--mtp-drafts N` | Family-specific cap on MTP drafts | Both |
