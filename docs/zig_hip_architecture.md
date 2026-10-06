@@ -21,8 +21,14 @@ should add a small module, not another copy of the kernels.
 Every one of these runs on every supported GPU, through one design: the decoder of section 3.2 plus the shared
 tiles, with native kernels only where they are measured faster.
 
-## 1. What must hold
+## 1. What must hold (CONTRIBUTING.md, plus this backend's own rules)
 
+- **Lanes** (CONTRIBUTING 1): every model decodes through the shared lane rounds, with drafts verified in the same
+  forward. There is no serial path and no second batcher.
+- **No precision traded for speed** (CONTRIBUTING 3): no lower-precision activations or sums than the checkpoint's
+  activation type, and fp32 where a value is fp32. Reorders are fine and are named in the PR. Faster lower-precision
+  operands (e.g. fp16 q and probabilities in attention) are an opt-in Policy mode only, raised as an issue before
+  becoming a default.
 - **Correct output.** Each format/GPU/mode is measured against an fp64 CPU forward of the same checkpoint
   (tools/truth): KL, top-1 and perplexity. Matching Python's bits is not the bar.
 - **Row-exact arithmetic.** A row's bits do not depend on what it shares a launch with. drafted == serial,
@@ -30,7 +36,11 @@ tiles, with native kernels only where they are measured faster.
   family per op and path at any row count**. (Commit a6762a3 fixed the last violation: prefill kernels chosen by m.)
 - **No speed regressions.** Prefill and decode tok/s for each model and GPU are recorded; a change that loses on any
   of them needs a reason.
-- **Lean.** A format adds a weight decoder, an activation precision adds an encoder, and a GPU instruction adds a Dot.
+- **Lean code** (CONTRIBUTING 6): one job to a module, files under about 600 lines, one-line comments that say what
+  the code can't. No numbers or history in the source.
+- **Every platform it touches** (CONTRIBUTING 5): HIP code lives in its own files. Shared files (server, lane core,
+  engine API) change only as needed, and the PR says Metal and CUDA were not run.
+- **Lean design.** A format adds a weight decoder, an activation precision adds an encoder, and a GPU instruction adds a Dot.
   Tiles and epilogues are written once, and a code object only holds the modes its GPU can run.
 
 ## 2. Today (hip-port a6762a3)
@@ -324,6 +334,7 @@ The matrix runs on one script, writes one table, and that table is published wit
 | Step | Change | Proof |
 |---|---|---|
 | 0 | this plan; owners and file ownership | review |
+| 0b | **CONTRIBUTING pass**, before any refactor:<br>- full-precision defaults: fp32 q and probabilities in prefill attention, fp32 operands in the chunked recurrence, the fp16/bf16-operand kernels behind `attention=f16`;<br>- `launches.zig` and `ops.hip` split by job under 600 lines;<br>- one-line comments everywhere;<br>- receipts from tools/bench_concurrent.py, bench_openai.py and prefill_cold.py against tensorfold-native;<br>- authorship under the GitHub noreply address | truth scores; rows/tpcheck; speed recorded (32k prefill expected lower) |
 | 1 | **Policy**: struct, resolution, flags, `TF_POLICY`, the old variables as aliases, start-up line and server info; ops/registry read Policy instead of env | all variables' behaviors unchanged (matrix of on/off runs) |
 | 2 | **Caps** replace `Family`; target table; gfx1151 and gfx1200 build | fixtures, rows, tpcheck, speed unchanged |
 | 3 | **Quant interface** with mlx: `quant.Projection`, `ops.project` | byte-identical logits (prefill and decode) on 0.8B/9B/35B |
