@@ -35,19 +35,139 @@ fn modelContext(a: Allocator, io: std.Io, dir: []const u8) i64 {
     return if (limit == .integer and limit.integer > 0) limit.integer else 0;
 }
 
-/// Prompt caches kept for later turns, within the plan's byte budget.
+/// Prompt caches kept for later turns when `--checkpoint-slots` names none.
 const kept_prompts = 8;
 
 fn gibs(bytes: usize) f64 {
     return @as(f64, @floatFromInt(bytes)) / (1 << 30);
 }
 
-/// Positions a stream holds when neither --context nor memory says otherwise.
+/// Positions a stream holds when neither --context nor the checkpoint's config names a window.
 const default_context = 32768;
+
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+
+/// A flag or a resource the engine cannot take: `problem` says why.
+const Refused = error{Refused};
+
+fn refuse(a: Allocator, problem: *[]const u8, comptime fmt: []const u8, args: anytype) Refused {
+    problem.* = std.fmt.allocPrint(a, fmt, args) catch fmt;
+    return error.Refused;
+}
+
+/// The tensor-parallel flags as the Python ROCm server checks them.
+fn checkGroup(a: Allocator, o: api.Open, problem: *[]const u8) Refused!void {
+    if (o.tp != 1 and o.tp != 2 and o.tp != 4 and o.tp != 8) return refuse(a, problem, "--tp {d} is not a supported ROCm world size; choose 1, 2, 4 or 8", .{o.tp});
+    if (o.tp > 1 and o.master.len == 0) return refuse(a, problem, "--tp > 1 needs --master: rank 0's address on the link between the machines", .{});
+    if (o.tp == 1 and o.rank != 0) return refuse(a, problem, "--rank must be 0 when --tp 1", .{});
+    if (o.rank >= o.tp) return refuse(a, problem, "--rank {d} not in [0, --tp {d})", .{ o.rank, o.tp });
+    if (o.keep) |n| if (n < 0) return refuse(a, problem, "--checkpoint-slots must be 0 or more", .{});
+    if (o.cache_gib) |g| if (g < 0) return refuse(a, problem, "--prompt-cache-gib must be 0 or more", .{});
+}
+
+/// The ranks of a tensor-parallel group: the TCP link that carries rank 0's steps and RCCL's unique id. RCCL's
+/// library stays loaded until the engine is gone (its bootstrap thread starts at the id).
+const Group = struct {
+    rccl: hip.rccl.Rccl,
+    link: hip.link.Link,
+    id: hip.rccl.UniqueId,
+
+    /// Rank 0 listens on `master`:`master_port` until the others have connected; they get its id.
+    fn join(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) (Refused || Allocator.Error)!*Group {
+        const g = try gpa.create(Group);
+        errdefer gpa.destroy(g);
+        g.rccl = hip.rccl.Rccl.open() catch |err| return refuse(a, problem, "tensor parallelism needs RCCL ({s})", .{@errorName(err)});
+        errdefer g.rccl.close();
+        const mine: hip.rccl.UniqueId = if (o.rank == 0) g.rccl.uniqueId() catch |err| return refuse(a, problem, "RCCL gave no id ({s})", .{@errorName(err)}) else undefined;
+        const host = if (std.mem.eql(u8, o.master, "localhost")) "127.0.0.1" else o.master;
+        const pair = hip.link.Link.open(io, o.rank, o.tp, host, o.master_port, mine) catch |err| return refuse(a, problem, "the ranks' link at {s}:{d} failed ({s})", .{ o.master, o.master_port, @errorName(err) });
+        g.link, g.id = pair;
+        return g;
+    }
+
+    fn close(g: *Group, gpa: Allocator) void {
+        g.link.close();
+        g.rccl.close();
+        gpa.destroy(g);
+    }
+};
+
+/// The card of `rank`: with every card visible rank r takes card r, with one card a process that card.
+fn deviceOf(rank: u32) c_int {
+    var d = hip.Driver.open() catch return 0;
+    defer d.close();
+    const count = d.deviceCount() catch return 0;
+    return if (count > 0) @intCast(rank % @as(u32, @intCast(count))) else 0;
+}
+
+/// One rank's loaded and sized engine: the window and prompt cache every rank agreed on.
+const Prepared = struct {
+    e: *qwen35.engine.Engine,
+    plan: qwen35.memory.Plan,
+    /// The window asked for, or the model's: `plan.window` is below it when the memory does not fit it.
+    asked: usize,
+    /// Kept prompt entries (the plan's `cache_budget` is 0 when the cache is off).
+    keep: usize,
+    streams: usize,
+    group: ?*Group,
+
+    fn deinit(p: *Prepared, gpa: Allocator) void {
+        p.e.deinit();
+        if (p.group) |g| g.close(gpa);
+    }
+};
+
+/// Joins the group, loads this rank's share of the model, plans the memory with the other ranks and sizes the scratch.
+fn prepare(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) (Refused || Allocator.Error)!Prepared {
+    if (!std.mem.eql(u8, o.model_type, "qwen3_5") and !std.mem.eql(u8, o.model_type, "qwen3_5_moe")) {
+        return refuse(a, problem, "the native HIP engine has no backend for {s} checkpoints yet; serve with --engine python", .{o.model_type});
+    }
+    try checkGroup(a, o, problem);
+    const native = modelContext(a, io, o.dir);
+    const window: i64 = o.context orelse if (native > 0) native else default_context;
+    if (window <= 0 or (native > 0 and window > native)) return refuse(a, problem, "--context {d} exceeds this model's {d}-token window", .{ window, native });
+    const rows = qwen35.hip_lanes.Hip.max_window;
+    // `--parallel auto` is one lane, as on the Python ROCm engine
+    const streams: usize = if (o.lanes_auto) 1 else @max(o.lanes, 1);
+    const group: ?*Group = if (o.tp > 1) try Group.join(a, gpa, io, o, problem) else null;
+    errdefer if (group) |g| g.close(gpa);
+    if (o.p2p) |on| _ = setenv("NCCL_P2P_DISABLE", if (on) "0" else "1", 1);
+    const e = qwen35.engine.Engine.load(gpa, io, o.dir, .{
+        .batch_rows = @max(32, @min(streams * rows, 128)),
+        .slack = rows + 1,
+        .device = deviceOf(o.rank),
+        .rank = o.rank,
+        .world = o.tp,
+        .id = if (group) |g| g.id else null,
+    }) catch |err| return refuse(a, problem, "the native HIP engine cannot load {s} ({s})", .{ o.dir, @errorName(err) });
+    errdefer e.deinit();
+    var plan = e.plan(streams, @intCast(window)) catch |err| return refuse(a, problem, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)});
+    if (o.tp > 1) {
+        // the window every rank fits, then the prompt cache the least of them holds
+        const fit = e.least(.{ plan.window, 0 }) catch |err| return refuse(a, problem, "the ranks could not agree on a window ({s})", .{@errorName(err)});
+        plan = e.plan(streams, fit[0]) catch |err| return refuse(a, problem, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)});
+        const cache = e.least(.{ plan.window, plan.cache_budget }) catch |err| return refuse(a, problem, "the ranks could not agree on a prompt cache ({s})", .{@errorName(err)});
+        plan.cache_budget = cache[1];
+    }
+    // --prompt-cache-gib names the bytes and --checkpoint-slots the entries; zero of either turns the cache off
+    if (o.cache_gib) |g| plan.cache_budget = @intFromFloat(g * (1 << 30));
+    const keep: usize = if (o.keep) |n| @intCast(n) else kept_prompts;
+    if (keep == 0) plan.cache_budget = 0;
+    if (plan.window == 0) {
+        return refuse(a, problem, "the weights leave no room for a request on this GPU ({d:.2} GiB of {d:.2} GiB); use a smaller checkpoint, --lanes or more ranks (--tp)", .{ gibs(plan.weights), gibs(plan.total) });
+    }
+    if (o.context != null and plan.window < @as(usize, @intCast(window))) {
+        return refuse(a, problem, "--context {d} does not fit this GPU's memory: {d} lanes and a kept copy of a prompt fit {d} tokens beside the weights; lower --context or --lanes, or add ranks (--tp)", .{ window, streams, plan.window });
+    }
+    e.size(plan.capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot allocate its scratch ({s})", .{@errorName(err)});
+    std.debug.print("[tensorfold] HIP rank {d} of {d}: weights {d:.2} GiB, scratch {d:.2} GiB, context window {d} tokens, prompt cache {d:.2} GiB, reserve {d:.2} GiB of {d:.2} GiB\n", .{ o.rank, o.tp, gibs(plan.weights), gibs(plan.scratch), plan.window, gibs(plan.cache_budget), gibs(plan.reserve), gibs(plan.total) });
+    return .{ .e = e, .plan = plan, .asked = @intCast(window), .keep = keep, .streams = streams, .group = group };
+}
 
 const Host = struct {
     gpa: Allocator,
     e: *qwen35.engine.Engine,
+    group: ?*Group,
     backend: *qwen35.hip_lanes.Hip,
     cfg: lanes.Config,
     clock: lanes.backend.WallClock,
@@ -59,63 +179,53 @@ const Host = struct {
         h.host.stop();
         h.core.deinit();
         h.cfg.deinit(h.gpa);
+        // the other ranks hear that the rounds are over, then every rank frees its share
         h.backend.deinit();
         h.e.deinit();
+        if (h.group) |g| g.close(h.gpa);
         h.gpa.destroy(h);
     }
 };
 
-/// The engine for `o.dir`, or null with `problem` set when no HIP engine reads the checkpoint.
+/// The engine for `o.dir`, or null with `problem` set when no HIP engine reads the checkpoint. Under tensor
+/// parallelism this is rank 0, which serves; the others run `follow`.
 pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
-    if (!std.mem.eql(u8, o.model_type, "qwen3_5") and !std.mem.eql(u8, o.model_type, "qwen3_5_moe")) {
-        problem.* = try std.fmt.allocPrint(a, "the native HIP engine has no backend for {s} checkpoints yet; serve with --engine python", .{o.model_type});
-        return null;
-    }
-    const native = modelContext(a, io, o.dir);
-    const window: i64 = o.context orelse @min(if (native > 0) native else default_context, default_context);
-    if (window <= 0 or (native > 0 and window > native)) {
-        problem.* = try std.fmt.allocPrint(a, "--context {d} exceeds this model's {d}-token window", .{ window, native });
-        return null;
-    }
-    const rows = qwen35.hip_lanes.Hip.max_window;
-    const streams = @max(o.lanes, 1);
-    const e = qwen35.engine.Engine.load(gpa, io, o.dir, .{ .batch_rows = @max(32, @min(streams * rows, 128)), .slack = rows + 1 }) catch |err| {
-        problem.* = try std.fmt.allocPrint(a, "the native HIP engine cannot load {s} ({s})", .{ o.dir, @errorName(err) });
-        return null;
+    var p = prepare(a, gpa, io, o, problem) catch |err| switch (err) {
+        error.Refused => return null,
+        else => |x| return x,
     };
     var served = false;
-    defer if (!served) e.deinit();
-    const plan = e.plan(streams, @intCast(window)) catch |err| {
-        problem.* = try std.fmt.allocPrint(a, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)});
-        return null;
-    };
-    if (plan.window == 0) {
-        problem.* = try std.fmt.allocPrint(a, "the weights leave no room for a request on this GPU ({d:.2} GiB of {d:.2} GiB); use a smaller checkpoint or --lanes", .{ gibs(plan.weights), gibs(plan.total) });
-        return null;
-    }
-    if (o.context != null and plan.window < @as(usize, @intCast(window))) {
-        problem.* = try std.fmt.allocPrint(a, "--context {d} does not fit this GPU's memory: {d} lanes and a kept copy of a prompt fit {d} tokens beside the weights; lower --context or --lanes", .{ window, streams, plan.window });
-        return null;
-    }
-    e.size(plan.capacity) catch |err| {
-        problem.* = try std.fmt.allocPrint(a, "the native HIP engine cannot allocate its scratch ({s})", .{@errorName(err)});
-        return null;
-    };
-    std.debug.print("[tensorfold] HIP: weights {d:.2} GiB, scratch {d:.2} GiB, context window {d} tokens, prompt cache {d:.2} GiB, reserve {d:.2} GiB of {d:.2} GiB\n", .{ gibs(plan.weights), gibs(plan.scratch), plan.window, gibs(plan.cache_budget), gibs(plan.reserve), gibs(plan.total) });
+    defer if (!served) p.deinit(gpa);
     const h = try gpa.create(Host);
     errdefer gpa.destroy(h);
     h.gpa = gpa;
-    h.e = e;
-    h.backend = try qwen35.hip_lanes.Hip.init(gpa, e);
+    h.e = p.e;
+    h.group = p.group;
+    h.backend = try qwen35.hip_lanes.Hip.init(gpa, p.e);
     errdefer h.backend.deinit();
-    h.backend.keepPrompts(kept_prompts, plan.cache_budget);
-    h.cfg = try lanes.Config.init(gpa, h.backend.facts(), rows, rows - 1);
+    h.backend.keepPrompts(if (p.plan.cache_budget == 0) 0 else p.keep, p.plan.cache_budget);
+    if (p.group) |g| h.backend.withLink(&g.link);
+    h.cfg = try lanes.Config.init(gpa, h.backend.facts(), qwen35.hip_lanes.Hip.max_window, qwen35.hip_lanes.Hip.max_window - 1);
     errdefer h.cfg.deinit(gpa);
     h.clock = .{ .io = io };
     h.core = lanes.Engine.init(gpa, &h.cfg, h.backend.backend(), h.clock.clock());
     errdefer h.core.deinit();
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = streams, .context_window = @intCast(plan.window), .context_fitted = plan.window < @as(usize, @intCast(window)) });
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = @intCast(p.streams), .context_window = @intCast(p.plan.window), .context_fitted = p.plan.window < p.asked });
     try h.host.start();
     served = true;
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
+}
+
+/// A rank above 0: holds its share of the model and runs rank 0's steps until rank 0 stops; false with `problem` set
+/// when it cannot start.
+pub fn follow(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !bool {
+    var p = prepare(a, gpa, io, o, problem) catch |err| switch (err) {
+        error.Refused => return false,
+        else => |x| return x,
+    };
+    defer p.deinit(gpa);
+    var w = try qwen35.worker.Worker.init(gpa, p.e);
+    defer w.deinit();
+    try w.follow(&p.group.?.link);
+    return true;
 }

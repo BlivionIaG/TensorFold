@@ -128,6 +128,26 @@ pub const Engine = struct {
         return memory.plan(.{ .spec = e.weights.spec, .act_bytes = e.act.size(), .streams = streams, .rows = e.o.batch_rows, .slack = e.o.slack, .target = target, .free = info.free, .total = info.total });
     }
 
+    /// The least of each value over the ranks, the same on every rank (a window and a prompt cache they all fit).
+    pub fn least(e: *Engine, mine: [2]u64) ![2]u64 {
+        if (e.o.world < 2) return mine;
+        const world = e.o.world;
+        var host = try hip.HostBuffer.alloc(&e.driver, 16 * (1 + world));
+        defer host.free();
+        var send = try hip.DeviceBuffer.alloc(&e.driver, 16);
+        defer send.free();
+        var recv = try hip.DeviceBuffer.alloc(&e.driver, 16 * world);
+        defer recv.free();
+        host.slice(u64)[0..2].* = mine;
+        try send.uploadAsync(0, host.bytes[0..16], e.stream.handle);
+        try e.comm.allGather(send.ptr, recv.ptr, 2, .i64, e.stream.handle);
+        try recv.downloadAsync(0, host.bytes[16 .. 16 * (1 + world)], e.stream.handle);
+        try e.stream.synchronize();
+        var out = mine;
+        for (host.slice(u64)[2 .. 2 * (1 + world)], 0..) |v, i| out[i % 2] = @min(out[i % 2], v);
+        return out;
+    }
+
     /// Load and size in one: `o.capacity` positions.
     pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
         const e = try load(gpa, io, dir, o);

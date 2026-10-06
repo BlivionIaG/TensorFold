@@ -21,7 +21,10 @@ pub const Flag = struct {
     native_values: ?[]const []const u8 = null,
 };
 
-const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else &.{ "auto", "cuda" };
+const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else &.{ "auto", "rocm" };
+
+/// The GPU lane's flags: the HIP engines serve them, the Mac's do not.
+const gpu = builtin.os.tag == .linux;
 
 /// Every Python serve flag (``cli_args.build_parser``), the ones this binary serves marked native.
 pub const flags = [_]Flag{
@@ -56,8 +59,8 @@ pub const flags = [_]Flag{
     .{ .name = "--mtp-drafts" },
     .{ .name = "--mtp-confidence" },
     .{ .name = "--lane-kernels", .choices = &.{ "auto", "on", "off" } },
-    .{ .name = "--prompt-cache-gib" },
-    .{ .name = "--checkpoint-slots" },
+    .{ .name = "--prompt-cache-gib", .native = gpu },
+    .{ .name = "--checkpoint-slots", .native = gpu },
     .{ .name = "--spill-gib" },
     .{ .name = "--snapshot-dir", .native = true, .native_values = &.{"none"} },
     .{ .name = "--max-snapshots", .native = true, .native_values = &.{"0"} },
@@ -69,11 +72,13 @@ pub const flags = [_]Flag{
     .{ .name = "--ssd-experts" },
     .{ .name = "--ple-on-ssd", .kind = .store_true },
     .{ .name = "--no-update-check", .kind = .store_true, .native = true },
-    .{ .name = "--backend", .choices = &.{ "auto", "mlx", "cuda" }, .native = true, .native_values = backend_values },
-    .{ .name = "--tp", .choices = &.{ "1", "2" } },
-    .{ .name = "--rank", .choices = &.{ "0", "1" } },
-    .{ .name = "--master" },
-    .{ .name = "--master-port" },
+    .{ .name = "--backend", .choices = &.{ "auto", "mlx", "cuda", "rocm" }, .native = true, .native_values = backend_values },
+    .{ .name = "--tp", .choices = &.{ "1", "2", "4", "8" }, .native = gpu },
+    .{ .name = "--rank", .native = gpu },
+    .{ .name = "--master", .native = gpu },
+    .{ .name = "--master-port", .native = gpu },
+    .{ .name = "--p2p", .kind = .store_true, .native = gpu },
+    .{ .name = "--no-p2p", .kind = .store_true, .native = gpu },
     .{ .name = "--kv-dtype", .choices = &.{ "bf16", "int8", "int4" } },
     .{ .name = "--prefill-fp8", .kind = .store_true },
     .{ .name = "--no-prefill-fp8", .kind = .store_true },
@@ -107,6 +112,14 @@ pub const Args = struct {
     no_drafts: bool = false,
     parallel: []const u8 = "auto",
     backend: []const u8 = "auto",
+    checkpoint_slots: ?i64 = null,
+    prompt_cache_gib: ?f64 = null,
+    /// Tensor parallelism: this process is `rank` of `tp`; rank 0 listens on `master`:`master_port` for the others.
+    tp: u32 = 1,
+    rank: u32 = 0,
+    master: []const u8 = "",
+    master_port: u16 = 29551,
+    p2p: ?bool = null,
 };
 
 /// A usage error's message (argparse's ``error:`` line); the caller exits 2.
@@ -181,7 +194,15 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         const p = try int(u, a, name, v);
         if (p < 0 or p > 65535) return fail(u, a, "argument --port: invalid port: '{s}'", .{v});
         out.port = @intCast(p);
-    } else if (is(name, "--name")) out.name = v else if (is(name, "--alias")) try alias.append(a, v) else if (is(name, "--api-key")) try keys.append(a, v) else if (is(name, "--api-key-file")) out.api_key_file = v else if (is(name, "--metrics-open")) out.metrics_open = true else if (is(name, "--dashboard")) out.dashboard = true else if (is(name, "--context")) out.context = try int(u, a, name, v) else if (is(name, "--speed-up")) out.speed_up = v else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--parallel")) out.parallel = v else if (is(name, "--backend")) out.backend = v;
+    } else if (is(name, "--name")) out.name = v else if (is(name, "--alias")) try alias.append(a, v) else if (is(name, "--api-key")) try keys.append(a, v) else if (is(name, "--api-key-file")) out.api_key_file = v else if (is(name, "--metrics-open")) out.metrics_open = true else if (is(name, "--dashboard")) out.dashboard = true else if (is(name, "--context")) out.context = try int(u, a, name, v) else if (is(name, "--speed-up")) out.speed_up = v else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--parallel")) out.parallel = v else if (is(name, "--backend")) out.backend = v else if (is(name, "--checkpoint-slots")) out.checkpoint_slots = try int(u, a, name, v) else if (is(name, "--prompt-cache-gib")) out.prompt_cache_gib = try float(u, a, name, v) else if (is(name, "--tp")) out.tp = @intCast(try int(u, a, name, v)) else if (is(name, "--rank")) {
+        const r = try int(u, a, name, v);
+        if (r < 0 or r > 4096) return fail(u, a, "argument --rank: invalid rank: '{s}'", .{v});
+        out.rank = @intCast(r);
+    } else if (is(name, "--master")) out.master = v else if (is(name, "--master-port")) {
+        const p = try int(u, a, name, v);
+        if (p < 0 or p > 65535) return fail(u, a, "argument --master-port: invalid port: '{s}'", .{v});
+        out.master_port = @intCast(p);
+    } else if (is(name, "--p2p")) out.p2p = true else if (is(name, "--no-p2p")) out.p2p = false;
 }
 
 /// ``--parallel``: "auto" is up to 8 requests at once; a number caps it.
@@ -248,4 +269,22 @@ test "parse and capabilities share the table" {
     const doc = out.written();
     try std.testing.expect(std.mem.indexOf(u8, doc, "\"--no-thinking\": {}") != null);
     try std.testing.expect(std.mem.indexOf(u8, doc, "\"--drafter\"") == null);
+}
+
+test "the GPU lane's flags: tensor parallelism, prompt cache, backend" {
+    if (!gpu) return error.SkipZigTest;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var u: Usage = .{};
+    const args = try parse(a, &.{ "m", "--tp", "4", "--rank=2", "--master", "10.0.0.1", "--master-port", "29600", "--checkpoint-slots", "3", "--prompt-cache-gib", "1.5", "--no-p2p", "--backend", "rocm" }, &u);
+    try std.testing.expectEqual(@as(u32, 4), args.tp);
+    try std.testing.expectEqual(@as(u32, 2), args.rank);
+    try std.testing.expectEqualStrings("10.0.0.1", args.master);
+    try std.testing.expectEqual(@as(u16, 29600), args.master_port);
+    try std.testing.expectEqual(@as(?i64, 3), args.checkpoint_slots);
+    try std.testing.expectEqual(@as(?f64, 1.5), args.prompt_cache_gib);
+    try std.testing.expectEqual(@as(?bool, false), args.p2p);
+    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--tp", "3" }, &u));
+    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--backend", "cuda" }, &u));
 }
