@@ -238,7 +238,8 @@ class Lanes:
         for s in self.admitted:
             values += [s.sid, int(s.draft), s.st.depth, s.count, s.cached, len(s.st.stops), *s.st.stops,
                        len(s.prompt), *s.prompt]
-        values += [fill.sid if fill is not None else -1, stop]
+        # The graph choice rides with every round: the ranks replay, or run eagerly, together.
+        values += [fill.sid if fill is not None else -1, stop, int(bool(self.e.graphs))]
         self._share(values)
 
     def _close_round(self, report: list[tuple[int, int, list[int]]]) -> None:
@@ -317,7 +318,7 @@ class Lanes:
             self._open(s, depth, stops, hit[1] if hit is not None else None)
             s.sid = sid
             self.next_id = sid + 1
-        fill_sid, stop = values[at], values[at + 1]
+        fill_sid, stop, e.graphs = values[at], values[at + 1], bool(values[at + 2])
         filled = None
         if fill_sid >= 0:
             s = next(x for x in self.filling if x.sid == fill_sid)
