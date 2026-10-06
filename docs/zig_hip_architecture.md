@@ -25,10 +25,10 @@ tiles, with native kernels only where they are measured faster.
 
 - **Lanes** (CONTRIBUTING 1): every model decodes through the shared lane rounds, with drafts verified in the same
   forward. There is no serial path and no second batcher.
-- **No precision traded for speed** (CONTRIBUTING 3): no lower-precision activations or sums than the checkpoint's
-  activation type, and fp32 where a value is fp32. Reorders are fine and are named in the PR. Faster lower-precision
-  operands (e.g. fp16 q and probabilities in attention) are an opt-in Policy mode only, raised as an issue before
-  becoming a default.
+- **No precision traded for speed** (CONTRIBUTING 3): operands at the checkpoint's activation type (fp16 / bf16) or
+  better, sums in fp32. This is what the CUDA path does (bf16 q, K, V and probabilities into fp32 MMA). Reorders are
+  fine and are named in the PR. Anything below the activation type (int8 / fp8 activations, lower-precision sums) is
+  an opt-in Policy mode, raised as an issue before it becomes a default.
 - **Correct output.** Each format/GPU/mode is measured against an fp64 CPU forward of the same checkpoint
   (tools/truth): KL, top-1 and perplexity. Matching Python's bits is not the bar.
 - **Row-exact arithmetic.** A row's bits do not depend on what it shares a launch with. drafted == serial,
@@ -375,7 +375,7 @@ How they compose:
 |---|---|---|
 | 0 | this plan; owners and file ownership | review |
 | 0c | **Tests regrouped** (4.2): `tf-hip-test kernels` and `runtime`, `tf-qwen35-test check`, the in-repo matrix script; host scripts retired | the same cases pass; nothing loses coverage (a mapping table in the PR) |
-| 0b | **CONTRIBUTING pass**, before any refactor:<br>- full-precision defaults: fp32 q and probabilities in prefill attention, fp32 operands in the chunked recurrence, the fp16/bf16-operand kernels behind `attention=f16`;<br>- `launches.zig` and `ops.hip` split by job under 600 lines;<br>- one-line comments everywhere;<br>- receipts from tools/bench_concurrent.py, bench_openai.py and prefill_cold.py against tensorfold-native;<br>- authorship under the GitHub noreply address | truth scores; rows/tpcheck; speed recorded (32k prefill expected lower) |
+| 0b | **CONTRIBUTING pass**, before any refactor:<br>- `launches.zig` and `ops.hip` split by job under 600 lines;<br>- one-line comments everywhere;<br>- receipts from tools/bench_concurrent.py, bench_openai.py and prefill_cold.py against tensorfold-native;<br>- authorship under the GitHub noreply address | truth scores; rows/tpcheck; speed recorded (32k prefill expected lower) |
 | 1 | **Policy**: struct, resolution, flags, `TF_POLICY`, the old variables as aliases, start-up line and server info; ops/registry read Policy instead of env | all variables' behaviors unchanged (matrix of on/off runs) |
 | 2 | **Caps** replace `Family`; target table; gfx1151 and gfx1200 build | fixtures, rows, tpcheck, speed unchanged |
 | 3 | **Quant interface** with mlx: `quant.Projection`, `ops.project` | byte-identical logits (prefill and decode) on 0.8B/9B/35B |
