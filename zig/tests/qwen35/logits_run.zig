@@ -1,6 +1,6 @@
-//! `logits <model dir> <ids.npy> <out.npy> [--f32]`: one cold prefill of the ids (int32 or int64) through the engine's
-//! forward and every row's logits saved, in the activation dtype the engine draws from (bf16 as `<u2`) or in fp32, for
-//! tools/truth/score.py to measure against the high-precision reference.
+//! `logits <model dir> <ids.npy> <out.npy> [--f32] [--decode]`: every row's logits for the ids (int32 or int64), from
+//! one cold prefill or (--decode) a token at a time through the decode rounds, in the activation dtype the engine
+//! draws from (bf16 as `<u2`) or in fp32, for tools/truth/score.py to measure against the high-precision reference.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -12,7 +12,11 @@ const chunk = 32;
 
 pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void {
     if (args.len < 3) return error.MissingArgument;
-    const wide = args.len > 3 and std.mem.eql(u8, args[3], "--f32");
+    var wide = false;
+    var decode = false;
+    for (args[3..]) |a| {
+        if (std.mem.eql(u8, a, "--f32")) wide = true else if (std.mem.eql(u8, a, "--decode")) decode = true else return error.UnknownOption;
+    }
     const file = try std.Io.Dir.cwd().readFileAlloc(io, args[1], gpa, .limited(1 << 28));
     defer gpa.free(file);
     const a = try npy.parse(file);
@@ -32,7 +36,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     const o: hip.ops.Ops = .{ .lib = &e.lib, .stream = e.stream.handle, .arena = &e.prompts };
     var ids_dev = try hip.DeviceBuffer.fromHost(&e.driver, std.mem.sliceAsBytes(ids));
     defer ids_dev.free();
-    const hidden = try qwen35.forward.span(o, m, &caches, ids_dev.ptr, ids.len, 0, null);
+    const hidden = try qwen35.forward.span(o, m, &caches, ids_dev.ptr, if (decode) 1 else ids.len, 0, null);
 
     const vocab = m.spec.vocab;
     const size: usize = if (wide) 4 else 2;
@@ -49,6 +53,29 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     out[10 + dict.len + pad] = '\n';
     const body = out[10 + dict.len + pad + 1 ..];
 
+    if (decode) {
+        // row 0 from its one-row prefill, then each token a one-row round at its slot, kept before the next
+        const first = try o.affine(hidden, m.head, 1, wide);
+        try e.stream.synchronize();
+        try e.driver.check(e.driver.api.hipMemcpyDtoH(body.ptr, first.ptr, vocab * size), "download");
+        var wins: [1]qwen35.window.Window = undefined;
+        const snaps = try gpa.alloc(qwen35.window.Snapshot, m.spec.n_layers);
+        defer gpa.free(snaps);
+        for (1..ids.len) |i| {
+            const rows = [1]qwen35.engine.Engine.Rows{.{ .caches = &caches, .pos = i, .tokens = ids[i..][0..1] }};
+            const reqs = [1]qwen35.draw.Request{.{ .sampling = null, .position = i + 1 }};
+            var drawn: [1]u32 = undefined;
+            const r = try e.verify(&rows, &wins, snaps, &reqs, &drawn);
+            const round: hip.ops.Ops = .{ .lib = &e.lib, .stream = e.stream.handle, .arena = &e.rounds };
+            const logits = try round.affine(r.hidden, m.head, 1, wide);
+            try e.stream.synchronize();
+            try e.driver.check(e.driver.api.hipMemcpyDtoH(body[i * vocab * size ..].ptr, logits.ptr, vocab * size), "download");
+            try e.keep(wins[0], 1);
+        }
+        try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = args[2], .data = out });
+        std.debug.print("wrote {d} decoded rows x {d} logits to {s}\n", .{ ids.len, vocab, args[2] });
+        return;
+    }
     var row: usize = 0;
     while (row < ids.len) : (row += chunk) {
         const rows = @min(chunk, ids.len - row);

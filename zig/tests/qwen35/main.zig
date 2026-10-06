@@ -13,7 +13,7 @@ const Tensor = qwen35.table.Tensor;
 /// little stack for glibc to create them.
 pub const std_options: std.Options = .{ .signal_stack_size = null };
 
-const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> [--tp N --rank R] | layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]] | lanes ... | prefill <model dir> <length>... | logits <model dir> <ids.npy> <out.npy> [--f32] | draw x\n";
+const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> [--tp N --rank R] | layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]] | lanes ... | prefill <model dir> <length>... | logits <model dir> <ids.npy> <out.npy> [--f32] [--decode] | draw x\n";
 
 pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
