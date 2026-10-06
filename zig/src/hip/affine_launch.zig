@@ -65,7 +65,8 @@ const stream_cbs = [_]c_int{ 2, 4, 8 }; // columns a lane carries in the stream 
 const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
 const stream_max_rows = 16; // kStreamRows
 const stream_waves = 4; // kStreamWaves
-const streams_wanted = 1152; // kStreamWavesWanted
+const streams_wanted = 3000; // kStreamWavesWanted
+const stream_code_words = 32; // kStreamCodeWords
 
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
 pub const Tile = enum { gemm, block };
@@ -247,12 +248,12 @@ pub const Kernels = struct {
         var lpc_log2: u5 = 0;
         while ((@as(c_int, 1) << lpc_log2) < (a.k >> 5) and lpc_log2 < 5) lpc_log2 += 1;
         const r: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else 2;
-        // the widest column count that still gives the card enough waves
+        // the widest column count that still gives the card enough waves, within the registers the lane's code words take
         var pick: usize = 0;
         var c: usize = stream_cbs.len;
         while (c > 0) {
             c -= 1;
-            if (stream_cbs[c] * stream_rows[r] > 16) continue;
+            if (stream_cbs[c] * stream_rows[r] > 16 or stream_cbs[c] * a.bits > stream_code_words) continue;
             pick = c;
             const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[c], pair_div);
             if (@as(u64, cdiv(total_n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[r]) >= streams_wanted) break;

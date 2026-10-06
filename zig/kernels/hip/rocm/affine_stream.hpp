@@ -368,8 +368,10 @@ __global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a
     }
 }
 
-// Waves a launch should have to hide the weight loads' latency: about eight a SIMD on a 72-CU card.
-constexpr int kStreamWavesWanted = 1152;
+// Waves a launch should have to hide the weight loads' latency, and the most code words a lane keeps in flight: a lane
+// with more (8 columns of 8-bit codes) leaves the SIMD too few waves, and its loads run at 80% of what 2 or 4 columns reach.
+constexpr int kStreamWavesWanted = 3000;
+constexpr int kStreamCodeWords = 32;
 
 template <typename T, int BITS, int R, int CB>
 hipError_t stream_launch_as(const Affine& a, int lpc_log2, int items, hipStream_t stream) {
@@ -387,7 +389,7 @@ int stream_cb(const Affine& a, int lpc_log2, int items) {
     const int cbs[3] = {8, 4, 2};
     int pick = 2;
     for (int cb : cbs) {
-        if (!stream_shape(R, cb)) continue;
+        if (!stream_shape(R, cb) || cb * a.bits > kStreamCodeWords) continue;
         pick = cb;
         const int per_block = kStreamWaves * (32 >> lpc_log2) * cb;
         if (((a.n + per_block - 1) / per_block) * kStreamWaves * items >= kStreamWavesWanted) break;
@@ -442,7 +444,7 @@ hipError_t stream_pair_rows(const Affine& a, int pair_cols, float limit, int lpc
     const int cbs[3] = {8, 4, 2};
     int cb = 2;
     for (int c : cbs) {
-        if (!stream_shape(R, c)) continue;
+        if (!stream_shape(R, c) || c * BITS > kStreamCodeWords) continue;
         cb = c;
         const int per_block = kStreamWaves * (32 >> lpc_log2) * (c / 2);
         if (((pair_cols + per_block - 1) / per_block) * kStreamWaves * items * ((a.m + R - 1) / R) >= kStreamWavesWanted) {
