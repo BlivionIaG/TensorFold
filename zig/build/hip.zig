@@ -35,6 +35,10 @@ const lib_headers = [_][]const u8{
     "rocm/gated_delta.hpp",
 };
 
+/// The source groups launched from Zig, one code object each (the order of kernels.zig's Group): the device code of the
+/// library sources above, built by hipcc --genco with the library's flags. gemv and the WMMA schedules stay out.
+const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2" };
+
 /// A GPU family's library: its gfx targets and whether its host dispatch takes the WMMA schedules.
 const Family = struct { name: []const u8, prefixes: []const []const u8, wmma: bool };
 const families = [_]Family{
@@ -43,7 +47,7 @@ const families = [_]Family{
 };
 
 /// The runtime module for `target`; without images it builds host-only (empty images).
-fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, images: []const ?std.Build.LazyPath, libs: []const ?std.Build.LazyPath, gfx: []const u8) *std.Build.Module {
+fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, images: []const ?std.Build.LazyPath, libs: []const ?std.Build.LazyPath, mods: []const [module_groups.len]?std.Build.LazyPath, gfx: []const u8) *std.Build.Module {
     const options = b.addOptions();
     var with = images.len > 0;
     for (images) |i| with = with and i != null;
@@ -52,10 +56,19 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     var have: [families.len]bool = @splat(false);
     for (libs, 0..) |l, i| have[i] = l != null;
     inline for (families, 0..) |f, i| options.addOption(bool, "with_" ++ f.name, have[i]);
+    var have_mods: [families.len]bool = @splat(false);
+    for (mods, 0..) |m, i| {
+        have_mods[i] = true;
+        for (m) |file| have_mods[i] = have_mods[i] and file != null;
+    }
+    inline for (families, 0..) |f, i| options.addOption(bool, "with_" ++ f.name ++ "_modules", have_mods[i]);
     const hip = b.createModule(.{ .root_source_file = b.path("zig/src/hip/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
     hip.addOptions("kernel_options", options);
     if (with) for (kernels, images) |k, image| hip.addAnonymousImport(b.fmt("hsaco_{s}", .{k.name}), .{ .root_source_file = image.? });
     for (families, libs) |f, l| if (l) |file| hip.addAnonymousImport(b.fmt("lib_{s}", .{f.name}), .{ .root_source_file = file });
+    for (mods, 0..) |group, i| if (have_mods[i]) for (module_groups, group) |name, file| {
+        hip.addAnonymousImport(b.fmt("mod_{s}_{s}", .{ families[i].name, name }), .{ .root_source_file = file.? });
+    };
     return hip;
 }
 
@@ -92,7 +105,20 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
         }
         if (lib.*) |file| bundle_step.dependOn(&b.addInstallFile(file, b.fmt("hsaco/libtf_{s}.so", .{f.name})).step);
     }
-    const hip = runtime(b, target, optimize, if (hipcc != null or prebuilt != null) &images else &.{}, &libs, gfx);
+    var mods: [families.len][module_groups.len]?std.Build.LazyPath = @splat(@splat(null));
+    for (families, &mods) |f, *group| {
+        const arches = archesOf(b, gfx, f);
+        if (arches.len == 0) continue;
+        for (module_groups, group) |name, *slot| {
+            if (prebuilt) |dir| {
+                slot.* = b.graph.cwdRelativePath(b.pathJoin(&.{ dir, b.fmt("{s}_{s}.hsaco", .{ f.name, name }) }));
+            } else if (hipcc) |tool| {
+                slot.* = codeObject(b, tool, version.?, f, arches, name);
+            }
+            if (slot.*) |file| bundle_step.dependOn(&b.addInstallFile(file, b.fmt("hsaco/{s}_{s}.hsaco", .{ f.name, name })).step);
+        }
+    }
+    const hip = runtime(b, target, optimize, if (hipcc != null or prebuilt != null) &images else &.{}, &libs, &mods, gfx);
     const runner = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
     runner.addImport("hip", hip);
     runner.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = target, .optimize = optimize }));
@@ -154,7 +180,7 @@ fn qwen35(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
 
 /// Host unit tests of the HIP runtime (no GPU), on any host.
 pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
-    const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, "");
+    const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, &.{}, "");
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
     const family = b.addRunArtifact(b.addTest(.{ .root_module = qwen35(b, b.graph.host, .debug, hip, lanesModule(b, b.graph.host, .debug)) }));
     // TF_QWEN_DIR is not a cached input
@@ -186,6 +212,26 @@ fn bundle(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, k: Kern
     run.addArg("-o");
     const out = run.addOutputFileArg(b.fmt("{s}.hsaco", .{k.name}));
     run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}.hip", .{k.name})));
+    return out;
+}
+
+/// hipcc --genco over one source group with the library's flags and the family's WMMA switch: its device code is the
+/// library's, launched from Zig.
+fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: Family, arches: []const []const u8, group: []const u8) std.Build.LazyPath {
+    const run = b.addSystemCommand(&.{ hipcc, "--genco" });
+    run.addFileInput(version);
+    run.addArgs(&torch_flags);
+    run.addArg(b.fmt("-DTENSORFOLD_RDNA_WMMA={d}", .{@intFromBool(f.wmma)}));
+    const root = std.fs.path.dirname(std.fs.path.dirname(hipcc) orelse ".") orelse ".";
+    run.addArg(b.fmt("--rocm-path={s}", .{root}));
+    run.addArg(b.fmt("--rocm-device-lib-path={s}/lib/llvm/amdgcn/bitcode", .{root}));
+    for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
+    run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip/rocm"));
+    for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
+    run.addArg("-o");
+    const out = run.addOutputFileArg(b.fmt("{s}_{s}.hsaco", .{ f.name, group }));
+    const source = if (std.mem.eql(u8, group, "ops")) "ops.hip" else b.fmt("rocm/{s}.hip", .{group});
+    run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}", .{source})));
     return out;
 }
 

@@ -5,6 +5,7 @@ const hip = @import("hip");
 const check = @import("check.zig");
 const runtime_tests = @import("runtime_tests.zig");
 const oracle_tests = @import("oracle_tests.zig");
+const launch_cost = @import("launch_cost.zig");
 
 const usage =
     \\usage: tf-hip-test <command>
@@ -15,6 +16,7 @@ const usage =
     \\  library                   this GPU family's embedded kernel library: open, build switch, one kernel
     \\  image                     an offload bundle without this GPU's target, and a broken image, refused
     \\  affine <dir>              affine products against qwen_rocm_dump.py's fixtures, bit for bit
+    \\  launches [n] [reps]       host cost of one kernel call: the library's C launchers vs the Zig launches
     \\  overhead [n] [reps]       dependent one-thread kernels: plain stream vs one graph
     \\
 ;
@@ -48,6 +50,11 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "image")) return runtime_tests.image(gpu);
     if (std.mem.eql(u8, cmd, "library")) return runtime_tests.library(gpu);
     if (std.mem.eql(u8, cmd, "affine")) return oracle_tests.affine(gpu, if (rest.len > 0) rest[0] else return error.MissingArgument);
+    if (std.mem.eql(u8, cmd, "launches")) {
+        const n = if (rest.len > 0) try std.fmt.parseInt(usize, rest[0], 10) else 2000;
+        const reps = if (rest.len > 1) try std.fmt.parseInt(usize, rest[1], 10) else 15;
+        return launch_cost.run(gpu, n, reps);
+    }
     if (std.mem.eql(u8, cmd, "overhead")) {
         const n = if (rest.len > 0) try std.fmt.parseInt(usize, rest[0], 10) else 1000;
         const reps = if (rest.len > 1) try std.fmt.parseInt(usize, rest[1], 10) else 20;

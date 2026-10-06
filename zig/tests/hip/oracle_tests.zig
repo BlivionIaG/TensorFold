@@ -53,7 +53,7 @@ pub fn affine(gpu: Gpu, dir_path: []const u8) !void {
     const root = dir.parsed.value.object;
     const act = try kindOf(root.get("act_dtype").?.string);
     const cap = try gpu.ctx.capability();
-    var lib = try hip.rocm.Library.open(hip.rocm.familyOf(cap) orelse return error.UnsupportedGpu);
+    var lib = try hip.rocm.Library.open(gpu.d, hip.rocm.familyOf(cap) orelse return error.UnsupportedGpu);
     defer lib.close();
     var stream = try hip.Stream.init(gpu.d, true);
     defer stream.deinit();
