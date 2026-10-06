@@ -153,6 +153,7 @@ pub const Launcher = struct {
         router_rows: [2]Function, // fp16, bf16
         router_tile: [2]Function,
         rms_rows: Function,
+        qk_rope: Function,
     };
 
     /// Loads the family's code objects on the current device and resolves every kernel the launchers use.
@@ -197,6 +198,7 @@ pub const Launcher = struct {
             .router_rows = .{ try ops.function("tf_router_rows_f16"), try ops.function("tf_router_rows_bf16") },
             .router_tile = .{ try ops.function("tf_router_tile_f16"), try ops.function("tf_router_tile_bf16") },
             .rms_rows = try ops.function("tf_rms_rows"),
+            .qk_rope = try ops.function(anon ++ "14qk_rope_kernelEPKvixiPKffiiiifPKiPfPvi"),
         };
         const r = "_ZN2tf4rocm";
         l.rms = .{
@@ -316,6 +318,28 @@ pub const Launcher = struct {
         a.add(kernel);
         a.add(rows);
         try l.go(l.conv_rows, dim(cdiv(channels, 128), 1, 1), dim(128, 1, 1), 0, s, &a);
+    }
+
+    pub fn tf_qk_rope(l: *const Launcher, src: C, kind: c_int, s_row: c_longlong, s_head: c_int, weight: CF, eps: f32, rows: c_int, heads: c_int, width: c_int, rotary: c_int, theta: f32, pos: CI, wide: F, cache: P, total: c_int, s: S) Error!void {
+        if (width > 512) return invalid("qk_rope");
+        var a: Args = .{};
+        a.add(ad(src));
+        a.add(kind);
+        a.add(s_row);
+        a.add(s_head);
+        a.add(ad(weight));
+        a.add(eps);
+        a.add(rows);
+        a.add(heads);
+        a.add(width);
+        a.add(rotary);
+        a.add(theta);
+        a.add(ad(pos));
+        a.add(ad(wide));
+        a.add(ad(cache));
+        a.add(total);
+        // a wave a (row, head), 8 a block
+        try l.go(l.op.qk_rope, dim(cdiv(@as(i64, rows) * heads, 8), 1, 1), dim(256, 1, 1), 0, s, &a);
     }
 
     pub fn tf_rope_decode(l: *const Launcher, x: CF, y: F, rows: c_int, width: c_int, rotary: c_int, pos: c_int, theta: f32, s: S, pos_dev: CI, per: c_int) Error!void {
