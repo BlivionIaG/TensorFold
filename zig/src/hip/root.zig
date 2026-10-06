@@ -18,6 +18,7 @@ pub const graph = @import("graph.zig");
 pub const kernels = @import("kernels.zig");
 pub const rocm = @import("rocm.zig");
 pub const ops = @import("ops.zig");
+pub const affine = @import("affine_launch.zig");
 pub const Arena = @import("arena.zig").Arena;
 pub const rccl = @import("rccl.zig");
 pub const link = @import("link.zig");

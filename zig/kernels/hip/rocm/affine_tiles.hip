@@ -1,9 +1,12 @@
 // Dot2 tiles for every width and both activation types: one row, 2-8 rows, the GEMM tile, and routed plans.
 
+#include <cstdlib>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
 #include "affine_dot2.hpp"
+#include "affine_gemm.hpp"
 
 namespace tf {
 namespace rocm {
@@ -439,7 +442,8 @@ hipError_t launch_block(const Affine& a, hipStream_t stream, int items = 1) {
     return hipGetLastError();
 }
 
-hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int items) {
+// The previous GEMM tile (TF_AFFINE_GEMM=old picks it): 128 x 128, a thread 8 x 8, the sums of x in the compute loop.
+hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int items) {
     if (a.m < 1 || a.n < 1 || a.group % kBlockK || a.k % a.group || a.k % 16) return hipErrorInvalidValue;
     switch (a.bits) {
         case 2: return launch_block<2>(a, stream, items);
@@ -450,6 +454,15 @@ hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int ite
         case 8: return launch_block<8>(a, stream, items);
         default: return hipErrorInvalidValue;
     }
+}
+
+hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int items) {
+    static const bool old = [] {
+        const char* v = std::getenv("TF_AFFINE_GEMM");
+        return v != nullptr && std::strcmp(v, "old") == 0;
+    }();
+    if (a.k % 16 == 0 && !old && affine_gemm_supported(a)) return launch_affine_gemm(a, stream, items);
+    return launch_affine_dot2_block_old(a, stream, items);
 }
 
 hipError_t launch_affine_dot2_routed(const Affine& a, int items, hipStream_t stream) {
