@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const cuda_build = @import("zig/build/cuda.zig");
+const hip_build = @import("zig/build/hip.zig");
 
 comptime {
     const required = std.mem.trim(u8, @embedFile(".zig-version"), "\r\n");
@@ -82,10 +83,14 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Host-side unit tests (no GPU work)");
     switch (target.result.os.tag) {
         .macos => metalTargets(b, target, optimize, draft_ids, test_step),
-        .linux => cuda_build.targets(b, target, optimize, draft_ids),
+        .linux => {
+            cuda_build.targets(b, target, optimize, draft_ids);
+            hip_build.targets(b, target, optimize);
+        },
         else => {},
     }
     cuda_build.hostTests(b, draft_ids, test_step);
+    hip_build.hostTests(b, test_step);
     const flash_host = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/flashnext_host.zig"), .target = target, .optimize = optimize, .link_libc = true }) });
     b.step("compile-flashnext-host", "Compile FlashNext CPU metadata contracts without running them").dependOn(&flash_host.step);
     const flash_host_run = b.addRunArtifact(flash_host);
