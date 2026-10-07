@@ -194,7 +194,7 @@ fn lanesModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
 /// The Qwen3.5 / Qwen3.6 family over the HIP runtime and the core's checkpoint reader.
 fn qwen3_5(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module) *std.Build.Module {
     const core = hip.import_table.get("core").?;
-    const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen3_5/backend/hip/hip.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen3_5/hip.zig"), .target = target, .optimize = optimize, .link_libc = true });
     family.addImport("hip", hip);
     family.addImport("core", core);
     family.addImport("lanes", lanes);
