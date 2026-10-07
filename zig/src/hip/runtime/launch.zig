@@ -19,13 +19,18 @@ pub const Args = struct {
     ptrs: [max_args]?*anyopaque = undefined,
     used: usize = 0,
     count: usize = 0,
+    /// An argument did not fit: the launch is refused, in every build mode.
+    overflow: bool = false,
 
     /// Copies `value` (a pointer-sized address, scalar, or extern struct passed by value) at its C alignment.
     pub fn add(self: *Args, value: anytype) void {
         const T = @TypeOf(value);
         comptime std.debug.assert(@sizeOf(T) > 0);
         const at = std.mem.alignForward(usize, self.used, @alignOf(T));
-        std.debug.assert(self.count < max_args and at + @sizeOf(T) <= max_bytes);
+        if (self.count >= max_args or at + @sizeOf(T) > max_bytes) {
+            self.overflow = true;
+            return;
+        }
         @memcpy(self.storage[at..][0..@sizeOf(T)], std.mem.asBytes(&value));
         self.offsets[self.count] = @intCast(at);
         self.sizes[self.count] = @sizeOf(T);
@@ -63,12 +68,14 @@ pub const Config = struct {
         const b = self.block;
         if (g.x == 0 or g.y == 0 or g.z == 0 or b.x == 0 or b.y == 0 or b.z == 0) return error.Invalid;
         if (@as(u64, b.x) * b.y * b.z > 1024) return error.Invalid;
+        if (@as(u64, g.x) * b.x > std.math.maxInt(u32) or @as(u64, g.y) * b.y > std.math.maxInt(u32) or @as(u64, g.z) * b.z > std.math.maxInt(u32)) return error.Invalid;
     }
 };
 
 /// hipModuleLaunchKernel, or hipModuleLaunchCooperativeKernel for a grid whose blocks must all be resident.
 pub fn launch(f: Function, cfg: Config, stream: Stream, args: *Args) Error!void {
     try cfg.validate();
+    if (args.overflow) return error.Invalid;
     const d = f.d;
     const g = cfg.grid;
     const b = cfg.block;
@@ -92,7 +99,16 @@ test "args keep C alignment and sizes" {
     try std.testing.expectEqual(@as(f64, 2.5), @as(*align(1) const f64, @ptrCast(ptrs[3].?)).*);
 }
 
-test "a block over 1,024 threads or an empty grid is refused" {
+test "a block over 1,024 threads, an empty grid or a grid past 2^32 threads is refused" {
     try std.testing.expectError(error.Invalid, (Config{ .grid = .{}, .block = .{ .x = 2048 } }).validate());
     try std.testing.expectError(error.Invalid, (Config{ .grid = .{ .x = 0 }, .block = .{} }).validate());
+    try std.testing.expectError(error.Invalid, (Config{ .grid = .{ .x = 1 << 31 }, .block = .{ .x = 4 } }).validate());
+}
+
+test "an argument past the pack's room marks it, whatever the build mode" {
+    var a: Args = .{};
+    for (0..Args.max_args) |_| a.add(@as(u32, 1));
+    try std.testing.expect(!a.overflow);
+    a.add(@as(u32, 1));
+    try std.testing.expect(a.overflow and a.count == Args.max_args);
 }
