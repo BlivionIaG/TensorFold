@@ -3,6 +3,25 @@
 
 const std = @import("std");
 const qwen35 = @import("qwen35");
+const ids_file = @import("ids_file.zig");
+
+/// The median seconds of three cold prefills of `prompt` after one warm-up.
+pub fn seconds(gpa: std.mem.Allocator, io: std.Io, e: *qwen35.engine.Engine, prompt: []const u32) !f64 {
+    var times: [3]f64 = undefined;
+    for (0..4) |rep| {
+        var caches = try e.newCaches(prompt.len + 8);
+        defer {
+            e.forget(&caches);
+            caches.deinit(gpa);
+        }
+        const t0 = std.Io.Clock.awake.now(io);
+        _ = try e.prefill(&caches, prompt, 0, null, .{ .sampling = null, .position = prompt.len }, null);
+        const dt = @as(f64, @floatFromInt(std.Io.Clock.awake.now(io).toNanoseconds() - t0.toNanoseconds())) / 1e9;
+        if (rep > 0) times[rep - 1] = dt;
+    }
+    std.mem.sort(f64, &times, {}, std.sort.asc(f64));
+    return times[1];
+}
 
 pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void {
     if (args.len < 2) return error.MissingArgument;
@@ -10,21 +29,11 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     for (args[1..]) |a| longest = @max(longest, try std.fmt.parseInt(usize, a, 10));
     const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + 64, .batch_rows = 32 });
     defer e.deinit();
-    const prompt = try gpa.alloc(u32, longest);
+    const prompt = try ids_file.synthetic(gpa, longest);
     defer gpa.free(prompt);
-    for (prompt, 0..) |*t, i| t.* = @intCast(1000 + (i * 7919) % 50000);
     for (args[1..]) |a| {
         const len = try std.fmt.parseInt(usize, a, 10);
-        var times: [3]f64 = undefined;
-        for (0..4) |rep| {
-            var caches = try e.newCaches(len + 8);
-            defer caches.deinit(gpa);
-            const t0 = std.Io.Clock.awake.now(io);
-            _ = try e.prefill(&caches, prompt[0..len], 0, null, .{ .sampling = null, .position = len }, null);
-            const dt = @as(f64, @floatFromInt(std.Io.Clock.awake.now(io).toNanoseconds() - t0.toNanoseconds())) / 1e9;
-            if (rep > 0) times[rep - 1] = dt;
-        }
-        std.mem.sort(f64, &times, {}, std.sort.asc(f64));
-        std.debug.print("RESULT prefill {d} tokens: {d:.3} s, {d:.0} tok/s\n", .{ len, times[1], @as(f64, @floatFromInt(len)) / times[1] });
+        const t = try seconds(gpa, io, e, prompt[0..len]);
+        std.debug.print("RESULT prefill {d} tokens: {d:.3} s, {d:.0} tok/s\n", .{ len, t, @as(f64, @floatFromInt(len)) / t });
     }
 }

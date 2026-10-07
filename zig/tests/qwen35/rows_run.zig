@@ -5,8 +5,8 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const npy = @import("npy");
 const qwen35 = @import("qwen35");
+const ids_file = @import("ids_file.zig");
 
 const Engine = qwen35.engine.Engine;
 const win = qwen35.window;
@@ -69,26 +69,19 @@ fn round(e: *Engine, caches: []const *qwen35.state.Caches, pos: []const usize, t
     try e.stream.synchronize();
 }
 
-pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void {
-    if (args.len < 2) return error.MissingArgument;
-    const n = if (args.len > 2) try std.fmt.parseInt(usize, args[2], 10) else 3;
-    if (n < 1 or n > 16) return error.BadWindow;
-    const file = try std.Io.Dir.cwd().readFileAlloc(io, args[1], gpa, .limited(1 << 28));
-    defer gpa.free(file);
-    const a = try npy.parse(file);
-    const ids = try gpa.alloc(u32, a.count());
-    defer gpa.free(ids);
-    for (ids, 0..) |*t, i| t.* = if (std.mem.eql(u8, a.descr, "<i8"))
-        @intCast(std.mem.readInt(i64, a.data[i * 8 ..][0..8], .little))
-    else
-        @intCast(std.mem.readInt(i32, a.data[i * 4 ..][0..4], .little));
-    const streams = if (args.len > 3) try std.fmt.parseInt(usize, args[3], 10) else 1;
-    const keep = if (args.len > 4) try std.fmt.parseInt(usize, args[4], 10) else n;
-    if (keep < 1 or keep > n) return error.BadKeep;
-    if (streams < 1 or streams > 8 or ids.len <= n + streams) return error.PromptTooShort;
+/// Streams of `n` rows each, the first `keep` of each kept.
+pub const Case = struct { streams: usize, n: usize, keep: usize };
 
-    const e = try Engine.open(gpa, io, args[0], .{ .capacity = ids.len + 64, .batch_rows = 128, .graphs = false });
-    defer e.deinit();
+/// Where a case's two runs first differ.
+pub const Diff = struct { layer: usize, kind: []const u8, stream: usize, row: usize, column: usize };
+
+/// Runs one case over prompts cut from `ids`; null when every layer's rows and the final rows are equal.
+pub fn runCase(gpa: std.mem.Allocator, e: *Engine, ids: []const u32, c: Case) !?Diff {
+    const n = c.n;
+    const streams = c.streams;
+    if (n < 1 or n > 16) return error.BadWindow;
+    if (c.keep < 1 or c.keep > n) return error.BadKeep;
+    if (streams < 1 or streams > 8 or ids.len <= n + streams or streams * n > 64) return error.PromptTooShort;
     const layers = e.model().spec.n_layers;
     const snaps = try gpa.alloc(win.Snapshot, streams * layers);
     defer gpa.free(snaps);
@@ -132,9 +125,9 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
         const one = [1]*qwen35.state.Caches{&alone[j]};
         try round(e, &one, &.{pos[j] + i}, &.{tails[j][i..][0..1]}, 1, &serial, snaps);
     };
-    try round(e, caches[0..streams], pos[0..streams], tails[0..streams], keep, &shared, snaps);
+    try round(e, caches[0..streams], pos[0..streams], tails[0..streams], c.keep, &shared, snaps);
     // the rows past `keep` again, one at a time from the kept state, over the shared round's captures
-    for (keep..n) |i| for (0..streams) |j| {
+    for (c.keep..n) |i| for (0..streams) |j| {
         shared.row = j * n + i;
         const one = [1]*qwen35.state.Caches{&together[j]};
         try round(e, &one, &.{pos[j] + i}, &.{tails[j][i..][0..1]}, 1, &shared, snaps);
@@ -145,9 +138,24 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
         const at = (slot * rows + r) * w;
         if (std.mem.indexOfDiff(u8, serial.bytes[at..][0..w], shared.bytes[at..][0..w])) |col| {
             const kind = if (slot == layers) "final" else if (e.model().spec.full(slot)) "full attention" else "linear attention";
-            std.debug.print("FAIL layer {d} ({s}), stream {d} row {d} of {d}: first difference at column {d}\n", .{ slot, kind, r / n, r % n, n, col / e.model().act.size() });
-            return error.Mismatch;
+            return .{ .layer = slot, .kind = kind, .stream = r / n, .row = r % n, .column = col / e.model().act.size() };
         }
     };
+    return null;
+}
+
+pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void {
+    if (args.len < 2) return error.MissingArgument;
+    const n = if (args.len > 2) try std.fmt.parseInt(usize, args[2], 10) else 3;
+    const streams = if (args.len > 3) try std.fmt.parseInt(usize, args[3], 10) else 1;
+    const keep = if (args.len > 4) try std.fmt.parseInt(usize, args[4], 10) else n;
+    const ids = try ids_file.load(gpa, io, args[1]);
+    defer gpa.free(ids);
+    const e = try Engine.open(gpa, io, args[0], .{ .capacity = ids.len + 64, .batch_rows = 128, .graphs = false });
+    defer e.deinit();
+    if (try runCase(gpa, e, ids, .{ .streams = streams, .n = n, .keep = keep })) |d| {
+        std.debug.print("FAIL layer {d} ({s}), stream {d} row {d} of {d}: first difference at column {d}\n", .{ d.layer, d.kind, d.stream, d.row, n, d.column });
+        return error.Mismatch;
+    }
     std.debug.print("PASS {d} streams of {d} rows, {d} kept: every layer's residuals and the final rows equal each stream one row at a time\n", .{ streams, n, keep });
 }

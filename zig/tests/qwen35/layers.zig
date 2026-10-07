@@ -13,8 +13,7 @@ const Tensor = hip.ops.Tensor;
 
 const Gpu = struct { d: *const hip.Driver, gpa: std.mem.Allocator, io: std.Io };
 
-/// The tensor-parallel group of this process: one rank of `world`, joined at `master:port`.
-pub const Group = struct { rank: usize = 0, world: usize = 1, master: []const u8 = "127.0.0.1", port: u16 = 29551 };
+pub const Group = @import("group.zig").Group;
 
 /// One fixture file's data (the caller frees `bytes`).
 fn read(g: Gpu, dir: []const u8, stem: []const u8, act: view.Kind) !struct { bytes: []u8, data: []const u8 } {

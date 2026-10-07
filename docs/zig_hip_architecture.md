@@ -370,7 +370,7 @@ How they compose:
 - **The kernel harness is driven by the registry** (3.4). Every entry declares its family, its shapes and its
   reference, so a new format, GPU or tile is tested by being registered, with no new command.
 - **`check` is driven by the Policy** (3.5). The matrix is `check` run over a list of Policies × models × tp, and
-  one in-repo script (`zig/tests/hip/matrix.sh`, taking model directories and device lists as arguments, no hosts or
+  one in-repo script (`zig/tests/qwen35/matrix.sh`, taking model directories and device lists as arguments, no hosts or
   paths in it) writes the PR's table.
 - **The Python-oracle tests** (`affine` fixtures, `layers`) become an optional `--oracle DIR` of `kernels` and
   `check`. The Python engine is frozen and the fp64 truth is the bar, so they only matter as a regression check of

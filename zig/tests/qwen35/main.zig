@@ -1,4 +1,5 @@
-//! Qwen3.5 / 3.6 loader checks: `check <model dir> [first layers]` uploads the model and reads every buffer back (GPU);
+//! Qwen3.5 / 3.6 model tests: `check <model dir> ...` runs the invariant, accuracy and speed checks in one process
+//! (check.zig); `upload <model dir> [first layers]` uploads the model and reads every buffer back (GPU);
 //! `digest <model dir> [--tp N --rank R]` prints a SHA-256 per host tensor (of one tensor-parallel rank's share with
 //! --tp), to compare with the Python loader's.
 
@@ -13,7 +14,15 @@ const Tensor = qwen35.table.Tensor;
 /// little stack for glibc to create them.
 pub const std_options: std.Options = .{ .signal_stack_size = null };
 
-const usage = "usage: tf-qwen35-test check <model dir> [first layers] | digest <model dir> [--tp N --rank R] | layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]] | lanes ... | prefill <model dir> <length>... | logits <model dir> <ids.npy> <out.npy> [--f32] [--decode] | rows <model dir> <ids.npy> [n] | draw x\n";
+const usage = "usage: tf-qwen35-test check <model dir> [--tp N --rank R --master H --port P] [--prompts FILE] [--truth T --ids IDS] [--speed] [--only invariants|accuracy|speed] | upload <model dir> [first layers] | digest <model dir> [--tp N --rank R] | layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]] | lanes ... | prefill <model dir> <length>... | logits <model dir> <ids.npy> <out.npy> [--f32] [--decode] | rows <model dir> <ids.npy> [n] | draw x\n";
+
+/// The subcommands that take their arguments after the name.
+const commands = [_]struct { name: []const u8, run: *const fn (std.mem.Allocator, std.Io, []const [:0]const u8) anyerror!void }{
+    .{ .name = "rows", .run = @import("rows_run.zig").run },
+    .{ .name = "logits", .run = @import("logits_run.zig").run },
+    .{ .name = "prefill", .run = @import("prefill_run.zig").run },
+    .{ .name = "lanes", .run = @import("lanes_run.zig").run },
+};
 
 pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -37,49 +46,30 @@ pub fn main(init: std.process.Init) !u8 {
         };
         return 0;
     }
-    if (std.mem.eql(u8, args[1], "rows")) {
-        @import("rows_run.zig").run(init.gpa, init.io, args[2..]) catch |e| {
+    for (commands) |c| if (std.mem.eql(u8, args[1], c.name)) {
+        c.run(init.gpa, init.io, args[2..]) catch |e| {
             std.debug.print("FAIL {t}\n", .{e});
             return 1;
         };
         return 0;
-    }
-    if (std.mem.eql(u8, args[1], "logits")) {
-        @import("logits_run.zig").run(init.gpa, init.io, args[2..]) catch |e| {
-            std.debug.print("FAIL {t}\n", .{e});
-            return 1;
-        };
-        return 0;
-    }
-    if (std.mem.eql(u8, args[1], "prefill")) {
-        @import("prefill_run.zig").run(init.gpa, init.io, args[2..]) catch |e| {
-            std.debug.print("FAIL {t}\n", .{e});
-            return 1;
-        };
-        return 0;
-    }
-    if (std.mem.eql(u8, args[1], "lanes")) {
-        @import("lanes_run.zig").run(init.gpa, init.io, args[2..]) catch |e| {
-            std.debug.print("FAIL {t}\n", .{e});
-            return 1;
-        };
-        return 0;
-    }
+    };
     if (std.mem.eql(u8, args[1], "layers") and args.len > 3) {
         var d = try hip.Driver.open();
         defer d.close();
-        var group: @import("layers.zig").Group = .{};
+        var group: @import("group.zig").Group = .{};
         var i: usize = 4;
-        while (i + 1 < args.len) : (i += 2) {
-            if (std.mem.eql(u8, args[i], "--tp")) group.world = try std.fmt.parseInt(usize, args[i + 1], 10) else if (std.mem.eql(u8, args[i], "--rank")) group.rank = try std.fmt.parseInt(usize, args[i + 1], 10) else if (std.mem.eql(u8, args[i], "--master")) group.master = args[i + 1] else if (std.mem.eql(u8, args[i], "--port")) group.port = try std.fmt.parseInt(u16, args[i + 1], 10) else return 2;
-        }
+        while (i < args.len) : (i += 1) if (!try group.option(args, &i)) return 2;
         @import("layers.zig").run(.{ .d = &d, .gpa = init.gpa, .io = init.io }, args[2], args[3], group) catch |e| {
             std.debug.print("FAIL {t}\n", .{e});
             return 1;
         };
         return 0;
     }
-    if (!std.mem.eql(u8, args[1], "check")) {
+    if (std.mem.eql(u8, args[1], "check")) return @import("check.zig").run(init.gpa, init.io, args[2..]) catch |e| {
+        std.debug.print("FAIL {t}\n", .{e});
+        return 1;
+    };
+    if (!std.mem.eql(u8, args[1], "upload")) {
         std.debug.print(usage, .{});
         return 2;
     }
