@@ -51,6 +51,12 @@ pub fn smoke(gpu: Gpu) !void {
     try c.downloadAsync(0, back, stream.handle);
     try stream.synchronize();
     try check.sameBytes("async copies through pinned memory", back, pattern);
+    // again with other bytes over the same buffers: a copy that does nothing leaves the old bytes and fails
+    for (pinned.bytes) |*p| p.* = ~p.*;
+    try c.uploadAsync(0, pinned.bytes, stream.handle);
+    try c.downloadAsync(0, back, stream.handle);
+    try stream.synchronize();
+    try check.sameBytes("async copies of new bytes over old ones", back, pinned.bytes);
     try c.fill8(0x5a, stream.handle);
     try stream.synchronize();
     try c.download(0, back);
