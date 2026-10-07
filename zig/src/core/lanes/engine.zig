@@ -12,6 +12,7 @@ const shape = @import("shape.zig");
 const plan_lanes = @import("plan_lanes.zig");
 const fill = @import("fill.zig");
 const trail = @import("trail.zig");
+const chunked = @import("chunked.zig");
 const Stream = sm.Stream;
 const Feed = be.Feed;
 const Plan = win.Plan;
@@ -86,28 +87,11 @@ pub const Engine = struct {
         try e.opened(s);
     }
 
-    /// Whether the backend can run a prompt pass a chunk at a time between rounds (`fillStream`).
-    pub fn fills(e: *const Engine) bool {
-        return e.backend.vtable.prefill_step != null;
-    }
-
-    /// One chunk of a stream's prompt pass, `first` on its first call; true once the pass is done and the stream is
-    /// opened (its first token drawn, its first drafts asked), so it takes part from the next round.
-    pub fn fillStream(e: *Engine, s: *Stream, first: bool) !bool {
-        _ = e.arena.reset(.retain_capacity);
-        if (first) try trail.event(e, &.{ f("ev", str("add")), f("stream", str(s.id)) });
-        const chunk = e.backend.vtable.prefill_step orelse return error.NoPrefillSteps;
-        const done = chunk(e.backend.ptr, s) catch |err| {
-            if (err == error.Cancelled) e.backend.release(s);
-            return err;
-        };
-        if (!done) return false;
-        try e.opened(s);
-        return true;
-    }
+    pub const fills = chunked.fills;
+    pub const fillStream = chunked.fillStream;
 
     /// A stream whose prompt is in: its first token, its first drafts, and its place among the live ones.
-    fn opened(e: *Engine, s: *Stream) !void {
+    pub fn opened(e: *Engine, s: *Stream) !void {
         if (s.isCancelled()) { // cancelled in its last chunk: no first token
             e.backend.release(s);
             return error.Cancelled;

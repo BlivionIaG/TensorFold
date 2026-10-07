@@ -78,8 +78,7 @@ pub const Counts = struct { hits: u64 = 0, misses: u64 = 0, kept: u64 = 0, evict
 /// Where a prompt pass starts and where it stops to keep its state (marks sorted, in `a`).
 pub const Plan = struct { from: u32 = 0, marks: []const u32 = &.{} };
 
-/// The result of a paged store's `keep`: whether a state is held at the mark now, and how many of the stream's first pages
-/// the store holds already (the `path` it was given has the store's page of each: the stream swaps its own for them).
+/// A paged store's `keep`: whether the mark holds a state, and how many leading pages the stream swaps for the store's.
 pub const Kept = struct { held: bool, shared: usize };
 
 /// The entry a backend restores itself (null: the pass starts at 0) and the pass's marks.

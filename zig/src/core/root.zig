@@ -1,4 +1,4 @@
-//! Backend-neutral engine parts: checkpoint files, the weight formats, the draft-depth rule, the copy index, the tokenizer.
+//! Backend-neutral engine parts: checkpoint files, weight formats, the draft-depth rule, the copy index, the tokenizer.
 
 pub const safetensors = @import("safetensors.zig");
 pub const quant = @import("quant/quant.zig");

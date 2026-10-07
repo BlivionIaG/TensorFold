@@ -1,4 +1,4 @@
-//! Qwen3.5 / Qwen3.6 text configuration: the geometry every backend reads, and Metal's admission of the tied-head 2B MLX affine checkpoint (other geometries and formats require qualification).
+//! Qwen3.5 text geometry for every backend, and Metal's admission of the tied-head 2B MLX affine checkpoint.
 const std = @import("std");
 
 pub const hidden = 2048;
@@ -235,8 +235,7 @@ test "admit only the tied affine 2B geometry and text rotary layout" {
     }
 }
 
-// ---- The geometry any backend reads: the Python loader's Spec, with its defaults and checks. Admission above is Metal's
-// own and stricter: its kernels are built for one geometry. The quantization table is each backend's.
+// The geometry any backend reads, with its defaults and checks; Metal's admission above is stricter (one geometry).
 
 pub const Error = error{
     InvalidConfig,
