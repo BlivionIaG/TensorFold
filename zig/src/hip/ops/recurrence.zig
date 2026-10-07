@@ -13,52 +13,6 @@ const int = t.int;
 const gdn_min_rows = 64;
 const gdn_segment = 4096;
 
-/// The q and k head norms a conv launch applies: their weights and epsilon.
-pub const Norm = struct { q: u64, k: u64, eps: f32 };
-/// The delta rule's gate inputs a conv launch computes beside.
-pub const Gates = struct { a: Tensor, b: Tensor, a_log: u64, dt_bias: u64, gate: u64, beta: u64, count: usize, heads: usize };
-
-/// A window's rows through the linear attention's conv in one launch: x (rows, channels) widened, the conv and its silu,
-/// the output split into q and k (rows, kw) and v (rows, vw) fp32; `states` (optional) keeps each row's state. With
-/// `norm` (heads of 128) q and k come out normed; with `gates` the delta rule's gate and beta are computed beside.
-pub fn convSplit(o: Ops, x: Tensor, weight: u64, state: u64, states: ?u64, qn: u64, kn: u64, v: u64, rows: usize, channels: usize, kernel: usize, kw: usize, vw: usize, norm: ?Norm, gates: ?Gates) Error!void {
-    if (kernel < 1 or kernel > 8 or x.kind == .f32) return error.BadShape;
-    const z = o.lib.zig orelse return error.BadShape;
-    var c: launches.ConvArgs = .{
-        .x = x.ptr,
-        .kind = @backingInt(x.kind),
-        .weight = weight,
-        .state = state,
-        .states = states orelse 0,
-        .qn = qn,
-        .kn = kn,
-        .v = v,
-        .channels = int(channels),
-        .kernel = int(kernel),
-        .rows = int(rows),
-        .kw = int(kw),
-        .vw = int(vw),
-    };
-    if (norm) |nm| {
-        c.qw = nm.q;
-        c.kw_w = nm.k;
-        c.eps = nm.eps;
-        c.norm = 128;
-    }
-    if (gates) |g| {
-        if (g.a.kind != x.kind or g.b.kind != x.kind) return error.BadShape;
-        c.ga = g.a.ptr;
-        c.gb = g.b.ptr;
-        c.a_log = g.a_log;
-        c.dt_bias = g.dt_bias;
-        c.gate = g.gate;
-        c.beta = g.beta;
-        c.gcount = int(g.count);
-        c.heads = int(g.heads);
-    }
-    try z.tf_conv_split(c, o.stream);
-}
-
 pub fn convPrefill(o: Ops, x: Tensor, weight: u64, state: ?u64, out: u64, new_state: u64, len: usize, channels: usize, kernel: usize) Error!void {
     if (kernel < 1 or kernel > 8) return error.BadShape;
     try o.lib.call("tf_conv_prefill", .{ p(x.ptr), @backingInt(x.kind), f(weight), if (state) |s| f(s) else null, f(out), f(new_state), int(len), int(channels), int(kernel), o.stream });

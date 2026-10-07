@@ -1,12 +1,12 @@
 //! A lane round's launches over its device plan: positions, slots and caches are read on the device, so a launch's
 //! arguments depend only on the plan's shape (its rows and slots) and the layer.
 
-const launches = @import("launches.zig");
-const ops = @import("ops/ops.zig");
+const t = @import("types.zig");
+const launches = @import("../launches.zig");
+const Ops = @import("ops.zig").Ops;
 
-const Ops = ops.Ops;
-const Tensor = ops.Tensor;
-const Error = ops.Error;
+const Tensor = t.Tensor;
+const Error = t.Error;
 
 pub const Args = launches.PlanArgs;
 pub const Plan = launches.PlanRef;
@@ -79,7 +79,7 @@ pub fn kvWrite(o: Ops, keys: u64, values: Tensor, p: Plan, layer: usize, kv_head
 }
 
 /// One query a row (rows, heads, d) fp32 over its slot's caches up to its position, the walk over `span` keys.
-pub fn causal(o: Ops, q: u64, kind: ops.Kind, out: u64, p: Plan, layer: usize, heads: usize, kv_heads: usize, d: usize, span: usize, scale: f32) Error!void {
+pub fn causal(o: Ops, q: u64, kind: t.Kind, out: u64, p: Plan, layer: usize, heads: usize, kv_heads: usize, d: usize, span: usize, scale: f32) Error!void {
     const tiles = (span + 127) / 128;
     const scores = try o.arena.of(f32, p.rows * heads * span);
     const stats = try o.arena.of(f32, p.rows * heads * 2);

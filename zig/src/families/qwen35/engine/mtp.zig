@@ -15,9 +15,8 @@ const pops = hip.plan_ops;
 const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
 
-/// Most drafts a chain (the Python engine's depth) and the probability below which a draft ends it.
+/// Most drafts a chain (the Python engine's depth).
 pub const max_depth = 3;
-pub const confidence = 0.3;
 
 /// One stream's chain: its last kept final row, the token after it and its slot, the drafts asked for and how each is drawn.
 pub const Job = struct {
