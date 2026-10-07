@@ -15,7 +15,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "affine_dot2.hpp"
+#include "tiles/dot2.hpp"
 
 namespace tf {
 namespace rocm {

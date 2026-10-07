@@ -4,8 +4,8 @@
 
 #include <hip/hip_fp16.h>
 
-#include "affine.hpp"
-#include "arch.hpp"
+#include "quant/mlx.hpp"
+#include "common/arch.hpp"
 
 namespace tf {
 namespace rocm {
@@ -17,7 +17,7 @@ constexpr int kLaneGroupMax = 128;
 constexpr int kBlockRows = 64;  // from here the GEMM tile beats the 128-row column tile
 
 hipError_t ensure_byte_lut(hipStream_t stream);
-// The stream tile for 9 to 16 rows (affine_stream.hpp); false when the shape keeps the other tiles.
+// The stream tile for 9 to 16 rows (tiles/stream.hpp); false when the shape keeps the other tiles.
 bool launch_affine_dot2_stream_wide(const Affine& a, hipStream_t stream, hipError_t* err);
 // out16 (m, n / 2) = silu(gate) * up (clamped by limit when above 0) of the stacked (gate | up) product of `a`, plain or
 // routed over `items`; hipErrorInvalidValue when the shape keeps the separate products.

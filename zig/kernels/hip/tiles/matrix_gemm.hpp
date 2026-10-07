@@ -6,7 +6,7 @@
 // affine_gemm_block's. The matrix core adds the 16 products of a step as a chain of dot2 pairs would: every product
 // compared so far has the dot2 tile's bits, which nothing but the measurement promises.
 
-#include "affine_gemm.hpp"
+#include "tiles/gemm.hpp"
 
 namespace tf {
 namespace rocm {

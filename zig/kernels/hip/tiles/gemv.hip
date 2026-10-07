@@ -1,7 +1,7 @@
 // Wave32 GEMV: the scalar formula, one thread an output, an ordered fp32 fma of BF16 factors (the reference).
 
-#include "affine.hpp"
-#include "arch.hpp"
+#include "quant/mlx.hpp"
+#include "common/arch.hpp"
 
 namespace tf {
 namespace rocm {

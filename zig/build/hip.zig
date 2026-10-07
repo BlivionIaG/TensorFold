@@ -26,11 +26,11 @@ const lib_sources = [_][]const u8{
     "ops/act.hip",
     "attention/attention.hip",
     "recurrence/gated_delta.hip",
-    "rocm/affine_gemv.hip",
-    "rocm/affine_wmma.hip",
-    "rocm/affine_wmma_pair.hip",
-    "rocm/affine_dot2.hip",
-    "rocm/affine_tiles.hip",
+    "tiles/gemv.hip",
+    "tiles/matrix.hip",
+    "tiles/matrix_pair.hip",
+    "tiles/dot2.hip",
+    "tiles/dot2_tiles.hip",
     "comm/tp.hip",
 };
 
@@ -45,14 +45,15 @@ const lib_headers = [_][]const u8{
     "ops/norms.hpp",
     "ops/moe.hpp",
     "ops/draw.hpp",
-    "rocm/affine.hpp",
-    "rocm/affine_api.hpp",
-    "rocm/affine_dot2.hpp",
-    "rocm/affine_gemm.hpp",
-    "rocm/affine_wmma_gemm.hpp",
-    "rocm/affine_wmma.hpp",
-    "rocm/affine_stream.hpp",
-    "rocm/arch.hpp",
+    "quant/mlx.hpp",
+    "tiles/api.hpp",
+    "tiles/dot2.hpp",
+    "tiles/gemm.hpp",
+    "tiles/matrix_gemm.hpp",
+    "tiles/gemm_kp.hpp",
+    "tiles/matrix.hpp",
+    "tiles/stream.hpp",
+    "common/arch.hpp",
     "attention/attention.hpp",
     "attention/attention_fa.hip",
     "recurrence/gated_delta.hpp",
@@ -60,7 +61,7 @@ const lib_headers = [_][]const u8{
 
 /// The code-object groups in kernels.zig's Group order, each with its source; gemv and the WMMA schedules stay out.
 const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill", "gdn_prefill", "decode" };
-const group_sources = [module_groups.len][]const u8{ "ops/ops.hip", "ops/act.hip", "attention/attention.hip", "recurrence/gated_delta.hip", "rocm/affine_tiles.hip", "rocm/affine_dot2.hip", "attention/prefill.hip", "recurrence/gdn_prefill.hip", "decode/decode.hip" };
+const group_sources = [module_groups.len][]const u8{ "ops/ops.hip", "ops/act.hip", "attention/attention.hip", "recurrence/gated_delta.hip", "tiles/dot2_tiles.hip", "tiles/dot2.hip", "attention/prefill.hip", "recurrence/gdn_prefill.hip", "decode/decode.hip" };
 
 /// A GPU family's library: its gfx targets and whether its host dispatch takes the WMMA schedules.
 const Family = struct { name: []const u8, prefixes: []const []const u8, wmma: bool };
@@ -250,7 +251,6 @@ fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: 
     run.addArg(b.fmt("--rocm-path={s}", .{root}));
     run.addArg(b.fmt("--rocm-device-lib-path={s}/lib/llvm/amdgcn/bitcode", .{root}));
     for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
-    run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip/rocm"));
     run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip"));
     for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
     run.addArg("-o");
@@ -273,7 +273,6 @@ fn library(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: Fam
     run.addArg(b.fmt("--rocm-path={s}", .{root}));
     run.addArg(b.fmt("--rocm-device-lib-path={s}/lib/llvm/amdgcn/bitcode", .{root}));
     for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
-    run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip/rocm"));
     run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip"));
     for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
     run.addArg("-o");

@@ -1,7 +1,7 @@
 // gfx11 / gfx12 WMMA tiles; odd rows replay in a second WMMA's even rows so a row's bits ignore its neighbours.
 
-#include "affine_api.hpp"
-#include "affine_wmma.hpp"
+#include "tiles/api.hpp"
+#include "tiles/matrix.hpp"
 
 #include <cstring>
 #include <stdexcept>

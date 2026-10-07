@@ -6,7 +6,7 @@
 #include <exception>
 
 #include "ops/act.hpp"
-#include "rocm/affine_api.hpp"
+#include "tiles/api.hpp"
 #include "attention/attention.hpp"
 #include "recurrence/gated_delta.hpp"
 

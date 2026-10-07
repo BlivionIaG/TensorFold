@@ -5,11 +5,11 @@
 #include <stdexcept>
 #include <string>
 
-#include "affine_dot2.hpp"
-#include "affine_gemm.hpp"
-#include "affine_gemm_kp.hpp"
-#include "affine_stream.hpp"
-#include "affine_wmma_gemm.hpp"
+#include "tiles/dot2.hpp"
+#include "tiles/gemm.hpp"
+#include "tiles/gemm_kp.hpp"
+#include "tiles/stream.hpp"
+#include "tiles/matrix_gemm.hpp"
 
 namespace tf {
 namespace rocm {
@@ -487,7 +487,7 @@ static int wmma_rows_from() {
     return rows;
 }
 
-// Prefill's tile for a few rows (affine_gemm_kp.hpp): the Zig launcher takes it, this entry keeps its kernels in the object.
+// Prefill's tile for a few rows (tiles/gemm_kp.hpp): the Zig launcher takes it, this entry keeps its kernels in the object.
 hipError_t launch_affine_gemm_kp(const Affine& a, hipStream_t stream, int items) {
     switch (a.bits) {
         case 2: return launch_kp_bits<2>(a, stream, items);

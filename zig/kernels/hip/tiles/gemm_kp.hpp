@@ -5,7 +5,7 @@
 // few channels when every block walks them in step). An output has affine_gemm_block's bits: a group's dot2 chain and sum
 // of x in ascending k, then the groups of a round, exchanged through LDS, folded in order with the same two fma.
 
-#include "affine_gemm.hpp"
+#include "tiles/gemm.hpp"
 
 namespace tf {
 namespace rocm {
@@ -197,7 +197,7 @@ hipError_t launch_kp_tier(const Affine& a, hipStream_t stream, int items) {
     return hipGetLastError();
 }
 
-// The shapes of affine_launch.zig's kp_tiles, by rows.
+// The shapes of launch/affine.zig's kp_tiles, by rows.
 template <int BITS>
 hipError_t launch_kp_bits(const Affine& a, hipStream_t stream, int items) {
     if (a.m <= 2) return launch_kp_tier<BITS, 8, 1, 2, 2, false>(a, stream, items);

@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 #include <string>
-#include "affine_dot2.hpp"
+#include "tiles/dot2.hpp"
 
 #include <hip/hip_fp16.h>
 

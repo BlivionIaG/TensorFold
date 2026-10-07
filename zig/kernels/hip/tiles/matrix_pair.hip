@@ -3,8 +3,8 @@
 #include <stdexcept>
 #include <string>
 
-#include "affine_api.hpp"
-#include "affine_wmma.hpp"
+#include "tiles/api.hpp"
+#include "tiles/matrix.hpp"
 
 namespace tf {
 namespace rocm {

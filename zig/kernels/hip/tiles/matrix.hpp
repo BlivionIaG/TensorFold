@@ -2,8 +2,8 @@
 
 // WMMA device helpers shared by the single, column, pair and group tiles.
 
-#include "affine.hpp"
-#include "arch.hpp"
+#include "quant/mlx.hpp"
+#include "common/arch.hpp"
 
 #if TENSORFOLD_RDNA_WMMA
 // rocWMMA rejects gfx1103 / gfx1152 / gfx1153, the same gfx11 WMMA: name them gfx1150 for its builtin choice.
