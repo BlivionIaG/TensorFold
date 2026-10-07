@@ -6,6 +6,7 @@ const check_ctx = @import("check_ctx.zig");
 const ids_file = @import("ids_file.zig");
 const lanes_session = @import("lanes_session.zig");
 const rows_run = @import("rows_run.zig");
+const check_radix = @import("check_radix.zig");
 
 const Ctx = check_ctx.Ctx;
 const Session = lanes_session.Session;
@@ -32,7 +33,9 @@ pub fn run(c: *Ctx) void {
     lanesSet(c, "short", c.short);
     lanesSet(c, "long", c.long);
     resumed(c);
+    check_radix.run(c);
     replayShare(c);
+    check_radix.leaked(c);
 }
 
 fn rows(c: *Ctx) void {
@@ -107,7 +110,8 @@ fn graphs(c: *Ctx, name: []const u8, job: Session.Job, graph: Session.Done) void
 /// with no caches kept (a serial stream neither resumes nor keeps).
 fn resumed(c: *Ctx) void {
     const name = "lanes long greedy: resumed == fresh";
-    if (true) return c.report.skip(name, "a stream keeps nothing for a later turn yet");
+    c.session.h.keepPrompts(8, 1 << 30);
+    defer c.session.h.keepPrompts(0, 0);
     const first = c.session.run(c.arena, .{ .prompts = c.long, .max_new = c.tokens }) catch |err| return c.report.broke(name, err);
     const extended = lanes_session.extend(c.arena, c.long, first.replies) catch |err| return c.report.broke(name, err);
     const again = c.session.run(c.arena, .{ .prompts = extended, .max_new = c.tokens, .solo = true }) catch |err| return c.report.broke(name, err);

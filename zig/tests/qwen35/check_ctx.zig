@@ -23,6 +23,8 @@ pub const Ctx = struct {
     long: []const ids_file.Prompt,
     /// Tokens each stream of an invariant run generates.
     tokens: u32,
+    /// Pages the pool held before the first run: the scratch rows'.
+    pages_at_start: usize = 0,
 
     /// Whether this run spans GPUs, where only what the lane core drives can run.
     pub fn tp(c: *const Ctx) bool {

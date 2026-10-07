@@ -1,8 +1,9 @@
-//! Startup memory plan: the window one request can use and the bytes the prompt cache may hold.
+//! Startup memory plan: the window one request can use, the bytes the prompt cache may hold and the pages of the pool.
 
 const std = @import("std");
 const config = @import("../model/config.zig");
 const fwd = @import("../forward/forward.zig");
+const pages = @import("../forward/pages.zig");
 
 pub const gib: usize = 1 << 30;
 
@@ -11,15 +12,27 @@ pub fn reserve(total: usize) usize {
     return @max(4 * gib, total / 10);
 }
 
-/// One stream's caches at `tokens` positions: keys and values of the attention layers plus the linear layers' state.
+/// Bytes of one page of the pool: the keys and values of 64 positions in every attention layer.
+pub fn pageBytes(s: config.Spec, act_bytes: usize) usize {
+    var full: usize = 0;
+    for (0..s.n_layers) |i| full += @intFromBool(s.full(i));
+    return full * 2 * s.kv_heads * s.head_dim * act_bytes * pages.tokens;
+}
+
+/// One stream's (or one snapshot's) linear state: the conv window and the recurrent state of every linear layer.
+pub fn linearBytes(s: config.Spec) usize {
+    var full: usize = 0;
+    for (0..s.n_layers) |i| full += @intFromBool(s.full(i));
+    const conv = (s.keyWidth() * 2 + s.valueWidth()) * (s.conv - 1) * 4;
+    const recurrent = s.value_heads * s.value_dim * s.key_dim * 4;
+    return (s.n_layers - full) * (conv + recurrent);
+}
+
+/// Bytes a copy of one stream's caches at `tokens` positions holds: keys and values of the attention layers plus the linear layers' state.
 pub fn stateBytes(s: config.Spec, act_bytes: usize, tokens: usize) usize {
     var full: usize = 0;
     for (0..s.n_layers) |i| full += @intFromBool(s.full(i));
-    const linear = s.n_layers - full;
-    const keys = full * 2 * s.kv_heads * s.head_dim * act_bytes * tokens;
-    const conv = (s.keyWidth() * 2 + s.valueWidth()) * (s.conv - 1) * 4;
-    const recurrent = s.value_heads * s.value_dim * s.key_dim * 4;
-    return keys + linear * (conv + recurrent);
+    return full * 2 * s.kv_heads * s.head_dim * act_bytes * tokens + linearBytes(s);
 }
 
 /// The engine's device scratch for streams of `capacity` positions and shared forwards of `rows` rows.
@@ -55,7 +68,7 @@ pub const Plan = struct {
     window: usize,
     /// Positions the engine's buffers hold: the window and a verify's rows.
     capacity: usize,
-    /// Bytes the kept prompt copies may hold together.
+    /// Bytes the prefix tree may hold together: its pages and its linear snapshots.
     cache_budget: usize,
     /// The GPU's memory the weights and the runtime hold, its size, the reserve, the scratch.
     weights: usize,
@@ -77,6 +90,25 @@ pub const Input = struct {
     free: usize,
     total: usize,
 };
+
+/// What the pool of pages and the prefix tree hold, from the bytes the tree may use.
+pub const Pool = struct {
+    /// Pages of the pool: every stream's whole window, the scratch rows and the tree's pages.
+    pages: usize,
+    /// Pages the tree may hold.
+    cache_pages: usize,
+    /// Linear snapshots the tree may hold.
+    snaps: usize,
+};
+
+/// The pool for `budget` bytes of prefix tree and at most `slots` snapshots, which may take up to half of it.
+pub fn pool(s: config.Spec, act_bytes: usize, streams: usize, rows: usize, capacity: usize, budget: usize, slots: usize) Pool {
+    const snap = @max(linearBytes(s), 1);
+    const snaps = @min(slots, budget / 2 / snap);
+    const page = @max(pageBytes(s, act_bytes), 1);
+    const cache_pages = (budget - snaps * snap) / page;
+    return .{ .pages = streams * pages.pagesFor(capacity) + pages.pagesFor(rows) + cache_pages, .cache_pages = cache_pages, .snaps = snaps };
+}
 
 /// The largest window at most `target` for which the scratch, every lane's caches and one kept copy fit; 0 if none.
 pub fn plan(in: Input) Plan {

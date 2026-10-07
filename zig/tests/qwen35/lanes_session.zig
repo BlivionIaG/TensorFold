@@ -73,7 +73,7 @@ pub const Session = struct {
         var made: usize = 0;
         defer for (streams[0..made]) |*st| st.deinit(s.gpa);
         for (streams, job.prompts) |*st, p| {
-            st.* = try lanes.Stream.init(s.gpa, .{ .id = p.name, .prompt = p.ids, .max_new = job.max_new, .sampling = job.sampling, .drafts = job.drafts, .history_len = @intCast(p.ids.len / 2) });
+            st.* = try lanes.Stream.init(s.gpa, .{ .id = p.name, .prompt = p.ids, .max_new = job.max_new, .sampling = job.sampling, .drafts = job.drafts, .history_len = @intCast(p.ids.len / 2), .shared_prefixes = p.shared });
             made += 1;
         }
         const replayed = s.e.graphs.replayed;
@@ -113,6 +113,6 @@ fn delta(now: [3]u64, before: [3]u64) [3]u64 {
 /// Each prompt extended by its reply and its own first tokens: what a next turn sends.
 pub fn extend(arena: std.mem.Allocator, prompts: []const ids_file.Prompt, replies: []const Session.Reply) ![]const ids_file.Prompt {
     const out = try arena.alloc(ids_file.Prompt, prompts.len);
-    for (out, prompts, replies) |*o, p, r| o.* = .{ .name = p.name, .ids = try std.mem.concat(arena, u32, &.{ p.ids, r.tokens, p.ids[0..@min(p.ids.len, 4)] }) };
+    for (out, prompts, replies) |*o, p, r| o.* = .{ .name = p.name, .ids = try std.mem.concat(arena, u32, &.{ p.ids, r.tokens, p.ids[0..@min(p.ids.len, 4)] }), .shared = p.shared };
     return out;
 }

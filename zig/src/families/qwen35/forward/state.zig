@@ -195,3 +195,61 @@ pub const Caches = struct {
         return n;
     }
 };
+
+/// Linear state of a stream kept at a prompt's page edge: the conv windows and DeltaNet states of every linear layer,
+/// in slots a tree names.
+pub const Snapshots = struct {
+    gpa: Allocator,
+    d: *const hip.Driver,
+    slots: std.ArrayList(?hip.DeviceBuffer) = .empty,
+
+    pub fn init(gpa: Allocator, d: *const hip.Driver) Snapshots {
+        return .{ .gpa = gpa, .d = d };
+    }
+
+    pub fn deinit(s: *Snapshots) void {
+        for (s.slots.items) |*b| if (b.*) |*x| x.free();
+        s.slots.deinit(s.gpa);
+    }
+
+    /// Frees every slot's buffer.
+    pub fn clear(s: *Snapshots) void {
+        for (s.slots.items) |*b| if (b.*) |*x| x.free();
+        s.slots.clearRetainingCapacity();
+    }
+
+    /// The caches' linear state copied into slot `slot` (its buffer made on first use).
+    pub fn take(s: *Snapshots, slot: u32, c: *const Caches, stream: hip.abi.Stream) !void {
+        while (s.slots.items.len <= slot) try s.slots.append(s.gpa, null);
+        const entry = &s.slots.items[slot];
+        if (entry.* == null) entry.* = try hip.DeviceBuffer.alloc(s.d, c.linearBytes());
+        var at: usize = 0;
+        for (c.layers) |l| switch (l) {
+            .full => {},
+            .linear => |x| for ([_]hip.DeviceBuffer{ x.conv, x.state }) |b| {
+                try entry.*.?.copyFrom(at, b.ptr, b.len, stream);
+                at += b.len;
+            },
+        };
+    }
+
+    /// Slot `slot`'s linear state copied back into the caches.
+    pub fn put(s: *const Snapshots, slot: u32, c: *Caches, stream: hip.abi.Stream) !void {
+        const buf = (if (slot < s.slots.items.len) s.slots.items[slot] else null) orelse return error.NoSnapshot;
+        var at: usize = 0;
+        for (c.layers) |l| switch (l) {
+            .full => {},
+            .linear => |x| for ([_]hip.DeviceBuffer{ x.conv, x.state }) |b| {
+                try b.copyFrom(0, buf.ptr + at, b.len, stream);
+                at += b.len;
+            },
+        };
+    }
+
+    /// Bytes the slots hold.
+    pub fn held(s: *const Snapshots) usize {
+        var n: usize = 0;
+        for (s.slots.items) |b| n += if (b) |x| x.len else 0;
+        return n;
+    }
+};
