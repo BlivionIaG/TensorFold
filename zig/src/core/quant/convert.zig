@@ -1,7 +1,7 @@
 //! Host-side element conversions the Python loader does with torch: `.float()` and bf16 rounding.
 
 const std = @import("std");
-const st = @import("core").safetensors;
+const st = @import("../safetensors.zig");
 
 const Tensor = st.Tensor;
 const DType = st.DType;

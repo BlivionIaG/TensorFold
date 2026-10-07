@@ -13,7 +13,7 @@ const Policy = @import("../policy.zig").Policy;
 const Caps = @import("../caps.zig").Caps;
 const Choice = @import("../policy.zig").Choice;
 const registry = @import("registry.zig");
-const quant = @import("../quant/quant.zig");
+const quant = @import("core").quant;
 const tuning = @import("../tuning/tuning.zig");
 const mlx_entries = @import("mlx_entries.zig");
 

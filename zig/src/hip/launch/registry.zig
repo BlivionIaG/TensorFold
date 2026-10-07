@@ -6,7 +6,7 @@
 //! one family at every row count keeps a row's bits whatever it shares a launch with. `verify` checks that at open.
 
 const std = @import("std");
-const quant = @import("../quant/quant.zig");
+const quant = @import("core").quant;
 const tuning = @import("../tuning/tuning.zig");
 
 /// What is launched: a plain product, up to four products that share x, a plan over stacked experts, and a plan's gate and

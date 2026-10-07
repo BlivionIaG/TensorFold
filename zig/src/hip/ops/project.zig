@@ -2,7 +2,7 @@
 //! embedding rows. `affine*` are the MLX affine path behind them; a format's own path is added beside it.
 
 const t = @import("types.zig");
-const quant = @import("../quant/quant.zig");
+const quant = @import("core").quant;
 const launches = @import("../launches.zig");
 const affine_launch = @import("../launch/affine.zig");
 const registry = @import("../launch/registry.zig");

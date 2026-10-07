@@ -1,6 +1,7 @@
-//! Backend-neutral engine parts: checkpoint files, the CUDA draft-depth rule, the copy index, the tokenizer.
+//! Backend-neutral engine parts: checkpoint files, the weight formats, the draft-depth rule, the copy index, the tokenizer.
 
 pub const safetensors = @import("safetensors.zig");
+pub const quant = @import("quant/quant.zig");
 pub const checkpoint = @import("checkpoint.zig");
 pub const Checkpoint = checkpoint.Checkpoint;
 pub const draft_depth = @import("draft_depth.zig");
@@ -10,6 +11,7 @@ pub const ids_json = @import("ids_json.zig");
 
 test {
     _ = safetensors;
+    _ = quant;
     _ = checkpoint;
     _ = draft_depth;
     _ = @import("copy_index.zig");

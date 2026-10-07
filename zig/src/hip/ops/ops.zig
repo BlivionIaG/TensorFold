@@ -20,7 +20,7 @@ pub const Kind = types.Kind;
 pub const Error = types.Error;
 pub const Tensor = types.Tensor;
 pub const Affine = types.Affine;
-pub const Projection = @import("../quant/quant.zig").Projection;
+pub const Projection = @import("core").quant.Projection;
 
 pub const Ops = struct {
     lib: *const rocm.Library,

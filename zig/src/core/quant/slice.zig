@@ -1,7 +1,7 @@
 //! Tensor-parallel cuts of host tensors, the same for every format: rows, columns and experts, byte for byte.
 
 const std = @import("std");
-const st = @import("core").safetensors;
+const st = @import("../safetensors.zig");
 
 const Tensor = st.Tensor;
 const Allocator = std.mem.Allocator;

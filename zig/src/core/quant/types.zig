@@ -2,7 +2,7 @@
 //! backend's: a backend uploads through an `Uploader` it makes and reads the device addresses of a `Buf`.
 
 const std = @import("std");
-const st = @import("core").safetensors;
+const st = @import("../safetensors.zig");
 
 pub const Tensor = st.Tensor;
 pub const DType = st.DType;

@@ -1,7 +1,7 @@
 //! The HIP backend's side of a format's `load`: host tensors onto the device, kept for the model to free.
 
 const std = @import("std");
-const quant = @import("quant/quant.zig");
+const quant = @import("core").quant;
 const driver = @import("runtime/driver.zig");
 const memory = @import("runtime/memory.zig");
 
