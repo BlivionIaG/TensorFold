@@ -28,7 +28,7 @@ pub const Driver = struct {
         const info = @typeInfo(abi.Api).@"struct";
         inline for (info.field_names, info.field_types) |name, T| {
             @field(api, name) = lib.lookup(T, name) orelse {
-                std.log.err("{s} has no {s}", .{ path, name });
+                std.log.warn("{s} has no {s}", .{ path, name });
                 return error.MissingSymbol;
             };
         }

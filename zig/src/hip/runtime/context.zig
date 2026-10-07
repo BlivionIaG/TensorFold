@@ -66,7 +66,7 @@ pub const Context = struct {
         var buf: [64]u8 = undefined;
         const arch = try self.archName(&buf);
         return Caps.of(arch) orelse {
-            std.log.err("{s} is not in the table of GPUs this build supports", .{arch});
+            std.log.warn("{s} is not in the table of GPUs this build supports", .{arch});
             return error.Invalid;
         };
     }
