@@ -140,6 +140,16 @@ Every host module provides:
 `ops.project(x, proj, m)`. Precision rules for A8 modes: activation scales are computed by the ActEncoder in one fixed
 order per row, so the row-exact rule holds for them as for everything else.
 
+**As built (step 3).** `zig/src/hip/quant/` holds a module a format (`mlx.zig`, `dense.zig`) behind `quant.zig`, where
+`conforms` lists at compile time what a format provides: `id`, `decoder`, `Config` and `detect`, `Host`, `matches`,
+`read`, `halves`, `rows` and `bytes`, `sliceRows`, `sliceCols` and `sliceStack` (tp), `Device` and `upload`, `Matrix`
+and `view`, `elements` and `reference` (fp64). `quant.Projection` is a product's shape, its split flag and a `Handle`
+union of the formats' device matrices; `ops.project`, `projectGroup`, `projectRouted` and `projectRoutedAct` dispatch on
+it, with the MLX launches behind them as `ops.affine*`. Nothing in `quant/` names a backend: a backend uploads through
+the `Uploader` it makes (`hip/upload.zig`) and maps a decoder id to its kernels. AWQ is a module that provides the same
+pieces (`detect` reads `quantization_config`, `read` a layer's qweight, scales and zeros, the slices cut by 8-column
+packs and groups, `reference` dequantizes in fp64) and a decoder id for its kernels.
+
 ### 3.3 Shared tiles: written once, parameterized by the plug-ins and Caps
 
 | Tile | Path | Rows | Notes |
@@ -153,6 +163,13 @@ Each tile is `template <class WeightDecoder, class ActEncoder, class Dot, class 
 only the modes a target's Dots support are compiled into it. That keeps code objects small: gfx1030 gets no wmma, and
 gfx900 gets no sdot. Epilogues (int rescale, activation, combine, residual, rms) are template parameters, so the fused
 decode tails stay fused in every mode.
+
+**As built (step 4).** The plug-ins are `MlxDecoder<BITS>` (`kernels/hip/quant/mlx_decoder.hpp`), `IdentityAct<Dot>`
+(`quant/act.hpp`), `DotF16` and `DotBF16` (`common/dot2.hpp`), `WmmaBF16` (`common/wmma.hpp`) and the epilogues `F32Out`,
+`StreamRound` and `StreamSwiglu` (`tiles/epilogue.hpp`). The tiles are `gemm_tile`, `gemm_kp_tile`, `wmma_gemm_tile` and
+`stream_tile`, each `template <class Dec, class Act, class T, class Epi, ...>`; `quant/mlx_tiles.hpp` instantiates them
+as the kernels the launchers name, and a format adds a header like it. The previous decode tiles and the Python-parity
+kernels of `tiles/dot2.hip` stay MLX-only reference code.
 
 ### 3.4 Registry: kernel choice in one place
 
@@ -169,6 +186,15 @@ Entry { op, format, path: .decode | .prefill, family: FamilyId, caps: CapsPredic
   and reviewed like code. There is no runtime autotuning: it would make choices differ between runs and between
   ranks.
 - `--explain-kernels` (and a field of the server's info) lists what each (op, path) chose and why.
+
+**As built (step 5).** `launch/registry.zig` is the selection (`Entry`, `Registry`, `select`, `verify`, `explain`) and
+names no backend; `launch/mlx_entries.zig` is the MLX entries over `launch/affine.zig`'s tile launchers; the costs are
+`tuning/gfx1030.zon` and `gfx1100.zon` (the gfx11 parts), today's thresholds as costs and row or item limits, so a choice
+is what it was. The decode path is a lane round (`shape.round`, which keeps the stream tile at any row count) and the
+calls of the head and the draft, which keep the stream tile to 16 rows (15 where the matrix cores take the rest) and the
+wide or GEMM tile above them; the prefill path is the K-parallel and 128-row tiles. `verify` checks the family rule for a
+lane round and the prefill paths at open, and the tests check it for every GPU table; `check --explain-kernels` prints
+each (op, path) choice.
 
 ### 3.5 Policy: what a run may use, chosen once
 
