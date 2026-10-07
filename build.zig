@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const cuda_build = @import("zig/build/cuda.zig");
 const hip_build = @import("zig/build/hip.zig");
-const native_build = @import("zig/build/native.zig");
 const dist_build = @import("zig/build/dist.zig");
 
 comptime {
@@ -133,9 +132,8 @@ pub fn build(b: *std.Build) void {
     switch (target.result.os.tag) {
         .macos => metalTargets(b, target, optimize, draft_ids, build_options, test_step),
         .linux => {
-            const cuda = cuda_build.targets(b, target, optimize, draft_ids);
-            const hip = hip_build.targets(b, target, optimize, cuda.api, cuda.lanes, cuda.core);
-            native_build.linux(b, target, optimize, cuda.api, cuda.engines, hip, cuda.tokenizer, build_options, test_step);
+            cuda_build.targets(b, target, optimize, draft_ids, build_options);
+            hip_build.targets(b, target, optimize, build_options);
         },
         else => {},
     }

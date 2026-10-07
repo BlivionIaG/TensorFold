@@ -21,6 +21,7 @@ pub const kernels = @import("kernels.zig");
 pub const policy = @import("policy.zig");
 pub const Policy = policy.Policy;
 pub const caps = @import("caps.zig");
+pub const admission = @import("admission.zig");
 pub const Caps = caps.Caps;
 pub const rocm = @import("rocm.zig");
 pub const ops = @import("ops/ops.zig");

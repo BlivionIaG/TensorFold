@@ -17,7 +17,7 @@ const round_graphs = @import("round_graphs.zig");
 const lane_round = @import("round.zig");
 const scratch = @import("scratch.zig");
 const mtp = @import("mtp.zig");
-const admission = @import("engine_api").admission;
+const admission = hip.admission;
 const prefix = @import("prefix.zig");
 const plan = @import("../forward/plan.zig");
 

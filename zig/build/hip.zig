@@ -95,6 +95,8 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     hip.addOptions("kernel_options", options);
     // a file lives in one module: the checkpoint reader is core's, shared with the tokenizer and the other backends
     hip.addImport("core", core);
+    // the CUDA path's memory rules, read where they are
+    hip.addImport("cuda_memory", b.createModule(.{ .root_source_file = b.path("zig/src/native/cuda_memory.zig"), .target = target, .optimize = optimize }));
     if (with) for (kernels, images) |k, image| hip.addAnonymousImport(b.fmt("hsaco_{s}", .{k.name}), .{ .root_source_file = image.? });
     for (families, libs) |f, l| if (l) |file| hip.addAnonymousImport(b.fmt("lib_{s}", .{f.name}), .{ .root_source_file = file });
     for (mods, 0..) |group, i| if (have_mods[i]) for (module_groups, group) |name, file| {
@@ -103,8 +105,11 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     return hip;
 }
 
-/// Linux targets: probe bundle, kernel libraries (-Dhipcc builds, -Dhsaco embeds), `tf-hip-test`; returns HIP engines.
-pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, api: *std.Build.Module, lanes: *std.Build.Module, core: *std.Build.Module) *std.Build.Module {
+/// Linux targets: kernel bundles and libraries (-Dhipcc builds, -Dhsaco embeds), `tf-hip-test`, `tf-qwen35-test`, `native-hip`.
+pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, build_options: *std.Build.Step.Options) void {
+    const core = coreModule(b, target, optimize);
+    const lanes = lanesModule(b, target, optimize);
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
     const hipcc = b.option([]const u8, "hipcc", "hipcc that builds the HIP kernels");
     const prebuilt = b.option([]const u8, "hsaco", "absolute directory of prebuilt <name>.hsaco bundles and libtf_<family>.so");
     const gfx = b.option([]const u8, "gfx", "gfx targets, comma separated (default gfx1030,gfx1100,gfx1151)") orelse "gfx1030,gfx1100,gfx1151";
@@ -164,7 +169,23 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const upload_exe = b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = upload });
     b.installArtifact(upload_exe);
     b.step("tf-qwen35-test", "Qwen3.5 / 3.6 model tests (GPU)").dependOn(&b.addInstallArtifact(upload_exe, .{}).step);
-    return engines(b, target, optimize, hip, lanes, api, qwen);
+    const native = server(b, target, api, engines(b, target, optimize, hip, lanes, api, qwen), core.import_table.get("tokenizer").?, build_options);
+    const install = b.addInstallArtifact(native, .{ .dest_dir = .{ .override = .{ .custom = "native/bin" } } });
+    b.step("native-hip", "tensorfold-native with the HIP engines into zig-out/native/bin").dependOn(&install.step);
+}
+
+/// The server over `engines`, as the CUDA build makes it: the HTTP side keeps its safety checks.
+fn server(b: *std.Build, target: std.Build.ResolvedTarget, api: *std.Build.Module, engines_mod: *std.Build.Module, tokenizer: *std.Build.Module, build_options: *std.Build.Step.Options) *std.Build.Step.Compile {
+    const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
+    const exe = b.addExecutable(.{ .name = "tensorfold-native", .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/server/main.zig"),
+        .target = target,
+        .optimize = .ReleaseSafe,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines_mod }, .{ .name = "checkpoint_cli", .module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/cli.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true, .imports = &.{.{ .name = "native_engines", .module = engines_mod }} }) } },
+    }) });
+    exe.root_module.addOptions("build_options", build_options);
+    return exe;
 }
 
 /// The HIP engines a native server opens (native/hip.zig), over the given runtime and family.

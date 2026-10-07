@@ -259,9 +259,6 @@ pub const LoneHooks = struct {
 /// The lane core served to the HTTP threads (lane_host.zig).
 pub const LaneHost = @import("lane_host.zig").LaneHost;
 
-/// What a native backend may serve on this machine: window, memory pool, reserve, streams (admission.zig).
-pub const admission = @import("admission.zig");
-
 /// Exact prompt reuse between requests, for any family (prompt_cache.zig).
 pub const prompt_cache = @import("prompt_cache.zig");
 
@@ -280,6 +277,5 @@ test {
     _ = prompt_cache;
     _ = prompt_radix;
     _ = keepalive;
-    _ = admission;
     _ = prompt_imprint;
 }

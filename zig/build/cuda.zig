@@ -1,7 +1,6 @@
 //! The CUDA half of the root build: kernel fatbins with each Python extension's nvcc flags, the runtime, Nemotron, the CLI.
 
 const std = @import("std");
-const native_build = @import("native.zig");
 
 /// Each .cu in zig/kernels/cuda (`src`, else `name`) with the flags its Python extension passes in `extra_cuda_cflags`.
 const Kernel = struct { name: []const u8, flags: []const []const u8, src: ?[]const u8 = null, arch_specific: bool = false };
@@ -71,11 +70,8 @@ fn family(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin
     return .{ .core = core, .lanes = lanes, .nemotron = nemotron, .tokenizer = tokenizer };
 }
 
-/// What the Linux native server is built from: the CUDA engines and the modules every backend's engines share.
-pub const Native = struct { api: *std.Build.Module, engines: *std.Build.Module, lanes: *std.Build.Module, tokenizer: *std.Build.Module, core: *std.Build.Module };
-
 /// Linux targets: fatbins (-Dnvcc builds them, -Dfatbins embeds prebuilt ones), `tensorfold` and `tf-cuda-test`.
-pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module) Native {
+pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options) void {
     const nvcc = b.option([]const u8, "nvcc", "nvcc (or a wrapper) that builds the CUDA kernel fatbins");
     const prebuilt = b.option([]const u8, "fatbins", "absolute directory of prebuilt <name>.fatbin files to embed");
     const sms = b.option([]const u8, "sm", "SASS targets, comma separated (121; later 120,89)") orelse "121";
@@ -107,8 +103,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     runner.addImport("cuda", cuda);
     runner.addImport("lanes", mods.lanes);
     b.installArtifact(b.addExecutable(.{ .name = "tf-cuda-test", .root_module = runner }));
-    const m = engines(b, target, optimize, cuda, mods.lanes, mods.nemotron);
-    return .{ .api = m.api, .engines = m.engines, .lanes = mods.lanes, .tokenizer = mods.tokenizer, .core = mods.core };
+    _ = nativeServer(b, target, optimize, cuda, mods.lanes, mods.nemotron, mods.tokenizer, build_options, true);
 }
 
 /// The CUDA engines a native server opens (native/cuda.zig), over the given runtime and families.
@@ -124,11 +119,25 @@ fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     return .{ .api = api, .engines = mod };
 }
 
-/// The release server: the CUDA engines alone, stripped, for the archive.
-fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, cuda: *std.Build.Module, lanes: *std.Build.Module, nemotron: *std.Build.Module, tokenizer: *std.Build.Module, build_options: *std.Build.Step.Options) *std.Build.Step.Compile {
+/// `zig build native`: tensorfold-native with the CUDA engines into zig-out/native/bin, as the Metal build makes it.
+fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, cuda: *std.Build.Module, lanes: *std.Build.Module, nemotron: *std.Build.Module, tokenizer: *std.Build.Module, build_options: *std.Build.Step.Options, install_native: bool) *std.Build.Step.Compile {
     const m = engines(b, target, optimize, cuda, lanes, nemotron);
-    const exe = native_build.server(b, target, m.api, m.engines, tokenizer, build_options);
-    exe.root_module.strip = true;
+    // the HTTP side keeps its safety checks; the engine below it runs at `optimize` (the tokenizer is the family's)
+    const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
+    const exe = b.addExecutable(.{ .name = "tensorfold-native", .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/server/main.zig"),
+        .target = target,
+        .optimize = .ReleaseSafe,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "engine_api", .module = m.api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = m.engines }, .{ .name = "checkpoint_cli", .module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/cli.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true, .imports = &.{.{ .name = "native_engines", .module = m.engines }} }) } },
+    }) });
+    exe.root_module.addOptions("build_options", build_options);
+    if (!install_native) {
+        exe.root_module.strip = true;
+        return exe;
+    }
+    const install = b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = .{ .custom = "native/bin" } } });
+    b.step("native", "tensorfold-native with the CUDA engines into zig-out/native/bin").dependOn(&install.step);
     return exe;
 }
 
@@ -172,7 +181,7 @@ pub fn distServer(b: *std.Build, target: std.Build.ResolvedTarget, draft_ids: *s
     };
     const cuda = runtime(b, target, .fast, if (prebuilt != null) &images else &.{});
     const mods = family(b, target, .fast, cuda, draft_ids);
-    return nativeServer(b, target, .fast, cuda, mods.lanes, mods.nemotron, mods.tokenizer, build_options);
+    return nativeServer(b, target, .fast, cuda, mods.lanes, mods.nemotron, mods.tokenizer, build_options, false);
 }
 
 /// Validate the complete named input set, including images unused by today's server.
