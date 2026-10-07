@@ -4,9 +4,9 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-const abi = @import("abi.zig");
+const abi = @import("runtime/abi.zig");
 const kernels = @import("kernels.zig");
-const driver = @import("driver.zig");
+const driver = @import("runtime/driver.zig");
 const launches = @import("launches.zig");
 
 pub const Error = error{ LibraryUnavailable, MissingSymbol, KernelFailed } || driver.Error;

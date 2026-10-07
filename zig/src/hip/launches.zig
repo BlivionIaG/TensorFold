@@ -3,13 +3,13 @@
 //! Methods keep the C launchers' names and parameter lists, so a call site reads the same on either path.
 
 const std = @import("std");
-const abi = @import("abi.zig");
-const driver = @import("driver.zig");
+const abi = @import("runtime/abi.zig");
+const driver = @import("runtime/driver.zig");
 const kernels = @import("kernels.zig");
-const launch = @import("launch.zig");
-const Module = @import("module.zig").Module;
-const Function = @import("module.zig").Function;
-const Stream = @import("stream.zig").Stream;
+const launch = @import("runtime/launch.zig");
+const Module = @import("runtime/module.zig").Module;
+const Function = @import("runtime/module.zig").Function;
+const Stream = @import("runtime/stream.zig").Stream;
 const affine_launch = @import("affine_launch.zig");
 const Affine = affine_launch.Kernels;
 

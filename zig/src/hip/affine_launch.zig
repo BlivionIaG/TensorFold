@@ -3,11 +3,11 @@
 //! GEMV, WMMA and column-stream schedules stay in the library.
 
 const std = @import("std");
-const abi = @import("abi.zig");
-const driver = @import("driver.zig");
-const hl = @import("launch.zig");
-const Module = @import("module.zig").Module;
-const Function = @import("module.zig").Function;
+const abi = @import("runtime/abi.zig");
+const driver = @import("runtime/driver.zig");
+const hl = @import("runtime/launch.zig");
+const Module = @import("runtime/module.zig").Module;
+const Function = @import("runtime/module.zig").Function;
 
 const Error = driver.Error;
 

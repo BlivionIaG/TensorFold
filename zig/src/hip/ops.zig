@@ -2,11 +2,11 @@
 //! scratch from the forward's arena, the Python wrappers' choices (splits, fp16 decode output) made the same way.
 
 const std = @import("std");
-const abi = @import("abi.zig");
+const abi = @import("runtime/abi.zig");
 const rocm = @import("rocm.zig");
 const launches = @import("launches.zig");
 const affine_launch = @import("affine_launch.zig");
-const Arena = @import("arena.zig").Arena;
+const Arena = @import("runtime/arena.zig").Arena;
 
 /// act.hpp's numbering: the activation and fp32 buffers the torch-op kernels read and write.
 pub const Kind = enum(c_int) {
