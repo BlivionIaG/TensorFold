@@ -142,6 +142,10 @@ pub const Open = struct {
     prompt_cache_over_cap: bool = false,
     /// Kept prompt entries (`--checkpoint-slots`); null: the engine's plan.
     keep: ?i64 = null,
+    /// --learn: where shared prompt states are kept on disk for later sessions and servers (null: off).
+    learn: ?[]const u8 = null,
+    /// --learn-gib: what learned states may take on disk, every model and build together.
+    learn_gib: f64 = 32,
     /// --device and --segments (CUDA); null: the backend's environment fallback, then its default.
     device: ?u32 = null,
     segments: ?u32 = null,
@@ -262,6 +266,10 @@ pub const prompt_cache = @import("prompt_cache.zig");
 
 /// The same for a paged cache over the backend's own KV pages (prompt_radix.zig).
 pub const prompt_radix = @import("prompt_radix.zig");
+
+/// Learned prompt-cache states on disk (prompt_imprint.zig).
+pub const prompt_imprint = @import("prompt_imprint.zig");
+
 /// The idle keepalive's ticker and target contract.
 pub const keepalive = @import("keepalive.zig");
 
@@ -272,4 +280,5 @@ test {
     _ = prompt_radix;
     _ = keepalive;
     _ = admission;
+    _ = prompt_imprint;
 }

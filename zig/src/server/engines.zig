@@ -13,7 +13,7 @@ pub fn capabilities(a: Allocator) cli.Engines {
 }
 
 /// What a server asks of an engine, from its flags.
-fn request(dir: []const u8, model_type: []const u8, args: cli.Args) api.Open {
+fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: cli.Args) !api.Open {
     return .{
         .dir = dir,
         .model_type = model_type,
@@ -25,6 +25,8 @@ fn request(dir: []const u8, model_type: []const u8, args: cli.Args) api.Open {
         .prompt_cache_gib = args.prompt_cache_gib,
         .prompt_cache_over_cap = args.prompt_cache_over_cap,
         .keep = args.checkpoint_slots,
+        .learn = if (args.learn) args.learn_dir orelse try api.prompt_imprint.defaultRoot(a) else null,
+        .learn_gib = args.learn_gib,
         .device = args.device,
         .segments = args.segments,
         .tp = args.tp,
@@ -38,7 +40,7 @@ fn request(dir: []const u8, model_type: []const u8, args: cli.Args) api.Open {
 
 /// The engine for the checkpoint in ``dir``, or null with ``problem`` set.
 pub fn open(a: Allocator, gpa: Allocator, io: std.Io, dir: []const u8, model_type: []const u8, args: cli.Args, problem: *[]const u8) !?Opened {
-    return native.open(a, gpa, io, request(dir, model_type, args), problem);
+    return native.open(a, gpa, io, try request(a, dir, model_type, args), problem);
 }
 
 /// A tensor-parallel rank above 0: runs rank 0's steps until it stops; false with ``problem`` set when it cannot.
@@ -47,5 +49,5 @@ pub fn follow(a: Allocator, gpa: Allocator, io: std.Io, dir: []const u8, model_t
         problem.* = "this build has no tensor-parallel ranks";
         return false;
     }
-    return native.follow(a, gpa, io, request(dir, model_type, args), problem);
+    return native.follow(a, gpa, io, try request(a, dir, model_type, args), problem);
 }

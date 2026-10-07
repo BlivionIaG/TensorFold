@@ -7,10 +7,11 @@ const st = @import("state.zig");
 const Kernels = @import("kernels.zig").Kernels;
 const Ep = @import("ep.zig").Ep;
 const moe_route = @import("../../core/moe_route.zig");
-const route_shape = @import("kernels.zig").route_shape;
 const hc_shape = @import("kernels.zig").hc_shape;
 const hc_core = @import("../../core/hc.zig");
 const Ref = wts.Ref;
+/// The MoE block (moe.zig).
+pub const moe = @import("moe.zig").moe;
 
 pub const Ctx = struct {
     k: *const Kernels,
@@ -28,7 +29,26 @@ pub const Ctx = struct {
     fused_route: bool = true, // the core route (two launches); false: the Python family's cast, router and top-k
     draft_vocab: u32 = 154880, // the MTP head's tokens: the vocabulary's first this many
     m_row: u32 = 0, // the MTP head's logits row in m_logits (a rank log keeps each depth's in its own row)
+    segs: []const Seg = &.{}, // a shared window's streams in row order (empty: every row is `s`'s)
 };
+
+/// One stream's rows in a shared window: its caches, its first row, its rows and the position of the first.
+pub const Seg = struct { s: *st.State, row0: u32, rows: u32, pos: u32 };
+
+/// The window's streams: the context's segments, or every row as `s`'s from `pos`.
+fn segments(x: *const Ctx, rows: u32, pos: u32, one: *[1]Seg) []const Seg {
+    if (x.segs.len > 0) return x.segs;
+    one[0] = .{ .s = x.s, .row0 = 0, .rows = rows, .pos = pos };
+    return one;
+}
+
+/// The context reading segment `g`'s caches.
+fn withState(x: *const Ctx, g: Seg) Ctx {
+    var y = x.*;
+    y.s = g.s;
+    y.segs = &.{};
+    return y;
+}
 
 /// Single launches (or tight groups) for a profile that times each alone.
 pub const Part = struct {
@@ -155,13 +175,24 @@ pub fn boundary(x: *Ctx, e: mtl.ComputeEncoder, rows: u32, pending: bool, hc: ?w
     if (pending) x.xi = 1 - x.xi;
 }
 
-/// KDA layer `ki` on `normed`: the stacked projection (kept for a replay), the fused step into the other slot, the out-projection.
+/// KDA layer `ki` on `normed`: the stacked projection (kept for a replay), each stream's fused step, the out-projection.
 fn kda(x: *Ctx, e: mtl.ComputeEncoder, ki: usize, w: *const wts.Kda, rows: u32) void {
     const sc = x.sc;
-    const L = &x.s.kda[ki];
-    if (on(x, "kda_in")) qmv(x, e, x.k.qmv_kda_in, sc.normed, w.in_proj, L.proj, rows);
-    if (on(x, "kda_step")) kdaStep(x, e, ki, w, L.proj, rows, sc.y);
-    if (on(x, "kda_out")) qmv(x, e, x.k.qmv_kda_out, sc.y, w.o_proj, sc.branch, rows);
+    const tp = x.c.tp > 1; // TP2: this Mac's heads, their out-projection partial summed with the peer's
+    const proj = x.s.kda[ki].proj; // every stream's state shares it: the window's rows
+    if (on(x, "kda_in")) qmv(x, e, if (tp) x.k.qmv_kda_in_tp else x.k.qmv_kda_in, sc.normed, w.in_proj, proj, rows);
+    if (on(x, "kda_step")) {
+        var one: [1]Seg = undefined;
+        for (segments(x, rows, 0, &one)) |g| {
+            std.debug.assert(g.s.kda[ki].proj.addr() == proj.addr());
+            var y = withState(x, g);
+            kdaStep(&y, e, ki, w, proj.at(@as(usize, g.row0) * x.c.kdaProj() * 2), g.rows, sc.y.at(@as(usize, g.row0) * x.c.kdaWidth() * 2));
+        }
+    }
+    if (!on(x, "kda_out")) return;
+    if (!tp) return qmv(x, e, x.k.qmv_kda_out, sc.y, w.o_proj, sc.branch, rows);
+    qmv(x, e, x.k.qmvp_kda_out, sc.y, w.o_proj, sc.yp, rows);
+    x.ep.?.reduce(e, sc.yp, sc.branch, rows);
 }
 
 /// The fused KDA step over `rows` of stacked projections `proj`: state and conv window from slot cur to the other.
@@ -169,7 +200,7 @@ pub fn kdaStep(x: *const Ctx, e: mtl.ComputeEncoder, ki: usize, w: *const wts.Kd
     const c = x.c;
     const L = &x.s.kda[ki];
     const cur = L.cur;
-    e.setPipeline(x.k.kda_rows);
+    e.setPipeline(if (c.tp > 1) x.k.kda_rows_tp else x.k.kda_rows);
     bind(e, 0, .{proj});
     shape(e, 1, .{ rows, c.kdaProj() });
     bind(e, 2, .{ L.cs[cur], w.conv_w, w.f_b.w, w.f_b.s, w.f_b.b, w.g_b.w, w.g_b.s, w.g_b.b, w.a, w.dt_bias, L.st[cur], w.o_norm });
@@ -181,35 +212,64 @@ pub fn kdaStep(x: *const Ctx, e: mtl.ComputeEncoder, ki: usize, w: *const wts.Kd
 
 /// MLA layer `mi` (its index among MLA caches) for rows at positions pos.. on `x_in`, into `branch`.
 pub fn mla(x: *Ctx, e: mtl.ComputeEncoder, mi: usize, w: *const wts.Mla, x_in: Ref, rows: u32, pos: u32) void {
+    mlaKeys(x, e, mi, w, x_in, rows, pos);
+    mlaAttend(x, e, mi, w, rows, pos);
+}
+
+/// The rows' x_proj into `xp` and each segment's key, indexer and pool writes into its cache (and `iw`).
+pub fn mlaKeys(x: *Ctx, e: mtl.ComputeEncoder, mi: usize, w: *const wts.Mla, x_in: Ref, rows: u32, pos: u32) void {
+    const c = x.c;
+    const sc = x.sc;
+    var one: [1]Seg = undefined;
+    if (on(x, "mla_proj")) qmv(x, e, x.k.qmv_x, x_in, w.x_proj, sc.xp, rows);
+    if (on(x, "mla_cache")) for (segments(x, rows, pos, &one)) |g| {
+        const y = withState(x, g);
+        mlaCache(&y, e, mi, w, x_in.at(@as(usize, g.row0) * c.hidden * 2), sc.xp.at(@as(usize, g.row0) * c.xProj() * 2), c.xProj(), sc.iw.at(@as(usize, g.row0) * c.i_heads * 2), g.rows, g.pos);
+    };
+}
+
+/// The rows' queries (from `xp`), their attention over each segment's cache as written, unabsorb and o_proj into `branch`.
+pub fn mlaAttend(x: *Ctx, e: mtl.ComputeEncoder, mi: usize, w: *const wts.Mla, rows: u32, pos: u32) void {
     const c = x.c;
     const k = x.k;
     const sc = x.sc;
-    const C = &x.s.mla[mi];
+    var one: [1]Seg = undefined;
+    if (on(x, "mla_proj")) {
+        rms(x, e, sc.xp, w.q_norm, sc.qr, rows, c.q_lora, c.xProj(), c.q_lora, c.eps);
+        qmv(x, e, if (c.tp > 1) k.qmv_qr_tp else k.qmv_qr, sc.qr, w.qr_proj, sc.qp, rows);
+    }
+    if (on(x, "mla_absorb")) absorb(x, e, w, sc.qp, sc.ql, rows);
+    for (segments(x, rows, pos, &one)) |g| attend(&withState(x, g), e, mi, g);
+    if (on(x, "mla_unabs")) unabsorb(x, e, w, sc.att, sc.vals, rows);
+    if (!on(x, "mla_out")) return;
+    if (c.tp == 1) return qmv(x, e, k.qmv_mla_out, sc.vals, w.o_proj, sc.branch, rows);
+    qmv(x, e, k.qmvp_mla_out, sc.vals, w.o_proj, sc.yp, rows); // TP2: this Mac's heads' partial, summed with the peer's
+    x.ep.?.reduce(e, sc.yp, sc.branch, rows);
+}
+
+/// Rows' indexer weights from their x_proj outputs (a row `xp_stride` apart), into `iw`.
+pub fn indexWeights(x: *const Ctx, e: mtl.ComputeEncoder, xp: Ref, xp_stride: u32, iw: Ref, rows: u32) void {
+    const c = x.c;
+    scale(x, e, xp.at((c.q_lora + c.kv_lora + c.i_dim) * 2), iw, rows, c.i_heads, xp_stride, c.i_heads, 1.0 / 64.0);
+}
+
+/// One stream's rows over its own cache: rows whose keys all fit index_topk attend every key (MLX's unfused attention).
+fn attend(x: *const Ctx, e: mtl.ComputeEncoder, mi: usize, g: Seg) void {
+    const c = x.c;
+    const sc = x.sc;
     const H = c.mla_heads;
     const RANK = c.kv_lora;
-    if (on(x, "mla_proj")) {
-        qmv(x, e, k.qmv_x, x_in, w.x_proj, sc.xp, rows);
-        rms(x, e, sc.xp, w.q_norm, sc.qr, rows, c.q_lora, c.xProj(), c.q_lora, c.eps);
-        qmv(x, e, k.qmv_qr, sc.qr, w.qr_proj, sc.qp, rows);
+    const lat = @as(usize, H) * RANK * 2; // a row's latent queries
+    var dense: u32 = 0;
+    while (dense < g.rows and g.pos + dense + 1 <= c.i_topk) dense += 1;
+    if (on(x, "mla_absorb") and dense > 0) scale(x, e, sc.ql.at(g.row0 * lat), sc.qls.at(g.row0 * lat), dense * H, RANK, RANK, RANK, 1.0 / 16.0);
+    if (!on(x, "mla_attn")) return;
+    const plane = @as(usize, H) * c.i_topk * 2;
+    for (0..dense) |ri| {
+        const r: usize = g.row0 + ri;
+        attendDense(x, e, x.s.mla[mi].keys, sc.qls.at(r * lat), sc.scores.at(r * plane), sc.probs.at(r * plane), sc.att.at(r * lat), g.pos + @as(u32, @intCast(ri)) + 1);
     }
-    if (on(x, "mla_cache")) mlaCache(x, e, mi, w, x_in, sc.xp, c.xProj(), sc.iw, rows, pos);
-    var dense: u32 = 0; // rows whose keys all fit index_topk attend every key (MLX's unfused attention)
-    while (dense < rows and pos + dense + 1 <= c.i_topk) dense += 1;
-    if (on(x, "mla_absorb")) {
-        absorb(x, e, w, sc.qp, sc.ql, rows);
-        if (dense > 0) scale(x, e, sc.ql, sc.qls, dense * H, RANK, RANK, RANK, 1.0 / 16.0);
-    }
-    if (on(x, "mla_attn")) {
-        for (0..dense) |ri| {
-            const r: u32 = @intCast(ri);
-            const n = pos + r + 1;
-            const plane = @as(usize, H) * c.i_topk * 2;
-            attendDense(x, e, C.keys, sc.qls.at(@as(usize, r) * H * RANK * 2), sc.scores.at(r * plane), sc.probs.at(r * plane), sc.att.at(@as(usize, r) * H * RANK * 2), n);
-        }
-        if (dense < rows) attendSparse(x, e, mi, rows, pos, dense);
-    }
-    if (on(x, "mla_unabs")) unabsorb(x, e, w, sc.att, sc.vals, rows);
-    if (on(x, "mla_out")) qmv(x, e, k.qmv_mla_out, sc.vals, w.o_proj, sc.branch, rows);
+    if (dense < g.rows) attendSparse(x, e, mi, g, dense);
 }
 
 /// Rows' latent keys, indexer keys and gates into MLA cache `mi` at pos.., their indexer weights into `iw`, the blocks they complete.
@@ -224,7 +284,7 @@ pub fn mlaCache(x: *const Ctx, e: mtl.ComputeEncoder, mi: usize, w: *const wts.M
     e.setValue(Rows{ .rows = @intCast(rows), .width = @intCast(c.i_dim), .x_stride = @intCast(xp_stride), .y_stride = @intCast(c.i_dim), .eps = 1e-6 }, 4);
     e.dispatchGroups(size(rows, 1, 1), size(32, 1, 1));
     moe_route.logits(e, k.igate_logits, @import("kernels.zig").igate_shape, x_in, w.igate, C.ig.at(@as(usize, pos) * c.i_dim * 2), rows); // MLX's gemv_t sums, more threadgroups
-    scale(x, e, xp.at((c.q_lora + RANK + c.i_dim) * 2), iw, rows, c.i_heads, xp_stride, c.i_heads, 1.0 / 64.0);
+    indexWeights(x, e, xp, xp_stride, iw, rows);
     const first = pos / c.kpool;
     const last = (pos + rows) / c.kpool;
     if (last > first) {
@@ -241,6 +301,7 @@ pub fn absorb(x: *const Ctx, e: mtl.ComputeEncoder, w: *const wts.Mla, qp: Ref, 
     e.setPipeline(x.k.absorb);
     bind(e, 0, .{ w.kv_b.w, w.kv_b.s, w.kv_b.b, qp, ql });
     e.setValue(c.qrProj(), 5);
+    e.setValue(c.mla_heads, 6);
     e.dispatchGroups(size(1, c.kv_lora / 64, rows * c.mla_heads), size(64, 1, 1));
 }
 
@@ -249,6 +310,7 @@ pub fn unabsorb(x: *const Ctx, e: mtl.ComputeEncoder, w: *const wts.Mla, att: Re
     const c = x.c;
     e.setPipeline(x.k.unabsorb);
     bind(e, 0, .{ w.kv_b.w, w.kv_b.s, w.kv_b.b, att, vals });
+    e.setValue(c.mla_heads, 5);
     e.dispatchGroups(size(1, c.v_dim / 4, rows * c.mla_heads), size(32, 1, 1));
 }
 
@@ -259,7 +321,7 @@ pub fn attendDense(x: *const Ctx, e: mtl.ComputeEncoder, keys: Ref, q: Ref, scor
     e.setPipeline(k.latent_scores);
     bind(e, 0, .{ q, keys, scores });
     e.setValue([2]i32{ @intCast(n), @intFromBool(n < 256) }, 3); // fewer than 256 keys: the 512 dims in two halves
-    e.dispatchGroups(size((n + 31) / 32, 1, 1), size(128, 1, 1));
+    e.dispatchGroups(size((n + 31) / 32, 1, 1), size(2 * H, 1, 1)); // a simdgroup each 16 heads
     e.setPipeline(k.softmax);
     bind(e, 0, .{scores});
     shape(e, 1, .{n});
@@ -268,16 +330,17 @@ pub fn attendDense(x: *const Ctx, e: mtl.ComputeEncoder, keys: Ref, q: Ref, scor
     e.setPipeline(k.latent_values);
     bind(e, 0, .{ probs, keys, out });
     e.setValue([2]i32{ @intCast(n), if (n > 1024) 1024 else 0 }, 3); // past 1,024 keys: the first 1,024 apart
-    e.dispatchGroups(size(x.c.kv_lora / 32, 1, 1), size(128, 1, 1));
+    e.dispatchGroups(size(x.c.kv_lora / 32, 1, 1), size(2 * H, 1, 1));
 }
 
-/// Rows [first, rows) past index_topk keys: fp32 block scores, the best blocks in block order plus the tail, the sparse kernel.
-fn attendSparse(x: *const Ctx, e: mtl.ComputeEncoder, mi: usize, rows: u32, pos: u32, first: u32) void {
+/// A stream's rows [first, rows) past index_topk keys: fp32 block scores, the best blocks in block order plus the tail, the sparse kernel.
+fn attendSparse(x: *const Ctx, e: mtl.ComputeEncoder, mi: usize, g: Seg, first: u32) void {
     const c = x.c;
     const sc = x.sc;
-    const n = rows - first;
-    selectKeys(x, e, mi, sc.qp.at((@as(usize, first) * c.qrProj() + c.mla_heads * c.nope) * 2), c.qrProj(), sc.iw.at(@as(usize, first) * c.i_heads * 2), sc.sscore, sc.indices, n, pos + first);
-    attendIndexed(x, e, mi, sc.ql.at(@as(usize, first) * c.mla_heads * c.kv_lora * 2), sc.indices, sc.att.at(@as(usize, first) * c.mla_heads * c.kv_lora * 2), n, pos + rows);
+    const n = g.rows - first;
+    const r: usize = g.row0 + first; // the first sparse row's place in the window
+    selectKeys(x, e, mi, sc.qp.at((r * c.qrProj() + c.mla_heads * c.nope) * 2), c.qrProj(), sc.iw.at(r * c.i_heads * 2), sc.sscore, sc.indices, n, g.pos + first);
+    attendIndexed(x, e, mi, sc.ql.at(r * c.mla_heads * c.kv_lora * 2), sc.indices, sc.att.at(r * c.mla_heads * c.kv_lora * 2), n, g.pos + g.rows);
 }
 
 /// Key lists for `n` rows at positions p0.. past index_topk keys (indexer queries `iq` a row `q_stride` apart).
@@ -299,7 +362,7 @@ pub fn selectKeys(x: *const Ctx, e: mtl.ComputeEncoder, mi: usize, iq: Ref, q_st
 /// The sparse kernel for `n` rows' 64 heads over their listed keys (`key_length` keys written so far).
 pub fn attendIndexed(x: *const Ctx, e: mtl.ComputeEncoder, mi: usize, ql: Ref, indices: Ref, out: Ref, n: u32, key_length: u32) void {
     const c = x.c;
-    e.setPipeline(x.k.sparse_attention);
+    e.setPipeline(if (c.tp > 1) x.k.sparse_attention_tp else x.k.sparse_attention);
     bind(e, 0, .{ ql, x.s.mla[mi].keys, indices });
     e.setValue(@as(f32, 1.0 / 16.0), 3);
     e.setValue(@as(i32, @intCast(key_length)), 4);
@@ -311,142 +374,14 @@ fn denseMlp(x: *const Ctx, e: mtl.ComputeEncoder, w: *const wts.Dense, x_in: Ref
     if (!on(x, "dense")) return;
     const c = x.c;
     const sc = x.sc;
-    qmv(x, e, x.k.qmv_dense_gu, x_in, w.gate_up, sc.gu, rows);
+    qmv(x, e, if (c.tp > 1) x.k.qmv_dense_gu_tp else x.k.qmv_dense_gu, x_in, w.gate_up, sc.gu, rows);
     e.setPipeline(x.k.swiglu);
     bind(e, 0, .{ sc.gu, sc.actd });
     e.setValue(Rows{ .rows = @intCast(rows), .width = @intCast(c.dense_inter), .x_stride = @intCast(2 * c.dense_inter), .y_stride = @intCast(c.dense_inter), .eps = c.swiglu_limit }, 2);
     e.dispatchThreads(size(c.dense_inter, rows, 1), size(256, 1, 1));
-    qmv(x, e, x.k.qmv_dense_down, sc.actd, w.down, sc.branch, rows);
-}
-
-/// The MoE block (shared expert, route, routed experts, combine); expert parallel: this Mac's experts, sent, the peer's received.
-pub fn moe(x: *const Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, rows: u32) void {
-    std.debug.assert(rows <= st.max_rows);
-    const c = x.c;
-    const k = x.k;
-    const sc = x.sc;
-    const top = c.topk;
-    const s = x.skip;
-    if (x.ep) |ep| if (c.byRows()) { // every expert's half on each Mac: both compute every pick, then swap their sums
-        if (s & Class.exchange == 0 and on(x, "x_locpost")) ep.begin();
-        if (s & Class.route == 0) route(x, e, w, x_in, rows);
-        if (s & Class.routed == 0) halfExperts(x, e, w, x_in, rows);
-        if (s & Class.exchange == 0 and on(x, "x_locpost")) ep.sendRows(e, sc.yp, sc.wts, rows); // with its begin
-        if (s & Class.shared == 0) experts(x, e, w, x_in, rows, 1, .{ sc.none, sc.none, sc.none });
-        if (s & Class.combine == 0) ep.receiveRows(e, sc.ys, sc.branch, rows);
-        return;
-    };
-    if (x.ep) |ep| {
-        if (s & Class.exchange == 0 and on(x, "x_locpost")) ep.begin();
-        if (s & Class.route == 0) route(x, e, w, x_in, rows);
-        if (!x.fused_route and s & Class.exchange == 0 and on(x, "x_locpost")) ep.localize(e, sc.pick, sc.uids, sc.umem, sc.ucount, rows);
-        if (s & Class.routed == 0) experts(x, e, w, x_in, rows, 2, ep.group());
-        if (s & Class.exchange == 0) ep.send(e, sc.ye, rows, on(x, "x_pack") and on(x, "x_locpost"), on(x, "x_locpost"));
-        if (s & Class.shared == 0) experts(x, e, w, x_in, rows, 1, .{ sc.none, sc.none, sc.none });
-        if (s & Class.exchange == 0 and on(x, "x_unpack")) ep.receive(e, sc.ye, rows);
-    } else {
-        if (s & Class.shared == 0) experts(x, e, w, x_in, rows, 1, .{ sc.none, sc.none, sc.none });
-        if (s & Class.route == 0) route(x, e, w, x_in, rows);
-        if (s & Class.routed == 0) experts(x, e, w, x_in, rows, 2, .{ sc.uids, sc.umem, sc.ucount });
-    }
-    if (s & Class.combine != 0 or !on(x, "combine")) return;
-    e.setPipeline(k.moe_combine);
-    bind(e, 0, .{ sc.ys, sc.ye, sc.wts });
-    shape(e, 3, .{ rows, top });
-    bind(e, 4, .{sc.branch});
-    e.dispatchThreads(size(rows * c.hidden, 1, 1), size(256, 1, 1));
-}
-
-/// The router's fp32 logits and the route: picks, weights and the window's unique experts with their members.
-fn route(x: *const Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, rows: u32) void {
-    const c = x.c;
-    const k = x.k;
-    const sc = x.sc;
-    if (x.fused_route) {
-        if (on(x, "r_router")) moe_route.logits(e, k.route_logits, route_shape, x_in, w.router, sc.logits_r, rows);
-        if (!on(x, "r_topk")) return;
-        if (x.ep) |ep| if (!c.byRows()) return moe_route.select(e, k.route_select, sc.logits_r, w.bias, c.routed_scale, rows, c.own, ep.outputs(sc.pick, sc.wts));
-        const rl = sc.rl;
-        const T: usize = c.topk * st.max_rows * 4;
-        return moe_route.select(e, k.route_select, sc.logits_r, w.bias, c.routed_scale, rows, .{ 0, c.experts }, .{ .pick = sc.pick, .wts = sc.wts, .ids = sc.uids, .members = sc.umem, .count = sc.ucount, .mine = rl, .theirs = rl.at(T), .counts = rl.at(2 * T), .word = rl.at(2 * T + 64) });
-    }
-    if (on(x, "r_cast")) {
-        e.setPipeline(k.cast_f32);
-        bind(e, 0, .{ x_in, sc.xf });
-        e.setValue(rows * c.hidden, 2);
-        e.dispatchThreads(size(rows * c.hidden, 1, 1), size(256, 1, 1));
-    }
-    if (on(x, "r_router")) {
-        e.setPipeline(k.router[rows - 1]);
-        bind(e, 0, .{ sc.xf, w.router, sc.logits_r });
-        e.dispatchThreads(size(1024 * c.experts / 16, 1, 1), size(1024, 1, 1));
-    }
-    if (!on(x, "r_topk")) return;
-    e.setPipeline(k.moe_route);
-    bind(e, 0, .{sc.logits_r});
-    shape(e, 1, .{ rows, c.experts });
-    bind(e, 2, .{w.bias});
-    e.setValue(c.routed_scale, 3);
-    bind(e, 4, .{ sc.pick, sc.wts, sc.uids, sc.umem, sc.ucount });
-    e.dispatchThreads(size(512, 1, 1), size(512, 1, 1));
-}
-
-/// Part 1: the shared expert into `ys`; part 2: the routed experts of `group` (unique ids, members, count) into `ye`.
-fn experts(x: *const Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, rows: u32, part: u32, group: [3]Ref) void {
-    const c = x.c;
-    const k = x.k;
-    const sc = x.sc;
-    const D = c.hidden;
-    const N = c.moe_inter;
-    const zs: u32 = if (part == 1) 1 else rows * c.topk;
-    const slots: u32 = if (part == 1) 1 else c.topk;
-    const act = if (part == 1) sc.acts else sc.act;
-    if (if (part == 1) on(x, "s_gateup") else on(x, "e_gateup")) gateUp(x, e, w, x_in, rows, part, group, zs, act);
-    if (!(if (part == 1) on(x, "s_down") else on(x, "e_down"))) return;
-    e.setPipeline(if (part == 1) k.moe_down_1 else k.moe_down_2);
-    bind(e, 0, .{act});
-    shape(e, 1, .{ rows, slots, N });
-    bind(e, 2, .{ w.down.w, w.down.s, w.down.b, w.sh_down.w, w.sh_down.s, w.sh_down.b, group[0], group[1], group[2], if (part == 1) sc.ys else sc.ye });
-    e.dispatchThreads(size(32 * rows, D / 4, zs), size(32 * rows, 1, 1));
-}
-
-/// By rows: every routed pick's half (this Mac's intermediate rows), down's fp32 partials into `yp`.
-fn halfExperts(x: *const Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, rows: u32) void {
-    const c = x.c;
-    const k = x.k;
-    const sc = x.sc;
-    const D = c.hidden;
-    const N: u32 = c.inter[1] - c.inter[0];
-    const zs: u32 = rows * c.topk;
-    if (on(x, "e_gateup")) {
-        e.setPipeline(k.moe_gateup_2h);
-        bind(e, 0, .{x_in});
-        shape(e, 1, .{ rows, D });
-        bind(e, 2, .{ w.gate.w, w.gate.s, w.gate.b, w.up.w, w.up.s, w.up.b, w.sh_gate_up.w, w.sh_gate_up.s, w.sh_gate_up.b, sc.uids, sc.umem, sc.ucount });
-        e.setValue(c.swiglu_limit, 14);
-        bind(e, 15, .{sc.act});
-        e.dispatchThreads(size(32 * rows, N / 4, zs), size(32 * rows, 1, 1));
-    }
-    if (!on(x, "e_down")) return;
-    e.setPipeline(k.moe_down_2h);
-    bind(e, 0, .{sc.act});
-    shape(e, 1, .{ rows, c.topk, N });
-    bind(e, 2, .{ w.down.w, w.down.s, w.down.b, w.sh_down.w, w.sh_down.s, w.sh_down.b, sc.uids, sc.umem, sc.ucount, sc.yp });
-    e.dispatchThreads(size(32 * rows, D / 4, zs), size(32 * rows, 1, 1));
-}
-
-fn gateUp(x: *const Ctx, e: mtl.ComputeEncoder, w: *const wts.Moe, x_in: Ref, rows: u32, part: u32, group: [3]Ref, zs: u32, act: Ref) void {
-    const c = x.c;
-    const k = x.k;
-    const D = c.hidden;
-    const N = c.moe_inter;
-    e.setPipeline(if (part == 1) k.moe_gateup_1 else k.moe_gateup_2);
-    bind(e, 0, .{x_in});
-    shape(e, 1, .{ rows, D });
-    bind(e, 2, .{ w.gate.w, w.gate.s, w.gate.b, w.up.w, w.up.s, w.up.b, w.sh_gate_up.w, w.sh_gate_up.s, w.sh_gate_up.b, group[0], group[1], group[2] });
-    e.setValue(c.swiglu_limit, 14);
-    bind(e, 15, .{act});
-    e.dispatchThreads(size(32 * rows, N / 4, zs), size(32 * rows, 1, 1));
+    if (c.tp == 1) return qmv(x, e, x.k.qmv_dense_down, sc.actd, w.down, sc.branch, rows);
+    qmv(x, e, x.k.qmvp_dense_down, sc.actd, w.down, sc.yp, rows); // TP2: this Mac's half, summed with the peer's
+    x.ep.?.reduce(e, sc.yp, sc.branch, rows);
 }
 
 /// The backbone over the window (its tokens in `ids`) at positions pos..: final-normed rows into `hidden`.
@@ -504,24 +439,35 @@ pub fn head(x: *const Ctx, e: mtl.ComputeEncoder, in: Ref, logits: Ref, picks: R
 /// `head` over the vocabulary's first `vocab` tokens (the MTP head's draft vocabulary: the most frequent BPE merges).
 pub fn headOver(x: *const Ctx, e: mtl.ComputeEncoder, in: Ref, logits: Ref, picks: Ref, rows: u32, vocab: u32) void {
     if (x.skip & Class.head != 0) return;
-    var q = x.w.head;
-    q.n = vocab;
-    qmv(x, e, x.k.qmv_head, in, q, logits, rows);
-    e.setPipeline(x.k.argmax);
-    bind(e, 0, .{ logits, picks });
-    e.setValue(vocab, 2);
-    e.dispatchGroups(size(rows, 1, 1), size(1024, 1, 1));
+    const part = x.c.vocabPart(); // TP2: this Mac's half, its picks merged with the peer's
+    const n: u32 = if (vocab > part[0]) @min(vocab, part[1]) - part[0] else 0;
+    if (n > 0) {
+        var q = x.w.head;
+        q.n = n;
+        qmv(x, e, if (x.c.tp > 1) x.k.qmv_head_tp else x.k.qmv_head, in, q, logits, rows);
+        e.setPipeline(x.k.argmax);
+        bind(e, 0, .{ logits, picks });
+        e.setValue(n, 2);
+        e.dispatchGroups(size(rows, 1, 1), size(1024, 1, 1));
+    }
+    if (x.c.tp > 1) x.ep.?.argmax(e, logits, picks, n, part[0], rows);
 }
 
 /// A judged window's first `keep` of `rows` in every KDA layer (replayed from the round's entry state when some were rejected).
 pub fn keepKda(x: *Ctx, e: mtl.ComputeEncoder, rows: u32, keep: u32) void {
+    keepKdaAt(x, e, 0, rows, keep);
+}
+
+/// keepKda for the stream of `x.s` whose rows began at row `row0` of the shared window.
+pub fn keepKdaAt(x: *Ctx, e: mtl.ComputeEncoder, row0: u32, rows: u32, keep: u32) void {
+    if (keep >= rows) return;
     var ki: usize = 0;
     for (0..x.c.run) |li| {
         const a = switch (x.w.layers[li].attn) {
             .kda => |*a| a,
             .mla => continue,
         };
-        if (keep < rows) kdaStep(x, e, ki, a, x.s.kda[ki].proj, keep, x.sc.y);
+        kdaStep(x, e, ki, a, x.s.kda[ki].proj.at(@as(usize, row0) * x.c.kdaProj() * 2), keep, x.sc.y);
         ki += 1;
     }
 }

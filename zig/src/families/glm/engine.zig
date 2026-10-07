@@ -71,6 +71,8 @@ pub const Engine = struct {
     trace_last: ?Ref = null, // a prompt's last row at every capture point (each layer's sublayers), for a path comparison
     margins: ?*std.ArrayList(f32) = null, // each emitted token's top-two logit margin (its row's logits), for a path comparison
     chunk_rows: u32 = prompt_mod.max_rows, // a prompt chunk's rows at most (GLM_CHUNK: smaller, to check chunk-size invariance)
+    model_hash: u64 = 0, // the checkpoint's config and weight index, hashed (a peer's and a learned state's identity)
+    cut: u32 = 0, // GLM_CUTS=N: a prompt chunk also ends at N (a server's planned start, for its served == CLI check)
     copy_min: u32 = 0, // copy drafts (GLM_COPY=N): a round copies what followed the reply's last N+ tokens earlier (0: off)
     rank_log: bool = false, // GLM_RANKS=1: each MTP depth's logits kept, and the target's rank in them where drafts miss
     ep_arena: std.heap.ArenaAllocator, // the link settings, alive as long as the link
@@ -85,11 +87,11 @@ pub const Engine = struct {
 
     /// The checkpoint in `dir`, caches for `cap` tokens; GLM_LAYERS=N: the first N layers only; GLM_EP=settings: half the experts.
     pub fn load(gpa: std.mem.Allocator, dir: []const u8, cap: u32) !*Engine {
-        return loadWith(gpa, dir, cap, if (std.c.getenv("GLM_EP")) |v| std.mem.span(v) else null);
+        return loadWith(gpa, dir, cap, if (std.c.getenv("GLM_EP")) |v| std.mem.span(v) else null, false);
     }
 
     /// `load` with expert parallel over the link in `ep_path` (this Mac's settings), or on one Mac when null.
-    pub fn loadWith(gpa: std.mem.Allocator, dir: []const u8, cap: u32, ep_path: ?[]const u8) !*Engine {
+    pub fn loadWith(gpa: std.mem.Allocator, dir: []const u8, cap: u32, ep_path: ?[]const u8, learn: bool) !*Engine {
         const e = try gpa.create(Engine); // undefined memory: every field is set below
         errdefer gpa.destroy(e);
         const pool = mtl.objc.Pool.push();
@@ -107,6 +109,7 @@ pub const Engine = struct {
         e.trace_last = null;
         e.margins = null;
         e.chunk_rows = prompt_mod.max_rows;
+        e.cut = if (std.c.getenv("GLM_CUTS")) |v| std.fmt.parseInt(u32, std.mem.span(v), 10) catch 0 else 0;
         e.copy_min = if (std.c.getenv("GLM_COPY")) |v| std.math.clamp(std.fmt.parseInt(u32, std.mem.span(v), 10) catch 0, 0, 8) else 0;
         e.rank_log = if (std.c.getenv("GLM_RANKS")) |v| v[0] == '1' else false;
         if (std.c.getenv("GLM_CHUNK")) |v| e.chunk_rows = std.math.clamp(std.fmt.parseInt(u32, std.mem.span(v), 10) catch prompt_mod.max_rows, st.max_rows + 1, prompt_mod.max_rows);
@@ -126,6 +129,7 @@ pub const Engine = struct {
         if (e.draft_vocab == 0 or e.draft_vocab > e.c.vocab) e.draft_vocab = e.c.vocab;
         e.draft_vocab -= e.draft_vocab % 4; // the head's kernel takes four rows a simdgroup
         const model = try modelHash(gpa, dir, f.bytes[0..f.size]);
+        e.model_hash = model;
         if (std.c.getenv("GLM_LAYERS")) |v| try cfg.subset(&e.c, std.fmt.parseInt(u32, std.mem.span(v), 10) catch return error.BadLayerCount);
         const link: ?ep_mod.Settings = if (ep_path) |sp| blk: {
             const sf = try mtl.MappedFile.open(try e.ep_arena.allocator().dupeSentinel(u8, sp, 0));
@@ -133,6 +137,12 @@ pub const Engine = struct {
             const s = try ep_mod.readSettings(e.ep_arena.allocator(), sf.bytes[0..sf.size]);
             const by_rows = if (std.c.getenv("GLM_EP_SPLIT")) |v| !std.mem.eql(u8, std.mem.span(v), "experts") else true;
             if (by_rows) try cfg.splitRows(&e.c, s.rank, 2) else try cfg.split(&e.c, s.rank, 2);
+            const tp = if (std.c.getenv("GLM_TP")) |v| v[0] != '0' else true; // TP2: each Mac half the KDA heads (GLM_TP=0: off)
+            if (by_rows and tp) try cfg.splitHeads(&e.c, s.rank, 2);
+            if (e.c.tp > 1) { // TP2's head halves: the whole vocabulary (its kernel's pitch); no host logits to rank
+                e.draft_vocab = e.c.vocab;
+                e.rank_log = false;
+            }
             break :blk s;
         } else null;
         e.k = try kernels.load(gpa, e.device);
@@ -171,6 +181,8 @@ pub const Engine = struct {
             const rows = e.c.byRows();
             var me: ep_mod.Identity = .{ .layers = e.c.layers, .run = e.c.run, .mtp = @intFromBool(e.w.mtp != null), .experts = if (rows) e.c.moe_inter else e.c.experts, .own_lo = if (rows) e.c.inter[0] else e.c.own[0], .own_hi = if (rows) e.c.inter[1] else e.c.own[1], .cap = cap, .model = model };
             me.rest[0] = @intFromBool(rows);
+            me.rest[1] = @intCast(e.c.tp);
+            me.rest[2] = @intFromBool(learn); // --learn on both Macs or neither: each holds its half of a learned state
             e.ep = try ep_mod.Ep.init(gpa, e.device, s, me);
         }
         // opt-in: wiring 181 GB leaves macOS nothing to reclaim if another model shares the Mac (Flash Next runs without)
@@ -209,7 +221,7 @@ pub const Engine = struct {
     }
 
     /// The most this Mac may load: 70% of its RAM in GiB, read as GB (the floor's 179 GB on a 256 GiB Mac, the strict reading).
-    fn loadLimit() usize {
+    pub fn loadLimit() usize {
         var mem: u64 = 0;
         var len: usize = @sizeOf(u64);
         if (std.c.sysctlbyname("hw.memsize", &mem, &len, null, 0) != 0 or mem == 0) return 0;
@@ -263,22 +275,12 @@ pub const Engine = struct {
         return e.w.mtp != null;
     }
 
-    /// Expert parallel's rank 1: it runs rank 0's requests (`follow`), never its own.
+    /// Expert parallel's rank 1: it runs rank 0's requests and slot commands (mirror.follow), never its own.
     pub fn followsPeer(e: *const Engine) bool {
         return if (e.ep) |ep| ep.rank == 1 else false;
     }
 
-    /// Rank 1: each request rank 0 hands over, in step with it, until `stopFollowing`.
-    pub fn follow(e: *Engine) !void {
-        const ep = e.ep orelse return;
-        var dummy: u8 = 0;
-        const quiet: Out = .{ .ctx = &dummy, .prefilled = Quiet.prefilled, .tokens = Quiet.tokens, .cancelled = Quiet.cancelled };
-        while (try ep.ctl.waitRequest()) |r| _ = e.generate(r.prompt, r.max_tokens, r.eos, r.depth, quiet) catch |err| switch (err) {
-            error.ContextFull, error.EmptyPrompt => continue, // refused before its first step, on rank 0 too
-            else => return err,
-        };
-    }
-
+    /// Rank 1's follower (mirror.follow) ends its wait for rank 0's next command.
     pub fn stopFollowing(e: *Engine) void {
         if (e.ep) |ep| ep.ctl.stop.store(true, .release);
     }
@@ -325,7 +327,7 @@ pub const Engine = struct {
     }
 
     /// One bf16 row of `D` values from `src` to `dst`.
-    fn copyRow(x: *const fwd.Ctx, enc: mtl.ComputeEncoder, src: Ref, dst: Ref, D: u32) void {
+    pub fn copyRow(x: *const fwd.Ctx, enc: mtl.ComputeEncoder, src: Ref, dst: Ref, D: u32) void {
         enc.setPipeline(x.k.copy_u32);
         enc.setBuffer(src.buf, src.off, 0);
         enc.setBuffer(dst.buf, dst.off, 1);
@@ -350,6 +352,7 @@ pub const Engine = struct {
 
     /// The top two logits' difference in row `row` of the last head's logits (bf16).
     fn margin(e: *const Engine, row: u32) f32 {
+        if (e.c.tp > 1) return std.math.nan(f32); // TP2: this Mac holds half of each row's logits
         const v: [*]const u16 = @ptrCast(@alignCast(e.sc.logits.addr()));
         var top = [2]f32{ -std.math.inf(f32), -std.math.inf(f32) };
         for (v[@as(usize, row) * e.c.vocab ..][0..e.c.vocab]) |h| {
@@ -393,8 +396,9 @@ pub const Engine = struct {
         var last_n: u32 = 1;
         while (at < P) {
             if (try e.agree(out.cancelled(out.ctx))) return .{ .reason = .cancelled };
-            const chunk = e.pr != null and P - at > st.max_rows;
-            const n = @min(@as(u32, if (chunk) e.chunk_rows else st.max_rows), P - at);
+            const end = if (e.cut > at and e.cut < P) e.cut else P;
+            const chunk = e.pr != null and end - at > st.max_rows;
+            const n = @min(@as(u32, if (chunk) e.chunk_rows else st.max_rows), end - at);
             const last = at + n == P;
             const absorb = if (last) n - 1 else n;
             const b = e.begin();
