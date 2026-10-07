@@ -36,6 +36,9 @@ const ChainKey = struct { rows: u32, most: u32, cut: bool };
 /// A greedy chain reads the head over the first ids of the vocabulary alone (the common tokens): a draft only guesses.
 const draft_vocab = 65536;
 
+/// Most chains one batch runs; a head serving `rows` rows a round holds caches for this many at most.
+pub const max_chains = 64;
+
 pub const Head = struct {
     gpa: std.mem.Allocator,
     d: *const hip.Driver,
@@ -62,20 +65,18 @@ pub const Head = struct {
     /// Greedy batches captured by shape: the head's launches over the scalars alone, replayed.
     graphs: graph_cache.Cache(ChainKey, void),
 
-    /// The head of `m`, or null when the checkpoint has none; `cap` chains at most run in one batch.
-    pub fn init(gpa: std.mem.Allocator, d: *const hip.Driver, m: *const weights.Model, model: *const view.Model, cap: usize) !?*Head {
+    /// The head of `m` with no device memory yet, or null when the checkpoint has none: what `deviceBytes` counts.
+    fn describe(gpa: std.mem.Allocator, d: *const hip.Driver, m: *const weights.Model, model: *const view.Model, cap: usize) !?Head {
         const w = if (m.mtp) |*x| x else return null;
         const s = m.spec;
         const qa = try bridge.projection(w.q);
         const ka = try bridge.projection(w.k);
-        const h = try gpa.create(Head);
-        errdefer gpa.destroy(h);
         const kv_heads = ka.n / s.head_dim;
         const full = if (w.head) |hp| try bridge.projection(hp) else model.head;
         var narrow = full;
         narrow.n = @min(full.n, draft_vocab);
-        const cache = kv_heads * (max_depth + 1) * s.head_dim * model.act.size();
-        h.* = .{
+        const none: hip.DeviceBuffer = .{ .d = d, .ptr = 0, .len = 0 };
+        return .{
             .gpa = gpa,
             .d = d,
             .w = w,
@@ -85,22 +86,38 @@ pub const Head = struct {
             .logits_head = full,
             .draft_head = narrow,
             .cap = cap,
-            .cache_bytes = cache,
-            .k = undefined,
-            .v = undefined,
-            .arena = undefined,
-            .rows = undefined,
-            .zero = undefined,
+            .cache_bytes = kv_heads * (max_depth + 1) * s.head_dim * model.act.size(),
+            .k = none,
+            .v = none,
+            .arena = hip.Arena.counting(),
+            .rows = none,
+            .zero = none,
             .graphs = graph_cache.Cache(ChainKey, void).init(gpa),
             .scalars = undefined,
-            .scalars_dev = undefined,
+            .scalars_dev = none,
         };
-        h.k = try hip.DeviceBuffer.alloc(d, cache * cap);
+    }
+
+    /// Device bytes the head of `m` holds for `cap` chains (0 without one): caches, rows, scalars and its arena.
+    pub fn deviceBytes(gpa: std.mem.Allocator, d: *const hip.Driver, lib: *const hip.rocm.Library, m: *const weights.Model, model: *const view.Model, cap: usize) !usize {
+        var h = (try describe(gpa, d, m, model, cap)) orelse return 0;
+        defer h.graphs.deinit();
+        const row = m.spec.hidden * model.act.size();
+        return 2 * h.cache_bytes * cap + cap * row + row + h.layout().total + try h.scratch(lib, model);
+    }
+
+    /// The head of `m`, or null when the checkpoint has none; `cap` chains at most run in one batch.
+    pub fn init(gpa: std.mem.Allocator, d: *const hip.Driver, lib: *const hip.rocm.Library, m: *const weights.Model, model: *const view.Model, cap: usize) !?*Head {
+        const described = (try describe(gpa, d, m, model, cap)) orelse return null;
+        const s = m.spec;
+        const h = try gpa.create(Head);
+        errdefer gpa.destroy(h);
+        h.* = described;
+        errdefer h.graphs.deinit();
+        h.k = try hip.DeviceBuffer.alloc(d, h.cache_bytes * cap);
         errdefer h.k.free();
-        h.v = try hip.DeviceBuffer.alloc(d, cache * cap);
+        h.v = try hip.DeviceBuffer.alloc(d, h.cache_bytes * cap);
         errdefer h.v.free();
-        h.arena = try hip.Arena.init(d, 256 << 20);
-        errdefer h.arena.deinit();
         h.rows = try hip.DeviceBuffer.alloc(d, cap * s.hidden * model.act.size());
         errdefer h.rows.free();
         h.zero = try hip.DeviceBuffer.alloc(d, s.hidden * model.act.size());
@@ -110,7 +127,20 @@ pub const Head = struct {
         errdefer h.scalars.free();
         h.scalars_dev = try hip.DeviceBuffer.alloc(d, h.layout().total);
         errdefer h.scalars_dev.free();
+        h.arena = try hip.Arena.init(d, try h.scratch(lib, model));
         return h;
+    }
+
+    /// The arena a batch of `cap` chains takes at full depth, greedy or sampled, counted on the counting stream.
+    fn scratch(h: *Head, lib: *const hip.rocm.Library, m: *const view.Model) !usize {
+        var most: usize = 0;
+        for ([_]view.Projection{ h.draft_head, h.logits_head }) |head| {
+            var arena = hip.Arena.counting();
+            const o: Ops = .{ .lib = lib, .stream = hip.abi.counting, .arena = &arena };
+            try h.steps(o, m, head, h.cap, max_depth, true);
+            most = @max(most, arena.peak);
+        }
+        return most;
     }
 
     pub fn deinit(h: *Head) void {
@@ -250,20 +280,20 @@ pub const Head = struct {
     /// The chains' input rows gathered, then every step.
     fn launches(h: *Head, o: Ops, m: *const view.Model, key: ChainKey) !void {
         try pops.gather(o, h.scalars_dev.ptr + h.layout().ptrs, h.rows.ptr, m.spec.hidden * m.act.size() / 4, key.rows);
-        try h.steps(o, m, key.rows, key.most, key.cut);
+        try h.steps(o, m, h.draft_head, key.rows, key.most, key.cut);
     }
 
     /// The greedy chains' steps on the device alone: each step's drafts feed the next, with probabilities for the cut.
-    fn steps(h: *Head, o: Ops, m: *const view.Model, rows: usize, most: usize, cut: bool) !void {
+    fn steps(h: *Head, o: Ops, m: *const view.Model, head: view.Projection, rows: usize, most: usize, cut: bool) !void {
         const at = h.layout();
         const dev = h.scalars_dev.ptr;
         var cur: Tensor = .{ .ptr = h.rows.ptr, .kind = m.act };
         for (0..most) |n| {
             const drafts = dev + at.drafts + 4 * h.cap * n;
             const ids = if (n == 0) dev else drafts - 4 * h.cap;
-            const logits = try h.step(o, m, h.draft_head, cur, ids, rows, dev + at.slots + 4 * n, dev + at.pos + 4 * h.cap * n, n);
-            try o.argmaxRows(logits, rows, h.draft_head.n, drafts);
-            if (cut and n + 1 < most) try o.tokenProb(logits, rows, h.draft_head.n, 0, dev + at.probs + 4 * h.cap * n);
+            const logits = try h.step(o, m, head, cur, ids, rows, dev + at.slots + 4 * n, dev + at.pos + 4 * h.cap * n, n);
+            try o.argmaxRows(logits, rows, head.n, drafts);
+            if (cut and n + 1 < most) try o.tokenProb(logits, rows, head.n, 0, dev + at.probs + 4 * h.cap * n);
             cur = .{ .ptr = h.last, .kind = m.act };
         }
     }

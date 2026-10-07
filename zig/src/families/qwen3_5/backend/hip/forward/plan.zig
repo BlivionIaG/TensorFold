@@ -56,8 +56,13 @@ pub const Buffer = struct {
     /// Pages a head of a layer's pool holds: the kernels find a page's keys and values with it.
     pool_pages: u32,
 
+    /// Device bytes a plan of `rows` rows over `layers` layers holds.
+    pub fn deviceBytes(rows: usize, layers: usize) usize {
+        return 4 * Layout.of(rows, rows + 1, layers).words;
+    }
+
     pub fn init(d: *const hip.Driver, rows: usize, layers: usize, pool_pages: usize) !Buffer {
-        const bytes = 4 * Layout.of(rows, rows + 1, layers).words;
+        const bytes = deviceBytes(rows, layers);
         var host = try hip.HostBuffer.alloc(d, bytes);
         errdefer host.free();
         return .{ .host = host, .dev = try hip.DeviceBuffer.alloc(d, bytes), .pool_pages = @intCast(pool_pages) };

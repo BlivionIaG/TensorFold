@@ -15,6 +15,11 @@ const slicing = @import("../../../weights/slicing.zig");
 const reduce = @import("../forward/reduce.zig");
 const round_graphs = @import("round_graphs.zig");
 const lane_round = @import("round.zig");
+const scratch = @import("scratch.zig");
+const mtp = @import("mtp.zig");
+const admission = @import("engine_api").admission;
+const prefix = @import("prefix.zig");
+const plan = @import("../forward/plan.zig");
 
 pub const Options = struct {
     /// Most positions a stream's caches hold (its prompt, its reply and a window's rows).
@@ -23,6 +28,11 @@ pub const Options = struct {
     pool_pages: usize = 0,
     /// Rows a shared forward holds at most.
     batch_rows: usize = 32,
+    /// Streams the memory plan holds at once (the lanes, or what a check runs together), and linear snapshots beside.
+    streams: usize = default_streams,
+    snapshots: usize = 0,
+    /// Rows one prompt pass takes at most (a longer one is refused): the server's chunk, a check's longest prompt.
+    prompt_rows: usize = prefix.chunk,
     /// The device ordinal among the visible ones.
     device: c_int = 0,
     /// Positions past a reply a verify writes (the window's rows and one more).
@@ -41,6 +51,10 @@ pub const Pick = lane_round.Pick;
 
 /// Streams the pool of an engine opened without a memory plan holds whole.
 pub const default_streams = 12;
+
+fn gib(bytes: usize) f64 {
+    return @as(f64, @floatFromInt(bytes)) / (1 << 30);
+}
 
 pub const Engine = struct {
     pub const Rows = lane_round.Rows;
@@ -117,45 +131,52 @@ pub const Engine = struct {
 
     /// Allocate the scratch for streams of `capacity` positions and a pool of `pool_pages` pages (zero: the default).
     pub fn size(e: *Engine, capacity: usize, pool_pages: usize) !void {
-        const s = e.weights.spec;
         const rows = e.o.batch_rows;
-        const need = memory.Scratch.of(s, capacity, rows);
+        const prompt_rows = @min(e.o.prompt_rows, capacity);
+        const count = if (pool_pages > 0) pool_pages else default_streams * pages.pagesFor(capacity) + pages.pagesFor(rows);
+        const arenas = try e.arenaBytes(rows, prompt_rows, capacity);
         e.o.capacity = capacity;
-        e.rounds = try hip.Arena.init(&e.driver, need.rounds);
+        e.o.prompt_rows = prompt_rows;
+        const before = hip.usage(false).device;
+        e.rounds = try hip.Arena.init(&e.driver, arenas[0]);
         errdefer e.rounds.deinit();
-        e.prompts = try hip.Arena.init(&e.driver, need.prompts);
+        e.prompts = try hip.Arena.init(&e.driver, arenas[1]);
         errdefer e.prompts.deinit();
-        e.ids = try hip.HostBuffer.alloc(&e.driver, need.ids);
+        e.ids = try hip.HostBuffer.alloc(&e.driver, prompt_rows * 4);
         errdefer e.ids.free();
-        e.ids_dev = try hip.DeviceBuffer.alloc(&e.driver, need.ids);
+        e.ids_dev = try hip.DeviceBuffer.alloc(&e.driver, prompt_rows * 4);
         errdefer e.ids_dev.free();
         e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, e.bridge.model.head.n * e.o.world, rows);
         errdefer e.drawer.deinit();
-        e.pool = try pages.Pool.init(e.gpa, &e.driver, &e.bridge.model, try e.fitPages(if (pool_pages > 0) pool_pages else default_streams * pages.pagesFor(capacity) + pages.pagesFor(rows), capacity), e.o.rank == 0);
+        e.pool = try pages.Pool.init(e.gpa, &e.driver, &e.bridge.model, count, e.o.rank == 0);
         errdefer e.pool.deinit();
         e.round = try lane_round.State.init(e);
+        errdefer e.round.deinit(e);
+        const held = hip.usage(false).device - before;
+        const planned = e.sizedBytes(arenas, rows, prompt_rows, count);
+        if (held != planned) {
+            std.log.err("sizing held {d} device bytes, the plan says {d}", .{ held, planned });
+            return error.SizeMismatch;
+        }
         e.sized = true;
     }
 
-    /// `want` pages, or fewer as memory allows, the same on every rank; refuses when not even the scratch fits.
-    fn fitPages(e: *Engine, want: usize, capacity: usize) !usize {
-        const info = try e.ctx.memInfo();
-        const per = @max(memory.pageBytes(e.weights.spec, e.act.size()), 1);
-        var fit = @min(want, (info.free -| memory.reserve(info.total)) / per);
-        if (e.o.world > 1) fit = (try e.least(.{ fit, 0 }))[0];
-        const least_pages = pages.pagesFor(e.o.batch_rows) + pages.pagesFor(capacity);
-        if (fit < least_pages) {
-            std.log.err("the weights and scratch leave room for {d} pages of {d} bytes, and {d} are the least a window needs", .{ fit, per, least_pages });
-            return error.OutOfDeviceMemory;
-        }
-        if (fit < want) std.log.warn("the page pool holds {d} pages, not the {d} asked for: that is what the memory leaves", .{ fit, want });
-        return fit;
+    /// The rounds and prompts arenas: the forwards counted at their largest shapes for `rows` and `prompt_rows`.
+    fn arenaBytes(e: *Engine, rows: usize, prompt_rows: usize, capacity: usize) ![2]usize {
+        return .{ try scratch.rounds(e, rows, capacity), try scratch.prompts(e, @min(prompt_rows, capacity), capacity) };
     }
 
-    /// The memory plan for `streams` at once and a window of `target` tokens, from the memory free now.
-    pub fn plan(e: *Engine, streams: usize, target: usize) !memory.Plan {
-        const info = try e.ctx.memInfo();
-        return memory.plan(.{ .spec = e.weights.spec, .act_bytes = e.act.size(), .streams = streams, .rows = e.o.batch_rows, .slack = e.o.slack, .target = target, .free = info.free, .total = info.total });
+    /// Device bytes `size` allocates beside the weights, with the arenas already counted.
+    fn sizedBytes(e: *const Engine, arenas: [2]usize, rows: usize, prompt_rows: usize, pool_pages: usize) usize {
+        const m = e.model();
+        return arenas[0] + arenas[1] + prompt_rows * 4 + draw.Drawer.deviceBytes(rows) + pages.Pool.deviceBytes(m, pool_pages) +
+            plan.Buffer.deviceBytes(rows, m.spec.n_layers) + state.Caches.deviceBytes(m, rows);
+    }
+
+    /// Device bytes `size(capacity, pool_pages)` would allocate with `rows` rows a forward: what admission weighs.
+    pub fn sizeBytes(e: *Engine, rows: usize, capacity: usize, pool_pages: usize) !usize {
+        const prompt_rows = @min(e.o.prompt_rows, capacity);
+        return e.sizedBytes(try e.arenaBytes(rows, prompt_rows, capacity), rows, prompt_rows, pool_pages);
     }
 
     /// The least of each value over the ranks, the same on every rank (a window and a prompt cache they all fit).
@@ -178,11 +199,37 @@ pub const Engine = struct {
         return out;
     }
 
-    /// Load and size in one: `o.capacity` positions.
+    /// Device bytes beside the weights: `size`'s scratch and pool, `streams` lanes, `snapshots`, rank 0's head.
+    pub fn planBytes(e: *Engine, streams: usize, rows: usize, capacity: usize, pool_pages: usize, snapshots: usize) !usize {
+        const m = e.model();
+        const lane = state.Caches.deviceBytes(m, capacity) + m.spec.hidden * m.act.size();
+        // under tensor parallelism only rank 0 holds the head
+        const head = if (e.o.rank > 0) 0 else try mtp.Head.deviceBytes(e.gpa, &e.driver, &e.lib, &e.weights, m, @min(rows, mtp.max_chains));
+        return try e.sizeBytes(rows, capacity, pool_pages) + streams * lane + snapshots * memory.linearBytes(m.spec) + head;
+    }
+
+    /// The device bytes the plan may take after `weights_bytes` of weights: free memory less the reserve.
+    pub fn room(e: *Engine, weights_bytes: usize) !struct { room: usize, reserve: usize, total: usize } {
+        const info = try e.ctx.memInfo();
+        const reserve = admission.reserveBytes(e.o.policy.reserve_gib.slice(), info.total) catch return error.BadReserve;
+        const pool: admission.Pool = .{ .free = info.free, .total = info.total, .reserve = reserve, .limit = null, .unified = false };
+        return .{ .room = pool.room(weights_bytes), .reserve = reserve, .total = info.total };
+    }
+
+    /// Load and size in one: `o.capacity` positions, refused when the plan does not fit the memory.
     pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
+        const held = hip.usage(false).device;
         const e = try load(gpa, io, dir, o);
         errdefer e.deinit();
-        try e.size(o.capacity, o.pool_pages);
+        const weights_bytes = hip.usage(false).device - held;
+        const pool_pages = if (o.pool_pages > 0) o.pool_pages else default_streams * pages.pagesFor(o.capacity) + pages.pagesFor(o.batch_rows);
+        const need = try e.planBytes(o.streams, o.batch_rows, o.capacity, pool_pages, o.snapshots);
+        const r = try e.room(weights_bytes);
+        if (need > r.room) {
+            std.log.err("{d} streams at {d} positions with {d} rows a round need {d:.2} GiB beside the model's {d:.2} GiB, and {d:.2} GiB is left after the {d:.1} GiB reserve", .{ o.streams, o.capacity, o.batch_rows, gib(need), gib(weights_bytes), gib(r.room), gib(r.reserve) });
+            return error.OutOfDeviceMemory;
+        }
+        try e.size(o.capacity, pool_pages);
         return e;
     }
 
@@ -248,9 +295,12 @@ pub const Engine = struct {
 
     /// Each of `rows` logits rows drawn per `reqs`, whole rows joined first across ranks; `argmaxed`: greedy rows done.
     pub fn drawRows(e: *Engine, o: hip.ops.Ops, y: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32, argmaxed: bool) !void {
-        var whole = y;
-        if (e.model().tp) |c| whole = try e.joined(o, c, y, rows);
-        try e.drawer.draw(o, e.stream, whole, reqs[0..rows], out, argmaxed);
+        try e.drawer.draw(o, e.stream, try e.wholeRows(o, y, rows), reqs[0..rows], out, argmaxed);
+    }
+
+    /// `rows` logits rows whole: this rank's when it holds the whole head, else every rank's slices joined.
+    pub fn wholeRows(e: *Engine, o: hip.ops.Ops, y: hip.ops.Tensor, rows: usize) !hip.ops.Tensor {
+        return if (e.model().tp) |c| e.joined(o, c, y, rows) else y;
     }
 
     /// vocab_gather: every rank's slice of `rows` logits rows, joined on the device into whole rows in rank order.
@@ -264,7 +314,7 @@ pub const Engine = struct {
         for (0..rows) |row| for (0..c.world) |r| {
             const to = whole + (row * c.world + r) * width * size_of;
             const from = parts + (r * rows + row) * width * size_of;
-            try e.driver.check(e.driver.api.hipMemcpyDtoDAsync(to, from, width * size_of, e.stream.handle), "join logits");
+            if (o.stream != hip.abi.counting) try e.driver.check(e.driver.api.hipMemcpyDtoDAsync(to, from, width * size_of, o.stream), "join logits");
         };
         return .{ .ptr = whole, .kind = slice.kind };
     }
@@ -296,7 +346,7 @@ pub const Engine = struct {
 
     /// Run `prompt[pos0..end]` into `caches`, its logits not read: a cut where the caches are kept.
     pub fn advance(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, end: usize, cancel: ?Cancel) !void {
-        if (end <= pos0 or end > caches.total) return error.PromptTooLong;
+        if (end <= pos0 or end > caches.total or end - pos0 > e.o.prompt_rows) return error.PromptTooLong;
         e.prompts.reset();
         const ids = e.ids.slice(u32)[0 .. end - pos0];
         @memcpy(ids, prompt[pos0..end]);
@@ -310,7 +360,7 @@ pub const Engine = struct {
     pub fn prefill(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, last: ?hip.DeviceBuffer, req: draw.Request, cancel: ?Cancel) !u32 {
         const m = e.model();
         const len = prompt.len - pos0;
-        if (len == 0 or prompt.len > caches.total) return error.PromptTooLong;
+        if (len == 0 or prompt.len > caches.total or len > e.o.prompt_rows) return error.PromptTooLong;
         e.prompts.reset();
         const ids = e.ids.slice(u32)[0..len];
         @memcpy(ids, prompt[pos0..]);

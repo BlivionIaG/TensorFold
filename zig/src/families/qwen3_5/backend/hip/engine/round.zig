@@ -6,6 +6,7 @@ const state = @import("../forward/state.zig");
 const win = @import("../forward/window.zig");
 const fwd = @import("../forward/forward.zig");
 const plan = @import("../forward/plan.zig");
+const view = @import("../model/view.zig");
 const draw = @import("draw.zig");
 const round_graphs = @import("round_graphs.zig");
 const Engine = @import("engine.zig").Engine;
@@ -148,16 +149,20 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
 
 /// The forward and its logits projection, and the greedy draw of every row when this rank holds the whole head.
 fn body(e: *Engine, r: win.Round) !round_graphs.Out {
-    var o = e.ops(&e.rounds);
-    // a round's rows keep their decode kernels however many share it
-    o.window = true;
-    const m = e.model();
     // the plan goes up first, inside the graph
     try e.round.buffer.send(e.stream.handle, e.round.layout);
-    const hidden = try win.forward(o, m, r, e.round.trace);
+    return forwardOn(e.ops(&e.rounds), e.model(), r, e.round.trace, e.drawer.argmaxAt());
+}
+
+/// `body` after the plan's copy, on `o`: on the counting stream it measures what a round takes.
+pub fn forwardOn(ops: hip.ops.Ops, m: *const view.Model, r: win.Round, trace: ?fwd.Trace, argmax_at: u64) !round_graphs.Out {
+    var o = ops;
+    // a round's rows keep their decode kernels however many share it
+    o.window = true;
+    const hidden = try win.forward(o, m, r, trace);
     const y = try o.project(hidden, m.head, r.plan.rows, false);
-    if (m.tp == null) try o.argmaxRows(y, r.plan.rows, e.drawer.vocab, e.drawer.argmaxAt());
-    return .{ .hidden = hidden, .y = y, .used = e.rounds.used };
+    if (m.tp == null) try o.argmaxRows(y, r.plan.rows, m.head.n, argmax_at);
+    return .{ .hidden = hidden, .y = y, .used = o.arena.used };
 }
 
 /// One round's forward as `choose` picked: replayed from the shape's graph, captured, or eager.

@@ -42,13 +42,11 @@ pub const Prefix = struct {
         p.gpa.destroy(p);
     }
 
-    /// Keep up to `slots` snapshots and the pages the rest of `budget` bytes buys (none: nothing is kept).
+    /// Keep up to `slots` snapshots and the pages the rest of `budget` bytes buys, a budget the memory plan granted.
     pub fn keepPrompts(p: *Prefix, slots: usize, budget: usize) void {
         const m = p.e.model();
-        // snapshots are made when needed: the tree never asks for more than the memory left beside a margin
-        const free = if (p.e.ctx.memInfo()) |info| info.free -| memory.gib else |_| 0;
-        const room = memory.pool(m.spec, m.act.size(), 0, 0, 0, @min(budget, free), slots);
-        p.keepPages(@min(room.cache_pages, p.e.pool.count), room.snaps);
+        const room = memory.cache(m.spec, m.act.size(), budget, slots);
+        p.keepPages(@min(room.pages, p.e.pool.count), room.snaps);
     }
 
     /// The tree may hold `max_pages` pages and `snaps` snapshots.

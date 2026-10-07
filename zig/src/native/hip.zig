@@ -65,8 +65,11 @@ const Ready = struct {
 fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) (Refused || Allocator.Error)!Ready {
     try checkGroup(a, o, problem);
     const native = modelContext(a, io, o.dir);
-    const window: i64 = o.context orelse if (native > 0) native else F.default_context;
-    if (window <= 0 or (native > 0 and window > native)) return refuse(a, problem, "--context {d} exceeds this model's {d}-token window", .{ window, native });
+    const window = admission.contextWindow(o.context, native, F.default_context) catch |err| return switch (err) {
+        error.Negative => refuse(a, problem, "--context {d}: a token count, or 0 for the model's window", .{o.context.?}),
+        error.NoNative => refuse(a, problem, "--context 0 asks for the model's window, and its config.json names none: give a token count", .{}),
+        error.PastNative => refuse(a, problem, "--context {d} exceeds this model's {d}-token window", .{ o.context.?, native }),
+    };
     const index = hip.Device.ordinal(o.rank);
     const caps = hip.Device.capsOf(index) orelse return refuse(a, problem, "HIP device {d} is not a GPU this engine supports", .{index});
     var notes: hip.Policy.Notes = .{};
@@ -86,12 +89,12 @@ fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open
         .dev = .{ .index = index, .caps = caps, .policy = policy, .group = group },
         .options = .{
             .window = @intCast(window),
-            .fixed = o.context != null,
-            // `--parallel auto` is one lane, as on the Python ROCm engine
-            .streams = if (o.lanes_fixed) @max(o.lanes, 1) else 1,
+            .streams = @max(o.lanes, 1),
+            .fixed = o.lanes_fixed,
             .rank = o.rank,
             .world = o.tp,
             .cache_gib = o.prompt_cache_gib,
+            .cache_over_cap = o.prompt_cache_over_cap,
             .keep = o.keep,
         },
         .policy_line = policy_line,
@@ -121,6 +124,12 @@ const Host = struct {
         h.gpa.destroy(h);
     }
 };
+
+/// The device bytes this process holds and their peak, as the runtime counts them.
+fn readMemory(_: ?*anyopaque, reset_peak: bool) ?api.Memory {
+    const u = hip.usage(reset_peak);
+    return .{ .active = u.device, .cache = 0, .peak = u.peak };
+}
 
 /// The engine for `o.dir`, or null with `problem` when no HIP family reads it; under tensor parallelism, rank 0.
 pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
@@ -155,7 +164,8 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
     h.clock = .{ .io = io };
     h.core = lanes.Engine.init(gpa, &h.cfg, loaded.backend, h.clock.clock());
     errdefer h.core.deinit();
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = @intCast(r.options.streams), .context_window = @intCast(loaded.window), .context_fitted = loaded.fitted, .prefill_step = F.prefill_step, .policy = h.policy_line });
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = @intCast(loaded.streams), .context_window = @intCast(r.options.window), .prefill_step = F.prefill_step, .policy = h.policy_line, .startup = loaded.startup });
+    h.host.memory = .{ .read = readMemory };
     try h.host.start();
     served = true;
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };

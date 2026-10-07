@@ -23,7 +23,7 @@ const ring = 1024;
 const Fill = struct { at: usize, stops: [16]u32, count: usize, next: usize };
 
 /// Most chains one draft request runs (the head batches as many as the engine has rows, up to this).
-const max_jobs = 64;
+const max_jobs = mtp.max_chains;
 
 pub const Lane = struct {
     caches: state.Caches,
@@ -78,7 +78,7 @@ pub const Hip = struct {
         h.order = try gpa.alloc(*const lanes.Stream, rows);
         errdefer gpa.free(h.order);
         // under tensor parallelism only rank 0 holds the head (whole): drafts only choose the rows every rank verifies
-        h.head = try mtp.Head.init(gpa, &e.driver, &e.weights, e.model(), @min(rows, max_jobs));
+        h.head = try mtp.Head.init(gpa, &e.driver, &e.lib, &e.weights, e.model(), @min(rows, max_jobs));
         return h;
     }
 

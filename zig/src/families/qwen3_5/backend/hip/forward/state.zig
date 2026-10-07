@@ -27,6 +27,16 @@ pub const Caches = struct {
     /// Pages promised to this stream, not yet taken (the pool's reservation).
     promised: usize = 0,
 
+    /// Device bytes the caches of `total` positions hold beside their pages: linear state and the descriptor.
+    pub fn deviceBytes(m: *const view.Model, total: usize) usize {
+        const s = m.spec;
+        var linear: usize = 0;
+        for (0..s.n_layers) |i| linear += @intFromBool(!s.full(i));
+        const conv = (s.conv - 1) * view.convChannels(s) * 4;
+        const state = s.value_heads * s.value_dim * s.key_dim * 4;
+        return linear * (conv + state) + 8 * (header_words + 2 * s.n_layers + std.mem.alignForward(usize, pages.pagesFor(total), 2) / 2);
+    }
+
     /// Caches for up to `total` positions with no pages yet; every linear byte zeroed.
     pub fn init(gpa: Allocator, pool: *pages.Pool, m: *const view.Model, total: usize) !Caches {
         const d = pool.d;

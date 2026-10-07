@@ -5,6 +5,10 @@ const hip = @import("hip");
 const lanes = @import("lanes");
 const Engine = @import("engine.zig").Engine;
 const memory = @import("memory.zig");
+const mtp = @import("mtp.zig");
+const prefix = @import("prefix.zig");
+const pages = @import("../forward/pages.zig");
+const state = @import("../forward/state.zig");
 const worker = @import("worker.zig");
 const hip_lanes = @import("hip_lanes.zig");
 
@@ -27,17 +31,18 @@ pub fn Native(comptime type_name: []const u8) type {
 
 /// What the serve flags ask of the engine, as the host read them.
 pub const Options = struct {
-    /// The window asked for, or the model's: the loaded window is below it when the memory does not fit it.
+    /// Prompt plus reply tokens a request may use: --context, or the family default within the model's window.
     window: usize,
-    /// --context named it: a window the memory does not fit is refused, not fitted down.
-    fixed: bool = false,
-    /// Requests served at once.
+    /// Streams asked for at once; `fixed` when --parallel named the number, which then fits or is refused.
     streams: usize,
+    fixed: bool = false,
     /// This process is `rank` of `world`.
     rank: u32 = 0,
     world: u32 = 1,
-    /// Bytes kept prompt states may hold (null: the policy's, else the plan's) and their snapshot slots.
+    /// Bytes kept prompt states may hold (null: the policy's, else what the streams leave) and their snapshot slots.
     cache_gib: ?f64 = null,
+    /// A --prompt-cache-gib past what the streams leave is kept, not refused.
+    cache_over_cap: bool = false,
     keep: ?i64 = null,
 };
 
@@ -48,9 +53,9 @@ pub const Loaded = struct {
     rows: u32,
     ctx: *anyopaque,
     deinit: *const fn (*anyopaque) void,
-    /// The window the engine fits, and whether it is below the one asked for.
-    window: usize,
-    fitted: bool,
+    /// The streams admitted at once, and the server's startup line (the memory plan).
+    streams: usize,
+    startup: []const u8,
 };
 
 /// A flag or a resource the engine cannot take: `problem` says why.
@@ -65,21 +70,26 @@ fn gibs(bytes: usize) f64 {
     return @as(f64, @floatFromInt(bytes)) / (1 << 30);
 }
 
-/// One rank's loaded and sized engine: the window and prompt cache every rank agreed on.
+/// One rank's loaded and sized engine: the streams and prompt cache every rank agreed on.
 const Prepared = struct {
     e: *Engine,
-    plan: memory.Plan,
-    /// Snapshots the prompt cache may hold (the plan's `cache_budget` is 0 when the cache is off).
-    keep: usize,
-    /// The pages of the KV pool and the share of them the prompt cache may hold.
-    pool: memory.Pool,
+    streams: usize,
+    /// What the prompt cache holds: pages of the pool and linear snapshots (none when it is off).
+    cache: memory.Cache,
+    startup: []const u8,
 };
 
-/// Loads this rank's share of the model, plans the memory with the other ranks and sizes the scratch.
+/// Device bytes of `streams` lanes at `capacity` beside the weights; the prompt cache takes what is left.
+fn served(e: *Engine, streams: usize, capacity: usize) !usize {
+    const rows = streams * hip_lanes.Hip.max_window;
+    return e.planBytes(streams, rows, capacity, streams * pages.pagesFor(capacity) + pages.pagesFor(rows), 0);
+}
+
+/// Loads this rank's share of the model, admits the streams its memory holds (with the other ranks) and sizes them.
 fn prepare(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.Device, dir: []const u8, o: Options, problem: *[]const u8) (Refused || std.mem.Allocator.Error)!Prepared {
     const rows = hip_lanes.Hip.max_window;
+    const held = hip.usage(false).device;
     const e = Engine.load(gpa, io, dir, .{
-        .batch_rows = @max(32, @min(o.streams * rows, 128)),
         .slack = rows + 1,
         .device = dev.index,
         .policy = dev.policy,
@@ -88,42 +98,59 @@ fn prepare(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.De
         .id = if (dev.group) |g| g.id else null,
     }) catch |err| return refuse(a, problem, "the native HIP engine cannot load {s} ({s})", .{ dir, @errorName(err) });
     errdefer e.deinit();
-    const window = o.window;
-    var plan = e.plan(o.streams, window) catch |err| return refuse(a, problem, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)});
-    if (o.world > 1) {
-        // the window every rank fits, then the prompt cache the least of them holds
-        const fit = e.least(.{ plan.window, 0 }) catch |err| return refuse(a, problem, "the ranks could not agree on a window ({s})", .{@errorName(err)});
-        plan = e.plan(o.streams, fit[0]) catch |err| return refuse(a, problem, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)});
-        const cache = e.least(.{ plan.window, plan.cache_budget }) catch |err| return refuse(a, problem, "the ranks could not agree on a prompt cache ({s})", .{@errorName(err)});
-        plan.cache_budget = cache[1];
+    const model = hip.usage(false).device - held;
+    const budget_of = e.room(model) catch |err| return switch (err) {
+        error.BadReserve => refuse(a, problem, "reserve_gib (TENSORFOLD_MEMORY_RESERVE_GIB) takes GiB from 2 up to the GPU's memory", .{}),
+        else => refuse(a, problem, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)}),
+    };
+    const room = budget_of.room;
+    const reserve = budget_of.reserve;
+    const capacity = o.window + rows + 1;
+    // the most streams up to the ones asked whose bytes fit, then the least of that over the ranks
+    var streams = o.streams;
+    while (streams > 0) : (streams -= 1) {
+        if ((served(e, streams, capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot count its scratch ({s})", .{@errorName(err)})) <= room) break;
     }
+    if (o.world > 1) streams = (e.least(.{ streams, 0 }) catch |err| return refuse(a, problem, "the ranks could not agree on the streams ({s})", .{@errorName(err)}))[0];
+    if (streams == 0) {
+        const one = served(e, 1, capacity) catch 0;
+        return refuse(a, problem, "the HIP memory budget fits no stream: one at a {d}-token window takes {d:.2} GiB, and {d:.2} GiB is left after the model's {d:.2} GiB and the {d:.1} GiB reserve; lower --context, add ranks (--tp), or free device memory", .{ o.window, gibs(one), gibs(room), gibs(model), gibs(reserve) });
+    }
+    if (streams < o.streams and o.fixed) {
+        const asked = served(e, o.streams, capacity) catch 0;
+        return refuse(a, problem, "--parallel {d} needs {d:.2} GiB at a {d}-token window, and the HIP memory budget leaves {d:.2} GiB: serve --parallel {d}, or lower --context", .{ o.streams, gibs(asked), o.window, gibs(room), streams });
+    }
+    const need = served(e, streams, capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot count its scratch ({s})", .{@errorName(err)});
+    // the prompt cache: --prompt-cache-gib, else the policy's prefix bytes, else what the streams leave
+    const left = room - need;
     const policy = dev.policy;
-    // --prompt-cache-gib and --checkpoint-slots override the policy's prefix bytes and slots; zero of either: off
-    if (o.cache_gib) |g| plan.cache_budget = @intFromFloat(g * (1 << 30)) else if (policy.prefix.bytes > 0) plan.cache_budget = policy.prefix.bytes;
     const keep: usize = if (o.keep) |n| @intCast(n) else policy.prefix.slots;
-    if (keep == 0) plan.cache_budget = 0;
-    if (plan.window == 0) {
-        return refuse(a, problem, "the weights leave no room for a request on this GPU ({d:.2} GiB of {d:.2} GiB); use a smaller checkpoint, --lanes or more ranks (--tp)", .{ gibs(plan.weights), gibs(plan.total) });
+    var budget: usize = if (o.cache_gib) |g| @intFromFloat(g * (1 << 30)) else if (policy.prefix.bytes > 0) policy.prefix.bytes else left;
+    if (budget > left and !o.cache_over_cap) {
+        return refuse(a, problem, "a {d:.2} GiB prompt cache does not fit the {d:.2} GiB the streams leave; lower --prompt-cache-gib, or --prompt-cache-over-cap to keep it", .{ gibs(budget), gibs(left) });
     }
-    if (plan.window < window and o.fixed) {
-        return refuse(a, problem, "--context {d} does not fit this GPU's memory: {d} lanes and a kept copy of a prompt fit {d} tokens beside the weights; lower --context or --lanes, or add ranks (--tp)", .{ window, o.streams, plan.window });
-    }
-    // the pool every rank can hold: the least of the ranks' pages, each rank's own bytes a page
-    var pool = memory.pool(e.weights.spec, e.act.size(), o.streams, e.o.batch_rows, plan.capacity, plan.cache_budget, keep);
+    if (keep == 0) budget = 0;
+    var cache = memory.cache(e.weights.spec, e.act.size(), budget, keep);
     if (o.world > 1) {
-        const fit = e.least(.{ pool.pages, pool.cache_pages }) catch |err| return refuse(a, problem, "the ranks could not agree on a page pool ({s})", .{@errorName(err)});
-        pool.pages = fit[0];
-        pool.cache_pages = fit[1];
+        const fit = e.least(.{ cache.pages, cache.snaps }) catch |err| return refuse(a, problem, "the ranks could not agree on a prompt cache ({s})", .{@errorName(err)});
+        cache = .{ .pages = fit[0], .snaps = fit[1] };
     }
-    e.size(plan.capacity, pool.pages) catch |err| return refuse(a, problem, "the native HIP engine cannot allocate its scratch and pages ({s})", .{@errorName(err)});
-    std.debug.print("[tensorfold] HIP rank {d} of {d}: weights {d:.2} GiB, scratch {d:.2} GiB, context window {d} tokens, prompt cache {d:.2} GiB ({d} snapshots), {d} pages of {d:.2} MiB, reserve {d:.2} GiB of {d:.2} GiB\n", .{ o.rank, o.world, gibs(plan.weights), gibs(plan.scratch), plan.window, gibs(plan.cache_budget), pool.snaps, pool.pages, @as(f64, @floatFromInt(e.pool.pageBytes())) / (1 << 20), gibs(plan.reserve), gibs(plan.total) });
-    return .{ .e = e, .plan = plan, .keep = keep, .pool = pool };
+    e.o.batch_rows = streams * rows;
+    e.o.streams = streams;
+    e.size(capacity, streams * pages.pagesFor(capacity) + pages.pagesFor(e.o.batch_rows) + cache.pages) catch |err|
+        return refuse(a, problem, "the native HIP engine cannot allocate its scratch and pages ({s})", .{@errorName(err)});
+    const lane = gibs(state.Caches.deviceBytes(e.model(), capacity) + pages.pagesFor(capacity) * memory.pageBytes(e.weights.spec, e.act.size()));
+    const startup = try std.fmt.allocPrint(gpa, "HIP gfx{x} device {d}, rank {d} of {d}: model {d:.2} GiB; {d} stream{s} at once, {d:.2} GiB each at a {d}-token window, of {d:.1} GiB left after a {d:.1} GiB reserve; prompt cache {d:.2} GiB ({d} pages, {d} snapshots); prompts in {d}-row chunks", .{
+        dev.caps.gfx, dev.index, o.rank, o.world, gibs(model), streams, if (streams == 1) "" else "s", lane, o.window, gibs(room), gibs(reserve), gibs(budget), cache.pages, cache.snaps, prefix.chunk,
+    });
+    return .{ .e = e, .streams = streams, .cache = cache, .startup = startup };
 }
 
 const Owned = struct {
     gpa: std.mem.Allocator,
     e: *Engine,
     backend: *hip_lanes.Hip,
+    startup: []const u8,
 };
 
 fn release(p: *anyopaque) void {
@@ -131,6 +158,7 @@ fn release(p: *anyopaque) void {
     // the other ranks hear that the rounds are over, then every rank frees its share
     own.backend.deinit();
     own.e.deinit();
+    own.gpa.free(own.startup);
     own.gpa.destroy(own);
 }
 
@@ -138,11 +166,16 @@ fn release(p: *anyopaque) void {
 fn openEngine(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.Device, dir: []const u8, o: Options, problem: *[]const u8) anyerror!Loaded {
     const p = try prepare(a, gpa, io, dev, dir, o, problem);
     errdefer p.e.deinit();
+    errdefer gpa.free(p.startup);
     const own = try gpa.create(Owned);
     errdefer gpa.destroy(own);
-    own.* = .{ .gpa = gpa, .e = p.e, .backend = try hip_lanes.Hip.init(gpa, p.e) };
+    const before = hip.usage(false).device;
+    own.* = .{ .gpa = gpa, .e = p.e, .backend = try hip_lanes.Hip.init(gpa, p.e), .startup = p.startup };
     errdefer own.backend.deinit();
-    if (p.plan.cache_budget > 0) own.backend.keepPages(p.pool.cache_pages, p.pool.snaps);
+    // the head is the one allocation of the plan made here: it holds what the plan counted for it
+    const head = mtp.Head.deviceBytes(gpa, &p.e.driver, &p.e.lib, &p.e.weights, p.e.model(), @min(p.e.o.batch_rows, mtp.max_chains)) catch 0;
+    if (hip.usage(false).device - before != head) return refuse(a, problem, "the draft head holds {d} device bytes, the plan says {d}", .{ hip.usage(false).device - before, head });
+    if (p.cache.pages > 0) own.backend.keepPages(p.cache.pages, p.cache.snaps);
     // a lone rank times its forwards for the depth rule; the ranks of a group draft without costs
     if (dev.group) |g| own.backend.withLink(&g.link) else own.backend.measure();
     return .{
@@ -151,8 +184,8 @@ fn openEngine(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip
         .rows = hip_lanes.Hip.max_window,
         .ctx = own,
         .deinit = release,
-        .window = p.plan.window,
-        .fitted = p.plan.window < o.window,
+        .streams = p.streams,
+        .startup = p.startup,
     };
 }
 
@@ -160,6 +193,7 @@ fn openEngine(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip
 fn followRank(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.Device, dir: []const u8, o: Options, problem: *[]const u8) anyerror!void {
     const p = try prepare(a, gpa, io, dev, dir, o, problem);
     defer p.e.deinit();
+    defer gpa.free(p.startup);
     var w = try worker.Worker.init(gpa, p.e);
     defer w.deinit();
     try w.follow(&dev.group.?.link);

@@ -85,6 +85,14 @@ pub const Pool = struct {
     /// Whether this holder hands pages out (rank 0 and a lone rank); a follower is told which pages to use.
     managed: bool,
 
+    /// Device bytes a pool of `count` pages holds: keys and values of every attention layer.
+    pub fn deviceBytes(m: *const view.Model, count: usize) usize {
+        const s = m.spec;
+        var full: usize = 0;
+        for (0..s.n_layers) |i| full += @intFromBool(s.full(i));
+        return 2 * full * count * s.kv_heads * tokens * s.head_dim * m.act.size();
+    }
+
     pub fn init(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, count: usize, managed: bool) !Pool {
         const s = m.spec;
         const keys = try gpa.alloc(hip.DeviceBuffer, s.n_layers);

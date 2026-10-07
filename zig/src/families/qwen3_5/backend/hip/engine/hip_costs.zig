@@ -71,7 +71,9 @@ const Rig = struct {
 pub fn measure(gpa: std.mem.Allocator, e: *Engine, head: ?*mtp.Head, out: *Costs) !void {
     var r: Rig = .{ .gpa = gpa, .e = e };
     defer r.deinit();
-    while (r.made < most_streams) : (r.made += 1) r.caches[r.made] = try e.newCaches(at + 2 * window * 4);
+    // the rig runs before any request, on the caches of streams the memory plan holds and none uses yet
+    const streams = @min(most_streams, e.o.streams);
+    while (r.made < streams) : (r.made += 1) r.caches[r.made] = try e.newCaches(at + 2 * window * 4);
     out.windows = 0;
     for (1..out.window.len + 1) |w| {
         if (w > e.o.batch_rows) break;
@@ -84,7 +86,7 @@ pub fn measure(gpa: std.mem.Allocator, e: *Engine, head: ?*mtp.Head, out: *Costs
         var widths: [most_streams]usize = undefined;
         var n: usize = 0;
         var left: usize = total;
-        while (left > 0 and n < most_streams) : (n += 1) {
+        while (left > 0 and n < streams) : (n += 1) {
             widths[n] = @min(window, left);
             left -= widths[n];
         }

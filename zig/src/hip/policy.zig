@@ -51,6 +51,8 @@ pub const Policy = struct {
     graph_fail: i32 = -1,
     /// The RCCL library to load first. Local to a rank.
     rccl_lib: Path = .{},
+    /// GiB of device memory kept beside the plan, by the native backends' rule (empty: a tenth, 4 GiB at least). Local.
+    reserve_gib: Path = .{},
 
     pub const Error = error{ UnknownKey, BadValue, StepNotAligned, ActivationsUnsupported };
 
@@ -126,6 +128,7 @@ pub const Policy = struct {
         if (eql(u8, key, "prefix_bytes")) p.prefix.bytes = std.fmt.parseInt(u64, value, 10) catch return error.BadValue;
         if (eql(u8, key, "graph_fail")) p.graph_fail = std.fmt.parseInt(i32, value, 10) catch return error.BadValue;
         if (eql(u8, key, "rccl_lib")) try p.rccl_lib.set(value);
+        if (eql(u8, key, "reserve_gib")) try p.reserve_gib.set(value);
         if (!known(key)) return error.UnknownKey;
     }
 
@@ -154,6 +157,7 @@ pub const Policy = struct {
         if (p.gdn != .auto) try w.print(",gdn={t}", .{p.gdn});
         if (p.graph_fail >= 0) try w.print(",graph_fail={d}", .{p.graph_fail});
         if (p.rccl_lib.slice()) |path| try w.print(",rccl_lib={s}", .{path});
+        if (p.reserve_gib.slice()) |gib| try w.print(",reserve_gib={s}", .{gib});
     }
 
     pub const word_count = 6;
@@ -162,8 +166,8 @@ pub const Policy = struct {
     pub fn words(p: Policy) [word_count]u32 {
         const conf: u64 = @bitCast(p.mtp.confidence);
         const pack = [_]u32{
-            @backingInt(p.matrix),  @backingInt(p.activations), @backingInt(p.attention), @backingInt(p.kernels), @backingInt(p.graphs), @backingInt(p.launch),
-            @backingInt(p.stream),  @backingInt(p.gemm),        @backingInt(p.fuse),      @backingInt(p.gdn),     @backingInt(p.exact),
+            @backingInt(p.matrix), @backingInt(p.activations), @backingInt(p.attention), @backingInt(p.kernels), @backingInt(p.graphs), @backingInt(p.launch),
+            @backingInt(p.stream), @backingInt(p.gemm),        @backingInt(p.fuse),      @backingInt(p.gdn),     @backingInt(p.exact),
         };
         var nibbles: [2]u32 = .{ 0, 0 };
         for (pack, 0..) |v, i| nibbles[i / 8] |= v << @intCast(4 * (i % 8));
@@ -240,6 +244,7 @@ pub const Policy = struct {
         .{ .name = "TF_HIP_GRAPH_FAIL", .rule = copyRule("graph_fail=") },
         .{ .name = "TF_HIP_LAUNCH", .rule = copyRule("launch=") },
         .{ .name = "TF_RCCL_LIB", .rule = copyRule("rccl_lib=") },
+        .{ .name = "TENSORFOLD_MEMORY_RESERVE_GIB", .rule = copyRule("reserve_gib=") },
     };
 
     fn wmmaRule(value: []const u8, out: []u8) ?[]const u8 {

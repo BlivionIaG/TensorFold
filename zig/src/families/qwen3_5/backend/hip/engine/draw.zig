@@ -37,8 +37,13 @@ pub const Drawer = struct {
     dev: hip.DeviceBuffer,
     row: hip.HostBuffer,
 
+    /// Device bytes a drawer of `rows` rows holds: each row's argmax and its sampling candidates.
+    pub fn deviceBytes(rows: usize) usize {
+        return rows * (8 + max_candidates * 6);
+    }
+
     pub fn init(gpa: std.mem.Allocator, d: *const hip.Driver, dtype: sample.Dtype, vocab: usize, rows: usize) !Drawer {
-        const bytes = rows * (8 + max_candidates * 6);
+        const bytes = deviceBytes(rows);
         var host = try hip.HostBuffer.alloc(d, bytes);
         errdefer host.free();
         var dev = try hip.DeviceBuffer.alloc(d, bytes);
