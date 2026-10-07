@@ -6,10 +6,10 @@
 #include <cstring>
 #include <exception>
 
-#include "rocm/act.hpp"
+#include "ops/act.hpp"
 #include "rocm/affine_api.hpp"
-#include "rocm/attention.hpp"
-#include "rocm/gated_delta.hpp"
+#include "attention/attention.hpp"
+#include "recurrence/gated_delta.hpp"
 
 namespace {
 

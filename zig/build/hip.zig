@@ -4,13 +4,13 @@
 const std = @import("std");
 
 /// Each .hip in zig/kernels/hip with its own hipcc flags and the headers it includes (hipcc --genco writes no dep file).
-const Kernel = struct { name: []const u8, flags: []const []const u8 = &.{}, headers: []const []const u8 = &.{} };
+const Kernel = struct { name: []const u8, source: []const u8, flags: []const []const u8 = &.{}, headers: []const []const u8 = &.{} };
 
 /// The probe's flags: wave32 on RDNA, no contraction.
 const shared_flags = [_][]const u8{ "-O3", "-mno-wavefrontsize64", "-ffp-contract=off", "-std=c++20" };
 
 const kernels = [_]Kernel{
-    .{ .name = "probe" },
+    .{ .name = "probe", .source = "capi/probe.hip" },
 };
 
 /// torch.utils.cpp_extension's hipcc flags for the Python ROCm extensions (build.ninja), less its include paths:
@@ -23,21 +23,22 @@ const torch_flags = [_][]const u8{
 
 /// One library's sources: the shim, the torch-op kernels and the ROCm kernels (attention.hip includes attention_fa.hip).
 const lib_sources = [_][]const u8{
-    "capi.hip",             "ops.hip",               "rocm/act.hip",         "rocm/attention.hip",
-    "rocm/gated_delta.hip", "rocm/affine_gemv.hip",  "rocm/affine_wmma.hip", "rocm/affine_wmma_pair.hip",
-    "rocm/affine_dot2.hip", "rocm/affine_tiles.hip", "tp.hip",
+    "capi/capi.hip",              "ops/ops.hip",           "ops/act.hip",          "attention/attention.hip",
+    "recurrence/gated_delta.hip", "rocm/affine_gemv.hip",  "rocm/affine_wmma.hip", "rocm/affine_wmma_pair.hip",
+    "rocm/affine_dot2.hip",       "rocm/affine_tiles.hip", "comm/tp.hip",
 };
 
 /// What the library sources include, so an edit to one rebuilds the libraries.
 const lib_headers = [_][]const u8{
-    "rocm/act.hpp",         "rocm/affine.hpp", "rocm/affine_api.hpp", "rocm/affine_dot2.hpp",  "rocm/affine_gemm.hpp", "rocm/affine_wmma_gemm.hpp",
-    "rocm/affine_wmma.hpp", "rocm/affine_stream.hpp", "rocm/arch.hpp",   "rocm/attention.hpp",  "rocm/attention_fa.hip", "rocm/gated_delta.hpp",
+    "ops/act.hpp",          "rocm/affine.hpp",        "rocm/affine_api.hpp", "rocm/affine_dot2.hpp",    "rocm/affine_gemm.hpp",       "rocm/affine_wmma_gemm.hpp",
+    "rocm/affine_wmma.hpp", "rocm/affine_stream.hpp", "rocm/arch.hpp",       "attention/attention.hpp", "attention/attention_fa.hip", "recurrence/gated_delta.hpp",
 };
 
 /// The source groups launched from Zig, one code object each (the order of kernels.zig's Group): the device code of the
 /// library sources above, built by hipcc --genco with the library's flags. gemv and the WMMA schedules stay out.
-/// The code-object groups: ops.hip, prefill.hip, gdn_prefill.hip and decode.hip (ours), and the ROCm sources by name.
+/// The code-object groups and the source each is built from.
 const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill", "gdn_prefill", "decode" };
+const group_sources = [module_groups.len][]const u8{ "ops/ops.hip", "ops/act.hip", "attention/attention.hip", "recurrence/gated_delta.hip", "rocm/affine_tiles.hip", "rocm/affine_dot2.hip", "attention/prefill.hip", "recurrence/gdn_prefill.hip", "decode/decode.hip" };
 
 /// A GPU family's library: its gfx targets and whether its host dispatch takes the WMMA schedules.
 const Family = struct { name: []const u8, prefixes: []const []const u8, wmma: bool };
@@ -214,7 +215,7 @@ fn bundle(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, k: Kern
     for (k.headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
     run.addArg("-o");
     const out = run.addOutputFileArg(b.fmt("{s}.hsaco", .{k.name}));
-    run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}.hip", .{k.name})));
+    run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}", .{k.source})));
     return out;
 }
 
@@ -230,11 +231,13 @@ fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: 
     run.addArg(b.fmt("--rocm-device-lib-path={s}/lib/llvm/amdgcn/bitcode", .{root}));
     for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
     run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip/rocm"));
+    run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip"));
     for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
     run.addArg("-o");
     const out = run.addOutputFileArg(b.fmt("{s}_{s}.hsaco", .{ f.name, group }));
-    const ours = std.mem.eql(u8, group, "ops") or std.mem.eql(u8, group, "prefill") or std.mem.eql(u8, group, "gdn_prefill") or std.mem.eql(u8, group, "decode");
-    const source = if (ours) b.fmt("{s}.hip", .{group}) else b.fmt("rocm/{s}.hip", .{group});
+    const source = for (module_groups, group_sources) |name, path| {
+        if (std.mem.eql(u8, name, group)) break path;
+    } else unreachable;
     run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}", .{source})));
     return out;
 }
@@ -251,6 +254,7 @@ fn library(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: Fam
     run.addArg(b.fmt("--rocm-device-lib-path={s}/lib/llvm/amdgcn/bitcode", .{root}));
     for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
     run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip/rocm"));
+    run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip"));
     for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
     run.addArg("-o");
     const out = run.addOutputFileArg(b.fmt("libtf_{s}.so", .{f.name}));
