@@ -30,7 +30,7 @@ pub fn captureStatus(stream: Stream) Error!abi.CaptureStatus {
 
 fn nodeParams(f: Function, cfg: launch.Config, args: *launch.Args) Error!abi.KernelNodeParams {
     try cfg.validate();
-    if (cfg.cooperative) return error.Invalid;
+    if (cfg.cooperative or args.overflow) return error.Invalid;
     return .{
         .block = cfg.block,
         .extra = null,
