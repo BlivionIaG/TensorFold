@@ -342,6 +342,29 @@ zig/tests/qwen35/              check/ (invariants, accuracy, speed), matrix.sh
 `zig/kernels/hip/rocm/` (the kernels copied from the Python ROCm engine) is absorbed: each file moves to the folder
 of its job and is split into decoder plus tile as step 4 reaches it.
 
+### 3.9 Converging with upstream's Zig structure
+
+Upstream's guide (docs/recipes/adding-a-zig-family.md) asks that each speed-up be built once, in `zig/src/core/`, and
+that a family supply only its config, weight map, layer graph and its own mixer kernels. Upstream's `zig-preview` line
+has a native `zig/src/families/qwen3_5` family (Metal, Qwen3.5-2B) with the same exactness contract as this port.
+`zig-flashnext` (this port's base) has the CUDA family registry in the native server (#443) and the core prompt cache.
+
+This port converges with that, keeping `zig-flashnext` as its base:
+
+- **The family is `qwen3_5`, with upstream's file roles:** qwen3_5.zig, config, weights, model, forward, state, and a
+  backend per GPU API. `families/qwen35` is renamed into it; its HIP-specific engine pieces become the HIP backend.
+  When `zig-preview` and `zig-flashnext` meet, the two families merge file by file instead of duplicating.
+- **Generic pieces move to core** where upstream's table puts them:
+  - lane kernels by format: the format plug-ins, tiles and registry of 3.2-3.4, with the device side under
+    `zig/kernels/hip/` and the selection logic in core;
+  - GPU-side rounds: the device round plan, graphs and speculative rounds of 3.6;
+  - the prompt path: the radix cache of 3.7, folded into `core/prompt_cache.zig`'s interface;
+  - serving: HIP registers through the same family registry as CUDA (#443), and hosts through `core/lane_host.zig`.
+- **What stays in the family:** its config, weight map and layer graph, plus the Gated DeltaNet mixer (serial and
+  chunked) and the gated attention specifics.
+- **The core interfaces stay backend-neutral** (Metal, CUDA, HIP), so Flash Next, Nemotron or a new family can use the
+  same pieces.
+
 ## 4. Testing
 
 ### 4.1 Today: grown one tool at a time
@@ -408,7 +431,7 @@ How they compose:
 - **Correctness:** every invariant, plus fp64 accuracy for every model.
 - **Speed:** prefill ≥ 2x Python, decode ≥ 2x the port's baseline, and MTP gains with concurrent streams too.
 - **Structure:** steps 1-5b below (Policy, Caps, the Quant interface, plug-in tiles, the registry, graphs everywhere, the
-  radix prefix cache),
+  radix prefix cache, and convergence with upstream's family and core structure),
   done with MLX as the only format. Each step is proven by MLX's own tests.
 
 **Phase 2: the other formats** (steps 6-9), each added as decoder plug-ins once the structure is in place.
@@ -429,6 +452,7 @@ How they compose:
 | 5 | **Registry** replaces the m-rules in affine_launch/launches/ops; tuning tables for gfx1030 and gfx1100 | family check; byte-identical logits; speed unchanged |
 | 5b | **Graphs everywhere** (3.6): device round plan, shape buckets, keep and the draft head in graphs, tp (open: device-side accept, prefill steps) | graph = eager byte for byte; > 99% rounds replayed; MTP beats no-drafts with 4 streams |
 | 5c | **Radix prefix cache** (3.7): paged KV with page tables in the round plan, the radix tree with state snapshots at chosen nodes, copy-on-write tails, tp mirroring | resumed = fresh; radix stress test; memory per shared prefix; time to first token on a shared system prompt |
+| 5d | **Upstream sync and convergence** (3.9): merge upstream zig-flashnext (registry #443, prompt cache, guide); `families/qwen35` becomes `families/qwen3_5` with upstream's file roles; HIP registers through the family registry and hosts through `core/lane_host`; generic lane kernels, GPU rounds and the prompt path move to core behind backend-neutral interfaces | `check` identical digits and speed; tp2; native server through the registry; `zig build test` and the Metal build unchanged |
 | 6 | **FP16 / BF16** (identity decoder) and **MLX 5-bit** | truth scores; speed |
 | 7 | **AWQ INT4** (and GPTQ by flag): detect, load, slice, reference, decoder; then the vLLM qgemm ports as native RDNA2 entries | truth scores; bit-exact against Python qgemm fixtures for the native kernels; the model matrix on AWQ checkpoints |
 | 8 | **FP8** (tensor/channel scales), then **MXFP4 / MXFP8** decoders | truth scores |
