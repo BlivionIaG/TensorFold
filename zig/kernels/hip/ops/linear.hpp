@@ -6,7 +6,7 @@
 
 namespace {
 
-// The conv's prefill loop: window [state | x], taps summed in order then silu; new_state is written by the first row block, never `state`.
+// Conv prefill: window [state | x], taps summed in order, then silu; row block 0 writes new_state, never `state`.
 constexpr int kConvRows = 16;   // rows a conv_prefill thread slides over
 constexpr int kConvTaps = 8;    // most taps it holds
 

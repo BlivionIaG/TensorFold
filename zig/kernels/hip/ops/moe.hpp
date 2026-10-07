@@ -6,7 +6,7 @@
 
 namespace {
 
-// Sorts the pairs by expert (stable) into members and cuts items of at most `tile` pairs; one block, counted per segment.
+// Stable-sorts the pairs by expert into members and cuts items of at most `tile` pairs; one block, counted per segment.
 __global__ void moe_route_kernel(const int* picks, int pairs, int experts, int tile, int* members, int* items,
                                  int capacity) {
     extern __shared__ int shared[];
@@ -160,8 +160,7 @@ __device__ void router_tile(const void* x, const float* rows, float* logits, int
     }
 }
 
-// router_tile's logits for up to 32 rows a block row: a wave an expert, a lane a row, each logit the same chain of fmaf over
-// the hidden size in order (8 activations and router weights a step); few rows fill the card with waves.
+// router_tile's logits for up to 32 rows: a wave an expert, a lane a row, each logit one in-order fmaf chain.
 template <int KIND>
 __device__ void router_small(const void* x, const float* rows, float* logits, int r, int d, int e) {
     const int lane = threadIdx.x & 31;

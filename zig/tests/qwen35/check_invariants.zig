@@ -1,5 +1,4 @@
-//! The exactness checks of `check`: a window against its rows one at a time, a drafted reply against a serial one, a
-//! stream alone against together, a resumed prompt against a fresh one, a replayed graph against an eager round.
+//! The exactness checks of `check`: windows, drafts, shared rounds, resumed prompts and replayed graphs against serial.
 
 const std = @import("std");
 const check_ctx = @import("check_ctx.zig");
@@ -11,8 +10,7 @@ const check_radix = @import("check_radix.zig");
 const Ctx = check_ctx.Ctx;
 const Session = lanes_session.Session;
 
-/// One stream's window of 1 to 16 rows, then streams of 4 and 2 rows with a rejected draft's partial keep, then rounds
-/// padded up to a bucket (the padding rows must not change a real row).
+/// Windows of 1 to 16 rows, streams with a rejected draft's partial keep, and rounds padded up to a bucket.
 const cases = blk: {
     var list: [25]rows_run.Case = undefined;
     for (0..16) |i| list[i] = .{ .streams = 1, .n = i + 1, .keep = i + 1 };
@@ -106,8 +104,7 @@ fn graphs(c: *Ctx, name: []const u8, job: Session.Job, graph: Session.Done) void
     c.report.pass(name, "{d} rounds replayed, {d} tokens", .{ graph.replayed, graph.tokens() });
 }
 
-/// Each long prompt a second time, extended by its reply, on the caches the first run kept, against the same prompt
-/// with no caches kept (a serial stream neither resumes nor keeps).
+/// Each long prompt again, extended by its reply, on the caches the first run kept, against a run with none kept.
 fn resumed(c: *Ctx) void {
     const name = "lanes long greedy: resumed == fresh";
     c.session.h.keepPrompts(8, 4 << 30);
@@ -128,8 +125,7 @@ fn resumed(c: *Ctx) void {
     c.report.pass(name, "{d} streams, {d} tokens, {d} prompt tokens from the kept caches", .{ again.replies.len, again.tokens(), cached });
 }
 
-/// A drafted run of every stream at once, the third time: once its shapes are met, rounds replay graphs, whatever the
-/// streams hold and accept.
+/// A drafted run of every stream at once, the third time: once its shapes are met, rounds replay graphs.
 fn replayShare(c: *Ctx) void {
     const name = "lanes short greedy: rounds replayed";
     if (c.tp() and !c.e.o.graphs) return c.report.skip(name, "rounds under tp run eager unless the policy says graphs=on");

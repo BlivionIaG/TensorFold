@@ -1,5 +1,4 @@
-//! The weight formats behind one interface: a format module (mlx.zig, dense.zig) provides what `conforms` lists, from
-//! recognizing its checkpoint to its device decoder and an fp64 dequantization. Nothing above this file names a format.
+//! The weight formats behind one interface: a format module provides what `conforms` lists; nothing above names one.
 
 const std = @import("std");
 
@@ -153,7 +152,7 @@ pub const Handle = union(Format) {
     dense: dense.Matrix,
 };
 
-/// One product (N, K): the format's handle and its shape. A stack of experts is the shape of one expert at the stack's addresses.
+/// One product (N, K): the format's handle and its shape. A stack is one expert's shape at the stack's addresses.
 pub const Projection = struct {
     n: u32,
     k: u32,

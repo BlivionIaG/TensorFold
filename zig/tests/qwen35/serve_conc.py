@@ -1,10 +1,4 @@
-"""Concurrency of a running native server: a long prompt arriving while other streams decode.
-
-usage: serve_conc.py URL MODEL [DECODERS=3] [PROMPT_WORDS=2400] [TOKENS=400]
-
-Starts DECODERS streams, then one long prompt; reports its time to first token, the longest gap between two tokens of a
-decoding stream, and the aggregate tokens a second while the prompt was in flight.
-"""
+"""A long prompt arriving while streams decode; usage: serve_conc.py URL MODEL [DECODERS] [PROMPT_WORDS] [TOKENS]."""
 
 import http.client
 import json

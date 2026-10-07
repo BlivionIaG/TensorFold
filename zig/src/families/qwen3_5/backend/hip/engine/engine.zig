@@ -82,7 +82,7 @@ pub const Engine = struct {
         e.gpa = gpa;
         e.o = o;
         e.sized = false;
-        // rounds replay captured graphs as the policy says: under tensor parallelism they stay eager unless it is `graphs=on`
+        // rounds replay graphs as the policy says; under tensor parallelism only when it is `graphs=on`
         e.o.graphs = o.graphs and o.policy.graphsOn(o.world);
         e.head_graphs = o.graphs and o.policy.graphsOn(1);
         e.graphs = round_graphs.Graphs.init(gpa);
@@ -115,8 +115,7 @@ pub const Engine = struct {
         return e;
     }
 
-    /// Allocate the scratch for streams of `capacity` positions (`o.batch_rows` rows a shared forward) and a pool of
-    /// `pool_pages` pages (`o.pool_pages`, or the default, when zero).
+    /// Allocate the scratch for streams of `capacity` positions and a pool of `pool_pages` pages (zero: the default).
     pub fn size(e: *Engine, capacity: usize, pool_pages: usize) !void {
         const s = e.weights.spec;
         const rows = e.o.batch_rows;
@@ -138,8 +137,7 @@ pub const Engine = struct {
         e.sized = true;
     }
 
-    /// `want` pages, or the fewer the memory left after the scratch holds beside the reserve (the same on every rank); it refuses
-    /// when not even the scratch rows and one window fit.
+    /// `want` pages, or fewer as memory allows, the same on every rank; refuses when not even the scratch fits.
     fn fitPages(e: *Engine, want: usize, capacity: usize) !usize {
         const info = try e.ctx.memInfo();
         const per = @max(memory.pageBytes(e.weights.spec, e.act.size()), 1);
@@ -242,14 +240,13 @@ pub const Engine = struct {
         e.stream.synchronize() catch {};
     }
 
-    /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order, each row per `reqs`.
+    /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
         const y = try o.project(hidden, e.model().head, rows, false);
         try e.drawRows(o, y, rows, reqs, out, false);
     }
 
-    /// Each of `rows` logits rows `y` drawn per `reqs` (whole rows joined first under tensor parallelism); `argmaxed`: the
-    /// greedy rows are drawn already, where the drawer keeps them.
+    /// Each of `rows` logits rows drawn per `reqs`, whole rows joined first across ranks; `argmaxed`: greedy rows done.
     pub fn drawRows(e: *Engine, o: hip.ops.Ops, y: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32, argmaxed: bool) !void {
         var whole = y;
         if (e.model().tp) |c| whole = try e.joined(o, c, y, rows);
@@ -309,7 +306,7 @@ pub const Engine = struct {
         try e.stream.synchronize();
     }
 
-    /// Prefill `prompt[pos0..]` into `caches`; the token drawn per `req` from the last row, whose final row is copied to `last` (MTP's input).
+    /// Prefill `prompt[pos0..]` into `caches`; the last row's token, its final row copied to `last` (MTP's input).
     pub fn prefill(e: *Engine, caches: *state.Caches, prompt: []const u32, pos0: usize, last: ?hip.DeviceBuffer, req: draw.Request, cancel: ?Cancel) !u32 {
         const m = e.model();
         const len = prompt.len - pos0;
@@ -328,7 +325,7 @@ pub const Engine = struct {
         return token[0];
     }
 
-    /// Every window in one forward: `out` the token of every row per `reqs`; the round's snapshots live until its keeps are flushed.
+    /// Every window in one forward: `out` the token of every row; the round's snapshots live until its keeps flush.
     pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: []u32) !lane_round.Verified {
         return lane_round.verify(e, rows, reqs, out);
     }

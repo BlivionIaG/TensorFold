@@ -56,7 +56,7 @@ __device__ __forceinline__ uint32_t order_key(uint16_t bits) {
     return (bits & 0x8000) ? (~bits & 0xffffu) : (bits | 0x8000u);
 }
 
-// The `k` largest of a row by (value desc, id asc): two histograms of the k-th key, then one ordered compaction; row r's k is ks[r].
+// Row r's ks[r] largest by (value desc, id asc): two histograms of the k-th key, then one ordered compaction.
 __global__ void topk_kernel(const uint16_t* logits, int n, const int* ks, int stride, int* ids, uint16_t* values) {
     const int r = blockIdx.x, k = ks[r];
     if (k <= 0) return;
@@ -144,7 +144,7 @@ int tf_argmax_rows(const void* logits, int kind, int rows, int n, int* out, hipS
     return finish();
 }
 
-// Row r's ks[r] largest by (value desc, id asc) into ids / values (rows, stride) as 16-bit patterns; ks[r] = 0 skips a row.
+// Row r's ks[r] largest by (value desc, id asc) into ids / values (rows, stride) as 16-bit; ks[r] = 0 skips the row.
 int tf_topk_rows(const void* logits, int rows, int n, const int* ks, int stride, int* ids, void* values, hipStream_t s) {
     if (rows == 0) return 0;
     topk_kernel<<<rows, kThreads, 0, s>>>(static_cast<const uint16_t*>(logits), n, ks, stride, ids,

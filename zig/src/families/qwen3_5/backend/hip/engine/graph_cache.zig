@@ -1,4 +1,4 @@
-//! Captured graphs by shape: a launch sequence recorded once the second time its shape is met, replayed on every later one.
+//! Captured graphs by shape: a launch sequence recorded the second time its shape is met, replayed on every later one.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -24,7 +24,7 @@ pub fn Cache(comptime Key: type, comptime Out: type) type {
         gpa: std.mem.Allocator,
         entries: std.ArrayList(Entry) = .empty,
         clock: u64 = 0,
-        /// Launches run, launches replayed from a graph, and graphs captured; the host's nanoseconds from a launch's start to its work queued.
+        /// Launches run, replayed and captured; the host's nanoseconds from a launch's start to its work queued.
         rounds: u64 = 0,
         submit_ns: u64 = 0,
         /// The host's nanoseconds recording and instantiating graphs.

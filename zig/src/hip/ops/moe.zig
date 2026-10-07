@@ -9,8 +9,7 @@ const f = t.f;
 const i = t.i;
 const int = t.int;
 
-/// The MoE combine, the residual and the next norm in one launch: x = round(x + round(sum_s wts[r, s] * y[r, s])),
-/// y (rows * slots, width) fp32, then normed = rms(x) * weight.
+/// MoE combine, residual and next norm in one launch: x = round(x + round(sum_s wts * y)), normed = rms(x) * weight.
 pub fn moeTail(o: Ops, x: Tensor, y: u64, wts: u64, weight: u64, normed: Tensor, rows: usize, slots: usize, width: usize, eps: f32) Error!void {
     if (x.kind != normed.kind or x.kind == .f32 or slots == 0) return error.BadShape;
     const z = o.lib.zig orelse return error.BadShape;

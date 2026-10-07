@@ -1,9 +1,6 @@
 #pragma once
 
-// Prefill GEMM tile on the matrix cores of gfx11 (BF16 activations, m >= 16): 128 x 128 outputs a block, 8 waves of
-// 32 rows x 64 columns. The codes are BF16 exactly, so a group's dot is v_wmma_f32_16x16x16_bf16 over the staged tiles
-// (x row-major, codes column-major) from a zero accumulator; the sum of x, the scale and bias folds and the stages are
-// affine_gemm_block's. The matrix core's sum of a step's 16 products is checked to equal the dot2 chain's, bit for bit.
+// gfx11 WMMA prefill GEMM (BF16, m >= 16): codes are exact in BF16, so WMMA sums match the dot2 chain bit for bit.
 
 #include "common/wmma.hpp"
 #include "tiles/gemm.hpp"
@@ -39,8 +36,7 @@ __device__ __forceinline__ void wmma_gemm_tile(typename Dec::Args& a) {
     const int wave = __builtin_amdgcn_readfirstlane(tid >> 5);
     const int lane = tid & 31;
 
-    // Staging, as in gemm_tile: a thread's codes of a column (half of its 32 with the other side), half a row of x, two
-    // stages a fetch, the row sums by the second side, scales and biases a stage ahead.
+    // Staging as in gemm_tile: half a column's codes and half a row of x a thread, two stages a fetch.
     const int col_s = n0 + line < a.n ? n0 + line : a.n - 1;
     const uint32_t* wsrc = Dec::words(a) + static_cast<long long>(col_s) * words_row;
     const int xrow = tid >> 1;
@@ -110,8 +106,7 @@ __device__ __forceinline__ void wmma_gemm_tile(typename Dec::Args& a) {
         if (st % per == per - 1) sx[(st / per) & 1][line] = run;
     };
 
-    // Wave (wm, wn) owns rows 32 wm.. and columns 64 wn..: 2 x 4 tiles. A lane holds, of a tile, column lane % 16 and
-    // the rows 2 i + lane / 16 (i < 8); a fragment is the row (or column) lane % 16 over 16 k, the same in both halves.
+    // Wave (wm, wn) owns rows 32 wm.., columns 64 wn.. (2 x 4 tiles); a lane: column lane % 16, rows 2 i + lane / 16.
     const int wm = wave & 3;
     const int wn = wave >> 2;
     const int rl = lane & 15;

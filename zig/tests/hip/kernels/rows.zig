@@ -1,6 +1,4 @@
-//! Rows are the same bytes however a product is cut. Decode: each row of a lane round's launch is what the row alone
-//! writes, at every row count, fp32 and rounded, plain and routed. Prefill: every tile the registry picks between by rows
-//! writes the same bytes at every row count, dense and routed, at every width and group, and the router's two kernels agree.
+//! Rows are the same bytes however a product is cut: decode's lane rounds, prefill's tiles and the router's kernels.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -212,13 +210,10 @@ fn routedProduct(t: *Rig, rng: *data.Rng, c: Case, pair: bool) !usize {
     return bad;
 }
 
-
 /// Row counts the block shapes are compared at: every short one's edges, ragged ones and a few blocks.
 const tier_rows = [_]usize{ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 31, 33, 63, 64, 65, 100, 128, 200 };
 
-/// One product (`m` rows dense, or `m` pairs over a few experts in items of 1 to 40 rows, and an empty item) through
-/// every block shape: the words of each short block's output (and of the engine's own pick) that differ from the
-/// 128-row block's.
+/// One product (dense, or routed with ragged and empty items) through every block shape: words unlike the 128-row's.
 fn tierProduct(t: *Rig, m: usize, n: usize, k: usize, bits: c_int, group: c_int, routed: bool) !usize {
     const gpa = t.gpu.gpa;
     const experts: usize = if (routed) 5 else 1;
@@ -338,7 +333,7 @@ fn tierProduct(t: *Rig, m: usize, n: usize, k: usize, bits: c_int, group: c_int,
     return diff;
 }
 
-/// The router's logits through the wave-an-expert kernel and through the 64 x 64 tiles at `r` rows: the words that differ.
+/// The router's logits through the wave-an-expert kernel and the 64 x 64 tiles at `r` rows: the words that differ.
 fn routerProduct(t: *Rig, r: usize, d: usize, e: usize) !usize {
     const gpa = t.gpu.gpa;
     const hx = try data.fill(gpa, u16, r * d, &t.rng, if (t.fp16) data.makeX16 else data.makeXB);
@@ -368,8 +363,7 @@ fn routerProduct(t: *Rig, r: usize, d: usize, e: usize) !usize {
     return data.sameOnDevice(t.gpu, outs[0], outs[1], r * e * 4);
 }
 
-/// Prefill's short blocks against the 128-row one at every row count of `tier_rows`, dense and routed, every width and
-/// group: any differing word is an error.
+/// Prefill's short blocks against the 128-row one at every `tier_rows`, dense and routed: any differing word fails.
 fn tiers(t: *Rig) !usize {
     var ran: usize = 0;
     for (shapes.widths) |bits_u| for (shapes.groups) |group_u| for (tier_rows) |m| for ([_]bool{ false, true }) |routed| {
@@ -414,4 +408,3 @@ pub fn prefill(t: *Rig) !void {
     std.debug.print("DIGEST rows prefill {x}\n", .{t.digest});
     check.pass("rows prefill: {d} products (rows 1..200, dense and routed, every width and group; the router's logits) with the same bytes in every tile", .{ran});
 }
-

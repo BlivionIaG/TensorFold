@@ -1,5 +1,4 @@
-//! One packed affine product on the host and the device: random activations, words and tables, a routed plan, its
-//! launch of any registry entry and the float64 reference of sampled outputs.
+//! One random packed affine product on the host and the device, launched by any registry entry, with its reference.
 
 const std = @import("std");
 const hip = @import("hip");

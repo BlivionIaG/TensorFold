@@ -1,5 +1,4 @@
-//! The engines a native server opens on Linux: the CUDA engines and the HIP engines side by side. A checkpoint goes to the
-//! backend whose registry lists its model type.
+//! The engines a native server opens on Linux: CUDA and HIP side by side; a checkpoint goes to its model's backend.
 const std = @import("std");
 const api = @import("engine_api");
 const cuda = @import("cuda_engines");

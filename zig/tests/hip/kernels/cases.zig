@@ -1,5 +1,4 @@
-//! The products the affine groups run every registered kernel on: the decode and prefill projections of the models
-//! the engine serves (a 2048-wide MoE, 4096- and 5120-wide dense), every width and group, and ragged sizes.
+//! The products the affine groups run every registered kernel on: the served models' projections and ragged sizes.
 
 const registry = @import("hip").registry;
 
@@ -26,8 +25,7 @@ pub const Case = struct {
     }
 };
 
-/// Decode: a lane round's few rows, dense and routed, on the engine's shapes (the stream tile, the row and lane tiles,
-/// the matrix and GEMM tiles at 16 rows and more).
+/// Decode: a lane round's few rows, dense and routed, on the engine's shapes, reaching every decode tile.
 pub const decode = [_]Case{
     .{ .name = "35b lm_head", .n = 248320, .k = 2048 },
     .{ .name = "35b qkv", .n = 8192, .k = 2048 },

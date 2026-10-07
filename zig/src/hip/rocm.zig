@@ -1,4 +1,4 @@
-//! The embedded ROCm kernels of this GPU's family, launched from Zig on code objects or through the C library, each call checked.
+//! The embedded ROCm kernels of this GPU's family, launched from Zig or through the C library, each call checked.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -78,7 +78,7 @@ pub const Library = struct {
     /// The Zig launches on the current device; null runs every call through `api`.
     zig: ?launches.Launcher = null,
 
-    /// The embedded library of the GPU's family, opened from an anonymous file; with the policy's `launch` at `zig` the Zig launches load on the calling thread's device.
+    /// The family's embedded library from an anonymous file; with `launch` at `zig` its kernels load on this device.
     pub fn open(d: *const driver.Driver, caps: Caps, policy: Policy) Error!Library {
         const family = caps.family;
         var lib = try openLibrary(caps, policy);

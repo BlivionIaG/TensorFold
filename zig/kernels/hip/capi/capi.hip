@@ -1,4 +1,4 @@
-// The ROCm launchers behind a C ABI: raw device pointers and the caller's stream; a call returns 0, or 1 with its message kept.
+// The ROCm launchers behind a C ABI on raw device pointers and the caller's stream; 0, or 1 with its message kept.
 
 #include <hip/hip_runtime.h>
 

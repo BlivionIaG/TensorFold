@@ -7,17 +7,7 @@ const Pick = @import("engine.zig").Pick;
 const state = @import("../forward/state.zig");
 const draw = @import("draw.zig");
 
-/// A step rank 0 sends the other ranks (a message's first word). Rank 0 decides every match, insertion and eviction and
-/// names pages and snapshot slots; a rank only applies them. A message's layout by step:
-/// prefill (begins a prompt pass): id, positions, prompt length, resumed at, cut count, snapshot slot to resume from
-/// (`no_snapshot`: none), page count, then the pages, the cuts and the prompt;
-/// fill: id, end of the next chunk of the prompt pass;
-/// verify: graph pick, count, then id, rows, tokens... each (the round's plan shape follows from them: every rank derives the same);
-/// keep: count, then id, rows each;
-/// release: id; stop;
-/// pages: id, first page index, count, then page ids: the stream's table from that index on is those pages;
-/// snap: id, slot: the stream's linear state is kept in the slot;
-/// copy: from, to: page `to` becomes a copy of page `from`.
+/// A message's first word: rank 0 decides every match, eviction, page and slot, and a rank only applies it.
 pub const Op = enum(u32) { stop, prefill, verify, keep, release, fill, pages, snap, copy };
 
 /// The prefill message's snapshot slot when the pass starts from nothing.
@@ -138,11 +128,14 @@ pub const Worker = struct {
             const m = msg.items;
             switch (@as(Op, @fromBackingInt(@as(u32, @intCast(m[0]))))) {
                 .stop => return,
+                // prefill: id, positions, prompt len, resumed at, cut count, snapshot slot, page count, then the pages
                 .prefill => {
                     const held = m[8..][0..m[7]];
+                    // the cuts sit between the pages and the prompt
                     const prompt = m[8 + m[7] + m[5] ..][0..m[3]];
                     try w.prefill(m[1], m[2], prompt, m[4], if (m[6] == no_snapshot) null else m[6], held);
                 },
+                // verify: graph pick, count, then id, rows, tokens each; every rank derives the plan shape from them
                 .verify => {
                     const pick: Pick = @fromBackingInt(m[1]);
                     const n = m[2];
@@ -156,14 +149,19 @@ pub const Worker = struct {
                     }
                     try w.verify(ids[0..n], rows[0..n], pick);
                 },
+                // keep: count, then id and rows each
                 .keep => {
                     for (0..m[1]) |i| try w.keep(m[2 + 2 * i], m[3 + 2 * i]);
                     try w.e.flush();
                 },
                 .release => w.release(m[1]),
+                // fill: id, end of the prompt pass's next chunk
                 .fill => try w.fill(m[1], m[2]),
+                // pages: id, first page index, count, then the stream's table from that index on
                 .pages => try (try w.laneOf(m[1])).caches.set(w.gpa, m[2], m[4..][0..m[3]]),
+                // snap: id, slot that keeps the stream's linear state
                 .snap => try w.snaps.take(m[2], &(try w.laneOf(m[1])).caches, w.e.stream.handle),
+                // copy: from, to; page `to` becomes a copy of page `from`
                 .copy => try w.e.pool.copyPage(m[1], m[2], w.e.stream.handle),
             }
         }

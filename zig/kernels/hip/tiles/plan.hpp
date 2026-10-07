@@ -1,7 +1,6 @@
 #pragma once
 
-// A routed plan as the tiles read it, whatever the weight format: item z = (expert, first, count) takes the pairs
-// members[first..first + count), whose x row is pair / x_div and whose output row is the pair itself.
+// Routed plan, any weight format: item z = (expert, first, count) takes pairs members[first..first + count).
 
 namespace tf {
 namespace rocm {

@@ -1,10 +1,6 @@
 #pragma once
 
-// Prefill GEMM tile of the dot2 schedule (m >= 64): 128 x 128 outputs a block, a wave 16 rows x 128 columns.
-// An output is what affine_dot2_block computes, bit for bit: per group a dot2 chain in ascending k from zero, the
-// group's sum of x (lo then hi of each pair, in order), then acc = fma(dot, scale, acc); acc = fma(sumx, bias, acc).
-// x is shared inside a quad of lanes (DPP) instead of read from LDS; the row sums of x come from their own threads, and a
-// group's bias term runs a stage after its scale term; the codes become pairs by bit operations (0x6400 | code is 1024 + code).
+// Dot2 prefill GEMM (m >= 64), 128 x 128 a block: bit for bit affine_dot2_block's per-group dot2 chain and fma fold.
 
 #include <type_traits>
 #include <utility>
@@ -21,8 +17,7 @@ constexpr int kGemmN = 128;
 constexpr int kGemmK = 32;
 constexpr int kGemmLd = kGemmK + 8;  // 20 words a row: 16-byte aligned, eight 16-byte readers hit eight bank groups
 
-// Rows of x a lane keeps (it owns 64 / RT columns): 16 where the dot2 takes x from another lane of the quad inside the
-// instruction (RDNA2 FP16), 8 where that costs a v_mov a row (the BF16 dot2 of gfx11 has no DPP form).
+// Rows of x a lane keeps: 16 where dot2 takes x from a quad lane by DPP (RDNA2 FP16), 8 where it has none (gfx11 BF16).
 template <typename T>
 struct GemmShape {
     static constexpr int rt = 16;
@@ -33,8 +28,7 @@ struct GemmShape<DotBF16> {
     static constexpr int rt = 8;
 };
 
-// One 128 x 128 block of the product y = x . W^T: the decoder Dec reads the weight words and group terms, Act the rows of x,
-// T multiplies and Epi stores; RT rows of x a lane keep (GemmShape).
+// One 128 x 128 block of y = x . W^T: Dec reads weights and group terms, Act the rows of x, T multiplies, Epi stores.
 template <class Dec, class Act, class T, class Epi, int RT>
 __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
     if (!Dec::take_item(a, blockIdx.z)) return;
@@ -45,8 +39,7 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
     __shared__ __attribute__((aligned(16))) uint32_t xs[2][kGemmM * kLdw];
     __shared__ __attribute__((aligned(16))) uint32_t ws[2][kGemmN * kLdw];
     __shared__ float sx[2][kGemmM];
-    // Scales and biases of the last three groups: a group's bias term runs a stage after its scale term, so with a
-    // group a stage a waiting wave still reads the bias of the group before the last that the others have staged.
+    // The last three groups' scales and biases: bias lags scale a stage, so a slow wave reads an older group.
     __shared__ float sc[3][kGemmN];
     __shared__ float bi[3][kGemmN];
 
@@ -60,14 +53,12 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
     const int line = tid & (kGemmN - 1);
     const int side = __builtin_amdgcn_readfirstlane(tid >> 7);  // codes 16 * side ..; side 1 also stages x
 
-    // This thread's column of codes, and half of a row of x (two threads share a row's 64 bytes of the stage). Past the
-    // edge a thread reads the last column or the first row and stores nothing that is used.
+    // This thread's column of codes and half a row of x; past the edge it reads the last column or first row, unused.
     const int col_s = n0 + line < a.n ? n0 + line : a.n - 1;
     const uint32_t* wsrc = Dec::words(a) + static_cast<long long>(col_s) * words_row;
     const int xrow = tid >> 1;
     const int xhalf = tid & 1;
-    // Rows of x past the end (a routed item's few rows) are neither loaded, stored nor summed: a wave of stagers has
-    // 16 rows, a wave of summers 32, so a whole wave skips.
+    // Rows past the end are not loaded, stored or summed: a stager wave has 16 rows, a summer 32: whole waves skip.
     const int wave = __builtin_amdgcn_readfirstlane(tid >> 5);
     const bool xlive = wave * 16 < a.m - m0;
     const bool sxlive = (line & ~31) < a.m - m0;
@@ -75,8 +66,7 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
     const typename Act::elem* xrow_ptr = Act::row(a, row_s);
     const u32x4* xsrc = reinterpret_cast<const u32x4*>(xrow_ptr);
 
-    // Two stages a fetch: the 64 bytes of x a row has in each (lane h of a row's two takes stage h, so a row is one
-    // 128-byte request) and the two code pieces of a column, which are contiguous.
+    // Two stages a fetch: a row's 64 bytes of x in each (two lanes: one 128-byte request), a column's two code pieces.
     uint32_t wreg[2][Dec::kWords];
     u32x4 xreg[4];
     typename Dec::Term term[2];
@@ -97,8 +87,7 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
         term[0] = Dec::term(a, base + st / per);
         term[1] = Dec::term(a, base + st1 / per);
     };
-    // Stage st (parity J) from the buffer `buf`: this thread's 16 codes of its column, its stage's row of x if it holds
-    // that stage, and the stage's scale and bias at a group's last stage.
+    // Stage st (parity J) from `buf`: this thread's 16 codes, its row of x if any, and scale and bias at a group's end.
     auto stash = [&]<int J>(std::integral_constant<int, J>, int st, int buf) {
         u32x4* dst = reinterpret_cast<u32x4*>(ws[buf] + line * kLdw + side * 8);
         auto decode = [&]<int S>(std::integral_constant<int, S>) {
@@ -142,13 +131,10 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
         if (st % per == per - 1) sx[(st / per) & 1][line] = run;
     };
 
-    // A wave owns 16 rows of x and 128 columns: with RT = 16 every lane takes the same rows and columns lane + 32 j; with 8
-    // the lanes 0-15 take rows 0-7 and 16-31 rows 8-15, and columns lane % 16 + 16 j. Lane p of a quad loads x rows 4 k + p
-    // and every lane takes row 4 k + i from lane i of the quad (DPP).
+    // A wave owns 16 rows, 128 columns; at RT = 8 lanes 0-15 take rows 0-7, 16-31 rows 8-15; x rows come by quad DPP.
     constexpr int CT = 64 / RT;
     const int lane = tid & 31;
-    // A wave whose 16 rows are all past the end skips its dots; with 3 groups or fewer live, every other block turns the
-    // groups by 2 waves so the two blocks of a WGP keep all four SIMDs busy (a wave runs on SIMD wave % 4).
+    // With 3 groups or fewer live, odd blocks rotate groups by 2 waves so a WGP's two blocks keep all four SIMDs busy.
     const int rg = (wave + ((a.m - m0 <= 48 && (bx & 1)) ? 6 : 0)) & 7;
     const bool live = rg * 16 < a.m - m0;
     const int hrow = RT == 8 ? (lane >> 4) * 8 : 0;
@@ -164,8 +150,7 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
             dot[r][j] = 0.f;
         }
     }
-    // The bias terms of a group come a stage after its scale terms: its row sums are published at the end of the last
-    // stage, and acc is untouched until the next group's scale term, so the order of the two fma holds.
+    // A group's bias terms lag its scale terms a stage; acc is untouched until the next scale term, keeping fma order.
     auto apply_bias = [&](int slot, int g) {
         float s_x[RT];
 #pragma unroll

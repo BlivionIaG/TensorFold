@@ -1,4 +1,4 @@
-//! MLX affine weights: i32 words of `bits`-wide codes, one scale and one bias a group of K; the format's host and device side.
+//! MLX affine weights: i32 words of `bits`-wide codes, a scale and bias a group of K; host and device side.
 
 const std = @import("std");
 const types = @import("types.zig");
@@ -59,8 +59,7 @@ pub fn detect(a: Allocator, src: types.Sources) Allocator.Error!?Config {
     return q;
 }
 
-/// An affine projection as stored: i32 words [N, K * bits / 32], group tables [N, K / group] in the stored dtype. A stack
-/// of experts has a leading E + 1 dimension on all three.
+/// An affine projection as stored: i32 words [N, K * bits / 32], tables [N, K / group]; a stack leads with E + 1.
 pub const Host = struct { words: Tensor, scales: Tensor, biases: Tensor, bits: u8, group: u16 };
 
 /// Whether `key` holds an MLX affine projection (a table of scales beside its words).
@@ -169,7 +168,7 @@ fn tableKind(dtype: types.DType) error{UnsupportedTables}!types.Tables {
     };
 }
 
-/// The projection's (N, K) and addresses; a stack (E + 1, N, ...) reads as one expert's shape with the stack's addresses.
+/// The projection's (N, K) and addresses; a stack (E + 1, N, ...) reads as one expert's shape at the stack's addresses.
 pub fn view(d: Device, stacked: bool) error{UnsupportedTables}!View {
     const lead: usize = @intFromBool(stacked);
     const n = d.words.dim(lead);
@@ -210,8 +209,7 @@ pub fn reference(h: Host, out: []f64) error{UnexpectedTensor}!void {
     };
 }
 
-/// MLX affine words [R, K * bits / 32] with scale and bias [R, K / group] as fp32 [R, K] the way torch computes them (a product
-/// rounded, then the sum), for widths 2, 4 and 8: the router rows of a routed layer.
+/// MLX affine words and tables as fp32 [R, K] the way torch computes them (product rounded, then sum), widths 2, 4, 8.
 pub fn dequant(a: Allocator, words: Tensor, scale: Tensor, bias: Tensor, group: usize) convert.Error![]f32 {
     if (words.rank != 2 or scale.rank != 2 or bias.rank != 2 or !std.mem.eql(usize, scale.shape[0..2], bias.shape[0..2])) return error.UnexpectedTensor;
     if (words.dtype != .u32 and words.dtype != .i32) return error.UnexpectedTensor;

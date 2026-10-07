@@ -1,13 +1,10 @@
-//! Kernel choice in one place: every product launch is an entry and `select` picks the cheapest that takes a shape, by the
-//! GPU's tuning table, so a choice is the same in every run and rank. Entries of one family write identical bytes for any
-//! row of a product, so a path that selects one family at every row count keeps a row's bits; `verify` checks that at open.
+//! Kernel choice: `select` takes the cheapest entry by tuning table, so ranks agree; one family writes equal bits.
 
 const std = @import("std");
 const quant = @import("quant/quant.zig");
 const tuning = @import("tuning.zig");
 
-/// What is launched: a plain product, up to four products that share x, a plan over stacked experts, and a plan's gate and
-/// up with the activation as the epilogue.
+/// What is launched: a product, up to four sharing x, a plan over stacked experts, or its gate and up with activation.
 pub const Op = enum { project, group, routed, routed_act };
 
 /// A prompt's span, or anything that decodes (a lane round, the logits head, a draft).
@@ -87,8 +84,7 @@ pub fn Entry(comptime Launch: type) type {
     };
 }
 
-/// Room for the entries' tuned rows: a Registry sits inside a backend's table of kernels, so its size does not come from
-/// the entries.
+/// Room for the entries' tuned rows: a Registry sits in a backend's kernel table, so its size is fixed.
 pub const max_entries = 64;
 
 /// The most rows the family rule is checked at.
@@ -127,7 +123,7 @@ pub fn Registry(comptime Launch: type) type {
             return t.cost;
         }
 
-        /// The cheapest entry of (format, op, path) that the GPU, the run and the shape allow; null when none takes the shape.
+        /// The cheapest entry of (format, op, path) the GPU, run and shape allow; null when none takes the shape.
         pub fn select(r: *const Self, env: Env, format: quant.Format, op: Op, path: Path, shape: Shape) ?*const E {
             var best: ?*const E = null;
             var best_cost: f32 = std.math.inf(f32);
@@ -158,7 +154,7 @@ pub fn Registry(comptime Launch: type) type {
             }
         }
 
-        /// The family rule for a lane round's decode, a prompt's plain products and its routed plans, at every width and group.
+        /// Checks the family rule for a round's decode, a prompt's products and routed plans, at every width and group.
         pub fn verify(r: *const Self, env: Env, format: quant.Format) error{FamilyChanges}!void {
             // the reference decode tiles and the reference GEMM tile are the Python engine's rules, by row count
             if (!env.stream_on or !env.gemm_on) return;

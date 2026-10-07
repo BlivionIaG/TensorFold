@@ -1,10 +1,8 @@
-//! A float64 reference for the packed affine product, dequant(W) . x, on sampled outputs, and the error statistics of a
-//! kernel's floats against it.
+//! A float64 reference for the packed affine product, dequant(W) . x, on sampled outputs, and error statistics.
 
 const std = @import("std");
 
-/// One matrix of a product on the host: activations of `fp16` or bf16 bits, and an expert's rows of words, scales and biases
-/// (bf16 tables), `experts` of them back to back.
+/// One product on the host: fp16 or bf16 activations, and `experts` back to back of words with bf16 scales and biases.
 pub const Problem = struct {
     fp16: bool,
     n: usize,
@@ -57,8 +55,7 @@ pub fn reference(p: Problem, row: usize, expert: usize, col: usize) Value {
     return .{ .y = y, .norm = norm };
 }
 
-/// Errors of one kernel's outputs: the largest |y - ref| / norm (the error against what the terms could sum to), the
-/// largest |y - ref| and the rms of |y - ref|.
+/// Errors of one kernel's outputs: largest |y - ref| / norm (norm: what the terms could sum to), largest and rms.
 pub const Stat = struct {
     max_rel: f64 = 0,
     max_abs: f64 = 0,

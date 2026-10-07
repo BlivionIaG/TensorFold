@@ -1,6 +1,4 @@
-//! `logits <model dir> <ids.npy> <out.npy> [--f32] [--decode]`: every row's logits for the ids (int32 or int64), from
-//! one cold prefill or (--decode) a token at a time through the decode rounds, in the activation dtype the engine
-//! draws from (bf16 as `<u2`) or in fp32, for tools/truth/score.py to measure against the high-precision reference.
+//! `logits <model dir> <ids.npy> <out.npy> [--f32] [--decode]`: every row's logits for tools/truth/score.py to score.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -15,7 +13,7 @@ pub const chunk = 32;
 
 pub const Mode = struct { decode: bool = false, wide: bool = false };
 
-/// Takes each block of rows as it is read: rows `first..first + count` of `vocab` logits each, `bytes` in the kind's layout.
+/// Takes each block of rows as it is read: rows `first..first + count` of `vocab` logits, `bytes` in the kind's layout.
 pub const Sink = struct {
     ctx: *anyopaque,
     put: *const fn (ctx: *anyopaque, first: usize, count: usize, bytes: []const u8) anyerror!void,

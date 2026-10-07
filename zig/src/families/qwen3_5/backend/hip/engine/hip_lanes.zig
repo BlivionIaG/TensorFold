@@ -64,7 +64,7 @@ pub const Hip = struct {
     costs: costs.Costs = .{},
     /// Each stream's id on every rank.
     ids: std.AutoHashMapUnmanaged(*const lanes.Stream, u32) = .empty,
-    /// Nanoseconds and calls the backend's verifies, keeps and drafts took (the core's own work between them is the rest).
+    /// Nanoseconds and calls the backend's verifies, keeps and drafts took; the core's own work is the rest.
     spent: [3]u64 = @splat(0),
     calls: [3]u64 = @splat(0),
     next_id: u32 = 0,
@@ -90,7 +90,7 @@ pub const Hip = struct {
         };
     }
 
-    /// Keep up to `slots` snapshots and the pages the rest of `budget` bytes buys, in the prefix tree (none: nothing is kept).
+    /// Keep up to `slots` snapshots and the pages the rest of `budget` bytes buys in the prefix tree (none: off).
     pub fn keepPrompts(h: *Hip, slots: usize, budget: usize) void {
         h.prefix.keepPrompts(slots, budget);
     }
@@ -165,7 +165,7 @@ pub const Hip = struct {
     /// Rows a window holds: every width keeps a row's bits (the window forward), drafts come from the core.
     pub const max_window = 16;
 
-    /// The facts the round loop reads at setup: shared rounds of exact windows, the MTP head's chains (every stream's in one batch) when it has one.
+    /// The facts the round loop reads at setup: shared rounds of exact windows, and the MTP head's batched chains.
     pub fn facts(h: *const Hip) lanes.Model {
         const drafting = h.head != null and h.e.o.policy.mtp.drafts > 0;
         // plain rounds compete with drafted ones once the forwards are timed
@@ -221,7 +221,7 @@ pub const Hip = struct {
         lane.pending = null;
     }
 
-    /// Lands the marked keeps in one launch: each stream's linear states as after its kept rows, and its last kept final row for the head.
+    /// Lands the marked keeps in one launch: linear states after the kept rows, the last kept final row for the head.
     fn flush(h: *Hip) !void {
         if (h.marked.items.len == 0) return;
         if (h.link != null) {
@@ -256,8 +256,7 @@ pub const Hip = struct {
         while (!try prefillStepFn(ptr, s)) {}
     }
 
-    /// The stream's lane and its prompt pass begun: its pages (the longest match's shared, the rest taken), the resume from a
-    /// snapshot, the cuts, the other ranks told.
+    /// The stream's lane and prompt pass begun: its pages, the resume from a snapshot, the cuts, the other ranks told.
     fn begin(h: *Hip, s: *lanes.Stream) !*Lane {
         const prompt = s.prompt();
         if (prompt.len == 0 or prompt.len + s.max_new + 1 > h.e.o.capacity) return error.PromptTooLong;
@@ -278,7 +277,7 @@ pub const Hip = struct {
         errdefer h.free(lane);
         gop.value_ptr.* = lane;
         lane.id = try h.idOf(s);
-        // a drafted request resumes from the deepest snapshot its prompt shares with the tree and keeps its own marks; a serial one neither
+        // a drafted request resumes from the deepest shared snapshot and keeps its own marks; a serial one does neither
         var owner: hip_prefix.Owner = .{ .caches = &lane.caches, .id = lane.id };
         h.matched.clearRetainingCapacity();
         var plan: radix.Plan = .{};
@@ -367,7 +366,7 @@ pub const Hip = struct {
         const began = costs.nowNs();
         defer h.timed(0, began);
         if (windows.len > h.order.len) return error.WindowTooWide;
-        // the last verify's windows the round loop did not trim keep every row, before this round's plan replaces theirs
+        // windows the round loop did not trim keep every row before this round's plan replaces theirs
         for (windows) |w| try h.settle(h.lanes.get(w.stream) orelse return error.UnknownStream);
         try h.flush();
         for (windows) |w| {

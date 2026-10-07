@@ -1,5 +1,4 @@
-//! The engines a native server opens on HIP: this file owns the GPU, its policy, the tensor-parallel group, the round loop
-//! and the lane host; each family in `registry` brings its lane backend.
+//! The engines a native server opens on HIP: the GPU, its policy, the tensor-parallel group, round loop and lane host.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -71,8 +70,7 @@ const Ready = struct {
     }
 };
 
-/// Resolves the policy on rank 0 (the GPU's defaults, the flags, the old variables, TF_POLICY), joins the group and
-/// gives the other ranks rank 0's policy.
+/// Resolves the policy on rank 0 (defaults, flags, old variables, TF_POLICY), joins the group, sends it to the others.
 fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) (Refused || Allocator.Error)!Ready {
     try checkGroup(a, o, problem);
     const native = modelContext(a, io, o.dir);
@@ -133,8 +131,7 @@ const Host = struct {
     }
 };
 
-/// The engine for `o.dir`, or null with `problem` set when no HIP family reads the checkpoint. Under tensor
-/// parallelism this is rank 0, which serves; the others run `follow`.
+/// The engine for `o.dir`, or null with `problem` when no HIP family reads it; under tensor parallelism, rank 0.
 pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
     inline for (registry) |F| {
         if (std.mem.eql(u8, o.model_type, F.model_type)) return openWith(F, a, gpa, io, o, problem);
@@ -173,8 +170,7 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
 }
 
-/// A rank above 0: holds its share of the model and runs rank 0's steps until rank 0 stops; false with `problem` set
-/// when it cannot start.
+/// A rank above 0: holds its share and runs rank 0's steps until rank 0 stops; false with `problem` if it cannot start.
 pub fn follow(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !bool {
     inline for (registry) |F| {
         if (std.mem.eql(u8, o.model_type, F.model_type)) {

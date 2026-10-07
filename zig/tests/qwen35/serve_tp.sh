@@ -1,6 +1,5 @@
 #!/bin/sh
-# usage: serve_tp.sh DEVS WORLD MODEL_DIR PORT [serve flags] -> the native server at tensor parallelism WORLD on the
-# cards DEVS (HIP_VISIBLE_DEVICES), checked over HTTP by serve_check.py; run from the build directory.
+# usage: serve_tp.sh DEVS WORLD MODEL_DIR PORT [serve flags]: serve_check.py on a tp server, from the build directory.
 set -u
 devs=$1; world=$2; model=$3; port=$4; shift 4
 bin=./zig-out/native/bin/tensorfold-native

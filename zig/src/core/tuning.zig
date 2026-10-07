@@ -1,5 +1,4 @@
-//! The registry's costs a GPU, as a table of rows a backend reads at build time from its own .zon files. No autotuning at
-//! run time, so ranks and runs choose alike. A backend names which table a GPU takes.
+//! The registry's costs per GPU, read at build time from a backend's .zon files; no autotuning, so ranks agree.
 
 const std = @import("std");
 

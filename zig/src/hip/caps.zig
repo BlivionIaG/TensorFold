@@ -1,5 +1,4 @@
-//! What a GPU can do, from its gfx name: wave size, the dot and matrix instructions, its activation type and which
-//! code-object family runs it. Kernels and the registry test these, never a GPU's name.
+//! What a GPU can do, from its gfx name; kernels and the registry test these capabilities, never the GPU's name.
 
 const std = @import("std");
 

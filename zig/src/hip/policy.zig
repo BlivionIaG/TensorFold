@@ -1,5 +1,4 @@
-//! What a run may use, resolved once at open: the matrix cores, activation and attention precision, which kernels,
-//! graphs, prefill steps, MTP and prompt reuse. Nothing below the engine reads the environment; it reads this.
+//! What a run may use, resolved once at open; nothing below the engine reads the environment, it reads this.
 
 const std = @import("std");
 const caps_mod = @import("caps.zig");
@@ -39,7 +38,7 @@ pub const Policy = struct {
     kernels: Kernels = .auto,
     graphs: Choice = .auto,
     launch: Launch = .zig,
-    /// The reference kernels one family at a time: the decode stream tile, the prefill GEMM tile, the fused decode tails, the chunked recurrence.
+    /// Reference kernels one at a time: decode stream tile, prefill GEMM tile, fused decode tails, chunked recurrence.
     stream: Pick = .auto,
     gemm: Pick = .auto,
     fuse: Pick = .auto,
@@ -144,7 +143,7 @@ pub const Policy = struct {
         return std.meta.stringToEnum(E, value) orelse error.BadValue;
     }
 
-    /// One line for the start-up log and the server's info, every field in `apply`'s syntax; what is at its default and local is left out.
+    /// One line for the start-up log and server info, in `apply`'s syntax; default and local fields are left out.
     pub fn format(p: Policy, w: *std.Io.Writer) std.Io.Writer.Error!void {
         try w.print("matrix={t},activations={t},attention={t},kernels={t},graphs={t},launch={t},prefill_step={d},mtp_drafts={d},mtp_confidence={d},prefix_slots={d},prefix_bytes={d},exact={t}", .{
             p.matrix, p.activations, p.attention, p.kernels, p.graphs, p.launch, p.prefill_step, p.mtp.drafts, p.mtp.confidence, p.prefix.slots, p.prefix.bytes, p.exact,
@@ -171,7 +170,7 @@ pub const Policy = struct {
         return .{ nibbles[0], nibbles[1] | @as(u32, p.mtp.drafts) << 24, p.prefill_step, @truncate(conf), @intCast(conf >> 32), p.prefix.slots };
     }
 
-    /// `local` with every field rank 0 sent replaced: what stays a rank's own is the prefix bytes, the graph fault and the library path.
+    /// `local` with every field rank 0 sent; a rank keeps its own prefix bytes, graph fault and library path.
     pub fn fromWords(w: [word_count]u32, local: Policy) Policy {
         var p = local;
         var vals: [11]u32 = undefined;
@@ -283,8 +282,7 @@ pub const Policy = struct {
         }.rule;
     }
 
-    /// The policy of a run on `gpu`: its defaults, then the server's flags (`flags`, `k=v` text), then the old
-    /// variables as aliases, then TF_POLICY. `notes` says which of the last two spoke.
+    /// The policy on `gpu`: defaults, then `flags` (`k=v`), old variables, then TF_POLICY; `notes` says which acted.
     pub fn resolve(gpu: caps_mod.Caps, flags: []const u8, env: Env, notes: *Notes) Error!Policy {
         var p = defaults(gpu);
         try p.apply(flags);

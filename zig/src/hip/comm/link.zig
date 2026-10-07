@@ -1,4 +1,4 @@
-//! The ranks' TCP link: rank 0 listens, the others connect once and get the communicator's id, then take rank 0's commands.
+//! The ranks' TCP link: rank 0 listens, the others connect once, get the communicator's id, take rank 0's commands.
 
 const std = @import("std");
 const posix = std.posix;
@@ -18,8 +18,7 @@ pub const Link = struct {
     /// Rank 0: the follower of rank r + 1 at index r. A follower: rank 0's socket at index 0.
     fds: [max_world - 1]posix.socket_t = undefined,
 
-    /// Joins the ranks: rank 0 listens on `host:port` and sends each the `id` and its `hello`; the others connect and
-    /// return what they receive. A rank whose GPU differs from rank 0's is refused on both sides.
+    /// Rank 0 listens on `host:port`, sends each rank `id` and `hello`; a GPU that differs from rank 0's is refused.
     pub fn open(io: std.Io, rank: usize, world: usize, host: []const u8, port: u16, id: rccl.UniqueId, hello: Hello) Error!struct { Link, rccl.UniqueId, Hello } {
         if (world < 2 or world > max_world or rank >= world) return error.BadRank;
         const ip = std.Io.net.IpAddress.parse(host, port) catch return error.ConnectFailed;

@@ -1,5 +1,4 @@
-//! The chunked DeltaNet prefill and the token-serial kernel against a float64 recurrence on random inputs
-//! and, with `--bench`, the two kernels' time at the model's head counts.
+//! The chunked DeltaNet prefill and the token-serial kernel against a float64 recurrence on random inputs.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -225,7 +224,7 @@ fn download(gpu: Gpu, b: hip.DeviceBuffer, out: []f32) !void {
     try b.download(0, std.mem.sliceAsBytes(out));
 }
 
-/// The chunked kernel against the float64 recurrence (`check`), and the two kernels' time at the model's head counts (`bench`).
+/// The chunked kernel against the float64 recurrence, and with `bench` both kernels' time at the model's head counts.
 pub fn run(gpu: Gpu) !void {
     const shapes = [_]Shape{
         .{ .length = 64, .key_heads = 2, .value_heads = 4 },

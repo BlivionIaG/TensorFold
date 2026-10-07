@@ -1,5 +1,4 @@
-//! What a lane round's launches depend on, for a backend that replays rounds from captured graphs: its rows padded to a
-//! bucket, its slots and the keys the attention walk covers. A graph captured for a shape serves any streams of it.
+//! What a lane round's launches depend on, so a graph captured for a shape replays for any streams of that shape.
 
 const std = @import("std");
 
@@ -22,8 +21,7 @@ pub fn spanOf(visible: usize) usize {
     return span;
 }
 
-/// What a round's launches depend on: the rows it runs (padding included), its slots (the streams', empty ones up to a
-/// bucket, then the scratch slot that holds the padding rows) and the keys the walk covers.
+/// A round's rows (padding included), slots (streams', empties to a bucket, then the padding's scratch slot) and keys.
 pub const Shape = struct {
     rows: u32,
     slots: u32,

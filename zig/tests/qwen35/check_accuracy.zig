@@ -1,5 +1,4 @@
-//! The accuracy checks of `check`: every row's logits, from one cold prefill and from a token at a time through the
-//! decode rounds, scored against the fp64 truth.
+//! The accuracy checks of `check`: every row's logits, from a cold prefill and from decode rounds, against fp64 truth.
 
 const std = @import("std");
 const check_ctx = @import("check_ctx.zig");

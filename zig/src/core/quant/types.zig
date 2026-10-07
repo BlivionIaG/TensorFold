@@ -1,5 +1,4 @@
-//! What the format modules share: the format tags, the device decoder ids and the uploaded tensor. Nothing here is a
-//! backend's: a backend uploads through an `Uploader` it makes and reads the device addresses of a `Buf`.
+//! What the format modules share: format tags, device decoder ids and the uploaded tensor; nothing here is a backend's.
 
 const std = @import("std");
 const st = @import("../safetensors.zig");
@@ -16,7 +15,7 @@ pub const Decoder = enum(u8) { mlx = 0, dense = 1 };
 /// The type of a group table, numbered as the kernels number it.
 pub const Tables = enum(u8) { f32 = 0, bf16 = 1, f16 = 2 };
 
-/// The config's objects a format looks for its quantization in: `quantization` of the text tower or the root, and the root.
+/// The config objects a format reads its quantization from: `quantization` of the text tower or the root, and the root.
 pub const Sources = struct { root: std.json.ObjectMap, quantization: std.json.ObjectMap };
 
 /// `parts` joined in `buf`: a tensor's key from its base and suffix.
@@ -48,7 +47,7 @@ pub const Buf = struct {
     }
 };
 
-/// How a backend puts a host tensor on its device: `put` copies it and returns where it landed, keeping what it must free.
+/// How a backend puts a host tensor on its device: `put` copies it, returns where it landed, keeps what it must free.
 pub const Uploader = struct {
     ctx: *anyopaque,
     put: *const fn (ctx: *anyopaque, t: Tensor) anyerror!Buf,

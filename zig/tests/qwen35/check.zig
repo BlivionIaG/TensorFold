@@ -1,7 +1,4 @@
-//! `check <model dir> [--tp N --rank R [--master HOST] [--port P]] [--policy K=V,...] [--prompts FILE] [--truth T --ids IDS] [--speed]
-//! [--only invariants|accuracy|speed] [--tokens N] [--kl X] [--top1 P] [--explain-kernels]`: the model's checks in one process, one line each
-//! (PASS, FAIL or SKIP with its numbers) and a summary; the exit code is nonzero when any fails. Under --tp every rank
-//! runs the same command and rank 0 reports; --explain-kernels prints each (op, path)'s kernel by row count and exits.
+//! `check <model dir> [--tp N --rank R] [--truth T --ids IDS] [--only invariants|accuracy|speed]`: a line a check.
 
 const std = @import("std");
 const qwen35 = @import("qwen3_5");

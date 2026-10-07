@@ -14,8 +14,7 @@ pub const Group = struct {
     link: link_mod.Link,
     id: rccl_mod.UniqueId,
 
-    /// Rank 0 listens on `master`:`port` until the others have connected; they get its id.
-    /// Rank 0's policy goes to the others, which adopt it; a rank whose GPU differs from rank 0's is refused.
+    /// Rank 0 listens on `master`:`port`, sends its id and policy; a rank whose GPU differs from rank 0's is refused.
     pub fn join(gpa: std.mem.Allocator, io: std.Io, rank: u32, world: u32, master: []const u8, port: u16, caps: Caps, policy: *Policy) Error!*Group {
         const g = try gpa.create(Group);
         errdefer gpa.destroy(g);

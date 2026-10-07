@@ -1,6 +1,4 @@
-//! The decode-step kernels of decode.hip and the merged affine launches against the launches they replace
-//! (the policy's `fuse` off): the router's logits, the residual tails, products that share x in one launch and the routed
-//! activation as an epilogue, each against a float64 reference on random data. With `--bench`, microseconds a launch.
+//! The merged decode-step launches against the ones they replace (`fuse` off), each against a float64 reference.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -57,7 +55,7 @@ pub const Rig = struct {
     bench: bool,
     start: hip.Event,
     stop: hip.Event,
-    /// A running hash of the group and pair outputs, the previous launches' (0) and the new ones' (1): the same before and after a change that keeps their bits.
+    /// A running hash of the group and pair outputs, the separate launches' (0) and the merged ones' (1).
     digest: [2]u64 = .{ 0, 0 },
 
     pub fn bits(t: *const Rig, v: f32) u16 {
@@ -139,8 +137,7 @@ fn router(t: *Rig, rows: usize, d: usize, experts: usize) !void {
     try check.expect(max_err[1] <= 2 * max_err[0] + 1e-9, "decode router r{d}: further from the float64 reference than twice the previous kernel", .{rows});
 }
 
-/// The residual tails: x = x + y (or the slots' weighted sum), then the next norm. Old is the combine, add and rms
-/// launches, new is one. Errors of x and of the normed rows against a float64 reference, relative to the row's largest.
+/// The residual tails, x = x + y (or the slots' weighted sum) then the next norm: three launches against one.
 fn tails(t: *Rig, rows: usize, width: usize, slots: usize) !void {
     const gpa = t.gpu.gpa;
     const kind: c_int = if (t.fp16) 1 else 2;
@@ -242,7 +239,7 @@ fn tails(t: *Rig, rows: usize, width: usize, slots: usize) !void {
     try check.expect(errs[1][0] <= 2 * errs[0][0] + 1e-7 and errs[1][1] <= 2 * errs[0][1] + 1e-7, "decode tail rows{d} slots{d}: further from the float64 reference than twice the previous launches", .{ rows, slots });
 }
 
-/// A random packed product's data on the host and the device: (n, k) at `bits` and `group`, bf16 tables, `experts` stacked.
+/// A random packed product on the host and the device: (n, k) at `bits` and `group`, bf16 tables, `experts` stacked.
 const Matrix = struct {
     n: usize,
     k: usize,
@@ -298,8 +295,7 @@ const Matrix = struct {
     }
 };
 
-/// Products that share x in one launch against one launch each: each side's rows rounded to the activation type, errors
-/// against a float64 dequant(W) . x on sampled outputs.
+/// Products that share x in one launch against one launch each, against a float64 dequant(W) . x on sampled outputs.
 fn group(t: *Rig, rows: usize, ns: []const usize, k: usize, bits: usize, group_size: usize) !void {
     const gpa = t.gpu.gpa;
     const hx = try gpa.alloc(u16, rows * k);
@@ -359,8 +355,7 @@ fn group(t: *Rig, rows: usize, ns: []const usize, k: usize, bits: usize, group_s
     try check.expect(errs[1] <= 2 * errs[0] + 1e-9, "decode group rows{d}: further from the float64 reference than twice one launch each", .{rows});
 }
 
-/// The routed gate and up of one token's slots (9 experts of 64): old is the stacked product to fp32 and the activation
-/// launch, new is one launch with the activation as its epilogue. Errors of the activation against a float64 reference.
+/// The routed gate and up of one token's slots: product then activation against one launch with an activation epilogue.
 fn pair(t: *Rig, rows: usize, width: usize, k: usize, bits: usize, group_size: usize) !void {
     const gpa = t.gpu.gpa;
     const experts = 64;

@@ -1,7 +1,6 @@
 #pragma once
 
-// The MLX affine WeightDecoder of the shared tiles: BITS-wide codes packed little-endian in 32-bit words, a scale and a
-// bias a group of K; it decides how a chunk is loaded and decoded, where the group terms are and how they fold.
+// The MLX affine WeightDecoder: BITS-wide codes packed little-endian in 32-bit words, a scale and a bias a group of K.
 
 #include <type_traits>
 #include <utility>
@@ -13,8 +12,7 @@
 namespace tf {
 namespace rocm {
 
-// A table entry's stored bits as two 16-bit loads at addresses that hold for every kind (no branch around the loads,
-// no conversion before use: either would make the loads in flight wait).
+// A table entry's bits as two 16-bit loads valid for every kind; a branch or conversion would stall loads in flight.
 using TableBits = unsigned __attribute__((ext_vector_type(2)));
 
 template <int BITS>
@@ -185,7 +183,7 @@ struct MlxDecoder {
         }
     }
 
-    // The stream tile's group terms: 16-bit table entries (BF16 or FP16), loaded as stored and widened where they are used.
+    // The stream tile's group terms: 16-bit BF16 or FP16 table entries, loaded as stored and widened where used.
     struct StreamTerms {
         const unsigned short* scale;
         const unsigned short* bias;

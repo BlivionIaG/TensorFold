@@ -1,4 +1,4 @@
-// Prefill attention for long prompts: 64 query rows share each 64-key tile, dot2 products into fp32, fp32 online softmax.
+// Prefill attention for long prompts: 64 query rows share a 64-key tile; dot2 products and online softmax in fp32.
 
 #include <hip/hip_bfloat16.h>
 #include <hip/hip_fp16.h>
@@ -51,8 +51,7 @@ __device__ __forceinline__ void pairs4(const void* at, Pair out[4]) {
     out[3] = __builtin_bit_cast(Pair, w.w);
 }
 
-// q is rounded to the cache's type once and stays in LDS; scores stay in registers, probabilities pass through LDS XOR-swizzled.
-// With PAGED, k and v are a layer's pools and `table` names the stream's pages: a 64-key tile is one page.
+// q rounds to the cache type once and stays in LDS; with PAGED, k and v are a layer's pools and a 64-key tile a page.
 template <typename Cache, bool PAGED>
 __device__ void fa_dot2(const float* __restrict__ q, const Cache* __restrict__ k, const Cache* __restrict__ v,
                         float* __restrict__ out, int qlen, int span, int heads, int kv_heads, int d, float scale,

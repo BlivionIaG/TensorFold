@@ -1,7 +1,6 @@
 #pragma once
 
-// The MLX affine instantiations of the shared tiles: each kernel is a tile (tiles/*.hpp) over the MLX decoder, the identity
-// encoder and the activation type's Dot, under the symbol the launchers look up, plus the C library's host launch helpers.
+// MLX affine kernels: each shared tile over the MLX decoder, identity encoder and Dot, named as the launchers look up.
 
 #include <cstdlib>
 #include <cstring>
@@ -127,8 +126,7 @@ inline hipError_t launch_affine_wmma_gemm(const Affine& a, hipStream_t stream, i
 
 // ---- the decode stream tile ----
 
-// Up to four products that share x, K, width and group in one launch: block bx of the launch belongs to the side whose
-// blocks [first[s], first[s + 1]) hold it. out is each side's (rows, n) output: fp32, or the activation type when out_half.
+// Up to four products sharing x, K, width and group in one launch; side s owns blocks [first[s], first[s + 1]).
 constexpr int kStreamSides = 4;
 
 struct StreamSides {
@@ -144,8 +142,7 @@ struct StreamSides {
     float limit;    // the activation's clamp when above 0
 };
 
-// Item z of the plan (or the plain product, or one side of a group) at CB columns a lane and R rows; PAIR is the routed gate
-// and up with the activation as its epilogue.
+// Item z of the plan (or the plain product, or a group's side) at CB columns a lane, R rows; PAIR fuses the activation.
 template <typename T, int BITS, int R, int CB, bool PAIR>
 __global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a, StreamSides sides, int lpc_log2,
                                                                        int gshift) {
@@ -153,7 +150,7 @@ __global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a
     stream_tile<MlxDecoder<BITS>, IdentityAct<T>, T, Epi, R, CB>(a, sides, lpc_log2, gshift);
 }
 
-// Waves a launch needs to hide the weight loads' latency, and the most code words a lane keeps in flight (more leaves the SIMD too few waves).
+// Waves needed to hide the weight loads' latency, and the most code words a lane keeps in flight (more: too few waves).
 constexpr int kStreamWavesWanted = 3000;
 constexpr int kStreamCodeWords = 32;
 
@@ -208,8 +205,7 @@ hipError_t stream_launch_type(const Affine& a, int lpc_log2, int items, hipStrea
     return stream_launch_bits<DotF16, BITS>(a, lpc_log2, items, stream);
 }
 
-// The activation of a stacked (gate | up) product: out (rows, pair_cols) = silu(gate) * up in the activation type, the
-// kernel's `a.n` the stacked width. Same columns a lane, half of them gate and half up.
+// The stacked (gate | up) product's activation: out (rows, pair_cols) = silu(gate) * up; `a.n` is the stacked width.
 template <typename T, int BITS, int R, int CB>
 hipError_t stream_pair_as(const Affine& a, int pair_cols, float limit, int lpc_log2, int items, hipStream_t stream) {
     const int per_block = kStreamWaves * (32 >> lpc_log2) * (CB / 2);
@@ -283,8 +279,7 @@ inline bool launch_affine_dot2_stream(const Affine& a, hipStream_t stream, int i
     return true;
 }
 
-// out (m, n / 2) = silu(gate) * up of the stacked (gate | up) product of `a`, in the activation type; false when the
-// shape keeps the separate products. Plain or routed (items).
+// out (m, n / 2) = silu(gate) * up of the stacked (gate | up) product, plain or routed; false keeps separate products.
 inline bool launch_affine_dot2_stream_pair(const Affine& a, float limit, hipStream_t stream, int items, hipError_t* err) {
     if (a.n % 2 != 0 || a.out16 == nullptr || a.n < 2 || !stream_enabled() || a.m < 1 || a.m > kStreamRows ||
         a.group % 32 || a.group > kLaneGroupMax || a.k % a.group || (reinterpret_cast<uintptr_t>(a.x) & 15) != 0 ||

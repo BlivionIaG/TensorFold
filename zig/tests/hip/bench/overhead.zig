@@ -8,7 +8,7 @@ const Gpu = check.Gpu;
 const expect = check.expect;
 const readCounter = probes.readCounter;
 
-/// `n` dependent one-thread launches on a stream, then the same chain captured once and replayed: microseconds a launch.
+/// `n` dependent one-thread launches, then the same chain captured once and replayed: microseconds a launch.
 pub fn run(gpu: Gpu, n: usize, reps: usize) !void {
     const d = gpu.d;
     var probe = try hip.Module.load(d, hip.kernels.probe);
@@ -58,4 +58,3 @@ pub fn run(gpu: Gpu, n: usize, reps: usize) !void {
     try expect(ran == want, "every launch ran once: {d} steps, expected {d}", .{ ran, want });
     std.debug.print("RESULT {d} dependent launches: {d:.2} us each on a stream, {d:.2} us each in a graph\n", .{ n, plain, graphed });
 }
-

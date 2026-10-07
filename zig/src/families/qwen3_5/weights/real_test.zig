@@ -1,4 +1,4 @@
-//! The index check on a real checkpoint: TF_QWEN_DIR names a model directory, and every tensor the loader reads is resolved.
+//! The index check on a real checkpoint: TF_QWEN_DIR names a model directory; every tensor the loader reads resolves.
 
 const std = @import("std");
 const checkpoint = @import("checkpoint.zig");

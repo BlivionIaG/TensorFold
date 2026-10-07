@@ -1,5 +1,4 @@
-//! Random packed products and device helpers the kernel groups share: a seeded generator, activations and tables of the
-//! kinds the engine feeds, device compares and timing.
+//! Random packed products and device helpers the kernel groups share: seeded data, device compares and timing.
 
 const std = @import("std");
 const hip = @import("hip");

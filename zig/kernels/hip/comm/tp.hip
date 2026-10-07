@@ -1,4 +1,4 @@
-// The tensor-parallel forward's own ops: a residual add of an fp32 sum, the expert share's remapping and masks, the MTP token probability.
+// Tensor-parallel forward ops: residual add of an fp32 sum, expert-share remap and masks, MTP token probability.
 
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>

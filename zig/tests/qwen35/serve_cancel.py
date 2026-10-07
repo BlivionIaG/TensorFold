@@ -1,10 +1,4 @@
-"""A request cancelled during its prompt pass frees the server at once, at any tp.
-
-usage: serve_cancel.py URL MODEL [PROMPT_WORDS=3000]
-
-Drops a long prompt's connection while it goes in, then times a short request: it must not wait. Three rounds, then the
-short answer must equal the one before the cancels.
-"""
+"""A request cancelled in its prompt pass frees the server at once; usage: serve_cancel.py URL MODEL [PROMPT_WORDS]."""
 
 import http.client
 import json

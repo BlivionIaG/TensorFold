@@ -1,5 +1,4 @@
-//! `prefill <model dir> <length>...`: cold prompts of each length (fixed synthetic ids) through the engine's prefill,
-//! one warm-up then the median of three timed runs, as prompt tokens a second.
+//! `prefill <model dir> <length>...`: cold synthetic prompts of each length through prefill, as prompt tokens a second.
 
 const std = @import("std");
 const qwen35 = @import("qwen3_5");

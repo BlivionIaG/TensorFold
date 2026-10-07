@@ -1,5 +1,4 @@
-//! Candidate logits scored against a high-precision truth .npy as tools/truth/score.py scores them: KL(truth || candidate),
-//! top-1 agreement, the largest logit error and perplexity. The truth is read a block of rows at a time.
+//! Candidate logits scored against a high-precision truth .npy as tools/truth/score.py scores them, a block at a time.
 
 const std = @import("std");
 const npy = @import("npy");

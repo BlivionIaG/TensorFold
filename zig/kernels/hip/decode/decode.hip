@@ -1,4 +1,4 @@
-// Decode-step kernels of a few rows: the MoE router a wave an expert and the residual tails; sums in the fastest order, not torch's.
+// Decode-step kernels for a few rows: the MoE router, a wave an expert, and residual tails; sums in the fastest order.
 
 // kind: 1 fp16, 2 bf16 (act.hpp's numbering).
 
@@ -29,7 +29,7 @@ constexpr int kRouterWaves = 4;
 constexpr int kRouterSteps = 16;  // float4 loads a lane keeps in flight
 constexpr int kRouterRows = 16;
 
-// logits[r, e] = x[r] . rows[e] for 16 rows a block, a wave an expert; d is a multiple of 4 and the weights' rows 16-byte aligned.
+// logits[r, e] = x[r] . rows[e], 16 rows a block, a wave an expert; d is a multiple of 4, weight rows 16-byte aligned.
 template <int KIND>
 __device__ void router_decode(const void* x, const float* rows, float* logits, int r, int d, int e) {
     const int lane = threadIdx.x & 31;
@@ -101,7 +101,7 @@ __device__ __forceinline__ void store_kind(void* p, int kind, long long i, float
 constexpr int kTailThreads = 512;
 constexpr int kTailWidth = 8192;
 
-// One row a block: x = round(x + t) with t = y or the slot-ordered weighted sum, then normed = rms(x) * weight, in one launch.
+// One row a block, one launch: x = round(x + t), t = y or the slot-ordered weighted sum; normed = rms(x) * weight.
 __device__ void tail_body(void* x, const void* y, const float* wts, const float* weight, void* normed, int kind,
                           int slots, int width, float eps) {
     __shared__ float row_v[kTailWidth];
@@ -141,7 +141,7 @@ __device__ void tail_body(void* x, const void* y, const float* wts, const float*
     }
 }
 
-// The conv launch's arguments: x (rows, channels), taps, state and snapshots, q and k (rows, kw) and v (rows, vw) out, norm and gate.
+// Conv launch arguments: x (rows, channels), taps, state, snapshots; q, k (rows, kw), v (rows, vw) out; norm, gate.
 struct ConvArgs {
     const void* x;
     int kind;
@@ -163,12 +163,12 @@ struct ConvArgs {
     float* gate;
     float* beta;
     int gcount, heads;
-    // A round's plan (plan.count null: the launch's own rows and state): a grid row a slot, its rows and state from the plan.
+    // A round's plan (plan.count null: the launch's own rows and state): a grid row a slot, rows and state from it.
     PlanArgs plan;
     int layer;
 };
 
-// The conv for a window's rows split into q, k and v: taps in order, silu after, q and k heads normed as rms_rows, gate and beta last.
+// The conv for a window's rows split into q, k, v: taps in order, then silu; q, k heads rms-normed; gate and beta last.
 __device__ void conv_split_body(const ConvArgs& launch) {
     __shared__ float sq[128];
     __shared__ float inv_s;
@@ -294,7 +294,7 @@ __device__ void
     }
 }
 
-// The gated norm: out = rms(y) * weight * round(silu(z)) in the kind, a wave a (row, head), with no fp32 round trip between.
+// The gated norm out = rms(y) * weight * round(silu(z)) in the kind, a wave a (row, head), no fp32 round trip between.
 __device__ void
     gnorm_out_body(const float* y, const float* weight, const void* z, void* out, int kind, int rows, int width,
                      float eps) {
@@ -330,7 +330,7 @@ constexpr int kSelectMax = 1024;
 
 __device__ __forceinline__ float round_bf16_f(float v) { return round_kind(v, 2); }
 
-// act.hip's moe_select with picks found by rank: expert i is in the top k when fewer than k beat it; `items` writes the plan.
+// act.hip's moe_select with picks by rank: expert i is in the top k when fewer than k beat it; `items` writes the plan.
 __device__ void select_body(const float* logits, int* pick, float* wts, int* items, int* members, int capacity,
                             int experts, int top_k) {
     __shared__ float v[kSelectMax];

@@ -1,7 +1,6 @@
 #pragma once
 
-// Epilogues: what a tile does with the finished sums of its outputs. The GEMM tiles hand over one fp32 value at a time; the
-// stream tile a lane's columns, rounded to the activation type or, for the routed gate and up, turned into the activation.
+// Epilogues: what a tile does with finished sums; GEMM tiles hand one fp32 value, the stream tile a lane's columns.
 
 #include <hip/hip_fp16.h>
 
@@ -32,8 +31,7 @@ __device__ inline typename T::elem narrow(float v) {
     }
 }
 
-// A float product rounded to the activation type; FP16 is one rounding of the exact product (a mixed-precision multiply-add
-// with a zero addend), spelled out so that no code layout makes it a rounding to fp32 and another to FP16.
+// A float product rounded to T: FP16 is one rounding of the exact product (fma, zero addend), never fp32 then FP16.
 template <typename T>
 __device__ inline typename T::elem narrow_product(float a, float b) {
     if constexpr (std::is_same_v<typename T::elem, __half>) {
@@ -55,8 +53,7 @@ __device__ inline typename T::elem swiglu(float g, float u, float limit) {
     return narrow_product<T>(g / (1.f + expf(-g)), u);
 }
 
-// The stream tile's epilogues take the CB sums of a lane's columns for one row (`v`), the column `c` of them and the width
-// of the paired output.
+// Stream tile epilogues take a lane's CB column sums for one row (`v`), their column `c` and the paired output width.
 
 // The sum rounded to the activation type where `out16` is set (the decode tails' own rounding), else stored in fp32.
 template <class T>
@@ -73,8 +70,7 @@ struct StreamRound {
     }
 };
 
-// A lane's columns are CB / 2 gate columns and the same columns of the up half: the output is silu(gate) * up in the
-// activation type, `pair_cols` wide.
+// A lane's columns are CB / 2 gate columns and the same up columns; out is silu(gate) * up in T, `pair_cols` wide.
 template <class T>
 struct StreamSwiglu {
     static constexpr bool kPair = true;

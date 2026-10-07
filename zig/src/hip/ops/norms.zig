@@ -20,7 +20,7 @@ pub fn rms2(o: Ops, x0: u64, w0: u64, y0: u64, x1: u64, w1: u64, y1: u64, rows: 
     try z.tf_rms2(f(x0), f(w0), f(y0), f(x1), f(w1), f(y1), int(rows), int(width), eps, o.stream);
 }
 
-/// The linear attention's gated norm: out = rms(y) * weight * round(silu(z)) in z's kind, rows of `width` (at most 1024).
+/// The linear attention's gated norm: out = rms(y) * weight * round(silu(z)) in z's kind, `width` at most 1024.
 pub fn gnormOut(o: Ops, y: u64, weight: u64, z: Tensor, out: Tensor, rows: usize, width: usize, eps: f32) Error!void {
     if (z.kind != out.kind or z.kind == .f32) return error.BadShape;
     const zig = o.lib.zig orelse return error.BadShape;

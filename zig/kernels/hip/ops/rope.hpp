@@ -6,7 +6,7 @@
 
 namespace {
 
-// apply_rope's prefill formula as torch makes it, rounded to kind and stored as out_kind at out[h * s_head + r * s_row + j].
+// apply_rope's prefill formula as torch has it, rounded to kind, stored as out_kind at h * s_head + r * s_row + j.
 __global__ void rope_prefill_kernel(const void* x, int kind, void* out, int out_kind, long long s_head, long long s_row,
                                     int len, int heads, int d, int rotary, int pos0, float theta) {
     long long i = gid();
@@ -31,7 +31,7 @@ __global__ void rope_prefill_kernel(const void* x, int kind, void* out, int out_
     store(out, out_kind, h * s_head + r * s_row + j, rounded(y, kind));
 }
 
-// A window's q or k heads in one pass, a wave a (row, head): RMS norm, then the rotation at its position, each rounded to `kind`.
+// A window's q or k heads in one pass, a wave a (row, head): RMS norm, then rotation at its position, both rounded.
 __global__ void __launch_bounds__(256) qk_rope_kernel(const void* src, int kind, long long s_row, int s_head,
                                                       const float* weight, float eps, int rows, int heads, int width,
                                                       int rotary, float theta, const int* pos, float* wide,

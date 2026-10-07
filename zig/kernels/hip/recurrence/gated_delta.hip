@@ -220,7 +220,7 @@ gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const
                                            blockIdx.z);
 }
 
-// A round's windows in one launch, a grid plane a slot: its rows, state and snapshots come from the plan (the same scan).
+// A round's windows in one launch, a grid plane a slot; rows, state and snapshots come from the plan, same scan.
 template <int DK>
 __device__ __forceinline__ void
 gated_delta_plan_body(const float* q, const float* k, const float* v, const float* gate, const float* beta, float* y,

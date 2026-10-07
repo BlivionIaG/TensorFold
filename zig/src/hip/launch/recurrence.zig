@@ -71,7 +71,7 @@ pub fn tf_gated_delta(l: *const Launcher, q: CF, k: CF, v: CF, gate: CF, beta: C
     }
 }
 
-/// The chunked DeltaNet prefill of `length` rows (dk = dv = 128, batch 1) in chunks, with `scratch` of `gdnScratch` bytes.
+/// The chunked DeltaNet prefill of `length` rows (dk = dv = 128, batch 1), `scratch` of `gdnScratch` bytes.
 pub fn gdnChunked(l: *const Launcher, q: CF, k: CF, v: CF, gate: CF, beta: CF, state: F, y: F, length: usize, key_heads: usize, value_heads: usize, scratch: u64, s: S) Error!void {
     if (length < 1 or key_heads < 1 or @rem(value_heads, key_heads) != 0) return invalid("gdn chunked");
     const sc = gdnScratch(length, key_heads, value_heads);

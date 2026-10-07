@@ -1,4 +1,4 @@
-//! The registry's costs on each GPU: the .zon tables beside this file, read at build time. A backend names which table a GPU takes.
+//! The registry's costs on each GPU: the .zon tables beside this file, read at build time.
 
 const std = @import("std");
 const tuning = @import("core").tuning;

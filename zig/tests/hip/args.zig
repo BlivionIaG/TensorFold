@@ -26,8 +26,7 @@ fn value(rest: []const []const u8, i: *usize) Bad![]const u8 {
     return rest[i.*];
 }
 
-/// The old commands as filters of the new ones: positional [reps] [filter] arguments are read, the old tile-by-tile
-/// comparisons are the registry's entries now.
+/// The old commands as filters of the new ones; their positional [reps] [filter] arguments are read.
 fn oldAlias(cmd: []const u8, rest: []const []const u8) Bad!?Plan {
     const eql = std.mem.eql;
     const first: []const u8 = if (rest.len > 0) rest[0] else "";
@@ -88,7 +87,6 @@ pub fn parse(cmd: []const u8, rest: []const []const u8) Bad!Plan {
     }
     return plan;
 }
-
 
 test "the old names resolve to groups of the new commands" {
     const a = (try oldAlias("exact", &.{})).?;

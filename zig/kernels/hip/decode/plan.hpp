@@ -4,8 +4,7 @@
 
 #include "decode/pages.hpp"
 
-// A lane round's plan as the kernels read it from device memory: each row's position and slot, each slot's rows and
-// its caches. Nothing of a stream is a launch argument, so one launch (or graph) serves any streams, positions and caches.
+// A lane round's plan in device memory: no stream state is a launch argument, so one launch or graph serves any.
 struct PlanArgs {
     const int* pos;                   // per row: its position
     const int* slot;                  // per row: its slot
@@ -17,8 +16,7 @@ struct PlanArgs {
     unsigned pool;                    // pages a head of a layer's pool holds
 };
 
-// A slot's descriptor: [0] positions its caches hold, [1] its last kept final row, then per layer two addresses (the key and
-// value pools of an attention layer; conv window, DeltaNet state of a linear one), then its page table (`pages` words in).
+// Slot descriptor: [0] cached positions, [1] last kept final row, two cache addresses a layer, then the page table.
 __device__ __forceinline__ const unsigned long long* plan_desc(const PlanArgs& p, int slot) {
     return reinterpret_cast<const unsigned long long*>(p.desc[slot]);
 }

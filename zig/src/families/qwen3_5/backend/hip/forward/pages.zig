@@ -1,5 +1,4 @@
-//! Paged KV: the keys and values of every attention layer live in a pool of pages of 64 positions, handed out with
-//! reference counts, so streams and the prefix tree share the pages of a common prefix.
+//! Paged KV: attention keys and values in a pool of reference-counted pages, so streams and the prefix tree share them.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -71,8 +70,7 @@ pub const Ids = struct {
     }
 };
 
-/// The device pools of every attention layer (keys and values) and the ids over them: `kv_heads` runs of `count` pages of 64
-/// positions, so pages taken in order read as one stretch.
+/// Each attention layer's key and value pools and their ids: `kv_heads` runs of `count` pages, contiguous in order.
 pub const Pool = struct {
     gpa: Allocator,
     d: *const hip.Driver,

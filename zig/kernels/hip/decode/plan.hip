@@ -61,7 +61,7 @@ __device__ void plan_score_body(const float* __restrict__ q, float* __restrict__
     }
 }
 
-// attention.hip's apply_values over a plan's rows: a block a 128-key tile, the tile's weighted values of the row's slot.
+// attention.hip's apply_values over a plan's rows: a block a 128-key tile, its weighted values of the row's slot.
 template <int KIND>
 __device__ void plan_apply_body(const float* __restrict__ scores, const float* __restrict__ stats,
                                   float* __restrict__ partials, int span, int heads, int kv_heads, int d,
@@ -136,8 +136,7 @@ tf_plan_apply_bf16(const float* scores, const float* stats, float* partials, int
     plan_apply_body<2>(scores, stats, partials, span, heads, kv_heads, d, plan, layer);
 }
 
-// Positions pos0 .. pos0 + len of a stream's pages from `src` (16-bit values at h * s_head + r * s_row + j): a prompt
-// pass's keys (already rotated and rounded) and values.
+// A prompt pass's rotated, rounded keys and values (16-bit) into positions pos0 .. pos0 + len of a stream's pages.
 __global__ void __launch_bounds__(256)
 tf_page_write(const uint16_t* src, uint16_t* pool, const unsigned* table, int len, int kv_heads, int d, long long s_head,
               long long s_row, int pos0, int count) {
@@ -149,7 +148,7 @@ tf_page_write(const uint16_t* src, uint16_t* pool, const unsigned* table, int le
     pool[page_at(table, count, h, pos0 + r, d) + j] = src[h * s_head + r * s_row + j];
 }
 
-// The first `len` positions of a stream's pages as (kv_heads, len, d): the flat layout the other attention kernels read.
+// The first `len` positions of a stream's pages as (kv_heads, len, d), the flat layout other attention kernels read.
 __global__ void __launch_bounds__(256)
 tf_page_gather(const uint16_t* pool, const unsigned* table, uint16_t* dst, int len, int kv_heads, int d, int count) {
     const long long i = gid();
@@ -167,8 +166,7 @@ __global__ void __launch_bounds__(256) tf_plan_gather(const unsigned long long* 
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < words; i += gridDim.x * blockDim.x) to[i] = from[i];
 }
 
-// Keeps each listed slot's first `keep[slot]` rows (a negative count lists none): a linear layer's conv window and state
-// as they stood after the last kept row, and the slot's last kept final row. A grid plane a layer, then one for the rows.
+// Rolls each slot's conv window, state and final row back to its first `keep[slot]` rows; a negative count skips it.
 __global__ void __launch_bounds__(256)
 tf_plan_keep(PlanArgs plan, const int* keep, const unsigned int* hidden, int hidden_words, int conv_words, int delta_words, int layers) {
     const int slot = blockIdx.z;

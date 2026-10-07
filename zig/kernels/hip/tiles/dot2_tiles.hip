@@ -472,8 +472,7 @@ hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int
     }
 }
 
-// Policy matrix=off keeps the dot2 tiles on gfx11, on puts every product of the GEMM tiles on the matrix cores, auto
-// takes them from 16 rows; gfx12's matrix cores have other layouts and always stay on dot2.
+// matrix=off keeps gfx11 on dot2, on puts all GEMM-tile products on matrix cores, auto from 16 rows; gfx12 stays dot2.
 static int wmma_rows_from() {
     static const int major = [] {
         int dev = 0, m = 0;
@@ -485,7 +484,7 @@ static int wmma_rows_from() {
     return library_policy.matrix == 1 ? 1 : 16;
 }
 
-// Prefill's tile for a few rows (tiles/gemm_kp.hpp): the Zig launcher takes it, this entry keeps its kernels in the object.
+// Prefill's few-row tile (tiles/gemm_kp.hpp): the Zig launcher takes it; this entry keeps its kernels in the object.
 hipError_t launch_affine_gemm_kp(const Affine& a, hipStream_t stream, int items) {
     switch (a.bits) {
         case 2: return launch_kp_bits<2>(a, stream, items);

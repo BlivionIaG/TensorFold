@@ -87,7 +87,7 @@ pub fn planCausal(l: *const Launcher, q: u64, out: u64, scores: u64, stats: u64,
     try l.go(l.sum_partials, dim(heads, rows, 1), dim(256, 1, 1), 0, s, &e);
 }
 
-/// The DeltaNet recurrence of every slot's rows (q, k, v, gate, beta, y flat over the round's rows), state in the slot's caches.
+/// The DeltaNet recurrence of every slot's rows (q, k, v, gate, beta, y flat over rows), state in the slot's caches.
 pub fn planGatedDelta(l: *const Launcher, q: u64, k: u64, v: u64, gate: u64, beta: u64, y: u64, p: PlanRef, layer: usize, key_heads: usize, value_heads: usize, dk: usize, dv: usize, s: S) Error!void {
     if ((dk != 16 and dk != 128) or @rem(dv, 8) != 0 or key_heads < 1 or @rem(value_heads, key_heads) != 0) return invalid("planned gated delta");
     var a: Args = .{};
@@ -116,8 +116,7 @@ pub fn planGather(l: *const Launcher, srcs: u64, dst: u64, words: usize, rows: u
     try l.go(l.plan.gather, dim(cdiv(words, 256), rows, 1), dim(256, 1, 1), 0, s, &a);
 }
 
-/// Positions pos0 .. pos0 + len of a stream's pages (the pool of one layer's keys or values) from 16-bit `src` values
-/// at h * s_head + r * s_row + j: a prompt pass's keys, rotated and rounded, and its values.
+/// Writes positions pos0 .. pos0 + len of a stream's pages from 16-bit `src` at h * s_head + r * s_row + j.
 pub fn pagesWrite(l: *const Launcher, src: u64, pool: u64, table: u64, len: usize, kv_heads: usize, d: usize, s_head: usize, s_row: usize, pos0: usize, count: usize, s: S) Error!void {
     var a: Args = .{};
     a.add(src);
@@ -146,8 +145,7 @@ pub fn pagesGather(l: *const Launcher, pool: u64, table: u64, dst: u64, len: usi
     try l.flat(l.plan.page_gather, @intCast(len * kv_heads * d), s, &a);
 }
 
-/// What a keep reads: the plan, each slot's kept row count (negative: not listed), the round's final rows, the words of
-/// one final row, of one conv snapshot and of one DeltaNet snapshot (multiples of four), and the layers.
+/// What a keep reads: the plan, kept rows a slot (negative: unlisted), final rows, word counts (of four), layers.
 pub const Keep = struct { keep: u64, hidden: u64, hidden_words: usize, conv_words: usize, delta_words: usize, layers: usize };
 
 /// Keeps the listed slots' rows: linear states from the snapshot of the last kept row, and its final row.

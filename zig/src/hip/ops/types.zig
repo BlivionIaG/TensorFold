@@ -1,4 +1,4 @@
-//! The types the launches share: the buffer kinds, a device tensor and an MLX affine matrix, and the casts of addresses.
+//! The types the launches share: buffer kinds, a device tensor, an MLX affine matrix and the address casts.
 
 const rocm = @import("../rocm.zig");
 

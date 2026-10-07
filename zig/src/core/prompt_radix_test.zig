@@ -1,4 +1,4 @@
-//! The prompt cache's tests: pages and a family over host memory, so a resumed pass keeps exactly the pages and states it should.
+//! The prompt cache's tests over host memory: a resumed pass keeps exactly the pages and states it should.
 
 const std = @import("std");
 const radix = @import("prompt_radix.zig");
@@ -81,8 +81,7 @@ fn seq(comptime n: usize, from: u32) [n]u32 {
     return out;
 }
 
-/// A pass over `prompt` as a backend runs it: begin, a stream with the resumed pages and fresh ones, a keep at each mark where
-/// the stream swaps its pages for the tree's.
+/// A pass over `prompt` as a backend runs it: begin, then a keep at each mark, the stream taking the tree's pages.
 fn pass(f: *Fake, s: *Store, a: Allocator, prompt: []const u32, history: u32, shared: []const u32, mine: *std.ArrayList(u32)) !Plan {
     mine.clearRetainingCapacity();
     const plan = try s.begin(a, prompt, history, shared, null, mine);
@@ -148,7 +147,7 @@ test "marks: the history, the stable prefix, shared blocks and the last page, ap
     const prompt = seq(48, 0);
     var prev = seq(30, 0);
     prev[28] = 77;
-    // history 41 floors to 40, the prefix shared with the last prompt ends at 28, a block ends at 12, the last page starts at 44
+    // history 41 floors to 40, the prefix shared with the last prompt ends at 28, a block at 12, the last page at 44
     try std.testing.expectEqualSlices(u32, &.{ 12, 28, 40 }, try s.marks(a, &prompt, 0, 41, &.{12}, &prev));
     try std.testing.expectEqualSlices(u32, &.{40}, try s.marks(a, &prompt, 28, 41, &.{12}, &prev));
     try std.testing.expectEqualSlices(u32, &.{44}, try s.marks(a, &prompt, 0, 0, &.{}, &.{})); // no history: the last page

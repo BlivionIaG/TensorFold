@@ -91,7 +91,7 @@ pub fn tf_causal(l: *const Launcher, q: CF, k: C, v: C, out: F, batch: c_int, ql
     a.add(v_sb);
     a.add(v_sh);
     a.add(v_ss);
-    // a 16-bit cache of whole 64-wide heads takes the 64-row tile (attention=f32: the 16-row one); odd heads a wave a query
+    // a 16-bit cache of whole 64-wide heads takes the 64-row tile (attention=f32: 16-row); odd heads a wave a query
     if (kind < 2 and @rem(d, 64) == 0 and d <= 256 and @rem(k_ss, 8) == 0 and @rem(v_ss, 8) == 0 and l.wide) {
         try l.go(l.fa_wide[kind], dim(cdiv(qlen, 64), heads, batch), dim(256, 1, 1), 0, s, &a);
     } else if (d >= 2 and @rem(d, 2) == 0) {
@@ -101,8 +101,7 @@ pub fn tf_causal(l: *const Launcher, q: CF, k: C, v: C, out: F, batch: c_int, ql
     }
 }
 
-/// The 64-row prefill tile over a stream's pages: q (heads, qlen, d) fp32 against the first `span` positions, the
-/// pools of a 16-bit cache of kind `cache_kind` (0 fp16, 1 bf16) and the stream's page table.
+/// The 64-row prefill tile over a stream's pages: q (heads, qlen, d) fp32 against `span` positions, 16-bit cache.
 pub fn pagedCausal(l: *const Launcher, q: u64, k: u64, v: u64, table: u64, out: u64, qlen: usize, span: usize, heads: usize, kv_heads: usize, d: usize, scale: f32, q_pos0: usize, count: usize, cache_kind: c_int, s: S) Error!void {
     if (d % 64 != 0 or d > 256 or heads % kv_heads != 0 or cache_kind < 0 or cache_kind > 1) return invalid("paged attention");
     var a: Args = .{};

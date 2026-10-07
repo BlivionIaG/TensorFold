@@ -1,6 +1,4 @@
-//! Typed launches of the ROCm kernel library on device addresses: shapes checked here (the C launchers trust them),
-//! scratch from the forward's arena, the Python wrappers' choices (splits, fp16 decode output) made the same way.
-//! The launches live by job in this folder; `Ops` is the one value the forward calls them through.
+//! Typed launches of the ROCm kernel library: shapes checked here, as the C launchers trust them; `Ops` holds them.
 
 const std = @import("std");
 const abi = @import("../runtime/abi.zig");
@@ -26,11 +24,9 @@ pub const Ops = struct {
     lib: *const rocm.Library,
     stream: abi.Stream,
     arena: *Arena,
-    /// A prompt's span: every product, the router and the recurrence take prefill's one kernel at any row count, so a
-    /// prompt's rows have the same bits however it is cut (fresh, resumed or in steps).
+    /// A prompt's span: products, router and recurrence take prefill's kernel, so rows have the same bits however cut.
     prefill: bool = false,
-    /// A lane round's forward: the decode tiles at any row count (the stream tile over 4-row blocks, the router a wave an
-    /// expert, 8-row routed items), so a row's bits do not depend on the rows it shares the round with.
+    /// A lane round's forward: decode tiles at any row count, so a row's bits ignore the rows it shares a round with.
     window: bool = false,
 
     /// The GPU's activations are bf16 (the matrix-core build); fp16 on RDNA2.

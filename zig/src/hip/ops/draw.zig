@@ -15,7 +15,7 @@ pub fn argmaxRows(o: Ops, logits: Tensor, rows: usize, n: usize, out: u64) Error
     try o.lib.check(o.lib.api.tf_argmax_rows(p(logits.ptr), @backingInt(logits.kind), int(rows), int(n), i(out), o.stream), "argmax_rows");
 }
 
-/// softmax of each of `rows` logits rows at the token the device i32 `ids` names (0: the row's largest), into f32 `out`.
+/// softmax of each of `rows` logits rows at the token device i32 `ids` names (0: the row's largest), into f32 `out`.
 pub fn tokenProb(o: Ops, logits: Tensor, rows: usize, n: usize, ids: u64, out: u64) Error!void {
     if (logits.kind == .f32) return error.BadShape;
     try o.lib.check(o.lib.api.tf_token_prob(p(logits.ptr), @backingInt(logits.kind), int(rows), int(n), if (ids == 0) null else @ptrFromInt(ids), f(out), o.stream), "token_prob");

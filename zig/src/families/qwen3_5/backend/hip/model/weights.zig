@@ -1,4 +1,4 @@
-//! The Qwen3.5 / Qwen3.6 text model on the GPU: the Python TextModel's tensors as device buffers with their dtypes beside them.
+//! The Qwen3.5 / Qwen3.6 text model on the GPU: the Python TextModel's tensors as device buffers with their dtypes.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -196,7 +196,7 @@ pub const Model = struct {
         return fromCheckpointRank(gpa, d, &ck, std.math.maxInt(usize), rank);
     }
 
-    /// The first `limit` layers of `ck` (all of them when `limit` is large), with the MTP head only when every layer loads.
+    /// The first `limit` layers of `ck` (all when `limit` is large), with the MTP head only when every layer loads.
     pub fn fromCheckpoint(gpa: std.mem.Allocator, d: *const hip.Driver, ck: *const checkpoint.Checkpoint, limit: usize) !Model {
         return fromCheckpointRank(gpa, d, ck, limit, null);
     }

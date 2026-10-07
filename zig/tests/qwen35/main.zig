@@ -1,7 +1,4 @@
-//! Qwen3.5 / 3.6 model tests: `check <model dir> ...` runs the invariant, accuracy and speed checks in one process
-//! (check.zig); `upload <model dir> [first layers]` uploads the model and reads every buffer back (GPU);
-//! `digest <model dir> [--tp N --rank R]` prints a SHA-256 per host tensor (of one tensor-parallel rank's share with
-//! --tp), to compare with the Python loader's.
+//! Qwen3.5 / 3.6 model tests: `tf-qwen35-test <command> ...`, the commands listed in `usage`.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -10,8 +7,7 @@ const qwen35 = @import("qwen3_5");
 const Buf = qwen35.weights.Buf;
 const Tensor = qwen35.table.Tensor;
 
-/// No per-thread alternate signal stack: its 256 KiB thread-local leaves the threads RCCL and the HIP runtime start too
-/// little stack for glibc to create them.
+/// No per-thread alternate signal stack: its thread-local leaves RCCL's and HIP's threads too little stack to start.
 pub const std_options: std.Options = .{ .signal_stack_size = null };
 
 const usage = "usage: tf-qwen35-test check <model dir> [--tp N --rank R --master H --port P] [--prompts FILE] [--truth T --ids IDS] [--speed] [--only invariants|accuracy|speed] | upload <model dir> [first layers] | digest <model dir> [--tp N --rank R] | layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]] | lanes ... | prefill <model dir> <length>... | logits <model dir> <ids.npy> <out.npy> [--f32] [--decode] | rows <model dir> <ids.npy> [n] | draw x\n";

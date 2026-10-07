@@ -1,5 +1,4 @@
-//! Qwen3.5 / Qwen3.6 for the native server on HIP: the engine sized to the GPU's memory and the lane backend over it.
-//! native/hip.zig drives what `open` returns and the ranks above 0 run `follow`; nothing here knows the server.
+//! Qwen3.5 / Qwen3.6 for the native server on HIP: the engine sized to GPU memory and the lane backend over it.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -99,7 +98,7 @@ fn prepare(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.De
         plan.cache_budget = cache[1];
     }
     const policy = dev.policy;
-    // --prompt-cache-gib names the bytes and --checkpoint-slots the snapshots (the policy's prefix bytes and slots otherwise); zero of either turns the cache off
+    // --prompt-cache-gib and --checkpoint-slots override the policy's prefix bytes and slots; zero of either: off
     if (o.cache_gib) |g| plan.cache_budget = @intFromFloat(g * (1 << 30)) else if (policy.prefix.bytes > 0) plan.cache_budget = policy.prefix.bytes;
     const keep: usize = if (o.keep) |n| @intCast(n) else policy.prefix.slots;
     if (keep == 0) plan.cache_budget = 0;

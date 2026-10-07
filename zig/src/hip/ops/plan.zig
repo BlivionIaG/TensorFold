@@ -1,5 +1,4 @@
-//! A lane round's launches over its device plan: positions, slots and caches are read on the device, so a launch's
-//! arguments depend only on the plan's shape (its rows and slots) and the layer.
+//! A lane round's launches over its device plan: arguments depend only on the plan's shape and the layer.
 
 const t = @import("types.zig");
 const launches = @import("../launches.zig");
@@ -24,8 +23,7 @@ fn int(n: usize) c_int {
 pub const Norm = struct { q: u64, k: u64, eps: f32 };
 pub const Gates = struct { a: Tensor, b: Tensor, a_log: u64, dt_bias: u64, gate: u64, beta: u64, count: usize, heads: usize };
 
-/// The round's rows through the linear attention's conv in one launch, from each slot's window, split into q, k (rows, kw)
-/// and v (rows, vw) fp32; a slot of several rows leaves each row's state in the round's snapshots.
+/// The round's rows through the linear attention's conv from each slot's window, split into q, k, v fp32.
 pub fn convSplit(o: Ops, x: Tensor, weight: u64, qn: u64, kn: u64, v: u64, p: Plan, layer: usize, channels: usize, kernel: usize, kw: usize, vw: usize, norm: ?Norm, gates: ?Gates) Error!void {
     if (kernel < 1 or kernel > 8 or x.kind == .f32) return error.BadShape;
     const z = try launcher(o);
@@ -66,7 +64,7 @@ pub fn convSplit(o: Ops, x: Tensor, weight: u64, qn: u64, kn: u64, v: u64, p: Pl
     try z.tf_conv_split(c, o.stream);
 }
 
-/// The DeltaNet recurrence of every slot's rows: q, k (rows, Hk, dk), v, y (rows, Hv, dv), gate and beta (rows, Hv) fp32.
+/// The DeltaNet recurrence of every slot's rows: q, k (rows, Hk, dk), v, y (rows, Hv, dv), gate, beta (rows, Hv) fp32.
 pub fn gatedDelta(o: Ops, q: u64, k: u64, v: u64, gate: u64, beta: u64, y: u64, p: Plan, layer: usize, key_heads: usize, value_heads: usize, dk: usize, dv: usize) Error!void {
     try (try launcher(o)).planGatedDelta(q, k, v, gate, beta, y, p, layer, key_heads, value_heads, dk, dv, o.stream);
 }

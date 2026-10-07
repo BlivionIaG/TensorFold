@@ -1,9 +1,6 @@
 #pragma once
 
-// Decode tile for 1 to 8 rows that streams the weights: a lane owns a 32-code chunk of a column's row, so a wave's load is
-// a contiguous run and the rows of x stay in registers. y = sum over chunks of scale * dot(x, code) + bias * sum(x): a
-// chunk needs no group alignment. Lanes a column (lpc, a power of two up to 32) walk the row in rounds, each lane CB
-// columns with all loads issued before the first dot; no LDS, the column's lanes fold with shuffles.
+// Streaming decode tile for 1 to 8 rows: a lane owns a 32-code chunk of a column; no LDS, lanes fold by shuffle.
 
 #include <type_traits>
 #include <utility>
@@ -54,8 +51,7 @@ __device__ inline void stream_dots(const typename T::pair (&xp)[RG][16], const u
      ...);
 }
 
-// Epi::kPair: a lane's CB columns are CB / 2 gate columns and the same columns of the up half (rows pair_cols on), and the
-// output is silu(gate) * up in the activation type, (rows, pair_cols).
+// Epi::kPair: a lane's CB columns are CB / 2 gate columns and the same up columns; out is silu(gate) * up.
 template <class Dec, class Act, class T, class Epi, int R, int CB, bool WIDE>
 __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, int gshift, int bx, int pair_cols, float limit) {
     using pair = typename T::pair;
@@ -160,8 +156,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         }
     };
 
-    // One row keeps two rounds of loads in flight. Columns start on different rounds, by their group of 8 (a column's sum
-    // keeps one order whatever the launch's shape), so rows a power of two bytes apart do not hit the same memory channels.
+    // Columns stagger their start round by group of 8 to spread memory channels; a column's sum order ignores shape.
     const int rounds = (nch + lpc - 1) >> lpc_log2;
     const int rot = rounds > 1 ? (col0 >> 3) % rounds : 0;
     auto at = [&](int r) {
@@ -207,8 +202,7 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
     }
 }
 
-// Item z of the plan (or the plain product, or one side of a group) at CB columns a lane and R rows; the chunks' group is
-// q >> gshift. `sides` counts a group's products off block by block when it has any.
+// Item z of the plan (or plain product, or a group's side) at CB columns a lane, R rows; chunk group is q >> gshift.
 template <class Dec, class Act, class T, class Epi, int R, int CB, class Sides>
 __device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, int lpc_log2, int gshift) {
     int bx = blockIdx.x;

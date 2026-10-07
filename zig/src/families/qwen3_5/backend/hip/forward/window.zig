@@ -1,4 +1,4 @@
-//! A lane round's forward: every stream's window in one pass over the round's device plan, each row with its serial step's bits.
+//! A lane round's forward: every stream's window in one pass over the round's device plan, each row bitwise serial.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -28,7 +28,7 @@ pub fn snapDeltaWords(s: view.Spec) usize {
     return s.value_heads * s.value_dim * s.key_dim;
 }
 
-/// Each linear layer's snapshots of a round of `rows` rows (conv window, DeltaNet state after every row), zero for an attention layer.
+/// Each linear layer's snapshots for a round of `rows` rows (conv window, state after every row), zero for attention.
 pub fn snapshots(o: Ops, m: *const view.Model, rows: usize, table: [][2]u64) !void {
     const s = m.spec;
     for (table, 0..) |*t, index| {
@@ -105,8 +105,7 @@ fn inputNorm(layer: view.Layer) u64 {
     };
 }
 
-/// Keeps the slots `kept` lists (`kept[slot]` rows, negative: not listed): attention needs nothing, a linear layer takes
-/// its snapshot of the last kept row, and the slot's last kept final row of `hidden` goes where its descriptor says.
+/// Keeps the slots `kept` lists (negative: none): linear layers take the last kept row's snapshot, `hidden` its row.
 pub fn keep(o: Ops, m: *const view.Model, p: pops.Plan, kept: u64, hidden: u64) hip.ops.Error!void {
     const s = m.spec;
     try pops.keep(o, p, .{
@@ -131,7 +130,7 @@ fn attentionRows(o: Ops, m: *const view.Model, f: view.Full, r: Round, index: us
     const q_rows = total * s.heads;
     const eps: f32 = @floatCast(s.eps);
     const theta: f32 = @floatCast(s.rope_theta);
-    // q and k each normed, rotated at the rows' positions and rounded in one launch; k then goes with v into the slots' caches
+    // q and k normed, rotated and rounded in one launch; k then goes with v into the slots' caches
     const q32 = try o.arena.of(f32, q_rows * hd);
     try o.qkRope(qg, s.heads * 2 * hd, 2 * hd, f.q_norm, eps, total, s.heads, hd, s.rotary_dim, theta, r.plan.args.pos, q32, null, 0);
     const k32 = try o.arena.of(f32, total * s.kv_heads * hd);

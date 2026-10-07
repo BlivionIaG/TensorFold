@@ -1,4 +1,4 @@
-//! GPU test runner for the Zig HIP port: `tf-hip-test <command> [flags]`, one PASS or FAIL line a case group, exit 1 on failure.
+//! GPU test runner for the Zig HIP port: `tf-hip-test <command> [flags]`, a PASS or FAIL line a group, exit 1 on FAIL.
 
 const std = @import("std");
 const hip = @import("hip");

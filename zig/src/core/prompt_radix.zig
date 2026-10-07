@@ -1,5 +1,4 @@
-//! Prompt reuse as a radix tree over token pages (prompt_radix_tree.zig), shaped as core/prompt_cache.zig's Store: a request
-//! takes the pages of its longest match and resumes from the deepest snapshot on it. Nothing here knows a GPU.
+//! Prompt reuse as a radix tree over token pages: a request takes its longest match and resumes its deepest snapshot.
 
 const std = @import("std");
 const pc = @import("prompt_cache.zig");
@@ -13,7 +12,7 @@ pub const Counts = tree_mod.Counts;
 pub const Node = tree_mod.Node;
 pub const Tree = tree_mod.Tree;
 
-/// The rules of prompt_cache.zig, paged: `page` is set, `lookahead` and `planned` are not (a row's bits do not depend on its chunk).
+/// The rules of prompt_cache.zig, paged: `page` set, `lookahead` and `planned` not (a row's bits ignore its chunk).
 pub const Rules = pc.Rules;
 
 /// What the tree may hold: pages, and snapshots.
@@ -53,14 +52,13 @@ pub const Store = struct {
         return s.limits.pages > 0 and s.limits.snaps > 0;
     }
 
-    /// The deepest node with a state that `prompt` resumes exactly: its tokens a prefix of the prompt, at least one token left.
+    /// The deepest node with a state `prompt` resumes exactly: its tokens a prefix, at least one token left.
     pub fn find(s: *const Store, prompt: []const u32) ?*Node {
         if (!s.on() or prompt.len < 2) return null;
         return s.tree.deepest(prompt, (prompt.len - 1) / s.rules.page * s.rules.page);
     }
 
-    /// Before a prompt pass: restore the longest state `prompt` resumes into `owner` (from 0: none, or a failed restore), put
-    /// its pages in `adopt` (each held once more for the caller) and plan the pass's marks.
+    /// Restores the longest state `prompt` resumes into `owner`, its pages into `adopt` (held once more); plans marks.
     pub fn begin(s: *Store, a: Allocator, prompt: []const u32, history_len: u32, shared: []const u32, owner: ?*anyopaque, adopt: *std.ArrayList(u32)) !Plan {
         if (!s.on()) return .{ .marks = try a.alloc(u32, 0) };
         const found = s.find(prompt);
@@ -150,7 +148,7 @@ pub const Store = struct {
         return out.toOwnedSlice(a);
     }
 
-    /// Where a pass from `from` keeps states: the history, then min_gap apart the stable prefix, shared blocks and the last page.
+    /// Where a pass from `from` keeps states: the history, then min_gap apart the stable prefix, blocks, last page.
     pub fn marks(s: *const Store, a: Allocator, prompt: []const u32, from: u32, history_len: u32, shared: []const u32, previous: []const u32) ![]const u32 {
         if (prompt.len < s.rules.min_prompt or prompt.len < 2) return a.alloc(u32, 0);
         var out: std.ArrayList(u32) = .empty;
@@ -180,8 +178,7 @@ pub const Store = struct {
         return out.toOwnedSlice(a);
     }
 
-    /// The pass stands at `at` with `mine`, its first pages: the tree takes the pages it lacks and the snapshot, evicting to fit;
-    /// `path` gets the tree's page of each of the first `shared`. Refused (counted) when nothing can go.
+    /// At `at` the tree takes the pages of `mine` it lacks and the snapshot, evicting to fit; `path` gets its pages.
     pub fn keep(s: *Store, prompt: []const u32, at: u32, owner: ?*anyopaque, mine: []const u32, path: []u32) Kept {
         const t = &s.tree;
         if (!s.on() or at == 0 or at % s.rules.page != 0 or at > prompt.len or mine.len != at / s.rules.page or path.len != mine.len) return .{ .held = false, .shared = 0 };
@@ -257,7 +254,7 @@ pub const Store = struct {
         for (n.kids.items) |k| pick(k, prompt, skip, moved, oldest);
     }
 
-    /// The entry to free first, never `skip` (a pass's resume): one a later prompt extends, oldest first; else the least valuable.
+    /// The entry to free first, never `skip`: one a later prompt extends, oldest first; else the least valuable.
     fn victim(s: *const Store, prompt: []const u32, skip: ?*Node) ?*Node {
         var moved: ?*Node = null;
         var oldest: ?*Node = null;
@@ -265,7 +262,7 @@ pub const Store = struct {
         return moved orelse oldest;
     }
 
-    /// Evicts until at least `want` pages of the pool are free and not promised; false when the tree cannot give that many.
+    /// Evicts until `want` pool pages are free and not promised; false when the tree cannot give that many.
     pub fn reclaim(s: *Store, want: usize) bool {
         const pages = s.tree.pages;
         while (pages.vtable.available(pages.ptr) < want) if (!s.tree.evictLeaf()) return false;

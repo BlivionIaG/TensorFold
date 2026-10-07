@@ -1,4 +1,4 @@
-//! The MTP head drafting chains: one head forward a step over a row each, so a round costs one chain's steps and one sync.
+//! The MTP head drafting chains: one head forward a step over a row each; a round costs one chain's steps, one sync.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -18,7 +18,7 @@ const Tensor = hip.ops.Tensor;
 /// Most drafts a chain (the Python engine's depth).
 pub const max_depth = 3;
 
-/// One stream's chain: its last kept final row, the token after it and its slot, the drafts asked for and how each is drawn.
+/// One stream's chain: its last kept final row, the token after it and its slot, the drafts asked for and their draw.
 pub const Job = struct {
     hidden: u64,
     token: u32,
@@ -30,8 +30,7 @@ pub const Job = struct {
     kept: usize = 0,
 };
 
-/// What a greedy batch's launches depend on: its chains (a bucket, padding included), the drafts each runs, whether
-/// their probabilities are read for the confidence cut.
+/// What a greedy batch's launches depend on: its chain bucket, drafts per chain, whether the confidence cut runs.
 const ChainKey = struct { rows: u32, most: u32, cut: bool };
 
 /// A greedy chain reads the head over the first ids of the vocabulary alone (the common tokens): a draft only guesses.
@@ -126,8 +125,7 @@ pub const Head = struct {
         h.gpa.destroy(h);
     }
 
-    /// Byte offsets in the scalars: uploads first (tokens, slots, positions, the addresses of the chains' input rows), then
-    /// the downloads (drafts, probabilities).
+    /// Scalar byte offsets: uploads (tokens, slots, positions, input row addresses), then downloads (drafts, probs).
     const Layout = struct { slots: usize, pos: usize, ptrs: usize, drafts: usize, probs: usize, total: usize };
 
     fn layout(h: *const Head) Layout {
@@ -255,7 +253,7 @@ pub const Head = struct {
         try h.steps(o, m, key.rows, key.most, key.cut);
     }
 
-    /// The greedy chains' steps on the device alone: each step's drafts feed the next, with the probabilities of those a later one follows.
+    /// The greedy chains' steps on the device alone: each step's drafts feed the next, with probabilities for the cut.
     fn steps(h: *Head, o: Ops, m: *const view.Model, rows: usize, most: usize, cut: bool) !void {
         const at = h.layout();
         const dev = h.scalars_dev.ptr;

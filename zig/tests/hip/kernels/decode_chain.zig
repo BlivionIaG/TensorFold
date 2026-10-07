@@ -1,5 +1,4 @@
-//! The linear attention's small launches merged by decode.hip against the chains they replace, byte for byte (the
-//! arithmetic is the separate kernels'), and the MoE pick rule found by rank against the one that scans.
+//! The merged linear-attention launches against the chains they replace, byte for byte, and the MoE pick rule by rank.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -21,8 +20,7 @@ fn same(t: *Rig, what: []const u8, a: hip.DeviceBuffer, b: hip.DeviceBuffer) !vo
     try check.sameBytes(what, hb, ha);
 }
 
-/// The pick rule over `rows` rows of (experts + 1) logits, the plan of one row included: picks, weights, items and
-/// members must be what the scanning kernel wrote.
+/// The pick rule over `rows` rows of (experts + 1) logits: picks, weights, items and members as the scanning kernel's.
 pub fn select(t: *Rig, rows: usize, experts: usize, top_k: usize) !void {
     const gpa = t.gpu.gpa;
     const slots = top_k + 1;
@@ -85,8 +83,7 @@ pub fn select(t: *Rig, rows: usize, experts: usize, top_k: usize) !void {
     if (t.bench) std.debug.print("RESULT decode select rows{d} experts{d} top{d}: old {d:.1} us, new {d:.1} us, x{d:.2}; picks, weights and plan equal\n", .{ rows, experts, top_k, us[0], us[1], us[0] / us[1] });
 }
 
-/// A window's conv: cast, conv, three column copies, the q and k norms and the gate against one launch. State,
-/// snapshots, outputs, gate and beta must be equal bytes.
+/// A window's conv chain (cast, conv, column copies, q and k norms, gate) against one launch: equal bytes everywhere.
 pub fn conv(t: *Rig, rows: usize) !void {
     const gpa = t.gpu.gpa;
     const kw: usize = 2048;

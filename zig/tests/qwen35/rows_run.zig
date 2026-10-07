@@ -1,6 +1,4 @@
-//! `rows <model dir> <ids.npy> [n] [streams] [keep]`: the window invariant layer by layer. Stream j holds the ids cut j
-//! tokens short; its last n tokens run one row a round alone and as one shared round keeping only its first `keep` rows.
-//! Every layer's residual rows and the final rows are compared byte for byte, and the first difference is named.
+//! `rows <model dir> <ids.npy> [n] [streams] [keep]`: the window invariant layer by layer, naming the first difference.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -36,8 +34,7 @@ const Sink = struct {
     }
 };
 
-/// One round of every stream's `tokens` (stream j from slot `pos[j]` of `caches[j]`) run in a plan of at least `pad` rows,
-/// captured into `sink` from its current row, then kept.
+/// One round of every stream's `tokens` from `pos[j]` of `caches[j]`, in at least `pad` rows, captured into `sink`.
 fn round(e: *Engine, caches: []const *qwen35.state.Caches, pos: []const usize, tokens: []const []const u32, keep: usize, sink: *Sink, pad: usize) !void {
     var rows: [8]Engine.Rows = undefined;
     var reqs: [128]qwen35.draw.Request = undefined;

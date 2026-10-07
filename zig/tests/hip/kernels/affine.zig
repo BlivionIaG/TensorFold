@@ -1,6 +1,4 @@
-//! Every registered affine kernel against float64: for each product, each entry of its (op, path) that the GPU has and the
-//! shape fits is launched on its own, its output compared with dequant(W) . x on sampled outputs, and the entries the
-//! registry can pick between under the run's policy must write the same bytes. `--bench` adds each entry's time.
+//! Every registered affine entry the GPU has and the shape fits, against float64; rival entries must write equal bytes.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -147,8 +145,7 @@ pub fn product(rig: *Rig, c: Case, tot: *Totals) !void {
         }
     }
     try check.expect(ran > 0, "affine {s}: no registered entry takes the product", .{label});
-    // under the default rules the entries the registry picks between by rows write one set of bytes
-    // (a routed decode plan keeps its rows by the item's rows: the rows group checks it)
+    // entries the registry picks between by rows write one set of bytes; the rows group checks routed decode plans
     if (env.stream_on and env.gemm_on and !(c.routed() and c.path == .decode)) for (seen, n_seen) |picked, n| {
         if (n < 2) continue;
         for (picked[1..n]) |s| try check.expect(s.digest == picked[0].digest, "affine {s}: {s} writes other bytes than {s}, which the registry picks between by rows", .{ label, s.e.id, picked[0].e.id });

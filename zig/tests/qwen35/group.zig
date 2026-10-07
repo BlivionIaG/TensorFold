@@ -73,7 +73,7 @@ pub const Group = struct {
     }
 };
 
-/// The policy of a test run on `device` and its GPU's caps: the GPU's defaults, `flags`, then the old variables and TF_POLICY, logged in one line.
+/// The policy of a test run on `device` and its caps: the GPU's defaults, `flags`, the variables and TF_POLICY, logged.
 pub fn resolve(flags: []const u8, device: c_int) !struct { policy: hip.Policy, caps: hip.Caps } {
     var d = try hip.Driver.open();
     defer d.close();

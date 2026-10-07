@@ -1,4 +1,4 @@
-//! The Python loader's `_packed`, `_float`, `_conv` and `_halves`: one tensor, or one projection's tensors, read and checked.
+//! The Python loader's `_packed`, `_float`, `_conv` and `_halves`: a tensor or a projection's, read and checked.
 
 const std = @import("std");
 const quant = @import("core").quant;

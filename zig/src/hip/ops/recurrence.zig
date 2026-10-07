@@ -50,8 +50,7 @@ fn gatedDeltaChunked(o: Ops, z: *const launches.Launcher, q: u64, k: u64, v: u64
     }
 }
 
-/// The DeltaNet recurrence: q, k (L, Hk, dk), v, y (L, Hv, dv), gate and beta (L, Hv) fp32; state in place.
-/// A prefill (no snapshots) of at least `gdn_min_rows` rows runs chunked; `gdn=reference` keeps the token-serial kernel.
+/// The DeltaNet recurrence, state in place; a prefill of `gdn_min_rows` rows or more runs chunked unless reference.
 pub fn gatedDelta(o: Ops, q: u64, k: u64, v: u64, gate: u64, beta: u64, state: u64, y: u64, length: usize, key_heads: usize, value_heads: usize, dk: usize, dv: usize, states: ?u64) Error!void {
     if (states == null and (length >= gdn_min_rows or o.prefill) and dk == 128 and dv == 128 and value_heads % key_heads == 0) {
         if (o.lib.zig) |*z| if (o.lib.policy.chunked()) return gatedDeltaChunked(o, z, q, k, v, gate, beta, state, y, length, key_heads, value_heads);

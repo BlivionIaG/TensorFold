@@ -1,6 +1,6 @@
 #pragma once
 
-// The PyTorch ops between the ROCm forward's kernels with their bits: one rounding where torch rounds, no contraction; kind 0 fp32, 1 fp16, 2 bf16.
+// The torch ops between kernels, bit for bit: round where torch rounds, no contraction; kind 0 fp32, 1 fp16, 2 bf16.
 
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>

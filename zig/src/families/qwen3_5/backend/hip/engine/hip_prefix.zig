@@ -1,5 +1,4 @@
-//! The HIP side of the prompt cache: the pool's pages and the linear snapshots behind core/prompt_radix.zig's interfaces, and the messages
-//! that keep the other ranks' copies. Rank 0 decides every match, insertion and eviction; the other ranks apply what it says.
+//! The prompt cache's HIP side: pages and snapshots for core/prompt_radix.zig; rank 0 decides, other ranks apply.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -71,13 +70,12 @@ pub const Prefix = struct {
         try p.send(p.msg.items);
     }
 
-    /// Before a prompt pass: the longest state the prompt resumes restored into the stream, its pages in `adopt`, the marks.
+    /// Before a prompt pass: the longest resumable state restored into the stream, its pages in `adopt`, the marks.
     pub fn begin(p: *Prefix, prompt: []const u32, history_len: u32, shared: []const u32, owner: *Owner, adopt: *std.ArrayList(u32)) !radix.Plan {
         return p.store.begin(p.gpa, prompt, history_len, shared, owner, adopt);
     }
 
-    /// The prompt pass stands at `at`: the tree takes the stream's pages it lacks and the linear state, and the stream swaps the
-    /// pages the tree had already for its own.
+    /// At `at` the tree takes the pages it lacks and the linear state; the stream swaps in the pages the tree had.
     pub fn keep(p: *Prefix, owner: *Owner, prompt: []const u32, at: usize) !void {
         if (!p.store.on()) return;
         const n = at / pages.tokens;

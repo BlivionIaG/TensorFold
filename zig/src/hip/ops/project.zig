@@ -1,5 +1,4 @@
-//! The products on a projection of any format, dispatched on its tag: the plain, grouped and routed matmuls and the
-//! embedding rows. `affine*` are the MLX affine path behind them; a format's own path is added beside it.
+//! The products on a projection of any format, dispatched on its tag; `affine*` are the MLX affine path behind them.
 
 const t = @import("types.zig");
 const quant = @import("core").quant;
@@ -27,7 +26,7 @@ fn affineOf(proj: Projection, h: mlx.Matrix) Affine {
     return .{ .words = h.words, .scale = h.scale, .bias = h.bias, .tables = tables, .n = proj.n, .k = proj.k, .bits = h.bits, .group = h.group, .partial = proj.partial };
 }
 
-/// matmul(x, proj) for a projection of any format: an fp32 product when `f32_out`, else x's kind (the MLX rules of `affine`).
+/// matmul(x, proj) for a projection of any format: fp32 when `f32_out`, else x's kind (the MLX rules of `affine`).
 pub fn project(o: Ops, x: Tensor, proj: Projection, m: usize, f32_out: bool) Error!Tensor {
     switch (proj.handle) {
         .mlx => |h| return affine(o, x, affineOf(proj, h), m, f32_out),
@@ -40,8 +39,7 @@ pub fn project(o: Ops, x: Tensor, proj: Projection, m: usize, f32_out: bool) Err
     }
 }
 
-/// Up to four products of the same `m` rows of x in one launch; false (nothing launched) when a format has no grouped tile
-/// or the products do not share one, and the caller launches them one by one.
+/// Up to four products of the same `m` rows in one launch; false, nothing launched, when no grouped tile takes them.
 pub fn projectGroup(o: Ops, x: Tensor, ps: []const Projection, m: usize, outs: []Tensor) Error!bool {
     var ws: [4]Affine = undefined;
     if (ps.len > ws.len) return false;
@@ -52,7 +50,7 @@ pub fn projectGroup(o: Ops, x: Tensor, ps: []const Projection, m: usize, outs: [
     return affineGroup(o, x, ws[0..ps.len], m, outs);
 }
 
-/// The routed gate and up with the activation as the launch's epilogue; null when the format or the tile does not take it.
+/// The routed gate and up with the activation as the epilogue; null when the format or the tile does not take it.
 pub fn projectRoutedAct(o: Ops, x: Tensor, proj: Projection, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize, limit: f32) Error!?Tensor {
     switch (proj.handle) {
         .mlx => |h| return affineRoutedAct(o, x, affineOf(proj, h), items, count, members, pairs, x_div, rows, limit),
@@ -68,7 +66,7 @@ pub fn projectRouted(o: Ops, x: Tensor, proj: Projection, items: u64, count: usi
     }
 }
 
-/// gather_rows: `n` embedding rows of a table in any format that has a row gather, by device ids, dequantized into `out`.
+/// gather_rows: `n` embedding rows of a table of any format with a row gather, by device ids, dequantized into `out`.
 pub fn embedRows(o: Ops, table: Projection, ids: u64, n: usize, out: Tensor) Error!void {
     switch (table.handle) {
         .mlx => |h| return embedAffine(o, affineOf(table, h), ids, n, out),
@@ -76,7 +74,7 @@ pub fn embedRows(o: Ops, table: Projection, ids: u64, n: usize, out: Tensor) Err
     }
 }
 
-/// The product of `m` rows of x with `w` as the registry sees it: a lane round (`window`) keeps its decode tile at any row count.
+/// The product of `m` rows of x with `w` as the registry sees it; a lane round keeps its decode tile at any row count.
 fn shapeOf(o: Ops, x: Tensor, w: Affine, m: usize) registry.Shape {
     return .{
         .m = @intCast(m),
@@ -142,8 +140,7 @@ pub fn affine(o: Ops, x: Tensor, w: Affine, m: usize, f32_out: bool) Error!Tenso
     return .{ .ptr = narrow, .kind = x.kind };
 }
 
-/// Up to four products of the same rows of x in one stream-tile launch, each rounded to x's kind into `outs`; false, with
-/// nothing launched, when the products differ in K, width, group or tables or the tile does not take them.
+/// Up to four products of the same rows in one stream-tile launch, rounded to x's kind; false if unsupported.
 pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tensor) Error!bool {
     const z = o.lib.zig orelse return false;
     if (o.prefill or !o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or x.kind == .f32) return false;
@@ -179,8 +176,7 @@ pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tens
     return true;
 }
 
-/// The routed gate and up in one launch with the activation as its epilogue: every item's stacked (gate | up) product
-/// and silu(gate) * up in x's kind, out (pairs, width). Null (nothing launched) when the tile does not take the shape.
+/// Routed gate and up in one launch, silu(gate) * up as epilogue into x's kind; null when the tile cannot.
 pub fn affineRoutedAct(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize, limit: f32) Error!?Tensor {
     const z = o.lib.zig orelse return null;
     if (o.prefill or !o.fused() or x.kind == .f32 or w.n % 2 != 0) return null;

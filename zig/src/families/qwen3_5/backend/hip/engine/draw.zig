@@ -65,8 +65,7 @@ pub const Drawer = struct {
         return w.dev.ptr + w.layout(0).arg;
     }
 
-    /// `out[r]` the token of row r of `logits` (rows, vocab) per `reqs[r]`; the stream is synchronized. `argmaxed`: the
-    /// rows' argmax is at `argmaxAt` already.
+    /// `out[r]` the token of row r of `logits` per `reqs[r]`, stream synchronized; `argmaxed`: argmax is at `argmaxAt`.
     pub fn draw(w: *Drawer, o: hip.ops.Ops, stream: hip.Stream, logits: hip.ops.Tensor, reqs: []const Request, out: []u32, argmaxed: bool) !void {
         const rows = reqs.len;
         if (rows > w.rows) return error.WindowTooWide;

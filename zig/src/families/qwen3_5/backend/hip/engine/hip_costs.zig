@@ -1,4 +1,4 @@
-//! The HIP lanes backend's own costs, timed at load on scratch streams: what the depth rule weighs a draft's rows against.
+//! The HIP lanes backend's own costs, timed at load on scratch streams: what the depth rule weighs drafts against.
 
 const std = @import("std");
 const hip = @import("hip");

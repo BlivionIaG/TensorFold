@@ -20,8 +20,7 @@ const invalid = util.invalid;
 /// The most rows the router's wave-an-expert kernel takes in prefill.
 pub const router_small_rows = 32;
 
-/// The router's logits at any row count (prefill's, so a prompt's rows do not depend on its cuts): the 64 x 64 tiles, or up
-/// to `router_small_rows` rows a wave an expert, which makes the same bits with more waves.
+/// The router's logits at any row count so prompt rows ignore cuts: 64 x 64 tiles, or a wave an expert, same bits.
 pub fn routerTile(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S) Error!void {
     return routerWith(l, x, kind, rows, logits, r, d, e, s, r <= router_small_rows);
 }

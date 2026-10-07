@@ -1,5 +1,4 @@
-//! A lane round's plan on the device: rows, slots and caches. Launches depend only on its `Shape`, so a graph captured for
-//! a shape serves any streams, positions and caches.
+//! A lane round's plan on the device; launches depend only on its `Shape`, so one graph serves any streams and caches.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -84,8 +83,7 @@ pub const Buffer = struct {
         };
     }
 
-    /// Writes the round into the pinned words: `windows` from their positions, the scratch slot's `pad` rows after them,
-    /// and each linear layer's snapshots (conv, DeltaNet; zero for an attention layer).
+    /// Writes the round into the pinned words: windows, the scratch slot's `pad` rows, each linear layer's snapshots.
     pub fn fill(b: *Buffer, l: Layout, shape: Shape, windows: []const Window, scratch: u64, snaps: []const [2]u64) void {
         const w = b.host.slice(u32);
         const slots: usize = shape.slots;
@@ -102,7 +100,7 @@ pub const Buffer = struct {
             }
             at += win.tokens.len;
         }
-        // slots past the streams' are empty, the last the scratch slot: the padding rows run there, from its first position
+        // slots past the streams' are empty and the last is the scratch slot, where padding rows run from its start
         for (windows.len..slots - 1) |s| {
             w[l.first + s] = 0;
             w[l.count + s] = 0;

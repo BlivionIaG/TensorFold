@@ -1,5 +1,4 @@
-//! The MLX affine tiles of tiles/dot2_tiles.hip and tiles/dot2.hip launched from Zig, a launcher a tile; the registry
-//! (core/registry.zig) picks which takes a product, and the entry points at the end are what launches call.
+//! The MLX affine tiles of tiles/dot2_tiles.hip and tiles/dot2.hip launched from Zig; the registry picks one.
 
 const std = @import("std");
 const abi = @import("../runtime/abi.zig");
@@ -89,8 +88,7 @@ const stream_waves = 4; // kStreamWaves
 const streams_wanted = 3000; // kStreamWavesWanted
 const stream_code_words = 32; // kStreamCodeWords
 
-/// The K-parallel tiles (tiles/gemm_kp.hpp) of a short prompt: cb columns a lane set, r rows a pass over up to rb row blocks,
-/// waves a block (`loop`: more rows than rb * r by passes).
+/// The K-parallel tiles of a short prompt: cb columns a lane set, r rows a pass over up to rb row blocks.
 pub const KpTile = struct { cb: c_int, r: c_int, waves: c_int, rb: c_int, loop: bool = true };
 pub const kp_tiles = [_]KpTile{
     .{ .cb = 8, .r = 1, .waves = 2, .rb = 2, .loop = false },
@@ -115,7 +113,7 @@ pub const Kernels = struct {
     wmma: bool,
     /// gfx11: the matrix-core GEMM tile runs (gfx12's WMMA has other layouts).
     matrix: bool,
-    /// The policy's `matrix`: `off` runs every product on the dot2 tiles, `on` and `auto` on the matrix cores where a tile exists.
+    /// The policy's `matrix`: `off` runs products on dot2 tiles, `on` and `auto` on matrix cores where a tile exists.
     mode: Choice,
     /// Which GEMM tile the products take; the policy's reference switch picks the reference one.
     tile: Tile,
@@ -139,8 +137,7 @@ pub const Kernels = struct {
     fill: Function,
     reg: Registry,
 
-    /// `tiles` holds dot2_tiles.hip's kernels, `dot2` dot2.hip's; one activation type a family: bf16 on the
-    /// WMMA build (v_dot2_f32_bf16), fp16 on RDNA2.
+    /// `tiles` holds dot2_tiles.hip's kernels, `dot2` dot2.hip's; bf16 on the WMMA build, fp16 on RDNA2.
     pub fn load(tiles_obj: Module, dot2_obj: Module, caps: Caps, policy: Policy) Error!Kernels {
         var k: Kernels = undefined;
         const wmma = caps.act == .bf16;
@@ -304,7 +301,7 @@ pub const Kernels = struct {
         var lpc_log2: u5 = 0;
         while ((@as(c_int, 1) << lpc_log2) < (a.k >> 5) and lpc_log2 < 5) lpc_log2 += 1;
         const r: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else 2;
-        // the widest column count that still gives the card enough waves, within the registers the lane's code words take
+        // the widest column count that still fills the card with waves, within the registers the lane's code words take
         var pick: usize = 0;
         var c: usize = stream_cbs.len;
         while (c > 0) {
@@ -421,16 +418,14 @@ pub const Kernels = struct {
 
     // ---- the entry points ----
 
-    /// Prefill's tile at any row count, with the same bits however a prompt is cut: the matrix tile on gfx11 unless
-    /// switched off, else the dot2 GEMM tile; a few rows take the K-parallel tile.
+    /// Prefill's tile, same bits however a prompt is cut: matrix on gfx11 unless off, else dot2 GEMM; few rows K-split.
     pub fn prefillLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
         const op: registry.Op = if (a.route.items != 0) .routed else .project;
         const e = k.choose(op, .prefill, shapeOf(a, items)) orelse return refuse("prefill shape");
         try e.launch(k, .{ .d = d, .s = s, .arg = a, .items = items });
     }
 
-    /// launch_affine on the auto schedule: the activation type's tiles. `schedule` 3 is prefill's, 4 a lane round's;
-    /// `partial` and `parts` split the groups over a scratch (the tests').
+    /// launch_affine on the auto schedule: `schedule` 3 is prefill's, 4 a lane round's; `partial`, `parts` the tests'.
     pub fn run(k: *const Kernels, d: *const driver.Driver, arg: Arg, schedule: c_int, s: abi.Stream, partial: u64, parts: c_int, out_half: bool) Error!void {
         var a = arg;
         if (schedule == 1) {
@@ -465,8 +460,7 @@ pub const Kernels = struct {
         try e.launch(k, .{ .d = d, .s = s, .arg = arg, .items = items });
     }
 
-    /// The stacked (gate | up) product of `arg` (plain or routed over `items`) as silu(gate) * up into `out16` (rows, n / 2),
-    /// clamped by `limit` when it is above 0. False when the shape keeps the separate products.
+    /// The stacked (gate | up) product as silu(gate) * up into `out16`, clamped by `limit` above 0; false if not taken.
     pub fn pairRun(k: *const Kernels, d: *const driver.Driver, arg: Arg, limit: f32, items: c_int, s: abi.Stream) Error!bool {
         var shape = shapeOf(arg, items);
         shape.pairs = arg.out16 != 0;
@@ -475,8 +469,7 @@ pub const Kernels = struct {
         return true;
     }
 
-    /// Up to four products of `m` rows over the same x in one launch (`a` holds x, m, k, bits, group, fp16 and the tables'
-    /// kind); each side's output is (m, n) fp32, or the activation type with `out_half`.
+    /// Up to four products of `m` rows over one x in one launch; outputs (m, n) fp32, or activation type if `out_half`.
     pub fn groupRun(k: *const Kernels, d: *const driver.Driver, arg: Arg, group: []const Side, out_half: bool, s: abi.Stream) Error!void {
         if (group.len == 0 or group.len > 4) return refuse("group shape");
         var a = arg;

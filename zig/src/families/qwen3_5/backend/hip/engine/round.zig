@@ -1,4 +1,4 @@
-//! A lane round on the engine: its plan on the device, its forward (replayed from a graph, captured or eager), its draws and its keep.
+//! A lane round on the engine: its device plan, its forward (replayed, captured or eager), its draws and its keep.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -116,7 +116,7 @@ fn nowNs() u64 {
     return @as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec));
 }
 
-/// Every window in one forward: `out` the token of every row per `reqs`; snapshots live until the next round for `keep`.
+/// Every window in one forward: `out` the token of every row per `reqs`; snapshots live until the next round's `keep`.
 pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: []u32) !Verified {
     const st = &e.round;
     const m = e.model();
@@ -227,7 +227,7 @@ pub fn mark(e: *Engine, slot: usize, rows: usize) void {
     e.round.staging[slot] = @intCast(rows);
 }
 
-/// Keeps every marked slot of the last verify in one launch: linear states as after the kept rows, and each slot's last kept final row.
+/// Keeps every marked slot of the last verify in one launch: linear states after the kept rows, last kept final rows.
 pub fn flush(e: *Engine) !void {
     const st = &e.round;
     const last = st.last orelse return;

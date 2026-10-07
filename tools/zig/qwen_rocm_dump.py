@@ -240,10 +240,7 @@ _ORIGINAL: dict = {}
 
 def generate(model: str, prompts_path: Path, max_tokens: int, out: Path, seed: int | None, temperature: float,
              tp: int = 1, rank: int = 0, master: str = "127.0.0.1", master_port: int = 29551) -> None:
-    """Each prompt's reply from the engine's own generate, serial (draft False), no end token: the lanes' reference.
-
-    With ``tp`` > 1 one process runs each rank: rank 0 writes the replies, the others follow it.
-    """
+    """Each prompt's serial reply from the engine's own generate, no end token: the lanes' reference; rank 0 writes."""
 
     from tensorfold.engine.exact_sampling import Sampling
     from tensorfold.rocm.serving.engine import QwenEngine

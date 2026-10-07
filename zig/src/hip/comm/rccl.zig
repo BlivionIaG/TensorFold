@@ -1,4 +1,4 @@
-//! RCCL opened at run time: the collectives the tensor-parallel forward needs, on our streams, as hand-declared exports.
+//! RCCL opened at run time: the tensor-parallel forward's collectives on our streams, as hand-declared exports.
 
 const std = @import("std");
 const abi = @import("../runtime/abi.zig");

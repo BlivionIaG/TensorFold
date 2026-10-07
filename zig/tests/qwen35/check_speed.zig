@@ -1,5 +1,4 @@
-//! The speed lines of `check`: cold prompt processing at three lengths, and decode of one stream and four, with drafts
-//! off and on. They carry numbers and fail only when a run does.
+//! The speed lines of `check`: cold prefill and decode with drafts off and on; they fail only when a run does.
 
 const std = @import("std");
 const check_ctx = @import("check_ctx.zig");
@@ -36,7 +35,7 @@ fn prefill(c: *Ctx) void {
     }
 }
 
-/// `prompts` generating `max_new` tokens each, the last of three runs (the first two meet the shapes and capture their graphs).
+/// `prompts` generating `max_new` tokens each, the last of three runs (the first two capture the graphs).
 fn decode(c: *Ctx, drafts: bool, prompts: []const ids_file.Prompt, max_new: u32) void {
     const name = std.fmt.allocPrint(c.arena, "speed decode {d} stream{s}, drafts {s}", .{ prompts.len, if (prompts.len == 1) "" else "s", if (drafts) "on" else "off" }) catch return;
     const job: Session.Job = .{ .prompts = prompts, .max_new = max_new, .drafts = drafts };

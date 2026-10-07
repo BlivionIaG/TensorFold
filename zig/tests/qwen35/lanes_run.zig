@@ -1,7 +1,4 @@
-//! `lanes <model dir> <prompts.json> <max tokens> [--seed S --temperature T] [--solo] [--no-drafts] [--report out.json]
-//! [--resume PREFIX] [--tp N --rank R [--master HOST] [--port P]]`: prompts through the lane core on the HIP backend,
-//! every stream at once or one at a time, no end token. --resume runs each prompt again, extended by its reply, on the
-//! kept caches (PREFIX-prompts.json and PREFIX-replies.json hold that run). With --tp rank 0 runs the core, the others follow.
+//! `lanes <model dir> <prompts.json> <max tokens> [--solo] [--no-drafts] [--resume PREFIX] [--tp N --rank R]`
 
 const std = @import("std");
 const lanes = @import("lanes");

@@ -1,5 +1,4 @@
-//! The structure under the paged prompt cache (prompt_radix.zig): nodes that are runs of whole pages keyed by their tokens, the pages
-//! they hold counted through the backend, and the family's snapshot at the end of a node that has one.
+//! The paged prompt cache's tree: nodes are runs of whole pages keyed by tokens, each may end in a family snapshot.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -108,8 +107,7 @@ pub const Tree = struct {
         return best;
     }
 
-    /// Pages of `tokens` (`np` whole pages) the tree holds from the start, written into `path` when there is one; `last` the
-    /// node they end in.
+    /// Pages of `tokens` (`np` whole pages) the tree holds from the start, into `path` if any; `last` the end node.
     pub fn heldPrefix(t: *const Tree, tokens: []const u32, np: usize, path: ?[]u32, last: *?*Node) usize {
         var node = t.root;
         var pi: usize = 0;
@@ -147,8 +145,7 @@ pub const Tree = struct {
         }
     }
 
-    /// Puts `tokens` (whole pages, `mine` the caller's page of each) in the tree and returns the node ending them: where the
-    /// tree has the pages `path` gets its page, where it does not the tree takes the caller's.
+    /// Puts `tokens` (whole pages, `mine` the caller's) in the tree, returns the end node; `path` gets the tree's page.
     pub fn insert(t: *Tree, tokens: []const u32, mine: []const u32, path: []u32) !*Node {
         const np = mine.len;
         var node = t.root;
@@ -233,7 +230,7 @@ pub const Tree = struct {
         return true;
     }
 
-    /// Whether the leaf `a` is less valuable than `b`: one never resumed before one that was, then the less recently used.
+    /// Whether leaf `a` is less valuable than `b`: never resumed before resumed, then the less recently used.
     fn lessValuable(a: *const Node, b: *const Node) bool {
         const hit_a = if (a.entry) |e| e.hit else false;
         const hit_b = if (b.entry) |e| e.hit else false;

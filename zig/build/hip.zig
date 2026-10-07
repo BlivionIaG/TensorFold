@@ -1,9 +1,9 @@
-//! The HIP half of the root build: the probe bundle, the ROCm libraries a GPU family each, the runtime and its GPU test program.
+//! The HIP half of the root build: the probe bundle, a ROCm library a GPU family, the runtime and its test program.
 
 const std = @import("std");
 const caps = @import("../src/hip/caps.zig");
 
-/// Each .hip in zig/kernels/hip with its own hipcc flags and the headers it includes (hipcc --genco writes no dep file).
+/// Each .hip in zig/kernels/hip with its hipcc flags and the headers it includes (hipcc --genco writes no dep file).
 const Kernel = struct { name: []const u8, source: []const u8, flags: []const []const u8 = &.{}, headers: []const []const u8 = &.{} };
 
 /// The probe's flags: wave32 on RDNA, no contraction.
@@ -13,14 +13,14 @@ const kernels = [_]Kernel{
     .{ .name = "probe", .source = "capi/probe.hip" },
 };
 
-/// torch's hipcc flags for the Python extensions, less include paths: the same flags give the same device code and bits.
+/// torch's hipcc flags for the Python extensions, less include paths: the same flags give the same device code, bits.
 const torch_flags = [_][]const u8{
     "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1",                      "-DHIPBLAS_V2", "-fPIC",
     "-DCUDA_HAS_FP16=1",        "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20",   "-fno-gpu-rdc",
     "-mno-wavefrontsize64",     "-ffp-contract=off",
 };
 
-/// One library's sources: the shim, the torch-op kernels and the ROCm kernels (attention.hip includes attention_fa.hip).
+/// One library's sources: the shim, the torch-op kernels, the ROCm kernels (attention.hip includes attention_fa.hip).
 const lib_sources = [_][]const u8{
     "capi/capi.hip",
     "ops/ops.hip",
@@ -93,7 +93,7 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     inline for (families, 0..) |f, i| options.addOption(bool, "with_" ++ f.name ++ "_modules", have_mods[i]);
     const hip = b.createModule(.{ .root_source_file = b.path("zig/src/hip/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
     hip.addOptions("kernel_options", options);
-    // a file lives in one module: the checkpoint reader is core's, shared with the server's tokenizer and the other backends
+    // a file lives in one module: the checkpoint reader is core's, shared with the tokenizer and the other backends
     hip.addImport("core", core);
     if (with) for (kernels, images) |k, image| hip.addAnonymousImport(b.fmt("hsaco_{s}", .{k.name}), .{ .root_source_file = image.? });
     for (families, libs) |f, l| if (l) |file| hip.addAnonymousImport(b.fmt("lib_{s}", .{f.name}), .{ .root_source_file = file });
@@ -103,8 +103,7 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     return hip;
 }
 
-/// Linux targets: the probe bundle and kernel libraries (-Dhipcc builds, -Dhsaco embeds prebuilt) and `tf-hip-test`;
-/// returns the HIP engines the native server opens, over the engine API and lane core the other backends share.
+/// Linux targets: probe bundle, kernel libraries (-Dhipcc builds, -Dhsaco embeds), `tf-hip-test`; returns HIP engines.
 pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, api: *std.Build.Module, lanes: *std.Build.Module, core: *std.Build.Module) *std.Build.Module {
     const hipcc = b.option([]const u8, "hipcc", "hipcc that builds the HIP kernels");
     const prebuilt = b.option([]const u8, "hsaco", "absolute directory of prebuilt <name>.hsaco bundles and libtf_<family>.so");
@@ -223,7 +222,7 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     b.step("test-qwen35", "Qwen3.5 / 3.6 host tests; TF_QWEN_DIR indexes a real checkpoint").dependOn(&family.step);
 }
 
-/// The gfx targets of `gfx` that belong to family `f`; a target outside the caps table, or one with no kernels, stops the build.
+/// The gfx targets of `gfx` in family `f`; a target outside the caps table, or one with no kernels, stops the build.
 fn archesOf(b: *std.Build, gfx: []const u8, f: Family) []const []const u8 {
     var list: std.ArrayList([]const u8) = .empty;
     var it = std.mem.tokenizeScalar(u8, gfx, ',');
@@ -235,7 +234,7 @@ fn archesOf(b: *std.Build, gfx: []const u8, f: Family) []const []const u8 {
     return list.items;
 }
 
-/// The caps macros of a family's targets (one set a hipcc run, so the targets must agree), and the old WMMA macro as their alias.
+/// The caps macros of a family's targets (one set a hipcc run, so they must agree), and the old WMMA macro as alias.
 fn addCaps(b: *std.Build, run: *std.Build.Step.Run, arches: []const []const u8) void {
     const first = caps.Caps.of(arches[0]).?;
     for (arches[1..]) |arch| {

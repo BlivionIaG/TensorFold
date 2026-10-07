@@ -1,7 +1,4 @@
-//! `layers <model dir> <fixture dir> [--tp N --rank R [--master HOST] [--port P]]`: the prompt and greedy decode steps of
-//! tools/zig/qwen_rocm_dump.py's `layers` run on the HIP forward, every layer's residual, the final rows, the logits and
-//! the tokens compared byte for byte. With --tp every rank runs the forward in step against the dump of the Python
-//! engine's same tp group (`layers --tp N --rank R`).
+//! `layers <model dir> <fixture dir> [--tp N --rank R]`: the forward against qwen_rocm_dump.py's dump, byte for byte.
 
 const std = @import("std");
 const hip = @import("hip");

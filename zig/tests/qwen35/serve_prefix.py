@@ -1,8 +1,4 @@
-"""Prompt reuse of a running native server over HTTP: the tokens a second request takes from the first's prompt, and the time
-to the first token with the cache hit against without it (a request that sets "draft": false neither resumes nor keeps).
-
-usage: serve_prefix.py URL MODEL [SYSTEM_WORDS]
-"""
+"""Prompt reuse of a running native server over HTTP; usage: serve_prefix.py URL MODEL [SYSTEM_WORDS]."""
 
 import json
 import sys

@@ -5,7 +5,7 @@ const pages = @import("../forward/pages.zig");
 /// A snapshot this close to the prompt's end saves too little to keep next to the one before it.
 pub const min_gap = 256;
 
-/// Cuts sit on page edges, which are multiples of the chunked recurrence's chunk: a resumed span then chunks a prompt as a fresh one does.
+/// Cuts sit on page edges, multiples of the recurrence's chunk, so a resumed span chunks as a fresh prompt does.
 pub const step = pages.tokens;
 
 /// Rows a prompt pass advances between two rounds; its steps end on multiples of this, so a prompt is cut the same way.

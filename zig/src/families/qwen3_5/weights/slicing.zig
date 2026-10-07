@@ -96,7 +96,7 @@ fn mlp(a: Allocator, m: *host.Mlp, r: Rank) Error!void {
     }
 }
 
-/// A rank's contiguous routed experts, the shared one on rank 0, and the remap to its own ids (-1 where another holds it).
+/// A rank's contiguous routed experts, the shared one on rank 0, and the remap to its own ids (-1: another rank's).
 fn routed(a: Allocator, x: *host.Routed, r: Rank) Error!void {
     const total = x.experts.count - 1;
     const part = try even(total, r.world, "experts");

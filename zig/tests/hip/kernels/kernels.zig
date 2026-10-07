@@ -1,6 +1,4 @@
-//! `tf-hip-test kernels`: every kernel against its reference, one PASS or FAIL line a case group. The affine kernels are
-//! driven by the registry (each entry on representative shapes, against float64 and against its family); the kernels
-//! outside it (the chunked DeltaNet, the decode tails and router) run against their own references.
+//! `tf-hip-test kernels`: every kernel against its reference, the affine ones through the registry's entries.
 
 const std = @import("std");
 const hip = @import("hip");

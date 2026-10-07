@@ -1,22 +1,7 @@
 #!/bin/sh
-# usage: matrix.sh [options] MODELS_DIR DEVICES...
-#
-# Runs `tf-qwen35-test check` for every model x device group x environment setting and prints one markdown table.
-# DEVICES is one argument a group of HIP devices, a comma list of ordinals ("3" is one GPU, "6,7" two: tensor
-# parallel over them). Nothing about a machine is in this file: models, devices, settings and files are arguments.
-#
-#   --model NAME      a model directory under MODELS_DIR (repeat; default: every directory under it)
-#   --env VAR=V1,V2   an environment variable and its values; every combination is run (repeat)
-#   --truth NAME=FILE the fp64 truth .npy the accuracy check scores model NAME against (repeat)
-#   --ids FILE        the ids .npy the long prompts and the truth rows are cut from
-#   --speed           also time prefill and decode
-#   --bin FILE        the test program (default: zig-out/bin/tf-qwen35-test)
-#   --log DIR         where each run's output goes (default: a temporary directory)
-#   --port N          the rendezvous port of the first tensor-parallel run (default 29551)
-#   --timeout SECONDS the most a run may take (default 3000)
-#   --                the rest goes to `check` as it is
-#
-# Exit status: 0 when every run passed every check, 1 otherwise. A cell with no number is "-".
+# usage: matrix.sh [options] MODELS_DIR DEVICES...: one markdown table of `check` over models x devices x settings.
+
+# DEVICES: an argument a group, a comma list of HIP ordinals ("6,7" is tensor parallel over two); exit 1 on any FAIL.
 
 bin=zig-out/bin/tf-qwen35-test
 log=
@@ -34,16 +19,16 @@ value() { [ "$1" -ge 2 ] || die "$2 needs a value"; }
 
 while [ $# -gt 0 ]; do
   case $1 in
-    --model) value $# "$1"; models="$models $2"; shift 2 ;;
-    --env) value $# "$1"; envs="$envs $2"; shift 2 ;;
-    --truth) value $# "$1"; truths="$truths $2"; shift 2 ;;
-    --ids) value $# "$1"; ids=$2; shift 2 ;;
+    --model) value $# "$1"; models="$models $2"; shift 2 ;; # a directory under MODELS_DIR; default: all of them
+    --env) value $# "$1"; envs="$envs $2"; shift 2 ;; # VAR=V1,V2; every combination is run
+    --truth) value $# "$1"; truths="$truths $2"; shift 2 ;; # NAME=FILE, the fp64 truth .npy model NAME is scored against
+    --ids) value $# "$1"; ids=$2; shift 2 ;; # the ids .npy the long prompts and the truth rows are cut from
     --speed) speed=--speed; shift ;;
     --bin) value $# "$1"; bin=$2; shift 2 ;;
     --log) value $# "$1"; log=$2; shift 2 ;;
     --port) value $# "$1"; port=$2; shift 2 ;;
     --timeout) value $# "$1"; limit=$2; shift 2 ;;
-    --) shift; extra="$*"; break ;;
+    --) shift; extra="$*"; break ;; # the rest goes to `check` as it is
     -*) die "unknown option $1" ;;
     *) break ;;
   esac
@@ -55,7 +40,7 @@ groups="$*"
 [ -d "$dir" ] || die "$dir is not a directory"
 [ -x "$bin" ] || die "$bin is not built"
 if [ -z "$models" ]; then
-  for d in "$dir"/*/; do models="$models $(basename "$d")"; done
+  for d in "$dir"/[!.]*/; do models="$models $(basename "$d")"; done
 fi
 [ -n "$log" ] || log=$(mktemp -d)
 mkdir -p "$log"

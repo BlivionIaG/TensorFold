@@ -9,8 +9,7 @@ pub const Tensor = table.Tensor;
 /// A projection as its format read it from the checkpoint.
 pub const Projection = quant.Host;
 
-/// A layer's experts. `fused` is gate then up along N per expert ([E + 1, 2 * width, ...]), or the up alone when `gated` is false;
-/// each stack is E + 1 projections, the shared expert last.
+/// A layer's E + 1 experts, shared last: `fused` is gate then up along N per expert, or up alone when not `gated`.
 pub const Experts = struct {
     fused: Projection,
     gated: bool,

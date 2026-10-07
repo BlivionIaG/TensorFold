@@ -1,5 +1,4 @@
-//! The prefix tree's checks of `check`: requests branching from shared prefixes each equal their own fresh run, a resumed
-//! page equals a fresh one, a shared page is copied before a write, and every page comes back when the streams are gone.
+//! The prefix tree's checks of `check`: shared prefixes equal fresh runs, copy on write, and no page leaks.
 
 const std = @import("std");
 const lanes = @import("lanes");
@@ -63,8 +62,7 @@ fn sameReplies(a: Session.Done, b: Session.Done, skip: usize, buf: []u8) ?[]cons
     return null;
 }
 
-/// What a copy of the caches at each mark the tree kept would hold for the same requests: each request's marks past where
-/// it resumed, one entry for the same tokens twice.
+/// Bytes a copy of the caches at each kept mark would hold: marks past where each request resumed, repeats once.
 fn copiedBytes(c: *Ctx, set: []const Prompt, replies: []const Session.Reply) usize {
     const spec = c.e.model().spec;
     var kept: std.ArrayList([]const u32) = .empty;
@@ -141,8 +139,7 @@ fn stress(c: *Ctx) void {
     if (short > 0) c.report.fail("radix: the system prompt is shared", "{d} of {d} requests after the first did not resume at {d}", .{ short, alone.replies.len - 1, want }) else c.report.pass("radix: the system prompt is shared", "{d} requests resumed at {d} of {d} tokens", .{ alone.replies.len - 1, want, system_len });
 }
 
-/// What `questions` requests sharing one system prompt, each with a question of its own, leave in the tree against the
-/// copies of the caches at each cut the old cache kept for them.
+/// What `questions` requests sharing one system prompt leave in the tree, against per-cut copies of the caches.
 fn memoryLine(c: *Ctx) void {
     const name = "radix memory";
     if (c.ids.len < system_len + tail_step * questions + long_tail) return c.report.skip(name, "too few ids");

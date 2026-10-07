@@ -1,5 +1,4 @@
-//! A stream's device caches: its page table over the key/value pools of the attention layers, conv window and DeltaNet
-//! state per linear layer.
+//! A stream's device caches: its page table over the attention pools, and each linear layer's conv window and state.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -20,8 +19,7 @@ pub const Caches = struct {
     layers: []LayerCache,
     /// Positions the page table can name.
     total: usize,
-    /// What a round's kernels read: positions held, the last kept final row's address (0 until `setHidden`), two addresses a
-    /// layer (key and value pools, or conv window and state), then the page table.
+    /// Kernel view: positions, last kept final row (0 until `setHidden`), two addresses a layer, then the page table.
     desc: hip.DeviceBuffer,
     pool: *pages.Pool,
     /// The page table as the device holds it: the pages of the first positions, each held once by this stream.
@@ -122,8 +120,7 @@ pub const Caches = struct {
         try c.desc.upload(base + 4 * first, std.mem.sliceAsBytes(ids));
     }
 
-    /// Takes pages from the pool until `n` positions are covered; the new ids, valid until the next call. A page promised
-    /// to this stream counts against its promise.
+    /// Takes pages until `n` positions are covered, counted against any promise; new ids valid until the next call.
     pub fn grow(c: *Caches, gpa: Allocator, n: usize) ![]const u32 {
         const want = pages.pagesFor(@min(n, c.total));
         const first = c.table.items.len;
@@ -139,8 +136,7 @@ pub const Caches = struct {
         return c.table.items[first..];
     }
 
-    /// Sets the pages of the first positions from `at` to `ids` (shared pages already held for this stream by the caller,
-    /// which keeps nothing of the ones they replace).
+    /// Sets the table from page `at` to `ids`; the caller's references move into it and replaced pages are released.
     pub fn set(c: *Caches, gpa: Allocator, at: usize, ids: []const u32) !void {
         try c.table.ensureTotalCapacity(gpa, at + ids.len);
         for (ids, at..) |id, i| {
@@ -159,8 +155,7 @@ pub const Caches = struct {
         try c.put(at, c.table.items[at..][0..ids.len]);
     }
 
-    /// Makes the pages that hold positions `from .. to` this stream's alone: a shared one is copied first. Returns the
-    /// pages replaced, each as its index in the table, the page it was and the page it is.
+    /// Copies each shared page holding positions `from .. to`; `out` gets its table index, old and new page.
     pub fn writable(c: *Caches, out: *std.ArrayList([3]u32), gpa: Allocator, from: usize, to: usize, stream: hip.abi.Stream) !void {
         var i = from / pages.tokens;
         const last = @min(pages.pagesFor(to), c.table.items.len);
@@ -194,8 +189,7 @@ pub const Caches = struct {
     }
 };
 
-/// Linear state of a stream kept at a prompt's page edge: the conv windows and DeltaNet states of every linear layer,
-/// in slots a tree names.
+/// A stream's linear state at a prompt's page edge: each linear layer's conv window and DeltaNet state, in tree slots.
 pub const Snapshots = struct {
     gpa: Allocator,
     d: *const hip.Driver,

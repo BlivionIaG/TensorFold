@@ -1,7 +1,4 @@
-"""Exactness of a running native server over HTTP: drafted == serial, solo == together, resumed == fresh.
-
-usage: serve_check.py URL MODEL [TOKENS]
-"""
+"""Exactness of a running native server over HTTP; usage: serve_check.py URL MODEL [TOKENS]."""
 
 import json
 import sys

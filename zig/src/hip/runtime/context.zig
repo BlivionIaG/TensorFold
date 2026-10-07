@@ -39,7 +39,7 @@ pub const Context = struct {
         return v;
     }
 
-    /// The gfx major and minor as 10 * major + minor (gfx1030: 103, gfx1100: 110, gfx1151: 115); the stepping is not in it.
+    /// The gfx major and minor as 10 * major + minor (gfx1030: 103, gfx1151: 115); the stepping is not in it.
     pub fn capability(self: *const Context) Error!u32 {
         const major = try self.attribute(.compute_capability_major);
         const minor = try self.attribute(.compute_capability_minor);

@@ -20,8 +20,7 @@ pub const probe: []const u8 = if (available) &Blob("hsaco_probe").bytes else &.{
 pub const rdna2: []const u8 = if (options.with_rdna2) &Blob("lib_rdna2").bytes else &.{};
 pub const rdna3: []const u8 = if (options.with_rdna3) &Blob("lib_rdna3").bytes else &.{};
 
-/// The ROCm kernels' code objects: one offload bundle a source group of zig/kernels/hip, a GPU family each, launched
-/// from Zig (the libraries above hold the same kernels behind C launchers).
+/// The ROCm kernels' code objects: one offload bundle a source group of zig/kernels/hip and GPU family.
 pub const Group = enum { ops, act, attention, gated_delta, affine_tiles, affine_dot2, prefill, gdn_prefill, decode, plan };
 pub const group_count = @typeInfo(Group).@"enum".field_names.len;
 

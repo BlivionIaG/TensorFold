@@ -1,5 +1,4 @@
-//! The MLX affine entries of the registry: each tile of launch/affine.zig with what it needs of the GPU and the run, the
-//! shapes it has code for, and its launch. The costs that order them are the tuning table's, not written here.
+//! The registry's MLX affine entries: each tile with its needs, the shapes it has code for and its launch.
 
 const std = @import("std");
 const registry = @import("core").registry;

@@ -9,7 +9,7 @@ const p = t.p;
 const f = t.f;
 const int = t.int;
 
-/// The gated attention's o input from att fp32, (heads, len, d) or with `rows_major` (len, heads, d), and the gate half.
+/// The gated attention's o input from att fp32, (heads, len, d) or (len, heads, d) with `rows_major`, and the gate.
 pub fn attnGate(o: Ops, att: u64, qg: Tensor, out: Tensor, len: usize, heads: usize, d: usize, rows_major: bool) Error!void {
     try o.lib.call("tf_attn_gate", .{ f(att), p(qg.ptr), p(out.ptr), @backingInt(out.kind), int(len), int(heads), int(d), @intFromBool(rows_major), o.stream });
 }
@@ -19,8 +19,7 @@ pub fn ropePrefill(o: Ops, x: Tensor, out: Tensor, s_head: usize, s_row: usize, 
     try o.lib.call("tf_rope_prefill", .{ p(x.ptr), @backingInt(x.kind), p(out.ptr), @backingInt(out.kind), @intCast(s_head), @intCast(s_row), int(len), int(heads), int(d), int(rotary), int(pos0), theta, o.stream });
 }
 
-/// A window's q or k heads (strides `s_row`, `s_head`): RMS-normed with `weight`, rotated at `pos` (int32 a row), rounded; into
-/// fp32 `wide` and/or the cache slots of those positions (`cache`, `total` slots a head).
+/// A window's q or k heads RMS-normed with `weight`, rotated at `pos`, rounded; into fp32 `wide` and/or cache slots.
 pub fn qkRope(o: Ops, src: Tensor, s_row: usize, s_head: usize, weight: u64, eps: f32, rows: usize, heads: usize, width: usize, rotary: usize, theta: f32, pos: u64, wide: ?u64, cache: ?u64, total: usize) Error!void {
     if (width > 512 or src.kind == .f32) return error.BadShape;
     try o.lib.call("tf_qk_rope", .{ p(src.ptr), @backingInt(src.kind), @intCast(s_row), int(s_head), f(weight), eps, int(rows), int(heads), int(width), int(rotary), theta, @ptrFromInt(pos), if (wide) |w| f(w) else null, if (cache) |c| p(c) else null, int(total), o.stream });
@@ -51,21 +50,19 @@ pub fn causalPrefill(o: Ops, q: u64, c: Cache, out: u64, qlen: usize, span: usiz
     try o.lib.call("tf_causal", .{ f(q), p(c.k), p(c.v), f(out), 1, int(qlen), int(span), int(heads), int(c.kv_heads), int(c.d), scale, int(q_pos0), sh * @as(c_longlong, @intCast(c.kv_heads)), sh, ss, sh * @as(c_longlong, @intCast(c.kv_heads)), sh, ss, c.kind.cache(), null, null, null, o.stream, null });
 }
 
-/// One attention layer of a stream's paged cache, as the prompt pass's kernels read it: the pools of its keys and values
-/// (`count` pages a head, each 64 positions of `d` values), and the stream's page table (32-bit page ids).
+/// One attention layer of a stream's paged cache: key and value pools (`count` 64-position pages a head), page table.
 pub const Paged = struct { k: u64, v: u64, table: u64, kind: Kind, kv_heads: usize, d: usize, count: usize };
 
 fn zigLaunches(o: Ops) Error!*const @import("../launches.zig").Launcher {
     return if (o.lib.zig) |*z| z else error.BadShape;
 }
 
-/// 16-bit `src` values (h * s_head + r * s_row + j, in elements) of `len` positions from `pos0` into a pool through the table.
+/// 16-bit `src` values (h * s_head + r * s_row + j elements) of `len` positions from `pos0` into a pool by the table.
 pub fn pageWrite(o: Ops, src: u64, pool: u64, table: u64, len: usize, kv_heads: usize, d: usize, s_head: usize, s_row: usize, pos0: usize, count: usize) Error!void {
     try (try zigLaunches(o)).pagesWrite(src, pool, table, len, kv_heads, d, s_head, s_row, pos0, count, o.stream);
 }
 
-/// Prefill attention over a stream's pages: q (heads, qlen, d) fp32 over the first `span` positions. The 64-row tile reads
-/// the pages itself; any other shape reads a flat copy of them, and the same kernels as a flat cache.
+/// Prefill attention over a stream's pages: the 64-row tile reads pages; other shapes read a flat copy.
 pub fn causalPaged(o: Ops, q: u64, c: Paged, out: u64, qlen: usize, span: usize, heads: usize, scale: f32, q_pos0: usize) Error!void {
     if (c.d > 256 or heads % c.kv_heads != 0 or c.kind == .f32) return error.BadShape;
     const z = try zigLaunches(o);

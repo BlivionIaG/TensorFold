@@ -28,7 +28,7 @@ pub fn linearBytes(s: config.Spec) usize {
     return (s.n_layers - full) * (conv + recurrent);
 }
 
-/// Bytes a copy of one stream's caches at `tokens` positions holds: keys and values of the attention layers plus the linear layers' state.
+/// Bytes one stream's caches hold at `tokens` positions: attention keys and values plus the linear layers' state.
 pub fn stateBytes(s: config.Spec, act_bytes: usize, tokens: usize) usize {
     var full: usize = 0;
     for (0..s.n_layers) |i| full += @intFromBool(s.full(i));
@@ -80,7 +80,7 @@ pub const Plan = struct {
 pub const Input = struct {
     spec: config.Spec,
     act_bytes: usize,
-    /// Streams served at once, each with the pages of a whole window; the prefix tree gets one window's worth beside them.
+    /// Streams served at once, each with a whole window's pages; the prefix tree gets one window's worth beside them.
     streams: usize,
     /// Rows of a shared forward, and the extra positions a verify writes past a reply.
     rows: usize,
@@ -115,7 +115,7 @@ fn streamBytes(s: config.Spec, act_bytes: usize, streams: usize, rows: usize, ca
     return streams * (linearBytes(s) + pages.pagesFor(capacity) * pageBytes(s, act_bytes)) + pages.pagesFor(rows) * pageBytes(s, act_bytes);
 }
 
-/// The largest window at most `target` for which the scratch, every lane's caches and a window's worth of prefix tree fit; 0 if none.
+/// The largest window up to `target` where scratch, every lane's caches and a window of prefix tree fit; 0 if none.
 pub fn plan(in: Input) Plan {
     const s = in.spec;
     const keep = reserve(in.total);
