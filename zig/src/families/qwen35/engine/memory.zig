@@ -80,7 +80,7 @@ pub const Plan = struct {
 pub const Input = struct {
     spec: config.Spec,
     act_bytes: usize,
-    /// Streams served at once; one more copy of a prompt is kept beside them.
+    /// Streams served at once, each with the pages of a whole window; the prefix tree gets one window's worth beside them.
     streams: usize,
     /// Rows of a shared forward, and the extra positions a verify writes past a reply.
     rows: usize,
@@ -110,25 +110,29 @@ pub fn pool(s: config.Spec, act_bytes: usize, streams: usize, rows: usize, capac
     return .{ .pages = streams * pages.pagesFor(capacity) + pages.pagesFor(rows) + cache_pages, .cache_pages = cache_pages, .snaps = snaps };
 }
 
-/// The largest window at most `target` for which the scratch, every lane's caches and one kept copy fit; 0 if none.
+/// Bytes the streams hold at a window of `capacity`: their linear state and a page for each 64 positions.
+fn streamBytes(s: config.Spec, act_bytes: usize, streams: usize, rows: usize, capacity: usize) usize {
+    return streams * (linearBytes(s) + pages.pagesFor(capacity) * pageBytes(s, act_bytes)) + pages.pagesFor(rows) * pageBytes(s, act_bytes);
+}
+
+/// The largest window at most `target` for which the scratch, every lane's caches and a window's worth of prefix tree fit; 0 if none.
 pub fn plan(in: Input) Plan {
     const s = in.spec;
     const keep = reserve(in.total);
     const room = in.free -| keep;
-    const copies = in.streams + 1;
     var lo: usize = 0;
     var hi: usize = in.target;
     while (lo < hi) {
         const mid = lo + (hi - lo + 1) / 2;
         const cap = mid + in.slack;
-        if (Scratch.of(s, cap, in.rows).total() + copies * stateBytes(s, in.act_bytes, cap) <= room) lo = mid else hi = mid - 1;
+        if (Scratch.of(s, cap, in.rows).total() + streamBytes(s, in.act_bytes, in.streams + 1, in.rows, cap) <= room) lo = mid else hi = mid - 1;
     }
     const cap = lo + in.slack;
     const scratch = Scratch.of(s, cap, in.rows).total();
     return .{
         .window = lo,
         .capacity = cap,
-        .cache_budget = room -| scratch -| in.streams * stateBytes(s, in.act_bytes, cap),
+        .cache_budget = room -| scratch -| streamBytes(s, in.act_bytes, in.streams, in.rows, cap),
         .weights = in.total -| in.free,
         .total = in.total,
         .reserve = keep,

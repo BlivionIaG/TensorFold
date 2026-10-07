@@ -216,8 +216,8 @@ on the shape of the round alone.
 - per linear layer: where the round's conv and DeltaNet snapshots are.
 
 A stream's descriptor (`state.Caches.desc`, made with its caches) holds the positions its caches take, the address of
-its last kept final row (the draft head's input), and two addresses a layer (keys and values, or the conv window and
-the state). The window forward's rope, cache writes, attention walk, conv and DeltaNet kernels index through it, one
+its last kept final row (the draft head's input), the address of its page table (3.7), and two addresses a layer (the
+key and value pools, or the conv window and the state). The window forward's rope, cache writes, attention walk, conv and DeltaNet kernels index through it, one
 launch a layer whatever the number of streams, and nothing of a stream is an argument.
 
 **Shapes come in buckets.** A round's graph is keyed by (rows, slots, keys covered):
@@ -265,44 +265,62 @@ kernels (padding rows after the last real one would advance the states).
 
 ### 3.7 Prefix reuse: a radix cache over paged KV
 
-Today (prefix.zig) a kept prompt is a whole copy of its caches at a cut point, found by the longest matching ids.
-Each copy costs a full KV prefix, and two requests that share a system prompt each hold their own copy. The target is
-that requests share prefix memory, and resuming copies nothing.
+A kept prompt used to be a whole copy of its caches at a cut point, so each copy cost a full KV prefix and two requests
+that shared a system prompt each held their own. Now requests share prefix memory, and resuming copies no key or value.
 
-**Paged KV.**
+**Paged KV** (`forward/pages.zig`, `forward/state.zig`).
 
-- Full-attention layers keep K and V in pages of 64 tokens: the same 64 as the chunked recurrence and the prefix
-  cuts, so a page edge is always a chunk edge.
-- A stream's KV is a page table in the round plan (3.6). Attention (decode and the prefill tile) and the KV write
-  read through it.
-- Pages are reference-counted. A partly filled last page is copied on write when a second request extends a
-  shared prefix.
+- The full-attention layers keep K and V in one pool of pages of 64 positions (`kv_heads x 64 x head_dim` values a
+  layer), the same 64 as the chunked recurrence and the cut spacing, so a page edge is a chunk edge. A page is the same id
+  in every layer's pool.
+- A stream's descriptor (3.6) holds the address of its page table, one 32-bit page id for each 64 positions, which sits
+  right behind the descriptor. The plan's
+  decode walk (score and apply), the plan's KV write, the prefill KV write (`tf_page_write`) and the 64-row prefill
+  attention tile (`tf_fa_paged_*`, a key tile is a page) all read and write through it. Any other prefill shape reads a
+  gathered flat copy of the pages, so every shape runs the kernels it ran before, on the same bytes.
+- Pages are reference-counted (`pages.Ids`). A stream takes pages as it grows, against a promise made when it starts (its
+  whole window), so a round never runs out of them; a page two holders share is copied before one writes it
+  (`Caches.writable`). A resumed span starts on a page edge, so a stream's first write lands on a page of its own and the
+  copy is a guard, not a path a prompt takes.
+- The linear layers keep a stream's conv window and DeltaNet state as before.
 
-**Radix tree over token pages.**
+**The prompt cache** (`engine/radix.zig`, `radix_tree.zig`, `radix_test.zig`) has the shape of upstream's
+`core/prompt_cache.zig` Store, and nothing in it knows a GPU, so it can move to core: the backend gives it page reference
+counts (`Pages`) and copies of its non-page state (`Snapshots`: bytes, save, restore, drop); it gives back a `Plan` (where
+the pass resumes, where it keeps), `keep`, `forget`, `marks` and the counters.
 
-- A node is a run of whole pages, keyed by their tokens.
-- A request walks the tree to its longest match, takes references on those pages, and prefills only its remainder.
-- Eviction is LRU on unreferenced leaves under a byte budget (`--prompt-cache-gib`). An entry that was hit outlives
-  entries that never were, as today.
+- A node is a run of whole pages keyed by their tokens. A request takes references on the pages of its longest match
+  and prefills the rest.
+- **Marks** (where a pass keeps a state) are upstream's: the rendered history, the prefix shared with the conversation's
+  last prompt, the ends of shared system blocks, each at least `min_gap` from the others and from the resume point; and
+  the prompt's last whole page. All sit on page edges.
+- A state is the family's snapshot at a node's end. A match resumes from the deepest node on its path with one; the
+  pages below it are shared, and the stream's own duplicates of pages the tree has are swapped for the tree's.
+- **Eviction** takes a state its own conversation has moved past first, oldest first, a shared cut only as the least
+  recently used, and then the least valuable state: one never resumed before one that was. Pool pressure takes the
+  least valuable leaf nobody holds. A node with no state and nothing below it goes with its pages.
+- **Budget**: `--prompt-cache-gib` (or the Policy's `prefix.bytes`) is the tree's bytes, `--checkpoint-slots` (the
+  Policy's `prefix.slots`) its snapshots. The memory plan (`memory.zig`) splits it: snapshots may take up to half of it,
+  the pages the rest, and the pool holds every stream's whole window, the scratch rows and those pages. Snapshots are
+  counted in the budget because they are bought from it.
 
-**Linear-attention state** (Qwen3.5's gated-delta layers) is not a per-token cache. Resuming from a node needs that
-layer's conv window and recurrent state as of the node's last token. So nodes carry state snapshots at chosen
-boundaries only:
+**Linear state** is not a per-token cache: resuming needs each linear layer's conv window and DeltaNet state as of the
+node's last token. A snapshot is large (35B-A3B: about 60 MB across its 30 linear layers), which is why it is kept only at
+the marks, and why the tree may hold fewer snapshots than pages.
 
-- the end of a shared system block;
-- the end of rendered history;
-- a prompt's last whole page.
+**Exactness.** Pages hold the same K and V a fresh prefill writes; resumed spans start on a page edge; snapshots are exact
+copies. `check` proves resumed == fresh and the page contents:
 
-A snapshot is large (35B-A3B: about 60 MB across its 30 linear layers), which is why it is kept only where a request
-can actually resume, and counted in the byte budget. A match resumes from the deepest node on its path that holds a
-snapshot. Pages below that node are shared even when the state is not.
+- a radix stress: requests branching from one shared system prompt, a conversation's next turns and branches inside and
+  between pages, each against its own fresh run alone, one at a time on the growing tree and then all at once;
+- the pages of a resumed prompt against the pages of a fresh prefill of it, byte for byte in every attention layer;
+- a shared page is copied before a write, and every page is back in the pool when the streams are gone;
+- a memory line: the bytes the tree holds for requests sharing a system prompt against copies of the caches at each mark.
 
-**Exactness.** Pages hold the same K and V a fresh prefill writes. Resumed spans start on a page (and chunk) edge,
-and snapshots are exact copies. So resumed == fresh holds as today; the tests are tpcheck with long prompts, plus a
-radix stress test (many requests branching from shared prefixes, against each one prefilled fresh).
-
-**Under tp**, rank 0 owns the tree and decides every match, insertion and eviction. The followers apply the same page
-operations from the round messages, as they mirror prefix cuts today.
+**Under tp**, rank 0 owns the tree and decides every match, insertion and eviction, and names pages and snapshot slots; the
+other ranks apply them from the messages (`worker.Op`): the prefill message carries the stream's pages and the slot to
+resume from, `pages` sets a stream's page table from an index, `snap` copies the stream's linear state into a slot, `copy`
+copies a page. A message is as long as its step needs, and a step added later takes the next number.
 
 ### 3.8 Layout: folders by job
 
