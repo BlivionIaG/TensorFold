@@ -1,5 +1,5 @@
 //! The prefill tiles of a few rows against the 128-row one on the engine's products: `tf-hip-test gemm tiers` runs each
-//! on the same random packed products (dense and routed, every width and group, rows 1 to 200) and
+//! on the same random packed products (dense and routed, every width and group, rows 1 to 200, the router's logits) and
 //! compares their bytes; `gemm short [reps]` times each of them on a short prompt's shapes.
 
 const std = @import("std");
@@ -19,8 +19,11 @@ const fine = bench.fine;
 const sameOnDevice = bench.sameOnDevice;
 const time = bench.time;
 
+const Launcher = @typeInfo(@FieldType(hip.rocm.Library, "zig")).optional.child;
+
 const Rig = struct {
     gpu: Gpu,
+    launcher: *const Launcher,
     kernels: *const hip.affine.Kernels,
     stream: hip.Stream,
     fp16: bool,
@@ -145,6 +148,32 @@ fn tierProduct(t: *Rig, m: usize, n: usize, k: usize, bits: c_int, group: c_int,
     return diff;
 }
 
+/// The router's logits through the wave-an-expert kernel and through the 64 x 64 tiles at `r` rows: the words that differ.
+fn routerProduct(t: *Rig, r: usize, d: usize, e: usize) !usize {
+    const gpa = t.gpu.gpa;
+    const hx = try fill(gpa, u16, r * d, &t.rng, if (t.fp16) makeX16 else makeXB);
+    defer gpa.free(hx);
+    const hw = try gpa.alloc(f32, e * d);
+    defer gpa.free(hw);
+    for (hw) |*v| v.* = fine(&t.rng);
+    var x = try toDevice(t.gpu, hx);
+    defer x.free();
+    var w = try toDevice(t.gpu, hw);
+    defer w.free();
+    var outs: [2]hip.DeviceBuffer = undefined;
+    for (&outs, 0..) |*o, i| {
+        o.* = try hip.DeviceBuffer.alloc(t.gpu.d, r * e * 4);
+        errdefer for (outs[0..i]) |*f| f.free();
+        try o.fill8(0xA5, null);
+    }
+    defer for (&outs) |*o| o.free();
+    for (outs, [_]bool{ true, false }) |o, small| {
+        try t.launcher.routerWith(@ptrFromInt(x.ptr), if (t.fp16) 1 else 2, @ptrFromInt(w.ptr), @ptrFromInt(o.ptr), @intCast(r), @intCast(d), @intCast(e), t.stream.handle, small);
+    }
+    try t.stream.synchronize();
+    return sameOnDevice(t.gpu, outs[0], outs[1], r * e * 4);
+}
+
 /// Prefill's short blocks against the 128-row one at every row count of `tier_rows`, dense and routed, every width and
 /// group: any differing word is an error.
 fn tiers(t: *Rig) !usize {
@@ -161,6 +190,13 @@ fn tiers(t: *Rig) !usize {
             ran += 1;
         }
     };
+    for (tier_rows) |r| {
+        for ([_]usize{ 96, 2048 }) |d| {
+            const diff = try routerProduct(t, r, d, 259);
+            try check.expect(diff == 0, "router logits r{d} d{d}: {d} words differ between the wave-an-expert kernel and the tiles", .{ r, d, diff });
+            ran += 1;
+        }
+    }
     return ran;
 }
 
@@ -282,6 +318,7 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     const launcher = &(lib.zig orelse return error.LibraryUnavailable);
     var t: Rig = .{
         .gpu = gpu,
+        .launcher = launcher,
         .kernels = &launcher.affine,
         .stream = try hip.Stream.init(gpu.d, true),
         .fp16 = family == .rdna2,
@@ -290,5 +327,5 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     defer t.stream.deinit();
     if (std.mem.eql(u8, args[0], "short")) return shortBench(&t, if (args.len > 1) try std.fmt.parseInt(usize, args[1], 10) else 10);
     const ran = try tiers(&t);
-    check.pass("gemm tiers: {d} products (rows 1..200, dense and routed, every width and group) with the same bytes in every block shape", .{ran});
+    check.pass("gemm tiers: {d} products (rows 1..200, dense and routed, every width and group; the router's logits) with the same bytes in every block shape", .{ran});
 }

@@ -98,6 +98,7 @@ pub const Launcher = struct {
         moe_route: Function,
         router_rows: [2]Function, // fp16, bf16
         router_tile: [2]Function,
+        router_small: [2]Function,
         rms_rows: Function,
         qk_rope: Function,
     };
@@ -143,6 +144,7 @@ pub const Launcher = struct {
             .moe_route = try ops.function(anon ++ "16moe_route_kernelEPKiiiiPiS2_i"),
             .router_rows = .{ try ops.function("tf_router_rows_f16"), try ops.function("tf_router_rows_bf16") },
             .router_tile = .{ try ops.function("tf_router_tile_f16"), try ops.function("tf_router_tile_bf16") },
+            .router_small = .{ try ops.function("tf_router_small_f16"), try ops.function("tf_router_small_bf16") },
             .rms_rows = try ops.function("tf_rms_rows"),
             .qk_rope = try ops.function(anon ++ "14qk_rope_kernelEPKvixiPKffiiiifPKiPfPvi"),
         };
@@ -225,6 +227,7 @@ pub const Launcher = struct {
     pub const tf_rope_decode = rope.tf_rope_decode;
     pub const tf_rope_prefill = rope.tf_rope_prefill;
     pub const routerTile = moe.routerTile;
+    pub const routerWith = moe.routerWith;
     pub const routerWindow = moe.routerWindow;
     pub const tf_moe_router = moe.tf_moe_router;
     pub const tf_moe_select = moe.tf_moe_select;

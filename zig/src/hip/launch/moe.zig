@@ -17,8 +17,16 @@ const cdiv = util.cdiv;
 const tri = util.tri;
 const invalid = util.invalid;
 
-/// The router's 64 x 64 tiles at any row count (prefill's, so a prompt's rows do not depend on its cuts).
+/// The most rows the router's wave-an-expert kernel takes in prefill.
+pub const router_small_rows = 32;
+
+/// The router's logits at any row count (prefill's, so a prompt's rows do not depend on its cuts): the 64 x 64 tiles, or up
+/// to `router_small_rows` rows a wave an expert, which makes the same bits with more waves.
 pub fn routerTile(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S) Error!void {
+    return routerWith(l, x, kind, rows, logits, r, d, e, s, r <= router_small_rows);
+}
+
+pub fn routerWith(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S, small: bool) Error!void {
     var a: Args = .{};
     a.add(ad(x));
     a.add(ad(rows));
@@ -26,7 +34,9 @@ pub fn routerTile(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r:
     a.add(r);
     a.add(d);
     a.add(e);
-    try l.go(l.op.router_tile[if (kind == 1) 0 else 1], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
+    const k: usize = if (kind == 1) 0 else 1;
+    if (small) return l.go(l.op.router_small[k], dim(cdiv(e, 8), cdiv(r, 32), 1), dim(256, 1, 1), 0, s, &a);
+    try l.go(l.op.router_tile[k], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
 }
 
 /// A lane round's router at any row count; false (nothing launched) where the shape keeps the other kernels.

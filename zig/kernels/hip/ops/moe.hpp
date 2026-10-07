@@ -160,7 +160,42 @@ __device__ void router_tile(const void* x, const float* rows, float* logits, int
     }
 }
 
+// router_tile's logits for up to 32 rows a block row: a wave an expert, a lane a row, each logit the same chain of fmaf over
+// the hidden size in order (8 activations and router weights a step); few rows fill the card with waves.
+template <int KIND>
+__device__ void router_small(const void* x, const float* rows, float* logits, int r, int d, int e) {
+    const int lane = threadIdx.x & 31;
+    const int expert = blockIdx.x * 8 + (threadIdx.x >> 5);
+    const int row = blockIdx.y * 32 + lane;
+    if (expert >= e) return;
+    const uint16_t* xh = static_cast<const uint16_t*>(x) + static_cast<long long>(row < r ? row : 0) * d;
+    const float* w = rows + static_cast<long long>(expert) * d;
+    float acc = 0.f;
+    for (int base = 0; base < d; base += 8) {
+        const uint4 xv = *reinterpret_cast<const uint4*>(xh + base);
+        const uint16_t* h = reinterpret_cast<const uint16_t*>(&xv);
+        const float4 w0 = *reinterpret_cast<const float4*>(w + base);
+        const float4 w1 = *reinterpret_cast<const float4*>(w + base + 4);
+        const float wv[8] = {w0.x, w0.y, w0.z, w0.w, w1.x, w1.y, w1.z, w1.w};
+#pragma unroll
+        for (int j = 0; j < 8; ++j) {
+            acc = fmaf(KIND == 1 ? __half2float(__ushort_as_half(h[j])) : bf16_to_float(h[j]), wv[j], acc);
+        }
+    }
+    if (row < r) logits[static_cast<long long>(row) * e + expert] = acc;
+}
+
 }  // namespace
+
+extern "C" __global__ void __launch_bounds__(256) tf_router_small_f16(const void* x, const float* rows, float* logits,
+                                                                      int r, int d, int e) {
+    router_small<1>(x, rows, logits, r, d, e);
+}
+
+extern "C" __global__ void __launch_bounds__(256) tf_router_small_bf16(const void* x, const float* rows, float* logits,
+                                                                       int r, int d, int e) {
+    router_small<2>(x, rows, logits, r, d, e);
+}
 
 extern "C" __global__ void __launch_bounds__(256) tf_router_tile_f16(const void* x, const float* rows, float* logits,
                                                                      int r, int d, int e) {
