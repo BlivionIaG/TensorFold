@@ -107,7 +107,7 @@ fn stress(c: *Ctx) void {
     const h = c.session.h;
     const slots = 8;
     h.keepPrompts(0, 0);
-    h.keepPrompts(slots, 1 << 30);
+    h.keepPrompts(slots, 4 << 30);
     defer h.keepPrompts(0, 0);
     const first = singles(c) catch |err| return c.report.broke(name, err);
     const alone = c.session.run(c.arena, .{ .prompts = first, .max_new = c.tokens, .solo = true }) catch |err| return c.report.broke(name, err);
@@ -177,7 +177,7 @@ fn resumedPages(c: *Ctx) void {
     const h = c.session.h;
     const e = c.e;
     h.keepPrompts(0, 0);
-    h.keepPrompts(8, 1 << 30);
+    h.keepPrompts(8, 4 << 30);
     defer h.keepPrompts(0, 0);
     const set = singles(c) catch |err| return c.report.broke(name, err);
     // the first run keeps the system prompt, the second resumes from it

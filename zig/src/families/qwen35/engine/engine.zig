@@ -122,8 +122,6 @@ pub const Engine = struct {
         const rows = e.o.batch_rows;
         const need = memory.Scratch.of(s, capacity, rows);
         e.o.capacity = capacity;
-        e.pool = try pages.Pool.init(e.gpa, &e.driver, &e.bridge.model, if (pool_pages > 0) pool_pages else default_streams * pages.pagesFor(capacity) + pages.pagesFor(rows), e.o.rank == 0);
-        errdefer e.pool.deinit();
         e.rounds = try hip.Arena.init(&e.driver, need.rounds);
         errdefer e.rounds.deinit();
         e.prompts = try hip.Arena.init(&e.driver, need.prompts);
@@ -134,8 +132,26 @@ pub const Engine = struct {
         errdefer e.ids_dev.free();
         e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, e.bridge.model.head.n * e.o.world, rows);
         errdefer e.drawer.deinit();
+        e.pool = try pages.Pool.init(e.gpa, &e.driver, &e.bridge.model, try e.fitPages(if (pool_pages > 0) pool_pages else default_streams * pages.pagesFor(capacity) + pages.pagesFor(rows), capacity), e.o.rank == 0);
+        errdefer e.pool.deinit();
         e.round = try lane_round.State.init(e);
         e.sized = true;
+    }
+
+    /// `want` pages, or the fewer the memory left after the scratch holds beside the reserve (the same on every rank); it refuses
+    /// when not even the scratch rows and one window fit.
+    fn fitPages(e: *Engine, want: usize, capacity: usize) !usize {
+        const info = try e.ctx.memInfo();
+        const per = @max(memory.pageBytes(e.weights.spec, e.act.size()), 1);
+        var fit = @min(want, (info.free -| memory.reserve(info.total)) / per);
+        if (e.o.world > 1) fit = (try e.least(.{ fit, 0 }))[0];
+        const least_pages = pages.pagesFor(e.o.batch_rows) + pages.pagesFor(capacity);
+        if (fit < least_pages) {
+            std.log.err("the weights and scratch leave room for {d} pages of {d} bytes, and {d} are the least a window needs", .{ fit, per, least_pages });
+            return error.OutOfDeviceMemory;
+        }
+        if (fit < want) std.log.warn("the page pool holds {d} pages, not the {d} asked for: that is what the memory leaves", .{ fit, want });
+        return fit;
     }
 
     /// The memory plan for `streams` at once and a window of `target` tokens, from the memory free now.
