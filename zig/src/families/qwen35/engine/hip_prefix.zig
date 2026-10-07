@@ -1,5 +1,5 @@
-//! The HIP side of the prompt cache: the pool's pages and the linear snapshots behind radix.zig's interfaces. Rank 0 decides
-//! every match, insertion and eviction.
+//! The HIP side of the prompt cache: the pool's pages and the linear snapshots behind radix.zig's interfaces, and the messages
+//! that keep the other ranks' copies. Rank 0 decides every match, insertion and eviction; the other ranks apply what it says.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -114,6 +114,7 @@ pub const Prefix = struct {
         };
         try p.snaps.take(slot, o.caches, p.e.stream.handle);
         p.used.items[slot] = true;
+        try p.send(&.{ @backingInt(worker.Op.snap), o.id, slot });
         return @ptrFromInt(@as(usize, slot) + 1);
     }
 

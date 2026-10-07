@@ -246,6 +246,7 @@ pub const Hip = struct {
         h.copied.clearRetainingCapacity();
         try lane.caches.writable(&h.copied, h.gpa, lane.len, upto, h.e.stream.handle);
         for (h.copied.items) |c| {
+            try h.send(&.{ @backingInt(worker.Op.copy), c[1], c[2] });
             try h.prefix.sendPages(lane.id, c[0], &.{c[2]});
         }
     }

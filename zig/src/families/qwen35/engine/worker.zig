@@ -7,17 +7,19 @@ const Pick = @import("engine.zig").Pick;
 const state = @import("../forward/state.zig");
 const draw = @import("draw.zig");
 
-/// A step rank 0 sends the other ranks (the first word of a message). Rank 0 names the pages of every stream; a rank only
-/// applies them. A message is as long as its step needs, a step added later takes the next number, and the layout of an
-/// older one never changes:
+/// A step rank 0 sends the other ranks (the first word of a message). Rank 0 decides every match, insertion and eviction of
+/// the prefix tree and names pages and snapshot slots; a rank only applies them. A message is as long as its step needs, a
+/// step added later takes the next number, and the layout of an older one never changes:
 /// prefill (begins a prompt pass): id, positions, prompt length, resumed at, cut count, snapshot slot to resume from
 /// (`no_snapshot`: none), page count, then the pages, the cuts and the prompt;
 /// fill: id, end of the next chunk of the prompt pass;
 /// verify: graph pick, count, then id, rows, tokens... each (the round's plan shape follows from them: every rank derives the same);
 /// keep: count, then id, rows each;
 /// release: id; stop;
-/// pages: id, first page index, count, then page ids: the stream's table from that index on is those pages.
-pub const Op = enum(u32) { stop, prefill, verify, keep, release, fill, pages };
+/// pages: id, first page index, count, then page ids: the stream's table from that index on is those pages;
+/// snap: id, slot: the stream's linear state is kept in the slot;
+/// copy: from, to: page `to` becomes a copy of page `from`.
+pub const Op = enum(u32) { stop, prefill, verify, keep, release, fill, pages, snap, copy };
 
 /// The prefill message's snapshot slot when the pass starts from nothing.
 pub const no_snapshot: u32 = std.math.maxInt(u32);
@@ -43,6 +45,8 @@ pub const Worker = struct {
     lanes: std.AutoHashMapUnmanaged(u32, *Lane) = .empty,
     reqs: []draw.Request,
     out: []u32,
+    /// The linear snapshots of rank 0's prefix tree, in the slots it names.
+    snaps: state.Snapshots,
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine) !Worker {
         const rows = e.o.batch_rows;
@@ -50,11 +54,12 @@ pub const Worker = struct {
         errdefer gpa.free(reqs);
         // a follower's draws are greedy and unread: the forward and its collectives are what it shares
         @memset(reqs, .{ .sampling = null, .position = 0 });
-        return .{ .gpa = gpa, .e = e, .reqs = reqs, .out = try gpa.alloc(u32, rows) };
+        return .{ .gpa = gpa, .e = e, .reqs = reqs, .out = try gpa.alloc(u32, rows), .snaps = state.Snapshots.init(gpa, &e.driver) };
     }
 
     pub fn deinit(w: *Worker) void {
         w.e.stream.synchronize() catch {};
+        w.snaps.deinit();
         var it = w.lanes.valueIterator();
         while (it.next()) |l| w.destroy(l.*);
         w.lanes.deinit(w.gpa);
@@ -69,7 +74,7 @@ pub const Worker = struct {
         w.gpa.destroy(l);
     }
 
-    fn prefill(w: *Worker, id: u32, total: usize, prompt: []const u32, at: usize, held: []const u32) !void {
+    fn prefill(w: *Worker, id: u32, total: usize, prompt: []const u32, at: usize, snap: ?u32, held: []const u32) !void {
         const gop = try w.lanes.getOrPut(w.gpa, id);
         if (gop.found_existing) w.destroy(gop.value_ptr.*);
         errdefer w.lanes.removeByPtr(gop.key_ptr);
@@ -78,6 +83,7 @@ pub const Worker = struct {
         lane.* = .{ .caches = try w.e.emptyCaches(total), .len = prompt.len };
         errdefer lane.caches.deinit(w.gpa);
         try lane.caches.set(w.gpa, 0, held);
+        if (snap) |slot| try w.snaps.put(slot, &lane.caches, w.e.stream.handle);
         lane.fill = .{ .prompt = try w.gpa.dupe(u32, prompt), .at = at };
         gop.value_ptr.* = lane;
     }
@@ -136,7 +142,7 @@ pub const Worker = struct {
                 .prefill => {
                     const held = m[8..][0..m[7]];
                     const prompt = m[8 + m[7] + m[5] ..][0..m[3]];
-                    try w.prefill(m[1], m[2], prompt, m[4], held);
+                    try w.prefill(m[1], m[2], prompt, m[4], if (m[6] == no_snapshot) null else m[6], held);
                 },
                 .verify => {
                     const pick: Pick = @fromBackingInt(m[1]);
@@ -158,6 +164,8 @@ pub const Worker = struct {
                 .release => w.release(m[1]),
                 .fill => try w.fill(m[1], m[2]),
                 .pages => try (try w.laneOf(m[1])).caches.set(w.gpa, m[2], m[4..][0..m[3]]),
+                .snap => try w.snaps.take(m[2], &(try w.laneOf(m[1])).caches, w.e.stream.handle),
+                .copy => try w.e.pool.copyPage(m[1], m[2], w.e.stream.handle),
             }
         }
     }
