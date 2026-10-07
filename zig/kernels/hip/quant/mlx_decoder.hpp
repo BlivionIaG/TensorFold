@@ -1,8 +1,7 @@
 #pragma once
 
 // The MLX affine WeightDecoder of the shared tiles: BITS-wide codes packed little-endian in 32-bit words, a scale and a
-// bias a group of K. A tile asks it for everything the format decides: how a column's 32-code chunk is loaded and turned
-// into dot operands, where its group terms are and how they fold into the sum, and what a routed item adds to the words.
+// bias a group of K; it decides how a chunk is loaded and decoded, where the group terms are and how they fold.
 
 #include <type_traits>
 #include <utility>

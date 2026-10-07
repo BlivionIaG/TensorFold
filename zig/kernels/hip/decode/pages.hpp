@@ -1,8 +1,7 @@
 #pragma once
 
-// Paged KV: a layer's keys (or values) live in a pool of `count` pages a head, each page 64 positions of d values, and a stream
-// names its pages in a table (page ids, one per 64 positions). A head's pages sit side by side, so a stream whose pages were
-// taken in order reads a head's keys as one stretch. Every kernel that reads or writes a cache goes through it.
+// Paged KV: a layer's keys (or values) live in a pool of `count` pages a head, each page 64 positions of d values; a stream
+// names its pages in a table. A head's pages sit side by side, so pages taken in order read as one stretch.
 constexpr int kPageTokens = 64;
 
 // The element offset in a pool of `count` pages a head of head `h`, slot `slot` of page `page`.

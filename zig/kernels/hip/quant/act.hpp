@@ -1,8 +1,7 @@
 #pragma once
 
-// ActEncoders: how a tile reads the activation rows. The identity encoders hand the rows over as the Dot's own element
-// type, unchanged; an encoder that quantizes (int8 per token, fp8) turns the rows into dot operands once per launch
-// and carries its scales to the epilogue.
+// ActEncoders: how a tile reads the activation rows. The identity encoders hand them over as the Dot's own element type;
+// a quantizing encoder (int8, fp8) turns them into dot operands once per launch and carries its scales to the epilogue.
 
 #include "common/dot2.hpp"
 #include "tiles/plan.hpp"

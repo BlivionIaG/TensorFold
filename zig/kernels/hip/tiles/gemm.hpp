@@ -3,14 +3,8 @@
 // Prefill GEMM tile of the dot2 schedule (m >= 64): 128 x 128 outputs a block, a wave 16 rows x 128 columns.
 // An output is what affine_dot2_block computes, bit for bit: per group a dot2 chain in ascending k from zero, the
 // group's sum of x (lo then hi of each pair, in order), then acc = fma(dot, scale, acc); acc = fma(sumx, bias, acc).
-// It runs faster because the work around the dot2s is spread differently:
-//  - x is shared inside a quad of lanes (DPP) instead of read from LDS by every lane: a lane reads RT / 4 rows of x
-//    and 64 / RT weight columns for RT x (64 / RT) outputs, a third of the LDS bytes of the 8 x 8 tile;
-//  - the row sums of x come from a separate set of threads, and a group's bias term runs a stage after its scale term;
-//  - the code words and the rows of x of two stages are loaded at once, so each request fills a cache line, and
-//    their scales and biases ride along; the codes become pairs with a few bit operations (0x6400 | code is 1024 +
-//    code in FP16);
-//  - a wave whose rows are all past the end (a routed item's few rows) does no dot2.
+// x is shared inside a quad of lanes (DPP) instead of read from LDS; the row sums of x come from their own threads, and a
+// group's bias term runs a stage after its scale term; the codes become pairs by bit operations (0x6400 | code is 1024 + code).
 
 #include <type_traits>
 #include <utility>
@@ -148,15 +142,13 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
         if (st % per == per - 1) sx[(st / per) & 1][line] = run;
     };
 
-    // A wave owns 16 rows of x and 128 columns. With 16 rows a lane, all 32 lanes take the same rows and the columns
-    // lane + 32 j (4 of them); with 8, the lanes 0-15 take the rows 0-7 and 16-31 the rows 8-15, and the columns
-    // lane % 16 + 16 j (8 of them). Lane p of a quad loads x rows 4 k + p, and every lane of the quad takes row 4 k + i
-    // from lane i of it (DPP), so a lane reads RT / 4 rows for RT.
+    // A wave owns 16 rows of x and 128 columns: with RT = 16 every lane takes the same rows and columns lane + 32 j; with 8
+    // the lanes 0-15 take rows 0-7 and 16-31 rows 8-15, and columns lane % 16 + 16 j. Lane p of a quad loads x rows 4 k + p
+    // and every lane takes row 4 k + i from lane i of the quad (DPP).
     constexpr int CT = 64 / RT;
     const int lane = tid & 31;
-    // A wave whose 16 rows are all past the end (a short last tile, a routed item's few rows) skips its dots.
-    // The row groups go to the waves turned by 2 on every other block when 3 groups or fewer are live, so the two blocks
-    // of a WGP keep all four SIMDs busy (a wave runs on SIMD wave % 4).
+    // A wave whose 16 rows are all past the end skips its dots; with 3 groups or fewer live, every other block turns the
+    // groups by 2 waves so the two blocks of a WGP keep all four SIMDs busy (a wave runs on SIMD wave % 4).
     const int rg = (wave + ((a.m - m0 <= 48 && (bx & 1)) ? 6 : 0)) & 7;
     const bool live = rg * 16 < a.m - m0;
     const int hrow = RT == 8 ? (lane >> 4) * 8 : 0;

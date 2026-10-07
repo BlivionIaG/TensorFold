@@ -1,10 +1,9 @@
 #pragma once
 
-// Decode tile for 1 to 8 rows that streams the weights: a lane owns a 32-code chunk of a column's row, so a wave's
-// load is a contiguous run of one row, and the rows of x it needs stay in registers. y = sum over chunks of
-// scale * dot(x, code) + bias * sum(x), so a chunk needs no group alignment: its lane loads its own scale and bias.
-// Lanes a column (lpc, a power of two up to 32) walk the row in rounds; each lane carries CB columns, all of whose
-// loads are issued before the first dot. No LDS, no barrier: the column's lanes fold with shuffles at the end.
+// Decode tile for 1 to 8 rows that streams the weights: a lane owns a 32-code chunk of a column's row, so a wave's load is
+// a contiguous run and the rows of x stay in registers. y = sum over chunks of scale * dot(x, code) + bias * sum(x): a
+// chunk needs no group alignment. Lanes a column (lpc, a power of two up to 32) walk the row in rounds, each lane CB
+// columns with all loads issued before the first dot; no LDS, the column's lanes fold with shuffles.
 
 #include <type_traits>
 #include <utility>
@@ -161,9 +160,8 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         }
     };
 
-    // One row keeps two rounds of loads in flight: the next is fetched before this one's dots. Columns start on different
-    // rounds, by their group of 8 (so a column's sum has one order whatever the launch's shape): rows a power of two bytes
-    // apart would otherwise send every wave to the same memory channels at once.
+    // One row keeps two rounds of loads in flight. Columns start on different rounds, by their group of 8 (a column's sum
+    // keeps one order whatever the launch's shape), so rows a power of two bytes apart do not hit the same memory channels.
     const int rounds = (nch + lpc - 1) >> lpc_log2;
     const int rot = rounds > 1 ? (col0 >> 3) % rounds : 0;
     auto at = [&](int r) {

@@ -87,7 +87,7 @@ __device__ void plan_apply_body(const float* __restrict__ scores, const float* _
     const float denom = stats[(static_cast<long long>(batch) * heads + head) * 2 + 1];
     float acc = 0.f;
     const int stop = min(key0 + 128, visible);
-    // a page at a time: its table entry is read once, and the keys are summed in order as before
+    // a page at a time: its table entry is read once, and the keys are summed in order
     for (int key = key0; key < stop;) {
         const int edge = min((key / kPageTokens + 1) * kPageTokens, stop);
         const long long slot0 = page_row(table[key / kPageTokens], plan.pool, kv, 0, d) + lane;

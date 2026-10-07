@@ -3,8 +3,7 @@
 // Prefill GEMM tile on the matrix cores of gfx11 (BF16 activations, m >= 16): 128 x 128 outputs a block, 8 waves of
 // 32 rows x 64 columns. The codes are BF16 exactly, so a group's dot is v_wmma_f32_16x16x16_bf16 over the staged tiles
 // (x row-major, codes column-major) from a zero accumulator; the sum of x, the scale and bias folds and the stages are
-// affine_gemm_block's. The matrix core adds the 16 products of a step as a chain of dot2 pairs would: every product
-// compared so far has the dot2 tile's bits, which nothing but the measurement promises.
+// affine_gemm_block's. The matrix core's sum of a step's 16 products is checked to equal the dot2 chain's, bit for bit.
 
 #include "common/wmma.hpp"
 #include "tiles/gemm.hpp"

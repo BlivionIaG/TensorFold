@@ -1,8 +1,7 @@
 #pragma once
 
-// The MLX affine instantiations of the shared tiles: each kernel here is a tile (tiles/*.hpp) over the MLX decoder, the
-// identity encoder and the Dot of the activation type, under the symbol name the launchers look up, plus the host
-// launch helpers of the C library. A format adds a header like this one beside its decoder.
+// The MLX affine instantiations of the shared tiles: each kernel is a tile (tiles/*.hpp) over the MLX decoder, the identity
+// encoder and the activation type's Dot, under the symbol the launchers look up, plus the C library's host launch helpers.
 
 #include <cstdlib>
 #include <cstring>
@@ -153,8 +152,7 @@ __global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a
     stream_tile<MlxDecoder<BITS>, IdentityAct<T>, T, Epi, R, CB>(a, sides, lpc_log2, gshift);
 }
 
-// Waves a launch should have to hide the weight loads' latency, and the most code words a lane keeps in flight: a lane
-// with more (8 columns of 8-bit codes) leaves the SIMD too few waves, and its loads run at 80% of what 2 or 4 columns reach.
+// Waves a launch needs to hide the weight loads' latency, and the most code words a lane keeps in flight (more leaves the SIMD too few waves).
 constexpr int kStreamWavesWanted = 3000;
 constexpr int kStreamCodeWords = 32;
 
@@ -260,7 +258,7 @@ hipError_t stream_pair_type(const Affine& a, int pair_cols, float limit, int lpc
     return stream_pair_bits<DotF16, BITS>(a, pair_cols, limit, lpc_log2, items, stream);
 }
 
-// TF_AFFINE_GEMV=old keeps the previous decode tiles.
+// TF_AFFINE_GEMV=old keeps the reference decode tiles.
 inline bool stream_enabled() {
     static const bool on = [] {
         const char* v = std::getenv("TF_AFFINE_GEMV");
@@ -269,7 +267,7 @@ inline bool stream_enabled() {
     return on;
 }
 
-// The stream tile of 1 to 8 rows; false when the shape keeps the previous tiles.
+// The stream tile of 1 to 8 rows; false when the shape keeps the reference tiles.
 inline bool launch_affine_dot2_stream(const Affine& a, hipStream_t stream, int items, hipError_t* err) {
     if (!stream_enabled() || a.m < 1 || a.m > kStreamRows || a.n < 1 || a.group % 32 || a.group > kLaneGroupMax ||
         a.k % a.group || (reinterpret_cast<uintptr_t>(a.x) & 15) != 0 || a.scale.kind == kScaleF32 ||

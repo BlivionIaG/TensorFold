@@ -1,8 +1,7 @@
 #pragma once
 
 // Epilogues: what a tile does with the finished sums of its outputs. The GEMM tiles hand over one fp32 value at a time; the
-// decode stream tile hands over a lane's columns, to be rounded to the activation type or, for the routed gate and up,
-// turned into the activation. An epilogue that adds a bias, a residual or a norm is another class here.
+// stream tile a lane's columns, rounded to the activation type or, for the routed gate and up, turned into the activation.
 
 #include <hip/hip_fp16.h>
 

@@ -457,7 +457,7 @@ hipError_t launch_block(const Affine& a, hipStream_t stream, int items = 1) {
     return hipGetLastError();
 }
 
-// The previous GEMM tile (TF_AFFINE_GEMM=old picks it): 128 x 128, a thread 8 x 8, the sums of x in the compute loop.
+// The reference GEMM tile (TF_AFFINE_GEMM=old picks it): 128 x 128, a thread 8 x 8, the sums of x in the compute loop.
 hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int items) {
     if (a.m < 1 || a.n < 1 || a.group % kBlockK || a.k % a.group || a.k % 16) return hipErrorInvalidValue;
     switch (a.bits) {
@@ -475,12 +475,10 @@ hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int
 // takes them from 16 rows; gfx12's matrix cores have other layouts and always stay on dot2.
 static int wmma_rows_from() {
     static const int rows = [] {
-        int dev = 0, major = 0, minor = 0;
+        int dev = 0, major = 0;
         if (hipGetDevice(&dev) != hipSuccess) return 1 << 30;
-        hipDeviceGetAttribute(&major, hipDeviceAttributeComputeCapabilityMajor, dev);
-        hipDeviceGetAttribute(&minor, hipDeviceAttributeComputeCapabilityMinor, dev);
+        if (hipDeviceGetAttribute(&major, hipDeviceAttributeComputeCapabilityMajor, dev) != hipSuccess) return 1 << 30;
         if (!TENSORFOLD_RDNA_WMMA || major != 11) return 1 << 30;
-        (void)minor;
         const char* v = std::getenv("TF_WMMA");
         if (v != nullptr && std::strcmp(v, "0") == 0) return 1 << 30;
         return v != nullptr && std::strcmp(v, "1") == 0 ? 1 : 16;

@@ -1,8 +1,7 @@
 #pragma once
 
 // Prefill GEMM tile for a few rows: a lane owns a group of a column, so a wave reads a column's row in one contiguous run
-// and the weights stream from many memory channels at once (columns whose rows are a power of two bytes apart camp on a
-// few channels when every block walks them in step). An output has affine_gemm_block's bits: a group's dot2 chain and sum
+// and the weights stream from many memory channels. An output has affine_gemm_block's bits: a group's dot2 chain and sum
 // of x in ascending k, then the groups of a round, exchanged through LDS, folded in order with the same two fma.
 
 #include "common/dot2.hpp"
@@ -15,9 +14,8 @@ namespace rocm {
 // The lanes a column takes, a group each: 32, or 16 or 8 when it has few groups (a wave then takes more columns).
 __host__ __device__ inline int kp_lanes(int groups) { return groups > 16 ? 32 : groups > 8 ? 16 : 8; }
 
-// CB columns a lane set, R rows a pass, WAVES waves a block; the rows are passes over at most RB row blocks, which have
-// consecutive block ids so the cache shares the weights between them. Dec reads the words and group terms, Act the rows of
-// x, T multiplies and Epi stores.
+// CB columns a lane set, R rows a pass, WAVES waves a block; rows are passes over at most RB row blocks with consecutive
+// block ids, so the cache shares the weights. Dec reads words and group terms, Act the rows of x, T multiplies, Epi stores.
 template <class Dec, class Act, class T, class Epi, int CB, int R, int WAVES, int RB, bool LOOP>
 __device__ __forceinline__ void gemm_kp_tile(typename Dec::Args& a) {
     const int blocks = (a.m + R - 1) / R < RB ? (a.m + R - 1) / R : RB;  // of the launch: a routed item has its own rows

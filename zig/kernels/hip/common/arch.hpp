@@ -2,7 +2,7 @@
 
 // RDNA generation of the device code: RDNA2 (dot2), RDNA3 / 3.5 (gfx11 WMMA), RDNA4 (gfx12 WMMA); RDNA1 refused.
 // The build passes the GPU's caps as macros (zig/build/hip.zig, from zig/src/hip/caps.zig): TF_WAVE, TF_DOT2_F16,
-// TF_DOT2_BF16, TF_SDOT4, TF_SDOT8 and TF_MATRIX; TENSORFOLD_RDNA_WMMA is the old name of TF_MATRIX.
+// TF_DOT2_BF16, TF_SDOT4, TF_SDOT8 and TF_MATRIX.
 
 #if !defined(TF_WAVE) || !defined(TF_MATRIX)
 #error "the caps macros come from the build"
