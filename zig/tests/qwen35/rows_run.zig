@@ -1,7 +1,6 @@
 //! `rows <model dir> <ids.npy> [n] [streams] [keep]`: the window invariant layer by layer. Stream j holds the ids cut j
-//! tokens short; its last n tokens run as n one-row rounds alone and, with every stream's window, as one shared round
-//! that keeps only its first `keep` rows (a rejected draft's commit), the rest then one row at a time. Every layer's
-//! residual rows and the final rows are compared byte for byte, and the first difference is named.
+//! tokens short; its last n tokens run one row a round alone and as one shared round keeping only its first `keep` rows.
+//! Every layer's residual rows and the final rows are compared byte for byte, and the first difference is named.
 
 const std = @import("std");
 const hip = @import("hip");

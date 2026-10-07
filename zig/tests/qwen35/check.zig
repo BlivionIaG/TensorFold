@@ -1,11 +1,7 @@
 //! `check <model dir> [--tp N --rank R [--master HOST] [--port P]] [--policy K=V,...] [--prompts FILE] [--truth T --ids IDS] [--speed]
 //! [--only invariants|accuracy|speed] [--tokens N] [--kl X] [--top1 P] [--explain-kernels]`: the model's checks in one process, one line each
-//! (PASS, FAIL or SKIP with its numbers) and a summary; the exit code is nonzero when any fails. Invariants: a window
-//! against its rows one at a time, drafted against serial, solo against together (greedy and seeded), resumed against
-//! fresh, graph against eager, on short prompts and on long ones (four of 300 to 500 tokens cut from IDS, or the
-//! prompts of FILE). Accuracy, with --truth: prefill and decode logits against the fp64 truth. Speed, with --speed:
-//! prefill and decode rates. Under --tp every rank runs the same command and rank 0 reports. --explain-kernels prints
-//! which kernel each (op, path) takes at every row count, on this GPU under this policy, and exits.
+//! (PASS, FAIL or SKIP with its numbers) and a summary; the exit code is nonzero when any fails. Under --tp every rank
+//! runs the same command and rank 0 reports; --explain-kernels prints each (op, path)'s kernel by row count and exits.
 
 const std = @import("std");
 const qwen35 = @import("qwen3_5");

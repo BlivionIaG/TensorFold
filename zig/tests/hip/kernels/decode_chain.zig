@@ -1,5 +1,5 @@
 //! The linear attention's small launches merged by decode.hip against the chains they replace, byte for byte (the
-//! arithmetic is the old kernels'), and the MoE pick rule found by rank against the one that scans.
+//! arithmetic is the separate kernels'), and the MoE pick rule found by rank against the one that scans.
 
 const std = @import("std");
 const hip = @import("hip");
