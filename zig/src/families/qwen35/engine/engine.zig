@@ -5,7 +5,6 @@ const hip = @import("hip");
 const view = @import("../model/view.zig");
 const state = @import("../forward/state.zig");
 const fwd = @import("../forward/forward.zig");
-const win = @import("../forward/window.zig");
 const weights = @import("../model/weights.zig");
 const bridge = @import("../model/bridge.zig");
 const sample = @import("sample.zig");
@@ -14,6 +13,7 @@ const draw = @import("draw.zig");
 const slicing = @import("../model/slicing.zig");
 const reduce = @import("../forward/reduce.zig");
 const round_graphs = @import("round_graphs.zig");
+const lane_round = @import("round.zig");
 
 pub const Options = struct {
     /// Most positions a stream's caches hold (its prompt, its reply and a window's rows).
@@ -34,12 +34,11 @@ pub const Options = struct {
     policy: hip.Policy = .{},
 };
 
-/// What a round does with its shape's graph: run eagerly, replay it, or capture it (every rank does the same).
-pub const Pick = enum(u32) { eager, replay, capture };
-
-const Chosen = struct { pick: Pick, entry: ?*round_graphs.Entry };
+pub const Pick = lane_round.Pick;
 
 pub const Engine = struct {
+    pub const Rows = lane_round.Rows;
+
     gpa: std.mem.Allocator,
     driver: hip.Driver,
     ctx: hip.Context,
@@ -63,10 +62,10 @@ pub const Engine = struct {
     rccl: hip.rccl.Rccl = undefined,
     comm: hip.rccl.Comm = undefined,
     graphs: round_graphs.Graphs,
-    /// The round's graph choice, made before its forward (rank 0 sends it to the others).
-    chosen: ?Chosen = null,
-    /// The serial of the next caches made, for graphs keyed by stream.
-    serial: u64 = 1,
+    /// The draft head's batches replay graphs (the head holds no collective, so under tp too unless TF_HIP_GRAPHS=0).
+    head_graphs: bool = true,
+    /// The lane rounds' plan, graph choice and keep.
+    round: lane_round.State = undefined,
 
     /// The model on the device, its scratch not yet sized: `size` takes the capacity the memory plan fits.
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
@@ -77,8 +76,8 @@ pub const Engine = struct {
         e.sized = false;
         // rounds replay captured graphs as the policy says: under tensor parallelism they stay eager unless it is `graphs=on`
         e.o.graphs = o.graphs and o.policy.graphsOn(o.world);
-        e.graphs = .{ .gpa = gpa };
-        e.serial = 1;
+        e.head_graphs = o.graphs and o.policy.graphsOn(1);
+        e.graphs = round_graphs.Graphs.init(gpa);
         e.driver = try hip.Driver.open();
         errdefer e.driver.close();
         e.ctx = try hip.Context.init(&e.driver, o.device);
@@ -123,6 +122,8 @@ pub const Engine = struct {
         e.ids_dev = try hip.DeviceBuffer.alloc(&e.driver, need.ids);
         errdefer e.ids_dev.free();
         e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, e.bridge.model.head.n * e.o.world, rows);
+        errdefer e.drawer.deinit();
+        e.round = try lane_round.State.init(e);
         e.sized = true;
     }
 
@@ -162,9 +163,10 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         e.stream.synchronize() catch {};
-        if (e.graphs.captured > 0) std.log.info("graphs: {d} captured, {d} rounds replayed", .{ e.graphs.captured, e.graphs.replayed });
+        if (e.graphs.captured > 0) std.log.info("graphs: {d} captured, {d} of {d} rounds replayed", .{ e.graphs.captured, e.graphs.replayed, e.graphs.rounds });
         e.graphs.deinit();
         if (e.sized) {
+            e.round.deinit(e);
             e.drawer.deinit();
             e.ids_dev.free();
             e.ids.free();
@@ -188,35 +190,37 @@ pub const Engine = struct {
         return &e.bridge.model;
     }
 
-    fn ops(e: *Engine, arena: *hip.Arena) hip.ops.Ops {
+    pub fn ops(e: *Engine, arena: *hip.Arena) hip.ops.Ops {
         return .{ .lib = &e.lib, .stream = e.stream.handle, .arena = arena };
     }
 
-    /// Zeroed caches for `total` positions (at most the capacity), with the serial graphs key them by.
+    /// Zeroed caches for `total` positions (at most the capacity).
     pub fn newCaches(e: *Engine, total: usize) !state.Caches {
-        var c = try state.Caches.init(e.gpa, &e.driver, e.model(), @min(total, e.o.capacity));
-        c.serial = e.serial;
-        e.serial += 1;
-        return c;
+        return state.Caches.init(e.gpa, &e.driver, e.model(), @min(total, e.o.capacity));
     }
 
-    /// Drops the graphs over `caches`, before they are freed.
-    pub fn forget(e: *Engine, caches: *const state.Caches) void {
+    /// Whether the draft head's greedy batches replay graphs.
+    pub fn headGraphs(e: *const Engine) bool {
+        return if (e.o.world > 1) e.head_graphs else e.o.graphs;
+    }
+
+    /// Waits for the stream, before caches are freed (a round may still be running on them).
+    pub fn drain(e: *Engine) void {
         e.stream.synchronize() catch {};
-        e.graphs.forget(caches.serial);
     }
 
     /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order, each row per `reqs`.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
         const y = try o.affine(hidden, e.model().head, rows, false);
-        try e.drawRows(o, y, rows, reqs, out);
+        try e.drawRows(o, y, rows, reqs, out, false);
     }
 
-    /// Each of `rows` logits rows `y` drawn per `reqs` (whole rows joined first under tensor parallelism).
-    fn drawRows(e: *Engine, o: hip.ops.Ops, y: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
+    /// Each of `rows` logits rows `y` drawn per `reqs` (whole rows joined first under tensor parallelism); `argmaxed`: the
+    /// greedy rows are drawn already, where the drawer keeps them.
+    pub fn drawRows(e: *Engine, o: hip.ops.Ops, y: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32, argmaxed: bool) !void {
         var whole = y;
         if (e.model().tp) |c| whole = try e.joined(o, c, y, rows);
-        try e.drawer.draw(o, e.stream, whole, reqs[0..rows], out);
+        try e.drawer.draw(o, e.stream, whole, reqs[0..rows], out, argmaxed);
     }
 
     /// vocab_gather: every rank's slice of `rows` logits rows, joined on the device into whole rows in rank order.
@@ -291,141 +295,23 @@ pub const Engine = struct {
         return token[0];
     }
 
-    /// One stream's rows of a round: tokens (the pending one, then drafts) from slot `pos` over its caches.
-    pub const Rows = struct { caches: *state.Caches, pos: usize, tokens: []const u32 };
-
-    /// Every window in one forward: `out` the token of every row per `reqs`; snapshots live until the next round for `keep`.
-    pub fn verify(e: *Engine, rows: []const Rows, wins: []win.Window, snaps: []win.Snapshot, reqs: []const draw.Request, out: []u32) !struct { hidden: hip.ops.Tensor } {
-        const m = e.model();
-        var total: usize = 0;
-        for (rows) |r| total += r.tokens.len;
-        if (total > e.o.batch_rows) return error.WindowTooWide;
-        if (e.chosen == null) _ = try e.choose(rows, null);
-        defer e.chosen = null;
-        e.rounds.reset();
-        // ids, then each row's position, in one pinned copy
-        const host = e.ids.slice(u32);
-        var at: usize = 0;
-        for (rows) |r| {
-            for (r.tokens, 0..) |t, i| {
-                host[at + i] = t;
-                host[total + at + i] = @intCast(r.pos + i);
-            }
-            at += r.tokens.len;
-        }
-        try e.ids_dev.uploadAsync(0, std.mem.sliceAsBytes(host[0 .. 2 * total]), e.stream.handle);
-        at = 0;
-        const layers = m.spec.n_layers;
-        for (rows, wins, 0..) |r, *w, i| {
-            if (r.pos + r.tokens.len > r.caches.total) return error.ContextFull;
-            w.* = .{ .caches = r.caches, .pos = r.pos, .rows = r.tokens.len, .at32 = e.ids_dev.ptr + (total + at) * 4, .snaps = snaps[i * layers ..][0..layers] };
-            at += r.tokens.len;
-        }
-        const out_round = try e.round(wins, snaps[0 .. rows.len * layers], total);
-        try e.drawRows(e.ops(&e.rounds), out_round.y, total, reqs, out);
-        return .{ .hidden = out_round.hidden };
-    }
-
-    /// The forward and its logits projection.
-    fn body(e: *Engine, wins: []win.Window, total: usize) !round_graphs.Out {
-        var o = e.ops(&e.rounds);
-        // a round's rows keep their decode kernels however many share it
-        o.window = true;
-        const hidden = try win.forward(o, e.model(), wins, e.ids_dev.ptr, null);
-        const y = try o.affine(hidden, e.model().head, total, false);
-        return .{ .hidden = hidden, .y = y, .used = e.rounds.used };
+    /// Every window in one forward: `out` the token of every row per `reqs`; the round's snapshots live until its keeps are flushed.
+    pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: []u32) !lane_round.Verified {
+        return lane_round.verify(e, rows, reqs, out);
     }
 
     /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys).
     pub fn choose(e: *Engine, rows: []const Rows, forced: ?Pick) !Pick {
-        e.chosen = .{ .pick = .eager, .entry = null };
-        if (!e.o.graphs or rows.len > 64) {
-            if ((forced orelse .eager) != .eager) return error.GraphsDisagree;
-            return .eager;
-        }
-        var parts: [64]round_graphs.Part = undefined;
-        for (rows, 0..) |r, i| parts[i] = .{ .serial = r.caches.serial, .rows = @intCast(r.tokens.len) };
-        const entry = try e.graphs.find(parts[0..rows.len]);
-        const mine: Pick = switch (entry.state) {
-            .failed => .eager,
-            .ready => .replay,
-            .seen => if (entry.again) .capture else .eager,
-        };
-        const pick = forced orelse mine;
-        if (pick == .replay and entry.state != .ready) return error.GraphsDisagree;
-        if (pick == .eager and entry.state == .seen) entry.again = true;
-        e.chosen = .{ .pick = pick, .entry = entry };
-        return pick;
+        return lane_round.choose(e, rows, forced);
     }
 
-    /// One round's forward as `choose` picked: replayed from the shape's graph, captured, or eager.
-    fn round(e: *Engine, wins: []win.Window, snaps: []win.Snapshot, total: usize) !round_graphs.Out {
-        const c = e.chosen.?;
-        const entry = c.entry orelse return e.body(wins, total);
-        switch (c.pick) {
-            .eager => return e.body(wins, total),
-            .replay => {
-                @memcpy(snaps, entry.snaps);
-                e.rounds.used = entry.out.used;
-                try entry.exec.?.launchOn(e.stream);
-                e.graphs.replayed += 1;
-                return entry.out;
-            },
-            .capture => return e.capture(entry, wins, snaps, total),
-        }
+    /// Marks a slot of the last verify to keep its first `rows` rows at the next `flush`.
+    pub fn keep(e: *Engine, slot: usize, rows: usize) void {
+        lane_round.mark(e, slot, rows);
     }
 
-    /// Records the round into a graph and launches it; a capture that fails on any rank runs eagerly on every rank.
-    fn capture(e: *Engine, entry: *round_graphs.Entry, wins: []win.Window, snaps: []win.Snapshot, total: usize) !round_graphs.Out {
-        var kept = false;
-        var fatal: ?anyerror = null;
-        var out: round_graphs.Out = undefined;
-        if (hip.graph.beginCapture(e.stream, .thread_local)) {
-            const recorded = e.body(wins, total);
-            if (hip.graph.endCapture(e.stream)) |graph| {
-                if (recorded) |o| {
-                    out = o;
-                    kept = if (e.graphs.keep(entry, graph, e.stream, snaps, o)) true else |_| false;
-                } else |err| {
-                    var g = graph;
-                    g.deinit();
-                    if (err == error.OutOfDeviceMemory) fatal = err;
-                }
-            } else |_| {}
-        } else |_| {}
-        if (fatal) |err| return err;
-        // the policy's `graph_fail` makes that rank's capture fail, to check that every rank falls back
-        if (e.o.policy.graph_fail >= 0 and @as(usize, @intCast(e.o.policy.graph_fail)) == e.o.rank) kept = false;
-        const all = if (e.o.world > 1) try e.agreed(kept) else kept;
-        if (!all) {
-            e.graphs.revoke(entry);
-            e.rounds.reset();
-            return e.body(wins, total);
-        }
-        try entry.exec.?.launchOn(e.stream);
-        return out;
-    }
-
-    /// Whether every rank says yes (an all-gather of one word each).
-    fn agreed(e: *Engine, yes: bool) !bool {
-        const world = e.o.world;
-        var host = try hip.HostBuffer.alloc(&e.driver, 8 * (1 + world));
-        defer host.free();
-        var send = try hip.DeviceBuffer.alloc(&e.driver, 8);
-        defer send.free();
-        var recv = try hip.DeviceBuffer.alloc(&e.driver, 8 * world);
-        defer recv.free();
-        host.slice(u64)[0] = @intFromBool(yes);
-        try send.uploadAsync(0, host.bytes[0..8], e.stream.handle);
-        try e.comm.allGather(send.ptr, recv.ptr, 1, .i64, e.stream.handle);
-        try recv.downloadAsync(0, host.bytes[8 .. 8 * (1 + world)], e.stream.handle);
-        try e.stream.synchronize();
-        for (host.slice(u64)[1 .. 1 + world]) |v| if (v == 0) return false;
-        return true;
-    }
-
-    /// Keep a verified window's first `rows` rows.
-    pub fn keep(e: *Engine, w: win.Window, rows: usize) !void {
-        try win.commit(e.ops(&e.rounds), e.model(), w, rows);
+    /// Keeps every marked slot in one launch.
+    pub fn flush(e: *Engine) !void {
+        try lane_round.flush(e);
     }
 };

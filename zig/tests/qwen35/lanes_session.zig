@@ -45,8 +45,10 @@ pub const Session = struct {
     pub const Done = struct {
         replies: []const Reply,
         seconds: f64,
-        /// Rounds replayed from graphs during the run.
+        /// Rounds run, rounds replayed from graphs and the host's nanoseconds submitting them, during the run.
+        rounds: u64,
         replayed: u64,
+        submit_ns: u64,
 
         pub fn tokens(d: Done) usize {
             var n: usize = 0;
@@ -72,6 +74,8 @@ pub const Session = struct {
             made += 1;
         }
         const replayed = s.e.graphs.replayed;
+        const rounds = s.e.graphs.rounds;
+        const submit = s.e.graphs.submit_ns;
         const t0 = std.Io.Clock.awake.now(s.io);
         if (job.solo) {
             for (streams) |*st| try s.finish(&.{st});
@@ -84,7 +88,7 @@ pub const Session = struct {
         const seconds = @as(f64, @floatFromInt(std.Io.Clock.awake.now(s.io).toNanoseconds() - t0.toNanoseconds())) / 1e9;
         const out = try arena.alloc(Reply, streams.len);
         for (out, streams, job.prompts) |*r, *st, p| r.* = .{ .name = p.name, .tokens = try arena.dupe(u32, st.emitted()), .rounds = st.rounds, .accepted = st.accepted, .cached = st.cached };
-        return .{ .replies = out, .seconds = seconds, .replayed = s.e.graphs.replayed - replayed };
+        return .{ .replies = out, .seconds = seconds, .rounds = s.e.graphs.rounds - rounds, .replayed = s.e.graphs.replayed - replayed, .submit_ns = s.e.graphs.submit_ns - submit };
     }
 
     fn finish(s: *Session, streams: []const *lanes.Stream) !void {

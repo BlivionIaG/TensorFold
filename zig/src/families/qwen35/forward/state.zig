@@ -13,8 +13,9 @@ pub const LayerCache = union(enum) {
 pub const Caches = struct {
     layers: []LayerCache,
     total: usize,
-    /// Which stream's buffers these are, for graphs bound to them (set by the engine).
-    serial: u64 = 0,
+    /// What a round's kernels read to find these buffers: the positions held, the address of the stream's last kept
+    /// final row (zero until `setHidden`), then two addresses a layer (keys and values, or conv window and state).
+    desc: hip.DeviceBuffer,
 
     /// Buffers for `total` positions; every byte zeroed.
     pub fn init(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, total: usize) !Caches {
@@ -59,7 +60,20 @@ pub const Caches = struct {
             }
             made += 1;
         }
-        return .{ .layers = layers, .total = total };
+        const words = try gpa.alloc(u64, 2 + 2 * s.n_layers);
+        defer gpa.free(words);
+        words[0] = total;
+        words[1] = 0;
+        for (layers, 0..) |l, i| switch (l) {
+            .full => |f| words[2 + 2 * i ..][0..2].* = .{ f.k.ptr, f.v.ptr },
+            .linear => |x| words[2 + 2 * i ..][0..2].* = .{ x.conv.ptr, x.state.ptr },
+        };
+        return .{ .layers = layers, .total = total, .desc = try hip.DeviceBuffer.fromHost(d, std.mem.sliceAsBytes(words)) };
+    }
+
+    /// The stream's last kept final row lives at `ptr`: a round's keep copies it there.
+    pub fn setHidden(c: *const Caches, ptr: u64) !void {
+        try c.desc.upload(8, std.mem.asBytes(&ptr));
     }
 
     fn free(l: *LayerCache) void {
@@ -76,6 +90,7 @@ pub const Caches = struct {
     }
 
     pub fn deinit(c: *Caches, gpa: Allocator) void {
+        c.desc.free();
         for (c.layers) |*l| free(l);
         gpa.free(c.layers);
         c.* = undefined;

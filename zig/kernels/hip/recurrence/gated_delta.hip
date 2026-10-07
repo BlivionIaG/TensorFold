@@ -1,6 +1,7 @@
 // Gated DeltaNet: a wave per (batch, value head, value row) walks the sequence, lane sums as the Python reference.
 
 #include "gated_delta.hpp"
+#include "decode/plan.hpp"
 
 #include <hip/hip_runtime.h>
 
@@ -97,18 +98,17 @@ gated_delta_kernel(const float* __restrict__ q, const float* __restrict__ k, con
 
 // Value rows share a staged tile of k and q, in the wave kernel's order (-ffp-contract=off keeps it).
 template <int DK, int ROWS, int STEPS>
-__global__ void __launch_bounds__(32 * ROWS)
-gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
-                 const float* __restrict__ gate, const float* __restrict__ beta, float* __restrict__ state,
-                 float* __restrict__ y, int length, int key_heads, int value_heads, int dv,
-                 float* __restrict__ states) {
+__device__ __forceinline__ void
+gated_delta_tile_body(const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
+                      const float* __restrict__ gate, const float* __restrict__ beta, float* __restrict__ state,
+                      float* __restrict__ y, int length, int key_heads, int value_heads, int dv,
+                      float* __restrict__ states, int batch) {
     constexpr int SPAN = (DK + 31) / 32;
     constexpr int WIDTH = 32 * ROWS;
     const int lane = threadIdx.x;
     const int local = threadIdx.y;
     const int row = blockIdx.x * ROWS + local;
     const int head = blockIdx.y;
-    const int batch = blockIdx.z;
     const int key_head = head / (value_heads / key_heads);
     const int tid = local * 32 + lane;
 
@@ -210,8 +210,49 @@ gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const
     }
 }
 
+template <int DK, int ROWS, int STEPS>
+__global__ void __launch_bounds__(32 * ROWS)
+gated_delta_tile(const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
+                 const float* __restrict__ gate, const float* __restrict__ beta, float* __restrict__ state,
+                 float* __restrict__ y, int length, int key_heads, int value_heads, int dv,
+                 float* __restrict__ states) {
+    gated_delta_tile_body<DK, ROWS, STEPS>(q, k, v, gate, beta, state, y, length, key_heads, value_heads, dv, states,
+                                           blockIdx.z);
+}
+
+// A round's windows in one launch, a grid plane a slot: its rows, state and snapshots come from the plan (the same scan).
+template <int DK>
+__device__ __forceinline__ void
+gated_delta_plan_body(const float* q, const float* k, const float* v, const float* gate, const float* beta, float* y,
+                      int key_heads, int value_heads, int dv, PlanArgs plan, int layer) {
+    const int slot = blockIdx.z;
+    const int length = plan.count[slot];
+    if (length == 0) return;
+    const long long row0 = plan.first[slot];
+    const unsigned long long* desc = plan_desc(plan, slot);
+    float* state = reinterpret_cast<float*>(desc[plan_second(layer)]);
+    // the last slot holds the round's padding rows, which keep no states
+    const bool snap = length > 1 && slot + 1 < static_cast<int>(gridDim.z);
+    float* states = snap ? reinterpret_cast<float*>(plan.snaps[2 * layer + 1]) + row0 * value_heads * dv * DK : nullptr;
+    gated_delta_tile_body<DK, 8, 16>(q + row0 * key_heads * DK, k + row0 * key_heads * DK, v + row0 * value_heads * dv,
+                                     gate + row0 * value_heads, beta + row0 * value_heads, state,
+                                     y + row0 * value_heads * dv, length, key_heads, value_heads, dv, states, 0);
+}
+
 }  // namespace rocm
 }  // namespace tf
+
+extern "C" __global__ void __launch_bounds__(256)
+tf_gdn_plan_128(const float* q, const float* k, const float* v, const float* gate, const float* beta, float* y,
+                int key_heads, int value_heads, int dv, PlanArgs plan, int layer) {
+    tf::rocm::gated_delta_plan_body<128>(q, k, v, gate, beta, y, key_heads, value_heads, dv, plan, layer);
+}
+
+extern "C" __global__ void __launch_bounds__(256)
+tf_gdn_plan_16(const float* q, const float* k, const float* v, const float* gate, const float* beta, float* y,
+               int key_heads, int value_heads, int dv, PlanArgs plan, int layer) {
+    tf::rocm::gated_delta_plan_body<16>(q, k, v, gate, beta, y, key_heads, value_heads, dv, plan, layer);
+}
 
 void gated_delta_launch(const float* q, const float* k, const float* v, const float* gate, const float* beta,
                         float* state, float* y, int batch, int length, int key_heads, int value_heads, int dk,

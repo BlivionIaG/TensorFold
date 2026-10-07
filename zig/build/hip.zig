@@ -60,11 +60,12 @@ const lib_headers = [_][]const u8{
     "attention/attention.hpp",
     "attention/attention_fa.hip",
     "recurrence/gated_delta.hpp",
+    "decode/plan.hpp",
 };
 
 /// The code-object groups in kernels.zig's Group order, each with its source; gemv and the WMMA schedules stay out.
-const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill", "gdn_prefill", "decode" };
-const group_sources = [module_groups.len][]const u8{ "ops/ops.hip", "ops/act.hip", "attention/attention.hip", "recurrence/gated_delta.hip", "tiles/dot2_tiles.hip", "tiles/dot2.hip", "attention/prefill.hip", "recurrence/gdn_prefill.hip", "decode/decode.hip" };
+const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill", "gdn_prefill", "decode", "plan" };
+const group_sources = [module_groups.len][]const u8{ "ops/ops.hip", "ops/act.hip", "attention/attention.hip", "recurrence/gated_delta.hip", "tiles/dot2_tiles.hip", "tiles/dot2.hip", "attention/prefill.hip", "recurrence/gdn_prefill.hip", "decode/decode.hip", "decode/plan.hip" };
 
 /// A GPU family's library: the caps table's family its gfx targets belong to.
 const Family = struct { name: []const u8, family: caps.Family };

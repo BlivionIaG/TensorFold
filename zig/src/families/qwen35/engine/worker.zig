@@ -5,13 +5,13 @@ const hip = @import("hip");
 const Engine = @import("engine.zig").Engine;
 const Pick = @import("engine.zig").Pick;
 const state = @import("../forward/state.zig");
-const win = @import("../forward/window.zig");
 const draw = @import("draw.zig");
 const prefix = @import("prefix.zig");
 
 /// A step rank 0 sends the other ranks (the first word of a message).
 /// prefill (begins a prompt pass): id, total, len, resumed at, cut count, kept entries, byte budget (low, high), cuts..., prompt...;
-/// fill: id, end of the next chunk of the prompt pass; verify: graph pick, count, then id, rows, tokens... each; keep: count, then id, rows each;
+/// fill: id, end of the next chunk of the prompt pass; verify: graph pick, count, then id, rows, tokens... each (the round's plan
+/// shape follows from them: every rank derives the same); keep: count, then id, rows each;
 /// release: id; stop.
 pub const Op = enum(u32) { stop, prefill, verify, keep, release, fill };
 
@@ -26,7 +26,7 @@ const Lane = struct {
     len: usize,
     /// The prompt pass in progress: the prompt, the row it has reached, the cuts it keeps a state at.
     fill: ?Fill = null,
-    /// The last verify's window and rows, until rank 0's keep.
+    /// The last verify's slot and rows, until rank 0's keep.
     pending: ?struct { window: usize, rows: usize } = null,
 };
 
@@ -34,8 +34,6 @@ pub const Worker = struct {
     gpa: std.mem.Allocator,
     e: *Engine,
     lanes: std.AutoHashMapUnmanaged(u32, *Lane) = .empty,
-    wins: []win.Window,
-    snaps: []win.Snapshot,
     reqs: []draw.Request,
     out: []u32,
     /// rank 0's kept prompts, mirrored: the same cuts in the same order keep the same entries
@@ -43,15 +41,11 @@ pub const Worker = struct {
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine) !Worker {
         const rows = e.o.batch_rows;
-        const wins = try gpa.alloc(win.Window, rows);
-        errdefer gpa.free(wins);
-        const snaps = try gpa.alloc(win.Snapshot, rows * e.model().spec.n_layers);
-        errdefer gpa.free(snaps);
         const reqs = try gpa.alloc(draw.Request, rows);
         errdefer gpa.free(reqs);
         // a follower's draws are greedy and unread: the forward and its collectives are what it shares
         @memset(reqs, .{ .sampling = null, .position = 0 });
-        return .{ .gpa = gpa, .e = e, .wins = wins, .snaps = snaps, .reqs = reqs, .out = try gpa.alloc(u32, rows), .kept = prefix.Cache.init(gpa, 0, 0) };
+        return .{ .gpa = gpa, .e = e, .reqs = reqs, .out = try gpa.alloc(u32, rows), .kept = prefix.Cache.init(gpa, 0, 0) };
     }
 
     pub fn deinit(w: *Worker) void {
@@ -62,8 +56,6 @@ pub const Worker = struct {
         w.lanes.deinit(w.gpa);
         w.gpa.free(w.out);
         w.gpa.free(w.reqs);
-        w.gpa.free(w.snaps);
-        w.gpa.free(w.wins);
     }
 
     fn destroy(w: *Worker, l: *Lane) void {
@@ -71,7 +63,7 @@ pub const Worker = struct {
             w.gpa.free(f.prompt);
             w.gpa.free(f.stops);
         }
-        w.e.forget(&l.caches);
+        w.e.drain();
         l.caches.deinit(w.gpa);
         w.gpa.destroy(l);
     }
@@ -126,14 +118,14 @@ pub const Worker = struct {
         var total: usize = 0;
         for (rows) |r| total += r.tokens.len;
         _ = try w.e.choose(rows, pick);
-        _ = try w.e.verify(rows, w.wins[0..rows.len], w.snaps, w.reqs[0..total], w.out[0..total]);
+        _ = try w.e.verify(rows, w.reqs[0..total], w.out[0..total]);
         for (ids, 0..) |id, i| w.lanes.get(id).?.pending = .{ .window = i, .rows = rows[i].tokens.len };
     }
 
     fn keep(w: *Worker, id: u32, rows: usize) !void {
         const lane = w.lanes.get(id) orelse return error.UnknownStream;
         const p = lane.pending orelse return error.NothingToKeep;
-        try w.e.keep(w.wins[p.window], rows);
+        w.e.keep(p.window, rows);
         lane.len += rows;
         lane.pending = null;
     }
@@ -174,7 +166,10 @@ pub const Worker = struct {
                     }
                     try w.verify(ids[0..n], rows[0..n], pick);
                 },
-                .keep => for (0..m[1]) |i| try w.keep(m[2 + 2 * i], m[3 + 2 * i]),
+                .keep => {
+                    for (0..m[1]) |i| try w.keep(m[2 + 2 * i], m[3 + 2 * i]);
+                    try w.e.flush();
+                },
                 .release => w.release(m[1]),
                 .fill => try w.fill(m[1], m[2]),
             }

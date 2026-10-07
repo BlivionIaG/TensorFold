@@ -10,14 +10,20 @@ const rows_run = @import("rows_run.zig");
 const Ctx = check_ctx.Ctx;
 const Session = lanes_session.Session;
 
-/// One stream's window of 1 to 16 rows, then streams of 4 and 2 rows with a rejected draft's partial keep.
+/// One stream's window of 1 to 16 rows, then streams of 4 and 2 rows with a rejected draft's partial keep, then rounds
+/// padded up to a bucket (the padding rows must not change a real row).
 const cases = blk: {
-    var list: [20]rows_run.Case = undefined;
+    var list: [25]rows_run.Case = undefined;
     for (0..16) |i| list[i] = .{ .streams = 1, .n = i + 1, .keep = i + 1 };
     list[16] = .{ .streams = 4, .n = 4, .keep = 4 };
     list[17] = .{ .streams = 4, .n = 4, .keep = 2 };
     list[18] = .{ .streams = 4, .n = 2, .keep = 2 };
     list[19] = .{ .streams = 4, .n = 2, .keep = 1 };
+    list[20] = .{ .streams = 1, .n = 1, .keep = 1, .pad = 4 };
+    list[21] = .{ .streams = 1, .n = 3, .keep = 3, .pad = 8 };
+    list[22] = .{ .streams = 3, .n = 3, .keep = 2, .pad = 16 };
+    list[23] = .{ .streams = 4, .n = 4, .keep = 4, .pad = 32 };
+    list[24] = .{ .streams = 2, .n = 4, .keep = 1, .pad = 64 };
     break :blk list;
 };
 
@@ -32,7 +38,8 @@ fn rows(c: *Ctx) void {
     if (c.tp()) return c.report.skip("rows", "the layer by layer trace runs on one rank; the lane checks below run the windows under tp");
     const ids = c.ids[0..@min(c.ids.len, 256)];
     for (cases) |k| {
-        const name = std.fmt.allocPrint(c.arena, "rows {d} stream{s} x {d} row{s}, {d} kept", .{ k.streams, if (k.streams == 1) "" else "s", k.n, if (k.n == 1) "" else "s", k.keep }) catch return;
+        const plain = std.fmt.allocPrint(c.arena, "rows {d} stream{s} x {d} row{s}, {d} kept", .{ k.streams, if (k.streams == 1) "" else "s", k.n, if (k.n == 1) "" else "s", k.keep }) catch return;
+        const name = if (k.pad > 0) std.fmt.allocPrint(c.arena, "{s}, padded to {d}", .{ plain, k.pad }) catch return else plain;
         const diff = rows_run.runCase(c.gpa, c.e, ids, k) catch |err| {
             c.report.broke(name, err);
             continue;

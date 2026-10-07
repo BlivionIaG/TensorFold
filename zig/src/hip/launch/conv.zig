@@ -12,6 +12,7 @@ const ad = util.ad;
 const dim = util.dim;
 const cdiv = util.cdiv;
 const invalid = util.invalid;
+const PlanArgs = @import("plan.zig").PlanArgs;
 
 /// decode.hip's ConvArgs: the linear attention's conv launch.
 pub const ConvArgs = extern struct {
@@ -40,6 +41,10 @@ pub const ConvArgs = extern struct {
     beta: u64 = 0,
     gcount: c_int = 0,
     heads: c_int = 0,
+    /// A round's plan: a grid row a slot, its rows and state from the plan (no plan: this launch's own).
+    plan: PlanArgs = .{},
+    layer: c_int = 0,
+    slots: c_int = 1,
 };
 
 pub fn tf_conv_decode(l: *const Launcher, x: CF, weight: CF, state: F, y: F, batch: c_int, channels: c_int, kernel: c_int, s: S) Error!void {
@@ -72,7 +77,7 @@ pub fn tf_conv_split(l: *const Launcher, c: ConvArgs, s: S) Error!void {
     var a: Args = .{};
     a.add(c);
     const gate_blocks = if (c.ga != 0) cdiv(c.gcount, 128) else 0;
-    try l.go(l.dec.conv_split, dim(cdiv(c.channels, 128) + gate_blocks, 1, 1), dim(128, 1, 1), 0, s, &a);
+    try l.go(l.dec.conv_split, dim(cdiv(c.channels, 128) + gate_blocks, c.slots, 1), dim(128, 1, 1), 0, s, &a);
 }
 
 pub fn tf_conv_prefill(l: *const Launcher, x: C, kind: c_int, weight: CF, state: CF, out: F, new_state: F, len: c_int, channels: c_int, kernel: c_int, s: S) Error!void {

@@ -13,6 +13,7 @@ pub const view = @import("model/view.zig");
 pub const state = @import("forward/state.zig");
 pub const forward = @import("forward/forward.zig");
 pub const window = @import("forward/window.zig");
+pub const plan = @import("forward/plan.zig");
 pub const moe = @import("forward/moe.zig");
 pub const sample = @import("engine/sample.zig");
 pub const draw = @import("engine/draw.zig");

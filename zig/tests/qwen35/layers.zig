@@ -124,24 +124,27 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
     var token = try logitsToken(g, o, m, dir, "prefill.logits", act, dtype, hidden, len - 1);
     try expectToken(token, sampled[0], "prefill");
 
-    var snaps: [512]qwen35.window.Snapshot = undefined;
+    // a decode step is a round of one row over a plan: the stream's slot, then the scratch slot
+    var plan_buf = try qwen35.plan.Buffer.init(g.d, 1, s.n_layers);
+    defer plan_buf.deinit();
+    var scratch = try qwen35.state.Caches.init(g.gpa, g.d, m, 1);
+    defer scratch.deinit(g.gpa);
+    const no_snaps = try g.gpa.alloc([2]u64, s.n_layers);
+    defer g.gpa.free(no_snaps);
+    @memset(no_snaps, .{ 0, 0 });
     for (0..sampled.len - 1) |step| {
         arena.reset();
         const pos = len + step;
-        var one = [1]i32{@intCast(token)};
-        var tok_dev = try hip.DeviceBuffer.fromHost(g.d, std.mem.asBytes(&one));
-        defer tok_dev.free();
-        var at = [1]i32{@intCast(pos)};
-        var at_dev = try hip.DeviceBuffer.fromHost(g.d, std.mem.asBytes(&at));
-        defer at_dev.free();
-        var windows = [1]qwen35.window.Window{.{ .caches = &caches, .pos = pos, .rows = 1, .at32 = at_dev.ptr, .snaps = snaps[0..s.n_layers] }};
+        const shape: qwen35.plan.Shape = .{ .rows = 1, .slots = 2, .span = @intCast(qwen35.plan.spanOf(pos + 1)) };
+        const layout = qwen35.plan.Layout.of(1, 2, s.n_layers);
+        try plan_buf.upload(stream.handle, layout, shape, &.{.{ .desc = caches.desc.ptr, .pos = pos, .tokens = &.{token} }}, scratch.desc.ptr, no_snaps);
+        const round: qwen35.window.Round = .{ .plan = .{ .args = plan_buf.args(layout), .rows = 1, .slots = 2 }, .tokens = plan_buf.dev.ptr + 4 * layout.tokens, .span = shape.span };
         var name_buf: [32]u8 = undefined;
         const stem = try std.fmt.bufPrint(&name_buf, "decode{d}", .{step});
         const want = try read(g, dir, try std.fmt.allocPrint(g.gpa, "{s}.layers", .{stem}), act);
         defer g.gpa.free(want.bytes);
         check = .{ .g = g, .want = want.data, .hidden = s.hidden, .stream = stream };
-        const h = try qwen35.window.forward(o, m, &windows, tok_dev.ptr, trace);
-        try qwen35.window.commit(o, m, windows[0], 1);
+        const h = try qwen35.window.forward(o, m, round, trace);
         try stream.synchronize();
         if (check.failed) |l| return fail(stem, l);
         try compare(g, dir, try std.fmt.allocPrint(g.gpa, "{s}.hidden", .{stem}), act, h.ptr, s.hidden * 2);

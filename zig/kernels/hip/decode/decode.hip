@@ -7,6 +7,8 @@
 
 #include <cstdint>
 
+#include "decode/plan.hpp"
+
 namespace {
 
 __device__ __forceinline__ float bf16_up(uint32_t bits) { return __uint_as_float(bits << 16); }
@@ -161,13 +163,37 @@ struct ConvArgs {
     float* gate;
     float* beta;
     int gcount, heads;
+    // A round's plan (plan.count null: the launch's own rows and state): a grid row a slot, its rows and state from the plan.
+    PlanArgs plan;
+    int layer;
 };
 
 // The conv for a window's rows split into q, k and v: taps in order, silu after, q and k heads normed as rms_rows, gate and beta last.
-__device__ void conv_split_body(const ConvArgs& c) {
+__device__ void conv_split_body(const ConvArgs& launch) {
     __shared__ float sq[128];
     __shared__ float inv_s;
+    ConvArgs c = launch;
     const int conv_blocks = (c.channels + 127) / 128;
+    if (launch.plan.count != nullptr) {
+        const int slot = blockIdx.y;
+        // the gates are one pass over every row of the round, from the first slot's blocks
+        if (blockIdx.x >= conv_blocks && slot != 0) return;
+        if (blockIdx.x < conv_blocks) {
+            const int rows = launch.plan.count[slot];
+            if (rows == 0) return;
+            const long long row0 = launch.plan.first[slot];
+            c.rows = rows;
+            c.state = reinterpret_cast<float*>(plan_desc(launch.plan, slot)[plan_first(launch.layer)]);
+            c.x = static_cast<const char*>(launch.x) + row0 * c.channels * 2;
+            c.qn += row0 * c.kw;
+            c.kn += row0 * c.kw;
+            c.v += row0 * c.vw;
+            const long long kept = c.kernel - 1;
+            // the last slot holds the round's padding rows, which keep no states
+            const bool snap = rows > 1 && slot + 1 < static_cast<int>(gridDim.y);
+            c.states = snap ? reinterpret_cast<float*>(launch.plan.snaps[2 * launch.layer]) + row0 * kept * c.channels : nullptr;
+        }
+    }
     if (blockIdx.x >= conv_blocks) {
         const int i = (blockIdx.x - conv_blocks) * 128 + threadIdx.x;
         if (c.ga == nullptr || i >= c.gcount) return;

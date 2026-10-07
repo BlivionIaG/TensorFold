@@ -60,8 +60,14 @@ pub const Drawer = struct {
         return .{ .arg = arg, .ids = ids, .vals = vals, .total = vals + w.rows * stride * 2 };
     }
 
-    /// `out[r]` the token of row r of `logits` (rows, vocab) per `reqs[r]`; the stream is synchronized.
-    pub fn draw(w: *Drawer, o: hip.ops.Ops, stream: hip.Stream, logits: hip.ops.Tensor, reqs: []const Request, out: []u32) !void {
+    /// Where the argmax of a logits block's first rows goes on the device (a graph can hold the launch).
+    pub fn argmaxAt(w: *const Drawer) u64 {
+        return w.dev.ptr + w.layout(0).arg;
+    }
+
+    /// `out[r]` the token of row r of `logits` (rows, vocab) per `reqs[r]`; the stream is synchronized. `argmaxed`: the
+    /// rows' argmax is at `argmaxAt` already.
+    pub fn draw(w: *Drawer, o: hip.ops.Ops, stream: hip.Stream, logits: hip.ops.Tensor, reqs: []const Request, out: []u32, argmaxed: bool) !void {
         const rows = reqs.len;
         if (rows > w.rows) return error.WindowTooWide;
         const ks = w.host.slice(i32)[0..rows];
@@ -79,9 +85,11 @@ pub const Drawer = struct {
         }
         const at = w.layout(stride);
         const base = w.dev.ptr;
-        try w.dev.uploadAsync(0, std.mem.sliceAsBytes(ks), stream.handle);
-        if (any_greedy) try o.argmaxRows(logits, rows, w.vocab, base + at.arg);
-        if (stride > 0) try o.topkRows(logits, rows, w.vocab, base, stride, base + at.ids, base + at.vals);
+        if (any_greedy and !argmaxed) try o.argmaxRows(logits, rows, w.vocab, base + at.arg);
+        if (stride > 0) {
+            try w.dev.uploadAsync(0, std.mem.sliceAsBytes(ks), stream.handle);
+            try o.topkRows(logits, rows, w.vocab, base, stride, base + at.ids, base + at.vals);
+        }
         const host = w.host.bytes;
         if (any_greedy) try w.dev.downloadAsync(at.arg, host[at.arg..][0 .. rows * 4], stream.handle);
         if (stride > 0) try w.dev.downloadAsync(at.ids, host[at.ids..at.total], stream.handle);

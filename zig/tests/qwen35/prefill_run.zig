@@ -11,7 +11,7 @@ pub fn seconds(gpa: std.mem.Allocator, io: std.Io, e: *qwen35.engine.Engine, pro
     for (0..4) |rep| {
         var caches = try e.newCaches(prompt.len + 8);
         defer {
-            e.forget(&caches);
+            e.drain();
             caches.deinit(gpa);
         }
         const t0 = std.Io.Clock.awake.now(io);

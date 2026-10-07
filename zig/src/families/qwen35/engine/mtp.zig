@@ -8,7 +8,10 @@ const weights = @import("../model/weights.zig");
 const bridge = @import("../model/bridge.zig");
 const fwd = @import("../forward/forward.zig");
 const draw = @import("draw.zig");
+const plan = @import("../forward/plan.zig");
+const graph_cache = @import("graph_cache.zig");
 
+const pops = hip.plan_ops;
 const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
 
@@ -27,6 +30,10 @@ pub const Job = struct {
     out: []u32,
     kept: usize = 0,
 };
+
+/// What a greedy batch's launches depend on: its chains (a bucket, padding included), the drafts each runs, whether
+/// their probabilities are read for the confidence cut.
+const ChainKey = struct { rows: u32, most: u32, cut: bool };
 
 /// A greedy chain reads the head over the first ids of the vocabulary alone (the common tokens): a draft only guesses.
 const draft_vocab = 65536;
@@ -49,9 +56,13 @@ pub const Head = struct {
     arena: hip.Arena,
     /// The chains' last kept final rows gathered, (cap, hidden).
     rows: hip.DeviceBuffer,
+    /// A row of zeros: the padding chains' input.
+    zero: hip.DeviceBuffer,
     scalars: hip.HostBuffer, // `Layout`'s words, pinned
     scalars_dev: hip.DeviceBuffer,
     last: u64 = 0, // the last step's final rows, the next step's hidden input
+    /// Greedy batches captured by shape: the head's launches over the scalars alone, replayed.
+    graphs: graph_cache.Cache(ChainKey, void),
 
     /// The head of `m`, or null when the checkpoint has none; `cap` chains at most run in one batch.
     pub fn init(gpa: std.mem.Allocator, d: *const hip.Driver, m: *const weights.Model, model: *const view.Model, cap: usize) !?*Head {
@@ -81,6 +92,8 @@ pub const Head = struct {
             .v = undefined,
             .arena = undefined,
             .rows = undefined,
+            .zero = undefined,
+            .graphs = graph_cache.Cache(ChainKey, void).init(gpa),
             .scalars = undefined,
             .scalars_dev = undefined,
         };
@@ -92,6 +105,9 @@ pub const Head = struct {
         errdefer h.arena.deinit();
         h.rows = try hip.DeviceBuffer.alloc(d, cap * s.hidden * model.act.size());
         errdefer h.rows.free();
+        h.zero = try hip.DeviceBuffer.alloc(d, s.hidden * model.act.size());
+        errdefer h.zero.free();
+        try h.zero.fill8(0, null);
         h.scalars = try hip.HostBuffer.alloc(d, h.layout().total);
         errdefer h.scalars.free();
         h.scalars_dev = try hip.DeviceBuffer.alloc(d, h.layout().total);
@@ -100,8 +116,10 @@ pub const Head = struct {
     }
 
     pub fn deinit(h: *Head) void {
+        h.graphs.deinit();
         h.scalars_dev.free();
         h.scalars.free();
+        h.zero.free();
         h.rows.free();
         h.arena.deinit();
         h.v.free();
@@ -109,15 +127,17 @@ pub const Head = struct {
         h.gpa.destroy(h);
     }
 
-    /// Byte offsets in the scalars: uploads first (tokens, slots, positions), then the downloads (drafts, probabilities).
-    const Layout = struct { slots: usize, pos: usize, drafts: usize, probs: usize, total: usize };
+    /// Byte offsets in the scalars: uploads first (tokens, slots, positions, the addresses of the chains' input rows), then
+    /// the downloads (drafts, probabilities).
+    const Layout = struct { slots: usize, pos: usize, ptrs: usize, drafts: usize, probs: usize, total: usize };
 
     fn layout(h: *const Head) Layout {
         const slots = 4 * h.cap;
         const pos = slots + 4 * max_depth;
-        const drafts = pos + 4 * max_depth * h.cap;
+        const ptrs = std.mem.alignForward(usize, pos + 4 * max_depth * h.cap, 8);
+        const drafts = ptrs + 8 * h.cap;
         const probs = drafts + 4 * max_depth * h.cap;
-        return .{ .slots = slots, .pos = pos, .drafts = drafts, .probs = probs, .total = probs + 4 * max_depth * h.cap };
+        return .{ .slots = slots, .pos = pos, .ptrs = ptrs, .drafts = drafts, .probs = probs, .total = probs + 4 * max_depth * h.cap };
     }
 
     fn affineOf(p: weights.Projection) !view.Affine {
@@ -141,12 +161,12 @@ pub const Head = struct {
     }
 
     /// Every job's chain, `cap` at a time, up to `depth` drafts each, cut after a draft under `stop_under` (0: never).
-    pub fn chains(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, jobs: []Job) !void {
+    pub fn chains(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, jobs: []Job, graphs: bool) !void {
         var at: usize = 0;
-        while (at < jobs.len) : (at += h.cap) try h.batch(lib, stream, drawer, m, jobs[at..][0..@min(h.cap, jobs.len - at)]);
+        while (at < jobs.len) : (at += h.cap) try h.batch(lib, stream, drawer, m, jobs[at..][0..@min(h.cap, jobs.len - at)], graphs);
     }
 
-    fn batch(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, jobs: []Job) !void {
+    fn batch(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, jobs: []Job, graphs: bool) !void {
         const o: Ops = .{ .lib = lib, .stream = stream.handle, .arena = &h.arena };
         h.arena.reset();
         const rows = jobs.len;
@@ -161,24 +181,29 @@ pub const Head = struct {
             cut = cut or j.stop_under > 0.0;
         }
         const sc = h.scalars.slice(i32);
+        const srcs = h.scalars.slice(u64);
+        // greedy chains run in a bucket of rows, the padding ones over zeros, so one graph serves any streams
+        const run = if (greedy) plan.bucketOf(rows, h.cap) else rows;
         for (0..max_depth) |n| sc[h.cap + n] = @intCast(n);
-        for (jobs, 0..) |j, r| {
-            sc[r] = @intCast(j.token);
-            for (0..max_depth) |n| sc[at.pos / 4 + n * h.cap + r] = @intCast(j.position + n);
-            try h.rows.copyFrom(r * width, j.hidden, width, o.stream);
+        for (0..run) |r| {
+            const real = r < jobs.len;
+            sc[r] = if (real) @intCast(jobs[r].token) else 0;
+            for (0..max_depth) |n| sc[at.pos / 4 + n * h.cap + r] = @intCast(n + if (real) jobs[r].position else 0);
+            srcs[at.ptrs / 8 + r] = if (real) jobs[r].hidden else h.zero.ptr;
         }
         try h.scalars_dev.uploadAsync(0, h.scalars.bytes[0..at.drafts], o.stream);
         const dev = h.scalars_dev.ptr;
         if (greedy) {
-            try h.steps(o, m, rows, most, cut);
+            try h.chain(stream, o, m, .{ .rows = @intCast(run), .most = @intCast(most), .cut = cut }, graphs);
         } else {
+            try pops.gather(o, dev + at.ptrs, h.rows.ptr, width / 4, rows);
             var cur: Tensor = .{ .ptr = h.rows.ptr, .kind = m.act };
             var reqs: [64]draw.Request = undefined;
             var drawn: [64]u32 = undefined;
             for (0..most) |n| {
                 const logits = try h.step(o, m, h.logits_head, cur, dev, rows, dev + at.slots + 4 * n, dev + at.pos + 4 * h.cap * n, n);
                 for (jobs, 0..) |j, r| reqs[r] = .{ .sampling = j.sampling, .position = j.position + n + 1 };
-                try drawer.draw(o, stream, logits, reqs[0..rows], drawn[0..rows]);
+                try drawer.draw(o, stream, logits, reqs[0..rows], drawn[0..rows], false);
                 for (jobs, 0..) |j, r| if (n < j.out.len) {
                     j.out[n] = drawn[r];
                 };
@@ -207,6 +232,45 @@ pub const Head = struct {
                 break;
             };
         }
+    }
+
+    const Recording = struct { h: *Head, o: Ops, m: *const view.Model, key: ChainKey };
+
+    fn record(c: Recording) anyerror!void {
+        try c.h.launches(c.o, c.m, c.key);
+    }
+
+    /// A greedy batch's launches: replayed from the shape's graph, captured the second time it is met, or eager.
+    fn chain(h: *Head, stream: hip.Stream, o: Ops, m: *const view.Model, key: ChainKey, graphs: bool) !void {
+        h.graphs.rounds += 1;
+        const entry = if (graphs) try h.graphs.find(key) else null;
+        if (entry) |e| switch (e.state) {
+            .ready => {
+                try e.exec.?.launchOn(stream);
+                h.graphs.replayed += 1;
+                return;
+            },
+            .seen => if (e.again) {
+                if (try graph_cache.Cache(ChainKey, void).record(stream, Recording{ .h = h, .o = o, .m = m, .key = key }, record)) |rec| {
+                    if (h.graphs.keep(e, rec.graph, stream, {})) {
+                        try e.exec.?.launchOn(stream);
+                        return;
+                    } else |_| {}
+                }
+                e.state = .failed;
+                h.arena.reset();
+            } else {
+                e.again = true;
+            },
+            .failed => {},
+        };
+        try h.launches(o, m, key);
+    }
+
+    /// The chains' input rows gathered, then every step.
+    fn launches(h: *Head, o: Ops, m: *const view.Model, key: ChainKey) !void {
+        try pops.gather(o, h.scalars_dev.ptr + h.layout().ptrs, h.rows.ptr, m.spec.hidden * m.act.size() / 4, key.rows);
+        try h.steps(o, m, key.rows, key.most, key.cut);
     }
 
     /// The greedy chains' steps on the device alone: each step's drafts feed the next, with the probabilities of those a later one follows.

@@ -39,9 +39,13 @@ const rope = @import("launch/rope.zig");
 const moe = @import("launch/moe.zig");
 const attention = @import("launch/attention.zig");
 const recurrence = @import("launch/recurrence.zig");
+const plan = @import("launch/plan.zig");
 const elementwise = @import("launch/elementwise.zig");
 
 pub const ConvArgs = conv.ConvArgs;
+pub const PlanArgs = plan.PlanArgs;
+pub const PlanRef = plan.PlanRef;
+pub const PlanKeep = plan.Keep;
 pub const gdn_chunk = recurrence.gdn_chunk;
 pub const GdnScratch = recurrence.GdnScratch;
 pub const gdnScratch = recurrence.gdnScratch;
@@ -71,11 +75,22 @@ pub const Launcher = struct {
     op: Ops,
     /// decode.hip's kernels: a round's few rows, and the launches that merge several small ones.
     dec: Decode,
+    /// plan.hip's kernels and the DeltaNet's over a round's plan.
+    plan: PlanFns,
     /// The policy keeps the launches decode.hip replaces (`fuse` off).
     fuse: bool,
     /// The 64-row prefill attention tile is on.
     wide: bool,
     affine: Affine,
+
+    const PlanFns = struct {
+        kv_write: Function,
+        score: [2]Function, // fp16, bf16
+        apply: [2]Function,
+        keep: Function,
+        gather: Function,
+        gdn: [2]Function, // dk 128, 16
+    };
 
     const Decode = struct {
         router: [2]Function, // fp16, bf16
@@ -123,9 +138,18 @@ pub const Launcher = struct {
         const gd = l.mods[@backingInt(kernels.Group.gated_delta)];
         const pre = l.mods[@backingInt(kernels.Group.prefill)];
         const dec = l.mods[@backingInt(kernels.Group.decode)];
+        const pl = l.mods[@backingInt(kernels.Group.plan)];
         l.fuse = policy.fused();
         l.wide = policy.wideAttention();
         l.dec = .{ .router = .{ try dec.function("tf_router_decode_f16"), try dec.function("tf_router_decode_bf16") }, .tail = try dec.function("tf_tail"), .conv_split = try dec.function("tf_conv_split"), .rms2 = try dec.function("tf_rms2"), .gnorm_out = try dec.function("tf_gnorm_out"), .select = try dec.function("tf_select_decode") };
+        l.plan = .{
+            .kv_write = try pl.function("tf_plan_kv_write"),
+            .score = .{ try pl.function("tf_plan_score_f16"), try pl.function("tf_plan_score_bf16") },
+            .apply = .{ try pl.function("tf_plan_apply_f16"), try pl.function("tf_plan_apply_bf16") },
+            .keep = try pl.function("tf_plan_keep"),
+            .gather = try pl.function("tf_plan_gather"),
+            .gdn = .{ try gd.function("tf_gdn_plan_128"), try gd.function("tf_gdn_plan_16") },
+        };
         l.fa_wide = .{ try pre.function("tf_fa_wide_f16"), try pre.function("tf_fa_wide_bf16") };
         const gp = l.mods[@backingInt(kernels.Group.gdn_prefill)];
         l.gdn_chunked = .{ try gp.function("tf_gdn_prep"), try gp.function("tf_gdn_kt"), try gp.function("tf_gdn_wy"), try gp.function("tf_gdn_h"), try gp.function("tf_gdn_o") };
@@ -241,6 +265,11 @@ pub const Launcher = struct {
     pub const tf_kv_write = attention.tf_kv_write;
     pub const tf_gdn_gate = recurrence.tf_gdn_gate;
     pub const tf_gated_delta = recurrence.tf_gated_delta;
+    pub const planKvWrite = plan.planKvWrite;
+    pub const planCausal = plan.planCausal;
+    pub const planGatedDelta = plan.planGatedDelta;
+    pub const planKeep = plan.planKeep;
+    pub const planGather = plan.planGather;
     pub const gdnChunked = recurrence.gdnChunked;
     pub const tf_gdn_gate_prefill = recurrence.tf_gdn_gate_prefill;
     pub const tf_gnorm_silu = recurrence.tf_gnorm_silu;

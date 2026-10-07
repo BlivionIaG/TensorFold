@@ -5,7 +5,6 @@ const hip = @import("hip");
 const lanes = @import("lanes");
 const Engine = @import("engine.zig").Engine;
 const state = @import("../forward/state.zig");
-const win = @import("../forward/window.zig");
 const draw = @import("draw.zig");
 const mtp = @import("mtp.zig");
 
@@ -40,19 +39,13 @@ const Rig = struct {
     e: *Engine,
     caches: [most_streams]state.Caches = undefined,
     made: usize = 0,
-    wins: []win.Window,
-    snaps: []win.Snapshot,
     tokens: [64]u32 = @splat(1),
     reqs: [64]draw.Request = undefined,
     out: [64]u32 = undefined,
 
     fn deinit(r: *Rig) void {
-        for (r.caches[0..r.made]) |*c| {
-            r.e.forget(c);
-            c.deinit(r.gpa);
-        }
-        r.gpa.free(r.snaps);
-        r.gpa.free(r.wins);
+        r.e.drain();
+        for (r.caches[0..r.made]) |*c| c.deinit(r.gpa);
     }
 
     /// Mean ms of a verify of `streams` windows of the given widths.
@@ -67,7 +60,7 @@ const Rig = struct {
         var spent: u64 = 0;
         for (0..warm + reps) |i| {
             const t0 = nowNs();
-            _ = try r.e.verify(rows[0..widths.len], r.wins[0..widths.len], r.snaps, r.reqs[0..total], &r.out);
+            _ = try r.e.verify(rows[0..widths.len], r.reqs[0..total], &r.out);
             if (i >= warm) spent += nowNs() - t0;
         }
         return @as(f64, @floatFromInt(spent)) / reps / 1e6;
@@ -76,8 +69,7 @@ const Rig = struct {
 
 /// Time `h`'s forwards and head on scratch caches of its engine (nothing of a stream is touched).
 pub fn measure(gpa: std.mem.Allocator, e: *Engine, head: ?*mtp.Head, out: *Costs) !void {
-    const layers = e.model().spec.n_layers;
-    var r: Rig = .{ .gpa = gpa, .e = e, .wins = try gpa.alloc(win.Window, most_streams), .snaps = try gpa.alloc(win.Snapshot, most_streams * layers) };
+    var r: Rig = .{ .gpa = gpa, .e = e };
     defer r.deinit();
     while (r.made < most_streams) : (r.made += 1) r.caches[r.made] = try e.newCaches(at + 2 * window * 4);
     out.windows = 0;
@@ -114,7 +106,7 @@ fn step(e: *Engine, hd: *mtp.Head) !f64 {
     for (0..warm + reps) |i| {
         var jobs = [_]mtp.Job{.{ .hidden = row.ptr, .token = 1, .position = at, .depth = mtp.max_depth, .sampling = null, .stop_under = 0.0, .out = &held }};
         const t0 = nowNs();
-        try hd.chains(&e.lib, e.stream, &e.drawer, m, &jobs);
+        try hd.chains(&e.lib, e.stream, &e.drawer, m, &jobs, e.headGraphs());
         if (i >= warm) spent += nowNs() - t0;
     }
     return @as(f64, @floatFromInt(spent)) / reps / 1e6 / mtp.max_depth;

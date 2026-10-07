@@ -45,5 +45,15 @@ fn decode(c: *Ctx, drafts: bool, prompts: []const ids_file.Prompt, max_new: u32)
     var rounds: u64 = 0;
     for (done.replies) |r| rounds += r.rounds;
     const n = done.tokens();
-    c.report.pass(name, "{d:.1} tok/s, {d} tokens in {d:.3} s, {d:.2} tokens a stream round", .{ @as(f64, @floatFromInt(n)) / done.seconds, n, done.seconds, @as(f64, @floatFromInt(n)) / @as(f64, @floatFromInt(@max(rounds, 1))) });
+    const shared: f64 = @floatFromInt(@max(done.rounds, 1));
+    c.report.pass(name, "{d:.1} tok/s, {d} tokens in {d:.3} s, {d:.2} tokens a stream round, {d:.1}% of {d} rounds replayed, {d:.0} us a round submitting, {d:.0} us a round in all", .{
+        @as(f64, @floatFromInt(n)) / done.seconds,
+        n,
+        done.seconds,
+        @as(f64, @floatFromInt(n)) / @as(f64, @floatFromInt(@max(rounds, 1))),
+        100.0 * @as(f64, @floatFromInt(done.replayed)) / shared,
+        done.rounds,
+        @as(f64, @floatFromInt(done.submit_ns)) / shared / 1e3,
+        done.seconds * 1e6 / shared,
+    });
 }

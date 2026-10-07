@@ -35,7 +35,7 @@ pub fn stream(gpa: std.mem.Allocator, e: *Engine, ids: []const u32, mode: Mode, 
     const m = e.model();
     var caches = try e.newCaches(ids.len + 8);
     defer {
-        e.forget(&caches);
+        e.drain();
         caches.deinit(gpa);
     }
     e.prompts.reset();
@@ -52,19 +52,17 @@ pub fn stream(gpa: std.mem.Allocator, e: *Engine, ids: []const u32, mode: Mode, 
         const first = try o.affine(hidden, m.head, 1, mode.wide);
         try e.stream.synchronize();
         try e.driver.check(e.driver.api.hipMemcpyDtoH(block.ptr, first.ptr, width), "download");
-        var wins: [1]qwen35.window.Window = undefined;
-        const snaps = try gpa.alloc(qwen35.window.Snapshot, m.spec.n_layers);
-        defer gpa.free(snaps);
         for (1..ids.len) |i| {
             const rows = [1]Engine.Rows{.{ .caches = &caches, .pos = i, .tokens = ids[i..][0..1] }};
             const reqs = [1]qwen35.draw.Request{.{ .sampling = null, .position = i + 1 }};
             var drawn: [1]u32 = undefined;
-            const r = try e.verify(&rows, &wins, snaps, &reqs, &drawn);
+            const r = try e.verify(&rows, &reqs, &drawn);
             const round: hip.ops.Ops = .{ .lib = &e.lib, .stream = e.stream.handle, .arena = &e.rounds };
             const logits = try round.affine(r.hidden, m.head, 1, mode.wide);
             try e.stream.synchronize();
             try e.driver.check(e.driver.api.hipMemcpyDtoH(block[(i % chunk) * width ..].ptr, logits.ptr, width), "download");
-            try e.keep(wins[0], 1);
+            e.keep(0, 1);
+            try e.flush();
             if (i % chunk == chunk - 1) try sink.put(sink.ctx, i + 1 - chunk, chunk, block);
         }
         const tail = ids.len % chunk;
