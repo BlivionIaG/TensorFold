@@ -304,6 +304,13 @@ the pass resumes, where it keeps), `keep`, `forget`, `marks` and the counters.
   the pages the rest, and the pool holds every stream's whole window, the scratch rows and those pages. Snapshots are
   counted in the budget because they are bought from it.
 
+Where it differs from upstream's Store: its entries are nodes of a tree, so pages are shared between them and the
+limits count pages and snapshots apart (`Limits`); `begin` also hands back the pages of the resume point (`adopt`) and
+`keep` takes the stream's pages and returns the tree's (`path`); `Rules.page` stands in for `planned` and the chunk
+starts (a resume and a mark sit on page edges, and a row's bits do not depend on its chunk), there is no lookahead, no
+spare storage and `min_prompt` is zero. Moving it to core means taking upstream's `Rules`, `Counts`, `Plan` and
+`Snapshots`, and adding `Pages`, `adopt` and `path` to them.
+
 **Linear state** is not a per-token cache: resuming needs each linear layer's conv window and DeltaNet state as of the
 node's last token. A snapshot is large (35B-A3B: about 60 MB across its 30 linear layers), which is why it is kept only at
 the marks, and why the tree may hold fewer snapshots than pages.
