@@ -103,16 +103,19 @@ pub const Comm = struct {
 
     /// `recv` = the ranks' `send` summed, `n` values of `dtype` (sum of two ranks is the one add, any order).
     pub fn allReduce(c: Comm, send: u64, recv: u64, n: usize, dtype: Dtype, stream: abi.Stream) Error!void {
+        if (stream == abi.counting) return;
         try c.rccl.check(c.rccl.api.ncclAllReduce(@ptrFromInt(send), @ptrFromInt(recv), n, @backingInt(dtype), sum_op, c.handle, stream), "ncclAllReduce");
     }
 
     /// `recv` (world * n values) = every rank's `send` (n values) in rank order.
     pub fn allGather(c: Comm, send: u64, recv: u64, n: usize, dtype: Dtype, stream: abi.Stream) Error!void {
+        if (stream == abi.counting) return;
         try c.rccl.check(c.rccl.api.ncclAllGather(@ptrFromInt(send), @ptrFromInt(recv), n, @backingInt(dtype), c.handle, stream), "ncclAllGather");
     }
 
     /// `root`'s `send` into every rank's `recv`, `n` values.
     pub fn broadcast(c: Comm, send: u64, recv: u64, n: usize, dtype: Dtype, root: usize, stream: abi.Stream) Error!void {
+        if (stream == abi.counting) return;
         try c.rccl.check(c.rccl.api.ncclBroadcast(@ptrFromInt(send), @ptrFromInt(recv), n, @backingInt(dtype), @intCast(root), c.handle, stream), "ncclBroadcast");
     }
 };

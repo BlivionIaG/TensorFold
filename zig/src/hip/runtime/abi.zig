@@ -7,6 +7,8 @@ pub const DevicePtr = u64;
 pub const Module = ?*opaque {};
 pub const Function = ?*opaque {};
 pub const Stream = ?*opaque {};
+/// A stream that runs nothing: launches and copies on it return at once, so a forward only counts its scratch.
+pub const counting: Stream = @ptrFromInt(0x1);
 pub const Event = ?*opaque {};
 pub const Graph = ?*opaque {};
 pub const GraphNode = ?*opaque {};

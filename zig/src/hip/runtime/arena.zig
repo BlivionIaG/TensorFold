@@ -14,6 +14,11 @@ pub const Arena = struct {
         return .{ .buf = try DeviceBuffer.alloc(d, bytes) };
     }
 
+    /// An arena with no memory behind it, for a forward on the counting stream: its peak is what the forward takes.
+    pub fn counting() Arena {
+        return .{ .buf = .{ .d = undefined, .ptr = 1 << 40, .len = 1 << 60 } };
+    }
+
     pub fn deinit(self: *Arena) void {
         self.buf.free();
         self.* = undefined;

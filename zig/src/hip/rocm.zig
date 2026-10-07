@@ -162,6 +162,7 @@ pub const Library = struct {
         if (self.zig) |*z| {
             if (@hasDecl(launches.Launcher, name)) return @call(.auto, @field(launches.Launcher, name), .{z} ++ args);
         }
+        inline for (args) |arg| if (@TypeOf(arg) == abi.Stream and arg == abi.counting) return;
         try self.check(@call(.auto, @field(self.api, name), args), name);
     }
 

@@ -103,12 +103,14 @@ pub const DeviceBuffer = struct {
     pub fn uploadAsync(self: DeviceBuffer, offset: usize, bytes: []const u8, stream: abi.Stream) Error!void {
         const dst = try self.span(offset, bytes.len);
         if (bytes.len == 0) return;
+        if (stream == abi.counting) return;
         try self.d.check(self.d.api.hipMemcpyHtoDAsync(dst, bytes.ptr, bytes.len, stream), "hipMemcpyHtoDAsync");
     }
 
     pub fn downloadAsync(self: DeviceBuffer, offset: usize, out: []u8, stream: abi.Stream) Error!void {
         const src = try self.span(offset, out.len);
         if (out.len == 0) return;
+        if (stream == abi.counting) return;
         try self.d.check(self.d.api.hipMemcpyDtoHAsync(out.ptr, src, out.len, stream), "hipMemcpyDtoHAsync");
     }
 
@@ -116,6 +118,7 @@ pub const DeviceBuffer = struct {
     pub fn copyFrom(self: DeviceBuffer, offset: usize, src: abi.DevicePtr, n: usize, stream: ?abi.Stream) Error!void {
         const dst = try self.span(offset, n);
         if (n == 0) return;
+        if (stream) |s| if (s == abi.counting) return;
         if (stream) |s| {
             try self.d.check(self.d.api.hipMemcpyDtoDAsync(dst, src, n, s), "hipMemcpyDtoDAsync");
         } else {
@@ -127,6 +130,7 @@ pub const DeviceBuffer = struct {
     /// Without a stream the fill has finished on return, so a non-blocking stream's next kernel cannot race it.
     pub fn fill8(self: DeviceBuffer, value: u8, stream: ?abi.Stream) Error!void {
         if (self.len == 0) return;
+        if (stream) |s| if (s == abi.counting) return;
         if (stream) |s| {
             try self.d.check(self.d.api.hipMemsetD8Async(self.ptr, value, self.len, s), "hipMemsetD8Async");
         } else {
@@ -139,6 +143,7 @@ pub const DeviceBuffer = struct {
     pub fn fill32(self: DeviceBuffer, value: u32, stream: ?abi.Stream) Error!void {
         if (self.len % 4 != 0) return error.Invalid;
         if (self.len == 0) return;
+        if (stream) |s| if (s == abi.counting) return;
         const v: c_int = @bitCast(value);
         if (stream) |s| {
             try self.d.check(self.d.api.hipMemsetD32Async(self.ptr, v, self.len / 4, s), "hipMemsetD32Async");

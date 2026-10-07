@@ -36,7 +36,7 @@ pub fn kvWrite(o: Ops, src: Tensor, cache: u64, len: usize, kv_heads: usize, d: 
 
 /// kv_write with the first slot read from the device (one int32), for graphs replayed at new positions.
 pub fn kvWriteAt(o: Ops, src: Tensor, cache: u64, len: usize, kv_heads: usize, d: usize, total: usize, pos: u64) Error!void {
-    try o.lib.check(o.lib.api.tf_kv_write_at(p(src.ptr), p(cache), @backingInt(src.kind), int(len), int(kv_heads), int(d), int(total), @ptrFromInt(pos), o.stream), "kv_write_at");
+    try o.lib.call("tf_kv_write_at", .{ p(src.ptr), p(cache), @backingInt(src.kind), int(len), int(kv_heads), int(d), int(total), @ptrFromInt(pos), o.stream });
 }
 
 /// The cache's layout: `kv_heads` heads of `total` slots of `d` values (batch 1).

@@ -69,6 +69,7 @@ pub const Config = struct {
 /// hipModuleLaunchKernel, or hipModuleLaunchCooperativeKernel for a grid whose blocks must all be resident.
 pub fn launch(f: Function, cfg: Config, stream: Stream, args: *Args) Error!void {
     try cfg.validate();
+    if (stream.handle == abi.counting) return;
     const d = f.d;
     const g = cfg.grid;
     const b = cfg.block;
