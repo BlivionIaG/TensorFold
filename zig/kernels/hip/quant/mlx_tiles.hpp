@@ -9,6 +9,7 @@
 #include "tiles/epilogue.hpp"
 #include "tiles/gemm.hpp"
 #include "tiles/gemm_kp.hpp"
+#include "tiles/matrix_gemm.hpp"
 
 namespace tf {
 namespace rocm {
@@ -90,6 +91,32 @@ hipError_t launch_kp_bits(const Affine& a, hipStream_t stream, int items) {
     if (a.m <= 8) return launch_kp_tier<BITS, 4, 2, 2, 4, true>(a, stream, items);
     if (a.m <= 32) return launch_kp_tier<BITS, 4, 8, 2, 4, false>(a, stream, items);
     return hipErrorInvalidValue;
+}
+
+// ---- the prefill GEMM tile on the matrix cores of gfx11 ----
+
+template <int BITS>
+__global__ void __launch_bounds__(256) affine_wmma_gemm(Affine a) {
+    wmma_gemm_tile<MlxDecoder<BITS>, BF16Act, WmmaBF16, F32Out>(a);
+}
+
+template <int BITS>
+hipError_t launch_wmma_gemm_bits(const Affine& a, hipStream_t stream, int items) {
+    const dim3 grid((a.n + kGemmN - 1) / kGemmN, (a.m + kGemmM - 1) / kGemmM, items);
+    affine_wmma_gemm<BITS><<<grid, dim3(256), 0, stream>>>(a);
+    return hipGetLastError();
+}
+
+inline hipError_t launch_affine_wmma_gemm(const Affine& a, hipStream_t stream, int items = 1) {
+    switch (a.bits) {
+        case 2: return launch_wmma_gemm_bits<2>(a, stream, items);
+        case 3: return launch_wmma_gemm_bits<3>(a, stream, items);
+        case 4: return launch_wmma_gemm_bits<4>(a, stream, items);
+        case 5: return launch_wmma_gemm_bits<5>(a, stream, items);
+        case 6: return launch_wmma_gemm_bits<6>(a, stream, items);
+        case 8: return launch_wmma_gemm_bits<8>(a, stream, items);
+        default: return hipErrorInvalidValue;
+    }
 }
 
 }  // namespace rocm

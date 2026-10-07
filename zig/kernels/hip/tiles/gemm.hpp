@@ -17,7 +17,6 @@
 
 #include "common/dot2.hpp"
 #include "common/vec.hpp"
-#include "quant/mlx_decoder.hpp"
 #include "tiles/plan.hpp"
 
 namespace tf {
@@ -27,80 +26,6 @@ constexpr int kGemmM = 128;
 constexpr int kGemmN = 128;
 constexpr int kGemmK = 32;
 constexpr int kGemmLd = kGemmK + 8;  // 20 words a row: 16-byte aligned, eight 16-byte readers hit eight bank groups
-
-// (transitional: the helpers the K-parallel and matrix tiles still read until they take the decoder)
-// Two codes (below 256, exact in both types) as the activation type's pair.
-template <typename T>
-__device__ inline typename T::pair code_pair(uint32_t c0, uint32_t c1) {
-    if constexpr (std::is_same_v<typename T::elem, __half>) {
-        // 0x6400 | c is 1024 + c in FP16; the subtraction is exact.
-        const uint32_t bits = (c0 | (c1 << 16)) | 0x64006400u;
-        return __hsub2(__builtin_bit_cast(__half2, bits), __builtin_bit_cast(__half2, 0x64006400u));
-    } else {
-        // The float of an integer below 256 has its low 16 bits clear, so its top half is the BF16.
-        const uint32_t bits = (__builtin_bit_cast(uint32_t, static_cast<float>(c0)) >> 16) |
-                              (__builtin_bit_cast(uint32_t, static_cast<float>(c1)) & 0xffff0000u);
-        return __builtin_bit_cast(bf16x2, bits);
-    }
-}
-
-// A 32-code piece is BITS words: loaded in 16-byte pieces when BITS % 4 == 0, 8-byte when even, else by word.
-// affine_gemm_supported checks the alignment this assumes.
-template <int BITS>
-__device__ inline void load_aligned(const uint32_t* src, uint32_t (&w)[BITS]) {
-    if constexpr (BITS % 4 == 0) {
-#pragma unroll
-        for (int i = 0; i < BITS / 4; ++i) {
-            const u32x4 v = reinterpret_cast<const u32x4*>(src)[i];
-            w[4 * i] = v.x;
-            w[4 * i + 1] = v.y;
-            w[4 * i + 2] = v.z;
-            w[4 * i + 3] = v.w;
-        }
-    } else if constexpr (BITS % 2 == 0) {
-#pragma unroll
-        for (int i = 0; i < BITS / 2; ++i) {
-            const uint2 v = reinterpret_cast<const uint2*>(src)[i];
-            w[2 * i] = v.x;
-            w[2 * i + 1] = v.y;
-        }
-    } else {
-#pragma unroll
-        for (int i = 0; i < BITS; ++i) w[i] = src[i];
-    }
-}
-
-// A table entry's stored bits as two 16-bit loads at addresses that hold for every kind (no branch around the loads,
-// no conversion before use: either would make the loads in flight wait).
-using TableBits = unsigned __attribute__((ext_vector_type(2)));
-
-__device__ inline TableBits table_bits(const GroupTable& t, long long i) {
-    const uint16_t* p = static_cast<const uint16_t*>(t.p);
-    const bool wide = t.kind == kScaleF32;
-    return TableBits{p[wide ? 2 * i : i], p[wide ? 2 * i + 1 : i]};
-}
-
-__device__ inline float table_float(const GroupTable& t, TableBits b) {
-    if (t.kind == kScaleBF16) return __uint_as_float(b.x << 16);
-    if (t.kind == kScaleF16) return __half2float(__ushort_as_half(static_cast<unsigned short>(b.x)));
-    return __uint_as_float(b.x | (b.y << 16));
-}
-
-// One dot2 whose x pair is lane I of the lane's quad (DPP quad_perm), accumulated in order. On RDNA2 the DPP form of
-// v_dot2c_f32_f16 does it in one instruction at full rate (row_share would halve it); the BF16 dot2 has no DPP form.
-template <typename T, int I>
-__device__ inline float dot_quad(uint32_t x, uint32_t w, float acc) {
-#if !TENSORFOLD_RDNA_WMMA
-    if constexpr (std::is_same_v<typename T::elem, __half>) {
-        asm("v_dot2c_f32_f16_dpp %0, %1, %2 quad_perm:[%3,%3,%3,%3] row_mask:0xf bank_mask:0xf"
-            : "+v"(acc)
-            : "v"(x), "v"(w), "n"(I));
-        return acc;
-    }
-#endif
-    const uint32_t shared = __builtin_amdgcn_mov_dpp(static_cast<int>(x), I * 0x55, 0xf, 0xf, false);
-    return T::dot(__builtin_bit_cast(typename T::pair, shared), __builtin_bit_cast(typename T::pair, w), acc);
-}
 
 // Rows of x a lane keeps (it owns 64 / RT columns): 16 where the dot2 takes x from another lane of the quad inside the
 // instruction (RDNA2 FP16), 8 where that costs a v_mov a row (the BF16 dot2 of gfx11 has no DPP form).
