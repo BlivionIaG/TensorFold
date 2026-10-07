@@ -43,6 +43,8 @@ pub const State = struct {
     pad_to: usize = 0,
     chosen: ?Chosen = null,
     last: ?Last = null,
+    /// The layout of the plan in flight, for the copy a round starts with.
+    layout: plan.Layout = undefined,
 
     pub fn init(e: *Engine) !State {
         const m = e.model();
@@ -132,7 +134,8 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     const o = e.ops(&e.rounds);
     try win.snapshots(o, m, c.shape.rows, st.snaps);
     const l = plan.Layout.of(c.shape.rows, c.shape.slots, m.spec.n_layers);
-    try st.buffer.upload(e.stream.handle, l, c.shape, st.wins[0..rows.len], st.scratch.desc.ptr, st.snaps);
+    st.buffer.fill(l, c.shape, st.wins[0..rows.len], st.scratch.desc.ptr, st.snaps);
+    st.layout = l;
     const p: hip.plan_ops.Plan = .{ .args = st.buffer.args(l), .rows = c.shape.rows, .slots = c.shape.slots };
     const r: win.Round = .{ .plan = p, .tokens = st.buffer.dev.ptr + 4 * l.tokens, .span = c.shape.span };
     const done = try run(e, c, r);
@@ -149,6 +152,8 @@ fn body(e: *Engine, r: win.Round) !round_graphs.Out {
     // a round's rows keep their decode kernels however many share it
     o.window = true;
     const m = e.model();
+    // the plan goes up first, inside the graph
+    try e.round.buffer.send(e.stream.handle, e.round.layout);
     const hidden = try win.forward(o, m, r, e.round.trace);
     const y = try o.affine(hidden, m.head, r.plan.rows, false);
     if (m.tp == null) try o.argmaxRows(y, r.plan.rows, e.drawer.vocab, e.drawer.argmaxAt());

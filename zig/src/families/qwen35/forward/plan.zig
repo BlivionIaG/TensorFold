@@ -98,9 +98,9 @@ pub const Buffer = struct {
         };
     }
 
-    /// Writes the round into the pinned words and uploads them in one copy: `windows` from their positions, the scratch
-    /// slot's `pad` rows after them, and each linear layer's snapshots (conv, DeltaNet; zero for an attention layer).
-    pub fn upload(b: *Buffer, stream: hip.abi.Stream, l: Layout, shape: Shape, windows: []const Window, scratch: u64, snaps: []const [2]u64) !void {
+    /// Writes the round into the pinned words: `windows` from their positions, the scratch slot's `pad` rows after them,
+    /// and each linear layer's snapshots (conv, DeltaNet; zero for an attention layer).
+    pub fn fill(b: *Buffer, l: Layout, shape: Shape, windows: []const Window, scratch: u64, snaps: []const [2]u64) void {
         const w = b.host.slice(u32);
         const slots: usize = shape.slots;
         var at: usize = 0;
@@ -137,6 +137,10 @@ pub const Buffer = struct {
             put64(w[l.snaps + 4 * i ..], pair[0]);
             put64(w[l.snaps + 4 * i + 2 ..], pair[1]);
         }
+    }
+
+    /// The filled words up to the device in one copy (a graph holds the copy: it runs from the same pinned words).
+    pub fn send(b: *const Buffer, stream: hip.abi.Stream, l: Layout) !void {
         try b.dev.uploadAsync(0, b.host.bytes[0 .. 4 * l.words], stream);
     }
 };
