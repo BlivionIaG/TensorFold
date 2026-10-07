@@ -119,6 +119,8 @@ pub const Info = struct {
     prefill_step: u32 = 0,
     /// The policy the engine runs under, one line; empty when it has none.
     policy: []const u8 = "",
+    /// A line the server prints once at startup (the engine's memory plan); empty: none.
+    startup: []const u8 = "",
 };
 
 /// A checkpoint family an engine reads: its config ``model_type`` and weight formats, as gate entries name them.
@@ -130,8 +132,8 @@ pub const Open = struct {
     model_type: []const u8,
     context: ?i64 = null,
     lanes: u32 = 8,
-    /// `--parallel auto`: the engine picks its own number of lanes (`lanes` is then the Mac's).
-    lanes_auto: bool = false,
+    /// --parallel named a number: an engine whose memory fits fewer streams refuses instead of serving fewer.
+    lanes_fixed: bool = false,
     drafts: bool = true,
     speed_up: ?[]const u8 = null,
     /// The bytes kept prompt states may hold, in GiB (`--prompt-cache-gib`); null: the engine's plan.
@@ -140,6 +142,9 @@ pub const Open = struct {
     prompt_cache_over_cap: bool = false,
     /// Kept prompt entries (`--checkpoint-slots`); null: the engine's plan.
     keep: ?i64 = null,
+    /// --device and --segments (CUDA); null: the backend's environment fallback, then its default.
+    device: ?u32 = null,
+    segments: ?u32 = null,
     /// Tensor parallelism: this process is `rank` of `tp`; rank 0 listens on `master`:`master_port` for the others.
     tp: u32 = 1,
     rank: u32 = 0,
@@ -155,6 +160,18 @@ pub const Open = struct {
 pub const Opened = struct { engine: Engine, close: *const fn (ctx: *anyopaque) void, ctx: *anyopaque };
 
 pub const Memory = struct { active: u64 = 0, cache: u64 = 0, peak: u64 = 0 };
+
+/// A backend's words for its own refusals (a request it cannot serve); null: the error's name.
+pub const Explain = struct {
+    ctx: ?*anyopaque = null,
+    text: *const fn (ctx: ?*anyopaque, err: anyerror) ?[]const u8,
+};
+
+/// A backend's own memory counts for LaneHost; read from HTTP threads, so it must not touch the GPU.
+pub const MemorySource = struct {
+    ctx: ?*anyopaque = null,
+    read: *const fn (ctx: ?*anyopaque, reset_peak: bool) ?Memory,
+};
 
 pub const Status = struct {
     /// Requests in prefill or decode, and those waiting for a lane.
@@ -185,6 +202,10 @@ pub const Engine = struct {
         status: *const fn (ctx: *anyopaque, out: *Status, stream_tokens: []u32) void,
         /// Device memory in bytes, the peak since the last reset; null when the backend keeps no count.
         memory: *const fn (ctx: *anyopaque, reset_peak: bool) ?Memory,
+        /// The engine's queue as a keepalive target, or null when the backend is not Metal.
+        keepalive: ?*const fn (ctx: *anyopaque) ?keepalive.Target = null,
+        /// One logit per label, and the vocabulary logsumexp. Null until a family scores decisions.
+        score: ?*const fn (ctx: *anyopaque, prompt: []const u32, labels: []const u32, logits: []f64) error{Failed}!f64 = null,
     };
 
     pub fn info(e: Engine) Info {
@@ -202,11 +223,23 @@ pub const Engine = struct {
     pub fn memory(e: Engine, reset_peak: bool) ?Memory {
         return e.vtable.memory(e.ctx, reset_peak);
     }
+    /// The engine's queue as a keepalive target, or null when the backend is not Metal.
+    pub fn keepaliveTarget(e: Engine) ?keepalive.Target {
+        const f = e.vtable.keepalive orelse return null;
+        return f(e.ctx);
+    }
+
+    /// The decision hook, or Unsupported when this engine does not score.
+    pub fn score(e: Engine, prompt: []const u32, labels: []const u32, logits: []f64) error{ Failed, Unsupported }!f64 {
+        const f = e.vtable.score orelse return error.Unsupported;
+        return f(e.ctx, prompt, labels, logits);
+    }
 };
 
 /// A backend's own driver for a lone greedy stream (the GPU round), which LaneHost runs while the stream is alone.
 pub const Lone = struct {
     ctx: *anyopaque,
+    sampled: bool = false, // it drives sampled streams too
     /// Prefills `s` and decodes it until it finishes (false) or `hooks.yield` hands it to the lane core (true).
     run: *const fn (ctx: *anyopaque, s: *lanes.Stream, hooks: LoneHooks) anyerror!bool,
 };
@@ -226,10 +259,13 @@ pub const prompt_cache = @import("prompt_cache.zig");
 
 /// The same for a paged cache over the backend's own KV pages (prompt_radix.zig).
 pub const prompt_radix = @import("prompt_radix.zig");
+/// The idle keepalive's ticker and target contract.
+pub const keepalive = @import("keepalive.zig");
 
 test {
     _ = @import("lane_host.zig");
     _ = @import("lane_host_reuse_test.zig");
     _ = prompt_cache;
     _ = prompt_radix;
+    _ = keepalive;
 }

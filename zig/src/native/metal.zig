@@ -57,6 +57,7 @@ const Host = struct {
     gpa: Allocator,
     m: *nemotron.Model,
     metal: *nemotron.backend.Metal,
+    warm: mtl.keepalive.Target = undefined, // the model's queue, for the lane host's idle ticker
     cfg: lanes.Config,
     clock: nemotron.timing.RoundClock,
     core: lanes.Engine,
@@ -129,16 +130,15 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = o.lanes, .context_window = @intCast(@max(window, 0)), .prefill_step = step });
     h.round = .{ .depth = 8 };
     if (h.metal.head != null) h.host.lone = .{ .ctx = h, .run = Host.lone };
+    h.warm = .{ .queue = h.m.queue };
+    h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
     try h.host.start();
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
 }
 
-/// Flash Next on the replay engine: the recorded kernels and packs from tools/zig/flashnext_dump.py in TF_FLASHNEXT_DUMP.
+/// Flash Next uses the dump named by TF_FLASHNEXT_DUMP, or the checked-in kernels when that variable is unset.
 fn openFlashNext(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
-    const dump = std.mem.span(std.c.getenv("TF_FLASHNEXT_DUMP") orelse {
-        problem.* = "the native Flash Next engine needs TF_FLASHNEXT_DUMP: a folder from tools/zig/flashnext_dump.py";
-        return null;
-    });
+    const dump: ?[]const u8 = if (std.c.getenv("TF_FLASHNEXT_DUMP")) |d| std.mem.span(d) else null;
     const native = modelContext(a, io, o.dir);
     const window: i64 = o.context orelse native;
     if (window < 0 or (native > 0 and window > native)) {
@@ -149,7 +149,7 @@ fn openFlashNext(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem:
     defer pool.pop();
     var why: []const u8 = "";
     const h = flashnext.open(gpa, io, o.dir, dump, window, o.speed_up, o.prompt_cache_gib, o.prompt_cache_over_cap, a, &why) catch |e| {
-        problem.* = if (e == error.CacheOverCap) why else try std.fmt.allocPrint(a, "the native Flash Next engine cannot load {s} with {s} ({s})", .{ o.dir, dump, @errorName(e) });
+        problem.* = if (e == error.CacheOverCap) why else try std.fmt.allocPrint(a, "the native Flash Next engine cannot load {s} with {s} ({s})", .{ o.dir, dump orelse "(none: the checked-in kernels)", @errorName(e) });
         return null;
     };
     return .{ .engine = h.engine(), .close = flashnext.close, .ctx = h };

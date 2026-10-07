@@ -22,6 +22,9 @@ const Value = json.Value;
 const Cx = errors.Cx;
 const Allocator = std.mem.Allocator;
 
+/// auto compacts near the window. fraction compacts past that share of it.
+pub const CompactAt = union(enum) { auto, fraction: f64 };
+
 pub const Config = struct {
     served_name: []const u8,
     /// The served name first, then aliases, without repeats.
@@ -31,6 +34,8 @@ pub const Config = struct {
     reasoning_effort: ?[]const u8 = null,
     thinking_budget: i64 = 0,
     loop_guard: bool = false,
+    /// Seconds the idle keepalive runs after the last request ends (0: off).
+    keep_warm_s: i64 = 900,
     dashboard: bool = false,
     /// Sampling when a request names none (generation_config.json and the serve flags), or null for greedy.
     default_sampling: ?Value = null,
@@ -38,6 +43,12 @@ pub const Config = struct {
     seed_salt: i64 = 0,
     /// TENSORFOLD_REQUEST_LOG: where chat and completion bodies are appended; null: nowhere.
     request_log: ?[]const u8 = null,
+    /// Null keeps every reply identical to a server that has no compaction.
+    compact_at: ?CompactAt = null,
+    /// Tokens of the recent tail kept whole. Null uses min(20000, a quarter of the window).
+    compact_keep: ?u32 = null,
+    /// Directory of the stored note, or null when notes are not stored.
+    compact_memory: ?[]const u8 = null,
     timeouts: http_conn.Timeouts = .{},
 };
 
@@ -62,6 +73,8 @@ pub const Server = struct {
     next_id: std.atomic.Value(u64) = .init(1),
     /// Connections open now; a stop waits for them before freeing what they read.
     open_connections: std.atomic.Value(u32) = .init(0),
+    /// The idle keepalive on the engine's queue, armed by --keep-warm; null when off or not Metal.
+    keepalive: ?*api.keepalive.Keepalive = null,
     preparing: std.atomic.Value(i64) = .init(0),
     arena: std.heap.ArenaAllocator,
 
@@ -69,6 +82,12 @@ pub const Server = struct {
     pub fn init(gpa: Allocator, io: std.Io, engine: api.Engine, text: model_text.Text, config: Config, keys: ?*auth.Store) !*Server {
         const srv = try gpa.create(Server);
         srv.* = .{ .gpa = gpa, .io = io, .engine = engine, .info = engine.info(), .text = text, .config = config, .keys = keys, .metrics = .{ .gpa = gpa }, .store = .{ .gpa = gpa }, .arena = .init(gpa) };
+        if (config.keep_warm_s > 0) if (engine.keepaliveTarget()) |target| {
+            srv.keepalive = api.keepalive.Keepalive.start(gpa, io, target, @as(i64, config.keep_warm_s) * std.time.ns_per_s) catch |e| blk: {
+                log.line("idle keepalive off: {s}", .{@errorName(e)});
+                break :blk null;
+            };
+        };
         const a = srv.arena.allocator();
         srv.eos = try a.dupe(u32, text.eosIds());
         if (text.tokenId(reply_text.channel_markers.close) != null) srv.markers = reply_text.channel_markers;
@@ -89,6 +108,7 @@ pub const Server = struct {
     }
 
     pub fn deinit(srv: *Server) void {
+        if (srv.keepalive) |k| k.stop(); // before the engine's queue goes away
         srv.arena.deinit();
         srv.store.deinit();
         srv.gpa.destroy(srv);

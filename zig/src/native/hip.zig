@@ -99,7 +99,7 @@ fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open
             .window = @intCast(window),
             .fixed = o.context != null,
             // `--parallel auto` is one lane, as on the Python ROCm engine
-            .streams = if (o.lanes_auto) 1 else @max(o.lanes, 1),
+            .streams = if (o.lanes_fixed) @max(o.lanes, 1) else 1,
             .rank = o.rank,
             .world = o.tp,
             .cache_gib = o.prompt_cache_gib,

@@ -222,6 +222,8 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
     defer box.deinit();
     const id = srv.next_id.fetchAdd(1, .monotonic);
     const submitted = nowNs(io);
+    if (srv.keepalive) |k| k.begin(); // the GPU is busy: the idle ticker holds its commits
+    defer if (srv.keepalive) |k| k.end();
     srv.engine.submit(id, &request, .{ .ctx = &box, .event = Mailbox.onEvent }) catch |e| return switch (e) {
         error.Busy => cx.fail(.capacity, "the engine is busy; retry shortly", .{}),
         error.Closed => cx.fail(.other, "the scheduler is closed", .{}),
@@ -253,7 +255,8 @@ fn logEnded(id: []const u8, e: Failure, message: []const u8, prompt: usize, toke
 
 /// The reply to ``input``; ``sink`` hears the stream (null: not streamed). ``gone`` says the client left.
 pub fn run(srv: *Server, cx: *Cx, input: Input, sink: ?Sink, gone: anytype) Failure!Reply {
-    return generate(srv, cx, try prepare(srv, cx, input, gone), sink, gone);
+    if (srv.config.compact_at == null) return generate(srv, cx, try prepare(srv, cx, input, gone), sink, gone);
+    return @import("compact.zig").run(srv, cx, input, sink, gone);
 }
 
 /// Give back a foreground request's preparing count: at its submit, or when it is never generated.

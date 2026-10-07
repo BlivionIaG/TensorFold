@@ -109,11 +109,15 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
         .reasoning_effort = args.reasoning_effort,
         .thinking_budget = args.thinking_budget,
         .loop_guard = args.loop_guard,
+        .keep_warm_s = args.keep_warm,
         .default_sampling = s.sampling,
         .use_drafts = !args.no_drafts,
         .seed_salt = salt,
         .request_log = env(s, "TENSORFOLD_REQUEST_LOG"),
         .dashboard = args.dashboard,
+        .compact_at = if (args.compact_auto) .{ .auto = {} } else if (args.compact_fraction) |f| .{ .fraction = f } else null,
+        .compact_keep = args.compact_keep,
+        .compact_memory = args.compact_memory,
     };
     const srv = server_mod.Server.init(gpa, io, s.engine, s.text, config, if (store.enabled()) &store else null) catch {
         std.debug.print("tensorfold: the server could not start\n", .{});
@@ -137,6 +141,7 @@ pub fn run(gpa: Allocator, io: std.Io, args: cli.Args, s: Setup) u8 {
     const port = lis.port();
     if (s.on_listen) |f| f(port);
     const window = srv.info.context_window;
+    if (srv.info.startup.len > 0) log.line("{s}", .{srv.info.startup});
     const now = std.Io.Clock.awake.now(io).toNanoseconds();
     const loaded = if (s.started > 0) @as(f64, @floatFromInt(now - s.started)) / 1e9 else 0;
     var window_text: [24]u8 = undefined;

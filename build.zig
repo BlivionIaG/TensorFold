@@ -25,6 +25,47 @@ const generated = kernels[1..];
 const kimi_dir = "zig/kernels/metal/kimi";
 const kimi_kernels = [_][]const u8{ "dense.metal", "dense_mma.metal", "norms.metal", "experts.metal", "kda.metal", "mla.metal", "synth.metal" };
 
+/// Nemotron's packed kernels (generated, they use uint4b_format): one metallib built ahead of time for the
+/// runtime compilers that refuse the type (macOS 26.3, #451). Keep in step with tools/zig/gen_nemotron_kernels.py.
+const nemotron_packed = [_][]const u8{
+    "zig/kernels/metal/nemotron/coop_down_1_0.metal",
+    "zig/kernels/metal/nemotron/coop_down_2_0.metal",
+    "zig/kernels/metal/nemotron/coop_down_2_1.metal",
+    "zig/kernels/metal/nemotron/coop_draft_1_0.metal",
+    "zig/kernels/metal/nemotron/coop_draft_2_0.metal",
+    "zig/kernels/metal/nemotron/coop_draft_2_1.metal",
+    "zig/kernels/metal/nemotron/coop_eh_1_0.metal",
+    "zig/kernels/metal/nemotron/coop_eh_1_0_sk.metal",
+    "zig/kernels/metal/nemotron/coop_eh_2_0.metal",
+    "zig/kernels/metal/nemotron/coop_eh_2_0_sk.metal",
+    "zig/kernels/metal/nemotron/coop_eh_2_1.metal",
+    "zig/kernels/metal/nemotron/coop_eh_2_1_sk.metal",
+    "zig/kernels/metal/nemotron/coop_head_1_0.metal",
+    "zig/kernels/metal/nemotron/coop_head_2_0.metal",
+    "zig/kernels/metal/nemotron/coop_head_2_1.metal",
+    "zig/kernels/metal/nemotron/coop_in_1_0.metal",
+    "zig/kernels/metal/nemotron/coop_in_1_0_sk.metal",
+    "zig/kernels/metal/nemotron/coop_in_2_0.metal",
+    "zig/kernels/metal/nemotron/coop_in_2_0_sk.metal",
+    "zig/kernels/metal/nemotron/coop_in_2_1.metal",
+    "zig/kernels/metal/nemotron/coop_in_2_1_sk.metal",
+    "zig/kernels/metal/nemotron/coop_out_1_0.metal",
+    "zig/kernels/metal/nemotron/coop_out_1_0_sk.metal",
+    "zig/kernels/metal/nemotron/coop_out_2_0.metal",
+    "zig/kernels/metal/nemotron/coop_out_2_0_sk.metal",
+    "zig/kernels/metal/nemotron/coop_out_2_1.metal",
+    "zig/kernels/metal/nemotron/coop_out_2_1_sk.metal",
+    "zig/kernels/metal/nemotron/coop_qkv_1_0.metal",
+    "zig/kernels/metal/nemotron/coop_qkv_2_0.metal",
+    "zig/kernels/metal/nemotron/coop_qkv_2_1.metal",
+    "zig/kernels/metal/nemotron/coop_up_1_0.metal",
+    "zig/kernels/metal/nemotron/coop_up_2_0.metal",
+    "zig/kernels/metal/nemotron/coop_up_2_1.metal",
+    "zig/kernels/metal/nemotron/up_relu2_1_0.metal",
+    "zig/kernels/metal/nemotron/up_relu2_2_0.metal",
+    "zig/kernels/metal/nemotron/up_relu2_2_1.metal",
+};
+
 /// MLX's language version for mx.fast.metal_kernel on this macOS: 4.1 from 27, 4.0 on 26, 3.2 on 15, else 3.1.
 fn mlxMetalStd(b: *std.Build) []const u8 {
     const os = b.graph.host.result.os;
@@ -101,23 +142,10 @@ pub fn build(b: *std.Build) void {
     dist_build.targets(b, draft_ids, build_options, release_version);
     cuda_build.hostTests(b, draft_ids, test_step);
     hip_build.hostTests(b, test_step);
-    const flash_host = b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/flashnext_host.zig"), .target = target, .optimize = optimize, .link_libc = true }) });
-    b.step("compile-flashnext-host", "Compile FlashNext CPU metadata contracts without running them").dependOn(&flash_host.step);
-    const flash_host_run = b.addRunArtifact(flash_host);
-    b.step("test-flashnext-host", "Run FlashNext CPU metadata contracts without Metal").dependOn(&flash_host_run.step);
-    test_step.dependOn(&flash_host_run.step);
 }
 
 /// `zig build native -Dcpu=apple_m1`: tensorfold-native with the Metal engines for the Python package's bundle (a native M5 build traps on M1-M4).
-fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, metal: *std.Build.Module, engine: *std.Build.Module, lanes: *std.Build.Module, build_options: *std.Build.Step.Options, test_step: ?*std.Build.Step) *std.Build.Step.Compile {
-    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
-    const engines = b.createModule(.{
-        .root_source_file = b.path("zig/src/native/metal.zig"),
-        .target = target,
-        .optimize = optimize,
-        .link_libc = true,
-        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "engine_api", .module = api }, .{ .name = "tensorfold", .module = engine } },
-    });
+fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, metal: *std.Build.Module, engine: *std.Build.Module, api: *std.Build.Module, engines: *std.Build.Module, build_options: *std.Build.Step.Options, test_step: ?*std.Build.Step) *std.Build.Step.Compile {
     // the HTTP side keeps its safety checks; the engine below it runs at `optimize`
     const tokenizer = b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
     const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
@@ -126,7 +154,7 @@ fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
         .target = target,
         .optimize = .ReleaseSafe,
         .link_libc = true,
-        .imports = &.{ .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines } },
+        .imports = &.{ .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines }, .{ .name = "checkpoint_cli", .module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/cli.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true, .imports = &.{.{ .name = "native_engines", .module = engines }} }) } },
     }) });
     exe.root_module.addOptions("build_options", build_options);
     if (test_step == null) {
@@ -205,6 +233,16 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     const metal = mods.metal;
     const kernels_mod = embedded(b, lib, "tensorfold.metallib");
 
+    // The engines registry: the families this platform's binaries serve; the CLI reads it for models/info/pull.
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = mods.lanes }} });
+    const engines = b.createModule(.{
+        .root_source_file = b.path("zig/src/native/metal.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "engine_api", .module = api }, .{ .name = "tensorfold", .module = mods.engine } },
+    });
+
     const programs = [_]struct { name: []const u8, path: []const u8, about: []const u8 }{
         .{ .name = "tf-metal-tests", .path = "zig/tests/gpu_tests.zig", .about = "GPU runtime tests" },
         .{ .name = "tf-dispatch-bench", .path = "zig/tests/dispatch_bench.zig", .about = "Dispatch boundary benchmark" },
@@ -275,7 +313,32 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     });
     // The engine: kernel sources compiled at run time (MLX's options), the families, the lane core.
     const sources = mods.sources;
+    // Nemotron's packed kernels, compiled offline and embedded: the runtime fallback when this macOS's
+    // compiler refuses uint4b_format (#451).
+    const packed_lib = metallib(b, "nemotron_packed", &nemotron_packed, &mlx_flags);
+    b.getInstallStep().dependOn(&b.addInstallFile(packed_lib, "lib/nemotron_packed.metallib").step);
+    sources.addImport("nemotron_packed_metallib", embedded(b, packed_lib, "nemotron_packed.metallib"));
     const engine = mods.engine;
+    // FlashNext's CPU contracts, with the family module's imports so the replay graph type-checks
+    const flash_host = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/flashnext_host.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "kernel_sources", .module = sources }, .{ .name = "nemotron_draft_ids", .module = draft_ids }, .{ .name = "lanes", .module = lanes }, .{ .name = "fabric", .module = fabric } },
+    }) });
+    b.step("compile-flashnext-host", "Compile FlashNext CPU metadata contracts without running them").dependOn(&flash_host.step);
+    const flash_host_run = b.addRunArtifact(flash_host);
+    b.step("test-flashnext-host", "Run FlashNext CPU metadata contracts without Metal").dependOn(&flash_host_run.step);
+    test_step.dependOn(&flash_host_run.step);
+    // Pack builder cases that do not need the replay graph.
+    const pack_cases = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/flashnext_pack_cases.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }) });
+    test_step.dependOn(&b.addRunArtifact(pack_cases).step);
     const engine_programs = [_]struct { name: []const u8, path: []const u8, about: []const u8, c_source: ?[]const u8 = null }{
         .{ .name = "tf-qwen35-check", .path = "zig/tests/qwen35_check.zig", .about = "Qwen3.5-2B checkpoint and native operations" },
         .{ .name = "tf-qwen35-forward", .path = "zig/tests/qwen35_forward.zig", .about = "Qwen3.5-2B native teacher-forced logits" },
@@ -289,6 +352,7 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
         .{ .name = "tf-nemotron-experts", .path = "zig/tests/nemotron_experts.zig", .about = "Routed-expert pass shapes bit-checked against the engine's kernels, then timed by window width" },
         .{ .name = "tf-nemotron-sample-check", .path = "zig/tests/nemotron_sample_check.zig", .about = "tf_sample_full against its host reference on synthetic rows, timed beside tf_gpu_sample" },
         .{ .name = "tf-flashnext-run", .path = "zig/tests/flashnext_run.zig", .about = "Flash Next one-row greedy steps on the Python engine's recorded kernels, against its tokens" },
+        .{ .name = "tf-flashnext-pack", .path = "zig/tests/flashnext_pack.zig", .about = "Flash Next's three weight packs built from a checkpoint, byte-compared with a Python dump" },
         .{ .name = "tf-grid-sync-bench", .path = "zig/tests/grid_sync_bench.zig", .about = "A GPU-wide barrier in one persistent dispatch against dependent relaunches" },
         .{ .name = "tf-weight-read-check", .path = "zig/tests/weight_read_check.zig", .about = "Check native file reads and failed-read cleanup", .c_source = "zig/tests/pread_fault.c" },
         .{ .name = "tf-glm-run", .path = "zig/tests/glm_run.zig", .about = "GLM-5.3-Flash greedy replies at each draft depth against depth 0 and reference tokens" },
@@ -301,7 +365,7 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-            .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "tensorfold", .module = engine }, .{ .name = "cluster", .module = cluster }, .{ .name = "kernel_sources", .module = sources } },
+            .imports = &.{ .{ .name = "metal", .module = metal }, .{ .name = "tensorfold", .module = engine }, .{ .name = "cluster", .module = cluster }, .{ .name = "kernel_sources", .module = sources }, .{ .name = "native_engines", .module = engines } },
         });
         if (p.c_source) |file| {
             mod.addCSourceFile(.{ .file = b.path(file), .flags = &.{"-std=c11"} });
@@ -323,7 +387,19 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     b.step("tf-row-check", "The core row projection on synthetic 4-bit matrices: widths bit-equal, a CPU reference, indexed experts").dependOn(&b.addInstallArtifact(row_check, .{}).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = row_mod })).step);
 
-    _ = nativeServer(b, target, optimize, metal, engine, lanes, build_options, test_step);
+    // The checkpoint CLI: models, info and pull, against a synthetic cache and a fake hub.
+    const cli_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/cli/tests.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{.{ .name = "native_engines", .module = engines }},
+    }) });
+    const run_cli_tests = b.addRunArtifact(cli_tests);
+    test_step.dependOn(&run_cli_tests.step);
+    b.step("test-cli", "The checkpoint CLI's host tests").dependOn(&run_cli_tests.step);
+
+    _ = nativeServer(b, target, optimize, metal, engine, api, engines, build_options, test_step);
 
     const cluster_metal = b.createModule(.{
         .root_source_file = b.path("zig/src/cluster/metal_sink.zig"),
@@ -371,15 +447,6 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     const cluster_tests = b.step("test-cluster", "Cluster tests: fake nodes and fabric, K3 planning (TF_K3_DIR), Metal sink");
     cluster_tests.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cluster })).step);
     cluster_tests.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cluster_metal })).step);
-
-    // The generated kernel sources must match the Python kernels they come from (needs python3, not MLX).
-    const gen_check = b.addSystemCommand(&.{ "python3", "-B", "tools/zig/gen_nemotron_metal.py", "--check" });
-    const gen_all = b.addSystemCommand(&.{ "python3", "-B", "tools/zig/gen_nemotron_kernels.py", "--check" });
-    const check_step = b.step("check-generated", "Fail if zig/kernels/metal's generated sources are stale");
-    check_step.dependOn(&gen_check.step);
-    check_step.dependOn(&gen_all.step);
-    const gen_qwen = b.addSystemCommand(&.{ "python3", "-B", "tools/zig/gen_qwen35_kernels.py", "--check" });
-    check_step.dependOn(&gen_qwen.step);
 
     // Host-only unit tests: no GPU work.
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = metal })).step);
@@ -429,11 +496,16 @@ fn metalEngineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize:
 
 pub fn distMetalServer(b: *std.Build, target: std.Build.ResolvedTarget, draft_ids: *std.Build.Module, build_options: *std.Build.Step.Options, sdk: []const u8) *std.Build.Step.Compile {
     const m = metalEngineModules(b, target, .fast, draft_ids);
+    // the release binary embeds the same prebuilt packed-kernel metallib as the development build
+    const flags = [_][]const u8{ b.fmt("-std={s}", .{mlxMetalStd(b)}), "-fmetal-math-mode=safe", "-fmetal-math-fp32-functions=fast" };
+    m.sources.addImport("nemotron_packed_metallib", embedded(b, metallib(b, "nemotron_packed", &nemotron_packed, &flags), "nemotron_packed.metallib"));
     // An explicit deployment target is a cross-build even on macOS. Supply the SDK search paths.
     m.metal.addSystemFrameworkPath(b.graph.cwdRelativePath(b.pathJoin(&.{ sdk, "System/Library/Frameworks" })));
     m.metal.addLibraryPath(b.graph.cwdRelativePath(b.pathJoin(&.{ sdk, "usr/lib" })));
     m.metal.addSystemIncludePath(b.graph.cwdRelativePath(b.pathJoin(&.{ sdk, "usr/include" })));
-    return nativeServer(b, target, .fast, m.metal, m.engine, m.lanes, build_options, null);
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = .fast, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = m.lanes }} });
+    const engines = b.createModule(.{ .root_source_file = b.path("zig/src/native/metal.zig"), .target = target, .optimize = .fast, .link_libc = true, .imports = &.{ .{ .name = "metal", .module = m.metal }, .{ .name = "engine_api", .module = api }, .{ .name = "tensorfold", .module = m.engine } } });
+    return nativeServer(b, target, .fast, m.metal, m.engine, api, engines, build_options, null);
 }
 
 test {

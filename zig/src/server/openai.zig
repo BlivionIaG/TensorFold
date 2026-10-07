@@ -4,6 +4,7 @@ const json = @import("json.zig");
 const errors = @import("errors.zig");
 const fields = @import("fields.zig");
 const chat = @import("chat.zig");
+const compact = @import("compact.zig");
 const grammar = @import("grammar.zig");
 const messages = @import("messages.zig");
 const tool_specs = @import("tool_specs.zig");
@@ -327,6 +328,17 @@ const Run = struct {
         }
     }
 
+    /// A context-window refusal on a stream: the role chunk when there are no tools, then the error event and [DONE].
+    fn streamedContext(r: *Run, cx: *const Cx, tools: bool, field: []const u8) void {
+        const a = r.a;
+        r.out.vt.open(r.out.ctx) catch return;
+        if (!tools and r.is_chat) r.emit(r.chunk(roleDelta(a) catch return, null) catch return) catch return;
+        logRefused(r.id, cx.message);
+        const body = errorBody(a, cx, field) catch return;
+        r.emit(wrapError(a, body) catch return) catch return;
+        r.out.vt.event(r.out.ctx, null) catch {};
+    }
+
     fn whole(r: *Run, gone: Gone, field: []const u8) void {
         const a = r.a;
         var cx: Cx = .{ .a = a };
@@ -420,8 +432,19 @@ const Run = struct {
         const a = r.a;
         const tools = r.plan.input.tools.len > 0;
         var cx: Cx = .{ .a = a };
-        // every refusal comes before the stream opens, so it gets the same 400 as a whole reply
-        const prepared = chat.prepare(r.srv, &cx, r.plan.input, gone) catch |e| return r.unsent(&cx, e, field);
+        // a context-window refusal is reported inside the stream; every other refusal is still a 400 before it opens
+        var compaction: ?compact.Stamp = null;
+        const prepared = if (r.srv.config.compact_at == null) chat.prepare(r.srv, &cx, r.plan.input, gone) catch |e| {
+            if (e == error.Refused and cx.kind == .context_length) return r.streamedContext(&cx, tools, field);
+            return r.unsent(&cx, e, field);
+        } else blk: {
+            const ready = compact.prepare(r.srv, &cx, r.plan.input, gone) catch |e| {
+                if (e == error.Refused and cx.kind == .context_length) return r.streamedContext(&cx, tools, field);
+                return r.unsent(&cx, e, field);
+            };
+            compaction = ready.stamp;
+            break :blk ready.prepared;
+        };
         var handed = false; // generate gives the preparing count back from here on
         defer if (!handed) chat.release(r.srv, prepared.preparing);
         r.out.vt.open(r.out.ctx) catch return;
@@ -468,6 +491,7 @@ const Run = struct {
             }
         }
         const last = r.chunk(.{ .string = "" }, if (reply.finish_reason.len > 0) reply.finish_reason else "length") catch return;
+        if (compaction) |s| compact.stamp(&cx, &reply, s) catch return;
         r.extras(last.object, &reply) catch return;
         const use = r.usage(&reply) catch return;
         if (!r.plan.separate_usage) last.object.put(a, "usage", use) catch return;

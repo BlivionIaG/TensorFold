@@ -81,3 +81,7 @@ pub const core_hc_boundary = @embedFile("core/hc_boundary.metal");
 /// MLX's precise row softmax and its embedding and RMS kernels, as the replicas in ops/ write them.
 pub const ops_softmax = @embedFile("ops/softmax.metal");
 pub const ops_embed_norm = @embedFile("ops/embed_norm.metal");
+/// The Flash Next checked-in kernels' embedded texts (flashnext_checked.py).
+pub const flashnext_gen = @import("flashnext/sources_gen.zig");
+/// Nemotron's packed kernels prebuilt as one metallib, for a macOS whose runtime compiler refuses uint4b_format.
+pub const packed_metallib = @import("nemotron_packed_metallib").bytes;
