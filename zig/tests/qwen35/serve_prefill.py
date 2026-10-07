@@ -4,6 +4,7 @@ import json
 import struct
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -20,18 +21,25 @@ def read_ids(path: Path) -> list[int]:
 
 
 def stream(url: str, body: dict) -> tuple[float, dict]:
-    """Seconds to the first streamed token, and the final usage block."""
+    """Seconds to the first streamed token and the final usage block; a refusal or a short prompt raises."""
     req = urllib.request.Request(url + "/v1/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
     began, first, usage = time.perf_counter(), None, {}
-    with urllib.request.urlopen(req, timeout=3600) as r:
-        for line in r:
-            if not line.startswith(b"data: ") or line.strip() == b"data: [DONE]":
-                continue
-            event = json.loads(line[6:])
-            if first is None and event.get("choices") and event["choices"][0].get("text") is not None:
-                first = time.perf_counter() - began
-            usage = event.get("usage") or usage
-    return first if first is not None else time.perf_counter() - began, usage
+    try:
+        with urllib.request.urlopen(req, timeout=3600) as r:
+            for line in r:
+                if not line.startswith(b"data: ") or line.strip() == b"data: [DONE]":
+                    continue
+                event = json.loads(line[6:])
+                if "error" in event:
+                    raise SystemExit(f"refused: {event['error']}")
+                if first is None and event.get("choices") and event["choices"][0].get("text") is not None:
+                    first = time.perf_counter() - began
+                usage = event.get("usage") or usage
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"refused: HTTP {e.code} {e.read().decode(errors='replace')[:300]}")
+    if first is None or usage.get("prompt_tokens") != len(body["prompt"]):
+        raise SystemExit(f"no prefill of {len(body['prompt'])} tokens: first token {first}, usage {usage}")
+    return first, usage
 
 
 def main() -> int:
