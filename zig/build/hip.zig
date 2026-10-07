@@ -170,8 +170,8 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     b.installArtifact(upload_exe);
     b.step("tf-qwen35-test", "Qwen3.5 / 3.6 model tests (GPU)").dependOn(&b.addInstallArtifact(upload_exe, .{}).step);
     const native = server(b, target, api, engines(b, target, optimize, hip, lanes, api, qwen), core.import_table.get("tokenizer").?, build_options);
-    const install = b.addInstallArtifact(native, .{ .dest_dir = .{ .override = .{ .custom = "native/bin" } } });
-    b.step("native-hip", "tensorfold-native with the HIP engines into zig-out/native/bin").dependOn(&install.step);
+    const install = b.addInstallArtifact(native, .{ .dest_dir = .{ .override = .{ .custom = "native-hip/bin" } } });
+    b.step("native-hip", "tensorfold-native with the HIP engines into zig-out/native-hip/bin").dependOn(&install.step);
 }
 
 /// The server over `engines`, as the CUDA build makes it: the HTTP side keeps its safety checks.
