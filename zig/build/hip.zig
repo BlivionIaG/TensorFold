@@ -23,15 +23,41 @@ const torch_flags = [_][]const u8{
 
 /// One library's sources: the shim, the torch-op kernels and the ROCm kernels (attention.hip includes attention_fa.hip).
 const lib_sources = [_][]const u8{
-    "capi/capi.hip",              "ops/ops.hip",           "ops/act.hip",          "attention/attention.hip",
-    "recurrence/gated_delta.hip", "rocm/affine_gemv.hip",  "rocm/affine_wmma.hip", "rocm/affine_wmma_pair.hip",
-    "rocm/affine_dot2.hip",       "rocm/affine_tiles.hip", "comm/tp.hip",
+    "capi/capi.hip",
+    "ops/ops.hip",
+    "ops/act.hip",
+    "attention/attention.hip",
+    "recurrence/gated_delta.hip",
+    "rocm/affine_gemv.hip",
+    "rocm/affine_wmma.hip",
+    "rocm/affine_wmma_pair.hip",
+    "rocm/affine_dot2.hip",
+    "rocm/affine_tiles.hip",
+    "comm/tp.hip",
 };
 
 /// What the library sources include, so an edit to one rebuilds the libraries.
 const lib_headers = [_][]const u8{
-    "ops/act.hpp",          "rocm/affine.hpp",        "rocm/affine_api.hpp", "rocm/affine_dot2.hpp",    "rocm/affine_gemm.hpp",       "rocm/affine_wmma_gemm.hpp",
-    "rocm/affine_wmma.hpp", "rocm/affine_stream.hpp", "rocm/arch.hpp",       "attention/attention.hpp", "attention/attention_fa.hip", "recurrence/gated_delta.hpp",
+    "ops/act.hpp",
+    "ops/common.hpp",
+    "ops/elementwise.hpp",
+    "ops/attention.hpp",
+    "ops/linear.hpp",
+    "ops/rope.hpp",
+    "ops/norms.hpp",
+    "ops/moe.hpp",
+    "ops/draw.hpp",
+    "rocm/affine.hpp",
+    "rocm/affine_api.hpp",
+    "rocm/affine_dot2.hpp",
+    "rocm/affine_gemm.hpp",
+    "rocm/affine_wmma_gemm.hpp",
+    "rocm/affine_wmma.hpp",
+    "rocm/affine_stream.hpp",
+    "rocm/arch.hpp",
+    "attention/attention.hpp",
+    "attention/attention_fa.hip",
+    "recurrence/gated_delta.hpp",
 };
 
 /// The source groups launched from Zig, one code object each (the order of kernels.zig's Group): the device code of the

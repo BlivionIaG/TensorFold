@@ -1,0 +1,97 @@
+#pragma once
+
+#include "common.hpp"
+
+// The linear attention's prefill: conv, gate and gated norm.
+
+namespace {
+
+// causal_conv's prefill loop: window = [state | x], out = sum over taps in order of window * weight from a zero,
+// then silu; every row runs at once with the same sum. new_state = the window's last kernel - 1 rows, written by the
+// first row block; it must not be `state` (other rows still read it).
+constexpr int kConvRows = 16;   // rows a conv_prefill thread slides over
+constexpr int kConvTaps = 8;    // most taps it holds
+
+__global__ void conv_prefill_kernel(const void* x, int kind, const float* weight, const float* state, float* out,
+                                    float* new_state, int len, int channels, int kernel) {
+    // a thread one channel over kConvRows rows, the window sliding in registers (each input read once)
+    const int c = blockIdx.x * blockDim.x + threadIdx.x;
+    if (c >= channels) return;
+    const int r0 = blockIdx.y * kConvRows;
+    const int kept = kernel - 1;
+    auto window = [&](int t) -> float {
+        if (t < kept) return state ? state[static_cast<long long>(t) * channels + c] : 0.0f;
+        return load(x, kind, static_cast<long long>(t - kept) * channels + c);
+    };
+    if (blockIdx.y == 0)
+        for (int t = 0; t < kept; ++t) new_state[static_cast<long long>(t) * channels + c] = window(len + t);
+    float w[kConvTaps], win[kConvTaps];
+    for (int tap = 0; tap < kernel; ++tap) w[tap] = weight[static_cast<long long>(c) * kernel + tap];
+    for (int tap = 0; tap + 1 < kernel; ++tap) win[tap] = window(r0 + tap);
+    const int r1 = r0 + kConvRows < len ? r0 + kConvRows : len;
+    for (int r = r0; r < r1; ++r) {
+        win[kernel - 1] = window(r + kernel - 1);
+        float acc = 0.0f;
+        for (int tap = 0; tap < kernel; ++tap) {
+            float p = win[tap] * w[tap];
+            acc = acc + p;
+        }
+        out[static_cast<long long>(r) * channels + c] = silu(acc);
+        for (int tap = 0; tap + 1 < kernel; ++tap) win[tap] = win[tap + 1];
+    }
+}
+
+// _gate_beta: beta = sigmoid(b), gate = exp(-exp(a_log) * softplus(a + dt_bias)) with torch's softplus (beta 1,
+// threshold 20) over rows of `heads`.
+__global__ void gdn_gate_prefill_kernel(const void* a, const void* b, int kind, const float* a_log,
+                                        const float* dt_bias, float* gate, float* beta, int count, int heads) {
+    long long i = gid();
+    if (i >= static_cast<long long>(count) * heads) return;
+    int h = static_cast<int>(i % heads);
+    beta[i] = sigmoid(load(b, kind, i));
+    float x = load(a, kind, i) + dt_bias[h];
+    float xb = x * 1.0f;
+    float sp = xb > 20.0f ? x : log1pf(expf(xb)) / 1.0f;
+    float e = -expf(a_log[h]);
+    gate[i] = expf(e * sp);
+}
+
+// out = y * silu(z) widened, rounded to kind: the linear-attention output before its projection.
+__global__ void gnorm_silu_kernel(const float* y, const void* z, void* out, int kind, long long n) {
+    long long i = gid();
+    if (i >= n) return;
+    float s = rounded(silu(load(z, kind, i)), kind);
+    store(out, kind, i, y[i] * s);
+}
+
+}  // namespace
+
+extern "C" {
+
+int tf_conv_prefill(const void* x, int kind, const float* weight, const float* state, float* out, float* new_state,
+                    int len, int channels, int kernel, hipStream_t s) {
+    if (channels == 0) return 0;
+    if (kernel > kConvTaps) {
+        std::strncpy(op_error, "conv_prefill: more taps than it holds", sizeof(op_error) - 1);
+        return 1;
+    }
+    conv_prefill_kernel<<<dim3((channels + 255) / 256, len > 0 ? (len + kConvRows - 1) / kConvRows : 1), 256, 0, s>>>(
+        x, kind, weight, state, out, new_state, len, channels, kernel);
+    return finish();
+}
+
+int tf_gdn_gate_prefill(const void* a, const void* b, int kind, const float* a_log, const float* dt_bias, float* gate,
+                        float* beta, int count, int heads, hipStream_t s) {
+    long long n = static_cast<long long>(count) * heads;
+    if (n == 0) return 0;
+    gdn_gate_prefill_kernel<<<blocks(n, 256), 256, 0, s>>>(a, b, kind, a_log, dt_bias, gate, beta, count, heads);
+    return finish();
+}
+
+int tf_gnorm_silu(const float* y, const void* z, void* out, int kind, long long n, hipStream_t s) {
+    if (n == 0) return 0;
+    gnorm_silu_kernel<<<blocks(n, 256), 256, 0, s>>>(y, z, out, kind, n);
+    return finish();
+}
+
+}  // extern "C"
