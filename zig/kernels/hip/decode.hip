@@ -27,13 +27,18 @@ constexpr int kRouterWaves = 4;
 constexpr int kRouterSteps = 16;  // float4 loads a lane keeps in flight
 constexpr int kRouterRows = 16;
 
-// logits[r, e] = x[r] . rows[e] for up to 16 rows: a wave an expert, a lane four consecutive weights a step, every load
+// logits[r, e] = x[r] . rows[e] for 16 rows a block (blockIdx.y): a wave an expert, a lane four consecutive weights a step, every load
 // of the expert's row in flight at once. d is a multiple of 4 and the weights' rows are 16-byte aligned.
 template <int KIND>
 __device__ void router_decode(const void* x, const float* rows, float* logits, int r, int d, int e) {
     const int lane = threadIdx.x & 31;
     const int expert = blockIdx.x * kRouterWaves + (threadIdx.x >> 5);
     if (expert >= e) return;
+    // blockIdx.y picks a block of 16 rows: a row's sums are the same whichever block it is in
+    const int first = blockIdx.y * kRouterRows;
+    x = static_cast<const uint16_t*>(x) + static_cast<long long>(first) * d;
+    logits += static_cast<long long>(first) * e;
+    r = r - first < kRouterRows ? r - first : kRouterRows;
     const float* w = rows + static_cast<long long>(expert) * d;
     float acc[kRouterRows];
 #pragma unroll

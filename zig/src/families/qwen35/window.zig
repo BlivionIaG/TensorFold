@@ -28,7 +28,10 @@ pub const Window = struct {
 };
 
 /// The final-normed rows of every window, in order (total rows, hidden); `ids` int32 on the device, all rows.
-pub fn forward(o: Ops, m: *const view.Model, windows: []Window, ids: u64, trace: ?fwd.Trace) fwd.Error!Tensor {
+pub fn forward(ops: Ops, m: *const view.Model, windows: []Window, ids: u64, trace: ?fwd.Trace) fwd.Error!Tensor {
+    // a round's rows keep their decode kernels however many share it
+    var o = ops;
+    o.window = true;
     const s = m.spec;
     var total: usize = 0;
     for (windows) |w| total += w.rows;

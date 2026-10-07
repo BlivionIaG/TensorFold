@@ -25,9 +25,9 @@ pub fn capacity(pairs: usize, experts: usize) usize {
     return @min(pairs, experts) + pairs / @min(TILE, LANE_ROWS);
 }
 
-/// tile_for: the decode tile below BLOCK_FROM rows, the GEMM tile from there.
-fn tileFor(rows: usize) usize {
-    return if (rows < BLOCK_FROM) LANE_ROWS else BLOCK_ROWS;
+/// tile_for: the decode tile below BLOCK_FROM rows, the GEMM tile from there; a lane round's rows keep the decode tile.
+fn tileFor(o: Ops, rows: usize) usize {
+    return if (rows < BLOCK_FROM or o.window) LANE_ROWS else BLOCK_ROWS;
 }
 
 /// `x` (rows, D) in the activation dtype -> (rows, D) in it: the top-k experts plus the shared one. A tensor-parallel
@@ -52,7 +52,7 @@ pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize,
         try o.moeSelect(logits, pick, wts, null, 0, rows, r.count(), r.top_k);
         const local = try o.arena.of(i32, size * slots);
         try o.moeLocalize(pick, r.remap, local, pairs, ex.count);
-        tile = tileFor(rows);
+        tile = tileFor(o, rows);
         try o.moeRoute(local, pairs, r.rows, tile, members, items, cap);
         try o.moeForeignItems(items, cap, ex.count);
         const both = try o.affineRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
@@ -102,7 +102,7 @@ fn expertParts(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: us
         count = slots;
     } else {
         try o.moeSelect(logits, pick, wts, null, 0, rows, r.count(), r.top_k);
-        tile = tileFor(rows);
+        tile = tileFor(o, rows);
         try o.moeRoute(pick, pairs, r.rows, tile, members, items, cap);
     }
     // the gate and up's activation is the launch's epilogue when the tile takes the shape

@@ -65,7 +65,8 @@ const stream_cbs = [_]c_int{ 2, 4, 8 }; // columns a lane carries in the stream 
 const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
 const stream_max_rows = 16; // kStreamRows
 const stream_waves = 4; // kStreamWaves
-const streams_wanted = 1152; // kStreamWavesWanted
+const streams_wanted = 3000; // kStreamWavesWanted
+const stream_code_words = 32; // kStreamCodeWords
 
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
 pub const Tile = enum { gemm, block };
@@ -227,7 +228,12 @@ pub const Kernels = struct {
     pub fn streamTakes(k: *const Kernels, m: c_int, n: c_int, kk: c_int, bits: c_int, group: c_int, scale_kind: c_int, bias_kind: c_int, x: u64) bool {
         // 16 rows or more of BF16 are the matrix tile's on gfx11
         const most: c_int = if (k.matrix and k.mode != .off) wmma_rows - 1 else stream_max_rows;
-        if (!k.stream_on or m < 1 or m > most or n < 1 or @rem(group, 32) != 0 or group > lane_group_max) return false;
+        return m >= 1 and m <= most and k.windowTakes(n, kk, bits, group, scale_kind, bias_kind, x);
+    }
+
+    /// The stream tile takes this product at any row count (a lane round's, whose rows keep their kernel however many share it).
+    pub fn windowTakes(k: *const Kernels, n: c_int, kk: c_int, bits: c_int, group: c_int, scale_kind: c_int, bias_kind: c_int, x: u64) bool {
+        if (!k.stream_on or n < 1 or @rem(group, 32) != 0 or group > lane_group_max) return false;
         return @rem(kk, group) == 0 and x % 16 == 0 and scale_kind != 0 and bias_kind == scale_kind and bitIndex(bits) != null;
     }
 
@@ -247,12 +253,12 @@ pub const Kernels = struct {
         var lpc_log2: u5 = 0;
         while ((@as(c_int, 1) << lpc_log2) < (a.k >> 5) and lpc_log2 < 5) lpc_log2 += 1;
         const r: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else 2;
-        // the widest column count that still gives the card enough waves
+        // the widest column count that still gives the card enough waves, within the registers the lane's code words take
         var pick: usize = 0;
         var c: usize = stream_cbs.len;
         while (c > 0) {
             c -= 1;
-            if (stream_cbs[c] * stream_rows[r] > 16) continue;
+            if (stream_cbs[c] * stream_rows[r] > 16 or stream_cbs[c] * a.bits > stream_code_words) continue;
             pick = c;
             const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[c], pair_div);
             if (@as(u64, cdiv(total_n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[r]) >= streams_wanted) break;
@@ -308,7 +314,7 @@ pub const Kernels = struct {
         a.words = group[0].words;
         a.scale.p = group[0].scale;
         a.bias.p = group[0].bias;
-        if (group.len == 0 or group.len > 4 or !k.streamFits(a)) return refuse("group shape");
+        if (group.len == 0 or group.len > 4 or !k.windowTakes(a.n, a.k, a.bits, a.group, a.scale.kind, a.bias.kind, a.x)) return refuse("group shape");
         try k.streamGo(d, a, sides, total, 1, s);
     }
 
@@ -381,9 +387,13 @@ pub const Kernels = struct {
         var a = arg;
         if (out_half) {
             // the activation type's output is the decode tile's: fp16 on RDNA2, and either type from the stream tile
-            if ((a.fp16 == 0 and !k.streamFits(arg)) or schedule != 0 or parts > 1) return refuse("fp16 output is the decode tile");
+            if ((a.fp16 == 0 and !k.streamFits(arg) and schedule != 4) or (schedule != 0 and schedule != 4) or parts > 1) return refuse("fp16 output is the decode tile");
             a.out16 = a.out;
             a.out = 0;
+        }
+        if (schedule == 4) {
+            if (!k.windowTakes(a.n, a.k, a.bits, a.group, a.scale.kind, a.bias.kind, a.x)) return refuse("window shape");
+            return k.streamGo(d, a, .{}, a.n, 1, s);
         }
         if (schedule == 3) return k.prefillLaunch(d, a, s, 1);
         if (partial != 0 and parts > 1) return k.split(d, a, partial, parts, s);

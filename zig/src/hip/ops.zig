@@ -97,6 +97,9 @@ pub const Ops = struct {
     /// A prompt's span: every product, the router and the recurrence take prefill's one kernel at any row count, so a
     /// prompt's rows have the same bits however it is cut (fresh, resumed or in steps).
     prefill: bool = false,
+    /// A lane round's forward: the decode tiles at any row count (the stream tile over 4-row blocks, the router a wave an
+    /// expert, 8-row routed items), so a row's bits do not depend on the rows it shares the round with.
+    window: bool = false,
 
     fn wmma(o: Ops) bool {
         return o.lib.family == .rdna3;
@@ -110,13 +113,20 @@ pub const Ops = struct {
 
     /// matmul(x, ...) as the Python wrapper runs it on the auto schedule: an fp32 product (`f32`), else the input
     /// dtype; fp16 x of at most 8 rows on RDNA2 takes the decode tile's own fp16 rounding.
+    /// Whether the stream tile takes `m` rows of x against `w`: up to 16 rows, or any number in a lane round.
+    fn takesStream(o: Ops, z: anytype, m: usize, w: Affine, x: Tensor) bool {
+        const kind = w.tables.table();
+        if (o.window) return z.affine.windowTakes(int(w.n), int(w.k), int(w.bits), int(w.group), kind, kind, x.ptr);
+        return z.affine.streamTakes(int(m), int(w.n), int(w.k), int(w.bits), int(w.group), kind, kind, x.ptr);
+    }
+
     pub fn affine(o: Ops, x: Tensor, w: Affine, m: usize, f32_out: bool) Error!Tensor {
         try w.check();
         if (m == 0) return error.BadShape;
         const fp16 = x.kind == .f16;
         if (x.kind == .f32 or (fp16 and o.wmma()) or (!fp16 and !o.wmma())) return error.BadShape;
         // the decode tiles round to the activation type themselves: RDNA2's up to 8 rows, and the stream tile's either type
-        const stream = if (o.prefill) false else if (o.lib.zig) |z| z.affine.streamTakes(int(m), int(w.n), int(w.k), int(w.bits), int(w.group), w.tables.table(), w.tables.table(), x.ptr) else false;
+        const stream = if (o.prefill) false else if (o.lib.zig) |z| o.takesStream(z, m, w, x) else false;
         const half = !f32_out and !o.prefill and ((fp16 and m <= 8 and !o.wmma()) or stream);
         const n: usize = w.n;
         const out = try o.arena.take(m * n * @as(usize, if (half) 2 else 4));
@@ -125,7 +135,7 @@ pub const Ops = struct {
         if (fp16 and !o.prefill) splits = launches.affineSplits(int(m), int(n), int(w.k), int(w.group), 0);
         const partial: u64 = if (splits > 1) try o.arena.of(f32, m * n * groups * 2) else 0;
         // prefill's tile at any row count is the Zig launches' (schedule 3); the library keeps its own rule
-        const schedule: c_int = if (o.prefill and o.lib.zig != null) 3 else 0;
+        const schedule: c_int = if (o.prefill and o.lib.zig != null) 3 else if (o.window and stream) 4 else 0;
         const args = .{ p(x.ptr), p(w.words), p(w.scale), p(w.bias), w.tables.table(), p(out), int(m), int(n), int(w.k), w.bits, w.group, schedule, @intFromBool(fp16), o.stream, f(partial), splits, @intFromBool(half) };
         try o.lib.call("tf_affine", args);
         if (half) return .{ .ptr = out, .kind = x.kind };
@@ -140,7 +150,7 @@ pub const Ops = struct {
     /// them, and the caller launches them one by one.
     pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tensor) Error!bool {
         const z = o.lib.zig orelse return false;
-        if (o.prefill or !o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or m > 16 or x.kind == .f32) return false;
+        if (o.prefill or !o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or (m > 16 and !o.window) or x.kind == .f32) return false;
         var widest: u32 = 0;
         for (ws) |w| {
             try w.check();
@@ -148,7 +158,8 @@ pub const Ops = struct {
             widest = @max(widest, w.n);
         }
         const kind = ws[0].tables.table();
-        if (!z.affine.streamTakes(int(m), int(widest), int(ws[0].k), int(ws[0].bits), int(ws[0].group), kind, kind, x.ptr)) return false;
+        const takes = if (o.window) z.affine.windowTakes(int(widest), int(ws[0].k), int(ws[0].bits), int(ws[0].group), kind, kind, x.ptr) else z.affine.streamTakes(int(m), int(widest), int(ws[0].k), int(ws[0].bits), int(ws[0].group), kind, kind, x.ptr);
+        if (!takes) return false;
         var sides: [4]affine_launch.Side = undefined;
         for (ws, outs[0..ws.len], sides[0..ws.len]) |w, *out, *side| {
             out.* = .{ .ptr = try o.arena.take(m * w.n * 2), .kind = x.kind };
@@ -443,6 +454,9 @@ pub const Ops = struct {
     }
 
     pub fn moeRouter(o: Ops, x: Tensor, rows32: u64, logits: u64, r: usize, d: usize, e: usize) Error!void {
+        if (o.window) if (o.lib.zig) |*z| if (z.routerWindow(p(x.ptr), @backingInt(x.kind), f(rows32), f(logits), int(r), int(d), int(e), o.stream)) |ran| {
+            if (ran) return;
+        } else |err| return err;
         if (o.prefill) if (o.lib.zig) |*z| if (d % 32 == 0) return z.routerTile(p(x.ptr), @backingInt(x.kind), f(rows32), f(logits), int(r), int(d), int(e), o.stream);
         try o.lib.call("tf_moe_router", .{ p(x.ptr), @backingInt(x.kind), f(rows32), f(logits), int(r), int(d), int(e), o.stream });
     }

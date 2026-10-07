@@ -367,6 +367,21 @@ pub const Launcher = struct {
         try l.go(l.op.router_tile[if (kind == 1) 0 else 1], dim(cdiv(e, 64), cdiv(r, 64), 1), dim(256, 1, 1), 0, s, &a);
     }
 
+    /// A lane round's router at any row count: decode.hip's wave an expert over blocks of 16 rows, each row's sums the same
+    /// whatever its block; false (nothing launched) where the shape keeps the other kernels.
+    pub fn routerWindow(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S) Error!bool {
+        if (!l.fuse or r < 1 or @rem(d, 4) != 0 or ad(rows) % 16 != 0 or ad(x) % 8 != 0) return false;
+        var a: Args = .{};
+        a.add(ad(x));
+        a.add(ad(rows));
+        a.add(ad(logits));
+        a.add(r);
+        a.add(d);
+        a.add(e);
+        try l.go(l.dec.router[if (kind == 1) 0 else 1], dim(cdiv(e, 4), cdiv(r, 16), 1), dim(128, 1, 1), 0, s, &a);
+        return true;
+    }
+
     pub fn tf_moe_router(l: *const Launcher, x: C, kind: c_int, rows: CF, logits: F, r: c_int, d: c_int, e: c_int, s: S) Error!void {
         // a prompt's rows: 64 x 64 tiles of fp32 products; a round's few rows: a wave an expert over 8 rows, each logit's
         // sum as moe_router_kernel's
