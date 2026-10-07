@@ -163,7 +163,7 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         e.stream.synchronize() catch {};
-        if (e.graphs.captured > 0) std.log.info("graphs: {d} captured, {d} of {d} rounds replayed", .{ e.graphs.captured, e.graphs.replayed, e.graphs.rounds });
+        if (e.graphs.captured > 0) std.log.info("graphs: {d} captured ({d:.0} ms each), {d} of {d} rounds replayed", .{ e.graphs.captured, @as(f64, @floatFromInt(e.graphs.capture_ns)) / @as(f64, @floatFromInt(e.graphs.captured)) / 1e6, e.graphs.replayed, e.graphs.rounds });
         e.graphs.deinit();
         if (e.sized) {
             e.round.deinit(e);

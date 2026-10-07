@@ -240,7 +240,7 @@ pub const Head = struct {
         try c.h.launches(c.o, c.m, c.key);
     }
 
-    /// A greedy batch's launches: replayed from the shape's graph, captured the second time it is met, or eager.
+    /// A greedy batch's launches: replayed from the shape's graph, captured the first time it is met, or eager.
     fn chain(h: *Head, stream: hip.Stream, o: Ops, m: *const view.Model, key: ChainKey, graphs: bool) !void {
         h.graphs.rounds += 1;
         const entry = if (graphs) try h.graphs.find(key) else null;
@@ -250,7 +250,7 @@ pub const Head = struct {
                 h.graphs.replayed += 1;
                 return;
             },
-            .seen => if (e.again) {
+            .seen => {
                 if (try graph_cache.Cache(ChainKey, void).record(stream, Recording{ .h = h, .o = o, .m = m, .key = key }, record)) |rec| {
                     if (h.graphs.keep(e, rec.graph, stream, {})) {
                         try e.exec.?.launchOn(stream);
@@ -259,8 +259,6 @@ pub const Head = struct {
                 }
                 e.state = .failed;
                 h.arena.reset();
-            } else {
-                e.again = true;
             },
             .failed => {},
         };

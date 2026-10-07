@@ -10,7 +10,7 @@ const mtp = @import("mtp.zig");
 
 const Cost = lanes.config.Cost;
 
-/// Forwards run before the timed ones (the graph is captured on a shape's second sighting) and the timed reps.
+/// Forwards run before the timed ones (the first captures the shape's graph) and the timed reps.
 const warm = 3;
 const reps = 5;
 /// Rows a stream's window holds in the shared timings, and its position (the caches are scratch).

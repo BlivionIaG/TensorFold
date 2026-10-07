@@ -83,7 +83,8 @@ pub fn shapeOf(e: *Engine, rows: []const Rows) !plan.Shape {
     if (rows.len == 0 or total == 0 or total > e.o.batch_rows) return error.WindowTooWide;
     const cap = std.mem.alignForward(usize, e.o.capacity, plan.min_span);
     const bucket = plan.bucketOf(@max(total, e.round.pad_to), e.o.batch_rows);
-    return .{ .rows = @intCast(bucket), .slots = @intCast(rows.len + 1), .span = @intCast(@min(plan.spanOf(visible), cap)) };
+    const slots = plan.bucketOf(rows.len + 1, e.o.batch_rows + 1);
+    return .{ .rows = @intCast(bucket), .slots = @intCast(slots), .span = @intCast(@min(plan.spanOf(visible), cap)) };
 }
 
 /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys).
@@ -99,11 +100,10 @@ pub fn choose(e: *Engine, rows: []const Rows, forced: ?Pick) !Pick {
     const mine: Pick = switch (entry.state) {
         .failed => .eager,
         .ready => .replay,
-        .seen => if (entry.again) .capture else .eager,
+        .seen => .capture,
     };
     const pick = forced orelse mine;
     if (pick == .replay and entry.state != .ready) return error.GraphsDisagree;
-    if (pick == .eager and entry.state == .seen) entry.again = true;
     st.chosen = .{ .pick = pick, .entry = entry, .shape = shape };
     return pick;
 }
@@ -181,12 +181,14 @@ fn capture(e: *Engine, entry: *round_graphs.Entry, r: win.Round) !round_graphs.O
     var kept = false;
     var out: round_graphs.Out = undefined;
     const at = e.rounds.mark();
+    const began = nowNs();
     if (try round_graphs.Graphs.record(e.stream, Recording{ .e = e, .r = r }, record)) |rec| {
         out = rec.out;
         kept = if (e.graphs.keep(entry, rec.graph, e.stream, rec.out)) true else |_| false;
     }
     // the policy's `graph_fail` makes that rank's capture fail, to check that every rank falls back
     if (e.o.policy.graph_fail >= 0 and @as(usize, @intCast(e.o.policy.graph_fail)) == e.o.rank) kept = false;
+    e.graphs.capture_ns += nowNs() - began;
     const all = if (e.o.world > 1) try agreed(e, kept) else kept;
     if (!all) {
         e.graphs.revoke(entry);

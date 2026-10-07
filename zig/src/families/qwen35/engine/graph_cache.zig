@@ -19,8 +19,6 @@ pub fn Cache(comptime Key: type, comptime Out: type) type {
             exec: ?hip.graph.Exec = null,
             out: Out = undefined,
             tick: u64 = 0,
-            /// Seen before: the next sighting captures.
-            again: bool = false,
         };
 
         gpa: std.mem.Allocator,
@@ -29,6 +27,8 @@ pub fn Cache(comptime Key: type, comptime Out: type) type {
         /// Launches run, launches replayed from a graph, and graphs captured; the host's nanoseconds from a launch's start to its work queued.
         rounds: u64 = 0,
         submit_ns: u64 = 0,
+        /// The host's nanoseconds recording and instantiating graphs.
+        capture_ns: u64 = 0,
         replayed: u64 = 0,
         captured: u64 = 0,
 

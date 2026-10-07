@@ -36,11 +36,11 @@ fn prefill(c: *Ctx) void {
     }
 }
 
-/// `prompts` generating `max_new` tokens each, the second of two runs (the first captures the graphs).
+/// `prompts` generating `max_new` tokens each, the last of three runs (the first two meet the shapes and capture their graphs).
 fn decode(c: *Ctx, drafts: bool, prompts: []const ids_file.Prompt, max_new: u32) void {
     const name = std.fmt.allocPrint(c.arena, "speed decode {d} stream{s}, drafts {s}", .{ prompts.len, if (prompts.len == 1) "" else "s", if (drafts) "on" else "off" }) catch return;
     const job: Session.Job = .{ .prompts = prompts, .max_new = max_new, .drafts = drafts };
-    _ = c.session.run(c.arena, job) catch |err| return c.report.broke(name, err);
+    for (0..2) |_| _ = c.session.run(c.arena, job) catch |err| return c.report.broke(name, err);
     const done = c.session.run(c.arena, job) catch |err| return c.report.broke(name, err);
     var rounds: u64 = 0;
     for (done.replies) |r| rounds += r.rounds;

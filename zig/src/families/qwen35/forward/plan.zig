@@ -25,8 +25,8 @@ pub fn spanOf(visible: usize) usize {
     return span;
 }
 
-/// What a round's launches depend on: the rows it runs (padding included), its slots (streams, then the scratch slot
-/// that holds the padding rows) and the keys the walk covers.
+/// What a round's launches depend on: the rows it runs (padding included), its slots (the streams', empty ones up to a
+/// bucket, then the scratch slot that holds the padding rows) and the keys the walk covers.
 pub const Shape = struct {
     rows: u32,
     slots: u32,
@@ -102,7 +102,7 @@ pub const Buffer = struct {
     /// slot's `pad` rows after them, and each linear layer's snapshots (conv, DeltaNet; zero for an attention layer).
     pub fn upload(b: *Buffer, stream: hip.abi.Stream, l: Layout, shape: Shape, windows: []const Window, scratch: u64, snaps: []const [2]u64) !void {
         const w = b.host.slice(u32);
-        const slots = windows.len + 1;
+        const slots: usize = shape.slots;
         var at: usize = 0;
         for (windows, 0..) |win, s| {
             w[l.first + s] = @intCast(at);
@@ -116,7 +116,13 @@ pub const Buffer = struct {
             }
             at += win.tokens.len;
         }
-        // the padding rows run in the scratch slot, from its first position
+        // slots past the streams' are empty, the last the scratch slot: the padding rows run there, from its first position
+        for (windows.len..slots - 1) |s| {
+            w[l.first + s] = 0;
+            w[l.count + s] = 0;
+            w[l.keep + s] = std.math.maxInt(u32);
+            put64(w[l.desc + 2 * s ..], 0);
+        }
         const pad = shape.rows - at;
         w[l.first + slots - 1] = @intCast(at);
         w[l.count + slots - 1] = @intCast(pad);
