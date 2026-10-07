@@ -1,33 +1,38 @@
-//! A stream's device caches: key/value per attention layer, conv window and DeltaNet state per linear layer.
+//! A stream's device caches: its page table over the key/value pools of the attention layers, conv window and DeltaNet
+//! state per linear layer.
 
 const std = @import("std");
 const hip = @import("hip");
 const view = @import("../model/view.zig");
+const pages = @import("pages.zig");
 const Allocator = std.mem.Allocator;
 
 pub const LayerCache = union(enum) {
-    full: struct { k: hip.DeviceBuffer, v: hip.DeviceBuffer, len: usize },
+    /// The keys and values are in the pool's pages.
+    full,
     linear: struct { conv: hip.DeviceBuffer, state: hip.DeviceBuffer },
 };
 
+/// Words of a descriptor before its layers: the positions it holds, the last kept final row, the page table's address.
+const header_words = 3;
+
 pub const Caches = struct {
     layers: []LayerCache,
+    /// Positions the page table can name.
     total: usize,
     /// What a round's kernels read to find these buffers: the positions held, the address of the stream's last kept
-    /// final row (zero until `setHidden`), then two addresses a layer (keys and values, or conv window and state).
+    /// final row (zero until `setHidden`), the page table, then two addresses a layer (the key and value pools, or the
+    /// conv window and state); the page table follows.
     desc: hip.DeviceBuffer,
+    pool: *pages.Pool,
+    /// The page table as the device holds it: the pages of the first positions, each held once by this stream.
+    table: std.ArrayList(u32) = .empty,
+    /// Pages promised to this stream, not yet taken (the pool's reservation).
+    promised: usize = 0,
 
-    /// Buffers for `total` positions; every byte zeroed.
-    pub fn init(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, total: usize) !Caches {
-        return make(gpa, d, m, total, true);
-    }
-
-    /// Buffers for `total` positions, contents left as the allocator gave them (a copy fills them).
-    pub fn blank(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, total: usize) !Caches {
-        return make(gpa, d, m, total, false);
-    }
-
-    fn make(gpa: Allocator, d: *const hip.Driver, m: *const view.Model, total: usize, zero: bool) !Caches {
+    /// Caches for up to `total` positions with no pages yet; every linear byte zeroed.
+    pub fn init(gpa: Allocator, pool: *pages.Pool, m: *const view.Model, total: usize) !Caches {
+        const d = pool.d;
         const s = m.spec;
         const layers = try gpa.alloc(LayerCache, s.n_layers);
         var made: usize = 0;
@@ -37,38 +42,40 @@ pub const Caches = struct {
         }
         for (layers, 0..) |*l, i| {
             if (s.full(i)) {
-                const bytes = s.kv_heads * total * s.head_dim * m.act.size();
-                var k = try hip.DeviceBuffer.alloc(d, bytes);
-                errdefer k.free();
-                var v = try hip.DeviceBuffer.alloc(d, bytes);
-                errdefer v.free();
-                if (zero) {
-                    try k.fill8(0, null);
-                    try v.fill8(0, null);
-                }
-                l.* = .{ .full = .{ .k = k, .v = v, .len = 0 } };
+                l.* = .full;
             } else {
                 var conv = try hip.DeviceBuffer.alloc(d, (s.conv - 1) * view.convChannels(s) * 4);
                 errdefer conv.free();
                 var state = try hip.DeviceBuffer.alloc(d, s.value_heads * s.value_dim * s.key_dim * 4);
                 errdefer state.free();
-                if (zero) {
-                    try conv.fill8(0, null);
-                    try state.fill8(0, null);
-                }
+                try conv.fill8(0, null);
+                try state.fill8(0, null);
                 l.* = .{ .linear = .{ .conv = conv, .state = state } };
             }
             made += 1;
         }
-        const words = try gpa.alloc(u64, 2 + 2 * s.n_layers);
+        const slots = std.mem.alignForward(usize, pages.pagesFor(total), 2);
+        const words = try gpa.alloc(u64, header_words + 2 * s.n_layers + slots / 2);
         defer gpa.free(words);
+        @memset(words, 0);
+        var desc = try hip.DeviceBuffer.alloc(d, 8 * words.len);
+        errdefer desc.free();
         words[0] = total;
-        words[1] = 0;
+        words[2] = desc.ptr + 8 * (header_words + 2 * s.n_layers);
         for (layers, 0..) |l, i| switch (l) {
-            .full => |f| words[2 + 2 * i ..][0..2].* = .{ f.k.ptr, f.v.ptr },
-            .linear => |x| words[2 + 2 * i ..][0..2].* = .{ x.conv.ptr, x.state.ptr },
+            .full => words[header_words + 2 * i ..][0..2].* = .{ pool.keys[i].ptr, pool.values[i].ptr },
+            .linear => |x| words[header_words + 2 * i ..][0..2].* = .{ x.conv.ptr, x.state.ptr },
         };
-        return .{ .layers = layers, .total = total, .desc = try hip.DeviceBuffer.fromHost(d, std.mem.sliceAsBytes(words)) };
+        try desc.upload(0, std.mem.sliceAsBytes(words));
+        return .{ .layers = layers, .total = total, .desc = desc, .pool = pool };
+    }
+
+    /// Caches for `total` positions with every page taken now (a check or a timing, with no reservation to keep).
+    pub fn initFull(gpa: Allocator, pool: *pages.Pool, m: *const view.Model, total: usize) !Caches {
+        var c = try init(gpa, pool, m, total);
+        errdefer c.deinit(gpa);
+        _ = try c.grow(gpa, total);
+        return c;
     }
 
     /// The stream's last kept final row lives at `ptr`: a round's keep copies it there.
@@ -78,10 +85,7 @@ pub const Caches = struct {
 
     fn free(l: *LayerCache) void {
         switch (l.*) {
-            .full => |*f| {
-                f.k.free();
-                f.v.free();
-            },
+            .full => {},
             .linear => |*x| {
                 x.conv.free();
                 x.state.free();
@@ -89,47 +93,105 @@ pub const Caches = struct {
         }
     }
 
+    /// Hands every page back (to the tree and the other streams that hold them, or to the pool) and frees the buffers.
     pub fn deinit(c: *Caches, gpa: Allocator) void {
+        for (c.table.items) |id| c.pool.release(id);
+        c.pool.ids.reserved -|= c.promised;
+        c.table.deinit(gpa);
         c.desc.free();
         for (c.layers) |*l| free(l);
         gpa.free(c.layers);
         c.* = undefined;
     }
 
-    /// Bytes the buffers hold.
+    /// Positions the pages cover.
+    pub fn covered(c: *const Caches) usize {
+        return @min(c.table.items.len * pages.tokens, c.total);
+    }
+
+    /// Bytes this stream holds: its linear state and every page it names (shared ones counted whole).
     pub fn held(c: *const Caches) usize {
-        var n: usize = 0;
+        var n: usize = c.table.items.len * c.pool.pageBytes();
         for (c.layers) |l| switch (l) {
-            .full => |f| n += f.k.len + f.v.len,
+            .full => {},
             .linear => |x| n += x.conv.len + x.state.len,
         };
         return n;
     }
 
-    /// Copy the first `len` positions of every attention layer and the whole linear state of `src` into `dst`.
-    pub fn copyPrefix(dst: *Caches, src: *const Caches, m: *const view.Model, len: usize, stream: hip.abi.Stream) !void {
-        const s = m.spec;
-        const row = s.head_dim * m.act.size();
-        for (dst.layers, src.layers) |*to, from| switch (to.*) {
-            .full => |*f| {
-                const g = from.full;
-                for (0..s.kv_heads) |h| {
-                    try f.k.copyFrom(h * dst.total * row, g.k.ptr + h * src.total * row, len * row, stream);
-                    try f.v.copyFrom(h * dst.total * row, g.v.ptr + h * src.total * row, len * row, stream);
-                }
-                f.len = len;
-            },
-            .linear => |*x| {
-                const g = from.linear;
-                try x.conv.copyFrom(0, g.conv.ptr, g.conv.len, stream);
-                try x.state.copyFrom(0, g.state.ptr, g.state.len, stream);
-            },
-        };
+    fn put(c: *const Caches, first: usize, ids: []const u32) !void {
+        const base = 8 * (header_words + 2 * c.layers.len);
+        try c.desc.upload(base + 4 * first, std.mem.sliceAsBytes(ids));
     }
 
-    /// The attention kernels' view of a full layer's cache.
-    pub fn attention(c: *const Caches, m: *const view.Model, index: usize) hip.ops.Ops.Cache {
-        const f = c.layers[index].full;
-        return .{ .k = f.k.ptr, .v = f.v.ptr, .kind = m.act, .kv_heads = m.spec.kv_heads, .total = c.total, .d = m.spec.head_dim };
+    /// Takes pages from the pool until `n` positions are covered; the new ids, valid until the next call. A page promised
+    /// to this stream counts against its promise.
+    pub fn grow(c: *Caches, gpa: Allocator, n: usize) ![]const u32 {
+        const want = pages.pagesFor(@min(n, c.total));
+        const first = c.table.items.len;
+        if (want <= first) return c.table.items[first..];
+        try c.table.ensureTotalCapacity(gpa, want);
+        errdefer c.table.shrinkRetainingCapacity(first);
+        while (c.table.items.len < want) c.table.appendAssumeCapacity(c.pool.take() orelse return error.OutOfPages);
+        const taken = want - first;
+        const own = @min(c.promised, taken);
+        c.promised -= own;
+        c.pool.ids.reserved -|= own;
+        try c.put(first, c.table.items[first..]);
+        return c.table.items[first..];
+    }
+
+    /// Sets the pages of the first positions from `at` to `ids` (shared pages already held for this stream by the caller,
+    /// which keeps nothing of the ones they replace).
+    pub fn set(c: *Caches, gpa: Allocator, at: usize, ids: []const u32) !void {
+        try c.table.ensureTotalCapacity(gpa, at + ids.len);
+        for (ids, at..) |id, i| {
+            if (i < c.table.items.len) {
+                if (c.table.items[i] == id) {
+                    c.pool.release(id);
+                    continue;
+                }
+                c.pool.release(c.table.items[i]);
+                c.table.items[i] = id;
+            } else {
+                std.debug.assert(i == c.table.items.len);
+                c.table.appendAssumeCapacity(id);
+            }
+        }
+        try c.put(at, c.table.items[at..][0..ids.len]);
+    }
+
+    /// Makes the pages that hold positions `from .. to` this stream's alone: a shared one is copied first. Returns the
+    /// pages replaced, each as its index in the table, the page it was and the page it is.
+    pub fn writable(c: *Caches, out: *std.ArrayList([3]u32), gpa: Allocator, from: usize, to: usize, stream: hip.abi.Stream) !void {
+        var i = from / pages.tokens;
+        const last = @min(pages.pagesFor(to), c.table.items.len);
+        while (i < last) : (i += 1) {
+            const old = c.table.items[i];
+            if (c.pool.ids.refs[old] < 2) continue;
+            const fresh = c.pool.take() orelse return error.OutOfPages;
+            errdefer c.pool.release(fresh);
+            try c.pool.copyPage(old, fresh, stream);
+            c.table.items[i] = fresh;
+            c.pool.release(old);
+            try c.put(i, c.table.items[i..][0..1]);
+            try out.append(gpa, .{ @intCast(i), old, fresh });
+        }
+    }
+
+    /// The attention kernels' view of a full layer's pages.
+    pub fn paged(c: *const Caches, m: *const view.Model, index: usize) hip.ops.Ops.Paged {
+        const base = c.desc.ptr + 8 * (header_words + 2 * c.layers.len);
+        return .{ .k = c.pool.keys[index].ptr, .v = c.pool.values[index].ptr, .table = base, .kind = m.act, .kv_heads = m.spec.kv_heads, .d = m.spec.head_dim };
+    }
+
+    /// Bytes of the linear layers' state.
+    pub fn linearBytes(c: *const Caches) usize {
+        var n: usize = 0;
+        for (c.layers) |l| switch (l) {
+            .full => {},
+            .linear => |x| n += x.conv.len + x.state.len,
+        };
+        return n;
     }
 };

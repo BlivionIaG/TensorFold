@@ -4,12 +4,15 @@
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
 
+#include "decode/pages.hpp"
+
 namespace {
 
 constexpr int kRows = 64;     // query rows a block
 constexpr int kKeys = 64;     // keys a tile
 constexpr int kChunk = 64;    // head dimensions a staged key or value chunk
 constexpr int kThreads = 256;
+static_assert(kKeys == kPageTokens, "a key tile is one page");
 
 // A cache element type's pair for dot2, the rounding into it and the product.
 template <typename Cache>
@@ -49,11 +52,12 @@ __device__ __forceinline__ void pairs4(const void* at, Pair out[4]) {
 }
 
 // q is rounded to the cache's type once and stays in LDS; scores stay in registers, probabilities pass through LDS XOR-swizzled.
-template <typename Cache>
+// With PAGED, k and v are a layer's pools and `table` names the stream's pages: a 64-key tile is one page.
+template <typename Cache, bool PAGED>
 __device__ void fa_dot2(const float* __restrict__ q, const Cache* __restrict__ k, const Cache* __restrict__ v,
                         float* __restrict__ out, int qlen, int span, int heads, int kv_heads, int d, float scale,
                         int q_pos0, long long k_sb, long long k_sh, long long k_ss, long long v_sb, long long v_sh,
-                        long long v_ss) {
+                        long long v_ss, const unsigned* table) {
     constexpr int kQChunks = 256 / 8;      // 16-byte chunks a q row
     constexpr int kKChunks = kChunk / 8;   // a staged key row's
     constexpr int kPLd = kRows + 4;        // a key pair's probabilities, row-indexed
@@ -77,8 +81,10 @@ __device__ void fa_dot2(const float* __restrict__ q, const Cache* __restrict__ k
     const int kv = head / (heads / kv_heads);
     const float* qrows = q + ((static_cast<long long>(batch) * heads + head) * qlen + q0) * d;
     float* orows = out + ((static_cast<long long>(batch) * heads + head) * qlen + q0) * d;
-    const Cache* kbase = k + static_cast<long long>(batch) * k_sb + static_cast<long long>(kv) * k_sh;
-    const Cache* vbase = v + static_cast<long long>(batch) * v_sb + static_cast<long long>(kv) * v_sh;
+    const Cache* kbase = PAGED ? k : k + static_cast<long long>(batch) * k_sb + static_cast<long long>(kv) * k_sh;
+    const Cache* vbase = PAGED ? v : v + static_cast<long long>(batch) * v_sb + static_cast<long long>(kv) * v_sh;
+    const long long kstride = PAGED ? d : k_ss;
+    const long long vstride = PAGED ? d : v_ss;
     const int chunks = d / 8;
 
     for (int e = tid; e < kRows * chunks; e += kThreads) {
@@ -103,6 +109,9 @@ __device__ void fa_dot2(const float* __restrict__ q, const Cache* __restrict__ k
         for (int m = 0; m < 16; ++m) o[i][m] = 0.f;
 
     for (int k0 = 0; k0 < max_vis; k0 += kKeys) {
+        // the tile's first key row in the keys' and the values' storage
+        const Cache* ktile = PAGED ? kbase + page_row(table[k0 / kPageTokens], kv_heads, kv, 0, d) : kbase + static_cast<long long>(k0) * k_ss;
+        const Cache* vtile = PAGED ? vbase + page_row(table[k0 / kPageTokens], kv_heads, kv, 0, d) : vbase + static_cast<long long>(k0) * v_ss;
         float acc[4][4];
 #pragma unroll
         for (int i = 0; i < 4; ++i)
@@ -114,7 +123,7 @@ __device__ void fa_dot2(const float* __restrict__ q, const Cache* __restrict__ k
             for (int t = 0; t < 2; ++t) {
                 const int e = tid + t * kThreads, key = e / kKChunks, c = e % kKChunks;
                 staged[t] = k0 + key < span
-                                ? *reinterpret_cast<const uint4*>(kbase + static_cast<long long>(k0 + key) * k_ss + 8 * (c0 + c))
+                                ? *reinterpret_cast<const uint4*>(ktile + static_cast<long long>(key) * kstride + 8 * (c0 + c))
                                 : uint4{0, 0, 0, 0};
             }
             __syncthreads();
@@ -182,10 +191,10 @@ __device__ void fa_dot2(const float* __restrict__ q, const Cache* __restrict__ k
             // a value chunk: key pair `pair`, dims 8g .. 8g + 7 interleaved as (key, key + 1) fp16 pairs
             const int pair = tid / kKChunks, g = tid % kKChunks;
             const int key = k0 + 2 * pair;
-            const uint4 a = key < span ? *reinterpret_cast<const uint4*>(vbase + static_cast<long long>(key) * v_ss + 8 * (c0 + g))
+            const uint4 a = key < span ? *reinterpret_cast<const uint4*>(vtile + static_cast<long long>(2 * pair) * vstride + 8 * (c0 + g))
                                        : uint4{0, 0, 0, 0};
             const uint4 b = key + 1 < span
-                                ? *reinterpret_cast<const uint4*>(vbase + static_cast<long long>(key + 1) * v_ss + 8 * (c0 + g))
+                                ? *reinterpret_cast<const uint4*>(vtile + static_cast<long long>(2 * pair + 1) * vstride + 8 * (c0 + g))
                                 : uint4{0, 0, 0, 0};
             __syncthreads();
             const elem* ha = reinterpret_cast<const elem*>(&a);
@@ -245,13 +254,26 @@ extern "C" __global__ void __launch_bounds__(kThreads, 1)
 tf_fa_wide_f16(const float* q, const __half* k, const __half* v, float* out, int qlen, int span, int heads,
                int kv_heads, int d, float scale, int q_pos0, long long k_sb, long long k_sh, long long k_ss,
                long long v_sb, long long v_sh, long long v_ss) {
-    fa_dot2<__half>(q, k, v, out, qlen, span, heads, kv_heads, d, scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss);
+    fa_dot2<__half, false>(q, k, v, out, qlen, span, heads, kv_heads, d, scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh, v_ss, nullptr);
 }
 
 extern "C" __global__ void __launch_bounds__(kThreads, 1)
 tf_fa_wide_bf16(const float* q, const hip_bfloat16* k, const hip_bfloat16* v, float* out, int qlen, int span,
                 int heads, int kv_heads, int d, float scale, int q_pos0, long long k_sb, long long k_sh,
                 long long k_ss, long long v_sb, long long v_sh, long long v_ss) {
-    fa_dot2<hip_bfloat16>(q, k, v, out, qlen, span, heads, kv_heads, d, scale, q_pos0, k_sb, k_sh, k_ss, v_sb, v_sh,
-                          v_ss);
+    fa_dot2<hip_bfloat16, false>(q, k, v, out, qlen, span, heads, kv_heads, d, scale, q_pos0, k_sb, k_sh, k_ss, v_sb,
+                                 v_sh, v_ss, nullptr);
+}
+
+// The same tile over a stream's pages: `k` and `v` are a layer's pools, `table` the stream's page ids.
+extern "C" __global__ void __launch_bounds__(kThreads, 1)
+tf_fa_paged_f16(const float* q, const __half* k, const __half* v, float* out, int qlen, int span, int heads,
+                int kv_heads, int d, float scale, int q_pos0, const unsigned* table) {
+    fa_dot2<__half, true>(q, k, v, out, qlen, span, heads, kv_heads, d, scale, q_pos0, 0, 0, 0, 0, 0, 0, table);
+}
+
+extern "C" __global__ void __launch_bounds__(kThreads, 1)
+tf_fa_paged_bf16(const float* q, const hip_bfloat16* k, const hip_bfloat16* v, float* out, int qlen, int span,
+                 int heads, int kv_heads, int d, float scale, int q_pos0, const unsigned* table) {
+    fa_dot2<hip_bfloat16, true>(q, k, v, out, qlen, span, heads, kv_heads, d, scale, q_pos0, 0, 0, 0, 0, 0, 0, table);
 }

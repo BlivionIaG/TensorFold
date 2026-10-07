@@ -11,7 +11,7 @@ __device__ __forceinline__ float wave_sum(float x) {
     return __shfl(x, 0, 32);
 }
 
-// Row r's keys (already rotated, fp32) and values (the activation kind) into its slot's caches at its position.
+// Row r's keys (already rotated, fp32) and values (the activation kind) into its slot's pages at its position.
 __device__ void plan_kv_write_body(const float* keys, const void* values, int kind, int rows, int kv_heads, int d,
                                      PlanArgs plan, int layer) {
     const long long i = gid();
@@ -20,8 +20,7 @@ __device__ void plan_kv_write_body(const float* keys, const void* values, int ki
     const int h = static_cast<int>((i / d) % kv_heads);
     const int r = static_cast<int>(i / (static_cast<long long>(d) * kv_heads));
     const unsigned long long* desc = plan_desc(plan, plan.slot[r]);
-    const long long total = static_cast<long long>(desc[0]);
-    const long long to = (static_cast<long long>(h) * total + plan.pos[r]) * d + j;
+    const long long to = page_at(plan_pages(desc), kv_heads, h, plan.pos[r], d) + j;
     store(reinterpret_cast<void*>(desc[plan_first(layer)]), kind, to, keys[i]);
     static_cast<uint16_t*>(reinterpret_cast<void*>(desc[plan_second(layer)]))[to] = static_cast<const uint16_t*>(values)[i];
 }
@@ -34,7 +33,7 @@ __device__ void plan_score_body(const float* __restrict__ q, float* __restrict__
     const int visible = min(plan.pos[batch] + 1, span);
     const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
     const void* keys = reinterpret_cast<const void*>(desc[plan_first(layer)]);
-    const long long k_sh = static_cast<long long>(desc[0]) * d;
+    const unsigned* table = plan_pages(desc);
     const int lane = threadIdx.x & 31;
     const int key = blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5);
     const int head = blockIdx.y;
@@ -48,7 +47,7 @@ __device__ void plan_score_body(const float* __restrict__ q, float* __restrict__
     float partial = 0.f;
     if (key < visible) {
         const int kv = head / (heads / kv_heads);
-        const long long base = static_cast<long long>(kv) * k_sh + static_cast<long long>(key) * d;
+        const long long base = page_at(table, kv_heads, kv, key, d);
 #pragma unroll
         for (int i = 0; i < 8; ++i) {
             const int idx = lane + i * 32;
@@ -81,17 +80,16 @@ __device__ void plan_apply_body(const float* __restrict__ scores, const float* _
     }
     const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
     const void* values = reinterpret_cast<const void*>(desc[plan_second(layer)]);
-    const long long v_sh = static_cast<long long>(desc[0]) * d;
+    const unsigned* table = plan_pages(desc);
     const int kv = head / (heads / kv_heads);
     const float* row = scores + (static_cast<long long>(batch) * heads + head) * span;
     const float max_score = stats[(static_cast<long long>(batch) * heads + head) * 2];
     const float denom = stats[(static_cast<long long>(batch) * heads + head) * 2 + 1];
-    const long long base = static_cast<long long>(kv) * v_sh + lane;
     float acc = 0.f;
     const int stop = min(key0 + 128, visible);
     for (int key = key0; key < stop; ++key) {
         const float weight = expf(row[key] - max_score) / denom;
-        acc += weight * load(values, KIND, base + static_cast<long long>(key) * d);
+        acc += weight * load(values, KIND, page_at(table, kv_heads, kv, key, d) + lane);
     }
     *dest = acc;
 }
@@ -131,6 +129,30 @@ tf_plan_apply_f16(const float* scores, const float* stats, float* partials, int 
 __global__ void __launch_bounds__(256)
 tf_plan_apply_bf16(const float* scores, const float* stats, float* partials, int span, int heads, int kv_heads, int d, PlanArgs plan, int layer) {
     plan_apply_body<2>(scores, stats, partials, span, heads, kv_heads, d, plan, layer);
+}
+
+// Positions pos0 .. pos0 + len of a stream's pages from `src` (16-bit values at h * s_head + r * s_row + j): a prompt
+// pass's keys (already rotated and rounded) and values.
+__global__ void __launch_bounds__(256)
+tf_page_write(const uint16_t* src, uint16_t* pool, const unsigned* table, int len, int kv_heads, int d, long long s_head,
+              long long s_row, int pos0) {
+    const long long i = gid();
+    if (i >= static_cast<long long>(len) * kv_heads * d) return;
+    const int j = static_cast<int>(i % d);
+    const int h = static_cast<int>((i / d) % kv_heads);
+    const int r = static_cast<int>(i / (static_cast<long long>(d) * kv_heads));
+    pool[page_at(table, kv_heads, h, pos0 + r, d) + j] = src[h * s_head + r * s_row + j];
+}
+
+// The first `len` positions of a stream's pages as (kv_heads, len, d): the flat layout the other attention kernels read.
+__global__ void __launch_bounds__(256)
+tf_page_gather(const uint16_t* pool, const unsigned* table, uint16_t* dst, int len, int kv_heads, int d) {
+    const long long i = gid();
+    if (i >= static_cast<long long>(len) * kv_heads * d) return;
+    const int j = static_cast<int>(i % d);
+    const int r = static_cast<int>((i / d) % len);
+    const int h = static_cast<int>(i / (static_cast<long long>(d) * len));
+    dst[i] = pool[page_at(table, kv_heads, h, r, d) + j];
 }
 
 // Row r of `dst` is `words` words from the address srcs[r]: a launch whose rows come from anywhere keeps its arguments.

@@ -98,13 +98,14 @@ fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, 
     const q32 = try o.arena.of(f32, q_rows * hd);
     // q rounded to the activation dtype by apply_rope, then widened for the kernel: (heads, rows, d) fp32
     try o.ropePrefill(qn, .{ .ptr = q32, .kind = .f32 }, rows * hd, hd, rows, s.heads, hd, s.rotary_dim, pos, theta);
-    const c = caches.attention(m, index);
-    // k straight into the cache at slot pos: (kv_heads, total, d) in the activation dtype
-    try o.ropePrefill(kn, .{ .ptr = c.k + pos * hd * m.act.size(), .kind = m.act }, c.total * hd, hd, rows, s.kv_heads, hd, s.rotary_dim, pos, theta);
-    try o.kvWrite(values, c.v, rows, s.kv_heads, hd, c.total, pos);
-    caches.layers[index].full.len = pos + rows;
+    const c = caches.paged(m, index);
+    // k rotated and rounded to the activation dtype as (kv_heads, rows, d), then with v into the pages from slot pos
+    const kr = try take(o, m.act, rows * s.kv_heads * hd);
+    try o.ropePrefill(kn, kr, rows * hd, hd, rows, s.kv_heads, hd, s.rotary_dim, pos, theta);
+    try o.pageWrite(kr.ptr, c.k, c.table, rows, s.kv_heads, hd, rows * hd, hd, pos);
+    try o.pageWrite(values.ptr, c.v, c.table, rows, s.kv_heads, hd, hd, s.kv_heads * hd, pos);
     const att = try o.arena.of(f32, q_rows * hd);
-    try o.causalPrefill(q32, c, att, rows, pos + rows, s.heads, scaleOf(hd), pos);
+    try o.causalPaged(q32, c, att, rows, pos + rows, s.heads, scaleOf(hd), pos);
     const gated = try take(o, m.act, q_rows * hd);
     try o.attnGate(att, qg, gated, rows, s.heads, hd, false);
     return o.affine(gated, f.o, rows, f.o.partial);

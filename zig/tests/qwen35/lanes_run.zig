@@ -51,7 +51,6 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     var s: Session = undefined;
     try s.init(gpa, io, e, if (group.world > 1) &joined.link else null);
     defer s.deinit();
-    if (resume_to != null) s.h.keepPrompts(8, 1 << 30);
     const done = try s.run(arena, job);
     for (done.replies) |r| std.debug.print("{s}: {d} tokens, rounds {d}, accepted {d}\n", .{ r.name, r.tokens.len, r.rounds, r.accepted });
     std.debug.print("{s}: {d} streams, {d} tokens in {d:.3} s, {d:.1} tok/s\n", .{ if (job.solo) "solo" else "together", done.replies.len, done.tokens(), done.seconds, @as(f64, @floatFromInt(done.tokens())) / done.seconds });

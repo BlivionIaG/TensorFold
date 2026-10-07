@@ -11,6 +11,7 @@ pub const Checkpoint = checkpoint.Checkpoint;
 pub const Model = weights.Model;
 pub const view = @import("model/view.zig");
 pub const state = @import("forward/state.zig");
+pub const pages = @import("forward/pages.zig");
 pub const forward = @import("forward/forward.zig");
 pub const window = @import("forward/window.zig");
 pub const plan = @import("forward/plan.zig");
@@ -39,5 +40,11 @@ test {
     _ = moe;
     _ = sample;
     _ = prefix;
+    _ = pages;
+    _ = plan;
     _ = slicing;
+    // the engine and its workers compile on a host with no GPU
+    @import("std").testing.refAllDecls(hip_lanes.Hip);
+    @import("std").testing.refAllDecls(worker.Worker);
+    @import("std").testing.refAllDecls(engine.Engine);
 }

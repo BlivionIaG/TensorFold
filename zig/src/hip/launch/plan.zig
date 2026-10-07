@@ -114,6 +114,34 @@ pub fn planGather(l: *const Launcher, srcs: u64, dst: u64, words: usize, rows: u
     try l.go(l.plan.gather, dim(cdiv(words, 256), rows, 1), dim(256, 1, 1), 0, s, &a);
 }
 
+/// Positions pos0 .. pos0 + len of a stream's pages (the pool of one layer's keys or values) from 16-bit `src` values
+/// at h * s_head + r * s_row + j: a prompt pass's keys, rotated and rounded, and its values.
+pub fn pagesWrite(l: *const Launcher, src: u64, pool: u64, table: u64, len: usize, kv_heads: usize, d: usize, s_head: usize, s_row: usize, pos0: usize, s: S) Error!void {
+    var a: Args = .{};
+    a.add(src);
+    a.add(pool);
+    a.add(table);
+    a.add(@as(c_int, @intCast(len)));
+    a.add(@as(c_int, @intCast(kv_heads)));
+    a.add(@as(c_int, @intCast(d)));
+    a.add(@as(c_longlong, @intCast(s_head)));
+    a.add(@as(c_longlong, @intCast(s_row)));
+    a.add(@as(c_int, @intCast(pos0)));
+    try l.flat(l.plan.page_write, @intCast(len * kv_heads * d), s, &a);
+}
+
+/// The first `len` positions of a stream's pages as (kv_heads, len, d) 16-bit values in `dst`.
+pub fn pagesGather(l: *const Launcher, pool: u64, table: u64, dst: u64, len: usize, kv_heads: usize, d: usize, s: S) Error!void {
+    var a: Args = .{};
+    a.add(pool);
+    a.add(table);
+    a.add(dst);
+    a.add(@as(c_int, @intCast(len)));
+    a.add(@as(c_int, @intCast(kv_heads)));
+    a.add(@as(c_int, @intCast(d)));
+    try l.flat(l.plan.page_gather, @intCast(len * kv_heads * d), s, &a);
+}
+
 /// What a keep reads: the plan, each slot's kept row count (negative: not listed), the round's final rows, the words of
 /// one final row, of one conv snapshot and of one DeltaNet snapshot (multiples of four), and the layers.
 pub const Keep = struct { keep: u64, hidden: u64, hidden_words: usize, conv_words: usize, delta_words: usize, layers: usize };

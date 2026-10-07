@@ -185,7 +185,7 @@ fn prepare(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]co
     if (o.context != null and plan.window < @as(usize, @intCast(window))) {
         return refuse(a, problem, "--context {d} does not fit this GPU's memory: {d} lanes and a kept copy of a prompt fit {d} tokens beside the weights; lower --context or --lanes, or add ranks (--tp)", .{ window, streams, plan.window });
     }
-    e.size(plan.capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot allocate its scratch ({s})", .{@errorName(err)});
+    e.size(plan.capacity, 0) catch |err| return refuse(a, problem, "the native HIP engine cannot allocate its scratch ({s})", .{@errorName(err)});
     std.debug.print("[tensorfold] HIP rank {d} of {d}: weights {d:.2} GiB, scratch {d:.2} GiB, context window {d} tokens, prompt cache {d:.2} GiB, reserve {d:.2} GiB of {d:.2} GiB\n", .{ o.rank, o.tp, gibs(plan.weights), gibs(plan.scratch), plan.window, gibs(plan.cache_budget), gibs(plan.reserve), gibs(plan.total) });
     return .{ .e = e, .plan = plan, .asked = @intCast(window), .keep = keep, .streams = streams, .group = group, .policy_line = policy_line };
 }
@@ -233,7 +233,6 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.group = p.group;
     h.backend = try qwen35.hip_lanes.Hip.init(gpa, p.e);
     errdefer h.backend.deinit();
-    h.backend.keepPrompts(if (p.plan.cache_budget == 0) 0 else p.keep, p.plan.cache_budget);
     // a lone rank times its forwards for the depth rule; the ranks of a group draft without costs
     if (p.group) |g| h.backend.withLink(&g.link) else h.backend.measure();
     h.cfg = try lanes.Config.init(gpa, h.backend.facts(), qwen35.hip_lanes.Hip.max_window, qwen35.hip_lanes.Hip.max_window - 1);

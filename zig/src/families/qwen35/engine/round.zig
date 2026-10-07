@@ -52,7 +52,7 @@ pub const State = struct {
         const rows = e.o.batch_rows;
         var buffer = try plan.Buffer.init(&e.driver, rows, m.spec.n_layers);
         errdefer buffer.deinit();
-        var scratch = try state.Caches.init(e.gpa, &e.driver, m, rows);
+        var scratch = try state.Caches.initFull(e.gpa, &e.pool, m, rows);
         errdefer scratch.deinit(e.gpa);
         const snaps = try e.gpa.alloc([2]u64, m.spec.n_layers);
         errdefer e.gpa.free(snaps);
@@ -126,7 +126,7 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     defer st.chosen = null;
     var total: usize = 0;
     for (rows, 0..) |r, i| {
-        if (r.pos + r.tokens.len > r.caches.total) return error.ContextFull;
+        if (r.pos + r.tokens.len > r.caches.covered()) return error.ContextFull;
         st.wins[i] = .{ .desc = r.caches.desc.ptr, .pos = r.pos, .tokens = r.tokens };
         total += r.tokens.len;
     }
