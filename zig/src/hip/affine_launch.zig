@@ -68,6 +68,18 @@ const stream_waves = 4; // kStreamWaves
 const streams_wanted = 3000; // kStreamWavesWanted
 const stream_code_words = 32; // kStreamCodeWords
 
+/// The K-parallel tiles (rocm/affine_gemm_kp.hpp) of a short prompt: cb columns a lane set, r rows a pass over up to rb row
+/// blocks, waves a block (`loop`: it takes more rows than rb * r by passes). A product takes the one with the fewest `rows`
+/// that hold it; a routed plan, whose items hold few rows however long the prompt, the one with the fewest `routed` items
+/// it has, up to `routed_items` (0: none).
+const KpTile = struct { rows: c_int, routed: c_int, cb: c_int, r: c_int, waves: c_int, rb: c_int, loop: bool = true };
+const kp_tiles = [_]KpTile{
+    .{ .rows = 2, .routed = 0, .cb = 8, .r = 1, .waves = 2, .rb = 2, .loop = false },
+    .{ .rows = 4, .routed = 410, .cb = 4, .r = 4, .waves = 2, .rb = 4 },
+    .{ .rows = 32, .routed = 0, .cb = 4, .r = 8, .waves = 2, .rb = 4, .loop = false },
+    .{ .rows = 0, .routed = 300, .cb = 4, .r = 2, .waves = 2, .rb = 4 },
+};
+
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
 pub const Tile = enum { gemm, block };
 
@@ -96,6 +108,14 @@ fn capability(d: *const driver.Driver) Error!u32 {
 }
 
 pub const Kernels = struct {
+    /// The block shapes prefill takes by rows: the K-parallel tiles, then the 128 x 128 one (the tests compare them).
+    pub const tier_count = kp_tiles.len + 1;
+
+    /// Whether block shape `tier` can take `m` rows: a tile that does not loop over its rows holds rb * r of them.
+    pub fn tierTakes(tier: usize, m: c_int) bool {
+        return tier >= kp_tiles.len or kp_tiles[tier].loop or m <= kp_tiles[tier].rb * kp_tiles[tier].r;
+    }
+
     wmma: bool,
     /// gfx11: the matrix-core GEMM tile runs (gfx12's WMMA has other layouts).
     matrix: bool,
@@ -113,6 +133,7 @@ pub const Kernels = struct {
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
     wmma_gemm: [bit_widths.len]Function,
+    kp: [bit_widths.len][kp_tiles.len]Function,
     fast: [2]Function, // rows 1, 8
     span: [2]Function,
     fold: Function,
@@ -156,6 +177,9 @@ pub const Kernels = struct {
             k.block[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_dot2_blockINS0_{s}ELi{d}EEEvNS0_6AffineE", .{ dot, bits }));
             if (k.matrix) k.wmma_gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_wmma_gemmILi{d}EEEvNS0_6AffineE", .{bits}));
             k.gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_gemm_blockINS0_{s}ELi{d}E{s}EEvNS0_6AffineE", .{ dot, bits, shape }));
+            inline for (kp_tiles, 0..) |t, i| {
+                k.kp[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm14affine_gemm_kpINS0_{s}ELi{d}ELi{d}ELi{d}ELi{d}ELi{d}ELb{d}EEEvNS0_6AffineE", .{ dot, bits, t.cb, t.r, t.waves, t.rb, @intFromBool(t.loop) }));
+            }
             inline for (piece_counts, 0..) |pieces, p| {
                 k.row[b][p] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm15affine_dot2_rowINS0_{s}ELi{d}ELi{d}EEEvNS0_6AffineEi", .{ dot, bits, pieces }));
                 inline for (row_counts, 0..) |rows, r| {
@@ -367,15 +391,45 @@ pub const Kernels = struct {
     }
 
     /// Prefill's tile at any row count, so a prompt's rows have the same bits however it is cut: the matrix tile on
-    /// gfx11 unless switched off, else the dot2 GEMM tile (the previous one for words it cannot load wide).
+    /// gfx11 unless switched off, else the dot2 GEMM tile (the previous one for words it cannot load wide); a few rows
+    /// take the K-parallel tile, which computes the same bits and streams the weights faster.
     pub fn prefillLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
+        // a routed plan of a prompt past 32 rows is faster on the 128-row tiles on the matrix cores, and past 128 on both
+        const plan = a.route.items != 0;
+        const routed_items: c_int = if (k.wmma) 300 else 410;
+        var tier: usize = kp_tiles.len;
+        var bound: c_int = std.math.maxInt(c_int);
+        inline for (kp_tiles, 0..) |t, i| {
+            const have = if (plan) t.routed else t.rows;
+            if (have != 0 and have >= (if (plan) items else a.m) and have < bound and (!plan or have <= routed_items)) {
+                tier = i;
+                bound = have;
+            }
+        }
+        return k.prefillTier(d, a, s, items, tier);
+    }
+
+    /// prefillLaunch in block shape `tier`: an index of kp_tiles, or `kp_tiles.len` for the 128 x 128 one.
+    pub fn prefillTier(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tier: usize) Error!void {
         if (a.m < 1 or a.n < 1 or !groupOk(a.group) or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0) return refuse("prefill shape");
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
         args.add(a);
         const matrix = k.tile == .gemm and k.matrix and k.mode != .off and a.fp16 == 0 and gemmFits(a);
-        const f = if (matrix) k.wmma_gemm[b] else if (k.tile == .gemm and gemmFits(a)) k.gemm[b] else k.block[b];
+        const dot2 = k.tile == .gemm and gemmFits(a);
+        if (tier < kp_tiles.len and (matrix or dot2) and tierTakes(tier, a.m)) {
+            const t = kp_tiles[tier];
+            const sets = @divExact(32, kpLanes(@divExact(a.k, a.group)));
+            const blocks = @min(cdiv(a.m, t.r), @as(c_uint, @intCast(t.rb)));
+            return go(d, k.kp[b][tier], .{ .x = cdiv(a.n, t.waves * t.cb * sets) * blocks, .z = @intCast(items) }, .{ .x = @intCast(32 * t.waves) }, s, &args);
+        }
+        const f = if (matrix) k.wmma_gemm[b] else if (dot2) k.gemm[b] else k.block[b];
         try go(d, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
+    }
+
+    /// The lanes a column takes in the K-parallel tile: one a group, 32 at most (kp_lanes).
+    fn kpLanes(groups: c_int) c_int {
+        return if (groups > 16) 32 else if (groups > 8) 16 else 8;
     }
 
     fn groupOk(group: c_int) bool {

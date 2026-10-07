@@ -7,6 +7,7 @@
 
 #include "affine_dot2.hpp"
 #include "affine_gemm.hpp"
+#include "affine_gemm_kp.hpp"
 #include "affine_stream.hpp"
 #include "affine_wmma_gemm.hpp"
 
@@ -484,6 +485,19 @@ static int wmma_rows_from() {
         return v != nullptr && std::strcmp(v, "1") == 0 ? 1 : 16;
     }();
     return rows;
+}
+
+// Prefill's tile for a few rows (affine_gemm_kp.hpp): the Zig launcher takes it, this entry keeps its kernels in the object.
+hipError_t launch_affine_gemm_kp(const Affine& a, hipStream_t stream, int items) {
+    switch (a.bits) {
+        case 2: return launch_kp_bits<2>(a, stream, items);
+        case 3: return launch_kp_bits<3>(a, stream, items);
+        case 4: return launch_kp_bits<4>(a, stream, items);
+        case 5: return launch_kp_bits<5>(a, stream, items);
+        case 6: return launch_kp_bits<6>(a, stream, items);
+        case 8: return launch_kp_bits<8>(a, stream, items);
+        default: return hipErrorInvalidValue;
+    }
 }
 
 hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int items) {

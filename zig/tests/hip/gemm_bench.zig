@@ -1,11 +1,13 @@
 //! The prefill GEMM tile against the previous one on the engine's projection shapes: random packed products, each
 //! tile's error against a float64 dequant(W) . x on sampled outputs, best-of-n milliseconds and TFLOPS of each.
-//! `tf-hip-test gemm [reps] [name filter]`, and `gemm sweep` for ragged shapes (errors and run-to-run bytes only).
+//! `tf-hip-test gemm [reps] [name filter]`, and `gemm sweep` for ragged shapes (errors and run-to-run bytes only);
+//! `gemm tiers` and `gemm short` are gemm_short.zig's.
 
 const std = @import("std");
 const hip = @import("hip");
 const check = @import("check.zig");
 const ref = @import("gemm_ref.zig");
+const short = @import("gemm_short.zig");
 const Gpu = check.Gpu;
 
 const Case = struct { name: []const u8, m: usize, n: usize, k: usize, bits: c_int = 4, group: c_int = 64, experts: usize = 0, x_div: c_int = 1, even: bool = false };
@@ -44,10 +46,10 @@ const cases = [_]Case{
     .{ .name = "edges", .m = 1000, .n = 1001, .k = 2112 },
 };
 
-const Rng = struct {
+pub const Rng = struct {
     state: u64,
 
-    fn next(r: *Rng) u64 {
+    pub fn next(r: *Rng) u64 {
         r.state ^= r.state >> 12;
         r.state ^= r.state << 25;
         r.state ^= r.state >> 27;
@@ -70,45 +72,45 @@ fn f16Bits(v: f32) u16 {
     return @bitCast(h);
 }
 
-fn fill(gpa: std.mem.Allocator, comptime T: type, n: usize, rng: *Rng, make: *const fn (*Rng) T) ![]T {
+pub fn fill(gpa: std.mem.Allocator, comptime T: type, n: usize, rng: *Rng, make: *const fn (*Rng) T) ![]T {
     const host = try gpa.alloc(T, n);
     for (host) |*v| v.* = make(rng);
     return host;
 }
 
-fn toDevice(gpu: Gpu, host: anytype) !hip.DeviceBuffer {
+pub fn toDevice(gpu: Gpu, host: anytype) !hip.DeviceBuffer {
     return hip.DeviceBuffer.fromHost(gpu.d, std.mem.sliceAsBytes(host));
 }
 
-fn makeWord(r: *Rng) u32 {
+pub fn makeWord(r: *Rng) u32 {
     return @truncate(r.next() >> 16);
 }
 
-fn makeScale(r: *Rng) u16 {
+pub fn makeScale(r: *Rng) u16 {
     return bf16Bits((r.unit() + 1.0) / 16.0);
 }
 
-fn makeBias(r: *Rng) u16 {
+pub fn makeBias(r: *Rng) u16 {
     return bf16Bits(r.unit() / 2.0);
 }
 
 /// A full-mantissa activation in [-1, 1) at one of six scales: sums of products then round, in any order.
-fn fine(r: *Rng) f32 {
+pub fn fine(r: *Rng) f32 {
     const v = r.next();
     const m: i32 = @intCast(v >> 41 & 0x3fffff);
     return @as(f32, @floatFromInt(m - 0x200000)) / 2097152.0 * std.math.ldexp(@as(f32, 1), -@as(i32, @intCast(v % 6)));
 }
 
-fn makeX16(r: *Rng) u16 {
+pub fn makeX16(r: *Rng) u16 {
     return f16Bits(fine(r));
 }
 
-fn makeXB(r: *Rng) u16 {
+pub fn makeXB(r: *Rng) u16 {
     return bf16Bits(fine(r));
 }
 
 /// Words of two device buffers that differ, compared through 32 MiB windows.
-fn sameOnDevice(gpu: Gpu, a: hip.DeviceBuffer, b: hip.DeviceBuffer, len: usize) !usize {
+pub fn sameOnDevice(gpu: Gpu, a: hip.DeviceBuffer, b: hip.DeviceBuffer, len: usize) !usize {
     const win = 32 << 20;
     const ha = try gpu.gpa.alloc(u8, win);
     defer gpu.gpa.free(ha);
@@ -128,9 +130,9 @@ fn sameOnDevice(gpu: Gpu, a: hip.DeviceBuffer, b: hip.DeviceBuffer, len: usize) 
     return diff;
 }
 
-const Timing = struct { best: f32, median: f32 };
+pub const Timing = struct { best: f32, median: f32 };
 
-fn time(gpu: Gpu, stream: hip.Stream, reps: usize, ctx: anytype, comptime go: fn (@TypeOf(ctx)) hip.Error!void) !Timing {
+pub fn time(gpu: Gpu, stream: hip.Stream, reps: usize, ctx: anytype, comptime go: fn (@TypeOf(ctx)) hip.Error!void) !Timing {
     try go(ctx);
     try stream.synchronize();
     var start = try hip.Event.init(gpu.d, true);
@@ -360,6 +362,7 @@ fn sweep(t: *Rig) !usize {
 }
 
 pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
+    if (args.len > 0 and (std.mem.eql(u8, args[0], "tiers") or std.mem.eql(u8, args[0], "short"))) return short.run(gpu, args);
     const sweep_only = args.len > 0 and std.mem.eql(u8, args[0], "sweep");
     const reps: usize = if (args.len > 0 and !sweep_only) try std.fmt.parseInt(usize, args[0], 10) else 5;
     const filter: []const u8 = if (args.len > 1) args[1] else "";
