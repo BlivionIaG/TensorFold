@@ -2,7 +2,7 @@
 //! shapes it has code for, and its launch. The costs that order them are the tuning table's, not written here.
 
 const std = @import("std");
-const registry = @import("registry.zig");
+const registry = @import("core").registry;
 const tuning = @import("../tuning/tuning.zig");
 const affine = @import("affine.zig");
 

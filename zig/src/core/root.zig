@@ -2,6 +2,8 @@
 
 pub const safetensors = @import("safetensors.zig");
 pub const quant = @import("quant/quant.zig");
+pub const registry = @import("registry.zig");
+pub const tuning = @import("tuning.zig");
 pub const checkpoint = @import("checkpoint.zig");
 pub const Checkpoint = checkpoint.Checkpoint;
 pub const draft_depth = @import("draft_depth.zig");
@@ -12,6 +14,8 @@ pub const ids_json = @import("ids_json.zig");
 test {
     _ = safetensors;
     _ = quant;
+    _ = registry;
+    _ = tuning;
     _ = checkpoint;
     _ = draft_depth;
     _ = @import("copy_index.zig");

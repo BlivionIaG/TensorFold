@@ -26,7 +26,7 @@ pub const plan_ops = @import("ops/plan.zig");
 pub const quant = @import("core").quant;
 pub const Upload = @import("upload.zig").Upload;
 pub const affine = @import("launch/affine.zig");
-pub const registry = @import("launch/registry.zig");
+pub const registry = @import("core").registry;
 pub const tuning = @import("tuning/tuning.zig");
 pub const Arena = @import("runtime/arena.zig").Arena;
 pub const rccl = @import("comm/rccl.zig");
@@ -42,7 +42,6 @@ test {
     _ = rocm;
     _ = ops;
     _ = quant;
-    _ = registry;
     _ = tuning;
     _ = rccl;
     _ = link;

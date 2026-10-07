@@ -1,5 +1,5 @@
 //! The MLX affine kernels launched from Zig: the tiles of tiles/dot2_tiles.hip and tiles/dot2.hip over the family's code
-//! objects, a launcher a tile. Which tile takes a product is the registry's (registry.zig); the entry points at the end
+//! objects, a launcher a tile. Which tile takes a product is the registry's (core/registry.zig); the entry points at the end
 //! (`run`, `routed`, `prefillLaunch`, `groupRun`, `pairRun`) are what the Zig launches and the C launchers' names call.
 
 const std = @import("std");
@@ -12,7 +12,7 @@ const Function = @import("../runtime/module.zig").Function;
 const Policy = @import("../policy.zig").Policy;
 const Caps = @import("../caps.zig").Caps;
 const Choice = @import("../policy.zig").Choice;
-const registry = @import("registry.zig");
+const registry = @import("core").registry;
 const quant = @import("core").quant;
 const tuning = @import("../tuning/tuning.zig");
 const mlx_entries = @import("mlx_entries.zig");
