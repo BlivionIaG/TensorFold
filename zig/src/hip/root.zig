@@ -14,8 +14,10 @@ pub const launch = @import("runtime/launch.zig");
 pub const Args = launch.Args;
 pub const Config = launch.Config;
 pub const Dim3 = launch.Dim3;
+pub const caps = @import("caps.zig");
+pub const Caps = caps.Caps;
 
 test {
     const std = @import("std");
-    inline for (.{ abi, Driver, Context, DeviceBuffer, HostBuffer, Stream, Event, Module, Function, launch }) |T| std.testing.refAllDecls(T);
+    inline for (.{ caps, abi, Driver, Context, DeviceBuffer, HostBuffer, Stream, Event, Module, Function, launch }) |T| std.testing.refAllDecls(T);
 }
