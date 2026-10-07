@@ -4,7 +4,7 @@ const std = @import("std");
 const caps = @import("../src/hip/caps.zig");
 
 /// Each .hip in zig/kernels/hip that the runtime embeds, by name.
-const kernels = [_][]const u8{"probe"};
+const kernels = [_][]const u8{ "probe", "affine" };
 
 /// wave32 on RDNA, no contraction: the device code computes what the source says.
 const flags = [_][]const u8{ "-O3", "-mno-wavefrontsize64", "-ffp-contract=off", "-std=c++20" };
@@ -79,6 +79,8 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     const hip = runtime(b, b.graph.host, .debug, null, "");
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
     step.dependOn(mockTests(b, hip));
+    const reference = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/affine_reference.zig"), .target = b.graph.host, .optimize = .debug });
+    step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = reference })).step);
 }
 
 /// hipcc --genco with the shared flags and one --offload-arch per gfx target: one offload bundle.

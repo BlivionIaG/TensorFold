@@ -4,6 +4,7 @@ const std = @import("std");
 const hip = @import("hip");
 const check = @import("check.zig");
 const runtime_tests = @import("runtime_tests.zig");
+const affine_tests = @import("affine_tests.zig");
 
 const usage =
     \\usage: tf-hip-test <command>
@@ -12,6 +13,8 @@ const usage =
     \\  cooperative   a cooperative grid of one block per CU
     \\  image         a broken and an empty code object are refused
     \\  runtime       info, smoke, cooperative and image
+    \\  affine        the affine 4-bit product: the host recipe's bits at 1, 3 and 16 rows, the float64 bound, a pinned digest
+    \\  all           runtime, then affine
     \\
 ;
 
@@ -40,11 +43,14 @@ fn run(gpu: check.Gpu, cmd: []const u8) !void {
     if (eql(u8, cmd, "smoke")) return runtime_tests.smoke(gpu);
     if (eql(u8, cmd, "cooperative")) return runtime_tests.cooperative(gpu);
     if (eql(u8, cmd, "image")) return runtime_tests.image(gpu);
-    if (eql(u8, cmd, "runtime")) {
+    if (eql(u8, cmd, "affine")) return affine_tests.run(gpu);
+    if (eql(u8, cmd, "runtime") or eql(u8, cmd, "all")) {
         try runtime_tests.info(gpu);
         try runtime_tests.smoke(gpu);
         try runtime_tests.cooperative(gpu);
-        return runtime_tests.image(gpu);
+        try runtime_tests.image(gpu);
+        if (eql(u8, cmd, "all")) try affine_tests.run(gpu);
+        return;
     }
     std.debug.print("{s}", .{usage});
     return error.UnknownCommand;

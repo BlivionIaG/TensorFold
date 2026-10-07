@@ -15,3 +15,4 @@ pub const available = options.with_kernels;
 pub const targets: []const u8 = options.gfx;
 
 pub const probe: []const u8 = if (available) &Blob("hsaco_probe").bytes else &.{};
+pub const affine: []const u8 = if (available) &Blob("hsaco_affine").bytes else &.{};
