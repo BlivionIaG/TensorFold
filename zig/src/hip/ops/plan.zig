@@ -89,6 +89,11 @@ pub fn keep(o: Ops, p: Plan, k: Keep) Error!void {
     try (try launcher(o)).planKeep(p, k, o.stream);
 }
 
+/// The kept slots' DeltaNet states replayed through their kept rows (see `launches.planGdnReplay`).
+pub fn gdnReplay(o: Ops, keep_counts: u64, p: Plan, key_heads: usize, value_heads: usize, dk: usize, dv: usize, layers: usize) Error!void {
+    try (try launcher(o)).planGdnReplay(keep_counts, p, key_heads, value_heads, dk, dv, layers, o.stream);
+}
+
 /// Row r of `dst` (`words` words each) from the address in `srcs[r]` (device u64s), for `rows` rows.
 pub fn gather(o: Ops, srcs: u64, dst: u64, words: usize, rows: usize) Error!void {
     try (try launcher(o)).planGather(srcs, dst, words, rows, o.stream);

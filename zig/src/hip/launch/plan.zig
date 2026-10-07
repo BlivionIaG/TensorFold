@@ -146,18 +146,33 @@ pub fn pagesGather(l: *const Launcher, pool: u64, table: u64, dst: u64, len: usi
 }
 
 /// What a keep reads: the plan, kept rows a slot (negative: unlisted), final rows, word counts (of four), layers.
-pub const Keep = struct { keep: u64, hidden: u64, hidden_words: usize, conv_words: usize, delta_words: usize, layers: usize };
+pub const Keep = struct { keep: u64, hidden: u64, hidden_words: usize, channels: usize, taps: usize, layers: usize };
 
-/// Keeps the listed slots' rows: linear states from the snapshot of the last kept row, and its final row.
+/// Keeps the listed slots' rows: conv windows from the round's first window and the kept rows' inputs, final rows.
 pub fn planKeep(l: *const Launcher, p: PlanRef, k: Keep, s: S) Error!void {
-    if (k.hidden_words % 4 != 0 or k.conv_words % 4 != 0 or k.delta_words % 4 != 0) return invalid("planned keep");
+    if (k.hidden_words % 4 != 0) return invalid("planned keep");
     var a: Args = .{};
     a.add(p.args);
     a.add(k.keep);
     a.add(k.hidden);
     a.add(@as(c_int, @intCast(k.hidden_words)));
-    a.add(@as(c_int, @intCast(k.conv_words)));
-    a.add(@as(c_int, @intCast(k.delta_words)));
+    a.add(@as(c_int, @intCast(k.channels)));
+    a.add(@as(c_int, @intCast(k.taps)));
     a.add(@as(c_int, @intCast(k.layers)));
     try l.go(l.plan.keep, dim(64, k.layers + 1, p.slots), dim(256, 1, 1), 0, s, &a);
+}
+
+/// The kept slots' DeltaNet states run through their kept rows, every linear layer in one launch.
+pub fn planGdnReplay(l: *const Launcher, keep: u64, p: PlanRef, key_heads: usize, value_heads: usize, dk: usize, dv: usize, layers: usize, s: S) Error!void {
+    if ((dk != 16 and dk != 128) or @rem(dv, 8) != 0 or key_heads < 1 or @rem(value_heads, key_heads) != 0) return invalid("planned replay");
+    var a: Args = .{};
+    a.add(keep);
+    a.add(@as(c_int, @intCast(p.rows)));
+    a.add(@as(c_int, @intCast(key_heads)));
+    a.add(@as(c_int, @intCast(value_heads)));
+    a.add(@as(c_int, @intCast(dv)));
+    a.add(p.args);
+    a.add(@as(c_int, @intCast(p.slots)));
+    const wide: usize = if (dk == 128) 0 else 1;
+    try l.go(l.plan.gdn_replay[wide], dim(@divExact(dv, 8), value_heads, p.slots * layers), dim(32, 8, 1), 0, s, &a);
 }

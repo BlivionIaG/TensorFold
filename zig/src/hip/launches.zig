@@ -87,6 +87,7 @@ pub const Launcher = struct {
         keep: Function,
         gather: Function,
         gdn: [2]Function, // dk 128, 16
+        gdn_replay: [2]Function, // dk 128, 16
         page_write: Function,
         page_gather: Function,
     };
@@ -148,6 +149,7 @@ pub const Launcher = struct {
             .keep = try pl.function("tf_plan_keep"),
             .gather = try pl.function("tf_plan_gather"),
             .gdn = .{ try gd.function("tf_gdn_plan_128"), try gd.function("tf_gdn_plan_16") },
+            .gdn_replay = .{ try gd.function("tf_gdn_replay_128"), try gd.function("tf_gdn_replay_16") },
             .page_write = try pl.function("tf_page_write"),
             .page_gather = try pl.function("tf_page_gather"),
         };
@@ -272,6 +274,7 @@ pub const Launcher = struct {
     pub const planCausal = plan.planCausal;
     pub const planGatedDelta = plan.planGatedDelta;
     pub const planKeep = plan.planKeep;
+    pub const planGdnReplay = plan.planGdnReplay;
     pub const pagesWrite = plan.pagesWrite;
     pub const pagesGather = plan.pagesGather;
     pub const planGather = plan.planGather;

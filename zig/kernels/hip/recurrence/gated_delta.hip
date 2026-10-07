@@ -102,7 +102,7 @@ __device__ __forceinline__ void
 gated_delta_tile_body(const float* __restrict__ q, const float* __restrict__ k, const float* __restrict__ v,
                       const float* __restrict__ gate, const float* __restrict__ beta, float* __restrict__ state,
                       float* __restrict__ y, int length, int key_heads, int value_heads, int dv,
-                      float* __restrict__ states, int batch) {
+                      float* __restrict__ states, int batch, bool write_back = true) {
     constexpr int SPAN = (DK + 31) / 32;
     constexpr int WIDTH = 32 * ROWS;
     const int lane = threadIdx.x;
@@ -136,11 +136,13 @@ gated_delta_tile_body(const float* __restrict__ q, const float* __restrict__ k, 
             const size_t at =
                 ((static_cast<size_t>(batch) * length + (t0 + step)) * key_heads + key_head) * DK + col;
             const float4 key = *reinterpret_cast<const float4*>(k + at);
-            const float4 query = *reinterpret_cast<const float4*>(q + at);
             ks[step][col] = key.x;
             ks[step][col + 1] = key.y;
             ks[step][col + 2] = key.z;
             ks[step][col + 3] = key.w;
+            // a replay (no q) advances the state alone
+            if (q == nullptr) continue;
+            const float4 query = *reinterpret_cast<const float4*>(q + at);
             qs[step][col] = query.x;
             qs[step][col + 1] = query.y;
             qs[step][col + 2] = query.z;
@@ -189,6 +191,7 @@ gated_delta_tile_body(const float* __restrict__ q, const float* __restrict__ k, 
                     if (idx < DK) states[snap + idx] = s[i];
                 }
             }
+            if (q == nullptr) continue;
             float readout = 0.f;
 #pragma unroll
             for (int i = 0; i < SPAN; ++i) {
@@ -203,6 +206,7 @@ gated_delta_tile_body(const float* __restrict__ q, const float* __restrict__ k, 
         __syncthreads();
     }
 
+    if (!write_back) return;
 #pragma unroll
     for (int i = 0; i < SPAN; ++i) {
         const int idx = lane + i * 32;
@@ -231,12 +235,31 @@ gated_delta_plan_body(const float* q, const float* k, const float* v, const floa
     const long long row0 = plan.first[slot];
     const unsigned long long* desc = plan_desc(plan, slot);
     float* state = reinterpret_cast<float*>(desc[plan_second(layer)]);
-    // the last slot holds the round's padding rows, which keep no states
-    const bool snap = length > 1 && slot + 1 < static_cast<int>(gridDim.z);
-    float* states = snap ? reinterpret_cast<float*>(plan.snaps[2 * layer + 1]) + row0 * value_heads * dv * DK : nullptr;
+    // a window of rows leaves the state as the round found it, for its keep to replay (padding rows keep nothing)
+    const bool replayed = length > 1 && slot + 1 < static_cast<int>(gridDim.z);
     gated_delta_tile_body<DK, 8, 16>(q + row0 * key_heads * DK, k + row0 * key_heads * DK, v + row0 * value_heads * dv,
                                      gate + row0 * value_heads, beta + row0 * value_heads, state,
-                                     y + row0 * value_heads * dv, length, key_heads, value_heads, dv, states, 0);
+                                     y + row0 * value_heads * dv, length, key_heads, value_heads, dv, nullptr, 0,
+                                     !replayed);
+}
+
+// A keep: each slot's state run from the round's start through its kept rows, by the same scan on the inputs kept.
+template <int DK>
+__device__ __forceinline__ void gated_delta_replay_body(const int* keep, int rows, int key_heads, int value_heads, int dv,
+                                                        PlanArgs plan, int slots) {
+    const int slot = blockIdx.z % slots;
+    const int layer = blockIdx.z / slots;
+    const int n = keep[slot];
+    if (n <= 0 || plan.count[slot] <= 1 || plan.snaps[2 * layer + 1] == 0) return;
+    const long long row0 = plan.first[slot];
+    const float* k = reinterpret_cast<const float*>(plan.snaps[2 * layer + 1]);
+    const float* v = k + static_cast<long long>(rows) * key_heads * DK;
+    const float* gate = v + static_cast<long long>(rows) * value_heads * dv;
+    const float* beta = gate + static_cast<long long>(rows) * value_heads;
+    float* state = reinterpret_cast<float*>(plan_desc(plan, slot)[plan_second(layer)]);
+    gated_delta_tile_body<DK, 8, 16>(nullptr, k + row0 * key_heads * DK, v + row0 * value_heads * dv,
+                                     gate + row0 * value_heads, beta + row0 * value_heads, state, nullptr, n, key_heads,
+                                     value_heads, dv, nullptr, 0);
 }
 
 }  // namespace rocm
@@ -246,6 +269,16 @@ extern "C" __global__ void __launch_bounds__(256)
 tf_gdn_plan_128(const float* q, const float* k, const float* v, const float* gate, const float* beta, float* y,
                 int key_heads, int value_heads, int dv, PlanArgs plan, int layer) {
     tf::rocm::gated_delta_plan_body<128>(q, k, v, gate, beta, y, key_heads, value_heads, dv, plan, layer);
+}
+
+extern "C" __global__ void __launch_bounds__(256)
+tf_gdn_replay_128(const int* keep, int rows, int key_heads, int value_heads, int dv, PlanArgs plan, int slots) {
+    tf::rocm::gated_delta_replay_body<128>(keep, rows, key_heads, value_heads, dv, plan, slots);
+}
+
+extern "C" __global__ void __launch_bounds__(256)
+tf_gdn_replay_16(const int* keep, int rows, int key_heads, int value_heads, int dv, PlanArgs plan, int slots) {
+    tf::rocm::gated_delta_replay_body<16>(keep, rows, key_heads, value_heads, dv, plan, slots);
 }
 
 extern "C" __global__ void __launch_bounds__(256)

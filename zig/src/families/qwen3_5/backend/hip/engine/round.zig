@@ -133,12 +133,12 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     }
     e.rounds.reset();
     const o = e.ops(&e.rounds);
-    try win.snapshots(o, m, c.shape.rows, st.snaps);
+    try win.kept(o, m, c.shape.rows, st.snaps);
     const l = plan.Layout.of(c.shape.rows, c.shape.slots, m.spec.n_layers);
     st.buffer.fill(l, c.shape, st.wins[0..rows.len], st.scratch.desc.ptr, st.snaps);
     st.layout = l;
     const p: hip.plan_ops.Plan = .{ .args = st.buffer.args(l), .rows = c.shape.rows, .slots = c.shape.slots };
-    const r: win.Round = .{ .plan = p, .tokens = st.buffer.dev.ptr + 4 * l.tokens, .span = c.shape.span };
+    const r: win.Round = .{ .plan = p, .tokens = st.buffer.dev.ptr + 4 * l.tokens, .span = c.shape.span, .inputs = st.snaps };
     const done = try run(e, c, r);
     e.graphs.rounds += 1;
     e.graphs.submit_ns += nowNs() - began;

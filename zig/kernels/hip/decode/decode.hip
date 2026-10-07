@@ -173,6 +173,7 @@ __device__ void conv_split_body(const ConvArgs& launch) {
     __shared__ float sq[128];
     __shared__ float inv_s;
     ConvArgs c = launch;
+    float* samples = nullptr;
     const int conv_blocks = (c.channels + 127) / 128;
     if (launch.plan.count != nullptr) {
         const int slot = blockIdx.y;
@@ -188,10 +189,10 @@ __device__ void conv_split_body(const ConvArgs& launch) {
             c.qn += row0 * c.kw;
             c.kn += row0 * c.kw;
             c.v += row0 * c.vw;
-            const long long kept = c.kernel - 1;
-            // the last slot holds the round's padding rows, which keep no states
-            const bool snap = rows > 1 && slot + 1 < static_cast<int>(gridDim.y);
-            c.states = snap ? reinterpret_cast<float*>(launch.plan.snaps[2 * launch.layer]) + row0 * kept * c.channels : nullptr;
+            // a window of rows keeps its input rows and leaves the window as the round found it, for its keep
+            const bool replayed = rows > 1 && slot + 1 < static_cast<int>(gridDim.y);
+            c.states = nullptr;
+            samples = replayed ? reinterpret_cast<float*>(launch.plan.snaps[2 * launch.layer]) + row0 * c.channels : nullptr;
         }
     }
     if (blockIdx.x >= conv_blocks) {
@@ -249,6 +250,7 @@ __device__ void conv_split_body(const ConvArgs& launch) {
             }
             for (int tap = 0; tap < kept - 1; ++tap) history[tap] = history[tap + 1];
             if (kept > 0) history[kept - 1] = sample;
+            if (samples != nullptr) samples[static_cast<long long>(r) * c.channels + channel] = sample;
             if (c.states != nullptr) {
                 for (int tap = 0; tap < kept; ++tap) {
                     c.states[(static_cast<long long>(r) * kept + tap) * c.channels + channel] = history[tap];
@@ -256,7 +258,7 @@ __device__ void conv_split_body(const ConvArgs& launch) {
             }
         }
     }
-    if (live) {
+    if (live && samples == nullptr) {
         for (int tap = 0; tap < kept; ++tap) c.state[static_cast<long long>(tap) * c.channels + channel] = history[tap];
     }
 }

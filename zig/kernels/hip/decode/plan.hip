@@ -166,24 +166,29 @@ __global__ void __launch_bounds__(256) tf_plan_gather(const unsigned long long* 
     for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < words; i += gridDim.x * blockDim.x) to[i] = from[i];
 }
 
-// Rolls each slot's conv window, state and final row back to its first `keep[slot]` rows; a negative count skips it.
+// Each slot's conv window and last final row after its first keep[slot] rows (negative: none); states: tf_gdn_replay.
 __global__ void __launch_bounds__(256)
-tf_plan_keep(PlanArgs plan, const int* keep, const unsigned int* hidden, int hidden_words, int conv_words, int delta_words, int layers) {
+tf_plan_keep(PlanArgs plan, const int* keep, const unsigned int* hidden, int hidden_words, int channels, int taps, int layers) {
     const int slot = blockIdx.z;
     const int n = keep[slot];
     if (n < 0) return;
-    const int row = plan.first[slot] + n - 1;
     const unsigned long long* desc = plan_desc(plan, slot);
     if (blockIdx.y == layers) {
+        const int row = plan.first[slot] + n - 1;
         if (desc[1] != 0) copy_words(reinterpret_cast<unsigned int*>(desc[1]), hidden + static_cast<long long>(row) * hidden_words, hidden_words);
         return;
     }
     const int layer = blockIdx.y;
-    if (n >= plan.count[slot] || plan.snaps[2 * layer] == 0) return;
-    copy_words(reinterpret_cast<unsigned int*>(desc[plan_first(layer)]),
-               reinterpret_cast<const unsigned int*>(plan.snaps[2 * layer]) + static_cast<long long>(row) * conv_words, conv_words);
-    copy_words(reinterpret_cast<unsigned int*>(desc[plan_second(layer)]),
-               reinterpret_cast<const unsigned int*>(plan.snaps[2 * layer + 1]) + static_cast<long long>(row) * delta_words, delta_words);
+    if (plan.count[slot] <= 1 || plan.snaps[2 * layer] == 0) return;
+    float* window = reinterpret_cast<float*>(desc[plan_first(layer)]);
+    const float* samples = reinterpret_cast<const float*>(plan.snaps[2 * layer]) + static_cast<long long>(plan.first[slot]) * channels;
+    // tap t takes position n - taps + t of the round's first window followed by its rows: ascending taps read ahead
+    for (int c = blockIdx.x * blockDim.x + threadIdx.x; c < channels; c += gridDim.x * blockDim.x) {
+        for (int t = 0; t < taps; ++t) {
+            const int at = n - taps + t;
+            window[static_cast<long long>(t) * channels + c] = at < 0 ? window[static_cast<long long>(taps + at) * channels + c] : samples[static_cast<long long>(at) * channels + c];
+        }
+    }
 }
 
 }  // extern "C"

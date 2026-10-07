@@ -10,8 +10,8 @@ const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
 const pops = hip.plan_ops;
 
-/// What a round's launches take: the plan on the device, the token ids it names and the keys the attention walk covers.
-pub const Round = struct { plan: pops.Plan, tokens: u64, span: usize };
+/// A round's launches: the device plan, its token ids, the keys the attention walk covers, each layer's kept inputs.
+pub const Round = struct { plan: pops.Plan, tokens: u64, span: usize, inputs: []const [2]u64 };
 
 /// Whether this build and model run lane rounds: the merged decode launches, and shapes the plan kernels take.
 pub fn supported(o: Ops, m: *const view.Model) bool {
@@ -19,23 +19,14 @@ pub fn supported(o: Ops, m: *const view.Model) bool {
     return o.lib.zig != null and o.fused() and s.key_dim <= 1024 and s.conv <= 8 and (s.key_dim == 128 or s.key_dim == 16) and s.value_dim % 8 == 0 and s.head_dim <= 256 and m.act != .f32;
 }
 
-/// Words of one row's conv snapshot and DeltaNet snapshot.
-pub fn snapConvWords(s: view.Spec) usize {
-    return (s.conv - 1) * view.convChannels(s);
-}
-
-pub fn snapDeltaWords(s: view.Spec) usize {
-    return s.value_heads * s.value_dim * s.key_dim;
-}
-
-/// Each linear layer's snapshots for a round of `rows` rows (conv window, state after every row), zero for attention.
-pub fn snapshots(o: Ops, m: *const view.Model, rows: usize, table: [][2]u64) !void {
+/// A linear layer's inputs a keep replays, `rows` rows: the conv inputs, then k, v, gate and beta; zero for attention.
+pub fn kept(o: Ops, m: *const view.Model, rows: usize, table: [][2]u64) !void {
     const s = m.spec;
     for (table, 0..) |*t, index| {
         t.* = .{ 0, 0 };
         if (s.full(index)) continue;
-        t[0] = try o.arena.of(f32, rows * snapConvWords(s));
-        t[1] = try o.arena.of(f32, rows * snapDeltaWords(s));
+        t[0] = try o.arena.of(f32, rows * view.convChannels(s));
+        t[1] = try o.arena.of(f32, rows * (s.keyWidth() + s.valueWidth() + 2 * s.value_heads));
     }
 }
 
@@ -105,17 +96,18 @@ fn inputNorm(layer: view.Layer) u64 {
     };
 }
 
-/// Keeps the slots `kept` lists (negative: none): linear layers take the last kept row's snapshot, `hidden` its row.
-pub fn keep(o: Ops, m: *const view.Model, p: pops.Plan, kept: u64, hidden: u64) hip.ops.Error!void {
+/// Keeps the slots `counts` lists (negative: none): linear layers replay their kept rows, `hidden` gets the last.
+pub fn keep(o: Ops, m: *const view.Model, p: pops.Plan, counts: u64, hidden: u64) hip.ops.Error!void {
     const s = m.spec;
     try pops.keep(o, p, .{
-        .keep = kept,
+        .keep = counts,
         .hidden = hidden,
         .hidden_words = s.hidden * m.act.size() / 4,
-        .conv_words = snapConvWords(s),
-        .delta_words = snapDeltaWords(s),
+        .channels = view.convChannels(s),
+        .taps = s.conv - 1,
         .layers = s.n_layers,
     });
+    try pops.gdnReplay(o, counts, p, s.key_heads, s.value_heads, s.key_dim, s.value_dim, s.n_layers);
 }
 
 fn attentionRows(o: Ops, m: *const view.Model, f: view.Full, r: Round, index: usize, x: Tensor) fwd.Error!Tensor {
@@ -153,14 +145,16 @@ fn linearRows(o: Ops, m: *const view.Model, l: view.Linear, r: Round, index: usi
         .{ try o.project(x, l.qkv, total, false), try o.project(x, l.z, total, false), try o.project(x, l.a, total, false), try o.project(x, l.b, total, false) };
     const ch = view.convChannels(s);
     const y = try o.arena.of(f32, total * s.valueWidth());
-    const gate = try o.arena.of(f32, total * s.value_heads);
-    const beta = try o.arena.of(f32, total * s.value_heads);
-    // the cast, the conv, the split of its output and, for heads of 128, the q and k norms and the gate in one launch
+    // the k, v, gate and beta a keep replays live in the round's kept inputs
     const kw = s.keyWidth();
-    const vv = try o.arena.of(f32, total * s.valueWidth());
+    const k_kept = r.inputs[index][1];
+    const vv = k_kept + 4 * total * kw;
+    const gate = vv + 4 * total * s.valueWidth();
+    const beta = gate + 4 * total * s.value_heads;
+    // the cast, the conv, the split of its output and, for heads of 128, the q and k norms and the gate in one launch
     const qn = try o.arena.of(f32, total * kw);
-    const kn = try o.arena.of(f32, total * kw);
     const heads128 = s.key_dim == 128 and kw % 128 == 0;
+    const kn = if (heads128) k_kept else try o.arena.of(f32, total * kw);
     const norm: ?pops.Norm = if (heads128) .{ .q = m.qk.q_weight, .k = m.qk.k_weight, .eps = m.qk.eps } else null;
     const gates: pops.Gates = .{ .a = a, .b = b, .a_log = l.a_log, .dt_bias = l.dt_bias, .gate = gate, .beta = beta, .count = total * s.value_heads, .heads = s.value_heads };
     try pops.convSplit(o, qkv, l.conv, qn, kn, vv, r.plan, index, ch, s.conv, kw, s.valueWidth(), norm, if (heads128) gates else null);
@@ -168,7 +162,7 @@ fn linearRows(o: Ops, m: *const view.Model, l: view.Linear, r: Round, index: usi
     var k = kn;
     if (!heads128) {
         const qc = try o.arena.of(f32, total * kw);
-        const kc = try o.arena.of(f32, total * kw);
+        const kc = k_kept;
         try o.rms2(qn, m.qk.q_weight, qc, kn, m.qk.k_weight, kc, total * s.key_heads, s.key_dim, m.qk.eps);
         try o.gdnGate(a, b, l.a_log, l.dt_bias, gate, beta, total * s.value_heads, s.value_heads);
         q = qc;

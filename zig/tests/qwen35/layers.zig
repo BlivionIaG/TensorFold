@@ -129,17 +129,17 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
     defer plan_buf.deinit();
     var scratch = try qwen35.state.Caches.initFull(g.gpa, &pool, m, 1);
     defer scratch.deinit(g.gpa);
-    const no_snaps = try g.gpa.alloc([2]u64, s.n_layers);
-    defer g.gpa.free(no_snaps);
-    @memset(no_snaps, .{ 0, 0 });
+    const inputs = try g.gpa.alloc([2]u64, s.n_layers);
+    defer g.gpa.free(inputs);
     for (0..sampled.len - 1) |step| {
         arena.reset();
+        try qwen35.window.kept(o, m, 1, inputs);
         const pos = len + step;
         const shape: qwen35.plan.Shape = .{ .rows = 1, .slots = 2, .span = @intCast(qwen35.plan.spanOf(pos + 1)) };
         const layout = qwen35.plan.Layout.of(1, 2, s.n_layers);
-        plan_buf.fill(layout, shape, &.{.{ .desc = caches.desc.ptr, .pos = pos, .tokens = &.{token} }}, scratch.desc.ptr, no_snaps);
+        plan_buf.fill(layout, shape, &.{.{ .desc = caches.desc.ptr, .pos = pos, .tokens = &.{token} }}, scratch.desc.ptr, inputs);
         try plan_buf.send(stream.handle, layout);
-        const round: qwen35.window.Round = .{ .plan = .{ .args = plan_buf.args(layout), .rows = 1, .slots = 2 }, .tokens = plan_buf.dev.ptr + 4 * layout.tokens, .span = shape.span };
+        const round: qwen35.window.Round = .{ .plan = .{ .args = plan_buf.args(layout), .rows = 1, .slots = 2 }, .tokens = plan_buf.dev.ptr + 4 * layout.tokens, .span = shape.span, .inputs = inputs };
         var name_buf: [32]u8 = undefined;
         const stem = try std.fmt.bufPrint(&name_buf, "decode{d}", .{step});
         const want = try read(g, dir, try std.fmt.allocPrint(g.gpa, "{s}.layers", .{stem}), act);
