@@ -1,17 +1,16 @@
-//! The MLX affine kernels launched from Zig: the host dispatch of rocm/affine_{dot2,tiles}.hip (the decode tiles, the
-//! GEMM tile, the fp16 split, routed plans) over the family's code objects. Schedule 0 (auto) only: the one-thread
-//! GEMV, WMMA and column-stream schedules stay in the library.
+//! The MLX affine kernels launched from Zig: the host dispatch of tiles/dot2.hip and tiles/dot2_tiles.hip over the
+//! family's code objects. Schedule 0 (auto) only: the one-thread GEMV, WMMA and column-stream schedules stay in the library.
 
 const std = @import("std");
-const abi = @import("runtime/abi.zig");
-const driver = @import("runtime/driver.zig");
-const hl = @import("runtime/launch.zig");
-const Module = @import("runtime/module.zig").Module;
-const Function = @import("runtime/module.zig").Function;
+const abi = @import("../runtime/abi.zig");
+const driver = @import("../runtime/driver.zig");
+const hl = @import("../runtime/launch.zig");
+const Module = @import("../runtime/module.zig").Module;
+const Function = @import("../runtime/module.zig").Function;
 
 const Error = driver.Error;
 
-/// rocm/affine.hpp's GroupTable, Routing and Affine as the kernels take them by value.
+/// quant/mlx.hpp's GroupTable, Routing and Affine as the kernels take them by value.
 pub const GroupTable = extern struct { p: u64, kind: c_int };
 pub const Routing = extern struct { items: u64 = 0, members: u64 = 0, x_div: c_int = 1, first: c_int = 0 };
 pub const Arg = extern struct {
@@ -30,7 +29,7 @@ pub const Arg = extern struct {
     out16: u64 = 0,
 };
 
-/// rocm/affine_stream.hpp's StreamSides: up to four products that share x, K, width and group in one launch.
+/// tiles/stream.hpp's StreamSides: up to four products that share x, K, width and group in one launch.
 pub const StreamSides = extern struct {
     words: [4]u64 = @splat(0),
     scale: [4]u64 = @splat(0),
@@ -68,7 +67,7 @@ const stream_waves = 4; // kStreamWaves
 const streams_wanted = 3000; // kStreamWavesWanted
 const stream_code_words = 32; // kStreamCodeWords
 
-/// The K-parallel tiles (rocm/affine_gemm_kp.hpp) of a short prompt: cb columns a lane set, r rows a pass over up to rb row
+/// The K-parallel tiles (tiles/gemm_kp.hpp) of a short prompt: cb columns a lane set, r rows a pass over up to rb row
 /// blocks, waves a block (`loop`: it takes more rows than rb * r by passes). A product takes the one with the fewest `rows`
 /// that hold it; a routed plan, whose items hold few rows however long the prompt, the one with the fewest `routed` items
 /// it has, up to `routed_items` (0: none).
@@ -124,7 +123,7 @@ pub const Kernels = struct {
     tile: Tile,
     lanes: [bit_widths.len][row_counts.len][piece_counts.len]Function,
     row: [bit_widths.len][piece_counts.len]Function,
-    /// The stream tile (rocm/affine_stream.hpp) by width, rows and columns a lane; null where columns * rows > 16.
+    /// The stream tile (tiles/stream.hpp) by width, rows and columns a lane; null where columns * rows > 16.
     stream: [bit_widths.len][stream_rows.len][stream_cbs.len]?Function,
     /// The same tile with the (gate | up) activation as its epilogue.
     pairs: [bit_widths.len][stream_rows.len][stream_cbs.len]?Function,
@@ -142,7 +141,7 @@ pub const Kernels = struct {
     reference: Function,
     fill: Function,
 
-    /// `tiles` holds affine_tiles.hip's kernels, `dot2` affine_dot2.hip's; one activation type a family: bf16 on the
+    /// `tiles` holds dot2_tiles.hip's kernels, `dot2` dot2.hip's; one activation type a family: bf16 on the
     /// WMMA build (v_dot2_f32_bf16), fp16 on RDNA2.
     pub fn load(d: *const driver.Driver, tiles_obj: Module, dot2_obj: Module, wmma: bool) Error!Kernels {
         var k: Kernels = undefined;
@@ -158,7 +157,7 @@ pub const Kernels = struct {
         if (std.c.getenv("TF_AFFINE_GEMM")) |v| {
             if (std.mem.eql(u8, std.mem.span(v), "old")) k.tile = .block;
         }
-        // the GEMM tile's rows of x a lane keeps (rocm/affine_gemm.hpp GemmShape): 8 for BF16, 16 for FP16
+        // the GEMM tile's rows of x a lane keeps (tiles/gemm.hpp GemmShape): 8 for BF16, 16 for FP16
         if (wmma) try k.resolve("7DotBF16", "Li8E", tiles_obj) else try k.resolve("6DotF16", "Li16E", tiles_obj);
         const r = "_ZN2tf4rocm";
         k.fast = .{ try dot2_obj.function(r ++ "16affine_dot2_fastILi1EEEvNS0_6AffineE"), try dot2_obj.function(r ++ "16affine_dot2_fastILi8EEEvNS0_6AffineE") };

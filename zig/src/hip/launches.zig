@@ -6,7 +6,7 @@ const kernels = @import("kernels.zig");
 const launch = @import("runtime/launch.zig");
 const Module = @import("runtime/module.zig").Module;
 const Function = @import("runtime/module.zig").Function;
-const affine_launch = @import("affine_launch.zig");
+const affine_launch = @import("launch/affine.zig");
 const Affine = affine_launch.Kernels;
 
 const util = @import("launch/util.zig");
