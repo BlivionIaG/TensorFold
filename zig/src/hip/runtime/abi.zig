@@ -88,6 +88,7 @@ pub const Api = struct {
     hipDeviceGet: *const fn (*Device, c_int) callconv(.c) R,
     hipDeviceGetName: *const fn ([*]u8, c_int, Device) callconv(.c) R,
     hipDeviceGetAttribute: *const fn (*c_int, DeviceAttribute, c_int) callconv(.c) R,
+    hipGetDevicePropertiesR0600: *const fn ([*]u8, c_int) callconv(.c) R,
     hipDeviceTotalMem: *const fn (*usize, Device) callconv(.c) R,
     hipSetDevice: *const fn (c_int) callconv(.c) R,
     hipGetDevice: *const fn (*c_int) callconv(.c) R,

@@ -4,6 +4,7 @@ const std = @import("std");
 const abi = @import("abi.zig");
 const Driver = @import("driver.zig").Driver;
 const Error = @import("driver.zig").Error;
+const Caps = @import("../caps.zig").Caps;
 
 pub const Context = struct {
     d: *const Driver,
@@ -43,6 +44,31 @@ pub const Context = struct {
         const major = try self.attribute(.compute_capability_major);
         const minor = try self.attribute(.compute_capability_minor);
         return @intCast(10 * major + minor);
+    }
+
+    /// The device's gfx name ("gfx1100", "gfx906:sramecc+:xnack-"), found in its properties record by its prefix.
+    pub fn archName(self: *const Context, out: []u8) Error![]const u8 {
+        var props: [16384]u8 align(8) = @splat(0);
+        try self.d.check(self.d.api.hipGetDevicePropertiesR0600(&props, self.ordinal), "hipGetDeviceProperties");
+        var at: usize = 256;
+        while (at + 4 < props.len) : (at += 1) {
+            if (!std.mem.startsWith(u8, props[at..], "gfx") or !std.ascii.isHex(props[at + 3])) continue;
+            const text = std.mem.sliceTo(props[at..], 0);
+            if (text.len > out.len) return error.Invalid;
+            @memcpy(out[0..text.len], text);
+            return out[0..text.len];
+        }
+        return error.NotFound;
+    }
+
+    /// What this GPU can do, from its gfx name; a GPU outside the caps table is refused with its name.
+    pub fn caps(self: *const Context) Error!Caps {
+        var buf: [64]u8 = undefined;
+        const arch = try self.archName(&buf);
+        return Caps.of(arch) orelse {
+            std.log.err("{s} is not in the table of GPUs this build supports", .{arch});
+            return error.Invalid;
+        };
     }
 
     pub fn name(self: *const Context, buf: []u8) Error![]const u8 {
