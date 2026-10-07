@@ -67,10 +67,15 @@ fn idsPath(arena: std.mem.Allocator, o: Options) !?[]const u8 {
     return try std.fmt.allocPrint(arena, "{s}.ids.npy", .{stem});
 }
 
-/// Pages for the engine's default streams at the longest prompt, and the prefix tree's.
-fn poolPages(capacity: usize) usize {
-    return qwen35.engine.default_streams * qwen35.pages.pagesFor(capacity) + check_radix.tree_pages;
+/// Pages of the largest phase (four streams at the capacity, or the radix streams and tree) and the padding slot's.
+fn poolPages(capacity: usize, tokens: u32) usize {
+    const pages = qwen35.pages.pagesFor;
+    const radix = check_radix.most_streams * pages(check_radix.capacity(tokens)) + check_radix.tree_pages;
+    return @max(4 * pages(capacity), radix) + pages(rows);
 }
+
+/// Rows a round of the checks holds at most: four streams of the widest window.
+const rows = 4 * qwen35.hip_lanes.Hip.max_window;
 
 /// Exit code: 0 when every check passed (or skipped), 1 when one failed.
 pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !u8 {
@@ -88,7 +93,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !u8 {
     if (o.runs(.speed)) capacity = @max(capacity, check_speed.longest_prefill + 64);
     var joined = try o.group.join(io);
     defer joined.close();
-    const e = try o.group.engine(gpa, io, o.model, joined, .{ .capacity = capacity, .batch_rows = 4 * qwen35.hip_lanes.Hip.max_window, .pool_pages = poolPages(capacity) });
+    const e = try o.group.engine(gpa, io, o.model, joined, .{ .capacity = capacity, .prompt_rows = capacity, .streams = check_radix.most_streams, .snapshots = check_radix.slots, .batch_rows = rows, .pool_pages = poolPages(capacity, o.tokens) });
     defer e.deinit();
     if (o.group.rank > 0) {
         try group_mod.follow(gpa, e, &joined);

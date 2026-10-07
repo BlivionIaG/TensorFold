@@ -40,7 +40,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     }
     var joined = try group.join(io);
     defer joined.close();
-    const e = try group.engine(gpa, io, args[0], joined, .{ .capacity = ids_file.longest(job.prompts) + 2 * max_tokens + 64, .batch_rows = @max(32, job.prompts.len * qwen35.hip_lanes.Hip.max_window) });
+    const e = try group.engine(gpa, io, args[0], joined, .{ .capacity = ids_file.longest(job.prompts) + 2 * max_tokens + 64, .prompt_rows = ids_file.longest(job.prompts) + 2 * max_tokens + 64, .streams = job.prompts.len, .batch_rows = @max(32, job.prompts.len * qwen35.hip_lanes.Hip.max_window) });
     defer e.deinit();
     if (group.rank > 0) return group_mod.follow(gpa, e, &joined);
     var s: Session = undefined;

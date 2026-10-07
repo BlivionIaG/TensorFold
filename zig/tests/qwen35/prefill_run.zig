@@ -26,7 +26,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     if (args.len < 2) return error.MissingArgument;
     var longest: usize = 0;
     for (args[1..]) |a| longest = @max(longest, try std.fmt.parseInt(usize, a, 10));
-    const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + 64, .batch_rows = 32, .policy = (try @import("group.zig").resolve("", 0)).policy });
+    const e = try qwen35.engine.Engine.open(gpa, io, args[0], .{ .capacity = longest + 64, .prompt_rows = longest + 64, .streams = 1, .batch_rows = 32, .policy = (try @import("group.zig").resolve("", 0)).policy });
     defer e.deinit();
     const prompt = try ids_file.synthetic(gpa, longest);
     defer gpa.free(prompt);

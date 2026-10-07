@@ -19,6 +19,9 @@ const questions = 8;
 const turns = 4;
 /// Pages the tree checks leave room for beside the streams'.
 pub const tree_pages = 600;
+/// Snapshots the stress keeps, and the streams its last pass runs at once: every question, turn and branch.
+pub const slots = 8;
+pub const most_streams = questions + turns + 2;
 
 /// Tokens of the question of each request of the memory line, and how far apart they start.
 const long_tail = 320;
@@ -103,7 +106,6 @@ fn stress(c: *Ctx) void {
     const name = "radix stress";
     if (c.ids.len < system_len + 8 * questions) return c.report.skip(name, "too few ids");
     const h = c.session.h;
-    const slots = 8;
     h.keepPrompts(0, 0);
     h.keepPrompts(slots, 4 << 30);
     defer h.keepPrompts(0, 0);
