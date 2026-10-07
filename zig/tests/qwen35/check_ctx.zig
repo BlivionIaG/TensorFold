@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const lanes = @import("lanes");
-const qwen35 = @import("qwen35");
+const qwen35 = @import("qwen3_5");
 const group_mod = @import("group.zig");
 const ids_file = @import("ids_file.zig");
 const lanes_session = @import("lanes_session.zig");

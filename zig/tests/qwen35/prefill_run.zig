@@ -2,7 +2,7 @@
 //! one warm-up then the median of three timed runs, as prompt tokens a second.
 
 const std = @import("std");
-const qwen35 = @import("qwen35");
+const qwen35 = @import("qwen3_5");
 const ids_file = @import("ids_file.zig");
 
 /// The median seconds of three cold prefills of `prompt` after one warm-up.

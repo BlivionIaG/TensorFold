@@ -8,7 +8,7 @@
 //! which kernel each (op, path) takes at every row count, on this GPU under this policy, and exits.
 
 const std = @import("std");
-const qwen35 = @import("qwen35");
+const qwen35 = @import("qwen3_5");
 const check_accuracy = @import("check_accuracy.zig");
 const check_ctx = @import("check_ctx.zig");
 const check_invariants = @import("check_invariants.zig");

@@ -5,7 +5,7 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const qwen35 = @import("qwen35");
+const qwen35 = @import("qwen3_5");
 const ids_file = @import("ids_file.zig");
 
 const Engine = qwen35.engine.Engine;

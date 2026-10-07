@@ -156,10 +156,10 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const exe = b.addExecutable(.{ .name = "tf-hip-test", .root_module = runner });
     b.installArtifact(exe);
     b.step("tf-hip-test", "The HIP runtime's GPU test program").dependOn(&b.addInstallArtifact(exe, .{}).step);
-    const qwen = qwen35(b, target, optimize, hip, lanes);
+    const qwen = qwen3_5(b, target, optimize, hip, lanes);
     const upload = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
     upload.addImport("hip", hip);
-    upload.addImport("qwen35", qwen);
+    upload.addImport("qwen3_5", qwen);
     upload.addImport("lanes", lanes);
     upload.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = target, .optimize = optimize }));
     const upload_exe = b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = upload });
@@ -175,7 +175,7 @@ fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .imports = &.{ .{ .name = "hip", .module = hip }, .{ .name = "engine_api", .module = api }, .{ .name = "lanes", .module = lanes }, .{ .name = "qwen35", .module = qwen } },
+        .imports = &.{ .{ .name = "hip", .module = hip }, .{ .name = "engine_api", .module = api }, .{ .name = "lanes", .module = lanes }, .{ .name = "qwen3_5", .module = qwen } },
     });
 }
 
@@ -192,9 +192,9 @@ fn lanesModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
 }
 
 /// The Qwen3.5 / Qwen3.6 family over the HIP runtime and the core's checkpoint reader.
-fn qwen35(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module) *std.Build.Module {
+fn qwen3_5(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module) *std.Build.Module {
     const core = hip.import_table.get("core").?;
-    const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen35/qwen35.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen3_5/backend/hip/hip.zig"), .target = target, .optimize = optimize, .link_libc = true });
     family.addImport("hip", hip);
     family.addImport("core", core);
     family.addImport("lanes", lanes);
@@ -207,7 +207,7 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, &.{}, "", core);
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
     const lanes = lanesModule(b, b.graph.host, .debug);
-    const qwen = qwen35(b, b.graph.host, .debug, hip, lanes);
+    const qwen = qwen3_5(b, b.graph.host, .debug, hip, lanes);
     const family = b.addRunArtifact(b.addTest(.{ .root_module = qwen }));
     // TF_QWEN_DIR is not a cached input
     family.has_side_effects = true;

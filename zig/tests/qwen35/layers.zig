@@ -6,7 +6,7 @@
 const std = @import("std");
 const hip = @import("hip");
 const npy = @import("npy");
-const qwen35 = @import("qwen35");
+const qwen35 = @import("qwen3_5");
 
 const view = qwen35.view;
 const Tensor = hip.ops.Tensor;

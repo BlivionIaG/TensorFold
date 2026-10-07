@@ -6,7 +6,7 @@ const std = @import("std");
 const hip = @import("hip");
 const api = @import("engine_api");
 const lanes = @import("lanes");
-const qwen35 = @import("qwen35");
+const qwen35 = @import("qwen3_5");
 const Allocator = std.mem.Allocator;
 
 /// The HIP families: namespaces with `model_type`, `formats`, `default_context`, `prefill_step`, `open` and `follow`.
