@@ -1,5 +1,6 @@
-//! The MLX affine kernels launched from Zig: the host dispatch of tiles/dot2.hip and tiles/dot2_tiles.hip over the
-//! family's code objects. Schedule 0 (auto) only: the one-thread GEMV, WMMA and column-stream schedules stay in the library.
+//! The MLX affine kernels launched from Zig: the tiles of tiles/dot2_tiles.hip and tiles/dot2.hip over the family's code
+//! objects, a launcher a tile. Which tile takes a product is the registry's (registry.zig); the entry points at the end
+//! (`run`, `routed`, `prefillLaunch`, `groupRun`, `pairRun`) are what the Zig launches and the C launchers' names call.
 
 const std = @import("std");
 const abi = @import("../runtime/abi.zig");
@@ -11,6 +12,10 @@ const Function = @import("../runtime/module.zig").Function;
 const Policy = @import("../policy.zig").Policy;
 const Caps = @import("../caps.zig").Caps;
 const Choice = @import("../policy.zig").Choice;
+const registry = @import("registry.zig");
+const quant = @import("../quant/quant.zig");
+const tuning = @import("../tuning/tuning.zig");
+const mlx_entries = @import("mlx_entries.zig");
 
 const Error = driver.Error;
 
@@ -33,7 +38,7 @@ pub const Arg = extern struct {
     out16: u64 = 0,
 };
 
-/// tiles/stream.hpp's StreamSides: up to four products that share x, K, width and group in one launch.
+/// quant/mlx_tiles.hpp's StreamSides: up to four products that share x, K, width and group in one launch.
 pub const StreamSides = extern struct {
     words: [4]u64 = @splat(0),
     scale: [4]u64 = @splat(0),
@@ -54,37 +59,53 @@ comptime {
     std.debug.assert(@sizeOf(GroupTable) == 16 and @sizeOf(Routing) == 24 and @sizeOf(Arg) == 112 and @sizeOf(StreamSides) == 184);
 }
 
-const bit_widths = [_]c_int{ 2, 3, 4, 5, 6, 8 };
+/// Everything a launch needs beside the kernels.
+pub const Call = struct {
+    d: *const driver.Driver,
+    s: abi.Stream,
+    arg: Arg,
+    items: c_int = 1,
+    sides: []const Side = &.{},
+    limit: f32 = 0,
+    out_half: bool = false,
+    partial: u64 = 0,
+    parts: c_int = 1,
+};
+
+/// A kernel of the registry: its launch on this backend's kernels.
+pub const Launch = *const fn (*const Kernels, Call) Error!void;
+pub const Registry = registry.Registry(Launch);
+pub const Entry = Registry.E;
+
+pub const bit_widths = [_]c_int{ 2, 3, 4, 5, 6, 8 };
 const row_counts = [_]u8{ 1, 2, 4, 8 };
 const piece_counts = [_]u8{ 1, 2, 4 };
 
-const lane_rows = 8; // kLaneRows
-const fast_m = 8;
+pub const lane_rows = 8; // kLaneRows
+pub const lane_group_max = 128;
 const fast_n = 256;
-const block_rows = 64; // kBlockRows
-const wmma_rows = 16; // the matrix-core GEMM tile from here (a routed item's rows too)
-const lane_group_max = 128;
 const stream_cbs = [_]c_int{ 2, 4, 8 }; // columns a lane carries in the stream tile
 const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
-const stream_max_rows = 16; // kStreamRows
 const stream_waves = 4; // kStreamWaves
 const streams_wanted = 3000; // kStreamWavesWanted
 const stream_code_words = 32; // kStreamCodeWords
 
 /// The K-parallel tiles (tiles/gemm_kp.hpp) of a short prompt: cb columns a lane set, r rows a pass over up to rb row
-/// blocks, waves a block (`loop`: it takes more rows than rb * r by passes). A product takes the one with the fewest `rows`
-/// that hold it; a routed plan, whose items hold few rows however long the prompt, the one with the fewest `routed` items
-/// it has, up to `routed_items` (0: none).
-const KpTile = struct { rows: c_int, routed: c_int, cb: c_int, r: c_int, waves: c_int, rb: c_int, loop: bool = true };
-const kp_tiles = [_]KpTile{
-    .{ .rows = 2, .routed = 0, .cb = 8, .r = 1, .waves = 2, .rb = 2, .loop = false },
-    .{ .rows = 4, .routed = 410, .cb = 4, .r = 4, .waves = 2, .rb = 4 },
-    .{ .rows = 32, .routed = 0, .cb = 4, .r = 8, .waves = 2, .rb = 4, .loop = false },
-    .{ .rows = 0, .routed = 300, .cb = 4, .r = 2, .waves = 2, .rb = 4 },
+/// blocks, waves a block (`loop`: it takes more rows than rb * r by passes). Which of them takes a product, by rows
+/// and by a routed plan's items, is the tuning table's.
+pub const KpTile = struct { cb: c_int, r: c_int, waves: c_int, rb: c_int, loop: bool = true };
+pub const kp_tiles = [_]KpTile{
+    .{ .cb = 8, .r = 1, .waves = 2, .rb = 2, .loop = false },
+    .{ .cb = 4, .r = 4, .waves = 2, .rb = 4 },
+    .{ .cb = 4, .r = 8, .waves = 2, .rb = 4, .loop = false },
+    .{ .cb = 4, .r = 2, .waves = 2, .rb = 4 },
 };
 
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
 pub const Tile = enum { gemm, block };
+
+/// Which GEMM tile of the 128-row family a launch runs: the matrix cores, the dot2 tile, or the previous tile.
+pub const BlockKind = enum { matrix, gemm, block };
 
 pub const Kernels = struct {
     /// The block shapes prefill takes by rows: the K-parallel tiles, then the 128 x 128 one (the tests compare them).
@@ -95,6 +116,7 @@ pub const Kernels = struct {
         return tier >= kp_tiles.len or kp_tiles[tier].loop or m <= kp_tiles[tier].rb * kp_tiles[tier].r;
     }
 
+    caps: Caps,
     wmma: bool,
     /// gfx11: the matrix-core GEMM tile runs (gfx12's WMMA has other layouts).
     matrix: bool,
@@ -114,28 +136,30 @@ pub const Kernels = struct {
     gemm: [bit_widths.len]Function,
     wmma_gemm: [bit_widths.len]Function,
     kp: [bit_widths.len][kp_tiles.len]Function,
-    fast: [2]Function, // rows 1, 8
     span: [2]Function,
     fold: Function,
     wide: Function,
     tiled: Function,
     reference: Function,
     fill: Function,
+    reg: Registry,
 
     /// `tiles` holds dot2_tiles.hip's kernels, `dot2` dot2.hip's; one activation type a family: bf16 on the
     /// WMMA build (v_dot2_f32_bf16), fp16 on RDNA2.
     pub fn load(tiles_obj: Module, dot2_obj: Module, caps: Caps, policy: Policy) Error!Kernels {
         var k: Kernels = undefined;
         const wmma = caps.act == .bf16;
+        k.caps = caps;
         k.wmma = wmma;
         k.matrix = wmma and caps.matrix == .wmma11;
         k.mode = policy.matrix;
         k.tile = if (policy.gemmOn()) .gemm else .block;
         k.stream_on = policy.streamOn();
+        k.reg = Registry.init(tableFor(caps), &mlx_entries.all);
+        k.reg.verify(k.env(), .mlx) catch return error.Invalid;
         // the GEMM tile's rows of x a lane keeps (tiles/gemm.hpp GemmShape): 8 for BF16, 16 for FP16
         if (wmma) try k.resolve("7DotBF16", "Li8E", tiles_obj) else try k.resolve("6DotF16", "Li16E", tiles_obj);
         const r = "_ZN2tf4rocm";
-        k.fast = .{ try dot2_obj.function(r ++ "16affine_dot2_fastILi1EEEvNS0_6AffineE"), try dot2_obj.function(r ++ "16affine_dot2_fastILi8EEEvNS0_6AffineE") };
         k.span = .{ try dot2_obj.function(r ++ "16affine_dot2_spanILi1EEEvNS0_6AffineEPfi"), try dot2_obj.function(r ++ "16affine_dot2_spanILi8EEEvNS0_6AffineEPfi") };
         k.fold = try dot2_obj.function(r ++ "16affine_dot2_foldEPKfNS0_10GroupTableES3_Pfiii");
         k.wide = try dot2_obj.function(r ++ "16affine_dot2_wideENS0_6AffineE");
@@ -211,39 +235,73 @@ pub const Kernels = struct {
     }
 
     /// Groups a lane covers: the groups rounded up to a power of two, at most 32; none under four groups.
-    fn rowLanes(groups: c_int) c_int {
+    pub fn rowLanes(groups: c_int) c_int {
         if (groups < 4) return 0;
         var lpc: c_int = 4;
         while (lpc < groups and lpc < 32) lpc <<= 1;
         return lpc;
     }
 
-    /// Whether the stream tile takes this product (its rows, widths, alignment and tables).
-    pub fn streamFits(k: *const Kernels, a: Arg) bool {
-        return k.streamTakes(a.m, a.n, a.k, a.bits, a.group, a.scale.kind, a.bias.kind, a.x);
+    /// The lanes a column takes in the K-parallel tile: one a group, 32 at most (kp_lanes).
+    fn kpLanes(groups: c_int) c_int {
+        return if (groups > 16) 32 else if (groups > 8) 16 else 8;
     }
 
-    pub fn streamTakes(k: *const Kernels, m: c_int, n: c_int, kk: c_int, bits: c_int, group: c_int, scale_kind: c_int, bias_kind: c_int, x: u64) bool {
-        // 16 rows or more of BF16 are the matrix tile's on gfx11
-        const most: c_int = if (k.matrix and k.mode != .off) wmma_rows - 1 else stream_max_rows;
-        return m >= 1 and m <= most and k.windowTakes(n, kk, bits, group, scale_kind, bias_kind, x);
+    /// The bytes the GEMM tile's piece loads need the words aligned to, by width.
+    pub fn gemmAlign(bits: c_int) u64 {
+        return switch (bits) {
+            4, 8 => 16,
+            2, 6 => 8,
+            else => 4,
+        };
     }
 
-    /// The stream tile takes this product at any row count (a lane round's, whose rows keep their kernel however many share it).
-    pub fn windowTakes(k: *const Kernels, n: c_int, kk: c_int, bits: c_int, group: c_int, scale_kind: c_int, bias_kind: c_int, x: u64) bool {
-        if (!k.stream_on or n < 1 or @rem(group, 32) != 0 or group > lane_group_max) return false;
-        return @rem(kk, group) == 0 and x % 16 == 0 and scale_kind != 0 and bias_kind == scale_kind and bitIndex(bits) != null;
+    // ---- what the choice sees of this build and of a call ----
+
+    /// The GPU and the run's switches as the registry reads them.
+    pub fn env(k: *const Kernels) registry.Env {
+        return .{ .bf16 = k.wmma, .matrix = k.matrix, .matrix_on = k.matrix and k.mode != .off, .stream_on = k.stream_on, .gemm_on = k.tile == .gemm };
     }
 
-    /// The stream tile of 1 to 16 rows; false when the shape keeps the previous tiles.
-    fn streamLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!bool {
-        if (!k.streamFits(a)) return false;
-        try k.streamGo(d, a, .{}, a.n, items, s);
-        return true;
+    /// The MLX entry that takes a product, or null.
+    pub fn choose(k: *const Kernels, op: registry.Op, path: registry.Path, shape: registry.Shape) ?*const Entry {
+        return k.reg.select(k.env(), .mlx, op, path, shape);
     }
+
+    /// The costs of the GPU's family: RDNA2, or the gfx11 family (RDNA4 takes it for its dot2 tiles).
+    fn tableFor(caps: Caps) *const tuning.Table {
+        return switch (caps.family) {
+            .rdna2, .gcn5 => &tuning.gfx1030,
+            .rdna3 => &tuning.gfx1100,
+        };
+    }
+
+    /// The product of `a` as a shape: `items` is a routed plan's item count.
+    pub fn shapeOf(a: Arg, items: c_int) registry.Shape {
+        const kind: quant.Tables = switch (a.scale.kind) {
+            1 => .bf16,
+            2 => .f16,
+            else => .f32,
+        };
+        return .{
+            .m = @intCast(@max(a.m, 0)),
+            .n = @intCast(@max(a.n, 0)),
+            .k = @intCast(@max(a.k, 0)),
+            .bits = std.math.cast(u8, a.bits) orelse 0,
+            .group = std.math.cast(u16, a.group) orelse 0,
+            .fp16 = a.fp16 != 0,
+            .tables = kind,
+            .tables_alike = a.scale.kind == a.bias.kind,
+            .x_aligned = a.x % 16 == 0,
+            .words_aligned = a.words % gemmAlign(a.bits) == 0,
+            .items = if (a.route.items != 0) @intCast(@max(items, 0)) else 0,
+        };
+    }
+
+    // ---- the tiles ----
 
     /// The stream tile on `total_n` columns (a group's sum); `sides` counts them off block by block when it has any.
-    fn streamGo(k: *const Kernels, d: *const driver.Driver, a: Arg, sides_in: StreamSides, total_n: c_int, items: c_int, s: abi.Stream) Error!void {
+    pub fn streamGo(k: *const Kernels, d: *const driver.Driver, a: Arg, sides_in: StreamSides, total_n: c_int, items: c_int, s: abi.Stream) Error!void {
         const b = bitIndex(a.bits).?;
         var sides = sides_in;
         // a pair's lane carries half as many output columns: a gate column and its up column make one
@@ -284,18 +342,189 @@ pub const Kernels = struct {
         try go(d, f, .{ .x = blocks, .y = cdiv(a.m, stream_rows[r]), .z = @intCast(items) }, .{ .x = 32 * stream_waves }, s, &args);
     }
 
+    /// One row on the row tile: a lane owns a group, a wave reads a column's row in one run.
+    pub fn rowGo(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
+        const b = bitIndex(a.bits) orelse return refuse("bits");
+        var args: hl.Args = .{};
+        args.add(a);
+        args.add(rowLanes(@divExact(a.k, a.group)));
+        try go(d, k.row[b][pieceIndex(a.group)], .{ .x = cdiv(a.n, 128), .z = @intCast(items) }, .{ .x = 128 }, s, &args);
+    }
+
+    /// Up to 8 rows on the column tile.
+    pub fn lanesGo(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
+        const b = bitIndex(a.bits) orelse return refuse("bits");
+        var args: hl.Args = .{};
+        args.add(a);
+        const r: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else if (a.m <= 4) 2 else 3;
+        try go(d, k.lanes[b][r][pieceIndex(a.group)], .{ .x = cdiv(a.n, 32), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
+    }
+
+    /// The wide tile of the RDNA2 decode products of 9 rows and more.
+    pub fn wideGo(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream) Error!void {
+        var args: hl.Args = .{};
+        args.add(a);
+        try go(d, k.wide, .{ .x = cdiv(a.n, 32), .y = cdiv(a.m, 128) }, .{ .x = 512 }, s, &args);
+    }
+
+    /// Any group width up to 128 that the others do not take, 16 columns by 16 rows a block.
+    pub fn tiledGo(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream) Error!void {
+        var args: hl.Args = .{};
+        args.add(a);
+        try go(d, k.tiled, .{ .x = cdiv(a.n, 16), .y = cdiv(a.m, 16) }, .{ .x = 256 }, s, &args);
+    }
+
+    /// The one-thread tile every product has: the reference of the others.
+    pub fn referenceGo(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream) Error!void {
+        var args: hl.Args = .{};
+        args.add(a);
+        try go(d, k.reference, .{ .x = cdiv(a.n, 32), .y = @intCast(a.m) }, .{ .x = 32 }, s, &args);
+    }
+
+    /// The decode tile over groups [z * per, (z + 1) * per) into `partial`, then the fold in group order.
+    pub fn splitGo(k: *const Kernels, d: *const driver.Driver, a: Arg, partial: u64, parts: c_int, s: abi.Stream) Error!void {
+        const groups = @divTrunc(a.k, a.group);
+        var args: hl.Args = .{};
+        args.add(a);
+        args.add(partial);
+        args.add(@divExact(groups, parts));
+        try go(d, k.span[if (a.m == 1) 0 else 1], .{ .x = cdiv(a.n, fast_n), .y = cdiv(a.m, 8), .z = @intCast(parts) }, .{ .x = fast_n }, s, &args);
+        var fold: hl.Args = .{};
+        fold.add(partial);
+        fold.add(a.scale);
+        fold.add(a.bias);
+        fold.add(a.out);
+        fold.add(a.m);
+        fold.add(a.n);
+        fold.add(groups);
+        try go(d, k.fold, .{ .x = cdiv(a.n, fast_n), .y = @intCast(a.m) }, .{ .x = fast_n }, s, &fold);
+    }
+
+    /// The 128 x 128 tile of a kind over every item of a plan (or the plain product).
+    pub fn blockGo(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, kind: BlockKind) Error!void {
+        const b = bitIndex(a.bits) orelse return refuse("bits");
+        var args: hl.Args = .{};
+        args.add(a);
+        const f = switch (kind) {
+            .matrix => k.wmma_gemm[b],
+            .gemm => k.gemm[b],
+            .block => k.block[b],
+        };
+        try go(d, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
+    }
+
+    /// K-parallel tile `tier` (an index of kp_tiles) of a short prompt.
+    pub fn kpGo(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tier: usize) Error!void {
+        const b = bitIndex(a.bits) orelse return refuse("bits");
+        var args: hl.Args = .{};
+        args.add(a);
+        const t = kp_tiles[tier];
+        const sets = @divExact(32, kpLanes(@divExact(a.k, a.group)));
+        const blocks = @min(cdiv(a.m, t.r), @as(c_uint, @intCast(t.rb)));
+        try go(d, k.kp[b][tier], .{ .x = cdiv(a.n, t.waves * t.cb * sets) * blocks, .z = @intCast(items) }, .{ .x = @intCast(32 * t.waves) }, s, &args);
+    }
+
+    // ---- the entry points ----
+
+    /// Whether the matrix-core tile takes this product's 128-row blocks (gfx11, bf16, switched on, words it can load wide).
+    fn matrixTakes(k: *const Kernels, a: Arg) bool {
+        return k.matrix and k.mode != .off and a.fp16 == 0 and a.words % gemmAlign(a.bits) == 0 and a.scale.kind == a.bias.kind;
+    }
+
+    fn blockShapeOk(a: Arg) bool {
+        return a.m >= 1 and a.n >= 1 and @rem(a.group, 32) == 0 and @rem(a.k, a.group) == 0 and @rem(a.k, 16) == 0;
+    }
+
+    /// The 128-row tile of `tile` over the plan (the GEMM tile falls back to the previous one for words it cannot load wide).
+    pub fn blockWith(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tile: Tile) Error!void {
+        if (!blockShapeOk(a)) return refuse("block shape");
+        const fits = a.words % gemmAlign(a.bits) == 0 and a.scale.kind == a.bias.kind;
+        const kind: BlockKind = if (tile == .gemm and k.matrixTakes(a) and a.m >= 16) .matrix else if (tile == .gemm and fits) .gemm else .block;
+        try k.blockGo(d, a, s, items, kind);
+    }
+
+    /// Prefill's tile at any row count, so a prompt's rows have the same bits however it is cut: the matrix tile on
+    /// gfx11 unless switched off, else the dot2 GEMM tile (the previous one for words it cannot load wide); a few rows
+    /// take the K-parallel tile, which computes the same bits and streams the weights faster.
+    pub fn prefillLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
+        const op: registry.Op = if (a.route.items != 0) .routed else .project;
+        const e = k.choose(op, .prefill, shapeOf(a, items)) orelse return refuse("prefill shape");
+        try e.launch(k, .{ .d = d, .s = s, .arg = a, .items = items });
+    }
+
+    /// prefillLaunch in block shape `tier`: an index of kp_tiles, or `kp_tiles.len` for the 128 x 128 one.
+    pub fn prefillTier(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tier: usize) Error!void {
+        const group_ok = a.group == 32 or a.group == 64 or a.group == 128;
+        if (a.m < 1 or a.n < 1 or !group_ok or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0) return refuse("prefill shape");
+        const fits = a.words % gemmAlign(a.bits) == 0 and a.scale.kind == a.bias.kind;
+        const matrix = k.tile == .gemm and k.matrixTakes(a);
+        const dot2 = k.tile == .gemm and fits;
+        if (tier < kp_tiles.len and (matrix or dot2) and tierTakes(tier, a.m)) return k.kpGo(d, a, s, items, tier);
+        try k.blockGo(d, a, s, items, if (matrix) .matrix else if (dot2) .gemm else .block);
+    }
+
+    /// launch_affine on the auto schedule: the activation type's tiles. `schedule` 3 is prefill's, 4 a lane round's;
+    /// `partial` and `parts` split the groups over a scratch (the tests').
+    pub fn run(k: *const Kernels, d: *const driver.Driver, arg: Arg, schedule: c_int, s: abi.Stream, partial: u64, parts: c_int, out_half: bool) Error!void {
+        var a = arg;
+        if (schedule == 1) {
+            if (a.fp16 == 0 or k.wmma) return refuse("this schedule stays in the library");
+            return k.referenceGo(d, a, s);
+        }
+        if (schedule == 2 or schedule > 4) return refuse("this schedule stays in the library");
+        var shape = shapeOf(a, 1);
+        shape.round = schedule == 4;
+        shape.parts = if (partial != 0 and parts > 1) @intCast(parts) else 1;
+        const e = k.choose(.project, if (schedule == 3) .prefill else .decode, shape) orelse return refuse("no tile takes this product");
+        if (out_half) {
+            // the activation type's output is the decode tile's: fp16 on RDNA2, and either type from the stream tile
+            if (schedule == 3 or parts > 1 or !e.roundsAct(shape)) return refuse("fp16 output is the decode tile");
+            a.out16 = a.out;
+            a.out = 0;
+        }
+        try e.launch(k, .{ .d = d, .s = s, .arg = a, .partial = partial, .parts = parts, .out_half = out_half });
+    }
+
+    /// affine_routed_launch: every item of a plan in one launch; `arg.m` is the most rows an item holds.
+    pub fn routed(k: *const Kernels, d: *const driver.Driver, arg: Arg, items: c_int, s: abi.Stream) Error!void {
+        return k.routedWith(d, arg, items, s, k.tile);
+    }
+
+    pub fn routedWith(k: *const Kernels, d: *const driver.Driver, arg: Arg, items: c_int, s: abi.Stream, tile: Tile) Error!void {
+        // the family's own activation type: bf16 on the WMMA build, fp16 on RDNA2
+        if ((arg.fp16 != 0) == k.wmma or arg.route.items == 0 or arg.route.members == 0 or items < 1 or arg.route.x_div < 1) return refuse("routed plan");
+        var environment = k.env();
+        environment.gemm_on = tile == .gemm;
+        const e = k.reg.select(environment, .mlx, .routed, .decode, shapeOf(arg, items)) orelse return refuse("no tile takes this plan");
+        try e.launch(k, .{ .d = d, .s = s, .arg = arg, .items = items });
+    }
+
     /// The stacked (gate | up) product of `arg` (n the stacked width, out16 the (rows, n / 2) activation, plain or routed
     /// over `items`) as silu(gate) * up in the activation type, clamped by `limit` first when it is above 0. False when
     /// the shape keeps the separate products.
     pub fn pairRun(k: *const Kernels, d: *const driver.Driver, arg: Arg, limit: f32, items: c_int, s: abi.Stream) Error!bool {
-        if (arg.out16 == 0 or @rem(arg.n, 2) != 0 or !k.streamFits(arg)) return false;
-        try k.streamGo(d, arg, .{ .pair_cols = @divExact(arg.n, 2), .limit = limit }, @divExact(arg.n, 2), items, s);
+        var shape = shapeOf(arg, items);
+        shape.pairs = arg.out16 != 0;
+        const e = k.choose(.routed_act, .decode, shape) orelse return false;
+        try e.launch(k, .{ .d = d, .s = s, .arg = arg, .items = items, .limit = limit });
         return true;
     }
 
     /// Up to four products of `m` rows over the same x in one launch (`a` holds x, m, k, bits, group, fp16 and the tables'
     /// kind); each side's output is (m, n) fp32, or the activation type with `out_half`.
     pub fn groupRun(k: *const Kernels, d: *const driver.Driver, arg: Arg, group: []const Side, out_half: bool, s: abi.Stream) Error!void {
+        if (group.len == 0 or group.len > 4) return refuse("group shape");
+        var a = arg;
+        a.n = 0;
+        for (group) |side| a.n = @max(a.n, side.n);
+        var shape = shapeOf(a, 1);
+        shape.round = true;
+        const e = k.choose(.group, .decode, shape) orelse return refuse("group shape");
+        try e.launch(k, .{ .d = d, .s = s, .arg = a, .sides = group, .out_half = out_half });
+    }
+
+    /// The stream tile over a group: the sides' addresses and widths in one launch.
+    pub fn groupGo(k: *const Kernels, d: *const driver.Driver, arg: Arg, group: []const Side, out_half: bool, s: abi.Stream) Error!void {
         var a = arg;
         var sides: StreamSides = .{ .count = @intCast(group.len), .out_half = @intFromBool(out_half) };
         var total: c_int = 0;
@@ -312,191 +541,17 @@ pub const Kernels = struct {
         a.words = group[0].words;
         a.scale.p = group[0].scale;
         a.bias.p = group[0].bias;
-        if (group.len == 0 or group.len > 4 or !k.windowTakes(a.n, a.k, a.bits, a.group, a.scale.kind, a.bias.kind, a.x)) return refuse("group shape");
         try k.streamGo(d, a, sides, total, 1, s);
-    }
-
-    fn lanesLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
-        if (a.m < 1 or a.m > lane_rows or a.n < 1 or @rem(a.group, 32) != 0 or a.group > lane_group_max or @rem(a.k, a.group) != 0) return refuse("lanes shape");
-        if (try k.streamLaunch(d, a, s, items)) return;
-        const b = bitIndex(a.bits) orelse return refuse("bits");
-        const p = pieceIndex(a.group);
-        var args: hl.Args = .{};
-        args.add(a);
-        const z: c_uint = @intCast(items);
-        // one row on the row tile unless it has under four groups
-        const lpc = if (a.m == 1) rowLanes(@divExact(a.k, a.group)) else 0;
-        if (lpc != 0) {
-            args.add(lpc);
-            return go(d, k.row[b][p], .{ .x = cdiv(a.n, 128), .z = z }, .{ .x = 128 }, s, &args);
-        }
-        const r: usize = if (a.m == 1) 0 else if (a.m == 2) 1 else if (a.m <= 4) 2 else 3;
-        try go(d, k.lanes[b][r][p], .{ .x = cdiv(a.n, 32), .z = z }, .{ .x = 256 }, s, &args);
-    }
-
-    /// The GEMM tile's piece loads read the code words 16, 8 or 4 bytes at a time by width; the tables are one kind.
-    fn gemmFits(a: Arg) bool {
-        const align_bytes: u64 = switch (a.bits) {
-            4, 8 => 16,
-            2, 6 => 8,
-            else => 4,
-        };
-        return a.words % align_bytes == 0 and a.scale.kind == a.bias.kind;
-    }
-
-    /// The matrix-core GEMM tile takes this product: gfx11, BF16, not switched off, 16 rows or more (matrix=on is the same as auto: decode stays on the dot2 tiles).
-    fn wmmaTile(k: *const Kernels, a: Arg) bool {
-        return k.matrix and k.mode != .off and a.fp16 == 0 and gemmFits(a) and a.m >= wmma_rows;
-    }
-
-    fn blockLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
-        return k.blockWith(d, a, s, items, k.tile);
-    }
-
-    /// The m >= 64 tile of `tile` (the GEMM tile falls back to the previous one for words it cannot load wide).
-    pub fn blockWith(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tile: Tile) Error!void {
-        if (a.m < 1 or a.n < 1 or @rem(a.group, 32) != 0 or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0) return refuse("block shape");
-        const b = bitIndex(a.bits) orelse return refuse("bits");
-        var args: hl.Args = .{};
-        args.add(a);
-        const matrix = tile == .gemm and k.wmmaTile(a);
-        const f = if (matrix) k.wmma_gemm[b] else if (tile == .gemm and gemmFits(a)) k.gemm[b] else k.block[b];
-        try go(d, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
-    }
-
-    /// Prefill's tile at any row count, so a prompt's rows have the same bits however it is cut: the matrix tile on
-    /// gfx11 unless switched off, else the dot2 GEMM tile (the previous one for words it cannot load wide); a few rows
-    /// take the K-parallel tile, which computes the same bits and streams the weights faster.
-    pub fn prefillLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
-        // a routed plan of a prompt past 32 rows is faster on the 128-row tiles on the matrix cores, and past 128 on both
-        const plan = a.route.items != 0;
-        const routed_items: c_int = if (k.wmma) 300 else 410;
-        var tier: usize = kp_tiles.len;
-        var bound: c_int = std.math.maxInt(c_int);
-        inline for (kp_tiles, 0..) |t, i| {
-            const have = if (plan) t.routed else t.rows;
-            if (have != 0 and have >= (if (plan) items else a.m) and have < bound and (!plan or have <= routed_items)) {
-                tier = i;
-                bound = have;
-            }
-        }
-        return k.prefillTier(d, a, s, items, tier);
-    }
-
-    /// prefillLaunch in block shape `tier`: an index of kp_tiles, or `kp_tiles.len` for the 128 x 128 one.
-    pub fn prefillTier(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tier: usize) Error!void {
-        if (a.m < 1 or a.n < 1 or !groupOk(a.group) or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0) return refuse("prefill shape");
-        const b = bitIndex(a.bits) orelse return refuse("bits");
-        var args: hl.Args = .{};
-        args.add(a);
-        const matrix = k.tile == .gemm and k.matrix and k.mode != .off and a.fp16 == 0 and gemmFits(a);
-        const dot2 = k.tile == .gemm and gemmFits(a);
-        if (tier < kp_tiles.len and (matrix or dot2) and tierTakes(tier, a.m)) {
-            const t = kp_tiles[tier];
-            const sets = @divExact(32, kpLanes(@divExact(a.k, a.group)));
-            const blocks = @min(cdiv(a.m, t.r), @as(c_uint, @intCast(t.rb)));
-            return go(d, k.kp[b][tier], .{ .x = cdiv(a.n, t.waves * t.cb * sets) * blocks, .z = @intCast(items) }, .{ .x = @intCast(32 * t.waves) }, s, &args);
-        }
-        const f = if (matrix) k.wmma_gemm[b] else if (dot2) k.gemm[b] else k.block[b];
-        try go(d, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
-    }
-
-    /// The lanes a column takes in the K-parallel tile: one a group, 32 at most (kp_lanes).
-    fn kpLanes(groups: c_int) c_int {
-        return if (groups > 16) 32 else if (groups > 8) 16 else 8;
-    }
-
-    fn groupOk(group: c_int) bool {
-        return group == 32 or group == 64 or group == 128;
-    }
-
-    /// launch_affine on the auto schedule: the activation type's dot2 tiles.
-    pub fn run(k: *const Kernels, d: *const driver.Driver, arg: Arg, schedule: c_int, s: abi.Stream, partial: u64, parts: c_int, out_half: bool) Error!void {
-        var a = arg;
-        if (out_half) {
-            // the activation type's output is the decode tile's: fp16 on RDNA2, and either type from the stream tile
-            if ((a.fp16 == 0 and !k.streamFits(arg) and schedule != 4) or (schedule != 0 and schedule != 4) or parts > 1) return refuse("fp16 output is the decode tile");
-            a.out16 = a.out;
-            a.out = 0;
-        }
-        if (schedule == 4) {
-            if (!k.windowTakes(a.n, a.k, a.bits, a.group, a.scale.kind, a.bias.kind, a.x)) return refuse("window shape");
-            return k.streamGo(d, a, .{}, a.n, 1, s);
-        }
-        if (schedule == 3) return k.prefillLaunch(d, a, s, 1);
-        if (partial != 0 and parts > 1) return k.split(d, a, partial, parts, s);
-        if (k.wmma) {
-            if (schedule != 0 or a.fp16 != 0) return refuse("this schedule stays in the library");
-            // BF16 x on a gfx11 / gfx12 build: the decode tiles up to 8 rows, the GEMM tile past them.
-            if (a.m < 1 or a.n < 1 or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0 or !groupOk(a.group)) return refuse("bf16 shape");
-            if (a.m <= lane_rows) return k.lanesLaunch(d, a, s, 1);
-            if (try k.streamLaunch(d, a, s, 1)) return;
-            return k.blockLaunch(d, a, s, 1);
-        }
-        if (a.fp16 == 0 or schedule == 2) return refuse("this schedule stays in the library");
-        try k.dotLaunch(d, a, schedule == 1, s);
-    }
-
-    fn dotLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, reference: bool, s: abi.Stream) Error!void {
-        if (a.m < 1 or a.n < 1 or a.k < 1 or @rem(a.group, 2) != 0 or @rem(a.k, a.group) != 0) return refuse("dot2 shape");
-        var args: hl.Args = .{};
-        args.add(a);
-        if (!reference) {
-            if (a.m <= lane_rows and groupOk(a.group)) return k.lanesLaunch(d, a, s, 1);
-            if (groupOk(a.group) and try k.streamLaunch(d, a, s, 1)) return;
-            if (a.out16 != 0) return refuse("fp16 output is the decode tile's");
-            if (groupOk(a.group)) {
-                if (a.m >= block_rows and @rem(a.k, 16) == 0) return k.blockLaunch(d, a, s, 1);
-                if (a.m > fast_m) return go(d, k.wide, .{ .x = cdiv(a.n, 32), .y = cdiv(a.m, 128) }, .{ .x = 512 }, s, &args);
-                return go(d, k.fast[if (a.m == 1) 0 else 1], .{ .x = cdiv(a.n, fast_n), .y = cdiv(a.m, fast_m) }, .{ .x = fast_n }, s, &args);
-            }
-            if (a.m > 1 and a.group <= 128) return go(d, k.tiled, .{ .x = cdiv(a.n, 16), .y = cdiv(a.m, 16) }, .{ .x = 256 }, s, &args);
-        }
-        try go(d, k.reference, .{ .x = cdiv(a.n, 32), .y = @intCast(a.m) }, .{ .x = 32 }, s, &args);
-    }
-
-    /// The decode tile over groups [z * per, (z + 1) * per) into `partial`, then the fold in group order.
-    fn split(k: *const Kernels, d: *const driver.Driver, a: Arg, partial: u64, parts: c_int, s: abi.Stream) Error!void {
-        const groups = @divTrunc(a.k, a.group);
-        if (a.fp16 == 0 or parts < 2 or @rem(groups, parts) != 0) return refuse("split shape");
-        var args: hl.Args = .{};
-        args.add(a);
-        args.add(partial);
-        args.add(@divExact(groups, parts));
-        try go(d, k.span[if (a.m == 1) 0 else 1], .{ .x = cdiv(a.n, fast_n), .y = cdiv(a.m, fast_m), .z = @intCast(parts) }, .{ .x = fast_n }, s, &args);
-        var fold: hl.Args = .{};
-        fold.add(partial);
-        fold.add(a.scale);
-        fold.add(a.bias);
-        fold.add(a.out);
-        fold.add(a.m);
-        fold.add(a.n);
-        fold.add(groups);
-        try go(d, k.fold, .{ .x = cdiv(a.n, fast_n), .y = @intCast(a.m) }, .{ .x = fast_n }, s, &fold);
-    }
-
-    /// affine_routed_launch: every item of a plan in one launch; `arg.m` is the most rows an item holds.
-    pub fn routed(k: *const Kernels, d: *const driver.Driver, arg: Arg, items: c_int, s: abi.Stream) Error!void {
-        return k.routedWith(d, arg, items, s, k.tile);
-    }
-
-    pub fn routedWith(k: *const Kernels, d: *const driver.Driver, arg: Arg, items: c_int, s: abi.Stream, tile: Tile) Error!void {
-        // the family's own activation type: bf16 on the WMMA build, fp16 on RDNA2
-        if ((arg.fp16 != 0) == k.wmma or arg.route.items == 0 or arg.route.members == 0 or items < 1 or arg.route.x_div < 1) return refuse("routed plan");
-        if (!groupOk(arg.group)) return refuse("routed group");
-        if (arg.m <= lane_rows and !(k.tile == .gemm and k.wmmaTile(arg))) return k.lanesLaunch(d, arg, s, items);
-        if (try k.streamLaunch(d, arg, s, items)) return;
-        try k.blockWith(d, arg, s, items, tile);
     }
 
     /// The split count of a decode launch: 1 unless `mode` is 2 (the tests' forced comparison) and the groups divide.
     pub fn splitCount(m: c_int, n: c_int, k: c_int, group: c_int, mode: c_int) c_int {
         if (mode != 2 or m < 1 or n < 512) return 1;
-        if (!groupOk(group) or k < group or @rem(k, group) != 0) return 1;
+        if (!(group == 32 or group == 64 or group == 128) or k < group or @rem(k, group) != 0) return 1;
         const groups = @divTrunc(k, group);
         if (groups < 2) return 1;
         // A full row tile or a wide column grid already fills the card.
-        const blocks = @divTrunc(n + fast_n - 1, fast_n) * @divTrunc(m + fast_m - 1, fast_m);
+        const blocks = @divTrunc(n + fast_n - 1, fast_n) * @divTrunc(m + 8 - 1, 8);
         if (blocks < 1) return 1;
         var want = @divTrunc(256, blocks);
         if (want < 2) want = 2;
@@ -519,4 +574,8 @@ test "the lane groups of a row tile" {
     try std.testing.expectEqual(@as(c_int, 0), Kernels.rowLanes(3));
     try std.testing.expectEqual(@as(c_int, 4), Kernels.rowLanes(4));
     try std.testing.expectEqual(@as(c_int, 32), Kernels.rowLanes(64));
+}
+
+test {
+    _ = mlx_entries;
 }
