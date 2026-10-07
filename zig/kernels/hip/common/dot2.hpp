@@ -22,6 +22,8 @@ __device__ inline float dot_quad_shared(uint32_t x, uint32_t w, float acc) {
 struct DotF16 {
     using elem = __half;
     using pair = __half2;
+    // A pair of 1.0: dotted with x it gives the sum of x.
+    static constexpr uint32_t ones = 0x3c003c00u;
     __device__ static elem zero() { return __float2half(0.f); }
     __device__ static pair two(elem a, elem b) { return __halves2half2(a, b); }
     __device__ static float lo(pair p) { return __low2float(p); }
@@ -45,6 +47,7 @@ struct DotF16 {
 struct DotBF16 {
     using elem = __bf16;
     using pair = bf16x2;
+    static constexpr uint32_t ones = 0x3f803f80u;
     __device__ static elem zero() { return static_cast<__bf16>(0.f); }
     __device__ static pair two(elem a, elem b) { return pair{a, b}; }
     __device__ static float lo(pair p) { return static_cast<float>(p.x); }

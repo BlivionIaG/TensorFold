@@ -123,6 +123,95 @@ struct MlxDecoder {
     // A group's sum: its dot against the codes times the scale, and the sum of x times the bias.
     __device__ static float fold_scale(float acc, float dot, float scale) { return fmaf(dot, scale, acc); }
     __device__ static float fold_bias(float acc, float sum_x, float bias) { return fmaf(sum_x, bias, acc); }
+
+    // ---- the decode stream tile: a lane owns a 32-code chunk, its pairs are made with a few bit operations ----
+
+    // Bytes the chunk's loads are aligned to when they are wide (16 for 4-word multiples, 8 for even, else by word).
+    static constexpr int kWideBytes = BITS % 4 == 0 ? 16 : BITS % 2 == 0 ? 8 : 4;
+
+    // Whether every chunk of the words is wide-aligned: the words and the row stride are.
+    __device__ static bool wide_aligned(const Args& a) {
+        const long long words_row = static_cast<long long>(a.k) * BITS / 32;
+        return ((reinterpret_cast<uintptr_t>(a.words) | static_cast<uintptr_t>(words_row * 4)) & (kWideBytes - 1)) == 0;
+    }
+
+    // The words and tables of side s of a group of products that share x.
+    template <class Sides>
+    __device__ static void bind(Args& a, const Sides& sides, int s) {
+        a.words = sides.words[s];
+        a.scale.p = sides.scale[s];
+        a.bias.p = sides.bias[s];
+    }
+
+    // Codes 16 bits apart in one word when the width divides 16 (the pair is two masked fields), else neighbours.
+    static constexpr bool kGapPairs = BITS == 2 || BITS == 4 || BITS == 8;
+
+    // The two codes of pair I of a chunk: `lo` and `lo + gap`.
+    template <int I>
+    static constexpr int lo() {
+        if constexpr (BITS == 4) return (I >> 2) * 8 + (I & 3);
+        else if constexpr (BITS == 8) return (I >> 1) * 4 + (I & 1);
+        else if constexpr (BITS == 2) return (I >> 3) * 16 + (I & 7);
+        else return 2 * I;
+    }
+
+    static constexpr int gap() {
+        if constexpr (BITS == 4) return 4;
+        else if constexpr (BITS == 8) return 2;
+        else if constexpr (BITS == 2) return 8;
+        else return 1;
+    }
+
+    // Pair I of the chunk's codes as the activation type's pair (the codes are below 256, exact in both types).
+    template <typename T, int I>
+    __device__ static typename T::pair stream_pair(const uint32_t (&w)[BITS]) {
+        constexpr int low = lo<I>();
+        constexpr int high = low + gap();
+        uint32_t bits;
+        if constexpr (kGapPairs) {
+            constexpr int per = 32 / BITS;
+            constexpr uint32_t mask = ((1u << BITS) - 1u) * 0x00010001u;
+            bits = (w[low / per] >> (BITS * (low % per))) & mask;
+        } else {
+            bits = piece_bits<BITS>(w, low) | (piece_bits<BITS>(w, high) << 16);
+        }
+        if constexpr (std::is_same_v<typename T::elem, __half>) {
+            bits |= 0x64006400u;
+            return __hsub2(__builtin_bit_cast(__half2, bits), __builtin_bit_cast(__half2, 0x64006400u));
+        } else {
+            // The float of an integer below 256 has its low 16 bits clear, so its top half is the BF16.
+            const uint32_t a = __builtin_bit_cast(uint32_t, static_cast<float>(bits & 0xffffu));
+            const uint32_t b = __builtin_bit_cast(uint32_t, static_cast<float>(bits >> 16));
+            return __builtin_bit_cast(typename T::pair, (a >> 16) | (b & 0xffff0000u));
+        }
+    }
+
+    // The stream tile's group terms: 16-bit table entries (BF16 or FP16), loaded as stored and widened where they are used.
+    struct StreamTerms {
+        const unsigned short* scale;
+        const unsigned short* bias;
+        bool half;
+
+        struct Raw {
+            unsigned short scale;
+            unsigned short bias;
+        };
+
+        __device__ explicit StreamTerms(const Args& a)
+            : scale(static_cast<const unsigned short*>(a.scale.p)),
+              bias(static_cast<const unsigned short*>(a.bias.p)),
+              half(a.scale.kind == kScaleF16) {}
+
+        __device__ unsigned short scale_raw(long long at) const { return scale[at]; }
+        __device__ unsigned short bias_raw(long long at) const { return bias[at]; }
+
+        __device__ float widen(unsigned short v) const {
+            return half ? __half2float(__ushort_as_half(v)) : __uint_as_float(static_cast<uint32_t>(v) << 16);
+        }
+
+        __device__ float scale_value(Raw r) const { return widen(r.scale); }
+        __device__ float bias_value(Raw r) const { return widen(r.bias); }
+    };
 };
 
 }  // namespace rocm
