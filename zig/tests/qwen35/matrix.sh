@@ -1,5 +1,5 @@
 #!/bin/sh
-# usage: matrix.sh [options] MODELS_DIR DEVICES...: one markdown table of `check` over models x devices x settings.
+# usage: matrix.sh [options] MODELS_DIR DEVICES... [-- CHECK_ARGS]: a markdown table of `check` per model and setting.
 
 # DEVICES: an argument a group, a comma list of HIP ordinals ("6,7" is tensor parallel over two); exit 1 on any FAIL.
 
@@ -28,15 +28,17 @@ while [ $# -gt 0 ]; do
     --log) value $# "$1"; log=$2; shift 2 ;;
     --port) value $# "$1"; port=$2; shift 2 ;;
     --timeout) value $# "$1"; limit=$2; shift 2 ;;
-    --) shift; extra="$*"; break ;; # the rest goes to `check` as it is
     -*) die "unknown option $1" ;;
     *) break ;;
   esac
 done
-[ $# -ge 2 ] || die "usage: matrix.sh [options] MODELS_DIR DEVICES..."
+[ $# -ge 2 ] || die "usage: matrix.sh [options] MODELS_DIR DEVICES... [-- CHECK_ARGS]"
 dir=$1
 shift
-groups="$*"
+groups=
+while [ $# -gt 0 ] && [ "$1" != -- ]; do groups="$groups $1"; shift; done
+[ $# -gt 0 ] && shift && extra="$*" # after `--`, arguments for every `check` as they are
+[ -n "$groups" ] || die "no DEVICES"
 [ -d "$dir" ] || die "$dir is not a directory"
 [ -x "$bin" ] || die "$bin is not built"
 if [ -z "$models" ]; then
