@@ -49,6 +49,9 @@ pub const Session = struct {
         rounds: u64,
         replayed: u64,
         submit_ns: u64,
+        /// Nanoseconds and calls of the backend's verifies, keeps and drafts.
+        spent: [3]u64,
+        calls: [3]u64,
 
         pub fn tokens(d: Done) usize {
             var n: usize = 0;
@@ -76,6 +79,8 @@ pub const Session = struct {
         const replayed = s.e.graphs.replayed;
         const rounds = s.e.graphs.rounds;
         const submit = s.e.graphs.submit_ns;
+        const spent = s.h.spent;
+        const calls = s.h.calls;
         const t0 = std.Io.Clock.awake.now(s.io);
         if (job.solo) {
             for (streams) |*st| try s.finish(&.{st});
@@ -88,7 +93,7 @@ pub const Session = struct {
         const seconds = @as(f64, @floatFromInt(std.Io.Clock.awake.now(s.io).toNanoseconds() - t0.toNanoseconds())) / 1e9;
         const out = try arena.alloc(Reply, streams.len);
         for (out, streams, job.prompts) |*r, *st, p| r.* = .{ .name = p.name, .tokens = try arena.dupe(u32, st.emitted()), .rounds = st.rounds, .accepted = st.accepted, .cached = st.cached };
-        return .{ .replies = out, .seconds = seconds, .rounds = s.e.graphs.rounds - rounds, .replayed = s.e.graphs.replayed - replayed, .submit_ns = s.e.graphs.submit_ns - submit };
+        return .{ .replies = out, .seconds = seconds, .rounds = s.e.graphs.rounds - rounds, .replayed = s.e.graphs.replayed - replayed, .submit_ns = s.e.graphs.submit_ns - submit, .spent = delta(s.h.spent, spent), .calls = delta(s.h.calls, calls) };
     }
 
     fn finish(s: *Session, streams: []const *lanes.Stream) !void {
@@ -98,6 +103,12 @@ pub const Session = struct {
         while (engine.live.items.len > 0) try engine.step();
     }
 };
+
+fn delta(now: [3]u64, before: [3]u64) [3]u64 {
+    var out: [3]u64 = undefined;
+    for (&out, now, before) |*o, a, b| o.* = a - b;
+    return out;
+}
 
 /// Each prompt extended by its reply and its own first tokens: what a next turn sends.
 pub fn extend(arena: std.mem.Allocator, prompts: []const ids_file.Prompt, replies: []const Session.Reply) ![]const ids_file.Prompt {

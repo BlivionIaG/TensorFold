@@ -58,6 +58,9 @@ pub const Hip = struct {
     costs: costs.Costs = .{},
     /// Each stream's id on every rank.
     ids: std.AutoHashMapUnmanaged(*const lanes.Stream, u32) = .empty,
+    /// Nanoseconds and calls the backend's verifies, keeps and drafts took (the core's own work between them is the rest).
+    spent: [3]u64 = @splat(0),
+    calls: [3]u64 = @splat(0),
     next_id: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine) !*Hip {
@@ -105,7 +108,14 @@ pub const Hip = struct {
         return gop.value_ptr.*;
     }
 
+    fn timed(h: *Hip, which: usize, began: u64) void {
+        h.spent[which] += costs.nowNs() - began;
+        h.calls[which] += 1;
+    }
+
     pub fn deinit(h: *Hip) void {
+        const names = [_][]const u8{ "verify", "keep", "draft" };
+        for (names, h.spent, h.calls) |name, ns, n| if (n > 0) std.log.info("backend {s}: {d} calls, {d:.0} us each", .{ name, n, @as(f64, @floatFromInt(ns)) / @as(f64, @floatFromInt(n)) / 1e3 });
         if (h.link != null) h.send(&.{@backingInt(worker.Op.stop)}) catch {};
         h.ids.deinit(h.gpa);
         h.marked.deinit(h.gpa);
@@ -327,6 +337,8 @@ pub const Hip = struct {
     /// Each stream's window from its kept length: the pending token, then the host's drafts; one forward for all.
     fn verifyFn(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) anyerror!void {
         const h = of(ptr);
+        const began = costs.nowNs();
+        defer h.timed(0, began);
         if (windows.len > h.order.len) return error.WindowTooWide;
         // the last verify's windows the round loop did not trim keep every row, before this round's plan replaces theirs
         for (windows) |w| try h.settle(h.lanes.get(w.stream) orelse return error.UnknownStream);
@@ -385,6 +397,8 @@ pub const Hip = struct {
     /// Keep each stream's accepted prefix: lengths, and the linear states of its last kept row.
     fn keepFn(ptr: *anyopaque, windows: []const be.Window, paths: []const []const u32) anyerror!void {
         const h = of(ptr);
+        const began = costs.nowNs();
+        defer h.timed(1, began);
         for (windows, paths) |w, path| {
             const lane = h.lanes.get(w.stream) orelse return error.UnknownStream;
             for (path, 0..) |r, j| if (r != j) return error.TreesNotBuilt;
@@ -398,6 +412,8 @@ pub const Hip = struct {
     /// The head drafts `depth` from each stream's last kept row and its pending token, one head forward a step for all.
     fn draftFn(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         const h = of(ptr);
+        const began = costs.nowNs();
+        defer h.timed(2, began);
         const head = h.head orelse return error.NoDraftHead;
         const m = h.e.model();
         var jobs: [max_jobs]mtp.Job = undefined;

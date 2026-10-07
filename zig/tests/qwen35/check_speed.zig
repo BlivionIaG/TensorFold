@@ -46,7 +46,7 @@ fn decode(c: *Ctx, drafts: bool, prompts: []const ids_file.Prompt, max_new: u32)
     for (done.replies) |r| rounds += r.rounds;
     const n = done.tokens();
     const shared: f64 = @floatFromInt(@max(done.rounds, 1));
-    c.report.pass(name, "{d:.1} tok/s, {d} tokens in {d:.3} s, {d:.2} tokens a stream round, {d:.1}% of {d} rounds replayed, {d:.0} us a round submitting, {d:.0} us a round in all", .{
+    c.report.pass(name, "{d:.1} tok/s, {d} tokens in {d:.3} s, {d:.2} tokens a stream round, {d:.1}% of {d} rounds replayed, {d:.0} us a round submitting, {d:.0} us a round in all (backend, a call: verify {d:.0} us, keep {d:.0} us, draft {d:.0} us)", .{
         @as(f64, @floatFromInt(n)) / done.seconds,
         n,
         done.seconds,
@@ -55,5 +55,13 @@ fn decode(c: *Ctx, drafts: bool, prompts: []const ids_file.Prompt, max_new: u32)
         done.rounds,
         @as(f64, @floatFromInt(done.submit_ns)) / shared / 1e3,
         done.seconds * 1e6 / shared,
+        each(done, 0),
+        each(done, 1),
+        each(done, 2),
     });
+}
+
+/// Microseconds a backend call of kind `which` (verify, keep, draft) took on average.
+fn each(d: Session.Done, which: usize) f64 {
+    return @as(f64, @floatFromInt(d.spent[which])) / @as(f64, @floatFromInt(@max(d.calls[which], 1))) / 1e3;
 }
