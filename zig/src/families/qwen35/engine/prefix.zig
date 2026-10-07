@@ -2,7 +2,7 @@
 //! later prompt that extends one prefills only its new tokens (Python's PrefixCache, with the same eviction order).
 
 const std = @import("std");
-const state = @import("state.zig");
+const state = @import("../forward/state.zig");
 const Allocator = std.mem.Allocator;
 
 /// A snapshot this close to the prompt's end saves too little to keep next to the entry before it.

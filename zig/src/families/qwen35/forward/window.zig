@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const view = @import("view.zig");
+const view = @import("../model/view.zig");
 const state = @import("state.zig");
 const fwd = @import("forward.zig");
 const moe = @import("moe.zig");

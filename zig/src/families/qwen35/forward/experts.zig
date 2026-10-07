@@ -1,11 +1,11 @@
 //! The Python loader's `_routed`, `_experts` and `_affine_side`: router rows and the stacked affine experts.
 
 const std = @import("std");
-const table = @import("table.zig");
-const convert = @import("convert.zig");
-const config = @import("config.zig");
-const host = @import("host.zig");
-const projection = @import("projection.zig");
+const table = @import("../model/table.zig");
+const convert = @import("../model/convert.zig");
+const config = @import("../model/config.zig");
+const host = @import("../model/host.zig");
+const projection = @import("../model/projection.zig");
 
 const Tensor = table.Tensor;
 const Table = table.Table;

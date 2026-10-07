@@ -2,8 +2,8 @@
 //! may hold, from the GPU's free memory after the weights, a reserve, the engine's scratch and every lane's caches.
 
 const std = @import("std");
-const config = @import("config.zig");
-const fwd = @import("forward.zig");
+const config = @import("../model/config.zig");
+const fwd = @import("../forward/forward.zig");
 
 pub const gib: usize = 1 << 30;
 

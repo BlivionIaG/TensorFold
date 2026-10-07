@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const win = @import("window.zig");
+const win = @import("../forward/window.zig");
 
 /// Shapes kept at once; the least recently used one is dropped for a new one.
 const max_entries = 24;

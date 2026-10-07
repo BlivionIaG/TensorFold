@@ -5,7 +5,7 @@ const config = @import("config.zig");
 const table = @import("table.zig");
 const host = @import("host.zig");
 const projection = @import("projection.zig");
-const experts = @import("experts.zig");
+const experts = @import("../forward/experts.zig");
 
 const Tensor = table.Tensor;
 const Table = table.Table;

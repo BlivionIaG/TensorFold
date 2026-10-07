@@ -3,7 +3,7 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const view = @import("view.zig");
+const view = @import("../model/view.zig");
 
 const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;

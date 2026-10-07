@@ -3,17 +3,17 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const view = @import("view.zig");
-const state = @import("state.zig");
-const fwd = @import("forward.zig");
-const win = @import("window.zig");
-const weights = @import("weights.zig");
-const bridge = @import("bridge.zig");
+const view = @import("../model/view.zig");
+const state = @import("../forward/state.zig");
+const fwd = @import("../forward/forward.zig");
+const win = @import("../forward/window.zig");
+const weights = @import("../model/weights.zig");
+const bridge = @import("../model/bridge.zig");
 const sample = @import("sample.zig");
 const memory = @import("memory.zig");
 const draw = @import("draw.zig");
-const slicing = @import("slicing.zig");
-const reduce = @import("reduce.zig");
+const slicing = @import("../model/slicing.zig");
+const reduce = @import("../forward/reduce.zig");
 const round_graphs = @import("round_graphs.zig");
 
 pub const Options = struct {

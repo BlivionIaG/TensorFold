@@ -7,10 +7,10 @@
 const std = @import("std");
 const hip = @import("hip");
 const lanes = @import("lanes");
-const view = @import("view.zig");
-const weights = @import("weights.zig");
-const bridge = @import("bridge.zig");
-const fwd = @import("forward.zig");
+const view = @import("../model/view.zig");
+const weights = @import("../model/weights.zig");
+const bridge = @import("../model/bridge.zig");
+const fwd = @import("../forward/forward.zig");
 const draw = @import("draw.zig");
 
 const Ops = hip.ops.Ops;

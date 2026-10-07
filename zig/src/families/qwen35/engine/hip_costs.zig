@@ -5,8 +5,8 @@ const std = @import("std");
 const hip = @import("hip");
 const lanes = @import("lanes");
 const Engine = @import("engine.zig").Engine;
-const state = @import("state.zig");
-const win = @import("window.zig");
+const state = @import("../forward/state.zig");
+const win = @import("../forward/window.zig");
 const draw = @import("draw.zig");
 const mtp = @import("mtp.zig");
 
