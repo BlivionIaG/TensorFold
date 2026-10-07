@@ -53,7 +53,6 @@ test "row outputs are repeatable and independent of batch width" {
         try buffers[4].download(0, &golden);
         try std.testing.expectEqual(@as(usize, 0), try affine.mismatchCount(&golden, &golden));
         try progress.fill8(0);
-        try ctx.synchronize();
         var load_args: @import("args.zig").Args = .{};
         try load_args.add(scratch.ptr);
         try load_args.add(progress.ptr);
@@ -65,7 +64,6 @@ test "row outputs are repeatable and independent of batch width" {
         for ([_]usize{ 1, 2, 4, 8, 16, 17, 32 }) |rows| for (0..3) |_| {
             shape.rows = rows;
             try buffers[4].fill8(0xff);
-            try (@import("stream.zig").Stream{ .r = &r, .handle = null }).synchronize();
             try affine.launchRowF32(function, stream, shape, buffers);
             try stream.synchronize();
             var got: [32 * 24 * 2]u8 = undefined;
@@ -79,7 +77,6 @@ test "row outputs are repeatable and independent of batch width" {
         for (0..32) |row_index| {
             try buffers[0].upload(0, std.mem.sliceAsBytes(x[row_index * k ..][0..k]));
             try buffers[4].fill8(0xff);
-            try (@import("stream.zig").Stream{ .r = &r, .handle = null }).synchronize();
             try affine.launchRowF32(function, stream, shape, buffers);
             try stream.synchronize();
             var got: [24 * 2]u8 = undefined;
