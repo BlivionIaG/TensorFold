@@ -29,6 +29,23 @@ pub const Snapshots = struct {
     };
 };
 
+/// What a paged store asks of the backend's pages: who holds each, and how many are free.
+pub const Pages = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+    /// Bytes of one page, over every layer.
+    bytes: u64,
+
+    pub const VTable = struct {
+        retain: *const fn (ptr: *anyopaque, id: u32) void,
+        release: *const fn (ptr: *anyopaque, id: u32) void,
+        /// How many hold the page: the store counts as one.
+        holders: *const fn (ptr: *anyopaque, id: u32) u32,
+        /// Pages free and not promised to a stream.
+        available: *const fn (ptr: *anyopaque) usize,
+    };
+};
+
 /// What a family's states depend on beyond their position.
 pub const Rules = struct {
     /// Tokens past the position a state read (Flash Next's MTP head keys row at-1 with token at: 1).
@@ -39,6 +56,10 @@ pub const Rules = struct {
     min_gap: u32 = 256,
     /// Shorter prompts keep nothing: below it a mark's extra prompt call costs more than a later turn's reuse saves.
     min_prompt: u32 = 4096,
+    /// A paged store (prompt_radix.zig): the tokens a page holds, where its marks and resumes sit (0: not paged).
+    page: u32 = 0,
+    /// A paged store also keeps the prompt's last whole page, for a later turn whose history the request did not name.
+    tail: bool = false,
 };
 
 pub const Entry = struct {
@@ -56,6 +77,10 @@ pub const Counts = struct { hits: u64 = 0, misses: u64 = 0, kept: u64 = 0, evict
 
 /// Where a prompt pass starts and where it stops to keep its state (marks sorted, in `a`).
 pub const Plan = struct { from: u32 = 0, marks: []const u32 = &.{} };
+
+/// The result of a paged store's `keep`: whether a state is held at the mark now, and how many of the stream's first pages
+/// the store holds already (the `path` it was given has the store's page of each: the stream swaps its own for them).
+pub const Kept = struct { held: bool, shared: usize };
 
 /// The entry a backend restores itself (null: the pass starts at 0) and the pass's marks.
 pub const Lookup = struct { entry: ?*Entry = null, marks: []const u32 = &.{} };

@@ -224,8 +224,12 @@ pub const LaneHost = @import("lane_host.zig").LaneHost;
 /// Exact prompt reuse between requests, for any family (prompt_cache.zig).
 pub const prompt_cache = @import("prompt_cache.zig");
 
+/// The same for a paged cache over the backend's own KV pages (prompt_radix.zig).
+pub const prompt_radix = @import("prompt_radix.zig");
+
 test {
     _ = @import("lane_host.zig");
     _ = @import("lane_host_reuse_test.zig");
     _ = prompt_cache;
+    _ = prompt_radix;
 }

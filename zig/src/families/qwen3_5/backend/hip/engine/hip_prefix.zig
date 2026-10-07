@@ -1,9 +1,9 @@
-//! The HIP side of the prompt cache: the pool's pages and the linear snapshots behind radix.zig's interfaces, and the messages
+//! The HIP side of the prompt cache: the pool's pages and the linear snapshots behind core/prompt_radix.zig's interfaces, and the messages
 //! that keep the other ranks' copies. Rank 0 decides every match, insertion and eviction; the other ranks apply what it says.
 
 const std = @import("std");
 const hip = @import("hip");
-const radix = @import("radix.zig");
+const radix = @import("engine_api").prompt_radix;
 const memory = @import("memory.zig");
 const worker = @import("worker.zig");
 const state = @import("../forward/state.zig");
@@ -30,7 +30,7 @@ pub const Prefix = struct {
     pub fn init(gpa: Allocator, e: *Engine) !*Prefix {
         const p = try gpa.create(Prefix);
         errdefer gpa.destroy(p);
-        const rules: radix.Rules = .{ .page = pages.tokens, .min_gap = @import("prefix.zig").min_gap };
+        const rules: radix.Rules = .{ .page = pages.tokens, .min_gap = @import("prefix.zig").min_gap, .min_prompt = 0, .tail = true };
         p.* = .{ .gpa = gpa, .e = e, .store = try radix.Store.init(gpa, .{ .ptr = p, .vtable = &family }, .{ .ptr = &e.pool, .vtable = &pool_pages, .bytes = e.pool.pageBytes() }, rules), .snaps = state.Snapshots.init(gpa, &e.driver) };
         return p;
     }

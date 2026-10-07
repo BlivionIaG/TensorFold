@@ -1,11 +1,12 @@
 //! Prompt reuse as a radix tree over token pages, shaped as core/prompt_cache.zig's Store: states kept at the marks a prompt
 //! pass stands at, found by their tokens, evicted least recently used, a shared system cut never superseded by its own
 //! conversation. A request takes the pages of its longest match and resumes from the deepest snapshot on it; the tree
-//! (radix_tree.zig) keeps the pages shared. Nothing here knows a GPU: the backend gives page reference counts and copies
+//! (prompt_radix_tree.zig) keeps the pages shared. Nothing here knows a GPU: the backend gives page reference counts and copies
 //! of its state.
 
 const std = @import("std");
-const tree_mod = @import("radix_tree.zig");
+const pc = @import("prompt_cache.zig");
+const tree_mod = @import("prompt_radix_tree.zig");
 const Allocator = std.mem.Allocator;
 
 pub const Saved = tree_mod.Saved;
@@ -15,26 +16,14 @@ pub const Counts = tree_mod.Counts;
 pub const Node = tree_mod.Node;
 pub const Tree = tree_mod.Tree;
 
-pub const Rules = struct {
-    /// Tokens a page holds: marks and resumes sit on its edges.
-    page: u32 = 64,
-    /// A mark other than the history's is kept only this far from every other mark and the resume point.
-    min_gap: u32 = 256,
-    /// Shorter prompts keep nothing.
-    min_prompt: u32 = 0,
-    /// Also keep the prompt's last whole page, for a later turn whose history the request did not name.
-    tail: bool = true,
-};
+/// The rules of prompt_cache.zig, paged: `page` is set, `lookahead` and `planned` are not (a row's bits do not depend on its chunk).
+pub const Rules = pc.Rules;
 
 /// What the tree may hold: pages, and snapshots.
 pub const Limits = struct { pages: usize = 0, snaps: usize = 0 };
 
-/// Where a prompt pass starts and where it stops to keep its state (marks sorted).
-pub const Plan = struct { from: u32 = 0, marks: []const u32 = &.{} };
-
-/// The result of `keep`: whether a state is held at the mark now, and how many of the stream's first pages the tree holds
-/// already (`path` has the tree's page of each: the stream swaps its own for them).
-pub const Kept = struct { held: bool, shared: usize };
+pub const Plan = pc.Plan;
+pub const Kept = pc.Kept;
 
 pub const Store = struct {
     tree: Tree,
@@ -46,6 +35,7 @@ pub const Store = struct {
     const SHARED_KEYS = 64;
 
     pub fn init(gpa: Allocator, family: Snapshots, pages: Pages, rules: Rules) !Store {
+        std.debug.assert(rules.page > 0 and rules.lookahead == 0 and !rules.planned);
         return .{ .tree = try Tree.init(gpa, family, pages, rules.page), .rules = rules };
     }
 
@@ -301,5 +291,5 @@ fn note(comptime fmt: []const u8, args: anytype) void {
 }
 
 test {
-    _ = @import("radix_test.zig");
+    _ = @import("prompt_radix_test.zig");
 }

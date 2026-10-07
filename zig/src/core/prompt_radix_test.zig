@@ -1,7 +1,7 @@
 //! The prompt cache's tests: pages and a family over host memory, so a resumed pass keeps exactly the pages and states it should.
 
 const std = @import("std");
-const radix = @import("radix.zig");
+const radix = @import("prompt_radix.zig");
 const Allocator = std.mem.Allocator;
 const Store = radix.Store;
 const Plan = radix.Plan;
@@ -73,7 +73,7 @@ const Fake = struct {
     }
 };
 
-const rules: radix.Rules = .{ .page = 4, .min_gap = 8, .tail = false };
+const rules: radix.Rules = .{ .page = 4, .min_gap = 8, .min_prompt = 0 };
 
 fn seq(comptime n: usize, from: u32) [n]u32 {
     var out: [n]u32 = undefined;
@@ -143,7 +143,7 @@ test "marks: the history, the stable prefix, shared blocks and the last page, ap
     defer arena.deinit();
     const a = arena.allocator();
     var f: Fake = .{ .gpa = std.testing.allocator };
-    var s = try newStore(&f, .{ .page = 4, .min_gap = 8 });
+    var s = try newStore(&f, .{ .page = 4, .min_gap = 8, .min_prompt = 0, .tail = true });
     defer s.deinit();
     const prompt = seq(48, 0);
     var prev = seq(30, 0);
@@ -160,7 +160,7 @@ test "a shared cut outlives the conversation that made it, and a state its conve
     defer arena.deinit();
     const a = arena.allocator();
     var f: Fake = .{ .gpa = std.testing.allocator };
-    var s = try newStore(&f, .{ .page = 4, .min_gap = 16, .tail = false });
+    var s = try newStore(&f, .{ .page = 4, .min_gap = 16, .min_prompt = 0 });
     defer s.deinit();
     s.limit(.{ .pages = 40, .snaps = 3 });
     var mine: std.ArrayList(u32) = .empty;

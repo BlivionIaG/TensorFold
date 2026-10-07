@@ -156,7 +156,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const exe = b.addExecutable(.{ .name = "tf-hip-test", .root_module = runner });
     b.installArtifact(exe);
     b.step("tf-hip-test", "The HIP runtime's GPU test program").dependOn(&b.addInstallArtifact(exe, .{}).step);
-    const qwen = qwen3_5(b, target, optimize, hip, lanes);
+    const qwen = qwen3_5(b, target, optimize, hip, lanes, api);
     const upload = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
     upload.addImport("hip", hip);
     upload.addImport("qwen3_5", qwen);
@@ -191,13 +191,14 @@ fn lanesModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     return b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = target, .optimize = optimize, .link_libc = true });
 }
 
-/// The Qwen3.5 / Qwen3.6 family over the HIP runtime and the core's checkpoint reader.
-fn qwen3_5(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module) *std.Build.Module {
+/// The Qwen3.5 / Qwen3.6 family over the HIP runtime, the core's checkpoint reader and the engine API's prompt cache.
+fn qwen3_5(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module, api: *std.Build.Module) *std.Build.Module {
     const core = hip.import_table.get("core").?;
     const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen3_5/hip.zig"), .target = target, .optimize = optimize, .link_libc = true });
     family.addImport("hip", hip);
     family.addImport("core", core);
     family.addImport("lanes", lanes);
+    family.addImport("engine_api", api);
     return family;
 }
 
@@ -207,12 +208,12 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, &.{}, "", core);
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
     const lanes = lanesModule(b, b.graph.host, .debug);
-    const qwen = qwen3_5(b, b.graph.host, .debug, hip, lanes);
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const qwen = qwen3_5(b, b.graph.host, .debug, hip, lanes, api);
     const family = b.addRunArtifact(b.addTest(.{ .root_module = qwen }));
     // TF_QWEN_DIR is not a cached input
     family.has_side_effects = true;
     step.dependOn(&family.step);
-    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines(b, b.graph.host, .debug, hip, lanes, api, qwen) })).step);
     const score = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/truth_score.zig"), .target = b.graph.host, .optimize = .debug });
     score.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = b.graph.host, .optimize = .debug }));

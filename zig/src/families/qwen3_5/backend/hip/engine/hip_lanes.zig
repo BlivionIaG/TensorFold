@@ -10,7 +10,7 @@ const mtp = @import("mtp.zig");
 const costs = @import("hip_costs.zig");
 const prefix = @import("prefix.zig");
 const hip_prefix = @import("hip_prefix.zig");
-const radix = @import("radix.zig");
+const radix = @import("engine_api").prompt_radix;
 const pages = @import("../forward/pages.zig");
 const worker = @import("worker.zig");
 

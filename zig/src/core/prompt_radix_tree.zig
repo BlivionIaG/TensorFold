@@ -1,46 +1,15 @@
-//! The structure under the prompt cache (radix.zig): nodes that are runs of whole pages keyed by their tokens, the pages
+//! The structure under the paged prompt cache (prompt_radix.zig): nodes that are runs of whole pages keyed by their tokens, the pages
 //! they hold counted through the backend, and the family's snapshot at the end of a node that has one.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-/// A family's copy of one state.
-pub const Saved = *anyopaque;
+const pc = @import("prompt_cache.zig");
 
-/// What a family gives the tree: copies of the state that is not in pages, while the prompt pass stands at a page edge.
-pub const Snapshots = struct {
-    ptr: *anyopaque,
-    vtable: *const VTable,
-
-    pub const VTable = struct {
-        /// The storage a snapshot at `at` tokens takes.
-        bytes: *const fn (ptr: *anyopaque, at: u32) u64,
-        /// Copy the live state after `at` prompt tokens into new storage; `owner` is the stream's.
-        save: *const fn (ptr: *anyopaque, owner: ?*anyopaque, at: u32) anyerror!Saved,
-        /// Make the live state `saved`'s: the next prompt chunk starts at its position.
-        restore: *const fn (ptr: *anyopaque, owner: ?*anyopaque, saved: Saved) anyerror!void,
-        drop: *const fn (ptr: *anyopaque, saved: Saved) void,
-    };
-};
-
-/// What the tree asks of the backend's pages: who holds each, and how many are free.
-pub const Pages = struct {
-    ptr: *anyopaque,
-    vtable: *const VTable,
-    /// Bytes of one page, over every layer.
-    bytes: u64,
-
-    pub const VTable = struct {
-        retain: *const fn (ptr: *anyopaque, id: u32) void,
-        release: *const fn (ptr: *anyopaque, id: u32) void,
-        /// How many hold the page: the tree counts as one.
-        holders: *const fn (ptr: *anyopaque, id: u32) u32,
-        /// Pages free and not promised to a stream.
-        available: *const fn (ptr: *anyopaque) usize,
-    };
-};
-
-pub const Counts = struct { hits: u64 = 0, misses: u64 = 0, kept: u64 = 0, evicted: u64 = 0, refused: u64 = 0, failed: u64 = 0 };
+pub const Saved = pc.Saved;
+pub const Snapshots = pc.Snapshots;
+pub const Pages = pc.Pages;
+pub const Counts = pc.Counts;
 
 /// The state kept at a node's end.
 pub const Entry = struct {
