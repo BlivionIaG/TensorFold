@@ -465,7 +465,7 @@ the bucketing of a round's rows and span that keeps graphs few (3.6).
 
 ## 4. Testing
 
-### 4.1 Today: grown one tool at a time
+### 4.1 Before step 0c: grown one tool at a time
 
 | Entry point | Commands | Kind |
 |---|---|---|
@@ -486,8 +486,8 @@ how fast is it.
 | Entry point | Answers | Replaces | Needs |
 |---|---|---|---|
 | `zig build test` | host logic is right | unchanged | nothing |
-| `tf-hip-test kernels [--filter F] [--bench]` | each registered kernel against an fp64 reference, and byte-identity within each family across row counts and block sizes | `affine gemm gemv decode gdn` (one harness; `--bench` gives the timings the separate benches gave) | one GPU |
-| `tf-hip-test runtime` | the HIP runtime works on this GPU | `info smoke graph cooperative library image` (one command, subtests by filter) | one GPU |
+| `tf-hip-test kernels [--filter F] [--bench] [--oracle DIR]` | each registered kernel against an fp64 reference, and byte-identity within each family across row counts and block sizes | `affine gemm gemv decode gdn exact` (one harness, built: 4.3; `--bench` gives the timings the separate benches gave) | one GPU |
+| `tf-hip-test runtime` | the HIP runtime works on this GPU | `info smoke graph cooperative library image` (one command, subtests by filter, built: 4.3) | one GPU |
 | `tf-qwen35-test check MODEL [--tp N] [--truth T]` | **invariants** (window vs one row by layer; drafted = serial, solo = together, resumed = fresh, greedy and sampled, short and long prompts; graph = eager), **accuracy** (prefill and decode logits scored against the fp64 truth in-process, if given), **speed** (prefill lengths, decode 1/4 streams, MTP depths) | `rows lanes logits prefill draw digest check`, and the scripts tpcheck/replies/verify/compare/decode/acc/prefill_ab | one model, N GPUs |
 
 Plus the official server tools, unchanged, for receipts (CONTRIBUTING): `tools/bench_concurrent.py --alone --serial`,
@@ -504,8 +504,8 @@ How they compose:
 - **The Python-oracle tests** (`affine` fixtures, `layers`) become an optional `--oracle DIR` of `kernels` and
   `check`. The Python engine is frozen and the fp64 truth is the bar, so they only matter as a regression check of
   the fp32 reference paths.
-- **Benchmarks** (`launches`, `overhead`, the old `--bench` timings) move under `tf-hip-test bench` and are not
-  tests.
+- **Benchmarks** (`launches`, `overhead`) live under `tf-hip-test bench`, and the old per-tile timings under
+  `kernels --bench`; none is a test.
 - **Every test fails before its fix and passes after**, as CONTRIBUTING asks. The regression cases found so far
   (prefill cut vs whole, follower prefix mirroring, the confidence cut, padded rows) become named cases of `check`.
 
@@ -515,6 +515,61 @@ How they compose:
 | `tf-hip-test kernels` (+ runtime) | every kernel change; once per GPU per merge |
 | `tf-qwen35-test check` on 0.8B and 35B-A3B, tp 1 and 2 | every merge |
 | matrix (every Policy × model × tp, both GPUs) and the official tools | before a PR update or a release |
+
+### 4.3 `tf-hip-test` as built
+
+```
+tf-hip-test [--policy K=V,...] [-v] runtime [--filter F]
+tf-hip-test [--policy K=V,...] [-v] kernels [--filter F] [--bench] [--oracle DIR] [--reps N]
+tf-hip-test bench launches|overhead [n] [reps]
+```
+
+`--policy` (and `TF_POLICY`, and the old variables) set the run's Policy, so the matrix cores on and off, or the previous
+tiles, are the same two commands with another policy. `-v` prints the steps inside each group. Every group prints one
+PASS or FAIL line, and the command ends with a summary and a nonzero exit when a group failed. `--filter` takes a
+substring of a group's name. Files: `runtime/` (the probes), `kernels/` (the registry-driven harness and the other
+kernels), `bench/`, `args.zig` (the command line and the aliases, with host tests under `zig build test`).
+
+**`runtime`** groups: `smoke graph cooperative library image` (and the `INFO` line of `info`).
+
+**`kernels`** groups:
+
+| Group | What it checks |
+|---|---|
+| `affine decode`, `affine prefill`, `affine sweep` | for every product (the decode shapes of three models, every width and group, ragged sizes, routed plans) each registry entry that the GPU has and the shape fits is launched on its own: its sampled outputs against dequant(W) . x in float64 within the bound of an fp32 sum (rounded outputs within the activation type's rounding too), and the entries the registry picks between by rows under the run's Policy write the same bytes |
+| `rows decode` | in a lane round, each row of a launch is the row alone, at every row count up to 32, fp32 and rounded, plain products, routed plans and the gate-up activation epilogue |
+| `rows prefill` | at every row count 1..200, width and group, dense and routed, every tile the registry picks between writes the same bytes, as does the engine's pick; the router's two kernels agree |
+| `gdn` | the chunked DeltaNet against a float64 recurrence at four lengths |
+| `decode router`, `decode tail`, `decode group`, `decode pair`, `decode chain` | the kernels outside the registry against the launches they replace (`fuse` off) and float64, or byte for byte: the router, the residual tails, products that share x, the routed activation epilogue, the MoE pick, the linear attention's conv and gated norm |
+| `oracle affine` (with `--oracle DIR`) | the Python engine's affine fixtures, pinned to `kernels=reference`, bit for bit |
+| `affine short`, `gdn bench` (with `--bench`) | timings only |
+
+With `--bench` the affine groups also print, per product, each entry's microseconds and GB/s (decode) or TFLOPS (prefill),
+and the decode groups the previous launches' and the merged ones' time.
+
+The old command names stay as aliases for one release (`info smoke graph cooperative library image affine gemm gemv
+decode exact gdn launches overhead`), each printing the group it now is:
+
+| Old command or case | Now |
+|---|---|
+| `info` | `runtime` (its `INFO` line) |
+| `smoke`, `graph`, `cooperative`, `library`, `image` | `runtime --filter NAME` |
+| `affine DIR` | `kernels --filter oracle --oracle DIR` |
+| `gemm [reps] [filter]` (29 products, new tile vs previous) | `kernels --filter "affine prefill"`: every prefill entry, `block` and `gemm` included, against float64 |
+| `gemm sweep` (222 ragged products) | `kernels --filter "affine sweep"` (444: prefill and decode rows) |
+| `gemm tiers` (1850 products and the router logits) | `kernels --filter "rows prefill"` |
+| `gemm short` | `kernels --bench --filter "affine short"` |
+| `gemv [reps] [filter]` (42 decode products) | `kernels --filter "affine decode"` (the same 42; each entry against float64, the stream and previous tiles included) |
+| `exact` | `kernels --filter "rows decode"` |
+| `decode router\|tail\|group\|pair\|chain` | `kernels --filter "decode NAME"` |
+| `gdn`, `gdn bench [rows]` | `kernels --filter gdn`, `--bench --filter "gdn bench"` |
+| `launches [n] [reps]`, `overhead [n] [reps]` | `bench launches`, `bench overhead` |
+
+What changed in the comparison: the old harnesses compared one new tile with one previous tile (`TF_AFFINE_GEMV=old`,
+`gemm=reference`); the registry lists every tile, so each is now compared with float64 directly, and the byte rule is the
+family rule of 3.4 under the run's Policy, so `--policy gemm=reference` or `stream=reference` runs the previous rules.
+The decode group launched its one-product-a-side comparison outside a lane round, which on the matrix cores refuses the
+rounded output at 16 rows ("fp16 output is the decode tile"); it launches inside one now, as the engine does.
 
 ## 5. Phases
 
@@ -541,7 +596,7 @@ How they compose:
 | Step | Change | Proof |
 |---|---|---|
 | 0 | this plan; owners and file ownership | review |
-| 0c | **Tests regrouped** (4.2): `tf-hip-test kernels` and `runtime`, `tf-qwen35-test check`, the in-repo matrix script; host scripts retired | the same cases pass; nothing loses coverage (a mapping table in the PR) |
+| 0c | **Tests regrouped** (4.2; `tf-hip-test` built, 4.3): `tf-hip-test kernels` and `runtime`, `tf-qwen35-test check`, the in-repo matrix script; host scripts retired | the same cases pass; nothing loses coverage (a mapping table in the PR) |
 | 0b | **CONTRIBUTING pass**, before any refactor (one owner, after the branches in flight land):<br>- the layout of 3.8 (moves first, as their own commits, then splits);<br>- `launches.zig` and `ops.hip` split by job under 600 lines;<br>- one-line comments everywhere;<br>- receipts from tools/bench_concurrent.py, bench_openai.py and prefill_cold.py against tensorfold-native;<br>- authorship under the GitHub noreply address (set) | truth scores; rows/tpcheck; speed recorded (32k prefill expected lower) |
 | 1 | **Policy**: struct, resolution, flags, `TF_POLICY`, the old variables as aliases, start-up line and server info; ops/registry read Policy instead of env | all variables' behaviors unchanged (matrix of on/off runs) |
 | 2 | **Caps** replace `Family`; target table; gfx1151 and gfx1200 build | fixtures, rows, tpcheck, speed unchanged |

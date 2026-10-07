@@ -218,6 +218,8 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     const score = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/truth_score.zig"), .target = b.graph.host, .optimize = .debug });
     score.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = b.graph.host, .optimize = .debug }));
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = score })).step);
+    const cli = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/args.zig"), .target = b.graph.host, .optimize = .debug });
+    step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cli })).step);
     b.step("test-qwen35", "Qwen3.5 / 3.6 host tests; TF_QWEN_DIR indexes a real checkpoint").dependOn(&family.step);
 }
 
