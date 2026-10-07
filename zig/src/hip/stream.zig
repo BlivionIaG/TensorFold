@@ -8,13 +8,13 @@ pub const Stream = struct {
 
     pub fn init(r: *const runtime.Runtime) runtime.Error!Stream {
         var handle: abi.Stream = null;
-        try runtime.check(r.api.hipStreamCreateWithFlags(&handle, 1));
+        try r.check(r.api.hipStreamCreateWithFlags(&handle, 1));
         if (handle == null) return error.Invalid;
         return .{ .r = r, .handle = handle };
     }
 
     pub fn synchronize(self: Stream) runtime.Error!void {
-        try runtime.check(self.r.api.hipStreamSynchronize(self.handle));
+        try self.r.check(self.r.api.hipStreamSynchronize(self.handle));
     }
 
     pub fn deinit(self: *Stream) void {

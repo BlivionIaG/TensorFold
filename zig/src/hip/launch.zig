@@ -28,7 +28,7 @@ pub fn launch(f: Function, cfg: Config, stream: Stream, args: *Args) runtime.Err
     if (f.r != stream.r) return error.Invalid;
     const g = cfg.grid;
     const b = cfg.block;
-    try runtime.check(f.r.api.hipModuleLaunchKernel(f.handle, g.x, g.y, g.z, b.x, b.y, b.z, cfg.shared, stream.handle, args.pointers(), null));
+    try f.r.check(f.r.api.hipModuleLaunchKernel(f.handle, g.x, g.y, g.z, b.x, b.y, b.z, cfg.shared, stream.handle, args.pointers(), null));
 }
 
 test "launch geometry refuses zero, oversized blocks and dimension overflow" {

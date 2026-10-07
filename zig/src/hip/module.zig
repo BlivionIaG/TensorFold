@@ -15,7 +15,7 @@ pub const Module = struct {
     pub fn load(r: *const runtime.Runtime, image: []const u8) runtime.Error!Module {
         if (image.len == 0 or @intFromPtr(image.ptr) % 8 != 0) return error.Invalid;
         var handle: abi.Module = null;
-        try runtime.check(r.api.hipModuleLoadData(&handle, image.ptr));
+        try r.check(r.api.hipModuleLoadData(&handle, image.ptr));
         if (handle == null) return error.Invalid;
         return .{ .r = r, .handle = handle };
     }
@@ -27,7 +27,7 @@ pub const Module = struct {
 
     pub fn function(self: Module, name: [:0]const u8) runtime.Error!Function {
         var handle: abi.Function = null;
-        try runtime.check(self.r.api.hipModuleGetFunction(&handle, self.handle, name.ptr));
+        try self.r.check(self.r.api.hipModuleGetFunction(&handle, self.handle, name.ptr));
         if (handle == null) return error.Invalid;
         return .{ .r = self.r, .handle = handle };
     }
@@ -50,7 +50,7 @@ test "selected code object reaches HIP and preserves driver failure" {
             return if (image[0] == 2) 1 else 0;
         }
     };
-    var r: runtime.Runtime = undefined;
+    var r = runtime.Runtime.forTests();
     r.api.hipModuleLoadData = Mock.load;
     const first align(8) = [_]u8{1};
     const selected align(8) = [_]u8{2};

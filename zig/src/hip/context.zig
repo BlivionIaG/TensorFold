@@ -11,21 +11,21 @@ pub const Context = struct {
     pub fn init(r: *const runtime.Runtime, ordinal: c_int) runtime.Error!Context {
         if (ordinal < 0) return error.Invalid;
         var device: abi.Device = 0;
-        try runtime.check(r.api.hipDeviceGet(&device, ordinal));
+        try r.check(r.api.hipDeviceGet(&device, ordinal));
         var handle: abi.Context = null;
-        try runtime.check(r.api.hipDevicePrimaryCtxRetain(&handle, device));
+        try r.check(r.api.hipDevicePrimaryCtxRetain(&handle, device));
         errdefer _ = r.api.hipDevicePrimaryCtxRelease(device);
         if (handle == null) return error.Invalid;
-        try runtime.check(r.api.hipCtxSetCurrent(handle));
+        try r.check(r.api.hipCtxSetCurrent(handle));
         return .{ .r = r, .device = device, .handle = handle };
     }
 
     pub fn makeCurrent(self: Context) runtime.Error!void {
-        try runtime.check(self.r.api.hipCtxSetCurrent(self.handle));
+        try self.r.check(self.r.api.hipCtxSetCurrent(self.handle));
     }
 
     pub fn synchronize(self: Context) runtime.Error!void {
-        try runtime.check(self.r.api.hipDeviceSynchronize());
+        try self.r.check(self.r.api.hipDeviceSynchronize());
     }
 
     pub fn deinit(self: *Context) void {
@@ -44,7 +44,7 @@ test "context synchronization uses the device API and propagates errors" {
             return result;
         }
     };
-    var r: runtime.Runtime = undefined;
+    var r = runtime.Runtime.forTests();
     r.api.hipDeviceSynchronize = Mock.synchronize;
     const ctx = Context{ .r = &r, .device = 0, .handle = null };
     Mock.calls = 0;
@@ -74,7 +74,7 @@ test "failed context selection releases the primary-context retain" {
             return 1;
         }
     };
-    var r: runtime.Runtime = undefined;
+    var r = runtime.Runtime.forTests();
     r.api.hipDeviceGet = Mock.device;
     r.api.hipDevicePrimaryCtxRetain = Mock.retain;
     r.api.hipDevicePrimaryCtxRelease = Mock.release;
