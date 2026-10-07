@@ -15,7 +15,7 @@ pub const Gpu = struct {
 /// The policy a run is under: the GPU's defaults, the `--policy` flags, then the old variables and TF_POLICY.
 pub fn policyOf(gpu: Gpu) !hip.Policy {
     var notes: hip.Policy.Notes = .{};
-    return hip.Policy.resolve(try gpu.ctx.caps(), gpu.policy, .current, &notes);
+    return hip.Policy.resolve(gpu.policy, .current, &notes);
 }
 
 /// Whether the steps inside a case group print their own lines.

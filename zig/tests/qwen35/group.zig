@@ -81,7 +81,7 @@ pub fn resolve(flags: []const u8, device: c_int) !struct { policy: hip.Policy, c
     defer ctx.deinit();
     const caps = try ctx.caps();
     var notes: hip.Policy.Notes = .{};
-    const policy = try hip.Policy.resolve(caps, flags, .current, &notes);
+    const policy = try hip.Policy.resolve(flags, .current, &notes);
     std.debug.print("policy {f} {s}\n", .{ policy, notes.text() });
     return .{ .policy = policy, .caps = caps };
 }

@@ -458,7 +458,7 @@ hipError_t launch_block(const Affine& a, hipStream_t stream, int items = 1) {
     return hipGetLastError();
 }
 
-// The reference GEMM tile (TF_AFFINE_GEMM=old picks it): 128 x 128, a thread 8 x 8, the sums of x in the compute loop.
+// The reference GEMM tile (gemm=reference picks it): 128 x 128, a thread 8 x 8, the sums of x in the compute loop.
 hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int items) {
     if (a.m < 1 || a.n < 1 || a.group % kBlockK || a.k % a.group || a.k % 16) return hipErrorInvalidValue;
     switch (a.bits) {

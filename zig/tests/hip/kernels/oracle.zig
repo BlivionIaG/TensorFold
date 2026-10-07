@@ -54,7 +54,7 @@ pub fn affine(gpu: Gpu, dir_path: []const u8) !void {
     const act = try kindOf(root.get("act_dtype").?.string);
     // the oracle's sums are the reference kernels': the fixtures pin them whatever the environment says
     var notes: hip.Policy.Notes = .{};
-    const policy = try hip.Policy.resolve(try gpu.ctx.caps(), "kernels=reference", .none, &notes);
+    const policy = try hip.Policy.resolve("kernels=reference", .none, &notes);
     var lib = try hip.rocm.Library.open(gpu.d, try gpu.ctx.caps(), policy);
     defer lib.close();
     var stream = try hip.Stream.init(gpu.d, true);

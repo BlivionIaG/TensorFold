@@ -93,7 +93,7 @@ fn lanesSet(c: *Ctx, set: []const u8, prompts: []const ids_file.Prompt) void {
 
 /// `graph` ran with the engine's graphs; the same job again with every round eager.
 fn graphs(c: *Ctx, name: []const u8, job: Session.Job, graph: Session.Done) void {
-    if (c.tp()) return c.report.skip(name, "rounds under tp run eager unless TF_HIP_GRAPHS_TP=1");
+    if (c.tp()) return c.report.skip(name, "rounds under tp run eager unless --policy graphs=on");
     if (!c.e.o.graphs) return c.report.skip(name, "graphs are off");
     if (graph.replayed == 0) return c.report.skip(name, "no round of the run replayed a graph");
     c.e.o.graphs = false;

@@ -135,6 +135,9 @@ pub const Open = struct {
     /// --parallel named a number: an engine whose memory fits fewer streams refuses instead of serving fewer.
     lanes_fixed: bool = false,
     drafts: bool = true,
+    /// --mtp-drafts and --mtp-confidence; null: the engine's defaults.
+    mtp_drafts: ?u32 = null,
+    mtp_confidence: ?f64 = null,
     speed_up: ?[]const u8 = null,
     /// The bytes kept prompt states may hold, in GiB (`--prompt-cache-gib`); null: the engine's plan.
     prompt_cache_gib: ?f64 = null,
@@ -154,8 +157,6 @@ pub const Open = struct {
     rank: u32 = 0,
     master: []const u8 = "",
     master_port: u16 = 29551,
-    /// Peer-to-peer between the cards: on, off, or null for the library's choice.
-    p2p: ?bool = null,
     /// The GPU engine's policy flags as `key=value,...`; empty: its defaults.
     policy: []const u8 = "",
 };

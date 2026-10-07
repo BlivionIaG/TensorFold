@@ -59,7 +59,7 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
     defer ctx.deinit();
     // the oracle's sums are the reference kernels': the fixtures pin them whatever the environment says
     var notes: hip.Policy.Notes = .{};
-    const policy = try hip.Policy.resolve(try ctx.caps(), "kernels=reference", .none, &notes);
+    const policy = try hip.Policy.resolve("kernels=reference", .none, &notes);
     // the unique id starts RCCL's bootstrap thread: the library stays loaded to the end
     var rccl: ?hip.rccl.Rccl = null;
     defer if (rccl) |*r| r.close();

@@ -44,7 +44,6 @@ pub const Options = struct {
     cache_gib: ?f64 = null,
     /// A --prompt-cache-gib past what the streams leave is kept, not refused.
     cache_over_cap: bool = false,
-    keep: ?i64 = null,
 };
 
 /// What the native server drives: the lane backend, the facts its round loop reads, and how to free it.
@@ -101,8 +100,8 @@ fn prepare(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.De
         .id = if (dev.group) |g| g.id else null,
     }) catch |err| return switch (err) {
         error.WeightsDoNotFit => refuse(a, problem, "the checkpoint's {d:.1} GiB of weights do not fit the {d:.1} GiB the HIP memory budget grants ({d:.1} GiB free less a {d:.1} GiB reserve{s}); free device memory or adjust TENSORFOLD_MEMORY_RESERVE_GIB / TENSORFOLD_HIP_MEMORY_LIMIT_GB", .{ gibs(pf.weights), gibs(pf.pool.room(pf.held)), gibs(pf.pool.free), gibs(pf.pool.reserve), if (pf.pool.limit != null) ", under TENSORFOLD_HIP_MEMORY_LIMIT_GB" else "" }),
-        error.BadReserve => refuse(a, problem, "TENSORFOLD_MEMORY_RESERVE_GIB (reserve_gib): a number of GiB from 2 to the memory's size", .{}),
-        error.BadLimit => refuse(a, problem, "TENSORFOLD_HIP_MEMORY_LIMIT_GB (memory_limit_gb): a positive number of GiB whose byte count fits in a 64-bit size", .{}),
+        error.BadReserve => refuse(a, problem, "TENSORFOLD_MEMORY_RESERVE_GIB: a number of GiB from 2 to the memory's size", .{}),
+        error.BadLimit => refuse(a, problem, "TENSORFOLD_HIP_MEMORY_LIMIT_GB: a positive number of GiB whose byte count fits in a 64-bit size", .{}),
         error.HostMemoryUnavailable => refuse(a, problem, "cannot read or parse /proc/meminfo's MemTotal and MemAvailable; refusing HIP unified-memory admission", .{}),
         else => refuse(a, problem, "the native HIP engine cannot load {s} ({s})", .{ dir, @errorName(err) }),
     };
@@ -127,11 +126,11 @@ fn prepare(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.De
         return refuse(a, problem, "--parallel {d} needs {d:.2} GiB at a {d}-token window, and the HIP memory budget leaves {d:.2} GiB: serve --parallel {d}, or lower --context", .{ o.streams, gibs(asked), o.window, gibs(room), streams });
     }
     const need = served(e, streams, capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot count its scratch ({s})", .{@errorName(err)});
-    // the prompt cache: --prompt-cache-gib, else the policy's prefix bytes, else what the streams leave
+    // the prompt cache: --prompt-cache-gib, else what the streams leave
     const left = room - need;
     const policy = dev.policy;
-    const keep: usize = if (o.keep) |n| @intCast(n) else policy.prefix.slots;
-    var budget: usize = if (o.cache_gib) |g| @intFromFloat(g * (1 << 30)) else if (policy.prefix.bytes > 0) policy.prefix.bytes else left;
+    const keep: usize = policy.slots;
+    var budget: usize = if (o.cache_gib) |g| @intFromFloat(g * (1 << 30)) else left;
     if (budget > left and !o.cache_over_cap) {
         return refuse(a, problem, "a {d:.2} GiB prompt cache does not fit the {d:.2} GiB the streams leave; lower --prompt-cache-gib, or --prompt-cache-over-cap to keep it", .{ gibs(budget), gibs(left) });
     }

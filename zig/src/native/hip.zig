@@ -26,7 +26,6 @@ pub fn chip(a: Allocator) ?[]const u8 {
     return a.dupe(u8, @tagName(caps.family)) catch null;
 }
 
-extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
 
 /// A flag or a resource the engine cannot take: `problem` says why.
 const Refused = error{Refused};
@@ -43,6 +42,8 @@ fn checkGroup(a: Allocator, o: api.Open, problem: *[]const u8) Refused!void {
     if (o.tp == 1 and o.rank != 0) return refuse(a, problem, "--rank must be 0 when --tp 1", .{});
     if (o.rank >= o.tp) return refuse(a, problem, "--rank {d} not in [0, --tp {d})", .{ o.rank, o.tp });
     if (o.keep) |n| if (n < 0) return refuse(a, problem, "--checkpoint-slots must be 0 or more", .{});
+    if (o.mtp_drafts) |n| if (n > 3) return refuse(a, problem, "--mtp-drafts {d}: the HIP engine drafts at most 3", .{n});
+    if (o.mtp_confidence) |c| if (c < 0 or c > 1) return refuse(a, problem, "--mtp-confidence must be from 0 to 1", .{});
     if (o.prompt_cache_gib) |g| if (g < 0) return refuse(a, problem, "--prompt-cache-gib must be 0 or more", .{});
 }
 
@@ -70,10 +71,13 @@ fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open
         error.NoNative => refuse(a, problem, "--context 0 asks for the model's window, and its config.json names none: give a token count", .{}),
         error.PastNative => refuse(a, problem, "--context {d} exceeds this model's {d}-token window", .{ o.context.?, native }),
     };
-    const index = hip.Device.ordinal(o.rank);
+    const index: c_int = if (o.device) |d| @intCast(d) else hip.Device.ordinal(o.rank);
     const caps = hip.Device.capsOf(index) orelse return refuse(a, problem, "HIP device {d} is not a GPU this engine supports", .{index});
     var notes: hip.Policy.Notes = .{};
-    var policy = hip.Policy.resolve(caps, o.policy, .current, &notes) catch |err| return refuse(a, problem, "the policy \"{s}\" is refused ({s})", .{ o.policy, @errorName(err) });
+    var policy = hip.Policy.resolve(o.policy, .current, &notes) catch |err| return refuse(a, problem, "the policy \"{s}\" is refused ({s})", .{ o.policy, @errorName(err) });
+    if (o.mtp_drafts) |n| policy.mtp.drafts = @intCast(n);
+    if (o.mtp_confidence) |c| policy.mtp.confidence = c;
+    if (o.keep) |n| policy.slots = @intCast(@min(n, 1 << 16));
     const group: ?*hip.Group = if (o.tp > 1) hip.Group.join(gpa, io, o.rank, o.tp, o.master, o.master_port, caps, &policy) catch |err| return switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         error.NoRccl => refuse(a, problem, "tensor parallelism needs RCCL", .{}),
@@ -84,7 +88,6 @@ fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open
     errdefer if (group) |g| g.close(gpa);
     const policy_line = try std.fmt.allocPrint(gpa, "{f}", .{policy});
     std.debug.print("[tensorfold] HIP rank {d} of {d}: policy {s}{s} {s}\n", .{ o.rank, o.tp, policy_line, if (o.rank > 0) " (rank 0's)" else "", notes.text() });
-    if (o.p2p) |on| _ = setenv("NCCL_P2P_DISABLE", if (on) "0" else "1", 1);
     return .{
         .dev = .{ .index = index, .caps = caps, .policy = policy, .group = group },
         .options = .{
@@ -95,7 +98,6 @@ fn ready(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open
             .world = o.tp,
             .cache_gib = o.prompt_cache_gib,
             .cache_over_cap = o.prompt_cache_over_cap,
-            .keep = o.keep,
         },
         .policy_line = policy_line,
     };

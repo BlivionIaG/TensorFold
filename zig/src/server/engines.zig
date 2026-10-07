@@ -21,6 +21,8 @@ fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: cli.Args
         .lanes = cli.parallel(args.parallel) orelse 8,
         .lanes_fixed = cli.parallelFixed(args.parallel),
         .drafts = !args.no_drafts,
+        .mtp_drafts = args.mtp_drafts,
+        .mtp_confidence = args.mtp_confidence,
         .speed_up = args.speed_up,
         .prompt_cache_gib = args.prompt_cache_gib,
         .prompt_cache_over_cap = args.prompt_cache_over_cap,
@@ -33,7 +35,6 @@ fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: cli.Args
         .rank = args.rank,
         .master = args.master,
         .master_port = args.master_port,
-        .p2p = args.p2p,
         .policy = args.policy,
     };
 }

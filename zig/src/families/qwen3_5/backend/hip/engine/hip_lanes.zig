@@ -42,6 +42,9 @@ pub const Lane = struct {
     pending: ?struct { window: usize, rows: usize } = null,
 };
 
+/// The engine this thread's HIP calls go to.
+threadlocal var bound: ?*Engine = null;
+
 pub const Hip = struct {
     gpa: std.mem.Allocator,
     e: *Engine,
@@ -195,8 +198,14 @@ pub const Hip = struct {
         h.gpa.destroy(l);
     }
 
+    /// The backend behind `ptr`, with the calling thread bound to its GPU (the lane thread is not the one that opened it).
     fn of(ptr: *anyopaque) *Hip {
-        return @ptrCast(@alignCast(ptr));
+        const h: *Hip = @ptrCast(@alignCast(ptr));
+        if (bound != h.e) {
+            h.e.ctx.makeCurrent() catch |err| std.log.err("hipSetDevice on the lane thread: {s}", .{@errorName(err)});
+            bound = h.e;
+        }
+        return h;
     }
 
     fn take(h: *Hip, token: u32) u64 {

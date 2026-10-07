@@ -89,7 +89,7 @@ pub const Engine = struct {
     rccl: hip.rccl.Rccl = undefined,
     comm: hip.rccl.Comm = undefined,
     graphs: round_graphs.Graphs,
-    /// The draft head's batches replay graphs (the head holds no collective, so under tp too unless TF_HIP_GRAPHS=0).
+    /// The draft head's batches replay graphs (the head holds no collective, so under tp too unless graphs=off).
     head_graphs: bool = true,
     /// The lane rounds' plan, graph choice and keep.
     round: lane_round.State = undefined,
@@ -225,8 +225,8 @@ pub const Engine = struct {
         const text = if (unified) admission.procText(e.gpa, io, "/proc/meminfo") else null;
         defer if (text) |t| e.gpa.free(t);
         const counts = admission.counts(unified, .{ .total = card.total, .available = card.free }, text) catch return error.HostMemoryUnavailable;
-        const reserve = admission.reserveBytes(e.o.policy.reserve_gib.slice(), counts.total) catch return error.BadReserve;
-        const limit = admission.limitBytes(e.o.policy.memory_limit_gb.slice()) catch return error.BadLimit;
+        const reserve = admission.reserveBytes(getenv("TENSORFOLD_MEMORY_RESERVE_GIB"), counts.total) catch return error.BadReserve;
+        const limit = admission.limitBytes(getenv("TENSORFOLD_HIP_MEMORY_LIMIT_GB")) catch return error.BadLimit;
         return .{ .free = counts.available, .total = counts.total, .reserve = reserve, .limit = limit, .unified = unified };
     }
 
@@ -409,3 +409,7 @@ pub const Engine = struct {
         try lane_round.flush(e);
     }
 };
+
+fn getenv(name: [:0]const u8) ?[]const u8 {
+    return std.mem.span(std.c.getenv(name) orelse return null);
+}

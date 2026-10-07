@@ -24,7 +24,7 @@ pub fn run(gpa: std.mem.Allocator) !void {
     defer ctx.deinit();
     const caps = try ctx.caps();
     var notes: hip.Policy.Notes = .{};
-    var lib = try hip.rocm.Library.open(&d, caps, try hip.Policy.resolve(try ctx.caps(), "", .current, &notes));
+    var lib = try hip.rocm.Library.open(&d, caps, try hip.Policy.resolve("", .current, &notes));
     defer lib.close();
     var stream = try hip.Stream.init(&d, true);
     defer stream.deinit();

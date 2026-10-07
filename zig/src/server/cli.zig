@@ -63,8 +63,8 @@ pub const flags = [_]Flag{
     .{ .name = "--compact-memory", .native = true },
     .{ .name = "--drafter" },
     .{ .name = "--drafter-bits" },
-    .{ .name = "--mtp-drafts" },
-    .{ .name = "--mtp-confidence" },
+    .{ .name = "--mtp-drafts", .native = gpu },
+    .{ .name = "--mtp-confidence", .native = gpu },
     .{ .name = "--lane-kernels", .choices = &.{ "auto", "on", "off" } },
     .{ .name = "--prompt-cache-gib", .native = true },
     .{ .name = "--prompt-cache-over-cap", .kind = .store_true, .native = true },
@@ -85,10 +85,6 @@ pub const flags = [_]Flag{
     .{ .name = "--rank", .native = gpu },
     .{ .name = "--master", .native = gpu },
     .{ .name = "--master-port", .native = gpu },
-    .{ .name = "--p2p", .kind = .store_true, .native = gpu },
-    .{ .name = "--no-p2p", .kind = .store_true, .native = gpu },
-    .{ .name = "--matrix", .choices = &.{ "auto", "on", "off" }, .native = gpu },
-    .{ .name = "--kernels", .choices = &.{ "auto", "shared", "native", "reference" }, .native = gpu },
     .{ .name = "--policy", .native = gpu },
     .{ .name = "--kv-dtype", .choices = &.{ "bf16", "int8", "int4" } },
     .{ .name = "--prefill-fp8", .kind = .store_true },
@@ -142,13 +138,14 @@ pub const Args = struct {
     parallel: []const u8 = "auto",
     backend: []const u8 = "auto",
     checkpoint_slots: ?i64 = null,
+    mtp_drafts: ?u32 = null,
+    mtp_confidence: ?f64 = null,
     /// Tensor parallelism: this process is `rank` of `tp`; rank 0 listens on `master`:`master_port` for the others.
     tp: u32 = 1,
     rank: u32 = 0,
     master: []const u8 = "",
     master_port: u16 = 29551,
-    p2p: ?bool = null,
-    /// The GPU engine's policy as `key=value,...`: --matrix and --kernels first, then --policy, as given.
+    /// The GPU engine's policy as `key=value,...` (--policy, as given).
     policy: []const u8 = "",
     device: ?u32 = null,
     segments: ?u32 = null,
@@ -264,7 +261,7 @@ fn cudaFlag(a: Allocator, out: *Args, name: []const u8, v: []const u8, u: *Usage
     return true;
 }
 
-/// The GPU lane's tensor-parallel, prompt-cache and policy flags; false for any other flag.
+/// The GPU lane's tensor-parallel, prompt-cache, MTP and policy flags; false for any other flag.
 fn gpuFlag(a: Allocator, out: *Args, name: []const u8, v: []const u8, u: *Usage) error{ Usage, OutOfMemory }!bool {
     const is = struct {
         fn f(x: []const u8, y: []const u8) bool {
@@ -279,7 +276,11 @@ fn gpuFlag(a: Allocator, out: *Args, name: []const u8, v: []const u8, u: *Usage)
         const p = try int(u, a, name, v);
         if (p < 0 or p > 65535) return fail(u, a, "argument --master-port: invalid port: '{s}'", .{v});
         out.master_port = @intCast(p);
-    } else if (is(name, "--p2p")) out.p2p = true else if (is(name, "--no-p2p")) out.p2p = false else if (is(name, "--matrix")) out.policy = try std.fmt.allocPrint(a, "{s},matrix={s}", .{ out.policy, v }) else if (is(name, "--kernels")) out.policy = try std.fmt.allocPrint(a, "{s},kernels={s}", .{ out.policy, v }) else if (is(name, "--policy")) out.policy = try std.fmt.allocPrint(a, "{s},{s}", .{ out.policy, v }) else return false;
+    } else if (is(name, "--mtp-drafts")) {
+        const n = try int(u, a, name, v);
+        if (n < 0 or n > 64) return fail(u, a, "argument --mtp-drafts: a count from 0: '{s}'", .{v});
+        out.mtp_drafts = @intCast(n);
+    } else if (is(name, "--mtp-confidence")) out.mtp_confidence = try float(u, a, name, v) else if (is(name, "--policy")) out.policy = try std.fmt.allocPrint(a, "{s},{s}", .{ out.policy, v }) else return false;
     return true;
 }
 
@@ -394,23 +395,24 @@ test "--device and --segments: CUDA builds serve them, values checked" {
     try std.testing.expect(parallelFixed("3") and !parallelFixed("auto") and !parallelFixed("x"));
 }
 
-test "the GPU lane's flags: tensor parallelism, prompt cache, backend" {
+test "the GPU lane's flags: tensor parallelism, prompt cache, MTP, backend" {
     if (!gpu) return error.SkipZigTest;
     var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
     var u: Usage = .{};
-    const args = try parse(a, &.{ "m", "--tp", "4", "--rank=2", "--master", "node0", "--master-port", "29600", "--checkpoint-slots", "3", "--prompt-cache-gib", "1.5", "--no-p2p", "--backend", "rocm" }, &u);
+    const args = try parse(a, &.{ "m", "--tp", "4", "--rank=2", "--master", "node0", "--master-port", "29600", "--checkpoint-slots", "3", "--prompt-cache-gib", "1.5", "--mtp-drafts", "2", "--mtp-confidence", "0.5", "--backend", "rocm" }, &u);
     try std.testing.expectEqual(@as(u32, 4), args.tp);
     try std.testing.expectEqual(@as(u32, 2), args.rank);
     try std.testing.expectEqualStrings("node0", args.master);
     try std.testing.expectEqual(@as(u16, 29600), args.master_port);
     try std.testing.expectEqual(@as(?i64, 3), args.checkpoint_slots);
     try std.testing.expectEqual(@as(?f64, 1.5), args.prompt_cache_gib);
-    try std.testing.expectEqual(@as(?bool, false), args.p2p);
-    const policy = try parse(a, &.{ "m", "--matrix", "off", "--policy", "kernels=reference,mtp_drafts=2" }, &u);
-    try std.testing.expectEqualStrings(",matrix=off,kernels=reference,mtp_drafts=2", policy.policy);
-    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--matrix", "maybe" }, &u));
+    try std.testing.expectEqual(@as(?u32, 2), args.mtp_drafts);
+    try std.testing.expectEqual(@as(?f64, 0.5), args.mtp_confidence);
+    const policy = try parse(a, &.{ "m", "--policy", "matrix=off", "--policy", "kernels=reference" }, &u);
+    try std.testing.expectEqualStrings(",matrix=off,kernels=reference", policy.policy);
+    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--matrix", "off" }, &u));
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--tp", "3" }, &u));
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--backend", "mlx" }, &u));
 }
