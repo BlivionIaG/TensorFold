@@ -117,6 +117,8 @@ pub const Info = struct {
     structures: bool = false,
     /// Prompt rows a prefill chunk at most, for the server's chunk starts (0: the engine cuts prompts itself).
     prefill_step: u32 = 0,
+    /// The policy the engine runs under, one line; empty when it has none.
+    policy: []const u8 = "",
 };
 
 /// A checkpoint family an engine reads: its config ``model_type`` and weight formats, as gate entries name them.
@@ -142,6 +144,8 @@ pub const Open = struct {
     master_port: u16 = 29551,
     /// Peer-to-peer between the cards: on, off, or null for the library's choice.
     p2p: ?bool = null,
+    /// The GPU engine's policy flags as `key=value,...`; empty: its defaults.
+    policy: []const u8 = "",
 };
 
 /// An opened engine; ``close`` stops its thread and frees its backend.

@@ -8,6 +8,9 @@ const hl = @import("../runtime/launch.zig");
 const Module = @import("../runtime/module.zig").Module;
 const Function = @import("../runtime/module.zig").Function;
 
+const Policy = @import("../policy.zig").Policy;
+const Choice = @import("../policy.zig").Choice;
+
 const Error = driver.Error;
 
 /// quant/mlx.hpp's GroupTable, Routing and Affine as the kernels take them by value.
@@ -82,19 +85,6 @@ const kp_tiles = [_]KpTile{
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
 pub const Tile = enum { gemm, block };
 
-/// TF_WMMA on gfx11: `off` runs every affine product on the dot2 tiles, `on` on the matrix cores wherever a tile exists
-/// (decode through the library's WMMA tiles, the GEMM tile for the products of 16 rows or more, routed items too);
-/// unset is `auto`, what measured fastest.
-pub const WmmaMode = enum { auto, on, off };
-
-pub fn wmmaMode() WmmaMode {
-    const v = std.c.getenv("TF_WMMA") orelse return .auto;
-    const text = std.mem.span(v);
-    if (std.mem.eql(u8, text, "1")) return .on;
-    if (std.mem.eql(u8, text, "0")) return .off;
-    return .auto;
-}
-
 /// The gfx major and minor as 10 * major + minor of the current device.
 fn capability(d: *const driver.Driver) Error!u32 {
     var dev: c_int = 0;
@@ -118,8 +108,9 @@ pub const Kernels = struct {
     wmma: bool,
     /// gfx11: the matrix-core GEMM tile runs (gfx12's WMMA has other layouts).
     matrix: bool,
-    mode: WmmaMode,
-    /// Which GEMM tile the products take; TF_AFFINE_GEMM=old picks the previous one.
+    /// The policy's `matrix`: `off` runs every product on the dot2 tiles, `on` and `auto` on the matrix cores where a tile exists.
+    mode: Choice,
+    /// Which GEMM tile the products take; the policy's reference switch picks the previous one.
     tile: Tile,
     lanes: [bit_widths.len][row_counts.len][piece_counts.len]Function,
     row: [bit_widths.len][piece_counts.len]Function,
@@ -127,7 +118,7 @@ pub const Kernels = struct {
     stream: [bit_widths.len][stream_rows.len][stream_cbs.len]?Function,
     /// The same tile with the (gate | up) activation as its epilogue.
     pairs: [bit_widths.len][stream_rows.len][stream_cbs.len]?Function,
-    /// TF_AFFINE_GEMV=old keeps the decode tiles before the stream tile.
+    /// Off keeps the decode tiles before the stream tile (the policy's reference switch).
     stream_on: bool,
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
@@ -143,20 +134,14 @@ pub const Kernels = struct {
 
     /// `tiles` holds dot2_tiles.hip's kernels, `dot2` dot2.hip's; one activation type a family: bf16 on the
     /// WMMA build (v_dot2_f32_bf16), fp16 on RDNA2.
-    pub fn load(d: *const driver.Driver, tiles_obj: Module, dot2_obj: Module, wmma: bool) Error!Kernels {
+    pub fn load(d: *const driver.Driver, tiles_obj: Module, dot2_obj: Module, wmma: bool, policy: Policy) Error!Kernels {
         var k: Kernels = undefined;
         k.wmma = wmma;
         const cap = try capability(d);
         k.matrix = wmma and (cap == 110 or cap == 115);
-        k.mode = wmmaMode();
-        k.tile = .gemm;
-        k.stream_on = true;
-        if (std.c.getenv("TF_AFFINE_GEMV")) |v| {
-            if (std.mem.eql(u8, std.mem.span(v), "old")) k.stream_on = false;
-        }
-        if (std.c.getenv("TF_AFFINE_GEMM")) |v| {
-            if (std.mem.eql(u8, std.mem.span(v), "old")) k.tile = .block;
-        }
+        k.mode = policy.matrix;
+        k.tile = if (policy.gemmOn()) .gemm else .block;
+        k.stream_on = policy.streamOn();
         // the GEMM tile's rows of x a lane keeps (tiles/gemm.hpp GemmShape): 8 for BF16, 16 for FP16
         if (wmma) try k.resolve("7DotBF16", "Li8E", tiles_obj) else try k.resolve("6DotF16", "Li16E", tiles_obj);
         const r = "_ZN2tf4rocm";
@@ -369,7 +354,7 @@ pub const Kernels = struct {
         return a.words % align_bytes == 0 and a.scale.kind == a.bias.kind;
     }
 
-    /// The matrix-core GEMM tile takes this product: gfx11, BF16, not switched off, 16 rows or more (TF_WMMA=1 is the same as unset: decode stays on the dot2 tiles).
+    /// The matrix-core GEMM tile takes this product: gfx11, BF16, not switched off, 16 rows or more (matrix=on is the same as auto: decode stays on the dot2 tiles).
     fn wmmaTile(k: *const Kernels, a: Arg) bool {
         return k.matrix and k.mode != .off and a.fp16 == 0 and gemmFits(a) and a.m >= wmma_rows;
     }

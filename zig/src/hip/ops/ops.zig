@@ -36,7 +36,7 @@ pub const Ops = struct {
         return o.lib.family == .rdna3;
     }
 
-    /// Whether decode.hip's merged launches are on: Zig launches, and TF_DECODE_FUSE is not `old`.
+    /// Whether decode.hip's merged launches are on: Zig launches, and the policy does not switch them to the reference.
     pub fn fused(o: Ops) bool {
         return if (o.lib.zig) |z| z.fuse else false;
     }

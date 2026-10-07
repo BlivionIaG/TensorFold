@@ -23,7 +23,8 @@ pub fn run(gpa: std.mem.Allocator) !void {
     var ctx = try hip.Context.init(&d, 0);
     defer ctx.deinit();
     const family = hip.rocm.familyOf(try ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(&d, family);
+    var notes: hip.Policy.Notes = .{};
+    var lib = try hip.rocm.Library.open(&d, family, try hip.Policy.resolve(try ctx.caps(), "", .current, &notes));
     defer lib.close();
     var stream = try hip.Stream.init(&d, true);
     defer stream.deinit();

@@ -72,7 +72,11 @@ pub fn run(gpu: Gpu, n: usize, reps: usize) !void {
     for (std.enums.values(Kernel)) |k| {
         var per: [2][2]f64 = undefined;
         for (modes, &per) |mode, *out| {
-            var lib = try hip.rocm.Library.openMode(gpu.d, family, mode);
+            var lib = try hip.rocm.Library.open(gpu.d, family, blk: {
+                var p = try check.policyOf(gpu);
+                p.launch = mode;
+                break :blk p;
+            });
             defer lib.close();
             for (times, enqueue) |*t, *e| {
                 const t0 = check.now(gpu.io);

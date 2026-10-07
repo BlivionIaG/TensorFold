@@ -79,6 +79,9 @@ pub const flags = [_]Flag{
     .{ .name = "--master-port", .native = gpu },
     .{ .name = "--p2p", .kind = .store_true, .native = gpu },
     .{ .name = "--no-p2p", .kind = .store_true, .native = gpu },
+    .{ .name = "--matrix", .choices = &.{ "auto", "on", "off" }, .native = gpu },
+    .{ .name = "--kernels", .choices = &.{ "auto", "shared", "native", "reference" }, .native = gpu },
+    .{ .name = "--policy", .native = gpu },
     .{ .name = "--kv-dtype", .choices = &.{ "bf16", "int8", "int4" } },
     .{ .name = "--prefill-fp8", .kind = .store_true },
     .{ .name = "--no-prefill-fp8", .kind = .store_true },
@@ -120,6 +123,8 @@ pub const Args = struct {
     master: []const u8 = "",
     master_port: u16 = 29551,
     p2p: ?bool = null,
+    /// The GPU engine's policy as `key=value,...`: --matrix and --kernels first, then --policy, as given.
+    policy: []const u8 = "",
 };
 
 /// A usage error's message (argparse's ``error:`` line); the caller exits 2.
@@ -202,7 +207,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         const p = try int(u, a, name, v);
         if (p < 0 or p > 65535) return fail(u, a, "argument --master-port: invalid port: '{s}'", .{v});
         out.master_port = @intCast(p);
-    } else if (is(name, "--p2p")) out.p2p = true else if (is(name, "--no-p2p")) out.p2p = false;
+    } else if (is(name, "--p2p")) out.p2p = true else if (is(name, "--no-p2p")) out.p2p = false else if (is(name, "--matrix")) out.policy = try std.fmt.allocPrint(a, "{s},matrix={s}", .{ out.policy, v }) else if (is(name, "--kernels")) out.policy = try std.fmt.allocPrint(a, "{s},kernels={s}", .{ out.policy, v }) else if (is(name, "--policy")) out.policy = try std.fmt.allocPrint(a, "{s},{s}", .{ out.policy, v });
 }
 
 /// ``--parallel``: "auto" is up to 8 requests at once; a number caps it.
@@ -285,6 +290,9 @@ test "the GPU lane's flags: tensor parallelism, prompt cache, backend" {
     try std.testing.expectEqual(@as(?i64, 3), args.checkpoint_slots);
     try std.testing.expectEqual(@as(?f64, 1.5), args.prompt_cache_gib);
     try std.testing.expectEqual(@as(?bool, false), args.p2p);
+    const policy = try parse(a, &.{ "m", "--matrix", "off", "--policy", "kernels=reference,mtp_drafts=2" }, &u);
+    try std.testing.expectEqualStrings(",matrix=off,kernels=reference,mtp_drafts=2", policy.policy);
+    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--matrix", "maybe" }, &u));
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--tp", "3" }, &u));
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--backend", "cuda" }, &u));
 }

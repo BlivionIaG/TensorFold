@@ -6,11 +6,12 @@ const abi = @import("runtime/abi.zig");
 const kernels = @import("kernels.zig");
 const driver = @import("runtime/driver.zig");
 const launches = @import("launches.zig");
+const Policy = @import("policy.zig").Policy;
 
 pub const Error = error{ LibraryUnavailable, MissingSymbol, KernelFailed } || driver.Error;
 
-/// How the kernels are launched: from Zig on the family's code objects, or by the embedded library's C launchers.
-pub const Launch = enum { zig, library };
+
+pub const Launch = @import("policy.zig").Launch;
 
 const S = abi.Stream;
 const P = ?*anyopaque;
@@ -79,24 +80,16 @@ pub const Library = struct {
     lib: std.DynLib,
     api: Api,
     family: Family,
+    /// What the run may use: the kernels and the ops read their switches here.
+    policy: Policy,
     /// The Zig launches on the current device; null runs every call through `api`.
     zig: ?launches.Launcher = null,
 
-    /// TF_HIP_LAUNCH picks the path: `zig` (the default) or `library`.
-    pub fn launchMode() Launch {
-        const v = std.c.getenv("TF_HIP_LAUNCH") orelse return .zig;
-        return std.meta.stringToEnum(Launch, std.mem.span(v)) orelse .zig;
-    }
-
-    /// The embedded library of `family`, opened from an anonymous file; the Zig launches load on the calling thread's device.
-    pub fn open(d: *const driver.Driver, family: Family) Error!Library {
-        return openMode(d, family, launchMode());
-    }
-
-    pub fn openMode(d: *const driver.Driver, family: Family, mode: Launch) Error!Library {
-        var lib = try openLibrary(family);
+    /// The embedded library of `family`, opened from an anonymous file; with the policy's `launch` at `zig` the Zig launches load on the calling thread's device.
+    pub fn open(d: *const driver.Driver, family: Family, policy: Policy) Error!Library {
+        var lib = try openLibrary(family, policy);
         errdefer lib.close();
-        if (mode == .zig) {
+        if (policy.launch == .zig) {
             const images = switch (family) {
                 .rdna2 => kernels.rdna2_modules,
                 .rdna3 => kernels.rdna3_modules,
@@ -104,13 +97,13 @@ pub const Library = struct {
             if (images[0].len == 0) {
                 std.log.warn("no {t} code objects in this binary: launching through the library", .{family});
             } else {
-                lib.zig = try launches.Launcher.load(d, family == .rdna3, images);
+                lib.zig = try launches.Launcher.load(d, family == .rdna3, policy, images);
             }
         }
         return lib;
     }
 
-    fn openLibrary(family: Family) Error!Library {
+    fn openLibrary(family: Family, policy: Policy) Error!Library {
         const bytes = switch (family) {
             .rdna2 => kernels.rdna2,
             .rdna3 => kernels.rdna3,
@@ -143,7 +136,7 @@ pub const Library = struct {
                 return error.MissingSymbol;
             };
         }
-        return .{ .lib = lib, .api = api, .family = family };
+        return .{ .lib = lib, .api = api, .family = family, .policy = policy };
     }
 
     pub fn close(self: *Library) void {

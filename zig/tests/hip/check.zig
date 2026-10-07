@@ -10,6 +10,12 @@ pub const Gpu = struct {
     io: std.Io,
 };
 
+/// The policy a bench runs under: the GPU's defaults, then the old variables and TF_POLICY.
+pub fn policyOf(gpu: Gpu) !hip.Policy {
+    var notes: hip.Policy.Notes = .{};
+    return hip.Policy.resolve(try gpu.ctx.caps(), "", .current, &notes);
+}
+
 pub const Failed = error{TestFailed};
 
 pub fn expect(ok: bool, comptime fmt: []const u8, args: anytype) Failed!void {

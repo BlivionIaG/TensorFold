@@ -1,4 +1,4 @@
-//! `check <model dir> [--tp N --rank R [--master HOST] [--port P]] [--prompts FILE] [--truth T --ids IDS] [--speed]
+//! `check <model dir> [--tp N --rank R [--master HOST] [--port P]] [--policy K=V,...] [--prompts FILE] [--truth T --ids IDS] [--speed]
 //! [--only invariants|accuracy|speed] [--tokens N] [--kl X] [--top1 P]`: the model's checks in one process, one line each
 //! (PASS, FAIL or SKIP with its numbers) and a summary; the exit code is nonzero when any fails. Invariants: a window
 //! against its rows one at a time, drafted against serial, solo against together (greedy and seeded), resumed against

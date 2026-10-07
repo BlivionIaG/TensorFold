@@ -1,6 +1,5 @@
 //! The linear attention: the conv, the gates and the DeltaNet recurrence.
 
-const std = @import("std");
 const t = @import("types.zig");
 const launches = @import("../launches.zig");
 const Ops = @import("ops.zig").Ops;
@@ -13,11 +12,6 @@ const int = t.int;
 /// Rows from which the DeltaNet prefill runs chunked, and the rows of one chunked segment (a multiple of the chunk).
 const gdn_min_rows = 64;
 const gdn_segment = 4096;
-
-fn chunkedOff() bool {
-    const text = std.c.getenv("TF_GDN_CHUNKED") orelse return false;
-    return text[0] == '0';
-}
 
 /// The q and k head norms a conv launch applies: their weights and epsilon.
 pub const Norm = struct { q: u64, k: u64, eps: f32 };
@@ -103,11 +97,11 @@ fn gatedDeltaChunked(o: Ops, z: *const launches.Launcher, q: u64, k: u64, v: u64
 }
 
 /// The DeltaNet recurrence: q, k (L, Hk, dk), v, y (L, Hv, dv), gate and beta (L, Hv) fp32; state in place.
-/// A prefill (no snapshots) of at least `gdn_min_rows` rows runs chunked on the Zig launches; TF_GDN_CHUNKED=0 keeps
+/// A prefill (no snapshots) of at least `gdn_min_rows` rows runs chunked on the Zig launches; the policy's `gdn=reference` keeps
 /// the token-serial kernel.
 pub fn gatedDelta(o: Ops, q: u64, k: u64, v: u64, gate: u64, beta: u64, state: u64, y: u64, length: usize, key_heads: usize, value_heads: usize, dk: usize, dv: usize, states: ?u64) Error!void {
     if (states == null and (length >= gdn_min_rows or o.prefill) and dk == 128 and dv == 128 and value_heads % key_heads == 0) {
-        if (o.lib.zig) |*z| if (!chunkedOff()) return gatedDeltaChunked(o, z, q, k, v, gate, beta, state, y, length, key_heads, value_heads);
+        if (o.lib.zig) |*z| if (o.lib.policy.chunked()) return gatedDeltaChunked(o, z, q, k, v, gate, beta, state, y, length, key_heads, value_heads);
     }
     try o.lib.call("tf_gated_delta", .{ f(q), f(k), f(v), f(gate), f(beta), f(state), f(y), 1, int(length), int(key_heads), int(value_heads), int(dk), int(dv), o.stream, if (states) |s| f(s) else null });
 }

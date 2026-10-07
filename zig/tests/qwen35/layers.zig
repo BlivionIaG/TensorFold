@@ -60,14 +60,17 @@ const Check = struct {
 pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
     var ctx = try hip.Context.init(g.d, @intCast(group.rank));
     defer ctx.deinit();
+    // the oracle's sums are the reference kernels': the fixtures pin them whatever the environment says
+    var notes: hip.Policy.Notes = .{};
+    const policy = try hip.Policy.resolve(try ctx.caps(), "kernels=reference", .none, &notes);
     // the unique id starts RCCL's bootstrap thread: the library stays loaded to the end
     var rccl: ?hip.rccl.Rccl = null;
     defer if (rccl) |*r| r.close();
     var link: hip.link.Link = undefined;
     var comm: hip.rccl.Comm = undefined;
     if (group.world > 1) {
-        rccl = try hip.rccl.Rccl.open();
-        const pair = try hip.link.Link.open(g.io, group.rank, group.world, group.master, group.port, if (group.rank == 0) try rccl.?.uniqueId() else undefined);
+        rccl = try hip.rccl.Rccl.open(policy.rccl_lib.slice());
+        const pair = try hip.link.Link.open(g.io, group.rank, group.world, group.master, group.port, if (group.rank == 0) try rccl.?.uniqueId() else undefined, .{ .caps = (try ctx.caps()).id(), .policy = policy.words() });
         link = pair[0];
         comm = try hip.rccl.Comm.init(&rccl.?, pair[1], group.rank, group.world);
     }
@@ -76,7 +79,7 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
         link.close();
     };
     const family = hip.rocm.familyOf(try ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(g.d, family);
+    var lib = try hip.rocm.Library.open(g.d, family, policy);
     defer lib.close();
     const act: view.Kind = if (family == .rdna2) .f16 else .bf16;
     const dtype: qwen35.sample.Dtype = if (act == .f16) .f16 else .bf16;

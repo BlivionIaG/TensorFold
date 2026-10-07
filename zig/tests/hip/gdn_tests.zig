@@ -148,7 +148,7 @@ const Device = struct {
         const dev = try gpu.gpa.create(Device);
         errdefer gpu.gpa.destroy(dev);
         dev.gpu = gpu;
-        dev.lib = try hip.rocm.Library.open(gpu.d, family);
+        dev.lib = try hip.rocm.Library.open(gpu.d, family, try check.policyOf(gpu));
         errdefer dev.lib.close();
         dev.stream = try hip.Stream.init(gpu.d, true);
         errdefer dev.stream.deinit();

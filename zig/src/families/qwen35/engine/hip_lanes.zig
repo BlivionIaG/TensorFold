@@ -148,7 +148,7 @@ pub const Hip = struct {
 
     /// The facts the round loop reads at setup: shared rounds of exact windows, the MTP head's chains (every stream's in one batch) when it has one.
     pub fn facts(h: *const Hip) lanes.Model {
-        const drafting = h.head != null;
+        const drafting = h.head != null and h.e.o.policy.mtp.drafts > 0;
         // plain rounds compete with drafted ones once the forwards are timed
         const plain_guard = drafting and h.costs.windows > 0;
         return .{
@@ -157,7 +157,7 @@ pub const Hip = struct {
             .mtp = drafting,
             .speculate = drafting,
             .speculate_early = false,
-            .drafts = mtp.max_depth,
+            .drafts = @min(mtp.max_depth, h.e.o.policy.mtp.drafts),
             .hidden_rows = true,
             .batch_rows = @intCast(h.e.o.batch_rows),
             .max_streams = @intCast(h.e.o.batch_rows),
@@ -408,7 +408,7 @@ pub const Hip = struct {
             if (r.depth == 0) continue;
             if (n == max_jobs) return error.WindowTooWide;
             // a chain ends after a draft the head gives under the confidence; the first drafts run whole
-            const stop_under: f64 = if (r.rows != null) mtp.confidence else 0.0;
+            const stop_under: f64 = if (r.rows != null) h.e.o.policy.mtp.confidence else 0.0;
             jobs[n] = .{ .hidden = lane.hidden.ptr, .token = token, .position = lane.len, .depth = r.depth, .sampling = sampling(r.stream), .stop_under = stop_under, .out = &lane.held };
             chained[n] = lane;
             n += 1;

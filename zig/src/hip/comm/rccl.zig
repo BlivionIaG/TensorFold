@@ -35,14 +35,14 @@ pub const Rccl = struct {
     lib: std.DynLib,
     api: Api,
 
-    pub fn open() Error!Rccl {
-        // TF_RCCL_LIB names the library first, as the Python engine reads it
+    /// `first` (the policy's `rccl_lib`) is tried before the usual places.
+    pub fn open(first: ?[]const u8) Error!Rccl {
         var candidates: [paths.len + 1][]const u8 = undefined;
         var n: usize = 0;
-        if (std.c.getenv("TF_RCCL_LIB")) |v| if (v[0] != 0) {
-            candidates[0] = std.mem.span(v);
+        if (first) |path| {
+            candidates[0] = path;
             n = 1;
-        };
+        }
         for (paths) |path| {
             candidates[n] = path;
             n += 1;

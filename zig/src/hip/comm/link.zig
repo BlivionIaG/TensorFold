@@ -3,10 +3,14 @@
 const std = @import("std");
 const posix = std.posix;
 const rccl = @import("rccl.zig");
+const Policy = @import("../policy.zig").Policy;
 
-pub const Error = error{ SocketFailed, BindFailed, ConnectFailed, LinkClosed, BadRank } || std.mem.Allocator.Error;
+pub const Error = error{ SocketFailed, BindFailed, ConnectFailed, LinkClosed, BadRank, MixedGpus } || std.mem.Allocator.Error;
 
 pub const max_world = 16;
+
+/// What the ranks agree on at join: the GPU's caps id (every rank's must match) and rank 0's policy.
+pub const Hello = struct { caps: u32, policy: [Policy.word_count]u32 };
 
 pub const Link = struct {
     rank: usize,
@@ -14,8 +18,9 @@ pub const Link = struct {
     /// Rank 0: the follower of rank r + 1 at index r. A follower: rank 0's socket at index 0.
     fds: [max_world - 1]posix.socket_t = undefined,
 
-    /// Joins the ranks: rank 0 listens on `host:port` and sends each the `id`; the others connect and return the id they receive.
-    pub fn open(io: std.Io, rank: usize, world: usize, host: []const u8, port: u16, id: rccl.UniqueId) Error!struct { Link, rccl.UniqueId } {
+    /// Joins the ranks: rank 0 listens on `host:port` and sends each the `id` and its `hello`; the others connect and
+    /// return what they receive. A rank whose GPU differs from rank 0's is refused on both sides.
+    pub fn open(io: std.Io, rank: usize, world: usize, host: []const u8, port: u16, id: rccl.UniqueId, hello: Hello) Error!struct { Link, rccl.UniqueId, Hello } {
         if (world < 2 or world > max_world or rank >= world) return error.BadRank;
         const ip = std.Io.net.IpAddress.parse(host, port) catch return error.ConnectFailed;
         if (ip != .ip4) return error.ConnectFailed;
@@ -35,11 +40,17 @@ pub const Link = struct {
                 const fd: posix.socket_t = @intCast(rc);
                 var peer: u32 = undefined;
                 try readAll(fd, std.mem.asBytes(&peer));
+                var caps: u32 = undefined;
+                try readAll(fd, std.mem.asBytes(&caps));
                 if (peer == 0 or peer >= world) return error.BadRank;
                 link.fds[peer - 1] = fd;
+                const status: u32 = if (caps == hello.caps) 0 else 1;
+                try writeAll(fd, std.mem.asBytes(&status));
+                if (status != 0) return error.MixedGpus;
                 try writeAll(fd, std.mem.asBytes(&id));
+                try writeAll(fd, std.mem.sliceAsBytes(&hello.policy));
             }
-            return .{ link, id };
+            return .{ link, id, hello };
         }
         var tries: usize = 0;
         while (true) : (tries += 1) {
@@ -54,9 +65,15 @@ pub const Link = struct {
         }
         const mine: u32 = @intCast(rank);
         try writeAll(link.fds[0], std.mem.asBytes(&mine));
+        try writeAll(link.fds[0], std.mem.asBytes(&hello.caps));
+        var status: u32 = undefined;
+        try readAll(link.fds[0], std.mem.asBytes(&status));
+        if (status != 0) return error.MixedGpus;
         var got: rccl.UniqueId = undefined;
         try readAll(link.fds[0], std.mem.asBytes(&got));
-        return .{ link, got };
+        var theirs: Hello = .{ .caps = hello.caps, .policy = undefined };
+        try readAll(link.fds[0], std.mem.sliceAsBytes(&theirs.policy));
+        return .{ link, got, theirs };
     }
 
     pub fn close(l: *Link) void {

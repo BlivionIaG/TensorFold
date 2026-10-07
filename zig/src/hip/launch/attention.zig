@@ -1,6 +1,5 @@
 //! Attention launches: causal prefill and decode, the gate and the cache write.
 
-const std = @import("std");
 const Launcher = @import("../launches.zig").Launcher;
 const util = @import("util.zig");
 const S = util.S;
@@ -92,9 +91,8 @@ pub fn tf_causal(l: *const Launcher, q: CF, k: C, v: C, out: F, batch: c_int, ql
     a.add(v_sb);
     a.add(v_sh);
     a.add(v_ss);
-    // a 16-bit cache of whole 64-wide heads takes the 64-row tile (TF_FA_WIDE=0: the 16-row one); odd heads a wave a query
-    const wide_off = if (std.c.getenv("TF_FA_WIDE")) |text| text[0] == '0' else false;
-    if (kind < 2 and @rem(d, 64) == 0 and d <= 256 and @rem(k_ss, 8) == 0 and @rem(v_ss, 8) == 0 and !wide_off) {
+    // a 16-bit cache of whole 64-wide heads takes the 64-row tile (attention=f32: the 16-row one); odd heads a wave a query
+    if (kind < 2 and @rem(d, 64) == 0 and d <= 256 and @rem(k_ss, 8) == 0 and @rem(v_ss, 8) == 0 and l.wide) {
         try l.go(l.fa_wide[kind], dim(cdiv(qlen, 64), heads, batch), dim(256, 1, 1), 0, s, &a);
     } else if (d >= 2 and @rem(d, 2) == 0) {
         try l.go(l.fa_prefill[kind], dim(cdiv(qlen, 16), heads, batch), dim(256, 1, 1), 0, s, &a);

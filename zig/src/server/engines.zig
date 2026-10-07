@@ -29,6 +29,7 @@ fn request(dir: []const u8, model_type: []const u8, args: cli.Args) api.Open {
         .master = args.master,
         .master_port = args.master_port,
         .p2p = args.p2p,
+        .policy = args.policy,
     };
 }
 

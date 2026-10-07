@@ -151,7 +151,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     const keep = if (args.len > 4) try std.fmt.parseInt(usize, args[4], 10) else n;
     const ids = try ids_file.load(gpa, io, args[1]);
     defer gpa.free(ids);
-    const e = try Engine.open(gpa, io, args[0], .{ .capacity = ids.len + 64, .batch_rows = 128, .graphs = false });
+    const e = try Engine.open(gpa, io, args[0], .{ .capacity = ids.len + 64, .batch_rows = 128, .graphs = false, .policy = (try @import("group.zig").resolve("", 0)).policy });
     defer e.deinit();
     if (try runCase(gpa, e, ids, .{ .streams = streams, .n = n, .keep = keep })) |d| {
         std.debug.print("FAIL layer {d} ({s}), stream {d} row {d} of {d}: first difference at column {d}\n", .{ d.layer, d.kind, d.stream, d.row, n, d.column });

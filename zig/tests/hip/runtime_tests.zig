@@ -371,7 +371,7 @@ pub fn overhead(gpu: Gpu, n: usize, reps: usize) !void {
 pub fn library(gpu: Gpu) !void {
     const cap = try gpu.ctx.capability();
     const family = hip.rocm.familyOf(cap) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(gpu.d, family);
+    var lib = try hip.rocm.Library.open(gpu.d, family, try check.policyOf(gpu));
     defer lib.close();
     try expect(lib.api.tf_wmma_build() == @intFromBool(family == .rdna3), "the {t} library's WMMA switch", .{family});
     const d = gpu.d;

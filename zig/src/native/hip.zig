@@ -73,15 +73,20 @@ const Group = struct {
     id: hip.rccl.UniqueId,
 
     /// Rank 0 listens on `master`:`master_port` until the others have connected; they get its id.
-    fn join(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) (Refused || Allocator.Error)!*Group {
+    /// Rank 0's policy goes to the others, which adopt it; a rank whose GPU differs from rank 0's is refused.
+    fn join(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, caps: hip.Caps, policy: *hip.Policy, problem: *[]const u8) (Refused || Allocator.Error)!*Group {
         const g = try gpa.create(Group);
         errdefer gpa.destroy(g);
-        g.rccl = hip.rccl.Rccl.open() catch |err| return refuse(a, problem, "tensor parallelism needs RCCL ({s})", .{@errorName(err)});
+        g.rccl = hip.rccl.Rccl.open(policy.rccl_lib.slice()) catch |err| return refuse(a, problem, "tensor parallelism needs RCCL ({s})", .{@errorName(err)});
         errdefer g.rccl.close();
         const mine: hip.rccl.UniqueId = if (o.rank == 0) g.rccl.uniqueId() catch |err| return refuse(a, problem, "RCCL gave no id ({s})", .{@errorName(err)}) else undefined;
         const host = if (std.mem.eql(u8, o.master, "localhost")) "127.0.0.1" else o.master;
-        const pair = hip.link.Link.open(io, o.rank, o.tp, host, o.master_port, mine) catch |err| return refuse(a, problem, "the ranks' link at {s}:{d} failed ({s})", .{ o.master, o.master_port, @errorName(err) });
-        g.link, g.id = pair;
+        const pair = hip.link.Link.open(io, o.rank, o.tp, host, o.master_port, mine, .{ .caps = caps.id(), .policy = policy.words() }) catch |err| return switch (err) {
+            error.MixedGpus => refuse(a, problem, "the ranks' GPUs differ: a group needs one kind of GPU", .{}),
+            else => refuse(a, problem, "the ranks' link at {s}:{d} failed ({s})", .{ o.master, o.master_port, @errorName(err) }),
+        };
+        g.link, g.id, const hello = pair;
+        if (o.rank != 0) policy.* = hip.Policy.fromWords(hello.policy, policy.*);
         return g;
     }
 
@@ -91,6 +96,15 @@ const Group = struct {
         gpa.destroy(g);
     }
 };
+
+/// What the card at `device` can do, or null when it is no usable GPU.
+fn capsOf(device: c_int) ?hip.Caps {
+    var d = hip.Driver.open() catch return null;
+    defer d.close();
+    var ctx = hip.Context.init(&d, device) catch return null;
+    defer ctx.deinit();
+    return ctx.caps() catch null;
+}
 
 /// The card of `rank`: with every card visible rank r takes card r, with one card a process that card.
 fn deviceOf(rank: u32) c_int {
@@ -110,8 +124,11 @@ const Prepared = struct {
     keep: usize,
     streams: usize,
     group: ?*Group,
+    /// The policy's line, for the server's info.
+    policy_line: []const u8,
 
     fn deinit(p: *Prepared, gpa: Allocator) void {
+        gpa.free(p.policy_line);
         p.e.deinit();
         if (p.group) |g| g.close(gpa);
     }
@@ -129,13 +146,22 @@ fn prepare(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]co
     const rows = qwen35.hip_lanes.Hip.max_window;
     // `--parallel auto` is one lane, as on the Python ROCm engine
     const streams: usize = if (o.lanes_auto) 1 else @max(o.lanes, 1);
-    const group: ?*Group = if (o.tp > 1) try Group.join(a, gpa, io, o, problem) else null;
+    const device = deviceOf(o.rank);
+    const caps = capsOf(device) orelse return refuse(a, problem, "HIP device {d} is not a GPU this engine supports", .{device});
+    // rank 0 resolves the policy: the GPU's defaults, the flags, the old variables, TF_POLICY; the others adopt it
+    var notes: hip.Policy.Notes = .{};
+    var policy = hip.Policy.resolve(caps, o.policy, .current, &notes) catch |err| return refuse(a, problem, "the policy \"{s}\" is refused ({s})", .{ o.policy, @errorName(err) });
+    const group: ?*Group = if (o.tp > 1) try Group.join(a, gpa, io, o, caps, &policy, problem) else null;
     errdefer if (group) |g| g.close(gpa);
+    const policy_line = try std.fmt.allocPrint(gpa, "{f}", .{policy});
+    errdefer gpa.free(policy_line);
+    std.debug.print("[tensorfold] HIP rank {d} of {d}: policy {s}{s} {s}\n", .{ o.rank, o.tp, policy_line, if (o.rank > 0) " (rank 0's)" else "", notes.text() });
     if (o.p2p) |on| _ = setenv("NCCL_P2P_DISABLE", if (on) "0" else "1", 1);
     const e = qwen35.engine.Engine.load(gpa, io, o.dir, .{
         .batch_rows = @max(32, @min(streams * rows, 128)),
         .slack = rows + 1,
-        .device = deviceOf(o.rank),
+        .device = device,
+        .policy = policy,
         .rank = o.rank,
         .world = o.tp,
         .id = if (group) |g| g.id else null,
@@ -161,7 +187,7 @@ fn prepare(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]co
     }
     e.size(plan.capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot allocate its scratch ({s})", .{@errorName(err)});
     std.debug.print("[tensorfold] HIP rank {d} of {d}: weights {d:.2} GiB, scratch {d:.2} GiB, context window {d} tokens, prompt cache {d:.2} GiB, reserve {d:.2} GiB of {d:.2} GiB\n", .{ o.rank, o.tp, gibs(plan.weights), gibs(plan.scratch), plan.window, gibs(plan.cache_budget), gibs(plan.reserve), gibs(plan.total) });
-    return .{ .e = e, .plan = plan, .asked = @intCast(window), .keep = keep, .streams = streams, .group = group };
+    return .{ .e = e, .plan = plan, .asked = @intCast(window), .keep = keep, .streams = streams, .group = group, .policy_line = policy_line };
 }
 
 const Host = struct {
@@ -170,6 +196,7 @@ const Host = struct {
     group: ?*Group,
     backend: *qwen35.hip_lanes.Hip,
     cfg: lanes.Config,
+    policy_line: []const u8,
     clock: lanes.backend.WallClock,
     core: lanes.Engine,
     host: api.LaneHost,
@@ -183,6 +210,7 @@ const Host = struct {
         h.backend.deinit();
         h.e.deinit();
         if (h.group) |g| g.close(h.gpa);
+        h.gpa.free(h.policy_line);
         h.gpa.destroy(h);
     }
 };
@@ -199,6 +227,8 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     const h = try gpa.create(Host);
     errdefer gpa.destroy(h);
     h.gpa = gpa;
+    h.policy_line = try gpa.dupe(u8, p.policy_line);
+    errdefer gpa.free(h.policy_line);
     h.e = p.e;
     h.group = p.group;
     h.backend = try qwen35.hip_lanes.Hip.init(gpa, p.e);
@@ -211,9 +241,10 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.clock = .{ .io = io };
     h.core = lanes.Engine.init(gpa, &h.cfg, h.backend.backend(), h.clock.clock());
     errdefer h.core.deinit();
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = @intCast(p.streams), .context_window = @intCast(p.plan.window), .context_fitted = p.plan.window < p.asked });
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .lanes = @intCast(p.streams), .context_window = @intCast(p.plan.window), .context_fitted = p.plan.window < p.asked, .policy = h.policy_line });
     try h.host.start();
     served = true;
+    gpa.free(p.policy_line);
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
 }
 

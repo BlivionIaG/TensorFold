@@ -313,7 +313,7 @@ fn shortBench(t: *Rig, reps: usize) !void {
 
 pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     const family = hip.rocm.familyOf(try gpu.ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(gpu.d, family);
+    var lib = try hip.rocm.Library.open(gpu.d, family, try check.policyOf(gpu));
     defer lib.close();
     const launcher = &(lib.zig orelse return error.LibraryUnavailable);
     var t: Rig = .{

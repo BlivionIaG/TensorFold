@@ -10,11 +10,13 @@ pub const Group = struct {
     world: usize = 1,
     master: []const u8 = "127.0.0.1",
     port: u16 = 29551,
+    /// The policy flags, `key=value,...`.
+    policy: []const u8 = "",
 
     /// Takes the option at `args[i.*]` if it is one of the group's, moving `i` to its value.
     pub fn option(g: *Group, args: []const [:0]const u8, i: *usize) !bool {
         const name = args[i.*];
-        const known = [_][]const u8{ "--tp", "--rank", "--master", "--port" };
+        const known = [_][]const u8{ "--tp", "--rank", "--master", "--port", "--policy" };
         const index = for (known, 0..) |k, n| {
             if (std.mem.eql(u8, name, k)) break n;
         } else return false;
@@ -25,7 +27,8 @@ pub const Group = struct {
             0 => g.world = try std.fmt.parseInt(usize, v, 10),
             1 => g.rank = try std.fmt.parseInt(usize, v, 10),
             2 => g.master = v,
-            else => g.port = try std.fmt.parseInt(u16, v, 10),
+            3 => g.port = try std.fmt.parseInt(u16, v, 10),
+            else => g.policy = v,
         }
         return true;
     }
@@ -36,6 +39,8 @@ pub const Group = struct {
         link: hip.link.Link = undefined,
         id: ?hip.rccl.UniqueId = null,
         world: usize = 1,
+        /// What every rank runs under: rank 0's.
+        policy: hip.Policy = .{},
 
         pub fn close(j: *Joined) void {
             if (j.world > 1) j.link.close();
@@ -45,12 +50,14 @@ pub const Group = struct {
 
     /// The unique id starts RCCL's bootstrap thread: the library stays loaded until the engine is gone.
     pub fn join(g: Group, io: std.Io) !Joined {
-        var j: Joined = .{ .world = g.world };
+        const found = try resolve(g.policy, @intCast(g.rank));
+        var j: Joined = .{ .world = g.world, .policy = found.policy };
         if (g.world < 2) return j;
-        j.rccl = try hip.rccl.Rccl.open();
+        j.rccl = try hip.rccl.Rccl.open(j.policy.rccl_lib.slice());
         errdefer j.rccl.?.close();
-        const pair = try hip.link.Link.open(io, g.rank, g.world, g.master, g.port, if (g.rank == 0) try j.rccl.?.uniqueId() else undefined);
-        j.link, j.id = pair;
+        const pair = try hip.link.Link.open(io, g.rank, g.world, g.master, g.port, if (g.rank == 0) try j.rccl.?.uniqueId() else undefined, .{ .caps = found.caps.id(), .policy = j.policy.words() });
+        j.link, j.id, const hello = pair;
+        if (g.rank != 0) j.policy = hip.Policy.fromWords(hello.policy, j.policy);
         return j;
     }
 
@@ -61,9 +68,23 @@ pub const Group = struct {
         own.rank = g.rank;
         own.world = g.world;
         own.id = j.id;
+        own.policy = j.policy;
         return qwen35.engine.Engine.open(gpa, io, dir, own);
     }
 };
+
+/// The policy of a test run on `device` and its GPU's caps: the GPU's defaults, `flags`, then the old variables and TF_POLICY, logged in one line.
+pub fn resolve(flags: []const u8, device: c_int) !struct { policy: hip.Policy, caps: hip.Caps } {
+    var d = try hip.Driver.open();
+    defer d.close();
+    var ctx = try hip.Context.init(&d, device);
+    defer ctx.deinit();
+    const caps = try ctx.caps();
+    var notes: hip.Policy.Notes = .{};
+    const policy = try hip.Policy.resolve(caps, flags, .current, &notes);
+    std.debug.print("policy {f} {s}\n", .{ policy, notes.text() });
+    return .{ .policy = policy, .caps = caps };
+}
 
 /// A rank above 0 runs what rank 0 sends until it says stop.
 pub fn follow(gpa: std.mem.Allocator, e: *qwen35.engine.Engine, j: *const Group.Joined) !void {

@@ -7,6 +7,7 @@ const launch = @import("runtime/launch.zig");
 const Module = @import("runtime/module.zig").Module;
 const Function = @import("runtime/module.zig").Function;
 const affine_launch = @import("launch/affine.zig");
+const Policy = @import("policy.zig").Policy;
 const Affine = affine_launch.Kernels;
 
 const util = @import("launch/util.zig");
@@ -29,7 +30,7 @@ const cdiv = util.cdiv;
 
 /// affine_dot2_splits: the split count of a decode launch (1 unless mode is 2).
 pub const affineSplits = Affine.splitCount;
-pub const wmmaMode = affine_launch.wmmaMode;
+
 
 const norms = @import("launch/norms.zig");
 const conv = @import("launch/conv.zig");
@@ -69,8 +70,10 @@ pub const Launcher = struct {
     op: Ops,
     /// decode.hip's kernels: a round's few rows, and the launches that merge several small ones.
     dec: Decode,
-    /// TF_DECODE_FUSE=old keeps the launches decode.hip replaces.
+    /// The policy keeps the launches decode.hip replaces (`fuse` off).
     fuse: bool,
+    /// The 64-row prefill attention tile is on.
+    wide: bool,
     affine: Affine,
 
     const Decode = struct {
@@ -104,7 +107,7 @@ pub const Launcher = struct {
     };
 
     /// Loads the family's code objects on the current device and resolves every kernel the launchers use.
-    pub fn load(d: *const driver.Driver, wmma: bool, images: [kernels.group_count][]const u8) Error!Launcher {
+    pub fn load(d: *const driver.Driver, wmma: bool, policy: Policy, images: [kernels.group_count][]const u8) Error!Launcher {
         var l: Launcher = undefined;
         l.d = d;
         var loaded: usize = 0;
@@ -119,10 +122,8 @@ pub const Launcher = struct {
         const gd = l.mods[@backingInt(kernels.Group.gated_delta)];
         const pre = l.mods[@backingInt(kernels.Group.prefill)];
         const dec = l.mods[@backingInt(kernels.Group.decode)];
-        l.fuse = true;
-        if (std.c.getenv("TF_DECODE_FUSE")) |v| {
-            if (std.mem.eql(u8, std.mem.span(v), "old")) l.fuse = false;
-        }
+        l.fuse = policy.fused();
+        l.wide = policy.wideAttention();
         l.dec = .{ .router = .{ try dec.function("tf_router_decode_f16"), try dec.function("tf_router_decode_bf16") }, .tail = try dec.function("tf_tail"), .conv_split = try dec.function("tf_conv_split"), .rms2 = try dec.function("tf_rms2"), .gnorm_out = try dec.function("tf_gnorm_out"), .select = try dec.function("tf_select_decode") };
         l.fa_wide = .{ try pre.function("tf_fa_wide_f16"), try pre.function("tf_fa_wide_bf16") };
         const gp = l.mods[@backingInt(kernels.Group.gdn_prefill)];
@@ -206,7 +207,7 @@ pub const Launcher = struct {
         };
         l.softmax_stats = try att.function("_Z13softmax_statsPKfPfiiPKi");
         l.sum_partials = try att.function("_Z12sum_partialsPKfPfii");
-        l.affine = try Affine.load(d, l.mods[@backingInt(kernels.Group.affine_tiles)], l.mods[@backingInt(kernels.Group.affine_dot2)], wmma);
+        l.affine = try Affine.load(d, l.mods[@backingInt(kernels.Group.affine_tiles)], l.mods[@backingInt(kernels.Group.affine_dot2)], wmma, policy);
         try l.affine.fillByteLut(d, l.mods[@backingInt(kernels.Group.affine_dot2)]);
         return l;
     }

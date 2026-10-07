@@ -102,7 +102,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     }
     const ids = try ids_file.load(gpa, io, args[1]);
     defer gpa.free(ids);
-    const e = try Engine.open(gpa, io, args[0], .{ .capacity = ids.len + 64, .batch_rows = 32 });
+    const e = try Engine.open(gpa, io, args[0], .{ .capacity = ids.len + 64, .batch_rows = 32, .policy = (try @import("group.zig").resolve("", 0)).policy });
     defer e.deinit();
     const kind = kindOf(e, mode);
     var header_buf: [128]u8 = undefined;

@@ -28,8 +28,10 @@ pub const Options = struct {
     rank: usize = 0,
     world: usize = 1,
     id: ?hip.rccl.UniqueId = null,
-    /// Replay rounds from captured graphs (TF_HIP_GRAPHS=0 turns it off).
+    /// Replay rounds from captured graphs (the policy's `graphs` turns it off).
     graphs: bool = true,
+    /// What the run may use, resolved once by whoever opens the engine.
+    policy: hip.Policy = .{},
 };
 
 /// What a round does with its shape's graph: run eagerly, replay it, or capture it (every rank does the same).
@@ -73,16 +75,8 @@ pub const Engine = struct {
         e.gpa = gpa;
         e.o = o;
         e.sized = false;
-        // rounds replay captured graphs unless TF_HIP_GRAPHS=0; under tensor parallelism they stay eager unless TF_HIP_GRAPHS_TP=1
-        for ([_][*:0]const u8{ "TF_HIP_GRAPHS", "TENSORFOLD_GRAPH" }) |name| {
-            if (std.c.getenv(name)) |v| if (std.mem.eql(u8, std.mem.span(v), "0")) {
-                e.o.graphs = false;
-            };
-        }
-        if (o.world > 1) {
-            const on = if (std.c.getenv("TF_HIP_GRAPHS_TP")) |v| std.mem.eql(u8, std.mem.span(v), "1") else false;
-            if (!on) e.o.graphs = false;
-        }
+        // rounds replay captured graphs as the policy says: under tensor parallelism they stay eager unless it is `graphs=on`
+        e.o.graphs = o.graphs and o.policy.graphsOn(o.world);
         e.graphs = .{ .gpa = gpa };
         e.serial = 1;
         e.driver = try hip.Driver.open();
@@ -90,7 +84,7 @@ pub const Engine = struct {
         e.ctx = try hip.Context.init(&e.driver, o.device);
         errdefer e.ctx.deinit();
         const family = hip.rocm.familyOf(try e.ctx.capability()) orelse return error.UnsupportedGpu;
-        e.lib = try hip.rocm.Library.open(e.ctx.d, family);
+        e.lib = try hip.rocm.Library.open(e.ctx.d, family, o.policy);
         errdefer e.lib.close();
         e.act = if (family == .rdna2) .f16 else .bf16;
         e.dtype = if (family == .rdna2) .f16 else .bf16;
@@ -98,7 +92,7 @@ pub const Engine = struct {
         errdefer e.stream.deinit();
         const group: ?slicing.Rank = if (o.world > 1) .{ .rank = o.rank, .world = o.world } else null;
         if (group != null) {
-            e.rccl = try hip.rccl.Rccl.open();
+            e.rccl = try hip.rccl.Rccl.open(o.policy.rccl_lib.slice());
             errdefer e.rccl.close();
             e.comm = try hip.rccl.Comm.init(&e.rccl, o.id orelse return error.NoUniqueId, o.rank, o.world);
         }
@@ -400,10 +394,8 @@ pub const Engine = struct {
             } else |_| {}
         } else |_| {}
         if (fatal) |err| return err;
-        // TF_HIP_GRAPH_FAIL=R makes rank R's capture fail, to check that every rank falls back
-        if (std.c.getenv("TF_HIP_GRAPH_FAIL")) |v| if (std.fmt.parseInt(usize, std.mem.span(v), 10) catch null == e.o.rank) {
-            kept = false;
-        };
+        // the policy's `graph_fail` makes that rank's capture fail, to check that every rank falls back
+        if (e.o.policy.graph_fail >= 0 and @as(usize, @intCast(e.o.policy.graph_fail)) == e.o.rank) kept = false;
         const all = if (e.o.world > 1) try e.agreed(kept) else kept;
         if (!all) {
             e.graphs.revoke(entry);
