@@ -1,0 +1,47 @@
+//! Shared helpers for the HIP test runner: the device bundle, pass/fail lines and byte comparison.
+
+const std = @import("std");
+const hip = @import("hip");
+
+pub const Gpu = struct {
+    d: *const hip.Driver,
+    ctx: *const hip.Context,
+    gpa: std.mem.Allocator,
+    io: std.Io,
+};
+
+pub const Failed = error{TestFailed};
+
+pub fn expect(ok: bool, comptime fmt: []const u8, args: anytype) Failed!void {
+    if (ok) return;
+    std.debug.print("FAIL " ++ fmt ++ "\n", args);
+    return error.TestFailed;
+}
+
+pub fn pass(comptime fmt: []const u8, args: anytype) void {
+    std.debug.print("PASS " ++ fmt ++ "\n", args);
+}
+
+/// Equal bytes, or the first difference and how many 4-byte words differ.
+pub fn sameBytes(what: []const u8, got: []const u8, want: []const u8) Failed!void {
+    if (got.len != want.len) {
+        std.debug.print("FAIL {s}: {d} bytes, expected {d}\n", .{ what, got.len, want.len });
+        return error.TestFailed;
+    }
+    if (std.mem.eql(u8, got, want)) return;
+    const first = std.mem.indexOfDiff(u8, got, want).?;
+    var words: usize = 0;
+    var i: usize = 0;
+    while (i + 4 <= got.len) : (i += 4) {
+        if (!std.mem.eql(u8, got[i..][0..4], want[i..][0..4])) words += 1;
+    }
+    std.debug.print("FAIL {s}: first difference at byte {d}, {d} of {d} words differ\n", .{ what, first, words, got.len / 4 });
+    return error.TestFailed;
+}
+
+pub fn download(gpu: Gpu, b: hip.DeviceBuffer) ![]u8 {
+    const out = try gpu.gpa.alloc(u8, b.len);
+    errdefer gpu.gpa.free(out);
+    try b.download(0, out);
+    return out;
+}
