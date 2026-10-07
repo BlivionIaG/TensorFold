@@ -2,8 +2,8 @@
 
 usage: serve_cancel.py URL MODEL [PROMPT_WORDS=3000]
 
-Sends a long prompt, drops the connection while the prompt is still going in, then times a short request: it must not
-wait for the rest of the prompt. Run three times, then checks a short answer is the same as before the cancels.
+Drops a long prompt's connection while it goes in, then times a short request: it must not wait. Three rounds, then the
+short answer must equal the one before the cancels.
 """
 
 import http.client

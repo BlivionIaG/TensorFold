@@ -2,9 +2,8 @@
 
 usage: serve_conc.py URL MODEL [DECODERS=3] [PROMPT_WORDS=2400] [TOKENS=400]
 
-Starts DECODERS streams on short prompts, lets them run, then sends one long prompt. Reports the long prompt's time to
-first token, the longest gap between two tokens of a decoding stream (what the prompt costs them), and the aggregate
-tokens a second over the window the long prompt was in flight.
+Starts DECODERS streams, then one long prompt; reports its time to first token, the longest gap between two tokens of a
+decoding stream, and the aggregate tokens a second while the prompt was in flight.
 """
 
 import http.client

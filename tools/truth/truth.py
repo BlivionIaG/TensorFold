@@ -207,7 +207,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("model"), ap.add_argument("ids"), ap.add_argument("out")
     ap.add_argument("--dtype", choices=("f64", "f32"), default="f64")
-    ap.add_argument("--threads", type=int, default=32)  # 96 threads on 48 cores is slower than 32
+    ap.add_argument("--threads", type=int, default=32)
     a = ap.parse_args()
     torch.set_num_threads(a.threads)
     ids = np.load(a.ids).reshape(-1)
