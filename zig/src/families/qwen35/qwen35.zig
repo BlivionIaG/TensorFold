@@ -28,6 +28,10 @@ pub const mtp = @import("engine/mtp.zig");
 pub const worker = @import("engine/worker.zig");
 pub const slicing = @import("model/slicing.zig");
 pub const reduce = @import("forward/reduce.zig");
+pub const native_engine = @import("engine/native.zig");
+/// The registry entries of the native server: the dense and the sparse checkpoints.
+pub const native = native_engine.Native("qwen3_5");
+pub const native_moe = native_engine.Native("qwen3_5_moe");
 
 test {
     _ = config;
@@ -41,6 +45,7 @@ test {
     _ = sample;
     _ = prefix;
     _ = radix;
+    _ = native_engine;
     _ = pages;
     _ = plan;
     _ = slicing;

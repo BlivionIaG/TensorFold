@@ -9,7 +9,7 @@ pub const Opened = api.Opened;
 
 /// What ``capabilities --json`` reports: this release, the chip here, and what the built-in backend serves.
 pub fn capabilities(a: Allocator) cli.Engines {
-    return .{ .version = "0.6.5", .chip = if (native.families.len > 0) native.chip(a) else null, .backends = native.backends, .families = native.families };
+    return .{ .version = @import("build_options").version, .chip = if (native.families.len > 0) native.chip(a) else null, .backends = native.backends, .families = native.families };
 }
 
 /// What a server asks of an engine, from its flags.
@@ -22,8 +22,9 @@ fn request(dir: []const u8, model_type: []const u8, args: cli.Args) api.Open {
         .lanes_auto = std.ascii.eqlIgnoreCase(std.mem.trim(u8, args.parallel, " "), "auto"),
         .drafts = !args.no_drafts,
         .speed_up = args.speed_up,
+        .prompt_cache_gib = args.prompt_cache_gib,
+        .prompt_cache_over_cap = args.prompt_cache_over_cap,
         .keep = args.checkpoint_slots,
-        .cache_gib = args.prompt_cache_gib,
         .tp = args.tp,
         .rank = args.rank,
         .master = args.master,

@@ -76,7 +76,7 @@ const families = [_]Family{
 };
 
 /// The runtime module for `target`; without images it builds host-only (empty images).
-fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, images: []const ?std.Build.LazyPath, libs: []const ?std.Build.LazyPath, mods: []const [module_groups.len]?std.Build.LazyPath, gfx: []const u8) *std.Build.Module {
+fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, images: []const ?std.Build.LazyPath, libs: []const ?std.Build.LazyPath, mods: []const [module_groups.len]?std.Build.LazyPath, gfx: []const u8, core: *std.Build.Module) *std.Build.Module {
     const options = b.addOptions();
     var with = images.len > 0;
     for (images) |i| with = with and i != null;
@@ -93,8 +93,8 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     inline for (families, 0..) |f, i| options.addOption(bool, "with_" ++ f.name ++ "_modules", have_mods[i]);
     const hip = b.createModule(.{ .root_source_file = b.path("zig/src/hip/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
     hip.addOptions("kernel_options", options);
-    // the safetensors reader alone: the server's tokenizer is core's too, and a file lives in one module; the format modules and the family share it
-    hip.addImport("safetensors", b.createModule(.{ .root_source_file = b.path("zig/src/core/safetensors.zig"), .target = target, .optimize = optimize, .link_libc = true }));
+    // a file lives in one module: the checkpoint reader is core's, shared with the server's tokenizer and the other backends
+    hip.addImport("core", core);
     if (with) for (kernels, images) |k, image| hip.addAnonymousImport(b.fmt("hsaco_{s}", .{k.name}), .{ .root_source_file = image.? });
     for (families, libs) |f, l| if (l) |file| hip.addAnonymousImport(b.fmt("lib_{s}", .{f.name}), .{ .root_source_file = file });
     for (mods, 0..) |group, i| if (have_mods[i]) for (module_groups, group) |name, file| {
@@ -103,8 +103,9 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     return hip;
 }
 
-/// Linux targets: the probe bundle and kernel libraries (-Dhipcc builds, -Dhsaco embeds prebuilt) and `tf-hip-test`.
-pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+/// Linux targets: the probe bundle and kernel libraries (-Dhipcc builds, -Dhsaco embeds prebuilt) and `tf-hip-test`;
+/// returns the HIP engines the native server opens, over the engine API and lane core the other backends share.
+pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, api: *std.Build.Module, lanes: *std.Build.Module, core: *std.Build.Module) *std.Build.Module {
     const hipcc = b.option([]const u8, "hipcc", "hipcc that builds the HIP kernels");
     const prebuilt = b.option([]const u8, "hsaco", "absolute directory of prebuilt <name>.hsaco bundles and libtf_<family>.so");
     const gfx = b.option([]const u8, "gfx", "gfx targets, comma separated (default gfx1030,gfx1100,gfx1151)") orelse "gfx1030,gfx1100,gfx1151";
@@ -148,14 +149,13 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
             if (slot.*) |file| bundle_step.dependOn(&b.addInstallFile(file, b.fmt("hsaco/{s}_{s}.hsaco", .{ f.name, name })).step);
         }
     }
-    const hip = runtime(b, target, optimize, if (hipcc != null or prebuilt != null) &images else &.{}, &libs, &mods, gfx);
+    const hip = runtime(b, target, optimize, if (hipcc != null or prebuilt != null) &images else &.{}, &libs, &mods, gfx, core);
     const runner = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
     runner.addImport("hip", hip);
     runner.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = target, .optimize = optimize }));
     const exe = b.addExecutable(.{ .name = "tf-hip-test", .root_module = runner });
     b.installArtifact(exe);
     b.step("tf-hip-test", "The HIP runtime's GPU test program").dependOn(&b.addInstallArtifact(exe, .{}).step);
-    const lanes = lanesModule(b, target, optimize);
     const qwen = qwen35(b, target, optimize, hip, lanes);
     const upload = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
     upload.addImport("hip", hip);
@@ -165,31 +165,25 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const upload_exe = b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = upload });
     b.installArtifact(upload_exe);
     b.step("tf-qwen35-test", "Qwen3.5 / 3.6 model tests (GPU)").dependOn(&b.addInstallArtifact(upload_exe, .{}).step);
-    nativeServer(b, target, optimize, hip, lanes, qwen);
+    return engines(b, target, optimize, hip, lanes, api, qwen);
 }
 
-/// `zig build native` on Linux: tensorfold-native with the HIP engines into zig-out/native/bin.
-fn nativeServer(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module, qwen: *std.Build.Module) void {
-    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
-    const engines = b.createModule(.{
+/// The HIP engines a native server opens (native/hip.zig), over the given runtime and family.
+fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module, api: *std.Build.Module, qwen: *std.Build.Module) *std.Build.Module {
+    return b.createModule(.{
         .root_source_file = b.path("zig/src/native/hip.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
         .imports = &.{ .{ .name = "hip", .module = hip }, .{ .name = "engine_api", .module = api }, .{ .name = "lanes", .module = lanes }, .{ .name = "qwen35", .module = qwen } },
     });
-    // the HTTP side keeps its safety checks; the engine below it runs at `optimize`
-    const tokenizer = b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
-    const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
-    const exe = b.addExecutable(.{ .name = "tensorfold-native", .root_module = b.createModule(.{
-        .root_source_file = b.path("zig/src/server/main.zig"),
-        .target = target,
-        .optimize = .ReleaseSafe,
-        .link_libc = true,
-        .imports = &.{ .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines } },
-    }) });
-    const install = b.addInstallArtifact(exe, .{ .dest_dir = .{ .override = .{ .custom = "native/bin" } } });
-    b.step("native", "tensorfold-native with the HIP engines into zig-out/native/bin").dependOn(&install.step);
+}
+
+/// The backend-neutral core (checkpoint reader, tokenizer) as one module for a target's programs.
+fn coreModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const core = b.createModule(.{ .root_source_file = b.path("zig/src/core/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    core.addImport("tokenizer", b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .optimize = optimize, .link_libc = true }));
+    return core;
 }
 
 /// The lane core, one module a target (the family and the programs share it).
@@ -197,24 +191,29 @@ fn lanesModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     return b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = target, .optimize = optimize, .link_libc = true });
 }
 
-/// The Qwen3.5 / Qwen3.6 family over the HIP runtime and the core's safetensors reader.
+/// The Qwen3.5 / Qwen3.6 family over the HIP runtime and the core's checkpoint reader.
 fn qwen35(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module) *std.Build.Module {
-    const safetensors = hip.import_table.get("safetensors").?;
+    const core = hip.import_table.get("core").?;
     const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen35/qwen35.zig"), .target = target, .optimize = optimize, .link_libc = true });
     family.addImport("hip", hip);
-    family.addImport("safetensors", safetensors);
+    family.addImport("core", core);
     family.addImport("lanes", lanes);
     return family;
 }
 
 /// Host unit tests of the HIP runtime (no GPU), on any host.
 pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
-    const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, &.{}, "");
+    const core = coreModule(b, b.graph.host, .debug);
+    const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, &.{}, "", core);
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
-    const family = b.addRunArtifact(b.addTest(.{ .root_module = qwen35(b, b.graph.host, .debug, hip, lanesModule(b, b.graph.host, .debug)) }));
+    const lanes = lanesModule(b, b.graph.host, .debug);
+    const qwen = qwen35(b, b.graph.host, .debug, hip, lanes);
+    const family = b.addRunArtifact(b.addTest(.{ .root_module = qwen }));
     // TF_QWEN_DIR is not a cached input
     family.has_side_effects = true;
     step.dependOn(&family.step);
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines(b, b.graph.host, .debug, hip, lanes, api, qwen) })).step);
     const score = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/truth_score.zig"), .target = b.graph.host, .optimize = .debug });
     score.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = b.graph.host, .optimize = .debug }));
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = score })).step);

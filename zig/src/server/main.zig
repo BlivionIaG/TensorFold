@@ -8,7 +8,7 @@ const engines = @import("engines.zig");
 const serve = @import("serve.zig");
 const hf_text = @import("hf_text.zig");
 
-const usage_line = "usage: tensorfold serve [-h] [--host HOST] [--port PORT] [--name NAME] [--alias ALIAS] [--api-key API_KEY] [--api-key-file API_KEY_FILE] [--metrics-open] [--dashboard] [--context CONTEXT] [--speed-up SETTINGS] [--max-tokens MAX_TOKENS] [--temperature TEMPERATURE] [--top-p TOP_P] [--top-k TOP_K] [--min-p MIN_P] [--thinking | --no-thinking] [--reasoning-effort {low,medium,high,xhigh}] [--thinking-budget THINKING_BUDGET] [--loop-guard] [--no-drafts] [--prompt-cache-gib PROMPT_CACHE_GIB] [--checkpoint-slots CHECKPOINT_SLOTS] [--parallel PARALLEL] [--no-update-check] [--backend {auto,mlx,cuda,rocm}] [--tp {1,2,4,8}] [--rank RANK] [--master MASTER] [--master-port MASTER_PORT] [--p2p | --no-p2p] model\n";
+const usage_line = "usage: tensorfold serve [-h] [--host HOST] [--port PORT] [--name NAME] [--alias ALIAS] [--api-key API_KEY] [--api-key-file API_KEY_FILE] [--metrics-open] [--dashboard] [--context CONTEXT] [--speed-up SETTINGS] [--prompt-cache-gib PROMPT_CACHE_GIB] [--prompt-cache-over-cap] [--checkpoint-slots CHECKPOINT_SLOTS] [--max-tokens MAX_TOKENS] [--temperature TEMPERATURE] [--top-p TOP_P] [--top-k TOP_K] [--min-p MIN_P] [--thinking | --no-thinking] [--reasoning-effort {low,medium,high,xhigh}] [--thinking-budget THINKING_BUDGET] [--loop-guard] [--no-drafts] [--parallel PARALLEL] [--no-update-check] [--backend {auto,mlx,cuda,rocm}] [--tp {1,2,4,8}] [--rank RANK] [--master MASTER] [--master-port MASTER_PORT] [--p2p | --no-p2p] model\n";
 
 /// RCCL starts threads of its own: they need glibc's signal stacks, not Zig's.
 pub const std_options: std.Options = .{ .signal_stack_size = null };
@@ -18,6 +18,21 @@ pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const a = init.arena.allocator();
     const argv = try init.minimal.args.toSlice(a);
+    // These commands must work without a model, driver, GPU or checkout.
+    if (argv.len == 2 and std.mem.eql(u8, argv[1], "--version")) {
+        try std.Io.File.stdout().writeStreamingAll(io, "tensorfold-native " ++ @import("build_options").version ++ "\n");
+        return 0;
+    }
+    if (argv.len == 2 and (std.mem.eql(u8, argv[1], "--help") or std.mem.eql(u8, argv[1], "-h"))) {
+        try std.Io.File.stdout().writeStreamingAll(io, "usage: tensorfold-native --version | capabilities --json | serve MODEL [flags]\n" ++ usage_line);
+        return 0;
+    }
+    if (argv.len >= 3 and std.mem.eql(u8, argv[1], "serve")) {
+        for (argv[2..]) |arg| if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            try std.Io.File.stdout().writeStreamingAll(io, usage_line);
+            return 0;
+        };
+    }
     log.init(io, false);
     if (argv.len == 3 and std.mem.eql(u8, argv[1], "capabilities") and std.mem.eql(u8, argv[2], "--json")) {
         var out: std.Io.Writer.Allocating = .init(a);
@@ -45,7 +60,7 @@ pub fn main(init: std.process.Init) !u8 {
         if (!try engines.follow(a, gpa, io, dir, modelType(a, io, dir), args, &problem)) return fail(problem);
         return 0;
     }
-    const text = hf_text.HfText.load(gpa, io, dir, &problem) catch return fail(problem);
+    const text = hf_text.HfText.load(gpa, io, dir, a, &problem) catch |e| return fail(if (problem.len > 0) problem else @errorName(e));
     defer text.deinit();
     const model_type = modelType(a, io, dir);
     const opened = try engines.open(a, gpa, io, dir, model_type, args, &problem) orelse return fail(problem);

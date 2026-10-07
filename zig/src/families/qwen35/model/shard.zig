@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const Io = std.Io;
-const st = @import("safetensors");
+const st = @import("core").safetensors;
 
 pub const Tensor = st.Tensor;
 

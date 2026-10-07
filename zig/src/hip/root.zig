@@ -31,6 +31,8 @@ pub const tuning = @import("tuning/tuning.zig");
 pub const Arena = @import("runtime/arena.zig").Arena;
 pub const rccl = @import("comm/rccl.zig");
 pub const link = @import("comm/link.zig");
+pub const Group = @import("comm/group.zig").Group;
+pub const Device = @import("device.zig").Device;
 
 test {
     _ = launch;
@@ -44,4 +46,6 @@ test {
     _ = tuning;
     _ = rccl;
     _ = link;
+    _ = Group;
+    _ = Device;
 }

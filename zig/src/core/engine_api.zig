@@ -134,9 +134,12 @@ pub const Open = struct {
     lanes_auto: bool = false,
     drafts: bool = true,
     speed_up: ?[]const u8 = null,
-    /// Kept prompt entries and their bytes (`--checkpoint-slots`, `--prompt-cache-gib`); null: the engine's plan.
+    /// The bytes kept prompt states may hold, in GiB (`--prompt-cache-gib`); null: the engine's plan.
+    prompt_cache_gib: ?f64 = null,
+    /// A budget past what the machine leaves is kept, not refused.
+    prompt_cache_over_cap: bool = false,
+    /// Kept prompt entries (`--checkpoint-slots`); null: the engine's plan.
     keep: ?i64 = null,
-    cache_gib: ?f64 = null,
     /// Tensor parallelism: this process is `rank` of `tp`; rank 0 listens on `master`:`master_port` for the others.
     tp: u32 = 1,
     rank: u32 = 0,
@@ -218,6 +221,11 @@ pub const LoneHooks = struct {
 /// The lane core served to the HTTP threads (lane_host.zig).
 pub const LaneHost = @import("lane_host.zig").LaneHost;
 
+/// Exact prompt reuse between requests, for any family (prompt_cache.zig).
+pub const prompt_cache = @import("prompt_cache.zig");
+
 test {
     _ = @import("lane_host.zig");
+    _ = @import("lane_host_reuse_test.zig");
+    _ = prompt_cache;
 }

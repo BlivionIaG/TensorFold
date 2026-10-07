@@ -21,7 +21,7 @@ pub const Flag = struct {
     native_values: ?[]const []const u8 = null,
 };
 
-const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else &.{ "auto", "rocm" };
+const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else &.{ "auto", "cuda", "rocm" };
 
 /// The GPU lane's flags: the HIP engines serve them, the Mac's do not.
 const gpu = builtin.os.tag == .linux;
@@ -59,7 +59,8 @@ pub const flags = [_]Flag{
     .{ .name = "--mtp-drafts" },
     .{ .name = "--mtp-confidence" },
     .{ .name = "--lane-kernels", .choices = &.{ "auto", "on", "off" } },
-    .{ .name = "--prompt-cache-gib", .native = gpu },
+    .{ .name = "--prompt-cache-gib", .native = true },
+    .{ .name = "--prompt-cache-over-cap", .kind = .store_true, .native = true },
     .{ .name = "--checkpoint-slots", .native = gpu },
     .{ .name = "--spill-gib" },
     .{ .name = "--snapshot-dir", .native = true, .native_values = &.{"none"} },
@@ -103,6 +104,8 @@ pub const Args = struct {
     dashboard: bool = false,
     context: ?i64 = null,
     speed_up: ?[]const u8 = null, // speed-up mode: this Mac's settings for the two-Mac link (Flash Next)
+    prompt_cache_gib: ?f64 = null, // kept prompt states' budget (0: none; null: what 70% of RAM leaves past the loaded server)
+    prompt_cache_over_cap: bool = false, // a --prompt-cache-gib past that is kept, not refused
     max_tokens: i64 = 4096,
     temperature: ?f64 = null,
     top_p: ?f64 = null,
@@ -116,7 +119,6 @@ pub const Args = struct {
     parallel: []const u8 = "auto",
     backend: []const u8 = "auto",
     checkpoint_slots: ?i64 = null,
-    prompt_cache_gib: ?f64 = null,
     /// Tensor parallelism: this process is `rank` of `tp`; rank 0 listens on `master`:`master_port` for the others.
     tp: u32 = 1,
     rank: u32 = 0,
@@ -188,6 +190,13 @@ fn float(u: *Usage, a: Allocator, name: []const u8, v: []const u8) error{ Usage,
     return @import("fields.zig").pyFloat(v) orelse fail(u, a, "argument {s}: invalid float value: '{s}'", .{ name, v });
 }
 
+/// A finite GiB count from 0 (off) to below 2^34, whose bytes fit a u64.
+fn gib(u: *Usage, a: Allocator, name: []const u8, v: []const u8) error{ Usage, OutOfMemory }!f64 {
+    const g = try float(u, a, name, v);
+    if (!std.math.isFinite(g) or g < 0 or g >= 1 << 34) return fail(u, a, "argument {s}: expected GiB from 0 (off) to below 2^34: '{s}'", .{ name, v });
+    return g;
+}
+
 fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usage, alias: *std.ArrayList([]const u8), keys: *std.ArrayList([]const u8)) error{ Usage, OutOfMemory }!void {
     const v = value orelse "";
     const is = struct {
@@ -199,7 +208,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
         const p = try int(u, a, name, v);
         if (p < 0 or p > 65535) return fail(u, a, "argument --port: invalid port: '{s}'", .{v});
         out.port = @intCast(p);
-    } else if (is(name, "--name")) out.name = v else if (is(name, "--alias")) try alias.append(a, v) else if (is(name, "--api-key")) try keys.append(a, v) else if (is(name, "--api-key-file")) out.api_key_file = v else if (is(name, "--metrics-open")) out.metrics_open = true else if (is(name, "--dashboard")) out.dashboard = true else if (is(name, "--context")) out.context = try int(u, a, name, v) else if (is(name, "--speed-up")) out.speed_up = v else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--parallel")) out.parallel = v else if (is(name, "--backend")) out.backend = v else if (is(name, "--checkpoint-slots")) out.checkpoint_slots = try int(u, a, name, v) else if (is(name, "--prompt-cache-gib")) out.prompt_cache_gib = try float(u, a, name, v) else if (is(name, "--tp")) out.tp = @intCast(try int(u, a, name, v)) else if (is(name, "--rank")) {
+    } else if (is(name, "--name")) out.name = v else if (is(name, "--alias")) try alias.append(a, v) else if (is(name, "--api-key")) try keys.append(a, v) else if (is(name, "--api-key-file")) out.api_key_file = v else if (is(name, "--metrics-open")) out.metrics_open = true else if (is(name, "--dashboard")) out.dashboard = true else if (is(name, "--context")) out.context = try int(u, a, name, v) else if (is(name, "--speed-up")) out.speed_up = v else if (is(name, "--max-tokens")) out.max_tokens = try int(u, a, name, v) else if (is(name, "--temperature")) out.temperature = try float(u, a, name, v) else if (is(name, "--top-p")) out.top_p = try float(u, a, name, v) else if (is(name, "--top-k")) out.top_k = try int(u, a, name, v) else if (is(name, "--min-p")) out.min_p = try float(u, a, name, v) else if (is(name, "--thinking")) out.thinking = true else if (is(name, "--no-thinking")) out.thinking = false else if (is(name, "--reasoning-effort")) out.reasoning_effort = v else if (is(name, "--thinking-budget")) out.thinking_budget = try int(u, a, name, v) else if (is(name, "--loop-guard")) out.loop_guard = true else if (is(name, "--no-drafts")) out.no_drafts = true else if (is(name, "--parallel")) out.parallel = v else if (is(name, "--backend")) out.backend = v else if (is(name, "--checkpoint-slots")) out.checkpoint_slots = try int(u, a, name, v) else if (is(name, "--prompt-cache-gib")) out.prompt_cache_gib = try gib(u, a, name, v) else if (is(name, "--prompt-cache-over-cap")) out.prompt_cache_over_cap = true else if (is(name, "--tp")) out.tp = @intCast(try int(u, a, name, v)) else if (is(name, "--rank")) {
         const r = try int(u, a, name, v);
         if (r < 0 or r > 4096) return fail(u, a, "argument --rank: invalid rank: '{s}'", .{v});
         out.rank = @intCast(r);
@@ -269,6 +278,11 @@ test "parse and capabilities share the table" {
     try std.testing.expect(!args.thinking);
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--drafter", "x" }, &u));
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--reasoning-effort", "max" }, &u));
+    try std.testing.expectEqual(@as(?f64, 12.5), (try parse(a, &.{ "m", "--prompt-cache-gib", "12.5" }, &u)).prompt_cache_gib);
+    try std.testing.expectEqual(@as(?f64, 0), (try parse(a, &.{ "m", "--prompt-cache-gib", "0" }, &u)).prompt_cache_gib);
+    try std.testing.expect(!(try parse(a, &.{ "m", "--prompt-cache-gib", "16" }, &u)).prompt_cache_over_cap);
+    try std.testing.expect((try parse(a, &.{ "m", "--prompt-cache-gib", "16", "--prompt-cache-over-cap" }, &u)).prompt_cache_over_cap);
+    for ([_][]const u8{ "1e300", "inf", "nan", "-1", "17179869184" }) |bad| try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--prompt-cache-gib", bad }, &u));
     var out: std.Io.Writer.Allocating = .init(a);
     try capabilities(&out.writer, .{ .version = "0.6.5" });
     const doc = out.written();
@@ -294,5 +308,5 @@ test "the GPU lane's flags: tensor parallelism, prompt cache, backend" {
     try std.testing.expectEqualStrings(",matrix=off,kernels=reference,mtp_drafts=2", policy.policy);
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--matrix", "maybe" }, &u));
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--tp", "3" }, &u));
-    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--backend", "cuda" }, &u));
+    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--backend", "mlx" }, &u));
 }

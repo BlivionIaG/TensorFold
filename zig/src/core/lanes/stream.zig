@@ -74,6 +74,20 @@ pub const CancelCheck = struct {
     check: *const fn (ptr: *anyopaque) bool,
 };
 
+/// A kept prompt state the backend restores before its prompt pass (core/prompt_cache.zig), and where it keeps new ones.
+pub const Reuse = struct {
+    saved: ?*anyopaque = null, // the backend's copy of the state after `at` prompt tokens (null: start at 0)
+    at: u32 = 0,
+    marks: []const u32 = &.{}, // ascending: the pass cuts a chunk at each and calls `hook` there
+    hook: ?MarkHook = null,
+};
+
+/// Called between prompt chunks, the pass standing at `at` (the GPU done with the chunk that ends there).
+pub const MarkHook = struct {
+    ptr: *anyopaque,
+    at: *const fn (ptr: *anyopaque, s: *Stream, at: u32) void,
+};
+
 /// Drafts the backend holds for the stream's next round; a tree keeps its tokens and parents on the host.
 pub const Held = struct {
     count: u32,
@@ -99,6 +113,7 @@ pub const Spec = struct {
     chunks: []const u32 = &.{}, // where prefill chunks start after 0 (Python's PrefillPlan); empty: the backend's step
     history_len: u32 = 0, // prompt prefix lengths a backend may keep for a later turn: the rendered history,
     shared_prefixes: []const u32 = &.{}, // then shared system blocks
+    reuse: Reuse = .{},
 };
 
 pub const Stream = struct {
@@ -120,7 +135,9 @@ pub const Stream = struct {
     chunks: []const u32,
     history_len: u32,
     shared_prefixes: []const u32,
-    cached: u32 = 0, // prompt tokens the backend took from a kept prefix
+    reuse: Reuse = .{},
+    cached: u32 = 0, // prompt tokens the backend took from a kept prefix: restored from `reuse`, or its own cache
+    reuse_failed: bool = false, // the backend's restore of `reuse` failed: it prefilled from 0
     context: std.ArrayList(u32) = .empty,
     pending: ?u32 = null,
     force: std.ArrayList(u32) = .empty,
@@ -172,6 +189,7 @@ pub const Stream = struct {
             .chunks = spec.chunks,
             .history_len = spec.history_len,
             .shared_prefixes = spec.shared_prefixes,
+            .reuse = spec.reuse,
         };
         try s.context.appendSlice(gpa, spec.prompt);
         return s;
