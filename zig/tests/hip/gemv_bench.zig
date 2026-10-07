@@ -101,6 +101,9 @@ fn launch(j: Job) hip.Error!void {
     return j.k.run(j.d, j.arg, 0, j.stream, 0, 1, false);
 }
 
+/// A running hash of the bytes the previous tiles (0) and the stream tile (1) wrote: the same before and after a change that keeps their bits.
+var digests: [2]u64 = .{ 0, 0 };
+
 fn runCase(gpu: Gpu, kernels: *const hip.affine.Kernels, stream: hip.Stream, fp16: bool, rng: *Rng, c: Case, reps: usize) !f64 {
     const gpa = gpu.gpa;
     const bits: usize = @intCast(c.bits);
@@ -273,6 +276,10 @@ fn runCase(gpu: Gpu, kernels: *const hip.affine.Kernels, stream: hip.Stream, fp1
         try out.fill8(0, null);
         try launch(.{ .k = k, .d = gpu.d, .stream = stream.handle, .arg = arg, .routed = c.experts > 0, .items = if (c.experts > 0) counts[pl] else 1 });
         try stream.synchronize();
+        const written = try gpa.alloc(u8, out_rows * c.n * 4);
+        defer gpa.free(written);
+        try out.download(0, written);
+        digests[v] = std.hash.Wyhash.hash(digests[v], written);
         const pick = 16;
         for (0..@min(pick, out_rows)) |ri| {
             const row = if (out_rows <= pick) ri else ri * (out_rows - 1) / (pick - 1);
@@ -316,6 +323,7 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
         worst = @min(worst, try runCase(gpu, &launcher.affine, stream, caps.family == .rdna2, &rng, c, reps));
         ran += 1;
     }
+    std.debug.print("DIGEST gemv previous {x} stream {x}\n", .{ digests[0], digests[1] });
     try check.expect(ran > 0, "gemv: no case matches '{s}'", .{filter});
     check.pass("gemv: {d} decode products, the stream tile within twice the previous tiles' error of the float64 reference (slowest x{d:.2})", .{ ran, worst });
 }

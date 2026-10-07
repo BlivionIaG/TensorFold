@@ -28,6 +28,8 @@ const Rig = struct {
     stream: hip.Stream,
     fp16: bool,
     rng: Rng,
+    /// A running hash of the bytes every product and router launch wrote: the same before and after a change that keeps its bits.
+    digest: u64 = 0,
 };
 
 /// Row counts the block shapes are compared at: every short one's edges, ragged ones and a few blocks.
@@ -122,6 +124,10 @@ fn tierProduct(t: *Rig, m: usize, n: usize, k: usize, bits: c_int, group: c_int,
     arg.out = outs[2 * n_ids].ptr;
     try t.kernels.prefillLaunch(t.gpu.d, arg, t.stream.handle, @intCast(item_count));
     try t.stream.synchronize();
+    const written = try gpa.alloc(u8, bytes);
+    defer gpa.free(written);
+    try outs[big].download(0, written);
+    t.digest = std.hash.Wyhash.hash(t.digest, written);
     var diff: usize = 0;
     for (0..n_outs) |i| {
         if (i == big) continue;
@@ -171,6 +177,10 @@ fn routerProduct(t: *Rig, r: usize, d: usize, e: usize) !usize {
         try t.launcher.routerWith(@ptrFromInt(x.ptr), if (t.fp16) 1 else 2, @ptrFromInt(w.ptr), @ptrFromInt(o.ptr), @intCast(r), @intCast(d), @intCast(e), t.stream.handle, small);
     }
     try t.stream.synchronize();
+    const written = try gpa.alloc(u8, r * e * 4);
+    defer gpa.free(written);
+    try outs[0].download(0, written);
+    t.digest = std.hash.Wyhash.hash(t.digest, written);
     return sameOnDevice(t.gpu, outs[0], outs[1], r * e * 4);
 }
 
@@ -327,5 +337,6 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     defer t.stream.deinit();
     if (std.mem.eql(u8, args[0], "short")) return shortBench(&t, if (args.len > 1) try std.fmt.parseInt(usize, args[1], 10) else 10);
     const ran = try tiers(&t);
+    std.debug.print("DIGEST gemm tiers {x}\n", .{t.digest});
     check.pass("gemm tiers: {d} products (rows 1..200, dense and routed, every width and group; the router's logits) with the same bytes in every block shape", .{ran});
 }

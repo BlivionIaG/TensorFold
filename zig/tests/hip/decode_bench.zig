@@ -57,6 +57,8 @@ pub const Rig = struct {
     reps: usize,
     start: hip.Event,
     stop: hip.Event,
+    /// A running hash of the group and pair outputs, the previous launches' (0) and the new ones' (1): the same before and after a change that keeps their bits.
+    digest: [2]u64 = .{ 0, 0 },
 
     pub fn bits(t: *const Rig, v: f32) u16 {
         return if (t.fp16) f16Bits(v) else bf16Bits(v);
@@ -342,6 +344,7 @@ fn group(t: *Rig, rows: usize, ns: []const usize, k: usize, bits: usize, group_s
             const got = try gpa.alloc(u16, rows * n);
             defer gpa.free(got);
             try outs[v][i].download(0, std.mem.sliceAsBytes(got));
+            t.digest[v] = std.hash.Wyhash.hash(t.digest[v], std.mem.sliceAsBytes(got));
             const p = ms[i].problem(t, hx);
             for (0..rows) |r| for (0..@min(n, 12)) |ci| {
                 const col = ci * (n - 1) / @max(@min(n, 12) - 1, 1);
@@ -425,6 +428,7 @@ fn pair(t: *Rig, rows: usize, width: usize, k: usize, bits: usize, group_size: u
         const got = try gpa.alloc(u16, pairs * width);
         defer gpa.free(got);
         try acts[v].download(0, std.mem.sliceAsBytes(got));
+        t.digest[v] = std.hash.Wyhash.hash(t.digest[v], std.mem.sliceAsBytes(got));
         const p = mm.problem(t, hx);
         for (0..pairs) |pi| for (0..12) |ci| {
             const col = ci * (width - 1) / 11;
@@ -494,6 +498,7 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
         try chain.run(&t);
         ran += 1;
     }
+    std.debug.print("DIGEST decode previous {x} new {x}\n", .{ t.digest[0], t.digest[1] });
     try check.expect(ran > 0, "decode: no case matches '{s}'", .{filter});
     check.pass("decode: {d} groups of kernels, each within twice the previous launches' error of the float64 reference", .{ran});
 }
