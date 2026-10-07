@@ -358,7 +358,7 @@ test "the previous decode tiles take over where the stream tile stops" {
         shape.m = m;
         try std.testing.expectEqual(registry.Family.stream, r.select(env, .mlx, .project, .decode, shape).?.family);
     }
-    // the same with the stream tile switched off: the previous tiles by rows
+    // the same with the stream tile switched off: the reference tiles by rows
     const off = envOn("gfx1030", false, true, false);
     shape.m = 4;
     try std.testing.expectEqual(registry.Family.lanes, r.select(off, .mlx, .project, .decode, shape).?.family);
@@ -377,7 +377,7 @@ test "the matrix cores take 16 rows and more of a call outside a lane round" {
     try std.testing.expect(std.mem.endsWith(u8, r.select(off, .mlx, .project, .decode, shape).?.id, "stream"));
     shape.m = 17;
     try std.testing.expect(std.mem.endsWith(u8, r.select(off, .mlx, .project, .decode, shape).?.id, "gemm"));
-    // words the GEMM tile cannot load wide keep the previous tile
+    // words the GEMM tile cannot load wide keep the reference tile
     shape.words_aligned = false;
     try std.testing.expect(std.mem.endsWith(u8, r.select(off, .mlx, .project, .decode, shape).?.id, "block"));
 }

@@ -1,6 +1,5 @@
-//! The engines a native server opens on HIP. Each family in `registry` brings its own lane backend (its `open`); this
-//! file owns the GPU, its policy, the tensor-parallel group, the round loop and the lane host, so a family adds itself
-//! here without server code.
+//! The engines a native server opens on HIP: this file owns the GPU, its policy, the tensor-parallel group, the round loop
+//! and the lane host; each family in `registry` brings its lane backend.
 
 const std = @import("std");
 const hip = @import("hip");

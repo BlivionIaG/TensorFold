@@ -19,9 +19,8 @@ pub fn ropePrefill(o: Ops, x: Tensor, out: Tensor, s_head: usize, s_row: usize, 
     try o.lib.call("tf_rope_prefill", .{ p(x.ptr), @backingInt(x.kind), p(out.ptr), @backingInt(out.kind), @intCast(s_head), @intCast(s_row), int(len), int(heads), int(d), int(rotary), int(pos0), theta, o.stream });
 }
 
-/// A window's q or k heads (row stride `s_row`, head stride `s_head` elements of `src`): each head RMS-normed with
-/// `weight`, rounded, rotated at its row's position (`pos`, int32 a row), rounded; into fp32 `wide` and/or the
-/// cache slots of those positions (`cache`, `total` slots a head).
+/// A window's q or k heads (strides `s_row`, `s_head`): RMS-normed with `weight`, rotated at `pos` (int32 a row), rounded; into
+/// fp32 `wide` and/or the cache slots of those positions (`cache`, `total` slots a head).
 pub fn qkRope(o: Ops, src: Tensor, s_row: usize, s_head: usize, weight: u64, eps: f32, rows: usize, heads: usize, width: usize, rotary: usize, theta: f32, pos: u64, wide: ?u64, cache: ?u64, total: usize) Error!void {
     if (width > 512 or src.kind == .f32) return error.BadShape;
     try o.lib.call("tf_qk_rope", .{ p(src.ptr), @backingInt(src.kind), @intCast(s_row), int(s_head), f(weight), eps, int(rows), int(heads), int(width), int(rotary), theta, @ptrFromInt(pos), if (wide) |w| f(w) else null, if (cache) |c| p(c) else null, int(total), o.stream });

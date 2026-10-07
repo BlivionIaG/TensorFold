@@ -1,6 +1,5 @@
-//! The MLX affine kernels launched from Zig: the tiles of tiles/dot2_tiles.hip and tiles/dot2.hip over the family's code
-//! objects, a launcher a tile. Which tile takes a product is the registry's (core/registry.zig); the entry points at the end
-//! (`run`, `routed`, `prefillLaunch`, `groupRun`, `pairRun`) are what the Zig launches and the C launchers' names call.
+//! The MLX affine tiles of tiles/dot2_tiles.hip and tiles/dot2.hip launched from Zig, a launcher a tile; the registry
+//! (core/registry.zig) picks which takes a product, and the entry points at the end are what launches call.
 
 const std = @import("std");
 const abi = @import("../runtime/abi.zig");
@@ -90,9 +89,8 @@ const stream_waves = 4; // kStreamWaves
 const streams_wanted = 3000; // kStreamWavesWanted
 const stream_code_words = 32; // kStreamCodeWords
 
-/// The K-parallel tiles (tiles/gemm_kp.hpp) of a short prompt: cb columns a lane set, r rows a pass over up to rb row
-/// blocks, waves a block (`loop`: it takes more rows than rb * r by passes). Which of them takes a product, by rows
-/// and by a routed plan's items, is the tuning table's.
+/// The K-parallel tiles (tiles/gemm_kp.hpp) of a short prompt: cb columns a lane set, r rows a pass over up to rb row blocks,
+/// waves a block (`loop`: more rows than rb * r by passes).
 pub const KpTile = struct { cb: c_int, r: c_int, waves: c_int, rb: c_int, loop: bool = true };
 pub const kp_tiles = [_]KpTile{
     .{ .cb = 8, .r = 1, .waves = 2, .rb = 2, .loop = false },
@@ -101,16 +99,13 @@ pub const kp_tiles = [_]KpTile{
     .{ .cb = 4, .r = 2, .waves = 2, .rb = 4 },
 };
 
-/// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
+/// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the reference `block`.
 pub const Tile = enum { gemm, block };
 
-/// Which GEMM tile of the 128-row family a launch runs: the matrix cores, the dot2 tile, or the previous tile.
+/// Which GEMM tile of the 128-row family a launch runs: the matrix cores, the dot2 tile, or the reference tile.
 pub const BlockKind = enum { matrix, gemm, block };
 
 pub const Kernels = struct {
-    /// The block shapes prefill takes by rows: the K-parallel tiles, then the 128 x 128 one (the tests compare them).
-    pub const tier_count = kp_tiles.len + 1;
-
     /// Whether block shape `tier` can take `m` rows: a tile that does not loop over its rows holds rb * r of them.
     pub fn tierTakes(tier: usize, m: c_int) bool {
         return tier >= kp_tiles.len or kp_tiles[tier].loop or m <= kp_tiles[tier].rb * kp_tiles[tier].r;
@@ -122,7 +117,7 @@ pub const Kernels = struct {
     matrix: bool,
     /// The policy's `matrix`: `off` runs every product on the dot2 tiles, `on` and `auto` on the matrix cores where a tile exists.
     mode: Choice,
-    /// Which GEMM tile the products take; the policy's reference switch picks the previous one.
+    /// Which GEMM tile the products take; the policy's reference switch picks the reference one.
     tile: Tile,
     lanes: [bit_widths.len][row_counts.len][piece_counts.len]Function,
     row: [bit_widths.len][piece_counts.len]Function,
@@ -426,41 +421,12 @@ pub const Kernels = struct {
 
     // ---- the entry points ----
 
-    /// Whether the matrix-core tile takes this product's 128-row blocks (gfx11, bf16, switched on, words it can load wide).
-    fn matrixTakes(k: *const Kernels, a: Arg) bool {
-        return k.matrix and k.mode != .off and a.fp16 == 0 and a.words % gemmAlign(a.bits) == 0 and a.scale.kind == a.bias.kind;
-    }
-
-    fn blockShapeOk(a: Arg) bool {
-        return a.m >= 1 and a.n >= 1 and @rem(a.group, 32) == 0 and @rem(a.k, a.group) == 0 and @rem(a.k, 16) == 0;
-    }
-
-    /// The 128-row tile of `tile` over the plan (the GEMM tile falls back to the previous one for words it cannot load wide).
-    pub fn blockWith(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tile: Tile) Error!void {
-        if (!blockShapeOk(a)) return refuse("block shape");
-        const fits = a.words % gemmAlign(a.bits) == 0 and a.scale.kind == a.bias.kind;
-        const kind: BlockKind = if (tile == .gemm and k.matrixTakes(a) and a.m >= 16) .matrix else if (tile == .gemm and fits) .gemm else .block;
-        try k.blockGo(d, a, s, items, kind);
-    }
-
-    /// Prefill's tile at any row count, so a prompt's rows have the same bits however it is cut: the matrix tile on
-    /// gfx11 unless switched off, else the dot2 GEMM tile (the previous one for words it cannot load wide); a few rows
-    /// take the K-parallel tile, which computes the same bits and streams the weights faster.
+    /// Prefill's tile at any row count, with the same bits however a prompt is cut: the matrix tile on gfx11 unless
+    /// switched off, else the dot2 GEMM tile; a few rows take the K-parallel tile.
     pub fn prefillLaunch(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int) Error!void {
         const op: registry.Op = if (a.route.items != 0) .routed else .project;
         const e = k.choose(op, .prefill, shapeOf(a, items)) orelse return refuse("prefill shape");
         try e.launch(k, .{ .d = d, .s = s, .arg = a, .items = items });
-    }
-
-    /// prefillLaunch in block shape `tier`: an index of kp_tiles, or `kp_tiles.len` for the 128 x 128 one.
-    pub fn prefillTier(k: *const Kernels, d: *const driver.Driver, a: Arg, s: abi.Stream, items: c_int, tier: usize) Error!void {
-        const group_ok = a.group == 32 or a.group == 64 or a.group == 128;
-        if (a.m < 1 or a.n < 1 or !group_ok or @rem(a.k, a.group) != 0 or @rem(a.k, 16) != 0) return refuse("prefill shape");
-        const fits = a.words % gemmAlign(a.bits) == 0 and a.scale.kind == a.bias.kind;
-        const matrix = k.tile == .gemm and k.matrixTakes(a);
-        const dot2 = k.tile == .gemm and fits;
-        if (tier < kp_tiles.len and (matrix or dot2) and tierTakes(tier, a.m)) return k.kpGo(d, a, s, items, tier);
-        try k.blockGo(d, a, s, items, if (matrix) .matrix else if (dot2) .gemm else .block);
     }
 
     /// launch_affine on the auto schedule: the activation type's tiles. `schedule` 3 is prefill's, 4 a lane round's;
@@ -499,9 +465,8 @@ pub const Kernels = struct {
         try e.launch(k, .{ .d = d, .s = s, .arg = arg, .items = items });
     }
 
-    /// The stacked (gate | up) product of `arg` (n the stacked width, out16 the (rows, n / 2) activation, plain or routed
-    /// over `items`) as silu(gate) * up in the activation type, clamped by `limit` first when it is above 0. False when
-    /// the shape keeps the separate products.
+    /// The stacked (gate | up) product of `arg` (plain or routed over `items`) as silu(gate) * up into `out16` (rows, n / 2),
+    /// clamped by `limit` when it is above 0. False when the shape keeps the separate products.
     pub fn pairRun(k: *const Kernels, d: *const driver.Driver, arg: Arg, limit: f32, items: c_int, s: abi.Stream) Error!bool {
         var shape = shapeOf(arg, items);
         shape.pairs = arg.out16 != 0;

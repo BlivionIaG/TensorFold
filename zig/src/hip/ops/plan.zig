@@ -24,9 +24,8 @@ fn int(n: usize) c_int {
 pub const Norm = struct { q: u64, k: u64, eps: f32 };
 pub const Gates = struct { a: Tensor, b: Tensor, a_log: u64, dt_bias: u64, gate: u64, beta: u64, count: usize, heads: usize };
 
-/// The round's rows through the linear attention's conv in one launch: x (rows, channels) widened, each slot's rows run
-/// from its conv window, the conv and its silu split into q and k (rows, kw) and v (rows, vw) fp32. The window ends as
-/// the slot's last row left it, and a slot of several rows leaves each row's state in the round's snapshots.
+/// The round's rows through the linear attention's conv in one launch, from each slot's window, split into q, k (rows, kw)
+/// and v (rows, vw) fp32; a slot of several rows leaves each row's state in the round's snapshots.
 pub fn convSplit(o: Ops, x: Tensor, weight: u64, qn: u64, kn: u64, v: u64, p: Plan, layer: usize, channels: usize, kernel: usize, kw: usize, vw: usize, norm: ?Norm, gates: ?Gates) Error!void {
     if (kernel < 1 or kernel > 8 or x.kind == .f32) return error.BadShape;
     const z = try launcher(o);

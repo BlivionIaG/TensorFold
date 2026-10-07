@@ -60,7 +60,7 @@ pub const Policy = struct {
         return p.kernels != .reference and p.stream != .reference;
     }
 
-    /// Whether the prefill GEMM tile (not the previous block tile) takes the products.
+    /// Whether the prefill GEMM tile (not the reference block tile) takes the products.
     pub fn gemmOn(p: *const Policy) bool {
         return p.kernels != .reference and p.gemm != .reference;
     }

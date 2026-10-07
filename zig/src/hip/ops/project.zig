@@ -96,9 +96,7 @@ fn shapeOf(o: Ops, x: Tensor, w: Affine, m: usize) registry.Shape {
     };
 }
 
-/// matmul(x, ...) as the Python wrapper runs it on the auto schedule: an fp32 product (`f32`), else the input
-/// dtype; where the tile the registry picks rounds to the activation type itself (the stream tile, RDNA2's decode
-/// tiles) the cast is its own.
+/// matmul(x, ...) as the Python wrapper runs it on the auto schedule: fp32 (`f32_out`), else the input dtype.
 pub fn affine(o: Ops, x: Tensor, w: Affine, m: usize, f32_out: bool) Error!Tensor {
     try w.check();
     if (m == 0) return error.BadShape;
@@ -144,9 +142,8 @@ pub fn affine(o: Ops, x: Tensor, w: Affine, m: usize, f32_out: bool) Error!Tenso
     return .{ .ptr = narrow, .kind = x.kind };
 }
 
-/// Up to four products of the same `m` rows of x in one launch of the stream tile, each rounded to x's kind into
-/// `outs`; false (nothing launched) when the products differ in K, width, group or tables, or the tile does not take
-/// them, and the caller launches them one by one.
+/// Up to four products of the same rows of x in one stream-tile launch, each rounded to x's kind into `outs`; false, with
+/// nothing launched, when the products differ in K, width, group or tables or the tile does not take them.
 pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tensor) Error!bool {
     const z = o.lib.zig orelse return false;
     if (o.prefill or !o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or x.kind == .f32) return false;

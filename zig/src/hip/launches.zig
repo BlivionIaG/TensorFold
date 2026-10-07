@@ -29,10 +29,6 @@ const ad = util.ad;
 const dim = util.dim;
 const cdiv = util.cdiv;
 
-/// affine_dot2_splits: the split count of a decode launch (1 unless mode is 2).
-pub const affineSplits = Affine.splitCount;
-
-
 const norms = @import("launch/norms.zig");
 const conv = @import("launch/conv.zig");
 const rope = @import("launch/rope.zig");
