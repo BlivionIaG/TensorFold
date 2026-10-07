@@ -131,7 +131,10 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Host-side unit tests (no GPU work)");
     switch (target.result.os.tag) {
         .macos => metalTargets(b, target, optimize, draft_ids, build_options, test_step),
-        .linux => cuda_build.targets(b, target, optimize, draft_ids, build_options),
+        .linux => {
+            cuda_build.targets(b, target, optimize, draft_ids, build_options);
+            hip_build.targets(b, target, optimize);
+        },
         else => {},
     }
     dist_build.targets(b, draft_ids, build_options, release_version);
