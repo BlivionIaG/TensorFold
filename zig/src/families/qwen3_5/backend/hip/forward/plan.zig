@@ -1,6 +1,5 @@
-//! A lane round's plan on the device: each row's token, position and slot, each slot's rows and caches, the round's
-//! snapshots. The forward reads them there, so its launches depend only on the plan's shape (`Shape`) and a graph
-//! captured for a shape serves any streams, positions and caches of it.
+//! A lane round's plan on the device: rows, slots and caches. Launches depend only on its `Shape`, so a graph captured for
+//! a shape serves any streams, positions and caches.
 
 const std = @import("std");
 const hip = @import("hip");

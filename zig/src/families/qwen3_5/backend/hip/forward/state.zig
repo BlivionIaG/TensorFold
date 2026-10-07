@@ -20,9 +20,8 @@ pub const Caches = struct {
     layers: []LayerCache,
     /// Positions the page table can name.
     total: usize,
-    /// What a round's kernels read to find these buffers: the positions held, the address of the stream's last kept
-    /// final row (zero until `setHidden`), then two addresses a layer (the key and value pools, or the conv window and
-    /// state); the page table follows.
+    /// What a round's kernels read: positions held, the last kept final row's address (0 until `setHidden`), two addresses a
+    /// layer (key and value pools, or conv window and state), then the page table.
     desc: hip.DeviceBuffer,
     pool: *pages.Pool,
     /// The page table as the device holds it: the pages of the first positions, each held once by this stream.

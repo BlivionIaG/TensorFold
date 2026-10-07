@@ -71,9 +71,8 @@ pub const Ids = struct {
     }
 };
 
-/// The device pools of every attention layer (keys and values) and the ids over them. A pool is `kv_heads` runs of `count` pages,
-/// a page being 64 positions of one head: a head's pages sit side by side, so a stream whose pages were taken in order reads
-/// a head's keys as one stretch.
+/// The device pools of every attention layer (keys and values) and the ids over them: `kv_heads` runs of `count` pages of 64
+/// positions, so pages taken in order read as one stretch.
 pub const Pool = struct {
     gpa: Allocator,
     d: *const hip.Driver,

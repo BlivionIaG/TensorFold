@@ -7,9 +7,8 @@ const Pick = @import("engine.zig").Pick;
 const state = @import("../forward/state.zig");
 const draw = @import("draw.zig");
 
-/// A step rank 0 sends the other ranks (the first word of a message). Rank 0 decides every match, insertion and eviction of
-/// the prefix tree and names pages and snapshot slots; a rank only applies them. A message is as long as its step needs, a
-/// step added later takes the next number, and the layout of an older one never changes:
+/// A step rank 0 sends the other ranks (a message's first word). Rank 0 decides every match, insertion and eviction and
+/// names pages and snapshot slots; a rank only applies them. A message's layout by step:
 /// prefill (begins a prompt pass): id, positions, prompt length, resumed at, cut count, snapshot slot to resume from
 /// (`no_snapshot`: none), page count, then the pages, the cuts and the prompt;
 /// fill: id, end of the next chunk of the prompt pass;
