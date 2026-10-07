@@ -8,13 +8,54 @@ pub const Gpu = struct {
     ctx: *const hip.Context,
     gpa: std.mem.Allocator,
     io: std.Io,
+    /// The `--policy` flags: `key=value,...`.
+    policy: []const u8 = "",
 };
 
-/// The policy a bench runs under: the GPU's defaults, then the old variables and TF_POLICY.
+/// The policy a run is under: the GPU's defaults, the `--policy` flags, then the old variables and TF_POLICY.
 pub fn policyOf(gpu: Gpu) !hip.Policy {
     var notes: hip.Policy.Notes = .{};
-    return hip.Policy.resolve(try gpu.ctx.caps(), "", .current, &notes);
+    return hip.Policy.resolve(try gpu.ctx.caps(), gpu.policy, .current, &notes);
 }
+
+/// Whether the steps inside a case group print their own lines.
+pub var verbose = false;
+
+/// A detail line of a case group, printed with `-v`.
+pub fn step(comptime fmt: []const u8, args: anytype) void {
+    if (verbose) std.debug.print("  " ++ fmt ++ "\n", args);
+}
+
+/// The case groups of one command: each prints one PASS or FAIL line, and the summary decides the exit code.
+pub const Tally = struct {
+    passed: usize = 0,
+    failed: usize = 0,
+    filter: []const u8 = "",
+
+    pub fn wants(t: Tally, name: []const u8) bool {
+        return t.filter.len == 0 or std.mem.indexOf(u8, name, t.filter) != null;
+    }
+
+    /// Runs `f(ctx)` as the group `name` when the filter takes it; the group prints its own PASS line.
+    pub fn group(t: *Tally, name: []const u8, ctx: anytype, comptime f: anytype) void {
+        if (!t.wants(name)) return;
+        if (f(ctx)) {
+            t.passed += 1;
+        } else |e| {
+            std.debug.print("FAIL {s}: {t}\n", .{ name, e });
+            t.failed += 1;
+        }
+    }
+
+    pub fn summary(t: Tally, what: []const u8) u8 {
+        std.debug.print("{s}: {d} passed, {d} failed\n", .{ what, t.passed, t.failed });
+        if (t.passed + t.failed == 0) {
+            std.debug.print("FAIL {s}: no case group matches '{s}'\n", .{ what, t.filter });
+            return 1;
+        }
+        return if (t.failed == 0) 0 else 1;
+    }
+};
 
 pub const Failed = error{TestFailed};
 

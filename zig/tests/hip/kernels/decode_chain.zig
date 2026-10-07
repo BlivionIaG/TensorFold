@@ -1,11 +1,10 @@
 //! The linear attention's small launches merged by decode.hip against the chains they replace, byte for byte (the
-//! arithmetic is the old kernels'), and the MoE pick rule found by rank against the one that scans: `tf-hip-test decode
-//! [reps] chain`.
+//! arithmetic is the old kernels'), and the MoE pick rule found by rank against the one that scans.
 
 const std = @import("std");
 const hip = @import("hip");
-const check = @import("check.zig");
-const bench = @import("decode_bench.zig");
+const check = @import("../check.zig");
+const bench = @import("decode.zig");
 const Rig = bench.Rig;
 const L = bench.L;
 const P = ?*anyopaque;
@@ -83,7 +82,7 @@ pub fn select(t: *Rig, rows: usize, experts: usize, top_k: usize) !void {
         try same(t, "select items", items[0], items[1]);
         try same(t, "select members", members[0], members[1]);
     }
-    std.debug.print("RESULT decode select rows{d} experts{d} top{d}: old {d:.1} us, new {d:.1} us, x{d:.2}; picks, weights and plan equal\n", .{ rows, experts, top_k, us[0], us[1], us[0] / us[1] });
+    if (t.bench) std.debug.print("RESULT decode select rows{d} experts{d} top{d}: old {d:.1} us, new {d:.1} us, x{d:.2}; picks, weights and plan equal\n", .{ rows, experts, top_k, us[0], us[1], us[0] / us[1] });
 }
 
 /// A window's conv: cast, conv, three column copies, the q and k norms and the gate against one launch. State,
@@ -262,7 +261,7 @@ pub fn conv(t: *Rig, rows: usize) !void {
         const ctx: Ctx = .{ .t = t, .old = v == 0, .v = v, .x = x.ptr, .weight = weight.ptr, .norm = norm.ptr, .state = state[v].ptr, .snaps = snaps[v].ptr, .qc = qc[v].ptr, .kc = kc[v].ptr, .vv = vv[v].ptr, .qn = qn[v].ptr, .kn = kn[v].ptr, .a = dev_a.ptr, .b = dev_b.ptr, .a_log = dev_log.ptr, .gate = gates[v].ptr, .beta = betas[v].ptr, .xr = xr.ptr, .mixed = mixed.ptr, .rows = rows, .ch = ch, .kw = kw, .vw = vw, .kernel = kernel, .kind = kind, .eps = eps };
         us[v] = try t.time(100 * t.reps, ctx, Ctx.go);
     }
-    std.debug.print("RESULT decode conv rows{d}: cast, conv, 3 copies, 2 norms and the gate {d:.1} us, one launch {d:.1} us, x{d:.2}; state, snapshots, q, k, v, gate and beta equal bytes\n", .{ rows, us[0], us[1], us[0] / us[1] });
+    if (t.bench) std.debug.print("RESULT decode conv rows{d}: cast, conv, 3 copies, 2 norms and the gate {d:.1} us, one launch {d:.1} us, x{d:.2}; state, snapshots, q, k, v, gate and beta equal bytes\n", .{ rows, us[0], us[1], us[0] / us[1] });
 }
 
 /// The gated norm of the linear attention: rms and gnorm_silu against one launch, equal bytes.
@@ -324,7 +323,7 @@ pub fn gnorm(t: *Rig, rows: usize) !void {
         us[v] = try t.time(100 * t.reps, ctx, Ctx.go);
     }
     try same(t, "gated norm", outs[0], outs[1]);
-    std.debug.print("RESULT decode gnorm rows{d}: rms and gnorm_silu {d:.1} us, one launch {d:.1} us, x{d:.2}; equal bytes\n", .{ rows, us[0], us[1], us[0] / us[1] });
+    if (t.bench) std.debug.print("RESULT decode gnorm rows{d}: rms and gnorm_silu {d:.1} us, one launch {d:.1} us, x{d:.2}; equal bytes\n", .{ rows, us[0], us[1], us[0] / us[1] });
 }
 
 pub fn run(t: *Rig) !void {

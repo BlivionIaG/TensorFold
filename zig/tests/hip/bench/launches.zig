@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const check = @import("check.zig");
+const check = @import("../check.zig");
 const Gpu = check.Gpu;
 
 const Kernel = enum { rms, affine_row, affine_rows, conv, gated_delta, causal, mix };

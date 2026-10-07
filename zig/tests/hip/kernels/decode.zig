@@ -1,13 +1,11 @@
 //! The decode-step kernels of decode.hip and the merged affine launches against the launches they replace
-//! (TF_DECODE_FUSE=old): the router's logits, the residual tails, products that share x in one launch and the routed
-//! activation as an epilogue, each against a float64 reference on random data, with microseconds a launch. Weights
-//! rotate over many copies where it matters so each launch reads them from DRAM.
-//! `tf-hip-test decode [reps] [router|tail|group|pair|chain]`.
+//! (the policy's `fuse` off): the router's logits, the residual tails, products that share x in one launch and the routed
+//! activation as an epilogue, each against a float64 reference on random data. With `--bench`, microseconds a launch.
 
 const std = @import("std");
 const hip = @import("hip");
-const check = @import("check.zig");
-const ref = @import("gemm_ref.zig");
+const check = @import("../check.zig");
+const ref = @import("reference.zig");
 const chain = @import("decode_chain.zig");
 const Gpu = check.Gpu;
 pub const L = @typeInfo(@FieldType(hip.rocm.Library, "zig")).optional.child;
@@ -55,6 +53,8 @@ pub const Rig = struct {
     fp16: bool,
     rng: Rng,
     reps: usize,
+    /// Timings are measured and printed.
+    bench: bool,
     start: hip.Event,
     stop: hip.Event,
     /// A running hash of the group and pair outputs, the previous launches' (0) and the new ones' (1): the same before and after a change that keeps their bits.
@@ -70,6 +70,7 @@ pub const Rig = struct {
 
     /// Microseconds a call of `go`, best of rounds after one warm-up; `go` takes the rig and the iteration.
     pub fn time(t: *Rig, iters: usize, ctx: anytype, comptime go: fn (@TypeOf(ctx), usize) hip.Error!void) !f64 {
+        if (!t.bench) return 0;
         var best: f64 = std.math.inf(f64);
         for (0..3) |round| {
             try t.start.record(t.stream);
@@ -134,7 +135,7 @@ fn router(t: *Rig, rows: usize, d: usize, experts: usize) !void {
             max_err[v] = @max(max_err[v], @abs(@as(f64, got[r * experts + e]) - y) / norm);
         };
     }
-    std.debug.print("RESULT decode router r{d} d{d} e{d}: old {d:.1} us, new {d:.1} us, x{d:.2}; max|y-ref|/sum|terms| old {e:.1} new {e:.1}\n", .{ rows, d, experts, us[0], us[1], us[0] / us[1], max_err[0], max_err[1] });
+    if (t.bench) std.debug.print("RESULT decode router r{d} d{d} e{d}: old {d:.1} us, new {d:.1} us, x{d:.2}; max|y-ref|/sum|terms| old {e:.1} new {e:.1}\n", .{ rows, d, experts, us[0], us[1], us[0] / us[1], max_err[0], max_err[1] });
     try check.expect(max_err[1] <= 2 * max_err[0] + 1e-9, "decode router r{d}: further from the float64 reference than twice the previous kernel", .{rows});
 }
 
@@ -237,7 +238,7 @@ fn tails(t: *Rig, rows: usize, width: usize, slots: usize) !void {
         }
         us[v] = try t.time(20 * t.reps, ctx, Ctx.go);
     }
-    std.debug.print("RESULT decode tail rows{d} width{d} slots{d}: old {d:.1} us, new {d:.1} us, x{d:.2}; max|got-ref|/max|ref| of x old {e:.1} new {e:.1}, of the norm old {e:.1} new {e:.1}\n", .{ rows, width, slots, us[0], us[1], us[0] / us[1], errs[0][0], errs[1][0], errs[0][1], errs[1][1] });
+    if (t.bench) std.debug.print("RESULT decode tail rows{d} width{d} slots{d}: old {d:.1} us, new {d:.1} us, x{d:.2}; max|got-ref|/max|ref| of x old {e:.1} new {e:.1}, of the norm old {e:.1} new {e:.1}\n", .{ rows, width, slots, us[0], us[1], us[0] / us[1], errs[0][0], errs[1][0], errs[0][1], errs[1][1] });
     try check.expect(errs[1][0] <= 2 * errs[0][0] + 1e-7 and errs[1][1] <= 2 * errs[0][1] + 1e-7, "decode tail rows{d} slots{d}: further from the float64 reference than twice the previous launches", .{ rows, slots });
 }
 
@@ -326,7 +327,7 @@ fn group(t: *Rig, rows: usize, ns: []const usize, k: usize, bits: usize, group_s
         fn go(c: @This(), _: usize) hip.Error!void {
             const kernels = &c.t.fast.affine;
             if (!c.one) {
-                for (c.ms, 0..) |m, i| try kernels.run(c.t.gpu.d, m.arg(c.t, c.x, c.rows, c.outs[i].ptr), 0, c.t.stream.handle, 0, 1, true);
+                for (c.ms, 0..) |m, i| try kernels.run(c.t.gpu.d, m.arg(c.t, c.x, c.rows, c.outs[i].ptr), 4, c.t.stream.handle, 0, 1, true);
             } else {
                 var sides: [4]hip.affine.Side = undefined;
                 for (c.ms, 0..) |m, i| sides[i] = .{ .words = m.dev[0].ptr, .scale = m.dev[1].ptr, .bias = m.dev[2].ptr, .n = @intCast(m.n), .out = c.outs[i].ptr };
@@ -354,7 +355,7 @@ fn group(t: *Rig, rows: usize, ns: []const usize, k: usize, bits: usize, group_s
         }
         us[v] = try t.time(100 * t.reps, ctx, Ctx.go);
     }
-    std.debug.print("RESULT decode group rows{d} sides{d} n{d} k{d} b{d} g{d}: one launch each {d:.1} us, one launch {d:.1} us, x{d:.2}; max|y-ref|/sum|terms| each {e:.1} one {e:.1}\n", .{ rows, ns.len, ns[0], k, bits, group_size, us[0], us[1], us[0] / us[1], errs[0], errs[1] });
+    if (t.bench) std.debug.print("RESULT decode group rows{d} sides{d} n{d} k{d} b{d} g{d}: one launch each {d:.1} us, one launch {d:.1} us, x{d:.2}; max|y-ref|/sum|terms| each {e:.1} one {e:.1}\n", .{ rows, ns.len, ns[0], k, bits, group_size, us[0], us[1], us[0] / us[1], errs[0], errs[1] });
     try check.expect(errs[1] <= 2 * errs[0] + 1e-9, "decode group rows{d}: further from the float64 reference than twice one launch each", .{rows});
 }
 
@@ -439,13 +440,15 @@ fn pair(t: *Rig, rows: usize, width: usize, k: usize, bits: usize, group_size: u
         };
         us[v] = try t.time(100 * t.reps, ctx, Ctx.go);
     }
-    std.debug.print("RESULT decode pair rows{d} width{d} k{d} b{d} g{d}: gate_up and act {d:.1} us, one launch {d:.1} us, x{d:.2}; max|act-ref|/max(|ref|, 0.01) old {e:.1} new {e:.1}\n", .{ rows, width, k, bits, group_size, us[0], us[1], us[0] / us[1], errs[0], errs[1] });
+    if (t.bench) std.debug.print("RESULT decode pair rows{d} width{d} k{d} b{d} g{d}: gate_up and act {d:.1} us, one launch {d:.1} us, x{d:.2}; max|act-ref|/max(|ref|, 0.01) old {e:.1} new {e:.1}\n", .{ rows, width, k, bits, group_size, us[0], us[1], us[0] / us[1], errs[0], errs[1] });
     try check.expect(errs[1] <= 2 * errs[0] + 1e-9, "decode pair rows{d}: further from the float64 reference than twice the previous launches", .{rows});
 }
 
-pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
-    const reps: usize = if (args.len > 0) try std.fmt.parseInt(usize, args[0], 10) else 3;
-    const filter: []const u8 = if (args.len > 1) args[1] else "";
+/// The groups of kernels outside the registry, by name: router, tail, group, pair and chain.
+pub const groups = [_][]const u8{ "router", "tail", "group", "pair", "chain" };
+
+/// One group against the launches it replaces (`fuse` off) and the float64 reference.
+pub fn run(gpu: Gpu, which: []const u8, bench: bool, reps: usize) !void {
     const caps = try gpu.ctx.caps();
     var lib = try hip.rocm.Library.open(gpu.d, caps, try check.policyOf(gpu));
     defer lib.close();
@@ -458,6 +461,7 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
         .fp16 = caps.family == .rdna2,
         .rng = .{ .state = 0x9E3779B97F4A7C15 },
         .reps = reps,
+        .bench = bench,
         .start = try hip.Event.init(gpu.d, true),
         .stop = try hip.Event.init(gpu.d, true),
     };
@@ -466,39 +470,27 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     defer t.stop.deinit();
     t.fast.fuse = true;
     t.old.fuse = false;
-    var ran: usize = 0;
-    const all = filter.len == 0;
-    if (all or std.mem.eql(u8, filter, "router")) {
+    if (std.mem.eql(u8, which, "router")) {
         for ([_]usize{ 1, 2, 4, 8 }) |rows| try router(&t, rows, 2048, 257);
-        ran += 1;
-    }
-    if (all or std.mem.eql(u8, filter, "tail")) {
+    } else if (std.mem.eql(u8, which, "tail")) {
         for ([_]usize{ 1, 4, 16 }) |rows| {
             try tails(&t, rows, 2048, 0);
             try tails(&t, rows, 2048, 9);
         }
         try tails(&t, 1, 4096, 0);
-        ran += 1;
-    }
-    if (all or std.mem.eql(u8, filter, "group")) {
+    } else if (std.mem.eql(u8, which, "group")) {
         for ([_]usize{ 1, 2, 4, 8, 16 }) |rows| try group(&t, rows, &.{ 8192, 4096, 32, 32 }, 2048, 4, 64);
         try group(&t, 1, &.{ 8192, 512, 512 }, 2048, 4, 64);
         try group(&t, 1, &.{ 12288, 12288 }, 4096, 6, 64);
         try group(&t, 4, &.{ 4096, 4096 }, 4096, 8, 128);
         try group(&t, 2, &.{ 1024, 96, 96 }, 2048, 3, 32);
-        ran += 1;
-    }
-    if (all or std.mem.eql(u8, filter, "pair")) {
+    } else if (std.mem.eql(u8, which, "pair")) {
         for ([_]usize{ 1, 2, 4 }) |rows| try pair(&t, rows, 512, 2048, 4, 64);
         try pair(&t, 1, 768, 2048, 6, 64);
         try pair(&t, 1, 512, 2048, 4, 128);
-        ran += 1;
-    }
-    if (all or std.mem.eql(u8, filter, "chain")) {
+    } else if (std.mem.eql(u8, which, "chain")) {
         try chain.run(&t);
-        ran += 1;
-    }
-    std.debug.print("DIGEST decode previous {x} new {x}\n", .{ t.digest[0], t.digest[1] });
-    try check.expect(ran > 0, "decode: no case matches '{s}'", .{filter});
-    check.pass("decode: {d} groups of kernels, each within twice the previous launches' error of the float64 reference", .{ran});
+    } else return error.UnknownGroup;
+    std.debug.print("DIGEST decode {s} previous {x} new {x}\n", .{ which, t.digest[0], t.digest[1] });
+    check.pass("decode {s}: each kernel within twice the previous launches' error of the float64 reference, or the same bytes", .{which});
 }

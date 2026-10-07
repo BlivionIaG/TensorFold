@@ -3,7 +3,7 @@
 const std = @import("std");
 const hip = @import("hip");
 const npy = @import("npy");
-const check = @import("check.zig");
+const check = @import("../check.zig");
 const Gpu = check.Gpu;
 
 /// A fixture directory: manifest.json and its .npy files.

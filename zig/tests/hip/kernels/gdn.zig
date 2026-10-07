@@ -1,9 +1,9 @@
 //! The chunked DeltaNet prefill and the token-serial kernel against a float64 recurrence on random inputs
-//! (`gdn check`), and the two kernels' time at the model's head counts (`gdn bench [rows]`).
+//! and, with `--bench`, the two kernels' time at the model's head counts.
 
 const std = @import("std");
 const hip = @import("hip");
-const check = @import("check.zig");
+const check = @import("../check.zig");
 const Gpu = check.Gpu;
 
 const d = 128;
@@ -225,11 +225,8 @@ fn download(gpu: Gpu, b: hip.DeviceBuffer, out: []f32) !void {
     try b.download(0, std.mem.sliceAsBytes(out));
 }
 
-pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
-    if (args.len > 0 and std.mem.eql(u8, args[0], "bench")) {
-        const rows = if (args.len > 1) try std.fmt.parseInt(usize, args[1], 10) else 32768;
-        return bench(gpu, rows);
-    }
+/// The chunked kernel against the float64 recurrence (`check`), and the two kernels' time at the model's head counts (`bench`).
+pub fn run(gpu: Gpu) !void {
     const shapes = [_]Shape{
         .{ .length = 64, .key_heads = 2, .value_heads = 4 },
         .{ .length = 200, .key_heads = 2, .value_heads = 4 },
@@ -262,14 +259,14 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
             const ey = compare(y, ry);
             const es = compare(st, rs);
             if (!serial) worst = @max(ey.rel, es.rel);
-            std.debug.print("RESULT gdn L={d} Hk={d} Hv={d} {s}: y abs {e:.2} rel {e:.2} rms {e:.2} | state abs {e:.2} rel {e:.2} rms {e:.2}\n", .{ sh.length, sh.key_heads, sh.value_heads, if (serial) "serial " else "chunked", ey.abs, ey.rel, ey.rms, es.abs, es.rel, es.rms });
+            check.step("gdn L={d} Hk={d} Hv={d} {s}: y abs {e:.2} rel {e:.2} rms {e:.2} | state abs {e:.2} rel {e:.2} rms {e:.2}\n", .{ sh.length, sh.key_heads, sh.value_heads, if (serial) "serial " else "chunked", ey.abs, ey.rel, ey.rms, es.abs, es.rel, es.rms });
         }
         try check.expect(worst < 5e-3, "chunked L={d}: error {e} over the reference's scale", .{ sh.length, worst });
     }
-    check.pass("chunked DeltaNet against the float64 recurrence", .{});
+    check.pass("gdn: the chunked DeltaNet prefill within 5e-3 of the float64 recurrence at four lengths", .{});
 }
 
-fn bench(gpu: Gpu, rows: usize) !void {
+pub fn bench(gpu: Gpu, rows: usize) !void {
     const sh: Shape = .{ .length = rows, .key_heads = 16, .value_heads = 32 };
     const dev = try Device.open(gpu, 1 << 30);
     defer dev.close();

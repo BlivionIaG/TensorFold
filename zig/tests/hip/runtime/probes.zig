@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const check = @import("check.zig");
+const check = @import("../check.zig");
 const Gpu = check.Gpu;
 const expect = check.expect;
 
@@ -23,7 +23,7 @@ pub fn smoke(gpu: Gpu) !void {
     const back = try check.download(gpu, b);
     defer gpu.gpa.free(back);
     try check.sameBytes("H2D, D2D, D2H round trip (1 MiB)", back, pattern);
-    check.pass("blocking copies: 1 MiB host -> device -> device -> host equal", .{});
+    check.step("blocking copies: 1 MiB host -> device -> device -> host equal", .{});
 
     var stream = try hip.Stream.init(d, true);
     defer stream.deinit();
@@ -44,7 +44,7 @@ pub fn smoke(gpu: Gpu) !void {
     try c.fill32(0xdeadbeef, null);
     try c.download(0, back);
     for (std.mem.bytesAsSlice(u32, back)) |w| try expect(w == 0xdeadbeef, "memset32 word {x}", .{w});
-    check.pass("async copies, memset8 and memset32", .{});
+    check.step("async copies, memset8 and memset32", .{});
 
     var mapped = try hip.HostBuffer.allocMapped(d, 4096);
     defer mapped.free();
@@ -59,7 +59,7 @@ pub fn smoke(gpu: Gpu) !void {
     try hip.launch.launch(fill, .{ .grid = .{ .x = 4 }, .block = .{ .x = 256 } }, stream, &margs);
     try stream.synchronize();
     for (mapped.slice(f32), 0..) |v, i| try expect(v == 7 + @as(f32, @floatFromInt(i)), "mapped host element {d}: {d}", .{ i, v });
-    check.pass("mapped host memory: a kernel writes pinned host memory directly", .{});
+    check.step("mapped host memory: a kernel writes pinned host memory directly", .{});
 
     const axpy = try probe.function("tf_probe_axpy");
     const count: u32 = 100_000;
@@ -91,7 +91,7 @@ pub fn smoke(gpu: Gpu) !void {
         const want: f32 = 2 * @as(f32, @floatFromInt(i)) + (1 + @as(f32, @floatFromInt(i)));
         try expect(v == want, "fill+axpy element {d}: {d} != {d}", .{ i, v, want });
     }
-    check.pass("launches: fill, fill, axpy over {d} elements exact", .{count});
+    check.step("launches: fill, fill, axpy over {d} elements exact", .{count});
 
     const table = try probe.global("tf_probe_table");
     try expect(table.len == 16, "module global size {d}", .{table.len});
@@ -106,7 +106,7 @@ pub fn smoke(gpu: Gpu) !void {
     var got: [4]i32 = undefined;
     try out.download(0, std.mem.asBytes(&got));
     try expect(std.mem.eql(i32, &got, &.{ 2, 4, 6, 8 }), "module global read back {any}", .{got});
-    check.pass("module global: hipModuleGetGlobal write, kernel read", .{});
+    check.step("module global: hipModuleGetGlobal write, kernel read", .{});
 
     args = .{};
     args.add(out.ptr);
@@ -115,7 +115,7 @@ pub fn smoke(gpu: Gpu) !void {
     var wave: i32 = 0;
     try out.download(0, std.mem.asBytes(&wave));
     try expect(wave == 32, "the kernels run in wave32 (got {d})", .{wave});
-    check.pass("wave32: the code object runs 32-lane wavefronts", .{});
+    check.step("wave32: the code object runs 32-lane wavefronts", .{});
 
     try argPacking(gpu, probe, stream);
 
@@ -125,7 +125,7 @@ pub fn smoke(gpu: Gpu) !void {
     try expect(refused == error.Invalid, "a 2048-thread block is refused before HIP", .{});
     const missing = probe.function("tf_probe_missing");
     try expect(missing == error.NotFound, "an absent symbol is NOT_FOUND", .{});
-    check.pass("refusals: oversized block, absent kernel symbol", .{});
+    check.step("refusals: oversized block, absent kernel symbol", .{});
 }
 
 /// A by-value struct, bool, int8, double and int64 reach the kernel exactly as packed.
@@ -150,7 +150,7 @@ fn argPacking(gpu: Gpu, probe: hip.Module, stream: hip.Stream) !void {
     for (0..8) |i| try expect(got[i] == src[i] * 0.5, "struct arg element {d}", .{i});
     const big: f32 = @floatFromInt(@as(i64, -123456789));
     try expect(got[8] == 1 and got[9] == -5 and got[10] == 3.25 and got[11] == big, "scalar args {any}", .{got[8..]});
-    check.pass("argument packing: by-value struct, bool, int8, double, int64", .{});
+    check.step("argument packing: by-value struct, bool, int8, double, int64", .{});
 }
 
 pub fn graphs(gpu: Gpu) !void {
@@ -183,7 +183,7 @@ pub fn graphs(gpu: Gpu) !void {
     for (0..3) |_| try exec.launchOn(stream);
     try stream.synchronize();
     try expect(try readCounter(counter) == 108, "three replays add 3 * 36", .{});
-    check.pass("stream capture: 8 launches captured, nothing run, 3 replays = 108", .{});
+    check.step("stream capture: 8 launches captured, nothing run, 3 replays = 108", .{});
 
     var nodes_buf: [8]hip.graph.Node = undefined;
     const nodes = try captured.nodes(&nodes_buf);
@@ -196,12 +196,12 @@ pub fn graphs(gpu: Gpu) !void {
     try exec.launchOn(stream);
     try stream.synchronize();
     try expect(try readCounter(counter) == 188, "updated nodes add 8 * 10", .{});
-    check.pass("exec kernel-node update: new arguments in place, replay adds 80", .{});
+    check.step("exec kernel-node update: new arguments in place, replay adds 80", .{});
 
     try explicitGraphs(gpu, probe, stream);
 }
 
-fn readCounter(counter: hip.DeviceBuffer) !u64 {
+pub fn readCounter(counter: hip.DeviceBuffer) !u64 {
     var v: u64 = 0;
     try counter.download(0, std.mem.asBytes(&v));
     return v;
@@ -269,7 +269,7 @@ fn explicitGraphs(gpu: Gpu, probe: hip.Module, stream: hip.Stream) !void {
     try exec.launchOn(stream);
     try stream.synchronize();
     try expectAxpy(gpu, y, 5, 3, n);
-    check.pass("explicit graph: fill->axpy edge exact; exec update from a same-topology graph; topology change refused ({t}) and the exec kept", .{r3});
+    check.step("explicit graph: fill->axpy edge exact; exec update from a same-topology graph; topology change refused ({t}) and the exec kept", .{r3});
 }
 
 fn expectAxpy(gpu: Gpu, y: hip.DeviceBuffer, base: f32, a: f32, n: u32) !void {
@@ -302,7 +302,7 @@ pub fn cooperative(gpu: Gpu) !void {
     const ys = try check.download(gpu, y);
     defer gpu.gpa.free(ys);
     for (std.mem.bytesAsSlice(f32, ys), 0..) |v, i| try expect(v == 3 + @as(f32, @floatFromInt(i)), "cooperative fill {d}", .{i});
-    check.pass("cooperative grid of {d} blocks (one per CU) exact", .{cus});
+    check.step("cooperative grid of {d} blocks (one per CU) exact", .{cus});
 }
 
 /// Bytes that are not a code object are refused, and the error is HIP's, not a crash.
@@ -313,58 +313,7 @@ pub fn image(gpu: Gpu) !void {
     try expect(refused == error.HipFailed, "a broken image must be refused (got {any})", .{refused});
     const empty = hip.Module.load(gpu.d, &.{});
     try expect(empty == error.Invalid, "an empty image is refused before HIP", .{});
-    check.pass("images: a broken code object refused by HIP, an empty one before it", .{});
-}
-
-/// `n` dependent one-thread launches on a stream, then the same chain captured once and replayed: microseconds a launch.
-pub fn overhead(gpu: Gpu, n: usize, reps: usize) !void {
-    const d = gpu.d;
-    var probe = try hip.Module.load(d, hip.kernels.probe);
-    defer probe.unload();
-    const step = try probe.function("tf_probe_step");
-    var stream = try hip.Stream.init(d, true);
-    defer stream.deinit();
-    var counter = try hip.DeviceBuffer.alloc(d, 8);
-    defer counter.free();
-    try counter.fill8(0, null);
-    const one: hip.Config = .{ .grid = .{}, .block = .{} };
-    const times = try gpu.gpa.alloc(f64, reps);
-    defer gpu.gpa.free(times);
-    for (times) |*t| {
-        const t0 = check.now(gpu.io);
-        for (0..n) |_| {
-            var args: hip.Args = .{};
-            args.add(counter.ptr);
-            args.add(@as(u64, 1));
-            try hip.launch.launch(step, one, stream, &args);
-        }
-        try stream.synchronize();
-        t.* = @as(f64, @floatFromInt(check.now(gpu.io) - t0)) / 1000 / @as(f64, @floatFromInt(n));
-    }
-    const plain = check.median(times);
-    try hip.graph.beginCapture(stream, .thread_local);
-    for (0..n) |_| {
-        var args: hip.Args = .{};
-        args.add(counter.ptr);
-        args.add(@as(u64, 1));
-        try hip.launch.launch(step, one, stream, &args);
-    }
-    var g = try hip.graph.endCapture(stream);
-    defer g.deinit();
-    var exec = try g.instantiate();
-    defer exec.deinit();
-    try exec.upload(stream);
-    for (times) |*t| {
-        const t0 = check.now(gpu.io);
-        try exec.launchOn(stream);
-        try stream.synchronize();
-        t.* = @as(f64, @floatFromInt(check.now(gpu.io) - t0)) / 1000 / @as(f64, @floatFromInt(n));
-    }
-    const graphed = check.median(times);
-    const want: u64 = @intCast(2 * n * reps);
-    const ran = try readCounter(counter);
-    try expect(ran == want, "every launch ran once: {d} steps, expected {d}", .{ ran, want });
-    std.debug.print("RESULT {d} dependent launches: {d:.2} us each on a stream, {d:.2} us each in a graph\n", .{ n, plain, graphed });
+    check.step("images: a broken code object refused by HIP, an empty one before it", .{});
 }
 
 /// The embedded kernel library of this GPU's family opens from memory, reports its build and runs a kernel.
@@ -391,5 +340,5 @@ pub fn library(gpu: Gpu) !void {
     for (xs[0..width]) |v| ss += v * v;
     const want = xs[1] / @sqrt(ss / width + 1e-6);
     try expect(@abs(ys[1] - want) < 1e-5, "rms row 0 element 1: {d} vs {d}", .{ ys[1], want });
-    check.pass("kernel library: {t} opened from memory, WMMA {d}, rms runs launched from {s}", .{ caps.family, lib.api.tf_wmma_build(), if (lib.zig != null) "Zig" else "the library" });
+    check.step("kernel library: {t} opened from memory, WMMA {d}, rms runs launched from {s}", .{ caps.family, lib.api.tf_wmma_build(), if (lib.zig != null) "Zig" else "the library" });
 }
