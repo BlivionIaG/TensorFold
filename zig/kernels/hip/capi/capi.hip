@@ -1,5 +1,4 @@
-// The ROCm kernels' launchers behind a C ABI for the Zig engine: raw device pointers, the caller's stream and scratch.
-// Each call returns 0, or 1 with the launcher's message kept for tf_last_error; no C++ exception crosses the ABI.
+// The ROCm launchers behind a C ABI: raw device pointers and the caller's stream; a call returns 0, or 1 with its message kept.
 
 #include <hip/hip_runtime.h>
 

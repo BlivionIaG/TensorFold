@@ -1,5 +1,4 @@
-//! A prompt span through the model as the Python ROCm forward_hidden runs it with exact_short: every layer in steps
-//! of SPAN rows, the prefill formulas (torch RoPE, the conv loop, the torch DeltaNet gate, the prefill attention tile).
+//! A prompt span through every layer in steps of SPAN rows, on the prefill formulas.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -81,8 +80,7 @@ pub fn scaleOf(head_dim: usize) f32 {
     return @floatCast(std.math.pow(f64, @floatFromInt(head_dim), -0.5));
 }
 
-/// _attention_span on `rows` normed rows at `pos`: q (and its gate), k and v, their norms, torch RoPE, the cache
-/// write, the prefill tile over the cache's first pos + rows slots, the sigmoid gate, then o.
+/// Full attention on `rows` normed rows at `pos`: q and its gate, k, v, norms, RoPE, cache write, prefill tile, o.
 fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, index: usize, x: Tensor, rows: usize, pos: usize) Error!Tensor {
     const s = m.spec;
     const hd = s.head_dim;
@@ -112,8 +110,7 @@ fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, 
     return o.affine(gated, f.o, rows, f.o.partial);
 }
 
-/// _linear_span with exact: qkv, z, a and b; the conv loop over [state | rows]; q and k normalized; the torch gate;
-/// the recurrence from the layer's state; the gated norm by silu(z); then out.
+/// Linear attention: qkv, z, a, b, the conv over [state | rows], norms, gate, recurrence and the gated norm.
 fn linear(o: Ops, m: *const view.Model, l: view.Linear, caches: *state.Caches, index: usize, x: Tensor, rows: usize) Error!Tensor {
     const s = m.spec;
     const qkv = try o.affine(x, l.qkv, rows, false);

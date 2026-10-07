@@ -6,9 +6,7 @@
 
 namespace {
 
-// causal_conv's prefill loop: window = [state | x], out = sum over taps in order of window * weight from a zero,
-// then silu; every row runs at once with the same sum. new_state = the window's last kernel - 1 rows, written by the
-// first row block; it must not be `state` (other rows still read it).
+// The conv's prefill loop: window [state | x], taps summed in order then silu; new_state is written by the first row block, never `state`.
 constexpr int kConvRows = 16;   // rows a conv_prefill thread slides over
 constexpr int kConvTaps = 8;    // most taps it holds
 
@@ -41,8 +39,7 @@ __global__ void conv_prefill_kernel(const void* x, int kind, const float* weight
     }
 }
 
-// _gate_beta: beta = sigmoid(b), gate = exp(-exp(a_log) * softplus(a + dt_bias)) with torch's softplus (beta 1,
-// threshold 20) over rows of `heads`.
+// _gate_beta: beta = sigmoid(b), gate = exp(-exp(a_log) * softplus(a + dt_bias)) with torch's softplus.
 __global__ void gdn_gate_prefill_kernel(const void* a, const void* b, int kind, const float* a_log,
                                         const float* dt_bias, float* gate, float* beta, int count, int heads) {
     long long i = gid();

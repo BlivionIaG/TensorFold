@@ -6,9 +6,7 @@
 
 namespace {
 
-// experts.route: members = the pairs sorted by expert (stable), items = (expert, first, count) of at most `tile`
-// pairs, one slot of `capacity` each. One block: the pairs cut into `segs` segments; each segment's counts by expert
-// (16-bit, in shared memory), an expert's prefix over the segments, then each segment places its pairs in order.
+// Sorts the pairs by expert (stable) into members and cuts items of at most `tile` pairs; one block, counted per segment.
 __global__ void moe_route_kernel(const int* picks, int pairs, int experts, int tile, int* members, int* items,
                                  int capacity) {
     extern __shared__ int shared[];
@@ -70,8 +68,7 @@ __global__ void moe_route_kernel(const int* picks, int pairs, int experts, int t
     }
 }
 
-// moe_router_kernel's logits (act.hip) with a wave's expert row read once for 8 token rows: lane l adds rows' x[i] *
-// w[i] for i = l, l + 32, ... with fmaf in order, then the same xor tree, so every logit keeps its bits.
+// moe_router_kernel's logits with a wave's expert row read once for 8 token rows; each logit keeps its bits.
 __device__ __forceinline__ float router_sum(float x) {
 #pragma unroll
     for (int mask = 16; mask > 0; mask >>= 1) x += __shfl_xor(x, mask, 32);
@@ -112,8 +109,7 @@ __device__ void router_rows(const void* x, const float* rows, float* logits, int
     }
 }
 
-// The router's logits for many rows: a 64 x 64 tile of (row, expert) a block over 32-wide steps of the hidden size
-// (16-byte loads: 8 activations or 4 router weights a thread each), each thread 4 x 4 of them in fp32.
+// The router's logits for many rows: a 64 x 64 tile of (row, expert) a block, 4 x 4 a thread, in fp32.
 template <int KIND>
 __device__ void router_tile(const void* x, const float* rows, float* logits, int r, int d, int e) {
     constexpr int kTile = 64, kStep = 32, kLd = kTile + 4;

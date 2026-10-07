@@ -1,5 +1,4 @@
-//! A row's token from its logits as the Python ROCm engine's draw: argmax for greedy, else the keyed draw over the
-//! top_k + MARGIN candidates (or the whole row when top_k is 0), on the host from the activation-dtype row.
+//! A row's token from its logits: argmax for greedy, else the keyed draw over top_k + MARGIN candidates.
 
 const std = @import("std");
 const lanes = @import("lanes");

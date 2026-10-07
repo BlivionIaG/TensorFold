@@ -1,5 +1,4 @@
-//! moe.run for MLX affine experts: router logits, the pick rule, the plan grouping pairs by expert, gate and up in
-//! one launch, the activation, down in one launch, and the slots summed in order (Python's buffers and tiles).
+//! The routed MoE of MLX affine experts: router, pick rule, plan, gate and up, activation, down, slots summed in order.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -30,8 +29,7 @@ fn tileFor(o: Ops, rows: usize) usize {
     return if (rows < BLOCK_FROM or o.window) LANE_ROWS else BLOCK_ROWS;
 }
 
-/// `x` (rows, D) in the activation dtype -> (rows, D) in it: the top-k experts plus the shared one. A tensor-parallel
-/// rank returns its fp32 share instead.
+/// `x` (rows, D) to (rows, D) in its dtype: the top-k experts plus the shared one; a tp rank returns its fp32 share.
 pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize, prefill: bool) hip.ops.Error!Tensor {
     _ = prefill; // the affine experts' arithmetic does not depend on it (the plan's tile comes from tile_for)
     const ex = r.experts;
@@ -71,8 +69,7 @@ pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize,
     return .{ .ptr = out, .kind = m.act };
 }
 
-/// The routed experts' slots a row (fp32, (rows * slots, dims)) and the slots' weights (rows, slots), before they are
-/// summed: a single rank only (no remap).
+/// The routed slots a row (fp32) and their weights before the sum: a single rank only.
 pub const Parts = struct { y: u64, wts: u64, slots: usize };
 
 pub fn parts(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize) hip.ops.Error!Parts {

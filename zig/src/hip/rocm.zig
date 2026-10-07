@@ -1,6 +1,4 @@
-//! The ROCm kernels of this GPU's family, embedded in the binary: the Python ROCm engine's kernels and the torch-op
-//! kernels launched from Zig on code objects (launches.zig), or through the library of C launchers opened from memory
-//! (TF_HIP_LAUNCH=library), each call checked.
+//! The embedded ROCm kernels of this GPU's family, launched from Zig on code objects or through the C library, each call checked.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -90,8 +88,7 @@ pub const Library = struct {
         return std.meta.stringToEnum(Launch, std.mem.span(v)) orelse .zig;
     }
 
-    /// The embedded library of `family`, written to an anonymous file and opened; every export resolved. The Zig
-    /// launches load their code objects on the calling thread's current device.
+    /// The embedded library of `family`, opened from an anonymous file; the Zig launches load on the calling thread's device.
     pub fn open(d: *const driver.Driver, family: Family) Error!Library {
         return openMode(d, family, launchMode());
     }

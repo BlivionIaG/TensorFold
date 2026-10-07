@@ -60,8 +60,7 @@ __global__ void copy_cols_kernel(const void* src, long long stride, int offset, 
     else static_cast<uint16_t*>(dst)[i] = static_cast<const uint16_t*>(src)[from];
 }
 
-// y[r, n] = x[r, :] . w[n, :] over fp32 weights (an unquantized MTP fc), the product rounded to out kind; one wave a
-// value. Drafts only: the verify decides every token, so this sum's order need not be torch's.
+// y[r, n] = x[r, :] . w[n, :] over fp32 weights (an unquantized MTP fc), a wave a value; drafts only, so the sum's order is free.
 __global__ void dense_rows_kernel(const void* x, int kind, const float* w, void* out, int rows, int n, int k) {
     int col = blockIdx.x, r = blockIdx.y;
     if (col >= n || r >= rows) return;

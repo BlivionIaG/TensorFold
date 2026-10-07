@@ -1,6 +1,4 @@
-// The tensor-parallel forward's own ops: a residual add of an fp32 sum (rounded once to the activation dtype, as torch's
-// widened add into the residual) and the expert share's id remapping and masks; and the MTP chain's token probability.
-// kind: 0 fp32, 1 fp16, 2 bf16.
+// The tensor-parallel forward's own ops: a residual add of an fp32 sum, the expert share's remapping and masks, the MTP token probability.
 
 #include <hip/hip_fp16.h>
 #include <hip/hip_runtime.h>
@@ -62,8 +60,7 @@ __device__ __forceinline__ float widen_row(uint16_t bits, int kind) {
     return kind == 1 ? __half2float(__ushort_as_half(bits)) : bf16_to_float(bits);
 }
 
-// out[r] = softmax(row r)[id[r]] of a row of `kind` (1 fp16, 2 bf16), or of the row's largest value when `id` is null:
-// the draft head's probability for the token it drafted. One block a row; a row with a NaN gives NaN.
+// out[r] = softmax(row r)[id[r]], or of the row's largest value when `id` is null; one block a row, a NaN in gives NaN.
 __global__ void token_prob_kernel(const uint16_t* logits, int kind, int n, const int* id, float* out) {
     const uint16_t* row = logits + static_cast<long long>(blockIdx.x) * n;
     __shared__ float shared[kProbThreads];

@@ -1,5 +1,4 @@
-//! The device weights the HIP forward reads, as the Python ROCm forward reads them: affine projections, fp32 norms,
-//! conv taps and DeltaNet tables, dense or routed MLPs, and the optional MTP head.
+//! The device weights the forward reads: projections, fp32 norms, conv taps, DeltaNet tables, MLPs and the MTP head.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -32,8 +31,7 @@ pub const Routed = struct {
     top_k: usize,
     /// The router's rows, E + 1: the model's expert count, whatever share of the experts this rank holds.
     rows: usize,
-    /// A tensor-parallel rank's expert ids (int32, E + 1): each id's place among its own experts, -1 for another rank's;
-    /// zero on one rank.
+    /// A rank's expert ids (int32, E + 1): each id's place among its own, -1 for another rank's; zero on one rank.
     remap: u64 = 0,
 
     /// Routed experts, the shared one not counted.

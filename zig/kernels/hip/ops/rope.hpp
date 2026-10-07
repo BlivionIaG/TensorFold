@@ -6,8 +6,7 @@
 
 namespace {
 
-// apply_rope's prefill formula on x (len, heads, d) of kind: freq = 1 / theta^(i / half) as torch makes it, then the
-// two products and their sum per half; rounded to kind and stored as out_kind at out[h * s_head + r * s_row + j].
+// apply_rope's prefill formula as torch makes it, rounded to kind and stored as out_kind at out[h * s_head + r * s_row + j].
 __global__ void rope_prefill_kernel(const void* x, int kind, void* out, int out_kind, long long s_head, long long s_row,
                                     int len, int heads, int d, int rotary, int pos0, float theta) {
     long long i = gid();
@@ -32,9 +31,7 @@ __global__ void rope_prefill_kernel(const void* x, int kind, void* out, int out_
     store(out, out_kind, h * s_head + r * s_row + j, rounded(y, kind));
 }
 
-// A decode window's q or k heads in one pass, a wave a (row, head): the head's RMS norm (rms_rows' sums, rounded to
-// `kind`), then rope_decode's rotation at the row's position (rounded again); out as fp32 (`wide`) and/or written to
-// the cache's slot of that position (`cache`, (heads, total, width) of `kind`). Up to 512 dims a head.
+// A window's q or k heads in one pass, a wave a (row, head): RMS norm, then the rotation at its position, each rounded to `kind`.
 __global__ void __launch_bounds__(256) qk_rope_kernel(const void* src, int kind, long long s_row, int s_head,
                                                       const float* weight, float eps, int rows, int heads, int width,
                                                       int rotary, float theta, const int* pos, float* wide,

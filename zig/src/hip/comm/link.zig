@@ -1,5 +1,4 @@
-//! The ranks' TCP link: rank 0 listens, each other rank connects once and gets its communicator's unique id; the same
-//! sockets then carry rank 0's commands to the followers (the collectives carry the data).
+//! The ranks' TCP link: rank 0 listens, the others connect once and get the communicator's id, then take rank 0's commands.
 
 const std = @import("std");
 const posix = std.posix;
@@ -15,8 +14,7 @@ pub const Link = struct {
     /// Rank 0: the follower of rank r + 1 at index r. A follower: rank 0's socket at index 0.
     fds: [max_world - 1]posix.socket_t = undefined,
 
-    /// Joins the ranks: rank 0 listens on `host:port` for the other ranks and sends each the `id`; the others connect
-    /// (retrying for ten minutes) and return the id they receive.
+    /// Joins the ranks: rank 0 listens on `host:port` and sends each the `id`; the others connect and return the id they receive.
     pub fn open(io: std.Io, rank: usize, world: usize, host: []const u8, port: u16, id: rccl.UniqueId) Error!struct { Link, rccl.UniqueId } {
         if (world < 2 or world > max_world or rank >= world) return error.BadRank;
         const ip = std.Io.net.IpAddress.parse(host, port) catch return error.ConnectFailed;

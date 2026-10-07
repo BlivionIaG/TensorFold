@@ -19,8 +19,7 @@ const invalid = util.invalid;
 /// The chunked DeltaNet's chunk, in rows.
 pub const gdn_chunk = 64;
 
-/// Byte sizes of the chunked DeltaNet's scratch, rows padded to whole chunks: q, k, k transposed and v as fp16 (q, k and v
-/// in tiles of a chunk), the cumulative log gate, w, u and v_new transposed, each chunk's start state.
+/// Byte sizes of the chunked DeltaNet's scratch, rows padded to whole chunks.
 pub const GdnScratch = struct { qk: usize, gc: usize, wu: usize, h: usize, total: usize };
 
 pub fn gdnScratch(length: usize, key_heads: usize, value_heads: usize) GdnScratch {
@@ -72,8 +71,7 @@ pub fn tf_gated_delta(l: *const Launcher, q: CF, k: CF, v: CF, gate: CF, beta: C
     }
 }
 
-/// The chunked DeltaNet prefill of `length` rows (dk = dv = 128, batch 1, `scratch` of `gdnScratch` bytes): the
-/// recurrence's outputs and final state in 64-row chunks.
+/// The chunked DeltaNet prefill of `length` rows (dk = dv = 128, batch 1) in chunks, with `scratch` of `gdnScratch` bytes.
 pub fn gdnChunked(l: *const Launcher, q: CF, k: CF, v: CF, gate: CF, beta: CF, state: F, y: F, length: usize, key_heads: usize, value_heads: usize, scratch: u64, s: S) Error!void {
     if (length < 1 or key_heads < 1 or @rem(value_heads, key_heads) != 0) return invalid("gdn chunked");
     const sc = gdnScratch(length, key_heads, value_heads);

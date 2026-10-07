@@ -1,6 +1,4 @@
-//! A lane round's forward (window.py): every stream's window in one pass, each row with its serial decode step's bits.
-//! Projections, norms and the MLP take all rows; RoPE, the cache write, attention, the conv and the recurrence take a
-//! stream's rows in one launch each at their own positions.
+//! A lane round's forward: every stream's window in one pass, each row with its serial step's bits.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -12,8 +10,7 @@ const moe = @import("moe.zig");
 const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
 
-/// A linear layer's states after each row of a window of two rows or more: conv (rows, K - 1, ch), delta (rows, Hv,
-/// dv, dk), both fp32; none for one row (its states advance in place and every commit keeps them).
+/// A linear layer's states after each row of a window of two rows or more; none for one row, whose state advances in place.
 pub const Snapshot = struct { convs: u64 = 0, deltas: u64 = 0 };
 
 /// One stream's rows this round: its last token and drafts from slot `pos`, over its caches.
@@ -59,8 +56,7 @@ pub fn forward(ops: Ops, m: *const view.Model, windows: []Window, ids: u64, trac
             .full => |f| try attentionRows(o, m, f, windows, index, normed, total),
             .linear => |l| try linearRows(o, m, l, windows, index, normed, total),
         };
-        // the launches of a layer's two tails merge when the rows stay on this rank: add and norm, then the MLP's sum, add
-        // and the next layer's norm (the last layer's is the final norm)
+        // the launches of a layer's two tails merge when the rows stay on this rank
         const merge = o.fused() and y.kind == m.act;
         const last = index + 1 == m.layers.len;
         const next_norm = if (last) m.final_norm else inputNorm(m.layers[index + 1]);

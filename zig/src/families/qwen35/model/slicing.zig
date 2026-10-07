@@ -1,5 +1,4 @@
-//! Tensor-parallel slicing on the host (model/slicing.py): each rank keeps its heads, columns, input groups, experts and
-//! vocabulary rows, cut from the loaded tensors before upload so the bytes are the Python rank's.
+//! Tensor-parallel slicing on the host: each rank's heads, columns, groups, experts and vocabulary rows, byte for byte.
 
 const std = @import("std");
 const config = @import("config.zig");
@@ -187,8 +186,7 @@ fn side(a: Allocator, x: host.Side, r: Rank, part: usize) Error!host.Side {
     return .{ .words = try takeExperts(a, x.words, r, part), .scales = try takeExperts(a, x.scales, r, part), .biases = try takeExperts(a, x.biases, r, part) };
 }
 
-/// `_experts_share`: a rank's contiguous E / world routed experts, the shared one on rank 0, and the remap from the
-/// model's expert ids (shared last) to the rank's own, -1 where another rank holds it.
+/// A rank's contiguous routed experts, the shared one on rank 0, and the remap to its own ids (-1 where another holds it).
 fn routed(a: Allocator, x: *host.Routed, r: Rank) Error!void {
     const total = x.experts.count - 1;
     const part = try even(total, r.world, "experts");

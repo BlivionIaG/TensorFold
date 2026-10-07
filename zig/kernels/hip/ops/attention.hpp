@@ -6,8 +6,7 @@
 
 namespace {
 
-// out[r, h * d + j] = att * sigmoid(gate[r, h * 2d + d + j]) rounded to kind (gated attention's o input); att is
-// (heads, len, d) from the prefill tile, or (len, heads, d) with rows_major from a window's queries.
+// out[r, h * d + j] = att * sigmoid(gate) rounded to kind; att is (heads, len, d), or (len, heads, d) with rows_major.
 __global__ void attn_gate_kernel(const float* att, const void* qg, void* out, int kind, int len, int heads, int d,
                                  int rows_major) {
     long long i = gid();

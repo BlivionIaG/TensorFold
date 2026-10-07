@@ -1,5 +1,4 @@
-//! Tokens from logits rows on the device: argmax per greedy row, the top_k + MARGIN candidates per sampled row, so a
-//! round downloads ids (or candidate pairs) instead of whole rows; the keyed `choose` stays on the host over them.
+//! Tokens from logits rows on the device: argmax per greedy row, top_k + MARGIN candidates per sampled row.
 
 const std = @import("std");
 const hip = @import("hip");

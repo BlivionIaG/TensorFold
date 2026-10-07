@@ -1,5 +1,4 @@
-//! The HIP half of the root build: the probe's offload bundle, the ROCm kernel libraries a GPU family each, the runtime
-//! and its GPU test program.
+//! The HIP half of the root build: the probe bundle, the ROCm libraries a GPU family each, the runtime and its GPU test program.
 
 const std = @import("std");
 
@@ -13,8 +12,7 @@ const kernels = [_]Kernel{
     .{ .name = "probe", .source = "capi/probe.hip" },
 };
 
-/// torch.utils.cpp_extension's hipcc flags for the Python ROCm extensions (build.ninja), less its include paths:
-/// the same compiler and flags give the same device code, so a kernel keeps the Python engine's bits.
+/// torch's hipcc flags for the Python extensions, less include paths: the same flags give the same device code and bits.
 const torch_flags = [_][]const u8{
     "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1",                      "-DHIPBLAS_V2", "-fPIC",
     "-DCUDA_HAS_FP16=1",        "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20",   "-fno-gpu-rdc",
@@ -60,9 +58,7 @@ const lib_headers = [_][]const u8{
     "recurrence/gated_delta.hpp",
 };
 
-/// The source groups launched from Zig, one code object each (the order of kernels.zig's Group): the device code of the
-/// library sources above, built by hipcc --genco with the library's flags. gemv and the WMMA schedules stay out.
-/// The code-object groups and the source each is built from.
+/// The code-object groups in kernels.zig's Group order, each with its source; gemv and the WMMA schedules stay out.
 const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill", "gdn_prefill", "decode" };
 const group_sources = [module_groups.len][]const u8{ "ops/ops.hip", "ops/act.hip", "attention/attention.hip", "recurrence/gated_delta.hip", "rocm/affine_tiles.hip", "rocm/affine_dot2.hip", "attention/prefill.hip", "recurrence/gdn_prefill.hip", "decode/decode.hip" };
 
@@ -99,8 +95,7 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     return hip;
 }
 
-/// Linux targets: the probe bundle and the kernel libraries (-Dhipcc builds them, -Dhsaco embeds prebuilt ones) and
-/// `tf-hip-test`.
+/// Linux targets: the probe bundle and kernel libraries (-Dhipcc builds, -Dhsaco embeds prebuilt) and `tf-hip-test`.
 pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const hipcc = b.option([]const u8, "hipcc", "hipcc that builds the HIP kernels");
     const prebuilt = b.option([]const u8, "hsaco", "absolute directory of prebuilt <name>.hsaco bundles and libtf_<family>.so");
@@ -245,8 +240,7 @@ fn bundle(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, k: Kern
     return out;
 }
 
-/// hipcc --genco over one source group with the library's flags and the family's WMMA switch: its device code is the
-/// library's, launched from Zig.
+/// hipcc --genco over one source group with the library's flags and WMMA switch.
 fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: Family, arches: []const []const u8, group: []const u8) std.Build.LazyPath {
     const run = b.addSystemCommand(&.{ hipcc, "--genco" });
     run.addFileInput(version);

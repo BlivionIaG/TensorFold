@@ -1,6 +1,4 @@
-//! The ROCm kernels launched from Zig: each launcher of zig/kernels/hip (capi.hip, ops.hip, rocm/*.hip) as a
-//! hipModuleLaunchKernel on the family's code objects, with the same kernel, grid, block, shared bytes and arguments.
-//! Methods keep the C launchers' names and parameter lists, so a call site reads the same on either path.
+//! The ROCm kernels launched from Zig on the family's code objects, under the C launchers' names and parameters.
 
 const std = @import("std");
 const driver = @import("runtime/driver.zig");

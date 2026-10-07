@@ -6,8 +6,7 @@
 
 namespace {
 
-// rms_kernel's arithmetic a wave a row (its lanes' strided sums, the same xor tree), 8 rows a block: short rows such
-// as a head's q or k no longer hold a 256-thread block each.
+// rms_kernel's arithmetic a wave a row, 8 rows a block, so short rows do not hold a 256-thread block each.
 __device__ void rms_rows(const void* x, int kind, const float* weight, void* y, int rows, int width, float eps) {
     constexpr int kMost = 1024 / 32;
     const int lane = threadIdx.x & 31;

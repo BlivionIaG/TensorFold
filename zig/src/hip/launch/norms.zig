@@ -66,8 +66,7 @@ pub fn tf_gnorm_out(l: *const Launcher, y: CF, weight: CF, z: C, out: P, kind: c
     try l.go(l.dec.gnorm_out, dim(cdiv(rows, 8), 1, 1), dim(256, 1, 1), 0, s, &a);
 }
 
-/// decode.hip's tail: x = round(x + t) with t = y (the activation kind) or, with `slots` > 0, the weighted sum of the
-/// row's slots of fp32 y; normed = rms(x) * weight. One block a row.
+/// x = round(x + t), t being y or the weighted sum of the row's `slots`; normed = rms(x) * weight, a block a row.
 pub fn tf_tail(l: *const Launcher, x: P, y: C, wts: CF, weight: CF, normed: P, kind: c_int, rows: c_int, slots: c_int, width: c_int, eps: f32, s: S) Error!void {
     if (width > 8192 or rows < 1) return invalid("tail");
     var a: Args = .{};

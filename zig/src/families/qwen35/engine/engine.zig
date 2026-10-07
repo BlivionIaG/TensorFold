@@ -1,5 +1,4 @@
-//! One loaded Qwen3.5 / 3.6 model on one HIP device: the kernel library, a stream, the forward's scratch, and the
-//! pinned buffers rounds read and write through; prompts and lane windows run here, draws on the device and host.
+//! One loaded model on one HIP device: the kernel library, a stream, scratch and the pinned buffers rounds go through.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -25,8 +24,7 @@ pub const Options = struct {
     device: c_int = 0,
     /// Positions past a reply a verify writes (the window's rows and one more).
     slack: usize = 0,
-    /// Tensor parallelism: this rank of `world` (the model split across them; every rank runs every forward). `id` is
-    /// the communicator's unique id, the same on every rank.
+    /// Tensor parallelism: this rank of `world`, `id` being the communicator's unique id, the same on every rank.
     rank: usize = 0,
     world: usize = 1,
     id: ?hip.rccl.UniqueId = null,
@@ -75,9 +73,7 @@ pub const Engine = struct {
         e.gpa = gpa;
         e.o = o;
         e.sized = false;
-        // rounds replay captured graphs unless TF_HIP_GRAPHS=0 (the Python engine's TENSORFOLD_GRAPH=0); under tensor
-        // parallelism the collectives are captured too, rank 0's pick goes to every rank with the round, and the
-        // replays are slower than the eager rounds on RCCL 2.30 (V620 x2-4), so TF_HIP_GRAPHS_TP=1 turns them on
+        // rounds replay captured graphs unless TF_HIP_GRAPHS=0; under tensor parallelism they stay eager unless TF_HIP_GRAPHS_TP=1
         for ([_][*:0]const u8{ "TF_HIP_GRAPHS", "TENSORFOLD_GRAPH" }) |name| {
             if (std.c.getenv(name)) |v| if (std.mem.eql(u8, std.mem.span(v), "0")) {
                 e.o.graphs = false;
@@ -216,8 +212,7 @@ pub const Engine = struct {
         e.graphs.forget(caches.serial);
     }
 
-    /// The tokens of `rows` final rows at `hidden`: one projection as the engine's _logits (the ranks' vocabulary
-    /// slices joined in rank order under tensor parallelism), each row drawn per `reqs`.
+    /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order, each row per `reqs`.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
         const y = try o.affine(hidden, e.model().head, rows, false);
         try e.drawRows(o, y, rows, reqs, out);
@@ -263,8 +258,7 @@ pub const Engine = struct {
         }
     };
 
-    /// The pass over `len` rows with the cancel polled after each layer; null where it cannot stop (a prompt shorter
-    /// than a span, or tensor parallelism, where the other ranks would wait in a collective).
+    /// The pass over `len` rows polling the cancel after each layer; null where it cannot stop (a short prompt, or tp).
     fn poll(e: *Engine, cancel: ?Cancel, len: usize, p: *Poll) ?fwd.Trace {
         const c = cancel orelse return null;
         if (e.o.world > 1 or len < fwd.SPAN) return null;
@@ -306,8 +300,7 @@ pub const Engine = struct {
     /// One stream's rows of a round: tokens (the pending one, then drafts) from slot `pos` over its caches.
     pub const Rows = struct { caches: *state.Caches, pos: usize, tokens: []const u32 };
 
-    /// Every window in one forward; `out` the token of every row (in order) per `reqs`, and the final rows. The windows' snapshots live in
-    /// the round's scratch until the next round, so `keep` commits from them.
+    /// Every window in one forward: `out` the token of every row per `reqs`; snapshots live until the next round for `keep`.
     pub fn verify(e: *Engine, rows: []const Rows, wins: []win.Window, snaps: []win.Snapshot, reqs: []const draw.Request, out: []u32) !struct { hidden: hip.ops.Tensor } {
         const m = e.model();
         var total: usize = 0;
@@ -349,8 +342,7 @@ pub const Engine = struct {
         return .{ .hidden = hidden, .y = y, .used = e.rounds.used };
     }
 
-    /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys). Looks
-    /// the shape up once, so every rank's table moves the same way.
+    /// The round's graph choice: from the shape's history, or `forced` (rank 0's pick, which a follower obeys).
     pub fn choose(e: *Engine, rows: []const Rows, forced: ?Pick) !Pick {
         e.chosen = .{ .pick = .eager, .entry = null };
         if (!e.o.graphs or rows.len > 64) {
@@ -389,8 +381,7 @@ pub const Engine = struct {
         }
     }
 
-    /// Records the round into a graph and launches it. A capture that fails on any rank runs the round eagerly on every
-    /// rank, and the shape stays eager.
+    /// Records the round into a graph and launches it; a capture that fails on any rank runs eagerly on every rank.
     fn capture(e: *Engine, entry: *round_graphs.Entry, wins: []win.Window, snaps: []win.Snapshot, total: usize) !round_graphs.Out {
         var kept = false;
         var fatal: ?anyerror = null;

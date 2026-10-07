@@ -1,5 +1,4 @@
-//! Startup memory plan (Python's serving/memory.plan): the window one request can use and the bytes the prompt cache
-//! may hold, from the GPU's free memory after the weights, a reserve, the engine's scratch and every lane's caches.
+//! Startup memory plan: the window one request can use and the bytes the prompt cache may hold.
 
 const std = @import("std");
 const config = @import("../model/config.zig");
@@ -79,8 +78,7 @@ pub const Input = struct {
     total: usize,
 };
 
-/// The largest window at most `target` for which the scratch, every lane's caches and one kept copy fit; the window
-/// is 0 when not even one token does.
+/// The largest window at most `target` for which the scratch, every lane's caches and one kept copy fit; 0 if none.
 pub fn plan(in: Input) Plan {
     const s = in.spec;
     const keep = reserve(in.total);

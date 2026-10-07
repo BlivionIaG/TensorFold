@@ -1,5 +1,4 @@
-//! One safetensors file mapped read-only. core's reader refuses a header with a tensor above rank 4 (a vision patch
-//! embedding has rank 5), so this one leaves such tensors, and dtypes it has no name for, out of its index.
+//! One safetensors file mapped read-only; tensors above rank 4 and unnamed dtypes stay out of its index.
 
 const std = @import("std");
 const Io = std.Io;

@@ -1,8 +1,4 @@
-//! The checkpoint's MTP head drafting chains (mtp.py): each step reads the last final row and the token after it,
-//! runs the head's gated attention over the chain's own cache and its MLP, and draws the next draft (greedy chains
-//! on the device without a host sync, sampled ones over downloaded candidates). Step n of every stream's chain is one
-//! head forward over a row each, so a round costs one chain's steps and one sync however many streams draft.
-//! Drafts only choose which rows a window verifies; the verify draws every token, so a draft's bits are free.
+//! The MTP head drafting chains: one head forward a step over a row each, so a round costs one chain's steps and one sync.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -20,8 +16,7 @@ const Tensor = hip.ops.Tensor;
 pub const max_depth = 3;
 pub const confidence = 0.3;
 
-/// One stream's chain: its last kept final row (device), the token after it and that token's slot, the drafts asked
-/// for and how each is drawn; `out` takes the drafts, `kept` the count the confidence cut leaves.
+/// One stream's chain: its last kept final row, the token after it and its slot, the drafts asked for and how each is drawn.
 pub const Job = struct {
     hidden: u64,
     token: u32,
@@ -114,8 +109,7 @@ pub const Head = struct {
         h.gpa.destroy(h);
     }
 
-    /// Byte offsets in the scalars: each chain's first token, then the steps' slots, the steps' positions (these
-    /// uploaded together), then each step's drafts and probabilities (downloaded together), `cap` chains a step.
+    /// Byte offsets in the scalars: uploads first (tokens, slots, positions), then the downloads (drafts, probabilities).
     const Layout = struct { slots: usize, pos: usize, drafts: usize, probs: usize, total: usize };
 
     fn layout(h: *const Head) Layout {
@@ -146,11 +140,7 @@ pub const Head = struct {
         }
     }
 
-    /// Every job's chain, `cap` of them at a time: step n of all the chains is one head forward over a row each, a
-    /// greedy draft feeding the next step from the device and a sampled one through the host, and one download after
-    /// the last step. A job gets up to `depth` drafts, the first at slot `position + 1`, each drawn with its sampling at
-    /// its slot, its chain cut after a draft the head gives less than `stop_under` (0: never), as mtp.py's draft_chain
-    /// cuts it; `kept` is the drafts' count.
+    /// Every job's chain, `cap` at a time, up to `depth` drafts each, cut after a draft under `stop_under` (0: never).
     pub fn chains(h: *Head, lib: *const hip.rocm.Library, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, jobs: []Job) !void {
         var at: usize = 0;
         while (at < jobs.len) : (at += h.cap) try h.batch(lib, stream, drawer, m, jobs[at..][0..@min(h.cap, jobs.len - at)]);
@@ -234,9 +224,7 @@ pub const Head = struct {
         }
     }
 
-    /// One head step over `rows` chains, a row each, at their rope positions (device int32s at `pos`), writing each
-    /// chain's slot `slot` (its last visible slot at device `slot_at`), the tokens at device `ids`: the logits rows
-    /// (activation dtype).
+    /// One head step over `rows` chains at their rope positions, writing each chain's slot; the logits rows come back.
     fn step(h: *Head, o: Ops, m: *const view.Model, head: view.Affine, hidden: Tensor, ids: u64, rows: usize, slot_at: u64, pos: u64, slot: usize) !Tensor {
         const s = m.spec;
         const w = h.w;
@@ -297,8 +285,7 @@ pub const Head = struct {
     }
 };
 
-/// The decode RoPE of `rows` rows of `heads` heads, each row at its device position: widened, rotated, rounded to the
-/// activation dtype, widened again.
+/// The decode RoPE of `rows` rows of `heads` heads, each at its device position, in the activation dtype.
 fn ropeRows(o: Ops, m: *const view.Model, x: Tensor, rows: usize, heads: usize, pos: u64) !u64 {
     const s = m.spec;
     const n = rows * heads * s.head_dim;

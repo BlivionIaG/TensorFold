@@ -1,5 +1,4 @@
-//! A tensor-parallel rank above 0: rank 0's lane backend sends every step (`Op`) and this rank runs the same forwards
-//! in the same order over its own shares, so the collectives pair up. It draws nothing it keeps: tokens are rank 0's.
+//! A tensor-parallel rank above 0: runs the steps rank 0 sends in the same order, so the collectives pair up.
 
 const std = @import("std");
 const hip = @import("hip");

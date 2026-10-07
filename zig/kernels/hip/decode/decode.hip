@@ -1,5 +1,5 @@
-// Decode-step kernels of a few rows (a round's windows), launched from Zig: the MoE router's logits a wave an expert,
-// and the residual tails that merge several small launches. No torch bits: sums in the order that is fastest.
+// Decode-step kernels of a few rows: the MoE router a wave an expert and the residual tails; sums in the fastest order, not torch's.
+
 // kind: 1 fp16, 2 bf16 (act.hpp's numbering).
 
 #include <hip/hip_fp16.h>
@@ -27,8 +27,7 @@ constexpr int kRouterWaves = 4;
 constexpr int kRouterSteps = 16;  // float4 loads a lane keeps in flight
 constexpr int kRouterRows = 16;
 
-// logits[r, e] = x[r] . rows[e] for 16 rows a block (blockIdx.y): a wave an expert, a lane four consecutive weights a step, every load
-// of the expert's row in flight at once. d is a multiple of 4 and the weights' rows are 16-byte aligned.
+// logits[r, e] = x[r] . rows[e] for 16 rows a block, a wave an expert; d is a multiple of 4 and the weights' rows 16-byte aligned.
 template <int KIND>
 __device__ void router_decode(const void* x, const float* rows, float* logits, int r, int d, int e) {
     const int lane = threadIdx.x & 31;
@@ -100,9 +99,7 @@ __device__ __forceinline__ void store_kind(void* p, int kind, long long i, float
 constexpr int kTailThreads = 512;
 constexpr int kTailWidth = 8192;
 
-// One row a block: x = round(x + t) where t is y (the activation kind) or, with `slots` > 0, the sum over slots of
-// y[row * slots + s] * wts[row * slots + s] (fp32, in slot order) rounded to the kind; then normed = x * rsqrt(mean(x^2)
-// + eps) * weight, rounded to the kind. What the add, the MoE combine and the next RMS norm each did, in one launch.
+// One row a block: x = round(x + t) with t = y or the slot-ordered weighted sum, then normed = rms(x) * weight, in one launch.
 __device__ void tail_body(void* x, const void* y, const float* wts, const float* weight, void* normed, int kind,
                           int slots, int width, float eps) {
     __shared__ float row_v[kTailWidth];
@@ -142,9 +139,7 @@ __device__ void tail_body(void* x, const void* y, const float* wts, const float*
     }
 }
 
-// What the linear attention's conv launch takes: x (rows, channels) in `kind`; the conv's taps, state and snapshots;
-// q and k (rows, kw) and v (rows, vw) out; with norm = 128 the q and k heads are normed with qw and kw_w; with ga the
-// gate and beta of the delta rule from a and b (rows * heads values of `kind`).
+// The conv launch's arguments: x (rows, channels), taps, state and snapshots, q and k (rows, kw) and v (rows, vw) out, norm and gate.
 struct ConvArgs {
     const void* x;
     int kind;
@@ -168,11 +163,7 @@ struct ConvArgs {
     int gcount, heads;
 };
 
-// The linear-attention conv for a window's rows with the activation widened on load and the output split into q, k and
-// v: channel c of row r goes to qn / kn (rows, kw) or v (rows, vw). conv_rows_kernel's taps, in order, silu after; the
-// state moves on in place, and `states` (optional) keeps the state after every row. A block of 128 channels is one
-// head: a q or k head is normed by rms_rows' sums (lane l adds elements l, l + 32, ... in order, then the xor tree).
-// The blocks past the channels' compute the gate and beta (gdn_gate_kernel's arithmetic).
+// The conv for a window's rows split into q, k and v: taps in order, silu after, q and k heads normed as rms_rows, gate and beta last.
 __device__ void conv_split_body(const ConvArgs& c) {
     __shared__ float sq[128];
     __shared__ float inv_s;
@@ -244,8 +235,7 @@ __device__ void conv_split_body(const ConvArgs& c) {
     }
 }
 
-// rms over rows of `width` (at most 1024) fp32 values a wave a row, 8 rows a block, as rms_rows in ops.hip; blockIdx.y
-// picks the first or the second set of rows (q and k of the linear attention, each with its own weight).
+// rms over rows of `width` fp32 values a wave a row as rms_rows; blockIdx.y picks the first or second set of rows.
 __device__ void
     rms2_body(const float* x0, const float* w0, float* y0, const float* x1, const float* w1, float* y1, int rows,
                 int width, float eps) {
@@ -278,8 +268,7 @@ __device__ void
     }
 }
 
-// The gated norm of the linear attention's output: out = rms(y) * weight * round(silu(z)), rounded to the kind, a wave
-// a (row, head) of `width` (at most 1024) values: rms_rows on y, then gnorm_silu, with no fp32 round trip between.
+// The gated norm: out = rms(y) * weight * round(silu(z)) in the kind, a wave a (row, head), with no fp32 round trip between.
 __device__ void
     gnorm_out_body(const float* y, const float* weight, const void* z, void* out, int kind, int rows, int width,
                      float eps) {
@@ -315,9 +304,7 @@ constexpr int kSelectMax = 1024;
 
 __device__ __forceinline__ float round_bf16_f(float v) { return round_kind(v, 2); }
 
-// act.hip's moe_select_kernel with the picks found by rank instead of one after another: expert i is in the top k when
-// fewer than k experts beat it (a larger value, or an equal one with a lower index), at slot = the number that do. A
-// block a row; with `items` (one row) it also writes the plan of single-pair items.
+// act.hip's moe_select with picks found by rank: expert i is in the top k when fewer than k beat it; `items` writes the plan.
 __device__ void select_body(const float* logits, int* pick, float* wts, int* items, int* members, int capacity,
                             int experts, int top_k) {
     __shared__ float v[kSelectMax];

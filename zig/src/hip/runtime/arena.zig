@@ -1,5 +1,4 @@
-//! A forward's scratch: one device buffer handed out front to back and reset per forward, so the same sequence of
-//! requests gets the same addresses (what a captured graph replays).
+//! A forward's scratch handed out front to back and reset per forward, so a captured graph replays the same addresses.
 
 const std = @import("std");
 const Driver = @import("driver.zig").Driver;

@@ -1,5 +1,4 @@
-//! The forward's view of an uploaded model: affine projections as the kernels take them, the activation dtype of this
-//! GPU's family, and normalize_qk's constant weights (uploaded here, owned by the bridge).
+//! The forward's view of an uploaded model: projections, activation dtype and normalize_qk's constants.
 
 const std = @import("std");
 const hip = @import("hip");

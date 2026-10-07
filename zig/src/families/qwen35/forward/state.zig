@@ -1,5 +1,4 @@
-//! A stream's caches on the device: a fixed key/value buffer per full-attention layer, the conv window and DeltaNet
-//! state per linear layer, both zeroed fresh (the Python engine's zeros for a cache that does not exist yet).
+//! A stream's device caches: key/value per attention layer, conv window and DeltaNet state per linear layer.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -92,8 +91,7 @@ pub const Caches = struct {
         return n;
     }
 
-    /// Copy the first `len` positions of every attention layer and the whole linear state of `src` into `dst` (either may
-    /// be the longer buffer); `dst` then holds `len` positions.
+    /// Copy the first `len` positions of every attention layer and the whole linear state of `src` into `dst`.
     pub fn copyPrefix(dst: *Caches, src: *const Caches, m: *const view.Model, len: usize, stream: hip.abi.Stream) !void {
         const s = m.spec;
         const row = s.head_dim * m.act.size();

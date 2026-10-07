@@ -1,5 +1,4 @@
-//! The tensor-parallel reduce (qwen_tp.py): the ranks' fp32 shares summed before each residual add, and the vocabulary
-//! slices of the logits joined in rank order.
+//! The tensor-parallel reduce: ranks' fp32 shares summed before each residual add, logits slices joined in rank order.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -10,8 +9,7 @@ const Tensor = hip.ops.Tensor;
 
 pub const Error = hip.ops.Error || hip.rccl.Error;
 
-/// `n` fp32 values summed over the ranks, the same on every rank (ordered_sum): one add between two ranks, else the
-/// shares gathered and added in rank order, so a row's sum does not depend on how many rows share the call.
+/// `n` fp32 values summed over the ranks in rank order, so a row's sum does not depend on the rows sharing the call.
 pub fn sum(o: Ops, c: hip.rccl.Comm, y: u64, n: usize) Error!u64 {
     const out = try o.arena.of(f32, n);
     if (c.world == 2) {
@@ -26,8 +24,7 @@ pub fn sum(o: Ops, c: hip.rccl.Comm, y: u64, n: usize) Error!u64 {
     return out;
 }
 
-/// x += y on the residual rows: an activation-dtype `y` as one rank adds it; an fp32 share is summed over the ranks and
-/// added to the widened residual, rounded once.
+/// x += y on the residual rows: an activation-dtype `y` as one rank adds it, an fp32 share summed over the ranks first.
 pub fn residual(o: Ops, m: *const view.Model, x: Tensor, y: Tensor, n: usize) Error!void {
     if (y.kind != .f32) return o.add(x, y, x, n);
     const total = try sum(o, m.tp.?, y.ptr, n);

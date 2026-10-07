@@ -241,8 +241,7 @@ pub const Model = struct {
         return fromCheckpointRank(gpa, d, ck, limit, null);
     }
 
-    /// `fromCheckpoint` for one tensor-parallel rank: its heads, columns, input groups, experts and vocabulary rows are
-    /// cut from the host tensors before upload, and `spec` is what the rank sees (its heads).
+    /// `fromCheckpoint` for one tensor-parallel rank, `spec` being what that rank sees.
     pub fn fromCheckpointRank(gpa: std.mem.Allocator, d: *const hip.Driver, ck: *const checkpoint.Checkpoint, limit: usize, rank: ?slicing.Rank) !Model {
         const whole = ck.spec();
         var m: Model = .{ .gpa = gpa, .spec = if (rank) |r| try slicing.localSpec(whole, r) else whole, .sliced = rank != null };

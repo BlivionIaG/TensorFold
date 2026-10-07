@@ -1,22 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-//
-// Chunked Gated DeltaNet for long prompts: FLA's chunk_gated_delta_rule (64-token chunks, 128-wide heads) in five
-// kernels, after the author's gdn_prefill_{prep,kkt,solve_wy,delta_h,o}_rdna2.cu ports. fp16 operands and fp32
-// accumulation through v_dot2_f32_f16 (RDNA2 and RDNA3 both have it); the state and every sum stay fp32.
-//
-//   prep  q, k, v to fp16 in tiles of a chunk (64 rows of 128, 16 KB contiguous: rows a power of two apart land on
-//         one memory channel); gc, the chunk-local cumulative log gate
-//   kt    each chunk's k transposed (key, token), for the state update
-//   wy    A = strict tril(beta exp(gc_i - gc_j) k_i.k_j), then (I + A) [w | u] = beta [exp(gc) k | v] by forward
-//         substitution, a column a thread: w, u fp16
-//   h     the state across chunks, a (value tile, head) a block: the chunk's start state to fp16 for o, v_new = u - w H^T
-//         (kept transposed, value by token), H = exp(g_last) H + sum_t exp(g_last - gc_t) v_new_t k_t
-//   o     o_t = exp(gc_t) q_t H^T + sum_{j<=t} exp(gc_t - gc_j) (q_t.k_j) v_new_j
-//
-// Inputs and y as the token-serial kernel's: q, k (L, Hk, 128), v, y (L, Hv, 128), gate and beta (L, Hv), state (Hv, 128
-// values, 128 keys) updated in place. Shared-memory rows are 16-byte aligned and four banks apart, so a 16-byte read
-// of eight consecutive rows takes one pass.
+
+// Chunked Gated DeltaNet for long prompts after FLA's chunk_gated_delta_rule, in five kernels: prep, kt, wy, h, o.
+
+// fp16 operands and fp32 accumulation through v_dot2_f32_f16; the state and every sum stay fp32.
+
+// Shared-memory rows are 16-byte aligned and four banks apart, so a 16-byte read of eight consecutive rows takes one pass.
 
 #include <hip/hip_runtime.h>
 
@@ -61,8 +50,7 @@ __device__ __forceinline__ float quad_xor2(float x) {
     return __builtin_bit_cast(float, __builtin_amdgcn_update_dpp(0, __builtin_bit_cast(int, x), 0x4E, 0xF, 0xF, true));
 }
 
-// acc[r][c] += (row r of a) . (row c of b) over the 8-wide groups g_first, g_first + g_stride, .. below g_end, for the
-// columns c < NC.
+// acc[r][c] += (row r of a) . (row c of b) over the 8-wide groups from g_first by g_stride below g_end, for c < NC.
 template <int NC>
 __device__ __forceinline__ void tile_acc(float (&acc)[4][4], const half_t* a, int lda, const half_t* b, int b_step,
                                          int g_first, int g_end, int g_stride) {
@@ -93,8 +81,7 @@ __device__ __forceinline__ void tile_acc_wave(float (&acc)[4][4], const half_t* 
     }
 }
 
-// A chunk tile (64 rows of 128 fp16 contiguous) as the 16-byte pieces a thread fetches (4), the rows from `n` on zero,
-// and stored into shared rows of kLd.
+// A chunk tile as the 16-byte pieces a thread fetches, rows from `n` on zero, stored into shared rows of kLd.
 struct Tile {
     Quad piece[4];
 

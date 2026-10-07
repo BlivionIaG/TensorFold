@@ -66,8 +66,7 @@ pub fn tf_conv_rows(l: *const Launcher, x: CF, weight: CF, state: F, y: F, state
     try l.go(l.conv_rows, dim(cdiv(channels, 128), 1, 1), dim(128, 1, 1), 0, s, &a);
 }
 
-/// decode.hip's conv: a window's rows through the linear attention's conv, split into q, k and v (fp32), the q and k
-/// heads normed and the gate and beta computed when `c` asks.
+/// A window's rows through the linear attention's conv, split into q, k and v, normed and gated when `c` asks.
 pub fn tf_conv_split(l: *const Launcher, c: ConvArgs, s: S) Error!void {
     if (c.kernel < 1 or c.kernel > 8 or (c.norm != 0 and (c.norm != 128 or @rem(c.kw, 128) != 0))) return invalid("conv split");
     var a: Args = .{};

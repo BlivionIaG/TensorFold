@@ -1,5 +1,4 @@
-//! The lane core's HIP backend for Qwen3.5 / 3.6: every stream its own caches, every round's windows verified in one
-//! forward, each row drawn on the host at its keyed position, the kept rows committed from the window's states.
+//! The lane core's HIP backend: every stream its own caches, every round's windows verified in one forward.
 
 const std = @import("std");
 const hip = @import("hip");
@@ -267,8 +266,7 @@ pub const Hip = struct {
         return lane;
     }
 
-    /// One chunk of the prompt pass: up to `prefix.chunk` rows, ending on the next cut or the prompt's end. The last
-    /// chunk draws the first token. A cancelled request stops between chunks, on every rank.
+    /// One chunk of the prompt pass, ending on the next cut or the prompt's end; the last draws the first token.
     fn prefillStepFn(ptr: *anyopaque, s: *lanes.Stream) anyerror!bool {
         const h = of(ptr);
         if (s.isCancelled()) return error.Cancelled;
@@ -384,8 +382,7 @@ pub const Hip = struct {
         }
     }
 
-    /// The head drafts `depth` from each stream's last kept row and the token after it (its pending one): every chain
-    /// together, one head forward a step for all the streams.
+    /// The head drafts `depth` from each stream's last kept row and its pending token, one head forward a step for all.
     fn draftFn(ptr: *anyopaque, requests: []const be.DraftRequest) anyerror!void {
         const h = of(ptr);
         const head = h.head orelse return error.NoDraftHead;
@@ -410,8 +407,7 @@ pub const Hip = struct {
             lane.held_n = 0;
             if (r.depth == 0) continue;
             if (n == max_jobs) return error.WindowTooWide;
-            // a chain ends after a draft the head gives under the confidence (`heldFn` tells the core how many it holds);
-            // the prompt's first drafts are asked for before any hook reads the count, so they run whole
+            // a chain ends after a draft the head gives under the confidence; the first drafts run whole
             const stop_under: f64 = if (r.rows != null) mtp.confidence else 0.0;
             jobs[n] = .{ .hidden = lane.hidden.ptr, .token = token, .position = lane.len, .depth = r.depth, .sampling = sampling(r.stream), .stop_under = stop_under, .out = &lane.held };
             chained[n] = lane;

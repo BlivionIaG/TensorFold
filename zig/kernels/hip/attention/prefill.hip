@@ -1,5 +1,4 @@
-// Prefill attention for long prompts: 64 query rows a block share each 64-key tile, both products on the 16-bit
-// cache's dot2 (fp16 pairs on RDNA2, bf16 or fp16 pairs on RDNA3) into fp32, the online softmax in fp32.
+// Prefill attention for long prompts: 64 query rows share each 64-key tile, dot2 products into fp32, fp32 online softmax.
 
 #include <hip/hip_bfloat16.h>
 #include <hip/hip_fp16.h>
@@ -49,9 +48,7 @@ __device__ __forceinline__ void pairs4(const void* at, Pair out[4]) {
     out[3] = __builtin_bit_cast(Pair, w.w);
 }
 
-// q is rounded to the cache's type once and stays in LDS, a tile's scores stay in registers (16 lanes share a row: max
-// and sum by shuffles) and only the probabilities go through LDS, as key pairs. Shared-memory rows are XOR-swizzled by
-// 16-byte chunk against bank conflicts.
+// q is rounded to the cache's type once and stays in LDS; scores stay in registers, probabilities pass through LDS XOR-swizzled.
 template <typename Cache>
 __device__ void fa_dot2(const float* __restrict__ q, const Cache* __restrict__ k, const Cache* __restrict__ v,
                         float* __restrict__ out, int qlen, int span, int heads, int kv_heads, int d, float scale,

@@ -1,5 +1,4 @@
-//! Captured lane rounds: a round's forward recorded once as a HIP graph per window shape (each stream's caches and row
-//! count) and replayed on later rounds, which cost one launch instead of the forward's hundreds.
+//! Captured lane rounds: a round's forward recorded once per window shape and replayed on later rounds.
 
 const std = @import("std");
 const hip = @import("hip");
