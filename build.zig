@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const cuda_build = @import("zig/build/cuda.zig");
 const dist_build = @import("zig/build/dist.zig");
+const hip_build = @import("zig/build/hip.zig");
 
 comptime {
     const required = std.mem.trim(u8, @embedFile(".zig-version"), "\r\n");
@@ -135,6 +136,7 @@ pub fn build(b: *std.Build) void {
     }
     dist_build.targets(b, draft_ids, build_options, release_version);
     cuda_build.hostTests(b, draft_ids, test_step);
+    hip_build.hostTests(b, test_step);
 }
 
 /// `zig build native -Dcpu=apple_m1`: tensorfold-native with the Metal engines for the Python package's bundle (a native M5 build traps on M1-M4).
