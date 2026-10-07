@@ -112,7 +112,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
     const hipcc = b.option([]const u8, "hipcc", "hipcc that builds the HIP kernels");
     const prebuilt = b.option([]const u8, "hsaco", "absolute directory of prebuilt <name>.hsaco bundles and libtf_<family>.so");
-    const gfx = b.option([]const u8, "gfx", "gfx targets, comma separated (default gfx1030,gfx1100,gfx1151)") orelse "gfx1030,gfx1100,gfx1151";
+    const gfx = expandGfx(b, b.option([]const u8, "gfx", "gfx targets or families (rdna2, rdna3, rdna3.5), comma separated (default gfx1030,gfx1100,gfx1151)") orelse "gfx1030,gfx1100,gfx1151");
     // the compiler's version text is an input of every build, so a new hipcc rebuilds them all
     const version: ?std.Build.LazyPath = if (prebuilt == null and hipcc != null) blk: {
         const run = b.addSystemCommand(&.{ hipcc.?, "--version" });
@@ -245,6 +245,35 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
 }
 
 /// The gfx targets of `gfx` in family `f`; a target outside the caps table, or one with no kernels, stops the build.
+/// The gfx targets a family name in -Dgfx stands for: every RDNA2, RDNA3 and RDNA3.5 part the caps table lists.
+const gfx_families = [_]struct { name: []const u8, arches: []const u8 }{
+    .{ .name = "rdna2", .arches = "gfx1030,gfx1031,gfx1032,gfx1033,gfx1034,gfx1035,gfx1036" },
+    .{ .name = "rdna3", .arches = "gfx1100,gfx1101,gfx1102,gfx1103" },
+    .{ .name = "rdna3.5", .arches = "gfx1150,gfx1151,gfx1152,gfx1153" },
+};
+
+/// -Dgfx with its family names expanded, each gfx target once.
+fn expandGfx(b: *std.Build, gfx: []const u8) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var it = std.mem.tokenizeScalar(u8, gfx, ',');
+    while (it.next()) |name| {
+        var arches = name;
+        for (gfx_families) |fam| if (std.mem.eql(u8, name, fam.name)) {
+            arches = fam.arches;
+        };
+        var each = std.mem.tokenizeScalar(u8, arches, ',');
+        while (each.next()) |arch| {
+            var seen = false;
+            var done = std.mem.tokenizeScalar(u8, out.items, ',');
+            while (done.next()) |prev| seen = seen or std.mem.eql(u8, prev, arch);
+            if (seen) continue;
+            if (out.items.len > 0) out.append(b.allocator, ',') catch @panic("OOM");
+            out.appendSlice(b.allocator, arch) catch @panic("OOM");
+        }
+    }
+    return out.items;
+}
+
 fn archesOf(b: *std.Build, gfx: []const u8, f: Family) []const []const u8 {
     var list: std.ArrayList([]const u8) = .empty;
     var it = std.mem.tokenizeScalar(u8, gfx, ',');
