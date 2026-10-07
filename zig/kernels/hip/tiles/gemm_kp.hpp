@@ -5,7 +5,9 @@
 // few channels when every block walks them in step). An output has affine_gemm_block's bits: a group's dot2 chain and sum
 // of x in ascending k, then the groups of a round, exchanged through LDS, folded in order with the same two fma.
 
+#include "common/dot2.hpp"
 #include "tiles/gemm.hpp"
+#include "tiles/plan.hpp"
 
 namespace tf {
 namespace rocm {
@@ -14,11 +16,12 @@ namespace rocm {
 __host__ __device__ inline int kp_lanes(int groups) { return groups > 16 ? 32 : groups > 8 ? 16 : 8; }
 
 // CB columns a lane set, R rows a pass, WAVES waves a block; the rows are passes over at most RB row blocks, which have
-// consecutive block ids so the cache shares the weights between them.
-template <typename T, int BITS, int CB, int R, int WAVES, int RB, bool LOOP>
-__global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
+// consecutive block ids so the cache shares the weights between them. Dec reads the words and group terms, Act the rows of
+// x, T multiplies and Epi stores.
+template <class Dec, class Act, class T, class Epi, int CB, int R, int WAVES, int RB, bool LOOP>
+__device__ __forceinline__ void gemm_kp_tile(typename Dec::Args& a) {
     const int blocks = (a.m + R - 1) / R < RB ? (a.m + R - 1) / R : RB;  // of the launch: a routed item has its own rows
-    if (!take_item(a, blockIdx.z)) return;
+    if (!Dec::take_item(a, blockIdx.z)) return;
     constexpr int NO = R * CB;  // outputs of a lane set
     constexpr int PS = NO + 1;
     constexpr int OPL = (4 * NO + 31) / 32;  // outputs a lane folds, at most
@@ -38,42 +41,36 @@ __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
     const int rounds = (groups + gp - 1) / gp;
     const int gi = lane & (gp - 1);
     const int col0 = colw + (lane / gp) * CB;  // this lane's columns
-    const long long words_row = static_cast<long long>(a.k) * BITS / 32;
+    const long long words_row = Dec::template row_words<long long>(a);
     const uint32_t* wsrc[CB];
     long long tb[CB];
 #pragma unroll
     for (int c = 0; c < CB; ++c) {
         const int col = col0 + c < a.n ? col0 + c : a.n - 1;
-        wsrc[c] = a.words + col * words_row;
+        wsrc[c] = Dec::words(a) + col * words_row;
         tb[c] = static_cast<long long>(col) * groups;
     }
     auto pass = [&](int row0) {
-        const typename T::elem* xr[R];
+        const typename Act::elem* xr[R];
 #pragma unroll
-        for (int r = 0; r < R; ++r) {
-            xr[r] = static_cast<const typename T::elem*>(a.x) + x_row(a, row0 + r < a.m ? row0 + r : 0) * a.k;
-        }
+        for (int r = 0; r < R; ++r) xr[r] = Act::row(a, row0 + r < a.m ? row0 + r : 0);
         float acc[OPL];
 #pragma unroll
         for (int t = 0; t < OPL; ++t) acc[t] = 0.f;
 
         // Stage s of group g's code words of every column, and the group's scale and bias (the groups past the last repeat it).
-        uint32_t w[CB][BITS];
-        uint32_t wn[CB][BITS];
-        TableBits sr[CB];
-        TableBits br[CB];
-        auto fetch = [&](uint32_t (&dst)[CB][BITS], int g, int s) {
+        uint32_t w[CB][Dec::kWords];
+        uint32_t wn[CB][Dec::kWords];
+        typename Dec::Term term[CB];
+        auto fetch = [&](uint32_t (&dst)[CB][Dec::kWords], int g, int s) {
             const int gl = g < groups ? g : groups - 1;
 #pragma unroll
-            for (int c = 0; c < CB; ++c) load_aligned<BITS>(wsrc[c] + (static_cast<long long>(gl) * per + s) * BITS, dst[c]);
+            for (int c = 0; c < CB; ++c) Dec::template load<true>(wsrc[c] + (static_cast<long long>(gl) * per + s) * Dec::kWords, dst[c]);
         };
         auto tables = [&](int g) {
             const int gl = g < groups ? g : groups - 1;
 #pragma unroll
-            for (int c = 0; c < CB; ++c) {
-                sr[c] = table_bits(a.scale, tb[c] + gl);
-                br[c] = table_bits(a.bias, tb[c] + gl);
-            }
+            for (int c = 0; c < CB; ++c) term[c] = Dec::term(a, tb[c] + gl);
         };
         fetch(w, gi, 0);
         tables(gi);
@@ -97,7 +94,7 @@ __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
                 for (int c = 0; c < CB; ++c) {
 #pragma unroll
                     for (int i = 0; i < 16; ++i) {
-                        wd[c][i] = code_pair<T>(piece_bits<BITS>(w[c], 2 * i), piece_bits<BITS>(w[c], 2 * i + 1));
+                        wd[c][i] = Dec::template pair<T>(w[c], 2 * i);
                     }
                 }
 #pragma unroll
@@ -130,7 +127,7 @@ __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
 #pragma unroll
                 for (int c = 0; c < CB; ++c) {
 #pragma unroll
-                    for (int i = 0; i < BITS; ++i) w[c][i] = wn[c][i];
+                    for (int i = 0; i < Dec::kWords; ++i) w[c][i] = wn[c][i];
                 }
             }
             // this group's results to LDS, then the round's groups in order
@@ -142,8 +139,8 @@ __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
             }
 #pragma unroll
             for (int c = 0; c < CB; ++c) {
-                scl[wave][lane][c] = table_float(a.scale, sr[c]);
-                bil[wave][lane][c] = table_float(a.bias, br[c]);
+                scl[wave][lane][c] = Dec::scale_value(a, term[c]);
+                bil[wave][lane][c] = Dec::bias_value(a, term[c]);
             }
             if (round + 1 < rounds) tables(g + gp);
             __syncwarp();
@@ -158,8 +155,8 @@ __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
                 const int c = o % CB;
                 float v = acc[t];
                 for (int gg = 0; gg < count; ++gg) {
-                    v = fmaf(part[wave][base + gg][o], scl[wave][base + gg][c], v);
-                    v = fmaf(spart[wave][base + gg][r], bil[wave][base + gg][c], v);
+                    v = Dec::fold_scale(v, part[wave][base + gg][o], scl[wave][base + gg][c]);
+                    v = Dec::fold_bias(v, spart[wave][base + gg][r], bil[wave][base + gg][c]);
                 }
                 acc[t] = v;
             }
@@ -172,7 +169,7 @@ __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
             const int o = os % NO;
             const int row = row0 + o / CB;
             const int col = colw + (os / NO) * CB + o % CB;
-            if (row < a.m && col < a.n) a.out[out_row(a, row) * a.n + col] = acc[t];
+            if (row < a.m && col < a.n) Epi::store(a, row, col, acc[t]);
         }
     };
     if constexpr (LOOP) {
@@ -180,31 +177,6 @@ __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
     } else {
         pass((blockIdx.x % blocks) * R);
     }
-}
-
-template <int BITS, int CB, int R, int WAVES, int RB, bool LOOP>
-hipError_t launch_kp_tier(const Affine& a, hipStream_t stream, int items) {
-    const int blocks = (a.m + R - 1) / R < RB ? (a.m + R - 1) / R : RB;
-    const int cols = WAVES * CB * (32 / kp_lanes(a.k / a.group));
-    const dim3 grid(((a.n + cols - 1) / cols) * blocks, 1, items);
-#if TENSORFOLD_RDNA_WMMA
-    if (!a.fp16) {
-        affine_gemm_kp<DotBF16, BITS, CB, R, WAVES, RB, LOOP><<<grid, dim3(32 * WAVES), 0, stream>>>(a);
-        return hipGetLastError();
-    }
-#endif
-    affine_gemm_kp<DotF16, BITS, CB, R, WAVES, RB, LOOP><<<grid, dim3(32 * WAVES), 0, stream>>>(a);
-    return hipGetLastError();
-}
-
-// The shapes of launch/affine.zig's kp_tiles, by rows.
-template <int BITS>
-hipError_t launch_kp_bits(const Affine& a, hipStream_t stream, int items) {
-    if (a.m <= 2) return launch_kp_tier<BITS, 8, 1, 2, 2, false>(a, stream, items);
-    if (a.m <= 4) return launch_kp_tier<BITS, 4, 4, 2, 4, true>(a, stream, items);
-    if (a.m <= 8) return launch_kp_tier<BITS, 4, 2, 2, 4, true>(a, stream, items);
-    if (a.m <= 32) return launch_kp_tier<BITS, 4, 8, 2, 4, false>(a, stream, items);
-    return hipErrorInvalidValue;
 }
 
 }  // namespace rocm
