@@ -17,8 +17,8 @@ not by bit equality with Python.
 | window and prompt-cache plan agreed by the ranks | all-reduce min of window and cache | each rank plans alone | yes | P0 | all-gather of the two numbers, min on every rank |
 | `--backend rocm` | accepted, `auto` picks it on an AMD GPU | table accepts `auto`/`cuda` on Linux | yes | P0 | accept `rocm` (and `auto`) |
 | `--p2p` / `--no-p2p` | sets `NCCL_P2P_DISABLE` before the communicator | none | yes | P1 | same variable, same place |
-| `--checkpoint-slots N` | kept prompt entries (default 8, 0 off) | 8, fixed | yes | P1 | flag to `Hip.keepPrompts` |
-| `--prompt-cache-gib G` | byte budget (0 off), default the plan's room | the plan's room only | yes | P1 | flag to `Hip.keepPrompts` |
+| `--checkpoint-slots N` | kept prompt entries (default 8, 0 off) | linear-state snapshots the prefix tree keeps (default the policy's `prefix_slots`, 8; 0 off); pages are shared | yes | P1 | flag to `Hip.keepPrompts` |
+| `--prompt-cache-gib G` | byte budget (0 off), default the plan's room | the prefix tree's pages and snapshots, from the policy's `prefix_bytes` when set, else the plan's room | yes | P1 | flag to `Hip.keepPrompts` |
 | `--parallel` | `auto` is 1 lane, N lanes | `auto` is 8 lanes (the Mac's) | memory and window differ | P1 | `auto` is 1 on HIP |
 | `--context` | default is what the memory fits up to the model's window; an explicit value that does not fit is refused | default capped at 32,768; explicit refused as Python | default | P1 | default is the model's window, fitted by the plan |
 | `--no-drafts`, `--max-tokens`, `--temperature`, `--top-p`, `--top-k`, `--min-p`, `--thinking*`, `--reasoning-effort`, `--thinking-budget`, `--loop-guard`, `--name`, `--alias`, `--api-key*`, `--host`, `--port` | the shared torch server | the shared native server (same table as Metal) | none | | |

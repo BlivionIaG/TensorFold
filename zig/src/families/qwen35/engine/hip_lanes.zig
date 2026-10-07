@@ -9,6 +9,9 @@ const draw = @import("draw.zig");
 const mtp = @import("mtp.zig");
 const costs = @import("hip_costs.zig");
 const prefix = @import("prefix.zig");
+const hip_prefix = @import("hip_prefix.zig");
+const radix = @import("radix.zig");
+const pages = @import("../forward/pages.zig");
 const worker = @import("worker.zig");
 
 const be = lanes.backend;
@@ -22,7 +25,7 @@ const Fill = struct { at: usize, stops: [16]u32, count: usize, next: usize };
 /// Most chains one draft request runs (the head batches as many as the engine has rows, up to this).
 const max_jobs = 64;
 
-const Lane = struct {
+pub const Lane = struct {
     caches: state.Caches,
     /// The last kept row's final hidden row: the draft head's input.
     hidden: hip.DeviceBuffer,
@@ -49,8 +52,11 @@ pub const Hip = struct {
     /// The streams (and rows) marked kept since the last flush, as the other ranks are told.
     marked: std.ArrayList([2]u32) = .empty,
     order: []*const lanes.Stream,
-    /// Caches kept at prompt cuts for later turns (no entries until `keepPrompts`).
-    kept: prefix.Cache,
+    /// The pages and linear snapshots kept from prompts for later turns (nothing until `keepPrompts`).
+    prefix: *hip_prefix.Prefix,
+    /// Scratch: the pages a match took, and the pages a round copied before writing.
+    matched: std.ArrayList(u32) = .empty,
+    copied: std.ArrayList([3]u32) = .empty,
     /// Tensor parallelism: the other ranks, which get every step before this rank runs it (`worker.follow`).
     link: ?*const hip.link.Link = null,
     msg: std.ArrayList(u32) = .empty,
@@ -67,7 +73,8 @@ pub const Hip = struct {
         const h = try gpa.create(Hip);
         errdefer gpa.destroy(h);
         const rows = e.o.batch_rows;
-        h.* = .{ .gpa = gpa, .e = e, .order = undefined, .kept = prefix.Cache.init(gpa, 0, 0) };
+        h.* = .{ .gpa = gpa, .e = e, .order = undefined, .prefix = try hip_prefix.Prefix.init(gpa, e) };
+        errdefer h.prefix.deinit();
         h.order = try gpa.alloc(*const lanes.Stream, rows);
         errdefer gpa.free(h.order);
         // under tensor parallelism only rank 0 holds the head (whole): drafts only choose the rows every rank verifies
@@ -83,15 +90,20 @@ pub const Hip = struct {
         };
     }
 
-    /// Keep up to `entries` prompt caches within `budget` bytes of device memory.
-    pub fn keepPrompts(h: *Hip, entries: usize, budget: usize) void {
-        h.kept.keep = entries;
-        h.kept.budget = budget;
+    /// Keep up to `slots` snapshots and the pages the rest of `budget` bytes buys, in the prefix tree (none: nothing is kept).
+    pub fn keepPrompts(h: *Hip, slots: usize, budget: usize) void {
+        h.prefix.keepPrompts(slots, budget);
+    }
+
+    /// The prefix tree may hold `max_pages` pages and `snaps` snapshots.
+    pub fn keepPages(h: *Hip, max_pages: usize, snaps: usize) void {
+        h.prefix.keepPages(max_pages, snaps);
     }
 
     /// Rank 0 of a tensor-parallel group: every step also goes to the ranks behind `link`.
     pub fn withLink(h: *Hip, link: *const hip.link.Link) void {
         h.link = link;
+        h.prefix.link = link;
     }
 
     fn send(h: *Hip, words: []const u32) !void {
@@ -121,7 +133,8 @@ pub const Hip = struct {
         h.marked.deinit(h.gpa);
         h.msg.deinit(h.gpa);
         h.e.stream.synchronize() catch {};
-        h.kept.deinit();
+        h.matched.deinit(h.gpa);
+        h.copied.deinit(h.gpa);
         var it = h.lanes.valueIterator();
         while (it.next()) |l| h.free(l.*);
         if (h.head) |hd| {
@@ -129,6 +142,7 @@ pub const Hip = struct {
             hd.deinit();
         }
         h.lanes.deinit(h.gpa);
+        h.prefix.deinit();
         h.gpa.free(h.order);
         h.gpa.destroy(h);
     }
@@ -224,12 +238,17 @@ pub const Hip = struct {
         return s.sampling;
     }
 
-    /// Copy of `caches` at its first `len` positions, kept under the prompt's first `len` ids; a failure keeps nothing.
-    fn remember(h: *Hip, ids: []const u32, caches: *const state.Caches) void {
-        if (h.kept.keep == 0 or h.kept.has(ids)) return;
-        var snap = state.Caches.blank(h.gpa, &h.e.driver, h.e.model(), ids.len) catch return;
-        snap.copyPrefix(caches, h.e.model(), ids.len, h.e.stream.handle) catch return snap.deinit(h.gpa);
-        h.kept.add(ids, snap) catch {};
+    /// Pages for the stream's positions up to `upto`, each its own to write: the other ranks are told what changed.
+    fn ensure(h: *Hip, lane: *Lane, upto: usize) !void {
+        const before = lane.caches.table.items.len;
+        const grown = try lane.caches.grow(h.gpa, upto);
+        if (grown.len > 0) try h.prefix.sendPages(lane.id, before, grown);
+        h.copied.clearRetainingCapacity();
+        try lane.caches.writable(&h.copied, h.gpa, lane.len, upto, h.e.stream.handle);
+        for (h.copied.items) |c| {
+            try h.send(&.{ @backingInt(worker.Op.copy), c[1], c[2] });
+            try h.prefix.sendPages(lane.id, c[0], &.{c[2]});
+        }
     }
 
     /// The whole prompt pass, chunk by chunk (a driver of its own, with no rounds between).
@@ -237,49 +256,56 @@ pub const Hip = struct {
         while (!try prefillStepFn(ptr, s)) {}
     }
 
-    /// The stream's lane and its prompt pass begun: caches, the resume from a kept prompt, the cuts, the other ranks told.
+    /// The stream's lane and its prompt pass begun: its pages (the longest match's shared, the rest taken), the resume from a
+    /// snapshot, the cuts, the other ranks told.
     fn begin(h: *Hip, s: *lanes.Stream) !*Lane {
         const prompt = s.prompt();
         if (prompt.len == 0 or prompt.len + s.max_new + 1 > h.e.o.capacity) return error.PromptTooLong;
         const gop = try h.lanes.getOrPut(h.gpa, s);
         if (gop.found_existing) h.free(gop.value_ptr.*);
-        const lane = h.gpa.create(Lane) catch |err| {
-            h.lanes.removeByPtr(gop.key_ptr);
-            return err;
+        errdefer h.lanes.removeByPtr(gop.key_ptr);
+        const total = prompt.len + s.max_new + max_window + 1;
+        const lane = blk: {
+            var caches = try h.e.emptyCaches(total);
+            errdefer caches.deinit(h.gpa);
+            var hidden = try hip.DeviceBuffer.alloc(&h.e.driver, h.e.model().spec.hidden * h.e.model().act.size());
+            errdefer hidden.free();
+            try caches.setHidden(hidden.ptr);
+            const l = try h.gpa.create(Lane);
+            l.* = .{ .caches = caches, .hidden = hidden, .len = prompt.len };
+            break :blk l;
         };
-        const width = h.e.model().spec.hidden * h.e.model().act.size();
-        lane.* = .{ .caches = h.e.newCaches(prompt.len + s.max_new + max_window + 1) catch |err| {
-            h.gpa.destroy(lane);
-            h.lanes.removeByPtr(gop.key_ptr);
-            return err;
-        }, .hidden = hip.DeviceBuffer.alloc(&h.e.driver, width) catch |err| {
-            h.gpa.destroy(lane);
-            h.lanes.removeByPtr(gop.key_ptr);
-            return err;
-        }, .len = prompt.len };
-        lane.caches.setHidden(lane.hidden.ptr) catch |err| {
-            h.free(lane);
-            h.lanes.removeByPtr(gop.key_ptr);
-            return err;
-        };
+        errdefer h.free(lane);
         gop.value_ptr.* = lane;
         lane.id = try h.idOf(s);
-        const total = prompt.len + s.max_new + max_window + 1;
-        // a drafted request resumes from the longest kept prompt it extends and keeps its own cuts; a serial one neither
-        var at: usize = 0;
-        if (s.drafts) if (h.kept.longest(prompt)) |hit| {
-            at = hit.ids.len;
-            try lane.caches.copyPrefix(&hit.caches, h.e.model(), at, h.e.stream.handle);
-        };
+        // a drafted request resumes from the deepest snapshot its prompt shares with the tree and keeps its own marks; a serial one neither
+        var owner: hip_prefix.Owner = .{ .caches = &lane.caches, .id = lane.id };
+        h.matched.clearRetainingCapacity();
+        var plan: radix.Plan = .{};
+        h.prefix.restored = worker.no_snapshot;
+        if (s.drafts) plan = try h.prefix.begin(prompt, s.history_len, s.shared_prefixes, &owner, &h.matched);
+        defer if (s.drafts) h.gpa.free(plan.marks);
+        errdefer for (h.matched.items) |id| h.e.pool.release(id);
+        const at: usize = plan.from;
+        const adopted = h.matched.items.len;
+        try lane.caches.set(h.gpa, 0, h.matched.items);
+        h.matched.clearRetainingCapacity();
+        // pages for the whole request are promised now, so no round runs out of them
+        const need = pages.pagesFor(lane.caches.total) - adopted;
+        if (!h.prefix.store.reclaim(need)) return error.OutOfPages;
+        lane.caches.promised = need;
+        h.e.pool.ids.reserved += need;
+        _ = try lane.caches.grow(h.gpa, prompt.len);
         s.cached = @intCast(at);
-        var fill: Fill = .{ .at = at, .stops = undefined, .count = 0, .next = 0 };
-        if (s.drafts) fill.count = prefix.cuts(&fill.stops, prompt.len, at, s.history_len, s.shared_prefixes).len;
+        var fill: Fill = .{ .at = at, .stops = undefined, .count = @min(plan.marks.len, 16), .next = 0 };
+        @memcpy(fill.stops[0..fill.count], plan.marks[0..fill.count]);
         lane.fill = fill;
         if (h.link != null) {
-            // the other ranks keep the same prompts: where this one resumed and cut, and the cache's limits
+            // the other ranks get the stream's pages and where it resumed and cuts
             h.msg.clearRetainingCapacity();
-            const budget: u64 = h.kept.budget;
-            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.prefill), lane.id, @intCast(total), @intCast(prompt.len), @intCast(at), @intCast(fill.count), @intCast(h.kept.keep), @truncate(budget), @truncate(budget >> 32) });
+            const held = lane.caches.table.items;
+            try h.msg.appendSlice(h.gpa, &.{ @backingInt(worker.Op.prefill), lane.id, @intCast(lane.caches.total), @intCast(prompt.len), @intCast(at), @intCast(fill.count), h.prefix.restored, @intCast(held.len) });
+            try h.msg.appendSlice(h.gpa, held);
             try h.msg.appendSlice(h.gpa, fill.stops[0..fill.count]);
             try h.msg.appendSlice(h.gpa, prompt);
             try h.send(h.msg.items);
@@ -305,7 +331,8 @@ pub const Hip = struct {
         try h.e.advance(&lane.caches, prompt, f.at, to, null);
         f.at = to;
         if (f.next < f.count and to == f.stops[f.next]) {
-            h.remember(prompt[0..to], &lane.caches);
+            var owner: hip_prefix.Owner = .{ .caches = &lane.caches, .id = lane.id };
+            h.prefix.keep(&owner, prompt, to) catch |err| std.log.warn("prefix not kept: {s}", .{@errorName(err)});
             f.next += 1;
         }
         return false;
@@ -343,6 +370,10 @@ pub const Hip = struct {
         // the last verify's windows the round loop did not trim keep every row, before this round's plan replaces theirs
         for (windows) |w| try h.settle(h.lanes.get(w.stream) orelse return error.UnknownStream);
         try h.flush();
+        for (windows) |w| {
+            const lane = h.lanes.get(w.stream).?;
+            try h.ensure(lane, lane.len + w.rows());
+        }
         var rows: [64]Engine.Rows = undefined;
         var tokens: [64][16]u32 = undefined;
         if (windows.len > rows.len) return error.WindowTooWide;

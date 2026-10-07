@@ -103,7 +103,10 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
     const tokens = std.mem.bytesAsSlice(i64, tokens_f.data);
     const sampled = std.mem.bytesAsSlice(i64, sampled_f.data);
     const len = tokens.len;
-    var caches = try qwen35.state.Caches.init(g.gpa, g.d, m, len + sampled.len + 1);
+    const positions = len + sampled.len + 1;
+    var pool = try qwen35.pages.Pool.init(g.gpa, g.d, m, qwen35.pages.pagesFor(positions) + 1, true);
+    defer pool.deinit();
+    var caches = try qwen35.state.Caches.initFull(g.gpa, &pool, m, positions);
     defer caches.deinit(g.gpa);
 
     const ids = try g.gpa.alloc(i32, len);
@@ -125,9 +128,9 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
     try expectToken(token, sampled[0], "prefill");
 
     // a decode step is a round of one row over a plan: the stream's slot, then the scratch slot
-    var plan_buf = try qwen35.plan.Buffer.init(g.d, 1, s.n_layers);
+    var plan_buf = try qwen35.plan.Buffer.init(g.d, 1, s.n_layers, pool.count);
     defer plan_buf.deinit();
-    var scratch = try qwen35.state.Caches.init(g.gpa, g.d, m, 1);
+    var scratch = try qwen35.state.Caches.initFull(g.gpa, &pool, m, 1);
     defer scratch.deinit(g.gpa);
     const no_snaps = try g.gpa.alloc([2]u64, s.n_layers);
     defer g.gpa.free(no_snaps);

@@ -4,6 +4,7 @@ const std = @import("std");
 const hip = @import("hip");
 const view = @import("../model/view.zig");
 const state = @import("../forward/state.zig");
+const pages = @import("../forward/pages.zig");
 const fwd = @import("../forward/forward.zig");
 const weights = @import("../model/weights.zig");
 const bridge = @import("../model/bridge.zig");
@@ -18,6 +19,8 @@ const lane_round = @import("round.zig");
 pub const Options = struct {
     /// Most positions a stream's caches hold (its prompt, its reply and a window's rows).
     capacity: usize = 0,
+    /// Pages of the KV pool (0: enough for `default_streams` streams of the capacity and the scratch caches).
+    pool_pages: usize = 0,
     /// Rows a shared forward holds at most.
     batch_rows: usize = 32,
     /// The device ordinal among the visible ones.
@@ -35,6 +38,9 @@ pub const Options = struct {
 };
 
 pub const Pick = lane_round.Pick;
+
+/// Streams the pool of an engine opened without a memory plan holds whole.
+pub const default_streams = 12;
 
 pub const Engine = struct {
     pub const Rows = lane_round.Rows;
@@ -57,6 +63,8 @@ pub const Engine = struct {
     prompts: hip.Arena,
     ids: hip.HostBuffer,
     ids_dev: hip.DeviceBuffer,
+    /// The keys and values of every stream and prefix entry.
+    pool: pages.Pool,
     drawer: draw.Drawer,
     /// Tensor parallelism: RCCL and this rank's communicator.
     rccl: hip.rccl.Rccl = undefined,
@@ -107,12 +115,15 @@ pub const Engine = struct {
         return e;
     }
 
-    /// Allocate the scratch for streams of `capacity` positions (`o.batch_rows` rows a shared forward).
-    pub fn size(e: *Engine, capacity: usize) !void {
+    /// Allocate the scratch for streams of `capacity` positions (`o.batch_rows` rows a shared forward) and a pool of
+    /// `pool_pages` pages (`o.pool_pages`, or the default, when zero).
+    pub fn size(e: *Engine, capacity: usize, pool_pages: usize) !void {
         const s = e.weights.spec;
         const rows = e.o.batch_rows;
         const need = memory.Scratch.of(s, capacity, rows);
         e.o.capacity = capacity;
+        e.pool = try pages.Pool.init(e.gpa, &e.driver, &e.bridge.model, if (pool_pages > 0) pool_pages else default_streams * pages.pagesFor(capacity) + pages.pagesFor(rows), e.o.rank == 0);
+        errdefer e.pool.deinit();
         e.rounds = try hip.Arena.init(&e.driver, need.rounds);
         errdefer e.rounds.deinit();
         e.prompts = try hip.Arena.init(&e.driver, need.prompts);
@@ -157,7 +168,7 @@ pub const Engine = struct {
     pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !*Engine {
         const e = try load(gpa, io, dir, o);
         errdefer e.deinit();
-        try e.size(o.capacity);
+        try e.size(o.capacity, o.pool_pages);
         return e;
     }
 
@@ -172,6 +183,7 @@ pub const Engine = struct {
             e.ids.free();
             e.prompts.deinit();
             e.rounds.deinit();
+            e.pool.deinit();
         }
         e.bridge.deinit();
         e.weights.deinit();
@@ -194,9 +206,14 @@ pub const Engine = struct {
         return .{ .lib = &e.lib, .stream = e.stream.handle, .arena = arena };
     }
 
-    /// Zeroed caches for `total` positions (at most the capacity).
+    /// Caches for `total` positions (at most the capacity) with every page taken.
     pub fn newCaches(e: *Engine, total: usize) !state.Caches {
-        return state.Caches.init(e.gpa, &e.driver, e.model(), @min(total, e.o.capacity));
+        return state.Caches.initFull(e.gpa, &e.pool, e.model(), @min(total, e.o.capacity));
+    }
+
+    /// Caches for `total` positions (at most the capacity) with no page yet: a stream takes them as it grows.
+    pub fn emptyCaches(e: *Engine, total: usize) !state.Caches {
+        return state.Caches.init(e.gpa, &e.pool, e.model(), @min(total, e.o.capacity));
     }
 
     /// Whether the draft head's greedy batches replay graphs.

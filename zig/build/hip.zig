@@ -61,6 +61,7 @@ const lib_headers = [_][]const u8{
     "attention/attention_fa.hip",
     "recurrence/gated_delta.hpp",
     "decode/plan.hpp",
+    "decode/pages.hpp",
 };
 
 /// The code-object groups in kernels.zig's Group order, each with its source; gemv and the WMMA schedules stay out.

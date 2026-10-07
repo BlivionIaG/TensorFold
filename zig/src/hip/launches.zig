@@ -69,6 +69,7 @@ pub const Launcher = struct {
     causal: Triple,
     fa_prefill: Triple,
     fa_wide: [2]Function, // the 64-row prefill tile, fp16 and bf16 caches
+    fa_paged: [2]Function, // the same tile over a stream's pages
     gdn_chunked: [5]Function, // prep, kt, wy, h, o
     softmax_stats: Function,
     sum_partials: Function,
@@ -90,6 +91,8 @@ pub const Launcher = struct {
         keep: Function,
         gather: Function,
         gdn: [2]Function, // dk 128, 16
+        page_write: Function,
+        page_gather: Function,
     };
 
     const Decode = struct {
@@ -149,8 +152,11 @@ pub const Launcher = struct {
             .keep = try pl.function("tf_plan_keep"),
             .gather = try pl.function("tf_plan_gather"),
             .gdn = .{ try gd.function("tf_gdn_plan_128"), try gd.function("tf_gdn_plan_16") },
+            .page_write = try pl.function("tf_page_write"),
+            .page_gather = try pl.function("tf_page_gather"),
         };
         l.fa_wide = .{ try pre.function("tf_fa_wide_f16"), try pre.function("tf_fa_wide_bf16") };
+        l.fa_paged = .{ try pre.function("tf_fa_paged_f16"), try pre.function("tf_fa_paged_bf16") };
         const gp = l.mods[@backingInt(kernels.Group.gdn_prefill)];
         l.gdn_chunked = .{ try gp.function("tf_gdn_prep"), try gp.function("tf_gdn_kt"), try gp.function("tf_gdn_wy"), try gp.function("tf_gdn_h"), try gp.function("tf_gdn_o") };
         const anon = "_ZN12_GLOBAL__N_1";
@@ -263,12 +269,15 @@ pub const Launcher = struct {
     pub const tf_causal = attention.tf_causal;
     pub const tf_attn_gate = attention.tf_attn_gate;
     pub const tf_kv_write = attention.tf_kv_write;
+    pub const pagedCausal = attention.pagedCausal;
     pub const tf_gdn_gate = recurrence.tf_gdn_gate;
     pub const tf_gated_delta = recurrence.tf_gated_delta;
     pub const planKvWrite = plan.planKvWrite;
     pub const planCausal = plan.planCausal;
     pub const planGatedDelta = plan.planGatedDelta;
     pub const planKeep = plan.planKeep;
+    pub const pagesWrite = plan.pagesWrite;
+    pub const pagesGather = plan.pagesGather;
     pub const planGather = plan.planGather;
     pub const gdnChunked = recurrence.gdnChunked;
     pub const tf_gdn_gate_prefill = recurrence.tf_gdn_gate_prefill;

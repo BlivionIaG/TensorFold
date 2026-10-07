@@ -23,7 +23,8 @@ pub fn synthetic(gpa: std.mem.Allocator, n: usize) ![]u32 {
     return ids;
 }
 
-pub const Prompt = struct { name: []const u8, ids: []const u32 };
+/// A prompt's ids; `shared` are the ends of the system blocks a later request may share (the tree keeps a snapshot at each).
+pub const Prompt = struct { name: []const u8, ids: []const u32, shared: []const u32 = &.{} };
 
 /// A JSON object of name to ids, in the arena.
 pub fn parse(arena: std.mem.Allocator, text: []const u8) ![]const Prompt {

@@ -11,6 +11,7 @@ const qwen35 = @import("qwen35");
 const check_accuracy = @import("check_accuracy.zig");
 const check_ctx = @import("check_ctx.zig");
 const check_invariants = @import("check_invariants.zig");
+const check_radix = @import("check_radix.zig");
 const check_report = @import("check_report.zig");
 const check_speed = @import("check_speed.zig");
 const group_mod = @import("group.zig");
@@ -67,6 +68,11 @@ fn idsPath(arena: std.mem.Allocator, o: Options) !?[]const u8 {
     return try std.fmt.allocPrint(arena, "{s}.ids.npy", .{stem});
 }
 
+/// Pages for the engine's default streams at the longest prompt, and the prefix tree's.
+fn poolPages(capacity: usize) usize {
+    return qwen35.engine.default_streams * qwen35.pages.pagesFor(capacity) + check_radix.tree_pages;
+}
+
 /// Exit code: 0 when every check passed (or skipped), 1 when one failed.
 pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !u8 {
     var arena_state = std.heap.ArenaAllocator.init(gpa);
@@ -78,11 +84,12 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !u8 {
     const long = if (o.prompts) |p| try ids_file.read(arena, io, p) else try ids_file.long(arena, ids);
 
     var capacity = ids_file.longest(long) + 2 * o.tokens + 64;
+    capacity = @max(capacity, check_radix.capacity(o.tokens));
     if (o.runs(.accuracy)) capacity = @max(capacity, ids.len + 64);
     if (o.runs(.speed)) capacity = @max(capacity, check_speed.longest_prefill + 64);
     var joined = try o.group.join(io);
     defer joined.close();
-    const e = try o.group.engine(gpa, io, o.model, joined, .{ .capacity = capacity, .batch_rows = 4 * qwen35.hip_lanes.Hip.max_window });
+    const e = try o.group.engine(gpa, io, o.model, joined, .{ .capacity = capacity, .batch_rows = 4 * qwen35.hip_lanes.Hip.max_window, .pool_pages = poolPages(capacity) });
     defer e.deinit();
     if (o.group.rank > 0) {
         try group_mod.follow(gpa, e, &joined);
@@ -93,7 +100,7 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !u8 {
     defer session.deinit();
 
     var report: check_report.Report = .{};
-    var c: check_ctx.Ctx = .{ .gpa = gpa, .io = io, .arena = arena, .e = e, .session = &session, .report = &report, .group = o.group, .ids = ids, .short = short, .long = long, .tokens = o.tokens };
+    var c: check_ctx.Ctx = .{ .gpa = gpa, .io = io, .arena = arena, .e = e, .session = &session, .report = &report, .group = o.group, .ids = ids, .short = short, .long = long, .tokens = o.tokens, .pages_at_start = e.pool.ids.used() };
     const t0 = std.Io.Clock.awake.now(io);
     std.debug.print("check {s}, tp {d}\n", .{ o.model, o.group.world });
     if (o.runs(.invariants)) check_invariants.run(&c);

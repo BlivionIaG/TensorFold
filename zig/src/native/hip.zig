@@ -35,9 +35,6 @@ fn modelContext(a: Allocator, io: std.Io, dir: []const u8) i64 {
     return if (limit == .integer and limit.integer > 0) limit.integer else 0;
 }
 
-/// Prompt caches kept for later turns when `--checkpoint-slots` names none.
-const kept_prompts = 8;
-
 fn gibs(bytes: usize) f64 {
     return @as(f64, @floatFromInt(bytes)) / (1 << 30);
 }
@@ -120,8 +117,10 @@ const Prepared = struct {
     plan: qwen35.memory.Plan,
     /// The window asked for, or the model's: `plan.window` is below it when the memory does not fit it.
     asked: usize,
-    /// Kept prompt entries (the plan's `cache_budget` is 0 when the cache is off).
+    /// Snapshots the prompt cache may hold (the plan's `cache_budget` is 0 when the cache is off).
     keep: usize,
+    /// The pages of the KV pool and the share of them the prompt cache may hold.
+    pool: qwen35.memory.Pool,
     streams: usize,
     group: ?*Group,
     /// The policy's line, for the server's info.
@@ -175,9 +174,9 @@ fn prepare(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]co
         const cache = e.least(.{ plan.window, plan.cache_budget }) catch |err| return refuse(a, problem, "the ranks could not agree on a prompt cache ({s})", .{@errorName(err)});
         plan.cache_budget = cache[1];
     }
-    // --prompt-cache-gib names the bytes and --checkpoint-slots the entries; zero of either turns the cache off
-    if (o.cache_gib) |g| plan.cache_budget = @intFromFloat(g * (1 << 30));
-    const keep: usize = if (o.keep) |n| @intCast(n) else kept_prompts;
+    // --prompt-cache-gib names the bytes and --checkpoint-slots the snapshots (the policy's prefix bytes and slots otherwise); zero of either turns the cache off
+    if (o.cache_gib) |g| plan.cache_budget = @intFromFloat(g * (1 << 30)) else if (policy.prefix.bytes > 0) plan.cache_budget = policy.prefix.bytes;
+    const keep: usize = if (o.keep) |n| @intCast(n) else policy.prefix.slots;
     if (keep == 0) plan.cache_budget = 0;
     if (plan.window == 0) {
         return refuse(a, problem, "the weights leave no room for a request on this GPU ({d:.2} GiB of {d:.2} GiB); use a smaller checkpoint, --lanes or more ranks (--tp)", .{ gibs(plan.weights), gibs(plan.total) });
@@ -185,9 +184,16 @@ fn prepare(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]co
     if (o.context != null and plan.window < @as(usize, @intCast(window))) {
         return refuse(a, problem, "--context {d} does not fit this GPU's memory: {d} lanes and a kept copy of a prompt fit {d} tokens beside the weights; lower --context or --lanes, or add ranks (--tp)", .{ window, streams, plan.window });
     }
-    e.size(plan.capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot allocate its scratch ({s})", .{@errorName(err)});
-    std.debug.print("[tensorfold] HIP rank {d} of {d}: weights {d:.2} GiB, scratch {d:.2} GiB, context window {d} tokens, prompt cache {d:.2} GiB, reserve {d:.2} GiB of {d:.2} GiB\n", .{ o.rank, o.tp, gibs(plan.weights), gibs(plan.scratch), plan.window, gibs(plan.cache_budget), gibs(plan.reserve), gibs(plan.total) });
-    return .{ .e = e, .plan = plan, .asked = @intCast(window), .keep = keep, .streams = streams, .group = group, .policy_line = policy_line };
+    // the pool every rank can hold: the least of the ranks' pages, each rank's own bytes a page
+    var pool = qwen35.memory.pool(e.weights.spec, e.act.size(), streams, e.o.batch_rows, plan.capacity, plan.cache_budget, keep);
+    if (o.tp > 1) {
+        const fit = e.least(.{ pool.pages, pool.cache_pages }) catch |err| return refuse(a, problem, "the ranks could not agree on a page pool ({s})", .{@errorName(err)});
+        pool.pages = fit[0];
+        pool.cache_pages = fit[1];
+    }
+    e.size(plan.capacity, pool.pages) catch |err| return refuse(a, problem, "the native HIP engine cannot allocate its scratch and pages ({s})", .{@errorName(err)});
+    std.debug.print("[tensorfold] HIP rank {d} of {d}: weights {d:.2} GiB, scratch {d:.2} GiB, context window {d} tokens, prompt cache {d:.2} GiB ({d} snapshots), {d} pages of {d:.2} MiB, reserve {d:.2} GiB of {d:.2} GiB\n", .{ o.rank, o.tp, gibs(plan.weights), gibs(plan.scratch), plan.window, gibs(plan.cache_budget), pool.snaps, pool.pages, @as(f64, @floatFromInt(e.pool.pageBytes())) / (1 << 20), gibs(plan.reserve), gibs(plan.total) });
+    return .{ .e = e, .plan = plan, .asked = @intCast(window), .keep = keep, .pool = pool, .streams = streams, .group = group, .policy_line = policy_line };
 }
 
 const Host = struct {
@@ -233,7 +239,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.group = p.group;
     h.backend = try qwen35.hip_lanes.Hip.init(gpa, p.e);
     errdefer h.backend.deinit();
-    h.backend.keepPrompts(if (p.plan.cache_budget == 0) 0 else p.keep, p.plan.cache_budget);
+    if (p.plan.cache_budget > 0) h.backend.keepPages(p.pool.cache_pages, p.pool.snaps);
     // a lone rank times its forwards for the depth rule; the ranks of a group draft without costs
     if (p.group) |g| h.backend.withLink(&g.link) else h.backend.measure();
     h.cfg = try lanes.Config.init(gpa, h.backend.facts(), qwen35.hip_lanes.Hip.max_window, qwen35.hip_lanes.Hip.max_window - 1);

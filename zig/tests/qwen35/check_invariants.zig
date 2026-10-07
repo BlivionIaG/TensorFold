@@ -6,6 +6,7 @@ const check_ctx = @import("check_ctx.zig");
 const ids_file = @import("ids_file.zig");
 const lanes_session = @import("lanes_session.zig");
 const rows_run = @import("rows_run.zig");
+const check_radix = @import("check_radix.zig");
 
 const Ctx = check_ctx.Ctx;
 const Session = lanes_session.Session;
@@ -32,7 +33,9 @@ pub fn run(c: *Ctx) void {
     lanesSet(c, "short", c.short);
     lanesSet(c, "long", c.long);
     resumed(c);
+    check_radix.run(c);
     replayShare(c);
+    check_radix.leaked(c);
 }
 
 fn rows(c: *Ctx) void {

@@ -6,25 +6,34 @@ const Engine = @import("engine.zig").Engine;
 const Pick = @import("engine.zig").Pick;
 const state = @import("../forward/state.zig");
 const draw = @import("draw.zig");
-const prefix = @import("prefix.zig");
 
-/// A step rank 0 sends the other ranks (the first word of a message).
-/// prefill (begins a prompt pass): id, total, len, resumed at, cut count, kept entries, byte budget (low, high), cuts..., prompt...;
-/// fill: id, end of the next chunk of the prompt pass; verify: graph pick, count, then id, rows, tokens... each (the round's plan
-/// shape follows from them: every rank derives the same); keep: count, then id, rows each;
-/// release: id; stop.
-pub const Op = enum(u32) { stop, prefill, verify, keep, release, fill };
+/// A step rank 0 sends the other ranks (the first word of a message). Rank 0 decides every match, insertion and eviction of
+/// the prefix tree and names pages and snapshot slots; a rank only applies them. A message is as long as its step needs, a
+/// step added later takes the next number, and the layout of an older one never changes:
+/// prefill (begins a prompt pass): id, positions, prompt length, resumed at, cut count, snapshot slot to resume from
+/// (`no_snapshot`: none), page count, then the pages, the cuts and the prompt;
+/// fill: id, end of the next chunk of the prompt pass;
+/// verify: graph pick, count, then id, rows, tokens... each (the round's plan shape follows from them: every rank derives the same);
+/// keep: count, then id, rows each;
+/// release: id; stop;
+/// pages: id, first page index, count, then page ids: the stream's table from that index on is those pages;
+/// snap: id, slot: the stream's linear state is kept in the slot;
+/// copy: from, to: page `to` becomes a copy of page `from`.
+pub const Op = enum(u32) { stop, prefill, verify, keep, release, fill, pages, snap, copy };
+
+/// The prefill message's snapshot slot when the pass starts from nothing.
+pub const no_snapshot: u32 = std.math.maxInt(u32);
 
 /// Windows a round holds at most.
 const max_windows = 128;
 
-const Fill = struct { prompt: []u32, at: usize, stops: []u32, next: usize };
+const Fill = struct { prompt: []u32, at: usize };
 
 const Lane = struct {
     caches: state.Caches,
     /// Slots written and kept: the next window starts here.
     len: usize,
-    /// The prompt pass in progress: the prompt, the row it has reached, the cuts it keeps a state at.
+    /// The prompt pass in progress: the prompt and the row it has reached.
     fill: ?Fill = null,
     /// The last verify's slot and rows, until rank 0's keep.
     pending: ?struct { window: usize, rows: usize } = null,
@@ -36,8 +45,8 @@ pub const Worker = struct {
     lanes: std.AutoHashMapUnmanaged(u32, *Lane) = .empty,
     reqs: []draw.Request,
     out: []u32,
-    /// rank 0's kept prompts, mirrored: the same cuts in the same order keep the same entries
-    kept: prefix.Cache,
+    /// The linear snapshots of rank 0's prefix tree, in the slots it names.
+    snaps: state.Snapshots,
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine) !Worker {
         const rows = e.o.batch_rows;
@@ -45,12 +54,12 @@ pub const Worker = struct {
         errdefer gpa.free(reqs);
         // a follower's draws are greedy and unread: the forward and its collectives are what it shares
         @memset(reqs, .{ .sampling = null, .position = 0 });
-        return .{ .gpa = gpa, .e = e, .reqs = reqs, .out = try gpa.alloc(u32, rows), .kept = prefix.Cache.init(gpa, 0, 0) };
+        return .{ .gpa = gpa, .e = e, .reqs = reqs, .out = try gpa.alloc(u32, rows), .snaps = state.Snapshots.init(gpa, &e.driver) };
     }
 
     pub fn deinit(w: *Worker) void {
         w.e.stream.synchronize() catch {};
-        w.kept.deinit();
+        w.snaps.deinit();
         var it = w.lanes.valueIterator();
         while (it.next()) |l| w.destroy(l.*);
         w.lanes.deinit(w.gpa);
@@ -59,31 +68,24 @@ pub const Worker = struct {
     }
 
     fn destroy(w: *Worker, l: *Lane) void {
-        if (l.fill) |f| {
-            w.gpa.free(f.prompt);
-            w.gpa.free(f.stops);
-        }
+        if (l.fill) |f| w.gpa.free(f.prompt);
         w.e.drain();
         l.caches.deinit(w.gpa);
         w.gpa.destroy(l);
     }
 
-    fn prefill(w: *Worker, id: u32, total: usize, prompt: []const u32, at: usize, stops: []const u32) !void {
+    fn prefill(w: *Worker, id: u32, total: usize, prompt: []const u32, at: usize, snap: ?u32, held: []const u32) !void {
         const gop = try w.lanes.getOrPut(w.gpa, id);
         if (gop.found_existing) w.destroy(gop.value_ptr.*);
         errdefer w.lanes.removeByPtr(gop.key_ptr);
         const lane = try w.gpa.create(Lane);
         errdefer w.gpa.destroy(lane);
-        lane.* = .{ .caches = try w.e.newCaches(total), .len = prompt.len };
+        lane.* = .{ .caches = try w.e.emptyCaches(total), .len = prompt.len };
+        errdefer lane.caches.deinit(w.gpa);
+        try lane.caches.set(w.gpa, 0, held);
+        if (snap) |slot| try w.snaps.put(slot, &lane.caches, w.e.stream.handle);
+        lane.fill = .{ .prompt = try w.gpa.dupe(u32, prompt), .at = at };
         gop.value_ptr.* = lane;
-        if (at > 0) {
-            const hit = w.kept.longest(prompt) orelse return error.PrefixMissing;
-            if (hit.ids.len != at) return error.PrefixMismatch;
-            try lane.caches.copyPrefix(&hit.caches, w.e.model(), at, w.e.stream.handle);
-        }
-        const own = try w.gpa.dupe(u32, prompt);
-        errdefer w.gpa.free(own);
-        lane.fill = .{ .prompt = own, .at = at, .stops = try w.gpa.dupe(u32, stops), .next = 0 };
     }
 
     /// The next chunk of a prompt pass, to row `to`: rank 0's cuts and chunk ends, run the same way.
@@ -93,25 +95,15 @@ pub const Worker = struct {
         if (to == f.prompt.len) {
             _ = try w.e.prefill(&lane.caches, f.prompt, f.at, null, w.reqs[0], null);
             w.gpa.free(f.prompt);
-            w.gpa.free(f.stops);
             lane.fill = null;
             return;
         }
         try w.e.advance(&lane.caches, f.prompt, f.at, to, null);
         f.at = to;
-        if (f.next < f.stops.len and to == f.stops[f.next]) {
-            try w.remember(f.prompt[0..to], &lane.caches);
-            f.next += 1;
-        }
     }
 
-    /// A copy of the caches at a cut, as rank 0's `remember` keeps it.
-    fn remember(w: *Worker, ids: []const u32, caches: *const state.Caches) !void {
-        if (w.kept.keep == 0 or w.kept.has(ids)) return;
-        var snap = try state.Caches.blank(w.gpa, &w.e.driver, w.e.model(), ids.len);
-        errdefer snap.deinit(w.gpa);
-        try snap.copyPrefix(caches, w.e.model(), ids.len, w.e.stream.handle);
-        try w.kept.add(ids, snap);
+    fn laneOf(w: *Worker, id: u32) !*Lane {
+        return w.lanes.get(id) orelse error.UnknownStream;
     }
 
     fn verify(w: *Worker, ids: []const u32, rows: []const Engine.Rows, pick: Pick) !void {
@@ -148,10 +140,9 @@ pub const Worker = struct {
             switch (@as(Op, @fromBackingInt(@as(u32, @intCast(m[0]))))) {
                 .stop => return,
                 .prefill => {
-                    w.kept.keep = m[6];
-                    w.kept.budget = @intCast(@as(u64, m[7]) | @as(u64, m[8]) << 32);
-                    const stops = m[9..][0..m[5]];
-                    try w.prefill(m[1], m[2], m[9 + m[5] ..][0..m[3]], m[4], stops);
+                    const held = m[8..][0..m[7]];
+                    const prompt = m[8 + m[7] + m[5] ..][0..m[3]];
+                    try w.prefill(m[1], m[2], prompt, m[4], if (m[6] == no_snapshot) null else m[6], held);
                 },
                 .verify => {
                     const pick: Pick = @fromBackingInt(m[1]);
@@ -172,6 +163,9 @@ pub const Worker = struct {
                 },
                 .release => w.release(m[1]),
                 .fill => try w.fill(m[1], m[2]),
+                .pages => try (try w.laneOf(m[1])).caches.set(w.gpa, m[2], m[4..][0..m[3]]),
+                .snap => try w.snaps.take(m[2], &(try w.laneOf(m[1])).caches, w.e.stream.handle),
+                .copy => try w.e.pool.copyPage(m[1], m[2], w.e.stream.handle),
             }
         }
     }

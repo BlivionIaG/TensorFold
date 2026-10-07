@@ -35,6 +35,7 @@ pub const Shape = struct {
 
 /// Where each array sits in the plan buffer, in 4-byte words (the 8-byte arrays on even words).
 pub const Layout = struct {
+    layers: usize,
     tokens: usize,
     pos: usize,
     slot: usize,
@@ -47,6 +48,7 @@ pub const Layout = struct {
 
     pub fn of(rows: usize, slots: usize, layers: usize) Layout {
         var l: Layout = undefined;
+        l.layers = layers;
         l.tokens = 0;
         l.pos = rows;
         l.slot = 2 * rows;
@@ -72,12 +74,14 @@ pub const Window = struct { desc: u64, pos: usize, tokens: []const u32 };
 pub const Buffer = struct {
     host: hip.HostBuffer,
     dev: hip.DeviceBuffer,
+    /// Pages a head of a layer's pool holds: the kernels find a page's keys and values with it.
+    pool_pages: u32,
 
-    pub fn init(d: *const hip.Driver, rows: usize, layers: usize) !Buffer {
+    pub fn init(d: *const hip.Driver, rows: usize, layers: usize, pool_pages: usize) !Buffer {
         const bytes = 4 * Layout.of(rows, rows + 1, layers).words;
         var host = try hip.HostBuffer.alloc(d, bytes);
         errdefer host.free();
-        return .{ .host = host, .dev = try hip.DeviceBuffer.alloc(d, bytes) };
+        return .{ .host = host, .dev = try hip.DeviceBuffer.alloc(d, bytes), .pool_pages = @intCast(pool_pages) };
     }
 
     pub fn deinit(b: *Buffer) void {
@@ -95,6 +99,8 @@ pub const Buffer = struct {
             .count = at + 4 * l.count,
             .desc = at + 4 * l.desc,
             .snaps = at + 4 * l.snaps,
+            .pages = @intCast(state.header_words + 2 * l.layers),
+            .pool = b.pool_pages,
         };
     }
 
