@@ -32,6 +32,7 @@ pub fn run(c: *Ctx) void {
     lanesSet(c, "short", c.short);
     lanesSet(c, "long", c.long);
     resumed(c);
+    replayShare(c);
 }
 
 fn rows(c: *Ctx) void {
@@ -122,4 +123,18 @@ fn resumed(c: *Ctx) void {
     if (differ(again, fresh, &buf)) |why| return c.report.fail(name, "{s}", .{why});
     if (!every) return c.report.fail(name, "a prompt resumed from no kept caches ({d} tokens kept in all)", .{cached});
     c.report.pass(name, "{d} streams, {d} tokens, {d} prompt tokens from the kept caches", .{ again.replies.len, again.tokens(), cached });
+}
+
+/// A drafted run of every stream at once, the third time: once its shapes are met, rounds replay graphs, whatever the
+/// streams hold and accept.
+fn replayShare(c: *Ctx) void {
+    const name = "lanes short greedy: rounds replayed";
+    if (c.tp() and !c.e.o.graphs) return c.report.skip(name, "rounds under tp run eager unless the policy says graphs=on");
+    if (!c.e.o.graphs) return c.report.skip(name, "graphs are off");
+    const job: Session.Job = .{ .prompts = c.short, .max_new = c.tokens };
+    var done: Session.Done = undefined;
+    for (0..3) |_| done = c.session.run(c.arena, job) catch |err| return c.report.broke(name, err);
+    const share = 100.0 * @as(f64, @floatFromInt(done.replayed)) / @as(f64, @floatFromInt(@max(done.rounds, 1)));
+    if (share < 99.0) return c.report.fail(name, "{d:.1}% of {d} rounds replayed", .{ share, done.rounds });
+    c.report.pass(name, "{d:.1}% of {d} rounds replayed, {d:.0} us a round submitting", .{ share, done.rounds, @as(f64, @floatFromInt(done.submit_ns)) / @as(f64, @floatFromInt(@max(done.rounds, 1))) / 1e3 });
 }

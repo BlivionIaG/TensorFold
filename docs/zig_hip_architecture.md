@@ -204,56 +204,64 @@ Policy {
 
 ### 3.6 Graphs: every round replays, whatever its streams and drafts
 
-Today a round's graph is keyed by its streams' caches and row counts. A new stream, a different number of accepted
-drafts, or a confidence cut makes a new shape, and that round either captures a graph or runs eager (about 1,000
-launches with 5-9 µs gaps). MTP rounds rarely replay, which is a large part of why drafting loses with concurrent
-streams. The target is that graphs cover prefill steps, decode rounds and speculative rounds, at every tp.
+A round's graph used to be keyed by its streams' caches and row counts, so a new stream, a different number of accepted
+drafts or a confidence cut made a new shape, and that round either captured a graph or ran eagerly. Now a launch depends
+on the shape of the round alone.
 
-**Kernels read the round from device memory, not from launch arguments.** A round plan buffer on the device holds:
+**Kernels read the round from device memory, not from launch arguments.** One buffer on the device
+(`forward/plan.zig`, `kernels/hip/decode/plan.hpp`), written by one copy a round, holds:
 
-- per row: the stream slot, position, token and window index;
-- per stream slot: cache descriptors (KV base pointers, the linear-attention states, their capacity);
-- the round's counts.
+- per row: its token, its position and its slot;
+- per slot: its first row and row count, and the address of its descriptor;
+- per linear layer: where the round's conv and DeltaNet snapshots are.
 
-Kernels index through it. Launch arguments then depend only on the shape bucket, and one graph serves any streams,
-any positions and any caches.
+A stream's descriptor (`state.Caches.desc`, made with its caches) holds the positions its caches take, the address of
+its last kept final row (the draft head's input), and two addresses a layer (keys and values, or the conv window and
+the state). The window forward's rope, cache writes, attention walk, conv and DeltaNet kernels index through it, one
+launch a layer whatever the number of streams, and nothing of a stream is an argument.
 
-**Shapes come in buckets.**
+**Shapes come in buckets.** A round's graph is keyed by (rows, slots, keys covered):
 
-- Rows are padded up to a bucket (1, 2, 4, 8, 16, 32, 64, ...). Padding rows point at a scratch slot and are
-  dropped. Every kernel is row-independent (section 1), so padding never changes a real row's bits; that is checked
-  like any other invariant.
-- Speculative rounds use a fixed window per stream: the pending token plus D draft slots. Unused draft slots are
-  padding.
+- rows are padded up to a bucket (1, 2, 4, ... 64, the engine's limit past them); padding rows run in a scratch slot,
+  the last, whose conv and DeltaNet kernels keep no snapshots, and are dropped;
+- slots are the streams' plus the scratch slot, padded up to a bucket too (empty slots list nothing);
+- the attention walk covers the keys the longest row sees, rounded up to a power of two;
+- every kernel is row-independent (section 1), so padding never changes a real row's bits (`rows` checks it).
 
-**Speculative rounds have no host trip between draft and verify.** One graph per (bucket, D) does all of it:
+A graph is captured the first time its shape is met (a capture costs milliseconds) and replayed on every later round of
+the shape, whatever its streams, positions and caches.
 
-1. The MTP head drafts D tokens for every stream at once: greedy argmax or keyed sampling on the device.
-2. Verify runs every window.
-3. The draws are made on the device.
-4. Acceptance runs on the device: the accepted count per stream is the first mismatch between drafts and draws.
-5. The keep step uses that count to restore each linear-attention state from its per-row snapshot and to advance
-   the KV lengths.
-6. The next pending token is written.
+**A speculative round is two replays and two syncs.**
 
-The host reads back only the emitted tokens and counts, once per round, and can queue the next round before reading
-them.
+1. verify: the plan goes up in one copy, the graph runs the window forward, the head projection and the greedy draw of
+   every row, and the tokens come back;
+2. the lane core (shared with the other backends) accepts, cuts and sizes the next drafts on the host, as ever;
+3. keep: one launch for every window restores each linear layer's state from the snapshot of the last kept row and
+   copies the stream's last kept final row where its descriptor says;
+4. draft: the head's greedy chains of every stream run as one graph keyed by (chains, drafts, confidence cut), their
+   input rows gathered through a device address table, and the drafts and their probabilities come back.
 
-**Prefill steps replay too.**
+The host's acceptance stays in the lane core: moving it onto the device would need the core to queue a round before
+reading the last, and it also holds the stops, the thinking budget and the loop cuts that end a window early. Sampled
+draws (top-k candidates, drawn with the keyed host sampler) and sampled head chains still synchronize each step, and
+stay correct.
 
-- A prompt advances in fixed steps (`prefill_step`, a multiple of 64), plus one tail bucket.
-- The step's span (keys visible) is a device scalar the attention reads, so one graph serves every position.
-- Prefill is compute-heavy, so its gain is mostly for short prompts and for steps interleaved with decode.
+**Under tp**, rank 0's pick (replay, capture or eager) goes with each round message, every rank derives the same plan
+shape from the tokens and positions the message carries, and a capture that fails on any rank turns the shape eager on
+all of them. A capture of a round with collectives takes hundreds of milliseconds and a replay is no faster than the
+eager round there (the ranks wait on each other), so graphs stay off under tp unless the Policy says `graphs=on`.
 
-**Under tp**, rank 0's round plan, including the graph key, goes to the followers with the round message. Every rank
-replays the same graph, collectives captured inside. A capture failure on any rank turns that key eager on all of
-them.
+**Prefill steps** still run eagerly. A graph for them needs the cache pointers and positions of the attention, the conv
+and the recurrence read through a descriptor too, and a tail bucket needs a device row count in the conv and DeltaNet
+kernels (padding rows after the last real one would advance the states).
 
 **Proof.**
 
-- Graph = eager byte for byte, for every bucket and mode: `rows`, tpcheck, and a graph/eager toggle in the matrix.
-- The share of rounds replayed is reported, with a target of over 99% in steady state.
-- Host time per round is measured and recorded.
+- Graph = eager byte for byte, greedy and seeded, on short and long prompts (`check`'s lane lines), and each padded
+  bucket against its rows one at a time, layer by layer (`rows`).
+- `check` fails when a repeated drafted run replays under 99% of its rounds; `check --speed` reports the share of
+  rounds replayed, the host time a round takes to submit its launches, and the time of each backend call (verify, keep,
+  draft).
 
 ### 3.7 Prefix reuse: a radix cache over paged KV
 
@@ -419,7 +427,7 @@ How they compose:
 | 3 | **Quant interface** with mlx: `quant.Projection`, `ops.project` | byte-identical logits (prefill and decode) on 0.8B/9B/35B |
 | 4 | **Decoder-templated tiles**: MLX unpacking moves out of stream/gemm/matrix/routed | `tf-hip-test kernels` byte-identity old vs new; speed unchanged |
 | 5 | **Registry** replaces the m-rules in affine_launch/launches/ops; tuning tables for gfx1030 and gfx1100 | family check; byte-identical logits; speed unchanged |
-| 5b | **Graphs everywhere** (3.6): device round plan, shape buckets, fixed speculative windows with device-side accept/keep, prefill steps, tp | graph = eager byte for byte; > 99% rounds replayed; MTP beats no-drafts with 4 streams |
+| 5b | **Graphs everywhere** (3.6): device round plan, shape buckets, keep and the draft head in graphs, tp (open: device-side accept, prefill steps) | graph = eager byte for byte; > 99% rounds replayed; MTP beats no-drafts with 4 streams |
 | 5c | **Radix prefix cache** (3.7): paged KV with page tables in the round plan, the radix tree with state snapshots at chosen nodes, copy-on-write tails, tp mirroring | resumed = fresh; radix stress test; memory per shared prefix; time to first token on a shared system prompt |
 | 6 | **FP16 / BF16** (identity decoder) and **MLX 5-bit** | truth scores; speed |
 | 7 | **AWQ INT4** (and GPTQ by flag): detect, load, slice, reference, decoder; then the vLLM qgemm ports as native RDNA2 entries | truth scores; bit-exact against Python qgemm fixtures for the native kernels; the model matrix on AWQ checkpoints |
