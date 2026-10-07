@@ -296,10 +296,10 @@ test "the GPU lane's flags: tensor parallelism, prompt cache, backend" {
     defer arena.deinit();
     const a = arena.allocator();
     var u: Usage = .{};
-    const args = try parse(a, &.{ "m", "--tp", "4", "--rank=2", "--master", "10.0.0.1", "--master-port", "29600", "--checkpoint-slots", "3", "--prompt-cache-gib", "1.5", "--no-p2p", "--backend", "rocm" }, &u);
+    const args = try parse(a, &.{ "m", "--tp", "4", "--rank=2", "--master", "node0", "--master-port", "29600", "--checkpoint-slots", "3", "--prompt-cache-gib", "1.5", "--no-p2p", "--backend", "rocm" }, &u);
     try std.testing.expectEqual(@as(u32, 4), args.tp);
     try std.testing.expectEqual(@as(u32, 2), args.rank);
-    try std.testing.expectEqualStrings("10.0.0.1", args.master);
+    try std.testing.expectEqualStrings("node0", args.master);
     try std.testing.expectEqual(@as(u16, 29600), args.master_port);
     try std.testing.expectEqual(@as(?i64, 3), args.checkpoint_slots);
     try std.testing.expectEqual(@as(?f64, 1.5), args.prompt_cache_gib);

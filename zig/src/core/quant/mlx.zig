@@ -14,7 +14,6 @@ pub const id: types.Format = .mlx;
 pub const decoder: types.Decoder = .mlx;
 
 pub const bit_widths = [_]u8{ 2, 3, 4, 5, 6, 8 };
-pub const group_sizes = [_]u16{ 32, 64, 128 };
 
 /// One affine width: groups of `group` weights share a scale and a bias, `bits` per weight.
 pub const Width = struct { bits: u8, group: u16 };

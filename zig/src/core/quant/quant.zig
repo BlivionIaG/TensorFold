@@ -1,8 +1,5 @@
-//! The weight formats of the backend behind one interface. A format is a module (mlx.zig, dense.zig; later awq, fp8, mx,
-//! exl3) that provides what `conforms` lists: it recognizes its checkpoint, reads and cuts its tensors on the host,
-//! uploads them, names the device decoder its kernels instantiate the shared tiles with, and dequantizes them in fp64 for
-//! the tests. The model holds `Projection`s and has its backend project them; nothing above this file names a format, and
-//! nothing in it is a backend's.
+//! The weight formats behind one interface: a format module (mlx.zig, dense.zig) provides what `conforms` lists, from
+//! recognizing its checkpoint to its device decoder and an fp64 dequantization. Nothing above this file names a format.
 
 const std = @import("std");
 
@@ -135,18 +132,6 @@ pub fn sliceCols(a: Allocator, h: Host, r: Rank, what: []const u8) slice.Error!H
 pub fn sliceStack(a: Allocator, h: Host, r: Rank, part: usize) slice.Error!Host {
     switch (h) {
         inline else => |x, tag| return wrap(tag, try Module(tag).sliceStack(a, x, r, part)),
-    }
-}
-
-/// fp64 dequantization of the whole projection, rows by K, into memory of `a`.
-pub fn dequant64(a: Allocator, h: Host) ![]f64 {
-    switch (h) {
-        inline else => |x, tag| {
-            const M = Module(tag);
-            const out = try a.alloc(f64, M.elements(x));
-            try M.reference(x, out);
-            return out;
-        },
     }
 }
 

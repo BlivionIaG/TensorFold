@@ -1,9 +1,6 @@
-//! Kernel choice in one place: every launch of a product a backend makes is an entry, and `select` picks the cheapest entry
-//! that takes a shape under the GPU's switches and the run's. The costs come from the tuning table of the GPU, so a choice
-//! is the same in every run and on every rank. Nothing here names a backend: an entry's `launch` is the backend's type.
-//!
-//! Entries of one family are byte-identical in what they write for any row of a product, so a path that only ever selects
-//! one family at every row count keeps a row's bits whatever it shares a launch with. `verify` checks that at open.
+//! Kernel choice in one place: every product launch is an entry and `select` picks the cheapest that takes a shape, by the
+//! GPU's tuning table, so a choice is the same in every run and rank. Entries of one family write identical bytes for any
+//! row of a product, so a path that selects one family at every row count keeps a row's bits; `verify` checks that at open.
 
 const std = @import("std");
 const quant = @import("quant/quant.zig");
@@ -54,7 +51,7 @@ pub const Env = struct {
     /// ...and the run lets them take the rows above the decode tiles'.
     matrix_on: bool,
     stream_on: bool,
-    /// The GEMM tile (else the previous one) takes the products.
+    /// The GEMM tile (else the reference one) takes the products.
     gemm_on: bool,
 };
 
@@ -163,7 +160,7 @@ pub fn Registry(comptime Launch: type) type {
 
         /// The family rule for a lane round's decode, a prompt's plain products and its routed plans, at every width and group.
         pub fn verify(r: *const Self, env: Env, format: quant.Format) error{FamilyChanges}!void {
-            // the previous decode tiles and the previous GEMM tile are the Python engine's rules, by row count
+            // the reference decode tiles and the reference GEMM tile are the Python engine's rules, by row count
             if (!env.stream_on or !env.gemm_on) return;
             for ([_]u8{ 2, 3, 4, 5, 6, 8 }) |bits| for ([_]u16{ 32, 64, 128 }) |group| {
                 var base: Shape = .{ .m = 1, .n = 4096, .k = 4096, .bits = bits, .group = group, .fp16 = !env.bf16, .tables = if (env.bf16) .bf16 else .f16 };

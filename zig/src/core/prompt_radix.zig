@@ -1,8 +1,5 @@
-//! Prompt reuse as a radix tree over token pages, shaped as core/prompt_cache.zig's Store: states kept at the marks a prompt
-//! pass stands at, found by their tokens, evicted least recently used, a shared system cut never superseded by its own
-//! conversation. A request takes the pages of its longest match and resumes from the deepest snapshot on it; the tree
-//! (prompt_radix_tree.zig) keeps the pages shared. Nothing here knows a GPU: the backend gives page reference counts and copies
-//! of its state.
+//! Prompt reuse as a radix tree over token pages (prompt_radix_tree.zig), shaped as core/prompt_cache.zig's Store: a request
+//! takes the pages of its longest match and resumes from the deepest snapshot on it. Nothing here knows a GPU.
 
 const std = @import("std");
 const pc = @import("prompt_cache.zig");
@@ -183,9 +180,8 @@ pub const Store = struct {
         return out.toOwnedSlice(a);
     }
 
-    /// The prompt pass stands at `at` with `mine`, its pages of the first positions: the tree takes the pages it lacks and the
-    /// family's snapshot, evicting to fit; `path` gets the tree's page of each of the first `shared`. Refused (counted) when
-    /// nothing can go.
+    /// The pass stands at `at` with `mine`, its first pages: the tree takes the pages it lacks and the snapshot, evicting to fit;
+    /// `path` gets the tree's page of each of the first `shared`. Refused (counted) when nothing can go.
     pub fn keep(s: *Store, prompt: []const u32, at: u32, owner: ?*anyopaque, mine: []const u32, path: []u32) Kept {
         const t = &s.tree;
         if (!s.on() or at == 0 or at % s.rules.page != 0 or at > prompt.len or mine.len != at / s.rules.page or path.len != mine.len) return .{ .held = false, .shared = 0 };
