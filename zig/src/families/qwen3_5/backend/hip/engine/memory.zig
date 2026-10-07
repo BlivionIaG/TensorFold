@@ -1,7 +1,7 @@
 //! Startup memory plan: the window one request can use, the bytes the prompt cache may hold and the pages of the pool.
 
 const std = @import("std");
-const config = @import("../model/config.zig");
+const config = @import("../../../weights/config.zig");
 const fwd = @import("../forward/forward.zig");
 const pages = @import("../forward/pages.zig");
 

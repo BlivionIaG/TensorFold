@@ -1,11 +1,10 @@
 //! The Python loader's `_packed`, `_float`, `_conv` and `_halves`: one tensor, or one projection's tensors, read and checked.
 
 const std = @import("std");
-const hip = @import("hip");
+const quant = @import("core").quant;
 const table = @import("table.zig");
 const host = @import("host.zig");
 
-const quant = hip.quant;
 const convert = quant.convert;
 const Tensor = table.Tensor;
 const Table = table.Table;

@@ -1,12 +1,12 @@
 //! The Python loader's `_routed`, `_experts` and `_affine_side`: router rows and the stacked affine experts.
 
 const std = @import("std");
-const hip = @import("hip");
-const table = @import("../model/table.zig");
-const convert = hip.quant.convert;
-const config = @import("../model/config.zig");
-const host = @import("../model/host.zig");
-const projection = @import("../model/projection.zig");
+const quant = @import("core").quant;
+const table = @import("table.zig");
+const convert = quant.convert;
+const config = @import("config.zig");
+const host = @import("host.zig");
+const projection = @import("projection.zig");
 
 const Tensor = table.Tensor;
 const Table = table.Table;
@@ -33,7 +33,7 @@ fn routerRows(a: std.mem.Allocator, t: *const Table, key: []const u8) Error!stru
     const group = (try t.width(key)).group;
     const scale = try t.get(projection.join(&buf, &.{ key, ".scales" }));
     const bias = try t.get(projection.join(&other, &.{ key, ".biases" }));
-    const data = try hip.quant.mlx.dequant(a, weight, scale, bias, group);
+    const data = try quant.mlx.dequant(a, weight, scale, bias, group);
     return .{ .data = data, .rows = weight.shape[0], .cols = scale.shape[1] * group };
 }
 

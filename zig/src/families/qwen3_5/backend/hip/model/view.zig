@@ -7,7 +7,7 @@ pub const Projection = hip.quant.Projection;
 pub const Kind = hip.ops.Kind;
 
 /// The text model's dimensions (Python's Spec), as the checkpoint's config gives them.
-pub const Spec = @import("config.zig").Spec;
+pub const Spec = @import("../../../weights/config.zig").Spec;
 
 /// The conv's channels: q, k and v of the linear attention.
 pub fn convChannels(s: Spec) usize {

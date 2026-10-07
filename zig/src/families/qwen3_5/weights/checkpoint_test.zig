@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const checkpoint = @import("checkpoint.zig");
-const convert = @import("hip").quant.convert;
+const convert = @import("core").quant.convert;
 const host = @import("host.zig");
 const DType = @import("table.zig").DType;
 

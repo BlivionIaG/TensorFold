@@ -2,11 +2,11 @@
 
 const std = @import("std");
 const hip = @import("hip");
-const config = @import("config.zig");
-const table = @import("table.zig");
-const host = @import("host.zig");
-const checkpoint = @import("checkpoint.zig");
-const slicing = @import("slicing.zig");
+const config = @import("../../../weights/config.zig");
+const table = @import("../../../weights/table.zig");
+const host = @import("../../../weights/host.zig");
+const checkpoint = @import("../../../weights/checkpoint.zig");
+const slicing = @import("../../../weights/slicing.zig");
 
 const quant = hip.quant;
 const Tensor = table.Tensor;

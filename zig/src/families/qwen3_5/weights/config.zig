@@ -1,8 +1,8 @@
-//! The HIP loader's configuration: the family's geometry (../../../config.zig) with the checkpoint's quantization table.
+//! The HIP loader's configuration: the family's geometry (../config.zig) with the checkpoint's quantization table.
 
 const std = @import("std");
 const quant = @import("core").quant;
-const shared = @import("../../../config.zig");
+const shared = @import("../config.zig");
 
 pub const Error = shared.Error || error{UnsupportedQuantization};
 

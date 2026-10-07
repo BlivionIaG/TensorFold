@@ -3,7 +3,7 @@
 const std = @import("std");
 const Io = std.Io;
 const st = @import("core").safetensors;
-const hip = @import("hip");
+const formats = @import("core").quant;
 const config = @import("config.zig");
 
 const Shard = @import("shard.zig").Shard;
@@ -19,10 +19,10 @@ pub const Table = struct {
     where: std.StringHashMapUnmanaged(Where) = .empty,
     /// A key prefix the table drops (`language_model.`), as `_Shards(strip=)`.
     strip: []const u8,
-    quant: hip.quant.Config,
+    quant: formats.Config,
 
     /// Maps `paths` (later files win a repeated name, as the Python dict does).
-    pub fn open(gpa: std.mem.Allocator, io: Io, paths: []const []const u8, strip: []const u8, quant: hip.quant.Config) !Table {
+    pub fn open(gpa: std.mem.Allocator, io: Io, paths: []const []const u8, strip: []const u8, quant: formats.Config) !Table {
         const files = try gpa.alloc(Shard, paths.len);
         var opened: usize = 0;
         errdefer {
@@ -68,7 +68,7 @@ pub const Table = struct {
     }
 
     /// The tensor's own width when the config names it (`key`, then the stripped prefix back on), else the global one.
-    pub fn width(t: *const Table, key: []const u8) config.Error!hip.quant.mlx.Width {
+    pub fn width(t: *const Table, key: []const u8) config.Error!formats.mlx.Width {
         const q = switch (t.quant) {
             .mlx => |m| m,
             .dense => return error.UnsupportedQuantization,

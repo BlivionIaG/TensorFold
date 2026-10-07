@@ -1,13 +1,13 @@
 //! What the loader hands the GPU, still on the host: the Python TextModel's layers with the bytes its kernels read.
 
 const std = @import("std");
-const hip = @import("hip");
+const quant = @import("core").quant;
 const table = @import("table.zig");
 
 pub const Tensor = table.Tensor;
 
 /// A projection as its format read it from the checkpoint.
-pub const Projection = hip.quant.Host;
+pub const Projection = quant.Host;
 
 /// A layer's experts. `fused` is gate then up along N per expert ([E + 1, 2 * width, ...]), or the up alone when `gated` is false;
 /// each stack is E + 1 projections, the shared expert last.

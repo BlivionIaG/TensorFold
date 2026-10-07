@@ -1,9 +1,8 @@
 const std = @import("std");
-const hip = @import("hip");
 const config = @import("config.zig");
 const host = @import("host.zig");
 
-const quant = hip.quant;
+const quant = @import("core").quant;
 const Allocator = std.mem.Allocator;
 const takeRows = quant.slice.takeRows;
 const even = quant.slice.even;
