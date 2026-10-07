@@ -1,4 +1,4 @@
-//! The HIP half of the root build: kernel bundles (-Dhipcc), the runtime, `tf-hip-test` and the host tests.
+//! The HIP half of the root build: kernel bundles (-Dhipcc), the runtime, `tf-hip-test`, host and mock-library tests.
 
 const std = @import("std");
 const caps = @import("../src/hip/caps.zig");
@@ -78,6 +78,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
 pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     const hip = runtime(b, b.graph.host, .debug, null, "");
     step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
+    step.dependOn(mockTests(b, hip));
 }
 
 /// hipcc --genco with the shared flags and one --offload-arch per gfx target: one offload bundle.
@@ -91,4 +92,29 @@ fn bundle(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, name: [
     const out = run.addOutputFileArg(b.fmt("{s}.hsaco", .{name}));
     run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}.hip", .{name})));
     return out;
+}
+
+/// The runtime against a stand-in libamdhip64 (zig/tests/hip/mock): complete, missing one entry point, an unknown GPU.
+fn mockTests(b: *std.Build, hip: *std.Build.Module) *std.Build.Step {
+    const abi = b.createModule(.{ .root_source_file = b.path("zig/src/hip/runtime/abi.zig"), .target = b.graph.host, .optimize = .debug });
+    const variants = [_]struct { name: []const u8, arch: []const u8, omit: []const u8 }{
+        .{ .name = "full", .arch = "gfx1100", .omit = "" },
+        .{ .name = "missing", .arch = "gfx1100", .omit = "hipModuleLaunchKernel" },
+        .{ .name = "unknown", .arch = "gfx803", .omit = "" },
+    };
+    const paths = b.addOptions();
+    for (variants) |v| {
+        const options = b.addOptions();
+        options.addOption([]const u8, "arch", v.arch);
+        options.addOption([]const u8, "omit", v.omit);
+        const root = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/mock/mock.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true });
+        root.addImport("abi", abi);
+        root.addOptions("mock_options", options);
+        const lib = b.addLibrary(.{ .name = b.fmt("hipmock_{s}", .{v.name}), .linkage = .dynamic, .root_module = root });
+        paths.addOptionPath(v.name, lib.getEmittedBin());
+    }
+    const tests = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/mock/mock_test.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true });
+    tests.addImport("hip", hip);
+    tests.addOptions("mock_libs", paths);
+    return &b.addRunArtifact(b.addTest(.{ .root_module = tests })).step;
 }
