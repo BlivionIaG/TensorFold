@@ -1,7 +1,7 @@
 # Zig HIP port against the Python ROCm engine
 
 What the Python ROCm engine (`src/tensorfold/rocm/`, served by `tensorfold serve --backend rocm`) does, what the Zig
-HIP port (`zig/src/families/qwen35/`, served by `tensorfold-native`) does, and what is left. "Zig" is this branch; the
+HIP port (`zig/src/families/qwen3_5/`, served by `tensorfold-native`) does, and what is left. "Zig" is this branch; the
 rows say which commit of the parity work closed a gap. Priorities: P0 blocks using the port as a server, P1 is a
 behaviour the Python engine has and a user sees, P2 is speed or a corner, P3 is polish.
 

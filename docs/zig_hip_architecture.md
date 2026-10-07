@@ -58,7 +58,7 @@ tiles, with native kernels only where they are measured faster.
 
 ```
  engine / lanes / server            (unchanged: windows, rounds, MTP, prefix, tp)
- model forward (qwen35/*.zig)       calls ops.project / ops.attention / ...; knows nothing of formats or GPUs
+ model forward (families/qwen3_5)   calls ops.project / ops.attention / ...; knows nothing of formats or GPUs
  ── Policy ── resolved once at open: what the run may use
  Ops + Registry                     (op, format, path, shape) -> one kernel, chosen under Caps and Policy
  Quant formats                      mlx | gptq | awq | exl3 ...: load, slice, reference dequant, Decoder, native kernels
@@ -140,7 +140,7 @@ Every host module provides:
 `ops.project(x, proj, m)`. Precision rules for A8 modes: activation scales are computed by the ActEncoder in one fixed
 order per row, so the row-exact rule holds for them as for everything else.
 
-**As built (step 3).** `zig/src/hip/quant/` holds a module a format (`mlx.zig`, `dense.zig`) behind `quant.zig`, where
+**As built (step 3).** `zig/src/core/quant/` holds a module a format (`mlx.zig`, `dense.zig`) behind `quant.zig`, where
 `conforms` lists at compile time what a format provides: `id`, `decoder`, `Config` and `detect`, `Host`, `matches`,
 `read`, `halves`, `rows` and `bytes`, `sliceRows`, `sliceCols` and `sliceStack` (tp), `Device` and `upload`, `Matrix`
 and `view`, `elements` and `reference` (fp64). `quant.Projection` is a product's shape, its split flag and a `Handle`
@@ -187,9 +187,9 @@ Entry { op, format, path: .decode | .prefill, family: FamilyId, caps: CapsPredic
   ranks.
 - `--explain-kernels` (and a field of the server's info) lists what each (op, path) chose and why.
 
-**As built (step 5).** `launch/registry.zig` is the selection (`Entry`, `Registry`, `select`, `verify`, `explain`) and
+**As built (step 5).** `core/registry.zig` is the selection (`Entry`, `Registry`, `select`, `verify`, `explain`) and
 names no backend; `launch/mlx_entries.zig` is the MLX entries over `launch/affine.zig`'s tile launchers; the costs are
-`tuning/gfx1030.zon` and `gfx1100.zon` (the gfx11 parts), today's thresholds as costs and row or item limits, so a choice
+`hip/tuning/gfx1030.zon` and `gfx1100.zon` (the gfx11 parts, read through `core/tuning.zig`'s rows), today's thresholds as costs and row or item limits, so a choice
 is what it was. The decode path is a lane round (`shape.round`, which keeps the stream tile at any row count) and the
 calls of the head and the draft, which keep the stream tile to 16 rows (15 where the matrix cores take the rest) and the
 wide or GEMM tile above them; the prefill path is the K-parallel and 128-row tiles. `verify` checks the family rule for a
@@ -311,7 +311,7 @@ that shared a system prompt each held their own. Now requests share prefix memor
   copy is a guard, not a path a prompt takes.
 - The linear layers keep a stream's conv window and DeltaNet state as before.
 
-**The prompt cache** (`engine/radix.zig`, `radix_tree.zig`, `radix_test.zig`) has the shape of upstream's
+**The prompt cache** (`core/prompt_radix.zig`, `prompt_radix_tree.zig`, `prompt_radix_test.zig`) has the shape of upstream's
 `core/prompt_cache.zig` Store, and nothing in it knows a GPU, so it can move to core: the backend gives it page reference
 counts (`Pages`) and copies of its non-page state (`Snapshots`: bytes, save, restore, drop); it gives back a `Plan` (where
 the pass resumes, where it keeps), `keep`, `forget`, `marks` and the counters.
@@ -370,10 +370,11 @@ zig/src/hip/
   runtime/                     driver, context, stream, memory, arena, module, graph, abi (as zig/src/cuda/)
   comm/                        rccl, link (tp transport)
   caps.zig  policy.zig         what the GPU can do; what the run may use (3.1, 3.5)
-  launch/                      args, code objects, registry, tuning/<gfx>.zon (3.4)
+  launch/                      args, code objects, the entries of the registry (3.4), tuning/<gfx>.zon
   ops/                         the Ops facade split by job: project (dense + routed), attention, recurrence,
                                norms, moe (router, select, plan, combine), draw, tp (sums, gathers)
-  quant/                       mlx.zig; later awq, fp8, mx, exl3 (3.2)
+zig/src/core/                  quant/ (the weight formats: mlx.zig; later awq, fp8, mx, exl3, 3.2), registry.zig and
+                               tuning.zig (3.4), prompt_radix*.zig (3.7), round_shape.zig (3.6)
 zig/kernels/hip/
   common/                      caps macros, wave helpers, Dot plug-ins
   quant/                       one WeightDecoder header a format (mlx.hpp first), ActEncoders
@@ -383,10 +384,8 @@ zig/kernels/hip/
   ops/                         norms, conv, rope, moe route/select/combine, casts, the fused decode tails
   comm/                        tp kernels
   capi/                        the library's C ABI (the bring-up path)
-zig/src/families/qwen35/
-  model/                       config, checkpoint, host, table, weights, view, bridge, convert, shard, slicing
-  forward/                     forward (prefill span), window (decode round), moe, experts, reduce, state
-  engine/                      engine, hip_lanes, worker, round_graphs (-> round plan), memory, prefix (-> radix), mtp, draw, sample
+zig/src/families/qwen3_5/      the family as 3.9 builds it: config, weights/ (the checkpoint reader), hip.zig and backend/hip/
+                               (model/, forward/, engine/), beside upstream's Metal files
 zig/tests/hip/                 kernels/, runtime/, bench/ (4.2)
 zig/tests/qwen35/              check/ (invariants, accuracy, speed), matrix.sh
 ```
@@ -416,6 +415,53 @@ This port converges with that, keeping `zig-flashnext` as its base:
   chunked) and the gated attention specifics.
 - **The core interfaces stay backend-neutral** (Metal, CUDA, HIP), so Flash Next, Nemotron or a new family can use the
   same pieces.
+
+**As built (step 5d).** Upstream's `zig-flashnext` is merged and the Zig HIP port sits in its structure.
+
+*Serving.* One `tensorfold-native` serves Linux: `native/linux.zig` hands a checkpoint to the backend whose registry lists its
+`model_type`, `native/cuda.zig` (nemotron_h) or `native/hip.zig` (qwen3_5, qwen3_5_moe). A registry entry is a namespace with
+`model_type`, `formats`, `default_context`, `prefill_step` and `open` (a rank above 0 also has `follow`), as upstream's CUDA
+entries are; the family's own is `families/qwen3_5/backend/hip/engine/native.zig`. The host owns the card, the policy, the
+tensor-parallel group (`hip.Device`, `hip.Group`), the round loop and `core/lane_host.zig`; the family loads, plans memory,
+sizes and returns its lane backend, the facts the round loop reads and the window it fitted. `--backend {auto,cuda,rocm}`,
+`--tp`, `--rank`, `--master`, `--p2p`, `--matrix`, `--kernels` and `--policy` ride in `engine_api.Open` next to upstream's
+`--prompt-cache-gib` and `--prompt-cache-over-cap`.
+
+*The family.* Upstream's `qwen3_5` files are untouched (`qwen3_5.zig`, `config`, `weights`, `model`, `forward`, `state`,
+`backend`, `kernels`, `qualify`: Metal). The HIP family is beside them:
+
+```
+zig/src/families/qwen3_5/
+  qwen3_5.zig                  Metal root (upstream)         hip.zig            the HIP family's root, as nemotron's cuda.zig
+  config.zig                   Metal's admission of the 2B   weights/           the checkpoint reader, for any backend: config
+                               geometry, and the Spec every                     with the quantization table, the tensor table,
+                               backend reads                                    host projections, layers, experts, tp cuts
+  weights.zig model.zig forward.zig state.zig backend.zig kernels.zig qualify.zig   Metal (upstream)
+  backend/hip/model/           the device model: weights uploaded, view, bridge
+  backend/hip/forward/         forward, window (decode round), moe, reduce, state, pages, plan
+  backend/hip/engine/          engine, hip_lanes, worker, round, mtp, draw, memory, hip_prefix, native
+```
+
+The test program keeps its name, `tf-qwen35-test` (`zig/tests/qwen35/`): the scripts and this plan name it.
+
+*Core.* `core/quant/` is the format interface and its two formats (3.2); `core/registry.zig` and `core/tuning.zig` are the kernel
+choice and the rows of a GPU's table (3.4), while the entries with their kernels (`hip/launch/`) and the `.zon` tables stay
+in `zig/src/hip`; `core/prompt_radix*.zig` is the paged prompt cache on `core/prompt_cache.zig`'s `Rules`, `Counts`, `Plan`
+and `Snapshots`, with `Pages`, the adopt list of a resume and the `path` of a keep added (3.7); `core/round_shape.zig` is
+the bucketing of a round's rows and span that keeps graphs few (3.6).
+
+*What stays HIP, and why.*
+- The plan buffer's word layout (`backend/hip/forward/plan.zig`): it is the layout the HIP kernels read.
+- The prefix tree's glue (`hip_prefix.zig`): the pool's pages and the linear snapshots live in device memory, and rank 0's
+  tree is mirrored to the other ranks by messages.
+- The GPU tables and the entries' kernel names: they are a GPU's measurements.
+- `qualify.zig` (load-time check that wide rows equal one row on the real weights) is Metal's: it compares Metal buffers. The
+  HIP equivalent is `tf-qwen35-test check`, which runs at the engine's own widths.
+- The radix cache is driven by the HIP backend, not by `lane_host`'s `cache` (the flat `prompt_cache.Store` with a copy of
+  the whole state per entry): a resume shares pages with live streams, a keep swaps the stream's pages for the tree's and
+  rank 0's decisions go to the other ranks. `lane_host` hosts the backend all the same, with the chunked prompt fill
+  (`prefill_step`) and the cancel check between chunks.
+- Metal's admission stays strict (its kernels are built for one geometry); widening it is a kernel job, not a loader one.
 
 ## 4. Testing
 
@@ -504,7 +550,7 @@ How they compose:
 | 5 | **Registry** replaces the m-rules in affine_launch/launches/ops; tuning tables for gfx1030 and gfx1100 | family check; byte-identical logits; speed unchanged |
 | 5b | **Graphs everywhere** (3.6): device round plan, shape buckets, keep and the draft head in graphs, tp (open: device-side accept, prefill steps) | graph = eager byte for byte; > 99% rounds replayed; MTP beats no-drafts with 4 streams |
 | 5c | **Radix prefix cache** (3.7): paged KV with page tables in the round plan, the radix tree with state snapshots at chosen nodes, copy-on-write tails, tp mirroring | resumed = fresh; radix stress test; memory per shared prefix; time to first token on a shared system prompt |
-| 5d | **Upstream sync and convergence** (3.9): merge upstream zig-flashnext (registry #443, prompt cache, guide); `families/qwen35` becomes `families/qwen3_5` with upstream's file roles; HIP registers through the family registry and hosts through `core/lane_host`; generic lane kernels, GPU rounds and the prompt path move to core behind backend-neutral interfaces | `check` identical digits and speed; tp2; native server through the registry; `zig build test` and the Metal build unchanged |
+| 5d | **Upstream sync and convergence** (3.9, done): merge upstream zig-flashnext (registry #443, prompt cache, guide); `families/qwen35` becomes `families/qwen3_5` with upstream's file roles; HIP registers through the family registry and hosts through `core/lane_host`; generic lane kernels, GPU rounds and the prompt path move to core behind backend-neutral interfaces | `check` identical digits and speed; tp2; native server through the registry; `zig build test` and the Metal build unchanged |
 | 6 | **FP16 / BF16** (identity decoder) and **MLX 5-bit** | truth scores; speed |
 | 7 | **AWQ INT4** (and GPTQ by flag): detect, load, slice, reference, decoder; then the vLLM qgemm ports as native RDNA2 entries | truth scores; bit-exact against Python qgemm fixtures for the native kernels; the model matrix on AWQ checkpoints |
 | 8 | **FP8** (tensor/channel scales), then **MXFP4 / MXFP8** decoders | truth scores |
