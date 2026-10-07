@@ -37,7 +37,7 @@ extern "C" {
 const char* tf_last_error() { return last_error; }
 
 // 0 rdna2 (dot2, fp16 activations), 1 a WMMA build (gfx11 / gfx12, bf16 activations): host dispatch differs.
-int tf_wmma_build() { return TENSORFOLD_RDNA_WMMA; }
+int tf_wmma_build() { return TF_MATRIX; }
 
 int tf_rms(const void* x, const float* weight, void* y, int kind, int rows, int width, float eps, hipStream_t s) {
     return guarded([&] { rms_launch(x, weight, y, kind, rows, width, eps, s); });

@@ -144,11 +144,11 @@ const Device = struct {
     arena: hip.Arena,
 
     fn open(gpu: Gpu, arena_bytes: usize) !*Device {
-        const family = hip.rocm.familyOf(try gpu.ctx.capability()) orelse return error.UnsupportedGpu;
+        const caps = try gpu.ctx.caps();
         const dev = try gpu.gpa.create(Device);
         errdefer gpu.gpa.destroy(dev);
         dev.gpu = gpu;
-        dev.lib = try hip.rocm.Library.open(gpu.d, family, try check.policyOf(gpu));
+        dev.lib = try hip.rocm.Library.open(gpu.d, caps, try check.policyOf(gpu));
         errdefer dev.lib.close();
         dev.stream = try hip.Stream.init(gpu.d, true);
         errdefer dev.stream.deinit();

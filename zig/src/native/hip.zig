@@ -20,8 +20,8 @@ pub fn chip(a: Allocator) ?[]const u8 {
     defer d.close();
     var ctx = hip.Context.init(&d, 0) catch return null;
     defer ctx.deinit();
-    const family = hip.rocm.familyOf(ctx.capability() catch return null) orelse return null;
-    return a.dupe(u8, @tagName(family)) catch null;
+    const caps = ctx.caps() catch return null;
+    return a.dupe(u8, @tagName(caps.family)) catch null;
 }
 
 /// The model's window (config.json's max_position_embeddings, text_config's first), 0 when it names none.

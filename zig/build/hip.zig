@@ -1,6 +1,7 @@
 //! The HIP half of the root build: the probe bundle, the ROCm libraries a GPU family each, the runtime and its GPU test program.
 
 const std = @import("std");
+const caps = @import("../src/hip/caps.zig");
 
 /// Each .hip in zig/kernels/hip with its own hipcc flags and the headers it includes (hipcc --genco writes no dep file).
 const Kernel = struct { name: []const u8, source: []const u8, flags: []const []const u8 = &.{}, headers: []const []const u8 = &.{} };
@@ -65,11 +66,11 @@ const lib_headers = [_][]const u8{
 const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill", "gdn_prefill", "decode" };
 const group_sources = [module_groups.len][]const u8{ "ops/ops.hip", "ops/act.hip", "attention/attention.hip", "recurrence/gated_delta.hip", "tiles/dot2_tiles.hip", "tiles/dot2.hip", "attention/prefill.hip", "recurrence/gdn_prefill.hip", "decode/decode.hip" };
 
-/// A GPU family's library: its gfx targets and whether its host dispatch takes the WMMA schedules.
-const Family = struct { name: []const u8, prefixes: []const []const u8, wmma: bool };
+/// A GPU family's library: the caps table's family its gfx targets belong to.
+const Family = struct { name: []const u8, family: caps.Family };
 const families = [_]Family{
-    .{ .name = "rdna2", .prefixes = &.{"gfx103"}, .wmma = false },
-    .{ .name = "rdna3", .prefixes = &.{ "gfx11", "gfx12" }, .wmma = true },
+    .{ .name = "rdna2", .family = .rdna2 },
+    .{ .name = "rdna3", .family = .rdna3 },
 };
 
 /// The runtime module for `target`; without images it builds host-only (empty images).
@@ -217,15 +218,34 @@ pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
     b.step("test-qwen35", "Qwen3.5 / 3.6 host tests; TF_QWEN_DIR indexes a real checkpoint").dependOn(&family.step);
 }
 
-/// The gfx targets of `gfx` that belong to family `f`.
+/// The gfx targets of `gfx` that belong to family `f`; a target outside the caps table, or one with no kernels, stops the build.
 fn archesOf(b: *std.Build, gfx: []const u8, f: Family) []const []const u8 {
     var list: std.ArrayList([]const u8) = .empty;
     var it = std.mem.tokenizeScalar(u8, gfx, ',');
-    while (it.next()) |arch| for (f.prefixes) |p| if (std.mem.startsWith(u8, arch, p)) {
-        list.append(b.allocator, arch) catch @panic("OOM");
-        break;
-    };
+    while (it.next()) |arch| {
+        const c = caps.Caps.of(arch) orelse std.debug.panic("-Dgfx: {s} is not in the caps table (zig/src/hip/caps.zig)", .{arch});
+        if (c.family == .gcn5) std.debug.panic("-Dgfx: {s} has no kernels built yet", .{arch});
+        if (c.family == f.family) list.append(b.allocator, arch) catch @panic("OOM");
+    }
     return list.items;
+}
+
+/// The caps macros of a family's targets (one set a hipcc run, so the targets must agree), and the old WMMA macro as their alias.
+fn addCaps(b: *std.Build, run: *std.Build.Step.Run, arches: []const []const u8) void {
+    const first = caps.Caps.of(arches[0]).?;
+    for (arches[1..]) |arch| {
+        const c = caps.Caps.of(arch).?;
+        const same = c.wave == first.wave and c.dot2_f16 == first.dot2_f16 and c.dot2_bf16 == first.dot2_bf16 and c.sdot4 == first.sdot4 and c.sdot8 == first.sdot8 and (c.matrix == .none) == (first.matrix == .none);
+        if (!same) std.debug.panic("-Dgfx: {s} and {s} differ in caps; build them apart", .{ arches[0], arch });
+    }
+    const matrix = @intFromBool(first.matrix != .none);
+    run.addArg(b.fmt("-DTF_WAVE={d}", .{first.wave}));
+    run.addArg(b.fmt("-DTF_DOT2_F16={d}", .{@intFromBool(first.dot2_f16)}));
+    run.addArg(b.fmt("-DTF_DOT2_BF16={d}", .{@intFromBool(first.dot2_bf16)}));
+    run.addArg(b.fmt("-DTF_SDOT4={d}", .{@intFromBool(first.sdot4)}));
+    run.addArg(b.fmt("-DTF_SDOT8={d}", .{@intFromBool(first.sdot8)}));
+    run.addArg(b.fmt("-DTF_MATRIX={d}", .{matrix}));
+    run.addArg(b.fmt("-DTENSORFOLD_RDNA_WMMA={d}", .{matrix}));
 }
 
 /// hipcc --genco with the shared flags, the kernel's own and one --offload-arch per gfx target: one offload bundle.
@@ -248,7 +268,7 @@ fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: 
     const run = b.addSystemCommand(&.{ hipcc, "--genco" });
     run.addFileInput(version);
     run.addArgs(&torch_flags);
-    run.addArg(b.fmt("-DTENSORFOLD_RDNA_WMMA={d}", .{@intFromBool(f.wmma)}));
+    addCaps(b, run, arches);
     const root = std.fs.path.dirname(std.fs.path.dirname(hipcc) orelse ".") orelse ".";
     run.addArg(b.fmt("--rocm-path={s}", .{root}));
     run.addArg(b.fmt("--rocm-device-lib-path={s}/lib/llvm/amdgcn/bitcode", .{root}));
@@ -269,7 +289,7 @@ fn library(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: Fam
     const run = b.addSystemCommand(&.{ hipcc, "-shared" });
     run.addFileInput(version);
     run.addArgs(&torch_flags);
-    run.addArg(b.fmt("-DTENSORFOLD_RDNA_WMMA={d}", .{@intFromBool(f.wmma)}));
+    addCaps(b, run, arches);
     // hipcc's own ROCm tree, with its device bitcode, as the Python build points at it
     const root = std.fs.path.dirname(std.fs.path.dirname(hipcc) orelse ".") orelse ".";
     run.addArg(b.fmt("--rocm-path={s}", .{root}));

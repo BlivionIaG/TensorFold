@@ -83,11 +83,11 @@ pub const Engine = struct {
         errdefer e.driver.close();
         e.ctx = try hip.Context.init(&e.driver, o.device);
         errdefer e.ctx.deinit();
-        const family = hip.rocm.familyOf(try e.ctx.capability()) orelse return error.UnsupportedGpu;
-        e.lib = try hip.rocm.Library.open(e.ctx.d, family, o.policy);
+        const caps = try e.ctx.caps();
+        e.lib = try hip.rocm.Library.open(e.ctx.d, caps, o.policy);
         errdefer e.lib.close();
-        e.act = if (family == .rdna2) .f16 else .bf16;
-        e.dtype = if (family == .rdna2) .f16 else .bf16;
+        e.act = if (caps.act == .f16) .f16 else .bf16;
+        e.dtype = if (caps.act == .f16) .f16 else .bf16;
         e.stream = try hip.Stream.init(&e.driver, true);
         errdefer e.stream.deinit();
         const group: ?slicing.Rank = if (o.world > 1) .{ .rank = o.rank, .world = o.world } else null;

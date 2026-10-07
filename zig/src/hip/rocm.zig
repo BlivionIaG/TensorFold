@@ -7,6 +7,7 @@ const kernels = @import("kernels.zig");
 const driver = @import("runtime/driver.zig");
 const launches = @import("launches.zig");
 const Policy = @import("policy.zig").Policy;
+const Caps = @import("caps.zig").Caps;
 
 pub const Error = error{ LibraryUnavailable, MissingSymbol, KernelFailed } || driver.Error;
 
@@ -65,48 +66,44 @@ pub const Api = struct {
     tf_token_prob: *const fn (C, c_int, c_int, c_int, CI, F, S) callconv(.c) c_int,
 };
 
-pub const Family = enum { rdna2, rdna3 };
-
-/// gfx major 10 (gfx103x) is RDNA2; 11 and 12 take the WMMA build.
-pub fn familyOf(capability: u32) ?Family {
-    return switch (capability / 10) {
-        10 => if (capability == 103) .rdna2 else null,
-        11, 12 => .rdna3,
-        else => null,
-    };
-}
+/// The code objects built for a GPU: the library and modules a caps row names.
+pub const Family = @import("caps.zig").Family;
 
 pub const Library = struct {
     lib: std.DynLib,
     api: Api,
-    family: Family,
+    caps: Caps,
     /// What the run may use: the kernels and the ops read their switches here.
     policy: Policy,
     /// The Zig launches on the current device; null runs every call through `api`.
     zig: ?launches.Launcher = null,
 
-    /// The embedded library of `family`, opened from an anonymous file; with the policy's `launch` at `zig` the Zig launches load on the calling thread's device.
-    pub fn open(d: *const driver.Driver, family: Family, policy: Policy) Error!Library {
-        var lib = try openLibrary(family, policy);
+    /// The embedded library of the GPU's family, opened from an anonymous file; with the policy's `launch` at `zig` the Zig launches load on the calling thread's device.
+    pub fn open(d: *const driver.Driver, caps: Caps, policy: Policy) Error!Library {
+        const family = caps.family;
+        var lib = try openLibrary(caps, policy);
         errdefer lib.close();
         if (policy.launch == .zig) {
             const images = switch (family) {
                 .rdna2 => kernels.rdna2_modules,
                 .rdna3 => kernels.rdna3_modules,
+                .gcn5 => return error.LibraryUnavailable,
             };
             if (images[0].len == 0) {
                 std.log.warn("no {t} code objects in this binary: launching through the library", .{family});
             } else {
-                lib.zig = try launches.Launcher.load(d, family == .rdna3, policy, images);
+                lib.zig = try launches.Launcher.load(d, caps, policy, images);
             }
         }
         return lib;
     }
 
-    fn openLibrary(family: Family, policy: Policy) Error!Library {
+    fn openLibrary(caps: Caps, policy: Policy) Error!Library {
+        const family = caps.family;
         const bytes = switch (family) {
             .rdna2 => kernels.rdna2,
             .rdna3 => kernels.rdna3,
+            .gcn5 => &[0]u8{},
         };
         if (bytes.len == 0) {
             std.log.err("this binary was built without the {t} kernel library (-Dhipcc or -Dhsaco)", .{family});
@@ -136,7 +133,7 @@ pub const Library = struct {
                 return error.MissingSymbol;
             };
         }
-        return .{ .lib = lib, .api = api, .family = family, .policy = policy };
+        return .{ .lib = lib, .api = api, .caps = caps, .policy = policy };
     }
 
     pub fn close(self: *Library) void {
@@ -167,9 +164,9 @@ pub const Library = struct {
     }
 };
 
-test "the gfx major picks the library family" {
-    try std.testing.expectEqual(Family.rdna2, familyOf(103).?);
-    try std.testing.expectEqual(Family.rdna3, familyOf(110).?);
-    try std.testing.expectEqual(Family.rdna3, familyOf(115).?);
-    try std.testing.expect(familyOf(101) == null);
+test "the caps name the library family" {
+    try std.testing.expectEqual(Family.rdna2, Caps.of("gfx1030").?.family);
+    try std.testing.expectEqual(Family.rdna3, Caps.of("gfx1100").?.family);
+    try std.testing.expectEqual(Family.rdna3, Caps.of("gfx1151").?.family);
+    try std.testing.expect(Caps.of("gfx1010") == null);
 }

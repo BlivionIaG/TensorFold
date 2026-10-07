@@ -302,8 +302,8 @@ fn runCase(gpu: Gpu, kernels: *const hip.affine.Kernels, stream: hip.Stream, fp1
 pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     const reps: usize = if (args.len > 0) try std.fmt.parseInt(usize, args[0], 10) else 5;
     const filter: []const u8 = if (args.len > 1) args[1] else "";
-    const family = hip.rocm.familyOf(try gpu.ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(gpu.d, family, try check.policyOf(gpu));
+    const caps = try gpu.ctx.caps();
+    var lib = try hip.rocm.Library.open(gpu.d, caps, try check.policyOf(gpu));
     defer lib.close();
     const launcher = &(lib.zig orelse return error.LibraryUnavailable);
     var stream = try hip.Stream.init(gpu.d, true);
@@ -313,7 +313,7 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     var worst: f64 = std.math.inf(f64);
     for (cases) |c| {
         if (filter.len > 0 and std.mem.indexOf(u8, c.name, filter) == null) continue;
-        worst = @min(worst, try runCase(gpu, &launcher.affine, stream, family == .rdna2, &rng, c, reps));
+        worst = @min(worst, try runCase(gpu, &launcher.affine, stream, caps.family == .rdna2, &rng, c, reps));
         ran += 1;
     }
     try check.expect(ran > 0, "gemv: no case matches '{s}'", .{filter});

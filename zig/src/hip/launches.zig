@@ -8,6 +8,7 @@ const Module = @import("runtime/module.zig").Module;
 const Function = @import("runtime/module.zig").Function;
 const affine_launch = @import("launch/affine.zig");
 const Policy = @import("policy.zig").Policy;
+const Caps = @import("caps.zig").Caps;
 const Affine = affine_launch.Kernels;
 
 const util = @import("launch/util.zig");
@@ -107,7 +108,7 @@ pub const Launcher = struct {
     };
 
     /// Loads the family's code objects on the current device and resolves every kernel the launchers use.
-    pub fn load(d: *const driver.Driver, wmma: bool, policy: Policy, images: [kernels.group_count][]const u8) Error!Launcher {
+    pub fn load(d: *const driver.Driver, caps: Caps, policy: Policy, images: [kernels.group_count][]const u8) Error!Launcher {
         var l: Launcher = undefined;
         l.d = d;
         var loaded: usize = 0;
@@ -207,7 +208,7 @@ pub const Launcher = struct {
         };
         l.softmax_stats = try att.function("_Z13softmax_statsPKfPfiiPKi");
         l.sum_partials = try att.function("_Z12sum_partialsPKfPfii");
-        l.affine = try Affine.load(d, l.mods[@backingInt(kernels.Group.affine_tiles)], l.mods[@backingInt(kernels.Group.affine_dot2)], wmma, policy);
+        l.affine = try Affine.load(l.mods[@backingInt(kernels.Group.affine_tiles)], l.mods[@backingInt(kernels.Group.affine_dot2)], caps, policy);
         try l.affine.fillByteLut(d, l.mods[@backingInt(kernels.Group.affine_dot2)]);
         return l;
     }

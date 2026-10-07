@@ -45,8 +45,8 @@ fn one(lib: *const hip.rocm.Library, k: Kernel, b: Buffers, fp16: bool, s: hip.a
 }
 
 pub fn run(gpu: Gpu, n: usize, reps: usize) !void {
-    const family = hip.rocm.familyOf(try gpu.ctx.capability()) orelse return error.UnsupportedGpu;
-    const fp16 = family == .rdna2;
+    const caps = try gpu.ctx.caps();
+    const fp16 = caps.family == .rdna2;
     var stream = try hip.Stream.init(gpu.d, true);
     defer stream.deinit();
     var b: Buffers = undefined;
@@ -72,7 +72,7 @@ pub fn run(gpu: Gpu, n: usize, reps: usize) !void {
     for (std.enums.values(Kernel)) |k| {
         var per: [2][2]f64 = undefined;
         for (modes, &per) |mode, *out| {
-            var lib = try hip.rocm.Library.open(gpu.d, family, blk: {
+            var lib = try hip.rocm.Library.open(gpu.d, caps, blk: {
                 var p = try check.policyOf(gpu);
                 p.launch = mode;
                 break :blk p;

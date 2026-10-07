@@ -442,8 +442,8 @@ fn pair(t: *Rig, rows: usize, width: usize, k: usize, bits: usize, group_size: u
 pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     const reps: usize = if (args.len > 0) try std.fmt.parseInt(usize, args[0], 10) else 3;
     const filter: []const u8 = if (args.len > 1) args[1] else "";
-    const family = hip.rocm.familyOf(try gpu.ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(gpu.d, family, try check.policyOf(gpu));
+    const caps = try gpu.ctx.caps();
+    var lib = try hip.rocm.Library.open(gpu.d, caps, try check.policyOf(gpu));
     defer lib.close();
     const launcher = lib.zig orelse return error.LibraryUnavailable;
     var t: Rig = .{
@@ -451,7 +451,7 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
         .fast = launcher,
         .old = launcher,
         .stream = try hip.Stream.init(gpu.d, true),
-        .fp16 = family == .rdna2,
+        .fp16 = caps.family == .rdna2,
         .rng = .{ .state = 0x9E3779B97F4A7C15 },
         .reps = reps,
         .start = try hip.Event.init(gpu.d, true),

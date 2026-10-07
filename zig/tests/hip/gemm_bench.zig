@@ -366,15 +366,15 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
     const sweep_only = args.len > 0 and std.mem.eql(u8, args[0], "sweep");
     const reps: usize = if (args.len > 0 and !sweep_only) try std.fmt.parseInt(usize, args[0], 10) else 5;
     const filter: []const u8 = if (args.len > 1) args[1] else "";
-    const family = hip.rocm.familyOf(try gpu.ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(gpu.d, family, try check.policyOf(gpu));
+    const caps = try gpu.ctx.caps();
+    var lib = try hip.rocm.Library.open(gpu.d, caps, try check.policyOf(gpu));
     defer lib.close();
     const launcher = &(lib.zig orelse return error.LibraryUnavailable);
     var t: Rig = .{
         .gpu = gpu,
         .kernels = &launcher.affine,
         .stream = try hip.Stream.init(gpu.d, true),
-        .fp16 = family == .rdna2,
+        .fp16 = caps.family == .rdna2,
         .rng = .{ .state = 0x9E3779B97F4A7C15 },
     };
     defer t.stream.deinit();

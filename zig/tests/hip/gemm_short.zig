@@ -312,8 +312,8 @@ fn shortBench(t: *Rig, reps: usize) !void {
 }
 
 pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
-    const family = hip.rocm.familyOf(try gpu.ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(gpu.d, family, try check.policyOf(gpu));
+    const caps = try gpu.ctx.caps();
+    var lib = try hip.rocm.Library.open(gpu.d, caps, try check.policyOf(gpu));
     defer lib.close();
     const launcher = &(lib.zig orelse return error.LibraryUnavailable);
     var t: Rig = .{
@@ -321,7 +321,7 @@ pub fn run(gpu: Gpu, args: []const [:0]const u8) !void {
         .launcher = launcher,
         .kernels = &launcher.affine,
         .stream = try hip.Stream.init(gpu.d, true),
-        .fp16 = family == .rdna2,
+        .fp16 = caps.family == .rdna2,
         .rng = .{ .state = 0x9E3779B97F4A7C15 },
     };
     defer t.stream.deinit();

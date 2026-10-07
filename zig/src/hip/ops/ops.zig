@@ -32,8 +32,9 @@ pub const Ops = struct {
     /// expert, 8-row routed items), so a row's bits do not depend on the rows it shares the round with.
     window: bool = false,
 
+    /// The GPU's activations are bf16 (the matrix-core build); fp16 on RDNA2.
     pub fn wmma(o: Ops) bool {
-        return o.lib.family == .rdna3;
+        return o.lib.caps.act == .bf16;
     }
 
     /// Whether decode.hip's merged launches are on: Zig launches, and the policy does not switch them to the reference.

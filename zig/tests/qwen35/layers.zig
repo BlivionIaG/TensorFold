@@ -78,10 +78,10 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
         comm.deinit();
         link.close();
     };
-    const family = hip.rocm.familyOf(try ctx.capability()) orelse return error.UnsupportedGpu;
-    var lib = try hip.rocm.Library.open(g.d, family, policy);
+    const caps = try ctx.caps();
+    var lib = try hip.rocm.Library.open(g.d, caps, policy);
     defer lib.close();
-    const act: view.Kind = if (family == .rdna2) .f16 else .bf16;
+    const act: view.Kind = if (caps.family == .rdna2) .f16 else .bf16;
     const dtype: qwen35.sample.Dtype = if (act == .f16) .f16 else .bf16;
     var model = try qwen35.Model.loadRank(g.gpa, g.io, g.d, model_dir, if (group.world > 1) .{ .rank = group.rank, .world = group.world } else null);
     defer model.deinit();

@@ -9,6 +9,7 @@ const Module = @import("../runtime/module.zig").Module;
 const Function = @import("../runtime/module.zig").Function;
 
 const Policy = @import("../policy.zig").Policy;
+const Caps = @import("../caps.zig").Caps;
 const Choice = @import("../policy.zig").Choice;
 
 const Error = driver.Error;
@@ -85,17 +86,6 @@ const kp_tiles = [_]KpTile{
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the previous `block`.
 pub const Tile = enum { gemm, block };
 
-/// The gfx major and minor as 10 * major + minor of the current device.
-fn capability(d: *const driver.Driver) Error!u32 {
-    var dev: c_int = 0;
-    try d.check(d.api.hipGetDevice(&dev), "hipGetDevice");
-    var major: c_int = 0;
-    var minor: c_int = 0;
-    try d.check(d.api.hipDeviceGetAttribute(&major, .compute_capability_major, dev), "hipDeviceGetAttribute");
-    try d.check(d.api.hipDeviceGetAttribute(&minor, .compute_capability_minor, dev), "hipDeviceGetAttribute");
-    return @intCast(10 * major + minor);
-}
-
 pub const Kernels = struct {
     /// The block shapes prefill takes by rows: the K-parallel tiles, then the 128 x 128 one (the tests compare them).
     pub const tier_count = kp_tiles.len + 1;
@@ -134,11 +124,11 @@ pub const Kernels = struct {
 
     /// `tiles` holds dot2_tiles.hip's kernels, `dot2` dot2.hip's; one activation type a family: bf16 on the
     /// WMMA build (v_dot2_f32_bf16), fp16 on RDNA2.
-    pub fn load(d: *const driver.Driver, tiles_obj: Module, dot2_obj: Module, wmma: bool, policy: Policy) Error!Kernels {
+    pub fn load(tiles_obj: Module, dot2_obj: Module, caps: Caps, policy: Policy) Error!Kernels {
         var k: Kernels = undefined;
+        const wmma = caps.act == .bf16;
         k.wmma = wmma;
-        const cap = try capability(d);
-        k.matrix = wmma and (cap == 110 or cap == 115);
+        k.matrix = wmma and caps.matrix == .wmma11;
         k.mode = policy.matrix;
         k.tile = if (policy.gemmOn()) .gemm else .block;
         k.stream_on = policy.streamOn();
