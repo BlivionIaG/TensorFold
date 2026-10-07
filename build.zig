@@ -87,12 +87,17 @@ pub fn build(b: *std.Build) void {
     }
     cuda_build.hostTests(b, draft_ids, test_step);
     const hip_fixtures = b.addOptions();
-    for ([_][]const u8{ "success", "failed", "missing" }) |kind| {
+    const hip_fixture_kinds = [_]struct { []const u8, []const []const u8 }{
+        .{ "success", &.{"-DINIT_RESULT=0"} },
+        .{ "failed", &.{"-DINIT_RESULT=1"} },
+        .{ "missing", &.{ "-DOMIT_INIT", "-DINIT_RESULT=0" } },
+        .{ "runtime", &.{ "-DFULL_RUNTIME", "-DINIT_RESULT=0" } },
+        .{ "runtime_missing", &.{ "-DFULL_RUNTIME", "-DOMIT_STREAM_SYNCHRONIZE", "-DINIT_RESULT=0" } },
+    };
+    for (hip_fixture_kinds) |entry| {
+        const kind, const flags = entry;
         const fixture_module = b.createModule(.{ .target = b.graph.host, .link_libc = true });
-        fixture_module.addCSourceFile(.{
-            .file = b.path("zig/tests/hip_mock.c"),
-            .flags = if (std.mem.eql(u8, kind, "missing")) &.{ "-DOMIT_INIT", "-DINIT_RESULT=0" } else if (std.mem.eql(u8, kind, "failed")) &.{"-DINIT_RESULT=1"} else &.{"-DINIT_RESULT=0"},
-        });
+        fixture_module.addCSourceFile(.{ .file = b.path("zig/tests/hip_mock.c"), .flags = flags });
         const fixture = b.addLibrary(.{ .name = b.fmt("hip-mock-{s}", .{kind}), .linkage = .dynamic, .root_module = fixture_module });
         hip_fixtures.addOptionPath(kind, fixture.getEmittedBin());
     }
