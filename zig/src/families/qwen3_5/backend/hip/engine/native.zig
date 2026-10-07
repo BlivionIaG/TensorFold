@@ -3,7 +3,8 @@
 const std = @import("std");
 const hip = @import("hip");
 const lanes = @import("lanes");
-const Engine = @import("engine.zig").Engine;
+const engine = @import("engine.zig");
+const Engine = engine.Engine;
 const memory = @import("memory.zig");
 const mtp = @import("mtp.zig");
 const prefix = @import("prefix.zig");
@@ -89,22 +90,27 @@ fn served(e: *Engine, streams: usize, capacity: usize) !usize {
 fn prepare(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.Device, dir: []const u8, o: Options, problem: *[]const u8) (Refused || std.mem.Allocator.Error)!Prepared {
     const rows = hip_lanes.Hip.max_window;
     const held = hip.usage(false).device;
+    var pf: engine.Preflight = .{};
     const e = Engine.load(gpa, io, dir, .{
+        .preflight = &pf,
         .slack = rows + 1,
         .device = dev.index,
         .policy = dev.policy,
         .rank = o.rank,
         .world = o.world,
         .id = if (dev.group) |g| g.id else null,
-    }) catch |err| return refuse(a, problem, "the native HIP engine cannot load {s} ({s})", .{ dir, @errorName(err) });
+    }) catch |err| return switch (err) {
+        error.WeightsDoNotFit => refuse(a, problem, "the checkpoint's {d:.1} GiB of weights do not fit the {d:.1} GiB the HIP memory budget grants ({d:.1} GiB free less a {d:.1} GiB reserve{s}); free device memory or adjust TENSORFOLD_MEMORY_RESERVE_GIB / TENSORFOLD_HIP_MEMORY_LIMIT_GB", .{ gibs(pf.weights), gibs(pf.pool.room(pf.held)), gibs(pf.pool.free), gibs(pf.pool.reserve), if (pf.pool.limit != null) ", under TENSORFOLD_HIP_MEMORY_LIMIT_GB" else "" }),
+        error.BadReserve => refuse(a, problem, "TENSORFOLD_MEMORY_RESERVE_GIB (reserve_gib): a number of GiB from 2 to the memory's size", .{}),
+        error.BadLimit => refuse(a, problem, "TENSORFOLD_HIP_MEMORY_LIMIT_GB (memory_limit_gb): a positive number of GiB whose byte count fits in a 64-bit size", .{}),
+        error.HostMemoryUnavailable => refuse(a, problem, "cannot read or parse /proc/meminfo's MemTotal and MemAvailable; refusing HIP unified-memory admission", .{}),
+        else => refuse(a, problem, "the native HIP engine cannot load {s} ({s})", .{ dir, @errorName(err) }),
+    };
     errdefer e.deinit();
     const model = hip.usage(false).device - held;
-    const budget_of = e.room(model) catch |err| return switch (err) {
-        error.BadReserve => refuse(a, problem, "reserve_gib (TENSORFOLD_MEMORY_RESERVE_GIB) takes GiB from 2 up to the GPU's memory", .{}),
-        else => refuse(a, problem, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)}),
-    };
-    const room = budget_of.room;
-    const reserve = budget_of.reserve;
+    const after = e.budget(io) catch |err| return refuse(a, problem, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)});
+    const room = after.room(model);
+    const reserve = after.reserve;
     const capacity = o.window + rows + 1;
     // the most streams up to the ones asked whose bytes fit, then the least of that over the ranks
     var streams = o.streams;

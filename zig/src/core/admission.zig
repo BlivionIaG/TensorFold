@@ -105,6 +105,29 @@ pub fn contextWindow(requested: ?i64, native: i64, default: i64) error{ Negative
     return r;
 }
 
+/// The bytes of the checkpoint's safetensors files: what its weights need on the device, near enough to refuse early.
+pub fn weightBytes(io: std.Io, dir: []const u8) u64 {
+    var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return 0;
+    defer d.close(io);
+    var total: u64 = 0;
+    var it = d.iterate();
+    while (it.next(io) catch null) |e| {
+        if (!std.mem.endsWith(u8, e.name, ".safetensors")) continue;
+        const st = d.statFile(io, e.name, .{}) catch continue;
+        total += st.size;
+    }
+    return total;
+}
+
+/// A /proc file's text, streamed: procfs reports size 0, and a positional read (readFileAlloc) stops there.
+pub fn procText(a: Allocator, io: std.Io, path: []const u8) ?[]u8 {
+    var file = std.Io.Dir.cwd().openFile(io, path, .{}) catch return null;
+    defer file.close(io);
+    var buf: [4096]u8 = undefined;
+    var r = file.readerStreaming(io, &buf);
+    return r.interface.allocRemaining(a, .limited(1 << 20)) catch null;
+}
+
 test "the memory plan: reserve, cap, and admission that fails closed" {
     const g: u64 = 1 << 30;
     try std.testing.expectEqual(4 * g, try reserveBytes(null, 24 * g)); // at least 4 GiB

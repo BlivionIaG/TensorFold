@@ -53,6 +53,8 @@ pub const Policy = struct {
     rccl_lib: Path = .{},
     /// GiB of device memory kept beside the plan, by the native backends' rule (empty: a tenth, 4 GiB at least). Local.
     reserve_gib: Path = .{},
+    /// GiB the engine may hold at most, weights included (empty: no cap). Local to a rank.
+    memory_limit_gb: Path = .{},
 
     pub const Error = error{ UnknownKey, BadValue, StepNotAligned, ActivationsUnsupported };
 
@@ -129,6 +131,7 @@ pub const Policy = struct {
         if (eql(u8, key, "graph_fail")) p.graph_fail = std.fmt.parseInt(i32, value, 10) catch return error.BadValue;
         if (eql(u8, key, "rccl_lib")) try p.rccl_lib.set(value);
         if (eql(u8, key, "reserve_gib")) try p.reserve_gib.set(value);
+        if (eql(u8, key, "memory_limit_gb")) try p.memory_limit_gb.set(value);
         if (!known(key)) return error.UnknownKey;
     }
 
@@ -158,6 +161,7 @@ pub const Policy = struct {
         if (p.graph_fail >= 0) try w.print(",graph_fail={d}", .{p.graph_fail});
         if (p.rccl_lib.slice()) |path| try w.print(",rccl_lib={s}", .{path});
         if (p.reserve_gib.slice()) |gib| try w.print(",reserve_gib={s}", .{gib});
+        if (p.memory_limit_gb.slice()) |gb| try w.print(",memory_limit_gb={s}", .{gb});
     }
 
     pub const word_count = 6;
@@ -245,6 +249,7 @@ pub const Policy = struct {
         .{ .name = "TF_HIP_LAUNCH", .rule = copyRule("launch=") },
         .{ .name = "TF_RCCL_LIB", .rule = copyRule("rccl_lib=") },
         .{ .name = "TENSORFOLD_MEMORY_RESERVE_GIB", .rule = copyRule("reserve_gib=") },
+        .{ .name = "TENSORFOLD_HIP_MEMORY_LIMIT_GB", .rule = copyRule("memory_limit_gb=") },
     };
 
     fn wmmaRule(value: []const u8, out: []u8) ?[]const u8 {

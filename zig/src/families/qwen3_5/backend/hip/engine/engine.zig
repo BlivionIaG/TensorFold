@@ -28,6 +28,8 @@ pub const Options = struct {
     pool_pages: usize = 0,
     /// Rows a shared forward holds at most.
     batch_rows: usize = 32,
+    /// Filled before the weights load: the pool, the bytes held and the checkpoint's share (refused when too big).
+    preflight: ?*Preflight = null,
     /// Streams the memory plan holds at once (the lanes, or what a check runs together), and linear snapshots beside.
     streams: usize = default_streams,
     snapshots: usize = 0,
@@ -55,6 +57,9 @@ pub const default_streams = 12;
 fn gib(bytes: usize) f64 {
     return @as(f64, @floatFromInt(bytes)) / (1 << 30);
 }
+
+/// What `load` found before reading the weights.
+pub const Preflight = struct { pool: admission.Pool = undefined, held: u64 = 0, weights: u64 = 0 };
 
 pub const Engine = struct {
     pub const Rows = lane_round.Rows;
@@ -121,6 +126,11 @@ pub const Engine = struct {
             e.comm.deinit();
             e.rccl.close();
         };
+        if (o.preflight) |pf| {
+            // a rank loads its share of the checkpoint, near enough to refuse before reading it
+            pf.* = .{ .pool = try e.budget(io), .held = hip.usage(false).device, .weights = admission.weightBytes(io, dir) / o.world };
+            if (pf.weights > pf.pool.room(pf.held)) return error.WeightsDoNotFit;
+        }
         e.weights = try weights.Model.loadRank(gpa, io, &e.driver, dir, group);
         errdefer e.weights.deinit();
         e.bridge = try bridge.Bridge.init(gpa, &e.driver, &e.weights, e.act);
@@ -208,12 +218,16 @@ pub const Engine = struct {
         return try e.sizeBytes(rows, capacity, pool_pages) + streams * lane + snapshots * memory.linearBytes(m.spec) + head;
     }
 
-    /// The device bytes the plan may take after `weights_bytes` of weights: free memory less the reserve.
-    pub fn room(e: *Engine, weights_bytes: usize) !struct { room: usize, reserve: usize, total: usize } {
-        const info = try e.ctx.memInfo();
-        const reserve = admission.reserveBytes(e.o.policy.reserve_gib.slice(), info.total) catch return error.BadReserve;
-        const pool: admission.Pool = .{ .free = info.free, .total = info.total, .reserve = reserve, .limit = null, .unified = false };
-        return .{ .room = pool.room(weights_bytes), .reserve = reserve, .total = info.total };
+    /// The memory a plan may take, as the native backends count it: free (host's when integrated), reserve and cap.
+    pub fn budget(e: *const Engine, io: std.Io) !admission.Pool {
+        const unified = (try e.ctx.attribute(.integrated)) != 0;
+        const card = try e.ctx.memInfo();
+        const text = if (unified) admission.procText(e.gpa, io, "/proc/meminfo") else null;
+        defer if (text) |t| e.gpa.free(t);
+        const counts = admission.counts(unified, .{ .total = card.total, .available = card.free }, text) catch return error.HostMemoryUnavailable;
+        const reserve = admission.reserveBytes(e.o.policy.reserve_gib.slice(), counts.total) catch return error.BadReserve;
+        const limit = admission.limitBytes(e.o.policy.memory_limit_gb.slice()) catch return error.BadLimit;
+        return .{ .free = counts.available, .total = counts.total, .reserve = reserve, .limit = limit, .unified = unified };
     }
 
     /// Load and size in one: `o.capacity` positions, refused when the plan does not fit the memory.
@@ -224,9 +238,9 @@ pub const Engine = struct {
         const weights_bytes = hip.usage(false).device - held;
         const pool_pages = if (o.pool_pages > 0) o.pool_pages else default_streams * pages.pagesFor(o.capacity) + pages.pagesFor(o.batch_rows);
         const need = try e.planBytes(o.streams, o.batch_rows, o.capacity, pool_pages, o.snapshots);
-        const r = try e.room(weights_bytes);
-        if (need > r.room) {
-            std.log.err("{d} streams at {d} positions with {d} rows a round need {d:.2} GiB beside the model's {d:.2} GiB, and {d:.2} GiB is left after the {d:.1} GiB reserve", .{ o.streams, o.capacity, o.batch_rows, gib(need), gib(weights_bytes), gib(r.room), gib(r.reserve) });
+        const p = try e.budget(io);
+        if (need > p.room(weights_bytes)) {
+            std.log.err("{d} streams at {d} positions with {d} rows a round need {d:.2} GiB beside the model's {d:.2} GiB, and {d:.2} GiB is left after the {d:.1} GiB reserve", .{ o.streams, o.capacity, o.batch_rows, gib(need), gib(weights_bytes), gib(p.room(weights_bytes)), gib(p.reserve) });
             return error.OutOfDeviceMemory;
         }
         try e.size(o.capacity, pool_pages);

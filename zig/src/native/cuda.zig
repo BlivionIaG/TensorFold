@@ -8,6 +8,8 @@ const Allocator = std.mem.Allocator;
 const budget = api.admission;
 const modelContext = budget.modelContext;
 const contextWindow = budget.contextWindow;
+const weightBytes = budget.weightBytes;
+const procText = budget.procText;
 const Pool = budget.Pool;
 
 /// CUDA families provide metadata, open their lane backend and explain their refusals.
@@ -62,29 +64,6 @@ fn kernelDir(a: Allocator, io: std.Io, capability: u32) ![]const u8 {
     if (getenv("TENSORFOLD_CUDA_KERNELS")) |dir| return a.dupe(u8, dir);
     const exe = try std.process.executableDirPathAlloc(io, a);
     return std.fs.path.join(a, &.{ exe, "..", "share", "tensorfold", "cuda", try std.fmt.allocPrint(a, "sm{d}", .{capability}) });
-}
-
-/// The bytes of the checkpoint's safetensors files: what its weights need on the device, near enough to refuse early.
-fn weightBytes(io: std.Io, dir: []const u8) u64 {
-    var d = std.Io.Dir.cwd().openDir(io, dir, .{ .iterate = true }) catch return 0;
-    defer d.close(io);
-    var total: u64 = 0;
-    var it = d.iterate();
-    while (it.next(io) catch null) |e| {
-        if (!std.mem.endsWith(u8, e.name, ".safetensors")) continue;
-        const st = d.statFile(io, e.name, .{}) catch continue;
-        total += st.size;
-    }
-    return total;
-}
-
-/// A /proc file's text, streamed: procfs reports size 0, and a positional read (readFileAlloc) stops there.
-fn procText(a: Allocator, io: std.Io, path: []const u8) ?[]u8 {
-    var file = std.Io.Dir.cwd().openFile(io, path, .{}) catch return null;
-    defer file.close(io);
-    var buf: [4096]u8 = undefined;
-    var r = file.readerStreaming(io, &buf);
-    return r.interface.allocRemaining(a, .limited(1 << 20)) catch null;
 }
 
 /// The pool now, read on the thread whose context is current; `problem` names a bad variable.
