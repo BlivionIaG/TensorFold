@@ -22,6 +22,7 @@ pub const bridge = @import("model/bridge.zig");
 pub const engine = @import("engine/engine.zig");
 pub const memory = @import("engine/memory.zig");
 pub const prefix = @import("engine/prefix.zig");
+pub const radix = @import("engine/radix.zig");
 pub const hip_lanes = @import("engine/hip_lanes.zig");
 pub const mtp = @import("engine/mtp.zig");
 pub const worker = @import("engine/worker.zig");
@@ -40,6 +41,7 @@ test {
     _ = moe;
     _ = sample;
     _ = prefix;
+    _ = radix;
     _ = pages;
     _ = plan;
     _ = slicing;
