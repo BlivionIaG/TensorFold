@@ -6,6 +6,8 @@ const api = @import("engine_api");
 const lanes = @import("lanes");
 const qwen35 = @import("qwen3_5");
 const Allocator = std.mem.Allocator;
+const admission = api.admission;
+const modelContext = admission.modelContext;
 
 /// The HIP families: namespaces with `model_type`, `formats`, `default_context`, `prefill_step`, `open` and `follow`.
 const registry = .{ qwen35.native, qwen35.native_moe };
@@ -22,17 +24,6 @@ pub const families: []const api.Family = blk: {
 pub fn chip(a: Allocator) ?[]const u8 {
     const caps = hip.Device.capsOf(0) orelse return null;
     return a.dupe(u8, @tagName(caps.family)) catch null;
-}
-
-/// The model's window (config.json's max_position_embeddings, text_config's first), 0 when it names none.
-fn modelContext(a: Allocator, io: std.Io, dir: []const u8) i64 {
-    const path = std.fs.path.join(a, &.{ dir, "config.json" }) catch return 0;
-    const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(16 << 20)) catch return 0;
-    const doc = std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{}) catch return 0;
-    if (doc != .object) return 0;
-    const text = if (doc.object.get("text_config")) |t| (if (t == .object) t else doc) else doc;
-    const limit = text.object.get("max_position_embeddings") orelse doc.object.get("max_position_embeddings") orelse return 0;
-    return if (limit == .integer and limit.integer > 0) limit.integer else 0;
 }
 
 extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
