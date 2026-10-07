@@ -10,6 +10,7 @@
 #include "tiles/gemm_kp.hpp"
 #include "tiles/stream.hpp"
 #include "tiles/matrix_gemm.hpp"
+#include "quant/mlx_tiles.hpp"
 
 namespace tf {
 namespace rocm {
@@ -81,8 +82,8 @@ __global__ void __launch_bounds__(kLaneCols * kLaneWaves) affine_dot2_lanes(Affi
                 const int xk = local * kGroup + 32 * p;
 #pragma unroll
                 for (int t = 0; t < 32; t += 2) {
-                    const typename T::pair q = T::two(T::template code<BITS>(w[j][p], t),
-                                                      T::template code<BITS>(w[j][p], t + 1));
+                    const typename T::pair q = T::two(MlxDecoder<BITS>::template code<T>(w[j][p], t),
+                                                      MlxDecoder<BITS>::template code<T>(w[j][p], t + 1));
 #pragma unroll
                     for (int r = 0; r < ROWS; ++r) {
                         const typename T::pair xp = T::two(xs[r][xk + t], xs[r][xk + t + 1]);
@@ -176,7 +177,7 @@ __global__ void __launch_bounds__(32 * kRowWaves) affine_dot2_row(Affine a, int 
 #pragma unroll
                     for (int t = 0; t < 32; t += 2) {
                         const typename T::pair q =
-                            T::two(T::template code<BITS>(w, t), T::template code<BITS>(w, t + 1));
+                            T::two(MlxDecoder<BITS>::template code<T>(w, t), MlxDecoder<BITS>::template code<T>(w, t + 1));
                         dot = T::dot(xv[p * 16 + t / 2], q, dot);
                     }
                 }
@@ -346,7 +347,7 @@ __device__ inline void stage_block(typename T::elem* xs, typename T::elem* ws, c
 #pragma unroll
             for (int t = 0; t < 32; t += 2) {
                 *reinterpret_cast<typename T::pair*>(dst + t) =
-                    T::two(T::template code<BITS>(w, t), T::template code<BITS>(w, t + 1));
+                    T::two(MlxDecoder<BITS>::template code<T>(w, t), MlxDecoder<BITS>::template code<T>(w, t + 1));
             }
         } else {
 #pragma unroll

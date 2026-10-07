@@ -15,18 +15,20 @@
 #include <type_traits>
 #include <utility>
 
-#include "tiles/dot2.hpp"
+#include "common/dot2.hpp"
+#include "common/vec.hpp"
+#include "quant/mlx_decoder.hpp"
+#include "tiles/plan.hpp"
 
 namespace tf {
 namespace rocm {
-
-using u32x4 = unsigned __attribute__((ext_vector_type(4)));
 
 constexpr int kGemmM = 128;
 constexpr int kGemmN = 128;
 constexpr int kGemmK = 32;
 constexpr int kGemmLd = kGemmK + 8;  // 20 words a row: 16-byte aligned, eight 16-byte readers hit eight bank groups
 
+// (transitional: the helpers the K-parallel and matrix tiles still read until they take the decoder)
 // Two codes (below 256, exact in both types) as the activation type's pair.
 template <typename T>
 __device__ inline typename T::pair code_pair(uint32_t c0, uint32_t c1) {
@@ -112,9 +114,11 @@ struct GemmShape<DotBF16> {
     static constexpr int rt = 8;
 };
 
-template <typename T, int BITS, int RT>
-__global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
-    if (!take_item(a, blockIdx.z)) return;
+// One 128 x 128 block of the product y = x . W^T: the decoder Dec reads the weight words and group terms, Act the rows of x,
+// T multiplies and Epi stores; RT rows of x a lane keep (GemmShape).
+template <class Dec, class Act, class T, class Epi, int RT>
+__device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
+    if (!Dec::take_item(a, blockIdx.z)) return;
     const int bx = blockIdx.x, by = blockIdx.y;
     if (by * kGemmM >= a.m) return;
     using pair = typename T::pair;
@@ -130,7 +134,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
     const int tid = threadIdx.x;
     const int m0 = by * kGemmM;
     const int n0 = bx * kGemmN;
-    const int words_row = a.k * BITS / 32;
+    const int words_row = Dec::template row_words<int>(a);
     const int groups = a.k / a.group;
     const int stages = a.k / kGemmK;
     const int per = a.group / kGemmK;
@@ -140,7 +144,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
     // This thread's column of codes, and half of a row of x (two threads share a row's 64 bytes of the stage). Past the
     // edge a thread reads the last column or the first row and stores nothing that is used.
     const int col_s = n0 + line < a.n ? n0 + line : a.n - 1;
-    const uint32_t* wsrc = a.words + static_cast<long long>(col_s) * words_row;
+    const uint32_t* wsrc = Dec::words(a) + static_cast<long long>(col_s) * words_row;
     const int xrow = tid >> 1;
     const int xhalf = tid & 1;
     // Rows of x past the end (a routed item's few rows) are neither loaded, stored nor summed: a wave of stagers has
@@ -149,33 +153,30 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
     const bool xlive = wave * 16 < a.m - m0;
     const bool sxlive = (line & ~31) < a.m - m0;
     const int row_s = m0 + xrow < a.m ? m0 + xrow : 0;
-    const typename T::elem* xrow_ptr = static_cast<const typename T::elem*>(a.x) + x_row(a, row_s) * a.k;
+    const typename Act::elem* xrow_ptr = Act::row(a, row_s);
     const u32x4* xsrc = reinterpret_cast<const u32x4*>(xrow_ptr);
 
     // Two stages a fetch: the 64 bytes of x a row has in each (lane h of a row's two takes stage h, so a row is one
     // 128-byte request) and the two code pieces of a column, which are contiguous.
-    uint32_t wreg[2][BITS];
+    uint32_t wreg[2][Dec::kWords];
     u32x4 xreg[4];
-    TableBits screg[2];
-    TableBits bireg[2];
+    typename Dec::Term term[2];
     float run = 0.f;
 
     // Every thread issues the same loads, so none waits on a branch. A stage past the last repeats it.
     auto fetch = [&](int st0) {
         const int st1 = st0 + 1 < stages ? st0 + 1 : stages - 1;
         const int st = st0 < stages ? st0 : stages - 1;
-        load_aligned<BITS>(wsrc + st * BITS, wreg[0]);
-        load_aligned<BITS>(wsrc + st1 * BITS, wreg[1]);
+        Dec::template load<true>(wsrc + st * Dec::kWords, wreg[0]);
+        Dec::template load<true>(wsrc + st1 * Dec::kWords, wreg[1]);
         const int sx_ = xhalf ? st1 : st;
         if (xlive) {
 #pragma unroll
             for (int v = 0; v < 4; ++v) xreg[v] = xsrc[sx_ * 4 + v];
         }
         const long long base = static_cast<long long>(col_s) * groups;
-        screg[0] = table_bits(a.scale, base + st / per);
-        bireg[0] = table_bits(a.bias, base + st / per);
-        screg[1] = table_bits(a.scale, base + st1 / per);
-        bireg[1] = table_bits(a.bias, base + st1 / per);
+        term[0] = Dec::term(a, base + st / per);
+        term[1] = Dec::term(a, base + st1 / per);
     };
     // Stage st (parity J) from the buffer `buf`: this thread's 16 codes of its column, its stage's row of x if it holds
     // that stage, and the stage's scale and bias at a group's last stage.
@@ -188,8 +189,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
 #pragma unroll
                 for (int h = 0; h < 4; ++h) {
                     const int t = S * 16 + v * 8 + h * 2;
-                    d[h] = __builtin_bit_cast(
-                        uint32_t, code_pair<T>(piece_bits<BITS>(wreg[J], t), piece_bits<BITS>(wreg[J], t + 1)));
+                    d[h] = __builtin_bit_cast(uint32_t, Dec::template pair<T>(wreg[J], t));
                 }
                 dst[v] = u32x4{d[0], d[1], d[2], d[3]};
             }
@@ -201,8 +201,8 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
             for (int v = 0; v < 4; ++v) xdst[v] = xreg[v];
         }
         if (side == 0 && st % per == per - 1) {
-            sc[(st / per) % 3][line] = table_float(a.scale, screg[J]);
-            bi[(st / per) % 3][line] = table_float(a.bias, bireg[J]);
+            sc[(st / per) % 3][line] = Dec::scale_value(a, term[J]);
+            bi[(st / per) % 3][line] = Dec::bias_value(a, term[J]);
         }
     };
     // Side 1 sums a row's x of the stage in LDS, lo then hi of each pair in order, on through the group.
@@ -257,7 +257,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
         for (int j = 0; j < CT; ++j) {
             const float bias = bi[slot][cbase + kCStride * j];
 #pragma unroll
-            for (int r = 0; r < RT; ++r) acc[r][j] = fmaf(s_x[r], bias, acc[r][j]);
+            for (int r = 0; r < RT; ++r) acc[r][j] = Dec::fold_bias(acc[r][j], s_x[r], bias);
         }
     };
     fetch(0);
@@ -300,7 +300,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
                             (([&] {
 #pragma unroll
                                  for (int j = 0; j < CT; ++j) {
-                                     dot[4 * k + I][j] = dot_quad<T, I>(xq, wq[j], dot[4 * k + I][j]);
+                                     dot[4 * k + I][j] = T::template quad<I>(xq, wq[j], dot[4 * k + I][j]);
                                  }
                              }()),
                              ...);
@@ -315,7 +315,7 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
                     const float scale = sc[g][cbase + kCStride * j];
 #pragma unroll
                     for (int r = 0; r < RT; ++r) {
-                        acc[r][j] = fmaf(dot[r][j], scale, acc[r][j]);
+                        acc[r][j] = Dec::fold_scale(acc[r][j], dot[r][j], scale);
                         dot[r][j] = 0.f;
                     }
                 }
@@ -337,48 +337,8 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
 #pragma unroll
         for (int j = 0; j < CT; ++j) {
             const int col = n0 + cbase + kCStride * j;
-            if (col < a.n) a.out[out_row(a, row) * a.n + col] = acc[r][j];
+            if (col < a.n) Epi::store(a, row, col, acc[r][j]);
         }
-    }
-}
-
-template <int BITS>
-hipError_t launch_gemm_bits(const Affine& a, hipStream_t stream, int items) {
-    const dim3 block(256);
-    const dim3 grid((a.n + kGemmN - 1) / kGemmN, (a.m + kGemmM - 1) / kGemmM, items);
-#if TENSORFOLD_RDNA_WMMA
-    if (!a.fp16) {
-        affine_gemm_block<DotBF16, BITS, GemmShape<DotBF16>::rt><<<grid, block, 0, stream>>>(a);
-        return hipGetLastError();
-    }
-#endif
-    affine_gemm_block<DotF16, BITS, GemmShape<DotF16>::rt><<<grid, block, 0, stream>>>(a);
-    return hipGetLastError();
-}
-
-// The shapes and pointers the GEMM tile takes: its piece loads need the words aligned to their width.
-inline bool affine_gemm_supported(const Affine& a) {
-    const bool alike = a.scale.kind == a.bias.kind;
-    int align = 4;
-    switch (a.bits) {
-        case 2: case 6: align = 8; break;
-        case 4: case 8: align = 16; break;
-        case 3: case 5: break;
-        default: return false;
-    }
-    return alike && a.m >= 1 && a.n >= 1 && a.group % kGemmK == 0 && a.k % a.group == 0 &&
-           reinterpret_cast<uintptr_t>(a.words) % align == 0;
-}
-
-inline hipError_t launch_affine_gemm(const Affine& a, hipStream_t stream, int items = 1) {
-    switch (a.bits) {
-        case 2: return launch_gemm_bits<2>(a, stream, items);
-        case 3: return launch_gemm_bits<3>(a, stream, items);
-        case 4: return launch_gemm_bits<4>(a, stream, items);
-        case 5: return launch_gemm_bits<5>(a, stream, items);
-        case 6: return launch_gemm_bits<6>(a, stream, items);
-        case 8: return launch_gemm_bits<8>(a, stream, items);
-        default: return hipErrorInvalidValue;
     }
 }
 

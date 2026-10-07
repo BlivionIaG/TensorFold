@@ -8,6 +8,8 @@
 
 #include <cstdint>
 
+#include "tiles/plan.hpp"
+
 namespace tf {
 namespace rocm {
 
@@ -24,14 +26,6 @@ struct GroupTable {
     }
 };
 
-// Item z = (expert, first, count) of a plan: pairs members[first..first+count), x row pair / x_div, out row pair.
-struct Routing {
-    const int* items = nullptr;  // (count, 3) int32; nullptr is one plain (m, n) product
-    const int* members = nullptr;
-    int x_div = 1;
-    int first = 0;  // set by the kernel from its item
-};
-
 struct Affine {
     const void* x;           // (m, k) row major, bf16 or fp16
     const uint32_t* words;   // (n, k * bits / 32) row major
@@ -43,14 +37,6 @@ struct Affine {
     Routing route = {};
     __half* out16 = nullptr;  // set: the decode tile rounds each output to fp16 here instead of writing out
 };
-
-// Row r of this block's x and out: the plain matrix's r, or the routed item's r-th pair.
-__device__ inline long long x_row(const Affine& a, int r) {
-    return a.route.items ? a.route.members[a.route.first + r] / a.route.x_div : r;
-}
-__device__ inline long long out_row(const Affine& a, int r) {
-    return a.route.items ? a.route.members[a.route.first + r] : r;
-}
 
 // A routed block takes item ``z``: its expert's weights and its rows. False when the item has no rows.
 __device__ inline bool take_item(Affine& a, int z) {
