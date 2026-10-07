@@ -46,7 +46,9 @@ pub const Prefix = struct {
     /// Keep up to `slots` snapshots and the pages the rest of `budget` bytes buys (none: nothing is kept).
     pub fn keepPrompts(p: *Prefix, slots: usize, budget: usize) void {
         const m = p.e.model();
-        const room = memory.pool(m.spec, m.act.size(), 0, 0, 0, budget, slots);
+        // snapshots are made when needed: the tree never asks for more than the memory left beside a margin
+        const free = if (p.e.ctx.memInfo()) |info| info.free -| memory.gib else |_| 0;
+        const room = memory.pool(m.spec, m.act.size(), 0, 0, 0, @min(budget, free), slots);
         p.keepPages(@min(room.cache_pages, p.e.pool.count), room.snaps);
     }
 

@@ -110,7 +110,7 @@ fn graphs(c: *Ctx, name: []const u8, job: Session.Job, graph: Session.Done) void
 /// with no caches kept (a serial stream neither resumes nor keeps).
 fn resumed(c: *Ctx) void {
     const name = "lanes long greedy: resumed == fresh";
-    c.session.h.keepPrompts(8, 1 << 30);
+    c.session.h.keepPrompts(8, 4 << 30);
     defer c.session.h.keepPrompts(0, 0);
     const first = c.session.run(c.arena, .{ .prompts = c.long, .max_new = c.tokens }) catch |err| return c.report.broke(name, err);
     const extended = lanes_session.extend(c.arena, c.long, first.replies) catch |err| return c.report.broke(name, err);
