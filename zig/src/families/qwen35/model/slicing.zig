@@ -1,27 +1,17 @@
-//! Tensor-parallel slicing on the host: each rank's heads, columns, groups, experts and vocabulary rows, byte for byte.
-
 const std = @import("std");
+const hip = @import("hip");
 const config = @import("config.zig");
 const host = @import("host.zig");
-const table = @import("table.zig");
 
-const Tensor = table.Tensor;
+const quant = hip.quant;
 const Allocator = std.mem.Allocator;
+const takeRows = quant.slice.takeRows;
+const even = quant.slice.even;
 
-pub const Error = error{ UnevenSplit, DenseProjection, KvHeads } || Allocator.Error;
+pub const Error = error{ UnevenSplit, KvHeads } || Allocator.Error;
 
-pub const Rank = struct { rank: usize, world: usize };
-
-/// Rows [from, to) of a tensor's first dimension.
-const Span = struct { from: usize, to: usize };
-
-fn even(size: usize, world: usize, what: []const u8) Error!usize {
-    if (size % world != 0) {
-        std.log.err("{s}: {d} does not split into {d} equal parts", .{ what, size, world });
-        return error.UnevenSplit;
-    }
-    return size / world;
-}
+pub const Rank = quant.Rank;
+const Span = quant.Span;
 
 /// The spec as a rank sees it: its heads and value heads (the vocabulary stays whole; the head's rows are split).
 pub fn localSpec(s: config.Spec, r: Rank) Error!config.Spec {
@@ -34,69 +24,14 @@ pub fn localSpec(s: config.Spec, r: Rank) Error!config.Spec {
     return out;
 }
 
-fn rowBytes(t: Tensor) usize {
-    return t.numel() / t.shape[0] * t.dtype.size();
-}
-
-/// `spans` of `t`'s rows joined in order; one span shares the source's bytes.
-fn takeRows(a: Allocator, t: Tensor, spans: []const Span) Error!Tensor {
-    const row = rowBytes(t);
-    var rows: usize = 0;
-    for (spans) |s| rows += s.to - s.from;
-    var out = t;
-    out.shape[0] = rows;
-    if (spans.len == 1) {
-        out.bytes = t.bytes[spans[0].from * row .. spans[0].to * row];
-        return out;
-    }
-    const bytes = try a.alloc(u8, rows * row);
-    var at: usize = 0;
-    for (spans) |s| {
-        const n = (s.to - s.from) * row;
-        @memcpy(bytes[at..][0..n], t.bytes[s.from * row ..][0..n]);
-        at += n;
-    }
-    out.bytes = bytes;
-    return out;
-}
-
-/// Columns [from, to) of a rank-2 tensor, copied.
-fn takeCols(a: Allocator, t: Tensor, from: usize, to: usize) Error!Tensor {
-    const size = t.dtype.size();
-    const width = (to - from) * size;
-    const bytes = try a.alloc(u8, t.shape[0] * width);
-    for (0..t.shape[0]) |r| @memcpy(bytes[r * width ..][0..width], t.bytes[(r * t.shape[1] + from) * size ..][0..width]);
-    var out = t;
-    out.shape[1] = to - from;
-    out.bytes = bytes;
-    return out;
-}
-
-fn affine(p: host.Projection) Error!host.Affine {
-    return switch (p) {
-        .affine => |x| x,
-        .dense => error.DenseProjection,
-    };
-}
-
 /// `_rows`: output rows `spans` of a projection, the share of a column-split one.
 fn sliceRows(a: Allocator, p: host.Projection, spans: []const Span) Error!host.Projection {
-    const x = try affine(p);
-    return .{ .affine = .{ .words = try takeRows(a, x.words, spans), .scales = try takeRows(a, x.scales, spans), .biases = try takeRows(a, x.biases, spans), .bits = x.bits, .group = x.group } };
+    return quant.sliceRows(a, p, spans);
 }
 
 /// `_cols`: one rank's whole input groups of a row-split projection, whose fp32 outputs the ranks sum.
 fn cols(a: Allocator, p: host.Projection, r: Rank, what: []const u8) Error!host.Projection {
-    const x = try affine(p);
-    const groups = try even(x.scales.shape[1], r.world, what);
-    const words = groups * x.group * x.bits / 32;
-    return .{ .affine = .{
-        .words = try takeCols(a, x.words, r.rank * words, (r.rank + 1) * words),
-        .scales = try takeCols(a, x.scales, r.rank * groups, (r.rank + 1) * groups),
-        .biases = try takeCols(a, x.biases, r.rank * groups, (r.rank + 1) * groups),
-        .bits = x.bits,
-        .group = x.group,
-    } };
+    return quant.sliceCols(a, p, r, what);
 }
 
 /// This rank's rows of each segment of a concatenated output (q | k | v), each segment split evenly.
@@ -162,36 +97,12 @@ fn mlp(a: Allocator, m: *host.Mlp, r: Rank) Error!void {
     }
 }
 
-/// Experts [E / world * rank, ...) of a stacked tensor (E + 1 experts, the shared one last), and the shared one on rank 0.
-fn takeExperts(a: Allocator, t: Tensor, r: Rank, part: usize) Error!Tensor {
-    const total = t.shape[0] - 1;
-    const row = rowBytes(t);
-    const mine = t.bytes[r.rank * part * row ..][0 .. part * row];
-    if (r.rank != 0) {
-        var out = t;
-        out.shape[0] = part;
-        out.bytes = mine;
-        return out;
-    }
-    const bytes = try a.alloc(u8, (part + 1) * row);
-    @memcpy(bytes[0 .. part * row], mine);
-    @memcpy(bytes[part * row ..], t.bytes[total * row ..][0..row]);
-    var out = t;
-    out.shape[0] = part + 1;
-    out.bytes = bytes;
-    return out;
-}
-
-fn side(a: Allocator, x: host.Side, r: Rank, part: usize) Error!host.Side {
-    return .{ .words = try takeExperts(a, x.words, r, part), .scales = try takeExperts(a, x.scales, r, part), .biases = try takeExperts(a, x.biases, r, part) };
-}
-
 /// A rank's contiguous routed experts, the shared one on rank 0, and the remap to its own ids (-1 where another holds it).
 fn routed(a: Allocator, x: *host.Routed, r: Rank) Error!void {
     const total = x.experts.count - 1;
     const part = try even(total, r.world, "experts");
-    x.experts.fused = try side(a, x.experts.fused, r, part);
-    x.experts.down = try side(a, x.experts.down, r, part);
+    x.experts.fused = try quant.sliceStack(a, x.experts.fused, r, part);
+    x.experts.down = try quant.sliceStack(a, x.experts.down, r, part);
     x.experts.count = part + @intFromBool(r.rank == 0);
     const remap = try a.alloc(i32, total + 1);
     @memset(remap, -1);
@@ -204,28 +115,6 @@ fn routed(a: Allocator, x: *host.Routed, r: Rank) Error!void {
 pub fn vocabRows(a: Allocator, p: host.Projection, vocab: usize, r: Rank) Error!host.Projection {
     var buf: [1]Span = undefined;
     return sliceRows(a, p, try segments(&.{vocab}, r, &buf, "vocab"));
-}
-
-test "a column split keeps whole groups and a row split its own rows" {
-    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
-    defer arena.deinit();
-    const a = arena.allocator();
-    var words: [4 * 4]u32 = undefined;
-    for (&words, 0..) |*w, i| w.* = @intCast(i);
-    var scales: [4 * 2]u16 = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
-    const p: host.Projection = .{ .affine = .{
-        .words = .{ .dtype = .i32, .rank = 2, .shape = .{ 4, 4, 1, 1 }, .bytes = std.mem.sliceAsBytes(&words) },
-        .scales = .{ .dtype = .bf16, .rank = 2, .shape = .{ 4, 2, 1, 1 }, .bytes = std.mem.sliceAsBytes(&scales) },
-        .biases = .{ .dtype = .bf16, .rank = 2, .shape = .{ 4, 2, 1, 1 }, .bytes = std.mem.sliceAsBytes(&scales) },
-        .bits = 8, // four words a row: sixteen codes, two groups of eight
-        .group = 8,
-    } };
-    const c = try cols(a, p, .{ .rank = 1, .world = 2 }, "test");
-    try std.testing.expectEqual(@as(usize, 2), c.affine.words.shape[1]);
-    try std.testing.expectEqualSlices(u32, &.{ 2, 3, 6, 7, 10, 11, 14, 15 }, @alignCast(std.mem.bytesAsSlice(u32, c.affine.words.bytes)));
-    try std.testing.expectEqualSlices(u16, &.{ 1, 3, 5, 7 }, @alignCast(std.mem.bytesAsSlice(u16, c.affine.scales.bytes)));
-    const q = try sliceRows(a, p, &.{ .{ .from = 1, .to = 2 }, .{ .from = 3, .to = 4 } });
-    try std.testing.expectEqualSlices(u32, &.{ 4, 5, 6, 7, 12, 13, 14, 15 }, @alignCast(std.mem.bytesAsSlice(u32, q.affine.words.bytes)));
 }
 
 test "a kv head is kept by its query ranks" {

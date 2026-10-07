@@ -93,6 +93,8 @@ fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builti
     inline for (families, 0..) |f, i| options.addOption(bool, "with_" ++ f.name ++ "_modules", have_mods[i]);
     const hip = b.createModule(.{ .root_source_file = b.path("zig/src/hip/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
     hip.addOptions("kernel_options", options);
+    // the safetensors reader alone: the server's tokenizer is core's too, and a file lives in one module; the format modules and the family share it
+    hip.addImport("safetensors", b.createModule(.{ .root_source_file = b.path("zig/src/core/safetensors.zig"), .target = target, .optimize = optimize, .link_libc = true }));
     if (with) for (kernels, images) |k, image| hip.addAnonymousImport(b.fmt("hsaco_{s}", .{k.name}), .{ .root_source_file = image.? });
     for (families, libs) |f, l| if (l) |file| hip.addAnonymousImport(b.fmt("lib_{s}", .{f.name}), .{ .root_source_file = file });
     for (mods, 0..) |group, i| if (have_mods[i]) for (module_groups, group) |name, file| {
@@ -197,8 +199,7 @@ fn lanesModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
 
 /// The Qwen3.5 / Qwen3.6 family over the HIP runtime and the core's safetensors reader.
 fn qwen35(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module) *std.Build.Module {
-    // the safetensors reader alone: the server's tokenizer is core's too, and a file lives in one module
-    const safetensors = b.createModule(.{ .root_source_file = b.path("zig/src/core/safetensors.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    const safetensors = hip.import_table.get("safetensors").?;
     const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen35/qwen35.zig"), .target = target, .optimize = optimize, .link_libc = true });
     family.addImport("hip", hip);
     family.addImport("safetensors", safetensors);

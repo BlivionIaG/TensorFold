@@ -23,6 +23,8 @@ pub const Caps = caps.Caps;
 pub const rocm = @import("rocm.zig");
 pub const ops = @import("ops/ops.zig");
 pub const plan_ops = @import("ops/plan.zig");
+pub const quant = @import("quant/quant.zig");
+pub const Upload = @import("upload.zig").Upload;
 pub const affine = @import("launch/affine.zig");
 pub const Arena = @import("runtime/arena.zig").Arena;
 pub const rccl = @import("comm/rccl.zig");
@@ -35,6 +37,7 @@ test {
     _ = caps;
     _ = rocm;
     _ = ops;
+    _ = quant;
     _ = rccl;
     _ = link;
 }

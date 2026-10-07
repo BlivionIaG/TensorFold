@@ -120,11 +120,11 @@ fn digest(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, rank: ?qwen35.sli
     var scratch: std.heap.ArenaAllocator = .init(gpa);
     defer scratch.deinit();
     const embed = try ck.embed(scratch.allocator());
-    try emit(gpa, "embed", qwen35.host.Projection{ .affine = embed });
+    try emit(gpa, "embed", embed);
     try emit(gpa, "final_norm", try ck.finalNorm(scratch.allocator()));
     const head = try ck.head(scratch.allocator());
     if (rank) |r| {
-        try emit(gpa, "head", try qwen35.slicing.vocabRows(scratch.allocator(), head orelse .{ .affine = embed }, ck.spec().vocab, r));
+        try emit(gpa, "head", try qwen35.slicing.vocabRows(scratch.allocator(), head orelse embed, ck.spec().vocab, r));
     } else try emit(gpa, "head", head);
     for (0..ck.spec().n_layers) |i| {
         var layer = try ck.layer(i);

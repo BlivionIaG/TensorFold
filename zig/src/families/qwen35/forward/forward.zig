@@ -84,9 +84,9 @@ pub fn scaleOf(head_dim: usize) f32 {
 fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, index: usize, x: Tensor, rows: usize, pos: usize) Error!Tensor {
     const s = m.spec;
     const hd = s.head_dim;
-    const qg = try o.affine(x, f.q, rows, false);
-    const keys = try o.affine(x, f.k, rows, false);
-    const values = try o.affine(x, f.v, rows, false);
+    const qg = try o.project(x, f.q, rows, false);
+    const keys = try o.project(x, f.k, rows, false);
+    const values = try o.project(x, f.v, rows, false);
     const q_rows = rows * s.heads;
     const qc = try take(o, m.act, q_rows * hd);
     try o.copyCols(qg, 2 * hd, 0, qc.ptr, q_rows, hd);
@@ -108,16 +108,16 @@ fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, 
     try o.causalPaged(q32, c, att, rows, pos + rows, s.heads, scaleOf(hd), pos);
     const gated = try take(o, m.act, q_rows * hd);
     try o.attnGate(att, qg, gated, rows, s.heads, hd, false);
-    return o.affine(gated, f.o, rows, f.o.partial);
+    return o.project(gated, f.o, rows, f.o.partial);
 }
 
 /// Linear attention: qkv, z, a, b, the conv over [state | rows], norms, gate, recurrence and the gated norm.
 fn linear(o: Ops, m: *const view.Model, l: view.Linear, caches: *state.Caches, index: usize, x: Tensor, rows: usize) Error!Tensor {
     const s = m.spec;
-    const qkv = try o.affine(x, l.qkv, rows, false);
-    const z = try o.affine(x, l.z, rows, false);
-    const a = try o.affine(x, l.a, rows, false);
-    const b = try o.affine(x, l.b, rows, false);
+    const qkv = try o.project(x, l.qkv, rows, false);
+    const z = try o.project(x, l.z, rows, false);
+    const a = try o.project(x, l.a, rows, false);
+    const b = try o.project(x, l.b, rows, false);
     const cache = caches.layers[index].linear;
     const ch = view.convChannels(s);
     const mixed = try o.arena.of(f32, rows * ch);
@@ -166,7 +166,7 @@ pub fn gatedOut(o: Ops, m: *const view.Model, l: view.Linear, y: u64, z: Tensor,
         try o.rms(.{ .ptr = y, .kind = .f32 }, l.gnorm, .{ .ptr = yn, .kind = .f32 }, rows * s.value_heads, s.value_dim, @floatCast(s.eps));
         try o.gnormSilu(yn, z, out, n);
     }
-    return o.affine(out, l.out, rows, l.out.partial);
+    return o.project(out, l.out, rows, l.out.partial);
 }
 
 /// _mlp: gate and up, silu(gate) * up, down; or the routed experts (`prefill` is the span's length above one).
@@ -175,13 +175,13 @@ pub fn mlpRows(o: Ops, m: *const view.Model, mlp: view.Mlp, x: Tensor, rows: usi
         .moe => |r| return moe.run(o, m, r, x, rows, prefill and rows > 1),
         .dense => |d| {
             var outs: [4]Tensor = undefined;
-            const gate, const up = if (try o.affineGroup(x, &.{ d.gate, d.up }, rows, &outs))
+            const gate, const up = if (try o.projectGroup(x, &.{ d.gate, d.up }, rows, &outs))
                 .{ outs[0], outs[1] }
             else
-                .{ try o.affine(x, d.gate, rows, false), try o.affine(x, d.up, rows, false) };
+                .{ try o.project(x, d.gate, rows, false), try o.project(x, d.up, rows, false) };
             const act = try take(o, m.act, rows * d.gate.n);
             try o.siluMul(gate, up, act, rows * d.gate.n);
-            return o.affine(act, d.down, rows, d.down.partial);
+            return o.project(act, d.down, rows, d.down.partial);
         },
     }
 }

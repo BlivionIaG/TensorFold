@@ -9,16 +9,8 @@ pub const Summary = struct { layers: usize = 0, full: usize = 0, moe: usize = 0,
 
 fn mlpBytes(m: host.Mlp) usize {
     return switch (m) {
-        .dense => |d| projBytes(d.gate) + projBytes(d.up) + projBytes(d.down),
-        .routed => |r| r.router.bytes.len + r.rows32.bytes.len + r.experts.fused.words.bytes.len + r.experts.fused.scales.bytes.len +
-            r.experts.fused.biases.bytes.len + r.experts.down.words.bytes.len + r.experts.down.scales.bytes.len + r.experts.down.biases.bytes.len,
-    };
-}
-
-fn projBytes(p: host.Projection) usize {
-    return switch (p) {
-        .affine => |a| a.words.bytes.len + a.scales.bytes.len + a.biases.bytes.len,
-        .dense => |d| d.weight.bytes.len,
+        .dense => |d| d.gate.bytes() + d.up.bytes() + d.down.bytes(),
+        .routed => |r| r.router.bytes.len + r.rows32.bytes.len + r.experts.fused.bytes() + r.experts.down.bytes(),
     };
 }
 
@@ -30,9 +22,9 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !Summary {
     var scratch: std.heap.ArenaAllocator = .init(gpa);
     defer scratch.deinit();
     const embed = try ck.embed(scratch.allocator());
-    sum.bytes += projBytes(.{ .affine = embed });
+    sum.bytes += embed.bytes();
     _ = try ck.finalNorm(scratch.allocator());
-    if (try ck.head(scratch.allocator())) |h| sum.bytes += projBytes(h);
+    if (try ck.head(scratch.allocator())) |h| sum.bytes += h.bytes();
     for (0..ck.spec().n_layers) |i| {
         var layer = try ck.layer(i);
         defer layer.deinit();

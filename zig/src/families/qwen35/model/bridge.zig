@@ -5,43 +5,18 @@ const hip = @import("hip");
 const view = @import("view.zig");
 const weights = @import("weights.zig");
 
-pub const Error = error{ DenseProjection, UnsupportedTables } || hip.Error || std.mem.Allocator.Error;
+pub const Error = error{UnsupportedTables} || hip.Error || std.mem.Allocator.Error;
 
-fn tables(dtype: weights.DType) Error!view.Kind {
-    return switch (dtype) {
-        .f32 => .f32,
-        .f16 => .f16,
-        .bf16 => .bf16,
-        else => error.UnsupportedTables,
-    };
-}
-
-/// An affine projection (N, K) from its uploaded words, scales and biases.
-pub fn affine(a: weights.Affine) Error!view.Affine {
-    const n = a.words.dim(0);
-    const k = a.words.dim(1) * 32 / a.bits;
-    return .{ .words = a.words.ptr, .scale = a.scales.ptr, .bias = a.biases.ptr, .tables = try tables(a.scales.dtype), .n = @intCast(n), .k = @intCast(k), .bits = a.bits, .group = a.group };
-}
-
-fn projection(p: weights.Projection) Error!view.Affine {
-    return switch (p) {
-        .affine => |a| affine(a),
-        .dense => error.DenseProjection,
-    };
+/// A projection (N, K) from its uploaded tensors, in whichever format they are.
+pub fn projection(p: weights.Projection) Error!view.Projection {
+    return hip.quant.view(p, false);
 }
 
 /// A projection split along K: its fp32 output is one rank's share of the sum.
-fn share(p: weights.Projection, sliced: bool) Error!view.Affine {
+fn share(p: weights.Projection, sliced: bool) Error!view.Projection {
     var a = try projection(p);
     a.partial = sliced;
     return a;
-}
-
-/// A stacked side (E + 1, N, ...): one expert's (N, K) shape with the stack's addresses.
-fn side(s: weights.Side, bits: u8, group: u16) Error!view.Affine {
-    const n = s.words.dim(1);
-    const k = s.words.dim(2) * 32 / bits;
-    return .{ .words = s.words.ptr, .scale = s.scales.ptr, .bias = s.biases.ptr, .tables = try tables(s.scales.dtype), .n = @intCast(n), .k = @intCast(k), .bits = bits, .group = group };
 }
 
 /// An uploaded MLP as the forward reads it: a dense one's projections, or the routed experts (a rank's share when `sliced`).
@@ -54,8 +29,8 @@ pub fn mlpView(m: weights.Mlp, sliced: bool) Error!view.Mlp {
             .rows = r.router.dim(0),
             .remap = if (r.remap) |b| b.ptr else 0,
             .experts = .{
-                .fused = try side(r.experts.fused, r.experts.bits, r.experts.group),
-                .down = try side(r.experts.down, r.experts.down_bits, r.experts.down_group),
+                .fused = try hip.quant.view(r.experts.fused, true),
+                .down = try hip.quant.view(r.experts.down, true),
                 .count = r.experts.count,
                 .width = r.experts.width,
                 .dims = r.experts.dims,
@@ -94,7 +69,7 @@ pub const Bridge = struct {
         b.model = .{
             .spec = s,
             .act = act,
-            .embed = try affine(m.embed),
+            .embed = try projection(m.embed),
             .layers = b.layers,
             .final_norm = m.final_norm.ptr,
             .head = try projection(m.outputHead()),

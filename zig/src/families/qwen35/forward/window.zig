@@ -124,10 +124,10 @@ fn attentionRows(o: Ops, m: *const view.Model, f: view.Full, r: Round, index: us
     const hd = s.head_dim;
     const total = r.plan.rows;
     var outs: [4]Tensor = undefined;
-    const qg, const keys, const values = if (try o.affineGroup(x, &.{ f.q, f.k, f.v }, total, &outs))
+    const qg, const keys, const values = if (try o.projectGroup(x, &.{ f.q, f.k, f.v }, total, &outs))
         .{ outs[0], outs[1], outs[2] }
     else
-        .{ try o.affine(x, f.q, total, false), try o.affine(x, f.k, total, false), try o.affine(x, f.v, total, false) };
+        .{ try o.project(x, f.q, total, false), try o.project(x, f.k, total, false), try o.project(x, f.v, total, false) };
     const q_rows = total * s.heads;
     const eps: f32 = @floatCast(s.eps);
     const theta: f32 = @floatCast(s.rope_theta);
@@ -141,17 +141,17 @@ fn attentionRows(o: Ops, m: *const view.Model, f: view.Full, r: Round, index: us
     try pops.causal(o, q32, m.act, att, r.plan, index, s.heads, s.kv_heads, hd, r.span, fwd.scaleOf(hd));
     const gated = try fwd.take(o, m.act, q_rows * hd);
     try o.attnGate(att, qg, gated, total, s.heads, hd, true);
-    return o.affine(gated, f.o, total, f.o.partial);
+    return o.project(gated, f.o, total, f.o.partial);
 }
 
 fn linearRows(o: Ops, m: *const view.Model, l: view.Linear, r: Round, index: usize, x: Tensor) fwd.Error!Tensor {
     const s = m.spec;
     const total = r.plan.rows;
     var outs: [4]Tensor = undefined;
-    const qkv, const z, const a, const b = if (try o.affineGroup(x, &.{ l.qkv, l.z, l.a, l.b }, total, &outs))
+    const qkv, const z, const a, const b = if (try o.projectGroup(x, &.{ l.qkv, l.z, l.a, l.b }, total, &outs))
         .{ outs[0], outs[1], outs[2], outs[3] }
     else
-        .{ try o.affine(x, l.qkv, total, false), try o.affine(x, l.z, total, false), try o.affine(x, l.a, total, false), try o.affine(x, l.b, total, false) };
+        .{ try o.project(x, l.qkv, total, false), try o.project(x, l.z, total, false), try o.project(x, l.a, total, false), try o.project(x, l.b, total, false) };
     const ch = view.convChannels(s);
     const y = try o.arena.of(f32, total * s.valueWidth());
     const gate = try o.arena.of(f32, total * s.value_heads);

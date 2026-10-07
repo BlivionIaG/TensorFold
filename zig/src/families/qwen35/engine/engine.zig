@@ -228,7 +228,7 @@ pub const Engine = struct {
 
     /// The tokens of `rows` final rows at `hidden`: one projection, vocabulary slices joined in rank order, each row per `reqs`.
     fn project(e: *Engine, o: hip.ops.Ops, hidden: hip.ops.Tensor, rows: usize, reqs: []const draw.Request, out: []u32) !void {
-        const y = try o.affine(hidden, e.model().head, rows, false);
+        const y = try o.project(hidden, e.model().head, rows, false);
         try e.drawRows(o, y, rows, reqs, out, false);
     }
 

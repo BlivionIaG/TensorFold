@@ -1,6 +1,7 @@
 //! Qwen3.5 / Qwen3.6 text configuration: the Python ROCm loader's Spec, defaults and checks, and the quantization map.
 
 const std = @import("std");
+const hip = @import("hip");
 
 pub const Error = error{
     InvalidConfig,
@@ -13,7 +14,7 @@ pub const Error = error{
 } || std.mem.Allocator.Error || std.json.ParseError(std.json.Scanner);
 
 /// One affine width: MLX groups of `group` weights share a scale and a bias, `bits` per weight.
-pub const Width = struct { bits: u8, group: u16 };
+pub const Width = hip.quant.mlx.Width;
 
 /// The Python `Spec`, plus the shared expert's width and the MTP layer count the config declares.
 pub const Spec = struct {
@@ -55,23 +56,10 @@ pub const Spec = struct {
     }
 };
 
-/// The config's `quantization` table: the global width and the per-tensor overrides (mixed-width conversions).
-pub const Quant = struct {
-    global: Width,
-    /// A per-tensor entry; `null` marks one `_affine_quant` refuses, which fails when the tensor is looked up.
-    overrides: std.StringHashMapUnmanaged(?Width) = .empty,
-
-    /// The tensor's own width when the table names it as an object, else the global one.
-    pub fn width(q: Quant, key: []const u8) Error!Width {
-        if (q.overrides.get(key)) |w| return w orelse error.UnsupportedQuantization;
-        return q.global;
-    }
-};
-
 pub const Config = struct {
     arena: std.heap.ArenaAllocator,
     spec: Spec,
-    quant: Quant,
+    quant: hip.quant.Config,
     /// `tie_word_embeddings`: the output head is the embedding.
     tied: bool,
 
@@ -98,9 +86,8 @@ pub const Config = struct {
         const kind = root.get("model_type") orelse return error.UnsupportedModel;
         if (kind != .string or !(eql(kind.string, "qwen3_5") or eql(kind.string, "qwen3_5_moe"))) return error.UnsupportedModel;
         const text = if (truthy(root.get("text_config"))) try object(root.get("text_config").?) else root;
-        const quant_obj = try pick(root, text, "quantization");
-        if (quant_obj.count() == 0 and try gptqMethod(root)) return error.UnsupportedQuantization;
-        const quant = try quantization(a, quant_obj);
+        const quant = try hip.quant.detect(a, .{ .root = root, .quantization = try pick(root, text, "quantization") });
+        const width = try quant.width("");
 
         const experts = try optionalInt(text, "num_experts", 0);
         const top_k = try optionalInt(text, "num_experts_per_tok", 0);
@@ -136,8 +123,8 @@ pub const Config = struct {
             .rope_theta = theta,
             .rotary_dim = rotary,
             .full_every = try optionalInt(text, "full_attention_interval", 4),
-            .bits = quant.global.bits,
-            .group = quant.global.group,
+            .bits = width.bits,
+            .group = width.group,
             .experts = experts,
             .top_k = top_k,
             .moe_width = moe_width,
@@ -214,41 +201,6 @@ fn optionalInt(o: std.json.ObjectMap, name: []const u8, default: usize) Error!us
 fn pick(root: std.json.ObjectMap, text: std.json.ObjectMap, key: []const u8) Error!std.json.ObjectMap {
     for ([_]std.json.ObjectMap{ root, text }) |source| if (truthy(source.get(key))) return object(source.get(key).?);
     return std.json.ObjectMap.empty;
-}
-
-/// A Hugging Face GPTQ / AWQ export has no `quantization` and names its method in `quantization_config`.
-fn gptqMethod(root: std.json.ObjectMap) Error!bool {
-    const q = root.get("quantization_config") orelse return false;
-    if (q != .object) return false;
-    const method = q.object.get("quant_method") orelse return false;
-    return method == .string and (eql(method.string, "gptq") or eql(method.string, "awq"));
-}
-
-/// `_affine_quant`: MLX affine widths, 2/3/4/5/6/8 bits in groups of 32/64/128.
-fn affine(o: std.json.ObjectMap) ?Width {
-    const bits = intOrNull(o.get("bits")) orelse return null;
-    const group = intOrNull(o.get("group_size")) orelse return null;
-    if (o.get("mode")) |m| if (m != .string or !eql(m.string, "affine")) return null;
-    if (std.mem.indexOfScalar(i64, &.{ 2, 3, 4, 5, 6, 8 }, bits) == null) return null;
-    if (std.mem.indexOfScalar(i64, &.{ 32, 64, 128 }, group) == null) return null;
-    return .{ .bits = @intCast(bits), .group = @intCast(group) };
-}
-
-fn intOrNull(v: ?std.json.Value) ?i64 {
-    const value = v orelse return null;
-    return switch (value) {
-        .integer => |i| i,
-        .float => |f| if (f == @floor(f) and @abs(f) < 1e15) @as(i64, @intFromFloat(f)) else null,
-        else => null,
-    };
-}
-
-fn quantization(a: std.mem.Allocator, obj: std.json.ObjectMap) Error!Quant {
-    if (obj.get("mode")) |m| if (m == .string and (eql(m.string, "gptq") or eql(m.string, "awq"))) return error.UnsupportedQuantization;
-    var q: Quant = .{ .global = affine(obj) orelse return error.UnsupportedQuantization };
-    var it = obj.iterator();
-    while (it.next()) |kv| if (kv.value_ptr.* == .object) try q.overrides.put(a, kv.key_ptr.*, affine(kv.value_ptr.object));
-    return q;
 }
 
 const sample =

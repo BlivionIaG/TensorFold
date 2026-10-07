@@ -1,8 +1,9 @@
 //! The Python loader's `_routed`, `_experts` and `_affine_side`: router rows and the stacked affine experts.
 
 const std = @import("std");
+const hip = @import("hip");
 const table = @import("../model/table.zig");
-const convert = @import("../model/convert.zig");
+const convert = hip.quant.convert;
 const config = @import("../model/config.zig");
 const host = @import("../model/host.zig");
 const projection = @import("../model/projection.zig");
@@ -32,7 +33,7 @@ fn routerRows(a: std.mem.Allocator, t: *const Table, key: []const u8) Error!stru
     const group = (try t.width(key)).group;
     const scale = try t.get(projection.join(&buf, &.{ key, ".scales" }));
     const bias = try t.get(projection.join(&other, &.{ key, ".biases" }));
-    const data = try convert.dequant(a, weight, scale, bias, group);
+    const data = try hip.quant.mlx.dequant(a, weight, scale, bias, group);
     return .{ .data = data, .rows = weight.shape[0], .cols = scale.shape[1] * group };
 }
 
@@ -101,7 +102,7 @@ fn part(t: *const Table, stack_key: []const u8, shared: []const u8, w: config.Wi
     return p;
 }
 
-fn side(a: std.mem.Allocator, parts: []const Part) Error!host.Side {
+fn side(a: std.mem.Allocator, parts: []const Part, w: config.Width) Error!host.Projection {
     var words: [2]Pair = undefined;
     var scales: [2]Pair = undefined;
     var biases: [2]Pair = undefined;
@@ -112,11 +113,13 @@ fn side(a: std.mem.Allocator, parts: []const Part) Error!host.Side {
     }
     const n = parts.len;
     const dtype = tableDtype(scales[0..n], biases[0..n]);
-    return .{
+    return .{ .mlx = .{
         .words = try stack(a, words[0..n], .i32),
         .scales = try stack(a, scales[0..n], dtype),
         .biases = try stack(a, biases[0..n], dtype),
-    };
+        .bits = w.bits,
+        .group = w.group,
+    } };
 }
 
 /// `_experts`: a layer's E + 1 affine experts, the shared one last, gate and up fused per expert.
@@ -151,16 +154,12 @@ pub fn experts(a: std.mem.Allocator, t: *const Table, prefix: []const u8) Error!
     }
     fused_parts[n] = up;
     n += 1;
-    const fused = try side(a, fused_parts[0..n]);
-    const d = try side(a, &.{down});
+    const fused = try side(a, fused_parts[0..n], up_w);
+    const d = try side(a, &.{down}, down_w);
     return .{
         .fused = fused,
         .gated = gated,
         .down = d,
-        .bits = up_w.bits,
-        .group = up_w.group,
-        .down_bits = down_w.bits,
-        .down_group = down_w.group,
         .width = up.words.mine.shape[1],
         .dims = down.words.mine.shape[1],
         .count = up.words.mine.shape[0] + 1,

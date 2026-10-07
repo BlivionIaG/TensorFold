@@ -1,16 +1,79 @@
-//! The products on MLX affine weights: the plain, grouped and routed matmuls, the embedding rows and the dense draft projection.
+//! The products on a projection of any format, dispatched on its tag: the plain, grouped and routed matmuls and the
+//! embedding rows. `affine*` are the MLX affine path behind them; a format's own path is added beside it.
 
 const t = @import("types.zig");
+const quant = @import("../quant/quant.zig");
 const launches = @import("../launches.zig");
 const affine_launch = @import("../launch/affine.zig");
 const Ops = @import("ops.zig").Ops;
 const Error = t.Error;
 const Tensor = t.Tensor;
 const Affine = t.Affine;
+const Projection = quant.Projection;
+const mlx = quant.mlx;
 const p = t.p;
 const f = t.f;
 const i = t.i;
 const int = t.int;
+
+/// The MLX matrix of a projection as the MLX launches take it.
+fn affineOf(proj: Projection, h: mlx.Matrix) Affine {
+    const tables: t.Kind = switch (h.tables) {
+        .f32 => .f32,
+        .bf16 => .bf16,
+        .f16 => .f16,
+    };
+    return .{ .words = h.words, .scale = h.scale, .bias = h.bias, .tables = tables, .n = proj.n, .k = proj.k, .bits = h.bits, .group = h.group, .partial = proj.partial };
+}
+
+/// matmul(x, proj) for a projection of any format: an fp32 product when `f32_out`, else x's kind (the MLX rules of `affine`).
+pub fn project(o: Ops, x: Tensor, proj: Projection, m: usize, f32_out: bool) Error!Tensor {
+    switch (proj.handle) {
+        .mlx => |h| return affine(o, x, affineOf(proj, h), m, f32_out),
+        .dense => |h| {
+            if (f32_out or m == 0 or x.kind == .f32) return error.BadShape;
+            const out: Tensor = .{ .ptr = try o.arena.take(m * proj.n * x.kind.size()), .kind = x.kind };
+            try denseRows(o, x, h.weight, out, m, proj.n, proj.k);
+            return out;
+        },
+    }
+}
+
+/// Up to four products of the same `m` rows of x in one launch; false (nothing launched) when a format has no grouped tile
+/// or the products do not share one, and the caller launches them one by one.
+pub fn projectGroup(o: Ops, x: Tensor, ps: []const Projection, m: usize, outs: []Tensor) Error!bool {
+    var ws: [4]Affine = undefined;
+    if (ps.len > ws.len) return false;
+    for (ps, ws[0..ps.len]) |pr, *w| switch (pr.handle) {
+        .mlx => |h| w.* = affineOf(pr, h),
+        .dense => return false,
+    };
+    return affineGroup(o, x, ws[0..ps.len], m, outs);
+}
+
+/// The routed gate and up with the activation as the launch's epilogue; null when the format or the tile does not take it.
+pub fn projectRoutedAct(o: Ops, x: Tensor, proj: Projection, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize, limit: f32) Error!?Tensor {
+    switch (proj.handle) {
+        .mlx => |h| return affineRoutedAct(o, x, affineOf(proj, h), items, count, members, pairs, x_div, rows, limit),
+        .dense => return null,
+    }
+}
+
+/// matmul_routed on a stack of experts: every item in one launch; out (pairs, N) fp32.
+pub fn projectRouted(o: Ops, x: Tensor, proj: Projection, items: u64, count: usize, members: u64, pairs: usize, x_div: usize, rows: usize) Error!u64 {
+    switch (proj.handle) {
+        .mlx => |h| return affineRouted(o, x, affineOf(proj, h), items, count, members, pairs, x_div, rows),
+        .dense => return error.BadShape,
+    }
+}
+
+/// gather_rows: `n` embedding rows of a table in any format that has a row gather, by device ids, dequantized into `out`.
+pub fn embedRows(o: Ops, table: Projection, ids: u64, n: usize, out: Tensor) Error!void {
+    switch (table.handle) {
+        .mlx => |h| return embedAffine(o, affineOf(table, h), ids, n, out),
+        .dense => return error.BadShape,
+    }
+}
 
 /// Whether the stream tile takes `m` rows of x against `w`: up to 16 rows, or any number in a lane round.
 fn takesStream(o: Ops, z: anytype, m: usize, w: Affine, x: Tensor) bool {
@@ -124,8 +187,8 @@ pub fn affineRouted(o: Ops, x: Tensor, w: Affine, items: u64, count: usize, memb
     return out;
 }
 
-/// gather_rows: `n` embedding rows of width `table.k` by device ids, dequantized into `out`.
-pub fn embedRows(o: Ops, table: Affine, ids: u64, n: usize, out: Tensor) Error!void {
+/// The MLX affine gather: `n` embedding rows of width `table.k` by device ids, dequantized into `out`.
+pub fn embedAffine(o: Ops, table: Affine, ids: u64, n: usize, out: Tensor) Error!void {
     try table.check();
     try o.lib.call("tf_embed_rows", .{ p(table.words), p(table.scale), p(table.bias), @backingInt(table.tables), @ptrFromInt(ids), int(n), table.bits, table.group, int(table.k), p(out.ptr), @backingInt(out.kind), o.stream });
 }

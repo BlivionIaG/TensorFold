@@ -1,41 +1,20 @@
 //! What the loader hands the GPU, still on the host: the Python TextModel's layers with the bytes its kernels read.
 
 const std = @import("std");
+const hip = @import("hip");
 const table = @import("table.zig");
 
 pub const Tensor = table.Tensor;
 
-/// An MLX affine projection as stored: i32 words [N, K * bits / 32], group tables [N, K / group] in the stored dtype.
-pub const Affine = struct { words: Tensor, scales: Tensor, biases: Tensor, bits: u8, group: u16 };
+/// A projection as its format read it from the checkpoint.
+pub const Projection = hip.quant.Host;
 
-/// A projection a conversion kept in float: fp32 [N, K].
-pub const Dense = struct { weight: Tensor };
-
-pub const Projection = union(enum) {
-    affine: Affine,
-    dense: Dense,
-
-    /// Output rows.
-    pub fn rows(p: Projection) usize {
-        return switch (p) {
-            .affine => |a| a.words.shape[0],
-            .dense => |d| d.weight.shape[0],
-        };
-    }
-};
-
-/// One expert projection stacked over E + 1 experts, the shared expert last: words, scales, biases [E + 1, N, ...].
-pub const Side = struct { words: Tensor, scales: Tensor, biases: Tensor };
-
-/// A layer's experts. `fused` is gate then up along N per expert ([E + 1, 2 * width, ...]), or the up alone when `gated` is false.
+/// A layer's experts. `fused` is gate then up along N per expert ([E + 1, 2 * width, ...]), or the up alone when `gated` is false;
+/// each stack is E + 1 projections, the shared expert last.
 pub const Experts = struct {
-    fused: Side,
+    fused: Projection,
     gated: bool,
-    down: Side,
-    bits: u8,
-    group: u16,
-    down_bits: u8,
-    down_group: u16,
+    down: Projection,
     /// The expert MLP's inner width (rows of the gate, and of the up).
     width: usize,
     /// The model width (rows of the down).

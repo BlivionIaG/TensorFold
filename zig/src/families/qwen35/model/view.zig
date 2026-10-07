@@ -3,7 +3,7 @@
 const std = @import("std");
 const hip = @import("hip");
 
-pub const Affine = hip.ops.Affine;
+pub const Projection = hip.quant.Projection;
 pub const Kind = hip.ops.Kind;
 
 /// The text model's dimensions (Python's Spec), as the checkpoint's config gives them.
@@ -16,8 +16,8 @@ pub fn convChannels(s: Spec) usize {
 
 /// A layer's experts, shared expert last: gate and up stacked as one (E + 1, 2 NI, ...) weight, down (E + 1, D, ...).
 pub const Experts = struct {
-    fused: Affine,
-    down: Affine,
+    fused: Projection,
+    down: Projection,
     count: usize,
     width: usize,
     dims: usize,
@@ -41,17 +41,17 @@ pub const Routed = struct {
 };
 
 pub const Mlp = union(enum) {
-    dense: struct { gate: Affine, up: Affine, down: Affine },
+    dense: struct { gate: Projection, up: Projection, down: Projection },
     moe: Routed,
 };
 
 pub const Full = struct {
     input_norm: u64,
     post_norm: u64,
-    q: Affine,
-    k: Affine,
-    v: Affine,
-    o: Affine,
+    q: Projection,
+    k: Projection,
+    v: Projection,
+    o: Projection,
     q_norm: u64,
     k_norm: u64,
     mlp: Mlp,
@@ -60,11 +60,11 @@ pub const Full = struct {
 pub const Linear = struct {
     input_norm: u64,
     post_norm: u64,
-    qkv: Affine,
-    z: Affine,
-    a: Affine,
-    b: Affine,
-    out: Affine,
+    qkv: Projection,
+    z: Projection,
+    a: Projection,
+    b: Projection,
+    out: Projection,
     conv: u64,
     a_log: u64,
     dt_bias: u64,
@@ -78,16 +78,16 @@ pub const Layer = union(enum) { full: Full, linear: Linear };
 pub const Mtp = struct {
     fc_e_norm: u64,
     fc_h_norm: u64,
-    fc_e: Affine,
-    fc_h: Affine,
+    fc_e: Projection,
+    fc_h: Projection,
     q_norm: u64,
     k_norm: u64,
-    q: Affine,
-    k: Affine,
-    v: Affine,
-    o: Affine,
+    q: Projection,
+    k: Projection,
+    v: Projection,
+    o: Projection,
     final_norm: u64,
-    head: ?Affine,
+    head: ?Projection,
     input_norm: ?u64,
     post_norm: ?u64,
     mlp: ?Mlp,
@@ -103,10 +103,10 @@ pub const Model = struct {
     /// The tensor-parallel communicator; null on one rank.
     tp: ?hip.rccl.Comm = null,
     act: Kind,
-    embed: Affine,
+    embed: Projection,
     layers: []const Layer,
     final_norm: u64,
-    head: Affine,
+    head: Projection,
     qk: QkNorm,
     mtp: ?Mtp = null,
 };

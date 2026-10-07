@@ -44,9 +44,9 @@ pub const Head = struct {
     heads: usize,
     kv_heads: usize,
     mlp: ?view.Mlp,
-    logits_head: view.Affine,
+    logits_head: view.Projection,
     /// The same weights over the first `draft_vocab` ids.
-    draft_head: view.Affine,
+    draft_head: view.Projection,
     /// Most chains a batch runs together; each has its own cache of `max_depth + 1` slots.
     cap: usize,
     cache_bytes: usize,
@@ -67,12 +67,12 @@ pub const Head = struct {
     pub fn init(gpa: std.mem.Allocator, d: *const hip.Driver, m: *const weights.Model, model: *const view.Model, cap: usize) !?*Head {
         const w = if (m.mtp) |*x| x else return null;
         const s = m.spec;
-        const qa = try affineOf(w.q);
-        const ka = try affineOf(w.k);
+        const qa = try bridge.projection(w.q);
+        const ka = try bridge.projection(w.k);
         const h = try gpa.create(Head);
         errdefer gpa.destroy(h);
         const kv_heads = ka.n / s.head_dim;
-        const full = if (w.head) |hp| try affineOf(hp) else model.head;
+        const full = if (w.head) |hp| try bridge.projection(hp) else model.head;
         var narrow = full;
         narrow.n = @min(full.n, draft_vocab);
         const cache = kv_heads * (max_depth + 1) * s.head_dim * model.act.size();
@@ -139,24 +139,9 @@ pub const Head = struct {
         return .{ .slots = slots, .pos = pos, .ptrs = ptrs, .drafts = drafts, .probs = probs, .total = probs + 4 * max_depth * h.cap };
     }
 
-    fn affineOf(p: weights.Projection) !view.Affine {
-        return switch (p) {
-            .affine => |a| bridge.affine(a),
-            .dense => error.DenseProjection,
-        };
-    }
-
-    /// A projection of the head: affine, or the unquantized fp32 weight an MTP fc may keep.
+    /// A projection of the head in whichever format: an unquantized fp32 weight an MTP fc may keep, or a quantized one.
     fn project(o: Ops, p: weights.Projection, x: Tensor, rows: usize) !Tensor {
-        switch (p) {
-            .affine => |a| return o.affine(x, try bridge.affine(a), rows, false),
-            .dense => |dn| {
-                const n = dn.weight.dim(0);
-                const out = try fwd.take(o, x.kind, rows * n);
-                try o.denseRows(x, dn.weight.ptr, out, rows, n, dn.weight.dim(1));
-                return out;
-            },
-        }
+        return o.project(x, try bridge.projection(p), rows, false);
     }
 
     /// Every job's chain, `cap` at a time, up to `depth` drafts each, cut after a draft under `stop_under` (0: never).
@@ -286,7 +271,7 @@ pub const Head = struct {
     }
 
     /// One head step over `rows` chains at their rope positions, writing each chain's slot; the logits rows come back.
-    fn step(h: *Head, o: Ops, m: *const view.Model, head: view.Affine, hidden: Tensor, ids: u64, rows: usize, slot_at: u64, pos: u64, slot: usize) !Tensor {
+    fn step(h: *Head, o: Ops, m: *const view.Model, head: view.Projection, hidden: Tensor, ids: u64, rows: usize, slot_at: u64, pos: u64, slot: usize) !Tensor {
         const s = m.spec;
         const w = h.w;
         const eps: f32 = @floatCast(s.eps);
@@ -342,7 +327,7 @@ pub const Head = struct {
         const residual = try fwd.take(o, m.act, rows * s.hidden);
         try o.rms(x, w.final_norm.ptr, residual, rows, s.hidden, eps);
         h.last = residual.ptr;
-        return o.affine(residual, head, rows, false);
+        return o.project(residual, head, rows, false);
     }
 };
 

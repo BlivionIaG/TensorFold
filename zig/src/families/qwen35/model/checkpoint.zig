@@ -41,12 +41,12 @@ pub const Checkpoint = struct {
         return c.config.spec;
     }
 
-    /// The embedding, which the gather needs as MLX affine rows; `a` holds any converted group tables.
-    pub fn embed(c: *const Checkpoint, a: std.mem.Allocator) !host.Affine {
+    /// The embedding, which the row gather reads in MLX affine words; `a` holds any converted group tables.
+    pub fn embed(c: *const Checkpoint, a: std.mem.Allocator) !host.Projection {
         const p = try projection.projection(a, &c.main, prefix ++ "embed_tokens");
-        if (p != .affine) return error.UnexpectedTensor;
-        if (p.affine.words.shape[0] != c.spec().vocab) return error.UnexpectedTensor;
-        return p.affine;
+        if (p != .mlx) return error.UnexpectedTensor;
+        if (p.rows() != c.spec().vocab) return error.UnexpectedTensor;
+        return p;
     }
 
     pub fn finalNorm(c: *const Checkpoint, a: std.mem.Allocator) !Tensor {

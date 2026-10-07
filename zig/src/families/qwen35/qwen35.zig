@@ -33,7 +33,6 @@ test {
     _ = config;
     _ = table;
     _ = @import("model/shard.zig");
-    _ = @import("model/convert.zig");
     _ = @import("model/projection.zig");
     _ = @import("model/checkpoint_test.zig");
     _ = @import("model/real_test.zig");

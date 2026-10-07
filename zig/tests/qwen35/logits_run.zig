@@ -49,7 +49,7 @@ pub fn stream(gpa: std.mem.Allocator, e: *Engine, ids: []const u32, mode: Mode, 
     defer gpa.free(block);
     if (mode.decode) {
         // row 0 from its one-row prefill, then each token a one-row round at its slot, kept before the next
-        const first = try o.affine(hidden, m.head, 1, mode.wide);
+        const first = try o.project(hidden, m.head, 1, mode.wide);
         try e.stream.synchronize();
         try e.driver.check(e.driver.api.hipMemcpyDtoH(block.ptr, first.ptr, width), "download");
         for (1..ids.len) |i| {
@@ -58,7 +58,7 @@ pub fn stream(gpa: std.mem.Allocator, e: *Engine, ids: []const u32, mode: Mode, 
             var drawn: [1]u32 = undefined;
             const r = try e.verify(&rows, &reqs, &drawn);
             const round: hip.ops.Ops = .{ .lib = &e.lib, .stream = e.stream.handle, .arena = &e.rounds };
-            const logits = try round.affine(r.hidden, m.head, 1, mode.wide);
+            const logits = try round.project(r.hidden, m.head, 1, mode.wide);
             try e.stream.synchronize();
             try e.driver.check(e.driver.api.hipMemcpyDtoH(block[(i % chunk) * width ..].ptr, logits.ptr, width), "download");
             e.keep(0, 1);
@@ -73,7 +73,7 @@ pub fn stream(gpa: std.mem.Allocator, e: *Engine, ids: []const u32, mode: Mode, 
     while (row < ids.len) : (row += chunk) {
         const rows = @min(chunk, ids.len - row);
         const at = e.prompts.mark();
-        const logits = try o.affine(qwen35.forward.at(hidden, row * m.spec.hidden), m.head, rows, mode.wide);
+        const logits = try o.project(qwen35.forward.at(hidden, row * m.spec.hidden), m.head, rows, mode.wide);
         try e.stream.synchronize();
         try e.driver.check(e.driver.api.hipMemcpyDtoH(block.ptr, logits.ptr, rows * width), "download");
         e.prompts.release(at);

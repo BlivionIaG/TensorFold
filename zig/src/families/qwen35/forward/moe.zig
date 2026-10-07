@@ -53,11 +53,11 @@ pub fn run(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: usize,
         tile = tileFor(o, rows);
         try o.moeRoute(local, pairs, r.rows, tile, members, items, cap);
         try o.moeForeignItems(items, cap, ex.count);
-        const both = try o.affineRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
+        const both = try o.projectRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
         const act = try o.arena.take(pairs * ex.width * m.act.size());
         const act_t: Tensor = .{ .ptr = act, .kind = m.act };
         try o.moeAct(both, act_t, pairs, ex.width, ex.limit);
-        const y = try o.affineRouted(act_t, ex.down, items, count, members, pairs, 1, @min(tile, rows));
+        const y = try o.projectRouted(act_t, ex.down, items, count, members, pairs, 1, @min(tile, rows));
         try o.moeZeroForeign(y, local, ex.count, pairs, ex.dims);
         const share = try o.arena.of(f32, rows * ex.dims);
         try o.moeCombine(y, wts, .{ .ptr = share, .kind = .f32 }, rows, slots, ex.dims);
@@ -103,14 +103,14 @@ fn expertParts(o: Ops, m: *const view.Model, r: view.Routed, x: Tensor, rows: us
         try o.moeRoute(pick, pairs, r.rows, tile, members, items, cap);
     }
     // the gate and up's activation is the launch's epilogue when the tile takes the shape
-    const act_t: Tensor = if (try o.affineRoutedAct(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows), ex.limit)) |t| t else blk: {
-        const both = try o.affineRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
+    const act_t: Tensor = if (try o.projectRoutedAct(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows), ex.limit)) |t| t else blk: {
+        const both = try o.projectRouted(x, ex.fused, items, count, members, pairs, slots, @min(tile, rows));
         const act = try o.arena.take(pairs * ex.width * m.act.size());
         const t: Tensor = .{ .ptr = act, .kind = m.act };
         try o.moeAct(both, t, pairs, ex.width, ex.limit);
         break :blk t;
     };
-    const y = try o.affineRouted(act_t, ex.down, items, count, members, pairs, 1, @min(tile, rows));
+    const y = try o.projectRouted(act_t, ex.down, items, count, members, pairs, 1, @min(tile, rows));
     return .{ .y = y };
 }
 

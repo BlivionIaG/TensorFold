@@ -3,6 +3,7 @@
 const std = @import("std");
 const Io = std.Io;
 const st = @import("safetensors");
+const hip = @import("hip");
 const config = @import("config.zig");
 
 const Shard = @import("shard.zig").Shard;
@@ -18,10 +19,10 @@ pub const Table = struct {
     where: std.StringHashMapUnmanaged(Where) = .empty,
     /// A key prefix the table drops (`language_model.`), as `_Shards(strip=)`.
     strip: []const u8,
-    quant: config.Quant,
+    quant: hip.quant.Config,
 
     /// Maps `paths` (later files win a repeated name, as the Python dict does).
-    pub fn open(gpa: std.mem.Allocator, io: Io, paths: []const []const u8, strip: []const u8, quant: config.Quant) !Table {
+    pub fn open(gpa: std.mem.Allocator, io: Io, paths: []const []const u8, strip: []const u8, quant: hip.quant.Config) !Table {
         const files = try gpa.alloc(Shard, paths.len);
         var opened: usize = 0;
         errdefer {
@@ -67,14 +68,18 @@ pub const Table = struct {
     }
 
     /// The tensor's own width when the config names it (`key`, then the stripped prefix back on), else the global one.
-    pub fn width(t: *const Table, key: []const u8) config.Error!config.Width {
-        if (t.quant.overrides.get(key)) |w| return w orelse error.UnsupportedQuantization;
+    pub fn width(t: *const Table, key: []const u8) config.Error!hip.quant.mlx.Width {
+        const q = switch (t.quant) {
+            .mlx => |m| m,
+            .dense => return error.UnsupportedQuantization,
+        };
+        if (q.overrides.get(key)) |w| return w orelse error.UnsupportedQuantization;
         if (t.strip.len > 0) {
             var buf: [512]u8 = undefined;
-            const full = std.fmt.bufPrint(&buf, "{s}{s}", .{ t.strip, key }) catch return t.quant.global;
-            if (t.quant.overrides.get(full)) |w| return w orelse error.UnsupportedQuantization;
+            const full = std.fmt.bufPrint(&buf, "{s}{s}", .{ t.strip, key }) catch return q.global;
+            if (q.overrides.get(full)) |w| return w orelse error.UnsupportedQuantization;
         }
-        return t.quant.global;
+        return q.global;
     }
 };
 

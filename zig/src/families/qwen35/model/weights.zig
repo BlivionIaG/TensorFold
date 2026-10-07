@@ -8,41 +8,21 @@ const host = @import("host.zig");
 const checkpoint = @import("checkpoint.zig");
 const slicing = @import("slicing.zig");
 
+const quant = hip.quant;
 const Tensor = table.Tensor;
 pub const DType = table.DType;
 
 /// One uploaded tensor: its device address and the element type and shape of the bytes there.
-pub const Buf = struct {
-    ptr: hip.abi.DevicePtr,
-    len: usize,
-    dtype: DType,
-    rank: u8,
-    shape: [4]usize,
+pub const Buf = quant.Buf;
 
-    pub fn dim(b: Buf, i: usize) usize {
-        return if (i < b.rank) b.shape[i] else 1;
-    }
-};
-
-/// An MLX affine projection: i32 words [N, K * bits / 32], scales and biases [N, K / group] in the stored dtype.
-pub const Affine = struct { words: Buf, scales: Buf, biases: Buf, bits: u8, group: u16 };
-
-/// A projection kept in float: fp32 [N, K].
-pub const Dense = struct { weight: Buf };
-
-pub const Projection = union(enum) { affine: Affine, dense: Dense };
-
-pub const Side = struct { words: Buf, scales: Buf, biases: Buf };
+/// A projection on the device in its format: the tensors as that format keeps them.
+pub const Projection = quant.Device;
 
 /// A layer's E + 1 experts, the shared one last; `fused` is gate then up per expert when `gated`.
 pub const Experts = struct {
-    fused: Side,
+    fused: Projection,
     gated: bool,
-    down: Side,
-    bits: u8,
-    group: u16,
-    down_bits: u8,
-    down_group: u16,
+    down: Projection,
     width: usize,
     dims: usize,
     count: usize,
@@ -106,30 +86,14 @@ pub const MtpHead = struct {
 
 /// Device memory of one model; every `Buf` of it is freed by `deinit`.
 const Uploader = struct {
-    d: *const hip.Driver,
-    buffers: *std.ArrayList(hip.DeviceBuffer),
-    gpa: std.mem.Allocator,
+    up: hip.Upload,
 
     fn tensor(u: Uploader, t: Tensor) !Buf {
-        var b = try hip.DeviceBuffer.fromHost(u.d, t.bytes);
-        errdefer b.free();
-        try u.buffers.append(u.gpa, b);
-        return .{ .ptr = b.ptr, .len = b.len, .dtype = t.dtype, .rank = t.rank, .shape = t.shape };
-    }
-
-    fn side(u: Uploader, s: host.Side) !Side {
-        return .{ .words = try u.tensor(s.words), .scales = try u.tensor(s.scales), .biases = try u.tensor(s.biases) };
+        return u.up.uploader().tensor(t);
     }
 
     fn projection(u: Uploader, p: host.Projection) !Projection {
-        return switch (p) {
-            .affine => |a| .{ .affine = try u.affine(a) },
-            .dense => |d| .{ .dense = .{ .weight = try u.tensor(d.weight) } },
-        };
-    }
-
-    fn affine(u: Uploader, a: host.Affine) !Affine {
-        return .{ .words = try u.tensor(a.words), .scales = try u.tensor(a.scales), .biases = try u.tensor(a.biases), .bits = a.bits, .group = a.group };
+        return quant.upload(u.up.uploader(), p);
     }
 
     fn mlp(u: Uploader, m: host.Mlp) !Mlp {
@@ -141,13 +105,9 @@ const Uploader = struct {
                     .router = try u.tensor(r.router),
                     .rows32 = try u.tensor(r.rows32),
                     .experts = .{
-                        .fused = try u.side(e.fused),
+                        .fused = try u.projection(e.fused),
                         .gated = e.gated,
-                        .down = try u.side(e.down),
-                        .bits = e.bits,
-                        .group = e.group,
-                        .down_bits = e.down_bits,
-                        .down_group = e.down_group,
+                        .down = try u.projection(e.down),
                         .width = e.width,
                         .dims = e.dims,
                         .count = e.count,
@@ -215,7 +175,7 @@ pub const Model = struct {
     gpa: std.mem.Allocator,
     spec: config.Spec,
     buffers: std.ArrayList(hip.DeviceBuffer) = .empty,
-    embed: Affine = undefined,
+    embed: Projection = undefined,
     layers: []Layer = &.{},
     final_norm: Buf = undefined,
     /// `null` ties the output head with `embed`.
@@ -246,15 +206,15 @@ pub const Model = struct {
         const whole = ck.spec();
         var m: Model = .{ .gpa = gpa, .spec = if (rank) |r| try slicing.localSpec(whole, r) else whole, .sliced = rank != null };
         errdefer m.deinit();
-        const u: Uploader = .{ .d = d, .buffers = &m.buffers, .gpa = gpa };
+        const u: Uploader = .{ .up = .{ .d = d, .buffers = &m.buffers, .gpa = gpa } };
         var scratch: std.heap.ArenaAllocator = .init(gpa);
         defer scratch.deinit();
         const embed = try ck.embed(scratch.allocator());
-        m.embed = try u.affine(embed);
+        m.embed = try u.projection(embed);
         m.final_norm = try u.tensor(try ck.finalNorm(scratch.allocator()));
         const head = try ck.head(scratch.allocator());
         if (rank) |r| {
-            m.head = try u.projection(try slicing.vocabRows(scratch.allocator(), head orelse .{ .affine = embed }, whole.vocab, r));
+            m.head = try u.projection(try slicing.vocabRows(scratch.allocator(), head orelse embed, whole.vocab, r));
         } else if (head) |h| m.head = try u.projection(h);
         var list: std.ArrayList(Layer) = .empty;
         errdefer list.deinit(gpa);
@@ -270,7 +230,7 @@ pub const Model = struct {
         if (drafts and m.layers.len == m.spec.n_layers) if (try ck.mtp()) |head_layer| {
             var h = head_layer;
             defer h.deinit();
-            if (rank != null and h.head == null) h.head = head orelse .{ .affine = embed };
+            if (rank != null and h.head == null) h.head = head orelse embed;
             m.mtp = try u.mtp(h);
         };
         return m;
@@ -278,7 +238,7 @@ pub const Model = struct {
 
     /// The output head: the embedding itself when the checkpoint ties them.
     pub fn outputHead(m: *const Model) Projection {
-        return m.head orelse .{ .affine = m.embed };
+        return m.head orelse m.embed;
     }
 
     pub fn deinit(m: *Model) void {

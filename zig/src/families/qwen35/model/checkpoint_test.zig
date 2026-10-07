@@ -2,7 +2,7 @@
 
 const std = @import("std");
 const checkpoint = @import("checkpoint.zig");
-const convert = @import("convert.zig");
+const convert = @import("hip").quant.convert;
 const host = @import("host.zig");
 const DType = @import("table.zig").DType;
 
@@ -171,8 +171,8 @@ test "a dense model: layers, embedding, tied head and the MTP side file" {
     var scratch: std.heap.ArenaAllocator = .init(gpa);
     defer scratch.deinit();
     const embed = try ck.embed(scratch.allocator());
-    try std.testing.expectEqual(@as(u8, 4), embed.bits);
-    try std.testing.expectEqual(host.Tensor{ .dtype = .i32, .rank = 2, .shape = .{ 16, 8, 1, 1 }, .bytes = embed.words.bytes }, embed.words);
+    try std.testing.expectEqual(@as(u8, 4), embed.mlx.bits);
+    try std.testing.expectEqual(host.Tensor{ .dtype = .i32, .rank = 2, .shape = .{ 16, 8, 1, 1 }, .bytes = embed.mlx.words.bytes }, embed.mlx.words);
     try std.testing.expect(try ck.head(scratch.allocator()) == null);
     const final = try ck.finalNorm(scratch.allocator());
     try std.testing.expectEqual(convert.load(.bf16, img.find(L ++ "norm.weight"), 5), convert.load(.f32, final.bytes, 5));
@@ -185,9 +185,9 @@ test "a dense model: layers, embedding, tied head and the MTP side file" {
     try std.testing.expectEqual(DType.f32, x.conv.dtype);
     try std.testing.expectEqual(@as(usize, 4), x.conv.shape[1]);
     try std.testing.expectEqual(convert.load(.bf16, img.find(lin ++ "conv1d.weight"), 9), convert.load(.f32, x.conv.bytes, 9));
-    try std.testing.expectEqual(@as(usize, 96), x.qkv.affine.words.shape[0]);
-    try std.testing.expectEqualSlices(u8, img.find(lin ++ "in_proj_qkv.weight"), x.qkv.affine.words.bytes);
-    try std.testing.expectEqual(DType.bf16, x.qkv.affine.scales.dtype);
+    try std.testing.expectEqual(@as(usize, 96), x.qkv.mlx.words.shape[0]);
+    try std.testing.expectEqualSlices(u8, img.find(lin ++ "in_proj_qkv.weight"), x.qkv.mlx.words.bytes);
+    try std.testing.expectEqual(DType.bf16, x.qkv.mlx.scales.dtype);
     try std.testing.expectEqual(@as(usize, 16), x.gnorm.numel());
     try std.testing.expect(x.mlp == .dense);
 
@@ -203,9 +203,9 @@ test "a dense model: layers, embedding, tied head and the MTP side file" {
     const words = side.find("mtp.fc.weight");
     const scales = side.find("mtp.fc.scales");
     for ([_]usize{ 0, 63 }) |r| {
-        try std.testing.expectEqualSlices(u8, words[r * 64 ..][0..32], head.fc_e.affine.words.bytes[r * 32 ..][0..32]);
-        try std.testing.expectEqualSlices(u8, words[r * 64 + 32 ..][0..32], head.fc_h.affine.words.bytes[r * 32 ..][0..32]);
-        try std.testing.expectEqualSlices(u8, scales[r * 8 + 4 ..][0..4], head.fc_h.affine.scales.bytes[r * 4 ..][0..4]);
+        try std.testing.expectEqualSlices(u8, words[r * 64 ..][0..32], head.fc_e.mlx.words.bytes[r * 32 ..][0..32]);
+        try std.testing.expectEqualSlices(u8, words[r * 64 + 32 ..][0..32], head.fc_h.mlx.words.bytes[r * 32 ..][0..32]);
+        try std.testing.expectEqualSlices(u8, scales[r * 8 + 4 ..][0..4], head.fc_h.mlx.scales.bytes[r * 4 ..][0..4]);
     }
 }
 
@@ -249,17 +249,17 @@ test "MoE experts: gate and up fused per expert, the shared expert last, router 
     const r = layer.body.full.mlp.routed;
     const e = r.experts;
     try std.testing.expect(e.gated and e.count == 3 and e.width == 32 and e.dims == 64);
-    try std.testing.expectEqual(@as(usize, 3), e.fused.words.shape[0]);
-    try std.testing.expectEqual(@as(usize, 64), e.fused.words.shape[1]);
+    try std.testing.expectEqual(@as(usize, 3), e.fused.mlx.words.shape[0]);
+    try std.testing.expectEqual(@as(usize, 64), e.fused.mlx.words.shape[1]);
     const per = 32 * 8 * 4;
     const gate = img.find(mlp ++ "switch_mlp.gate_proj.weight");
     const up = img.find(mlp ++ "switch_mlp.up_proj.weight");
-    const fused = e.fused.words.bytes;
+    const fused = e.fused.mlx.words.bytes;
     try std.testing.expectEqualSlices(u8, gate[per .. 2 * per], fused[(2 * per) * 1 ..][0..per]);
     try std.testing.expectEqualSlices(u8, up[per .. 2 * per], fused[(2 * per) * 1 + per ..][0..per]);
     try std.testing.expectEqualSlices(u8, img.find(mlp ++ "shared_expert.gate_proj.weight"), fused[2 * 2 * per ..][0..per]);
     try std.testing.expectEqualSlices(u8, img.find(mlp ++ "shared_expert.up_proj.weight"), fused[2 * 2 * per + per ..][0..per]);
-    try std.testing.expectEqualSlices(u8, img.find(mlp ++ "shared_expert.down_proj.scales"), e.down.scales.bytes[2 * 64 * 2 ..][0 .. 64 * 2]);
+    try std.testing.expectEqualSlices(u8, img.find(mlp ++ "shared_expert.down_proj.scales"), e.down.mlx.scales.bytes[2 * 64 * 2 ..][0 .. 64 * 2]);
     // the router: 8-bit codes unpacked as s * q + b, rounded to bf16, the shared gate row last
     try std.testing.expectEqualSlices(usize, &.{ 3, 64 }, r.router.shape[0..2]);
     const words = img.find(mlp ++ "gate.weight");

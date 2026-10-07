@@ -155,7 +155,7 @@ fn body(e: *Engine, r: win.Round) !round_graphs.Out {
     // the plan goes up first, inside the graph
     try e.round.buffer.send(e.stream.handle, e.round.layout);
     const hidden = try win.forward(o, m, r, e.round.trace);
-    const y = try o.affine(hidden, m.head, r.plan.rows, false);
+    const y = try o.project(hidden, m.head, r.plan.rows, false);
     if (m.tp == null) try o.argmaxRows(y, r.plan.rows, e.drawer.vocab, e.drawer.argmaxAt());
     return .{ .hidden = hidden, .y = y, .used = e.rounds.used };
 }

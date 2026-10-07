@@ -7,7 +7,7 @@ const abi = @import("../runtime/abi.zig");
 const rocm = @import("../rocm.zig");
 const Arena = @import("../runtime/arena.zig").Arena;
 const types = @import("types.zig");
-const project = @import("project.zig");
+const products = @import("project.zig");
 const attention = @import("attention.zig");
 const recurrence = @import("recurrence.zig");
 const norms = @import("norms.zig");
@@ -20,6 +20,7 @@ pub const Kind = types.Kind;
 pub const Error = types.Error;
 pub const Tensor = types.Tensor;
 pub const Affine = types.Affine;
+pub const Projection = @import("../quant/quant.zig").Projection;
 
 pub const Ops = struct {
     lib: *const rocm.Library,
@@ -42,12 +43,17 @@ pub const Ops = struct {
         return if (o.lib.zig) |z| z.fuse else false;
     }
 
-    pub const affine = project.affine;
-    pub const affineGroup = project.affineGroup;
-    pub const affineRoutedAct = project.affineRoutedAct;
-    pub const affineRouted = project.affineRouted;
-    pub const embedRows = project.embedRows;
-    pub const denseRows = project.denseRows;
+    pub const project = products.project;
+    pub const projectGroup = products.projectGroup;
+    pub const projectRoutedAct = products.projectRoutedAct;
+    pub const projectRouted = products.projectRouted;
+    pub const embedRows = products.embedRows;
+    pub const affine = products.affine;
+    pub const affineGroup = products.affineGroup;
+    pub const affineRoutedAct = products.affineRoutedAct;
+    pub const affineRouted = products.affineRouted;
+    pub const embedAffine = products.embedAffine;
+    pub const denseRows = products.denseRows;
     pub const attnGate = attention.attnGate;
     pub const ropePrefill = attention.ropePrefill;
     pub const qkRope = attention.qkRope;
