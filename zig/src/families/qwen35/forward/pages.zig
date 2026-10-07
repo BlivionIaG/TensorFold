@@ -71,7 +71,9 @@ pub const Ids = struct {
     }
 };
 
-/// The device pools of every attention layer (keys and values, `count` pages each) and the ids over them.
+/// The device pools of every attention layer (keys and values) and the ids over them. A pool is `kv_heads` runs of `count` pages,
+/// a page being 64 positions of one head: a head's pages sit side by side, so a stream whose pages were taken in order reads
+/// a head's keys as one stretch.
 pub const Pool = struct {
     gpa: Allocator,
     d: *const hip.Driver,
@@ -123,9 +125,14 @@ pub const Pool = struct {
         return p.head_dim * p.act_bytes;
     }
 
-    /// Bytes of one page of one layer's keys (or values).
+    /// Bytes of one head's share of a page of one layer's keys (or values).
+    fn headBytes(p: *const Pool) usize {
+        return tokens * p.rowBytes();
+    }
+
+    /// Bytes of one page of one layer's keys (or values), over its heads.
     pub fn layerBytes(p: *const Pool) usize {
-        return p.kv_heads * tokens * p.rowBytes();
+        return p.kv_heads * p.headBytes();
     }
 
     /// Bytes of a page over every attention layer, keys and values.
@@ -151,20 +158,25 @@ pub const Pool = struct {
     /// Copies page `from` into page `to` in every layer.
     pub fn copyPage(p: *Pool, from: u32, to: u32, stream: hip.abi.Stream) !void {
         if (from >= p.count or to >= p.count) return error.BadPage;
-        const n = p.layerBytes();
+        const n = p.headBytes();
         for (p.keys, p.values) |k, v| {
             if (k.len == 0) continue;
-            try k.copyFrom(to * n, k.ptr + from * n, n, stream);
-            try v.copyFrom(to * n, v.ptr + from * n, n, stream);
+            for (0..p.kv_heads) |h| {
+                const run = h * p.count * n;
+                try k.copyFrom(run + to * n, k.ptr + run + from * n, n, stream);
+                try v.copyFrom(run + to * n, v.ptr + run + from * n, n, stream);
+            }
         }
     }
 
-    /// Page `id`'s keys of layer `layer` read back, then its values: for checks.
+    /// Page `id`'s keys of layer `layer` read back, then its values, each head after head: for checks.
     pub fn read(p: *const Pool, layer: usize, id: u32, out: []u8) !void {
-        const n = p.layerBytes();
-        std.debug.assert(out.len == 2 * n);
-        try p.keys[layer].download(id * n, out[0..n]);
-        try p.values[layer].download(id * n, out[n..]);
+        const n = p.headBytes();
+        std.debug.assert(out.len == 2 * p.layerBytes());
+        for (0..p.kv_heads) |h| {
+            try p.keys[layer].download((h * p.count + id) * n, out[h * n ..][0..n]);
+            try p.values[layer].download((h * p.count + id) * n, out[(p.kv_heads + h) * n ..][0..n]);
+        }
     }
 };
 

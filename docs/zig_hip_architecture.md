@@ -216,9 +216,9 @@ on the shape of the round alone.
 - per linear layer: where the round's conv and DeltaNet snapshots are.
 
 A stream's descriptor (`state.Caches.desc`, made with its caches) holds the positions its caches take, the address of
-its last kept final row (the draft head's input), the address of its page table (3.7), and two addresses a layer (the
-key and value pools, or the conv window and the state). The window forward's rope, cache writes, attention walk, conv and DeltaNet kernels index through it, one
-launch a layer whatever the number of streams, and nothing of a stream is an argument.
+its last kept final row (the draft head's input), and two addresses a layer (the key and value pools, or the conv window
+and the state), then its page table (3.7). The window forward's rope, cache writes, attention walk, conv and DeltaNet
+kernels index through it, one launch a layer whatever the number of streams, and nothing of a stream is an argument.
 
 **Shapes come in buckets.** A round's graph is keyed by (rows, slots, keys covered):
 
@@ -270,14 +270,15 @@ that shared a system prompt each held their own. Now requests share prefix memor
 
 **Paged KV** (`forward/pages.zig`, `forward/state.zig`).
 
-- The full-attention layers keep K and V in one pool of pages of 64 positions (`kv_heads x 64 x head_dim` values a
-  layer), the same 64 as the chunked recurrence and the cut spacing, so a page edge is a chunk edge. A page is the same id
-  in every layer's pool.
-- A stream's descriptor (3.6) holds the address of its page table, one 32-bit page id for each 64 positions, which sits
-  right behind the descriptor. The plan's
-  decode walk (score and apply), the plan's KV write, the prefill KV write (`tf_page_write`) and the 64-row prefill
-  attention tile (`tf_fa_paged_*`, a key tile is a page) all read and write through it. Any other prefill shape reads a
-  gathered flat copy of the pages, so every shape runs the kernels it ran before, on the same bytes.
+- The full-attention layers keep K and V in one pool of pages of 64 positions, the same 64 as the chunked recurrence and
+  the cut spacing, so a page edge is a chunk edge. A layer's pool is `kv_heads` runs of pages, so a head's pages sit side
+  by side and a stream whose pages were taken in order reads a head's keys as one stretch, as a flat cache did. A page is
+  the same id in every layer's pool.
+- A stream's page table, one 32-bit page id for each 64 positions, sits right behind its descriptor (3.6), at the word
+  offset the round's plan carries. The plan's decode walk (score and apply), the plan's KV write, the prefill KV write
+  (`tf_page_write`) and the 64-row prefill attention tile (`tf_fa_paged_*`, a key tile is a page) all read and write
+  through it. Any other prefill shape reads a gathered flat copy of the pages, so every shape runs the kernels it ran
+  before, on the same bytes.
 - Pages are reference-counted (`pages.Ids`). A stream takes pages as it grows, against a promise made when it starts (its
   whole window), so a round never runs out of them; a page two holders share is copied before one writes it
   (`Caches.writable`). A resumed span starts on a page edge, so a stream's first write lands on a page of its own and the

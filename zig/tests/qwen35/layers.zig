@@ -128,7 +128,7 @@ pub fn run(g: Gpu, model_dir: []const u8, dir: []const u8, group: Group) !void {
     try expectToken(token, sampled[0], "prefill");
 
     // a decode step is a round of one row over a plan: the stream's slot, then the scratch slot
-    var plan_buf = try qwen35.plan.Buffer.init(g.d, 1, s.n_layers);
+    var plan_buf = try qwen35.plan.Buffer.init(g.d, 1, s.n_layers, pool.count);
     defer plan_buf.deinit();
     var scratch = try qwen35.state.Caches.initFull(g.gpa, &pool, m, 1);
     defer scratch.deinit(g.gpa);

@@ -13,16 +13,16 @@ pub const LayerCache = union(enum) {
     linear: struct { conv: hip.DeviceBuffer, state: hip.DeviceBuffer },
 };
 
-/// Words of a descriptor before its layers: the positions it holds, the last kept final row, the page table's address.
-const header_words = 3;
+/// Words of a descriptor before its layers: the positions it holds and the last kept final row.
+pub const header_words = 2;
 
 pub const Caches = struct {
     layers: []LayerCache,
     /// Positions the page table can name.
     total: usize,
     /// What a round's kernels read to find these buffers: the positions held, the address of the stream's last kept
-    /// final row (zero until `setHidden`), the page table, then two addresses a layer (the key and value pools, or the
-    /// conv window and state); the page table follows.
+    /// final row (zero until `setHidden`), then two addresses a layer (the key and value pools, or the conv window and
+    /// state); the page table follows.
     desc: hip.DeviceBuffer,
     pool: *pages.Pool,
     /// The page table as the device holds it: the pages of the first positions, each held once by this stream.
@@ -61,7 +61,6 @@ pub const Caches = struct {
         var desc = try hip.DeviceBuffer.alloc(d, 8 * words.len);
         errdefer desc.free();
         words[0] = total;
-        words[2] = desc.ptr + 8 * (header_words + 2 * s.n_layers);
         for (layers, 0..) |l, i| switch (l) {
             .full => words[header_words + 2 * i ..][0..2].* = .{ pool.keys[i].ptr, pool.values[i].ptr },
             .linear => |x| words[header_words + 2 * i ..][0..2].* = .{ x.conv.ptr, x.state.ptr },
@@ -182,7 +181,7 @@ pub const Caches = struct {
     /// The attention kernels' view of a full layer's pages.
     pub fn paged(c: *const Caches, m: *const view.Model, index: usize) hip.ops.Ops.Paged {
         const base = c.desc.ptr + 8 * (header_words + 2 * c.layers.len);
-        return .{ .k = c.pool.keys[index].ptr, .v = c.pool.values[index].ptr, .table = base, .kind = m.act, .kv_heads = m.spec.kv_heads, .d = m.spec.head_dim };
+        return .{ .k = c.pool.keys[index].ptr, .v = c.pool.values[index].ptr, .table = base, .kind = m.act, .kv_heads = m.spec.kv_heads, .d = m.spec.head_dim, .count = c.pool.count };
     }
 
     /// Bytes of the linear layers' state.

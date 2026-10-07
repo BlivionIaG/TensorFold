@@ -50,7 +50,7 @@ pub const State = struct {
         const m = e.model();
         if (!win.supported(e.ops(&e.rounds), m)) return error.RoundsUnsupported;
         const rows = e.o.batch_rows;
-        var buffer = try plan.Buffer.init(&e.driver, rows, m.spec.n_layers);
+        var buffer = try plan.Buffer.init(&e.driver, rows, m.spec.n_layers, e.pool.count);
         errdefer buffer.deinit();
         var scratch = try state.Caches.initFull(e.gpa, &e.pool, m, rows);
         errdefer scratch.deinit(e.gpa);

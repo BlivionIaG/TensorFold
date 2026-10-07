@@ -102,8 +102,8 @@ fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, 
     // k rotated and rounded to the activation dtype as (kv_heads, rows, d), then with v into the pages from slot pos
     const kr = try take(o, m.act, rows * s.kv_heads * hd);
     try o.ropePrefill(kn, kr, rows * hd, hd, rows, s.kv_heads, hd, s.rotary_dim, pos, theta);
-    try o.pageWrite(kr.ptr, c.k, c.table, rows, s.kv_heads, hd, rows * hd, hd, pos);
-    try o.pageWrite(values.ptr, c.v, c.table, rows, s.kv_heads, hd, hd, s.kv_heads * hd, pos);
+    try o.pageWrite(kr.ptr, c.k, c.table, rows, s.kv_heads, hd, rows * hd, hd, pos, c.count);
+    try o.pageWrite(values.ptr, c.v, c.table, rows, s.kv_heads, hd, hd, s.kv_heads * hd, pos, c.count);
     const att = try o.arena.of(f32, q_rows * hd);
     try o.causalPaged(q32, c, att, rows, pos + rows, s.heads, scaleOf(hd), pos);
     const gated = try take(o, m.act, q_rows * hd);

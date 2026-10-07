@@ -53,16 +53,16 @@ pub fn causalPrefill(o: Ops, q: u64, c: Cache, out: u64, qlen: usize, span: usiz
 }
 
 /// One attention layer of a stream's paged cache, as the prompt pass's kernels read it: the pools of its keys and values
-/// (pages of `kv_heads` heads of 64 positions of `d` values), and the stream's page table (32-bit page ids).
-pub const Paged = struct { k: u64, v: u64, table: u64, kind: Kind, kv_heads: usize, d: usize };
+/// (`count` pages a head, each 64 positions of `d` values), and the stream's page table (32-bit page ids).
+pub const Paged = struct { k: u64, v: u64, table: u64, kind: Kind, kv_heads: usize, d: usize, count: usize };
 
 fn zigLaunches(o: Ops) Error!*const @import("../launches.zig").Launcher {
     return if (o.lib.zig) |*z| z else error.BadShape;
 }
 
 /// 16-bit `src` values (h * s_head + r * s_row + j, in elements) of `len` positions from `pos0` into a pool through the table.
-pub fn pageWrite(o: Ops, src: u64, pool: u64, table: u64, len: usize, kv_heads: usize, d: usize, s_head: usize, s_row: usize, pos0: usize) Error!void {
-    try (try zigLaunches(o)).pagesWrite(src, pool, table, len, kv_heads, d, s_head, s_row, pos0, o.stream);
+pub fn pageWrite(o: Ops, src: u64, pool: u64, table: u64, len: usize, kv_heads: usize, d: usize, s_head: usize, s_row: usize, pos0: usize, count: usize) Error!void {
+    try (try zigLaunches(o)).pagesWrite(src, pool, table, len, kv_heads, d, s_head, s_row, pos0, count, o.stream);
 }
 
 /// Prefill attention over a stream's pages: q (heads, qlen, d) fp32 over the first `span` positions. The 64-row tile reads
@@ -70,11 +70,11 @@ pub fn pageWrite(o: Ops, src: u64, pool: u64, table: u64, len: usize, kv_heads: 
 pub fn causalPaged(o: Ops, q: u64, c: Paged, out: u64, qlen: usize, span: usize, heads: usize, scale: f32, q_pos0: usize) Error!void {
     if (c.d > 256 or heads % c.kv_heads != 0 or c.kind == .f32) return error.BadShape;
     const z = try zigLaunches(o);
-    if (c.d % 64 == 0 and z.wide) return z.pagedCausal(q, c.k, c.v, c.table, out, qlen, span, heads, c.kv_heads, c.d, scale, q_pos0, c.kind.cache(), o.stream);
+    if (c.d % 64 == 0 and z.wide) return z.pagedCausal(q, c.k, c.v, c.table, out, qlen, span, heads, c.kv_heads, c.d, scale, q_pos0, c.count, c.kind.cache(), o.stream);
     const bytes = c.kv_heads * span * c.d * 2;
     const flat: Cache = .{ .k = try o.arena.take(bytes), .v = try o.arena.take(bytes), .kind = c.kind, .kv_heads = c.kv_heads, .total = span, .d = c.d };
-    try z.pagesGather(c.k, c.table, flat.k, span, c.kv_heads, c.d, o.stream);
-    try z.pagesGather(c.v, c.table, flat.v, span, c.kv_heads, c.d, o.stream);
+    try z.pagesGather(c.k, c.table, flat.k, span, c.kv_heads, c.d, c.count, o.stream);
+    try z.pagesGather(c.v, c.table, flat.v, span, c.kv_heads, c.d, c.count, o.stream);
     try causalPrefill(o, q, flat, out, qlen, span, heads, scale, q_pos0);
 }
 
