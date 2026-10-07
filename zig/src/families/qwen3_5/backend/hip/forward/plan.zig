@@ -6,32 +6,13 @@ const std = @import("std");
 const hip = @import("hip");
 const state = @import("state.zig");
 
-/// Rows a round runs are padded up to one of these (and the limit), so the shapes stay few.
-pub const buckets = [_]usize{ 1, 2, 4, 8, 16, 32, 64 };
+const round_shape = @import("core").round_shape;
 
-/// Shortest span the attention walk covers; spans double from here.
-pub const min_span = 128;
-
-/// The rows a round of `rows` real rows runs: the smallest bucket that holds them, the limit past the last bucket.
-pub fn bucketOf(rows: usize, limit: usize) usize {
-    for (buckets) |b| if (b >= rows) return @min(b, limit);
-    return limit;
-}
-
-/// The keys the attention walk covers when the longest row sees `visible`: min_span doubled until it holds them.
-pub fn spanOf(visible: usize) usize {
-    var span: usize = min_span;
-    while (span < visible) span *= 2;
-    return span;
-}
-
-/// What a round's launches depend on: the rows it runs (padding included), its slots (the streams', empty ones up to a
-/// bucket, then the scratch slot that holds the padding rows) and the keys the walk covers.
-pub const Shape = struct {
-    rows: u32,
-    slots: u32,
-    span: u32,
-};
+pub const buckets = round_shape.buckets;
+pub const min_span = round_shape.min_span;
+pub const bucketOf = round_shape.bucketOf;
+pub const spanOf = round_shape.spanOf;
+pub const Shape = round_shape.Shape;
 
 /// Where each array sits in the plan buffer, in 4-byte words (the 8-byte arrays on even words).
 pub const Layout = struct {
@@ -155,12 +136,4 @@ test "layout keeps the eight-byte arrays on even words" {
     const l = Layout.of(5, 4, 3);
     try std.testing.expect(l.desc % 2 == 0 and l.snaps % 2 == 0);
     try std.testing.expect(l.words >= l.snaps + 12);
-}
-
-test "buckets round up and the span doubles" {
-    try std.testing.expectEqual(@as(usize, 4), bucketOf(3, 64));
-    try std.testing.expectEqual(@as(usize, 32), bucketOf(17, 32));
-    try std.testing.expectEqual(@as(usize, 6), bucketOf(5, 6));
-    try std.testing.expectEqual(@as(usize, 128), spanOf(1));
-    try std.testing.expectEqual(@as(usize, 512), spanOf(300));
 }

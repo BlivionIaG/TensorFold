@@ -4,6 +4,7 @@ pub const safetensors = @import("safetensors.zig");
 pub const quant = @import("quant/quant.zig");
 pub const registry = @import("registry.zig");
 pub const tuning = @import("tuning.zig");
+pub const round_shape = @import("round_shape.zig");
 pub const checkpoint = @import("checkpoint.zig");
 pub const Checkpoint = checkpoint.Checkpoint;
 pub const draft_depth = @import("draft_depth.zig");
@@ -16,6 +17,7 @@ test {
     _ = quant;
     _ = registry;
     _ = tuning;
+    _ = round_shape;
     _ = checkpoint;
     _ = draft_depth;
     _ = @import("copy_index.zig");
