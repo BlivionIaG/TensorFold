@@ -1,10 +1,11 @@
 //! `check <model dir> [--tp N --rank R [--master HOST] [--port P]] [--policy K=V,...] [--prompts FILE] [--truth T --ids IDS] [--speed]
-//! [--only invariants|accuracy|speed] [--tokens N] [--kl X] [--top1 P]`: the model's checks in one process, one line each
+//! [--only invariants|accuracy|speed] [--tokens N] [--kl X] [--top1 P] [--explain-kernels]`: the model's checks in one process, one line each
 //! (PASS, FAIL or SKIP with its numbers) and a summary; the exit code is nonzero when any fails. Invariants: a window
 //! against its rows one at a time, drafted against serial, solo against together (greedy and seeded), resumed against
 //! fresh, graph against eager, on short prompts and on long ones (four of 300 to 500 tokens cut from IDS, or the
 //! prompts of FILE). Accuracy, with --truth: prefill and decode logits against the fp64 truth. Speed, with --speed:
-//! prefill and decode rates. Under --tp every rank runs the same command and rank 0 reports.
+//! prefill and decode rates. Under --tp every rank runs the same command and rank 0 reports. --explain-kernels prints
+//! which kernel each (op, path) takes at every row count, on this GPU under this policy, and exits.
 
 const std = @import("std");
 const qwen35 = @import("qwen35");
@@ -27,6 +28,7 @@ const Options = struct {
     truth: ?[]const u8 = null,
     ids: ?[]const u8 = null,
     speed: bool = false,
+    explain: bool = false,
     only: ?Phase = null,
     tokens: u32 = 48,
     bar: check_accuracy.Bar = .{},
@@ -52,11 +54,15 @@ fn parse(args: []const [:0]const u8) !Options {
             o.speed = true;
             continue;
         }
+        if (std.mem.eql(u8, a, "--explain-kernels")) {
+            o.explain = true;
+            continue;
+        }
         i += 1;
         if (i >= args.len) return error.MissingArgument;
         if (std.mem.eql(u8, a, "--prompts")) o.prompts = args[i] else if (std.mem.eql(u8, a, "--truth")) o.truth = args[i] else if (std.mem.eql(u8, a, "--ids")) o.ids = args[i] else if (std.mem.eql(u8, a, "--only")) o.only = std.meta.stringToEnum(Phase, args[i]) orelse return error.UnknownPhase else if (std.mem.eql(u8, a, "--tokens")) o.tokens = try std.fmt.parseInt(u32, args[i], 10) else if (std.mem.eql(u8, a, "--kl")) o.bar.kl_mean = try std.fmt.parseFloat(f64, args[i]) else if (std.mem.eql(u8, a, "--top1")) o.bar.top1 = try std.fmt.parseFloat(f64, args[i]) else return error.UnknownOption;
     }
-    if (o.runs(.accuracy) and o.truth == null) return error.NoTruth;
+    if (o.runs(.accuracy) and o.truth == null and !o.explain) return error.NoTruth;
     return o;
 }
 
@@ -93,6 +99,13 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !u8 {
     defer e.deinit();
     if (o.group.rank > 0) {
         try group_mod.follow(gpa, e, &joined);
+        return 0;
+    }
+    if (o.explain) {
+        var buf: [4096]u8 = undefined;
+        var w: std.Io.Writer = .fixed(&buf);
+        try e.lib.explain(&w, e.weights.spec.bits, e.weights.spec.group);
+        std.debug.print("{s}", .{w.buffered()});
         return 0;
     }
     var session: lanes_session.Session = undefined;

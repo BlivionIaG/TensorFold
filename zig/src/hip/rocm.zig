@@ -141,6 +141,12 @@ pub const Library = struct {
         self.lib.close();
     }
 
+    /// What each launch of a product chooses at every row count on this GPU under this policy, one line an (op, path).
+    pub fn explain(self: *const Library, w: *std.Io.Writer, bits: u8, group: u16) std.Io.Writer.Error!void {
+        const z = self.zig orelse return w.writeAll("kernel choice: the C library's own, by launch=library\n");
+        try z.affine.reg.explain(z.affine.env(), .mlx, w, bits, group);
+    }
+
     fn ArgsOf(comptime name: []const u8) type {
         return std.meta.ArgsTuple(@typeInfo(@FieldType(Api, name)).pointer.child);
     }
