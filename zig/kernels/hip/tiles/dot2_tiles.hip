@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "tiles/api.hpp"
 #include "tiles/dot2.hpp"
 #include "tiles/gemm.hpp"
 #include "tiles/gemm_kp.hpp"
@@ -471,19 +472,17 @@ hipError_t launch_affine_dot2_block_old(const Affine& a, hipStream_t stream, int
     }
 }
 
-// TF_WMMA=0 keeps the dot2 tiles on gfx11, 1 puts every product of the GEMM tiles on the matrix cores, unset (auto)
+// Policy matrix=off keeps the dot2 tiles on gfx11, on puts every product of the GEMM tiles on the matrix cores, auto
 // takes them from 16 rows; gfx12's matrix cores have other layouts and always stay on dot2.
 static int wmma_rows_from() {
-    static const int rows = [] {
-        int dev = 0, major = 0;
-        if (hipGetDevice(&dev) != hipSuccess) return 1 << 30;
-        if (hipDeviceGetAttribute(&major, hipDeviceAttributeComputeCapabilityMajor, dev) != hipSuccess) return 1 << 30;
-        if (!TENSORFOLD_RDNA_WMMA || major != 11) return 1 << 30;
-        const char* v = std::getenv("TF_WMMA");
-        if (v != nullptr && std::strcmp(v, "0") == 0) return 1 << 30;
-        return v != nullptr && std::strcmp(v, "1") == 0 ? 1 : 16;
+    static const int major = [] {
+        int dev = 0, m = 0;
+        if (hipGetDevice(&dev) != hipSuccess) return 0;
+        if (hipDeviceGetAttribute(&m, hipDeviceAttributeComputeCapabilityMajor, dev) != hipSuccess) return 0;
+        return m;
     }();
-    return rows;
+    if (!TENSORFOLD_RDNA_WMMA || major != 11 || library_policy.matrix == 2) return 1 << 30;
+    return library_policy.matrix == 1 ? 1 : 16;
 }
 
 // Prefill's tile for a few rows (tiles/gemm_kp.hpp): the Zig launcher takes it, this entry keeps its kernels in the object.
@@ -500,11 +499,7 @@ hipError_t launch_affine_gemm_kp(const Affine& a, hipStream_t stream, int items)
 }
 
 hipError_t launch_affine_dot2_block(const Affine& a, hipStream_t stream, int items) {
-    static const bool old = [] {
-        const char* v = std::getenv("TF_AFFINE_GEMM");
-        return v != nullptr && std::strcmp(v, "old") == 0;
-    }();
-    if (a.k % 16 == 0 && !old && affine_gemm_supported(a)) {
+    if (a.k % 16 == 0 && library_policy.gemm_on && affine_gemm_supported(a)) {
         if (!a.fp16 && a.m >= wmma_rows_from()) return launch_affine_wmma_gemm(a, stream, items);
         return launch_affine_gemm(a, stream, items);
     }

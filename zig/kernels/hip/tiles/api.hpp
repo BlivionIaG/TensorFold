@@ -1,5 +1,13 @@
 #pragma once
 
+// The run's Policy as the C launchers read it, set once by tf_set_policy when the library opens.
+struct LibraryPolicy {
+    int matrix = 0;           // 0 auto, 1 on, 2 off
+    bool stream_on = true;    // the decode stream tile, else the reference decode tiles
+    bool gemm_on = true;      // the prefill GEMM tile, else the reference block tile
+};
+inline LibraryPolicy library_policy;
+
 // x (m, k) bf16, or fp16 on RDNA2; words (n, k * bits / 32); scale and bias (n, k / group) of one type; out (m, n).
 void affine_launch(const void* x, const void* words, const void* scale, const void* bias, int scale_kind, void* out,
                    int m, int n, int k, int bits, int group, int schedule, int fp16, void* stream, float* partial,

@@ -39,6 +39,11 @@ const char* tf_last_error() { return last_error; }
 // 0 rdna2 (dot2, fp16 activations), 1 a WMMA build (gfx11 / gfx12, bf16 activations): host dispatch differs.
 int tf_wmma_build() { return TF_MATRIX; }
 
+// The run's Policy for the C launchers: matrix 0 auto, 1 on, 2 off; the stream and GEMM tiles on or at their reference.
+void tf_set_policy(int matrix, int stream_on, int gemm_on) {
+    library_policy = {matrix, stream_on != 0, gemm_on != 0};
+}
+
 int tf_rms(const void* x, const float* weight, void* y, int kind, int rows, int width, float eps, hipStream_t s) {
     return guarded([&] { rms_launch(x, weight, y, kind, rows, width, eps, s); });
 }

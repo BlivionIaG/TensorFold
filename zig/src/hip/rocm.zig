@@ -11,7 +11,6 @@ const Caps = @import("caps.zig").Caps;
 
 pub const Error = error{ LibraryUnavailable, MissingSymbol, KernelFailed } || driver.Error;
 
-
 pub const Launch = @import("policy.zig").Launch;
 
 const S = abi.Stream;
@@ -27,6 +26,7 @@ pub const Api = struct {
     tf_last_error: *const fn () callconv(.c) [*:0]const u8,
     tf_op_error: *const fn () callconv(.c) [*:0]const u8,
     tf_wmma_build: *const fn () callconv(.c) c_int,
+    tf_set_policy: *const fn (c_int, c_int, c_int) callconv(.c) void,
     tf_rms: *const fn (C, CF, P, c_int, c_int, c_int, f32, S) callconv(.c) c_int,
     tf_conv_decode: *const fn (CF, CF, F, F, c_int, c_int, c_int, S) callconv(.c) c_int,
     tf_conv_rows: *const fn (CF, CF, F, F, F, c_int, c_int, c_int, S) callconv(.c) c_int,
@@ -133,6 +133,12 @@ pub const Library = struct {
                 return error.MissingSymbol;
             };
         }
+        const matrix: c_int = switch (policy.matrix) {
+            .auto => 0,
+            .on => 1,
+            .off => 2,
+        };
+        api.tf_set_policy(matrix, @intFromBool(policy.streamOn()), @intFromBool(policy.gemmOn()));
         return .{ .lib = lib, .api = api, .caps = caps, .policy = policy };
     }
 

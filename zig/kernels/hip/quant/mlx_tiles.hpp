@@ -8,6 +8,7 @@
 #include <type_traits>
 
 #include "quant/act.hpp"
+#include "tiles/api.hpp"
 #include "quant/mlx_decoder.hpp"
 #include "tiles/dot2.hpp"
 #include "tiles/epilogue.hpp"
@@ -258,14 +259,8 @@ hipError_t stream_pair_type(const Affine& a, int pair_cols, float limit, int lpc
     return stream_pair_bits<DotF16, BITS>(a, pair_cols, limit, lpc_log2, items, stream);
 }
 
-// TF_AFFINE_GEMV=old keeps the reference decode tiles.
-inline bool stream_enabled() {
-    static const bool on = [] {
-        const char* v = std::getenv("TF_AFFINE_GEMV");
-        return v == nullptr || std::strcmp(v, "old") != 0;
-    }();
-    return on;
-}
+// Policy stream=reference keeps the reference decode tiles.
+inline bool stream_enabled() { return library_policy.stream_on; }
 
 // The stream tile of 1 to 8 rows; false when the shape keeps the reference tiles.
 inline bool launch_affine_dot2_stream(const Affine& a, hipStream_t stream, int items, hipError_t* err) {
