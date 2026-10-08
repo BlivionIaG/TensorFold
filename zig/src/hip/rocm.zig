@@ -42,6 +42,7 @@ pub const Api = struct {
     tf_affine: *const fn (C, C, C, C, c_int, P, c_int, c_int, c_int, c_int, c_int, c_int, c_int, S, F, c_int, c_int) callconv(.c) c_int,
     tf_affine_routed: *const fn (C, C, C, C, c_int, P, CI, c_int, CI, c_int, c_int, c_int, c_int, c_int, c_int, c_int, S) callconv(.c) c_int,
     tf_embed_rows: *const fn (C, C, C, c_int, CI, c_int, c_int, c_int, c_int, P, c_int, S) callconv(.c) c_int,
+    tf_embed_dense: *const fn (CF, CI, c_int, c_int, P, c_int, S) callconv(.c) c_int,
     tf_cast: *const fn (C, c_int, P, c_int, c_longlong, S) callconv(.c) c_int,
     tf_silu_mul: *const fn (C, C, P, c_int, c_longlong, S) callconv(.c) c_int,
     tf_add: *const fn (C, C, P, c_int, c_longlong, S) callconv(.c) c_int,

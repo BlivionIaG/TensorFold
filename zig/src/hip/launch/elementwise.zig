@@ -28,6 +28,17 @@ pub fn tf_embed_rows(l: *const Launcher, words: C, scale: C, bias: C, scale_kind
     try l.flat(l.op.embed_rows, @as(i64, n) * k, s, &a);
 }
 
+pub fn tf_embed_dense(l: *const Launcher, table: CF, ids: CI, n: c_int, k: c_int, out: P, out_kind: c_int, s: S) Error!void {
+    var a: Args = .{};
+    a.add(ad(table));
+    a.add(ad(ids));
+    a.add(n);
+    a.add(k);
+    a.add(ad(out));
+    a.add(out_kind);
+    try l.flat(l.op.embed_dense, @as(i64, n) * k, s, &a);
+}
+
 pub fn tf_cast(l: *const Launcher, src: C, skind: c_int, dst: P, dkind: c_int, n: c_longlong, s: S) Error!void {
     var a: Args = .{};
     a.add(ad(src));

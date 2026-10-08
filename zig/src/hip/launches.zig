@@ -103,6 +103,7 @@ pub const Launcher = struct {
 
     const Ops = struct {
         embed_rows: Function,
+        embed_dense: Function,
         cast: Function,
         silu_mul: Function,
         add: Function,
@@ -160,6 +161,7 @@ pub const Launcher = struct {
         const anon = "_ZN12_GLOBAL__N_1";
         l.op = .{
             .embed_rows = try ops.function(anon ++ "17embed_rows_kernelEPKjPKvS3_iPKiiiiiPvi"),
+            .embed_dense = try ops.function(anon ++ "18embed_dense_kernelEPKfPKiiiPvi"),
             .cast = try ops.function(anon ++ "11cast_kernelEPKviPvix"),
             .silu_mul = try ops.function(anon ++ "15silu_mul_kernelEPKvS1_Pvix"),
             .add = try ops.function(anon ++ "10add_kernelEPKvS1_Pvix"),
@@ -282,6 +284,7 @@ pub const Launcher = struct {
     pub const tf_gdn_gate_prefill = recurrence.tf_gdn_gate_prefill;
     pub const tf_gnorm_silu = recurrence.tf_gnorm_silu;
     pub const tf_embed_rows = elementwise.tf_embed_rows;
+    pub const tf_embed_dense = elementwise.tf_embed_dense;
     pub const tf_cast = elementwise.tf_cast;
     pub const tf_silu_mul = elementwise.tf_silu_mul;
     pub const tf_add = elementwise.tf_add;

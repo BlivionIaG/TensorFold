@@ -41,10 +41,9 @@ pub const Checkpoint = struct {
         return c.config.spec;
     }
 
-    /// The embedding, which the row gather reads in MLX affine words; `a` holds any converted group tables.
+    /// The embedding, MLX affine words or a float table the row gather reads; `a` holds any converted tables.
     pub fn embed(c: *const Checkpoint, a: std.mem.Allocator) !host.Projection {
         const p = try projection.projection(a, &c.main, prefix ++ "embed_tokens");
-        if (p != .mlx) return error.UnexpectedTensor;
         if (p.rows() != c.spec().vocab) return error.UnexpectedTensor;
         return p;
     }

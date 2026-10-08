@@ -31,6 +31,14 @@ __global__ void embed_rows_kernel(const uint32_t* words, const void* scale, cons
     store(out, out_kind, i, y);
 }
 
+// The float gather: rows of an fp32 table (an embedding kept unquantized), written in the activation type.
+__global__ void embed_dense_kernel(const float* table, const int* ids, int n, int k, void* out, int out_kind) {
+    long long i = gid();
+    if (i >= static_cast<long long>(n) * k) return;
+    int r = static_cast<int>(i / k), c = static_cast<int>(i % k);
+    store(out, out_kind, i, table[static_cast<long long>(ids[r]) * k + c]);
+}
+
 __global__ void cast_kernel(const void* src, int skind, void* dst, int dkind, long long n) {
     long long i = gid();
     if (i < n) store(dst, dkind, i, load(src, skind, i));
@@ -80,6 +88,13 @@ int tf_embed_rows(const void* words, const void* scale, const void* bias, int sc
     if (total == 0) return 0;
     embed_rows_kernel<<<blocks(total, 256), 256, 0, s>>>(static_cast<const uint32_t*>(words), scale, bias,
                                                          scale_kind, ids, n, bits, group, k, out, out_kind);
+    return finish();
+}
+
+int tf_embed_dense(const float* table, const int* ids, int n, int k, void* out, int out_kind, hipStream_t s) {
+    long long total = static_cast<long long>(n) * k;
+    if (total == 0) return 0;
+    embed_dense_kernel<<<blocks(total, 256), 256, 0, s>>>(table, ids, n, k, out, out_kind);
     return finish();
 }
 
