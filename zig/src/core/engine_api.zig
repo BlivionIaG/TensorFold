@@ -117,6 +117,8 @@ pub const Info = struct {
     structures: bool = false,
     /// Prompt rows a prefill chunk at most, for the server's chunk starts (0: the engine cuts prompts itself).
     prefill_step: u32 = 0,
+    /// The policy the engine runs under, one line; empty when it has none.
+    policy: []const u8 = "",
     /// A line the server prints once at startup (the engine's memory plan); empty: none.
     startup: []const u8 = "",
 };
@@ -133,9 +135,16 @@ pub const Open = struct {
     /// --parallel named a number: an engine whose memory fits fewer streams refuses instead of serving fewer.
     lanes_fixed: bool = false,
     drafts: bool = true,
+    /// --mtp-drafts and --mtp-confidence; null: the engine's defaults.
+    mtp_drafts: ?u32 = null,
+    mtp_confidence: ?f64 = null,
     speed_up: ?[]const u8 = null,
+    /// The bytes kept prompt states may hold, in GiB (`--prompt-cache-gib`); null: the engine's plan.
     prompt_cache_gib: ?f64 = null,
+    /// A budget past what the machine leaves is kept, not refused.
     prompt_cache_over_cap: bool = false,
+    /// Kept prompt entries (`--checkpoint-slots`); null: the engine's plan.
+    keep: ?i64 = null,
     /// --learn: where shared prompt states are kept on disk for later sessions and servers (null: off).
     learn: ?[]const u8 = null,
     /// --learn-gib: what learned states may take on disk, every model and build together.
@@ -143,6 +152,13 @@ pub const Open = struct {
     /// --device and --segments (CUDA); null: the backend's environment fallback, then its default.
     device: ?u32 = null,
     segments: ?u32 = null,
+    /// Tensor parallelism: this process is `rank` of `tp`; rank 0 listens on `master`:`master_port` for the others.
+    tp: u32 = 1,
+    rank: u32 = 0,
+    master: []const u8 = "",
+    master_port: u16 = 29551,
+    /// The GPU engine's policy flags as `key=value,...`; empty: its defaults.
+    policy: []const u8 = "",
 };
 
 /// An opened engine; ``close`` stops its thread and frees its backend.
@@ -246,6 +262,9 @@ pub const LaneHost = @import("lane_host.zig").LaneHost;
 /// Exact prompt reuse between requests, for any family (prompt_cache.zig).
 pub const prompt_cache = @import("prompt_cache.zig");
 
+/// The same for a paged cache over the backend's own KV pages (prompt_radix.zig).
+pub const prompt_radix = @import("prompt_radix.zig");
+
 /// Learned prompt-cache states on disk (prompt_imprint.zig).
 pub const prompt_imprint = @import("prompt_imprint.zig");
 
@@ -255,7 +274,8 @@ pub const keepalive = @import("keepalive.zig");
 test {
     _ = @import("lane_host.zig");
     _ = @import("lane_host_reuse_test.zig");
-    _ = @import("prompt_cache.zig");
-    _ = @import("prompt_imprint.zig");
-    _ = @import("keepalive.zig");
+    _ = prompt_cache;
+    _ = prompt_radix;
+    _ = keepalive;
+    _ = prompt_imprint;
 }

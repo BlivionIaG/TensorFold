@@ -21,7 +21,10 @@ pub const Flag = struct {
     native_values: ?[]const []const u8 = null,
 };
 
-const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else &.{ "auto", "cuda" };
+const backend_values: []const []const u8 = if (builtin.os.tag == .macos) &.{ "auto", "mlx" } else &.{ "auto", "cuda", "rocm" };
+
+/// The GPU lane's flags: the HIP engines serve them, the Mac's do not.
+const gpu = builtin.os.tag == .linux;
 
 /// The CUDA build's own flags and variables (the Metal build refuses them).
 const cuda_build = builtin.os.tag == .linux;
@@ -60,12 +63,12 @@ pub const flags = [_]Flag{
     .{ .name = "--compact-memory", .native = true },
     .{ .name = "--drafter" },
     .{ .name = "--drafter-bits" },
-    .{ .name = "--mtp-drafts" },
-    .{ .name = "--mtp-confidence" },
+    .{ .name = "--mtp-drafts", .native = gpu },
+    .{ .name = "--mtp-confidence", .native = gpu },
     .{ .name = "--lane-kernels", .choices = &.{ "auto", "on", "off" } },
     .{ .name = "--prompt-cache-gib", .native = true },
     .{ .name = "--prompt-cache-over-cap", .kind = .store_true, .native = true },
-    .{ .name = "--checkpoint-slots" },
+    .{ .name = "--checkpoint-slots", .native = gpu },
     .{ .name = "--spill-gib" },
     .{ .name = "--snapshot-dir", .native = true, .native_values = &.{"none"} },
     .{ .name = "--max-snapshots", .native = true, .native_values = &.{"0"} },
@@ -77,11 +80,12 @@ pub const flags = [_]Flag{
     .{ .name = "--ssd-experts" },
     .{ .name = "--ple-on-ssd", .kind = .store_true },
     .{ .name = "--no-update-check", .kind = .store_true, .native = true },
-    .{ .name = "--backend", .choices = &.{ "auto", "mlx", "cuda" }, .native = true, .native_values = backend_values },
-    .{ .name = "--tp", .choices = &.{ "1", "2" } },
-    .{ .name = "--rank", .choices = &.{ "0", "1" } },
-    .{ .name = "--master" },
-    .{ .name = "--master-port" },
+    .{ .name = "--backend", .choices = &.{ "auto", "mlx", "cuda", "rocm" }, .native = true, .native_values = backend_values },
+    .{ .name = "--tp", .choices = &.{ "1", "2", "4", "8" }, .native = gpu },
+    .{ .name = "--rank", .native = gpu },
+    .{ .name = "--master", .native = gpu },
+    .{ .name = "--master-port", .native = gpu },
+    .{ .name = "--policy", .native = gpu },
     .{ .name = "--kv-dtype", .choices = &.{ "bf16", "int8", "int4" } },
     .{ .name = "--prefill-fp8", .kind = .store_true },
     .{ .name = "--no-prefill-fp8", .kind = .store_true },
@@ -97,7 +101,7 @@ pub const flags = [_]Flag{
 
 /// The variables this binary honours as the Python engine does, then the CUDA build's.
 pub const env = [_][]const u8{ "TENSORFOLD_API_KEY", "TENSORFOLD_NO_LIVE", "TENSORFOLD_SEED_SALT", "TENSORFOLD_REQUEST_LOG", "TENSORFOLD_NO_UPDATE_CHECK", "HF_HOME", "HF_HUB_CACHE", "HF_HUB_OFFLINE" } ++
-    (if (cuda_build) [_][]const u8{ "TF_CUDA_DEVICE", "TF_CUDA_SEGMENTS", "TENSORFOLD_CUDA_KERNELS", "TENSORFOLD_MEMORY_RESERVE_GIB", "TENSORFOLD_CUDA_MEMORY_LIMIT_GB" } else [_][]const u8{});
+    (if (cuda_build) [_][]const u8{ "TF_CUDA_DEVICE", "TF_CUDA_SEGMENTS", "TENSORFOLD_CUDA_KERNELS", "TENSORFOLD_MEMORY_RESERVE_GIB", "TENSORFOLD_CUDA_MEMORY_LIMIT_GB", "TENSORFOLD_HIP_MEMORY_LIMIT_GB" } else [_][]const u8{});
 
 pub const Args = struct {
     model: []const u8 = "",
@@ -133,6 +137,16 @@ pub const Args = struct {
     compact_memory: ?[]const u8 = null,
     parallel: []const u8 = "auto",
     backend: []const u8 = "auto",
+    checkpoint_slots: ?i64 = null,
+    mtp_drafts: ?u32 = null,
+    mtp_confidence: ?f64 = null,
+    /// Tensor parallelism: this process is `rank` of `tp`; rank 0 listens on `master`:`master_port` for the others.
+    tp: u32 = 1,
+    rank: u32 = 0,
+    master: []const u8 = "",
+    master_port: u16 = 29551,
+    /// The GPU engine's policy as `key=value,...` (--policy, as given).
+    policy: []const u8 = "",
     device: ?u32 = null,
     segments: ?u32 = null,
 };
@@ -212,7 +226,7 @@ fn apply(a: Allocator, out: *Args, name: []const u8, value: ?[]const u8, u: *Usa
             return std.mem.eql(u8, x, y);
         }
     }.f;
-    if (try cudaFlag(a, out, name, v, u)) return;
+    if (try cudaFlag(a, out, name, v, u) or try gpuFlag(a, out, name, v, u)) return;
     if (is(name, "--host")) out.host = v else if (is(name, "--port")) {
         const p = try int(u, a, name, v);
         if (p < 0 or p > 65535) return fail(u, a, "argument --port: invalid port: '{s}'", .{v});
@@ -244,6 +258,29 @@ fn cudaFlag(a: Allocator, out: *Args, name: []const u8, v: []const u8, u: *Usage
         const n = try int(u, a, name, v);
         out.segments = if (n >= 1) @intCast(@min(n, std.math.maxInt(u32))) else return fail(u, a, "argument --segments: a count from 1: '{s}'", .{v});
     } else return false;
+    return true;
+}
+
+/// The GPU lane's tensor-parallel, prompt-cache, MTP and policy flags; false for any other flag.
+fn gpuFlag(a: Allocator, out: *Args, name: []const u8, v: []const u8, u: *Usage) error{ Usage, OutOfMemory }!bool {
+    const is = struct {
+        fn f(x: []const u8, y: []const u8) bool {
+            return std.mem.eql(u8, x, y);
+        }
+    }.f;
+    if (is(name, "--checkpoint-slots")) out.checkpoint_slots = try int(u, a, name, v) else if (is(name, "--tp")) out.tp = @intCast(try int(u, a, name, v)) else if (is(name, "--rank")) {
+        const r = try int(u, a, name, v);
+        if (r < 0 or r > 4096) return fail(u, a, "argument --rank: invalid rank: '{s}'", .{v});
+        out.rank = @intCast(r);
+    } else if (is(name, "--master")) out.master = v else if (is(name, "--master-port")) {
+        const p = try int(u, a, name, v);
+        if (p < 0 or p > 65535) return fail(u, a, "argument --master-port: invalid port: '{s}'", .{v});
+        out.master_port = @intCast(p);
+    } else if (is(name, "--mtp-drafts")) {
+        const n = try int(u, a, name, v);
+        if (n < 0 or n > 64) return fail(u, a, "argument --mtp-drafts: a count from 0: '{s}'", .{v});
+        out.mtp_drafts = @intCast(n);
+    } else if (is(name, "--mtp-confidence")) out.mtp_confidence = try float(u, a, name, v) else if (is(name, "--policy")) out.policy = try std.fmt.allocPrint(a, "{s},{s}", .{ out.policy, v }) else return false;
     return true;
 }
 
@@ -356,4 +393,26 @@ test "--device and --segments: CUDA builds serve them, values checked" {
     try std.testing.expectEqual(@as(?u32, 4), out.segments);
     try std.testing.expect(!try cudaFlag(a, &out, "--port", "1", &u));
     try std.testing.expect(parallelFixed("3") and !parallelFixed("auto") and !parallelFixed("x"));
+}
+
+test "the GPU lane's flags: tensor parallelism, prompt cache, MTP, backend" {
+    if (!gpu) return error.SkipZigTest;
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    var u: Usage = .{};
+    const args = try parse(a, &.{ "m", "--tp", "4", "--rank=2", "--master", "node0", "--master-port", "29600", "--checkpoint-slots", "3", "--prompt-cache-gib", "1.5", "--mtp-drafts", "2", "--mtp-confidence", "0.5", "--backend", "rocm" }, &u);
+    try std.testing.expectEqual(@as(u32, 4), args.tp);
+    try std.testing.expectEqual(@as(u32, 2), args.rank);
+    try std.testing.expectEqualStrings("node0", args.master);
+    try std.testing.expectEqual(@as(u16, 29600), args.master_port);
+    try std.testing.expectEqual(@as(?i64, 3), args.checkpoint_slots);
+    try std.testing.expectEqual(@as(?f64, 1.5), args.prompt_cache_gib);
+    try std.testing.expectEqual(@as(?u32, 2), args.mtp_drafts);
+    try std.testing.expectEqual(@as(?f64, 0.5), args.mtp_confidence);
+    const policy = try parse(a, &.{ "m", "--policy", "matrix=off", "--policy", "kernels=reference" }, &u);
+    try std.testing.expectEqualStrings(",matrix=off,kernels=reference", policy.policy);
+    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--matrix", "off" }, &u));
+    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--tp", "3" }, &u));
+    try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--backend", "mlx" }, &u));
 }

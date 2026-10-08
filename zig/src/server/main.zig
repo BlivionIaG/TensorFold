@@ -9,7 +9,10 @@ const serve = @import("serve.zig");
 const hf_text = @import("hf_text.zig");
 const checkpoint_cli = @import("checkpoint_cli");
 
-const usage_line = "usage: tensorfold serve [-h] [--host HOST] [--port PORT] [--name NAME] [--alias ALIAS] [--api-key API_KEY] [--api-key-file API_KEY_FILE] [--metrics-open] [--dashboard] [--context CONTEXT] [--speed-up SETTINGS] [--prompt-cache-gib PROMPT_CACHE_GIB] [--prompt-cache-over-cap] [--learn] [--learn-dir LEARN_DIR] [--learn-gib LEARN_GIB] [--max-tokens MAX_TOKENS] [--temperature TEMPERATURE] [--top-p TOP_P] [--top-k TOP_K] [--min-p MIN_P] [--thinking | --no-thinking] [--reasoning-effort {low,medium,high,xhigh}] [--thinking-budget THINKING_BUDGET] [--loop-guard] [--no-drafts] [--compact-at COMPACT_AT] [--compact-keep COMPACT_KEEP] [--compact-memory COMPACT_MEMORY] [--parallel PARALLEL] [--no-update-check] [--backend {auto,mlx,cuda}] [--device DEVICE] [--segments SEGMENTS] model\n";
+const usage_line = "usage: tensorfold serve [-h] [--host HOST] [--port PORT] [--name NAME] [--alias ALIAS] [--api-key API_KEY] [--api-key-file API_KEY_FILE] [--metrics-open] [--dashboard] [--context CONTEXT] [--speed-up SETTINGS] [--prompt-cache-gib PROMPT_CACHE_GIB] [--prompt-cache-over-cap] [--learn] [--learn-dir LEARN_DIR] [--learn-gib LEARN_GIB] [--checkpoint-slots CHECKPOINT_SLOTS] [--max-tokens MAX_TOKENS] [--temperature TEMPERATURE] [--top-p TOP_P] [--top-k TOP_K] [--min-p MIN_P] [--thinking | --no-thinking] [--reasoning-effort {low,medium,high,xhigh}] [--thinking-budget THINKING_BUDGET] [--loop-guard] [--no-drafts] [--mtp-drafts MTP_DRAFTS] [--mtp-confidence MTP_CONFIDENCE] [--compact-at COMPACT_AT] [--compact-keep COMPACT_KEEP] [--compact-memory COMPACT_MEMORY] [--parallel PARALLEL] [--no-update-check] [--backend {auto,mlx,cuda,rocm}] [--device DEVICE] [--segments SEGMENTS] [--tp {1,2,4,8}] [--rank RANK] [--master MASTER] [--master-port MASTER_PORT] [--policy POLICY] model\n";
+
+/// RCCL starts threads of its own: they need glibc's signal stacks, not Zig's.
+pub const std_options: std.Options = .{ .signal_stack_size = null };
 
 pub fn main(init: std.process.Init) !u8 {
     const gpa = init.gpa;
@@ -55,6 +58,11 @@ pub fn main(init: std.process.Init) !u8 {
     };
     var problem: []const u8 = "";
     const dir = try hub.resolve(a, io, init.environ_map, args.model, &problem) orelse return fail(problem);
+    if (args.rank > 0) {
+        // a tensor-parallel rank above 0 serves no HTTP: it runs rank 0's steps, so it needs no tokenizer
+        if (!try engines.follow(a, gpa, io, dir, modelType(a, io, dir), args, &problem)) return fail(problem);
+        return 0;
+    }
     const text = hf_text.HfText.load(gpa, io, dir, a, &problem) catch |e| return fail(if (problem.len > 0) problem else @errorName(e));
     defer text.deinit();
     const model_type = modelType(a, io, dir);

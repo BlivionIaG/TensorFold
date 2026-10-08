@@ -23,6 +23,8 @@ const Lane = struct {
     held: std.ArrayList(u32) = .empty, // drafts for the next round
     base: usize = 0, // the history length before the last verify
     rows: std.ArrayList(u32) = .empty, // the last verify's row tokens
+    filled: usize = 0, // prompt chunks a stepped prefill has run
+    filling: bool = false,
 };
 
 pub const Fake = struct {
@@ -51,6 +53,13 @@ pub const Fake = struct {
         l.history.deinit(gpa);
         l.held.deinit(gpa);
         l.rows.deinit(gpa);
+    }
+
+    /// The same target, its prompt pass available a chunk (`prefill_chunks`) at a time.
+    pub fn stepped(x: *Fake) be.Backend {
+        var b = x.backend();
+        b.vtable = &.{ .prefill = prefill, .prefill_step = prefillStep, .first = first, .queue = queue, .read = read, .verify = verify, .keep = keep, .draft = draft, .release = release };
+        return b;
     }
 
     pub fn backend(x: *Fake) be.Backend {
@@ -135,6 +144,21 @@ pub const Fake = struct {
         const kept: *std.ArrayList(u32) = @ptrCast(@alignCast(saved));
         kept.deinit(x.gpa);
         x.gpa.destroy(kept);
+    }
+
+    fn prefillStep(ptr: *anyopaque, s: *Stream) anyerror!bool {
+        const x = self(ptr);
+        const got = try x.lanes.getOrPut(x.gpa, s);
+        if (got.found_existing and !got.value_ptr.filling) freeLane(x.gpa, got.value_ptr);
+        if (!got.found_existing or !got.value_ptr.filling) got.value_ptr.* = .{ .filling = true };
+        x.prefill_count += 1;
+        if (x.prefill_hook) |hook| hook(x.prefill_hook_ctx.?, s, got.value_ptr.filled);
+        if (s.isCancelled()) return error.Cancelled;
+        got.value_ptr.filled += 1;
+        if (got.value_ptr.filled < @max(1, x.prefill_chunks)) return false;
+        got.value_ptr.filling = false;
+        try got.value_ptr.history.appendSlice(x.gpa, s.prompt());
+        return true;
     }
 
     fn first(ptr: *anyopaque, s: *Stream, position: u64) anyerror!u64 {

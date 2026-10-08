@@ -1,0 +1,385 @@
+//! The HIP half of the root build: the probe bundle, a ROCm library a GPU family, the runtime and its test program.
+
+const std = @import("std");
+const caps = @import("../src/hip/caps.zig");
+
+/// Each .hip in zig/kernels/hip with its hipcc flags and the headers it includes (hipcc --genco writes no dep file).
+const Kernel = struct { name: []const u8, source: []const u8, flags: []const []const u8 = &.{}, headers: []const []const u8 = &.{} };
+
+/// The probe's flags: wave32 on RDNA, no contraction.
+const shared_flags = [_][]const u8{ "-O3", "-mno-wavefrontsize64", "-ffp-contract=off", "-std=c++20" };
+
+const kernels = [_]Kernel{
+    .{ .name = "probe", .source = "capi/probe.hip" },
+};
+
+/// torch's hipcc flags for the Python extensions, less include paths: the same flags give the same device code, bits.
+const torch_flags = [_][]const u8{
+    "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1",                      "-DHIPBLAS_V2", "-fPIC",
+    "-DCUDA_HAS_FP16=1",        "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20",   "-fno-gpu-rdc",
+    "-mno-wavefrontsize64",     "-ffp-contract=off",
+};
+
+/// One library's sources: the shim, the torch-op kernels, the ROCm kernels (attention.hip includes attention_fa.hip).
+const lib_sources = [_][]const u8{
+    "capi/capi.hip",
+    "ops/ops.hip",
+    "ops/act.hip",
+    "attention/attention.hip",
+    "recurrence/gated_delta.hip",
+    "tiles/gemv.hip",
+    "tiles/matrix.hip",
+    "tiles/matrix_pair.hip",
+    "tiles/dot2.hip",
+    "tiles/dot2_tiles.hip",
+    "comm/tp.hip",
+};
+
+/// What the library sources include, so an edit to one rebuilds the libraries.
+const lib_headers = [_][]const u8{
+    "ops/act.hpp",
+    "ops/common.hpp",
+    "ops/elementwise.hpp",
+    "ops/attention.hpp",
+    "ops/linear.hpp",
+    "ops/rope.hpp",
+    "ops/norms.hpp",
+    "ops/moe.hpp",
+    "ops/draw.hpp",
+    "quant/mlx.hpp",
+    "quant/mlx_pieces.hpp",
+    "tiles/api.hpp",
+    "tiles/dot2.hpp",
+    "tiles/gemm.hpp",
+    "tiles/matrix_gemm.hpp",
+    "tiles/gemm_kp.hpp",
+    "tiles/matrix.hpp",
+    "tiles/stream.hpp",
+    "common/arch.hpp",
+    "common/dot2.hpp",
+    "attention/attention.hpp",
+    "attention/attention_fa.hip",
+    "recurrence/gated_delta.hpp",
+    "decode/plan.hpp",
+    "decode/pages.hpp",
+};
+
+/// The code-object groups in kernels.zig's Group order, each with its source; gemv and the WMMA schedules stay out.
+const module_groups = [_][]const u8{ "ops", "act", "attention", "gated_delta", "affine_tiles", "affine_dot2", "prefill", "gdn_prefill", "decode", "plan" };
+const group_sources = [module_groups.len][]const u8{ "ops/ops.hip", "ops/act.hip", "attention/attention.hip", "recurrence/gated_delta.hip", "tiles/dot2_tiles.hip", "tiles/dot2.hip", "attention/prefill.hip", "recurrence/gdn_prefill.hip", "decode/decode.hip", "decode/plan.hip" };
+
+/// A GPU family's library: the caps table's family its gfx targets belong to.
+const Family = struct { name: []const u8, family: caps.Family };
+const families = [_]Family{
+    .{ .name = "rdna2", .family = .rdna2 },
+    .{ .name = "rdna3", .family = .rdna3 },
+};
+
+/// The runtime module for `target`; without images it builds host-only (empty images).
+fn runtime(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, images: []const ?std.Build.LazyPath, libs: []const ?std.Build.LazyPath, mods: []const [module_groups.len]?std.Build.LazyPath, gfx: []const u8, core: *std.Build.Module) *std.Build.Module {
+    const options = b.addOptions();
+    var with = images.len > 0;
+    for (images) |i| with = with and i != null;
+    options.addOption(bool, "with_kernels", with);
+    options.addOption([]const u8, "gfx", if (with) gfx else "");
+    var have: [families.len]bool = @splat(false);
+    for (libs, 0..) |l, i| have[i] = l != null;
+    inline for (families, 0..) |f, i| options.addOption(bool, "with_" ++ f.name, have[i]);
+    var have_mods: [families.len]bool = @splat(false);
+    for (mods, 0..) |m, i| {
+        have_mods[i] = true;
+        for (m) |file| have_mods[i] = have_mods[i] and file != null;
+    }
+    inline for (families, 0..) |f, i| options.addOption(bool, "with_" ++ f.name ++ "_modules", have_mods[i]);
+    const hip = b.createModule(.{ .root_source_file = b.path("zig/src/hip/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    hip.addOptions("kernel_options", options);
+    // a file lives in one module: the checkpoint reader is core's, shared with the tokenizer and the other backends
+    hip.addImport("core", core);
+    // the CUDA path's memory rules, read where they are
+    hip.addImport("cuda_memory", b.createModule(.{ .root_source_file = b.path("zig/src/native/cuda_memory.zig"), .target = target, .optimize = optimize }));
+    if (with) for (kernels, images) |k, image| hip.addAnonymousImport(b.fmt("hsaco_{s}", .{k.name}), .{ .root_source_file = image.? });
+    for (families, libs) |f, l| if (l) |file| hip.addAnonymousImport(b.fmt("lib_{s}", .{f.name}), .{ .root_source_file = file });
+    for (mods, 0..) |group, i| if (have_mods[i]) for (module_groups, group) |name, file| {
+        hip.addAnonymousImport(b.fmt("mod_{s}_{s}", .{ families[i].name, name }), .{ .root_source_file = file.? });
+    };
+    return hip;
+}
+
+/// Linux targets: kernel bundles and libraries (-Dhipcc builds, -Dhsaco embeds), `tf-hip-test`, `tf-qwen35-test`, `native-hip`.
+pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, build_options: *std.Build.Step.Options) void {
+    const core = coreModule(b, target, optimize);
+    const lanes = lanesModule(b, target, optimize);
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const hipcc = b.option([]const u8, "hipcc", "hipcc that builds the HIP kernels");
+    const device_lib = b.option([]const u8, "hip-device-lib", "ROCm device bitcode directory (default <rocm>/lib/llvm/amdgcn/bitcode; Arch: <rocm>/amdgcn/bitcode)");
+    const prebuilt = b.option([]const u8, "hsaco", "absolute directory of prebuilt <name>.hsaco bundles and libtf_<family>.so");
+    const gfx = expandGfx(b, b.option([]const u8, "gfx", "gfx targets or families (rdna2, rdna3, rdna3.5), comma separated (default gfx1030,gfx1100,gfx1151)") orelse "gfx1030,gfx1100,gfx1151");
+    // the compiler's version text is an input of every build, so a new hipcc rebuilds them all
+    const version: ?std.Build.LazyPath = if (prebuilt == null and hipcc != null) blk: {
+        const run = b.addSystemCommand(&.{ hipcc.?, "--version" });
+        run.has_side_effects = true;
+        break :blk run.captureStdOut(.{});
+    } else null;
+    var images: [kernels.len]?std.Build.LazyPath = @splat(null);
+    const bundle_step = b.step("hsaco", "Build and install the HIP kernel bundles and libraries alone");
+    for (kernels, &images) |k, *image| {
+        if (prebuilt) |dir| {
+            image.* = b.graph.cwdRelativePath(b.pathJoin(&.{ dir, b.fmt("{s}.hsaco", .{k.name}) }));
+        } else if (hipcc) |tool| {
+            image.* = bundle(b, tool, version.?, k, gfx);
+        }
+        if (image.*) |file| bundle_step.dependOn(&b.addInstallFile(file, b.fmt("hsaco/{s}.hsaco", .{k.name})).step);
+    }
+    var libs: [families.len]?std.Build.LazyPath = @splat(null);
+    for (families, &libs) |f, *lib| {
+        const arches = archesOf(b, gfx, f);
+        if (arches.len == 0) continue;
+        if (prebuilt) |dir| {
+            lib.* = b.graph.cwdRelativePath(b.pathJoin(&.{ dir, b.fmt("libtf_{s}.so", .{f.name}) }));
+        } else if (hipcc) |tool| {
+            lib.* = library(b, tool, version.?, device_lib, f, arches);
+        }
+        if (lib.*) |file| bundle_step.dependOn(&b.addInstallFile(file, b.fmt("hsaco/libtf_{s}.so", .{f.name})).step);
+    }
+    var mods: [families.len][module_groups.len]?std.Build.LazyPath = @splat(@splat(null));
+    for (families, &mods) |f, *group| {
+        const arches = archesOf(b, gfx, f);
+        if (arches.len == 0) continue;
+        for (module_groups, group) |name, *slot| {
+            if (prebuilt) |dir| {
+                slot.* = b.graph.cwdRelativePath(b.pathJoin(&.{ dir, b.fmt("{s}_{s}.hsaco", .{ f.name, name }) }));
+            } else if (hipcc) |tool| {
+                slot.* = codeObject(b, tool, version.?, device_lib, f, arches, name);
+            }
+            if (slot.*) |file| bundle_step.dependOn(&b.addInstallFile(file, b.fmt("hsaco/{s}_{s}.hsaco", .{ f.name, name })).step);
+        }
+    }
+    const hip = runtime(b, target, optimize, if (hipcc != null or prebuilt != null) &images else &.{}, &libs, &mods, gfx, core);
+    const runner = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    runner.addImport("hip", hip);
+    runner.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = target, .optimize = optimize }));
+    const exe = b.addExecutable(.{ .name = "tf-hip-test", .root_module = runner });
+    b.installArtifact(exe);
+    b.step("tf-hip-test", "The HIP runtime's GPU test program").dependOn(&b.addInstallArtifact(exe, .{}).step);
+    const qwen = qwen3_5(b, target, optimize, hip, lanes, api);
+    const upload = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/main.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    upload.addImport("hip", hip);
+    upload.addImport("qwen3_5", qwen);
+    upload.addImport("lanes", lanes);
+    upload.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = target, .optimize = optimize }));
+    const upload_exe = b.addExecutable(.{ .name = "tf-qwen35-test", .root_module = upload });
+    b.installArtifact(upload_exe);
+    b.step("tf-qwen35-test", "Qwen3.5 / 3.6 model tests (GPU)").dependOn(&b.addInstallArtifact(upload_exe, .{}).step);
+    const native = server(b, target, api, engines(b, target, optimize, hip, lanes, api, qwen), core.import_table.get("tokenizer").?, build_options);
+    const install = b.addInstallArtifact(native, .{ .dest_dir = .{ .override = .{ .custom = "native-hip/bin" } } });
+    b.step("native-hip", "tensorfold-native with the HIP engines into zig-out/native-hip/bin").dependOn(&install.step);
+}
+
+/// The server over `engines`, as the CUDA build makes it: the HTTP side keeps its safety checks.
+fn server(b: *std.Build, target: std.Build.ResolvedTarget, api: *std.Build.Module, engines_mod: *std.Build.Module, tokenizer: *std.Build.Module, build_options: *std.Build.Step.Options) *std.Build.Step.Compile {
+    const template = b.createModule(.{ .root_source_file = b.path("zig/src/core/template/template.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true });
+    const exe = b.addExecutable(.{ .name = "tensorfold-native", .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/server/main.zig"),
+        .target = target,
+        .optimize = .ReleaseSafe,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "engine_api", .module = api }, .{ .name = "tokenizer", .module = tokenizer }, .{ .name = "template", .module = template }, .{ .name = "native_engines", .module = engines_mod }, .{ .name = "checkpoint_cli", .module = b.createModule(.{ .root_source_file = b.path("zig/src/cli/cli.zig"), .target = target, .optimize = .ReleaseSafe, .link_libc = true, .imports = &.{.{ .name = "native_engines", .module = engines_mod }} }) } },
+    }) });
+    exe.root_module.addOptions("build_options", build_options);
+    return exe;
+}
+
+/// The HIP engines a native server opens (native/hip.zig), over the given runtime and family.
+fn engines(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module, api: *std.Build.Module, qwen: *std.Build.Module) *std.Build.Module {
+    return b.createModule(.{
+        .root_source_file = b.path("zig/src/native/hip.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "hip", .module = hip }, .{ .name = "engine_api", .module = api }, .{ .name = "lanes", .module = lanes }, .{ .name = "qwen3_5", .module = qwen } },
+    });
+}
+
+/// The backend-neutral core (checkpoint reader, tokenizer) as one module for a target's programs.
+fn coreModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    const core = b.createModule(.{ .root_source_file = b.path("zig/src/core/root.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    core.addImport("tokenizer", b.createModule(.{ .root_source_file = b.path("zig/src/core/tokenizer/tokenizer.zig"), .target = target, .optimize = optimize, .link_libc = true }));
+    return core;
+}
+
+/// The lane core, one module a target (the family and the programs share it).
+fn lanesModule(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Module {
+    return b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = target, .optimize = optimize, .link_libc = true });
+}
+
+/// The Qwen3.5 / Qwen3.6 family over the HIP runtime, the core's checkpoint reader and the engine API's prompt cache.
+fn qwen3_5(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, hip: *std.Build.Module, lanes: *std.Build.Module, api: *std.Build.Module) *std.Build.Module {
+    const core = hip.import_table.get("core").?;
+    const family = b.createModule(.{ .root_source_file = b.path("zig/src/families/qwen3_5/hip.zig"), .target = target, .optimize = optimize, .link_libc = true });
+    family.addImport("hip", hip);
+    family.addImport("core", core);
+    family.addImport("lanes", lanes);
+    family.addImport("engine_api", api);
+    return family;
+}
+
+/// Host unit tests of the HIP runtime (no GPU), on any host.
+pub fn hostTests(b: *std.Build, step: *std.Build.Step) void {
+    const core = coreModule(b, b.graph.host, .debug);
+    const hip = runtime(b, b.graph.host, .debug, &.{}, &.{ null, null }, &.{}, "", core);
+    step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = hip })).step);
+    step.dependOn(mockTests(b, hip));
+    const lanes = lanesModule(b, b.graph.host, .debug);
+    const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
+    const qwen = qwen3_5(b, b.graph.host, .debug, hip, lanes, api);
+    const family = b.addRunArtifact(b.addTest(.{ .root_module = qwen }));
+    // TF_QWEN_DIR is not a cached input
+    family.has_side_effects = true;
+    step.dependOn(&family.step);
+    step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = engines(b, b.graph.host, .debug, hip, lanes, api, qwen) })).step);
+    const score = b.createModule(.{ .root_source_file = b.path("zig/tests/qwen35/truth_score.zig"), .target = b.graph.host, .optimize = .debug });
+    score.addImport("npy", b.createModule(.{ .root_source_file = b.path("zig/src/core/npy.zig"), .target = b.graph.host, .optimize = .debug }));
+    step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = score })).step);
+    const cli = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/args.zig"), .target = b.graph.host, .optimize = .debug });
+    step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = cli })).step);
+    b.step("test-qwen35", "Qwen3.5 / 3.6 host tests; TF_QWEN_DIR indexes a real checkpoint").dependOn(&family.step);
+}
+
+/// The gfx targets of `gfx` in family `f`; a target outside the caps table, or one with no kernels, stops the build.
+/// The gfx targets a family name in -Dgfx stands for: every RDNA2, RDNA3 and RDNA3.5 part the caps table lists.
+const gfx_families = [_]struct { name: []const u8, arches: []const u8 }{
+    .{ .name = "rdna2", .arches = "gfx1030,gfx1031,gfx1032,gfx1033,gfx1034,gfx1035,gfx1036" },
+    .{ .name = "rdna3", .arches = "gfx1100,gfx1101,gfx1102,gfx1103" },
+    .{ .name = "rdna3.5", .arches = "gfx1150,gfx1151,gfx1152,gfx1153" },
+};
+
+/// -Dgfx with its family names expanded, each gfx target once.
+fn expandGfx(b: *std.Build, gfx: []const u8) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var it = std.mem.tokenizeScalar(u8, gfx, ',');
+    while (it.next()) |name| {
+        var arches = name;
+        for (gfx_families) |fam| if (std.mem.eql(u8, name, fam.name)) {
+            arches = fam.arches;
+        };
+        var each = std.mem.tokenizeScalar(u8, arches, ',');
+        while (each.next()) |arch| {
+            var seen = false;
+            var done = std.mem.tokenizeScalar(u8, out.items, ',');
+            while (done.next()) |prev| seen = seen or std.mem.eql(u8, prev, arch);
+            if (seen) continue;
+            if (out.items.len > 0) out.append(b.allocator, ',') catch @panic("OOM");
+            out.appendSlice(b.allocator, arch) catch @panic("OOM");
+        }
+    }
+    return out.items;
+}
+
+fn archesOf(b: *std.Build, gfx: []const u8, f: Family) []const []const u8 {
+    var list: std.ArrayList([]const u8) = .empty;
+    var it = std.mem.tokenizeScalar(u8, gfx, ',');
+    while (it.next()) |arch| {
+        const c = caps.Caps.of(arch) orelse std.debug.panic("-Dgfx: {s} is not in the caps table (zig/src/hip/caps.zig)", .{arch});
+        if (c.family == .gcn5) std.debug.panic("-Dgfx: {s} has no kernels built yet", .{arch});
+        if (c.family == f.family) list.append(b.allocator, arch) catch @panic("OOM");
+    }
+    return list.items;
+}
+
+/// The caps macros of a family's targets (one set a hipcc run, so they must agree), and the old WMMA macro as alias.
+fn addCaps(b: *std.Build, run: *std.Build.Step.Run, arches: []const []const u8) void {
+    const first = caps.Caps.of(arches[0]).?;
+    for (arches[1..]) |arch| {
+        const c = caps.Caps.of(arch).?;
+        const same = c.wave == first.wave and c.dot2_f16 == first.dot2_f16 and c.dot2_bf16 == first.dot2_bf16 and c.sdot4 == first.sdot4 and c.sdot8 == first.sdot8 and (c.matrix == .none) == (first.matrix == .none);
+        if (!same) std.debug.panic("-Dgfx: {s} and {s} differ in caps; build them apart", .{ arches[0], arch });
+    }
+    const matrix = @intFromBool(first.matrix != .none);
+    run.addArg(b.fmt("-DTF_WAVE={d}", .{first.wave}));
+    run.addArg(b.fmt("-DTF_DOT2_F16={d}", .{@intFromBool(first.dot2_f16)}));
+    run.addArg(b.fmt("-DTF_DOT2_BF16={d}", .{@intFromBool(first.dot2_bf16)}));
+    run.addArg(b.fmt("-DTF_SDOT4={d}", .{@intFromBool(first.sdot4)}));
+    run.addArg(b.fmt("-DTF_SDOT8={d}", .{@intFromBool(first.sdot8)}));
+    run.addArg(b.fmt("-DTF_MATRIX={d}", .{matrix}));
+    run.addArg(b.fmt("-DTENSORFOLD_RDNA_WMMA={d}", .{matrix}));
+}
+
+/// hipcc --genco with the shared flags, the kernel's own and one --offload-arch per gfx target: one offload bundle.
+fn bundle(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, k: Kernel, gfx: []const u8) std.Build.LazyPath {
+    const run = b.addSystemCommand(&.{ hipcc, "--genco" });
+    run.addFileInput(version);
+    run.addArgs(&shared_flags);
+    run.addArgs(k.flags);
+    var it = std.mem.tokenizeScalar(u8, gfx, ',');
+    while (it.next()) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
+    for (k.headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
+    run.addArg("-o");
+    const out = run.addOutputFileArg(b.fmt("{s}.hsaco", .{k.name}));
+    run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}", .{k.source})));
+    return out;
+}
+
+/// hipcc --genco over one source group with the library's flags and WMMA switch.
+fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, device_lib: ?[]const u8, f: Family, arches: []const []const u8, group: []const u8) std.Build.LazyPath {
+    const run = b.addSystemCommand(&.{ hipcc, "--genco" });
+    run.addFileInput(version);
+    run.addArgs(&torch_flags);
+    addCaps(b, run, arches);
+    const root = std.fs.path.dirname(std.fs.path.dirname(hipcc) orelse ".") orelse ".";
+    run.addArg(b.fmt("--rocm-path={s}", .{root}));
+    run.addArg(b.fmt("--rocm-device-lib-path={s}", .{device_lib orelse b.fmt("{s}/lib/llvm/amdgcn/bitcode", .{root})}));
+    for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
+    run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip"));
+    for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
+    run.addArg("-o");
+    const out = run.addOutputFileArg(b.fmt("{s}_{s}.hsaco", .{ f.name, group }));
+    const source = for (module_groups, group_sources) |name, path| {
+        if (std.mem.eql(u8, name, group)) break path;
+    } else unreachable;
+    run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}", .{source})));
+    return out;
+}
+
+/// hipcc -shared over every library source with torch's flags and the family's WMMA switch: libtf_<family>.so.
+fn library(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, device_lib: ?[]const u8, f: Family, arches: []const []const u8) std.Build.LazyPath {
+    const run = b.addSystemCommand(&.{ hipcc, "-shared" });
+    run.addFileInput(version);
+    run.addArgs(&torch_flags);
+    addCaps(b, run, arches);
+    // hipcc's own ROCm tree, with its device bitcode, as the Python build points at it
+    const root = std.fs.path.dirname(std.fs.path.dirname(hipcc) orelse ".") orelse ".";
+    run.addArg(b.fmt("--rocm-path={s}", .{root}));
+    run.addArg(b.fmt("--rocm-device-lib-path={s}", .{device_lib orelse b.fmt("{s}/lib/llvm/amdgcn/bitcode", .{root})}));
+    for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
+    run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip"));
+    for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
+    run.addArg("-o");
+    const out = run.addOutputFileArg(b.fmt("libtf_{s}.so", .{f.name}));
+    for (lib_sources) |src| run.addFileArg(b.path(b.fmt("zig/kernels/hip/{s}", .{src})));
+    return out;
+}
+
+/// The runtime against a stand-in libamdhip64 (zig/tests/hip/mock): complete, missing one entry point, an unknown GPU.
+fn mockTests(b: *std.Build, hip: *std.Build.Module) *std.Build.Step {
+    const abi = b.createModule(.{ .root_source_file = b.path("zig/src/hip/runtime/abi.zig"), .target = b.graph.host, .optimize = .debug });
+    const variants = [_]struct { name: []const u8, arch: []const u8, omit: []const u8 }{
+        .{ .name = "full", .arch = "gfx1100", .omit = "" },
+        .{ .name = "missing", .arch = "gfx1100", .omit = "hipGraphLaunch" },
+        .{ .name = "unknown", .arch = "gfx803", .omit = "" },
+    };
+    const paths = b.addOptions();
+    for (variants) |v| {
+        const options = b.addOptions();
+        options.addOption([]const u8, "arch", v.arch);
+        options.addOption([]const u8, "omit", v.omit);
+        const root = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/mock/mock.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true });
+        root.addImport("abi", abi);
+        root.addOptions("mock_options", options);
+        const lib = b.addLibrary(.{ .name = b.fmt("hipmock_{s}", .{v.name}), .linkage = .dynamic, .root_module = root });
+        paths.addOptionPath(v.name, lib.getEmittedBin());
+    }
+    const tests = b.createModule(.{ .root_source_file = b.path("zig/tests/hip/mock/mock_test.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true });
+    tests.addImport("hip", hip);
+    tests.addOptions("mock_libs", paths);
+    return &b.addRunArtifact(b.addTest(.{ .root_module = tests })).step;
+}

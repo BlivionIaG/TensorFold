@@ -12,6 +12,7 @@ const shape = @import("shape.zig");
 const plan_lanes = @import("plan_lanes.zig");
 const fill = @import("fill.zig");
 const trail = @import("trail.zig");
+const chunked = @import("chunked.zig");
 const Stream = sm.Stream;
 const Feed = be.Feed;
 const Plan = win.Plan;
@@ -83,6 +84,14 @@ pub const Engine = struct {
             if (err == error.Cancelled) e.backend.release(s); // the host finishes a cancelled stream without the core
             return err;
         };
+        try e.opened(s);
+    }
+
+    pub const fills = chunked.fills;
+    pub const fillStream = chunked.fillStream;
+
+    /// A stream whose prompt is in: its first token, its first drafts, and its place among the live ones.
+    pub fn opened(e: *Engine, s: *Stream) !void {
         if (s.isCancelled()) { // cancelled in its last chunk: no first token
             e.backend.release(s);
             return error.Cancelled;

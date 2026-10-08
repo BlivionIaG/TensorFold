@@ -8,7 +8,8 @@ TREES = ("zig", "tools/zig")
 MAX_LINES = 600
 MAX_COLUMNS = 120
 COMMENT = {".zig": re.compile(r"^\s*//"), ".metal": re.compile(r"^\s*//"), ".cu": re.compile(r"^\s*//"),
-           ".cuh": re.compile(r"^\s*//"), ".h": re.compile(r"^\s*//"), ".py": re.compile(r"^\s*#"),
+           ".cuh": re.compile(r"^\s*//"), ".h": re.compile(r"^\s*//"), ".hip": re.compile(r"^\s*//"),
+           ".hpp": re.compile(r"^\s*//"), ".py": re.compile(r"^\s*#"),
            ".sh": re.compile(r"^\s*#(?!!)")}
 BLOCK = re.compile(r"/\*")
 DOCSTRING = re.compile(r'^\s*(?:[rubf]{0,2})("""|\'\'\')')
