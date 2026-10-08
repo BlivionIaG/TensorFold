@@ -49,6 +49,10 @@ pub fn planCausal(l: *const Launcher, q: u64, out: u64, scores: u64, stats: u64,
     const kv_c: c_int = @intCast(kv_heads);
     const d_c: c_int = @intCast(d);
     const layer_c: c_int = @intCast(layer);
+    // a block takes `group` query heads of one KV head (plan.hip's kMaxGroup at most), so the cache is read once for them
+    var group = @divExact(heads, kv_heads);
+    while (group > 16) group = @divExact(group, smallestFactor(group));
+    const blocks = @divExact(heads, group);
     var a: Args = .{};
     a.add(q);
     a.add(scores);
@@ -59,8 +63,8 @@ pub fn planCausal(l: *const Launcher, q: u64, out: u64, scores: u64, stats: u64,
     a.add(scale);
     a.add(p.args);
     a.add(layer_c);
-    // a warp scores a key: four warps a block
-    try l.go(l.plan.score[which], dim(cdiv(span, 4), heads, rows), dim(128, 1, 1), 0, s, &a);
+    // a warp scores a key for the block's heads: four warps a block, the heads' queries in shared memory
+    try l.go(l.plan.score[which], dim(cdiv(span, 4), blocks, rows), dim(128, 1, 1), @intCast(group * d * 4), s, &a);
     var b: Args = .{};
     b.add(scores);
     b.add(stats);
@@ -78,13 +82,19 @@ pub fn planCausal(l: *const Launcher, q: u64, out: u64, scores: u64, stats: u64,
     c.add(d_c);
     c.add(p.args);
     c.add(layer_c);
-    try l.go(l.plan.apply[which], dim(tiles, heads, rows), dim(256, 1, 1), 0, s, &c);
+    try l.go(l.plan.apply[which], dim(tiles, blocks, rows), dim(256, 1, 1), 0, s, &c);
     var e: Args = .{};
     e.add(partials);
     e.add(out);
     e.add(tiles);
     e.add(d_c);
     try l.go(l.sum_partials, dim(heads, rows, 1), dim(256, 1, 1), 0, s, &e);
+}
+
+fn smallestFactor(n: usize) usize {
+    var f: usize = 2;
+    while (@rem(n, f) != 0) f += 1;
+    return f;
 }
 
 /// The DeltaNet recurrence of every slot's rows (q, k, v, gate, beta, y flat over rows), state in the slot's caches.

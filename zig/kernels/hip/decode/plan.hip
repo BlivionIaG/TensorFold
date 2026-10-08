@@ -25,78 +25,105 @@ __device__ void plan_kv_write_body(const float* keys, const void* values, int ki
     static_cast<uint16_t*>(reinterpret_cast<void*>(desc[plan_second(layer)]))[to] = static_cast<const uint16_t*>(values)[i];
 }
 
-// attention.hip's score_keys over a plan's rows: a warp scores a key of the row's slot, at most its position visible.
+// Query heads a block takes together: they share a KV head, so its keys and values are read once for all of them.
+constexpr int kMaxGroup = 16;
+
+// attention.hip's score_keys over a plan's rows: a warp scores a key of the row's slot for each of the block's heads
+// (heads / gridDim.y of one KV head), at most its position visible. Each head's dot sums as score_keys' does.
 template <int KIND>
 __device__ void plan_score_body(const float* __restrict__ q, float* __restrict__ scores, int span, int heads,
                                   int kv_heads, int d, float scale, PlanArgs plan, int layer) {
+    extern __shared__ float qs[];  // the block's query heads, group * d
     const int batch = blockIdx.z;
+    const int group = heads / gridDim.y;
+    const int head0 = blockIdx.y * group;
+    const float* qrows = q + (static_cast<long long>(batch) * heads + head0) * d;
+    for (int i = threadIdx.x; i < group * d; i += blockDim.x) qs[i] = qrows[i];
+    __syncthreads();
     const int visible = min(plan.pos[batch] + 1, span);
-    const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
-    const void* keys = reinterpret_cast<const void*>(desc[plan_first(layer)]);
-    const unsigned* table = plan_pages(plan, desc);
     const int lane = threadIdx.x & 31;
     const int key = blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5);
-    const int head = blockIdx.y;
-    const float* qrow = q + (static_cast<long long>(batch) * heads + head) * d;
-    float qreg[8];
-#pragma unroll
-    for (int i = 0; i < 8; ++i) {
-        const int idx = lane + i * 32;
-        qreg[i] = idx < d ? qrow[idx] : 0.f;
-    }
-    float partial = 0.f;
+    float kreg[8] = {};
     if (key < visible) {
-        const int kv = head / (heads / kv_heads);
-        const long long base = page_at(table, plan.pool, kv, key, d);
+        const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
+        const void* keys = reinterpret_cast<const void*>(desc[plan_first(layer)]);
+        const long long base = page_at(plan_pages(plan, desc), plan.pool, head0 / (heads / kv_heads), key, d);
 #pragma unroll
         for (int i = 0; i < 8; ++i) {
             const int idx = lane + i * 32;
-            if (idx < d) partial += qreg[i] * load(keys, KIND, base + idx);
+            if (idx < d) kreg[i] = load(keys, KIND, base + idx);
         }
     }
-    const float dot = wave_sum(partial);
-    if (lane == 0 && key < span) {
-        const float score = key < visible ? dot * scale : -INFINITY;
-        scores[(static_cast<long long>(batch) * heads + head) * span + key] = score;
+#pragma unroll
+    for (int g = 0; g < kMaxGroup; ++g) {
+        if (g < group) {  // the same for the whole block, so every lane reaches wave_sum
+            float partial = 0.f;
+            if (key < visible) {
+#pragma unroll
+                for (int i = 0; i < 8; ++i) {
+                    const int idx = lane + i * 32;
+                    if (idx < d) partial += qs[g * d + idx] * kreg[i];
+                }
+            }
+            const float dot = wave_sum(partial);
+            if (lane == 0 && key < span) {
+                const float score = key < visible ? dot * scale : -INFINITY;
+                scores[(static_cast<long long>(batch) * heads + head0 + g) * span + key] = score;
+            }
+        }
     }
 }
 
-// attention.hip's apply_values over a plan's rows: a block a 128-key tile, its weighted values of the row's slot.
+// attention.hip's apply_values over a plan's rows: a block a 128-key tile of the block's heads (as plan_score_body),
+// their weighted values of the row's slot. Weights are worked once a block; each head sums as apply_values does.
 template <int KIND>
 __device__ void plan_apply_body(const float* __restrict__ scores, const float* __restrict__ stats,
                                   float* __restrict__ partials, int span, int heads, int kv_heads, int d,
                                   PlanArgs plan, int layer) {
+    __shared__ float weights[kMaxGroup * 128];
     const int batch = blockIdx.z;
     const int visible = min(plan.pos[batch] + 1, span);
     const int tile = blockIdx.x;
-    const int head = blockIdx.y;
+    const int group = heads / gridDim.y;
+    const int head0 = blockIdx.y * group;
+    const long long first = static_cast<long long>(batch) * heads + head0;
     const int lane = threadIdx.x;
     const int key0 = tile * 128;
-    if (lane >= d) return;
-    float* dest = partials + (((static_cast<long long>(batch) * heads + head) * gridDim.x) + tile) * d + lane;
     if (key0 >= visible) {  // a tile past the keys in use adds zero
-        *dest = 0.f;
+        if (lane < d) {
+            for (int g = 0; g < group; ++g) partials[((first + g) * gridDim.x + tile) * d + lane] = 0.f;
+        }
         return;
     }
+    const int stop = min(key0 + 128, visible);
+    for (int i = threadIdx.x; i < group * 128; i += blockDim.x) {
+        const long long h = first + i / 128;
+        const int key = key0 + i % 128;
+        if (key < stop) weights[i] = expf(scores[h * span + key] - stats[h * 2]) / stats[h * 2 + 1];
+    }
+    __syncthreads();
+    if (lane >= d) return;
     const unsigned long long* desc = plan_desc(plan, plan.slot[batch]);
     const void* values = reinterpret_cast<const void*>(desc[plan_second(layer)]);
     const unsigned* table = plan_pages(plan, desc);
-    const int kv = head / (heads / kv_heads);
-    const float* row = scores + (static_cast<long long>(batch) * heads + head) * span;
-    const float max_score = stats[(static_cast<long long>(batch) * heads + head) * 2];
-    const float denom = stats[(static_cast<long long>(batch) * heads + head) * 2 + 1];
-    float acc = 0.f;
-    const int stop = min(key0 + 128, visible);
+    const int kv = head0 / (heads / kv_heads);
+    float acc[kMaxGroup] = {};
     // a page at a time: its table entry is read once, and the keys are summed in order
     for (int key = key0; key < stop;) {
         const int edge = min((key / kPageTokens + 1) * kPageTokens, stop);
         const long long slot0 = page_row(table[key / kPageTokens], plan.pool, kv, 0, d) + lane;
         for (; key < edge; ++key) {
-            const float weight = expf(row[key] - max_score) / denom;
-            acc += weight * load(values, KIND, slot0 + static_cast<long long>(key % kPageTokens) * d);
+            const float value = load(values, KIND, slot0 + static_cast<long long>(key % kPageTokens) * d);
+#pragma unroll
+            for (int g = 0; g < kMaxGroup; ++g) {
+                if (g < group) acc[g] += weights[g * 128 + key - key0] * value;
+            }
         }
     }
-    *dest = acc;
+#pragma unroll
+    for (int g = 0; g < kMaxGroup; ++g) {
+        if (g < group) partials[((first + g) * gridDim.x + tile) * d + lane] = acc[g];
+    }
 }
 
 // The words of a row copied by a block row of threads, four at a time.
