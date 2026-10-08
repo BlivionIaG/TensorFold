@@ -136,6 +136,7 @@ __global__ void softmax_stats(const float* __restrict__ scores, float* __restric
         __syncthreads();
     }
     float max_score = buf[0];
+    __syncthreads();
     local = 0.f;
     for (int i = threadIdx.x; i < visible; i += blockDim.x) local += expf(row[i] - max_score);
     buf[threadIdx.x] = local;
