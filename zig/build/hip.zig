@@ -111,6 +111,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     const lanes = lanesModule(b, target, optimize);
     const api = b.createModule(.{ .root_source_file = b.path("zig/src/core/engine_api.zig"), .target = target, .optimize = optimize, .link_libc = true, .imports = &.{.{ .name = "lanes", .module = lanes }} });
     const hipcc = b.option([]const u8, "hipcc", "hipcc that builds the HIP kernels");
+    const device_lib = b.option([]const u8, "hip-device-lib", "ROCm device bitcode directory (default <rocm>/lib/llvm/amdgcn/bitcode; Arch: <rocm>/amdgcn/bitcode)");
     const prebuilt = b.option([]const u8, "hsaco", "absolute directory of prebuilt <name>.hsaco bundles and libtf_<family>.so");
     const gfx = expandGfx(b, b.option([]const u8, "gfx", "gfx targets or families (rdna2, rdna3, rdna3.5), comma separated (default gfx1030,gfx1100,gfx1151)") orelse "gfx1030,gfx1100,gfx1151");
     // the compiler's version text is an input of every build, so a new hipcc rebuilds them all
@@ -136,7 +137,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
         if (prebuilt) |dir| {
             lib.* = b.graph.cwdRelativePath(b.pathJoin(&.{ dir, b.fmt("libtf_{s}.so", .{f.name}) }));
         } else if (hipcc) |tool| {
-            lib.* = library(b, tool, version.?, f, arches);
+            lib.* = library(b, tool, version.?, device_lib, f, arches);
         }
         if (lib.*) |file| bundle_step.dependOn(&b.addInstallFile(file, b.fmt("hsaco/libtf_{s}.so", .{f.name})).step);
     }
@@ -148,7 +149,7 @@ pub fn targets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
             if (prebuilt) |dir| {
                 slot.* = b.graph.cwdRelativePath(b.pathJoin(&.{ dir, b.fmt("{s}_{s}.hsaco", .{ f.name, name }) }));
             } else if (hipcc) |tool| {
-                slot.* = codeObject(b, tool, version.?, f, arches, name);
+                slot.* = codeObject(b, tool, version.?, device_lib, f, arches, name);
             }
             if (slot.*) |file| bundle_step.dependOn(&b.addInstallFile(file, b.fmt("hsaco/{s}_{s}.hsaco", .{ f.name, name })).step);
         }
@@ -319,14 +320,14 @@ fn bundle(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, k: Kern
 }
 
 /// hipcc --genco over one source group with the library's flags and WMMA switch.
-fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: Family, arches: []const []const u8, group: []const u8) std.Build.LazyPath {
+fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, device_lib: ?[]const u8, f: Family, arches: []const []const u8, group: []const u8) std.Build.LazyPath {
     const run = b.addSystemCommand(&.{ hipcc, "--genco" });
     run.addFileInput(version);
     run.addArgs(&torch_flags);
     addCaps(b, run, arches);
     const root = std.fs.path.dirname(std.fs.path.dirname(hipcc) orelse ".") orelse ".";
     run.addArg(b.fmt("--rocm-path={s}", .{root}));
-    run.addArg(b.fmt("--rocm-device-lib-path={s}/lib/llvm/amdgcn/bitcode", .{root}));
+    run.addArg(b.fmt("--rocm-device-lib-path={s}", .{device_lib orelse b.fmt("{s}/lib/llvm/amdgcn/bitcode", .{root})}));
     for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
     run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip"));
     for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
@@ -340,7 +341,7 @@ fn codeObject(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: 
 }
 
 /// hipcc -shared over every library source with torch's flags and the family's WMMA switch: libtf_<family>.so.
-fn library(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: Family, arches: []const []const u8) std.Build.LazyPath {
+fn library(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, device_lib: ?[]const u8, f: Family, arches: []const []const u8) std.Build.LazyPath {
     const run = b.addSystemCommand(&.{ hipcc, "-shared" });
     run.addFileInput(version);
     run.addArgs(&torch_flags);
@@ -348,7 +349,7 @@ fn library(b: *std.Build, hipcc: []const u8, version: std.Build.LazyPath, f: Fam
     // hipcc's own ROCm tree, with its device bitcode, as the Python build points at it
     const root = std.fs.path.dirname(std.fs.path.dirname(hipcc) orelse ".") orelse ".";
     run.addArg(b.fmt("--rocm-path={s}", .{root}));
-    run.addArg(b.fmt("--rocm-device-lib-path={s}/lib/llvm/amdgcn/bitcode", .{root}));
+    run.addArg(b.fmt("--rocm-device-lib-path={s}", .{device_lib orelse b.fmt("{s}/lib/llvm/amdgcn/bitcode", .{root})}));
     for (arches) |arch| run.addArg(b.fmt("--offload-arch={s}", .{arch}));
     run.addPrefixedDirectoryArg("-I", b.path("zig/kernels/hip"));
     for (lib_headers) |h| run.addFileInput(b.path(b.fmt("zig/kernels/hip/{s}", .{h})));
