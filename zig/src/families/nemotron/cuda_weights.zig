@@ -18,11 +18,22 @@ pub const mtp_file = "mtp-4bit.safetensors";
 
 /// The token table as stored (MLX words, scales, biases): a row lookup, not a matmul.
 pub const Embed = struct { w: u64, s: u64, b: u64, n: usize, k: usize };
+/// A live lesson's change after an output projection (--slide): y += scale (x a^T) b over each row's open blocks.
+pub const Adapter = struct {
+    a: u64, // f32 [max_rank, in]
+    b: u64, // f32 [max_rank, out]
+    tau: u64, // f32 [max_blocks]: each block's gate
+    rank: u64, // the u32 word of ranks in use, which the kernels read
+    xa: u64, // f32 [rows, max_rank]: scratch
+    xn: u64, // f32 [rows]
+    in: usize,
+    out: usize,
+};
 /// A `*_rest` is a lesson's change past its projection's 4-bit codes ([out, in] bf16), added after it; 0 when none.
-pub const Mamba = struct { in_proj: QLinear, out_proj: QLinear, conv_w: u64, conv_b: u64, a: u64, d: u64, dt_bias: u64, gnorm: u64, out_rest: u64 = 0 };
-pub const Attention = struct { qkv: QLinear, o: QLinear, o_rest: u64 = 0 };
+pub const Mamba = struct { in_proj: QLinear, out_proj: QLinear, conv_w: u64, conv_b: u64, a: u64, d: u64, dt_bias: u64, gnorm: u64, out_rest: u64 = 0, adapter: ?*const Adapter = null };
+pub const Attention = struct { qkv: QLinear, o: QLinear, o_rest: u64 = 0, adapter: ?*const Adapter = null };
 /// The shared expert's down projection rest in its two halves, as experts E and E + 1 split its columns.
-pub const MoE = struct { router: u64, bias: u64, experts: Experts, rest: [2]u64 = .{ 0, 0 } };
+pub const MoE = struct { router: u64, bias: u64, experts: Experts, rest: [2]u64 = .{ 0, 0 }, adapter: ?*const Adapter = null };
 pub const Block = struct { kind: Kind, norm: u64, mamba: Mamba = undefined, attn: Attention = undefined, moe: MoE = undefined };
 pub const Mtp = struct { enorm: u64, hnorm: u64, eh_proj: QLinear, attn_norm: u64, attn: Attention, moe_norm: u64, moe: MoE, final_norm: u64 };
 
@@ -123,7 +134,7 @@ const Loader = struct {
         }
         const k = k8 * 8;
         const kg = k / 64;
-        const npad = (n + 127) / 128 * 128;
+        const lay = cuda.qlinear.Affine4.layout(n, k);
         const sizes = [3]usize{ @as(usize, n) * k8 * 4, @as(usize, n) * kg * 2, @as(usize, n) * kg * 2 };
         const base = try L.tmp(sizes[0] + sizes[1] + sizes[2]);
         var at = [3]usize{ 0, sizes[0], sizes[0] + sizes[1] };
@@ -133,29 +144,15 @@ const Loader = struct {
         };
         var buf: [128]u8 = undefined;
         const q: QLinear = .{
-            .w = try L.alloc(try std.fmt.bufPrint(&buf, "{s}.weight", .{name}), @as(usize, npad) * k / 2),
-            .s = try L.alloc(try std.fmt.bufPrint(&buf, "{s}.scales", .{name}), @as(usize, kg) * npad * 2),
-            .b = try L.alloc(try std.fmt.bufPrint(&buf, "{s}.biases", .{name}), @as(usize, kg) * npad * 2),
+            .w = try L.alloc(try std.fmt.bufPrint(&buf, "{s}.weight", .{name}), lay.words),
+            .s = try L.alloc(try std.fmt.bufPrint(&buf, "{s}.scales", .{name}), lay.scales),
+            .b = try L.alloc(try std.fmt.bufPrint(&buf, "{s}.biases", .{name}), lay.scales),
             .n = n,
             .k = k,
-            .npad = npad,
+            .npad = lay.npad,
         };
-        const total: u64 = @as(u64, npad / 64) * kg * 512;
         try L.src.flush();
-        var a: cuda.Args = .{};
-        a.add(base);
-        for ([_]usize{ n, k / 8, kg }) |v| a.add(@as(c_int, @intCast(v)));
-        a.add(q.w);
-        a.add(@as(c_longlong, @intCast(total)));
-        try cuda.launch.launch(L.ops.k.pack_dense, .{ .grid = .{ .x = @intCast((total + 255) / 256) }, .block = .{ .x = 256 } }, L.ops.s, &a);
-        for ([_]u64{ q.s, q.b }, [_]usize{ sizes[0], sizes[0] + sizes[1] }) |out, off| {
-            var t: cuda.Args = .{};
-            t.add(base + off);
-            for ([_]usize{ n, kg, npad }) |v| t.add(@as(c_int, @intCast(v)));
-            t.add(out);
-            const cells = @as(u64, kg) * npad;
-            try cuda.launch.launch(L.ops.k.transpose16, .{ .grid = .{ .x = @intCast((cells + 255) / 256) }, .block = .{ .x = 256 } }, L.ops.s, &t);
-        }
+        try L.ops.k.affine.pack(L.ops.s, base, base + sizes[0], base + sizes[0] + sizes[1], q);
         return q;
     }
 
@@ -251,8 +248,7 @@ const Loader = struct {
             if (!split) try L.src.upload(base + at[j] + routed[j].bytes.len, shared[j].bytes);
         }
         // the output's allocation runs while the reads queued above go on
-        const nb = n / 32;
-        const ptr = try L.alloc(name, @as(usize, e) * nb * kg * 288 * 4);
+        const ptr = try L.alloc(name, cuda.experts.Affine4Experts.bytes(e, n, k));
         if (split) for (0..3) |j| {
             const row = shared[j].bytes.len / n;
             const half = row / 2;
@@ -262,10 +258,7 @@ const Loader = struct {
             try L.ops.upload(base + at[j] + routed[j].bytes.len, host);
         };
         try L.src.flush();
-        var a: cuda.Args = .{};
-        for ([_]u64{ base, base + sizes[0], base + sizes[0] + sizes[1], ptr }) |v| a.add(v);
-        for ([_]usize{ n, k / 8, kg, nb }) |v| a.add(@as(c_int, @intCast(v)));
-        try cuda.launch.launch(L.ops.k.pack_experts, .{ .grid = .{ .x = @intCast(kg), .y = @intCast(nb), .z = @intCast(e) }, .block = .{ .x = 288 } }, L.ops.s, &a);
+        try L.ops.k.experts.pack(L.ops.s, base, base + sizes[0], base + sizes[0] + sizes[1], ptr, e, n, k);
         return ptr;
     }
 
@@ -275,6 +268,7 @@ const Loader = struct {
         var m: Mamba = undefined;
         m.in_proj = try L.dense(ck, try join(&a, name, ".in_proj"), &.{try join(&b, pre, "in_proj")});
         m.out_rest = 0;
+        m.adapter = null;
         m.out_proj = try L.denseRest(ck, try join(&a, name, ".out_proj"), &.{try join(&b, pre, "out_proj")}, &m.out_rest);
         const conv = try ck.get(try join(&b, pre, "conv1d.weight"));
         if (conv.rank != 3 or conv.dim(1) != 4 or conv.dim(2) != 1 or conv.dtype != .bf16) return error.UnexpectedTensor;

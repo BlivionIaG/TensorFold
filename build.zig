@@ -130,6 +130,10 @@ pub fn build(b: *std.Build) void {
     _ = ids_files.addCopyFile(b.path("zig/src/families/nemotron/draft_ids.txt"), "draft_ids.txt");
     const draft_ids = b.createModule(.{ .root_source_file = ids_files.add("draft_ids.zig", "pub const text = @embedFile(\"draft_ids.txt\");\n") });
     const test_step = b.step("test", "Host-side unit tests (no GPU work)");
+    // every tracked path checks out on Windows too
+    const names_run = b.addRunArtifact(b.addTest(.{ .root_module = b.createModule(.{ .root_source_file = b.path("zig/tests/portable_names.zig"), .target = target }) }));
+    names_run.setCwd(b.path("."));
+    test_step.dependOn(&names_run.step);
     const cost_cases = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("zig/cost_rule_cases.zig"),
         .target = target,
@@ -147,6 +151,27 @@ pub fn build(b: *std.Build) void {
     dist_build.targets(b, draft_ids, build_options, release_version);
     cuda_build.hostTests(b, draft_ids, build_options, test_step);
     hip_build.steps(b, target, test_step);
+    const lanes_cpu = b.createModule(.{ .root_source_file = b.path("zig/src/core/lanes/lanes.zig"), .target = b.graph.host, .optimize = .debug, .link_libc = true });
+    const disk_cpu = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/glm_disk_tests.zig"),
+        .target = b.graph.host,
+        .optimize = .debug,
+        .link_libc = true,
+        .imports = &.{.{ .name = "lanes", .module = lanes_cpu }},
+    }) });
+    const disk_run = b.addRunArtifact(disk_cpu);
+    test_step.dependOn(&disk_run.step);
+    b.step("test-learn-recovery", "CPU learned-state recovery and admission tests").dependOn(&disk_run.step);
+    const warning = b.addExecutable(.{ .name = "learned-warning-test", .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/learned_warning_test.zig"),
+        .target = b.graph.host,
+        .optimize = .debug,
+        .link_libc = true,
+        .imports = &.{.{ .name = "lanes", .module = lanes_cpu }},
+    }) });
+    const warning_run = b.addRunArtifact(warning);
+    test_step.dependOn(&warning_run.step);
+    b.step("test-learn-warning", "CPU production-log refusal, backoff and recovery test").dependOn(&warning_run.step);
 }
 
 /// `zig build native -Dcpu=apple_m1`: tensorfold-native with the Metal engines for the Python package's bundle (a native M5 build traps on M1-M4).
@@ -353,6 +378,15 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
     const load_admission_run = b.addRunArtifact(load_admission_cases);
     b.step("test-flashnext-load-admission", "CPU-only Flash Next runtime quantization admission").dependOn(&load_admission_run.step);
     test_step.dependOn(&load_admission_run.step);
+    const pack_cache_cases = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/flashnext_pack_cache_cases.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+    }) });
+    const pack_cache_run = b.addRunArtifact(pack_cache_cases);
+    b.step("test-flashnext-pack-cache", "CPU-only atomic Flash Next pack cache lifecycle").dependOn(&pack_cache_run.step);
+    test_step.dependOn(&pack_cache_run.step);
     const engine_programs = [_]struct { name: []const u8, path: []const u8, about: []const u8, c_source: ?[]const u8 = null }{
         .{ .name = "tf-qwen35-check", .path = "zig/tests/qwen35_check.zig", .about = "Qwen3.5-2B checkpoint and native operations" },
         .{ .name = "tf-qwen35-forward", .path = "zig/tests/qwen35_forward.zig", .about = "Qwen3.5-2B native teacher-forced logits" },

@@ -10,6 +10,7 @@ const qwen27 = @import("qwen27_host.zig");
 const flashnext = @import("flashnext_host.zig");
 const glm = @import("glm_host.zig");
 const nemotron_slide = @import("nemotron_slide.zig");
+const Slide = nemotron_slide.Adapter(nemotron.slide);
 const cache_fit = @import("cache_fit.zig");
 
 pub const backends: []const []const u8 = &.{"metal"};
@@ -68,7 +69,7 @@ const Host = struct {
     cache: ?api.prompt_cache.Store = null, // kept prompt states (engine thread only); null: a zero budget
     learned: ?api.prompt_imprint.Imprint = null, // --learn: shared states on disk, read back by later servers
     round: nemotron.gpu_round.Options = .{ .depth = 8 }, // a lone greedy stream's GPU-side rounds, as the CLI runs them
-    slide: ?*nemotron_slide.Adapter = null, // Sliding Weights' learner, with --slide
+    slide: ?*Slide = null, // Sliding Weights' learner, with --slide
 
     /// A lone greedy stream's rounds on the GPU until it finishes, or a hand-over to the lane core (true).
     fn lone(ctx: *anyopaque, s: *lanes.Stream, hooks: api.LoneHooks) anyerror!bool {
@@ -161,7 +162,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     if (plan.budget_bytes > 0) {
         const S = nemotron.snapshot.Cached;
         const L = nemotron.learned_prompts;
-        h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = h.metal, .vtable = &.{ .bytes = S.snapBytes, .save = S.snapSave, .restore = S.snapRestore, .drop = S.snapDrop, .write = L.snapWrite, .read = L.snapRead, .forget = L.snapForget } }, .{ .lookahead = 1, .planned = true }, plan.budget_bytes);
+        h.cache = api.prompt_cache.Store.init(gpa, .{ .ptr = h.metal, .vtable = &.{ .bytes = S.snapBytes, .save = S.snapSave, .restore = S.snapRestore, .drop = S.snapDrop, .write = L.snapWrite, .read = L.snapRead, .forget = L.snapForget, .forget_checked = api.prompt_cache.singleForgetChecked, .reclaim = api.prompt_cache.singleReclaim } }, .{ .lookahead = 1, .planned = true }, plan.budget_bytes);
         h.host.cache = &h.cache.?; // the lane host's store: a Sliding Weights step that moves weights clears it
         h.host.info_.prompt_cache = true;
     }
@@ -172,6 +173,7 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
             if (e == error.PromptTooLong) problem.* = "--learn keys its states with a 4,143-token prompt at startup: serve with --context 4096 or more, or without --learn";
             return e;
         };
+        h.learned.?.admission.floor = @intFromFloat(o.learn_min_free_gib * (1 << 30));
         if (h.cache) |*store| store.imprint = &h.learned.?;
     }
     errdefer if (h.learned) |*im| im.deinit();
@@ -180,9 +182,9 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
     h.slide = null;
     if (o.slide) {
-        const s = try gpa.create(nemotron_slide.Adapter);
+        const s = try gpa.create(Slide);
         errdefer gpa.destroy(s);
-        s.* = nemotron_slide.Adapter.init(gpa, io, h.metal);
+        s.* = Slide.init(gpa, io, h.metal);
         h.slide = s;
         h.host.learner = s.hook();
     }
@@ -311,6 +313,7 @@ fn openFlashNext(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem:
 
 test {
     _ = flashnext;
+    _ = glm;
     _ = @import("cache_fit.zig");
 }
 
@@ -336,8 +339,8 @@ fn openGlm(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]co
     }
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
-    const h = glm.open(gpa, io, o.dir, @intCast(window), o.speed_up, o.lanes, o.lanes_fixed, o.prompt_cache_gib, o.learn, @intFromFloat(o.learn_gib * (1 << 30))) catch |e| {
-        problem.* = if (linkProblem(e)) |link| try std.fmt.allocPrint(a, "the native GLM-5.3-Flash engine cannot load {s}: {s}", .{ o.dir, link }) else try std.fmt.allocPrint(a, "the native GLM-5.3-Flash engine cannot load {s} ({s})", .{ o.dir, @errorName(e) });
+    const h = glm.open(gpa, io, o.dir, @intCast(window), o.speed_up, o.lanes, o.lanes_fixed, o.prompt_cache_gib, o.learn, @intFromFloat(o.learn_gib * (1 << 30)), @intFromFloat(o.learn_min_free_gib * (1 << 30))) catch |e| {
+        if (e == error.BadLoadLimit) problem.* = "GLM_LOAD_LIMIT_GB is not a load limit: give a number of GB above 0, or unset it for 70% of RAM" else problem.* = if (linkProblem(e)) |link| try std.fmt.allocPrint(a, "the native GLM-5.3-Flash engine cannot load {s}: {s}", .{ o.dir, link }) else try std.fmt.allocPrint(a, "the native GLM-5.3-Flash engine cannot load {s} ({s})", .{ o.dir, @errorName(e) });
         return null;
     };
     return .{ .engine = h.engine(), .close = glm.close, .ctx = h };

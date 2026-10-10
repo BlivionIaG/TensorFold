@@ -3,10 +3,19 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const imprint = @import("prompt_imprint.zig");
 const modes = @import("cache_modes.zig");
+const learned = @import("prompt_learn.zig");
 
 /// A family's copy of one state.
 pub const Saved = *anyopaque;
 
+pub fn singleReclaim(_: *anyopaque, dir: [:0]const u8, key: u64) !u64 {
+    var buf: [1100]u8 = undefined;
+    return @import("lanes").learned_dirs.fileBytes(try std.fmt.bufPrintSentinel(&buf, "{s}/{x:0>16}.bin", .{ dir, key }, 0));
+}
+pub fn singleForgetChecked(_: *anyopaque, dir: [:0]const u8, key: u64) !void {
+    var buf: [1100]u8 = undefined;
+    try @import("lanes").learned_dirs.unlink(try std.fmt.bufPrintSentinel(&buf, "{s}/{x:0>16}.bin", .{ dir, key }, 0));
+}
 /// What a family gives the cache: copies of its state while the prompt pass stands at a chunk end.
 pub const Snapshots = struct {
     ptr: *anyopaque,
@@ -32,8 +41,36 @@ pub const Snapshots = struct {
         write: ?*const fn (ptr: *anyopaque, saved: Saved, dir: [:0]const u8, key: u64) anyerror!void = null,
         /// Learned state `key` of `at` tokens, read back from its files under `dir` into new storage.
         read: ?*const fn (ptr: *anyopaque, dir: [:0]const u8, key: u64, at: u32) anyerror!Saved = null,
+        /// Peer disk demand and reservation lifetime; null functions mean a single local rank.
+        reclaim: ?*const fn (*anyopaque, [:0]const u8, u64) anyerror!u64 = null,
+        peer_other_used: ?*const fn (*anyopaque, u64) anyerror!u64 = null,
+        peer_need: ?*const fn (ptr: *anyopaque, saved: Saved, extra: u64) anyerror!u64 = null,
+        peer_reclaim: ?*const fn (ptr: *anyopaque, key: u64) anyerror!u64 = null,
+        peer_reserve: ?*const fn (ptr: *anyopaque, saved: Saved, key: u64, extra: u64) anyerror!void = null,
+        peer_finish: ?*const fn (ptr: *anyopaque, key: u64, success: bool) anyerror!void = null,
+        peer_other_next: ?*const fn (*anyopaque, ?u64) anyerror!?u64 = null,
+        peer_other_bytes: ?*const fn (*anyopaque, u64) anyerror!u64 = null,
+        peer_other_remove: ?*const fn (*anyopaque, u64) anyerror!void = null,
+        forget_checked: ?*const fn (*anyopaque, [:0]const u8, u64) anyerror!void = null,
         /// Learned state `key`'s files under `dir` removed (the cap needs room, or they no longer read back).
         forget: ?*const fn (ptr: *anyopaque, dir: [:0]const u8, key: u64) void = null,
+    };
+};
+
+/// What a paged store asks of the backend's pages: who holds each, and how many are free.
+pub const Pages = struct {
+    ptr: *anyopaque,
+    vtable: *const VTable,
+    /// Bytes of one page, over every layer.
+    bytes: u64,
+
+    pub const VTable = struct {
+        retain: *const fn (ptr: *anyopaque, id: u32) void,
+        release: *const fn (ptr: *anyopaque, id: u32) void,
+        /// How many hold the page: the store counts as one.
+        holders: *const fn (ptr: *anyopaque, id: u32) u32,
+        /// Pages free and not promised to a stream.
+        available: *const fn (ptr: *anyopaque) usize,
     };
 };
 
@@ -51,6 +88,10 @@ pub const Rules = struct {
     min_prompt: u32 = 4096,
     /// Replies are prefilled in background passes kept at their end: a pass resumed near its history keeps no mark.
     warm: bool = false,
+    /// A paged store (prompt_radix.zig): the tokens a page holds, where its marks and resumes sit (0: not paged).
+    page: u32 = 0,
+    /// A paged store also keeps the prompt's last whole page, for a later turn whose history the request did not name.
+    tail: bool = false,
 };
 
 pub const Entry = struct {
@@ -69,6 +110,9 @@ pub const Counts = struct { hits: u64 = 0, misses: u64 = 0, kept: u64 = 0, evict
 
 /// Where a prompt pass starts and where it stops to keep its state (marks sorted, in `a`).
 pub const Plan = struct { from: u32 = 0, marks: []const u32 = &.{} };
+
+/// A paged store's `keep`: whether the mark holds a state, and how many leading pages the stream swaps for the store's.
+pub const Kept = struct { held: bool, shared: usize };
 
 /// The entry a backend restores itself (null: the pass starts at 0) and the pass's marks.
 pub const Lookup = struct { entry: ?*Entry = null, marks: []const u32 = &.{} };
@@ -349,6 +393,7 @@ pub const Store = struct {
         for (s.entries.items) |e| if (e.at == at and std.mem.eql(u32, e.tokens, prompt[0..n]) and modes.equal(e.decode_spans, spans, at)) {
             e.used = s.clock; // the same state again: no copy
             e.shared = e.shared or shared;
+            if (shared) learned.learn(s, e, starts);
             return true;
         };
         const decoded = modes.prefix(s.gpa, spans, at) catch |err| return s.fail(at, err);
@@ -397,28 +442,9 @@ pub const Store = struct {
         };
         s.held += charged;
         s.counts.kept += 1;
-        if (shared) s.learn(e, starts);
+        if (shared) learned.learn(s, e, starts);
         if (s.family.vtable.trim) |f| f(s.family.ptr, s.budget -| s.held); // spare storage only inside what the budget leaves
         return true;
-    }
-
-    /// A shared cut's state written to disk once (--learn): later sessions read it back, after a restart too.
-    fn learn(s: *Store, e: *const Entry, starts: []const u32) void {
-        const im = s.imprint orelse return;
-        if (e.decode_spans.len != 0) return; // learned states are prompt arithmetic only: their key holds no span map
-        const write = s.family.vtable.write orelse return;
-        const key = imprint.Imprint.keyOf(e.tokens);
-        if (im.has(key) or e.bytes > im.cap) return;
-        while (!im.fits(e.bytes)) s.unlearn(im, im.victim() orelse return); // the least recently used go first
-        write(s.family.ptr, e.saved, im.dir, key) catch |err| return note("learning {d} tokens failed ({s})", .{ e.at, @errorName(err) });
-        im.add(key, e.at, e.tokens, starts, e.bytes) catch |err| return note("learning {d} tokens failed ({s})", .{ e.at, @errorName(err) });
-        if (!@import("builtin").is_test) std.log.info("prompt cache: learned {d} tokens to disk", .{e.at});
-    }
-
-    /// Learned state `key` forgotten: its files (the family's), then its index record.
-    fn unlearn(s: *Store, im: *imprint.Imprint, key: u64) void {
-        if (s.family.vtable.forget) |f| f(s.family.ptr, im.dir, key);
-        im.remove(key) catch |err| note("forgetting a learned state failed ({s})", .{@errorName(err)});
     }
 
     /// A learned state on disk longer than `have`, read back as a shared entry; else `have` (none, or reading failed).
@@ -440,7 +466,7 @@ pub const Store = struct {
         const key = m.key;
         e.saved = read(s.family.ptr, im.dir, key, m.at) catch |err| {
             note("reading the learned {d} tokens failed ({s}); forgotten, a later pass learns them again", .{ e.at, @errorName(err) });
-            s.unlearn(im, key);
+            learned.unlearn(s, im, key);
             return s.drop(e, have, false);
         };
         im.touch(key);
@@ -504,7 +530,7 @@ pub const Store = struct {
 };
 
 /// A line on the engine's log; tests stay quiet (the build runner fails a test that writes to stderr).
-fn note(comptime fmt: []const u8, args: anytype) void {
+pub fn note(comptime fmt: []const u8, args: anytype) void {
     if (@import("builtin").is_test) return;
     std.log.warn("prompt cache: " ++ fmt, args);
 }
@@ -521,5 +547,6 @@ fn floorStart(starts: []const u32, at: u32) u32 {
 test {
     _ = @import("prompt_cache_test.zig");
     _ = @import("prompt_cache_rewind_test.zig");
+    _ = @import("learned_fault_test.zig");
     _ = modes;
 }
