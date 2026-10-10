@@ -41,6 +41,18 @@ pub const Context = struct {
         return std.mem.sliceTo(buf, 0);
     }
 
+    pub const MemInfo = struct { free: usize, total: usize };
+
+    /// The current device's free and total bytes (hipMemGetInfo, looked up on its own: the admission set lacks it).
+    pub fn memInfo(self: Context) runtime.Error!MemInfo {
+        const Get = *const fn (*usize, *usize) callconv(.c) abi.Result;
+        const lib: *std.DynLib = @constCast(&self.r.lib);
+        const get = lib.lookup(Get, "hipMemGetInfo") orelse return error.MissingSymbol;
+        var m: MemInfo = .{ .free = 0, .total = 0 };
+        try runtime.check(get(&m.free, &m.total));
+        return m;
+    }
+
     pub fn deinit(self: *Context) void {
         _ = self.r.api.hipDeviceSynchronize();
         _ = self.r.api.hipDevicePrimaryCtxRelease(self.device);

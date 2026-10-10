@@ -294,3 +294,7 @@ test "a cooperative grid of one block a compute unit, and the device's attribute
     for (got, 0..) |v, i| try std.testing.expectEqual(3 + @as(f32, @floatFromInt(i)), v);
     try std.testing.expect(r.errorName(1).len > 0);
 }
+
+test {
+    _ = @import("engine_runtime_tests.zig");
+}
