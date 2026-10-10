@@ -92,10 +92,24 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     // the GPU programs compile on any host against stub kernels, so `test` catches what only they reach
     test_step.dependOn(&checksExe(b, b.graph.host, .Debug, host).step);
     test_step.dependOn(&server(b, b.graph.host, host, build_options).step);
+    const stub_probe = b.createModule(.{ .root_source_file = b.addWriteFiles().add("probe.zig", "pub const arch = \"\";\npub const bytes align(8) = [_]u8{};\n") });
+    test_step.dependOn(&benchExe(b, b.graph.host, .Debug, host, stub_probe).step);
     const gpu = engineModules(b, target, optimize, objects, hip_include);
     b.step("tf-qwen35-test", "Qwen3.5 / 3.6 model checks on the GPU (-Dhip-arch)").dependOn(&b.addInstallArtifact(checksExe(b, target, optimize, gpu), .{}).step);
+    b.step("tf-hip-bench", "Launch costs on the GPU: a stream against a graph, and each model kernel (-Dhip-arch)").dependOn(&b.addInstallArtifact(benchExe(b, target, optimize, gpu, hip_probe), .{}).step);
     const native = server(b, target, gpu, build_options);
     b.step("native-hip", "tensorfold-native with the HIP engines into zig-out/native-hip/bin (-Dhip-arch)").dependOn(&b.addInstallArtifact(native, .{ .dest_dir = .{ .override = .{ .custom = "native-hip/bin" } } }).step);
+}
+
+/// `tf-hip-bench`: the host cost of launches, on the probe kernels and the model kernels.
+fn benchExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, e: Engine, probe: *std.Build.Module) *std.Build.Step.Compile {
+    return b.addExecutable(.{ .name = "tf-hip-bench", .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/tests/hip/bench.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{ .{ .name = "hip", .module = e.hip }, .{ .name = "hip_probe", .module = probe } },
+    }) });
 }
 
 /// `tf-qwen35-test`: the model checks on a real checkpoint and GPU.
