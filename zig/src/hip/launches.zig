@@ -9,6 +9,8 @@ const Function = @import("module.zig").Function;
 const Stream = @import("stream.zig").Stream;
 const caps = @import("caps.zig");
 const affine = @import("launches/affine.zig");
+/// The stream tile's column counts a lane, for tf-hip-bench's sweep.
+pub const affine_stream_cbs = affine.stream_cbs;
 
 const util = @import("launches/util.zig");
 

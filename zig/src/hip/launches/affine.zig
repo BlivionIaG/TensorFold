@@ -88,7 +88,7 @@ const piece_counts = [_]u8{ 1, 2, 4 };
 pub const lane_rows = 8; // kLaneRows
 pub const lane_group_max = 128;
 const fast_n = 256;
-const stream_cbs = [_]c_int{ 2, 4, 8 }; // columns a lane carries in the stream tile
+pub const stream_cbs = [_]c_int{ 2, 4, 8 }; // columns a lane carries in the stream tile
 const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
 const stream_waves = 4; // kStreamWaves
 const streams_wanted = 3000; // kStreamWavesWanted
@@ -125,6 +125,9 @@ pub const Kernels = struct {
     tile: Tile,
     lanes: [bit_widths.len][row_counts.len][piece_counts.len]Function,
     row: [bit_widths.len][piece_counts.len]Function,
+    /// A forced stream column count (an index of `stream_cbs`) and wave target, for tf-hip-bench; null: the rule's.
+    stream_cb: ?usize = null,
+    stream_waves_wanted: u64 = streams_wanted,
     /// The stream tile (tiles/stream.hpp) by width, rows and columns a lane; null where columns * rows > 16.
     stream: [bit_widths.len][stream_rows.len][stream_cbs.len]?Function,
     /// The same tile with the (gate | up) activation as its epilogue.
@@ -146,6 +149,8 @@ pub const Kernels = struct {
     /// `tiles` holds dot2_tiles.hip's kernels, `dot2` dot2.hip's; bf16 on the WMMA build, fp16 on RDNA2.
     pub fn load(tiles_obj: Module, dot2_obj: Module, caps: Caps, choices: Choices) Error!Kernels {
         var k: Kernels = undefined;
+        k.stream_cb = null;
+        k.stream_waves_wanted = streams_wanted;
         const wmma = caps.act == .bf16;
         k.caps = caps;
         k.wmma = wmma;
@@ -317,8 +322,11 @@ pub const Kernels = struct {
             if (stream_cbs[c] * stream_rows[ri] > 16 or stream_cbs[c] * a.bits > stream_code_words) continue;
             pick = c;
             const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[c], pair_div);
-            if (@as(u64, cdiv(total_n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[ri]) >= streams_wanted) break;
+            if (@as(u64, cdiv(total_n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[ri]) >= k.stream_waves_wanted) break;
         }
+        if (k.stream_cb) |forced| if (stream_cbs[forced] * stream_rows[ri] <= 16 and stream_cbs[forced] * a.bits <= stream_code_words) {
+            pick = forced;
+        };
         const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[pick], pair_div);
         var blocks: c_uint = cdiv(total_n, per_block);
         if (sides.count > 0) {
