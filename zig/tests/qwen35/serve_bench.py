@@ -1,4 +1,4 @@
-"""Prefill and decode tok/s, TTFT and ITL, a request and in total, c=1 and c=8; serve_bench.py URL MODEL [--json F]."""
+"""Prefill, decode tok/s, TTFT, ITL per request and total, c=1 and c=8; URL MODEL [--json F] [--no-draft]."""
 
 import http.client
 import json
@@ -10,6 +10,7 @@ import urllib.parse
 
 URL, MODEL = sys.argv[1], sys.argv[2]
 OUT = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else None
+DRAFT = "--no-draft" not in sys.argv  # --no-draft: every request asks for "draft": false
 TOKENS = 256  # reply tokens a request asks for
 SHORT, MEDIUM, LONG = 256, 2048, 8192  # prompt tokens, about
 VOCAB = ("the cat sat on a mat and saw the dog run in the park while we read old books by the sea "
@@ -27,7 +28,7 @@ def request(text, stamps):
     url = urllib.parse.urlparse(URL)
     conn = http.client.HTTPConnection(url.hostname, url.port, timeout=1800)
     body = {"model": MODEL, "messages": [{"role": "user", "content": text}], "max_tokens": TOKENS, "temperature": 0.0,
-            "stream": True, "stream_options": {"include_usage": True}, "ignore_eos": True,
+            "stream": True, "stream_options": {"include_usage": True}, "ignore_eos": True, "draft": DRAFT,
             "chat_template_kwargs": {"enable_thinking": False}}
     stamps["sent"] = time.perf_counter()
     conn.request("POST", "/v1/chat/completions", json.dumps(body), {"Content-Type": "application/json"})
