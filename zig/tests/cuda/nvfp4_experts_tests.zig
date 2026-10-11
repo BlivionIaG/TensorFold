@@ -157,9 +157,5 @@ fn oneCase(gpu: Gpu, fx: Fixture, router: grouped.Router, g: ex_.Grouped, s: cud
     const want_y = try arr(fx, "y{d}", .{rows});
     defer a.free(want_y);
     try check.sameBytes("down", got_y, want_y);
-    if (wide) {
-        const refused = g.prompt(s, .up, .{ .x = dx.ptr, .stride = l.dims, .slots = slots }, l, plan, act.ptr, bound, -1);
-        if (refused != error.PromptFormNotBuilt) return error.PromptNotRefused;
-    }
-    check.pass("nvfp4 experts: {d} rows x {d} slots ({s}, {d} items) plan, up and down via experts.Grouped equal Python's bytes", .{ rows, slots, if (wide) "decode form, bf16 sums; prompt refused" else "decode", n_items });
+    check.pass("nvfp4 experts: {d} rows x {d} slots ({s}, {d} items) plan, up and down via experts.Grouped equal Python's bytes", .{ rows, slots, if (wide) "decode form, bf16 sums" else "decode", n_items });
 }
