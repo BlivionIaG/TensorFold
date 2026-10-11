@@ -145,6 +145,53 @@ test "hyper-connection norm, gates and mix: the reference's roundings, each row 
     };
 }
 
+test "the wide norm over a row of every stream, and the gates without inject gates" {
+    const t = try Rig.open(1 << 20);
+    defer t.close();
+    var rng: rig.Rng = .{ .state = 0x51DE };
+    const rows = 3;
+    const w = 10240;
+    const low = 320;
+    const eps: f32 = 1e-6;
+    const hx = try acts(t, &rng, rows * w, 2.0);
+    defer gpa.free(hx);
+    const scale = try gpa.alloc(f32, w);
+    defer gpa.free(scale);
+    for (scale) |*x| x.* = 1.0 + rng.unit() * 0.5;
+    var x = try t.upload(hx);
+    defer x.free();
+    var sc = try t.upload(scale);
+    defer sc.free();
+    var y = try t.alloc(rows * w * 2);
+    defer y.free();
+    const zh = try gpa.alloc(f32, rows * low);
+    defer gpa.free(zh);
+    for (zh) |*v| v.* = rng.unit() * 6.0;
+    var z = try t.upload(zh);
+    defer z.free();
+    var act = try t.alloc(rows * low * 2);
+    defer act.free();
+    const st = t.stream.handle;
+    try t.on.fn_rms_wide(ptr(?*const anyopaque, x), ptr(?[*]const f32, sc), ptr(?*anyopaque, y), t.kind(), rows, w, eps, st);
+    try t.on.fn_hc_gates(ptr(?[*]const f32, z), ptr(?*anyopaque, act), null, t.kind(), rows, low, 4, st);
+    try t.stream.synchronize();
+    const gy = try rig.download(u16, y);
+    defer gpa.free(gy);
+    const xs = try gpa.alloc(f32, w);
+    defer gpa.free(xs);
+    for (0..rows) |r| {
+        for (xs, 0..) |*v, j| v.* = value(t, hx[r * w + j]);
+        const inv = rmsInv(xs, eps);
+        for (0..w) |j| try rig.expect(close(t, value(t, gy[r * w + j]), rnd(t, xs[j] * inv * scale[j]), 1), "wide norm row {d} dim {d}", .{ r, j });
+    }
+    const ga = try rig.download(u16, act);
+    defer gpa.free(ga);
+    for (0..rows * low) |i| {
+        const v = rnd(t, rnd(t, zh[i]) / 4.0);
+        try rig.expect(close(t, value(t, ga[i]), rnd(t, v * sigmoid(v)), 1), "gate {d}", .{i});
+    }
+}
+
 test "the n-gram gate and its dilated conv: gate, norm, conv and residual sums as the reference rounds them" {
     const t = try Rig.open(1 << 20);
     defer t.close();

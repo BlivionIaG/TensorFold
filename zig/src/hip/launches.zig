@@ -330,6 +330,7 @@ pub const Launcher = struct {
     pub const fn_hc_norm = flashnext.hcNorm;
     pub const fn_hc_gates = flashnext.hcGates;
     pub const fn_hc_mix = flashnext.hcMix;
+    pub const fn_rms_wide = flashnext.rmsWide;
     pub const fn_ple_gate = flashnext.pleGate;
     pub const fn_ple_conv = flashnext.pleConv;
     pub const fn_ngram_ids = flashnext.ngramIds;

@@ -20,6 +20,7 @@ const cdiv = util.cdiv;
 pub const Fns = struct {
     hc_norm: Function,
     hc_gates: Function,
+    rms_wide: Function,
     hc_mix: Function,
     ple_gate: Function,
     ple_conv: Function,
@@ -34,6 +35,7 @@ pub const Fns = struct {
         return .{
             .hc_norm = try m.function("tf_fn_hc_norm"),
             .hc_gates = try m.function("tf_fn_hc_gates"),
+            .rms_wide = try m.function("tf_fn_rms_wide"),
             .hc_mix = try m.function("tf_fn_hc_mix"),
             .ple_gate = try m.function("tf_fn_ple_gate"),
             .ple_conv = try m.function("tf_fn_ple_conv"),
@@ -59,11 +61,19 @@ pub fn hcNorm(l: *const Launcher, h: C, branch: C, inject: C, h_out: P, x_out: P
     try l.go(l.fnx.hc_norm, dim(streams, rows, 1), dim(threads, 1, 1), 0, s, &a);
 }
 
-/// act = silu(z / streams) and inject = 2 sigmoid(z / streams) from the down projection's fp32 sums.
+/// act = silu(z / streams) and inject = 2 sigmoid(z / streams) from the down projection's fp32 sums (no inject: null).
 pub fn hcGates(l: *const Launcher, z: CF, act: P, inject: P, kind: c_int, rows: c_int, low: c_int, streams: c_int, s: S) Error!void {
     var a: Args = .{};
     inline for (.{ ad(z), ad(act), ad(inject), kind, rows, low, streams }) |v| try a.add(v);
-    try l.flat(l.fnx.hc_gates, @as(i64, rows) * (low + streams), s, &a);
+    try l.flat(l.fnx.hc_gates, @as(i64, rows) * (low + if (inject != null) streams else 0), s, &a);
+}
+
+/// Each of `rows` rows normed over its whole `width` (any width) times the fp32 `scale`.
+pub fn rmsWide(l: *const Launcher, x: C, scale: CF, y: P, kind: c_int, rows: c_int, width: c_int, eps: f32, s: S) Error!void {
+    if (rows == 0) return;
+    var a: Args = .{};
+    inline for (.{ ad(x), ad(scale), ad(y), kind, width, eps }) |v| try a.add(v);
+    try l.go(l.fnx.rms_wide, dim(rows, 1, 1), dim(threads, 1, 1), 0, s, &a);
 }
 
 /// The block input: the mean over the streams of sigmoid(g) times the normed stream.

@@ -58,16 +58,32 @@ tf_fn_hc_norm(const void* h, const void* branch, const void* inject, void* h_out
     }
 }
 
-// From z [rows, low + streams] / streams: silu for the up projection, 2 sigmoid for the inject gates, rounded to kind.
+// From z [rows, low (+ streams with inject)] / streams: silu for the up projection, 2 sigmoid for the inject gates.
 extern "C" __global__ void tf_fn_hc_gates(const float* z, void* act, void* inject, int kind, int rows, int low,
                                           int streams) {
     const long long i = gid();
-    const int width = low + streams;
+    const int width = low + (inject != nullptr ? streams : 0);
     if (i >= static_cast<long long>(rows) * width) return;
     const int r = static_cast<int>(i / width), c = static_cast<int>(i % width);
     const float v = rounded(rounded(z[i], kind) / static_cast<float>(streams), kind);
     if (c < low) store(act, kind, static_cast<long long>(r) * low + c, silu(v));
     else store(inject, kind, static_cast<long long>(r) * streams + c - low, 2.f * rounded(sigmoid(v), kind));
+}
+
+// Row r of x normed over all its `width` values (fp32 sums: each thread's strided values, then the block's sum).
+extern "C" __global__ void __launch_bounds__(kFnThreads)
+tf_fn_rms_wide(const void* x, const float* scale, void* y, int kind, int width, float eps) {
+    __shared__ float scratch[kFnWaves];
+    const long long base = static_cast<long long>(blockIdx.x) * width;
+    float sum = 0.f;
+    for (int i = threadIdx.x; i < width; i += kFnThreads) {
+        const float v = load(x, kind, base + i);
+        sum += v * v;
+    }
+    const float rinv = rsqrtf(fn_block_sum(sum, scratch) / static_cast<float>(width) + eps);
+    for (int i = threadIdx.x; i < width; i += kFnThreads) {
+        store(y, kind, base + i, (load(x, kind, base + i) * rinv) * scale[i]);
+    }
 }
 
 // mixed[r, d] = mean over the streams (in order) of round(sigmoid(round(g)) * x): g the up projection's fp32 sums.
