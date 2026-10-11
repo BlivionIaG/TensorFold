@@ -84,9 +84,11 @@ pub fn scaleOf(head_dim: usize) f32 {
 fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, index: usize, x: Tensor, rows: usize, pos: usize) Error!Tensor {
     const s = m.spec;
     const hd = s.head_dim;
-    const qg = try o.project(x, f.q, rows, false);
-    const keys = try o.project(x, f.k, rows, false);
-    const values = try o.project(x, f.v, rows, false);
+    var outs: [4]Tensor = undefined;
+    const qg, const keys, const values = if (o.prefill and try o.projectGroup(x, &.{ f.q, f.k, f.v }, rows, &outs))
+        .{ outs[0], outs[1], outs[2] }
+    else
+        .{ try o.project(x, f.q, rows, false), try o.project(x, f.k, rows, false), try o.project(x, f.v, rows, false) };
     const q_rows = rows * s.heads;
     const qc = try take(o, m.act, q_rows * hd);
     try o.copyCols(qg, 2 * hd, 0, qc.ptr, q_rows, hd);
@@ -114,10 +116,11 @@ fn attention(o: Ops, m: *const view.Model, f: view.Full, caches: *state.Caches, 
 /// Linear attention: qkv, z, a, b, the conv over [state | rows], norms, gate, recurrence and the gated norm.
 fn linear(o: Ops, m: *const view.Model, l: view.Linear, caches: *state.Caches, index: usize, x: Tensor, rows: usize) Error!Tensor {
     const s = m.spec;
-    const qkv = try o.project(x, l.qkv, rows, false);
-    const z = try o.project(x, l.z, rows, false);
-    const a = try o.project(x, l.a, rows, false);
-    const b = try o.project(x, l.b, rows, false);
+    var outs: [4]Tensor = undefined;
+    const qkv, const z, const a, const b = if (o.prefill and try o.projectGroup(x, &.{ l.qkv, l.z, l.a, l.b }, rows, &outs))
+        .{ outs[0], outs[1], outs[2], outs[3] }
+    else
+        .{ try o.project(x, l.qkv, rows, false), try o.project(x, l.z, rows, false), try o.project(x, l.a, rows, false), try o.project(x, l.b, rows, false) };
     const cache = caches.layers[index].linear;
     const ch = view.convChannels(s);
     const mixed = try o.arena.of(f32, rows * ch);

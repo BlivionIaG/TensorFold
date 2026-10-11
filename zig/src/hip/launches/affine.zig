@@ -137,6 +137,7 @@ pub const Kernels = struct {
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
     wmma_gemm: [bit_widths.len]Function,
+    wmma_group: [bit_widths.len]Function,
     kp: [bit_widths.len][kp_tiles.len]Function,
     span: [2]Function,
     fold: Function,
@@ -177,6 +178,7 @@ pub const Kernels = struct {
         inline for (bit_widths, 0..) |bits, b| {
             k.block[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_dot2_blockINS0_{s}ELi{d}EEEvNS0_6AffineE", .{ dot, bits }));
             if (k.matrix) k.wmma_gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_wmma_gemmILi{d}EEEvNS0_6AffineE", .{bits}));
+            if (k.matrix) k.wmma_group[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_wmma_groupILi{d}EEEvNS0_6AffineENS0_11StreamSidesE", .{bits}));
             k.gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_gemm_blockINS0_{s}ELi{d}E{s}EEvNS0_6AffineE", .{ dot, bits, shape }));
             inline for (kp_tiles, 0..) |t, i| {
                 k.kp[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm14affine_gemm_kpINS0_{s}ELi{d}ELi{d}ELi{d}ELi{d}ELi{d}ELb{d}EEEvNS0_6AffineE", .{ dot, bits, t.cb, t.r, t.waves, t.rb, @intFromBool(t.loop) }));
@@ -487,14 +489,41 @@ pub const Kernels = struct {
 
     /// Up to four products of `m` rows over one x in one launch; outputs (m, n) fp32, or activation type if `out_half`.
     pub fn groupRun(k: *const Kernels, r: *const runtime.Runtime, arg: Arg, group: []const Side, out_half: bool, s: abi.Stream) Error!void {
-        if (group.len == 0 or group.len > 4) return refuse("group shape");
+        const e = k.groupEntry(arg, group, .decode) orelse return refuse("group shape");
+        try e.launch(k, .{ .r = r, .s = s, .arg = arg, .sides = group, .out_half = out_half });
+    }
+
+    /// The entry that takes a group on `path` (a lane round's on decode), or null; every side's words count.
+    pub fn groupEntry(k: *const Kernels, arg: Arg, group: []const Side, path: registry.Path) ?*const Entry {
+        if (group.len == 0 or group.len > 4) return null;
         var a = arg;
         a.n = 0;
         for (group) |side| a.n = @max(a.n, side.n);
         var shape = shapeOf(a, 1);
-        shape.round = true;
-        const e = k.choose(.group, .decode, shape) orelse return refuse("group shape");
-        try e.launch(k, .{ .r = r, .s = s, .arg = a, .sides = group, .out_half = out_half });
+        shape.round = path == .decode;
+        for (group) |side| shape.words_aligned = shape.words_aligned and side.words % gemmAlign(a.bits) == 0;
+        return k.choose(.group, path, shape);
+    }
+
+    /// A prompt's group on the matrix cores: each side's 128-column blocks in turn, fp32 outputs.
+    pub fn matrixGroupGo(k: *const Kernels, r: *const runtime.Runtime, arg: Arg, group: []const Side, s: abi.Stream) Error!void {
+        const b = bitIndex(arg.bits) orelse return refuse("bits");
+        var sides: StreamSides = .{ .count = @intCast(group.len) };
+        var blocks: c_uint = 0;
+        for (group, 0..) |side, i| {
+            sides.words[i] = side.words;
+            sides.scale[i] = side.scale;
+            sides.bias[i] = side.bias;
+            sides.out[i] = side.out;
+            sides.n[i] = side.n;
+            sides.first[i] = @intCast(blocks);
+            blocks += cdiv(side.n, 128);
+        }
+        sides.first[group.len] = @intCast(blocks);
+        var args: hl.Args = .{};
+        try args.add(arg);
+        try args.add(sides);
+        try go(r, k.wmma_group[b], .{ .x = blocks, .y = cdiv(arg.m, 128) }, .{ .x = 256 }, s, &args);
     }
 
     /// The stream tile over a group: the sides' addresses and widths in one launch.

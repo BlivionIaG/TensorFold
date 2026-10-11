@@ -194,6 +194,10 @@ fn fitsPrefillBlock(s: Shape) bool {
     return prefillOk(s);
 }
 
+fn fitsPrefillGroup(s: Shape) bool {
+    return fitsPrefillMatrix(s) and widthOk(s);
+}
+
 // ---- the launches
 
 fn launchStream(k: *const Kernels, c: Call) Error!void {
@@ -206,6 +210,10 @@ fn launchPair(k: *const Kernels, c: Call) Error!void {
 
 fn launchGroup(k: *const Kernels, c: Call) Error!void {
     try k.groupGo(c.r, c.arg, c.sides, c.out_half, c.s);
+}
+
+fn launchMatrixGroup(k: *const Kernels, c: Call) Error!void {
+    try k.matrixGroupGo(c.r, c.arg, c.sides, c.s);
 }
 
 fn launchRow(k: *const Kernels, c: Call) Error!void {
@@ -302,6 +310,7 @@ const routed_decode = [_]Entry{
 const other_decode = [_]Entry{
     entry(.group, .decode, "stream", .{ .family = .stream, .fits = &fitsGroup, .launch = &launchGroup, .policy = &streamOn, .round_any = true }),
     entry(.routed_act, .decode, "stream", .{ .family = .stream, .fits = &fitsPair, .launch = &launchPair, .policy = &streamOn }),
+    entry(.group, .prefill, "matrix", .{ .family = .gemm, .fits = &fitsPrefillGroup, .launch = &launchMatrixGroup, .caps = &matrixCores, .policy = &matrixOn }),
 };
 
 fn prefill(comptime op: Op) [7]Entry {

@@ -42,5 +42,7 @@
         .{ .id = "mlx.routed.prefill.matrix", .cost = 10 },
         .{ .id = "mlx.routed.prefill.gemm", .cost = 11 },
         .{ .id = "mlx.routed.prefill.block", .cost = 12 },
+        // a prompt's products sharing x in one launch on the matrix cores, past the K-parallel tiles' rows
+        .{ .id = "mlx.group.prefill.matrix", .cost = 10, .min_rows = 33 },
     },
 }

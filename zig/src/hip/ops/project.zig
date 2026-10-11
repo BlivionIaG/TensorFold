@@ -132,10 +132,10 @@ pub fn affine(o: Ops, x: Tensor, w: Affine, m: usize, f32_out: bool) Error!Tenso
     return .{ .ptr = narrow, .kind = x.kind };
 }
 
-/// Up to four products of the same rows in one stream-tile launch, rounded to x's kind; false if unsupported.
+/// Up to four products of the same rows in one launch, rounded to x's kind; false if unsupported.
 pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tensor) Error!bool {
     const z = o.l;
-    if (o.prefill or !o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or x.kind == .f32) return false;
+    if (!o.fused() or ws.len < 2 or ws.len > 4 or m == 0 or x.kind == .f32) return false;
     var widest: u32 = 0;
     for (ws) |w| {
         try w.check();
@@ -143,6 +143,7 @@ pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tens
         widest = @max(widest, w.n);
     }
     const kind = ws[0].tables.table();
+    if (o.prefill) return promptGroup(o, x, ws, m, outs);
     var widest_w = ws[0];
     widest_w.n = widest;
     if (z.affine.choose(.group, .decode, shapeOf(o, x, widest_w, m)) == null) return false;
@@ -165,6 +166,35 @@ pub fn affineGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tens
         .fp16 = @intFromBool(x.kind == .f16),
     };
     try z.affine.groupRun(z.r, arg, sides[0..ws.len], true, o.stream);
+    return true;
+}
+
+/// A prompt's group on the matrix cores: fp32 sides, then each rounded to x's kind as a lone product's is.
+fn promptGroup(o: Ops, x: Tensor, ws: []const Affine, m: usize, outs: []Tensor) Error!bool {
+    const z = o.l;
+    var sides: [4]affine_launch.Side = undefined;
+    for (ws, sides[0..ws.len]) |w, *side| side.* = .{ .words = w.words, .scale = w.scale, .bias = w.bias, .n = int(w.n), .out = 0 };
+    const kind = ws[0].tables.table();
+    const arg: affine_launch.Arg = .{
+        .x = x.ptr,
+        .words = ws[0].words,
+        .scale = .{ .p = ws[0].scale, .kind = kind },
+        .bias = .{ .p = ws[0].bias, .kind = kind },
+        .out = 0,
+        .m = int(m),
+        .n = int(ws[0].n),
+        .k = int(ws[0].k),
+        .bits = int(ws[0].bits),
+        .group = int(ws[0].group),
+        .fp16 = @intFromBool(x.kind == .f16),
+    };
+    const e = z.affine.groupEntry(arg, sides[0..ws.len], .prefill) orelse return false;
+    for (ws, sides[0..ws.len]) |w, *side| side.out = try o.arena.take(m * w.n * 4);
+    try e.launch(&z.affine, .{ .r = z.r, .s = o.stream, .arg = arg, .sides = sides[0..ws.len] });
+    for (ws, sides[0..ws.len], outs[0..ws.len]) |w, side, *out| {
+        out.* = .{ .ptr = try o.arena.take(m * w.n * 2), .kind = x.kind };
+        try o.cast(.{ .ptr = side.out, .kind = .f32 }, out.*, m * w.n);
+    }
     return true;
 }
 

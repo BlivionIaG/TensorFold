@@ -34,7 +34,7 @@ __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
 
 template <int BITS>
 __global__ void __launch_bounds__(256) affine_wmma_gemm(Affine a) {
-    wmma_gemm_tile<MlxDecoder<BITS>, BF16Act, WmmaBF16, F32Out>(a);
+    wmma_gemm_tile<MlxDecoder<BITS>, BF16Act, WmmaBF16, F32Out>(a, blockIdx.x);
 }
 
 // ---- the decode stream tile ----
@@ -63,6 +63,20 @@ __global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a
     stream_tile<MlxDecoder<BITS>, IdentityAct<T>, T, Epi, R, CB>(a, sides, lpc_log2, gshift);
 }
 
+// ---- a prompt's products sharing x on the matrix cores of gfx11 ----
+
+// Side s owns column blocks [first[s], first[s + 1]); each block is the plain product's, so every side keeps its bits.
+template <int BITS>
+__global__ void __launch_bounds__(256) affine_wmma_group(Affine a, StreamSides sides) {
+    int s = 0;
+    while (s + 1 < sides.count && static_cast<int>(blockIdx.x) >= sides.first[s + 1]) ++s;
+    a.words = sides.words[s];
+    a.scale.p = sides.scale[s];
+    a.bias.p = sides.bias[s];
+    a.out = static_cast<float*>(sides.out[s]);
+    a.n = sides.n[s];
+    wmma_gemm_tile<MlxDecoder<BITS>, BF16Act, WmmaBF16, F32Out>(a, blockIdx.x - sides.first[s]);
+}
 
 }  // namespace rocm
 }  // namespace tf
