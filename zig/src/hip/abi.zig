@@ -64,6 +64,11 @@ pub const ExecUpdateResult = enum(c_int) {
     unsupported_function_change = 7,
     _,
 };
+pub const Event = ?*opaque {};
+
+/// hipErrorNotReady: a query found queued work unfinished; not a failure.
+pub const not_ready: Result = 600;
+pub const event_disable_timing: c_uint = 2;
 
 pub const Api = struct {
     hipInit: *const fn (c_uint) callconv(.c) Result,
@@ -89,6 +94,15 @@ pub const Api = struct {
     hipModuleLoadData: *const fn (*Module, [*]const u8) callconv(.c) Result,
     hipModuleUnload: *const fn (Module) callconv(.c) Result,
     hipModuleGetFunction: *const fn (*Function, Module, [*:0]const u8) callconv(.c) Result,
+    hipStreamQuery: *const fn (Stream) callconv(.c) Result,
+    hipStreamWaitEvent: *const fn (Stream, Event, c_uint) callconv(.c) Result,
+    hipEventCreateWithFlags: *const fn (*Event, c_uint) callconv(.c) Result,
+    hipEventDestroy: *const fn (Event) callconv(.c) Result,
+    hipEventRecord: *const fn (Event, Stream) callconv(.c) Result,
+    hipEventSynchronize: *const fn (Event) callconv(.c) Result,
+    hipEventQuery: *const fn (Event) callconv(.c) Result,
+    hipEventElapsedTime: *const fn (*f32, Event, Event) callconv(.c) Result,
+    hipMemGetInfo: *const fn (*usize, *usize) callconv(.c) Result,
     hipModuleLaunchKernel: *const fn (Function, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, c_uint, Stream, ?[*]?*anyopaque, ?[*]?*anyopaque) callconv(.c) Result,
     hipGetErrorName: *const fn (Result) callconv(.c) ?[*:0]const u8,
     hipRuntimeGetVersion: *const fn (*c_int) callconv(.c) Result,
@@ -128,6 +142,7 @@ test "HIP ABI handles and scalar types have C widths" {
     try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(Module));
     try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(Function));
     try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(Graph));
+    try std.testing.expectEqual(@sizeOf(*anyopaque), @sizeOf(Event));
     try std.testing.expectEqual(@sizeOf(c_int), @sizeOf(DeviceAttribute));
 }
 
