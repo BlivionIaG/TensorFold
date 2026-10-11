@@ -4,9 +4,10 @@ const std = @import("std");
 const hip = @import("hip");
 const probe = @import("hip_probe");
 
-const usage = "usage: tf-hip-bench overhead [n] [reps] | launches [n] [reps]\n" ++
+const usage = "usage: tf-hip-bench overhead [n] [reps] | launches [n] [reps] | products [bits] [group]\n" ++
     "  overhead: n dependent one-thread launches on a stream, then the same chain replayed from one graph\n" ++
-    "  launches: the host cost of one call of each model kernel through the Zig launches, enqueued and done\n";
+    "  launches: the host cost of one call of each model kernel through the Zig launches, enqueued and done\n" ++
+    "  products: decode products of model shapes, the rule's stream tile against each column count and wave target\n";
 
 pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -23,6 +24,7 @@ pub fn main(init: std.process.Init) !u8 {
     const b: Bench = .{ .r = &r, .gpa = init.gpa, .io = init.io };
     if (std.mem.eql(u8, args[1], "overhead")) return b.overhead(n orelse 1000, reps orelse 20);
     if (std.mem.eql(u8, args[1], "launches")) return b.launches(n orelse 2000, reps orelse 15);
+    if (std.mem.eql(u8, args[1], "products")) return b.products(@intCast(n orelse 4), @intCast(reps orelse 64));
     std.debug.print(usage, .{});
     return 2;
 }
@@ -86,6 +88,58 @@ const Bench = struct {
         return 0;
     }
 
+    /// Decode products at 1, 2, 4 and 8 rows: the rule's stream tile, then each column count and wave target.
+    fn products(b: Bench, bits: u8, group: u16) !u8 {
+        const caps = try hip.Device.kernelCaps(b.r, 0);
+        const act: hip.ops.Kind = if (caps.act == .f16) .f16 else .bf16;
+        var l = try hip.Launcher.load(b.r, .{}, hip.kernels.images);
+        defer l.unload();
+        var stream = try hip.Stream.init(b.r);
+        defer stream.deinit();
+        var most: usize = 0;
+        for (shapes) |sh| most = @max(most, @as(usize, sh[0]) * sh[1]);
+        var words = try hip.DeviceBuffer.alloc(b.r, most * bits / 8);
+        defer words.free();
+        var tables = try hip.DeviceBuffer.alloc(b.r, most / group * 2);
+        defer tables.free();
+        var x = try hip.DeviceBuffer.alloc(b.r, 8 * 12288 * 2);
+        defer x.free();
+        try words.fill8(0x5a);
+        try tables.fill8(0x3c);
+        try x.fill8(0x3c);
+        var arena = try hip.Arena.init(b.r, 64 << 20);
+        defer arena.deinit();
+        const o: hip.ops.Ops = .{ .l = &l, .bf16 = act == .bf16, .stream = stream.handle, .arena = &arena, .window = true };
+        const waves = [_]u64{ 1500, 3000, 6000, 12000, 24000 };
+        std.debug.print("| n | k | rows | rule us | rule GB/s | best us | best GB/s | best cb, waves |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n", .{});
+        for (shapes) |sh| for ([_]usize{ 1, 2, 4, 8 }) |m| {
+            const w: hip.ops.Affine = .{ .words = words.base(), .scale = tables.base(), .bias = tables.base(), .tables = act, .n = sh[0], .k = sh[1], .bits = bits, .group = group };
+            const xt: hip.ops.Tensor = .{ .ptr = x.base(), .kind = act };
+            const bytes: f64 = @floatFromInt(@as(u64, sh[0]) * sh[1] * bits / 8 + @as(u64, sh[0]) * sh[1] / group * 4);
+            l.affine.stream_cb = null;
+            l.affine.stream_waves_wanted = 3000;
+            const rule = try Bench2.time(b, o, xt, w, m, stream, &arena);
+            var best = rule;
+            var best_cb: usize = 99;
+            var best_waves: u64 = 3000;
+            for (0..hip.launches.affine_stream_cbs.len) |cb| for (waves) |wv| {
+                l.affine.stream_cb = cb;
+                l.affine.stream_waves_wanted = wv;
+                const t = try Bench2.time(b, o, xt, w, m, stream, &arena);
+                if (t < best) {
+                    best = t;
+                    best_cb = cb;
+                    best_waves = wv;
+                }
+            };
+            l.affine.stream_cb = null;
+            l.affine.stream_waves_wanted = 3000;
+            const cbs = hip.launches.affine_stream_cbs;
+            std.debug.print("| {d} | {d} | {d} | {d:.1} | {d:.0} | {d:.1} | {d:.0} | {s}{d}, {d} |\n", .{ sh[0], sh[1], m, rule, bytes / rule / 1e3, best, bytes / best / 1e3, if (best_cb == 99) "rule " else "", if (best_cb == 99) 0 else cbs[best_cb], best_waves });
+        };
+        return 0;
+    }
+
     /// The host cost of one call of each kernel through the Zig launches: enqueued, and done with the GPU's work.
     fn launches(b: Bench, n: usize, reps: usize) !u8 {
         const caps = try hip.Device.kernelCaps(b.r, 0);
@@ -115,6 +169,27 @@ const Bench = struct {
             std.debug.print("RESULT {t}: {d:.2} us a call enqueued, {d:.2} us done\n", .{ k, median(enqueue), median(times) });
         }
         return 0;
+    }
+};
+
+/// Decode products (n, k) of the dense and MoE checkpoints we serve: attention, MLP, head.
+const shapes = [_][2]u32{ .{ 4096, 4096 }, .{ 12288, 4096 }, .{ 4096, 12288 }, .{ 8192, 4096 }, .{ 2048, 2048 }, .{ 6144, 2048 }, .{ 2048, 6144 }, .{ 248320, 4096 }, .{ 248320, 2048 } };
+
+const Bench2 = struct {
+    fn time(b: Bench, o: hip.ops.Ops, x: hip.ops.Tensor, w: hip.ops.Affine, m: usize, stream: hip.Stream, arena: *hip.Arena) !f64 {
+        const calls = 40;
+        for (0..5) |_| {
+            arena.reset();
+            _ = try o.affine(x, w, m, false);
+        }
+        try stream.synchronize();
+        const t0 = b.now();
+        for (0..calls) |_| {
+            arena.reset();
+            _ = try o.affine(x, w, m, false);
+        }
+        try stream.synchronize();
+        return b.per(t0, calls);
     }
 };
 
