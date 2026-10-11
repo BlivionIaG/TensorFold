@@ -384,10 +384,15 @@ pub const LaneHost = struct {
         return true;
     }
 
-    /// The oldest filling job's next prompt chunk: the other streams' rounds run between chunks, not after the prompt.
+    /// The shortest filling job's next chunk: the other streams' rounds run between chunks, not after the prompt.
     fn fillOne(h: *LaneHost) void {
         if (h.filling.items.len == 0) return;
-        const job = h.filling.items[0];
+        // the prompt with the fewest tokens to run goes first (the oldest of equals): a short one waits on no long one
+        var at: usize = 0;
+        for (h.filling.items, 0..) |j, i| {
+            if (j.stream.prompt_len - j.stream.cached < h.filling.items[at].stream.prompt_len - h.filling.items[at].stream.cached) at = i;
+        }
+        const job = h.filling.items[at];
         const first = !job.fill_began;
         job.fill_began = true;
         const done = h.core.fillStream(&job.stream, first) catch |e| {
@@ -395,7 +400,7 @@ pub const LaneHost = struct {
             return;
         };
         if (!done) return;
-        _ = h.filling.orderedRemove(0);
+        _ = h.filling.orderedRemove(at);
         h.prefilled(job, job.began);
         if (h.deliver(job)) h.remove(job);
     }
