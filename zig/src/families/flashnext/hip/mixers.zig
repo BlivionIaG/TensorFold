@@ -15,7 +15,7 @@ pub fn qkConstants(key_dim: usize) struct { q: f32, k: f32, eps: f32 } {
     return .{ .q = @floatCast(inv * inv), .k = @floatCast(inv), .eps = @floatCast(1e-6 * inv * inv) };
 }
 
-/// The Gated DeltaNet over every segment's rows: products and norms on all rows, conv and recurrence a stream at a time.
+/// The Gated DeltaNet over every segment: products and norms on all rows, conv and recurrence a stream at a time.
 pub fn linear(o: Ops, m: *const model.Model, l: model.Linear, segs: []const forward.Seg, index: usize, x: Tensor, rows: usize, window: bool) !Tensor {
     const d = m.dims;
     const ch = d.convWidth();
