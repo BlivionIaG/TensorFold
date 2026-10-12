@@ -11,7 +11,15 @@ pub const Attention = enum { auto, f32 };
 pub const Pick = enum { auto, reference };
 
 /// MTP drafting: `--mtp-drafts` and `--mtp-confidence`.
-pub const Mtp = struct { drafts: u8 = 3, confidence: f64 = 0.3 };
+pub const Mtp = struct {
+    drafts: u8 = 3,
+    confidence: f64 = 0.3,
+
+    /// The drafts without --mtp-drafts: one on an integrated GPU, where wide verify rounds cost the most.
+    pub fn defaultDrafts(integrated: bool) u8 {
+        return if (integrated) 1 else (Mtp{}).drafts;
+    }
+};
 
 /// A path a rank reads locally (it never travels with the policy).
 pub const Path = struct {
@@ -213,6 +221,11 @@ pub const Policy = struct {
         return p;
     }
 };
+
+test "an integrated GPU drafts one token by default, a discrete one three" {
+    try std.testing.expectEqual(@as(u8, 1), Mtp.defaultDrafts(true));
+    try std.testing.expectEqual(@as(u8, 3), Mtp.defaultDrafts(false));
+}
 
 test "apply sets fields and refuses what it does not know" {
     var p: Policy = .{};
