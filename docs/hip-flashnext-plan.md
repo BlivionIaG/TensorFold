@@ -2,11 +2,12 @@
 
 Qwen3.8 Flash Next (`model_type: qwen4_exp`) on TensorFold's native HIP backend, in the `flashnext` family: the plan,
 what the `hip-flashnext` branch implements, and how it measures on four Radeon PRO V620s (gfx1030) at tensor
-parallelism 4 with the 4-bit MLX checkpoint.
+parallelism 4 with the 4-bit MLX checkpoint and on two Radeon PRO W7800s (gfx1100) at tp 2 with the 3-bit one.
 
 ## Status
 
-Working end to end at tp 4 on HIP 2-5 of par1 (four V620s, RCCL), served by `tensorfold-native serve`:
+Working end to end at tp 4 on HIP 2-5 of par1 (four V620s, 4-bit) and at tp 2 on HIP 0-1 (two W7800s, 3-bit,
+`TensorFold/Qwen3.8-Flash-Next-MLX-3bit-MTP` at `1d53b5c6`), RCCL, served by `tensorfold-native serve`:
 
 - the whole forward: hyper-connections, the n-gram (PLE) layer with its tables in host memory, Gated DeltaNet
   layers, sparse attention with its indexer (block scores, top-512 selection, attention over the chosen keys),
@@ -14,23 +15,24 @@ Working end to end at tp 4 on HIP 2-5 of par1 (four V620s, RCCL), served by `ten
 - MTP drafts from the checkpoint's head (whole on rank 0, its own keys for every prompt row, chains of up to three
   greedy drafts over the family's draft vocabulary, cut under `--mtp-confidence`), and copy drafts from the lane
   core;
-- several streams at once (`--parallel`), a round's windows in one forward;
+- several streams at once (`--parallel`), a round's windows in one forward, replayed from HIP graphs by shape (below);
 - the prompt cache (`--prompt-cache-gib`, 16 GiB of host memory by default): stream states at 64-row cuts, every
   rank keeping its own share;
 - chat, tool calls, thinking on and off, structured output (the lane core's grammar masks on the HIP draw), greedy
   and sampled replies;
 - admission that sizes the streams to the memory the weights leave and refuses what does not fit.
 
-Exactness on the real checkpoint (all on the branch head, four V620s):
+Exactness on the real checkpoints (all on the branch head):
 
-| Check | Result |
-| --- | --- |
-| drafted == serial (`serve_check.py`, greedy and t=0.8) | pass (also through a structured-output grammar: same token hash) |
-| solo == together (2 and 4 streams in shared rounds), long prompt among decoders == alone | pass, greedy and sampled |
-| prompt cache: chat with cache == without, through turns, regenerate, edit and delete (`rewind.py`) | 16/16, 10,240 of ~10,280 prompt tokens resumed |
-| needle in 7k, 120k and 255k-token prompts (sparse attention, the model's 262,144 window) | found all three |
-| tool call round trip, thinking on/off, JSON schema output (drafts on and off) | valid |
-| tp 4 against tp 1 | not comparable: one card cannot hold the weights (74.8 GiB a rank at tp 1); see below |
+| Check | V620 tp 4, 4-bit | W7800 tp 2, 3-bit |
+| --- | --- | --- |
+| drafted == serial (`serve_check.py`, greedy and t=0.8) | pass (also through a JSON schema: same token hash) | pass (same) |
+| solo == together (2 and 4 streams in shared rounds), long prompt among decoders == alone | pass | pass |
+| prompt cache: with == without through turns, regenerate, edit, delete (`rewind.py`) | 16/16 | 16/16 |
+| graphs on == graphs off (`tf-flashnext-hip-test --hash`: every step's whole logits row) | identical | identical |
+| needle in 7k, 120k and 255k-token prompts (the model's 262,144 window) | found all three | found all three |
+| tool call round trip, thinking on/off, JSON schema output (drafts on and off) | valid | valid |
+| tp 4 against tp 1 | not comparable: one card cannot hold the weights (74.8 GiB a rank at tp 1); see below | |
 
 **Why tp 4 cannot equal tp 1 bit for bit**: a split projection's ranks each sum their own K range in fp32 and the
 shares are added in rank order before rounding (`tf_fn_hc_norm` sums the gathered shares), where one rank sums the
@@ -40,7 +42,9 @@ all-reduce whose order follows the message size), so each world size is self-con
 solo == together hold at tp 4. The one-rank engine can still be checked on smaller cards' worth of weights in the
 future (a 2-bit checkpoint, 75 GB, still needs tp 4 on V620s).
 
-## Measurements (four V620s, tp 4, 4-bit, `bench.py` streamed through the server)
+## Measurements (`bench.py` streamed through the server)
+
+Four V620s, tp 4, 4-bit, before graphs (the rows below are this section's first measurements):
 
 | Workload | Prefill | TTFT | Decode, drafts off | Decode, drafts on |
 | --- | --- | --- | --- | --- |
@@ -68,11 +72,51 @@ chunks). A resumed 16k prompt answers in 272 ms.
 | a window's DeltaNet conv, split, norms and gates in one launch (Qwen3.5's merged conv); grouped input products | 43.8 -> 48.2 |
 | the MoE plan sized by the rows' own pairs (a routed launch walked 198 items for one row's 11) | 48.2 -> 50.0 |
 | idle prompts in 1,024-row chunks (512 while others decode) | prefill 1,040 -> 1,262 tok/s on a 7k prompt |
+| a decode round replayed from graphs (below), V620 | c=1 drafts off 45.0 -> 46.5, on 86.1 -> 87.9; c=4 off 68.0 -> 68.7 |
+| the head's broadcast gates sized for a prompt chunk (a bug: past 4 rows it read unrelated memory) | c=1 drafts on 86.3-88.0 -> 92.2 tok/s, 165/210 -> 167/191 drafts kept |
 
 Where a decode step's 20 ms go now (profiled): the affine products 7 ms (the output head's 62k-row slice alone
 0.26 ms), RCCL all-gathers 3.5 ms (97 a token, 36 us each), routers and picks 1.5 ms, and about 1,400 launches whose
-gaps add some 5 ms. Next candidates: a peer-to-peer all-gather for one-row shares, graphs for the decode step (the
-step's host-side inputs already go through one pinned staging buffer), and the prefill GEMM tiles on gfx1030.
+gaps add some 5 ms. Graphs recover under 1 ms of those on gfx1030 (below): the gaps are mostly the device's own
+dispatch, not the host's. Next candidates: a peer-to-peer all-gather for one-row shares (cuts 97 RCCL calls and the
+graph pieces between them) and the prefill GEMM tiles on gfx1030.
+
+Two W7800s, tp 2, 3-bit (first pass after the server started, graph captures included):
+
+| Workload | Prefill | TTFT | Decode, drafts off | Decode, drafts on |
+| --- | --- | --- | --- | --- |
+| c=1, 4k-token prompt, 256-token reply | 1,085 tok/s | 3.72 s | 55.6 tok/s (ITL 18.0 ms) | 70.3 tok/s |
+| c=4, 4k each | | 10.4 s | 18.2 each, 72.9 total | 20.2 each, 80.9 total |
+| c=1, 16k-token prompt, 128-token reply | 921 tok/s | 17.5 s | | 78.1 tok/s |
+| c=1, 7k / 120k / 255k-token prompt (needles) | 980 / 803 / 666 tok/s | 7.2 / 149.5 / 382.8 s | | 62 / 65 / 57 tok/s |
+
+Load 30-39 s, 32.1 GiB on rank 0 (8k window) of the W7800's 48 GiB; 2 streams at the full 262,144-token window
+(4.79 GiB each), `--parallel 4` there refused with the number that fits. The gfx11 matrix-core tile is used for
+prompt products: `--policy matrix=off` drops a 7k prompt from 1,146 to 952 tok/s. Graphs gain more on gfx1100: the
+model check decodes 58.5 tok/s with them and 48.2 without.
+
+### Graphs for the decode round
+
+A round of windows (plain one-row rounds and drafted verify windows alike, several streams together) is recorded
+the second time its shape is met and replayed after (`Engine.choose` / `Engine.round`, keyed by each stream's cache
+slot and rows). Every host input of the round (token ids, positions, the attention's ends and complete blocks, and the
+n-gram rows hashed and gathered from the host tables) is written into the pinned staging buffer before the launch and
+sent up in one copy that the graph holds (`forward.stage` / `forward.send`); no host work happens mid-forward. The
+launches that took a position as a value now read it from the device (value and indexer-key writes, the pool of the
+blocks a row completes, the block scores over all the blocks a stream's caches hold), so one graph serves every
+position. Streams take their caches from slots kept for the server's life, so a new request reuses its slot's
+graphs. RCCL calls take ~8 ms each to record inside a graph (750 ms a step), so a round is recorded as graphs cut at
+its collectives (`hip/graph_split.zig`): the all-gathers run between the pieces' replays, recording takes 21-47 ms
+a shape. Every rank makes the same choice in the same order (rank 0's pick goes with the round's message), a rank
+that cannot record makes all of them run eagerly (`--policy graph_fail=R` tests it), and `--policy graphs=off`
+turns them off. The MTP head's chain stays eager: its launches are a few dozen a draft (under 0.1 ms of gaps), and
+its sparse layer still takes positions from the host.
+
+| | graphs off | graphs on |
+| --- | --- | --- |
+| V620, model check, 300 greedy tokens (3 runs each) | 48.9 tok/s | 50.8 tok/s |
+| W7800, model check, 64 greedy tokens | 48.2 tok/s | 58.5 tok/s |
+
 
 ## The model
 
@@ -160,7 +204,8 @@ at `1d53b5c6` (90.8 GB, uniform 3-bit group 32) needs no conversion; the alterna
 checkpoint (`~/models/q38n-bf16`, 336 GB) with the owner's `tools/mlx_requant.py` to MLX affine 3-bit group 32, every
 tensor the 4-bit one quantizes (n-gram tables included), the routers and norms left bf16. par1 has about 48 GB free,
 so either needs space first. The engine reads any of 2- to 8-bit group-32 MLX checkpoints (`hip/plan.zig` admits them
-by their bytes); only the 4-bit one has been run.
+by their bytes); the 4-bit one runs on the V620s and the 3-bit one on the W7800s. The 3-bit checkpoint stores the
+shared expert's router row as 3-bit codes, which `core.quant`'s dequantization now reads (any width from 2 to 8).
 
 
 ## Memory (measured on the 4-bit checkpoint)
@@ -184,8 +229,7 @@ Admission reads the card's budget (`hip.admission.budget`: free memory, the rese
 `TENSORFOLD_HIP_MEMORY_LIMIT_GB`) before loading and refuses a `--context` that one stream cannot hold beside the
 rank's weights, naming the window that would fit; after loading it counts each stream's bytes at the window and
 admits as many as the memory left holds (`--parallel N` fixed and too large is refused with the number that fits).
-The W7800 pair is left out by the owner's choice; by the same count the 4-bit checkpoint would hold 37.9 GiB a rank
-there (a ~200k window) and the 3-bit one 30.4 GiB, but neither is run.
+On the W7800 pair the 3-bit checkpoint holds 32.1 GiB on rank 0 and leaves room for two streams at the full window.
 
 ## Ops and kernels (as implemented)
 
@@ -199,7 +243,7 @@ there (a ~200k window) and the 3-bit one 30.4 GiB, but neither is run.
 | DeltaNet conv, gates (prompts), delta rule | `tf_conv_prefill`, `tf_gdn_gate_prefill`, `gated_delta_tile` (windows, per-row states), chunked `tf_gdn_*` (prompts) |
 | DeltaNet output norm, sigmoid gate | `tf_gnorm_out` with the new gate argument |
 | q/k norms and partial RoPE, cache writes | `tf_qk_rope`, `tf_kv_write` |
-| indexer pooled keys, scores, top-512 selection | **new** `tf_fn_idx_pool`, `tf_fn_idx_scores`, `tf_fn_idx_select` |
+| indexer pooled keys (from a block start, or the blocks rows at device positions complete), scores, top-512 | **new** `tf_fn_idx_pool`, `tf_fn_idx_scores`, `tf_fn_idx_select` |
 | attention over chosen keys, merge, output gate | **new** `tf_fn_sparse_parts6/12`, `tf_fn_sparse_merge`; `tf_attn_gate` |
 | router, top 10 of 512 + shared gate, route, combine | `tf_router_*`, `tf_select_decode`, `tf_moe_route`, `moe_combine` (hip.moe) |
 | n-gram ids, rows, gate, dilated conv | host hashing (`hip/ngram.zig`) and gather (`hip/tables.zig`), `tf_embed_rows`; **new** `tf_fn_ple_gate`, `tf_fn_ple_conv` (`tf_fn_ngram_ids` for device tables) |
@@ -223,19 +267,41 @@ blanked.
 5. **flashnext: HIP admission and routing** with the host n-gram hashing.
 6. **flashnext: the HIP forward** (weights by rank, caches, tables) and **serving** (lane backend, MTP drafts,
    tp followers), then **prompt reuse**, then the batched windows and the tuning commits.
+7. **Graphs**: the graph cache moved into the hip module, then taught to hold any replay; split graphs cut at the
+   collectives (GPU test: nothing runs while recording, every replay runs the pieces and calls in order); the
+   indexer pool at device positions and the scores' skip (kernel tests); then Flash Next's rounds on them.
+8. **3-bit**: `core.quant` dequantization of any 2- to 8-bit width (test against the reference unpacker); the
+   head's broadcast gates sized for a prompt chunk.
+9. **One tensor description** for admission and the Metal pack, then the HIP loader on it.
+
+## One description of the checkpoint's tensors
+
+The family read the checkpoint in three places with their own spellings: admission (`index.zig`), the Metal pack
+builder (`pack.zig`, which turns the checkpoint into the packs the Metal engine maps) and the HIP loader; a fourth,
+`weights.zig`'s reader, was unused. `tensors.zig` now describes the model's tensors once: every name (layer stems,
+hyper-connections, DeltaNet, sparse attention and indexer, MoE, n-gram layer and tables, MTP head), the shape of
+every projection from the config (pinned by a test to the published checkpoint's headers), the rule that decides
+whether centred norms are stored as gamma or gamma - 1, and the centred scale. Admission, the pack builder and the
+HIP loader all read through it; the HIP loader keeps only what is the backend's own: device upload, tensor-parallel
+cuts (`core.quant`), and the checks of each projection against the description's shape. `tensors.zig` imports
+nothing but the config, so both the Metal side (which reaches core by path) and the HIP module (which imports core)
+can hold it. The Metal path's behaviour is unchanged: its pack, admission and host tests pass untouched, and the
+three packs its full-build tests write hash the same (SHA-256) before and after. What a full unification would add:
+the pack builder's own readers (`qlinear`, `denseRows`, the conv transpose) moved behind the same generic reader the
+HIP loader uses (`core.quant` over a checkpoint), which needs the Metal side to import `core` as a module instead of
+by path (a build change for the whole Metal engine, outside this family).
 
 ## On this branch
 
 Branch `hip-flashnext` on the fork (`BlivionIaG/TensorFold`), from `qwen35-rccl` merged with `qwen35-structured`.
 Every commit is the repository's configured author, without AI trailers; `zig fmt` clean; `lean_check.py` 534
 problems as on the base. Tests: Mac `zig build test test-golden -Dcpu=apple_m1`; Linux `zig build test` from the
-pushed commit; `hip-kernel-test` on gfx1030 (all kernel tests, Flash Next's included); the model checks above
+pushed commit; `hip-kernel-test` on gfx1030 and gfx1100 (all kernel tests, Flash Next's included); the model checks above
 (`zig/tests/flashnext_hip`: `tf-flashnext-hip-test generate`, `rewind.py`, `bench.py`; `zig/tests/qwen35/serve_check.py`
 against the Flash Next server).
 
 ## Remaining work
 
-- Not run on gfx1100 (the W7800s were not available to this work); bf16 activations take the same kernels.
 - Family settings not ported: `--learn` (learned prompt states on disk) needs every rank to write and read its share
   in step (the store's peer hooks); speed-up mode is the two-Mac engine's and HIP takes `--tp` instead.
 - The MTP head drafts one stream at a time (a shared round's heads could batch).
@@ -244,8 +310,8 @@ against the Flash Next server).
 
 ## Decisions for the owner
 
-1. The HIP loader reads tensors through `core.checkpoint` / `core.quant` and reuses the family's `config.zig`,
-   `index.zig` names and spec; `weights.zig` and `affine.zig` reach core by path, which a module importing core
-   cannot hold. Ask ashhart whether he prefers `weights.zig` made generic over the checkpoint type instead.
+1. The tensor description is the smallest step to one loader (see above); moving the Metal side onto `core` as a
+   module would let the pack builder share the HIP loader's reader too. Ask ashhart whether he wants that.
 2. Prompt states live in host memory (16 GiB by default): the cards hold no room to spare at tp 4.
-3. The W7800 pair: a 3-bit checkpoint (published, 90.8 GB) once disk space allows.
+3. Graphs are on by default at any world size (`--policy graphs=off` turns them off); Qwen3.5's engine keeps them
+   off under tp unless asked, because of RCCL's recording cost, which the split graphs avoid.
