@@ -52,7 +52,7 @@ pub const Fx = struct {
     link: ?hip.collective.Link = null,
     msg: std.ArrayList(u32) = .empty,
     next_id: u32 = 0,
-    /// A row of ones a stream for the head's broadcast add, and the draft vocabulary's token ids.
+    /// A one a stream for every row the head takes at once (a prompt chunk), and the draft vocabulary's token ids.
     ones: hip.DeviceBuffer,
     draft_ids: []u32,
     drafts: u32,
@@ -63,7 +63,7 @@ pub const Fx = struct {
     pub fn init(gpa: std.mem.Allocator, e: *Engine, streams: usize) !*Fx {
         const f = try gpa.create(Fx);
         errdefer gpa.destroy(f);
-        const n = cache.max_window * e.cfg.hc_count;
+        const n = @max(e.o.chunk, cache.max_window) * e.cfg.hc_count;
         const one: u16 = if (e.act == .f16) 0x3c00 else 0x3f80;
         const host = try gpa.alloc(u16, n);
         defer gpa.free(host);
@@ -287,7 +287,7 @@ pub const Fx = struct {
         if (lane.head) |*hc| {
             // the head's keys for every prompt row with a next token (the last waits for the first draw)
             const n = if (last) rows - 1 else rows;
-            if (n > 0) _ = try head_mod.run(e.ops(&e.arena), m, &e.host, hc, out.streams, prompt[at + 1 ..][0..n], at, f.ones.base());
+            if (n > 0) _ = try head_mod.run(e.ops(&e.arena), m, &e.host, hc, out.streams, prompt[at + 1 ..][0..n], at, f.ones);
         }
         fill.at = to;
         if (fill.next < fill.count and to == fill.stops[fill.next]) {
@@ -444,7 +444,7 @@ pub const Fx = struct {
             e.host.used = 0;
             e.arena.reset();
             const o = e.ops(&e.arena);
-            var out = try head_mod.run(o, m, &e.host, hc, .{ .ptr = lane.streams.base(), .kind = m.act }, follow, start, f.ones.base());
+            var out = try head_mod.run(o, m, &e.host, hc, .{ .ptr = lane.streams.base(), .kind = m.act }, follow, start, f.ones);
             var mixed = forward.at(out.mixed, (follow.len - 1) * m.dims.hidden);
             var streams = out.streams.ptr + (follow.len - 1) * row_bytes;
             const depth = @min(r.depth, max_depth);
@@ -459,7 +459,7 @@ pub const Fx = struct {
                 lane.held[d] = tok[0];
                 chained = d + 1;
                 if (d + 1 == depth or prob[0] < stop_under) break;
-                out = try head_mod.run(o, m, &e.host, hc, .{ .ptr = streams, .kind = m.act }, &tok, lane.caches.len + d, f.ones.base());
+                out = try head_mod.run(o, m, &e.host, hc, .{ .ptr = streams, .kind = m.act }, &tok, lane.caches.len + d, f.ones);
                 mixed = out.mixed;
                 streams = out.streams.ptr;
             }

@@ -17,13 +17,14 @@ pub fn caches(gpa: std.mem.Allocator, d: *const hip.Runtime, h: *const model.Hea
     return cache.Caches.init(gpa, d, h.dims, &.{false}, cap, act, eos);
 }
 
-/// `tokens` (each the token after its row) over the target's (or the head's) residual `streams` from position `pos`.
-pub fn run(ops: Ops, m: *const model.Model, host: *forward.Host, c: *cache.Caches, streams: Tensor, tokens: []const u32, pos: usize, ones: u64) !Out {
+/// `tokens` (each the token after its row) over residual `streams` from `pos`; `ones` a one a stream a row.
+pub fn run(ops: Ops, m: *const model.Model, host: *forward.Host, c: *cache.Caches, streams: Tensor, tokens: []const u32, pos: usize, ones: hip.DeviceBuffer) !Out {
     var o = ops;
     o.window = true;
     const w = &m.mtp.?;
     const d = w.dims;
     const rows = tokens.len;
+    if (rows * d.streams * m.act.size() > ones.len) return error.HeadRowsPastOnes;
     const ids = try host.gpa.alloc(i32, rows);
     defer host.gpa.free(ids);
     const at_pos = try host.gpa.alloc(i32, rows);
@@ -45,7 +46,7 @@ pub fn run(ops: Ops, m: *const model.Model, host: *forward.Host, c: *cache.Cache
     const x = try take(o, m.act, rows * d.wide());
     const l = w.layer;
     // the embedding broadcast over the streams: h += round(e * 1) per stream, then the layer's first norm
-    try forward.hcNorm(o, m, h, e, .{ .ptr = ones, .kind = m.act }, x, l.ahc.scale, rows);
+    try forward.hcNorm(o, m, h, e, .{ .ptr = ones.base(), .kind = m.act }, x, l.ahc.scale, rows);
     const inject = try take(o, m.act, rows * d.streams);
     const mixed = try forward.hcPre(o, m, l.ahc, x, rows, inject);
     const seg = [_]forward.Seg{.{ .c = c, .tokens = tokens, .pos = pos }};
