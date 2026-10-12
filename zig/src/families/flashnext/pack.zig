@@ -8,6 +8,8 @@ const config_mod = @import("config.zig");
 const index_mod = @import("index.zig");
 const tensors = @import("tensors.zig");
 const pio = @import("pack_io.zig");
+const quant = @import("../../core/quant/quant.zig");
+const Tables = @import("checkpoint_tables.zig").Tables(ckpt.Checkpoint, quant.mlx.Width);
 
 pub const Report = struct {
     decode_tensors: usize = 0,
@@ -43,20 +45,16 @@ pub const Q = struct {
 
 fn qlinear(ck: *ckpt.Checkpoint, cfg: *const config_mod.Config, path: []const u8) !Q {
     const spec = (try cfg.quantization(path)) orelse return error.NotQuantized;
-    var buf: [320]u8 = undefined;
-    const w = try ck.get(try std.fmt.bufPrint(&buf, "{s}.weight", .{path}));
-    const s = try ck.get(try std.fmt.bufPrint(&buf, "{s}.scales", .{path}));
-    const b = try ck.get(try std.fmt.bufPrint(&buf, "{s}.biases", .{path}));
-    if (w.dtype != .u32 or w.rank != 2) return error.UnexpectedTensor;
-    if (s.dtype != .bf16 or s.rank != 2 or b.dtype != .bf16 or b.rank != 2) return error.UnexpectedTensor;
     if (spec.group == 128) return error.Group128NotPacked; // the pack never carries group 128; the halve-to-64 widen is unimplemented
-    const rows = w.dim(0);
-    const kw = w.dim(1);
-    if (rows != s.dim(0) or rows != b.dim(0)) return error.UnexpectedTensor;
-    if (kw * 32 % spec.bits != 0) return error.UnexpectedTensor;
-    const k = kw * 32 / spec.bits;
-    if (k % spec.group != 0 or s.dim(1) != k / spec.group or b.dim(1) != k / spec.group) return error.UnexpectedTensor;
-    return .{ .w = w, .s = s, .b = b, .rows = rows, .k = k, .kw = kw, .spec = spec };
+    const tables: Tables = .{ .ck = ck, .cfg = cfg };
+    var arena: std.heap.ArenaAllocator = .init(ck.gpa);
+    defer arena.deinit();
+    const h = (try quant.read(arena.allocator(), &tables, path)).mlx;
+    // the pack carries the checkpoint's own bytes: bf16 group tables only, the words as stored
+    if (h.scales.dtype != .bf16 or h.biases.dtype != .bf16) return error.UnexpectedTensor;
+    var w = h.words;
+    w.dtype = .u32;
+    return .{ .w = w, .s = h.scales, .b = h.biases, .rows = w.dim(0), .k = h.scales.dim(1) * spec.group, .kw = w.dim(1), .spec = spec };
 }
 
 /// The lane pipeline's word permutation: rows tiled nt at a time, a group's words innermost (lane_qmm.tile_weight).
@@ -215,31 +213,14 @@ fn denseRows(gpa: std.mem.Allocator, a: std.mem.Allocator, ck: *ckpt.Checkpoint,
     const se = st.Entry{ .dtype = s.dtype, .rank = s.rank, .shape = s.shape, .begin = 0, .end = s.bytes.len };
     const be = st.Entry{ .dtype = b.dtype, .rank = b.rank, .shape = b.shape, .begin = 0, .end = b.bytes.len };
     const shape = try affine.matrix(we, se, be, spec);
-    const es: usize = s.dtype.size();
+    // core/quant's dequantization: code times scale rounded, then plus bias, in fp32; then the bf16 store below
+    const vals = try quant.mlx.dequant(a, w, s, b, spec.group);
     const out = try gpa.alloc(u8, shape.n * shape.k * 2);
-    const words_per_row = shape.words * 4;
-    for (0..shape.n) |r| {
-        const row = w.bytes[r * words_per_row ..][0..words_per_row];
-        for (0..shape.k) |c| {
-            const g = c / spec.group;
-            const scale: f32 = switch (s.dtype) {
-                .bf16 => bf16ToF32(std.mem.readInt(u16, s.bytes[(r * shape.groups + g) * es ..][0..2], .little)),
-                .f16 => @floatCast(@as(f16, @bitCast(std.mem.readInt(u16, s.bytes[(r * shape.groups + g) * es ..][0..2], .little)))),
-                .f32 => @bitCast(std.mem.readInt(u32, s.bytes[(r * shape.groups + g) * es ..][0..4], .little)),
-                else => return error.InvalidAffineMetadataPrecision,
-            };
-            const bias: f32 = switch (b.dtype) {
-                .bf16 => bf16ToF32(std.mem.readInt(u16, b.bytes[(r * shape.groups + g) * es ..][0..2], .little)),
-                .f16 => @floatCast(@as(f16, @bitCast(std.mem.readInt(u16, b.bytes[(r * shape.groups + g) * es ..][0..2], .little)))),
-                .f32 => @bitCast(std.mem.readInt(u32, b.bytes[(r * shape.groups + g) * es ..][0..4], .little)),
-                else => return error.InvalidAffineMetadataPrecision,
-            };
-            const v: f32 = @as(f32, @floatFromInt(try affine.code(spec, row, c))) * scale + bias;
-            const bits: u32 = @bitCast(v);
-            const exp = bits & 0x7F800000;
-            const rounded: u32 = if (exp == 0x7F800000) bits else bits + 0x7FFF + ((bits >> 16) & 1);
-            std.mem.writeInt(u16, out[(r * shape.k + c) * 2 ..][0..2], @intCast(rounded >> 16), .little);
-        }
+    for (vals, 0..) |v, i| {
+        const bits: u32 = @bitCast(v);
+        const exp = bits & 0x7F800000;
+        const rounded: u32 = if (exp == 0x7F800000) bits else bits + 0x7FFF + ((bits >> 16) & 1);
+        std.mem.writeInt(u16, out[i * 2 ..][0..2], @intCast(rounded >> 16), .little);
     }
     return .{ .bytes = out, .rows = shape.n, .cols = shape.k, .owned = true };
 }

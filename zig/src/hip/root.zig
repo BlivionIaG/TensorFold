@@ -46,9 +46,9 @@ test {
     _ = admission;
     _ = Device;
     _ = collective;
+    _ = graph_cache;
     _ = moe;
     _ = reduce;
-    _ = graph_cache;
     _ = @import("comm/rccl.zig");
     _ = @import("comm/link.zig");
     _ = @import("comm/group.zig");

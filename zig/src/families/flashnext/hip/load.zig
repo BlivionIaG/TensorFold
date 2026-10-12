@@ -13,24 +13,8 @@ const Rank = quant.Rank;
 const Span = quant.Span;
 const Allocator = std.mem.Allocator;
 
-/// The table core/quant reads projections through: the mapped shards and the config's per-tensor widths.
-pub const Tables = struct {
-    ck: *core.checkpoint.Checkpoint,
-    cfg: *const config.Config,
-
-    pub fn has(t: *const Tables, key: []const u8) bool {
-        return t.ck.has(key);
-    }
-
-    pub fn get(t: *const Tables, key: []const u8) !Tensor {
-        return t.ck.get(key);
-    }
-
-    pub fn width(t: *const Tables, key: []const u8) !quant.mlx.Width {
-        const s = (try t.cfg.quantization(key)) orelse return error.UnsupportedQuantization;
-        return .{ .bits = s.bits, .group = @intCast(s.group) };
-    }
-};
+/// The table core/quant reads projections through: the family's checkpoint tables, over core's checkpoint.
+pub const Tables = @import("../checkpoint_tables.zig").Tables(core.checkpoint.Checkpoint, core.quant.mlx.Width);
 
 /// The device copy of one rank's weights: every buffer it uploaded, freed together.
 pub const Weights = struct {
