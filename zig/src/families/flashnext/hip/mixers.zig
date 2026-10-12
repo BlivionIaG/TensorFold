@@ -21,44 +21,84 @@ pub fn linear(o: Ops, m: *const model.Model, l: model.Linear, segs: []const forw
     const ch = d.convWidth();
     const kw = d.key_heads * d.key_dim;
     const vw = d.value_heads * d.value_dim;
-    const qkv = try o.project(x, l.qkv, rows, false);
-    const z = try o.project(x, l.z, rows, false);
-    const a = try o.project(x, l.a, rows, false);
-    const b = try o.project(x, l.b, rows, false);
+    var outs: [4]Tensor = undefined;
+    if (!try o.projectGroup(x, &.{ l.qkv, l.z, l.a, l.b }, rows, &outs)) {
+        for (&outs, [_]model.Projection{ l.qkv, l.z, l.a, l.b }) |*t, p| t.* = try o.project(x, p, rows, false);
+    }
+    const qkv, const z, const a, const b = outs;
+    const q = try o.arena.of(f32, rows * kw);
+    const k = try o.arena.of(f32, rows * kw);
+    const v = try o.arena.of(f32, rows * vw);
+    const gate = try o.arena.of(f32, rows * d.value_heads);
+    const beta = try o.arena.of(f32, rows * d.value_heads);
+    if (window) {
+        // a window's conv, split, q and k norms and gates in one launch a stream, each row's conv state kept aside
+        var at_row: usize = 0;
+        for (segs) |g| {
+            const n = g.tokens.len;
+            const nh = n * d.value_heads;
+            try o.l.tf_conv_split(.{
+                .x = forward.at(qkv, at_row * ch).ptr,
+                .kind = @backingInt(m.act),
+                .weight = l.conv,
+                .state = g.c.linearAt(index).conv,
+                .states = g.c.snapshot(index, 0).conv,
+                .qn = q + at_row * kw * 4,
+                .kn = k + at_row * kw * 4,
+                .v = v + at_row * vw * 4,
+                .channels = @intCast(ch),
+                .kernel = @intCast(d.conv),
+                .rows = @intCast(n),
+                .kw = @intCast(kw),
+                .vw = @intCast(vw),
+                .qw = m.qk.q,
+                .kw_w = m.qk.k,
+                .eps = m.qk.eps,
+                .norm = 128,
+                .ga = forward.at(a, at_row * d.value_heads).ptr,
+                .gb = forward.at(b, at_row * d.value_heads).ptr,
+                .a_log = l.a_log,
+                .dt_bias = l.dt_bias,
+                .gate = gate + at_row * d.value_heads * 4,
+                .beta = beta + at_row * d.value_heads * 4,
+                .gcount = @intCast(nh),
+                .heads = @intCast(d.value_heads),
+            }, o.stream);
+            at_row += n;
+        }
+        return recur(o, m, l, segs, index, q, k, v, gate, beta, z, rows, true);
+    }
     const mixed = try o.arena.of(f32, rows * ch);
     var off: usize = 0;
     for (segs) |g| {
         const n = g.tokens.len;
         const st = g.c.linearAt(index);
         const out = mixed + off * ch * 4;
-        if (window) {
-            const wide = try o.arena.of(f32, n * ch);
-            try o.cast(forward.at(qkv, off * ch), .{ .ptr = wide, .kind = .f32 }, n * ch);
-            try o.convRows(wide, l.conv, st.conv, out, g.c.snapshot(index, 0).conv, n, ch, d.conv);
-        } else {
-            const conv_bytes = (d.conv - 1) * ch * 4;
-            const next = try o.arena.take(conv_bytes);
-            try o.convPrefill(forward.at(qkv, off * ch), l.conv, st.conv, out, next, n, ch, d.conv);
-            if (o.stream != hip.counting) try hip.runtime.check(o.l.r.api.hipMemcpyDtoDAsync(@ptrFromInt(st.conv), @ptrFromInt(next), conv_bytes, o.stream));
-        }
+        const conv_bytes = (d.conv - 1) * ch * 4;
+        const next = try o.arena.take(conv_bytes);
+        try o.convPrefill(forward.at(qkv, off * ch), l.conv, st.conv, out, next, n, ch, d.conv);
+        if (o.stream != hip.counting) try hip.runtime.check(o.l.r.api.hipMemcpyDtoDAsync(@ptrFromInt(st.conv), @ptrFromInt(next), conv_bytes, o.stream));
         off += n;
     }
     const mixed_t: Tensor = .{ .ptr = mixed, .kind = .f32 };
     const qc = try o.arena.of(f32, rows * kw);
     const kc = try o.arena.of(f32, rows * kw);
-    const v = try o.arena.of(f32, rows * vw);
     try o.copyCols(mixed_t, ch, 0, qc, rows, kw);
     try o.copyCols(mixed_t, ch, kw, kc, rows, kw);
     try o.copyCols(mixed_t, ch, 2 * kw, v, rows, vw);
-    const q = try o.arena.of(f32, rows * kw);
-    const k = try o.arena.of(f32, rows * kw);
     try o.rms(.{ .ptr = qc, .kind = .f32 }, m.qk.q, .{ .ptr = q, .kind = .f32 }, rows * d.key_heads, d.key_dim, m.qk.eps);
     try o.rms(.{ .ptr = kc, .kind = .f32 }, m.qk.k, .{ .ptr = k, .kind = .f32 }, rows * d.key_heads, d.key_dim, m.qk.eps);
-    const gate = try o.arena.of(f32, rows * d.value_heads);
-    const beta = try o.arena.of(f32, rows * d.value_heads);
     try o.gdnGatePrefill(a, b, l.a_log, l.dt_bias, gate, beta, rows, d.value_heads);
+    return recur(o, m, l, segs, index, q, k, v, gate, beta, z, rows, false);
+}
+
+/// The delta rule a stream at a time (a window's rows each with its state kept aside), the gated norm, the out product.
+fn recur(o: Ops, m: *const model.Model, l: model.Linear, segs: []const forward.Seg, index: usize, q: u64, k: u64, v: u64, gate: u64, beta: u64, z: Tensor, rows: usize, window: bool) !Tensor {
+    const d = m.dims;
+    const kw = d.key_heads * d.key_dim;
+    const vw = d.value_heads * d.value_dim;
     const y = try o.arena.of(f32, rows * vw);
-    off = 0;
+    var off: usize = 0;
     for (segs) |g| {
         const n = g.tokens.len;
         const snaps: ?u64 = if (window) g.c.snapshot(index, 0).state else null;
@@ -80,10 +120,11 @@ pub fn sparse(o: Ops, m: *const model.Model, d: model.Dims, s: model.Sparse, seg
     const di = d.index_dim;
     const width = (d.index_heads + 1) * di;
     const kind = @backingInt(m.act);
-    const qg = try o.project(x, s.q, rows, false);
-    const keys = try o.project(x, s.k, rows, false);
-    const values = try o.project(x, s.v, rows, false);
-    const idx = try o.project(x, s.index, rows, false);
+    var outs: [4]Tensor = undefined;
+    if (!try o.projectGroup(x, &.{ s.q, s.k, s.v, s.index }, rows, &outs)) {
+        for (&outs, [_]model.Projection{ s.q, s.k, s.v, s.index }) |*t, p| t.* = try o.project(x, p, rows, false);
+    }
+    const qg, const keys, const values, const idx = outs;
     const q32 = try o.arena.of(f32, rows * d.heads * hd);
     try o.qkRope(qg, d.heads * 2 * hd, 2 * hd, s.q_norm, d.eps, rows, d.heads, hd, d.rotary, d.theta, dev_pos, q32, null, 0);
     const iq = try o.arena.of(f32, rows * d.index_heads * di);
