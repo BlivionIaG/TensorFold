@@ -98,7 +98,8 @@ pub fn run(gpa: std.mem.Allocator, io: std.Io, args: []const [:0]const u8) !void
     }
     const ids = try ids_file.load(gpa, io, args[1]);
     defer gpa.free(ids);
-    const e = try Engine.open(gpa, io, args[0], .{ .capacity = ids.len + 64, .prompt_rows = ids.len + 64, .streams = 1, .batch_rows = 32, .policy = (try @import("group.zig").resolve("", 0)).policy });
+    // the prompt arena takes the forward's rows and then a block of `chunk` head rows: 28 to 49 rows ran out of it
+    const e = try Engine.open(gpa, io, args[0], .{ .capacity = ids.len + 64 + 2 * chunk, .prompt_rows = ids.len + 64 + 2 * chunk, .streams = 1, .batch_rows = 32, .policy = (try @import("group.zig").resolve("", 0)).policy });
     defer e.deinit();
     const kind = kindOf(e, mode);
     var header_buf: [128]u8 = undefined;
