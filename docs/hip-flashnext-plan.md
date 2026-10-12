@@ -264,24 +264,26 @@ follows an algorithm from those trees. A scan of every new and changed source li
 `gfx1030_optimized` folder (356,262 files, this round's lines included) finds no shared 6-line window, exact or with identifiers and numbers
 blanked.
 
-## PR slicing (ashhart's order), as the branch's commits group
+## PR slicing (ashhart's order)
 
-1. **Family groundwork**: the spec in its own file; pleRef's wrapping multiply (a safe-build panic).
-2. **Shared moves** (each its own PR, behaviour unchanged): the memory budget into `hip/admission.zig`; expert
-   stacking into `core/quant/experts.zig`; the MoE run and tp reduce into the hip module; the draw into `hip_serve`.
-3. **Shared kernel changes** (each with its kernel test): the gated norm's sigmoid gate; the route's block scan;
-   the merged pick on 512 threads; an exact MoE plan option.
-4. **Flash Next kernels**: streams, n-gram, indexer, sparse attention, wide norm (GPU tests against host
-   references, each failing when its kernel is broken).
-5. **flashnext: HIP admission and routing** with the host n-gram hashing.
-6. **flashnext: the HIP forward** (weights by rank, caches, tables) and **serving** (lane backend, MTP drafts,
-   tp followers), then **prompt reuse**, then the batched windows and the tuning commits.
-7. **Graphs**: the graph cache moved into the hip module, then taught to hold any replay; split graphs cut at the
-   collectives (GPU test: nothing runs while recording, every replay runs the pieces and calls in order); the
-   indexer pool at device positions and the scores' skip (kernel tests); then Flash Next's rounds on them.
-8. **3-bit**: `core.quant` dequantization of any 2- to 8-bit width (test against the reference unpacker); the
-   head's broadcast gates sized for a prompt chunk.
-9. **One tensor description** for admission and the Metal pack, then the HIP loader on it.
+Each slice is a branch with only its own commits, stacked on the one before it:
+
+1. **`core-quant-any-width`** (on `main`): `core/quant`'s dequantization of any 2- to 8-bit width.
+2. **`flashnext-tensors`**, then **`flashnext-pack-reader`** (Metal side): the tensor description; the pack builder
+   reading through `core/quant` with the family's generic checkpoint tables.
+3. **`qwen35-engine-graphs`** (commits for the Qwen3.5 engine PR): the graph cache in the hip module, generic over
+   the replay; graphs cut at the collectives; Qwen3.5's rounds recorded that way. **`qwen35-rccl-graphs`**: the
+   RCCL commit on top, and Qwen3.5's rounds replaying graphs at any world size.
+4. **`flashnext-base`**: a merge of the above with the structured-output slice, the base of the Flash Next HIP stack.
+5. **`flashnext-hip-shared`**: the spec in its own file, pleRef's wrapping multiply, and the shared moves (the memory
+   budget into `hip/admission.zig`, expert stacking into `core/quant/experts.zig`, the MoE run and tp reduce into the
+   hip module, the draw into `hip_serve`).
+6. **`flashnext-hip-kernels-shared`**: the route's block scan, the merged pick on 512 threads, the exact MoE plan.
+7. **`flashnext-hip-kernels`**: Flash Next's kernels with their GPU tests, and the gated norm's sigmoid gate.
+8. **`flashnext-hip-admission`**: native routing for `qwen4_exp` behind admission, the host n-gram hashing.
+9. **`flashnext-hip-engine`**: the forward on one device, then serving (lane backend, MTP drafts, prompt reuse).
+10. **`flashnext-hip-tp`**: tensor parallelism (weights by rank, shares summed in the stream norm, followers).
+11. **`flashnext-hip-graphs`**: rounds replayed from split graphs; this document's status and measurements.
 
 ## One description of the checkpoint's tensors
 
