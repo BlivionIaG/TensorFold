@@ -9,6 +9,7 @@
 #include "tiles/dot2.hpp"
 #include "tiles/epilogue.hpp"
 #include "tiles/gemm.hpp"
+#include "tiles/gemm_cols.hpp"
 #include "tiles/gemm_kp.hpp"
 #include "tiles/matrix_gemm.hpp"
 #include "tiles/stream.hpp"
@@ -35,6 +36,13 @@ __global__ void __launch_bounds__(256) affine_gemm_rows(Affine a) {
 template <typename T, int BITS, int CB, int R, int WAVES, int RB, bool LOOP>
 __global__ void __launch_bounds__(32 * WAVES) affine_gemm_kp(Affine a) {
     gemm_kp_tile<MlxDecoder<BITS>, IdentityAct<T>, T, F32Out, CB, R, WAVES, RB, LOOP>(a);
+}
+
+// ---- the column tile of a short prompt on a small GPU: a lane a column, words read on long runs ----
+
+template <typename T, int BITS, int RG, int SC>
+__global__ void __launch_bounds__(32 * kColsWaves) affine_gemm_cols(Affine a) {
+    gemm_cols_tile<MlxDecoder<BITS>, IdentityAct<T>, T, F32Out, RG, SC>(a);
 }
 
 // ---- the prefill GEMM tile on the matrix cores of gfx11 ----

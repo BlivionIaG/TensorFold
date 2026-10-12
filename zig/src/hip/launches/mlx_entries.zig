@@ -13,6 +13,7 @@ const Op = registry.Op;
 const Kernels = affine.Kernels;
 const Error = @import("../runtime.zig").Error;
 const Launch = affine.Launch;
+const hl = @import("../launch.zig");
 
 // ---- what the GPU has and the run switched on
 
@@ -34,6 +35,10 @@ fn streamOn(e: Env) bool {
 
 fn gemmOn(e: Env) bool {
     return e.gemm_on;
+}
+
+fn smallRdna2(e: Env) bool {
+    return !e.bf16 and e.small;
 }
 
 fn matrixOn(e: Env) bool {
@@ -190,6 +195,11 @@ fn fitsPrefillGemm(s: Shape) bool {
     return prefillOk(s) and gemmFits(s);
 }
 
+/// The column tile: 4- or 8-bit words on 16 bytes, 16-bit tables of one kind, x on 16 bytes, K in whole chunks.
+fn fitsPrefillCols(s: Shape) bool {
+    return prefillOk(s) and (s.bits == 4 or s.bits == 8) and s.words_aligned and s.tables != .f32 and s.tables_alike and s.x_aligned and s.k % 32 == 0;
+}
+
 fn fitsPrefillBlock(s: Shape) bool {
     return prefillOk(s);
 }
@@ -238,6 +248,14 @@ fn launchBlock(comptime kind: affine.BlockKind) Launch {
             try k.blockGo(c.r, c.arg, c.s, c.items, kind);
         }
     }.f;
+}
+
+/// 16 rows a block, a column a lane of its 128, the row groups of a column adjacent (gemm_cols_tile).
+fn launchCols(k: *const Kernels, c: Call) Error!void {
+    var args: hl.Args = .{};
+    try args.add(c.arg);
+    const blocks: c_uint = @intCast(@divTrunc(c.arg.n + 127, 128) * @divTrunc(c.arg.m + 15, 16));
+    try Kernels.go(c.r, k.cols[@intCast(@divTrunc(c.arg.bits, 8))], .{ .x = blocks, .z = @intCast(c.items) }, .{ .x = 128 }, c.s, &args);
 }
 
 fn launchKp(comptime tier: usize) Launch {
@@ -304,12 +322,14 @@ const other_decode = [_]Entry{
     entry(.routed_act, .decode, "stream", .{ .family = .stream, .fits = &fitsPair, .launch = &launchPair, .policy = &streamOn }),
 };
 
-fn prefill(comptime op: Op) [9]Entry {
+fn prefill(comptime op: Op) [11]Entry {
     return .{
         entry(op, .prefill, "kp0", .{ .family = .gemm, .fits = kpFits(0), .launch = launchKp(0), .policy = &gemmOn }),
         entry(op, .prefill, "kp1", .{ .family = .gemm, .fits = kpFits(1), .launch = launchKp(1), .policy = &gemmOn }),
         entry(op, .prefill, "kp2", .{ .family = .gemm, .fits = kpFits(2), .launch = launchKp(2), .policy = &gemmOn }),
         entry(op, .prefill, "kp3", .{ .family = .gemm, .fits = kpFits(3), .launch = launchKp(3), .policy = &gemmOn }),
+        entry(op, .prefill, "cols", .{ .family = .gemm, .fits = &fitsPrefillCols, .launch = &launchCols, .caps = &smallRdna2, .policy = &gemmOn }),
+        entry(op, .prefill, "cols_tall", .{ .family = .gemm, .fits = &fitsPrefillCols, .launch = &launchCols, .caps = &smallRdna2, .policy = &gemmOn }),
         entry(op, .prefill, "matrix", .{ .family = .gemm, .fits = &fitsPrefillMatrix, .launch = launchBlock(.matrix), .caps = &matrixCores, .policy = &matrixOn }),
         entry(op, .prefill, "gemm", .{ .family = .gemm, .fits = &fitsPrefillGemm, .launch = launchBlock(.gemm), .policy = &gemmOn }),
         entry(op, .prefill, "gemm64", .{ .family = .gemm, .fits = &fitsPrefillGemm, .launch = launchBlock(.gemm64), .policy = &gemmOn }),
@@ -333,6 +353,33 @@ fn envOn(gfx: []const u8, stream_on: bool, gemm_on: bool, matrix_on: bool) Env {
     const caps = Caps.of(gfx).?;
     const matrix = caps.act == .bf16 and caps.matrix == .wmma11;
     return .{ .bf16 = caps.act == .bf16, .matrix = matrix, .matrix_on = matrix and matrix_on, .stream_on = stream_on, .gemm_on = gemm_on };
+}
+
+test "a small RDNA2 GPU takes 9 to 48 and 65 to 88 prompt rows on the column tile, 4- and 8-bit, in one family" {
+    const r = kernelsOn("gfx1033");
+    var env = envOn("gfx1033", true, true, false);
+    env.small = true;
+    try r.verify(env, .mlx);
+    var shape: Shape = .{ .m = 1, .n = 4096, .k = 4096, .bits = 4, .group = 64, .fp16 = true, .tables = .f16 };
+    const want = [_]struct { u32, []const u8 }{ .{ 8, "kp2" }, .{ 9, "cols" }, .{ 48, "cols" }, .{ 49, "gemm64" }, .{ 64, "gemm64" }, .{ 65, "cols_tall" }, .{ 88, "cols_tall" }, .{ 89, "gemm" } };
+    for (want) |w| {
+        shape.m = w[0];
+        try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .project, .prefill, shape).?.id, w[1]));
+    }
+    shape.m = 16;
+    shape.bits = 8;
+    try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .project, .prefill, shape).?.id, "cols"));
+    // other widths, f32 tables, a routed plan and a large GPU keep the tiles they had
+    shape.bits = 3;
+    try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .project, .prefill, shape).?.id, "kp2"));
+    shape.bits = 4;
+    shape.tables = .f32;
+    try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .project, .prefill, shape).?.id, "kp2"));
+    shape.tables = .f16;
+    shape.items = 10;
+    try std.testing.expect(!std.mem.endsWith(u8, r.select(env, .mlx, .routed, .prefill, shape).?.id, "cols"));
+    shape.items = 0;
+    try std.testing.expect(std.mem.endsWith(u8, r.select(envOn("gfx1033", true, true, false), .mlx, .project, .prefill, shape).?.id, "kp2"));
 }
 
 test "a lane round and a prompt each keep one family at every row count, on every GPU and policy" {

@@ -387,6 +387,27 @@ fn tiers(t: *Rig) !usize {
     return ran;
 }
 
+/// A small GPU's tiles, the column tile among them, at the row counts around its own: dense products, 4 and 8 bits.
+fn smallTiers(t: *Rig) !usize {
+    var small = t.kernels.*;
+    small.small = true;
+    var on_small = t.*;
+    on_small.kernels = &small;
+    var ran: usize = 0;
+    for ([_]c_int{ 4, 8 }) |bits| for (shapes.groups) |group_u| for ([_]usize{ 1, 8, 9, 15, 16, 17, 31, 33, 47, 48, 49, 64, 65, 88, 89 }) |m| {
+        const group: c_int = group_u;
+        // k: one ragged x step, a ragged odd run of steps, a long run; n: off a block and off a wave's 32 columns
+        const g: usize = @intCast(group);
+        for ([_]usize{ 3 * g, 11 * g, 4096 }, [_]usize{ 97, 288, 1000 }) |k, n| {
+            const diff = try tierProduct(&on_small, m, n, k, bits, group, false);
+            try base.expect(diff == 0, "small gpu tiers m{d} n{d} k{d} b{d} g{d}: {d} words differ from the 128-row block", .{ m, n, k, bits, group, diff });
+            ran += 1;
+        }
+    };
+    t.digest = on_small.digest;
+    return ran;
+}
+
 /// Decode: the rows of a lane round's launch against each row alone, plain products and routed plans.
 pub fn decode(t: *Rig) !void {
     var rng: data.Rng = .{ .state = 0x9E3779B97F4A7C15 };
@@ -403,6 +424,7 @@ pub fn decode(t: *Rig) !void {
 /// Prefill: every tile the registry picks between by rows, at every row count, width and group.
 pub fn prefill(t: *Rig) !void {
     try base.expect(try tiers(t) > 0, "rows prefill: no product ran", .{});
+    try base.expect(try smallTiers(t) > 0, "rows prefill on a small GPU: no product ran", .{});
 }
 
 test "a decode row writes the same bytes alone and in a round of 2 to 32, dense and routed, fp32 and rounded" {

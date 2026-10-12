@@ -375,5 +375,9 @@ TF_TILES(5)
 TF_TILES(6)
 TF_TILES(8)
 
+// the column tile takes the widths whose 8-chunk run is whole 16-byte pieces a power of two lanes long
+template __global__ void affine_gemm_cols<Dot, 4, 16, 8>(Affine);
+template __global__ void affine_gemm_cols<Dot, 8, 16, 8>(Affine);
+
 }  // namespace rocm
 }  // namespace tf

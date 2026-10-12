@@ -37,6 +37,9 @@
         // 25 to 64 rows: the GEMM tile on 32 or 64 rows a block keeps every wave busy (the 128-row one idles most)
         .{ .id = "mlx.project.prefill.gemm32", .cost = 3.5, .rows = 32, .min_rows = 25 },
         .{ .id = "mlx.project.prefill.gemm64", .cost = 10, .rows = 64, .min_rows = 33 },
+        // a small GPU (16 compute units or fewer): 9 to 48 rows on the column tile, its words read on long runs
+        .{ .id = "mlx.project.prefill.cols", .cost = 3, .rows = 48, .min_rows = 9, .routed = false },
+        .{ .id = "mlx.project.prefill.cols_tall", .cost = 10.5, .rows = 88, .min_rows = 65, .routed = false },
         .{ .id = "mlx.project.prefill.gemm", .cost = 11 },
         .{ .id = "mlx.project.prefill.block", .cost = 12 },
         .{ .id = "mlx.routed.prefill.kp0", .cost = 1, .rows = 2, .routed = false },

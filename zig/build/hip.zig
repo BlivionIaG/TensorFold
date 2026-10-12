@@ -168,7 +168,7 @@ const headers = [_][]const u8{
     "ops/norms.hpp",              "ops/rope.hpp",     "common/arch.hpp",     "common/dot2.hpp",       "common/vec.hpp",
     "common/wmma.hpp",            "quant/act.hpp",    "quant/mlx.hpp",       "quant/mlx_decoder.hpp", "quant/mlx_pieces.hpp",
     "quant/mlx_tiles.hpp",        "tiles/dot2.hpp",   "tiles/epilogue.hpp",  "tiles/gemm.hpp",        "tiles/gemm_kp.hpp",
-    "tiles/matrix_gemm.hpp",      "tiles/plan.hpp",   "tiles/stream.hpp",
+    "tiles/matrix_gemm.hpp",      "tiles/plan.hpp",   "tiles/stream.hpp",    "tiles/gemm_cols.hpp",
 };
 
 /// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.

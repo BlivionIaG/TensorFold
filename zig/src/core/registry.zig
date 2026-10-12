@@ -50,6 +50,8 @@ pub const Env = struct {
     stream_on: bool,
     /// The GEMM tile (else the reference one) takes the products.
     gemm_on: bool,
+    /// A small GPU (16 compute units or fewer): its own short-prompt tile pays there.
+    small: bool = false,
 };
 
 /// Whether an entry writes the activation type itself instead of fp32.

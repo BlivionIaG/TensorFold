@@ -143,6 +143,9 @@ pub const Kernels = struct {
     gemm_rows: [bit_widths.len][2]Function,
     wmma_gemm: [bit_widths.len]Function,
     kp: [bit_widths.len][kp_tiles.len]Function,
+    /// The column tile of a short prompt (tiles/gemm_cols.hpp) at 4 and 8 bits, and whether the GPU is small.
+    cols: [2]Function,
+    small: bool,
     span: [2]Function,
     fold: Function,
     wide: Function,
@@ -163,6 +166,7 @@ pub const Kernels = struct {
         k.stream_on = choices.stream;
         k.stage_on = true;
         k.waves_wanted = wavesWanted(choices.cus);
+        k.small = choices.cus != 0 and choices.cus <= 16;
         k.reg = Registry.init(tableFor(caps), &mlx_entries.all);
         k.reg.verify(k.env(), .mlx) catch return error.Invalid;
         // the GEMM tile's rows of x a lane keeps (tiles/gemm.hpp GemmShape): 8 for BF16, 16 for FP16
@@ -186,6 +190,7 @@ pub const Kernels = struct {
             inline for (.{ 64, 32 }, 0..) |rows, i| {
                 k.gemm_rows[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_gemm_rowsINS0_{s}ELi{d}E{s}Li{d}EEEvNS0_6AffineE", .{ dot, bits, shape, rows }));
             }
+            if (bits == 4 or bits == 8) k.cols[bits / 8] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_gemm_colsINS0_{s}ELi{d}ELi16ELi8EEEvNS0_6AffineE", .{ dot, bits }));
             inline for (kp_tiles, 0..) |t, i| {
                 k.kp[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm14affine_gemm_kpINS0_{s}ELi{d}ELi{d}ELi{d}ELi{d}ELi{d}ELb{d}EEEvNS0_6AffineE", .{ dot, bits, t.cb, t.r, t.waves, t.rb, @intFromBool(t.loop) }));
             }
@@ -221,7 +226,7 @@ pub const Kernels = struct {
     }
 
     /// Launches on `s`; the counting stream runs nothing.
-    fn go(r: *const runtime.Runtime, f: Function, grid: hl.Dim3, block: hl.Dim3, s: abi.Stream, args: *hl.Args) Error!void {
+    pub fn go(r: *const runtime.Runtime, f: Function, grid: hl.Dim3, block: hl.Dim3, s: abi.Stream, args: *hl.Args) Error!void {
         return goShared(r, f, grid, block, 0, s, args);
     }
 
@@ -289,7 +294,7 @@ pub const Kernels = struct {
 
     /// The GPU and the run's switches as the registry reads them.
     pub fn env(k: *const Kernels) registry.Env {
-        return .{ .bf16 = k.wmma, .matrix = k.matrix, .matrix_on = k.matrix and k.mode != .off, .stream_on = k.stream_on, .gemm_on = k.tile == .gemm };
+        return .{ .bf16 = k.wmma, .matrix = k.matrix, .matrix_on = k.matrix and k.mode != .off, .stream_on = k.stream_on, .gemm_on = k.tile == .gemm, .small = k.small };
     }
 
     /// The MLX entry that takes a product, or null.
