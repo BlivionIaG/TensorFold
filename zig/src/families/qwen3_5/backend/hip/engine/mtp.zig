@@ -60,6 +60,8 @@ pub const Head = struct {
     /// A row of zeros: the padding chains' input.
     zero: hip.DeviceBuffer,
     scalars: hip.HostBuffer, // `Layout`'s words, pinned
+    /// The first step's input embeddings gathered on the host (the embedding on the host), pinned.
+    embed_rows: ?hip.HostBuffer = null,
     scalars_dev: hip.DeviceBuffer,
     last: u64 = 0, // the last step's final rows, the next step's hidden input
     /// Greedy batches captured by shape: the head's launches over the scalars alone, replayed.
@@ -127,6 +129,8 @@ pub const Head = struct {
         errdefer h.scalars.free();
         h.scalars_dev = try hip.DeviceBuffer.alloc(d, h.layout().total);
         errdefer h.scalars_dev.free();
+        h.embed_rows = if (model.host_embed != null) try hip.HostBuffer.alloc(d, cap * s.hidden * model.act.size()) else null;
+        errdefer if (h.embed_rows) |*b| b.free();
         h.arena = try hip.Arena.init(d, try h.scratch(lib, model));
         return h;
     }
@@ -147,6 +151,7 @@ pub const Head = struct {
         h.graphs.deinit();
         h.scalars_dev.free();
         h.scalars.free();
+        if (h.embed_rows) |*b| b.free();
         h.zero.free();
         h.rows.free();
         h.arena.deinit();
@@ -179,6 +184,8 @@ pub const Head = struct {
     }
 
     fn batch(h: *Head, lib: *const hip.Launcher, stream: hip.Stream, drawer: *draw.Drawer, m: *const view.Model, jobs: []Job, graphs: bool) !void {
+        // the embedding on the host: the batch's host buffers are written only once the stream's earlier work is done
+        if (m.host_embed != null) try stream.synchronize();
         const o: Ops = .{ .l = lib, .bf16 = m.act == .bf16, .stream = stream.handle, .arena = &h.arena };
         h.arena.reset();
         const rows = jobs.len;
@@ -204,6 +211,7 @@ pub const Head = struct {
             srcs[at.ptrs / 8 + r] = if (real) jobs[r].hidden else h.zero.base();
         }
         const dev = h.scalars_dev.base();
+        if (m.host_embed) |t| t.gather(@ptrCast(sc[0..run]), h.embed_rows.?.bytes[0 .. run * width], m.act == .bf16);
         if (greedy) {
             try h.chain(stream, o, m, .{ .rows = @intCast(run), .most = @intCast(most), .cut = cut }, graphs);
         } else {
@@ -306,7 +314,8 @@ pub const Head = struct {
         const eps: f32 = @floatCast(s.eps);
         const hd = s.head_dim;
         const emb = try fwd.take(o, m.act, rows * s.hidden);
-        try o.embedRows(m.embed, ids, rows, emb);
+        const host_rows = if (slot == 0) if (h.embed_rows) |b| b.bytes else null else null;
+        try fwd.embed(o, m, ids, host_rows, rows, emb);
         const emb_e = try fwd.take(o, m.act, rows * s.hidden);
         try o.rms(emb, w.fc_e_norm.ptr, emb_e, rows, s.hidden, eps);
         const emb_h = try fwd.take(o, m.act, rows * s.hidden);

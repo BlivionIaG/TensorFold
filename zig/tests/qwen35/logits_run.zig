@@ -40,7 +40,8 @@ pub fn stream(gpa: std.mem.Allocator, e: *Engine, ids: []const u32, mode: Mode, 
     const o: hip.ops.Ops = e.ops(&e.prompts);
     var ids_dev = try hip.DeviceBuffer.fromHost(&e.driver, std.mem.sliceAsBytes(ids));
     defer ids_dev.free();
-    const hidden = try qwen35.forward.span(o, m, &caches, ids_dev.base(), if (mode.decode) 1 else ids.len, 0, null);
+    const rows_in = if (mode.decode) 1 else ids.len;
+    const hidden = try qwen35.forward.spanRows(o, m, &caches, ids_dev.base(), e.hostRows(ids[0..rows_in]), rows_in, 0, null);
 
     const width = vocab(e) * kindOf(e, mode).size();
     const block = try gpa.alloc(u8, chunk * width);

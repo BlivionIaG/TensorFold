@@ -31,6 +31,12 @@ pub fn upload(dst: DeviceBuffer, offset: usize, bytes: []const u8, stream: abi.S
     try runtime.check(dst.r.api.hipMemcpyHtoDAsync(@ptrFromInt(dst.base() + offset), bytes.ptr, bytes.len, stream));
 }
 
+/// Pinned host `bytes` to device address `dst`, queued on `stream` (a graph records it and copies them each replay).
+pub fn uploadTo(r: *const runtime.Runtime, dst: u64, bytes: []const u8, stream: abi.Stream) runtime.Error!void {
+    if (bytes.len == 0 or stream == counting) return;
+    try runtime.check(r.api.hipMemcpyHtoDAsync(@ptrFromInt(dst), bytes.ptr, bytes.len, stream));
+}
+
 /// `out.len` bytes of `src` from `offset` into pinned host `out`, queued on `stream`.
 pub fn download(src: DeviceBuffer, offset: usize, out: []u8, stream: abi.Stream) runtime.Error!void {
     if (offset > src.len or out.len > src.len - offset) return error.Invalid;

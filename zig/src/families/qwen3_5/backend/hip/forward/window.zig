@@ -10,8 +10,8 @@ const Ops = hip.ops.Ops;
 const Tensor = hip.ops.Tensor;
 const pops = hip.plan_ops;
 
-/// A round's launches: the device plan, its token ids, the keys the attention walk covers, each layer's kept inputs.
-pub const Round = struct { plan: pops.Plan, tokens: u64, span: usize, inputs: []const [2]u64 };
+/// A round's launches: plan, token ids, keys walked, kept inputs, and the rows' embeddings when the host gathers them.
+pub const Round = struct { plan: pops.Plan, tokens: u64, span: usize, inputs: []const [2]u64, embed_rows: ?[]const u8 = null };
 
 /// Whether this build and model run lane rounds: the merged decode launches, and shapes the plan kernels take.
 pub fn supported(o: Ops, m: *const view.Model) bool {
@@ -38,7 +38,7 @@ pub fn forward(ops: Ops, m: *const view.Model, r: Round, trace: ?fwd.Trace) fwd.
     const s = m.spec;
     const total = r.plan.rows;
     const x = try fwd.take(o, m.act, total * s.hidden);
-    try o.embedRows(m.embed, r.tokens, total, x);
+    try fwd.embed(o, m, r.tokens, r.embed_rows, total, x);
     const normed = try fwd.take(o, m.act, total * s.hidden);
     const out = try fwd.take(o, m.act, total * s.hidden);
     const eps: f32 = @floatCast(s.eps);

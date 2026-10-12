@@ -7,6 +7,7 @@ const table = @import("../../../weights/table.zig");
 const host = @import("../../../weights/host.zig");
 const checkpoint = @import("../../../weights/checkpoint.zig");
 const slicing = @import("../../../weights/slicing.zig");
+pub const host_embed = @import("host_embed.zig");
 
 const quant = hip.quant;
 const Tensor = table.Tensor;
@@ -183,6 +184,9 @@ pub const Model = struct {
     mtp: ?MtpHead = null,
     /// A tensor-parallel rank's share: the output projections hold fp32 shares of a sum.
     sliced: bool = false,
+    /// The embedding left on the host (`embed` is then unset), and the checkpoint whose pages it reads.
+    host_embed: ?host_embed.Table = null,
+    ck: ?checkpoint.Checkpoint = null,
 
     /// The text tower of the checkpoint in `dir`, one layer at a time through host memory.
     pub fn load(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8) !Model {
@@ -191,9 +195,16 @@ pub const Model = struct {
 
     /// As `load`, keeping only tensor-parallel rank `rank`'s share (null: the whole model).
     pub fn loadRank(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8, rank: ?slicing.Rank) !Model {
+        return loadWith(gpa, io, d, dir, rank, false);
+    }
+
+    /// As `loadRank`; `embed_on_host` leaves an untied MLX embedding on the host (whole models only).
+    pub fn loadWith(gpa: std.mem.Allocator, io: std.Io, d: *const hip.Runtime, dir: []const u8, rank: ?slicing.Rank, embed_on_host: bool) !Model {
         var ck = try checkpoint.Checkpoint.open(gpa, io, dir);
-        defer ck.close();
-        return fromCheckpointRank(gpa, d, &ck, std.math.maxInt(usize), rank);
+        errdefer ck.close();
+        var m = try loadInto(gpa, d, &ck, std.math.maxInt(usize), rank, embed_on_host and rank == null);
+        if (m.host_embed == null) ck.close() else m.ck = ck;
+        return m;
     }
 
     /// The first `limit` layers of `ck` (all when `limit` is large), with the MTP head only when every layer loads.
@@ -203,6 +214,10 @@ pub const Model = struct {
 
     /// `fromCheckpoint` for one tensor-parallel rank, `spec` being what that rank sees.
     pub fn fromCheckpointRank(gpa: std.mem.Allocator, d: *const hip.Runtime, ck: *const checkpoint.Checkpoint, limit: usize, rank: ?slicing.Rank) !Model {
+        return loadInto(gpa, d, ck, limit, rank, false);
+    }
+
+    fn loadInto(gpa: std.mem.Allocator, d: *const hip.Runtime, ck: *const checkpoint.Checkpoint, limit: usize, rank: ?slicing.Rank, embed_on_host: bool) !Model {
         const whole = ck.spec();
         var m: Model = .{ .gpa = gpa, .spec = if (rank) |r| try slicing.localSpec(whole, r) else whole, .sliced = rank != null };
         errdefer m.deinit();
@@ -212,9 +227,11 @@ pub const Model = struct {
         var scratch: std.heap.ArenaAllocator = .init(gpa);
         defer scratch.deinit();
         const embed = try ck.embed(scratch.allocator());
-        m.embed = try u.projection(embed);
-        m.final_norm = try u.tensor(try ck.finalNorm(scratch.allocator()));
         const head = try ck.head(scratch.allocator());
+        // an untied head leaves the embedding to row lookups, which the host can do from the mapped pages
+        m.host_embed = if (embed_on_host and head != null) host_embed.Table.of(embed) else null;
+        if (m.host_embed == null) m.embed = try u.projection(embed);
+        m.final_norm = try u.tensor(try ck.finalNorm(scratch.allocator()));
         if (rank) |r| {
             m.head = try u.projection(try slicing.vocabRows(scratch.allocator(), head orelse embed, whole.vocab, r));
         } else if (head) |h| m.head = try u.projection(h);
@@ -248,9 +265,14 @@ pub const Model = struct {
     }
 
     pub fn deinit(m: *Model) void {
+        if (m.ck) |*c| c.close();
         for (m.buffers.items) |*b| b.free();
         m.buffers.deinit(m.gpa);
         m.gpa.free(m.layers);
         m.* = undefined;
     }
 };
+
+test {
+    _ = host_embed;
+}

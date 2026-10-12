@@ -14,7 +14,15 @@ const Kind = hip.ops.Kind;
 /// Rows of one prefill step (qwen_math.SPAN).
 pub const SPAN = 2048;
 
-pub const Error = reduce.Error || error{Cancelled};
+pub const Error = reduce.Error || error{ Cancelled, NoHostRows };
+
+/// `n` embedding rows into `out`: by `ids` on the device, or copied up from the caller's pinned host gather `rows`.
+pub fn embed(o: Ops, m: *const view.Model, ids: u64, rows: ?[]const u8, n: usize, out: Tensor) Error!void {
+    if (m.host_embed == null) return o.embedRows(m.embed, ids, n, out);
+    const bytes = n * m.spec.hidden * m.act.size();
+    const src = rows orelse return if (o.stream == hip.counting) {} else error.NoHostRows;
+    try hip.raw.uploadTo(o.l.r, out.ptr, src[0..bytes], o.stream);
+}
 
 pub const residual = reduce.residual;
 
@@ -36,6 +44,11 @@ pub const Trace = struct {
 
 /// The span's final-normed rows (len, hidden) in the activation dtype; `ids` are int32 token ids on the device.
 pub fn span(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len: usize, pos0: usize, trace: ?Trace) Error!Tensor {
+    return spanRows(ops, m, caches, ids, null, len, pos0, trace);
+}
+
+/// `span` with the host-gathered embedding rows of `ids` when the embedding is on the host.
+pub fn spanRows(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, rows_in: ?[]const u8, len: usize, pos0: usize, trace: ?Trace) Error!Tensor {
     // prefill's kernels at any row count: a prompt's rows have the same bits fresh, resumed or in steps
     var o = ops;
     o.prefill = true;
@@ -44,7 +57,8 @@ pub fn span(ops: Ops, m: *const view.Model, caches: *state.Caches, ids: u64, len
     var start: usize = 0;
     while (start < len) : (start += SPAN) {
         const rows = @min(SPAN, len - start);
-        try o.embedRows(m.embed, ids + start * 4, rows, at(x, start * s.hidden));
+        const from = if (rows_in) |r| r[start * s.hidden * m.act.size() ..] else null;
+        try embed(o, m, ids + start * 4, from, rows, at(x, start * s.hidden));
     }
     for (m.layers, 0..) |layer, index| {
         start = 0;

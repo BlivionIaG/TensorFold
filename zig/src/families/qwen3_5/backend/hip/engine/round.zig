@@ -46,6 +46,8 @@ pub const State = struct {
     last: ?Last = null,
     /// The layout of the plan in flight, for the copy a round starts with.
     layout: plan.Layout = undefined,
+    /// The rows' embeddings gathered on the host (the embedding on the host): pinned, copied up like the plan.
+    embed: ?hip.HostBuffer = null,
 
     pub fn init(e: *Engine) !State {
         const m = e.model();
@@ -62,10 +64,14 @@ pub const State = struct {
         const staging = try e.gpa.alloc(i32, rows + 1);
         errdefer e.gpa.free(staging);
         @memset(staging, -1);
-        return .{ .buffer = buffer, .scratch = scratch, .snaps = snaps, .wins = wins, .staging = staging, .keeps = try hip.HostBuffer.alloc(&e.driver, keep_ring * 4 * (rows + 1)) };
+        var keeps = try hip.HostBuffer.alloc(&e.driver, keep_ring * 4 * (rows + 1));
+        errdefer keeps.free();
+        const embed = if (m.host_embed != null) try hip.HostBuffer.alloc(&e.driver, rows * m.spec.hidden * m.act.size()) else null;
+        return .{ .buffer = buffer, .scratch = scratch, .snaps = snaps, .wins = wins, .staging = staging, .keeps = keeps, .embed = embed };
     }
 
     pub fn deinit(s: *State, e: *Engine) void {
+        if (s.embed) |*b| b.free();
         s.keeps.free();
         e.gpa.free(s.staging);
         e.gpa.free(s.wins);
@@ -137,8 +143,15 @@ pub fn verify(e: *Engine, rows: []const Rows, reqs: []const draw.Request, out: [
     const l = plan.Layout.of(c.shape.rows, c.shape.slots, m.spec.n_layers);
     st.buffer.fill(l, c.shape, st.wins[0..rows.len], st.scratch.desc.base(), st.snaps);
     st.layout = l;
+    // the embedding on the host: the plan's tokens (padding rows' zeros included) gathered now, copied up in the round
+    const embed_rows: ?[]const u8 = if (m.host_embed) |t| blk: {
+        try e.stream.synchronize();
+        const rows_bytes = st.embed.?.bytes[0 .. c.shape.rows * m.spec.hidden * m.act.size()];
+        t.gather(st.buffer.host.slice(u32)[l.tokens..][0..c.shape.rows], rows_bytes, m.act == .bf16);
+        break :blk rows_bytes;
+    } else null;
     const p: hip.plan_ops.Plan = .{ .args = st.buffer.args(l), .rows = c.shape.rows, .slots = c.shape.slots };
-    const r: win.Round = .{ .plan = p, .tokens = st.buffer.dev.base() + 4 * l.tokens, .span = c.shape.span, .inputs = st.snaps };
+    const r: win.Round = .{ .plan = p, .tokens = st.buffer.dev.base() + 4 * l.tokens, .span = c.shape.span, .inputs = st.snaps, .embed_rows = embed_rows };
     const done = try run(e, c, r);
     e.graphs.rounds += 1;
     e.graphs.submit_ns += nowNs() - began;

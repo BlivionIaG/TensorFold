@@ -103,7 +103,9 @@ pub const Model = struct {
     /// The tensor-parallel communicator; null on one rank.
     tp: ?hip.collective.Comm = null,
     act: Kind,
+    /// Unset when `host_embed` holds the embedding: the forwards then upload rows the host gathered.
     embed: Projection,
+    host_embed: ?*const @import("host_embed.zig").Table = null,
     layers: []const Layer,
     final_norm: u64,
     head: Projection,

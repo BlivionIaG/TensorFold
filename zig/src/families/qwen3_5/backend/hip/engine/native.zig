@@ -113,9 +113,17 @@ fn prepare(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.De
     const capacity = o.window + rows + 1;
     // the most streams up to the ones asked whose bytes fit, then the least of that over the ranks
     var streams = o.streams;
-    while (streams > 0) : (streams -= 1) {
-        if ((served(e, streams, capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot count its scratch ({s})", .{@errorName(err)})) <= room) break;
+    // no stream at 1024-row prompt steps: 512, then 256 (cuts on page edges keep a prompt's bits; the arena shrinks)
+    for ([_]usize{ prefix.chunk, prefix.chunk / 2, prefix.chunk / 4 }) |step| {
+        if (step != prefix.chunk and o.world > 1) break;
+        e.o.prompt_rows = step;
+        streams = o.streams;
+        while (streams > 0) : (streams -= 1) {
+            if ((served(e, streams, capacity) catch |err| return refuse(a, problem, "the native HIP engine cannot count its scratch ({s})", .{@errorName(err)})) <= room) break;
+        }
+        if (streams > 0) break;
     }
+    if (streams == 0) e.o.prompt_rows = prefix.chunk;
     if (o.world > 1) streams = (e.least(.{ streams, 0 }) catch |err| return refuse(a, problem, "the ranks could not agree on the streams ({s})", .{@errorName(err)}))[0];
     if (streams == 0) {
         const one = served(e, 1, capacity) catch 0;
@@ -146,7 +154,7 @@ fn prepare(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.De
         return refuse(a, problem, "the native HIP engine cannot allocate its scratch and pages ({s})", .{@errorName(err)});
     const lane = gibs(state.Caches.deviceBytes(e.model(), capacity) + pages.pagesFor(capacity) * memory.pageBytes(e.weights.spec, e.act.size()));
     const startup = try std.fmt.allocPrint(gpa, "HIP {s} device {d}, rank {d} of {d}: model {d:.2} GiB; {d} stream{s} at once, {d:.2} GiB each at a {d}-token window, of {d:.1} GiB left after a {d:.1} GiB reserve; prompt cache {d:.2} GiB ({d} pages, {d} snapshots); prompts in {d}-row chunks", .{
-        hip.kernels.arch, dev.index, o.rank, o.world, gibs(model), streams, if (streams == 1) "" else "s", lane, o.window, gibs(room), gibs(reserve), gibs(budget), cache.pages, cache.snaps, prefix.chunk,
+        hip.kernels.arch, dev.index, o.rank, o.world, gibs(model), streams, if (streams == 1) "" else "s", lane, o.window, gibs(room), gibs(reserve), gibs(budget), cache.pages, cache.snaps, e.o.prompt_rows,
     });
     return .{ .e = e, .streams = streams, .cache = cache, .startup = startup };
 }

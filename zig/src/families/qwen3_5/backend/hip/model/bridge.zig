@@ -69,7 +69,8 @@ pub const Bridge = struct {
         b.model = .{
             .spec = s,
             .act = act,
-            .embed = try projection(m.embed),
+            .embed = if (m.host_embed == null) try projection(m.embed) else undefined,
+            .host_embed = if (m.host_embed) |*t| t else null,
             .layers = b.layers,
             .final_norm = m.final_norm.ptr,
             .head = try projection(m.outputHead()),

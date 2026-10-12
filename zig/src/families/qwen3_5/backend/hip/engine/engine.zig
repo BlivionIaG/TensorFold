@@ -82,6 +82,8 @@ pub const Engine = struct {
     prompts: hip.Arena,
     ids: hip.HostBuffer,
     ids_dev: hip.DeviceBuffer,
+    /// A prompt's embedding rows gathered on the host, pinned (the embedding on the host).
+    embed_rows: ?hip.HostBuffer = null,
     /// The keys and values of every stream and prefix entry.
     pool: pages.Pool,
     drawer: draw.Drawer,
@@ -125,7 +127,9 @@ pub const Engine = struct {
             pf.* = .{ .pool = try e.budget(io), .held = hip.usage(false).device, .weights = admission.weightBytes(io, dir) / o.world };
             if (pf.weights > pf.pool.room(pf.held)) return error.WeightsDoNotFit;
         }
-        e.weights = try weights.Model.loadRank(gpa, io, &e.driver, dir, group);
+        // an integrated GPU (or the policy) leaves an untied embedding's row lookups to the host and its pages there
+        const on_host = o.policy.embedOnHost((try e.ctx.attribute(.integrated)) != 0);
+        e.weights = try weights.Model.loadWith(gpa, io, &e.driver, dir, group, on_host);
         errdefer e.weights.deinit();
         e.bridge = try bridge.Bridge.init(gpa, &e.driver, &e.weights, e.act);
         errdefer e.bridge.deinit();
@@ -150,6 +154,9 @@ pub const Engine = struct {
         errdefer e.ids.free();
         e.ids_dev = try hip.DeviceBuffer.alloc(&e.driver, prompt_rows * 4);
         errdefer e.ids_dev.free();
+        const m = e.model();
+        e.embed_rows = if (m.host_embed != null) try hip.HostBuffer.alloc(&e.driver, prompt_rows * m.spec.hidden * m.act.size()) else null;
+        errdefer if (e.embed_rows) |*b| b.free();
         e.drawer = try draw.Drawer.init(e.gpa, &e.driver, e.dtype, e.bridge.model.head.n * e.o.world, rows);
         errdefer e.drawer.deinit();
         e.pool = try pages.Pool.init(e.gpa, &e.driver, &e.bridge.model, count, e.o.rank == 0);
@@ -250,6 +257,7 @@ pub const Engine = struct {
             e.drawer.deinit();
             e.ids_dev.free();
             e.ids.free();
+            if (e.embed_rows) |*b| b.free();
             e.prompts.deinit();
             e.rounds.deinit();
             e.pool.deinit();
@@ -341,6 +349,16 @@ pub const Engine = struct {
         }
     };
 
+    /// The embedding rows of `ids` gathered into the pinned prompt rows, or null when the device gathers them.
+    pub fn hostRows(e: *Engine, ids: []const u32) ?[]const u8 {
+        const m = e.model();
+        const t = m.host_embed orelse return null;
+        e.stream.synchronize() catch {};
+        const out = e.embed_rows.?.bytes[0 .. ids.len * m.spec.hidden * m.act.size()];
+        t.gather(ids, out, m.act == .bf16);
+        return out;
+    }
+
     /// The pass over `len` rows polling the cancel after each layer; null where it cannot stop (a short prompt, or tp).
     fn poll(e: *Engine, cancel: ?Cancel, len: usize, p: *Poll) ?fwd.Trace {
         const c = cancel orelse return null;
@@ -357,7 +375,7 @@ pub const Engine = struct {
         @memcpy(ids, prompt[pos0..end]);
         try e.ids_dev.uploadAsync(0, e.ids.view(0, 4 * ids.len), e.stream);
         var p: Poll = undefined;
-        _ = try fwd.span(e.ops(&e.prompts), e.model(), caches, e.ids_dev.base(), end - pos0, pos0, e.poll(cancel, end - pos0, &p));
+        _ = try fwd.spanRows(e.ops(&e.prompts), e.model(), caches, e.ids_dev.base(), e.hostRows(ids), end - pos0, pos0, e.poll(cancel, end - pos0, &p));
         try e.stream.synchronize();
     }
 
@@ -372,7 +390,7 @@ pub const Engine = struct {
         try e.ids_dev.uploadAsync(0, e.ids.view(0, 4 * ids.len), e.stream);
         const o = e.ops(&e.prompts);
         var p: Poll = undefined;
-        const hidden = try fwd.span(o, m, caches, e.ids_dev.base(), len, pos0, e.poll(cancel, len, &p));
+        const hidden = try fwd.spanRows(o, m, caches, e.ids_dev.base(), e.hostRows(ids), len, pos0, e.poll(cancel, len, &p));
         const row = fwd.at(hidden, (len - 1) * m.spec.hidden);
         if (last) |b| try hip.raw.copy(b, 0, row.ptr, m.spec.hidden * m.act.size(), e.stream.handle);
         var token: [1]u32 = undefined;

@@ -183,7 +183,8 @@ pub const Hip = struct {
             .mtp = drafting,
             .speculate = drafting,
             .speculate_early = false,
-            .drafts = @min(mtp.max_depth, h.e.o.policy.mtp.drafts),
+            // the embedding on the host gathers a chain's first step only: one draft deep
+            .drafts = if (h.e.model().host_embed != null) @min(1, h.e.o.policy.mtp.drafts) else @min(mtp.max_depth, h.e.o.policy.mtp.drafts),
             .hidden_rows = true,
             .batch_rows = @intCast(h.e.o.batch_rows),
             .max_streams = @intCast(h.e.o.batch_rows),
@@ -341,7 +342,7 @@ pub const Hip = struct {
         const f = &lane.fill.?;
         const limit: usize = if (f.next < f.count) f.stops[f.next] else prompt.len;
         // a prompt cut anywhere on 64 rows gives the same bits; streams decoding between chunks wait less on short ones
-        const to = prefix.chunkEnd(f.at, limit, if (h.decoding()) h.e.o.policy.fill_rows else prefix.chunk);
+        const to = prefix.chunkEnd(f.at, limit, @min(if (h.decoding()) h.e.o.policy.fill_rows else prefix.chunk, h.e.o.prompt_rows));
         if (h.link != null) try h.send(&.{ @backingInt(worker.Op.fill), lane.id, @intCast(to) });
         if (to == prompt.len) {
             // a structured reply keeps the prompt's last row: its first token is drawn again under the grammar
