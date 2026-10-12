@@ -108,8 +108,8 @@ pub const kp_tiles = [_]KpTile{
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the reference `block`.
 pub const Tile = enum { gemm, block };
 
-/// Which GEMM tile of the 128-row family a launch runs: the matrix cores, the dot2 tile, or the reference tile.
-pub const BlockKind = enum { matrix, gemm, block };
+/// The GEMM tile of the 128-row family a launch runs: matrix cores, dot2 on 128, 64 or 32 rows a block, or reference.
+pub const BlockKind = enum { matrix, gemm, gemm64, gemm32, block };
 
 pub const Kernels = struct {
     /// Whether block shape `tier` can take `m` rows: a tile that does not loop over its rows holds rb * r of them.
@@ -139,6 +139,8 @@ pub const Kernels = struct {
     waves_wanted: u64,
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
+    /// The dot2 GEMM tile on 64 and 32 rows a block: the same bits as the 128-row one.
+    gemm_rows: [bit_widths.len][2]Function,
     wmma_gemm: [bit_widths.len]Function,
     kp: [bit_widths.len][kp_tiles.len]Function,
     span: [2]Function,
@@ -181,6 +183,9 @@ pub const Kernels = struct {
             k.block[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_dot2_blockINS0_{s}ELi{d}EEEvNS0_6AffineE", .{ dot, bits }));
             if (k.matrix) k.wmma_gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_wmma_gemmILi{d}EEEvNS0_6AffineE", .{bits}));
             k.gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_gemm_blockINS0_{s}ELi{d}E{s}EEvNS0_6AffineE", .{ dot, bits, shape }));
+            inline for (.{ 64, 32 }, 0..) |rows, i| {
+                k.gemm_rows[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_gemm_rowsINS0_{s}ELi{d}E{s}Li{d}EEEvNS0_6AffineE", .{ dot, bits, shape, rows }));
+            }
             inline for (kp_tiles, 0..) |t, i| {
                 k.kp[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm14affine_gemm_kpINS0_{s}ELi{d}ELi{d}ELi{d}ELi{d}ELi{d}ELb{d}EEEvNS0_6AffineE", .{ dot, bits, t.cb, t.r, t.waves, t.rb, @intFromBool(t.loop) }));
             }
@@ -426,7 +431,7 @@ pub const Kernels = struct {
         try go(r, k.fold, .{ .x = cdiv(a.n, fast_n), .y = @intCast(a.m) }, .{ .x = fast_n }, s, &fold);
     }
 
-    /// The 128 x 128 tile of a kind over every item of a plan (or the plain product).
+    /// The GEMM tile of a kind over every item of a plan (or the plain product): 128 (or 64, 32) rows x 128 a block.
     pub fn blockGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream, items: c_int, kind: BlockKind) Error!void {
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
@@ -434,9 +439,16 @@ pub const Kernels = struct {
         const f = switch (kind) {
             .matrix => k.wmma_gemm[b],
             .gemm => k.gemm[b],
+            .gemm64 => k.gemm_rows[b][0],
+            .gemm32 => k.gemm_rows[b][1],
             .block => k.block[b],
         };
-        try go(r, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
+        const rows: c_int = switch (kind) {
+            .gemm64 => 64,
+            .gemm32 => 32,
+            else => 128,
+        };
+        try go(r, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, rows), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
     }
 
     /// K-parallel tile `tier` (an index of kp_tiles) of a short prompt.
