@@ -45,6 +45,8 @@ future (a 2-bit checkpoint, 75 GB, still needs tp 4 on V620s).
 | Workload | Prefill | TTFT | Decode, drafts off | Decode, drafts on |
 | --- | --- | --- | --- | --- |
 | c=1, 4k-token prompt, 256-token reply | 1,123 tok/s | 3.60 s | 45.0 tok/s (ITL 22.2 ms) | 86.5 tok/s |
+| c=1, 8k-token prompt, 128-token reply | 1,009 tok/s | 7.99 s | | 62.7 tok/s |
+| c=2, 8k each, 128-token replies | 1,003 tok/s | 8.04 s | 34.0 each, 68.1 total | |
 | c=1, 16k-token prompt, 128-token reply | 972 tok/s | 16.6 s | 44.6 tok/s | 68.2 tok/s |
 | c=2, 4k each | 694 tok/s each (both prompts together) | 5.8 s | 29.4 each, 58.9 total | 43.8 each, 87.6 total |
 | c=4, 4k each | | 10.3 s | 16.9 each, 67.5 total | 22.5 each, 89.8 total |
