@@ -6,6 +6,7 @@ const ckpt = @import("../../core/checkpoint.zig");
 const affine = @import("affine.zig");
 const config_mod = @import("config.zig");
 const index_mod = @import("index.zig");
+const tensors = @import("tensors.zig");
 const pio = @import("pack_io.zig");
 
 pub const Report = struct {
@@ -149,11 +150,7 @@ pub fn centeredScale(gpa: std.mem.Allocator, ck: *ckpt.Checkpoint, path: []const
     const out = try gpa.alloc(u8, in16.len * 4);
     errdefer gpa.free(out);
     const out32 = std.mem.bytesAsSlice(u32, out);
-    for (in16, 0..) |bits, i| {
-        var v: f32 = bf16ToF32(bits);
-        if (around_one) v = v - 1.0; // the loader's stored form, which decode.py adds one back to
-        out32[i] = @bitCast(@as(f32, 1.0) + v);
-    }
+    for (in16, 0..) |bits, i| out32[i] = @bitCast(tensors.centred(bf16ToF32(bits), around_one));
     return out;
 }
 
@@ -164,7 +161,8 @@ pub fn normsAroundOne(ck: *ckpt.Checkpoint, cfg: *const config_mod.Config, wide:
     defer means.deinit(ck.gpa);
     for (0..cfg.layers) |i| {
         var buf: [256]u8 = undefined;
-        const name = try std.fmt.bufPrint(&buf, "language_model.model.layers.{d}.attn_hyper_connection.hc_norm.weight", .{i});
+        var stem: [128]u8 = undefined;
+        const name = try std.fmt.bufPrint(&buf, "{s}.{s}.{s}", .{ try tensors.layer(&stem, i), tensors.hc.attn, tensors.hc.norm });
         const t = try ck.get(name);
         if (t.dtype != .bf16 or t.dim(0) != wide) return error.UnexpectedTensor;
         const in16 = std.mem.bytesAsSlice(u16, t.bytes);
@@ -172,25 +170,15 @@ pub fn normsAroundOne(ck: *ckpt.Checkpoint, cfg: *const config_mod.Config, wide:
         for (in16) |bits| sum += bf16ToF32(bits);
         try means.append(ck.gpa, sum / @as(f64, @floatFromInt(in16.len)));
     }
-    var above: usize = 0;
-    for (means.items) |m| {
-        if (m > 0.5) above += 1;
-    }
-    std.mem.sort(f64, means.items, {}, std.sort.asc(f64));
-    const median = means.items[means.items.len / 2];
-    const share = @as(f64, @floatFromInt(above)) / @as(f64, @floatFromInt(means.items.len));
-    const around_one = share >= 0.9 and 0.75 <= median and median <= 1.5;
-    const around_zero = share <= 0.1 and -0.5 <= median and median <= 0.25;
-    if (!around_one and !around_zero) return error.AmbiguousNormStorage;
-    return around_one;
+    return tensors.normsAroundOne(means.items);
 }
 
 fn putHc(out: *Out, gpa: std.mem.Allocator, a: std.mem.Allocator, ck: *ckpt.Checkpoint, cfg: *const config_mod.Config, name: []const u8, stem: []const u8, inject: bool, around_one: bool, wide: usize) !void {
     var down_paths: [2][]const u8 = undefined;
     var down_n: usize = 1;
-    down_paths[0] = try std.fmt.allocPrint(a, "{s}.input_mix_weight_down", .{stem});
+    down_paths[0] = try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.hc.down });
     if (inject) {
-        down_paths[1] = try std.fmt.allocPrint(a, "{s}.block_inject_weight", .{stem});
+        down_paths[1] = try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.hc.inject });
         down_n = 2;
     }
     var storage: [2]Q = undefined;
@@ -199,7 +187,7 @@ fn putHc(out: *Out, gpa: std.mem.Allocator, a: std.mem.Allocator, ck: *ckpt.Chec
     for (down) |m| if (m.spec.bits != down[0].spec.bits or m.spec.group != down[0].spec.group) return error.MixedAffine;
     var rows: usize = 0;
     for (down) |m| rows += m.rows;
-    const scale = try centeredScale(gpa, ck, try std.fmt.allocPrint(a, "{s}.hc_norm.weight", .{stem}), around_one);
+    const scale = try centeredScale(gpa, ck, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.hc.norm }), around_one);
     try out.put(try std.fmt.allocPrint(a, "{s}.scale", .{name}), "F32", &.{wide}, scale);
     const down_w = try concatPart(gpa, down, .weight);
     const down_s = try concatPart(gpa, down, .scales);
@@ -207,7 +195,7 @@ fn putHc(out: *Out, gpa: std.mem.Allocator, a: std.mem.Allocator, ck: *ckpt.Chec
     try out.put(try std.fmt.allocPrint(a, "{s}.down.w", .{name}), "U32", &.{ rows, down[0].kw }, down_w);
     try out.put(try std.fmt.allocPrint(a, "{s}.down.s", .{name}), "BF16", &.{ rows, down[0].s.dim(1) }, down_s);
     try out.put(try std.fmt.allocPrint(a, "{s}.down.b", .{name}), "BF16", &.{ rows, down[0].b.dim(1) }, down_b);
-    const up = try qlinear(ck, cfg, try std.fmt.allocPrint(a, "{s}.input_mix_weight_up", .{stem}));
+    const up = try qlinear(ck, cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.hc.up }));
     try out.put(try std.fmt.allocPrint(a, "{s}.up.w", .{name}), "U32", &.{ up.rows, up.kw }, try gpa.dupe(u8, up.part(.weight)));
     try out.put(try std.fmt.allocPrint(a, "{s}.up.s", .{name}), "BF16", &.{ up.rows, up.s.dim(1) }, try gpa.dupe(u8, up.part(.scales)));
     try out.put(try std.fmt.allocPrint(a, "{s}.up.b", .{name}), "BF16", &.{ up.rows, up.b.dim(1) }, try gpa.dupe(u8, up.part(.biases)));
@@ -325,7 +313,10 @@ fn pleStarts(gpa: std.mem.Allocator, ck: *ckpt.Checkpoint, cfg: *const config_mo
             const id = g * per + s;
             if (id >= cfg.ngram_shards) break;
             var buf: [256]u8 = undefined;
-            const t = try ck.get(try std.fmt.bufPrint(&buf, "language_model.model.layers.{d}.ple.ple_embedding.ngram_embedding.{s}{d}.weight", .{ ple_layer, spelling, id }));
+            var name: [320]u8 = undefined;
+            var stem: [128]u8 = undefined;
+            const table = try tensors.ple.table(&buf, try tensors.layer(&stem, ple_layer), spelling, id);
+            const t = try ck.get(try std.fmt.bufPrint(&name, "{s}.weight", .{table}));
             at += t.dim(0);
         }
     }
@@ -402,7 +393,7 @@ pub fn build(gpa: std.mem.Allocator, io: Io, model_dir: []const u8, out_dir: []c
     var cfg = try config_mod.Config.read(gpa, io, model_dir);
     defer cfg.deinit();
     // the vision tower's tensors stay unread: a rank-five entry must not stop the no-dump build
-    var ck = try ckpt.Checkpoint.openModelPrefix(gpa, io, model_dir, "language_model.");
+    var ck = try ckpt.Checkpoint.openModelPrefix(gpa, io, model_dir, tensors.root);
     defer ck.close();
     const wide = try cfg.wide();
     var report: Report = .{};
@@ -427,53 +418,38 @@ pub fn build(gpa: std.mem.Allocator, io: Io, model_dir: []const u8, out_dir: []c
     try decode.put("eps", "F32", &.{1}, eps);
     var buf: [256]u8 = undefined;
     for (0..cfg.layers) |i| {
-        const stem = try std.fmt.bufPrint(&buf, "language_model.model.layers.{d}", .{i});
-        try putHc(&decode, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.ahc", .{i}), try std.fmt.allocPrint(a, "{s}.attn_hyper_connection", .{stem}), true, report.norms_around_one, wide);
-        try putHc(&decode, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.mhc", .{i}), try std.fmt.allocPrint(a, "{s}.mlp_hyper_connection", .{stem}), true, report.norms_around_one, wide);
-        try putRouter(&decode, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.moe.router", .{i}), try std.fmt.allocPrint(a, "{s}.mlp.gate", .{stem}), try std.fmt.allocPrint(a, "{s}.mlp.shared_expert_gate", .{stem}));
+        const stem = try tensors.layer(&buf, i);
+        try putHc(&decode, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.ahc", .{i}), try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.hc.attn }), true, report.norms_around_one, wide);
+        try putHc(&decode, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.mhc", .{i}), try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.hc.mlp }), true, report.norms_around_one, wide);
+        try putRouter(&decode, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.moe.router", .{i}), try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.moe.gate }), try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.moe.shared_gate }));
         if ((try cfg.kind(i)) == .linear_attention) {
             var in_members: [4]Q = undefined;
-            const in_names = [_][]const u8{ "linear_attn.in_proj_qkv", "linear_attn.in_proj_z", "linear_attn.in_proj_b", "linear_attn.in_proj_a" };
-            for (in_names, 0..) |n, j| in_members[j] = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, n }));
+            for (tensors.linear.inputs, 0..) |n, j| in_members[j] = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, n }));
             try putLane(&decode, gpa, try std.fmt.allocPrint(a, "L{d}.gdn.in", .{i}), in_members[0..]);
-            const out_proj = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.linear_attn.out_proj", .{stem}));
+            const out_proj = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.linear.out }));
             const out_members = [_]Q{out_proj};
             try putLane(&decode, gpa, try std.fmt.allocPrint(a, "L{d}.gdn.out", .{i}), out_members[0..]);
-            try putConvSlice(&decode, gpa, &ck, try std.fmt.allocPrint(a, "L{d}.gdn.conv", .{i}), try std.fmt.allocPrint(a, "{s}.linear_attn.conv1d.weight", .{stem}), false);
-            const alog = try ck.get(try std.fmt.allocPrint(a, "{s}.linear_attn.A_log", .{stem}));
+            try putConvSlice(&decode, gpa, &ck, try std.fmt.allocPrint(a, "L{d}.gdn.conv", .{i}), try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.linear.conv }), false);
+            const alog = try ck.get(try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.linear.a_log }));
             if (alog.rank != 1 or (alog.dtype != .bf16 and alog.dtype != .f32)) return error.UnexpectedTensor;
             // Gdn ALOG and DT are bf16 in the pack, copied when stored as bf16 and rounded from f32 otherwise.
             const alog16 = try gpa.alloc(u8, alog.dim(0) * 2);
             if (alog.dtype == .bf16) @memcpy(alog16, alog.bytes) else for (0..alog.dim(0)) |j| std.mem.writeInt(u16, alog16[j * 2 ..][0..2], f32ToBf16(std.mem.readInt(u32, alog.bytes[j * 4 ..][0..4], .little)), .little);
             try decode.put(try std.fmt.allocPrint(a, "L{d}.gdn.alog", .{i}), "BF16", &.{alog.dim(0)}, alog16);
-            const dt = try ck.get(try std.fmt.allocPrint(a, "{s}.linear_attn.dt_bias", .{stem}));
+            const dt = try ck.get(try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.linear.dt_bias }));
             if (dt.rank != 1 or (dt.dtype != .bf16 and dt.dtype != .f32)) return error.UnexpectedTensor;
             const dt16 = try gpa.alloc(u8, dt.dim(0) * 2);
             if (dt.dtype == .bf16) @memcpy(dt16, dt.bytes) else for (0..dt.dim(0)) |j| std.mem.writeInt(u16, dt16[j * 2 ..][0..2], f32ToBf16(std.mem.readInt(u32, dt.bytes[j * 4 ..][0..4], .little)), .little);
             try decode.put(try std.fmt.allocPrint(a, "L{d}.gdn.dt", .{i}), "BF16", &.{dt.dim(0)}, dt16);
-            const norm = try ck.get(try std.fmt.allocPrint(a, "{s}.linear_attn.norm.weight", .{stem}));
+            const norm = try ck.get(try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.linear.norm }));
             if (norm.dtype != .bf16 or norm.rank != 1) return error.UnexpectedTensor;
             try decode.put(try std.fmt.allocPrint(a, "L{d}.gdn.norm", .{i}), "BF16", &.{norm.dim(0)}, try gpa.dupe(u8, norm.bytes));
         } else {
-            var proj_members: [4]Q = undefined;
-            const proj_names = [_][]const u8{ "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.indexer.index_qk_proj" };
-            for (proj_names, 0..) |n, j| proj_members[j] = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, n }));
-            try putLane(&decode, gpa, try std.fmt.allocPrint(a, "L{d}.att.proj", .{i}), proj_members[0..]);
-            const o = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.self_attn.o_proj", .{stem}));
-            const o_members = [_]Q{o};
-            try putLane(&decode, gpa, try std.fmt.allocPrint(a, "L{d}.att.o", .{i}), o_members[0..]);
-            for ([_][]const u8{ "q_norm.weight", "k_norm.weight" }, [_][]const u8{ "qn", "kn" }) |n, pack_name| {
-                const scale = try centeredScale(gpa, &ck, try std.fmt.allocPrint(a, "{s}.self_attn.{s}", .{ stem, n }), report.norms_around_one);
-                try decode.put(try std.fmt.allocPrint(a, "L{d}.att.{s}", .{ i, pack_name }), "F32", &.{cfg.head_dim}, scale);
-            }
-            for ([_][]const u8{ "q_layernorm.weight", "k_layernorm.weight" }, [_][]const u8{ "iqn", "pool" }) |n, pack_name| {
-                const scale = try centeredScale(gpa, &ck, try std.fmt.allocPrint(a, "{s}.self_attn.indexer.{s}", .{ stem, n }), report.norms_around_one);
-                try decode.put(try std.fmt.allocPrint(a, "L{d}.att.{s}", .{ i, pack_name }), "F32", &.{cfg.index_dim}, scale);
-            }
+            try putAttention(&decode, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.att", .{i}), stem, report.norms_around_one);
         }
     }
-    try putHc(&decode, gpa, a, &ck, &cfg, "mix", "language_model.model.hyper_connection_mixer", false, report.norms_around_one, wide);
-    const head = try qlinear(&ck, &cfg, "language_model.lm_head");
+    try putHc(&decode, gpa, a, &ck, &cfg, "mix", tensors.mixer, false, report.norms_around_one, wide);
+    const head = try qlinear(&ck, &cfg, tensors.lm_head);
     const head_members = [_]Q{head};
     try putLane(&decode, gpa, "head", head_members[0..]);
     var ple_layer: ?usize = null;
@@ -481,16 +457,16 @@ pub fn build(gpa: std.mem.Allocator, io: Io, model_dir: []const u8, out_dir: []c
         if (cfg.ple[i]) ple_layer = i;
     }
     if (ple_layer) |pl| {
-        const stem = try std.fmt.bufPrint(&buf, "language_model.model.layers.{d}", .{pl});
+        const stem = try tensors.layer(&buf, pl);
         var kv_members: [2]Q = undefined;
-        kv_members[0] = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.ple.key_proj", .{stem}));
-        kv_members[1] = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.ple.value_proj", .{stem}));
+        kv_members[0] = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.ple.key }));
+        kv_members[1] = try qlinear(&ck, &cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.ple.value }));
         try putLane(&decode, gpa, "ple.kv", kv_members[0..]);
-        for ([_][]const u8{ "norm_key.weight", "norm_query.weight", "norm_conv.weight" }, [_][]const u8{ "ks", "qs", "cs" }) |n, pack_name| {
-            const scale = try centeredScale(gpa, &ck, try std.fmt.allocPrint(a, "{s}.ple.{s}", .{ stem, n }), report.norms_around_one);
+        for ([_][]const u8{ tensors.ple.norm_key, tensors.ple.norm_query, tensors.ple.norm_conv }, [_][]const u8{ "ks", "qs", "cs" }) |n, pack_name| {
+            const scale = try centeredScale(gpa, &ck, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, n }), report.norms_around_one);
             try decode.put(try std.fmt.allocPrint(a, "ple.{s}", .{pack_name}), "F32", &.{wide}, scale);
         }
-        try putConvSlice(&decode, gpa, &ck, "ple.conv", try std.fmt.allocPrint(a, "{s}.ple.conv1d.weight", .{stem}), true);
+        try putConvSlice(&decode, gpa, &ck, "ple.conv", try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.ple.conv }), true);
         const starts = try pleStarts(gpa, &ck, &cfg, pl, spelling);
         try decode.put("ple.starts", "U32", &.{8}, starts);
     }
@@ -507,18 +483,18 @@ pub fn build(gpa: std.mem.Allocator, io: Io, model_dir: []const u8, out_dir: []c
     var mlx = Out.init(gpa);
     defer mlx.deinit();
     for (0..cfg.layers) |i| {
-        const stem = try std.fmt.bufPrint(&buf, "language_model.model.layers.{d}", .{i});
+        const stem = try tensors.layer(&buf, i);
         if ((try cfg.kind(i)) == .linear_attention) {
-            try putMlxProjection(&mlx, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.gdn.in", .{i}), &.{ "linear_attn.in_proj_qkv", "linear_attn.in_proj_z", "linear_attn.in_proj_b", "linear_attn.in_proj_a" }, stem);
-            try putMlxProjection(&mlx, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.gdn.out", .{i}), &.{"linear_attn.out_proj"}, stem);
+            try putMlxProjection(&mlx, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.gdn.in", .{i}), &tensors.linear.inputs, stem);
+            try putMlxProjection(&mlx, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.gdn.out", .{i}), &.{tensors.linear.out}, stem);
         } else {
-            try putMlxProjection(&mlx, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.att.proj", .{i}), &.{ "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.indexer.index_qk_proj" }, stem);
-            try putMlxProjection(&mlx, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.att.o", .{i}), &.{"self_attn.o_proj"}, stem);
+            try putMlxProjection(&mlx, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.att.proj", .{i}), &tensors.sparse.inputs, stem);
+            try putMlxProjection(&mlx, gpa, a, &ck, &cfg, try std.fmt.allocPrint(a, "L{d}.att.o", .{i}), &.{tensors.sparse.o}, stem);
         }
     }
     if (ple_layer) |pl| {
-        const stem = try std.fmt.bufPrint(&buf, "language_model.model.layers.{d}", .{pl});
-        try putMlxProjection(&mlx, gpa, a, &ck, &cfg, "ple.kv", &.{ "ple.key_proj", "ple.value_proj" }, stem);
+        const stem = try tensors.layer(&buf, pl);
+        try putMlxProjection(&mlx, gpa, a, &ck, &cfg, "ple.kv", &.{ tensors.ple.key, tensors.ple.value }, stem);
     }
     report.mlx_tensors = mlx.names.items.len;
     try mlx.write(gpa, io, try std.fs.path.join(a, &.{ out_dir, "pack_mlx.safetensors" }), identity);
@@ -527,10 +503,9 @@ pub fn build(gpa: std.mem.Allocator, io: Io, model_dir: []const u8, out_dir: []c
     if (cfg.mtp.layers > 0) {
         var mtp_mlx = Out.init(gpa);
         defer mtp_mlx.deinit();
-        const mtp_stem = "language_model.mtp.layers.0";
-        try putMlxProjection(&mtp_mlx, gpa, a, &ck, &cfg, "mtp.att.proj", &.{ "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.indexer.index_qk_proj" }, mtp_stem);
-        try putMlxProjection(&mtp_mlx, gpa, a, &ck, &cfg, "mtp.fce", &.{"fc_embedding"}, "language_model.mtp");
-        try putMlxProjection(&mtp_mlx, gpa, a, &ck, &cfg, "mtp.fch", &.{"fc_hidden"}, "language_model.mtp");
+        try putMlxProjection(&mtp_mlx, gpa, a, &ck, &cfg, "mtp.att.proj", &tensors.sparse.inputs, tensors.mtp.layer0);
+        try putMlxProjection(&mtp_mlx, gpa, a, &ck, &cfg, "mtp.fce", &.{tensors.mtp.fc_e}, tensors.mtp.stem);
+        try putMlxProjection(&mtp_mlx, gpa, a, &ck, &cfg, "mtp.fch", &.{tensors.mtp.fc_h}, tensors.mtp.stem);
         report.mtp_mlx_tensors = mtp_mlx.names.items.len;
         try mtp_mlx.write(gpa, io, try std.fs.path.join(a, &.{ out_dir, "pack_mtp_mlx.safetensors" }), identity);
     }
@@ -554,38 +529,42 @@ fn putMlxProjection(out: *Out, gpa: std.mem.Allocator, a: std.mem.Allocator, ck:
 
 /// The mtp.* decode tensors: the MTP layer's hc/att/moe classes, its norms, and the draft head over the id list.
 fn putMtp(out: *Out, gpa: std.mem.Allocator, a: std.mem.Allocator, ck: *ckpt.Checkpoint, cfg: *const config_mod.Config, ids: []const u32, report: *Report, wide: usize) !void {
-    const layer_stem = "language_model.mtp.layers.0";
-    try putHc(out, gpa, a, ck, cfg, "mtp.ahc", try std.fmt.allocPrint(a, "{s}.attn_hyper_connection", .{layer_stem}), true, report.norms_around_one, wide);
-    try putHc(out, gpa, a, ck, cfg, "mtp.mhc", try std.fmt.allocPrint(a, "{s}.mlp_hyper_connection", .{layer_stem}), true, report.norms_around_one, wide);
-    try putRouter(out, gpa, a, ck, cfg, "mtp.moe.router", try std.fmt.allocPrint(a, "{s}.mlp.gate", .{layer_stem}), try std.fmt.allocPrint(a, "{s}.mlp.shared_expert_gate", .{layer_stem}));
-    var proj_members: [4]Q = undefined;
-    const proj_names = [_][]const u8{ "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.indexer.index_qk_proj" };
-    for (proj_names, 0..) |n, j| proj_members[j] = try qlinear(ck, cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ layer_stem, n }));
-    try putLane(out, gpa, "mtp.att.proj", proj_members[0..]);
-    const o = try qlinear(ck, cfg, try std.fmt.allocPrint(a, "{s}.self_attn.o_proj", .{layer_stem}));
-    const o_members = [_]Q{o};
-    try putLane(out, gpa, "mtp.att.o", o_members[0..]);
-    for ([_][]const u8{ "q_norm.weight", "k_norm.weight" }, [_][]const u8{ "qn", "kn" }) |n, pack_name| {
-        const scale = try centeredScale(gpa, ck, try std.fmt.allocPrint(a, "{s}.self_attn.{s}", .{ layer_stem, n }), report.norms_around_one);
-        try out.put(try std.fmt.allocPrint(a, "mtp.att.{s}", .{pack_name}), "F32", &.{cfg.head_dim}, scale);
-    }
-    for ([_][]const u8{ "q_layernorm.weight", "k_layernorm.weight" }, [_][]const u8{ "iqn", "pool" }) |n, pack_name| {
-        const scale = try centeredScale(gpa, ck, try std.fmt.allocPrint(a, "{s}.self_attn.indexer.{s}", .{ layer_stem, n }), report.norms_around_one);
-        try out.put(try std.fmt.allocPrint(a, "mtp.att.{s}", .{pack_name}), "F32", &.{cfg.index_dim}, scale);
-    }
-    try putHc(out, gpa, a, ck, cfg, "mtp.mix", "language_model.mtp.hyper_connection_mixer", false, report.norms_around_one, wide);
-    const fce = try qlinear(ck, cfg, "language_model.mtp.fc_embedding");
+    const layer_stem = tensors.mtp.layer0;
+    try putHc(out, gpa, a, ck, cfg, "mtp.ahc", try std.fmt.allocPrint(a, "{s}.{s}", .{ layer_stem, tensors.hc.attn }), true, report.norms_around_one, wide);
+    try putHc(out, gpa, a, ck, cfg, "mtp.mhc", try std.fmt.allocPrint(a, "{s}.{s}", .{ layer_stem, tensors.hc.mlp }), true, report.norms_around_one, wide);
+    try putRouter(out, gpa, a, ck, cfg, "mtp.moe.router", try std.fmt.allocPrint(a, "{s}.{s}", .{ layer_stem, tensors.moe.gate }), try std.fmt.allocPrint(a, "{s}.{s}", .{ layer_stem, tensors.moe.shared_gate }));
+    try putAttention(out, gpa, a, ck, cfg, "mtp.att", layer_stem, report.norms_around_one);
+    try putHc(out, gpa, a, ck, cfg, "mtp.mix", tensors.mtp.mixer, false, report.norms_around_one, wide);
+    const fce = try qlinear(ck, cfg, tensors.mtp.fc_embedding);
     const fce_members = [_]Q{fce};
     try putLane(out, gpa, "mtp.fce", fce_members[0..]);
-    const fch = try qlinear(ck, cfg, "language_model.mtp.fc_hidden");
+    const fch = try qlinear(ck, cfg, tensors.mtp.fc_hidden);
     const fch_members = [_]Q{fch};
     try putLane(out, gpa, "mtp.fch", fch_members[0..]);
-    const enorm = try centeredScale(gpa, ck, "language_model.mtp.pre_fc_norm_embedding.weight", report.norms_around_one);
+    const enorm = try centeredScale(gpa, ck, tensors.mtp.norm_embedding, report.norms_around_one);
     try out.put("mtp.enorm.scale", "F32", &.{cfg.hidden}, enorm);
-    const hnorm = try centeredScale(gpa, ck, "language_model.mtp.pre_fc_norm_hidden.weight", report.norms_around_one);
+    const hnorm = try centeredScale(gpa, ck, tensors.mtp.norm_hidden, report.norms_around_one);
     try out.put("mtp.hnorm.scale", "F32", &.{wide}, hnorm);
-    const head = try qlinear(ck, cfg, "language_model.lm_head");
+    const head = try qlinear(ck, cfg, tensors.lm_head);
     try putDraftHead(out, gpa, a, "mtp.draft", head, ids);
+}
+
+/// A sparse attention block's decode tensors under `name`: q, k, v and the indexer in one lane, o, the four norms.
+fn putAttention(out: *Out, gpa: std.mem.Allocator, a: std.mem.Allocator, ck: *ckpt.Checkpoint, cfg: *const config_mod.Config, name: []const u8, stem: []const u8, around_one: bool) !void {
+    var proj_members: [4]Q = undefined;
+    for (tensors.sparse.inputs, 0..) |n, j| proj_members[j] = try qlinear(ck, cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, n }));
+    try putLane(out, gpa, try std.fmt.allocPrint(a, "{s}.proj", .{name}), proj_members[0..]);
+    const o = try qlinear(ck, cfg, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, tensors.sparse.o }));
+    const o_members = [_]Q{o};
+    try putLane(out, gpa, try std.fmt.allocPrint(a, "{s}.o", .{name}), o_members[0..]);
+    for ([_][]const u8{ tensors.sparse.q_norm, tensors.sparse.k_norm }, [_][]const u8{ "qn", "kn" }) |n, pack_name| {
+        const scale = try centeredScale(gpa, ck, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, n }), around_one);
+        try out.put(try std.fmt.allocPrint(a, "{s}.{s}", .{ name, pack_name }), "F32", &.{cfg.head_dim}, scale);
+    }
+    for ([_][]const u8{ tensors.sparse.iq_norm, tensors.sparse.ik_norm }, [_][]const u8{ "iqn", "pool" }) |n, pack_name| {
+        const scale = try centeredScale(gpa, ck, try std.fmt.allocPrint(a, "{s}.{s}", .{ stem, n }), around_one);
+        try out.put(try std.fmt.allocPrint(a, "{s}.{s}", .{ name, pack_name }), "F32", &.{cfg.index_dim}, scale);
+    }
 }
 
 pub const compareFile = pio.compareFile;
