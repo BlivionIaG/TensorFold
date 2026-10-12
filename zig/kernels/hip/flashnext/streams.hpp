@@ -10,8 +10,11 @@ constexpr int kFnThreads = 256;
 constexpr int kFnWaves = kFnThreads / 32;
 // The widest stream a thread walks in registers: dims / kFnThreads values each.
 constexpr int kFnPer = 16;
+// The hyper-connection norm's block: a stream's dims over 1024 threads, four values each at most.
+constexpr int kNormThreads = 1024;
+constexpr int kNormPer = 4;
 
-// A block's sum of one value a thread (kFnThreads at most): each wave by a fixed xor tree, then the waves in order.
+// A block's sum of a value a thread (`scratch`: a value a wave): each wave by a fixed xor tree, then waves in order.
 __device__ float fn_block_sum(float v, float* scratch) {
 #pragma unroll
     for (int mask = 16; mask > 0; mask >>= 1) v += __shfl_xor(v, mask, 32);
@@ -25,17 +28,17 @@ __device__ float fn_block_sum(float v, float* scratch) {
 }
 
 // Block (s, r): h_s += round(branch * inject[s]) (tp: `world` fp32 shares, summed in order), then x = h rinv scale.
-extern "C" __global__ void __launch_bounds__(kFnThreads)
+extern "C" __global__ void __launch_bounds__(kNormThreads)
 tf_fn_hc_norm(const void* h, const void* branch, const void* inject, void* h_out, void* x_out, const float* scale,
               int kind, int streams, int dims, float eps, int world, long long stride) {
-    __shared__ float scratch[kFnWaves];
+    __shared__ float scratch[kNormThreads / 32];
     const int s = blockIdx.x, r = blockIdx.y;
     const long long base = (static_cast<long long>(r) * streams + s) * dims;
-    float v[kFnPer];
+    float v[kNormPer];
     float sum = 0.f;
 #pragma unroll
-    for (int j = 0; j < kFnPer; ++j) {
-        const int d = threadIdx.x + j * kFnThreads;
+    for (int j = 0; j < kNormPer; ++j) {
+        const int d = threadIdx.x + j * kNormThreads;
         v[j] = 0.f;
         if (d >= dims) continue;
         float x = load(h, kind, base + d);
@@ -58,8 +61,8 @@ tf_fn_hc_norm(const void* h, const void* branch, const void* inject, void* h_out
     sum = fn_block_sum(sum, scratch);
     const float rinv = rsqrtf(sum / static_cast<float>(dims) + eps);
 #pragma unroll
-    for (int j = 0; j < kFnPer; ++j) {
-        const int d = threadIdx.x + j * kFnThreads;
+    for (int j = 0; j < kNormPer; ++j) {
+        const int d = threadIdx.x + j * kNormThreads;
         if (d >= dims) continue;
         if (h_out != nullptr) store(h_out, kind, base + d, v[j]);
         store(x_out, kind, base + d, (v[j] * rinv) * scale[s * dims + d]);

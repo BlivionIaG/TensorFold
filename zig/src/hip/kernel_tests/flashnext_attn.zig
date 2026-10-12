@@ -169,9 +169,13 @@ test "block scores and selection: relu-summed heads, the best blocks with ties t
 test "sparse attention: listed keys and dense rows near fp64's softmax, a row's parts alike at any row count" {
     const t = try Rig.open(1 << 22);
     defer t.close();
-    var rng: rig.Rng = .{ .state = 0xA77 };
-    const heads = 24;
-    const kv_heads = 2;
+    // the whole model's 12 query heads a kv head, and a tp-4 rank's 6
+    try sparseCase(t, 24, 2);
+    try sparseCase(t, 6, 1);
+}
+
+fn sparseCase(t: *Rig, comptime heads: usize, comptime kv_heads: usize) !void {
+    var rng: rig.Rng = .{ .state = 0xA77 + heads };
     const dims = 256;
     const cap = 700;
     const parts = 16;
