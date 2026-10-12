@@ -2,6 +2,7 @@
 const std = @import("std");
 const core = @import("core");
 const config = @import("../config.zig");
+const tensors = @import("../tensors.zig");
 const ngram = @import("ngram.zig");
 
 /// One shard's packed rows and their group tables, as mapped.
@@ -39,7 +40,9 @@ pub const Tables = struct {
         starts[0] = 0;
         var spec: ?@import("../spec.zig").Spec = null;
         for (shards, 0..) |*s, i| {
-            const stem = try std.fmt.allocPrint(a, "language_model.model.layers.{d}.ple.ple_embedding.ngram_embedding.{s}{d}", .{ layer, spelling, i });
+            var lb: [128]u8 = undefined;
+            var nb: [256]u8 = undefined;
+            const stem = try a.dupe(u8, try tensors.ple.table(&nb, try tensors.layer(&lb, layer), spelling, i));
             const n = base + @intFromBool(i < extra);
             starts[i + 1] = starts[i] + n;
             const w = try ck.get(try std.fmt.allocPrint(a, "{s}.weight", .{stem}));
