@@ -9,6 +9,8 @@ const forward = @import("forward.zig");
 const head_mod = @import("head.zig");
 const load = @import("load.zig");
 const worker = @import("worker.zig");
+const snapshot = @import("snapshot.zig");
+const pc = @import("engine_api").prompt_cache;
 
 const be = lanes.backend;
 const draw = serve.draw;
@@ -18,6 +20,8 @@ const ring = 1024;
 /// Drafts the head holds for a stream at most.
 pub const max_depth = cache.max_window - 1;
 
+pub const Fill = struct { at: usize, stops: [16]u32 = undefined, count: usize = 0, next: usize = 0, from: usize = 0, kept0: u64 = 0 };
+
 pub const Lane = struct {
     caches: cache.Caches,
     /// The head's caches (none on a rank that does not draft).
@@ -26,8 +30,8 @@ pub const Lane = struct {
     streams: hip.DeviceBuffer,
     held: [max_depth]u32 = undefined,
     held_n: usize = 0,
-    /// The prompt pass: the row it reached (null once the prompt is in).
-    fill: ?usize = null,
+    /// The prompt pass: the row it reached and the cuts where the prompt cache keeps a state (null once it is in).
+    fill: ?Fill = null,
     /// The last verify's tokens until its keep.
     pending: ?struct { tokens: [cache.max_window]u32, rows: usize } = null,
     first_row: ?[]u16 = null,
@@ -52,6 +56,9 @@ pub const Fx = struct {
     ones: hip.DeviceBuffer,
     draft_ids: []u32,
     drafts: u32,
+    /// The kept prompt states (null: no reuse), and the slot the next one takes on every rank.
+    store: ?pc.Store = null,
+    next_slot: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator, e: *Engine, streams: usize) !*Fx {
         const f = try gpa.create(Fx);
@@ -68,6 +75,7 @@ pub const Fx = struct {
     }
 
     pub fn deinit(f: *Fx) void {
+        if (f.store) |*st| st.deinit();
         if (f.link != null) f.send(&.{@backingInt(worker.Op.stop)}) catch {};
         f.e.stream.synchronize() catch {};
         var it = f.lanes.valueIterator();
@@ -81,6 +89,46 @@ pub const Fx = struct {
 
     pub fn withLink(f: *Fx, link: hip.collective.Link) void {
         f.link = link;
+    }
+
+    /// Keep prompt states in `budget` host bytes, at 64-row cuts (the prompt kernels' grid), each a token past its rows.
+    pub fn keepPrompts(f: *Fx, budget: u64) void {
+        if (budget == 0) return;
+        f.store = pc.Store.init(f.gpa, .{ .ptr = f, .vtable = &.{ .bytes = snapBytes, .save = snapSave, .restore = snapRestore, .drop = snapDrop } }, .{ .lookahead = 1, .planned = true, .grid = 64 }, budget);
+    }
+
+    fn snapBytes(ptr: *anyopaque, at: u32) u64 {
+        const f: *Fx = @ptrCast(@alignCast(ptr));
+        var buf: [64]bool = undefined;
+        const kinds = f.e.kinds(&buf) catch return std.math.maxInt(u64);
+        const main = cache.Layout.of(f.e.weights.model.dims, kinds, 64, f.e.act).stateBytes(at);
+        const head = if (f.e.weights.model.mtp) |h| cache.Layout.of(h.dims, &.{false}, 64, f.e.act).stateBytes(at) else 0;
+        return main + head;
+    }
+
+    fn snapSave(ptr: *anyopaque, owner: ?*anyopaque, at: u32) anyerror!pc.Saved {
+        const f = of(ptr);
+        const lane: *Lane = @ptrCast(@alignCast(owner orelse return error.NoOwner));
+        const saved = try snapshot.save(f.gpa, &f.e.driver, f.e.stream, &lane.caches, if (lane.head) |*h| h else null, at, f.e.cfg.index_ratio);
+        saved.slot = f.next_slot;
+        f.next_slot += 1;
+        if (f.link != null) try f.send(&.{ @backingInt(worker.Op.snap), lane.id, saved.slot, at });
+        return saved;
+    }
+
+    fn snapRestore(ptr: *anyopaque, owner: ?*anyopaque, saved: pc.Saved) anyerror!void {
+        const f = of(ptr);
+        const lane: *Lane = @ptrCast(@alignCast(owner orelse return error.NoOwner));
+        const s: *snapshot.Saved = @ptrCast(@alignCast(saved));
+        if (f.link != null) try f.send(&.{ @backingInt(worker.Op.restore), lane.id, s.slot });
+        try snapshot.restore(f.gpa, &f.e.driver, f.e.stream, s, &lane.caches, if (lane.head) |*h| h else null, f.e.cfg.index_ratio);
+    }
+
+    fn snapDrop(ptr: *anyopaque, saved: pc.Saved) void {
+        const f: *Fx = @ptrCast(@alignCast(ptr));
+        const s: *snapshot.Saved = @ptrCast(@alignCast(saved));
+        if (f.link != null) f.send(&.{ @backingInt(worker.Op.drop), s.slot }) catch {};
+        snapshot.drop(f.gpa, s);
     }
 
     fn send(f: *Fx, words: []const u32) !void {
@@ -177,11 +225,22 @@ pub const Fx = struct {
         var streams = try hip.DeviceBuffer.alloc(&e.driver, cache.max_window * m.dims.wide() * m.act.size());
         errdefer streams.free();
         const lane = try f.gpa.create(Lane);
-        lane.* = .{ .caches = caches, .head = head, .streams = streams, .fill = 0, .id = f.next_id };
+        lane.* = .{ .caches = caches, .head = head, .streams = streams, .fill = .{ .at = 0 }, .id = f.next_id };
         f.next_id += 1;
         gop.value_ptr.* = lane;
-        s.cached = 0;
         if (f.link != null) try f.send(&.{ @backingInt(worker.Op.begin), lane.id, @intCast(total) });
+        const fill = &lane.fill.?;
+        if (f.store) |*st| {
+            var arena: std.heap.ArenaAllocator = .init(f.gpa);
+            defer arena.deinit();
+            fill.kept0 = st.counts.kept;
+            const plan = st.begin(arena.allocator(), prompt, s.history_len, s.shared_prefixes, &.{}, lane, &.{}) catch pc.Plan{};
+            fill.at = plan.from;
+            fill.from = plan.from;
+            fill.count = @min(plan.marks.len, fill.stops.len);
+            for (plan.marks[0..fill.count], 0..) |mk, i| fill.stops[i] = mk;
+        }
+        s.cached = @intCast(fill.at);
         return lane;
     }
 
@@ -193,8 +252,10 @@ pub const Fx = struct {
         const e = f.e;
         const m = &e.weights.model;
         const prompt = s.prompt();
-        const at = lane.fill.?;
-        const to = @min(prompt.len, at + e.o.chunk);
+        const fill = &lane.fill.?;
+        const at = fill.at;
+        const stop: usize = if (fill.next < fill.count) fill.stops[fill.next] else prompt.len;
+        const to = @min(stop, at + e.o.chunk);
         const last = to == prompt.len;
         if (f.link != null) {
             f.msg.clearRetainingCapacity();
@@ -210,8 +271,13 @@ pub const Fx = struct {
             const n = if (last) rows - 1 else rows;
             if (n > 0) _ = try head_mod.run(e.ops(&e.arena), m, &e.host, hc, out.streams, prompt[at + 1 ..][0..n], at, f.ones.base());
         }
-        lane.fill = to;
+        fill.at = to;
+        if (fill.next < fill.count and to == fill.stops[fill.next]) {
+            if (f.store) |*st| _ = st.keep(prompt, @intCast(to), lane, &.{}, &.{});
+            fill.next += 1;
+        }
         if (!last) return false;
+        if (f.store) |*st| st.report(prompt.len, @intCast(fill.from), st.counts.kept - fill.kept0);
         try hip.raw.copy(lane.streams, 0, out.streams.ptr + (rows - 1) * row_bytes, row_bytes, e.stream.handle);
         if (s.grammar != null and lane.first_row == null) lane.first_row = try f.gpa.alloc(u16, e.cfg.vocab);
         const o = e.ops(&e.arena);

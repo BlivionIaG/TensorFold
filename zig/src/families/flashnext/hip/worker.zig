@@ -4,9 +4,10 @@ const hip = @import("hip");
 const Engine = @import("engine.zig").Engine;
 const cache = @import("cache.zig");
 const forward = @import("forward.zig");
+const snapshot = @import("snapshot.zig");
 
 /// A message's first word; rank 0 decides everything, a rank only applies it.
-pub const Op = enum(u32) { stop, begin, fill, verify, keep, release };
+pub const Op = enum(u32) { stop, begin, fill, verify, keep, release, snap, restore, drop };
 
 const Lane = struct {
     caches: cache.Caches,
@@ -26,6 +27,14 @@ pub fn follow(gpa: std.mem.Allocator, e: *Engine, link: hip.collective.Link) !vo
     }
     var msg: std.ArrayList(u32) = .empty;
     defer msg.deinit(gpa);
+    // rank 0's kept prompt states: this rank's own copy of each, under the slot rank 0 names
+    var saved: std.AutoHashMapUnmanaged(u32, *snapshot.Saved) = .empty;
+    defer {
+        var it = saved.valueIterator();
+        while (it.next()) |x| snapshot.drop(gpa, x.*);
+        saved.deinit(gpa);
+    }
+    const ratio = e.cfg.index_ratio;
     const d = e.weights.model.dims;
     while (true) {
         msg.clearRetainingCapacity();
@@ -64,6 +73,16 @@ pub fn follow(gpa: std.mem.Allocator, e: *Engine, link: hip.collective.Link) !vo
                 const lane = lanes.get(w[1]) orelse return error.UnknownStream;
                 try e.keepWindow(&lane.caches, lane.pending[0..w[3]], w[2]);
             },
+            .snap => {
+                const lane = lanes.get(w[1]) orelse return error.UnknownStream;
+                const x = try snapshot.save(gpa, &e.driver, e.stream, &lane.caches, null, w[3], ratio);
+                try saved.put(gpa, w[2], x);
+            },
+            .restore => {
+                const lane = lanes.get(w[1]) orelse return error.UnknownStream;
+                try snapshot.restore(gpa, &e.driver, e.stream, saved.get(w[2]) orelse return error.UnknownSnapshot, &lane.caches, null, ratio);
+            },
+            .drop => if (saved.fetchRemove(w[1])) |kv| snapshot.drop(gpa, kv.value),
             .release => if (lanes.fetchRemove(w[1])) |kv| {
                 try e.stream.synchronize();
                 kv.value.caches.deinit(gpa);

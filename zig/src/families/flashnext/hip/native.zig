@@ -131,6 +131,8 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.D
     const fx = try lanes_mod.Fx.init(gpa, e, streams);
     errdefer fx.deinit();
     if (dev.group) |g| fx.withLink(g.link());
+    // kept prompt states live in host memory: --prompt-cache-gib, else 16 GiB
+    fx.keepPrompts(@intFromFloat((o.cache_gib orelse 16.0) * (1 << 30)));
     const startup = try std.fmt.allocPrint(gpa, "HIP {s} device {d}, rank {d} of {d}: Flash Next, {d:.2} GiB on the device, {d} stream{s} of {d} positions, {d:.2} GiB each; prompts in {d}-row chunks", .{ hip.kernels.arch, dev.index, o.rank, o.world, gibs(hip.usage(false).device), streams, if (streams == 1) "" else "s", capacity(o.window), gibs(per), e.o.chunk });
     own.* = .{ .gpa = gpa, .e = e, .fx = fx, .startup = startup };
     return .{ .backend = fx.backend(), .facts = fx.facts(), .rows = cache.max_window, .ctx = own, .deinit = Owned.release, .streams = streams, .startup = startup };

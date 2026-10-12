@@ -26,6 +26,10 @@ pub const Layout = struct {
     state_bytes: usize,
     tail_rows: usize,
     tail_bytes: usize,
+    kv_heads: usize,
+    head_dim: usize,
+    index_dim: usize,
+    ratio: usize,
 
     pub fn of(d: Dims, kinds: []const bool, cap: usize, act: model.Kind) Layout {
         var sparse: usize = 0;
@@ -44,6 +48,10 @@ pub const Layout = struct {
             .state_bytes = d.value_heads * d.key_dim * d.value_dim * 4,
             .tail_rows = d.ngram * (d.ple_taps - 1),
             .tail_bytes = d.ngram * (d.ple_taps - 1) * d.wide() * a,
+            .kv_heads = d.kv_heads,
+            .head_dim = d.head_dim,
+            .index_dim = d.index_dim,
+            .ratio = d.index_ratio,
         };
     }
 
@@ -58,6 +66,12 @@ pub const Layout = struct {
     /// Device bytes of a stream's caches at `cap` positions.
     pub fn bytes(l: Layout) usize {
         return l.sparse * l.sparseBytes() + l.linear * l.linearBytes() + l.tail_bytes;
+    }
+
+    /// Bytes of the state after `at` positions: the sparse layers' first `at` rows, the rest whole.
+    pub fn stateBytes(l: Layout, at: usize) usize {
+        const sparse_rows = 2 * l.kv_heads * at * l.head_dim * l.act + at * l.index_dim * l.act + at / l.ratio * l.index_dim * l.act;
+        return l.sparse * sparse_rows + l.linear * l.linearBytes() + l.tail_bytes;
     }
 
     /// Device bytes of a window's snapshots: every DeltaNet layer's conv tail and state after each row.
