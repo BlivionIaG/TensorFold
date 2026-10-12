@@ -14,6 +14,9 @@ const index = @import("../index.zig");
 
 pub const Options = struct {
     device: c_int = 0,
+    rank: usize = 0,
+    world: usize = 1,
+    group: ?hip.collective.Group = null,
     policy: hip.Policy = .{},
     /// Positions a stream holds at most (its prompt, reply and a window's rows).
     capacity: usize = 4096,
@@ -42,6 +45,7 @@ pub const Engine = struct {
     qk: [2]hip.DeviceBuffer,
     arena: hip.Arena,
     drawer: serve.draw.Drawer,
+    comm: ?hip.collective.Comm = null,
     act: model.Kind,
     eos: i64,
 
@@ -62,14 +66,19 @@ pub const Engine = struct {
         e.act = if (caps.act == .f16) .f16 else .bf16;
         e.stream = try hip.Stream.init(&e.driver);
         errdefer e.stream.deinit();
+        e.comm = null;
+        if (o.world > 1) e.comm = try (o.group orelse return error.NoGroup).open();
+        errdefer if (e.comm) |c| c.close();
         e.cfg = try config.Config.read(gpa, io, dir);
         errdefer e.cfg.deinit();
         e.ck = try core.checkpoint.Checkpoint.openModel(gpa, io, dir);
         errdefer e.ck.close();
         e.keep = .init(gpa);
         errdefer e.keep.deinit();
-        e.weights = try load.load(gpa, &e.driver, &e.ck, &e.cfg, e.act);
+        const rank: ?core.quant.Rank = if (o.world > 1) .{ .rank = o.rank, .world = o.world } else null;
+        e.weights = try load.load(gpa, &e.driver, &e.ck, &e.cfg, rank, e.act);
         errdefer e.weights.deinit();
+        e.weights.model.tp = e.comm;
         const spelling = try spellingOf(e.keep.allocator(), io, dir);
         e.tables = try tables.Tables.init(e.keep.allocator(), &e.ck, &e.cfg, e.weights.model.ple.layer, spelling);
         const c = mixers.qkConstants(e.cfg.key_dim);
@@ -102,6 +111,7 @@ pub const Engine = struct {
         e.keep.deinit();
         e.ck.close();
         e.cfg.deinit();
+        if (e.comm) |c| c.close();
         e.stream.deinit();
         e.lib.unload();
         e.ctx.deinit();
@@ -146,9 +156,23 @@ pub const Engine = struct {
         return counting.used + (16 << 20);
     }
 
-    /// The output head over `rows` final rows: whole logits rows (act dtype).
+    /// The output head over `rows` final rows: whole logits rows (act dtype), joined across ranks in rank order.
     pub fn logits(e: *Engine, o: hip.ops.Ops, mixed: hip.ops.Tensor, rows: usize) !hip.ops.Tensor {
-        return o.project(mixed, e.weights.model.head, rows, false);
+        const m = &e.weights.model;
+        const y = try o.project(mixed, m.head, rows, false);
+        const c = e.comm orelse return y;
+        const width = m.head.n;
+        const size = y.kind.size();
+        const parts = try o.arena.take(c.world * rows * width * size);
+        try hip.reduce.gather(o, c, y, parts, rows * width);
+        const out = try o.arena.take(c.world * rows * width * size);
+        if (o.stream == hip.counting) return .{ .ptr = out, .kind = y.kind };
+        for (0..rows) |row| for (0..c.world) |r| {
+            const to = out + (row * c.world + r) * width * size;
+            const from = parts + (r * rows + row) * width * size;
+            try hip.runtime.check(e.driver.api.hipMemcpyDtoDAsync(@ptrFromInt(to), @ptrFromInt(from), width * size, o.stream));
+        };
+        return .{ .ptr = out, .kind = y.kind };
     }
 
     /// The first `kept` rows of a window from `c.len` become the stream's: DeltaNet states, n-gram tail and history.
