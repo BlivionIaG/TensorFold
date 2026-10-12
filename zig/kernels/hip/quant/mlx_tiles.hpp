@@ -58,9 +58,9 @@ struct StreamSides {
 // Item z of the plan (or the plain product, or a group's side) at CB columns a lane, R rows; PAIR fuses the activation.
 template <typename T, int BITS, int R, int CB, bool PAIR>
 __global__ void __launch_bounds__(32 * kStreamWaves) affine_dot2_stream(Affine a, StreamSides sides, int lpc_log2,
-                                                                       int gshift) {
+                                                                       int gshift, int shared) {
     using Epi = std::conditional_t<PAIR, StreamSwiglu<T>, StreamRound<T>>;
-    stream_tile<MlxDecoder<BITS>, IdentityAct<T>, T, Epi, R, CB>(a, sides, lpc_log2, gshift);
+    stream_tile<MlxDecoder<BITS>, IdentityAct<T>, T, Epi, R, CB>(a, sides, lpc_log2, gshift, shared);
 }
 
 
