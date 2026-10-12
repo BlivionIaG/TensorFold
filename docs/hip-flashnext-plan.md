@@ -95,6 +95,15 @@ Load 30-39 s, 32.1 GiB on rank 0 (8k window) of the W7800's 48 GiB; 2 streams at
 prompt products: `--policy matrix=off` drops a 7k prompt from 1,146 to 952 tok/s. Graphs gain more on gfx1100: the
 model check decodes 58.5 tok/s with them and 48.2 without.
 
+Both rigs on the branch head, warm (a server's second pass of the same runs: graphs recorded, 4k-token prompts,
+256-token replies), decode in tok/s:
+
+| | c=1 drafts on | c=1 drafts off (ITL) | c=4 drafts on, total | c=4 drafts off, total | prefill, TTFT (c=1) |
+| --- | --- | --- | --- | --- | --- |
+| V620 tp 4, 4-bit, before graphs and the head fix | 86.1 | 45.0 (22.2 ms) | 89.5 | 68.0 | 1,123 tok/s, 3.60 s |
+| V620 tp 4, 4-bit, head | 93.8 | 46.7 (21.4 ms) | 93.7 | 69.8 | 1,115 tok/s, 3.62 s |
+| W7800 tp 2, 3-bit, head | 77.2 | 55.7 (18.0 ms) | 78.1 | 72.9 | 1,085 tok/s, 3.72 s |
+
 ### Graphs for the decode round
 
 A round of windows (plain one-row rounds and drafted verify windows alike, several streams together) is recorded
@@ -252,7 +261,7 @@ On the W7800 pair the 3-bit checkpoint holds 32.1 GiB on rank 0 and leaves room 
 Kernels are written for TensorFold from the Python reference's math and the rounding points the upstream Metal
 kernels document; nothing is taken from MLX, vLLM, FLA, llama.cpp or the owner's vllm-rdna trees, and no new kernel
 follows an algorithm from those trees. A scan of every new and changed source line against the owner's
-`gfx1030_optimized` folder (350,868 files) finds no shared 6-line window, exact or with identifiers and numbers
+`gfx1030_optimized` folder (356,262 files, this round's lines included) finds no shared 6-line window, exact or with identifiers and numbers
 blanked.
 
 ## PR slicing (ashhart's order), as the branch's commits group
