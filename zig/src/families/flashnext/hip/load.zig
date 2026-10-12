@@ -187,6 +187,7 @@ const Loader = struct {
             .top_k = r.top_k,
             .rows = r.router.shape[0],
             .remap = if (r.remap) |t| (try u.tensor(t)).ptr else 0,
+            .exact = true,
             .experts = .{
                 .fused = try quant.view(try quant.upload(u, r.experts.fused), true),
                 .down = try quant.view(try quant.upload(u, r.experts.down), true),

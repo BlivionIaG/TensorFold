@@ -7,7 +7,7 @@ const tokenizer = @import("tokenizer");
 /// No per-thread alternate signal stack: its thread-local leaves RCCL's and HIP's threads too little stack to start.
 pub const std_options: std.Options = .{ .signal_stack_size = null };
 
-const usage = "usage: tf-flashnext-hip-test generate <model dir> [--tp N --rank R --master H --port P --policy P] [--text T] [--chat] [--max N] [--capacity N] [--repeat N]\n";
+const usage = "usage: tf-flashnext-hip-test generate <model dir> [--tp N --rank R --master H --port P --policy P] [--text T] [--chat] [--max N] [--capacity N] [--repeat N] [--chunk N]\n";
 
 const Args = struct {
     dir: []const u8 = "",
@@ -21,6 +21,7 @@ const Args = struct {
     max: usize = 32,
     capacity: usize = 8192,
     repeat: usize = 1,
+    chunk: usize = 512,
 };
 
 fn parse(args: []const [:0]const u8) !Args {
@@ -35,7 +36,7 @@ fn parse(args: []const [:0]const u8) !Args {
         i += 1;
         if (i >= args.len) return error.MissingArgument;
         const v = args[i];
-        if (std.mem.eql(u8, name, "--tp")) a.world = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--rank")) a.rank = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--master")) a.master = v else if (std.mem.eql(u8, name, "--port")) a.port = try std.fmt.parseInt(u16, v, 10) else if (std.mem.eql(u8, name, "--policy")) a.policy = v else if (std.mem.eql(u8, name, "--text")) a.text = v else if (std.mem.eql(u8, name, "--max")) a.max = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--capacity")) a.capacity = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--repeat")) a.repeat = try std.fmt.parseInt(usize, v, 10) else return error.UnknownOption;
+        if (std.mem.eql(u8, name, "--tp")) a.world = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--rank")) a.rank = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--master")) a.master = v else if (std.mem.eql(u8, name, "--port")) a.port = try std.fmt.parseInt(u16, v, 10) else if (std.mem.eql(u8, name, "--policy")) a.policy = v else if (std.mem.eql(u8, name, "--text")) a.text = v else if (std.mem.eql(u8, name, "--max")) a.max = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--capacity")) a.capacity = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--repeat")) a.repeat = try std.fmt.parseInt(usize, v, 10) else if (std.mem.eql(u8, name, "--chunk")) a.chunk = try std.fmt.parseInt(usize, v, 10) else return error.UnknownOption;
     }
     return a;
 }
@@ -55,7 +56,7 @@ fn generate(gpa: std.mem.Allocator, io: std.Io, a: Args) !void {
     const group: ?hip.collective.Group = if (a.world > 1) try hip.joinGroup(gpa, io, @intCast(a.rank), @intCast(a.world), a.master, a.port, caps, &policy) else null;
     defer if (group) |g| g.close(gpa);
     const t0 = nowNs(io);
-    const e = try fx.engine.Engine.open(gpa, io, a.dir, .{ .device = device, .rank = a.rank, .world = a.world, .group = group, .policy = policy, .capacity = a.capacity });
+    const e = try fx.engine.Engine.open(gpa, io, a.dir, .{ .device = device, .rank = a.rank, .world = a.world, .group = group, .policy = policy, .capacity = a.capacity, .chunk = a.chunk });
     defer e.deinit();
     const loud = a.rank == 0;
     if (loud) std.debug.print("loaded in {d:.1} s, {d:.2} GiB on the device\n", .{ @as(f64, @floatFromInt(nowNs(io) - t0)) / 1e9, @as(f64, @floatFromInt(hip.usage(false).device)) / (1 << 30) });

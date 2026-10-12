@@ -205,6 +205,13 @@ pub const Fx = struct {
         lane.pending = null;
     }
 
+    /// Whether a stream other than `mine` is past its prompt: a prompt's chunks then hold its rounds back.
+    fn decoding(f: *const Fx, mine: *const Lane) bool {
+        var it = f.lanes.valueIterator();
+        while (it.next()) |l| if (l.* != mine and l.*.fill == null) return true;
+        return false;
+    }
+
     fn prefillFn(ptr: *anyopaque, s: *lanes.Stream) anyerror!void {
         while (!try prefillStepFn(ptr, s)) {}
     }
@@ -255,7 +262,9 @@ pub const Fx = struct {
         const fill = &lane.fill.?;
         const at = fill.at;
         const stop: usize = if (fill.next < fill.count) fill.stops[fill.next] else prompt.len;
-        const to = @min(stop, at + e.o.chunk);
+        // the idle chunk alone, the shorter one while other streams decode between chunks (both on the 64-row grid)
+        const chunk: usize = if (f.decoding(lane)) e.o.policy.fill_rows else e.o.chunk;
+        const to = @min(stop, at + chunk);
         const last = to == prompt.len;
         if (f.link != null) {
             f.msg.clearRetainingCapacity();

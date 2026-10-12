@@ -96,7 +96,7 @@ fn capacity(window: usize) usize {
 }
 
 fn engineOf(gpa: std.mem.Allocator, io: std.Io, dev: hip.Device, dir: []const u8, o: anytype) !*Engine {
-    return Engine.open(gpa, io, dir, .{ .device = dev.index, .rank = o.rank, .world = o.world, .group = dev.group, .policy = dev.policy, .capacity = capacity(o.window), .chunk = dev.policy.fill_rows });
+    return Engine.open(gpa, io, dir, .{ .device = dev.index, .rank = o.rank, .world = o.world, .group = dev.group, .policy = dev.policy, .capacity = capacity(o.window), .chunk = @max(dev.policy.prefill_step, dev.policy.fill_rows) });
 }
 
 const Owned = struct {
