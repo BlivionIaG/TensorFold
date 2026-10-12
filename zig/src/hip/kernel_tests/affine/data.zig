@@ -67,9 +67,9 @@ pub fn makeXB(r: *Rng) u16 {
     return bf16Bits(fine(r));
 }
 
-/// Words of two device buffers that differ, compared through 32 MiB windows.
+/// Words of two device buffers that differ, compared through windows of 32 MiB at most (no larger than the buffers).
 pub fn sameOnDevice(a: Buffer, b: Buffer, len: usize) !usize {
-    const win = 32 << 20;
+    const win: usize = @min(32 << 20, @max(len, 4));
     const ha = try gpa.alloc(u8, win);
     defer gpa.free(ha);
     const hb = try gpa.alloc(u8, win);
