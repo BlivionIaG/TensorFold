@@ -91,7 +91,7 @@ pub const Fx = struct {
         f.link = link;
     }
 
-    /// Keep prompt states in `budget` host bytes, at 64-row cuts (the prompt kernels' grid), each a token past its rows.
+    /// Keep prompt states in `budget` host bytes on the prompt kernels' 64-row grid, each a token past its rows.
     pub fn keepPrompts(f: *Fx, budget: u64) void {
         if (budget == 0) return;
         f.store = pc.Store.init(f.gpa, .{ .ptr = f, .vtable = &.{ .bytes = snapBytes, .save = snapSave, .restore = snapRestore, .drop = snapDrop } }, .{ .lookahead = 1, .planned = true, .grid = 64 }, budget);
