@@ -20,12 +20,12 @@ Raise the GTT from 8 to 12 GiB with `ttm.pages_limit=3145728 ttm.page_pool_size=
 
 ```sh
 export LD_LIBRARY_PATH=$HOME/tensorfold/rocm/lib:$HOME/tensorfold/rocm/lib/llvm/lib:$HOME/tensorfold/out1033/lib
-export HSA_ENABLE_SDMA=0   # SDMA host-to-device copies hang on gfx1033 with HIP 7.14
 tensorfold-native serve <model> --parallel 1 --context 8192 --prompt-cache-gib 0.5
 TENSORFOLD_MEMORY_RESERVE_GIB=2.5 tf-qwen35-test check <model>   # 14 streams need the smaller reserve
 ```
 
-Graphs stay on: the MTP head runs eagerly on integrated GPUs, where its first graph launch faults.
+Graphs stay on, the MTP head's too. On an integrated GPU the engine sets `HSA_ENABLE_SDMA=0` itself before HIP
+loads (SDMA host-to-device copies stall on gfx1033: the first or second never retires); an exported value wins.
 
 ## What `steamdeck-opt` tunes for the Deck
 
@@ -40,6 +40,39 @@ Graphs stay on: the MTP head runs eagerly on integrated GPUs, where its first gr
 Every change keeps every output bit: the kernel tests compare the staged and unstaged stream tile and pin its hash
 to the previous tile's, the rows test compares every prompt tile byte for byte, and decode and prefill logits of the
 9B (and of the 35B-A3B on a W7800) are byte-identical to the `steamdeck` branch's.
+
+## What `steamdeck-opt2` adds
+
+- Prompts of 9 to 48 and 65 to 88 rows on a small RDNA2 GPU (16 compute units or fewer) run the column tile
+  (`tiles/gemm_cols.hpp`): a lane a column through all of K with the GEMM tile's arithmetic, its words loaded on long
+  runs and turned in LDS. Every other prompt tile on the Deck loads 16 bytes a column a lane, which streams at 1-6 GB/s.
+- The MTP head copies its scalars inside its graph, so it replays graphs on integrated GPUs too (a copy queued before
+  the capture began was not done by the first launch on gfx1033). The head's time on the Deck is its projections, not
+  its launches: a draft costs about 6.6 ms eager or replayed.
+- An integrated GPU copies by blit kernels without `HSA_ENABLE_SDMA=0`.
+
+Same bits: the rows test compares the column tile with every prompt tile; prefill logits at 9 to 256 tokens and
+decode logits are byte-identical to `steamdeck-opt`'s, and served greedy replies are the same text.
+
+## Measured on `steamdeck-opt2` against `steamdeck-opt` (Qwen3.5-9B MLX 4-bit MTP, 12 GiB GTT, 15 W)
+
+Served, greedy, each request started at or below 70 C, `steamdeck-opt2` with `HSA_ENABLE_SDMA` unset.
+
+| prompt | drafts | TTFT before | TTFT after | decode before | decode after |
+| --- | --- | --- | --- | --- | --- |
+| 47 tokens | off | 0.87 s | 0.71 s | | |
+| 66 tokens | off | 1.20 s | 1.04 s | | |
+| 91 tokens | off | 1.44 s | 1.29 s | | |
+| 246 tokens | off | 2.03 s | 2.02 s | | |
+| 266 tokens | default (1) | 2.82 s | 2.67 s | 18.5 / 19.3 tok/s | 18.5 / 19.3 tok/s |
+| 266 tokens | off | 2.84 s | 2.67 s | 14.7 tok/s | 14.7 tok/s |
+| 2,046 tokens | default (1) | 19.2 s | 19.2 s | 17.8 / 14.6 tok/s | 17.8 / 15.3 tok/s |
+| 2,046 tokens | off | 19.2 s | 19.2 s | 13.7 tok/s | 13.7 tok/s |
+
+`tf-qwen35-test prefill` (engine alone): 15 tokens 0.383 -> 0.231 s, 30 tokens 0.521 -> 0.367 s, 47 tokens
+0.621 -> 0.527 s; 64 tokens and more unchanged. Two streams: 21.4 -> 21.3 tok/s in all (four streams: 25.5 before,
+not measured after: the Deck was needed elsewhere). The loader drops each part's host pages once uploaded, so an
+APU holds the weights once (the 27B oQ2e loads whole on the Deck).
 
 ## Measured on `steamdeck-opt` against `steamdeck` (Qwen3.5-9B MLX 4-bit MTP, 12 GiB GTT, 15 W)
 
