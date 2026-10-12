@@ -304,7 +304,7 @@ const other_decode = [_]Entry{
     entry(.routed_act, .decode, "stream", .{ .family = .stream, .fits = &fitsPair, .launch = &launchPair, .policy = &streamOn }),
 };
 
-fn prefill(comptime op: Op) [7]Entry {
+fn prefill(comptime op: Op) [8]Entry {
     return .{
         entry(op, .prefill, "kp0", .{ .family = .gemm, .fits = kpFits(0), .launch = launchKp(0), .policy = &gemmOn }),
         entry(op, .prefill, "kp1", .{ .family = .gemm, .fits = kpFits(1), .launch = launchKp(1), .policy = &gemmOn }),
@@ -312,6 +312,7 @@ fn prefill(comptime op: Op) [7]Entry {
         entry(op, .prefill, "kp3", .{ .family = .gemm, .fits = kpFits(3), .launch = launchKp(3), .policy = &gemmOn }),
         entry(op, .prefill, "matrix", .{ .family = .gemm, .fits = &fitsPrefillMatrix, .launch = launchBlock(.matrix), .caps = &matrixCores, .policy = &matrixOn }),
         entry(op, .prefill, "gemm", .{ .family = .gemm, .fits = &fitsPrefillGemm, .launch = launchBlock(.gemm), .policy = &gemmOn }),
+        entry(op, .prefill, "gemm64", .{ .family = .gemm, .fits = &fitsPrefillGemm, .launch = launchBlock(.gemm64), .policy = &gemmOn }),
         entry(op, .prefill, "block", .{ .family = .gemm, .fits = &fitsPrefillBlock, .launch = launchBlock(.block) }),
     };
 }
@@ -399,6 +400,13 @@ test "a prompt takes the K-parallel tiles by rows and by items, then the 128-row
     shape.items = 0;
     shape.m = 64;
     try std.testing.expect(std.mem.endsWith(u8, r.select(envOn("gfx1100", true, true, false), .mlx, .project, .prefill, shape).?.id, "gemm"));
+    // RDNA2 takes 33 to 64 rows on the 64-row GEMM tile
+    const dot2_env = envOn("gfx1030", true, true, false);
+    const short = [_]struct { u32, []const u8 }{ .{ 32, "kp2" }, .{ 33, "gemm64" }, .{ 64, "gemm64" }, .{ 65, "gemm" } };
+    for (short) |p| {
+        shape.m = p[0];
+        try std.testing.expect(std.mem.endsWith(u8, kernelsOn("gfx1030").select(dot2_env, .mlx, .project, .prefill, shape).?.id, p[1]));
+    }
     // RDNA2 takes a plan of up to 410 items on the second K-parallel tile
     const v = kernelsOn("gfx1030");
     shape.fp16 = true;

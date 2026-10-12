@@ -1,6 +1,6 @@
 #pragma once
 
-// Dot2 prefill GEMM (m >= 64), 128 x 128 a block: bit for bit affine_dot2_block's per-group dot2 chain and fma fold.
+// Dot2 prefill GEMM, 128 or 64 rows x 128 a block: bit for bit affine_dot2_block's dot2 chains and fma fold.
 
 #include <type_traits>
 #include <utility>
@@ -28,23 +28,23 @@ struct GemmShape<DotBF16> {
     static constexpr int rt = 8;
 };
 
-// One 128 x 128 block of y = x . W^T: Dec reads weights and group terms, Act the rows of x, T multiplies, Epi stores.
-template <class Dec, class Act, class T, class Epi, int RT>
+// One M x 128 block of y = x . W^T: Dec reads weights and group terms, Act the rows of x, T multiplies, Epi stores.
+template <class Dec, class Act, class T, class Epi, int RT, int M = kGemmM>
 __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
     if (!Dec::take_item(a, blockIdx.z)) return;
     const int bx = blockIdx.x, by = blockIdx.y;
-    if (by * kGemmM >= a.m) return;
+    if (by * M >= a.m) return;
     using pair = typename T::pair;
     constexpr int kLdw = kGemmLd / 2;
-    __shared__ __attribute__((aligned(16))) uint32_t xs[2][kGemmM * kLdw];
+    __shared__ __attribute__((aligned(16))) uint32_t xs[2][M * kLdw];
     __shared__ __attribute__((aligned(16))) uint32_t ws[2][kGemmN * kLdw];
-    __shared__ float sx[2][kGemmM];
+    __shared__ float sx[2][M];
     // The last three groups' scales and biases: bias lags scale a stage, so a slow wave reads an older group.
     __shared__ float sc[3][kGemmN];
     __shared__ float bi[3][kGemmN];
 
     const int tid = threadIdx.x;
-    const int m0 = by * kGemmM;
+    const int m0 = by * M;
     const int n0 = bx * kGemmN;
     const int words_row = Dec::template row_words<int>(a);
     const int groups = a.k / a.group;
@@ -60,9 +60,9 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
     const int xhalf = tid & 1;
     // Rows past the end are not loaded, stored or summed: a stager wave has 16 rows, a summer 32: whole waves skip.
     const int wave = __builtin_amdgcn_readfirstlane(tid >> 5);
-    const bool xlive = wave * 16 < a.m - m0;
-    const bool sxlive = (line & ~31) < a.m - m0;
-    const int row_s = m0 + xrow < a.m ? m0 + xrow : 0;
+    const bool xlive = wave * 16 < a.m - m0 && wave * 16 < M;
+    const bool sxlive = (line & ~31) < a.m - m0 && line < M;
+    const int row_s = m0 + xrow < a.m && xrow < M ? m0 + xrow : 0;
     const typename Act::elem* xrow_ptr = Act::row(a, row_s);
     const u32x4* xsrc = reinterpret_cast<const u32x4*>(xrow_ptr);
 
@@ -131,15 +131,18 @@ __device__ __forceinline__ void gemm_tile(typename Dec::Args& a) {
         if (st % per == per - 1) sx[(st / per) & 1][line] = run;
     };
 
-    // A wave owns 16 rows, 128 columns; at RT = 8 lanes 0-15 take rows 0-7, 16-31 rows 8-15; x rows come by quad DPP.
-    constexpr int CT = 64 / RT;
+    // A wave owns 16 rows, M columns; at RT = 8 lanes 0-15 take rows 0-7, 16-31 rows 8-15; x rows come by quad DPP.
+    constexpr int CT = 64 / RT * M / kGemmM;
     const int lane = tid & 31;
+    constexpr int RG = M / 16;  // row groups; under 128 rows the waves of a row group split its 128 columns
+    constexpr int CW = 16 * RG;  // columns a wave
     // With 3 groups or fewer live, odd blocks rotate groups by 2 waves so a WGP's two blocks keep all four SIMDs busy.
-    const int rg = (wave + ((a.m - m0 <= 48 && (bx & 1)) ? 6 : 0)) & 7;
+    const int rg = M == kGemmM ? (wave + ((a.m - m0 <= 48 && (bx & 1)) ? 6 : 0)) & 7 : wave % RG;
+    const int cpart = M == kGemmM ? 0 : wave / RG;
     const bool live = rg * 16 < a.m - m0;
     const int hrow = RT == 8 ? (lane >> 4) * 8 : 0;
     constexpr int kCStride = RT == 8 ? 16 : 32;
-    const int cbase = RT == 8 ? lane & 15 : lane;
+    const int cbase = cpart * CW + (RT == 8 ? lane & 15 : lane);
     float acc[RT][CT];
     float dot[RT][CT];
 #pragma unroll

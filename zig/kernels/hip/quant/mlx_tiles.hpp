@@ -23,6 +23,13 @@ __global__ void __launch_bounds__(256) affine_gemm_block(Affine a) {
     gemm_tile<MlxDecoder<BITS>, IdentityAct<T>, T, F32Out, RT>(a);
 }
 
+// ---- the same tile on 64 rows a block: a short prompt's rows without the 128-row block's idle waves ----
+
+template <typename T, int BITS, int RT, int M>
+__global__ void __launch_bounds__(256) affine_gemm_rows(Affine a) {
+    gemm_tile<MlxDecoder<BITS>, IdentityAct<T>, T, F32Out, RT, M>(a);
+}
+
 // ---- the K-parallel tiles of a short prompt ----
 
 template <typename T, int BITS, int CB, int R, int WAVES, int RB, bool LOOP>
