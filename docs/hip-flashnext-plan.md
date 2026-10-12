@@ -304,9 +304,9 @@ by path (a build change for the whole Metal engine, outside this family).
 
 ## On this branch
 
-Branch `hip-flashnext` on the fork (`BlivionIaG/TensorFold`), from `qwen35-rccl` merged with `qwen35-structured`.
-Every commit is the repository's configured author, without AI trailers; `zig fmt` clean; `lean_check.py` 534
-problems as on the base. Tests: Mac `zig build test test-golden -Dcpu=apple_m1`; Linux `zig build test` from the
+Branch `hip-flashnext` on the fork (`BlivionIaG/TensorFold`): the integration of the slices above (the same tree as
+the last). Every commit is the repository's configured author, without AI trailers; `zig fmt` clean; `lean_check.py`
+reports as many problems as the base. Tests: Mac `zig build test test-golden -Dcpu=apple_m1`; Linux `zig build test` from the
 pushed commit; `hip-kernel-test` on gfx1030 and gfx1100 (all kernel tests, Flash Next's included); the model checks above
 (`zig/tests/flashnext_hip`: `tf-flashnext-hip-test generate`, `rewind.py`, `bench.py`; `zig/tests/qwen35/serve_check.py`
 against the Flash Next server).
