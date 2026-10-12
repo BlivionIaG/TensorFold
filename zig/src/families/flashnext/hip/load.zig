@@ -287,7 +287,13 @@ pub fn draftIds(a: Allocator) ![]u32 {
     var list: std.ArrayList(u32) = .empty;
     var it = std.mem.tokenizeAny(u8, draft_ids, "\n\r ");
     while (it.next()) |word| try list.append(a, try std.fmt.parseInt(u32, word, 10));
-    return list.items;
+    return list.toOwnedSlice(a);
+}
+
+test "the draft ids are one allocation of the vocabulary's length" {
+    const ids = try draftIds(std.testing.allocator);
+    defer std.testing.allocator.free(ids);
+    try std.testing.expectEqual(@as(usize, 79591), ids.len);
 }
 
 /// One rank's weights (`rank` null: the whole model) from the mapped checkpoint `ck`; rank 0 also holds the MTP head.
