@@ -161,7 +161,7 @@ pub const Fx = struct {
             .speculate = drafting,
             .speculate_early = false,
             .drafts = f.drafts,
-            .hidden_rows = false,
+            .hidden_rows = true,
             .batch_rows = @intCast(cache.max_window * f.streams),
             .max_streams = @intCast(f.streams),
             .draft_streams = false,
@@ -321,40 +321,68 @@ pub const Fx = struct {
         return f.drawn[handle % ring];
     }
 
-    /// Each window in its own forward from its stream's kept length, every row drawn at its position.
+    /// Every window in one forward, each from its stream's kept length; every row drawn at its position.
     fn verifyFn(ptr: *anyopaque, windows: []const be.Window, out: []be.Verified) anyerror!void {
         const f = of(ptr);
         const e = f.e;
         const m = &e.weights.model;
-        for (windows, out) |w, *v| {
+        if (windows.len > forward.max_segs) return error.WindowTooWide;
+        var tokens: [forward.max_segs][cache.max_window]u32 = undefined;
+        var segs: [forward.max_segs]forward.Seg = undefined;
+        var total: usize = 0;
+        if (f.link != null) {
+            f.msg.clearRetainingCapacity();
+            try f.msg.appendSlice(f.gpa, &.{ @backingInt(worker.Op.verify), @intCast(windows.len) });
+        }
+        for (windows, 0..) |w, i| {
             if (w.parents != null) return error.TreesNotBuilt;
             const lane = f.lanes.get(w.stream) orelse return error.UnknownStream;
             if (lane.pending) |p| try f.mark(lane, p.rows);
             const n = w.rows();
             if (n > cache.max_window) return error.WindowTooWide;
             if (w.held > lane.held_n or (w.held > 0 and w.tokens.len > 0)) return error.NoHeldDrafts;
-            var tokens: [cache.max_window]u32 = undefined;
-            tokens[0] = w.pending;
-            if (w.held > 0) @memcpy(tokens[1..n], lane.held[0..w.held]) else @memcpy(tokens[1..n], w.tokens);
+            tokens[i][0] = w.pending;
+            if (w.held > 0) @memcpy(tokens[i][1..n], lane.held[0..w.held]) else @memcpy(tokens[i][1..n], w.tokens);
             const len = lane.caches.len;
             for (w.positions, 0..) |p, r| if (p != len + 1 + r) return error.PositionMismatch;
+            segs[i] = .{ .c = &lane.caches, .tokens = tokens[i][0..n], .pos = len };
+            total += n;
             if (f.link != null) {
-                f.msg.clearRetainingCapacity();
-                try f.msg.appendSlice(f.gpa, &.{ @backingInt(worker.Op.verify), lane.id, @intCast(n) });
-                try f.msg.appendSlice(f.gpa, tokens[0..n]);
-                try f.send(f.msg.items);
+                try f.msg.appendSlice(f.gpa, &.{ lane.id, @intCast(n) });
+                try f.msg.appendSlice(f.gpa, tokens[i][0..n]);
             }
-            const fw = try e.run(&lane.caches, tokens[0..n], len, true);
-            try hip.raw.copy(lane.streams, 0, fw.streams.ptr, n * m.dims.wide() * m.act.size(), e.stream.handle);
-            const o = e.ops(&e.arena);
-            const logits = try e.logits(o, fw.mixed, n);
-            var reqs: [cache.max_window]draw.Request = undefined;
+        }
+        if (f.link != null) try f.send(f.msg.items);
+        const fw = try e.runMany(segs[0..windows.len], true);
+        const row_bytes = m.dims.wide() * m.act.size();
+        var off: usize = 0;
+        for (windows) |w| {
+            const lane = f.lanes.get(w.stream).?;
+            try hip.raw.copy(lane.streams, 0, fw.streams.ptr + off * row_bytes, w.rows() * row_bytes, e.stream.handle);
+            off += w.rows();
+        }
+        const o = e.ops(&e.arena);
+        const logits = try e.logits(o, fw.mixed, total);
+        var reqs: [forward.max_segs * cache.max_window]draw.Request = undefined;
+        var drawn: [forward.max_segs * cache.max_window]u32 = undefined;
+        off = 0;
+        for (windows) |w| {
+            const n = w.rows();
             const words = if (w.masks.len > 0) w.masks.len / n else 0;
-            for (w.positions, 0..) |p, r| reqs[r] = .{ .sampling = sampling(w.stream), .position = p, .mask = w.masks[r * words ..][0..words] };
-            try e.drawer.draw(o, e.stream, logits, reqs[0..n], v.sampled[0..n], false);
+            for (w.positions, 0..) |p, r| reqs[off + r] = .{ .sampling = sampling(w.stream), .position = p, .mask = w.masks[r * words ..][0..words] };
+            off += n;
+        }
+        if (total > e.drawer.rows) return error.WindowTooWide;
+        try e.drawer.draw(o, e.stream, logits, reqs[0..total], drawn[0..total], false);
+        off = 0;
+        for (windows, out, 0..) |w, *v, i| {
+            const n = w.rows();
+            const lane = f.lanes.get(w.stream).?;
+            @memcpy(v.sampled[0..n], drawn[off..][0..n]);
             @memcpy(v.drafts, if (w.held > 0) lane.held[0..w.held] else w.tokens);
             lane.held_n = 0;
-            lane.pending = .{ .tokens = tokens, .rows = n };
+            lane.pending = .{ .tokens = tokens[i], .rows = n };
+            off += n;
         }
     }
 

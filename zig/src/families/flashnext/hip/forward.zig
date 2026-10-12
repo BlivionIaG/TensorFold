@@ -45,6 +45,9 @@ pub fn at(t: Tensor, n: usize) Tensor {
 /// One call's rows: their tokens, the position of the first, and whether they are a window (else a prompt's).
 pub const Call = struct { tokens: []const u32, pos: usize, window: bool };
 
+/// One stream's rows in a forward: its caches, its tokens and the position of its first row.
+pub const Seg = struct { c: *cache.Caches, tokens: []const u32, pos: usize };
+
 /// The final mixer's rows (rows, hidden) for the head, and the residual streams (rows, wide) before it.
 pub const Out = struct { mixed: Tensor, streams: Tensor };
 
@@ -131,44 +134,60 @@ fn ple(o: Ops, m: *const model.Model, host: *Host, c: *cache.Caches, h: Tensor, 
     }
 }
 
-/// `call`'s rows through every layer: the final mixer's rows and the residual streams.
-pub fn run(ops: Ops, m: *const model.Model, host: *Host, c: *cache.Caches, call: Call) !Out {
+/// Every segment's rows through every layer: one stream's prompt chunk, or several streams' windows together.
+pub fn run(ops: Ops, m: *const model.Model, host: *Host, segs: []const Seg, window: bool) !Out {
     var o = ops;
-    o.prefill = !call.window;
-    o.window = call.window;
+    o.prefill = !window;
+    o.window = window;
     const d = m.dims;
-    const rows = call.tokens.len;
+    var rows: usize = 0;
+    for (segs) |g| rows += g.tokens.len;
     const ids4 = try host.gpa.alloc(i32, rows * d.streams);
     defer host.gpa.free(ids4);
-    for (call.tokens, 0..) |t, r| for (0..d.streams) |s| {
-        ids4[r * d.streams + s] = @intCast(t);
-    };
     const pos = try host.gpa.alloc(i32, rows);
     defer host.gpa.free(pos);
-    for (pos, 0..) |*p, r| p.* = @intCast(call.pos + r);
+    var row: usize = 0;
+    for (segs) |g| {
+        for (g.tokens, 0..) |t, r| {
+            for (0..d.streams) |s| ids4[(row + r) * d.streams + s] = @intCast(t);
+            pos[row + r] = @intCast(g.pos + r);
+        }
+        row += g.tokens.len;
+    }
     const dev_ids = try host.put(o, std.mem.sliceAsBytes(ids4));
     const dev_pos = try host.put(o, std.mem.sliceAsBytes(pos));
     const h = try take(o, m.act, rows * d.wide());
     const x = try take(o, m.act, rows * d.wide());
     try o.embedRows(m.embed, dev_ids, rows * d.streams, h);
-    const cin = if (call.window) c.cin.base() else try o.arena.take((c.layout.tail_rows + rows) * d.wide() * m.act.size());
+    var cins: [max_segs]u64 = undefined;
+    if (segs.len > max_segs) return error.TooManyStreams;
+    for (segs, cins[0..segs.len]) |g, *cin| cin.* = if (window) g.c.cin.base() else try o.arena.take((g.c.layout.tail_rows + g.tokens.len) * d.wide() * m.act.size());
     for (m.layers, 0..) |layer, i| {
         const mark = o.arena.mark();
         defer o.arena.release(mark);
-        if (i == m.ple.layer) try ple(o, m, host, c, h, call, cin);
+        if (i == m.ple.layer) {
+            var off: usize = 0;
+            for (segs, cins[0..segs.len]) |g, cin| {
+                try ple(o, m, host, g.c, at(h, off * d.wide()), .{ .tokens = g.tokens, .pos = g.pos, .window = window }, cin);
+                off += g.tokens.len;
+            }
+        }
         if (i == 0 or i == m.ple.layer) try hcNorm(o, m, h, null, null, x, layer.ahc.scale, rows);
         const inject = try take(o, m.act, rows * d.streams);
         const mixed = try hcPre(o, m, layer.ahc, x, rows, inject);
         const branch = switch (layer.mixer) {
-            .linear => |l| try mixers.linear(o, m, l, c, i, mixed, rows, call.window),
-            .sparse => |s| try mixers.sparse(o, m, d, s, c.sparse(i), &c.pooled, c.layout.cap, mixed, rows, call.pos, dev_pos, host),
+            .linear => |l| try mixers.linear(o, m, l, segs, i, mixed, rows, window),
+            .sparse => |s| try mixers.sparse(o, m, d, s, segs, i, mixed, rows, dev_pos, host),
         };
         try hcBranch(o, m, h, branch, inject, x, layer.mhc.scale, rows);
         const mixed2 = try hcPre(o, m, layer.mhc, x, rows, inject);
-        const y = try hip.moe.run(o, m.act, layer.moe, mixed2, rows, !call.window);
+        const y = try hip.moe.run(o, m.act, layer.moe, mixed2, rows, !window);
         const next = if (i + 1 < m.layers.len) m.layers[i + 1].ahc.scale else m.mix.scale;
         try hcBranch(o, m, h, y, inject, x, next, rows);
     }
-    c.pooled = (call.pos + rows) / d.index_ratio;
+    for (segs) |g| g.c.pooled = (g.pos + g.tokens.len) / d.index_ratio;
     return .{ .mixed = try hcPre(o, m, m.mix, x, rows, null), .streams = h };
 }
+
+/// Streams a forward takes at once at most.
+pub const max_segs = 64;

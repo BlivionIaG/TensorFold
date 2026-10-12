@@ -62,11 +62,20 @@ pub fn follow(gpa: std.mem.Allocator, e: *Engine, link: hip.collective.Link) !vo
                 try e.stream.synchronize();
             },
             .verify => {
-                const lane = lanes.get(w[1]) orelse return error.UnknownStream;
-                const n = w[2];
-                @memcpy(lane.pending[0..n], w[3..][0..n]);
-                const out = try e.run(&lane.caches, lane.pending[0..n], lane.caches.len, true);
-                _ = try e.logits(e.ops(&e.arena), out.mixed, n);
+                var segs: [forward.max_segs]forward.Seg = undefined;
+                const count = w[1];
+                var at: usize = 2;
+                var rows: usize = 0;
+                for (segs[0..count]) |*g| {
+                    const lane = lanes.get(w[at]) orelse return error.UnknownStream;
+                    const n = w[at + 1];
+                    @memcpy(lane.pending[0..n], w[at + 2 ..][0..n]);
+                    g.* = .{ .c = &lane.caches, .tokens = lane.pending[0..n], .pos = lane.caches.len };
+                    at += 2 + n;
+                    rows += n;
+                }
+                const out = try e.runMany(segs[0..count], true);
+                _ = try e.logits(e.ops(&e.arena), out.mixed, rows);
                 try e.stream.synchronize();
             },
             .keep => {

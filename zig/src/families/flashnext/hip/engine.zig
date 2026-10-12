@@ -97,7 +97,7 @@ pub const Engine = struct {
         e.eos = e.tables.hasher.ref.eos;
         e.arena = try hip.Arena.init(&e.driver, try e.scratchBytes());
         errdefer e.arena.deinit();
-        e.drawer = try serve.draw.Drawer.init(gpa, &e.driver, if (e.act == .f16) .f16 else .bf16, e.cfg.vocab, cache.max_window * 8);
+        e.drawer = try serve.draw.Drawer.init(gpa, &e.driver, if (e.act == .f16) .f16 else .bf16, e.cfg.vocab, cache.max_window * forward.max_segs);
         return e;
     }
 
@@ -151,7 +151,7 @@ pub const Engine = struct {
         @memset(tokens, 0);
         const before = e.host.used;
         defer e.host.used = before;
-        const out = try forward.run(o, &e.weights.model, &e.host, &c, .{ .tokens = tokens, .pos = e.o.capacity -| e.o.chunk, .window = false });
+        const out = try forward.run(o, &e.weights.model, &e.host, &.{.{ .c = &c, .tokens = tokens, .pos = e.o.capacity -| e.o.chunk }}, false);
         _ = try e.logits(o, out.mixed, e.o.chunk);
         return counting.used + (16 << 20);
     }
@@ -207,7 +207,15 @@ pub const Engine = struct {
         try e.stream.synchronize();
         e.host.used = 0;
         e.arena.reset();
-        return forward.run(e.ops(&e.arena), &e.weights.model, &e.host, c, .{ .tokens = tokens, .pos = pos, .window = window });
+        return e.runMany(&.{.{ .c = c, .tokens = tokens, .pos = pos }}, window);
+    }
+
+    /// Several streams' rows in one forward (every segment from its own caches): windows of a shared round.
+    pub fn runMany(e: *Engine, segs: []const forward.Seg, window: bool) !forward.Out {
+        try e.stream.synchronize();
+        e.host.used = 0;
+        e.arena.reset();
+        return forward.run(e.ops(&e.arena), &e.weights.model, &e.host, segs, window);
     }
 };
 
