@@ -48,15 +48,6 @@ pub const Call = struct { tokens: []const u32, pos: usize, window: bool };
 /// The final mixer's rows (rows, hidden) for the head, and the residual streams (rows, wide) before it.
 pub const Out = struct { mixed: Tensor, streams: Tensor };
 
-/// A rank's fp32 share summed over the ranks and rounded to the activation, or the activation rows as they are.
-pub fn whole(o: Ops, m: *const model.Model, y: Tensor, n: usize) !Tensor {
-    if (y.kind != .f32) return y;
-    const total = try hip.reduce.sum(o, m.tp.?, y.ptr, n);
-    const out = try take(o, m.act, n);
-    try o.cast(.{ .ptr = total, .kind = .f32 }, out, n);
-    return out;
-}
-
 /// A hyper-connection's read of the normed streams `x`: the block input, and the inject gates when `inject` is set.
 pub fn hcPre(o: Ops, m: *const model.Model, hc: model.Hc, x: Tensor, rows: usize, inject: ?Tensor) !Tensor {
     const d = m.dims;
@@ -68,6 +59,17 @@ pub fn hcPre(o: Ops, m: *const model.Model, hc: model.Hc, x: Tensor, rows: usize
     const mixed = try take(o, m.act, rows * d.hidden);
     try o.l.fn_hc_mix(@ptrFromInt(g.ptr), @ptrFromInt(x.ptr), @ptrFromInt(mixed.ptr), kind, @intCast(rows), @intCast(d.streams), @intCast(d.hidden), o.stream);
     return mixed;
+}
+
+/// A block's output into the streams, then their norm: a tp rank's fp32 share is gathered and summed in the kernel.
+pub fn hcBranch(o: Ops, m: *const model.Model, h: Tensor, branch: Tensor, inject: Tensor, x: Tensor, scale: u64, rows: usize) !void {
+    if (branch.kind != .f32) return hcNorm(o, m, h, branch, inject, x, scale, rows);
+    const d = m.dims;
+    const c = m.tp.?;
+    const n = rows * d.hidden;
+    const parts = try o.arena.of(f32, c.world * n);
+    try c.allGather(branch.ptr, parts, n, .f32, o.stream);
+    try o.l.fn_hc_norm_shares(@ptrFromInt(h.ptr), @ptrFromInt(parts), @ptrFromInt(inject.ptr), @ptrFromInt(h.ptr), @ptrFromInt(x.ptr), @ptrFromInt(scale), @backingInt(m.act), @intCast(rows), @intCast(d.streams), @intCast(d.hidden), d.eps, @intCast(c.world), @intCast(n), o.stream);
 }
 
 /// h += round(branch * inject) per stream when a branch is given, then x = the streams normed with `scale`.
@@ -161,11 +163,11 @@ pub fn run(ops: Ops, m: *const model.Model, host: *Host, c: *cache.Caches, call:
             .linear => |l| try mixers.linear(o, m, l, c, i, mixed, rows, call.window),
             .sparse => |s| try mixers.sparse(o, m, d, s, c.sparse(i), &c.pooled, c.layout.cap, mixed, rows, call.pos, dev_pos, host),
         };
-        try hcNorm(o, m, h, try whole(o, m, branch, rows * d.hidden), inject, x, layer.mhc.scale, rows);
+        try hcBranch(o, m, h, branch, inject, x, layer.mhc.scale, rows);
         const mixed2 = try hcPre(o, m, layer.mhc, x, rows, inject);
         const y = try hip.moe.run(o, m.act, layer.moe, mixed2, rows, !call.window);
         const next = if (i + 1 < m.layers.len) m.layers[i + 1].ahc.scale else m.mix.scale;
-        try hcNorm(o, m, h, try whole(o, m, y, rows * d.hidden), inject, x, next, rows);
+        try hcBranch(o, m, h, y, inject, x, next, rows);
     }
     c.pooled = (call.pos + rows) / d.index_ratio;
     return .{ .mixed = try hcPre(o, m, m.mix, x, rows, null), .streams = h };

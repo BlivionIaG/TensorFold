@@ -55,9 +55,14 @@ const threads = 256;
 
 /// `rows` rows of `streams` streams: h += round(branch * inject) when a branch is given, then x = h rinv scale.
 pub fn hcNorm(l: *const Launcher, h: C, branch: C, inject: C, h_out: P, x_out: P, scale: CF, kind: c_int, rows: c_int, streams: c_int, dims: c_int, eps: f32, s: S) Error!void {
+    return hcNormShares(l, h, branch, inject, h_out, x_out, scale, kind, rows, streams, dims, eps, 0, 0, s);
+}
+
+/// hcNorm with the branch as `world` fp32 shares `stride` values apart (a tensor-parallel gather), summed in order.
+pub fn hcNormShares(l: *const Launcher, h: C, branch: C, inject: C, h_out: P, x_out: P, scale: CF, kind: c_int, rows: c_int, streams: c_int, dims: c_int, eps: f32, world: c_int, stride: i64, s: S) Error!void {
     if (dims > most_dims) return util.invalid("hcNorm");
     var a: Args = .{};
-    inline for (.{ ad(h), ad(branch), ad(inject), ad(h_out), ad(x_out), ad(scale), kind, streams, dims, eps }) |v| try a.add(v);
+    inline for (.{ ad(h), ad(branch), ad(inject), ad(h_out), ad(x_out), ad(scale), kind, streams, dims, eps, world, stride }) |v| try a.add(v);
     try l.go(l.fnx.hc_norm, dim(streams, rows, 1), dim(threads, 1, 1), 0, s, &a);
 }
 

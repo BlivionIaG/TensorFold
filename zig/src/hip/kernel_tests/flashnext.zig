@@ -109,6 +109,25 @@ test "hyper-connection norm, gates and mix: the reference's roundings, each row 
     const gx1 = try rig.download(u16, x_one);
     defer gpa.free(gx1);
     try std.testing.expectEqualSlices(u16, gx[0..w], gx1);
+    // the branch as two fp32 shares (a tp rank's gather): summed in order, then as the whole branch
+    const shares = try gpa.alloc(f32, 2 * rows * d);
+    defer gpa.free(shares);
+    for (shares) |*v| v.* = rng.unit() * 0.5;
+    var dev_shares = try t.upload(shares);
+    defer dev_shares.free();
+    var h_shared = try t.upload(hh);
+    defer h_shared.free();
+    var x_shared = try t.alloc(rows * w * 2);
+    defer x_shared.free();
+    try t.on.fn_hc_norm_shares(ptr(?*const anyopaque, h_shared), ptr(?*const anyopaque, dev_shares), ptr(?*const anyopaque, inject), ptr(?*anyopaque, h_shared), ptr(?*anyopaque, x_shared), ptr(?[*]const f32, sc), k, rows, s, d, eps, 2, rows * d, st);
+    try t.stream.synchronize();
+    const ghs = try rig.download(u16, h_shared);
+    defer gpa.free(ghs);
+    for (0..rows) |r| for (0..s) |si| for (0..d) |j| {
+        const b = rnd(t, shares[r * d + j] + shares[rows * d + r * d + j]);
+        const want = rnd(t, value(t, hh[(r * s + si) * d + j]) + rnd(t, b * value(t, hi[r * s + si])));
+        try std.testing.expectEqual(t.bits(want), ghs[(r * s + si) * d + j]);
+    };
     const want_h = try gpa.alloc(f32, d);
     defer gpa.free(want_h);
     for (0..rows) |r| for (0..s) |si| {

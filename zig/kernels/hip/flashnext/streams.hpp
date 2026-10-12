@@ -24,10 +24,10 @@ __device__ float fn_block_sum(float v, float* scratch) {
     return total;
 }
 
-// Block (s, r): stream s of row r takes back round(branch * inject[s]) if a branch is given, then x = h rinv scale.
+// Block (s, r): h_s += round(branch * inject[s]) (tp: `world` fp32 shares, summed in order), then x = h rinv scale.
 extern "C" __global__ void __launch_bounds__(kFnThreads)
 tf_fn_hc_norm(const void* h, const void* branch, const void* inject, void* h_out, void* x_out, const float* scale,
-              int kind, int streams, int dims, float eps) {
+              int kind, int streams, int dims, float eps, int world, long long stride) {
     __shared__ float scratch[kFnWaves];
     const int s = blockIdx.x, r = blockIdx.y;
     const long long base = (static_cast<long long>(r) * streams + s) * dims;
@@ -40,8 +40,16 @@ tf_fn_hc_norm(const void* h, const void* branch, const void* inject, void* h_out
         if (d >= dims) continue;
         float x = load(h, kind, base + d);
         if (branch != nullptr) {
-            const float add = rounded(load(branch, kind, static_cast<long long>(r) * dims + d)
-                                      * load(inject, kind, static_cast<long long>(r) * streams + s), kind);
+            const long long at = static_cast<long long>(r) * dims + d;
+            float b;
+            if (world > 0) {
+                b = 0.f;
+                for (int w = 0; w < world; ++w) b += static_cast<const float*>(branch)[w * stride + at];
+                b = rounded(b, kind);
+            } else {
+                b = load(branch, kind, at);
+            }
+            const float add = rounded(b * load(inject, kind, static_cast<long long>(r) * streams + s), kind);
             x = rounded(x + add, kind);
         }
         v[j] = x;
