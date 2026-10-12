@@ -206,7 +206,9 @@ pub const Model = struct {
         const whole = ck.spec();
         var m: Model = .{ .gpa = gpa, .spec = if (rank) |r| try slicing.localSpec(whole, r) else whole, .sliced = rank != null };
         errdefer m.deinit();
-        const u: Uploader = .{ .up = .{ .r = d, .buffers = &m.buffers, .gpa = gpa } };
+        var staging = try hip.HostBuffer.alloc(d, 32 << 20);
+        defer staging.free();
+        const u: Uploader = .{ .up = .{ .r = d, .buffers = &m.buffers, .gpa = gpa, .staging = &staging } };
         var scratch: std.heap.ArenaAllocator = .init(gpa);
         defer scratch.deinit();
         const embed = try ck.embed(scratch.allocator());
@@ -216,6 +218,8 @@ pub const Model = struct {
         if (rank) |r| {
             m.head = try u.projection(try slicing.vocabRows(scratch.allocator(), head orelse embed, whole.vocab, r));
         } else if (head) |h| m.head = try u.projection(h);
+        // an APU shares the RAM between mapped pages and their device copies: each part's pages go once it is up
+        ck.release(null);
         var list: std.ArrayList(Layer) = .empty;
         errdefer list.deinit(gpa);
         for (0..@min(limit, m.spec.n_layers)) |i| {
@@ -223,6 +227,7 @@ pub const Model = struct {
             defer host_layer.deinit();
             if (rank) |r| try slicing.layer(&host_layer, whole, r);
             try list.append(gpa, try u.layer(host_layer));
+            ck.release(i);
         }
         m.layers = try list.toOwnedSlice(gpa);
         // under tp only rank 0 drafts: its head is whole, logits rows included (its own or the model's whole head)
@@ -232,6 +237,7 @@ pub const Model = struct {
             defer h.deinit();
             if (rank != null and h.head == null) h.head = head orelse embed;
             m.mtp = try u.mtp(h);
+            ck.main.release("mtp.");
         };
         return m;
     }

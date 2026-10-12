@@ -1,6 +1,7 @@
 //! One safetensors file mapped read-only; tensors above core's max rank and unnamed dtypes stay out of its index.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Io = std.Io;
 const st = @import("core").safetensors;
 
@@ -25,14 +26,29 @@ pub const Shard = struct {
         var arena: std.heap.ArenaAllocator = .init(gpa);
         errdefer arena.deinit();
         const names = try parse(arena.allocator(), map.memory[8..][0..header_len], len - 8 - header_len);
-        return .{ .file = file, .map = map, .data = 8 + header_len, .names = names, .arena = arena };
+        const s: Shard = .{ .file = file, .map = map, .data = 8 + header_len, .names = names, .arena = arena };
+        // pages a copy or an earlier run left cached: TTM fails a GTT allocation rather than reclaim them on an APU
+        s.release(0, len - s.data);
+        return s;
     }
 
     pub fn close(s: *Shard, io: Io) void {
+        s.release(0, s.map.memory.len - s.data);
         s.map.destroy(io);
         s.file.close(io);
         s.arena.deinit();
         s.* = undefined;
+    }
+
+    /// Drops data bytes [begin, end) (their whole pages) from this mapping and the page cache; a later read refaults.
+    pub fn release(s: *const Shard, begin: usize, end: usize) void {
+        if (builtin.os.tag != .linux or end <= begin) return;
+        const page = std.heap.pageSize();
+        const lo = std.mem.alignBackward(usize, s.data + begin, page);
+        const hi = @min(std.mem.alignForward(usize, s.data + end, page), s.map.memory.len);
+        if (hi <= lo) return;
+        _ = std.os.linux.madvise(s.map.memory.ptr + lo, hi - lo, std.os.linux.MADV.DONTNEED);
+        _ = std.os.linux.fadvise(s.file.handle, @intCast(lo), @intCast(hi - lo), std.os.linux.POSIX_FADV.DONTNEED);
     }
 
     pub fn get(s: *const Shard, name: []const u8) ?Tensor {
