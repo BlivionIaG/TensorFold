@@ -98,8 +98,9 @@ pub const kp_tiles = [_]KpTile{
 /// The GEMM tiles of the m >= 64 products: `gemm` (the default) or the reference `block`.
 pub const Tile = enum { gemm, block };
 
-/// Which 128-row GEMM tile a launch runs: matrix cores (padded or skewed rows), the dot2 tile, or the reference tile.
-pub const BlockKind = enum { matrix, skew, gemm, block };
+/// Which GEMM tile of the 128-row family a launch runs: matrix cores (padded or skewed rows), the dot2 tile, on gfx900 the dot2 tile on 64 or 32
+/// rows a block (the 128-row one spills there), or the reference tile.
+pub const BlockKind = enum { matrix, skew, gemm, gemm64, gemm32, block };
 
 /// Stream tile experiments, read from the environment once per `load` (the defaults are the launch rules below):
 ///   TF_STREAM_CB=2|4|8       columns a lane carries (where the registers allow)
@@ -153,6 +154,8 @@ pub const Kernels = struct {
     tune: StreamTune,
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
+    /// The dot2 GEMM tile on 64 and 32 rows a block: the same bits as the 128-row one.
+    gemm_rows: [bit_widths.len][2]Function,
     wmma_gemm: [bit_widths.len]Function,
     wmma_skew: [bit_widths.len]Function,
     item: @import("matrix_item.zig").Functions,
@@ -200,6 +203,11 @@ pub const Kernels = struct {
             if (k.matrix) k.wmma_skew[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_wmma_skewILi{d}EEEvNS0_6AffineE", .{bits}));
             if (k.matrix) k.item[b] = try @import("matrix_item.zig").load(m, bits);
             k.gemm[b] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm17affine_gemm_blockINS0_{s}ELi{d}E{s}EEvNS0_6AffineE", .{ dot, bits, shape }));
+            if (k.caps.generation == .gcn5) {
+                inline for (.{ 64, 32 }, 0..) |rows, i| {
+                    k.gemm_rows[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm16affine_gemm_rowsINS0_{s}ELi{d}E{s}Li{d}EEEvNS0_6AffineE", .{ dot, bits, shape, rows }));
+                }
+            }
             inline for (kp_tiles, 0..) |t, i| {
                 k.kp[b][i] = try m.function(std.fmt.comptimePrint("_ZN2tf4rocm14affine_gemm_kpINS0_{s}ELi{d}ELi{d}ELi{d}ELi{d}ELi{d}ELb{d}EEEvNS0_6AffineE", .{ dot, bits, t.cb, t.r, t.waves, t.rb, @intFromBool(t.loop) }));
             }
@@ -314,7 +322,7 @@ pub const Kernels = struct {
 
     /// The GPU and the run's switches as the registry reads them.
     pub fn env(k: *const Kernels) registry.Env {
-        return .{ .bf16 = k.wmma, .matrix = k.matrix, .matrix_on = k.matrix and k.mode != .off, .stream_on = k.stream_on, .gemm_on = k.tile == .gemm };
+        return .{ .bf16 = k.wmma, .matrix = k.matrix, .matrix_on = k.matrix and k.mode != .off, .stream_on = k.stream_on, .gemm_on = k.tile == .gemm, .gemm_rows = k.caps.generation == .gcn5 };
     }
 
     /// The MLX entry that takes a product, or null.
@@ -469,7 +477,7 @@ pub const Kernels = struct {
         try go(r, k.fold, .{ .x = cdiv(a.n, fast_n), .y = @intCast(a.m) }, .{ .x = fast_n }, s, &fold);
     }
 
-    /// The 128 x 128 tile of a kind over every item of a plan (or the plain product).
+    /// The GEMM tile of a kind over every item of a plan (or the plain product): 128 (or 64, 32) rows x 128 a block.
     pub fn blockGo(k: *const Kernels, r: *const runtime.Runtime, a: Arg, s: abi.Stream, items: c_int, kind: BlockKind) Error!void {
         const b = bitIndex(a.bits) orelse return refuse("bits");
         var args: hl.Args = .{};
@@ -478,9 +486,16 @@ pub const Kernels = struct {
             .matrix => k.wmma_gemm[b],
             .skew => k.wmma_skew[b],
             .gemm => k.gemm[b],
+            .gemm64 => k.gemm_rows[b][0],
+            .gemm32 => k.gemm_rows[b][1],
             .block => k.block[b],
         };
-        try go(r, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, 128), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
+        const rows: c_int = switch (kind) {
+            .gemm64 => 64,
+            .gemm32 => 32,
+            else => 128,
+        };
+        try go(r, f, .{ .x = cdiv(a.n, 128), .y = cdiv(a.m, rows), .z = @intCast(items) }, .{ .x = 256 }, s, &args);
     }
 
     /// K-parallel tile `tier` (an index of kp_tiles) of a short prompt.

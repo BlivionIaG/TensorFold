@@ -36,6 +36,10 @@ fn gemmOn(e: Env) bool {
     return e.gemm_on;
 }
 
+fn gemmRows(e: Env) bool {
+    return e.gemm_on and e.gemm_rows;
+}
+
 fn matrixOn(e: Env) bool {
     return e.matrix and e.matrix_on and e.gemm_on;
 }
@@ -326,7 +330,7 @@ const other_decode = [_]Entry{
     entry(.routed_act, .decode, "stream", .{ .family = .stream, .fits = &fitsPair, .launch = &launchPair, .policy = &streamOn }),
 };
 
-fn prefill(comptime op: Op) [8]Entry {
+fn prefill(comptime op: Op) [10]Entry {
     // a plain prompt product rounds into out16 when asked; a routed one writes fp32 for the expert combine
     const r: registry.Rounds = if (op == .project) .always else .never;
     return .{
@@ -337,6 +341,8 @@ fn prefill(comptime op: Op) [8]Entry {
         entry(op, .prefill, "matrix", .{ .family = .gemm, .fits = &fitsPrefillMatrix, .launch = launchBlock(.matrix), .caps = &matrixCores, .policy = &matrixOn, .rounds = r }),
         entry(op, .prefill, "skew", .{ .family = .gemm, .fits = &fitsPrefillSkew, .launch = launchBlock(.skew), .caps = &matrixCores, .policy = &matrixOn, .rounds = r }),
         entry(op, .prefill, "gemm", .{ .family = .gemm, .fits = &fitsPrefillGemm, .launch = launchBlock(.gemm), .policy = &gemmOn, .rounds = r }),
+        entry(op, .prefill, "gemm64", .{ .family = .gemm, .fits = &fitsPrefillGemm, .launch = launchBlock(.gemm64), .caps = &gemmRows, .policy = &gemmOn, .rounds = r }),
+        entry(op, .prefill, "gemm32", .{ .family = .gemm, .fits = &fitsPrefillGemm, .launch = launchBlock(.gemm32), .caps = &gemmRows, .policy = &gemmOn, .rounds = r }),
         entry(op, .prefill, "block", .{ .family = .gemm, .fits = &fitsPrefillBlock, .launch = launchBlock(.block), .rounds = r }),
     };
 }
@@ -359,7 +365,7 @@ fn kernelsOn(gfx: []const u8) affine.Registry {
 fn envOn(gfx: []const u8, stream_on: bool, gemm_on: bool, matrix_on: bool) Env {
     const caps = Caps.of(gfx).?;
     const matrix = caps.act == .bf16 and caps.matrix == .wmma11;
-    return .{ .bf16 = caps.act == .bf16, .matrix = matrix, .matrix_on = matrix and matrix_on, .stream_on = stream_on, .gemm_on = gemm_on };
+    return .{ .bf16 = caps.act == .bf16, .matrix = matrix, .matrix_on = matrix and matrix_on, .stream_on = stream_on, .gemm_on = gemm_on, .gemm_rows = caps.generation == .gcn5 };
 }
 
 test "a lane round and a prompt each keep one family at every row count, on every GPU and policy" {
@@ -428,6 +434,14 @@ test "a prompt takes the K-parallel tiles by rows and by items, then the 128-row
     shape.items = 0;
     shape.m = 64;
     try std.testing.expect(std.mem.endsWith(u8, r.select(envOn("gfx1100", true, true, false), .mlx, .project, .prefill, shape).?.id, "gemm"));
+    // gfx900 (its 128-row tile spills) takes 25 to 32 rows on the 32-row GEMM tile, 33 and more on the 64-row one
+    const vega_env = envOn("gfx900", true, true, false);
+    shape.fp16 = true;
+    const short = [_]struct { u32, []const u8 }{ .{ 24, "kp2" }, .{ 25, "gemm32" }, .{ 32, "gemm32" }, .{ 33, "gemm64" }, .{ 64, "gemm64" }, .{ 200, "gemm64" } };
+    for (short) |p| {
+        shape.m = p[0];
+        try std.testing.expect(std.mem.endsWith(u8, kernelsOn("gfx900").select(vega_env, .mlx, .project, .prefill, shape).?.id, p[1]));
+    }
     // RDNA2 takes a plan of up to 410 items on the second K-parallel tile
     const v = kernelsOn("gfx1030");
     shape.fp16 = true;
@@ -527,8 +541,8 @@ test "Vega 10 keeps the fp16 families and never runs the 128-row GEMM tile, whic
     const r = kernelsOn("gfx900");
     const env = envOn("gfx900", true, true, false);
     var shape: Shape = .{ .m = 1, .n = 4096, .k = 4096, .bits = 4, .group = 64, .fp16 = true, .tables = .f16 };
-    // a prompt: the K-parallel tiles to 32 rows, then the reference block tile at every size
-    const prompt = [_]struct { u32, []const u8 }{ .{ 1, "kp0" }, .{ 2, "kp0" }, .{ 3, "kp1" }, .{ 5, "kp2" }, .{ 32, "kp2" }, .{ 33, "block" }, .{ 64, "block" }, .{ 4096, "block" } };
+    // a prompt: the K-parallel tiles, then the 32-row GEMM tile to 32 rows, then the 64-row one at every size
+    const prompt = [_]struct { u32, []const u8 }{ .{ 1, "kp0" }, .{ 2, "kp0" }, .{ 3, "kp1" }, .{ 5, "kp2" }, .{ 24, "kp2" }, .{ 25, "gemm32" }, .{ 32, "gemm32" }, .{ 33, "gemm64" }, .{ 64, "gemm64" }, .{ 65, "gemm64" }, .{ 4096, "gemm64" } };
     for (prompt) |p| {
         shape.m = p[0];
         try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .project, .prefill, shape).?.id, p[1]));
@@ -539,11 +553,11 @@ test "Vega 10 keeps the fp16 families and never runs the 128-row GEMM tile, whic
         shape.m = d[0];
         try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .project, .decode, shape).?.id, d[1]));
     }
-    // a plan: its K-parallel tiles, then the block tile
+    // a plan: its K-parallel tiles, then the 64-row GEMM tile
     shape.items = 100;
     shape.m = 30;
     try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .routed, .prefill, shape).?.id, "kp3"));
     shape.items = 411;
-    try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .routed, .prefill, shape).?.id, "block"));
+    try std.testing.expect(std.mem.endsWith(u8, r.select(env, .mlx, .routed, .prefill, shape).?.id, "gemm64"));
     for (r.entries) |e| try std.testing.expect(!std.mem.endsWith(u8, e.id, ".gemm") or tuning.find(r.table, e.id) == null);
 }

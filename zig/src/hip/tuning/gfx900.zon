@@ -1,11 +1,10 @@
 // The kernel registry's costs on Vega 10 / gfx900 (RX Vega 56 and 64: wave64, fp16 activations, no dot2 and no matrix cores).
 //
-// Taken from gfx1030's table, which is the one for fp16 activations on dot2 tiles, with the change the code objects of gfx900 ask for
+// Taken from gfx1030's table, which is the one for fp16 activations on dot2 tiles, with the changes the code objects of gfx900 ask for
 // (spill counts from the amdhsa metadata of each kernel, tools/vega-macos; no measurement on the card yet):
-//   * the 128-row GEMM tile (affine_gemm_block, the `gemm` entries) spills 195+ of its 256 VGPRs on gfx900, so it never runs: the
-//     reference block tile (`block`) takes every call it would take, a prompt past the K-parallel tiles and a decode call of 64 rows or
-//     more. All of the tiles of a family give the same bits, so this changes speed only.
-//   * the family rule (one family at every row count) holds as it does in gfx1030's table
+//   * the 128-row GEMM tile (affine_gemm_block) spills 195+ of its 256 VGPRs on gfx900, so it never runs: the 64-row tile (48 spilled
+//     at 4 bits, none at 32 rows) takes every prompt past 32 rows, and the reference block tile every call of 64+ rows of a decode round
+//   * the table is the same set of families as gfx1030's, so the family rule (one family at every row count) holds as it does there
 //
 // An entry is `mlx.<op>.<path>.<kernel>`. Among the entries that take a product the cheapest one runs; an entry not listed
 // here is not tuned for this GPU and never runs on it. Beside its `cost` an entry says which products it takes:
@@ -34,16 +33,20 @@
         .{ .id = "mlx.routed.decode.block", .cost = 7, .min_rows = 9 },
         .{ .id = "mlx.routed_act.decode.stream", .cost = 1, .rows = 16 },
 
-        // a prompt: the K-parallel tiles for a few rows or a short plan, the reference block tile past them
+        // a prompt: the K-parallel tiles for a few rows or a short plan, the 64-row tile past them
         .{ .id = "mlx.project.prefill.kp0", .cost = 1, .rows = 2, .routed = false },
         .{ .id = "mlx.project.prefill.kp3", .cost = 2, .items = 300, .plain = false },
         .{ .id = "mlx.project.prefill.kp1", .cost = 3, .rows = 4, .items = 410 },
         .{ .id = "mlx.project.prefill.kp2", .cost = 4, .rows = 32, .routed = false },
+        // 25 to 32 rows the GEMM tile on 32 rows a block, past that the 64-row one
+        .{ .id = "mlx.project.prefill.gemm32", .cost = 3.5, .rows = 32, .min_rows = 25 },
+        .{ .id = "mlx.project.prefill.gemm64", .cost = 10, .min_rows = 33 },
         .{ .id = "mlx.project.prefill.block", .cost = 12 },
         .{ .id = "mlx.routed.prefill.kp0", .cost = 1, .rows = 2, .routed = false },
         .{ .id = "mlx.routed.prefill.kp3", .cost = 2, .items = 300, .plain = false },
         .{ .id = "mlx.routed.prefill.kp1", .cost = 3, .rows = 4, .items = 410 },
         .{ .id = "mlx.routed.prefill.kp2", .cost = 4, .rows = 32, .routed = false },
+        .{ .id = "mlx.routed.prefill.gemm64", .cost = 11 },
         .{ .id = "mlx.routed.prefill.block", .cost = 12 },
     },
 }
