@@ -28,4 +28,5 @@ test {
     _ = @import("kernel_tests/affine/rows.zig");
     _ = @import("kernel_tests/flashnext.zig");
     _ = @import("kernel_tests/flashnext_attn.zig");
+    _ = @import("kernel_tests/graph_split.zig");
 }
