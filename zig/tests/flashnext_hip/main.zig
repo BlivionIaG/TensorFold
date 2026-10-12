@@ -7,7 +7,7 @@ const tokenizer = @import("tokenizer");
 /// No per-thread alternate signal stack: its thread-local leaves RCCL's and HIP's threads too little stack to start.
 pub const std_options: std.Options = .{ .signal_stack_size = null };
 
-const usage = "usage: tf-flashnext-hip-test generate <model dir> [--tp N --rank R --master H --port P --policy P] [--text T] [--chat] [--max N] [--capacity N] [--repeat N] [--chunk N]\n";
+const usage = "usage: tf-flashnext-hip-test generate <model dir> [--tp N --rank R --master H --port P --policy P] [--text T] [--chat] [--max N] [--capacity N] [--repeat N] [--chunk N] [--hash]\n";
 
 const Args = struct {
     dir: []const u8 = "",
@@ -22,6 +22,8 @@ const Args = struct {
     capacity: usize = 8192,
     repeat: usize = 1,
     chunk: usize = 512,
+    /// Print a hash of every step's whole logits row, to compare builds and policies bit for bit.
+    hash: bool = false,
 };
 
 fn parse(args: []const [:0]const u8) !Args {
@@ -29,8 +31,8 @@ fn parse(args: []const [:0]const u8) !Args {
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const name = args[i];
-        if (std.mem.eql(u8, name, "--chat")) {
-            a.chat = true;
+        if (std.mem.eql(u8, name, "--chat") or std.mem.eql(u8, name, "--hash")) {
+            if (name[2] == 'c') a.chat = true else a.hash = true;
             continue;
         }
         i += 1;
@@ -83,7 +85,10 @@ fn generate(gpa: std.mem.Allocator, io: std.Io, a: Args) !void {
         const last = fx.forward.at(out.mixed, (prompt.len - 1 - start) * m.dims.hidden);
         var o = e.ops(&e.arena);
         var next: [1]u32 = undefined;
-        try e.drawer.draw(o, e.stream, try e.logits(o, last, 1), &.{.{ .sampling = null, .position = prompt.len }}, &next, false);
+        var digest = std.hash.Fnv1a_64.init();
+        const first = try e.logits(o, last, 1);
+        if (a.hash) try mix(e, &digest, first);
+        try e.drawer.draw(o, e.stream, first, &.{.{ .sampling = null, .position = prompt.len }}, &next, false);
         const p1 = nowNs(io);
         var reply: std.ArrayList(u32) = .empty;
         try reply.append(arena.allocator(), next[0]);
@@ -91,7 +96,9 @@ fn generate(gpa: std.mem.Allocator, io: std.Io, a: Args) !void {
             const step = [1]u32{next[0]};
             const w = try e.run(&c, &step, c.len, true);
             o = e.ops(&e.arena);
-            try e.drawer.draw(o, e.stream, try e.logits(o, w.mixed, 1), &.{.{ .sampling = null, .position = c.len + 1 }}, &next, false);
+            const y = try e.logits(o, w.mixed, 1);
+            if (a.hash) try mix(e, &digest, y);
+            try e.drawer.draw(o, e.stream, y, &.{.{ .sampling = null, .position = c.len + 1 }}, &next, false);
             try e.keepWindow(&c, &step, 1);
             try reply.append(arena.allocator(), next[0]);
         }
@@ -102,8 +109,18 @@ fn generate(gpa: std.mem.Allocator, io: std.Io, a: Args) !void {
         const pre = @as(f64, @floatFromInt(p1 - p0)) / 1e9;
         const dec = @as(f64, @floatFromInt(p2 - p1)) / 1e9;
         std.debug.print("prompt {d} tokens in {d:.3} s ({d:.1} tok/s); {d} tokens in {d:.3} s ({d:.2} tok/s)\n", .{ prompt.len, pre, @as(f64, @floatFromInt(prompt.len)) / pre, a.max - 1, dec, @as(f64, @floatFromInt(a.max - 1)) / dec });
+        if (a.hash) std.debug.print("logits hash {x:0>16}\n", .{digest.final()});
         std.debug.print("ids {any}\n---\n{s}{s}\n---\n", .{ reply.items, text, words });
     }
+}
+
+/// One logits row folded into `digest`, read back after the stream's work.
+fn mix(e: *fx.engine.Engine, digest: *std.hash.Fnv1a_64, y: hip.ops.Tensor) !void {
+    const bytes = try e.gpa.alloc(u8, e.cfg.vocab * y.kind.size());
+    defer e.gpa.free(bytes);
+    try e.stream.synchronize();
+    try hip.runtime.check(e.driver.api.hipMemcpyDtoH(bytes.ptr, @ptrFromInt(y.ptr), bytes.len));
+    digest.update(bytes);
 }
 
 pub fn main(init: std.process.Init) !u8 {
