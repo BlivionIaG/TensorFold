@@ -20,8 +20,8 @@ const Error = runtime.Error;
 /// Matrix cores for products: `off` keeps every product on dot2 tiles; `auto` and `on` use them where a tile exists.
 pub const Matrix = enum { auto, on, off };
 
-/// Which product tiles a run takes where two give the same bits; every one defaults on.
-pub const Choices = struct { matrix: Matrix = .auto, stream: bool = true, gemm: bool = true };
+/// Which product tiles a run takes where two give the same bits; every one defaults on. `cus`: the GPU's, 0 unknown.
+pub const Choices = struct { matrix: Matrix = .auto, stream: bool = true, gemm: bool = true, cus: u32 = 0 };
 
 /// quant/mlx.hpp's GroupTable, Routing and Affine as the kernels take them by value.
 pub const GroupTable = extern struct { p: u64, kind: c_int };
@@ -91,7 +91,8 @@ const fast_n = 256;
 const stream_cbs = [_]c_int{ 2, 4, 8 }; // columns a lane carries in the stream tile
 const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
 const stream_waves = 4; // kStreamWaves
-const streams_wanted = 3000; // kStreamWavesWanted
+const streams_wanted = 3000; // the waves a stream launch fills a large GPU with
+const stream_waves_cu = 96; // and a small one with, a compute unit
 const stream_code_words = 32; // kStreamCodeWords
 
 /// The K-parallel tiles of a short prompt: cb columns a lane set, r rows a pass over up to rb row blocks.
@@ -131,6 +132,8 @@ pub const Kernels = struct {
     pairs: [bit_widths.len][stream_rows.len][stream_cbs.len]?Function,
     /// Off keeps the decode tiles before the stream tile (the policy's reference switch).
     stream_on: bool,
+    /// The waves a stream launch wants: fewer columns a lane until it has them (a choice of speed, not of bits).
+    waves_wanted: u64,
     block: [bit_widths.len]Function,
     gemm: [bit_widths.len]Function,
     wmma_gemm: [bit_widths.len]Function,
@@ -153,6 +156,7 @@ pub const Kernels = struct {
         k.mode = choices.matrix;
         k.tile = if (choices.gemm) .gemm else .block;
         k.stream_on = choices.stream;
+        k.waves_wanted = wavesWanted(choices.cus);
         k.reg = Registry.init(tableFor(caps), &mlx_entries.all);
         k.reg.verify(k.env(), .mlx) catch return error.Invalid;
         // the GEMM tile's rows of x a lane keeps (tiles/gemm.hpp GemmShape): 8 for BF16, 16 for FP16
@@ -211,6 +215,11 @@ pub const Kernels = struct {
     fn go(r: *const runtime.Runtime, f: Function, grid: hl.Dim3, block: hl.Dim3, s: abi.Stream, args: *hl.Args) Error!void {
         if (s == util.counting) return;
         try hl.launch(f, .{ .grid = grid, .block = block }, .{ .r = r, .handle = s }, args);
+    }
+
+    /// The waves a stream launch wants on a GPU of `cus` compute units: a large GPU's 3000, fewer on a small one.
+    pub fn wavesWanted(cus: u32) u64 {
+        return if (cus == 0) streams_wanted else @min(streams_wanted, @as(u64, stream_waves_cu) * cus);
     }
 
     fn refuse(what: []const u8) Error {
@@ -317,7 +326,7 @@ pub const Kernels = struct {
             if (stream_cbs[c] * stream_rows[ri] > 16 or stream_cbs[c] * a.bits > stream_code_words) continue;
             pick = c;
             const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[c], pair_div);
-            if (@as(u64, cdiv(total_n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[ri]) >= streams_wanted) break;
+            if (@as(u64, cdiv(total_n, per_block)) * stream_waves * @as(u64, @intCast(items)) * cdiv(a.m, stream_rows[ri]) >= k.waves_wanted) break;
         }
         const per_block: c_int = stream_waves * (@as(c_int, 32) >> lpc_log2) * @divExact(stream_cbs[pick], pair_div);
         var blocks: c_uint = cdiv(total_n, per_block);
@@ -534,6 +543,12 @@ test "the split count follows the C rule" {
     try std.testing.expectEqual(@as(c_int, 1), Kernels.splitCount(1, 4096, 4096, 64, 0));
     try std.testing.expectEqual(@as(c_int, 1), Kernels.splitCount(1, 256, 4096, 64, 2));
     try std.testing.expectEqual(@as(c_int, 8), Kernels.splitCount(1, 4096, 512, 64, 2));
+}
+
+test "a stream launch wants 3000 waves on a large GPU, 96 a compute unit on a small one" {
+    try std.testing.expectEqual(@as(u64, 3000), Kernels.wavesWanted(0));
+    try std.testing.expectEqual(@as(u64, 3000), Kernels.wavesWanted(70));
+    try std.testing.expectEqual(@as(u64, 768), Kernels.wavesWanted(8));
 }
 
 test "the lane groups of a row tile" {
