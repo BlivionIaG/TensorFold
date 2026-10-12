@@ -343,8 +343,8 @@ using Dot = DotF16;
     template __global__ void affine_dot2_lanes<Dot, BITS, ROWS, 2>(Affine);     \
     template __global__ void affine_dot2_lanes<Dot, BITS, ROWS, 4>(Affine);
 #define TF_STREAM(BITS, R, CB)                                                                     \
-    template __global__ void affine_dot2_stream<Dot, BITS, R, CB, false>(Affine, StreamSides, int, int); \
-    template __global__ void affine_dot2_stream<Dot, BITS, R, CB, true>(Affine, StreamSides, int, int);
+    template __global__ void affine_dot2_stream<Dot, BITS, R, CB, false>(Affine, StreamSides, int, int, int); \
+    template __global__ void affine_dot2_stream<Dot, BITS, R, CB, true>(Affine, StreamSides, int, int, int);
 #if TF_MATRIX
 #define TF_WMMA(BITS) template __global__ void affine_wmma_gemm<BITS>(Affine);
 #else

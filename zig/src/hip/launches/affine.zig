@@ -93,6 +93,7 @@ const stream_rows = [_]u8{ 1, 2, 4 }; // its row counts: columns * rows <= 16
 const stream_waves = 4; // kStreamWaves
 const streams_wanted = 3000; // the waves a stream launch fills a large GPU with
 const stream_waves_cu = 96; // and a small one with, a compute unit
+const stage_bytes_max = 32 << 10; // the most LDS the stream tile stages a block's x in (two blocks a CU still fit)
 const stream_code_words = 32; // kStreamCodeWords
 
 /// The K-parallel tiles of a short prompt: cb columns a lane set, r rows a pass over up to rb row blocks.
@@ -132,6 +133,8 @@ pub const Kernels = struct {
     pairs: [bit_widths.len][stream_rows.len][stream_cbs.len]?Function,
     /// Off keeps the decode tiles before the stream tile (the policy's reference switch).
     stream_on: bool,
+    /// Off (the tests' comparison) keeps every lane of the stream tile loading its own x: the staged x's bits.
+    stage_on: bool,
     /// The waves a stream launch wants: fewer columns a lane until it has them (a choice of speed, not of bits).
     waves_wanted: u64,
     block: [bit_widths.len]Function,
@@ -156,6 +159,7 @@ pub const Kernels = struct {
         k.mode = choices.matrix;
         k.tile = if (choices.gemm) .gemm else .block;
         k.stream_on = choices.stream;
+        k.stage_on = true;
         k.waves_wanted = wavesWanted(choices.cus);
         k.reg = Registry.init(tableFor(caps), &mlx_entries.all);
         k.reg.verify(k.env(), .mlx) catch return error.Invalid;
@@ -189,11 +193,11 @@ pub const Kernels = struct {
             inline for (stream_rows, 0..) |rows, r| {
                 inline for (stream_cbs, 0..) |cb, c| {
                     k.stream[b][r][c] = if (cb * rows <= 16)
-                        try m.function(std.fmt.comptimePrint("_ZN2tf4rocm18affine_dot2_streamINS0_{s}ELi{d}ELi{d}ELi{d}ELb0EEEvNS0_6AffineENS0_11StreamSidesEii", .{ dot, bits, rows, cb }))
+                        try m.function(std.fmt.comptimePrint("_ZN2tf4rocm18affine_dot2_streamINS0_{s}ELi{d}ELi{d}ELi{d}ELb0EEEvNS0_6AffineENS0_11StreamSidesEiii", .{ dot, bits, rows, cb }))
                     else
                         null;
                     k.pairs[b][r][c] = if (cb * rows <= 16)
-                        try m.function(std.fmt.comptimePrint("_ZN2tf4rocm18affine_dot2_streamINS0_{s}ELi{d}ELi{d}ELi{d}ELb1EEEvNS0_6AffineENS0_11StreamSidesEii", .{ dot, bits, rows, cb }))
+                        try m.function(std.fmt.comptimePrint("_ZN2tf4rocm18affine_dot2_streamINS0_{s}ELi{d}ELi{d}ELi{d}ELb1EEEvNS0_6AffineENS0_11StreamSidesEiii", .{ dot, bits, rows, cb }))
                     else
                         null;
                 }
@@ -213,13 +217,24 @@ pub const Kernels = struct {
 
     /// Launches on `s`; the counting stream runs nothing.
     fn go(r: *const runtime.Runtime, f: Function, grid: hl.Dim3, block: hl.Dim3, s: abi.Stream, args: *hl.Args) Error!void {
+        return goShared(r, f, grid, block, 0, s, args);
+    }
+
+    fn goShared(r: *const runtime.Runtime, f: Function, grid: hl.Dim3, block: hl.Dim3, shared: u32, s: abi.Stream, args: *hl.Args) Error!void {
         if (s == util.counting) return;
-        try hl.launch(f, .{ .grid = grid, .block = block }, .{ .r = r, .handle = s }, args);
+        try hl.launch(f, .{ .grid = grid, .block = block, .shared = shared }, .{ .r = r, .handle = s }, args);
     }
 
     /// The waves a stream launch wants on a GPU of `cus` compute units: a large GPU's 3000, fewer on a small one.
     pub fn wavesWanted(cus: u32) u64 {
         return if (cus == 0) streams_wanted else @min(streams_wanted, @as(u64, stream_waves_cu) * cus);
+    }
+
+    /// LDS bytes a block stages its rows of x in, 0 for none: it repays one row at 4+ columns, two at 8 on a small GPU.
+    pub fn stageBytes(k: *const Kernels, rows: c_int, depth: c_int, cb: c_int) u32 {
+        const bytes = @as(i64, rows) * (2 * @as(i64, depth) + @divTrunc(depth, 32) * 4);
+        const repays = if (rows == 1) cb >= 4 else rows == 2 and cb == 8 and k.waves_wanted < streams_wanted;
+        return if (k.stage_on and repays and bytes <= stage_bytes_max) @intCast(bytes) else 0;
     }
 
     fn refuse(what: []const u8) Error {
@@ -347,8 +362,10 @@ pub const Kernels = struct {
             64 => 1,
             else => 2,
         }));
+        const stage = k.stageBytes(stream_rows[ri], a.k, stream_cbs[pick]);
+        try args.add(@as(c_int, @intFromBool(stage > 0)));
         const f = (if (sides.pair_cols > 0) k.pairs[b][ri][pick] else k.stream[b][ri][pick]).?;
-        try go(r, f, .{ .x = blocks, .y = cdiv(a.m, stream_rows[ri]), .z = @intCast(items) }, .{ .x = 32 * stream_waves }, s, &args);
+        try goShared(r, f, .{ .x = blocks, .y = cdiv(a.m, stream_rows[ri]), .z = @intCast(items) }, .{ .x = 32 * stream_waves }, stage, s, &args);
     }
 
     /// One row on the row tile: a lane owns a group, a wave reads a column's row in one run.
