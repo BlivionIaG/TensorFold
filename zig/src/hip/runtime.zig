@@ -12,6 +12,7 @@ pub const Runtime = struct {
     }
 
     pub fn openPath(path: []const u8) Error!Runtime {
+        @import("copies.zig").preferBlit();
         var lib = std.DynLib.open(path) catch return error.DriverUnavailable;
         errdefer lib.close();
         const api = try @import("symbols.zig").resolve(abi.Api, &lib);

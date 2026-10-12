@@ -38,6 +38,7 @@ pub const collective = @import("collective.zig");
 pub const joinGroup = @import("comm/group.zig").join;
 
 test {
+    _ = @import("copies.zig");
     _ = policy;
     _ = admission;
     _ = Device;
