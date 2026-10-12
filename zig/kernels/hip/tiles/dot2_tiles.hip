@@ -353,9 +353,18 @@ using Dot = DotF16;
 #else
 #define TF_WMMA(BITS)
 #endif
+// the GEMM tile on 64 and 32 rows a block (gfx900's prompts past the K-parallel tiles: the 128-row tile spills there)
+#if defined(__gfx900__)
+#define TF_ROWS(BITS)                                                                        \
+    template __global__ void affine_gemm_rows<Dot, BITS, GemmShape<Dot>::rt, 64>(Affine);    \
+    template __global__ void affine_gemm_rows<Dot, BITS, GemmShape<Dot>::rt, 32>(Affine);
+#else
+#define TF_ROWS(BITS)
+#endif
 #define TF_TILES(BITS)                                                                       \
     template __global__ void affine_dot2_block<Dot, BITS>(Affine);                           \
     template __global__ void affine_gemm_block<Dot, BITS, GemmShape<Dot>::rt>(Affine);       \
+    TF_ROWS(BITS)                                                                            \
     template __global__ void affine_gemm_kp<Dot, BITS, 8, 1, 2, 2, false>(Affine);           \
     template __global__ void affine_gemm_kp<Dot, BITS, 4, 4, 2, 4, true>(Affine);            \
     template __global__ void affine_gemm_kp<Dot, BITS, 4, 8, 2, 4, false>(Affine);           \
