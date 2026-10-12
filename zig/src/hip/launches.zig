@@ -336,6 +336,7 @@ pub const Launcher = struct {
     pub const fn_ple_conv = flashnext.pleConv;
     pub const fn_ngram_ids = flashnext.ngramIds;
     pub const fn_idx_pool = flashnext.idxPool;
+    pub const fn_idx_pool_at = flashnext.idxPoolAt;
     pub const fn_idx_scores = flashnext.idxScores;
     pub const fn_idx_select = flashnext.idxSelect;
     pub const fn_sparse_attention = flashnext.sparseAttention;

@@ -65,6 +65,44 @@ test "pooled block keys: the mean of a block's raw keys, normed and rotated at i
     }
 }
 
+test "pooled block keys at device positions: the blocks a window's rows complete, each as a pool from block 0" {
+    const t = try Rig.open(1 << 20);
+    defer t.close();
+    var rng: rig.Rng = .{ .state = 0x9002 };
+    const dims = 128;
+    const ratio = 4;
+    const blocks = 5;
+    const hraw = try fx.acts(t, &rng, blocks * ratio * dims, 2.0);
+    defer gpa.free(hraw);
+    var scale: [dims]f32 = undefined;
+    for (&scale) |*x| x.* = 1.0 + rng.unit() * 0.5;
+    var raw = try t.upload(hraw);
+    defer raw.free();
+    var sc = try t.upload(&scale);
+    defer sc.free();
+    var whole = try t.alloc(blocks * dims * 2);
+    defer whole.free();
+    try t.on.fn_idx_pool(ptr(?*const anyopaque, raw), ptr(?*anyopaque, whole), ptr(?[*]const f32, sc), t.kind(), 0, blocks, dims, ratio, 64, 1e7, 1e-6, t.stream.handle);
+    var mark: [blocks * dims]u16 = undefined;
+    @memset(&mark, 0xffff);
+    var slots = try t.upload(&mark);
+    defer slots.free();
+    // rows at 10 .. 15: the rows at 11 and 15 complete blocks 2 and 3
+    const pos = [_]i32{ 10, 11, 12, 13, 14, 15 };
+    var dp = try t.upload(&pos);
+    defer dp.free();
+    try t.on.fn_idx_pool_at(ptr(?*const anyopaque, raw), ptr(?*anyopaque, slots), ptr(?[*]const f32, sc), t.kind(), ptr(?[*]const i32, dp), pos.len, dims, ratio, 64, 1e7, 1e-6, t.stream.handle);
+    try t.stream.synchronize();
+    const want = try rig.download(u16, whole);
+    defer gpa.free(want);
+    const got = try rig.download(u16, slots);
+    defer gpa.free(got);
+    for (0..blocks) |b| {
+        const done = b == 2 or b == 3;
+        for (0..dims) |d| try rig.expect(got[b * dims + d] == if (done) want[b * dims + d] else 0xffff, "block {d} dim {d}", .{ b, d });
+    }
+}
+
 /// A row's keys as the reference picks them: the top best blocks (ties: lower id) in block order, then the tail.
 fn selectRef(scores: []const f32, nb: usize, end: usize, top: usize, ratio: usize, out: *std.ArrayList(i32)) !void {
     const order = try gpa.alloc(usize, nb);

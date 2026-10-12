@@ -10,12 +10,16 @@ constexpr int kSelectThreads = 1024;
 constexpr int kSelectWaves = kSelectThreads / 32;
 
 // Block b: the mean of its ratio raw keys, RMS-normed with scale and rotated at its first position, as tf_qk_rope.
+// With `pos`, launch x is a row: the block it completes (if any) goes to slot b of `pooled`; else block first + x to x.
 extern "C" __global__ void __launch_bounds__(kFnThreads)
-tf_fn_idx_pool(const void* raw, void* pooled, const float* scale, int kind, int first, int dims, int ratio, int rotary,
-               float theta, float eps) {
+tf_fn_idx_pool(const void* raw, void* pooled, const float* scale, int kind, int first, const int* pos, int dims,
+               int ratio, int rotary, float theta, float eps) {
     __shared__ float scratch[kFnWaves];
     __shared__ float normed[kFnThreads];
-    const int b = first + blockIdx.x, d = threadIdx.x;
+    const int end = pos ? pos[blockIdx.x] + 1 : 0;
+    if (pos && end % ratio != 0) return;
+    const int b = pos ? end / ratio - 1 : first + blockIdx.x, d = threadIdx.x;
+    const long long slot = pos ? b : blockIdx.x;
     float x = 0.f;
     if (d < dims) {
         float m = 0.f;
@@ -35,7 +39,7 @@ tf_fn_idx_pool(const void* raw, void* pooled, const float* scale, int kind, int 
         const float c = cosf(ang), s = sinf(ang);
         y = d < half ? normed[f] * c - normed[f + half] * s : normed[f] * s + normed[f + half] * c;
     }
-    store(pooled, kind, static_cast<long long>(blockIdx.x) * dims + d, rounded(y, kind));
+    store(pooled, kind, slot * dims + d, rounded(y, kind));
 }
 
 // Wave w of block (x, y) scores block 8 x + w for rows 8 y ..: the sum over heads of relu(q . key) / sqrt(dims).
@@ -45,7 +49,10 @@ tf_fn_idx_scores(const float* q, const void* pooled, const int* complete, float*
     constexpr int kMost = 8;
     const int lane = threadIdx.x & 31;
     const int b = blockIdx.x * kFnWaves + (threadIdx.x >> 5);
-    if (b >= blocks) return;
+    const int r0 = blockIdx.y * 8, r1 = min(rows, r0 + 8);
+    bool wanted = false;  // a graph launches over a bound of blocks: those no row scores read nothing
+    for (int r = r0; r < r1; ++r) wanted = wanted || (complete[r] > top && b < complete[r]);
+    if (b >= blocks || !wanted) return;
     float key[kMost];
 #pragma unroll
     for (int i = 0; i < kMost; ++i) {
@@ -53,7 +60,7 @@ tf_fn_idx_scores(const float* q, const void* pooled, const int* complete, float*
         key[i] = d < dims ? load(pooled, kind, static_cast<long long>(b) * dims + d) : 0.f;
     }
     const float norm = sqrtf(static_cast<float>(dims));
-    for (int r = blockIdx.y * 8; r < min(rows, blockIdx.y * 8 + 8); ++r) {
+    for (int r = r0; r < r1; ++r) {
         if (complete[r] <= top || b >= complete[r]) continue;
         float total = 0.f;
         for (int h = 0; h < heads; ++h) {

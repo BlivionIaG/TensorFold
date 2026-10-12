@@ -115,8 +115,17 @@ pub fn idxPool(l: *const Launcher, raw: C, pooled: P, scale: CF, kind: c_int, fi
     if (blocks == 0) return;
     if (dims > threads) return util.invalid("idxPool");
     var a: Args = .{};
-    inline for (.{ ad(raw), ad(pooled), ad(scale), kind, first, dims, ratio, rotary, theta, eps }) |v| try a.add(v);
+    inline for (.{ ad(raw), ad(pooled), ad(scale), kind, first, @as(u64, 0), dims, ratio, rotary, theta, eps }) |v| try a.add(v);
     try l.go(l.fnx.idx_pool, dim(blocks, 1, 1), dim(threads, 1, 1), 0, s, &a);
+}
+
+/// The blocks `rows` rows at device positions `pos` complete, pooled into their slots of `pooled` (all blocks').
+pub fn idxPoolAt(l: *const Launcher, raw: C, pooled: P, scale: CF, kind: c_int, pos: CI, rows: c_int, dims: c_int, ratio: c_int, rotary: c_int, theta: f32, eps: f32, s: S) Error!void {
+    if (rows == 0) return;
+    if (dims > threads) return util.invalid("idxPoolAt");
+    var a: Args = .{};
+    inline for (.{ ad(raw), ad(pooled), ad(scale), kind, @as(c_int, 0), ad(pos), dims, ratio, rotary, theta, eps }) |v| try a.add(v);
+    try l.go(l.fnx.idx_pool, dim(rows, 1, 1), dim(threads, 1, 1), 0, s, &a);
 }
 
 /// Every row's score of each of `blocks` pooled blocks it has complete, for rows past `top` complete blocks.
