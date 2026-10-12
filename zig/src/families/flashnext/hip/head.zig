@@ -57,15 +57,20 @@ pub fn run(ops: Ops, m: *const model.Model, host: *forward.Host, c: *cache.Cache
     return .{ .mixed = try forward.hcPre(o, m, w.mix, x, rows, null), .streams = h };
 }
 
-/// The draft head's greedy token for each of `rows` mixed rows: argmax over the draft vocabulary, as token ids.
-pub fn draws(o: Ops, m: *const model.Model, host: *forward.Host, s: hip.Stream, mixed: Tensor, rows: usize, ids: []const u32, out: []u32) !void {
+/// The draft head's greedy token for each of `rows` mixed rows (argmax over the draft vocabulary) and its probability.
+pub fn draws(o: Ops, m: *const model.Model, host: *forward.Host, s: hip.Stream, mixed: Tensor, rows: usize, ids: []const u32, out: []u32, probs: []f32) !void {
     const w = &m.mtp.?;
     const logits = try o.project(mixed, w.draft, rows, false);
-    const arg = try o.arena.of(i32, rows);
+    const arg = try o.arena.of(i32, 2 * rows);
     try o.argmaxRows(logits, rows, w.draft.n, arg);
+    try o.tokenProb(logits, rows, w.draft.n, arg, arg + rows * 4);
     const at = std.mem.alignForward(usize, host.used, 16);
-    const bytes = host.staging.bytes[at..][0 .. rows * 4];
-    try hip.runtime.check(host.d.api.hipMemcpyDtoHAsync(bytes.ptr, @ptrFromInt(arg), rows * 4, s.handle));
+    const bytes = host.staging.bytes[at..][0 .. 2 * rows * 4];
+    try hip.runtime.check(host.d.api.hipMemcpyDtoHAsync(bytes.ptr, @ptrFromInt(arg), 2 * rows * 4, s.handle));
     try s.synchronize();
-    for (out[0..rows], std.mem.bytesAsSlice(i32, @as([]align(4) u8, @alignCast(bytes)))) |*t, i| t.* = ids[@intCast(i)];
+    const words = std.mem.bytesAsSlice(u32, @as([]align(4) u8, @alignCast(bytes)));
+    for (out[0..rows], probs[0..rows], words[0..rows], words[rows..]) |*t, *p, i, f| {
+        t.* = ids[i];
+        p.* = @bitCast(f);
+    }
 }

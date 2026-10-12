@@ -397,17 +397,22 @@ pub const Fx = struct {
             var mixed = forward.at(out.mixed, (follow.len - 1) * m.dims.hidden);
             var streams = out.streams.ptr + (follow.len - 1) * row_bytes;
             const depth = @min(r.depth, max_depth);
+            // a chain past the first round ends after a draft the head gives under the confidence (--mtp-confidence)
+            const stop_under: f32 = if (r.rows != null) @floatCast(e.o.policy.mtp.confidence) else 0.0;
             var d: usize = 0;
+            var chained: usize = 0;
             while (d < depth) : (d += 1) {
                 var tok: [1]u32 = undefined;
-                try head_mod.draws(o, m, &e.host, e.stream, mixed, 1, f.draft_ids, &tok);
+                var prob: [1]f32 = undefined;
+                try head_mod.draws(o, m, &e.host, e.stream, mixed, 1, f.draft_ids, &tok, &prob);
                 lane.held[d] = tok[0];
-                if (d + 1 == depth) break;
+                chained = d + 1;
+                if (d + 1 == depth or prob[0] < stop_under) break;
                 out = try head_mod.run(o, m, &e.host, hc, .{ .ptr = streams, .kind = m.act }, &tok, lane.caches.len + d, f.ones.base());
                 mixed = out.mixed;
                 streams = out.streams.ptr;
             }
-            lane.held_n = depth;
+            lane.held_n = chained;
         }
     }
 
