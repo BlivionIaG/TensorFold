@@ -203,11 +203,11 @@ pub const Head = struct {
             for (0..max_depth) |n| sc[at.pos / 4 + n * h.cap + r] = @intCast(n + if (real) jobs[r].position else 0);
             srcs[at.ptrs / 8 + r] = if (real) jobs[r].hidden else h.zero.base();
         }
-        try hip.raw.upload(h.scalars_dev, 0, h.scalars.bytes[0..at.drafts], o.stream);
         const dev = h.scalars_dev.base();
         if (greedy) {
             try h.chain(stream, o, m, .{ .rows = @intCast(run), .most = @intCast(most), .cut = cut }, graphs);
         } else {
+            try hip.raw.upload(h.scalars_dev, 0, h.scalars.bytes[0..at.drafts], o.stream);
             try pops.gather(o, dev + at.ptrs, h.rows.base(), width / 4, rows);
             var cur: Tensor = .{ .ptr = h.rows.base(), .kind = m.act };
             var reqs: [64]draw.Request = undefined;
@@ -277,8 +277,9 @@ pub const Head = struct {
         try h.launches(o, m, key);
     }
 
-    /// The chains' input rows gathered, then every step.
+    /// The scalars' copy (in the graph, as a round's plan is), the chains' input rows gathered, then every step.
     fn launches(h: *Head, o: Ops, m: *const view.Model, key: ChainKey) !void {
+        try hip.raw.upload(h.scalars_dev, 0, h.scalars.bytes[0..h.layout().drafts], o.stream);
         try pops.gather(o, h.scalars_dev.base() + h.layout().ptrs, h.rows.base(), m.spec.hidden * m.act.size() / 4, key.rows);
         try h.steps(o, m, h.draft_head, key.rows, key.most, key.cut);
     }

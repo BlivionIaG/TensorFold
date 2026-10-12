@@ -69,8 +69,6 @@ pub const Engine = struct {
     ctx: hip.Context,
     lib: hip.Launcher,
     stream: hip.Stream,
-    /// An integrated GPU (an APU): the head's chains run eagerly there, as its first graph launch faults on gfx1033.
-    integrated: bool = false,
     weights: weights.Model,
     bridge: *bridge.Bridge,
     o: Options,
@@ -110,7 +108,6 @@ pub const Engine = struct {
         errdefer e.driver.close();
         e.ctx = try hip.Context.init(&e.driver, o.device);
         errdefer e.ctx.deinit();
-        e.integrated = (try e.ctx.attribute(.integrated)) != 0;
         const caps = try hip.Device.kernelCaps(&e.driver, o.device);
         var choices = o.policy.choices();
         choices.products.cus = @intCast(@max(0, try e.ctx.attribute(.multiprocessor_count)));
@@ -287,7 +284,6 @@ pub const Engine = struct {
 
     /// Whether the draft head's greedy batches replay graphs.
     pub fn headGraphs(e: *const Engine) bool {
-        if (e.integrated) return false;
         return if (e.o.world > 1) e.head_graphs else e.o.graphs;
     }
 
