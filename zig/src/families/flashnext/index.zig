@@ -1,6 +1,7 @@
 //! Public index admission proves required tensor names and safe shard basenames before payload headers are available.
 const std = @import("std");
 const Config = @import("config.zig").Config;
+const tensors = @import("tensors.zig");
 
 const Check = struct {
     map: std.json.ObjectMap,
@@ -39,30 +40,30 @@ const Check = struct {
     }
 
     fn hc(c: *Check, stem: []const u8, inject: bool) !void {
-        try c.part(stem, "hc_norm.weight");
-        for ([_][]const u8{ "input_mix_weight_down", "input_mix_weight_up" }) |suffix| try c.proj(stem, suffix);
-        if (inject) try c.proj(stem, "block_inject_weight");
+        try c.part(stem, tensors.hc.norm);
+        for ([_][]const u8{ tensors.hc.down, tensors.hc.up }) |suffix| try c.proj(stem, suffix);
+        if (inject) try c.proj(stem, tensors.hc.inject);
     }
 
     fn layer(c: *Check, stem: []const u8, kind: @import("config.zig").Kind) !void {
         var buf: [256]u8 = undefined;
-        for ([_][]const u8{ "attn_hyper_connection", "mlp_hyper_connection" }) |suffix| try c.hc(try std.fmt.bufPrint(&buf, "{s}.{s}", .{ stem, suffix }), true);
-        for ([_][]const u8{ "mlp.gate", "mlp.shared_expert_gate", "mlp.shared_expert.gate_proj", "mlp.shared_expert.up_proj", "mlp.shared_expert.down_proj", "mlp.switch_mlp.gate_proj", "mlp.switch_mlp.up_proj", "mlp.switch_mlp.down_proj" }) |suffix| try c.proj(stem, suffix);
+        for ([_][]const u8{ tensors.hc.attn, tensors.hc.mlp }) |suffix| try c.hc(try std.fmt.bufPrint(&buf, "{s}.{s}", .{ stem, suffix }), true);
+        for ([_][]const u8{ tensors.moe.gate, tensors.moe.shared_gate } ++ tensors.moe.shared ++ tensors.moe.routed) |suffix| try c.proj(stem, suffix);
         if (kind == .linear_attention) {
-            for ([_][]const u8{ "linear_attn.in_proj_qkv", "linear_attn.in_proj_z", "linear_attn.in_proj_b", "linear_attn.in_proj_a", "linear_attn.out_proj" }) |suffix| try c.proj(stem, suffix);
-            for ([_][]const u8{ "linear_attn.A_log", "linear_attn.dt_bias", "linear_attn.conv1d.weight", "linear_attn.norm.weight" }) |suffix| try c.part(stem, suffix);
+            for (tensors.linear.inputs ++ [_][]const u8{tensors.linear.out}) |suffix| try c.proj(stem, suffix);
+            for ([_][]const u8{ tensors.linear.a_log, tensors.linear.dt_bias, tensors.linear.conv, tensors.linear.norm }) |suffix| try c.part(stem, suffix);
         } else {
-            for ([_][]const u8{ "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj", "self_attn.indexer.index_qk_proj" }) |suffix| try c.proj(stem, suffix);
-            for ([_][]const u8{ "self_attn.q_norm.weight", "self_attn.k_norm.weight", "self_attn.indexer.q_layernorm.weight", "self_attn.indexer.k_layernorm.weight" }) |suffix| try c.part(stem, suffix);
+            for (tensors.sparse.inputs ++ [_][]const u8{tensors.sparse.o}) |suffix| try c.proj(stem, suffix);
+            for ([_][]const u8{ tensors.sparse.q_norm, tensors.sparse.k_norm, tensors.sparse.iq_norm, tensors.sparse.ik_norm }) |suffix| try c.part(stem, suffix);
         }
     }
 
     fn ple(c: *Check, stem: []const u8, shards: usize, spelling: []const u8) !void {
-        for ([_][]const u8{ "conv1d.weight", "norm_conv.weight", "norm_key.weight", "norm_query.weight", "ple_embedding.layer_multipliers", "ple_embedding.ngram_heads_offsets", "ple_embedding.ngram_heads_vocab_sizes" }) |suffix| try c.part(stem, suffix);
-        try c.proj(stem, "key_proj");
-        try c.proj(stem, "value_proj");
+        for (tensors.ple.vectors) |suffix| try c.part(stem, suffix);
+        try c.proj(stem, tensors.ple.key);
+        try c.proj(stem, tensors.ple.value);
         var buf: [256]u8 = undefined;
-        for (0..shards) |i| try c.proj(stem, try std.fmt.bufPrint(&buf, "ple_embedding.ngram_embedding.{s}{d}", .{ spelling, i }));
+        for (0..shards) |i| try c.matrix(try tensors.ple.table(&buf, stem, spelling, i));
     }
 };
 
@@ -100,23 +101,20 @@ fn admitWith(gpa: std.mem.Allocator, bytes: []const u8, config: *const Config, r
     }
     var c = Check{ .map = map.object, .runtime = if (runtime) config else null };
     const spelling = ngramSpelling(map.object); // every shard is checked under this one, so an index mixing the two is refused
-    try c.matrix("language_model.model.embed_tokens");
-    try c.matrix("language_model.lm_head");
-    try c.hc("language_model.model.hyper_connection_mixer", false);
+    try c.matrix(tensors.embed);
+    try c.matrix(tensors.lm_head);
+    try c.hc(tensors.mixer, false);
     var stem: [128]u8 = undefined;
     for (0..config.layers) |i| {
-        const layer = try std.fmt.bufPrint(&stem, "language_model.model.layers.{d}", .{i});
+        const layer = try tensors.layer(&stem, i);
         try c.layer(layer, try config.kind(i));
-        if (config.ple[i]) {
-            var buf: [160]u8 = undefined;
-            try c.ple(try std.fmt.bufPrint(&buf, "{s}.ple", .{layer}), config.ngram_shards, spelling);
-        }
+        if (config.ple[i]) try c.ple(layer, config.ngram_shards, spelling);
     }
     if (config.mtp.layers > 0) {
-        for ([_][]const u8{ "fc_embedding", "fc_hidden" }) |suffix| try c.proj("language_model.mtp", suffix);
-        for ([_][]const u8{ "pre_fc_norm_embedding.weight", "pre_fc_norm_hidden.weight" }) |suffix| try c.part("language_model.mtp", suffix);
-        try c.hc("language_model.mtp.hyper_connection_mixer", false);
-        for (0..config.mtp.layers) |i| try c.layer(try std.fmt.bufPrint(&stem, "language_model.mtp.layers.{d}", .{i}), config.mtp.kinds[i]);
+        for ([_][]const u8{ tensors.mtp.fc_embedding, tensors.mtp.fc_hidden }) |name| try c.matrix(name);
+        for ([_][]const u8{ tensors.mtp.norm_embedding, tensors.mtp.norm_hidden }) |name| try c.take(name);
+        try c.hc(tensors.mtp.mixer, false);
+        for (0..config.mtp.layers) |i| try c.layer(try std.fmt.bufPrint(&stem, "{s}.layers.{d}", .{ tensors.mtp.stem, i }), config.mtp.kinds[i]);
     }
     return .{ .tensor_names = map.object.count(), .required_names = c.names, .shards = files.count() };
 }
