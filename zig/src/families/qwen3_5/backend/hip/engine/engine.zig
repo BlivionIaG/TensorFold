@@ -112,7 +112,9 @@ pub const Engine = struct {
         errdefer e.ctx.deinit();
         e.integrated = (try e.ctx.attribute(.integrated)) != 0;
         const caps = try hip.Device.kernelCaps(&e.driver, o.device);
-        e.lib = try hip.Launcher.load(&e.driver, o.policy.choices(), hip.kernels.images);
+        var choices = o.policy.choices();
+        choices.products.cus = @intCast(@max(0, try e.ctx.attribute(.multiprocessor_count)));
+        e.lib = try hip.Launcher.load(&e.driver, choices, hip.kernels.images);
         errdefer e.lib.unload();
         e.act = if (caps.act == .f16) .f16 else .bf16;
         e.dtype = if (caps.act == .f16) .f16 else .bf16;
