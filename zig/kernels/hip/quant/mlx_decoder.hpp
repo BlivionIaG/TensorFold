@@ -165,7 +165,18 @@ struct MlxDecoder {
         constexpr int low = lo<I>();
         constexpr int high = low + gap();
         uint32_t bits;
-        if constexpr (kGapPairs) {
+        if constexpr (kGapPairs && std::is_same_v<typename T::elem, __half>) {
+            // codes kept in place under an exponent making their bit the units (one shared shift past bit 9)
+            constexpr int per = 32 / BITS;
+            constexpr int at = BITS * (low % per);
+            constexpr int base = at + BITS <= 10 ? 0 : ((10 - BITS) / BITS + 1) * BITS;
+            constexpr int rem = at - base;
+            constexpr uint32_t magic = static_cast<uint32_t>(25 - rem) << 10;
+            constexpr uint32_t magics = magic | (magic << 16);
+            constexpr uint32_t mask = (((1u << BITS) - 1u) << rem) * 0x00010001u;
+            bits = ((w[low / per] >> base) & mask) | magics;
+            return __hsub2(__builtin_bit_cast(__half2, bits), __builtin_bit_cast(__half2, magics));
+        } else if constexpr (kGapPairs) {
             constexpr int per = 32 / BITS;
             constexpr uint32_t mask = ((1u << BITS) - 1u) * 0x00010001u;
             bits = (w[low / per] >> (BITS * (low % per))) & mask;
