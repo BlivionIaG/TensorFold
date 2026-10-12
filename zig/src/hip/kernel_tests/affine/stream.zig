@@ -10,14 +10,14 @@ const cases = @import("cases.zig");
 const prod = @import("product.zig");
 
 /// The bytes every launch below writes, hashed in order, as the stream tile before the stage wrote them.
-const pinned_f16: u64 = 0xed1af04b190fa007;
-const pinned_bf16: u64 = 0x326489ea4585d911;
+const pinned_f16: u64 = 0x36ef53355d892c81;
+const pinned_bf16: u64 = 0x6b703ab847138aad;
 
 /// Row counts: one and two rows a block (the staged tiles), a partial block of four, and the y blocks above.
 const row_counts = [_]usize{ 1, 2, 3, 5, 16 };
 
-/// How a launch writes: fp32, the activation type, or silu(gate) * up of a stacked pair.
-const Out = enum { f32, act, pair };
+/// How a launch writes: fp32, the activation type, silu(gate) * up of a stacked pair, or fp32 of a two-expert plan.
+const Out = enum { f32, act, pair, routed };
 
 const Shape = struct { n: usize, k: usize, bits: u8, group: u16 };
 
@@ -38,11 +38,12 @@ fn product(t: *prod.Rig, rng: *data.Rng, s: Shape, out: Out, hash: *u64) !usize 
     const groups = s.k / s.group;
     const hx = try data.fill(gpa, u16, most * s.k, rng, if (t.fp16) data.makeX16 else data.makeXB);
     defer gpa.free(hx);
-    const hw = try data.fill(gpa, u32, s.n * words_row, rng, data.makeWord);
+    const experts: usize = if (out == .routed) 2 else 1;
+    const hw = try data.fill(gpa, u32, experts * s.n * words_row, rng, data.makeWord);
     defer gpa.free(hw);
-    const hs = try data.fill(gpa, u16, s.n * groups, rng, data.makeScale);
+    const hs = try data.fill(gpa, u16, experts * s.n * groups, rng, data.makeScale);
     defer gpa.free(hs);
-    const hb = try data.fill(gpa, u16, s.n * groups, rng, data.makeBias);
+    const hb = try data.fill(gpa, u16, experts * s.n * groups, rng, data.makeBias);
     defer gpa.free(hb);
     var x = try Buffer.fromHost(t.base, hx);
     defer x.free();
@@ -52,8 +53,16 @@ fn product(t: *prod.Rig, rng: *data.Rng, s: Shape, out: Out, hash: *u64) !usize 
     defer scale.free();
     var bias = try Buffer.fromHost(t.base, hb);
     defer bias.free();
+    // a plan's rows reversed: item 0 (expert 0) takes the first half of the members, item 1 the rest
+    var members: [most]c_int = undefined;
+    for (&members, 0..) |*mb, i| mb.* = @intCast(most - 1 - i);
+    var member_buf = try Buffer.fromHost(t.base, @as([]const c_int, &members));
+    defer member_buf.free();
+    var plan = try Buffer.alloc(t.base, 6 * @sizeOf(c_int));
+    defer plan.free();
     const cols = if (out == .pair) s.n / 2 else s.n;
-    const bytes = most * cols * @as(usize, if (out == .f32) 4 else 2);
+    const size: usize = if (out == .f32 or out == .routed) 4 else 2;
+    const bytes = most * cols * size;
     var outs: [2]Buffer = .{ try Buffer.alloc(t.base, bytes), try Buffer.alloc(t.base, bytes) };
     defer for (&outs) |*o| o.free();
     const got = try gpa.alloc(u8, 2 * bytes);
@@ -76,18 +85,28 @@ fn product(t: *prod.Rig, rng: *data.Rng, s: Shape, out: Out, hash: *u64) !usize 
             .group = s.group,
             .fp16 = @intFromBool(t.fp16),
         };
+        var a0 = arg;
+        var items: c_int = 1;
+        if (out == .routed) {
+            const first = (m + 1) / 2;
+            const item = [6]c_int{ 0, 0, @intCast(first), 1, @intCast(first), @intCast(m - first) };
+            try plan.upload(0, std.mem.sliceAsBytes(&item));
+            items = if (m > first) 2 else 1;
+            a0.m = @intCast(first);
+            a0.route = .{ .items = plan.ptr, .members = member_buf.ptr, .x_div = 1 };
+        }
         // the widest width meets a target of one wave; a narrower one the waves it makes itself
-        k.waves_wanted = if (cb == 8) 1 else wavesOf(s, m, cb, out);
+        k.waves_wanted = if (cb == 8) 1 else wavesOf(s, @intCast(a0.m), cb, out) * @as(u64, @intCast(items));
         for (outs, [_]bool{ false, true }) |o, staged| {
             k.stage_on = staged;
-            var a = arg;
-            if (out == .f32) a.out = o.ptr else a.out16 = o.ptr;
+            var a = a0;
+            if (size == 4) a.out = o.ptr else a.out16 = o.ptr;
             try o.fill8(0xA5, null);
             const sides: affine.StreamSides = if (out == .pair) .{ .pair_cols = @intCast(cols) } else .{};
-            try k.streamGo(&t.base.r, a, sides, @intCast(cols), 1, t.base.stream.handle);
+            try k.streamGo(&t.base.r, a, sides, @intCast(cols), items, t.base.stream.handle);
         }
         try t.base.stream.synchronize();
-        const n_bytes = m * cols * @as(usize, if (out == .f32) 4 else 2);
+        const n_bytes = if (out == .routed) most * cols * size else m * cols * size;
         try outs[0].download(0, got[0..n_bytes]);
         try outs[1].download(0, got[bytes..][0..n_bytes]);
         hash.* = std.hash.Wyhash.hash(hash.*, got[0..n_bytes]);
