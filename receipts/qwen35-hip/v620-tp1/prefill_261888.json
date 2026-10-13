@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "fixture_sha256": "83f5fe821d76d584aa8e9efa66df15d24d92bf5a9e4173947771649fc2b6e2fa",
+  "requested_reply_tokens": 16,
+  "temperature": 0,
+  "seed": 1234,
+  "rows": [
+    {
+      "phase": "first",
+      "prompt_tokens": 261888,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "854bcb06577a",
+      "output_sha256": "7d897e54306813bfdafab145228966c00a4c92fc62a11370c56494afb114cabb",
+      "ttft_s": 551.1199161290006,
+      "decode_tps": null,
+      "unmeasured": true
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 261888,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "854bcb06577a",
+      "output_sha256": "7d897e54306813bfdafab145228966c00a4c92fc62a11370c56494afb114cabb",
+      "ttft_s": 551.0407774879986,
+      "decode_tps": null,
+      "unmeasured": true,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 261888,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "854bcb06577a",
+      "output_sha256": "7d897e54306813bfdafab145228966c00a4c92fc62a11370c56494afb114cabb",
+      "ttft_s": 551.5451167780011,
+      "decode_tps": null,
+      "unmeasured": true,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    }
+  ],
+  "qualified": true
+}

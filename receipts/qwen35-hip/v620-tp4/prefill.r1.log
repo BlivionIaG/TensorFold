@@ -1,0 +1,3 @@
+[tensorfold] HIP rank 1 of 4: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots (rank 0's) 
+info: graphs: 6 captured (38 ms each), 84 of 90 rounds replayed
+error: Invalid

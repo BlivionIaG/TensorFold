@@ -1,0 +1,88 @@
+[
+ {
+  "label": "v620-tp4",
+  "prompt": "fibonacci-raw",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 153.8075935632076,
+  "decode_tps_all": [
+   153.97,
+   153.81,
+   153.76
+  ],
+  "ttft_s_median": 0.03241280300062499,
+  "evidence": [
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f996c8bd76ff",
+    "output_sha256": "0914a4a1da8ee5368c25976eaa99fe323b1afcac986a93dfb750c725920d3eee"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f996c8bd76ff",
+    "output_sha256": "0914a4a1da8ee5368c25976eaa99fe323b1afcac986a93dfb750c725920d3eee"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f996c8bd76ff",
+    "output_sha256": "0914a4a1da8ee5368c25976eaa99fe323b1afcac986a93dfb750c725920d3eee"
+   }
+  ],
+  "sample": "\n\n```python\ndef fib(n):\n    \"\"\"Compute the nth Fibonacci number.\"\"\"\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n```\nThis functio"
+ },
+ {
+  "label": "v620-tp4",
+  "prompt": "gpu-chat-no-think",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 128.9458371777683,
+  "decode_tps_all": [
+   127.74,
+   128.95,
+   129.08
+  ],
+  "ttft_s_median": 0.041730372002348304,
+  "evidence": [
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "3b5353e0122b",
+    "output_sha256": "098d5de195e675642ae39eea204296fc00ebe658507d578a6fcb339d0ef23922"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "3b5353e0122b",
+    "output_sha256": "098d5de195e675642ae39eea204296fc00ebe658507d578a6fcb339d0ef23922"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "3b5353e0122b",
+    "output_sha256": "098d5de195e675642ae39eea204296fc00ebe658507d578a6fcb339d0ef23922"
+   }
+  ],
+  "sample": "### How Matrix Multiplication Uses a GPU (Plain English)\n\nImagine you have two large grids of numbers (matrices), and you need to multiply them. The result is a"
+ }
+]

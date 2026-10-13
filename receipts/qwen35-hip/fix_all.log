@@ -1,0 +1,74 @@
+== checks
+tp2 0,1: check Qwen3.6-35B-A3B-MLX-4bit-MTP, tp 2
+tp2 0,1: check PASS: 19 passed, 0 failed, 4 skipped in 46.0 s
+tp2 2,3: check Qwen3.6-35B-A3B-MLX-4bit-MTP, tp 2
+tp2 2,3: check PASS: 19 passed, 0 failed, 4 skipped in 54.7 s
+tp4 2,3,4,5: check Qwen3.6-35B-A3B-MLX-4bit-MTP, tp 4
+tp4 2,3,4,5: check PASS: 19 passed, 0 failed, 4 skipped in 51.1 s
+== w7800-tp2 devs=0,1 arch=gfx1100 head=10926cf+window-fix 2026-10-12T23:23:14+02:00
+-- cold prefill
+[tensorfold] HIP gfx1100 device 0, rank 0 of 2: model 10.07 GiB; 1 stream at once, 2.53 GiB each at a 262144-token window, of 32.6 GiB left after a 1.4 GiB reserve; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 1024-row chunks
+[tensorfold] serving Qwen3.6-35B-A3B-MLX-4bit-MTP at http://127.0.0.1:19644/v1 (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 262144; loaded in 26.6s)
+2048 qualified True [('first', 2048, 0, 0.44204023299971595), ('repeated', 2048, 0, 0.4362610960015445), ('concurrent', 2048, 0, 0.4391584929981036)]
+8192 qualified True [('first', 8192, 0, 1.8744277469995723), ('repeated', 8192, 0, 1.8832609519995458), ('concurrent', 8192, 0, 1.8896851219978998)]
+32768 qualified True [('first', 32768, 0, 9.967492324998602), ('repeated', 32768, 0, 10.092314222998539), ('concurrent', 32768, 0, 10.20680993499991)]
+65536 qualified True [('first', 65536, 0, 26.947953451999638), ('repeated', 65536, 0, 26.849967563000973), ('concurrent', 65536, 0, 26.76591918900158)]
+131072 qualified True [('first', 131072, 0, 78.83754542500174), ('repeated', 131072, 0, 79.72813154300093), ('concurrent', 131072, 0, 80.64042462399811)]
+261888 qualified True [('first', 261888, 0, 266.79476116799924), ('repeated', 261888, 0, 266.44232585899954), ('concurrent', 261888, 0, 268.6932353739976)]
+{"peak_vram_bytes": 29922521088, "peak_rss_kib": 2091088, "peak_hwm_kib_sum": 40919808, "samples": 607}
+-- decode and concurrency
+[tensorfold] HIP gfx1100 device 0, rank 0 of 2: model 10.07 GiB; 4 streams at once, 0.34 GiB each at a 32768-token window, of 32.6 GiB left after a 1.4 GiB reserve; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 1024-row chunks
+[tensorfold] serving Qwen3.6-35B-A3B-MLX-4bit-MTP at http://127.0.0.1:19644/v1 (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 32768; loaded in 26.5s)
+{"label": "w7800-tp2", "prompt": "fibonacci-raw", "temperature": 0.0, "decode_tps_median": 181.8006181284999, "decode_tps_all": [182.25, 181.8, 181.55], "ttft_s_median": 0.02989954199802014}
+{"label": "w7800-tp2", "prompt": "gpu-chat-no-think", "temperature": 0.0, "decode_tps_median": 143.60753114642614, "decode_tps_all": [143.82, 143.61, 143.28], "ttft_s_median": 0.04098288800014416}
+{"label": "w7800-tp2", "prompt": "code", "temperature": 0.0, "streams": 1, "failed": 0, "unmeasured": 0, "aggregate_tps": 179.2, "per_stream_tps": 179.2, "ttft_s_max": 0.03, "alone": {"equal": 3, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "w7800-tp2", "prompt": "code", "temperature": 0.0, "streams": 4, "failed": 0, "unmeasured": 0, "aggregate_tps": 372.6, "per_stream_tps": 95.8, "ttft_s_max": 0.22, "steady_tps": 389.3, "alone": {"equal": 12, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "w7800-tp2", "prompt": "chat", "temperature": 0.0, "streams": 1, "failed": 0, "unmeasured": 0, "aggregate_tps": 142.3, "per_stream_tps": 142.3, "ttft_s_max": 0.04, "alone": {"equal": 3, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "w7800-tp2", "prompt": "chat", "temperature": 0.0, "streams": 4, "failed": 0, "unmeasured": 0, "aggregate_tps": 310.5, "per_stream_tps": 80.2, "ttft_s_max": 0.23, "steady_tps": 323.4, "alone": {"equal": 12, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"peak_vram_bytes": 27608244224, "peak_rss_kib": 2087188, "peak_hwm_kib_sum": 40922464, "samples": 27}
+== done w7800-tp2 2026-10-12T23:44:29+02:00
+== v620-tp2 devs=2,3 arch=gfx1030 head=10926cf+window-fix 2026-10-12T23:44:29+02:00
+-- cold prefill
+[tensorfold] HIP gfx1030 device 0, rank 0 of 2: model 10.07 GiB; 1 stream at once, 2.53 GiB each at a 262144-token window, of 18.0 GiB left after a 1.0 GiB reserve; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 1024-row chunks
+[tensorfold] serving Qwen3.6-35B-A3B-MLX-4bit-MTP at http://127.0.0.1:19502/v1 (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 262144; loaded in 26.1s)
+2048 qualified True [('first', 2048, 0, 0.605586169000162), ('repeated', 2048, 0, 0.5781340529974841), ('concurrent', 2048, 0, 0.5781369979995361)]
+8192 qualified True [('first', 8192, 0, 2.46837159399729), ('repeated', 8192, 0, 2.461567702001048), ('concurrent', 8192, 0, 2.4649457779996737)]
+32768 qualified True [('first', 32768, 0, 12.445897034001973), ('repeated', 32768, 0, 12.50047709700084), ('concurrent', 32768, 0, 12.551900652997574)]
+65536 qualified True [('first', 65536, 0, 32.050919249999424), ('repeated', 65536, 0, 32.13706678900053), ('concurrent', 65536, 0, 32.17470429199966)]
+131072 qualified True [('first', 131072, 0, 91.67121092099842), ('repeated', 131072, 0, 91.78850343599697), ('concurrent', 131072, 0, 91.86034365800151)]
+261888 qualified True [('first', 261888, 0, 292.9254791019994), ('repeated', 261888, 0, 292.93453441100064), ('concurrent', 261888, 0, 293.6473617820011)]
+{"peak_vram_bytes": 29743869952, "peak_rss_kib": 1916108, "peak_hwm_kib_sum": 40731908, "samples": 688}
+-- decode and concurrency
+[tensorfold] HIP gfx1030 device 0, rank 0 of 2: model 10.07 GiB; 4 streams at once, 0.34 GiB each at a 32768-token window, of 18.0 GiB left after a 1.0 GiB reserve; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 1024-row chunks
+[tensorfold] serving Qwen3.6-35B-A3B-MLX-4bit-MTP at http://127.0.0.1:19502/v1 (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 32768; loaded in 26.8s)
+{"label": "v620-tp2", "prompt": "fibonacci-raw", "temperature": 0.0, "decode_tps_median": 149.11478403177324, "decode_tps_all": [149.11, 149.13, 149.11], "ttft_s_median": 0.03477359699900262}
+{"label": "v620-tp2", "prompt": "gpu-chat-no-think", "temperature": 0.0, "decode_tps_median": 126.9988472454494, "decode_tps_all": [126.93, 127.0, 127.09], "ttft_s_median": 0.04730084400216583}
+{"label": "v620-tp2", "prompt": "code", "temperature": 0.0, "streams": 1, "failed": 0, "unmeasured": 0, "aggregate_tps": 149.3, "per_stream_tps": 149.3, "ttft_s_max": 0.03, "alone": {"equal": 3, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "v620-tp2", "prompt": "code", "temperature": 0.0, "streams": 4, "failed": 0, "unmeasured": 0, "aggregate_tps": 341.3, "per_stream_tps": 87.6, "ttft_s_max": 0.25, "steady_tps": 358.2, "alone": {"equal": 12, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "v620-tp2", "prompt": "chat", "temperature": 0.0, "streams": 1, "failed": 0, "unmeasured": 0, "aggregate_tps": 127.0, "per_stream_tps": 127.0, "ttft_s_max": 0.05, "alone": {"equal": 3, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "v620-tp2", "prompt": "chat", "temperature": 0.0, "streams": 4, "failed": 0, "unmeasured": 0, "aggregate_tps": 285.3, "per_stream_tps": 73.8, "ttft_s_max": 0.26, "steady_tps": 298.8, "alone": {"equal": 12, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"peak_vram_bytes": 27540897792, "peak_rss_kib": 1902432, "peak_hwm_kib_sum": 40735772, "samples": 36}
+== done v620-tp2 2026-10-13T00:08:08+02:00
+== v620-tp4 devs=2,3,4,5 arch=gfx1030 head=10926cf+window-fix 2026-10-13T00:08:08+02:00
+-- cold prefill
+[tensorfold] HIP gfx1030 device 0, rank 0 of 4: model 5.62 GiB; 1 stream at once, 2.52 GiB each at a 262144-token window, of 22.4 GiB left after a 1.0 GiB reserve; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 1024-row chunks
+[tensorfold] serving Qwen3.6-35B-A3B-MLX-4bit-MTP at http://127.0.0.1:19744/v1 (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 262144; loaded in 24.4s)
+2048 qualified True [('first', 2048, 0, 0.5307930920025683), ('repeated', 2048, 0, 0.5016482249993715), ('concurrent', 2048, 0, 0.5025545009993948)]
+8192 qualified True [('first', 8192, 0, 2.087368256998161), ('repeated', 8192, 0, 2.0783759070000087), ('concurrent', 8192, 0, 2.0791042929995456)]
+32768 qualified True [('first', 32768, 0, 9.58420939899952), ('repeated', 32768, 0, 9.596050859003299), ('concurrent', 32768, 0, 9.606007312002475)]
+65536 qualified True [('first', 65536, 0, 22.660060999998677), ('repeated', 65536, 0, 22.66909786099859), ('concurrent', 65536, 0, 22.68631220699899)]
+131072 qualified True [('first', 131072, 0, 59.015911587997834), ('repeated', 131072, 0, 59.03967438300242), ('concurrent', 131072, 0, 59.05803074699725)]
+261888 qualified True [('first', 261888, 0, 172.75990778800042), ('repeated', 261888, 0, 172.71606813399922), ('concurrent', 261888, 0, 172.75197306500195)]
+{"peak_vram_bytes": 38240874496, "peak_rss_kib": 3549336, "peak_hwm_kib_sum": 79900528, "samples": 394}
+-- decode and concurrency
+[tensorfold] HIP gfx1030 device 0, rank 0 of 4: model 5.62 GiB; 4 streams at once, 0.33 GiB each at a 32768-token window, of 22.4 GiB left after a 1.0 GiB reserve; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 1024-row chunks
+[tensorfold] serving Qwen3.6-35B-A3B-MLX-4bit-MTP at http://127.0.0.1:19744/v1 (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 32768; loaded in 25.3s)
+{"label": "v620-tp4", "prompt": "fibonacci-raw", "temperature": 0.0, "decode_tps_median": 153.78331543209524, "decode_tps_all": [153.87, 153.68, 153.78], "ttft_s_median": 0.032222081998042995}
+{"label": "v620-tp4", "prompt": "gpu-chat-no-think", "temperature": 0.0, "decode_tps_median": 129.52972239541634, "decode_tps_all": [129.18, 129.53, 129.57], "ttft_s_median": 0.0417396609991556}
+{"label": "v620-tp4", "prompt": "code", "temperature": 0.0, "streams": 1, "failed": 0, "unmeasured": 0, "aggregate_tps": 153.6, "per_stream_tps": 153.6, "ttft_s_max": 0.03, "alone": {"equal": 3, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "v620-tp4", "prompt": "code", "temperature": 0.0, "streams": 4, "failed": 0, "unmeasured": 0, "aggregate_tps": 406.8, "per_stream_tps": 104.2, "ttft_s_max": 0.29, "steady_tps": 430.0, "alone": {"equal": 12, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "v620-tp4", "prompt": "chat", "temperature": 0.0, "streams": 1, "failed": 0, "unmeasured": 0, "aggregate_tps": 129.4, "per_stream_tps": 129.4, "ttft_s_max": 0.04, "alone": {"equal": 3, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"label": "v620-tp4", "prompt": "chat", "temperature": 0.0, "streams": 4, "failed": 0, "unmeasured": 0, "aggregate_tps": 333.4, "per_stream_tps": 86.2, "ttft_s_max": 0.23, "steady_tps": 351.0, "alone": {"equal": 12, "unequal": 0, "failed": 0}, "serial": {"equal": 1, "unequal": 0, "failed": 0}}
+{"peak_vram_bytes": 33628897280, "peak_rss_kib": 3540176, "peak_hwm_kib_sum": 79910056, "samples": 26}
+== done v620-tp4 2026-10-13T00:23:23+02:00
+FIX-ALL-DONE
