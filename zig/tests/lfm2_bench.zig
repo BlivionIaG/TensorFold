@@ -3,6 +3,7 @@ const std = @import("std");
 const mtl = @import("metal");
 const q = @import("tensorfold").lfm2;
 const st = q.state;
+const c = q.config;
 
 fn now() i128 {
     var ts: std.c.timespec = undefined;
@@ -23,6 +24,8 @@ pub fn main(init: std.process.Init) !void {
     try prompts(m);
     try grouped(m);
     try promptBudget(m);
+    try decodeBudget(m, 64);
+    try decodeBudget(m, 32768);
     var big = try st.Scratch.init(init.gpa, m.device, &m.config.attention, chunk);
     defer big.deinit();
     var one = try st.Scratch.init(init.gpa, m.device, &m.config.attention, 1);
@@ -104,8 +107,7 @@ fn grouped(m: *q.Model) !void {
     std.debug.print("grouped tiles 1536x2048 x64 experts, {d} rows: {d:.0} us, {d:.2} TFLOPS\n", .{ rows, t * 1e6, 2.0 * @as(f64, @floatFromInt(rows * 1536 * 2048)) / t / 1e12 });
 }
 
-
-/// One 2,048-row prompt chunk's GPU budget: each kernel at its real shape (picks spread over the experts), times its launches.
+/// A 2,048-row prompt chunk's GPU budget: each kernel at its real shape (picks spread), times its launches.
 fn promptBudget(m: *q.Model) !void {
     const rows = 2048;
     const slots = rows * 4;
@@ -125,12 +127,12 @@ fn promptBudget(m: *q.Model) !void {
     const dense = m.weights.blocks[0].ffn.dense;
     const Item = struct { name: []const u8, per: f64 };
     const items = [_]Item{
-        .{ .name = "sums+tiles conv in", .per = 30 },   .{ .name = "sums+tiles conv out", .per = 30 },
-        .{ .name = "sums+tiles attn q,k,v,o", .per = 10 }, .{ .name = "sums+tiles dense x3", .per = 2 },
-        .{ .name = "route", .per = 38 },                .{ .name = "sort+work", .per = 38 },
+        .{ .name = "sums+tiles conv in", .per = 30 },       .{ .name = "sums+tiles conv out", .per = 30 },
+        .{ .name = "sums+tiles attn q,k,v,o", .per = 10 },  .{ .name = "sums+tiles dense x3", .per = 2 },
+        .{ .name = "route", .per = 38 },                    .{ .name = "sort+work", .per = 38 },
         .{ .name = "sums+grouped glu gate,up", .per = 38 }, .{ .name = "sums+grouped down", .per = 38 },
-        .{ .name = "combine sorted", .per = 38 },      .{ .name = "norm", .per = 81 },
-        .{ .name = "conv kernel", .per = 30 },         .{ .name = "attn mma 2k", .per = 10 },
+        .{ .name = "combine sorted", .per = 38 },           .{ .name = "norm", .per = 81 },
+        .{ .name = "conv kernel", .per = 30 },              .{ .name = "attn mma 2k", .per = 10 },
     };
     var total: f64 = 0;
     inline for (items, 0..) |it, which| {
@@ -220,7 +222,7 @@ fn promptBudget(m: *q.Model) !void {
                 e.setBuffer(sc.queries, 0, 0);
                 e.setBuffer(kv.keys, 0, 1);
                 e.setBuffer(kv.values, 0, 2);
-                e.setBytes(std.mem.asBytes(&[3]u32{ 0, @intCast(cache.capacity), @bitCast(@as(f32, 0.125)) }), 3);
+                e.setBytes(std.mem.asBytes(&[4]u32{ 0, @intCast(cache.capacity), @bitCast(@as(f32, 0.125)), 1 }), 3);
                 e.setBuffer(sc.pm, 0, 4);
                 e.setBuffer(sc.pl, 0, 5);
                 e.setBuffer(sc.po, 0, 6);
@@ -230,7 +232,7 @@ fn promptBudget(m: *q.Model) !void {
                 e.setBuffer(sc.pm, 0, 0);
                 e.setBuffer(sc.pl, 0, 1);
                 e.setBuffer(sc.po, 0, 2);
-                e.setBytes(std.mem.asBytes(&[3]u32{ 0, @intCast(cache.capacity), @bitCast(@as(f32, 0.125)) }), 3);
+                e.setBytes(std.mem.asBytes(&[4]u32{ 0, @intCast(cache.capacity), @bitCast(@as(f32, 0.125)), 1 }), 3);
                 e.setBuffer(sc.y, 0, 4);
                 e.dispatchGroups(mtl.Size.of(32, rows, 1), mtl.Size.of(32, 1, 1));
             },
@@ -243,4 +245,176 @@ fn promptBudget(m: *q.Model) !void {
         std.debug.print("{s}: {d:.2} ms x {d} = {d:.0} ms\n", .{ it.name, ms, it.per, ms * it.per });
     }
     std.debug.print("prompt chunk budget: {d:.0} ms for {d} rows ({d:.0} tok/s)\n", .{ total, rows, rows / total * 1e3 });
+}
+
+fn linearBytes(w: q.weights.Linear) usize {
+    return w.n * w.k * w.bits / 8 + 2 * w.n * (w.k / 64) * 2;
+}
+
+/// One decode step's GPU budget at `len` context: each kernel class at its one-row shape over every layer of its kind.
+fn decodeBudget(m: *q.Model, len: usize) !void {
+    const dev = m.device;
+    var sc = try st.Scratch.init(m.gpa, dev, &m.config.attention, 1);
+    defer sc.deinit();
+    var cache = try st.Cache.init(m.gpa, dev, &m.config.attention, len + 64);
+    defer cache.deinit();
+    cache.len = len;
+    // Rotating through the layers, no call finds its weights in cache; each class reports the bytes it must read.
+    const ids = try dev.buffer(64, mtl.ResourceOptions.shared);
+    defer ids.deinit();
+    for (ids.slice(u32, 4), 0..) |*v, i| v.* = @intCast(i * 13 + 1);
+    const tq = q.forward.matrix;
+    const t = &m.kernels.tiles;
+    const scale: f32 = 1.0 / @sqrt(@as(f32, c.head_dim));
+    const names = [_][]const u8{ "norm x43", "conv in twin", "conv kernel", "conv out twin", "attn q,k,v,o twins", "qk+attn+merge", "dense gate,up,swiglu,down", "route", "experts glu", "experts down", "combine+norm", "head twin (6-bit)" };
+    var total: f64 = 0;
+    inline for (names, 0..) |name, which| {
+        var bytes: usize = 0;
+        var launches_n: usize = 0;
+        const cb = m.queue.commandBuffer();
+        const e = cb.compute(.serial);
+        for (m.weights.blocks, 0..) |block, layer| {
+            switch (which) {
+                0 => {
+                    for (0..@as(usize, if (block.ffn == .dense) 2 else 1) + @intFromBool(layer == 0)) |_| {
+                        e.setPipeline(m.kernels.get("lfm2_norm"));
+                        e.setBuffer(sc.h, 0, 0);
+                        e.setBuffer(sc.r, 0, 1);
+                        e.setBuffer(block.operator_norm.buffer, block.operator_norm.offset, 2);
+                        e.setValue(@as(f32, 1e-5), 3);
+                        e.setValue(@as(u32, 1), 4);
+                        e.setBuffer(sc.x, 0, 5);
+                        e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(512, 1, 1));
+                        launches_n += 1;
+                    }
+                },
+                1, 2, 3 => if (block.mixer == .conv) {
+                    const cv = block.mixer.conv;
+                    if (which == 1) {
+                        try tile.encodeTwin(e, t, tq(cv.in), sc.x, 0, sc.bcx, 0, 1);
+                        bytes += linearBytes(cv.in);
+                    } else if (which == 2) {
+                        e.setPipeline(m.kernels.get("lfm2_conv"));
+                        e.setBuffer(sc.bcx, 0, 0);
+                        e.setBuffer(cache.blocks[layer].conv, 0, 1);
+                        e.setBuffer(cv.weight.buffer, cv.weight.offset, 2);
+                        e.setBuffer(sc.y, 0, 3);
+                        e.setBuffer(sc.snapshots[layer].?, 0, 4);
+                        e.dispatchThreads(mtl.Size.of(2048, 1, 1), mtl.Size.of(256, 1, 1));
+                    } else {
+                        try tile.encodeTwin(e, t, tq(cv.out), sc.y, 0, sc.r, 0, 1);
+                        bytes += linearBytes(cv.out);
+                    }
+                    launches_n += 1;
+                },
+                4, 5 => if (block.mixer == .attention) {
+                    const a = block.mixer.attention;
+                    if (which == 4) {
+                        for ([_]q.weights.Linear{ a.q, a.k, a.v, a.out }) |w| {
+                            try tile.encodeTwin(e, t, tq(w), sc.x, 0, sc.q, 0, 1);
+                            bytes += linearBytes(w);
+                            launches_n += 1;
+                        }
+                    } else {
+                        const kv = cache.blocks[layer].attention;
+                        e.setPipeline(m.kernels.get("lfm2_qk"));
+                        e.setBuffer(sc.q, 0, 0);
+                        e.setBuffer(sc.k, 0, 1);
+                        e.setBuffer(sc.v, 0, 2);
+                        e.setBuffer(a.q_norm.buffer, a.q_norm.offset, 3);
+                        e.setBuffer(a.k_norm.buffer, a.k_norm.offset, 4);
+                        e.setBytes(std.mem.asBytes(&[4]u32{ @intCast(len), @intCast(cache.capacity), @bitCast(@as(f32, 1e-5)), @bitCast(@as(f32, 20.0)) }), 5);
+                        e.setBuffer(sc.queries, 0, 6);
+                        e.setBuffer(kv.keys, 0, 7);
+                        e.setBuffer(kv.values, 0, 8);
+                        e.dispatchGroups(mtl.Size.of(c.query_heads + c.kv_heads, 1, 1), mtl.Size.of(32, 1, 1));
+                        const used = (len + 1 + st.chunk_keys - 1) / st.chunk_keys * st.subs;
+                        e.setPipeline(m.kernels.get("lfm2_attn_mma"));
+                        e.setBuffer(sc.queries, 0, 0);
+                        e.setBuffer(kv.keys, 0, 1);
+                        e.setBuffer(kv.values, 0, 2);
+                        e.setBytes(std.mem.asBytes(&[4]u32{ @intCast(len), @intCast(cache.capacity), @bitCast(scale), st.subs }), 3);
+                        e.setBuffer(sc.pm, 0, 4);
+                        e.setBuffer(sc.pl, 0, 5);
+                        e.setBuffer(sc.po, 0, 6);
+                        e.setValue(@as(u32, 1), 7);
+                        e.dispatchGroups(mtl.Size.of(used, c.kv_heads, 1), mtl.Size.of(128, 1, 1));
+                        e.setPipeline(m.kernels.get("lfm2_attn_merge"));
+                        e.setBuffer(sc.pm, 0, 0);
+                        e.setBuffer(sc.pl, 0, 1);
+                        e.setBuffer(sc.po, 0, 2);
+                        e.setBytes(std.mem.asBytes(&[4]u32{ @intCast(len), @intCast(cache.capacity), @bitCast(scale), st.subs }), 3);
+                        e.setBuffer(sc.y, 0, 4);
+                        e.dispatchGroups(mtl.Size.of(c.query_heads, 1, 1), mtl.Size.of(32, 1, 1));
+                        bytes += 2 * (len + 1) * c.kv_heads * c.head_dim * 2;
+                        launches_n += 3;
+                    }
+                },
+                6 => if (block.ffn == .dense) {
+                    const d = block.ffn.dense;
+                    try tile.encodeTwin(e, t, tq(d.gate), sc.x, 0, sc.gate, 0, 1);
+                    try tile.encodeTwin(e, t, tq(d.up), sc.x, 0, sc.up, 0, 1);
+                    e.setPipeline(m.kernels.get("lfm2_swiglu"));
+                    e.setBuffer(sc.gate, 0, 0);
+                    e.setBuffer(sc.up, 0, 1);
+                    e.setBuffer(sc.act, 0, 2);
+                    e.setValue(@as(u32, c.intermediate), 3);
+                    e.dispatchThreads(mtl.Size.of(c.intermediate / 8, 1, 1), mtl.Size.of(256, 1, 1));
+                    try tile.encodeTwin(e, t, tq(d.down), sc.act, 0, sc.r, 0, 1);
+                    bytes += linearBytes(d.gate) + linearBytes(d.up) + linearBytes(d.down);
+                    launches_n += 4;
+                },
+                7, 8, 9, 10 => if (block.ffn == .moe) {
+                    const x = block.ffn.moe;
+                    if (which == 7) {
+                        e.setPipeline(m.kernels.get("lfm2_route_logits"));
+                        e.setBuffer(sc.x, 0, 0);
+                        e.setBuffer(x.router.buffer, x.router.offset, 1);
+                        e.setBuffer(sc.route, 0, 2);
+                        e.dispatchGroups(mtl.Size.of(c.experts / 8, 1, 1), mtl.Size.of(256, 1, 1));
+                        e.setPipeline(m.kernels.get("lfm2_route_select"));
+                        e.setBuffer(sc.route, 0, 0);
+                        e.setBuffer(x.bias.buffer, x.bias.offset, 1);
+                        e.setValue(@as(f32, 1), 2);
+                        e.setBuffer(sc.picks, 0, 3);
+                        e.setBuffer(sc.weights, 0, 4);
+                        e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(32, 1, 1));
+                        bytes += c.experts * c.hidden * 4;
+                        launches_n += 2;
+                    } else if (which == 8) {
+                        try tile.encodeTwinGlu(e, t, tq(x.gate.one), tq(x.up.one), sc.x, sc.act, ids, 4, 4);
+                        bytes += 4 * (linearBytes(x.gate.one) + linearBytes(x.up.one));
+                        launches_n += 1;
+                    } else if (which == 9) {
+                        try tile.encodeTwinIndexed(e, t, tq(x.down.one), sc.act, sc.experts, ids, 4, 1);
+                        bytes += 4 * linearBytes(x.down.one);
+                        launches_n += 1;
+                    } else {
+                        e.setPipeline(m.kernels.get("lfm2_combine_norm"));
+                        e.setBuffer(sc.experts, 0, 0);
+                        e.setBuffer(sc.weights, 0, 1);
+                        e.setBuffer(sc.h, 0, 2);
+                        e.setBuffer(block.operator_norm.buffer, block.operator_norm.offset, 3);
+                        e.setValue(@as(f32, 1e-5), 4);
+                        e.setBuffer(sc.x, 0, 5);
+                        e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(512, 1, 1));
+                        launches_n += 1;
+                    }
+                },
+                else => if (layer == 0) {
+                    try tile.encodeTwin(e, t, tq(m.weights.embedding), sc.x, 0, sc.logits, 0, 1);
+                    bytes += linearBytes(m.weights.embedding);
+                    launches_n += 1;
+                },
+            }
+        }
+        e.end();
+        cb.commit();
+        cb.wait();
+        const ms = cb.gpuSeconds() * 1e3;
+        total += ms;
+        const mb = @as(f64, @floatFromInt(bytes)) / 1e6;
+        std.debug.print("{s}: {d:.3} ms, {d} launches, {d:.0} MB, {d:.0} GB/s\n", .{ name, ms, launches_n, mb, mb / ms });
+    }
+    std.debug.print("decode step budget at {d} context: {d:.2} ms ({d:.0} tok/s)\n", .{ len, total, 1e3 / total });
 }
