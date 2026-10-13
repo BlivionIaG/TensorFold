@@ -185,14 +185,19 @@ inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t
         for (int j = 0; j < 8; ++j) p[c] = fma(xf[j], float(word & (0xFu << (4 * j))), p[c]);
       }
     } else {
+      // Codes 8 kb.. of this group sit in the two words from bit 8 kb BITS (48 or 64 bits).
+      const int bit = kb * 8 * BITS, at = bit / 32, sh = bit % 32;
       #pragma unroll
       for (int c = 0; c < NC; ++c) {
-        const device uint* wc = (const device uint*)(w + c * stride + size_t(g) * (GW * 4));
-        uint wv[GW];
+        const device uint* wc = (const device uint*)(w + c * stride + size_t(g) * (GW * 4)) + at;
+        const ulong v = ((sh + 8 * BITS > 64 ? ulong(wc[2]) << 32 : 0ul) | 0ul);
+        const ulong lo = (ulong(wc[1]) << 32) | wc[0];
         #pragma unroll
-        for (int i = 0; i < GW; ++i) wv[i] = wc[i];
-        #pragma unroll
-        for (int j = 0; j < 8; ++j) p[c] = fma(xf[j], tf_tq_code<BITS>(wv, kb * 8 + j), p[c]);
+        for (int j = 0; j < 8; ++j) {
+          const int o = sh + BITS * j;
+          const uint q = o + BITS <= 64 ? uint(lo >> o) : uint((lo >> o) | (v << (64 - o)));
+          p[c] = fma(xf[j], float(q & ((1u << BITS) - 1u)), p[c]);
+        }
       }
     }
   }

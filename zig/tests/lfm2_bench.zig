@@ -31,6 +31,7 @@ pub fn main(init: std.process.Init) !void {
     try prompts(m);
     try grouped(m);
     try sorting(m);
+    try launches(m);
     var big = try st.Scratch.init(init.gpa, m.device, &m.config.attention, chunk);
     defer big.deinit();
     var one = try st.Scratch.init(init.gpa, m.device, &m.config.attention, 1);
@@ -215,4 +216,31 @@ fn sorting(m: *q.Model) !void {
     cb.commit();
     cb.wait();
     std.debug.print("sort of {d} picks: {d:.0} us\n", .{ slots, cb.gpuSeconds() * 1e6 / 10.0 });
+}
+
+/// GPU time a launch of the one-row norm, serial and concurrent encoders.
+fn launches(m: *q.Model) !void {
+    const dev = m.device;
+    const h = try dev.buffer(2048 * 2 * 4, mtl.ResourceOptions.shared);
+    defer h.deinit();
+    @memset(h.contents()[0 .. 2048 * 2 * 4], 0);
+    const w = m.weights.blocks[0].operator_norm;
+    inline for (.{ .serial, .concurrent }) |kind| {
+        const cb = m.queue.commandBuffer();
+        const e = cb.compute(kind);
+        for (0..1000) |_| {
+            e.setPipeline(m.kernels.get("lfm2_norm"));
+            e.setBuffer(h, 0, 0);
+            e.setBuffer(h, 4096, 1);
+            e.setBuffer(w.buffer, w.offset, 2);
+            e.setValue(@as(f32, 1e-5), 3);
+            e.setValue(@as(u32, 0), 4);
+            e.setBuffer(h, 8192, 5);
+            e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(512, 1, 1));
+        }
+        e.end();
+        cb.commit();
+        cb.wait();
+        std.debug.print("one-row norm, {s}: {d:.1} us a launch\n", .{ @tagName(kind), cb.gpuSeconds() * 1e6 / 1000.0 });
+    }
 }
