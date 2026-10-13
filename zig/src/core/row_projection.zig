@@ -63,6 +63,7 @@ pub const Pipelines = struct {
     relu2: [variants]mtl.Pipeline,
     indexed: [variants]mtl.Pipeline,
     indexed_relu2: [variants]mtl.Pipeline,
+    grouped: [variants]mtl.Pipeline,
 
     pub fn load(device: mtl.Device) !Pipelines {
         const pool = mtl.objc.Pool.push();
@@ -76,6 +77,7 @@ pub const Pipelines = struct {
             p.relu2[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_row_projection_relu2_q{d}_{s}", .{ bits, sum }), false);
             p.indexed[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_row_projection_indexed_q{d}_{s}", .{ bits, sum }), false);
             p.indexed_relu2[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_row_projection_indexed_relu2_q{d}_{s}", .{ bits, sum }), false);
+            p.grouped[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_row_projection_grouped_q{d}_{s}", .{ bits, sum }), false);
         };
         return p;
     }
@@ -85,6 +87,7 @@ pub const Pipelines = struct {
         for (p.relu2) |x| x.deinit();
         for (p.indexed) |x| x.deinit();
         for (p.indexed_relu2) |x| x.deinit();
+        for (p.grouped) |x| x.deinit();
     }
 };
 
@@ -105,6 +108,14 @@ pub fn callIndexed(p: *const Pipelines, x: Experts, slots: usize, relu2: bool) !
     if (slots == 0 or slots % x.repeat != 0 or slots > std.math.maxInt(u16)) return error.NoRows;
     const i = x.one.variant();
     return .{ .pipeline = if (relu2) p.indexed_relu2[i] else p.indexed[i], .dims = .{ @intCast(x.one.k), @intCast(x.one.n), @intCast(x.one.group), @intCast(slots), @intCast(x.experts), @intCast(x.repeat) }, .groups = x.one.n / (columns * groups), .slots = slots };
+}
+
+/// y = x W[e]^T on rows sorted by expert (e's from starts[e], buffer 6), each row's sums the indexed call's.
+pub fn callGrouped(p: *const Pipelines, x: Experts, rows: usize) !Call {
+    try x.validate();
+    if (rows == 0 or rows > std.math.maxInt(i32)) return error.NoRows;
+    const i = x.one.variant();
+    return .{ .pipeline = p.grouped[i], .dims = .{ @intCast(x.one.k), @intCast(x.one.n), @intCast(x.one.group), @intCast(rows), @intCast(x.experts), 1 }, .groups = x.one.n / (columns * groups), .slots = x.experts };
 }
 
 test {

@@ -205,44 +205,55 @@ struct lfm2_attn_args { uint len, cap; float scale; };
   out[lane + 32] = static_cast<bfloat>(o1 / l);
 }
 
-// A row's route: fp32 logits, top-k of sigmoid + bias (lower id on ties), unbiased sigmoids / (sum + 1e-6) * scale.
-[[kernel]] void lfm2_route(const device bfloat* x [[buffer(0)]], const device float* router [[buffer(1)]],
-                           const device float* bias [[buffer(2)]], constant float& scale [[buffer(3)]],
-                           device uint* ids [[buffer(4)]], device bfloat* wts [[buffer(5)]],
-                           uint row [[threadgroup_position_in_grid]], uint sg [[simdgroup_index_in_threadgroup]],
-                           uint lane [[thread_index_in_simdgroup]]) {
-  threadgroup float gates[E];
-  const device bfloat* xr = x + size_t(row) * D;
-  for (uint j = 0; j < E / 8; ++j) {
-    const uint e = sg * (E / 8) + j;
-    const device float* wr = router + size_t(e) * D;
-    float acc = 0.0f;
-    for (uint i = lane; i < D; i += 32) acc += float(xr[i]) * wr[i];
-    acc = simd_sum(acc);
-    if (lane == 0) gates[e] = 1.0f / (1.0f + metal::precise::exp(-acc));
+// Router logits [rows, E] in fp32: a simdgroup an expert, lane l over inputs 4l..4l+3 of each 128, then simd_sum.
+[[kernel]] void lfm2_route_logits(const device bfloat* x [[buffer(0)]], const device float* router [[buffer(1)]],
+                                  device float* logits [[buffer(2)]], uint2 tg [[threadgroup_position_in_grid]],
+                                  uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  const uint e = tg.x * 8 + sg, row = tg.y;
+  const device bfloat4* xr = (const device bfloat4*)(x + size_t(row) * D) + lane;
+  const device float4* wr = (const device float4*)(router + size_t(e) * D) + lane;
+  float acc = 0.0f;
+  for (uint i = 0; i < D / 128; ++i) {
+    const float4 xv = float4(xr[i * 32]), wv = wr[i * 32];
+    acc += xv.x * wv.x + xv.y * wv.y + xv.z * wv.z + xv.w * wv.w;
   }
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-  if (sg != 0 || lane != 0) return;
+  acc = simd_sum(acc);
+  if (lane == 0) logits[size_t(row) * E + e] = acc;
+}
+
+// A row's picks, a simdgroup a row: top-k of sigmoid + bias (lower id on ties), sigmoids / (sum + 1e-6) * scale.
+[[kernel]] void lfm2_route_select(const device float* logits [[buffer(0)]], const device float* bias [[buffer(1)]],
+                                  constant float& scale [[buffer(2)]], device uint* ids [[buffer(3)]], device bfloat* wts [[buffer(4)]],
+                                  uint row [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
+  float gate[2], score[2];
+  for (uint h = 0; h < 2; ++h) {
+    const uint e = lane + 32 * h;
+    gate[h] = 1.0f / (1.0f + metal::precise::exp(-logits[size_t(row) * E + e]));
+    score[h] = gate[h] + bias[e];
+  }
   uint pick[TOPK];
+  float picked[TOPK];
   float total = 0.0f;
   for (uint k = 0; k < TOPK; ++k) {
-    float best = -INFINITY;
-    uint at = 0;
-    for (uint e = 0; e < E; ++e) {
-      bool taken = false;
-      for (uint j = 0; j < k; ++j) taken = taken || pick[j] == e;
-      const float s = gates[e] + bias[e];
-      if (!taken && s > best) {
-        best = s;
-        at = e;
+    const uint mine = score[1] > score[0] ? 1 : 0;
+    float best = score[mine];
+    uint at = lane + 32 * mine;
+    for (uint off = 16; off > 0; off >>= 1) {
+      const float b = simd_shuffle_xor(best, off);
+      const uint i = simd_shuffle_xor(at, off);
+      if (b > best || (b == best && i < at)) {
+        best = b;
+        at = i;
       }
     }
     pick[k] = at;
-    total += gates[at];
+    picked[k] = simd_shuffle(gate[at / 32], at % 32);
+    total += picked[k];
+    if (at % 32 == lane) score[at / 32] = -INFINITY;
   }
-  for (uint k = 0; k < TOPK; ++k) {
-    ids[row * TOPK + k] = pick[k];
-    wts[row * TOPK + k] = static_cast<bfloat>(gates[pick[k]] / (total + 1e-6f) * scale);
+  if (lane < TOPK) {
+    ids[row * TOPK + lane] = pick[lane];
+    wts[row * TOPK + lane] = static_cast<bfloat>(picked[lane] / (total + 1e-6f) * scale);
   }
 }
 
@@ -264,6 +275,45 @@ struct lfm2_attn_args { uint len, cap; float scale; };
   for (uint k = 0; k < TOPK; ++k) {
     const size_t slot = size_t(at.y) * TOPK + k;
     acc += float(static_cast<bfloat>(float(y[slot * D + at.x]) * float(wts[slot])));
+  }
+  r[size_t(at.y) * D + at.x] = static_cast<bfloat>(acc);
+}
+
+// Picks sorted by expert, in slot order within one: STARTS [E + 1], ORDER (sorted -> slot), POS (slot -> sorted).
+[[kernel]] void lfm2_sort(const device uint* ids [[buffer(0)]], constant uint& slots [[buffer(1)]], device uint* starts [[buffer(2)]],
+                          device uint* order [[buffer(3)]], device uint* pos [[buffer(4)]], uint e [[thread_position_in_threadgroup]]) {
+  threadgroup uint counts[E];
+  uint n = 0;
+  for (uint j = 0; j < slots; ++j) n += ids[j] == e ? 1 : 0;
+  counts[e] = n;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  uint at = 0;
+  for (uint i = 0; i < e; ++i) at += counts[i];
+  starts[e] = at;
+  if (e == E - 1) starts[E] = at + n;
+  for (uint j = 0; j < slots; ++j)
+    if (ids[j] == e) {
+      order[at] = j;
+      pos[j] = at;
+      ++at;
+    }
+}
+
+// XS [slots, D]: sorted row j is X's row order[j] / TOPK (a token's input for each of its picks).
+[[kernel]] void lfm2_gather(const device bfloat* x [[buffer(0)]], const device uint* order [[buffer(1)]], device bfloat* xs [[buffer(2)]],
+                            uint2 at [[thread_position_in_grid]]) {
+  if (at.x >= D) return;
+  xs[size_t(at.y) * D + at.x] = x[size_t(order[at.y] / TOPK) * D + at.x];
+}
+
+// lfm2_combine with Y's rows in sorted order (slot s at POS[s]).
+[[kernel]] void lfm2_combine_sorted(const device bfloat* y [[buffer(0)]], const device bfloat* wts [[buffer(1)]], device bfloat* r [[buffer(2)]],
+                                    const device uint* pos [[buffer(3)]], uint2 at [[thread_position_in_grid]]) {
+  if (at.x >= D) return;
+  float acc = 0.0f;
+  for (uint k = 0; k < TOPK; ++k) {
+    const size_t slot = size_t(at.y) * TOPK + k;
+    acc += float(static_cast<bfloat>(float(y[size_t(pos[slot]) * D + at.x]) * float(wts[slot])));
   }
   r[size_t(at.y) * D + at.x] = static_cast<bfloat>(acc);
 }

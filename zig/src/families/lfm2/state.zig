@@ -103,9 +103,16 @@ pub const Scratch = struct {
     gate: mtl.Buffer,
     up: mtl.Buffer,
     act: mtl.Buffer,
+    route: mtl.Buffer,
     picks: mtl.Buffer,
     weights: mtl.Buffer,
     experts: mtl.Buffer,
+    /// Prompt rows' picks by expert: the gathered inputs, starts, sorted -> slot and slot -> sorted.
+    sorted: mtl.Buffer,
+    starts: mtl.Buffer,
+    order: mtl.Buffer,
+    pos: mtl.Buffer,
+    work: mtl.Buffer,
     logits: mtl.Buffer,
     snapshots: [c.layers]?mtl.Buffer = @splat(null),
 
@@ -127,9 +134,15 @@ pub const Scratch = struct {
         out.po = try mem.alloc(rows * c.query_heads * chunks * c.head_dim * 4);
         const wide = @max(rows * c.intermediate, slots * c.moe_intermediate);
         inline for (.{ "gate", "up", "act" }) |name| @field(out, name) = try mem.alloc(wide * 2);
+        out.route = try mem.alloc(rows * c.experts * 4);
         out.picks = try mem.alloc(slots * 4);
         out.weights = try mem.alloc(slots * 2);
         out.experts = try mem.alloc(slots * c.hidden * 2);
+        out.sorted = try mem.alloc(slots * c.hidden * 2);
+        out.starts = try mem.alloc((c.experts + 1) * 4);
+        out.order = try mem.alloc(slots * 4);
+        out.pos = try mem.alloc(slots * 4);
+        out.work = try mem.alloc((slots + c.experts + 2) * 4);
         const logit_rows: usize = @min(rows, batch_rows);
         out.logits = try mem.alloc(logit_rows * c.vocab * 2);
         for (&out.snapshots, attention) |*s, a| if (!a) {

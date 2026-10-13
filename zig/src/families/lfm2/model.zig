@@ -15,6 +15,8 @@ pub const Model = struct {
     checkpoint: ckpt.Checkpoint,
     weights: weights.Weights,
     kernels: kernels.Kernels,
+    /// The checkpoint's buffers held resident on the queue (none before macOS 15).
+    resident: ?mtl.ResidencySet = null,
 
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !*Model {
         const config = try cfg.Config.read(gpa, io, dir);
@@ -33,10 +35,44 @@ pub const Model = struct {
         for (files) |path| try m.checkpoint.addFile(m.device, path, "");
         m.weights = try weights.load(&m.checkpoint, &m.config);
         m.kernels = try kernels.load(m.device);
+        errdefer m.kernels.deinit();
+        for (m.weights.blocks) |b| {
+            var list: [4]weights.Linear = undefined;
+            var n: usize = 0;
+            switch (b.mixer) {
+                .conv => |cv| for ([_]weights.Linear{ cv.in, cv.out }) |w| {
+                    list[n] = w;
+                    n += 1;
+                },
+                .attention => |a| for ([_]weights.Linear{ a.q, a.k, a.v, a.out }) |w| {
+                    list[n] = w;
+                    n += 1;
+                },
+            }
+            for (list[0..n]) |w| _ = try m.kernels.tiles(m.device, w);
+            if (b.ffn == .moe) for ([_]weights.Linear{ b.ffn.moe.gate.one, b.ffn.moe.up.one, b.ffn.moe.down.one }) |w| {
+                _ = try m.kernels.tiles(m.device, w);
+            };
+            if (b.ffn == .dense) for ([_]weights.Linear{ b.ffn.dense.gate, b.ffn.dense.up, b.ffn.dense.down }) |w| {
+                _ = try m.kernels.tiles(m.device, w);
+            };
+        }
+        m.resident = null;
+        if (m.device.residencySet(m.checkpoint.shards.items.len)) |set| {
+            for (m.checkpoint.shards.items) |shard| set.add(shard.buffer);
+            set.commit();
+            set.requestResidency();
+            m.queue.addResidencySet(set);
+            m.resident = set;
+        } else |_| {}
         return m;
     }
 
     pub fn deinit(m: *Model) void {
+        if (m.resident) |set| {
+            m.queue.removeResidencySet(set);
+            set.deinit();
+        }
         m.kernels.deinit();
         m.checkpoint.deinit();
         m.queue.deinit();
