@@ -3,7 +3,7 @@ const std = @import("std");
 const hip = @import("hip");
 const core = @import("core");
 const config = @import("../config.zig");
-const tensors = @import("../tensors.zig");
+const tensors = @import("tensors.zig");
 const model = @import("model.zig");
 
 const quant = core.quant;
@@ -14,7 +14,7 @@ const Span = quant.Span;
 const Allocator = std.mem.Allocator;
 
 /// The table core/quant reads projections through: the family's checkpoint tables, over core's checkpoint.
-pub const Tables = @import("../checkpoint_tables.zig").Tables(core.checkpoint.Checkpoint, core.quant.mlx.Width);
+pub const Tables = @import("checkpoint_tables.zig").Tables(core.checkpoint.Checkpoint, core.quant.mlx.Width);
 
 /// The device copy of one rank's weights: every buffer it uploaded, freed together.
 pub const Weights = struct {

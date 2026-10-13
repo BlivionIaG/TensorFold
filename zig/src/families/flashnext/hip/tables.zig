@@ -2,7 +2,7 @@
 const std = @import("std");
 const core = @import("core");
 const config = @import("../config.zig");
-const tensors = @import("../tensors.zig");
+const tensors = @import("tensors.zig");
 const ngram = @import("ngram.zig");
 
 /// One shard's packed rows and their group tables, as mapped.
