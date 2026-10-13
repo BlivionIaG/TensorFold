@@ -68,9 +68,10 @@ struct TfTqAhead {
 template <int BITS, int BM, int BN, bool GLU>
 inline void tf_tq_fetch(thread TfTqAhead<BITS>& a, const device bfloat* X, const device float* XS, const device uint8_t* W,
                         const device bfloat* SC, const device bfloat* BI, const device uint8_t* W2, const device bfloat* SC2,
-                        const device bfloat* BI2, int K, int R, int rb, int nb, int s, int tid) {
+                        const device bfloat* BI2, uint xr, uint sr, int K, int nb, int s, int tid) {
   const int G = K / 64, g = s / 2, k0 = g * 64 + s % 2 * 32;
-  a.x = *((const device uint4*)(X + size_t(min(rb + tid / 4, R - 1)) * K + k0) + tid % 4);
+  // The thread's input row is X's xr and its sum row XS's sr (resolved once a tile).
+  a.x = *((const device uint4*)(X + size_t(xr) * K + k0) + tid % 4);
   const bool up = GLU && tid >= 64;
   const int col = nb + (GLU ? tid / 4 % (BN / 2) : tid / 4);
   const device ushort* src = (const device ushort*)((up ? W2 : W) + size_t(col) * (K * BITS / 8) + (k0 + tid % 4 * 8) * BITS / 8);
@@ -81,7 +82,7 @@ inline void tf_tq_fetch(thread TfTqAhead<BITS>& a, const device bfloat* X, const
       const size_t n = size_t(nb + (GLU ? tid % (BN / 2) : tid)) * G + g;
       a.sb = float2(float((up2 ? SC2 : SC)[n]), float((up2 ? BI2 : BI)[n]));
     }
-    if (tid < BM) a.xs = XS[size_t(min(rb + tid, R - 1)) * G + g];
+    if (tid < BM) a.xs = XS[size_t(sr) * G + g];
   }
 }
 
@@ -126,10 +127,10 @@ inline void tf_tq_mmas(thread simdgroup_matrix<float, 8, 8> (*P)[TJ], const thre
 }
 
 // One 32x32 tile of Y = X W^T: four simdgroups of 16x16, each 64-input group summed by bf16 MMAs into fp32 in k order.
-template <int BITS, int BM, int BN, bool PARTIAL, bool GLU>
+template <int BITS, int BM, int BN, bool PARTIAL, bool GLU, bool MAP>
 inline void tf_tq_tile(const device bfloat* X, const device float* XS, const device uint8_t* W, const device bfloat* SC,
                        const device bfloat* BI, const device uint8_t* W2, const device bfloat* SC2, const device bfloat* BI2,
-                       int K, int N, int R, device bfloat* OUT, int rb, int nb, uint tid, uint sg, uint lane,
+                       const device uint* map, int K, int N, int R, device bfloat* OUT, int rb, int nb, uint tid, uint sg, uint lane,
                        threadgroup bfloat* xs, threadgroup bfloat* ws, threadgroup float2* sb, threadgroup float* xsum) {
   // Then acc = fma(bias, xsum, fma(scale, group, acc)) per output, XS [R, K / 64] from tf_tile_xsum.
   static_assert(BM == 32 && BN == 32, "128 threads stage 32 rows and 32 columns, 8 values each");
@@ -140,6 +141,9 @@ inline void tf_tq_tile(const device bfloat* X, const device float* XS, const dev
   const int fm = (qid & 4) + ((int(lane) / 2) % 4);
   const int fn = (qid & 2) * 2 + (int(lane) % 2) * 2;
   const bool live = !PARTIAL || rb + sr < R;  // an expert's partial tile: a simdgroup past its rows skips the MMAs
+  // MAP: tile row r's inputs and sums are X's and XS's row map[r] (rows by expert reading their tokens).
+  const int xi = min(rb + int(tid) / 4, R - 1), si = min(rb + int(tid), R - 1);
+  const uint xr = MAP ? map[xi] : uint(xi), srw = MAP ? map[si] : uint(si);
   // GLU: 16 gate and the same 16 up columns, OUT [R, N] = swiglu of their bf16 rows (the twin's tf_tile_qmv_glu).
   const threadgroup bfloat* xb1 = xs + BM * TP;
   const threadgroup bfloat* wb1 = ws + BN * TP;
@@ -148,21 +152,21 @@ inline void tf_tq_tile(const device bfloat* X, const device float* XS, const dev
     for (int j = 0; j < TJ; ++j) acc[i][j][0] = acc[i][j][1] = 0.0f;
   // Two 32-input stages a group in two buffers: loads two stages ahead, stores one; a stage's barrier waits on neither.
   TfTqAhead<BITS> even, odd;  // the next even and odd stages' shares
-  tf_tq_fetch<BITS, BM, BN, GLU>(even, X, XS, W, SC, BI, W2, SC2, BI2, K, R, rb, nb, 0, int(tid));
-  tf_tq_fetch<BITS, BM, BN, GLU>(odd, X, XS, W, SC, BI, W2, SC2, BI2, K, R, rb, nb, 1, int(tid));
+  tf_tq_fetch<BITS, BM, BN, GLU>(even, X, XS, W, SC, BI, W2, SC2, BI2, xr, srw, K, nb, 0, int(tid));
+  tf_tq_fetch<BITS, BM, BN, GLU>(odd, X, XS, W, SC, BI, W2, SC2, BI2, xr, srw, K, nb, 1, int(tid));
   tf_tq_stage<BITS, BM, BN>(even, xs, ws, sb, xsum, 0, int(tid));
   for (int g = 0; g < G; ++g) {
     const int s = 2 * g;
     threadgroup_barrier(mem_flags::mem_threadgroup);
     tf_tq_stage<BITS, BM, BN>(odd, xs + BM * TP, ws + BN * TP, sb, xsum, s + 1, int(tid));
-    if (s + 2 < S) tf_tq_fetch<BITS, BM, BN, GLU>(even, X, XS, W, SC, BI, W2, SC2, BI2, K, R, rb, nb, s + 2, int(tid));
+    if (s + 2 < S) tf_tq_fetch<BITS, BM, BN, GLU>(even, X, XS, W, SC, BI, W2, SC2, BI2, xr, srw, K, nb, s + 2, int(tid));
     simdgroup_matrix<float, 8, 8> P[TI][TJ];
     for (int i = 0; i < TI; ++i)
       for (int j = 0; j < TJ; ++j) P[i][j] = simdgroup_matrix<float, 8, 8>(0.0f);
     if (live) tf_tq_mmas<TI, TJ, GLU>(P, xs, ws, sr, sc, fm, fn);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (s + 2 < S) tf_tq_stage<BITS, BM, BN>(even, xs, ws, sb, xsum, s + 2, int(tid));
-    if (s + 3 < S) tf_tq_fetch<BITS, BM, BN, GLU>(odd, X, XS, W, SC, BI, W2, SC2, BI2, K, R, rb, nb, s + 3, int(tid));
+    if (s + 3 < S) tf_tq_fetch<BITS, BM, BN, GLU>(odd, X, XS, W, SC, BI, W2, SC2, BI2, xr, srw, K, nb, s + 3, int(tid));
     if (live) tf_tq_mmas<TI, TJ, GLU>(P, xb1, wb1, sr, sc, fm, fn);
     const threadgroup float2* sbg = sb + g % 2 * BN;
     const threadgroup float* xsg = xsum + g % 2 * BM;
@@ -194,8 +198,8 @@ template <int BITS>
   threadgroup bfloat xs[2 * TQ * TP], ws[2 * TQN * TP];
   threadgroup float2 sb[2 * TQN];
   threadgroup float xsum[2 * TQ];
-  tf_tq_tile<BITS, TQ, TQN, false, false>(X, XS, W, SC, BI, W, SC, BI, a.K, a.N, a.R, OUT, int(tg.y) * TQ, int(tg.x) * TQN, tid, sg,
-                                          lane, xs, ws, sb, xsum);
+  tf_tq_tile<BITS, TQ, TQN, false, false, false>(X, XS, W, SC, BI, W, SC, BI, nullptr, a.K, a.N, a.R, OUT, int(tg.y) * TQ,
+                                                 int(tg.x) * TQN, tid, sg, lane, xs, ws, sb, xsum);
 }
 
 // The tiles over rows sorted by expert: item tg.y of WORK[1..WORK[0]] = (expert << 16) | row tile, rows from STARTS.
@@ -206,19 +210,21 @@ template <int BITS, bool GLU>
                                     const device uint* starts [[buffer(6)]], const device uint* work [[buffer(7)]],
                                     const device float* XS [[buffer(8)]], const device uint8_t* W2 [[buffer(9)]],
                                     const device bfloat* SC2 [[buffer(10)]], const device bfloat* BI2 [[buffer(11)]],
-                                    uint tid [[thread_index_in_threadgroup]], uint sg [[simdgroup_index_in_threadgroup]],
+                                    const device uint* map [[buffer(12)]], uint tid [[thread_index_in_threadgroup]],
+                                    uint sg [[simdgroup_index_in_threadgroup]],
                                     uint lane [[thread_index_in_simdgroup]], uint3 tg [[threadgroup_position_in_grid]]) {
   threadgroup bfloat xs[2 * TQ * TP], ws[2 * TQN * TP];
   threadgroup float2 sb[2 * TQN];
   threadgroup float xsum[2 * TQ];
   if (tg.y >= work[0]) return;
+  // Sorted row j reads X's and XS's row MAP[j], and writes OUT's row j.
   const uint item = work[1 + tg.y], e = item >> 16;
   const uint first = starts[e], rows = starts[e + 1] - first;
   // GLU: W2/SC2/BI2 are the up experts (the same shape), OUT [rows, N] their swiglu with W's gate, 16 columns a tile.
   const size_t K = size_t(a.K), N = size_t(a.N), at = e * N * (K * BITS / 8), sat = e * N * (K / 64);
-  tf_tq_tile<BITS, TQ, TQN, true, GLU>(X + first * K, XS + first * (K / 64), W + at, SC + sat, BI + sat, W2 + at, SC2 + sat, BI2 + sat,
-                                       a.K, a.N, int(rows), OUT + first * N, int(item & 0xFFFFu) * TQ, int(tg.x) * (GLU ? TQN / 2 : TQN),
-                                       tid, sg, lane, xs, ws, sb, xsum);
+  tf_tq_tile<BITS, TQ, TQN, true, GLU, true>(X, XS, W + at, SC + sat, BI + sat, W2 + at, SC2 + sat, BI2 + sat, map + first, a.K, a.N,
+                                             int(rows), OUT + first * N, int(item & 0xFFFFu) * TQ, int(tg.x) * (GLU ? TQN / 2 : TQN),
+                                             tid, sg, lane, xs, ws, sb, xsum);
 }
 
 // The grouped tiles' work list from STARTS [E + 1]: count, then (expert << 16) | tile for each expert's 32-row tiles.

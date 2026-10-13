@@ -336,9 +336,11 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
 // Picks sorted by expert, in slot order within one: STARTS [E + 1], ORDER (sorted -> slot), POS (slot -> sorted).
 constant constexpr uint SORT_CHUNKS = 16;  // thread (e, c) counts expert e's picks in chunk c, then places them
 [[kernel]] void lfm2_sort(const device uint* ids [[buffer(0)]], constant uint& slots [[buffer(1)]], device uint* starts [[buffer(2)]],
-                          device uint* order [[buffer(3)]], device uint* pos [[buffer(4)]], uint t [[thread_position_in_threadgroup]]) {
+                          device uint* order [[buffer(3)]], device uint* pos [[buffer(4)]], device uint* rows [[buffer(5)]],
+                          uint t [[thread_position_in_threadgroup]]) {
   threadgroup uint counts[E * SORT_CHUNKS];
   threadgroup uint totals[E];
+  // ROWS: sorted -> the slot's token row, the grouped tiles' input map.
   const uint e = t / SORT_CHUNKS, c = t % SORT_CHUNKS;
   const uint span = (slots + SORT_CHUNKS - 1) / SORT_CHUNKS, lo = c * span, hi = min(lo + span, slots);
   uint n = 0;
@@ -359,16 +361,10 @@ constant constexpr uint SORT_CHUNKS = 16;  // thread (e, c) counts expert e's pi
   for (uint j = lo; j < hi; ++j)
     if (ids[j] == e) {
       order[at] = j;
+      rows[at] = j / TOPK;
       pos[j] = at;
       ++at;
     }
-}
-
-// XS [slots, D]: sorted row j is X's row order[j] / TOPK (a token's input for each of its picks).
-[[kernel]] void lfm2_gather(const device bfloat* x [[buffer(0)]], const device uint* order [[buffer(1)]], device bfloat* xs [[buffer(2)]],
-                            uint2 at [[thread_position_in_grid]]) {
-  if (at.x >= D) return;
-  xs[size_t(at.y) * D + at.x] = x[size_t(order[at.y] / TOPK) * D + at.x];
 }
 
 // lfm2_combine with Y's rows in sorted order (slot s at POS[s]).

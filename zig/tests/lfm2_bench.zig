@@ -178,10 +178,13 @@ fn grouped(m: *q.Model) !void {
     for (starts.slice(u32, 65), 0..) |*v, i| v.* = @intCast(i * 128);
     const work = try dev.buffer((rows / 32 + 66) * 4, mtl.ResourceOptions.shared);
     defer work.deinit();
+    const ident = try dev.buffer(rows * 4, mtl.ResourceOptions.shared);
+    defer ident.deinit();
+    for (ident.slice(u32, rows), 0..) |*v, i| v.* = @intCast(i);
     const cb = m.queue.commandBuffer();
     const e = cb.compute(.serial);
     tile.encodeWork(e, &m.kernels.tiles, starts, 64, work);
-    for (0..10) |_| try tile.encodeGrouped(e, &m.kernels.tiles, q.forward.matrix(x.gate.one), 64, in, xs, out, rows, starts, work);
+    for (0..10) |_| try tile.encodeGrouped(e, &m.kernels.tiles, q.forward.matrix(x.gate.one), 64, in, xs, ident, out, rows, starts, work);
     e.end();
     cb.commit();
     cb.wait();
@@ -269,7 +272,7 @@ fn promptBudget(m: *q.Model) !void {
     const items = [_]Item{
         .{ .name = "sums+tiles conv in", .per = 30 },   .{ .name = "sums+tiles conv out", .per = 30 },
         .{ .name = "sums+tiles attn q,k,v,o", .per = 10 }, .{ .name = "sums+tiles dense x3", .per = 2 },
-        .{ .name = "route", .per = 38 },                .{ .name = "sort+work+gather", .per = 38 },
+        .{ .name = "route", .per = 38 },                .{ .name = "sort+work", .per = 38 },
         .{ .name = "sums+grouped glu gate,up", .per = 38 }, .{ .name = "sums+grouped down", .per = 38 },
         .{ .name = "combine sorted", .per = 38 },      .{ .name = "norm", .per = 81 },
         .{ .name = "conv kernel", .per = 30 },         .{ .name = "attn mma 2k", .per = 10 },
@@ -317,21 +320,17 @@ fn promptBudget(m: *q.Model) !void {
                 e.setBuffer(sc.starts, 0, 2);
                 e.setBuffer(sc.order, 0, 3);
                 e.setBuffer(sc.pos, 0, 4);
+                e.setBuffer(sc.tokens, 0, 5);
                 e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(64 * 16, 1, 1));
                 tile.encodeWork(e, t, sc.starts, 64, sc.work);
-                e.setPipeline(m.kernels.get("lfm2_gather"));
-                e.setBuffer(sc.x, 0, 0);
-                e.setBuffer(sc.order, 0, 1);
-                e.setBuffer(sc.sorted, 0, 2);
-                e.dispatchThreads(mtl.Size.of(2048, slots, 1), mtl.Size.of(256, 1, 1));
             },
             6 => {
-                tile.encodeSums(e, t, 2048, sc.sorted, 0, sc.sums, slots);
-                try tile.encodeGroupedGlu(e, t, tq(moe.gate.one), tq(moe.up.one), 64, sc.sorted, sc.sums, sc.act, slots, sc.starts, sc.work);
+                tile.encodeSums(e, t, 2048, sc.x, 0, sc.sums, rows);
+                try tile.encodeGroupedGlu(e, t, tq(moe.gate.one), tq(moe.up.one), 64, sc.x, sc.sums, sc.tokens, sc.act, slots, sc.starts, sc.work);
             },
             7 => {
                 tile.encodeSums(e, t, 1536, sc.act, 0, sc.sums, slots);
-                try tile.encodeGrouped(e, t, tq(moe.down.one), 64, sc.act, sc.sums, sc.experts, slots, sc.starts, sc.work);
+                try tile.encodeGrouped(e, t, tq(moe.down.one), 64, sc.act, sc.sums, sc.ident, sc.experts, slots, sc.starts, sc.work);
             },
             8 => {
                 e.setPipeline(m.kernels.get("lfm2_combine_sorted"));

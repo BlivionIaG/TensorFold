@@ -108,11 +108,12 @@ pub const Scratch = struct {
     picks: mtl.Buffer,
     weights: mtl.Buffer,
     experts: mtl.Buffer,
-    /// Prompt rows' picks by expert: the gathered inputs, starts, sorted -> slot and slot -> sorted.
-    sorted: mtl.Buffer,
+    /// Prompt rows' picks by expert: starts, sorted -> slot, slot -> sorted, sorted -> token row, and the identity map.
     starts: mtl.Buffer,
     order: mtl.Buffer,
     pos: mtl.Buffer,
+    tokens: mtl.Buffer,
+    ident: mtl.Buffer,
     work: mtl.Buffer,
     /// A projection's input rows' group sums for the tiles and their twin (f32 [rows, k / 64]).
     sums: mtl.Buffer,
@@ -142,10 +143,12 @@ pub const Scratch = struct {
         out.picks = try mem.alloc(slots * 4);
         out.weights = try mem.alloc(slots * 2);
         out.experts = try mem.alloc(slots * c.hidden * 2);
-        out.sorted = try mem.alloc(slots * c.hidden * 2);
         out.starts = try mem.alloc((c.experts + 1) * 4);
         out.order = try mem.alloc(slots * 4);
         out.pos = try mem.alloc(slots * 4);
+        out.tokens = try mem.alloc(slots * 4);
+        out.ident = try mem.alloc(slots * 4);
+        for (out.ident.slice(u32, slots), 0..) |*v, i| v.* = @intCast(i);
         out.work = try mem.alloc((slots / 32 + c.experts + 2) * 4);
         out.sums = try mem.alloc(@max(rows * (c.intermediate / 64), slots * (c.hidden / 64)) * 4);
         const logit_rows: usize = @min(rows, batch_rows);
