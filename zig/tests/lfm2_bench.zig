@@ -368,7 +368,7 @@ fn promptBudget(m: *q.Model) !void {
                 e.setBuffer(sc.queries, 0, 0);
                 e.setBuffer(kv.keys, 0, 1);
                 e.setBuffer(kv.values, 0, 2);
-                e.setBytes(std.mem.asBytes(&[3]u32{ 0, @intCast(cache.capacity), @bitCast(@as(f32, 0.125)) }), 3);
+                e.setBytes(std.mem.asBytes(&[4]u32{ 0, @intCast(cache.capacity), @bitCast(@as(f32, 0.125)), 1 }), 3);
                 e.setBuffer(sc.pm, 0, 4);
                 e.setBuffer(sc.pl, 0, 5);
                 e.setBuffer(sc.po, 0, 6);
@@ -378,7 +378,7 @@ fn promptBudget(m: *q.Model) !void {
                 e.setBuffer(sc.pm, 0, 0);
                 e.setBuffer(sc.pl, 0, 1);
                 e.setBuffer(sc.po, 0, 2);
-                e.setBytes(std.mem.asBytes(&[3]u32{ 0, @intCast(cache.capacity), @bitCast(@as(f32, 0.125)) }), 3);
+                e.setBytes(std.mem.asBytes(&[4]u32{ 0, @intCast(cache.capacity), @bitCast(@as(f32, 0.125)), 1 }), 3);
                 e.setBuffer(sc.y, 0, 4);
                 e.dispatchGroups(mtl.Size.of(32, rows, 1), mtl.Size.of(32, 1, 1));
             },
@@ -474,12 +474,12 @@ fn decodeBudget(m: *q.Model, len: usize) !void {
                         e.setBuffer(kv.keys, 0, 7);
                         e.setBuffer(kv.values, 0, 8);
                         e.dispatchGroups(mtl.Size.of(c.query_heads + c.kv_heads, 1, 1), mtl.Size.of(32, 1, 1));
-                        const used = (len + 1 + st.chunk_keys - 1) / st.chunk_keys;
+                        const used = (len + 1 + st.chunk_keys - 1) / st.chunk_keys * st.subs;
                         e.setPipeline(m.kernels.get("lfm2_attn_mma"));
                         e.setBuffer(sc.queries, 0, 0);
                         e.setBuffer(kv.keys, 0, 1);
                         e.setBuffer(kv.values, 0, 2);
-                        e.setBytes(std.mem.asBytes(&[3]u32{ @intCast(len), @intCast(cache.capacity), @bitCast(scale) }), 3);
+                        e.setBytes(std.mem.asBytes(&[4]u32{ @intCast(len), @intCast(cache.capacity), @bitCast(scale), st.subs }), 3);
                         e.setBuffer(sc.pm, 0, 4);
                         e.setBuffer(sc.pl, 0, 5);
                         e.setBuffer(sc.po, 0, 6);
@@ -489,7 +489,7 @@ fn decodeBudget(m: *q.Model, len: usize) !void {
                         e.setBuffer(sc.pm, 0, 0);
                         e.setBuffer(sc.pl, 0, 1);
                         e.setBuffer(sc.po, 0, 2);
-                        e.setBytes(std.mem.asBytes(&[3]u32{ @intCast(len), @intCast(cache.capacity), @bitCast(scale) }), 3);
+                        e.setBytes(std.mem.asBytes(&[4]u32{ @intCast(len), @intCast(cache.capacity), @bitCast(scale), st.subs }), 3);
                         e.setBuffer(sc.y, 0, 4);
                         e.dispatchGroups(mtl.Size.of(c.query_heads, 1, 1), mtl.Size.of(32, 1, 1));
                         bytes += 2 * (len + 1) * c.kv_heads * c.head_dim * 2;

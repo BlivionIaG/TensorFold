@@ -140,7 +140,24 @@ struct lfm2_qk_args { uint len, cap; float eps, log2_theta; };
 
 // Keys a chunk: a row's keys split at fixed positions, so prompt tiles and decode rows cut them the same way.
 constant constexpr uint PER = 4096;
-struct lfm2_attn_args { uint len, cap; float scale; };
+// Keys a sub-span: a chunk's state is the in-order merge of its sub-spans' (tiles fold them, decode rows run one each).
+constant constexpr uint SUB = 512;
+constant constexpr uint SUBS = PER / SUB;
+struct lfm2_attn_args { uint len, cap; float scale; uint subs; };
+
+// (M, L, O) merged with a sub-span's (m, l, o): O's scale `alpha` and o's `beta` for the caller's elements.
+inline void lfm2_merge(thread float& M, thread float& L, float m, float l, thread float& alpha, thread float& beta) {
+  if (m == -INFINITY) {
+    alpha = 1.0f;
+    beta = 0.0f;
+    return;
+  }
+  const float M2 = max(M, m);
+  alpha = M == -INFINITY ? 0.0f : metal::fast::exp(M - M2);
+  beta = metal::fast::exp(m - M2);
+  L = fma(L, alpha, l * beta);
+  M = M2;
+}
 
 // Every row's attention partials (one kernel for prompt and decode): a threadgroup a (chunk, kv head, 8 rows).
 constant constexpr uint KB = 32;   // keys a staged block
@@ -152,18 +169,21 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
                               uint tid [[thread_index_in_threadgroup]], uint sg [[simdgroup_index_in_threadgroup]],
                               uint lane [[thread_index_in_simdgroup]]) {
   threadgroup bfloat ks[KB * KP], vs[KB * KP];
-  const uint chunk = tg.x, kh = tg.y, r0 = tg.z * 8, head = kh * (QH / KVH) + sg;
+  const uint chunk = tg.x / p.subs, sub0 = p.subs == 1 ? 0 : tg.x % SUBS, sub1 = p.subs == 1 ? SUBS : sub0 + 1;
+  const uint kh = tg.y, r0 = tg.z * 8, head = kh * (QH / KVH) + sg;
   const uint qid = lane / 4, fm = (qid & 4) + ((lane / 2) % 4), fn = (qid & 2) * 2 + (lane % 2) * 2;
   const uint row = r0 + fm;
   const uint count = p.len + min(row, rows - 1) + 1;  // this lane's row's visible keys
   const uint top = p.len + min(r0 + 7, rows - 1) + 1;  // the tile's most
-  const uint first = chunk * PER;
-  if (first >= top) return;
-  const uint last = min(top, first + PER);
+  if (chunk * PER + sub0 * SUB >= top) return;
   simdgroup_matrix<bfloat, 8, 8> q[8];
   for (int d = 0; d < 8; ++d) simdgroup_load(q[d], queries + (size_t(r0) * QH + head) * HD + 8 * d, QH * HD);
   const device bfloat* kb = keys + size_t(kh) * p.cap * HD;
   const device bfloat* vb = values + size_t(kh) * p.cap * HD;
+  float M = -INFINITY, L = 0.0f, O[8][2];
+  for (int d = 0; d < 8; ++d) O[d][0] = O[d][1] = 0.0f;
+  for (uint sub = sub0; sub < sub1; ++sub) {
+  const uint first = chunk * PER + sub * SUB, last = min(top, first + SUB);
   simdgroup_matrix<float, 8, 8> o[8];
   for (int d = 0; d < 8; ++d) o[d] = simdgroup_matrix<float, 8, 8>(0.0f);
   float m = -INFINITY, l = 0.0f;
@@ -219,15 +239,20 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
       }
     }
   }
+  float alpha, beta;
+  lfm2_merge(M, L, m, l, alpha, beta);
+  for (int d = 0; d < 8; ++d)
+    for (int e = 0; e < 2; ++e) O[d][e] = fma(O[d][e], alpha, o[d].thread_elements()[e] * beta);
+  }
   if (row >= rows) return;
-  const size_t at = (size_t(row) * QH + head) * CHUNKS + chunk;
+  const size_t at = (size_t(row) * QH + head) * (CHUNKS * p.subs) + chunk * p.subs + sub0;
   if ((lane & 9) == 0) {
-    pm[at] = m;
-    pl[at] = l;
+    pm[at] = M;
+    pl[at] = L;
   }
   for (int d = 0; d < 8; ++d) {
-    po[at * HD + 8 * d + fn] = o[d].thread_elements()[0];
-    po[at * HD + 8 * d + fn + 1] = o[d].thread_elements()[1];
+    po[at * HD + 8 * d + fn] = O[d][0];
+    po[at * HD + 8 * d + fn + 1] = O[d][1];
   }
 }
 
@@ -239,15 +264,32 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
   const uint count = p.len + r + 1;
   const uint per = PER;
   const uint chunks = (count + per - 1) / per;
-  const size_t at = (size_t(r) * QH + head) * CHUNKS;
+  const size_t at = (size_t(r) * QH + head) * (CHUNKS * p.subs);
+  // Each chunk's state: its sub-spans' partials folded in order (one a chunk from the prompt tiles).
+  float cm[CHUNKS], cl[CHUNKS], c0[CHUNKS], c1[CHUNKS];
+  for (uint c = 0; c < chunks; ++c) {
+    const uint subs = min(p.subs, (count - c * per + SUB - 1) / SUB);
+    float M = -INFINITY, L = 0.0f, O0 = 0.0f, O1 = 0.0f;
+    for (uint s = 0; s < subs; ++s) {
+      const size_t i = at + c * p.subs + s;
+      float alpha, beta;
+      lfm2_merge(M, L, pm[i], pl[i], alpha, beta);
+      O0 = fma(O0, alpha, po[i * HD + lane] * beta);
+      O1 = fma(O1, alpha, po[i * HD + lane + 32] * beta);
+    }
+    cm[c] = M;
+    cl[c] = L;
+    c0[c] = O0;
+    c1[c] = O1;
+  }
   float m = -INFINITY;
-  for (uint c = 0; c < chunks; ++c) m = max(m, pm[at + c]);
+  for (uint c = 0; c < chunks; ++c) m = max(m, cm[c]);
   float l = 0.0f, o0 = 0.0f, o1 = 0.0f;
   for (uint c = 0; c < chunks; ++c) {
-    const float f = metal::fast::exp(pm[at + c] - m);
-    l += pl[at + c] * f;
-    o0 += po[(at + c) * HD + lane] * f;
-    o1 += po[(at + c) * HD + lane + 32] * f;
+    const float f = metal::fast::exp(cm[c] - m);
+    l += cl[c] * f;
+    o0 += c0[c] * f;
+    o1 += c1[c] * f;
   }
   device bfloat* out = y + (size_t(r) * QH + head) * HD;
   out[lane] = static_cast<bfloat>(o0 / l);

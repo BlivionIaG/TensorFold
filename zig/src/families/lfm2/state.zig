@@ -10,6 +10,9 @@ pub const batch_rows = 32;
 /// Key chunks a row's attention splits into at most (the kernel's CHUNKS), and keys a chunk (its PER).
 pub const chunks = 32;
 pub const chunk_keys = 4096;
+/// Sub-spans a chunk, one a threadgroup for rows of up to `split_rows` (the kernel's SUBS), folded by the merge.
+pub const subs = 8;
+pub const split_rows = 8;
 
 pub const Storage = struct {
     gpa: std.mem.Allocator,
@@ -134,9 +137,10 @@ pub const Scratch = struct {
         out.bcx = try mem.alloc(rows * 3 * c.hidden * 2);
         out.k = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);
         out.v = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);
-        out.pm = try mem.alloc(rows * c.query_heads * chunks * 4);
-        out.pl = try mem.alloc(rows * c.query_heads * chunks * 4);
-        out.po = try mem.alloc(rows * c.query_heads * chunks * c.head_dim * 4);
+        const partials = @max(rows, split_rows * subs) * c.query_heads * chunks;
+        out.pm = try mem.alloc(partials * 4);
+        out.pl = try mem.alloc(partials * 4);
+        out.po = try mem.alloc(partials * c.head_dim * 4);
         const wide = @max(rows * c.intermediate, slots * c.moe_intermediate);
         inline for (.{ "gate", "up", "act" }) |name| @field(out, name) = try mem.alloc(wide * 2);
         out.route = try mem.alloc(rows * c.experts * 4);

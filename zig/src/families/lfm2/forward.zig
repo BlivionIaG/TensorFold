@@ -14,7 +14,7 @@ pub const Head = enum { last, all };
 const tile_rows = 33;
 
 const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32 };
-const AttnArgs = extern struct { len: u32, cap: u32, scale: f32 };
+const AttnArgs = extern struct { len: u32, cap: u32, scale: f32, subs: u32 };
 
 const Encoder = struct {
     e: mtl.ComputeEncoder,
@@ -170,8 +170,9 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
         e.setBuffer(cache.keys, 0, 7);
         e.setBuffer(cache.values, 0, 8);
         enc.groups(.{ c.query_heads + c.kv_heads, seg.rows, 1 }, .{ 32, 1, 1 });
-        const args = AttnArgs{ .len = len, .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)) };
-        const used = (seg.cache.len + seg.rows + st.chunk_keys - 1) / st.chunk_keys;
+        const subs: u32 = if (seg.rows <= st.split_rows) st.subs else 1;
+        const args = AttnArgs{ .len = len, .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .subs = subs };
+        const used = (seg.cache.len + seg.rows + st.chunk_keys - 1) / st.chunk_keys * subs;
         enc.pipe("lfm2_attn_mma");
         e.setBuffer(s.queries, base * c.hidden * 2, 0);
         e.setBuffer(cache.keys, 0, 1);
