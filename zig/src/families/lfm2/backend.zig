@@ -18,6 +18,9 @@ pub const Metal = struct {
     scratch: st.Scratch,
     width: u32 = 1,
     caches: std.AutoHashMapUnmanaged(*lanes.Stream, *st.Cache) = .empty,
+    /// Forward ms by window width, timed at load: the lane core weighs drafts against them.
+    costs: [st.window_rows]lanes.config.Cost = undefined,
+    timed: usize = 0,
 
     pub fn init(gpa: std.mem.Allocator, model: *Model, options: Options) !*Metal {
         const out = try gpa.create(Metal);
@@ -32,6 +35,7 @@ pub const Metal = struct {
             else => return err,
         };
         out.width = st.window_rows;
+        out.timed = try out.time();
         return out;
     }
 
@@ -47,7 +51,37 @@ pub const Metal = struct {
     }
 
     pub fn facts(self: *const Metal) lanes.Model {
-        return .{ .exact_width = self.width, .hidden_rows = self.width > 1, .batch_rows = st.batch_rows, .max_streams = self.options.streams, .streams_exact = true };
+        return .{ .exact_width = self.width, .hidden_rows = self.width > 1, .batch_rows = st.batch_rows, .max_streams = self.options.streams, .streams_exact = true, .window_costs = self.costs[0..self.timed], .plain_guard = true };
+    }
+
+    /// Each window width's forward ms on a 256-token history (the fastest of three, after the GPU's clocks ramp up).
+    fn time(self: *Metal) !usize {
+        var cache = try st.Cache.init(self.gpa, self.model.device, &self.model.config.attention, 512);
+        defer cache.deinit();
+        var ids: [256]u32 = undefined;
+        for (&ids, 0..) |*id, i| id.* = @intCast((i * 7919 + 13) % c.vocab);
+        try fwd.run(self.model, &self.scratch, &.{.{ .cache = &cache, .rows = 256 }}, &ids, false, .last);
+        const base = cache.len;
+        for (0..8) |_| {
+            try fwd.run(self.model, &self.scratch, &.{.{ .cache = &cache, .rows = 1 }}, ids[0..1], true, .all);
+            cache.len = base;
+        }
+        for (&self.costs, 1..) |*cost, w| {
+            var best: f64 = std.math.floatMax(f64);
+            for (0..3) |_| {
+                var t0: std.c.timespec = undefined;
+                var t1: std.c.timespec = undefined;
+                _ = std.c.clock_gettime(.MONOTONIC, &t0);
+                try fwd.run(self.model, &self.scratch, &.{.{ .cache = &cache, .rows = w }}, ids[0..w], true, .all);
+                _ = std.c.clock_gettime(.MONOTONIC, &t1);
+                cache.len = base;
+                const ms = @as(f64, @floatFromInt(t1.sec - t0.sec)) * 1e3 + @as(f64, @floatFromInt(t1.nsec - t0.nsec)) / 1e6;
+                best = @min(best, ms);
+            }
+            cost.* = .{ .width = @intCast(w), .ms = best };
+        }
+        std.log.info("LFM2 window ms by width: 1 {d:.1}, 2 {d:.1}, 4 {d:.1}, 8 {d:.1}, 16 {d:.1}", .{ self.costs[0].ms, self.costs[1].ms, self.costs[3].ms, self.costs[7].ms, self.costs[15].ms });
+        return self.costs.len;
     }
 
     pub fn backend(self: *Metal) be.Backend {

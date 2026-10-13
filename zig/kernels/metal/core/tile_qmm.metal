@@ -226,6 +226,74 @@ inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t
   return t;
 }
 
+// Rows a 4-bit twin threadgroup takes over one load of its columns' codes (windows: each weight read once).
+constant constexpr int TQ_RT = 4;
+
+// tf_tq_group at 4 bits for `rows` (<= TQ_RT) rows K apart: the codes stay in registers, each row its own chains.
+template <int NC>
+inline void tf_tq_group_rows(const device bfloat* x, int K, int rows, const device uint8_t* w, size_t stride, int g,
+                             thread float (*p)[NC], thread float* t, float one) {
+  uint wq[NC][8];
+  #pragma unroll
+  for (int c = 0; c < NC; ++c) {
+    const device uint4* src = (const device uint4*)(w + c * stride + size_t(g) * 32);
+    const uint4 a = src[0], b = src[1];
+    wq[c][0] = a.x; wq[c][1] = a.y; wq[c][2] = a.z; wq[c][3] = a.w;
+    wq[c][4] = b.x; wq[c][5] = b.y; wq[c][6] = b.z; wq[c][7] = b.w;
+  }
+  for (int r = 0; r < TQ_RT; ++r) {
+    t[r] = 0.0f;
+    for (int c = 0; c < NC; ++c) p[r][c] = 0.0f;
+  }
+  for (int r = 0; r < rows; ++r) {
+    const device uint4* xr = (const device uint4*)(x + size_t(r) * K + size_t(g) * 64);
+    #pragma unroll
+    for (int kb = 0; kb < 8; ++kb) {
+      const uint4 xv = xr[kb];
+      const uint xw[4] = {xv.x, xv.y, xv.z, xv.w};
+      float xf[8];
+      #pragma unroll
+      for (int j = 0; j < 8; ++j) {
+        const float v = as_type<float>((j % 2) ? (xw[j / 2] & 0xFFFF0000u) : (xw[j / 2] << 16));
+        t[r] = kb == 0 && j == 0 ? v : fma(v, one, t[r]);
+        xf[j] = v * as_type<float>(uint(127 - 4 * j) << 23);
+      }
+      #pragma unroll
+      for (int c = 0; c < NC; ++c)
+        #pragma unroll
+        for (int j = 0; j < 8; ++j) p[r][c] = fma(xf[j], float(wq[c][kb] & (0xFu << (4 * j))), p[r][c]);
+    }
+  }
+}
+
+// NC columns of up to TQ_RT rows at 4 bits: lanes take groups, then lane r * NC + c chains row r's column c in order.
+template <int NC>
+inline void tf_tq_columns_rows(const device bfloat* x, int rows, float one, const device uint8_t* w, const device bfloat* sc,
+                               const device bfloat* bi, int K, int N, device bfloat* out, uint lane, threadgroup float* part) {
+  const int G = K / 64;
+  const size_t stride = size_t(K) / 2;
+  for (int g = int(lane); g < G; g += 32) {
+    float p[TQ_RT][NC], t[TQ_RT];
+    tf_tq_group_rows<NC>(x, K, rows, w, stride, g, p, t, one);
+    for (int r = 0; r < rows; ++r) {
+      part[(r * (NC + 1) + NC) * G + g] = t[r];
+      for (int c = 0; c < NC; ++c) part[(r * (NC + 1) + c) * G + g] = p[r][c];
+    }
+  }
+  simdgroup_barrier(mem_flags::mem_threadgroup);
+  const int r = int(lane) / NC, c = int(lane) % NC;
+  if (r < rows) {
+    const device bfloat* s = sc + c * G;
+    const device bfloat* b = bi + c * G;
+    const threadgroup float* pc = part + (r * (NC + 1) + c) * G;
+    const threadgroup float* sums = part + (r * (NC + 1) + NC) * G;
+    float acc = 0.0f;
+    #pragma unroll(8)
+    for (int g = 0; g < G; ++g) acc = fma(float(b[g]), sums[g], fma(float(s[g]), pc[g], acc));
+    out[size_t(r) * N + c] = bfloat(acc);
+  }
+}
+
 // NC columns of one row at the tiles' bits: lanes take groups (staging each group's partials and input sum),
 // then lanes 0..NC-1 chain a column's groups in order with its scales and biases.
 template <int BITS, int NC>
@@ -259,7 +327,8 @@ inline bfloat tf_tq_swiglu(bfloat gate, bfloat up) {
   return static_cast<bfloat>(float(silu) * float(up));
 }
 
-// Y [rows, N] = X W^T at the tiles' bits (decode and windows): NC columns a simdgroup, TQ_SG a threadgroup; tg.y the row.
+// Y [rows, N] = X W^T at the tiles' bits (decode and windows): NC columns a simdgroup, TQ_SG a threadgroup;
+// tg.y takes TQ_RT rows at 4 bits (over one load of the codes), one row at 6 and 8.
 template <int BITS>
 [[kernel]] void tf_tile_qmv(const device bfloat* X [[buffer(0)]], const device uint8_t* W [[buffer(1)]],
                             const device bfloat* SC [[buffer(2)]], const device bfloat* BI [[buffer(3)]],
@@ -267,8 +336,15 @@ template <int BITS>
                             threadgroup float* part [[threadgroup(0)]], uint sg [[simdgroup_index_in_threadgroup]],
                             uint lane [[thread_index_in_simdgroup]], uint3 tg [[threadgroup_position_in_grid]]) {
   constexpr int NC = TfTqCols<BITS>::value;
-  const int n = (int(tg.x) * TQ_SG + int(sg)) * NC, r = int(tg.y), K = a.K, G = K / 64;
+  const int n = (int(tg.x) * TQ_SG + int(sg)) * NC, K = a.K, G = K / 64;
   if (n >= a.N) return;
+  if (BITS == 4) {
+    const int r0 = int(tg.y) * TQ_RT, rows = min(TQ_RT, a.R - r0);
+    tf_tq_columns_rows<NC>(X + size_t(r0) * K, rows, a.one, W + size_t(n) * (K / 2), SC + size_t(n) * G, BI + size_t(n) * G, K,
+                           a.N, OUT + size_t(r0) * a.N + n, lane, part + sg * TQ_RT * (NC + 1) * G);
+    return;
+  }
+  const int r = int(tg.y);
   const float y = tf_tq_columns<BITS, NC>(X + size_t(r) * K, a.one, W + size_t(n) * (K * BITS / 8), SC + size_t(n) * G,
                                          BI + size_t(n) * G, K, lane, part + sg * (NC + 1) * G);
   if (int(lane) < NC) OUT[size_t(r) * a.N + n + lane] = bfloat(y);

@@ -99,8 +99,10 @@ pub fn encodeTwin(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, x: mtl.
     if (rows == 0 or rows > twin_rows) return error.NoRows;
     e.setPipeline(p.twin[i]);
     bind(e, m, .{ .k = @intCast(m.k), .n = @intCast(m.n), .r = @intCast(rows) }, x, x_off, y, y_off);
-    e.setThreadgroupMemory(2 * (twinColumns(m.bits) / 2 + 1) * (m.k / 64) * 4, 0);
-    e.dispatchGroups(.{ .width = m.n / twinColumns(m.bits), .height = rows }, .{ .width = 64 });
+    // 4 bits: 4 rows a threadgroup over one load of the codes
+    const rt: usize = if (m.bits == 4) 4 else 1;
+    e.setThreadgroupMemory(2 * rt * (twinColumns(m.bits) / 2 + 1) * (m.k / 64) * 4, 0);
+    e.dispatchGroups(.{ .width = m.n / twinColumns(m.bits), .height = (rows + rt - 1) / rt }, .{ .width = 64 });
 }
 
 /// The twin by slot: slot y reads expert ids[y]'s matrix (`m` the first) and x row y / repeat.

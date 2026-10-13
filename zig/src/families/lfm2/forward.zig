@@ -10,6 +10,8 @@ const tile = @import("../../core/tile_qmm.zig");
 const Buffer = mtl.Buffer;
 pub const Segment = struct { cache: *st.Cache, rows: usize };
 pub const Head = enum { last, all };
+/// Rows from which a call takes the tiles (the twin's bits, each weight read once for every row).
+const tile_rows = 33;
 
 const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32 };
 const AttnArgs = extern struct { len: u32, cap: u32, scale: f32 };
@@ -18,7 +20,7 @@ const Encoder = struct {
     e: mtl.ComputeEncoder,
     m: *Model,
     s: *st.Scratch,
-    /// Prompt rows take the core's tiles (their own arithmetic); decode and window rows the row kernels.
+    /// Prompt calls and windows of tile_rows or more take the tiles; fewer decode rows the twin (the same bits).
     prompt: bool,
 
     fn pipe(self: Encoder, comptime key: []const u8) void {
@@ -84,7 +86,7 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     const cb = m.queue.commandBuffer();
-    const enc = Encoder{ .e = cb.compute(.serial), .m = m, .s = s, .prompt = !record and head == .last };
+    const enc = Encoder{ .e = cb.compute(.serial), .m = m, .s = s, .prompt = (!record and head == .last) or total >= tile_rows };
     const e = enc.e;
     const embedding = m.weights.embedding;
     e.setPipeline(m.kernels.embed(embedding.bits));
