@@ -117,6 +117,8 @@ const Owned = struct {
 /// The engine for `dir` on `dev`; under tensor parallelism this is rank 0, which serves.
 pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.Device, dir: []const u8, o: anytype, problem: *[]const u8) anyerror!Loaded {
     try check(a, gpa, io, dev, dir, o, problem);
+    // the followers size their streams for this window: the page tables rank 0 sends cover that many positions
+    if (dev.group) |g| try g.link().send(&.{@intCast(o.window)});
     const e = engineOf(gpa, io, dev, dir, o) catch |err| return refuse(a, problem, "the native HIP engine cannot load Flash Next from {s} ({s})", .{ dir, @errorName(err) });
     errdefer e.deinit();
     // the streams the memory left after the weights and the scratch holds at the window
@@ -153,8 +155,14 @@ fn streamBytes(e: *const Engine, cap: usize) usize {
 
 /// A rank above 0: holds its share of the model and runs rank 0's steps until rank 0 stops.
 pub fn follow(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.Device, dir: []const u8, o: anytype, problem: *[]const u8) anyerror!void {
-    try check(a, gpa, io, dev, dir, o, problem);
-    const e = engineOf(gpa, io, dev, dir, o) catch |err| return refuse(a, problem, "the native HIP engine cannot load Flash Next from {s} ({s})", .{ dir, @errorName(err) });
+    // rank 0's window, whatever this rank's own --context says
+    var msg: std.ArrayList(u32) = .empty;
+    defer msg.deinit(gpa);
+    try dev.group.?.link().recv(gpa, &msg);
+    var mine = o;
+    mine.window = msg.items[0];
+    try check(a, gpa, io, dev, dir, mine, problem);
+    const e = engineOf(gpa, io, dev, dir, mine) catch |err| return refuse(a, problem, "the native HIP engine cannot load Flash Next from {s} ({s})", .{ dir, @errorName(err) });
     defer e.deinit();
     try worker.follow(gpa, e, dev.group.?.link());
 }
