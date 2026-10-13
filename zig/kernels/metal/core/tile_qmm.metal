@@ -73,8 +73,17 @@ inline void tf_tq_tile(const device bfloat* X, const device float* XS, const dev
       for (int j = 0; j < TJ; ++j) P[i][j] = simdgroup_matrix<float, 8, 8>(0.0f);
     for (int kk = 0; kk < 64; kk += 8) {
       simdgroup_matrix<bfloat, 8, 8> a[TI], b[TJ];
-      for (int i = 0; i < TI; ++i) simdgroup_load(a[i], xs + (sr + 8 * i) * TP + kk, TP);
-      for (int j = 0; j < TJ; ++j) simdgroup_load(b[j], ws + (sc + 8 * j) * TP + kk, TP, ulong2(0, 0), true);
+      // Each lane's two elements (row fm, columns fn and fn + 1) read directly: A along k, B down its two columns.
+      for (int i = 0; i < TI; ++i) {
+        const threadgroup bfloat* ap = xs + (sr + 8 * i + fm) * TP + kk + fn;
+        a[i].thread_elements()[0] = ap[0];
+        a[i].thread_elements()[1] = ap[1];
+      }
+      for (int j = 0; j < TJ; ++j) {
+        const threadgroup bfloat* bp = ws + (sc + 8 * j + fn) * TP + kk + fm;
+        b[j].thread_elements()[0] = bp[0];
+        b[j].thread_elements()[1] = bp[TP];
+      }
       for (int i = 0; i < TI; ++i)
         for (int j = 0; j < TJ; ++j) simdgroup_multiply_accumulate(P[i][j], a[i], b[j], P[i][j]);
     }
