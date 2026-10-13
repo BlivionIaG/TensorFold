@@ -336,7 +336,7 @@ fn promptBudget(m: *q.Model) !void {
                 e.setBuffer(sc.up, 0, 1);
                 e.setBuffer(sc.act, 0, 2);
                 e.setValue(@as(u32, slots * 1536), 3);
-                e.dispatchThreads(mtl.Size.of(slots * 1536, 1, 1), mtl.Size.of(256, 1, 1));
+                e.dispatchThreads(mtl.Size.of(slots * 1536 / 8, 1, 1), mtl.Size.of(256, 1, 1));
                 tile.encodeSums(e, t, 1536, sc.act, 0, sc.sums, slots);
                 try tile.encodeGrouped(e, t, tq(moe.down.one), 64, sc.act, sc.sums, sc.experts, slots, sc.starts, sc.work);
             },

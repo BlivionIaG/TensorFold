@@ -210,9 +210,17 @@ template <int BITS>
                              uint2 at [[thread_position_in_grid]]) {
   const int G = a.K / 64;
   if (int(at.x) >= G) return;
-  const device bfloat* x = X + size_t(at.y) * a.K + at.x * 64;
-  float t = float(x[0]);
-  for (int k = 1; k < 64; ++k) t = fma(float(x[k]), a.one, t);
+  const device uint4* x = (const device uint4*)(X + size_t(at.y) * a.K + at.x * 64);
+  float t = 0.0f;
+  for (int kb = 0; kb < 8; ++kb) {
+    const uint4 v = x[kb];
+    const uint w[4] = {v.x, v.y, v.z, v.w};
+    #pragma unroll
+    for (int j = 0; j < 8; ++j) {
+      const float f = as_type<float>((j % 2) ? (w[j / 2] & 0xFFFF0000u) : (w[j / 2] << 16));
+      t = kb == 0 && j == 0 ? f : fma(f, a.one, t);
+    }
+  }
   XS[size_t(at.y) * G + at.x] = t;
 }
 

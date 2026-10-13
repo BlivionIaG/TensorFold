@@ -65,7 +65,7 @@ const Encoder = struct {
         self.e.setBuffer(s.up, 0, 1);
         self.e.setBuffer(s.act, 0, 2);
         self.e.setValue(@as(u32, @intCast(count)), 3);
-        self.threads(.{ count, 1, 1 }, .{ 256, 1, 1 });
+        self.threads(.{ count / 8, 1, 1 }, .{ 256, 1, 1 });
     }
 };
 

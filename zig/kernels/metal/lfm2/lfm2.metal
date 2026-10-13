@@ -306,14 +306,19 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
   }
 }
 
-// act = silu(gate) * up over [rows, n] (bf16 at each step, as mlx-lm's compiled swiglu and core/tile_qmm's twin).
+// act = silu(gate) * up over [rows, n] (bf16 at each step, as mlx-lm's compiled swiglu and core/tile_qmm's twin), 8 a thread.
 [[kernel]] void lfm2_swiglu(const device bfloat* gate [[buffer(0)]], const device bfloat* up [[buffer(1)]],
                             device bfloat* act [[buffer(2)]], constant uint& count [[buffer(3)]], uint i [[thread_position_in_grid]]) {
-  if (i >= count) return;
-  const float g = gate[i];
-  const bfloat s = static_cast<bfloat>(1.0f / (1.0f + metal::precise::exp(-g)));
-  const bfloat silu = static_cast<bfloat>(g * float(s));
-  act[i] = static_cast<bfloat>(float(silu) * float(up[i]));
+  if (i * 8 >= count) return;
+  const vec<bfloat, 8> g = ((const device vec<bfloat, 8>*)gate)[i], u = ((const device vec<bfloat, 8>*)up)[i];
+  vec<bfloat, 8> out;
+  for (int j = 0; j < 8; ++j) {
+    const float gf = g[j];
+    const bfloat s = static_cast<bfloat>(1.0f / (1.0f + metal::precise::exp(-gf)));
+    const bfloat silu = static_cast<bfloat>(gf * float(s));
+    out[j] = static_cast<bfloat>(float(silu) * float(u[j]));
+  }
+  ((device vec<bfloat, 8>*)act)[i] = out;
 }
 
 // R [rows, D] = sum over a row's picks of bf16(y * weight), in pick order with an fp32 sum.
