@@ -38,7 +38,8 @@ inline void tf_tq_codes(const thread uint* w, threadgroup uint* out) {
 template <int BITS, int BM, int BN>
 inline void tf_tq_tile(const device bfloat* X, const device float* XS, const device uint8_t* W, const device bfloat* SC,
                        const device bfloat* BI, int K, int N, int R, device bfloat* OUT, int rb, int nb, uint tid, uint sg,
-                       uint lane, threadgroup bfloat* xs, threadgroup bfloat* ws, threadgroup float2* sb) {
+                       uint lane, threadgroup bfloat* xs, threadgroup bfloat* ws, threadgroup float2* sb,
+                       threadgroup float* xsum) {
   constexpr int TI = BM / 16, TJ = BN / 16;  // 8x8 blocks a simdgroup (2x2 simdgroups)
   const int G = K / 64;
   const int sr = int(sg) / 2 * (BM / 2), sc = int(sg) % 2 * (BN / 2);
@@ -65,6 +66,7 @@ inline void tf_tq_tile(const device bfloat* X, const device float* XS, const dev
       const size_t n = size_t(min(nb + idx, N - 1)) * G + g;
       sb[idx] = float2(float(SC[n]), float(BI[n]));
     }
+    for (int idx = int(tid); idx < BM; idx += 128) xsum[idx] = XS[size_t(min(rb + idx, R - 1)) * G + g];
     threadgroup_barrier(mem_flags::mem_threadgroup);
     simdgroup_matrix<float, 8, 8> P[TI][TJ];
     for (int i = 0; i < TI; ++i)
@@ -77,7 +79,7 @@ inline void tf_tq_tile(const device bfloat* X, const device float* XS, const dev
         for (int j = 0; j < TJ; ++j) simdgroup_multiply_accumulate(P[i][j], a[i], b[j], P[i][j]);
     }
     float xsr[TI];
-    for (int i = 0; i < TI; ++i) xsr[i] = XS[size_t(min(rb + sr + 8 * i + fm, R - 1)) * G + g];
+    for (int i = 0; i < TI; ++i) xsr[i] = xsum[sr + 8 * i + fm];
     for (int j = 0; j < TJ; ++j)
       for (int e = 0; e < 2; ++e) {
         const float2 v = sb[sc + 8 * j + fn + e];
@@ -101,7 +103,8 @@ template <int BITS>
                             uint lane [[thread_index_in_simdgroup]], uint3 tg [[threadgroup_position_in_grid]]) {
   threadgroup bfloat xs[TQ * TP], ws[TQN * TP];
   threadgroup float2 sb[TQN];
-  tf_tq_tile<BITS, TQ, TQN>(X, XS, W, SC, BI, a.K, a.N, a.R, OUT, int(tg.y) * TQ, int(tg.x) * TQN, tid, sg, lane, xs, ws, sb);
+  threadgroup float xsum[TQ];
+  tf_tq_tile<BITS, TQ, TQN>(X, XS, W, SC, BI, a.K, a.N, a.R, OUT, int(tg.y) * TQ, int(tg.x) * TQN, tid, sg, lane, xs, ws, sb, xsum);
 }
 
 // The tiles over rows sorted by expert: item tg.y of WORK[1..WORK[0]] = (expert << 16) | row tile, rows from STARTS.
@@ -115,12 +118,13 @@ template <int BITS>
                                     uint3 tg [[threadgroup_position_in_grid]]) {
   threadgroup bfloat xs[TQ * TP], ws[TQN * TP];
   threadgroup float2 sb[TQN];
+  threadgroup float xsum[TQ];
   if (tg.y >= work[0]) return;
   const uint item = work[1 + tg.y], e = item >> 16;
   const uint first = starts[e], rows = starts[e + 1] - first;
   const size_t K = size_t(a.K), N = size_t(a.N);
   tf_tq_tile<BITS, TQ, TQN>(X + first * K, XS + first * (K / 64), W + e * N * (K * BITS / 8), SC + e * N * (K / 64), BI + e * N * (K / 64),
-                   a.K, a.N, int(rows), OUT + first * N, int(item & 0xFFFFu) * TQ, int(tg.x) * TQN, tid, sg, lane, xs, ws, sb);
+                   a.K, a.N, int(rows), OUT + first * N, int(item & 0xFFFFu) * TQ, int(tg.x) * TQN, tid, sg, lane, xs, ws, sb, xsum);
 }
 
 // The grouped tiles' work list from STARTS [E + 1]: count, then (expert << 16) | tile for each expert's 32-row tiles.
