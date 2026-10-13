@@ -11,87 +11,145 @@ struct TfTqArgs { int K, N, R; float one; };
 
 constant constexpr int TQ = TQ_BM;  // rows a tile (the work list's row tiles)
 constant constexpr int TQN = TQ_BN;  // columns a tile
-constant constexpr int TP = 72;  // bf16 a staged row: 64 values, pad (bank spread)
+constant constexpr int TP = 40;  // bf16 a staged row: a stage's 32 values, pad (bank spread)
 
-// bf16 bits of a small exact integer (its float's top half: no rounding below 256).
-inline uint tf_tq_bf(uint v) { return as_type<uint>(float(v)) >> 16; }
+// bf16 bits of a small exact integer (no rounding below 256), at compile time.
+constexpr uint tf_tq_bf(uint q) {
+  uint e = 0;
+  while ((2u << e) <= q) ++e;
+  return q == 0 ? 0u : (((127u + e) << 7) | ((q - (1u << e)) << (7 - e)));
+}
 
-// 16 codes from BITS / 2 words of a little-endian bit stream as 8 words of bf16 pairs.
+// A byte's two 4-bit codes (low first) as a bf16 pair.
+struct TfTqPairs { uint v[256]; };
+constexpr TfTqPairs tf_tq_pairs_make() {
+  TfTqPairs t{};
+  for (uint b = 0; b < 256; ++b) t.v[b] = tf_tq_bf(b & 15u) | (tf_tq_bf(b >> 4) << 16);
+  return t;
+}
+constant TfTqPairs tf_tq_pairs = tf_tq_pairs_make();
+
+// 8 codes from BITS / 2 halfwords of a little-endian bit stream as 4 words of bf16 pairs.
 template <int BITS>
-inline void tf_tq_codes(const thread uint* w, threadgroup uint* out) {
+inline uint4 tf_tq_codes(const thread ushort* h) {
+  const ulong v = ulong(h[0]) | (ulong(h[1]) << 16) | (BITS > 4 ? ulong(h[BITS > 4 ? 2 : 0]) << 32 : 0ul) |
+                  (BITS > 6 ? ulong(h[BITS > 6 ? 3 : 0]) << 48 : 0ul);
+  uint out[4];
   #pragma unroll
-  for (int i = 0; i < 8; ++i) {
-    uint q[2];
-    #pragma unroll
-    for (int h = 0; h < 2; ++h) {
-      const int bit = (2 * i + h) * BITS, at = bit / 32, sh = bit % 32;
-      uint v = w[at] >> sh;
-      if (sh + BITS > 32) v |= w[at + 1] << (32 - sh);
-      q[h] = v & ((1u << BITS) - 1u);
+  for (int i = 0; i < 4; ++i) {
+    const uint pair = uint(v >> (2 * i * BITS)) & ((1u << (2 * BITS)) - 1u);
+    if (BITS == 4) out[i] = tf_tq_pairs.v[pair];
+    else {
+      const uint lo = pair & ((1u << BITS) - 1u), hi = pair >> BITS;
+      out[i] = (as_type<uint>(float(lo)) >> 16) | (as_type<uint>(float(hi)) & 0xFFFF0000u);
     }
-    out[i] = tf_tq_bf(q[0]) | (tf_tq_bf(q[1]) << 16);
+  }
+  return uint4(out[0], out[1], out[2], out[3]);
+}
+
+// A thread's stage share: 8 inputs of a row, 8 codes of a column; a group's first stage adds its scale, bias and sum.
+template <int BITS>
+struct TfTqAhead {
+  uint4 x;
+  ushort w[BITS / 2];
+  float2 sb;
+  float xs;
+};
+
+template <int BITS, int BM, int BN>
+inline void tf_tq_fetch(thread TfTqAhead<BITS>& a, const device bfloat* X, const device float* XS, const device uint8_t* W,
+                        const device bfloat* SC, const device bfloat* BI, int K, int R, int rb, int nb, int s, int tid) {
+  const int G = K / 64, g = s / 2, k0 = g * 64 + s % 2 * 32;
+  a.x = *((const device uint4*)(X + size_t(min(rb + tid / 4, R - 1)) * K + k0) + tid % 4);
+  const device ushort* src = (const device ushort*)(W + size_t(nb + tid / 4) * (K * BITS / 8) + (k0 + tid % 4 * 8) * BITS / 8);
+  for (int i = 0; i < BITS / 2; ++i) a.w[i] = src[i];
+  if (s % 2 == 0) {
+    if (tid < BN) {
+      const size_t n = size_t(nb + tid) * G + g;
+      a.sb = float2(float(SC[n]), float(BI[n]));
+    }
+    if (tid < BM) a.xs = XS[size_t(min(rb + tid, R - 1)) * G + g];
   }
 }
 
-// One 32x32 tile of Y = X W^T: four simdgroups of 16x16, each group of 64 inputs summed by bf16 MMAs into fp32 in k order,
-// then acc = fma(bias, xsum, fma(scale, group, acc)) per output; XS [R, K / 64] from tf_tile_xsum.
+template <int BITS, int BM, int BN>
+inline void tf_tq_stage(const thread TfTqAhead<BITS>& a, threadgroup bfloat* xs, threadgroup bfloat* ws, threadgroup float2* sb,
+                        threadgroup float* xsum, int s, int tid) {
+  *(threadgroup uint4*)(xs + tid / 4 * TP + tid % 4 * 8) = a.x;
+  *(threadgroup uint4*)(ws + tid / 4 * TP + tid % 4 * 8) = tf_tq_codes<BITS>(a.w);
+  if (s % 2 == 0) {  // a group's scales, biases and sums by its parity (read after its second stage)
+    if (tid < BN) sb[s / 2 % 2 * BN + tid] = a.sb;
+    if (tid < BM) xsum[s / 2 % 2 * BM + tid] = a.xs;
+  }
+}
+
+// A stage's 4 k-steps of a simdgroup's TI x TJ blocks on staged inputs xb and codes wb.
+template <int TI, int TJ>
+inline void tf_tq_mmas(thread simdgroup_matrix<float, 8, 8> (*P)[TJ], const threadgroup bfloat* xb, const threadgroup bfloat* wb,
+                       int sr, int sc, int fm, int fn) {
+  #pragma unroll
+  for (int kk = 0; kk < 32; kk += 8) {
+    simdgroup_matrix<bfloat, 8, 8> a[TI], b[TJ];
+    // Each lane's two elements (row fm, columns fn and fn + 1) read directly: A along k, B down its two columns.
+    for (int i = 0; i < TI; ++i) {
+      const threadgroup bfloat* ap = xb + (sr + 8 * i + fm) * TP + kk + fn;
+      a[i].thread_elements()[0] = ap[0];
+      a[i].thread_elements()[1] = ap[1];
+    }
+    for (int j = 0; j < TJ; ++j) {
+      const threadgroup bfloat* bp = wb + (sc + 8 * j + fn) * TP + kk + fm;
+      b[j].thread_elements()[0] = bp[0];
+      b[j].thread_elements()[1] = bp[TP];
+    }
+    for (int i = 0; i < TI; ++i)
+      for (int j = 0; j < TJ; ++j) simdgroup_multiply_accumulate(P[i][j], a[i], b[j], P[i][j]);
+  }
+}
+
+// One 32x32 tile of Y = X W^T: four simdgroups of 16x16, each 64-input group summed by bf16 MMAs into fp32 in k order.
 template <int BITS, int BM, int BN>
 inline void tf_tq_tile(const device bfloat* X, const device float* XS, const device uint8_t* W, const device bfloat* SC,
                        const device bfloat* BI, int K, int N, int R, device bfloat* OUT, int rb, int nb, uint tid, uint sg,
                        uint lane, threadgroup bfloat* xs, threadgroup bfloat* ws, threadgroup float2* sb,
                        threadgroup float* xsum) {
+  // Then acc = fma(bias, xsum, fma(scale, group, acc)) per output, XS [R, K / 64] from tf_tile_xsum.
+  static_assert(BM == 32 && BN == 32, "128 threads stage 32 rows and 32 columns, 8 values each");
   constexpr int TI = BM / 16, TJ = BN / 16;  // 8x8 blocks a simdgroup (2x2 simdgroups)
-  const int G = K / 64;
+  const int G = K / 64, S = 2 * G;
   const int sr = int(sg) / 2 * (BM / 2), sc = int(sg) % 2 * (BN / 2);
   const int qid = int(lane) / 4;
   const int fm = (qid & 4) + ((int(lane) / 2) % 4);
   const int fn = (qid & 2) * 2 + (int(lane) % 2) * 2;
+  const threadgroup bfloat* xb1 = xs + BM * TP;
+  const threadgroup bfloat* wb1 = ws + BN * TP;
   float acc[TI][TJ][2];
   for (int i = 0; i < TI; ++i)
     for (int j = 0; j < TJ; ++j) acc[i][j][0] = acc[i][j][1] = 0.0f;
+  // Two 32-input stages a group, two buffers: loads two stages ahead, stores one; a stage's one barrier waits on neither.
+  TfTqAhead<BITS> even, odd;  // the next even and odd stages' shares
+  tf_tq_fetch<BITS, BM, BN>(even, X, XS, W, SC, BI, K, R, rb, nb, 0, int(tid));
+  tf_tq_fetch<BITS, BM, BN>(odd, X, XS, W, SC, BI, K, R, rb, nb, 1, int(tid));
+  tf_tq_stage<BITS, BM, BN>(even, xs, ws, sb, xsum, 0, int(tid));
   for (int g = 0; g < G; ++g) {
+    const int s = 2 * g;
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (int idx = int(tid); idx < BM * 8; idx += 128) {
-      const int r = idx / 8, part = idx % 8;
-      *(threadgroup uint4*)(xs + r * TP + part * 8) = *((const device uint4*)(X + size_t(min(rb + r, R - 1)) * K + g * 64) + part);
-    }
-    for (int idx = int(tid); idx < BN * 4; idx += 128) {
-      const int n = idx / 4, part = idx % 4;
-      const device uint* src = (const device uint*)(W + size_t(min(nb + n, N - 1)) * (K * BITS / 8)) + (g * 4 + part) * (BITS / 2);
-      uint rw[BITS / 2];
-      for (int i = 0; i < BITS / 2; ++i) rw[i] = src[i];
-      tf_tq_codes<BITS>(rw, (threadgroup uint*)(ws + n * TP + part * 16));
-    }
-    for (int idx = int(tid); idx < BN; idx += 128) {
-      const size_t n = size_t(min(nb + idx, N - 1)) * G + g;
-      sb[idx] = float2(float(SC[n]), float(BI[n]));
-    }
-    for (int idx = int(tid); idx < BM; idx += 128) xsum[idx] = XS[size_t(min(rb + idx, R - 1)) * G + g];
-    threadgroup_barrier(mem_flags::mem_threadgroup);
+    tf_tq_stage<BITS, BM, BN>(odd, xs + BM * TP, ws + BN * TP, sb, xsum, s + 1, int(tid));
+    if (s + 2 < S) tf_tq_fetch<BITS, BM, BN>(even, X, XS, W, SC, BI, K, R, rb, nb, s + 2, int(tid));
     simdgroup_matrix<float, 8, 8> P[TI][TJ];
     for (int i = 0; i < TI; ++i)
       for (int j = 0; j < TJ; ++j) P[i][j] = simdgroup_matrix<float, 8, 8>(0.0f);
-    for (int kk = 0; kk < 64; kk += 8) {
-      simdgroup_matrix<bfloat, 8, 8> a[TI], b[TJ];
-      // Each lane's two elements (row fm, columns fn and fn + 1) read directly: A along k, B down its two columns.
-      for (int i = 0; i < TI; ++i) {
-        const threadgroup bfloat* ap = xs + (sr + 8 * i + fm) * TP + kk + fn;
-        a[i].thread_elements()[0] = ap[0];
-        a[i].thread_elements()[1] = ap[1];
-      }
-      for (int j = 0; j < TJ; ++j) {
-        const threadgroup bfloat* bp = ws + (sc + 8 * j + fn) * TP + kk + fm;
-        b[j].thread_elements()[0] = bp[0];
-        b[j].thread_elements()[1] = bp[TP];
-      }
-      for (int i = 0; i < TI; ++i)
-        for (int j = 0; j < TJ; ++j) simdgroup_multiply_accumulate(P[i][j], a[i], b[j], P[i][j]);
-    }
+    tf_tq_mmas<TI, TJ>(P, xs, ws, sr, sc, fm, fn);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (s + 2 < S) tf_tq_stage<BITS, BM, BN>(even, xs, ws, sb, xsum, s + 2, int(tid));
+    if (s + 3 < S) tf_tq_fetch<BITS, BM, BN>(odd, X, XS, W, SC, BI, K, R, rb, nb, s + 3, int(tid));
+    tf_tq_mmas<TI, TJ>(P, xb1, wb1, sr, sc, fm, fn);
+    const threadgroup float2* sbg = sb + g % 2 * BN;
+    const threadgroup float* xsg = xsum + g % 2 * BM;
     float xsr[TI];
-    for (int i = 0; i < TI; ++i) xsr[i] = xsum[sr + 8 * i + fm];
+    for (int i = 0; i < TI; ++i) xsr[i] = xsg[sr + 8 * i + fm];
     for (int j = 0; j < TJ; ++j)
       for (int e = 0; e < 2; ++e) {
-        const float2 v = sb[sc + 8 * j + fn + e];
+        const float2 v = sbg[sc + 8 * j + fn + e];
         for (int i = 0; i < TI; ++i) acc[i][j][e] = fma(v.y, xsr[i], fma(v.x, P[i][j].thread_elements()[e], acc[i][j][e]));
       }
   }
@@ -99,7 +157,7 @@ inline void tf_tq_tile(const device bfloat* X, const device float* XS, const dev
     for (int j = 0; j < TJ; ++j)
       for (int e = 0; e < 2; ++e) {
         const int row = rb + sr + 8 * i + fm, n = nb + sc + 8 * j + fn + e;
-        if (row < R && n < N) OUT[size_t(row) * N + n] = bfloat(acc[i][j][e]);
+        if (row < R) OUT[size_t(row) * N + n] = bfloat(acc[i][j][e]);
       }
 }
 
@@ -110,9 +168,9 @@ template <int BITS>
                             constant TfTqArgs& a [[buffer(4)]], device bfloat* OUT [[buffer(5)]], const device float* XS [[buffer(6)]],
                             uint tid [[thread_index_in_threadgroup]], uint sg [[simdgroup_index_in_threadgroup]],
                             uint lane [[thread_index_in_simdgroup]], uint3 tg [[threadgroup_position_in_grid]]) {
-  threadgroup bfloat xs[TQ * TP], ws[TQN * TP];
-  threadgroup float2 sb[TQN];
-  threadgroup float xsum[TQ];
+  threadgroup bfloat xs[2 * TQ * TP], ws[2 * TQN * TP];
+  threadgroup float2 sb[2 * TQN];
+  threadgroup float xsum[2 * TQ];
   tf_tq_tile<BITS, TQ, TQN>(X, XS, W, SC, BI, a.K, a.N, a.R, OUT, int(tg.y) * TQ, int(tg.x) * TQN, tid, sg, lane, xs, ws, sb, xsum);
 }
 
@@ -125,9 +183,9 @@ template <int BITS>
                                     const device float* XS [[buffer(8)]], uint tid [[thread_index_in_threadgroup]],
                                     uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],
                                     uint3 tg [[threadgroup_position_in_grid]]) {
-  threadgroup bfloat xs[TQ * TP], ws[TQN * TP];
-  threadgroup float2 sb[TQN];
-  threadgroup float xsum[TQ];
+  threadgroup bfloat xs[2 * TQ * TP], ws[2 * TQN * TP];
+  threadgroup float2 sb[2 * TQN];
+  threadgroup float xsum[2 * TQ];
   if (tg.y >= work[0]) return;
   const uint item = work[1 + tg.y], e = item >> 16;
   const uint first = starts[e], rows = starts[e + 1] - first;
