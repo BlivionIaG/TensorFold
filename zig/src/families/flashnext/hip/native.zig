@@ -124,7 +124,8 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip.D
     // the streams the memory left after the weights and the scratch holds at the window
     const room = (hip.admission.budget(gpa, io, e.ctx) catch |err| return refuse(a, problem, "the native HIP engine cannot read the GPU's memory ({s})", .{@errorName(err)})).room(hip.usage(false).device);
     const per = streamBytes(e, capacity(o.window));
-    const fit = room / per;
+    // the streams every rank's memory holds: a follower takes a stream's caches when rank 0 begins it
+    const fit = try e.least(room / per);
     if (fit == 0) return refuse(a, problem, "one stream at a {d}-token window takes {d:.2} GiB and {d:.2} GiB is left after the weights; lower --context or add ranks (--tp)", .{ o.window, gibs(per), gibs(room) });
     if (fit < o.streams and o.fixed) return refuse(a, problem, "--parallel {d} needs {d:.2} GiB at a {d}-token window and {d:.2} GiB is left: serve --parallel {d}, or lower --context", .{ o.streams, gibs(per * o.streams), o.window, gibs(room), fit });
     const streams = @min(fit, @max(o.streams, 1));
@@ -164,6 +165,8 @@ pub fn follow(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, dev: hip
     try check(a, gpa, io, dev, dir, mine, problem);
     const e = engineOf(gpa, io, dev, dir, mine) catch |err| return refuse(a, problem, "the native HIP engine cannot load Flash Next from {s} ({s})", .{ dir, @errorName(err) });
     defer e.deinit();
+    const room = (try hip.admission.budget(gpa, io, e.ctx)).room(hip.usage(false).device);
+    _ = try e.least(room / streamBytes(e, capacity(mine.window)));
     try worker.follow(gpa, e, dev.group.?.link());
 }
 

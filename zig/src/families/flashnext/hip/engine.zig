@@ -332,21 +332,27 @@ pub const Engine = struct {
         e.pool.items[c.id] = c;
     }
 
-    /// Whether every rank kept its capture (one word each, gathered).
-    fn agreed(e: *Engine, yes: bool) !bool {
-        const c = e.comm orelse return yes;
+    /// The least of `mine` over the ranks, the same on every rank (the streams every rank's memory holds).
+    pub fn least(e: *Engine, mine: u64) !u64 {
+        const c = e.comm orelse return mine;
         const o = e.ops(&e.arena);
         const at = e.arena.mark();
         defer e.arena.release(at);
         const send = try o.arena.of(i64, 1 + c.world);
-        const word: i64 = @intFromBool(yes);
+        const word: i64 = @intCast(mine);
         try hip.runtime.check(e.driver.api.hipMemcpyHtoDAsync(@ptrFromInt(send), @ptrCast(@constCast(&word)), 8, e.stream.handle));
         try c.allGather(send, send + 8, 1, .i64, e.stream.handle);
         var all: [64]i64 = undefined;
         try hip.runtime.check(e.driver.api.hipMemcpyDtoHAsync(std.mem.sliceAsBytes(&all).ptr, @ptrFromInt(send + 8), 8 * c.world, e.stream.handle));
         try e.stream.synchronize();
-        for (all[0..c.world]) |v| if (v == 0) return false;
-        return true;
+        var out = mine;
+        for (all[0..c.world]) |v| out = @min(out, @as(u64, @intCast(v)));
+        return out;
+    }
+
+    /// Whether every rank kept its capture (one word each, gathered).
+    fn agreed(e: *Engine, yes: bool) !bool {
+        return try e.least(@intFromBool(yes)) == 1;
     }
 };
 
