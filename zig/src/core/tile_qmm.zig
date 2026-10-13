@@ -51,7 +51,7 @@ pub const Pipelines = struct {
     }
 };
 
-/// A checkpoint's [n, k] matrix (or the first of `experts` back to back): codes [n][k*bits/8], scales and biases [n][k/64].
+/// A checkpoint's [n, k] matrix (or experts' first): codes [n][k*bits/8], scales and biases [n][k/64].
 pub const Matrix = struct { w: mtl.Buffer, w_off: usize = 0, scales: mtl.Buffer, s_off: usize = 0, biases: mtl.Buffer, b_off: usize = 0, n: usize, k: usize, bits: u8 };
 
 fn width(m: Matrix) !usize {
@@ -121,7 +121,7 @@ pub fn encodeTwinIndexed(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, 
     e.dispatchGroups(.{ .width = m.n / twinColumns(m.bits), .height = slots }, .{ .width = 64 });
 }
 
-/// encodeTwinIndexed on gate and up (the same shape) into swiglu(gate, up): mlx-lm's compiled swiglu on their bf16 rows.
+/// encodeTwinIndexed on gate and up (one shape) into swiglu(gate, up), mlx-lm's compiled swiglu on bf16 rows.
 pub fn encodeTwinGlu(e: mtl.ComputeEncoder, p: *const Pipelines, gate: Matrix, up: Matrix, x: mtl.Buffer, y: mtl.Buffer, ids: mtl.Buffer, slots: usize, repeat: usize) !void {
     const i = try width(gate);
     if (slots == 0 or repeat == 0 or up.n != gate.n or up.k != gate.k or up.bits != gate.bits) return error.NoRows;
@@ -135,7 +135,7 @@ pub fn encodeTwinGlu(e: mtl.ComputeEncoder, p: *const Pipelines, gate: Matrix, u
     e.dispatchGroups(.{ .width = gate.n / twinColumns(gate.bits), .height = slots }, .{ .width = 64 });
 }
 
-/// Whether the twin's rows equal the tiles' for `m` on this GPU (random rows; a different chip may round MMAs otherwise).
+/// Whether the twin's rows equal the tiles' for `m` on this GPU (random rows; another chip may round MMAs otherwise).
 pub fn twinExact(p: *const Pipelines, device: mtl.Device, m: Matrix) !bool {
     const rows = 40;
     const pool = mtl.objc.Pool.push();

@@ -254,7 +254,7 @@ fn launches(m: *q.Model) !void {
 }
 
 
-/// One 2,048-row prompt chunk's GPU budget: each kernel at its real shape (picks spread over the experts), times its launches.
+/// A 2,048-row prompt chunk's GPU budget: each kernel at its real shape (picks spread), times its launches.
 fn promptBudget(m: *q.Model) !void {
     const rows = 2048;
     const slots = rows * 4;

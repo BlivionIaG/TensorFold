@@ -266,13 +266,11 @@ inline float tf_tq_code(const thread uint* w, int k) {
   return float(v & ((1u << BITS) - 1u));
 }
 
-// Columns a simdgroup and simdgroups a threadgroup for the twin.
-// Columns a simdgroup (fewer at 6 and 8 bits, whose words take more registers) and simdgroups a threadgroup.
+// The twin's columns a simdgroup and simdgroups a threadgroup.
 template <int BITS> struct TfTqCols { static constant constexpr int value = 4; };
 constant constexpr int TQ_SG = 2;
 
-// Group g's 64-step fma chains (the tiles' MMA order) of x's 64 inputs against NC columns' codes, `stride` bytes apart,
-// and the group's input sum. At 4 bits a code stays in place (code * 16^j) against x * 16^-j: the same exact product.
+// Group g's 64-step fma chains (the MMA order) and input sum; at 4 bits a code in place meets x * 16^-j (same product).
 template <int BITS, int NC>
 inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t stride, int g, thread float* p, float one) {
   constexpr int GW = 2 * BITS;  // words a group of 64 codes
@@ -398,8 +396,7 @@ inline void tf_tq_columns_rows(const device bfloat* x, int rows, float one, cons
   if (r < rows) out[size_t(r) * N + c] = bfloat(acc);
 }
 
-// NC columns of one row at the tiles' bits, in rounds of 32 groups: lanes take a group each (partials and input sum
-// staged in part [NC + 1][32]), then lanes 0..NC-1 chain a column's groups in order with its scales and biases.
+// NC columns of a row at the tiles' bits, 32 groups a round: a group a lane, then lane c chains column c in order.
 template <int BITS, int NC>
 inline float tf_tq_columns(const device bfloat* x, float one, const device uint8_t* w, const device bfloat* sc,
                            const device bfloat* bi, int K, uint lane, threadgroup float* part) {
@@ -427,8 +424,7 @@ inline float tf_tq_columns(const device bfloat* x, float one, const device uint8
   return acc;
 }
 
-// Y [rows, N] = X W^T at the tiles' bits (decode and windows): NC columns a simdgroup, TQ_SG a threadgroup;
-// tg.y takes TQ_RT rows at 4 bits (over one load of the codes), one row at 6 and 8.
+// Y = X W^T at the tiles' bits for decode and windows: tg.y takes TQ_RT rows a code load at 4 bits, one at 6 and 8.
 template <int BITS>
 [[kernel]] void tf_tile_qmv(const device bfloat* X [[buffer(0)]], const device uint8_t* W [[buffer(1)]],
                             const device bfloat* SC [[buffer(2)]], const device bfloat* BI [[buffer(3)]],

@@ -374,7 +374,7 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
   }
 }
 
-// act = silu(gate) * up over [rows, n], 8 a thread (bf16 at each step, as mlx-lm's compiled swiglu and the tiles' twin).
+// act = silu(gate) * up, 8 a thread, bf16 at each step (mlx-lm's compiled swiglu, as the tiles' twin).
 [[kernel]] void lfm2_swiglu(const device bfloat* gate [[buffer(0)]], const device bfloat* up [[buffer(1)]],
                             device bfloat* act [[buffer(2)]], constant uint& count [[buffer(3)]], uint i [[thread_position_in_grid]]) {
   if (i * 8 >= count) return;
