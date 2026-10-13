@@ -232,10 +232,11 @@ fn launches(m: *q.Model) !void {
     defer h.deinit();
     @memset(h.contents()[0 .. 2048 * 2 * 4], 0);
     const w = m.weights.blocks[0].operator_norm;
-    inline for (.{ .serial, .concurrent }) |kind| {
+    inline for (.{ .serial, .concurrent, .concurrent }, .{ false, false, true }) |kind, fenced| {
         const cb = m.queue.commandBuffer();
         const e = cb.compute(kind);
         for (0..1000) |_| {
+            if (fenced) e.barrier();
             e.setPipeline(m.kernels.get("lfm2_norm"));
             e.setBuffer(h, 0, 0);
             e.setBuffer(h, 4096, 1);
@@ -248,7 +249,7 @@ fn launches(m: *q.Model) !void {
         e.end();
         cb.commit();
         cb.wait();
-        std.debug.print("one-row norm, {s}: {d:.1} us a launch\n", .{ @tagName(kind), cb.gpuSeconds() * 1e6 / 1000.0 });
+        std.debug.print("one-row norm, {s}{s}: {d:.1} us a launch\n", .{ @tagName(kind), if (fenced) " with barriers" else "", cb.gpuSeconds() * 1e6 / 1000.0 });
     }
 }
 
@@ -412,7 +413,7 @@ fn decodeBudget(m: *q.Model, len: usize) !void {
     const tq = q.forward.matrix;
     const t = &m.kernels.tiles;
     const scale: f32 = 1.0 / @sqrt(@as(f32, c.head_dim));
-    const names = [_][]const u8{ "norm x81", "conv in twin", "conv kernel", "conv out twin", "attn q,k,v,o twins", "qk+attn+merge", "dense gate,up,swiglu,down", "route", "experts glu", "experts down", "combine", "head twin (6-bit)" };
+    const names = [_][]const u8{ "norm x43", "conv in twin", "conv kernel", "conv out twin", "attn q,k,v,o twins", "qk+attn+merge", "dense gate,up,swiglu,down", "route", "experts glu", "experts down", "combine+norm", "head twin (6-bit)" };
     var total: f64 = 0;
     inline for (names, 0..) |name, which| {
         var bytes: usize = 0;
@@ -422,7 +423,7 @@ fn decodeBudget(m: *q.Model, len: usize) !void {
         for (m.weights.blocks, 0..) |block, layer| {
             switch (which) {
                 0 => {
-                    for (0..2) |_| {
+                    for (0..@as(usize, if (block.ffn == .dense) 2 else 1) + @intFromBool(layer == 0)) |_| {
                         e.setPipeline(m.kernels.get("lfm2_norm"));
                         e.setBuffer(sc.h, 0, 0);
                         e.setBuffer(sc.r, 0, 1);
@@ -536,11 +537,14 @@ fn decodeBudget(m: *q.Model, len: usize) !void {
                         bytes += 4 * linearBytes(x.down.one);
                         launches_n += 1;
                     } else {
-                        e.setPipeline(m.kernels.get("lfm2_combine"));
+                        e.setPipeline(m.kernels.get("lfm2_combine_norm"));
                         e.setBuffer(sc.experts, 0, 0);
                         e.setBuffer(sc.weights, 0, 1);
-                        e.setBuffer(sc.r, 0, 2);
-                        e.dispatchThreads(mtl.Size.of(c.hidden, 1, 1), mtl.Size.of(256, 1, 1));
+                        e.setBuffer(sc.h, 0, 2);
+                        e.setBuffer(block.operator_norm.buffer, block.operator_norm.offset, 3);
+                        e.setValue(@as(f32, 1e-5), 4);
+                        e.setBuffer(sc.x, 0, 5);
+                        e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(512, 1, 1));
                         launches_n += 1;
                     }
                 },

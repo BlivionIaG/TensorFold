@@ -46,25 +46,11 @@ template [[host_name("lfm2_embed_b4")]] [[kernel]] decltype(lfm2_embed<4>) lfm2_
 template [[host_name("lfm2_embed_b6")]] [[kernel]] decltype(lfm2_embed<6>) lfm2_embed<6>;
 template [[host_name("lfm2_embed_b8")]] [[kernel]] decltype(lfm2_embed<8>) lfm2_embed<8>;
 
-// h += r (bf16) when `add`, then x = w * bf16(h * rsqrt(mean(h^2) + eps)): MLX's one-row RMS order, 4 values a thread.
-[[kernel]] void lfm2_norm(device bfloat* h [[buffer(0)]], const device bfloat* r [[buffer(1)]], const device bfloat* w [[buffer(2)]],
-                          constant float& eps [[buffer(3)]], constant uint& add [[buffer(4)]], device bfloat* x [[buffer(5)]],
-                          uint row [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]],
-                          uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
-  threadgroup float sums[32];
-  threadgroup float inv[1];
-  const size_t base = size_t(row) * D + 4 * t;
-  float v[4];
+// x = w * bf16(h * rsqrt(mean(h^2) + eps)) over a row's 4 values a thread (v): MLX's one-row RMS order.
+inline void lfm2_rms(const thread float* v, const device bfloat* w, float eps, device bfloat* x, size_t base, uint t, uint sg,
+                     uint lane, threadgroup float* sums, threadgroup float* inv) {
   float sq = 0.0f;
-  for (int j = 0; j < 4; ++j) {
-    bfloat hv = h[base + j];
-    if (add != 0) {
-      hv = hv + r[base + j];
-      h[base + j] = hv;
-    }
-    v[j] = hv;
-    sq += v[j] * v[j];
-  }
+  for (int j = 0; j < 4; ++j) sq += v[j] * v[j];
   sq = simd_sum(sq);
   if (sg == 0) sums[lane] = 0.0f;
   threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -76,6 +62,46 @@ template [[host_name("lfm2_embed_b8")]] [[kernel]] decltype(lfm2_embed<8>) lfm2_
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   for (int j = 0; j < 4; ++j) x[base + j] = w[4 * t + j] * static_cast<bfloat>(v[j] * inv[0]);
+}
+
+// h += r (bf16) when `add`, then x = norm(h), 4 values a thread.
+[[kernel]] void lfm2_norm(device bfloat* h [[buffer(0)]], const device bfloat* r [[buffer(1)]], const device bfloat* w [[buffer(2)]],
+                          constant float& eps [[buffer(3)]], constant uint& add [[buffer(4)]], device bfloat* x [[buffer(5)]],
+                          uint row [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]],
+                          uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  const size_t base = size_t(row) * D + 4 * t;
+  float v[4];
+  for (int j = 0; j < 4; ++j) {
+    bfloat hv = h[base + j];
+    if (add != 0) {
+      hv = hv + r[base + j];
+      h[base + j] = hv;
+    }
+    v[j] = hv;
+  }
+  threadgroup float sums[32], inv[1];
+  lfm2_rms(v, w, eps, x, base, t, sg, lane, sums, inv);
+}
+
+// lfm2_combine's row sum (bf16(y * weight) over a token's picks, fp32) added to h as lfm2_norm's r, then x = norm(h).
+[[kernel]] void lfm2_combine_norm(const device bfloat* y [[buffer(0)]], const device bfloat* wts [[buffer(1)]], device bfloat* h [[buffer(2)]],
+                                  const device bfloat* w [[buffer(3)]], constant float& eps [[buffer(4)]], device bfloat* x [[buffer(5)]],
+                                  uint row [[threadgroup_position_in_grid]], uint t [[thread_position_in_threadgroup]],
+                                  uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  const size_t base = size_t(row) * D + 4 * t;
+  float v[4];
+  for (int j = 0; j < 4; ++j) {
+    float acc = 0.0f;
+    for (uint k = 0; k < TOPK; ++k) {
+      const size_t slot = size_t(row) * TOPK + k;
+      acc += float(static_cast<bfloat>(float(y[slot * D + 4 * t + j]) * float(wts[slot])));
+    }
+    const bfloat hv = h[base + j] + static_cast<bfloat>(acc);
+    h[base + j] = hv;
+    v[j] = hv;
+  }
+  threadgroup float sums[32], inv[1];
+  lfm2_rms(v, w, eps, x, base, t, sg, lane, sums, inv);
 }
 
 // A segment's short conv: Bx = B * x, 3 causal taps over (state [2, D], Bx), y = C * conv; SNAP: each row's state.
