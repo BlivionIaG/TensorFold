@@ -48,8 +48,14 @@ def compare(actual, reference):
         delta = actual[at:at+32] - reference[at:at+32]
         max_abs = max(max_abs, float(np.abs(delta).max()))
         squared += float(np.sum(delta * delta, dtype=np.float64))
-    return dict(top1_agreement=float(np.mean(actual.argmax(-1) == reference.argmax(-1))),
-                max_abs=max_abs, rms=float(np.sqrt(squared / actual.size)), finite=bool(np.isfinite(actual).all()))
+    a_top, r_top = actual.argmax(-1), reference.argmax(-1)
+    differences = []
+    for row in np.nonzero(a_top != r_top)[0]:
+        a2, r2 = np.sort(actual[row])[-2:], np.sort(reference[row])[-2:]
+        differences.append(dict(row=int(row), native=int(a_top[row]), reference=int(r_top[row]),
+                                native_margin=float(a2[1] - a2[0]), reference_margin=float(r2[1] - r2[0])))
+    return dict(top1_agreement=float(np.mean(a_top == r_top)), max_abs=max_abs, rms=float(np.sqrt(squared / actual.size)),
+                finite=bool(np.isfinite(actual).all()), top1_differences=differences)
 
 
 def main():

@@ -141,13 +141,8 @@ struct lfm2_qk_args { uint len, cap; float eps, log2_theta; };
 // Keys a chunk: a row's keys split at fixed positions, so prompt tiles and decode rows cut them the same way.
 constant constexpr uint PER = 4096;
 struct lfm2_attn_args { uint len, cap; float scale; };
-inline uint lfm2_chunk(uint keys) { (void)keys; return PER; }
 
-// Attention partials for every row, prompt or decode: a threadgroup a (chunk, kv head, 8 rows), simdgroup g its query
-// head kv * 4 + g, K and V staged 32 keys at a time. Per 32 keys: s = q . k by MMAs times 1/8, m' = max(m, block max),
-// p = exp(s - m'), the 8-key sums in a fixed tree then ((b0 + b1) + (b2 + b3)), l = fma(l, exp(m - m'), sum),
-// o = o * exp(m - m') + bf16(p) v by MMAs in key order. A block with no visible key leaves the state as it is,
-// so a row's bits never depend on the rows beside it. PM, PL, PO by (row, head, chunk).
+// Every row's attention partials (one kernel for prompt and decode): a threadgroup a (chunk, kv head, 8 rows).
 constant constexpr uint KB = 32;   // keys a staged block
 constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
 [[kernel]] void lfm2_attn_mma(const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
@@ -242,7 +237,7 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
                                 uint2 tg [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
   const uint head = tg.x, r = tg.y;
   const uint count = p.len + r + 1;
-  const uint per = lfm2_chunk(count);
+  const uint per = PER;
   const uint chunks = (count + per - 1) / per;
   const size_t at = (size_t(r) * QH + head) * CHUNKS;
   float m = -INFINITY;
