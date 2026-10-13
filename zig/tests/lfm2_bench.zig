@@ -270,7 +270,7 @@ fn promptBudget(m: *q.Model) !void {
         .{ .name = "sums+tiles conv in", .per = 30 },   .{ .name = "sums+tiles conv out", .per = 30 },
         .{ .name = "sums+tiles attn q,k,v,o", .per = 10 }, .{ .name = "sums+tiles dense x3", .per = 2 },
         .{ .name = "route", .per = 38 },                .{ .name = "sort+work+gather", .per = 38 },
-        .{ .name = "sums+grouped gate,up", .per = 38 }, .{ .name = "swiglu+sums+grouped down", .per = 38 },
+        .{ .name = "sums+grouped glu gate,up", .per = 38 }, .{ .name = "sums+grouped down", .per = 38 },
         .{ .name = "combine sorted", .per = 38 },      .{ .name = "norm", .per = 81 },
         .{ .name = "conv kernel", .per = 30 },         .{ .name = "attn mma 2k", .per = 10 },
     };
@@ -327,16 +327,9 @@ fn promptBudget(m: *q.Model) !void {
             },
             6 => {
                 tile.encodeSums(e, t, 2048, sc.sorted, 0, sc.sums, slots);
-                try tile.encodeGrouped(e, t, tq(moe.gate.one), 64, sc.sorted, sc.sums, sc.gate, slots, sc.starts, sc.work);
-                try tile.encodeGrouped(e, t, tq(moe.up.one), 64, sc.sorted, sc.sums, sc.up, slots, sc.starts, sc.work);
+                try tile.encodeGroupedGlu(e, t, tq(moe.gate.one), tq(moe.up.one), 64, sc.sorted, sc.sums, sc.act, slots, sc.starts, sc.work);
             },
             7 => {
-                e.setPipeline(m.kernels.get("lfm2_swiglu"));
-                e.setBuffer(sc.gate, 0, 0);
-                e.setBuffer(sc.up, 0, 1);
-                e.setBuffer(sc.act, 0, 2);
-                e.setValue(@as(u32, slots * 1536), 3);
-                e.dispatchThreads(mtl.Size.of(slots * 1536 / 8, 1, 1), mtl.Size.of(256, 1, 1));
                 tile.encodeSums(e, t, 1536, sc.act, 0, sc.sums, slots);
                 try tile.encodeGrouped(e, t, tq(moe.down.one), 64, sc.act, sc.sums, sc.experts, slots, sc.starts, sc.work);
             },

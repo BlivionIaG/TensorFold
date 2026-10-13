@@ -234,9 +234,7 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) void 
     e.setBuffer(s.sorted, 0, 2);
     enc.threads(.{ c.hidden, slots, 1 }, .{ 256, 1, 1 });
     tile.encodeSums(e, t, c.hidden, s.sorted, 0, s.sums, slots);
-    tile.encodeGrouped(e, t, matrix(x.gate.one), c.experts, s.sorted, s.sums, s.gate, slots, s.starts, s.work) catch unreachable;
-    tile.encodeGrouped(e, t, matrix(x.up.one), c.experts, s.sorted, s.sums, s.up, slots, s.starts, s.work) catch unreachable;
-    enc.swiglu(s, slots * c.moe_intermediate);
+    tile.encodeGroupedGlu(e, t, matrix(x.gate.one), matrix(x.up.one), c.experts, s.sorted, s.sums, s.act, slots, s.starts, s.work) catch unreachable;
     tile.encodeSums(e, t, c.moe_intermediate, s.act, 0, s.sums, slots);
     tile.encodeGrouped(e, t, matrix(x.down.one), c.experts, s.act, s.sums, s.experts, slots, s.starts, s.work) catch unreachable;
     enc.pipe("lfm2_combine_sorted");

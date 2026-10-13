@@ -13,6 +13,7 @@ pub const Args = extern struct { k: i32, n: i32, r: i32, one: f32 = 1.0 };
 pub const Pipelines = struct {
     dense: [bit_widths.len]mtl.Pipeline,
     grouped: [bit_widths.len]mtl.Pipeline,
+    grouped_glu: [bit_widths.len]mtl.Pipeline,
     twin: [bit_widths.len]mtl.Pipeline,
     twin_indexed: [bit_widths.len]mtl.Pipeline,
     twin_glu: [bit_widths.len]mtl.Pipeline,
@@ -28,6 +29,7 @@ pub const Pipelines = struct {
         inline for (bit_widths, 0..) |bits, i| {
             p.dense[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmm_q{d}", .{bits}), false);
             p.grouped[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmm_grouped_q{d}", .{bits}), false);
+            p.grouped_glu[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmm_grouped_glu_q{d}", .{bits}), false);
             p.twin[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_q{d}", .{bits}), false);
             p.twin_indexed[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_indexed_q{d}", .{bits}), false);
             p.twin_glu[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_glu_q{d}", .{bits}), false);
@@ -40,6 +42,7 @@ pub const Pipelines = struct {
     pub fn deinit(p: *Pipelines) void {
         for (p.dense) |x| x.deinit();
         for (p.grouped) |x| x.deinit();
+        for (p.grouped_glu) |x| x.deinit();
         for (p.twin) |x| x.deinit();
         for (p.twin_indexed) |x| x.deinit();
         for (p.twin_glu) |x| x.deinit();
@@ -187,6 +190,21 @@ pub fn encodeGrouped(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, expe
     e.setBuffer(work, 0, 7);
     e.setBuffer(sums, 0, 8);
     e.dispatchGroups(.{ .width = m.n / tile, .height = items(rows, experts) }, .{ .width = 128 });
+}
+
+/// encodeGrouped on gate and up (the same shape) into swiglu(gate, up): a tile's halves are 16 columns of each.
+pub fn encodeGroupedGlu(e: mtl.ComputeEncoder, p: *const Pipelines, gate: Matrix, up: Matrix, experts: usize, x: mtl.Buffer, sums: mtl.Buffer, y: mtl.Buffer, rows: usize, starts: mtl.Buffer, work: mtl.Buffer) !void {
+    const i = try width(gate);
+    if (rows == 0 or rows > std.math.maxInt(i32) or up.n != gate.n or up.k != gate.k or up.bits != gate.bits) return error.NoRows;
+    e.setPipeline(p.grouped_glu[i]);
+    bind(e, gate, .{ .k = @intCast(gate.k), .n = @intCast(gate.n), .r = @intCast(rows) }, x, 0, y, 0);
+    e.setBuffer(starts, 0, 6);
+    e.setBuffer(work, 0, 7);
+    e.setBuffer(sums, 0, 8);
+    e.setBuffer(up.w, up.w_off, 9);
+    e.setBuffer(up.scales, up.s_off, 10);
+    e.setBuffer(up.biases, up.b_off, 11);
+    e.dispatchGroups(.{ .width = gate.n / (tile / 2), .height = items(rows, experts) }, .{ .width = 128 });
 }
 
 test "work items bound every expert's tiles" {
