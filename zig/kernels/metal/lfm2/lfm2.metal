@@ -257,7 +257,7 @@ struct lfm2_attn_args { uint len, cap; float scale; };
   }
 }
 
-// act = silu(gate) * up over [rows, n] (bf16 at each step, as mlx-lm's compiled swiglu).
+// act = silu(gate) * up over [rows, n] (bf16 at each step, as mlx-lm's compiled swiglu and core/tile_qmm's twin).
 [[kernel]] void lfm2_swiglu(const device bfloat* gate [[buffer(0)]], const device bfloat* up [[buffer(1)]],
                             device bfloat* act [[buffer(2)]], constant uint& count [[buffer(3)]], uint i [[thread_position_in_grid]]) {
   if (i >= count) return;

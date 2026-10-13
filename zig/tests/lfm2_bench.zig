@@ -29,6 +29,8 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("residency set: {}\n", .{m.resident != null});
     try kernels(m);
     try prompts(m);
+    try grouped(m);
+    try sorting(m);
     var big = try st.Scratch.init(init.gpa, m.device, &m.config.attention, chunk);
     defer big.deinit();
     var one = try st.Scratch.init(init.gpa, m.device, &m.config.attention, 1);
@@ -99,7 +101,7 @@ fn kernels(m: *q.Model) !void {
         const cb = m.queue.commandBuffer();
         const e = cb.compute(.serial);
         for (0..200) |_| switch (which) {
-            0 => try tile.encodeTwinIndexed(e, &m.kernels.tiles, tq(x.gate.one), in, sums, out, ids, 4, 4),
+            0 => try tile.encodeTwinIndexed(e, &m.kernels.tiles, tq(x.gate.one), in, out, ids, 4, 4),
             1 => {
                 const call = try row.callIndexed(&m.kernels.rows, x.gate, 4, false);
                 e.setPipeline(call.pipeline);
@@ -112,7 +114,7 @@ fn kernels(m: *q.Model) !void {
                 e.setBuffer(ids, 0, 6);
                 e.dispatchThreads(mtl.Size.of(call.groups * call.threads, 4, 1), mtl.Size.of(call.threads, 1, 1));
             },
-            2, 4 => try tile.encodeTwin(e, &m.kernels.tiles, tq(if (which == 2) m.weights.blocks[0].mixer.conv.in else m.weights.embedding), in, 0, sums, 0, out, 0, 1),
+            2, 4 => try tile.encodeTwin(e, &m.kernels.tiles, tq(if (which == 2) m.weights.blocks[0].mixer.conv.in else m.weights.embedding), in, 0, out, 0, 1),
             else => {
                 const w = if (which == 3) m.weights.blocks[0].mixer.conv.in else m.weights.embedding;
                 const call = try row.call(&m.kernels.rows, w, 1, false);
@@ -137,7 +139,7 @@ fn kernels(m: *q.Model) !void {
 fn prompts(m: *q.Model) !void {
     const dev = m.device;
     const rows = 512;
-    const in = try dev.buffer(rows * 11776 * 2, mtl.ResourceOptions.shared);
+    const in = try dev.buffer((rows + 32) * 11776 * 2, mtl.ResourceOptions.shared);
     defer in.deinit();
     for (in.slice(u16, rows * 2048), 0..) |*v, i| v.* = @truncate(@as(u32, @bitCast(@as(f32, @floatFromInt(i % 97)) / 97.0 - 0.5)) >> 16);
     const out = try dev.buffer(rows * 11776 * 2, mtl.ResourceOptions.shared);
@@ -155,4 +157,62 @@ fn prompts(m: *q.Model) !void {
         const t = cb.gpuSeconds() / 20.0;
         std.debug.print("tiles {d}x{d}, {d} rows: {d:.0} us, {d:.2} TFLOPS\n", .{ w.n, w.k, rows, t * 1e6, 2.0 * @as(f64, @floatFromInt(rows * w.n * w.k)) / t / 1e12 });
     }
+}
+
+/// GPU TFLOPS of the grouped tiles on 8,192 rows, 128 an expert, over layer 10's gate experts.
+fn grouped(m: *q.Model) !void {
+    const dev = m.device;
+    const rows = 8192;
+    const x = m.weights.blocks[10].ffn.moe;
+    const in = try dev.buffer((rows + 32) * 2048 * 2, mtl.ResourceOptions.shared);
+    defer in.deinit();
+    for (in.slice(u16, rows * 2048), 0..) |*v, i| v.* = @truncate(@as(u32, @bitCast(@as(f32, @floatFromInt(i % 97)) / 97.0 - 0.5)) >> 16);
+    const out = try dev.buffer(rows * 2048 * 2, mtl.ResourceOptions.shared);
+    defer out.deinit();
+    const xs = try dev.buffer(rows * 32 * 4, mtl.ResourceOptions.shared);
+    defer xs.deinit();
+    const starts = try dev.buffer(65 * 4, mtl.ResourceOptions.shared);
+    defer starts.deinit();
+    for (starts.slice(u32, 65), 0..) |*v, i| v.* = @intCast(i * 128);
+    const work = try dev.buffer((rows / 32 + 66) * 4, mtl.ResourceOptions.shared);
+    defer work.deinit();
+    const cb = m.queue.commandBuffer();
+    const e = cb.compute(.serial);
+    tile.encodeWork(e, &m.kernels.tiles, starts, 64, work);
+    for (0..10) |_| try tile.encodeGrouped(e, &m.kernels.tiles, q.forward.matrix(x.gate.one), 64, in, xs, out, rows, starts, work);
+    e.end();
+    cb.commit();
+    cb.wait();
+    const t = cb.gpuSeconds() / 10.0;
+    std.debug.print("grouped tiles 1536x2048 x64 experts, {d} rows: {d:.0} us, {d:.2} TFLOPS\n", .{ rows, t * 1e6, 2.0 * @as(f64, @floatFromInt(rows * 1536 * 2048)) / t / 1e12 });
+}
+
+/// GPU time of the expert sort on 8,192 picks.
+fn sorting(m: *q.Model) !void {
+    const dev = m.device;
+    const slots: u32 = 8192;
+    const ids = try dev.buffer(slots * 4, mtl.ResourceOptions.shared);
+    defer ids.deinit();
+    for (ids.slice(u32, slots), 0..) |*v, i| v.* = @intCast((i * 2654435761) % 64);
+    const starts = try dev.buffer(65 * 4, mtl.ResourceOptions.shared);
+    defer starts.deinit();
+    const order = try dev.buffer(slots * 4, mtl.ResourceOptions.shared);
+    defer order.deinit();
+    const pos = try dev.buffer(slots * 4, mtl.ResourceOptions.shared);
+    defer pos.deinit();
+    const cb = m.queue.commandBuffer();
+    const e = cb.compute(.serial);
+    for (0..10) |_| {
+        e.setPipeline(m.kernels.get("lfm2_sort"));
+        e.setBuffer(ids, 0, 0);
+        e.setValue(slots, 1);
+        e.setBuffer(starts, 0, 2);
+        e.setBuffer(order, 0, 3);
+        e.setBuffer(pos, 0, 4);
+        e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(64, 1, 1));
+    }
+    e.end();
+    cb.commit();
+    cb.wait();
+    std.debug.print("sort of {d} picks: {d:.0} us\n", .{ slots, cb.gpuSeconds() * 1e6 / 10.0 });
 }

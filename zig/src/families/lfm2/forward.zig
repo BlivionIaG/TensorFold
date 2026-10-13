@@ -38,13 +38,13 @@ const Encoder = struct {
         self.e.setBuffer(w.scales, w.s_off, 2);
         self.e.setBuffer(w.biases, w.b_off, 3);
     }
-    /// y[rows] = x[rows] W^T: the prompt tiles, or their twin at decode and window rows (both read x's group sums).
+    /// y[rows] = x[rows] W^T: the prompt tiles (on x's group sums), or their twin at decode and window rows.
     fn projection(self: Encoder, w: row.Weights, x: Buffer, x_off: usize, y: Buffer, y_off: usize, rows: usize) void {
         const t = &self.m.kernels.tiles;
-        tile.encodeSums(self.e, t, w.k, x, x_off, self.s.sums, rows);
-        if (self.prompt or !self.m.kernels.twin) tile.encode(self.e, t, matrix(w), x, x_off, self.s.sums, 0, y, y_off, rows) catch unreachable else {
-            tile.encodeTwin(self.e, t, matrix(w), x, x_off, self.s.sums, 0, y, y_off, rows) catch unreachable;
-        }
+        if (self.prompt or !self.m.kernels.twin) {
+            tile.encodeSums(self.e, t, w.k, x, x_off, self.s.sums, rows);
+            tile.encode(self.e, t, matrix(w), x, x_off, self.s.sums, 0, y, y_off, rows) catch unreachable;
+        } else tile.encodeTwin(self.e, t, matrix(w), x, x_off, y, y_off, rows) catch unreachable;
     }
     /// h += r unless first, then x = norm(h).
     fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize) void {
@@ -207,12 +207,8 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) void 
     enc.groups(.{ total, 1, 1 }, .{ 32, 1, 1 });
     const t = &enc.m.kernels.tiles;
     if (!enc.prompt and enc.m.kernels.twin) {
-        tile.encodeSums(e, t, c.hidden, s.x, 0, s.sums, total);
-        tile.encodeTwinIndexed(e, t, matrix(x.gate.one), s.x, s.sums, s.gate, s.picks, slots, c.topk) catch unreachable;
-        tile.encodeTwinIndexed(e, t, matrix(x.up.one), s.x, s.sums, s.up, s.picks, slots, c.topk) catch unreachable;
-        enc.swiglu(s, slots * c.moe_intermediate);
-        tile.encodeSums(e, t, c.moe_intermediate, s.act, 0, s.sums, slots);
-        tile.encodeTwinIndexed(e, t, matrix(x.down.one), s.act, s.sums, s.experts, s.picks, slots, 1) catch unreachable;
+        tile.encodeTwinGlu(e, t, matrix(x.gate.one), matrix(x.up.one), s.x, s.act, s.picks, slots, c.topk) catch unreachable;
+        tile.encodeTwinIndexed(e, t, matrix(x.down.one), s.act, s.experts, s.picks, slots, 1) catch unreachable;
         enc.pipe("lfm2_combine");
         e.setBuffer(s.experts, 0, 0);
         e.setBuffer(s.weights, 0, 1);
