@@ -138,48 +138,78 @@ struct lfm2_qk_args { uint len, cap; float eps, log2_theta; };
   values[at + lane + 32] = v[(size_t(r) * KVH + kh) * HD + lane + 32];
 }
 
-// A row's key chunk from its own key count alone (64-key multiples, at most CHUNKS): sums independent of the window.
-inline uint lfm2_chunk(uint keys) {
-  const uint per = (keys + CHUNKS - 1) / CHUNKS;
-  return (per + 63) / 64 * 64;
-}
-
-// One key chunk's online fp32 max, sum and value sums in key order for (chunk, head, row) into PM, PL and PO.
+// Keys a chunk: a row's keys split at fixed positions, so prompt tiles and decode rows cut them the same way.
+constant constexpr uint PER = 4096;
 struct lfm2_attn_args { uint len, cap; float scale; };
-[[kernel]] void lfm2_attn_partial(const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
-                                  const device bfloat* values [[buffer(2)]], constant lfm2_attn_args& p [[buffer(3)]],
-                                  device float* pm [[buffer(4)]], device float* pl [[buffer(5)]], device float* po [[buffer(6)]],
-                                  uint3 tg [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
-  const uint chunk = tg.x, head = tg.y, r = tg.z;
-  const uint count = p.len + r + 1;
-  const uint per = lfm2_chunk(count);
-  const uint first = chunk * per;
-  if (first >= count) return;
-  const uint last = min(count, first + per);
-  const uint kh = head / (QH / KVH);
-  const device bfloat* qr = queries + (size_t(r) * QH + head) * HD;
-  const float q0 = float(qr[lane]) * p.scale, q1 = float(qr[lane + 32]) * p.scale;
+inline uint lfm2_chunk(uint keys) { (void)keys; return PER; }
+
+// Attention partials for every row, prompt or decode: a threadgroup a (chunk, kv head, 8 rows), simdgroup g its query
+// head kv * 4 + g. Per 8-key block: s = q . k by MMAs times 1/8, m' = max(m, block max), p = exp(s - m'), the block's p
+// summed in a fixed tree, l = fma(l, exp(m - m'), sum), o = o * exp(m - m') + bf16(p) v by MMA. A block with no visible
+// key leaves the state as it is, so a row's bits never depend on the rows beside it. PM, PL, PO by (row, head, chunk).
+[[kernel]] void lfm2_attn_mma(const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
+                              const device bfloat* values [[buffer(2)]], constant lfm2_attn_args& p [[buffer(3)]],
+                              device float* pm [[buffer(4)]], device float* pl [[buffer(5)]], device float* po [[buffer(6)]],
+                              constant uint& rows [[buffer(7)]], uint3 tg [[threadgroup_position_in_grid]],
+                              uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  const uint chunk = tg.x, kh = tg.y, r0 = tg.z * 8, head = kh * (QH / KVH) + sg;
+  const uint qid = lane / 4, fm = (qid & 4) + ((lane / 2) % 4), fn = (qid & 2) * 2 + (lane % 2) * 2;
+  const uint row = r0 + fm;
+  const uint count = p.len + min(row, rows - 1) + 1;  // this lane's row's visible keys
+  const uint top = p.len + min(r0 + 7, rows - 1) + 1;  // the tile's most
+  const uint first = chunk * PER;
+  if (first >= top) return;
+  const uint last = min(top, first + PER);
+  simdgroup_matrix<bfloat, 8, 8> q[8];
+  for (int d = 0; d < 8; ++d) simdgroup_load(q[d], queries + (size_t(r0) * QH + head) * HD + 8 * d, QH * HD);
   const device bfloat* kb = keys + size_t(kh) * p.cap * HD;
   const device bfloat* vb = values + size_t(kh) * p.cap * HD;
-  float m = -INFINITY, l = 0.0f, o0 = 0.0f, o1 = 0.0f;
-  for (uint key = first; key < last; ++key) {
-    const device bfloat* kr = kb + size_t(key) * HD;
-    const float s = simd_sum(q0 * float(kr[lane]) + q1 * float(kr[lane + 32]));
-    const float m2 = max(m, s);
-    const float old = metal::fast::exp(m - m2), now = metal::fast::exp(s - m2);
-    const device bfloat* vr = vb + size_t(key) * HD;
-    l = l * old + now;
-    o0 = o0 * old + now * float(vr[lane]);
-    o1 = o1 * old + now * float(vr[lane + 32]);
+  simdgroup_matrix<float, 8, 8> o[8];
+  for (int d = 0; d < 8; ++d) o[d] = simdgroup_matrix<float, 8, 8>(0.0f);
+  float m = -INFINITY, l = 0.0f;
+  for (uint j0 = first; j0 < last; j0 += 8) {
+    simdgroup_matrix<float, 8, 8> sm(0.0f);
+    for (int d = 0; d < 8; ++d) {
+      simdgroup_matrix<bfloat, 8, 8> kt;
+      simdgroup_load(kt, kb + size_t(j0) * HD + 8 * d, HD, ulong2(0, 0), true);
+      simdgroup_multiply_accumulate(sm, q[d], kt, sm);
+    }
+    float s0 = sm.thread_elements()[0] * p.scale, s1 = sm.thread_elements()[1] * p.scale;
+    if (j0 + fn >= count) s0 = -INFINITY;
+    if (j0 + fn + 1 >= count) s1 = -INFINITY;
+    float bm = max(s0, s1);
+    bm = max(bm, simd_shuffle_xor(bm, ushort(1)));
+    bm = max(bm, simd_shuffle_xor(bm, ushort(8)));
+    const bool live = bm != -INFINITY;
+    const float m2 = live ? max(m, bm) : m;
+    const float p0 = live ? metal::fast::exp(s0 - m2) : 0.0f, p1 = live ? metal::fast::exp(s1 - m2) : 0.0f;
+    float bs = p0 + p1;
+    bs = bs + simd_shuffle_xor(bs, ushort(1));
+    bs = bs + simd_shuffle_xor(bs, ushort(8));
+    const float alpha = live ? metal::fast::exp(m - m2) : 1.0f;
+    l = fma(l, alpha, bs);
     m = m2;
+    simdgroup_matrix<bfloat, 8, 8> pb;
+    pb.thread_elements()[0] = bfloat(p0);
+    pb.thread_elements()[1] = bfloat(p1);
+    for (int d = 0; d < 8; ++d) {
+      o[d].thread_elements()[0] *= alpha;
+      o[d].thread_elements()[1] *= alpha;
+      simdgroup_matrix<bfloat, 8, 8> v;
+      simdgroup_load(v, vb + size_t(j0) * HD + 8 * d, HD);
+      simdgroup_multiply_accumulate(o[d], pb, v, o[d]);
+    }
   }
-  const size_t at = (size_t(r) * QH + head) * CHUNKS + chunk;
-  if (lane == 0) {
+  if (row >= rows) return;
+  const size_t at = (size_t(row) * QH + head) * CHUNKS + chunk;
+  if ((lane & 9) == 0) {
     pm[at] = m;
     pl[at] = l;
   }
-  po[at * HD + lane] = o0;
-  po[at * HD + lane + 32] = o1;
+  for (int d = 0; d < 8; ++d) {
+    po[at * HD + 8 * d + fn] = o[d].thread_elements()[0];
+    po[at * HD + 8 * d + fn + 1] = o[d].thread_elements()[1];
+  }
 }
 
 // The chunks merged in chunk order for (head, row): Y [rows, QH*HD] bf16.

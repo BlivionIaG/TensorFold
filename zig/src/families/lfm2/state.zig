@@ -7,8 +7,9 @@ const opts = mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked;
 pub const conv_bytes = (c.conv_taps - 1) * c.hidden * 2;
 pub const window_rows = 16;
 pub const batch_rows = 32;
-/// Key chunks a row's attention splits into at most (the kernel's CHUNKS).
+/// Key chunks a row's attention splits into at most (the kernel's CHUNKS), and keys a chunk (its PER).
 pub const chunks = 32;
+pub const chunk_keys = 4096;
 
 pub const Storage = struct {
     gpa: std.mem.Allocator,
@@ -127,7 +128,8 @@ pub const Scratch = struct {
         const mem = &out.memory;
         const slots = rows * c.topk;
         out.ids = try mem.alloc(rows * 4);
-        inline for (.{ "h", "x", "r", "y", "q", "queries" }) |name| @field(out, name) = try mem.alloc(rows * c.hidden * 2);
+        inline for (.{ "h", "x", "r", "y", "q" }) |name| @field(out, name) = try mem.alloc(rows * c.hidden * 2);
+        out.queries = try mem.alloc((rows + 8) * c.hidden * 2); // a prompt tile reads 8 rows from its first
         out.bcx = try mem.alloc(rows * 3 * c.hidden * 2);
         out.k = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);
         out.v = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);

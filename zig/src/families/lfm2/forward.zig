@@ -169,7 +169,8 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
         e.setBuffer(cache.values, 0, 8);
         enc.groups(.{ c.query_heads + c.kv_heads, seg.rows, 1 }, .{ 32, 1, 1 });
         const args = AttnArgs{ .len = len, .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)) };
-        enc.pipe("lfm2_attn_partial");
+        const used = (seg.cache.len + seg.rows + st.chunk_keys - 1) / st.chunk_keys;
+        enc.pipe("lfm2_attn_mma");
         e.setBuffer(s.queries, base * c.hidden * 2, 0);
         e.setBuffer(cache.keys, 0, 1);
         e.setBuffer(cache.values, 0, 2);
@@ -177,7 +178,8 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
         e.setBuffer(s.pm, 0, 4);
         e.setBuffer(s.pl, 0, 5);
         e.setBuffer(s.po, 0, 6);
-        enc.groups(.{ st.chunks, c.query_heads, seg.rows }, .{ 32, 1, 1 });
+        e.setValue(@as(u32, @intCast(seg.rows)), 7);
+        enc.groups(.{ used, c.kv_heads, (seg.rows + 7) / 8 }, .{ 128, 1, 1 });
         enc.pipe("lfm2_attn_merge");
         e.setBuffer(s.pm, 0, 0);
         e.setBuffer(s.pl, 0, 1);

@@ -5,7 +5,7 @@ const sources = @import("kernel_sources");
 const row = @import("../../core/row_projection.zig");
 const tile = @import("../../core/tile_qmm.zig");
 
-const names = [_][:0]const u8{ "lfm2_embed_b4", "lfm2_embed_b6", "lfm2_embed_b8", "lfm2_norm", "lfm2_conv", "lfm2_qk", "lfm2_attn_partial", "lfm2_attn_merge", "lfm2_route_logits", "lfm2_route_select", "lfm2_swiglu", "lfm2_combine", "lfm2_sort", "lfm2_gather", "lfm2_combine_sorted" };
+const names = [_][:0]const u8{ "lfm2_embed_b4", "lfm2_embed_b6", "lfm2_embed_b8", "lfm2_norm", "lfm2_conv", "lfm2_qk", "lfm2_attn_mma", "lfm2_attn_merge", "lfm2_route_logits", "lfm2_route_select", "lfm2_swiglu", "lfm2_combine", "lfm2_sort", "lfm2_gather", "lfm2_combine_sorted" };
 
 pub const Kernels = struct {
     pipelines: [names.len]mtl.Pipeline,
