@@ -306,7 +306,7 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
   }
 }
 
-// act = silu(gate) * up over [rows, n] (bf16 at each step, as mlx-lm's compiled swiglu and core/tile_qmm's twin), 8 a thread.
+// act = silu(gate) * up over [rows, n], 8 a thread (bf16 at each step, as mlx-lm's compiled swiglu and the tiles' twin).
 [[kernel]] void lfm2_swiglu(const device bfloat* gate [[buffer(0)]], const device bfloat* up [[buffer(1)]],
                             device bfloat* act [[buffer(2)]], constant uint& count [[buffer(3)]], uint i [[thread_position_in_grid]]) {
   if (i * 8 >= count) return;
@@ -334,18 +334,29 @@ constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
 }
 
 // Picks sorted by expert, in slot order within one: STARTS [E + 1], ORDER (sorted -> slot), POS (slot -> sorted).
+constant constexpr uint SORT_CHUNKS = 16;  // thread (e, c) counts expert e's picks in chunk c, then places them
 [[kernel]] void lfm2_sort(const device uint* ids [[buffer(0)]], constant uint& slots [[buffer(1)]], device uint* starts [[buffer(2)]],
-                          device uint* order [[buffer(3)]], device uint* pos [[buffer(4)]], uint e [[thread_position_in_threadgroup]]) {
-  threadgroup uint counts[E];
+                          device uint* order [[buffer(3)]], device uint* pos [[buffer(4)]], uint t [[thread_position_in_threadgroup]]) {
+  threadgroup uint counts[E * SORT_CHUNKS];
+  threadgroup uint totals[E];
+  const uint e = t / SORT_CHUNKS, c = t % SORT_CHUNKS;
+  const uint span = (slots + SORT_CHUNKS - 1) / SORT_CHUNKS, lo = c * span, hi = min(lo + span, slots);
   uint n = 0;
-  for (uint j = 0; j < slots; ++j) n += ids[j] == e ? 1 : 0;
-  counts[e] = n;
+  for (uint j = lo; j < hi; ++j) n += ids[j] == e ? 1 : 0;
+  counts[t] = n;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (c == 0) {
+    uint total = 0;
+    for (uint i = 0; i < SORT_CHUNKS; ++i) total += counts[e * SORT_CHUNKS + i];
+    totals[e] = total;
+  }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   uint at = 0;
-  for (uint i = 0; i < e; ++i) at += counts[i];
-  starts[e] = at;
-  if (e == E - 1) starts[E] = at + n;
-  for (uint j = 0; j < slots; ++j)
+  for (uint i = 0; i < e; ++i) at += totals[i];
+  if (c == 0) starts[e] = at;
+  if (t == E * SORT_CHUNKS - 1) starts[E] = at + totals[e];
+  for (uint i = 0; i < c; ++i) at += counts[e * SORT_CHUNKS + i];
+  for (uint j = lo; j < hi; ++j)
     if (ids[j] == e) {
       order[at] = j;
       pos[j] = at;

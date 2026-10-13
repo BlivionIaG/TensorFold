@@ -107,7 +107,7 @@ inline void tf_tq_mmas(thread simdgroup_matrix<float, 8, 8> (*P)[TJ], const thre
 }
 
 // One 32x32 tile of Y = X W^T: four simdgroups of 16x16, each 64-input group summed by bf16 MMAs into fp32 in k order.
-template <int BITS, int BM, int BN>
+template <int BITS, int BM, int BN, bool PARTIAL>
 inline void tf_tq_tile(const device bfloat* X, const device float* XS, const device uint8_t* W, const device bfloat* SC,
                        const device bfloat* BI, int K, int N, int R, device bfloat* OUT, int rb, int nb, uint tid, uint sg,
                        uint lane, threadgroup bfloat* xs, threadgroup bfloat* ws, threadgroup float2* sb,
@@ -120,12 +120,13 @@ inline void tf_tq_tile(const device bfloat* X, const device float* XS, const dev
   const int qid = int(lane) / 4;
   const int fm = (qid & 4) + ((int(lane) / 2) % 4);
   const int fn = (qid & 2) * 2 + (int(lane) % 2) * 2;
+  const bool live = !PARTIAL || rb + sr < R;  // an expert's partial tile: a simdgroup past its rows skips the MMAs
   const threadgroup bfloat* xb1 = xs + BM * TP;
   const threadgroup bfloat* wb1 = ws + BN * TP;
   float acc[TI][TJ][2];
   for (int i = 0; i < TI; ++i)
     for (int j = 0; j < TJ; ++j) acc[i][j][0] = acc[i][j][1] = 0.0f;
-  // Two 32-input stages a group, two buffers: loads two stages ahead, stores one; a stage's one barrier waits on neither.
+  // Two 32-input stages a group in two buffers: loads two stages ahead, stores one; a stage's barrier waits on neither.
   TfTqAhead<BITS> even, odd;  // the next even and odd stages' shares
   tf_tq_fetch<BITS, BM, BN>(even, X, XS, W, SC, BI, K, R, rb, nb, 0, int(tid));
   tf_tq_fetch<BITS, BM, BN>(odd, X, XS, W, SC, BI, K, R, rb, nb, 1, int(tid));
@@ -138,11 +139,11 @@ inline void tf_tq_tile(const device bfloat* X, const device float* XS, const dev
     simdgroup_matrix<float, 8, 8> P[TI][TJ];
     for (int i = 0; i < TI; ++i)
       for (int j = 0; j < TJ; ++j) P[i][j] = simdgroup_matrix<float, 8, 8>(0.0f);
-    tf_tq_mmas<TI, TJ>(P, xs, ws, sr, sc, fm, fn);
+    if (live) tf_tq_mmas<TI, TJ>(P, xs, ws, sr, sc, fm, fn);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (s + 2 < S) tf_tq_stage<BITS, BM, BN>(even, xs, ws, sb, xsum, s + 2, int(tid));
     if (s + 3 < S) tf_tq_fetch<BITS, BM, BN>(odd, X, XS, W, SC, BI, K, R, rb, nb, s + 3, int(tid));
-    tf_tq_mmas<TI, TJ>(P, xb1, wb1, sr, sc, fm, fn);
+    if (live) tf_tq_mmas<TI, TJ>(P, xb1, wb1, sr, sc, fm, fn);
     const threadgroup float2* sbg = sb + g % 2 * BN;
     const threadgroup float* xsg = xsum + g % 2 * BM;
     float xsr[TI];
@@ -171,7 +172,7 @@ template <int BITS>
   threadgroup bfloat xs[2 * TQ * TP], ws[2 * TQN * TP];
   threadgroup float2 sb[2 * TQN];
   threadgroup float xsum[2 * TQ];
-  tf_tq_tile<BITS, TQ, TQN>(X, XS, W, SC, BI, a.K, a.N, a.R, OUT, int(tg.y) * TQ, int(tg.x) * TQN, tid, sg, lane, xs, ws, sb, xsum);
+  tf_tq_tile<BITS, TQ, TQN, false>(X, XS, W, SC, BI, a.K, a.N, a.R, OUT, int(tg.y) * TQ, int(tg.x) * TQN, tid, sg, lane, xs, ws, sb, xsum);
 }
 
 // The tiles over rows sorted by expert: item tg.y of WORK[1..WORK[0]] = (expert << 16) | row tile, rows from STARTS.
@@ -190,7 +191,7 @@ template <int BITS>
   const uint item = work[1 + tg.y], e = item >> 16;
   const uint first = starts[e], rows = starts[e + 1] - first;
   const size_t K = size_t(a.K), N = size_t(a.N);
-  tf_tq_tile<BITS, TQ, TQN>(X + first * K, XS + first * (K / 64), W + e * N * (K * BITS / 8), SC + e * N * (K / 64), BI + e * N * (K / 64),
+  tf_tq_tile<BITS, TQ, TQN, true>(X + first * K, XS + first * (K / 64), W + e * N * (K * BITS / 8), SC + e * N * (K / 64), BI + e * N * (K / 64),
                    a.K, a.N, int(rows), OUT + first * N, int(item & 0xFFFFu) * TQ, int(tg.x) * TQN, tid, sg, lane, xs, ws, sb, xsum);
 }
 

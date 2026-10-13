@@ -211,7 +211,7 @@ fn sorting(m: *q.Model) !void {
         e.setBuffer(starts, 0, 2);
         e.setBuffer(order, 0, 3);
         e.setBuffer(pos, 0, 4);
-        e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(64, 1, 1));
+        e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(64 * 16, 1, 1));
     }
     e.end();
     cb.commit();
@@ -317,7 +317,7 @@ fn promptBudget(m: *q.Model) !void {
                 e.setBuffer(sc.starts, 0, 2);
                 e.setBuffer(sc.order, 0, 3);
                 e.setBuffer(sc.pos, 0, 4);
-                e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(64, 1, 1));
+                e.dispatchGroups(mtl.Size.of(1, 1, 1), mtl.Size.of(64 * 16, 1, 1));
                 tile.encodeWork(e, t, sc.starts, 64, sc.work);
                 e.setPipeline(m.kernels.get("lfm2_gather"));
                 e.setBuffer(sc.x, 0, 0);

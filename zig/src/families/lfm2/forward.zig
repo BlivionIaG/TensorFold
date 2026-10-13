@@ -226,7 +226,7 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) void 
     e.setBuffer(s.starts, 0, 2);
     e.setBuffer(s.order, 0, 3);
     e.setBuffer(s.pos, 0, 4);
-    enc.groups(.{ 1, 1, 1 }, .{ c.experts, 1, 1 });
+    enc.groups(.{ 1, 1, 1 }, .{ c.experts * 16, 1, 1 });
     tile.encodeWork(e, &enc.m.kernels.tiles, s.starts, c.experts, s.work);
     enc.pipe("lfm2_gather");
     e.setBuffer(s.x, 0, 0);
