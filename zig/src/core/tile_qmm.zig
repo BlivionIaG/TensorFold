@@ -79,6 +79,8 @@ pub fn encode(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, x: mtl.Buff
     e.dispatchGroups(.{ .width = m.n / tile, .height = (rows + tile - 1) / tile }, .{ .width = 128 });
 }
 
+/// Threadgroup bytes a twin threadgroup asks for: three a core keep the M4 Pro's memory pipes fullest (measured).
+const twin_tg_bytes = 10240;
 /// Rows the twin takes in one call at most (decode and verify windows).
 pub const twin_rows = 32;
 /// Columns a twin threadgroup: 2 simdgroups of 4 columns (n is a multiple of the tile).
@@ -102,9 +104,9 @@ pub fn encodeTwin(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, x: mtl.
     if (rows == 0 or rows > twin_rows) return error.NoRows;
     e.setPipeline(p.twin[i]);
     bind(e, m, .{ .k = @intCast(m.k), .n = @intCast(m.n), .r = @intCast(rows) }, x, x_off, y, y_off);
-    // 4 bits: 4 rows a threadgroup over one load of the codes
-    const rt: usize = if (m.bits == 4) 4 else 1;
-    e.setThreadgroupMemory(2 * rt * (twinColumns(m.bits) / 2 + 1) * (m.k / 64) * 4, 0);
+    // 4 bits: 4 rows a threadgroup over one load of the codes; partials staged 32 groups a round
+    const rt: usize = if (m.bits == 4) @min(4, rows) else 1;
+    e.setThreadgroupMemory(@max(twin_tg_bytes, 2 * rt * (twinColumns(m.bits) / 2 + 1) * 32 * 4), 0);
     e.dispatchGroups(.{ .width = m.n / twinColumns(m.bits), .height = (rows + rt - 1) / rt }, .{ .width = 64 });
 }
 
@@ -115,7 +117,7 @@ pub fn encodeTwinIndexed(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, 
     e.setPipeline(p.twin_indexed[i]);
     bind(e, m, .{ .k = @intCast(m.k), .n = @intCast(m.n), .r = @intCast(repeat) }, x, 0, y, 0);
     e.setBuffer(ids, 0, 6);
-    e.setThreadgroupMemory(2 * (twinColumns(m.bits) / 2 + 1) * (m.k / 64) * 4, 0);
+    e.setThreadgroupMemory(@max(twin_tg_bytes, 2 * (twinColumns(m.bits) / 2 + 1) * 32 * 4), 0);
     e.dispatchGroups(.{ .width = m.n / twinColumns(m.bits), .height = slots }, .{ .width = 64 });
 }
 
@@ -129,7 +131,7 @@ pub fn encodeTwinGlu(e: mtl.ComputeEncoder, p: *const Pipelines, gate: Matrix, u
     e.setBuffer(up.w, up.w_off, 7);
     e.setBuffer(up.scales, up.s_off, 8);
     e.setBuffer(up.biases, up.b_off, 9);
-    e.setThreadgroupMemory(2 * (twinColumns(gate.bits) / 2 + 1) * (gate.k / 64) * 4, 0);
+    e.setThreadgroupMemory(@max(twin_tg_bytes, 2 * (twinColumns(gate.bits) / 2 + 1) * 32 * 4), 0);
     e.dispatchGroups(.{ .width = gate.n / twinColumns(gate.bits), .height = slots }, .{ .width = 64 });
 }
 
