@@ -14,7 +14,7 @@ pub const Head = enum { last, all };
 const tile_rows = 33;
 
 const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32 };
-const AttnArgs = extern struct { len: u32, cap: u32, scale: f32 };
+const AttnArgs = extern struct { len: u32, cap: u32, scale: f32, subs: u32 };
 
 const Encoder = struct {
     e: mtl.ComputeEncoder,
@@ -48,8 +48,19 @@ const Encoder = struct {
             tile.encode(self.e, t, matrix(w), x, x_off, self.s.sums, 0, y, y_off, rows) catch unreachable;
         } else tile.encodeTwin(self.e, t, matrix(w), x, x_off, y, y_off, rows) catch unreachable;
     }
-    /// h += r unless first, then x = norm(h).
-    fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize) void {
+    /// h += r unless first, then x = norm(h); `combine`: r is the decode experts' combine, taken here instead.
+    fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize, combine: bool) void {
+        if (combine) {
+            self.pipe("lfm2_combine_norm");
+            self.e.setBuffer(s.experts, 0, 0);
+            self.e.setBuffer(s.weights, 0, 1);
+            self.e.setBuffer(s.h, 0, 2);
+            self.tensor(weight, 3);
+            self.e.setValue(c.eps, 4);
+            self.e.setBuffer(s.x, 0, 5);
+            self.groups(.{ rows, 1, 1 }, .{ c.hidden / 4, 1, 1 });
+            return;
+        }
         self.pipe("lfm2_norm");
         self.e.setBuffer(s.h, 0, 0);
         self.e.setBuffer(s.r, 0, 1);
@@ -95,13 +106,15 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     e.setBuffer(s.h, 0, 4);
     const units = c.hidden / @as(usize, if (embedding.bits == 6) 4 else 8 / embedding.bits);
     enc.threads(.{ units, total, 1 }, .{ 256, 1, 1 });
+    var combine = false; // the previous block's decode experts, combined by the next norm
     for (m.weights.blocks, 0..) |block, i| {
-        enc.norm(s, block.operator_norm, i == 0, total);
+        enc.norm(s, block.operator_norm, i == 0, total, combine);
+        combine = false;
         switch (block.mixer) {
             .conv => |cv| conv(enc, s, cv, i, segments, total),
             .attention => |a| attention(enc, s, a, &m.config, segments, i, total),
         }
-        enc.norm(s, block.ffn_norm, false, total);
+        enc.norm(s, block.ffn_norm, false, total, false);
         switch (block.ffn) {
             .dense => |d| {
                 enc.projection(d.gate, s.x, 0, s.gate, 0, total);
@@ -109,10 +122,10 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
                 enc.swiglu(s, total * c.intermediate);
                 enc.projection(d.down, s.act, 0, s.r, 0, total);
             },
-            .moe => |x| moe(enc, s, x, m.config.scale, total),
+            .moe => |x| combine = moe(enc, s, x, m.config.scale, total),
         }
     }
-    enc.norm(s, m.weights.norm, false, total);
+    enc.norm(s, m.weights.norm, false, total, combine);
     if (head == .all) enc.projection(embedding, s.x, 0, s.logits, 0, total) else {
         enc.projection(embedding, s.x, (total - 1) * c.hidden * 2, s.logits, 0, 1);
     }
@@ -170,8 +183,9 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
         e.setBuffer(cache.keys, 0, 7);
         e.setBuffer(cache.values, 0, 8);
         enc.groups(.{ c.query_heads + c.kv_heads, seg.rows, 1 }, .{ 32, 1, 1 });
-        const args = AttnArgs{ .len = len, .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)) };
-        const used = (seg.cache.len + seg.rows + st.chunk_keys - 1) / st.chunk_keys;
+        const subs: u32 = if (seg.rows <= st.split_rows) st.subs else 1;
+        const args = AttnArgs{ .len = len, .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .subs = subs };
+        const used = (seg.cache.len + seg.rows + st.chunk_keys - 1) / st.chunk_keys * subs;
         enc.pipe("lfm2_attn_mma");
         e.setBuffer(s.queries, base * c.hidden * 2, 0);
         e.setBuffer(cache.keys, 0, 1);
@@ -194,7 +208,8 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
     enc.projection(a.out, s.y, 0, s.r, 0, total);
 }
 
-fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) void {
+/// True when the picks' combine is left to the next norm (decode rows).
+fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) bool {
     const e = enc.e;
     const slots = total * c.topk;
     enc.pipe("lfm2_route_logits");
@@ -213,12 +228,7 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) void 
     if (!enc.prompt and enc.m.kernels.twin) {
         tile.encodeTwinGlu(e, t, matrix(x.gate.one), matrix(x.up.one), s.x, s.act, s.picks, slots, c.topk) catch unreachable;
         tile.encodeTwinIndexed(e, t, matrix(x.down.one), s.act, s.experts, s.picks, slots, 1) catch unreachable;
-        enc.pipe("lfm2_combine");
-        e.setBuffer(s.experts, 0, 0);
-        e.setBuffer(s.weights, 0, 1);
-        e.setBuffer(s.r, 0, 2);
-        enc.threads(.{ c.hidden, total, 1 }, .{ 256, 1, 1 });
-        return;
+        return true;
     }
     enc.pipe("lfm2_sort");
     e.setBuffer(s.picks, 0, 0);
@@ -239,4 +249,5 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) void 
     e.setBuffer(s.r, 0, 2);
     e.setBuffer(s.pos, 0, 3);
     enc.threads(.{ c.hidden, total, 1 }, .{ 256, 1, 1 });
+    return false;
 }
