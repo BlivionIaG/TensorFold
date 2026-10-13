@@ -1,0 +1,88 @@
+[
+ {
+  "label": "vllm",
+  "prompt": "fibonacci-raw",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 44.417695136853965,
+  "decode_tps_all": [
+   44.43,
+   44.4,
+   44.42
+  ],
+  "ttft_s_median": 0.1323886770005629,
+  "evidence": [
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": null,
+    "tokens": 256,
+    "cache_state": "unverified",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "6c8fff316c40584907195bc5903f0d0ed203db18528794997e13a593ae8a5c11"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": null,
+    "tokens": 256,
+    "cache_state": "unverified",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "e3ef92fc2244e2ccaf6d84ae4a7aaa7bc55700dfc3895c2a6ad2ed0dc8383c25"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": null,
+    "tokens": 256,
+    "cache_state": "unverified",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "6c8fff316c40584907195bc5903f0d0ed203db18528794997e13a593ae8a5c11"
+   }
+  ],
+  "sample": "\n\n<think>\nThe user wants a short Python function for the Fibonacci sequence plus an explanation. Let me think about what makes a good answer here:\n\nOptions for "
+ },
+ {
+  "label": "vllm",
+  "prompt": "gpu-chat-no-think",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 44.40047326475691,
+  "decode_tps_all": [
+   44.42,
+   44.4,
+   44.4
+  ],
+  "ttft_s_median": 0.12906054199993378,
+  "evidence": [
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": null,
+    "tokens": 256,
+    "cache_state": "unverified",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "bb78e9d1878866d7a28dc13d3e64671cf5bee86d34ad3233110b6d5d7cd36375"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": null,
+    "tokens": 256,
+    "cache_state": "unverified",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "bb78e9d1878866d7a28dc13d3e64671cf5bee86d34ad3233110b6d5d7cd36375"
+   },
+   {
+    "prompt_tokens": 31,
+    "cached_tokens": null,
+    "tokens": 256,
+    "cache_state": "unverified",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "bb78e9d1878866d7a28dc13d3e64671cf5bee86d34ad3233110b6d5d7cd36375"
+   }
+  ],
+  "sample": "### How Matrix Multiplication Uses a GPU (In Plain English)\n\nTo understand how a GPU handles matrix multiplication, it helps to compare it to a CPU (the main pr"
+ }
+]

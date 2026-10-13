@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "fixture_sha256": "f2c0e9e0139f0fa410958533842797474aa25926ad60c2d50f4ebefa038811f9",
+  "requested_reply_tokens": 16,
+  "temperature": 0,
+  "seed": 1234,
+  "rows": [
+    {
+      "phase": "first",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": null,
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 1.8666600050019042,
+      "decode_tps": 44.05958067852162
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": null,
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 1.8541427009986364,
+      "decode_tps": 44.056272136520406,
+      "equal_first_tokens": null,
+      "equal_first_output": true
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": null,
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 1.854900523001561,
+      "decode_tps": 43.95795775375984,
+      "equal_first_tokens": null,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": null,
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 4.130640663999657,
+      "decode_tps": 42.623375804777226,
+      "equal_first_tokens": null,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": null,
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 1.8602414870001667,
+      "decode_tps": 6.333902616334997,
+      "equal_first_tokens": null,
+      "equal_first_output": true
+    }
+  ],
+  "qualified": false
+}

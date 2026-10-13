@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "fixture_sha256": "f2c0e9e0139f0fa410958533842797474aa25926ad60c2d50f4ebefa038811f9",
+  "requested_reply_tokens": 16,
+  "temperature": 0,
+  "seed": 1234,
+  "rows": [
+    {
+      "phase": "first",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "bb030340f7e7",
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 2.171978197999124,
+      "decode_tps": 34.89145449922048
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 2048,
+      "cached_tokens": 1984,
+      "tokens": 16,
+      "cache_state": "reused",
+      "complete": true,
+      "token_sha": "bb030340f7e7",
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 0.16383663099986734,
+      "decode_tps": 40.02252595840966,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 2048,
+      "cached_tokens": 1984,
+      "tokens": 16,
+      "cache_state": "reused",
+      "complete": true,
+      "token_sha": "bb030340f7e7",
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 0.1630368330006604,
+      "decode_tps": 39.899167886751876,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 2048,
+      "cached_tokens": 1984,
+      "tokens": 16,
+      "cache_state": "reused",
+      "complete": true,
+      "token_sha": "bb030340f7e7",
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 0.3711652669990144,
+      "decode_tps": 33.09008568685537,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 2048,
+      "cached_tokens": 1984,
+      "tokens": 16,
+      "cache_state": "reused",
+      "complete": true,
+      "token_sha": "bb030340f7e7",
+      "output_sha256": "df829a8a7cde5191131e3da91533e95b1d7e189d9e2c30cd04b7840ec8d78036",
+      "ttft_s": 0.1640069669992954,
+      "decode_tps": 23.604119264999966,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    }
+  ],
+  "qualified": true
+}
