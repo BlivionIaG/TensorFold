@@ -27,7 +27,8 @@ pub fn main(init: std.process.Init) !void {
     defer m.deinit();
     empty(m.queue, "model queue");
     std.debug.print("residency set: {}\n", .{m.resident != null});
-    for (m.checkpoint.shards.items) |shard| bound(m.queue, shard.buffer, shard.bytes);
+    try kernels(m);
+    try prompts(m);
     var big = try st.Scratch.init(init.gpa, m.device, &m.config.attention, chunk);
     defer big.deinit();
     var one = try st.Scratch.init(init.gpa, m.device, &m.config.attention, 1);
@@ -74,4 +75,84 @@ fn bound(queue: mtl.Queue, b: mtl.Buffer, bytes: usize) void {
         cb.wait();
     }
     std.debug.print("bound {d} MiB buffer: {d} us\n", .{ bytes >> 20, @divTrunc(now() - t, 20000) });
+}
+
+const tile = @import("tensorfold").tile_qmm;
+const row = @import("tensorfold").row_projection;
+
+/// GPU time of 200 back-to-back calls of each decode projection kind on layer 10's real experts.
+fn kernels(m: *q.Model) !void {
+    const x = m.weights.blocks[10].ffn.moe;
+    const dev = m.device;
+    const in = try dev.buffer(16 * 11776 * 2, mtl.ResourceOptions.shared);
+    defer in.deinit();
+    for (in.slice(u16, 16 * 11776), 0..) |*v, i| v.* = @truncate(@as(u32, @bitCast(@as(f32, @floatFromInt(i % 97)) / 97.0 - 0.5)) >> 16);
+    const out = try dev.buffer(16 * 11776 * 2, mtl.ResourceOptions.shared);
+    defer out.deinit();
+    const sums = try dev.buffer(16 * 184 * 4, mtl.ResourceOptions.shared);
+    defer sums.deinit();
+    const ids = try dev.buffer(64, mtl.ResourceOptions.shared);
+    defer ids.deinit();
+    for (ids.slice(u32, 4), 0..) |*v, i| v.* = @intCast(i * 13 + 1);
+    const tq = q.forward.matrix;
+    inline for (.{ "twin indexed 1536x2048", "row indexed 1536x2048", "twin dense 6144x2048", "row dense 6144x2048", "twin head 128000x2048 (6-bit)", "row head" }, 0..) |name, which| {
+        const cb = m.queue.commandBuffer();
+        const e = cb.compute(.serial);
+        for (0..200) |_| switch (which) {
+            0 => try tile.encodeTwinIndexed(e, &m.kernels.tiles, tq(x.gate.one), in, sums, out, ids, 4, 4),
+            1 => {
+                const call = try row.callIndexed(&m.kernels.rows, x.gate, 4, false);
+                e.setPipeline(call.pipeline);
+                e.setBuffer(in, 0, 0);
+                e.setBuffer(x.gate.one.w, x.gate.one.w_off, 1);
+                e.setBuffer(x.gate.one.scales, x.gate.one.s_off, 2);
+                e.setBuffer(x.gate.one.biases, x.gate.one.b_off, 3);
+                e.setBytes(std.mem.asBytes(&call.dims), 4);
+                e.setBuffer(out, 0, 5);
+                e.setBuffer(ids, 0, 6);
+                e.dispatchThreads(mtl.Size.of(call.groups * call.threads, 4, 1), mtl.Size.of(call.threads, 1, 1));
+            },
+            2, 4 => try tile.encodeTwin(e, &m.kernels.tiles, tq(if (which == 2) m.weights.blocks[0].mixer.conv.in else m.weights.embedding), in, 0, sums, 0, out, 0, 1),
+            else => {
+                const w = if (which == 3) m.weights.blocks[0].mixer.conv.in else m.weights.embedding;
+                const call = try row.call(&m.kernels.rows, w, 1, false);
+                e.setPipeline(call.pipeline);
+                e.setBuffer(in, 0, 0);
+                e.setBuffer(w.w, w.w_off, 1);
+                e.setBuffer(w.scales, w.s_off, 2);
+                e.setBuffer(w.biases, w.b_off, 3);
+                e.setBytes(std.mem.asBytes(&call.dims), 4);
+                e.setBuffer(out, 0, 5);
+                e.dispatchThreads(mtl.Size.of(call.groups * call.threads, 1, 1), mtl.Size.of(call.threads, 1, 1));
+            },
+        };
+        e.end();
+        cb.commit();
+        cb.wait();
+        std.debug.print("{s}: {d:.1} us a call\n", .{ name, cb.gpuSeconds() * 1e6 / 200.0 });
+    }
+}
+
+/// GPU TFLOPS of the prompt tiles on 512 rows of a dense 6144x2048 and a 2048x2048 matrix.
+fn prompts(m: *q.Model) !void {
+    const dev = m.device;
+    const rows = 512;
+    const in = try dev.buffer(rows * 11776 * 2, mtl.ResourceOptions.shared);
+    defer in.deinit();
+    for (in.slice(u16, rows * 2048), 0..) |*v, i| v.* = @truncate(@as(u32, @bitCast(@as(f32, @floatFromInt(i % 97)) / 97.0 - 0.5)) >> 16);
+    const out = try dev.buffer(rows * 11776 * 2, mtl.ResourceOptions.shared);
+    defer out.deinit();
+    const xs = try dev.buffer(rows * 184 * 4, mtl.ResourceOptions.shared);
+    defer xs.deinit();
+    const b = m.weights.blocks[0];
+    for ([_]q.weights.Linear{ b.mixer.conv.in, b.mixer.conv.out, b.ffn.dense.gate }) |w| {
+        const cb = m.queue.commandBuffer();
+        const e = cb.compute(.serial);
+        for (0..20) |_| try tile.encode(e, &m.kernels.tiles, q.forward.matrix(w), in, 0, xs, 0, out, 0, rows);
+        e.end();
+        cb.commit();
+        cb.wait();
+        const t = cb.gpuSeconds() / 20.0;
+        std.debug.print("tiles {d}x{d}, {d} rows: {d:.0} us, {d:.2} TFLOPS\n", .{ w.n, w.k, rows, t * 1e6, 2.0 * @as(f64, @floatFromInt(rows * w.n * w.k)) / t / 1e12 });
+    }
 }

@@ -6,22 +6,10 @@ const st = @import("state.zig");
 const wts = @import("weights.zig");
 const c = @import("config.zig");
 const row = @import("../../core/row_projection.zig");
+const tile = @import("../../core/tile_qmm.zig");
 const Buffer = mtl.Buffer;
 pub const Segment = struct { cache: *st.Cache, rows: usize };
 pub const Head = enum { last, all };
-/// Rows from which a MoE layer sorts its picks by expert (each expert's weights read once for its rows).
-const grouped_rows = 4;
-
-/// 4-bit experts take the simdgroup tiles, or at few rows their checked scalar twin: a row's bits never depend on its window.
-fn tiled(x: row.Experts) bool {
-    return x.one.bits == 4 and x.one.group == 64 and x.one.sum == .f32;
-}
-
-/// Whether the twin equals the tiles for every expert shape of this layer (else the tiles at every width).
-fn self_twin(enc: Encoder, x: wts.Moe) bool {
-    const k = &enc.m.kernels;
-    return (k.twin(x.gate.one) orelse false) and (k.twin(x.up.one) orelse false) and (k.twin(x.down.one) orelse false);
-}
 
 const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32 };
 const AttnArgs = extern struct { len: u32, cap: u32, scale: f32 };
@@ -30,6 +18,8 @@ const Encoder = struct {
     e: mtl.ComputeEncoder,
     m: *Model,
     s: *st.Scratch,
+    /// Prompt rows take the core's tiles (their own arithmetic); decode and window rows the row kernels.
+    prompt: bool,
 
     fn pipe(self: Encoder, comptime key: []const u8) void {
         self.e.setPipeline(self.m.kernels.get(key));
@@ -48,54 +38,13 @@ const Encoder = struct {
         self.e.setBuffer(w.scales, w.s_off, 2);
         self.e.setBuffer(w.biases, w.b_off, 3);
     }
-    /// y[rows] = x[rows] W^T through the core's row kernel.
+    /// y[rows] = x[rows] W^T: the prompt tiles, or their twin at decode and window rows (both read x's group sums).
     fn projection(self: Encoder, w: row.Weights, x: Buffer, x_off: usize, y: Buffer, y_off: usize, rows: usize) void {
-        if (self.m.kernels.twin(w)) |scalar| {
-            const m = row.simd.Matrix{ .w = w.w, .w_off = w.w_off, .scales = w.scales, .s_off = w.s_off, .biases = w.biases, .b_off = w.b_off, .n = w.n, .k = w.k };
-            row.simd.encode(self.e, row.simd.call(&self.m.kernels.simd, w.n, w.k, rows, scalar) catch unreachable, m, x, x_off, y, y_off);
-            return;
+        const t = &self.m.kernels.tiles;
+        tile.encodeSums(self.e, t, w.k, x, x_off, self.s.sums, rows);
+        if (self.prompt or !self.m.kernels.twin) tile.encode(self.e, t, matrix(w), x, x_off, self.s.sums, 0, y, y_off, rows) catch unreachable else {
+            tile.encodeTwin(self.e, t, matrix(w), x, x_off, self.s.sums, 0, y, y_off, rows) catch unreachable;
         }
-        const call = row.call(&self.m.kernels.rows, w, rows, false) catch unreachable;
-        self.e.setPipeline(call.pipeline);
-        self.e.setBuffer(x, x_off, 0);
-        self.weights(w);
-        self.e.setBytes(std.mem.asBytes(&call.dims), 4);
-        self.e.setBuffer(y, y_off, 5);
-        self.threads(.{ call.groups * call.threads, 1, 1 }, .{ call.threads, 1, 1 });
-    }
-    /// y[slot] = x[slot / repeat] W[ids[slot]]^T.
-    fn experts(self: Encoder, x: row.Experts, in: Buffer, ids: Buffer, y: Buffer, slots: usize) void {
-        if (tiled(x)) {
-            const w = x.one;
-            const m = row.simd.Matrix{ .w = w.w, .w_off = w.w_off, .scales = w.scales, .s_off = w.s_off, .biases = w.biases, .b_off = w.b_off, .n = w.n, .k = w.k };
-            row.simd.encodeIndexed(self.e, row.simd.callIndexed(&self.m.kernels.simd, w.n, w.k, slots, x.repeat) catch unreachable, m, in, y, ids);
-            return;
-        }
-        const call = row.callIndexed(&self.m.kernels.rows, x, slots, false) catch unreachable;
-        self.e.setPipeline(call.pipeline);
-        self.e.setBuffer(in, 0, 0);
-        self.weights(x.one);
-        self.e.setBytes(std.mem.asBytes(&call.dims), 4);
-        self.e.setBuffer(y, 0, 5);
-        self.e.setBuffer(ids, 0, 6);
-        self.threads(.{ call.groups * call.threads, slots, 1 }, .{ call.threads, 1, 1 });
-    }
-    /// y[sorted rows] = x[sorted rows] W[e]^T, expert e's rows from starts[e].
-    fn grouped(self: Encoder, x: row.Experts, in: Buffer, starts: Buffer, y: Buffer, rows: usize) void {
-        if (tiled(x)) {
-            const w = x.one;
-            const m = row.simd.Matrix{ .w = w.w, .w_off = w.w_off, .scales = w.scales, .s_off = w.s_off, .biases = w.biases, .b_off = w.b_off, .n = w.n, .k = w.k };
-            row.simd.encodeGrouped(self.e, row.simd.callGrouped(&self.m.kernels.simd, w.n, w.k, rows, x.experts) catch unreachable, m, in, y, starts, self.s.work);
-            return;
-        }
-        const call = row.callGrouped(&self.m.kernels.rows, x, rows) catch unreachable;
-        self.e.setPipeline(call.pipeline);
-        self.e.setBuffer(in, 0, 0);
-        self.weights(x.one);
-        self.e.setBytes(std.mem.asBytes(&call.dims), 4);
-        self.e.setBuffer(y, 0, 5);
-        self.e.setBuffer(starts, 0, 6);
-        self.groups(.{ call.groups, c.experts, 1 }, .{ call.threads, 1, 1 });
     }
     /// h += r unless first, then x = norm(h).
     fn norm(self: Encoder, s: *st.Scratch, weight: wts.Tensor, first: bool, rows: usize) void {
@@ -118,6 +67,10 @@ const Encoder = struct {
     }
 };
 
+pub fn matrix(w: row.Weights) tile.Matrix {
+    return .{ .w = w.w, .w_off = w.w_off, .scales = w.scales, .s_off = w.s_off, .biases = w.biases, .b_off = w.b_off, .n = w.n, .k = w.k, .bits = w.bits };
+}
+
 pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head) !void {
     if (tokens.len == 0 or tokens.len > s.rows or (record and tokens.len > st.batch_rows)) return error.LfmRowsExceeded;
     var total: usize = 0;
@@ -131,7 +84,7 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     const cb = m.queue.commandBuffer();
-    const enc = Encoder{ .e = cb.compute(.serial), .m = m, .s = s };
+    const enc = Encoder{ .e = cb.compute(.serial), .m = m, .s = s, .prompt = !record and head == .last };
     const e = enc.e;
     const embedding = m.weights.embedding;
     e.setPipeline(m.kernels.embed(embedding.bits));
@@ -252,11 +205,14 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) void 
     e.setBuffer(s.picks, 0, 3);
     e.setBuffer(s.weights, 0, 4);
     enc.groups(.{ total, 1, 1 }, .{ 32, 1, 1 });
-    if (total < grouped_rows and (!tiled(x.gate) or self_twin(enc, x))) {
-        enc.experts(x.gate, s.x, s.picks, s.gate, slots);
-        enc.experts(x.up, s.x, s.picks, s.up, slots);
+    const t = &enc.m.kernels.tiles;
+    if (!enc.prompt and enc.m.kernels.twin) {
+        tile.encodeSums(e, t, c.hidden, s.x, 0, s.sums, total);
+        tile.encodeTwinIndexed(e, t, matrix(x.gate.one), s.x, s.sums, s.gate, s.picks, slots, c.topk) catch unreachable;
+        tile.encodeTwinIndexed(e, t, matrix(x.up.one), s.x, s.sums, s.up, s.picks, slots, c.topk) catch unreachable;
         enc.swiglu(s, slots * c.moe_intermediate);
-        enc.experts(x.down, s.act, s.picks, s.experts, slots);
+        tile.encodeSums(e, t, c.moe_intermediate, s.act, 0, s.sums, slots);
+        tile.encodeTwinIndexed(e, t, matrix(x.down.one), s.act, s.sums, s.experts, s.picks, slots, 1) catch unreachable;
         enc.pipe("lfm2_combine");
         e.setBuffer(s.experts, 0, 0);
         e.setBuffer(s.weights, 0, 1);
@@ -271,16 +227,18 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) void 
     e.setBuffer(s.order, 0, 3);
     e.setBuffer(s.pos, 0, 4);
     enc.groups(.{ 1, 1, 1 }, .{ c.experts, 1, 1 });
-    if (tiled(x.gate)) row.simd.encodeWork(e, &enc.m.kernels.simd, s.starts, c.experts, slots, s.work);
+    tile.encodeWork(e, &enc.m.kernels.tiles, s.starts, c.experts, s.work);
     enc.pipe("lfm2_gather");
     e.setBuffer(s.x, 0, 0);
     e.setBuffer(s.order, 0, 1);
     e.setBuffer(s.sorted, 0, 2);
     enc.threads(.{ c.hidden, slots, 1 }, .{ 256, 1, 1 });
-    enc.grouped(x.gate, s.sorted, s.starts, s.gate, slots);
-    enc.grouped(x.up, s.sorted, s.starts, s.up, slots);
+    tile.encodeSums(e, t, c.hidden, s.sorted, 0, s.sums, slots);
+    tile.encodeGrouped(e, t, matrix(x.gate.one), c.experts, s.sorted, s.sums, s.gate, slots, s.starts, s.work) catch unreachable;
+    tile.encodeGrouped(e, t, matrix(x.up.one), c.experts, s.sorted, s.sums, s.up, slots, s.starts, s.work) catch unreachable;
     enc.swiglu(s, slots * c.moe_intermediate);
-    enc.grouped(x.down, s.act, s.starts, s.experts, slots);
+    tile.encodeSums(e, t, c.moe_intermediate, s.act, 0, s.sums, slots);
+    tile.encodeGrouped(e, t, matrix(x.down.one), c.experts, s.act, s.sums, s.experts, slots, s.starts, s.work) catch unreachable;
     enc.pipe("lfm2_combine_sorted");
     e.setBuffer(s.experts, 0, 0);
     e.setBuffer(s.weights, 0, 1);

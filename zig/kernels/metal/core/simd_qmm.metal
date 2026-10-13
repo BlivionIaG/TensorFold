@@ -23,16 +23,25 @@ inline float tf_sq_pre(int s) { return as_type<float>(uint(127 - 4 * s) << 23); 
 
 // R rows in 8-row tiles, NT 8-column tiles; simdgroups take K chunks c, c + SGS, ..., summed by a fixed tree.
 template <int S, int NT, int RT>
-inline void tf_sq_tiles(const device uint4* X, const device uint* W, const device bfloat* SC, const device bfloat* BI,
-                        int K, int N, int R, float one, device bfloat* OUT, uint sgi, uint sgs, uint lane, uint3 tg,
-                        threadgroup float* red) {
-  const int G = K / 64, SGS = int(sgs);
+[[kernel]] void tf_sq_mma(const device uint4* X [[buffer(0)]],
+                          const device uint* W [[buffer(1)]],
+                          const device bfloat* SC [[buffer(2)]],
+                          const device bfloat* BI [[buffer(3)]],
+                          constant TfSqArgs& a [[buffer(4)]],
+                          device bfloat* OUT [[buffer(5)]],
+                          uint sgi [[simdgroup_index_in_threadgroup]],
+                          uint sgs [[simdgroups_per_threadgroup]],
+                          uint lane [[thread_index_in_simdgroup]],
+                          uint3 tg [[threadgroup_position_in_grid]]) {
+  const int K = a.K, N = a.N, R = a.R, G = K / 64, SGS = int(sgs);
+  const float one = a.one;
   const int sg = int(sgi);
   const int qid = int(lane) / 4;
   const int fm = (qid & 4) + ((int(lane) / 2) % 4);
   const int fn = (qid & 2) * 2 + (int(lane) % 2) * 2;
   const int nb = int(tg.x) * (8 * NT);
   const int rb = int(tg.y) * (8 * RT);
+  threadgroup float red[S > 1 ? S * RT * NT * 64 : 1];
   const device uint2* W2 = (const device uint2*)W;
   int wrow[NT];
   for (int t = 0; t < NT; t++) wrow[t] = min(nb + 8 * t + fm, N - 1);
@@ -112,66 +121,23 @@ inline void tf_sq_tiles(const device uint4* X, const device uint* W, const devic
   }
 }
 
-template <int S, int NT, int RT>
-[[kernel]] void tf_sq_mma(const device uint4* X [[buffer(0)]],
-                          const device uint* W [[buffer(1)]],
-                          const device bfloat* SC [[buffer(2)]],
-                          const device bfloat* BI [[buffer(3)]],
-                          constant TfSqArgs& a [[buffer(4)]],
-                          device bfloat* OUT [[buffer(5)]],
-                          uint sgi [[simdgroup_index_in_threadgroup]],
-                          uint sgs [[simdgroups_per_threadgroup]],
-                          uint lane [[thread_index_in_simdgroup]],
-                          uint3 tg [[threadgroup_position_in_grid]]) {
-  threadgroup float red[S > 1 ? S * RT * NT * 64 : 1];
-  tf_sq_tiles<S, NT, RT>(X, W, SC, BI, a.K, a.N, a.R, a.one, OUT, sgi, sgs, lane, tg, red);
-}
-
-// The tiles over rows sorted by expert: work item tg.y = (expert << 16) | row tile of WORK[1..WORK[0]], as tf_sq_mma.
-template <int S, int NT, int RT>
-[[kernel]] void tf_sq_mma_grouped(const device uint4* X [[buffer(0)]],
-                                  const device uint* W [[buffer(1)]],
-                                  const device bfloat* SC [[buffer(2)]],
-                                  const device bfloat* BI [[buffer(3)]],
-                                  constant TfSqArgs& a [[buffer(4)]],
-                                  device bfloat* OUT [[buffer(5)]],
-                                  const device uint* starts [[buffer(6)]],
-                                  const device uint* work [[buffer(7)]],
-                                  uint sgi [[simdgroup_index_in_threadgroup]],
-                                  uint sgs [[simdgroups_per_threadgroup]],
-                                  uint lane [[thread_index_in_simdgroup]],
-                                  uint3 tg [[threadgroup_position_in_grid]]) {
-  threadgroup float red[S > 1 ? S * RT * NT * 64 : 1];
-  if (tg.y >= work[0]) return;
-  const uint item = work[1 + tg.y], e = item >> 16;
-  const uint first = starts[e], rows = starts[e + 1] - first;
-  const size_t K = size_t(a.K), N = size_t(a.N);
-  tf_sq_tiles<S, NT, RT>(X + first * (K / 8), W + e * N * (K / 8), SC + e * N * (K / 64), BI + e * N * (K / 64), a.K, a.N,
-                         int(rows), a.one, OUT + first * N, sgi, sgs, lane, uint3(tg.x, item & 0xFFFFu, 0), red);
-}
-
-// The grouped tiles' work list from STARTS: count, then (expert << 16) | tile for each expert's ceil(rows / (8 RT)) tiles.
-[[kernel]] void tf_sq_group_work(const device uint* starts [[buffer(0)]], constant uint2& er [[buffer(1)]], device uint* work [[buffer(2)]],
-                                 uint t [[thread_position_in_grid]]) {
-  if (t != 0) return;
-  uint n = 0;
-  for (uint e = 0; e < er.x; ++e) {
-    const uint tiles = (starts[e + 1] - starts[e] + 8 * er.y - 1) / (8 * er.y);
-    for (uint i = 0; i < tiles; ++i) work[1 + n++] = (e << 16) | i;
-  }
-  work[0] = n;
-}
-
 // 1-2 rows over the same weight loads: each lane runs one chunk of NR outputs with the MMA kernel's chains.
-constant constexpr int TF_SQ_XP = 76;  // floats a staged group: 64 inputs, 8 word sums, pad (bank spread)
-
 template <int S, int NR, int XB, int RS>
-inline void tf_sq_twin(const device uint4* X, const device uint* W, const device bfloat* SC, const device bfloat* BI,
-                       int K, int N, float one, device bfloat* OUT, uint sgi, uint sgs, uint lane, uint3 tg,
-                       threadgroup float* xs) {
-  constexpr int XP = TF_SQ_XP;
+[[kernel]] void tf_sq_scalar(const device uint4* X [[buffer(0)]],
+                             const device uint* W [[buffer(1)]],
+                             const device bfloat* SC [[buffer(2)]],
+                             const device bfloat* BI [[buffer(3)]],
+                             constant TfSqArgs& a [[buffer(4)]],
+                             device bfloat* OUT [[buffer(5)]],
+                             uint sgi [[simdgroup_index_in_threadgroup]],
+                             uint sgs [[simdgroups_per_threadgroup]],
+                             uint lane [[thread_index_in_simdgroup]],
+                             uint3 tg [[threadgroup_position_in_grid]]) {
+  constexpr int XP = 76;  // floats a staged group: 64 inputs, 8 word sums, pad (bank spread)
   constexpr int SLOTS = 32 / S;
-  const int G = K / 64, SGS = int(sgs);
+  threadgroup float xs[RS * XB * XP];
+  const int K = a.K, N = a.N, G = K / 64, SGS = int(sgs);
+  const float one = a.one;
   const int tid = int(sgi) * 32 + int(lane);
   const int c = int(lane) % S;
   const int n0 = (int(tg.x) * SGS + int(sgi)) * (SLOTS * NR) + int(lane) / S;
@@ -250,51 +216,11 @@ inline void tf_sq_twin(const device uint4* X, const device uint* W, const device
     }
 }
 
-template <int S, int NR, int XB, int RS>
-[[kernel]] void tf_sq_scalar(const device uint4* X [[buffer(0)]],
-                             const device uint* W [[buffer(1)]],
-                             const device bfloat* SC [[buffer(2)]],
-                             const device bfloat* BI [[buffer(3)]],
-                             constant TfSqArgs& a [[buffer(4)]],
-                             device bfloat* OUT [[buffer(5)]],
-                             uint sgi [[simdgroup_index_in_threadgroup]],
-                             uint sgs [[simdgroups_per_threadgroup]],
-                             uint lane [[thread_index_in_simdgroup]],
-                             uint3 tg [[threadgroup_position_in_grid]]) {
-  threadgroup float xs[RS * XB * TF_SQ_XP];
-  tf_sq_twin<S, NR, XB, RS>(X, W, SC, BI, a.K, a.N, a.one, OUT, sgi, sgs, lane, tg, xs);
-}
-
-// The twin on one row a slot (tg.y): expert ids[slot]'s matrix, x row slot / a.R, out row slot.
-template <int S, int NR, int XB>
-[[kernel]] void tf_sq_scalar_indexed(const device uint4* X [[buffer(0)]],
-                                     const device uint* W [[buffer(1)]],
-                                     const device bfloat* SC [[buffer(2)]],
-                                     const device bfloat* BI [[buffer(3)]],
-                                     constant TfSqArgs& a [[buffer(4)]],
-                                     device bfloat* OUT [[buffer(5)]],
-                                     const device uint* ids [[buffer(6)]],
-                                     uint sgi [[simdgroup_index_in_threadgroup]],
-                                     uint sgs [[simdgroups_per_threadgroup]],
-                                     uint lane [[thread_index_in_simdgroup]],
-                                     uint3 tg [[threadgroup_position_in_grid]]) {
-  threadgroup float xs[XB * TF_SQ_XP];
-  const size_t K = size_t(a.K), N = size_t(a.N), e = ids[tg.y];
-  tf_sq_twin<S, NR, XB, 1>(X + size_t(tg.y / uint(a.R)) * (K / 8), W + e * N * (K / 8), SC + e * N * (K / 64), BI + e * N * (K / 64),
-                           a.K, a.N, a.one, OUT + size_t(tg.y) * N, sgi, sgs, lane, uint3(tg.x, 0, 0), xs);
-}
-
 #define TF_SQ_MMA(S, NT, RT) template [[host_name("tf_sq_mma_" #S "_" #NT "_" #RT)]] [[kernel]] decltype(tf_sq_mma<S, NT, RT>) tf_sq_mma<S, NT, RT>;
 TF_SQ_MMA(8, 1, 1) TF_SQ_MMA(8, 2, 1) TF_SQ_MMA(8, 4, 1) TF_SQ_MMA(8, 1, 2) TF_SQ_MMA(8, 2, 2) TF_SQ_MMA(8, 4, 2)
 TF_SQ_MMA(16, 1, 1) TF_SQ_MMA(16, 2, 1) TF_SQ_MMA(16, 4, 1) TF_SQ_MMA(16, 1, 2) TF_SQ_MMA(16, 2, 2)
 TF_SQ_MMA(32, 1, 1) TF_SQ_MMA(32, 2, 1) TF_SQ_MMA(32, 1, 2)
-#define TF_SQ_GROUPED(S, NT, RT) template [[host_name("tf_sq_grouped_" #S "_" #NT "_" #RT)]] [[kernel]] decltype(tf_sq_mma_grouped<S, NT, RT>) tf_sq_mma_grouped<S, NT, RT>;
-TF_SQ_GROUPED(8, 1, 1) TF_SQ_GROUPED(8, 2, 1) TF_SQ_GROUPED(8, 4, 1) TF_SQ_GROUPED(8, 1, 2) TF_SQ_GROUPED(8, 2, 2) TF_SQ_GROUPED(8, 4, 2)
-TF_SQ_GROUPED(16, 1, 1) TF_SQ_GROUPED(16, 2, 1) TF_SQ_GROUPED(16, 4, 1) TF_SQ_GROUPED(16, 1, 2) TF_SQ_GROUPED(16, 2, 2)
-TF_SQ_GROUPED(32, 1, 1) TF_SQ_GROUPED(32, 2, 1) TF_SQ_GROUPED(32, 1, 2)
 #define TF_SQ_SCALAR(S, NR, XB, RS) template [[host_name("tf_sq_scalar_" #S "_" #NR "_" #RS)]] [[kernel]] decltype(tf_sq_scalar<S, NR, XB, RS>) tf_sq_scalar<S, NR, XB, RS>;
 TF_SQ_SCALAR(8, 1, 32, 1) TF_SQ_SCALAR(8, 2, 32, 1) TF_SQ_SCALAR(8, 1, 16, 2) TF_SQ_SCALAR(8, 2, 16, 2)
 TF_SQ_SCALAR(16, 1, 32, 1) TF_SQ_SCALAR(16, 2, 32, 1) TF_SQ_SCALAR(16, 1, 16, 2) TF_SQ_SCALAR(16, 2, 16, 2)
 TF_SQ_SCALAR(32, 1, 32, 1) TF_SQ_SCALAR(32, 2, 32, 1) TF_SQ_SCALAR(32, 1, 32, 2) TF_SQ_SCALAR(32, 2, 32, 2)
-#define TF_SQ_INDEXED(S, NR, XB) template [[host_name("tf_sq_indexed_" #S "_" #NR)]] [[kernel]] decltype(tf_sq_scalar_indexed<S, NR, XB>) tf_sq_scalar_indexed<S, NR, XB>;
-TF_SQ_INDEXED(8, 1, 32) TF_SQ_INDEXED(8, 2, 32) TF_SQ_INDEXED(16, 1, 32) TF_SQ_INDEXED(16, 2, 32) TF_SQ_INDEXED(32, 1, 32) TF_SQ_INDEXED(32, 2, 32)

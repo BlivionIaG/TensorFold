@@ -35,9 +35,6 @@ fn fits(s: u32, nt: u32, rt: u32) bool {
 
 pub const Pipelines = struct {
     mma: [s_values.len][nt_values.len][2]?mtl.Pipeline,
-    grouped: [s_values.len][nt_values.len][2]?mtl.Pipeline,
-    work: mtl.Pipeline,
-    indexed: [s_values.len][2]mtl.Pipeline,
     scalar: [s_values.len][2][max_scalar_rows]mtl.Pipeline,
 
     pub fn load(device: mtl.Device) !Pipelines {
@@ -49,24 +46,16 @@ pub const Pipelines = struct {
         inline for (s_values, 0..) |s, si| {
             inline for (nt_values, 0..) |nt, ti| inline for (.{ 1, 2 }, 0..) |rt, ri| {
                 p.mma[si][ti][ri] = if (comptime fits(s, nt, rt)) try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_sq_mma_{d}_{d}_{d}", .{ s, nt, rt }), false) else null;
-                p.grouped[si][ti][ri] = if (comptime fits(s, nt, rt)) try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_sq_grouped_{d}_{d}_{d}", .{ s, nt, rt }), false) else null;
             };
             inline for (.{ 1, 2 }, 0..) |nr, ni| inline for (.{ 1, 2 }, 0..) |rs, ri| {
                 p.scalar[si][ni][ri] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_sq_scalar_{d}_{d}_{d}", .{ s, nr, rs }), false);
             };
         }
-        p.work = try mtl.Pipeline.init(device, lib, "tf_sq_group_work", false);
-        inline for (s_values, 0..) |s, si| inline for (.{ 1, 2 }, 0..) |nr, ni| {
-            p.indexed[si][ni] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_sq_indexed_{d}_{d}", .{ s, nr }), false);
-        };
         return p;
     }
 
     pub fn deinit(p: *Pipelines) void {
-        p.work.deinit();
-        for (p.indexed) |a| for (a) |x| x.deinit();
         for (p.mma) |a| for (a) |b| for (b) |x| if (x) |y| y.deinit();
-        for (p.grouped) |a| for (a) |b| for (b) |x| if (x) |y| y.deinit();
         for (p.scalar) |a| for (a) |b| for (b) |x| x.deinit();
     }
 };
@@ -97,62 +86,8 @@ pub fn call(p: *const Pipelines, n: usize, k: usize, rows: usize, scalar: bool) 
     return .{ .pipeline = pipeline, .args = args, .groups = .{ .width = (n + 8 * nt - 1) / (8 * nt), .height = (rows + 8 * rt - 1) / (8 * rt) }, .threads = sgs * 32 };
 }
 
-/// The scalar twin on one row a slot (ids at buffer 6): slot y reads expert ids[y]'s matrix and x row y / repeat.
-pub fn callIndexed(p: *const Pipelines, n: usize, k: usize, slots: usize, repeat: usize) !Call {
-    var c = try call(p, n, k, 1, true);
-    const si = std.mem.indexOfScalar(u32, &s_values, splits(n)).?;
-    c.pipeline = p.indexed[si][if (n > 2048) 1 else 0];
-    c.args.r = @intCast(repeat);
-    c.groups.height = slots;
-    return c;
-}
-
-/// encode for callIndexed (`m` the first expert's matrix).
-pub fn encodeIndexed(e: mtl.ComputeEncoder, c: Call, m: Matrix, x: mtl.Buffer, y: mtl.Buffer, ids: mtl.Buffer) void {
-    e.setBuffer(ids, 0, 6);
-    encode(e, c, m, x, 0, y, 0);
-}
-
-/// Grouped tiles' row-tile height for `rows` sorted rows (the work list and every call on those rows use it).
-pub fn groupedHeight(rows: usize) u32 {
-    return @min(2, @as(u32, @intCast((rows + 7) / 8)));
-}
-
-/// Work items at most on `rows` rows over `experts`: whole tiles, plus a partial one an expert.
-pub fn groupedItems(rows: usize, experts: usize) usize {
-    return rows / (8 * groupedHeight(rows)) + @min(experts, rows) + 1;
-}
-
-/// The work list (u32 [groupedItems + 1]) for `rows` rows sorted by expert, from `starts` [experts + 1].
-pub fn encodeWork(e: mtl.ComputeEncoder, p: *const Pipelines, starts: mtl.Buffer, experts: usize, rows: usize, work: mtl.Buffer) void {
-    e.setPipeline(p.work);
-    e.setBuffer(starts, 0, 0);
-    e.setValue([2]u32{ @intCast(experts), groupedHeight(rows) }, 1);
-    e.setBuffer(work, 0, 2);
-    e.dispatchGroups(.{ .width = 1 }, .{ .width = 1 });
-}
-
-/// The tiles on `rows` rows sorted by expert, `experts` [n, k] matrices back to back; a row's bits are call's.
-pub fn callGrouped(p: *const Pipelines, n: usize, k: usize, rows: usize, experts: usize) !Call {
-    var c = try call(p, n, k, rows, false);
-    const s = splits(n);
-    const si = std.mem.indexOfScalar(u32, &s_values, s).?;
-    const rt = groupedHeight(rows);
-    const nt = tiles(n, rt, s);
-    c.pipeline = p.grouped[si][std.mem.indexOfScalar(u32, &nt_values, nt).?][rt - 1] orelse return error.UnsupportedSimdShape;
-    c.groups.height = groupedItems(rows, experts);
-    return c;
-}
-
 /// A checkpoint's [n, k] matrix: words [n][k/8], scales and biases [n][k/64] bf16, at byte offsets.
 pub const Matrix = struct { w: mtl.Buffer, w_off: usize = 0, scales: mtl.Buffer, s_off: usize = 0, biases: mtl.Buffer, b_off: usize = 0, n: usize, k: usize };
-
-/// encode with each expert's rows from `starts` and encodeWork's list (`m` the first expert's matrix).
-pub fn encodeGrouped(e: mtl.ComputeEncoder, c: Call, m: Matrix, x: mtl.Buffer, y: mtl.Buffer, starts: mtl.Buffer, work: mtl.Buffer) void {
-    e.setBuffer(starts, 0, 6);
-    e.setBuffer(work, 0, 7);
-    encode(e, c, m, x, 0, y, 0);
-}
 
 pub fn encode(e: mtl.ComputeEncoder, c: Call, m: Matrix, x: mtl.Buffer, x_off: usize, y: mtl.Buffer, y_off: usize) void {
     e.setPipeline(c.pipeline);

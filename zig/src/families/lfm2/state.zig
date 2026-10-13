@@ -113,6 +113,8 @@ pub const Scratch = struct {
     order: mtl.Buffer,
     pos: mtl.Buffer,
     work: mtl.Buffer,
+    /// A projection's input rows' group sums for the tiles and their twin (f32 [rows, k / 64]).
+    sums: mtl.Buffer,
     logits: mtl.Buffer,
     snapshots: [c.layers]?mtl.Buffer = @splat(null),
 
@@ -142,7 +144,8 @@ pub const Scratch = struct {
         out.starts = try mem.alloc((c.experts + 1) * 4);
         out.order = try mem.alloc(slots * 4);
         out.pos = try mem.alloc(slots * 4);
-        out.work = try mem.alloc((slots + c.experts + 2) * 4);
+        out.work = try mem.alloc((slots / 32 + c.experts + 2) * 4);
+        out.sums = try mem.alloc(@max(rows * (c.intermediate / 64), slots * (c.hidden / 64)) * 4);
         const logit_rows: usize = @min(rows, batch_rows);
         out.logits = try mem.alloc(logit_rows * c.vocab * 2);
         for (&out.snapshots, attention) |*s, a| if (!a) {
