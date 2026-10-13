@@ -253,7 +253,6 @@ fn launches(m: *q.Model) !void {
     }
 }
 
-
 /// A 2,048-row prompt chunk's GPU budget: each kernel at its real shape (picks spread), times its launches.
 fn promptBudget(m: *q.Model) !void {
     const rows = 2048;
@@ -274,12 +273,12 @@ fn promptBudget(m: *q.Model) !void {
     const dense = m.weights.blocks[0].ffn.dense;
     const Item = struct { name: []const u8, per: f64 };
     const items = [_]Item{
-        .{ .name = "sums+tiles conv in", .per = 30 },   .{ .name = "sums+tiles conv out", .per = 30 },
-        .{ .name = "sums+tiles attn q,k,v,o", .per = 10 }, .{ .name = "sums+tiles dense x3", .per = 2 },
-        .{ .name = "route", .per = 38 },                .{ .name = "sort+work", .per = 38 },
+        .{ .name = "sums+tiles conv in", .per = 30 },       .{ .name = "sums+tiles conv out", .per = 30 },
+        .{ .name = "sums+tiles attn q,k,v,o", .per = 10 },  .{ .name = "sums+tiles dense x3", .per = 2 },
+        .{ .name = "route", .per = 38 },                    .{ .name = "sort+work", .per = 38 },
         .{ .name = "sums+grouped glu gate,up", .per = 38 }, .{ .name = "sums+grouped down", .per = 38 },
-        .{ .name = "combine sorted", .per = 38 },      .{ .name = "norm", .per = 81 },
-        .{ .name = "conv kernel", .per = 30 },         .{ .name = "attn mma 2k", .per = 10 },
+        .{ .name = "combine sorted", .per = 38 },           .{ .name = "norm", .per = 81 },
+        .{ .name = "conv kernel", .per = 30 },              .{ .name = "attn mma 2k", .per = 10 },
     };
     var total: f64 = 0;
     inline for (items, 0..) |it, which| {

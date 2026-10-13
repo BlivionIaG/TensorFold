@@ -106,7 +106,7 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     e.setBuffer(s.h, 0, 4);
     const units = c.hidden / @as(usize, if (embedding.bits == 6) 4 else 8 / embedding.bits);
     enc.threads(.{ units, total, 1 }, .{ 256, 1, 1 });
-    var combine = false;  // the previous block's decode experts, combined by the next norm
+    var combine = false; // the previous block's decode experts, combined by the next norm
     for (m.weights.blocks, 0..) |block, i| {
         enc.norm(s, block.operator_norm, i == 0, total, combine);
         combine = false;
