@@ -438,7 +438,7 @@ template <int BITS>
   constexpr int NC = TfTqCols<BITS>::value;
   const int n = (int(tg.x) * TQ_SG + int(sg)) * NC, K = a.K, G = K / 64;
   if (n >= a.N) return;
-  if (BITS == 4) {
+  if (BITS == 4 && a.R > 1) {
     const int r0 = int(tg.y) * TQ_RT, rows = min(TQ_RT, a.R - r0);
     tf_tq_columns_rows<NC>(X + size_t(r0) * K, rows, a.one, W + size_t(n) * (K / 2), SC + size_t(n) * G, BI + size_t(n) * G, K,
                            a.N, OUT + size_t(r0) * a.N + n, lane, part + sg * rows * (NC + 1) * 32);
