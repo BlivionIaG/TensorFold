@@ -144,14 +144,19 @@ struct lfm2_attn_args { uint len, cap; float scale; };
 inline uint lfm2_chunk(uint keys) { (void)keys; return PER; }
 
 // Attention partials for every row, prompt or decode: a threadgroup a (chunk, kv head, 8 rows), simdgroup g its query
-// head kv * 4 + g. Per 8-key block: s = q . k by MMAs times 1/8, m' = max(m, block max), p = exp(s - m'), the block's p
-// summed in a fixed tree, l = fma(l, exp(m - m'), sum), o = o * exp(m - m') + bf16(p) v by MMA. A block with no visible
-// key leaves the state as it is, so a row's bits never depend on the rows beside it. PM, PL, PO by (row, head, chunk).
+// head kv * 4 + g, K and V staged 32 keys at a time. Per 32 keys: s = q . k by MMAs times 1/8, m' = max(m, block max),
+// p = exp(s - m'), the 8-key sums in a fixed tree then ((b0 + b1) + (b2 + b3)), l = fma(l, exp(m - m'), sum),
+// o = o * exp(m - m') + bf16(p) v by MMAs in key order. A block with no visible key leaves the state as it is,
+// so a row's bits never depend on the rows beside it. PM, PL, PO by (row, head, chunk).
+constant constexpr uint KB = 32;   // keys a staged block
+constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
 [[kernel]] void lfm2_attn_mma(const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
                               const device bfloat* values [[buffer(2)]], constant lfm2_attn_args& p [[buffer(3)]],
                               device float* pm [[buffer(4)]], device float* pl [[buffer(5)]], device float* po [[buffer(6)]],
                               constant uint& rows [[buffer(7)]], uint3 tg [[threadgroup_position_in_grid]],
-                              uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+                              uint tid [[thread_index_in_threadgroup]], uint sg [[simdgroup_index_in_threadgroup]],
+                              uint lane [[thread_index_in_simdgroup]]) {
+  threadgroup bfloat ks[KB * KP], vs[KB * KP];
   const uint chunk = tg.x, kh = tg.y, r0 = tg.z * 8, head = kh * (QH / KVH) + sg;
   const uint qid = lane / 4, fm = (qid & 4) + ((lane / 2) % 4), fn = (qid & 2) * 2 + (lane % 2) * 2;
   const uint row = r0 + fm;
@@ -167,37 +172,56 @@ inline uint lfm2_chunk(uint keys) { (void)keys; return PER; }
   simdgroup_matrix<float, 8, 8> o[8];
   for (int d = 0; d < 8; ++d) o[d] = simdgroup_matrix<float, 8, 8>(0.0f);
   float m = -INFINITY, l = 0.0f;
-  for (uint j0 = first; j0 < last; j0 += 8) {
-    simdgroup_matrix<float, 8, 8> sm(0.0f);
-    for (int d = 0; d < 8; ++d) {
-      simdgroup_matrix<bfloat, 8, 8> kt;
-      simdgroup_load(kt, kb + size_t(j0) * HD + 8 * d, HD, ulong2(0, 0), true);
-      simdgroup_multiply_accumulate(sm, q[d], kt, sm);
+  for (uint j0 = first; j0 < last; j0 += KB) {
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint idx = tid; idx < KB * 8; idx += 128) {
+      const uint k = idx / 8, part = idx % 8;
+      const size_t src = size_t(min(j0 + k, p.cap - 1)) * HD + part * 8;
+      *(threadgroup uint4*)(ks + k * KP + part * 8) = *(const device uint4*)(kb + src);
+      *(threadgroup uint4*)(vs + k * KP + part * 8) = *(const device uint4*)(vb + src);
     }
-    float s0 = sm.thread_elements()[0] * p.scale, s1 = sm.thread_elements()[1] * p.scale;
-    if (j0 + fn >= count) s0 = -INFINITY;
-    if (j0 + fn + 1 >= count) s1 = -INFINITY;
-    float bm = max(s0, s1);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float sv[4][2];
+    float bm = -INFINITY;
+    for (uint t = 0; t < 4; ++t) {
+      simdgroup_matrix<float, 8, 8> sm(0.0f);
+      for (int d = 0; d < 8; ++d) {
+        simdgroup_matrix<bfloat, 8, 8> kt;
+        simdgroup_load(kt, ks + (8 * t) * KP + 8 * d, KP, ulong2(0, 0), true);
+        simdgroup_multiply_accumulate(sm, q[d], kt, sm);
+      }
+      for (uint e = 0; e < 2; ++e) {
+        const float v = sm.thread_elements()[e] * p.scale;
+        sv[t][e] = j0 + 8 * t + fn + e < count ? v : -INFINITY;
+        bm = max(bm, sv[t][e]);
+      }
+    }
     bm = max(bm, simd_shuffle_xor(bm, ushort(1)));
     bm = max(bm, simd_shuffle_xor(bm, ushort(8)));
-    const bool live = bm != -INFINITY;
+    const bool live = bm != -INFINITY;  // per row: a block with no visible key leaves its state as it is
     const float m2 = live ? max(m, bm) : m;
-    const float p0 = live ? metal::fast::exp(s0 - m2) : 0.0f, p1 = live ? metal::fast::exp(s1 - m2) : 0.0f;
-    float bs = p0 + p1;
-    bs = bs + simd_shuffle_xor(bs, ushort(1));
-    bs = bs + simd_shuffle_xor(bs, ushort(8));
+    float bsum[4];
+    simdgroup_matrix<bfloat, 8, 8> pb[4];
+    for (uint t = 0; t < 4; ++t) {
+      const float p0 = live ? metal::fast::exp(sv[t][0] - m2) : 0.0f, p1 = live ? metal::fast::exp(sv[t][1] - m2) : 0.0f;
+      float bs = p0 + p1;
+      bs = bs + simd_shuffle_xor(bs, ushort(1));
+      bs = bs + simd_shuffle_xor(bs, ushort(8));
+      bsum[t] = bs;
+      pb[t].thread_elements()[0] = bfloat(p0);
+      pb[t].thread_elements()[1] = bfloat(p1);
+    }
     const float alpha = live ? metal::fast::exp(m - m2) : 1.0f;
-    l = fma(l, alpha, bs);
+    l = fma(l, alpha, (bsum[0] + bsum[1]) + (bsum[2] + bsum[3]));
     m = m2;
-    simdgroup_matrix<bfloat, 8, 8> pb;
-    pb.thread_elements()[0] = bfloat(p0);
-    pb.thread_elements()[1] = bfloat(p1);
     for (int d = 0; d < 8; ++d) {
       o[d].thread_elements()[0] *= alpha;
       o[d].thread_elements()[1] *= alpha;
-      simdgroup_matrix<bfloat, 8, 8> v;
-      simdgroup_load(v, vb + size_t(j0) * HD + 8 * d, HD);
-      simdgroup_multiply_accumulate(o[d], pb, v, o[d]);
+      for (uint t = 0; t < 4; ++t) {
+        simdgroup_matrix<bfloat, 8, 8> v;
+        simdgroup_load(v, vs + (8 * t) * KP + 8 * d, KP);
+        simdgroup_multiply_accumulate(o[d], pb[t], v, o[d]);
+      }
     }
   }
   if (row >= rows) return;
