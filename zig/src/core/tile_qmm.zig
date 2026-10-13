@@ -78,9 +78,10 @@ pub fn encode(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, x: mtl.Buff
 
 /// Rows the twin takes in one call at most (decode and verify windows).
 pub const twin_rows = 32;
-/// Columns a twin threadgroup: 2 simdgroups of 8 columns at 4 bits, of 4 at 6 and 8 (n is a multiple of the tile).
+/// Columns a twin threadgroup: 2 simdgroups of 4 columns (n is a multiple of the tile).
 fn twinColumns(bits: u8) usize {
-    return if (bits == 4) 16 else 8;
+    _ = bits;
+    return 8;
 }
 
 /// Each of `rows` rows' group sums (f32 [rows, k / 64] into `sums`), which the twin calls on those rows read.

@@ -160,7 +160,7 @@ inline float tf_tq_code(const thread uint* w, int k) {
 
 // Columns a simdgroup and simdgroups a threadgroup for the twin.
 // Columns a simdgroup (fewer at 6 and 8 bits, whose words take more registers) and simdgroups a threadgroup.
-template <int BITS> struct TfTqCols { static constant constexpr int value = BITS == 4 ? 8 : 4; };
+template <int BITS> struct TfTqCols { static constant constexpr int value = 4; };
 constant constexpr int TQ_SG = 2;
 
 // Group g's 64-step fma chains (the tiles' MMA order) of x's 64 inputs against NC columns' codes, `stride` bytes apart,
@@ -170,6 +170,15 @@ inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t
   constexpr int GW = 2 * BITS;  // words a group of 64 codes
   float t = 0.0f;
   for (int c = 0; c < NC; ++c) p[c] = 0.0f;
+  uint wq[BITS == 4 ? NC : 1][8];  // 4 bits: each column's group, two 16-byte loads
+  if (BITS == 4)
+    #pragma unroll
+    for (int c = 0; c < NC; ++c) {
+      const device uint4* src = (const device uint4*)(w + c * stride + size_t(g) * (GW * 4));
+      const uint4 a = src[0], b = src[1];
+      wq[c][0] = a.x; wq[c][1] = a.y; wq[c][2] = a.z; wq[c][3] = a.w;
+      wq[c][4] = b.x; wq[c][5] = b.y; wq[c][6] = b.z; wq[c][7] = b.w;
+    }
   #pragma unroll
   for (int kb = 0; kb < 8; ++kb) {
     const uint4 xv = ((const device uint4*)(x + size_t(g) * 64))[kb];
@@ -184,7 +193,7 @@ inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t
     if (BITS == 4) {
       #pragma unroll
       for (int c = 0; c < NC; ++c) {
-        const uint word = ((const device uint*)(w + c * stride + size_t(g) * (GW * 4)))[kb];
+        const uint word = wq[c][kb];
         #pragma unroll
         for (int j = 0; j < 8; ++j) p[c] = fma(xf[j], float(word & (0xFu << (4 * j))), p[c]);
       }
