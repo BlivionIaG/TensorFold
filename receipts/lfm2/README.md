@@ -54,3 +54,15 @@ Decode, tok/s:
 - Peak physical footprint of the servers (`vmmap`). These runs are not like for like: TensorFold, cache off, after cold prompts up to 131,000 tokens: 16.7 GB. TensorFold, cache on, two turns at 8k: 14.8 GB. mlx-lm, decode, streams and two turns, no prompt over 8,055 tokens: 14.5 GB.
 
 The mlx-lm server sends the thinking text at the end of a chat reply. Thus its chat decode rate in `mlx_decode.json` is not comparable.
+
+## Served decode with drafts off (c88bd868, a second session)
+
+`runs/c88bd868-drafts-off/`: the same build and `bench_openai.py` command, `--prompt-cache-gib 0`. Order: TensorFold drafts off, on, off, on (`--no-drafts` for off), then mlx-lm, then mlx-lm again, then TensorFold drafts off.
+
+| Run | Code decode, tok/s |
+| --- | --- |
+| TensorFold, drafts off | 124.3, 122.1, 125.0 |
+| TensorFold, drafts on | 123.1, 121.5 |
+| mlx-lm server | 93.4, 99.2 |
+
+The adjacent pair (mlx-lm, then TensorFold drafts off): 99.2 and 125.0 tok/s. Every TensorFold reply had the same `token_sha` (f66e3fd7e509) with drafts on and off. At 4 streams with drafts off (`concurrent_off.json`): 186.5 tok/s total for code and 184.9 for chat, each reply equal to its solo run (12 of 12).

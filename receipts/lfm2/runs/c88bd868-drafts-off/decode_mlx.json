@@ -1,0 +1,88 @@
+[
+ {
+  "label": "mlx",
+  "prompt": "fibonacci-raw",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 93.40504660625581,
+  "decode_tps_all": [
+   91.92,
+   93.77,
+   93.41
+  ],
+  "ttft_s_median": 0.076194042339921,
+  "evidence": [
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "2705e3c377ec7d0369fa6dc3644140325becb7e9fd31942beb4cf1c6701265ad"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "2705e3c377ec7d0369fa6dc3644140325becb7e9fd31942beb4cf1c6701265ad"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "2705e3c377ec7d0369fa6dc3644140325becb7e9fd31942beb4cf1c6701265ad"
+   }
+  ],
+  "sample": "and the user is asking for the \"real\" answer. The user says: \"I'm asking for the 'real' answer.\" So the user wants the answer that is not the typical joke answe"
+ },
+ {
+  "label": "mlx",
+  "prompt": "gpu-chat-no-think",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 314.14749377598866,
+  "decode_tps_all": [
+   310.02,
+   314.15,
+   314.23
+  ],
+  "ttft_s_median": 1.974153958261013,
+  "evidence": [
+   {
+    "prompt_tokens": 28,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "e7e2e23398202ec305d18d5ab1f68d9b42f3eaacdc13a9247a472b623d44f13e"
+   },
+   {
+    "prompt_tokens": 28,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "e7e2e23398202ec305d18d5ab1f68d9b42f3eaacdc13a9247a472b623d44f13e"
+   },
+   {
+    "prompt_tokens": 28,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "e7e2e23398202ec305d18d5ab1f68d9b42f3eaacdc13a9247a472b623d44f13e"
+   }
+  ],
+  "sample": "**How a GPU does matrix multiplication \u2013 plain English**\n\nThink of a matrix multiplication problem as a big table of numbers that you need to fill in.  \nFor two"
+ }
+]
