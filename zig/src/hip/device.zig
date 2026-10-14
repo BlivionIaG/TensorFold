@@ -51,6 +51,15 @@ pub const Device = struct {
         return Caps.of(arch);
     }
 
+    /// Whether the card at `index` is an integrated GPU (an APU sharing the host's memory); false when unknown.
+    pub fn integrated(index: c_int) bool {
+        var r = runtime.Runtime.open() catch return false;
+        defer r.close();
+        var v: c_int = 0;
+        runtime.check(r.api.hipDeviceGetAttribute(&v, .integrated, index)) catch return false;
+        return v != 0;
+    }
+
     /// The card's gfx name ("gfx1100", "gfx906:sramecc+:xnack-"), found in its properties record by its prefix.
     pub fn archName(r: *runtime.Runtime, index: c_int, out: []u8) runtime.Error![]const u8 {
         const Properties = *const fn (*anyopaque, c_int) callconv(.c) c_int;
