@@ -13,6 +13,8 @@ pub const chunk_keys = 4096;
 /// Sub-spans a chunk, one a threadgroup for rows of up to `split_rows` (the kernel's SUBS), folded by the merge.
 pub const subs = 8;
 pub const split_rows = 8;
+/// Query rows a prompt attention tile (two 8-row blocks a simdgroup); rows of up to `split_rows` take 8-row tiles.
+pub const attn_rows = 16;
 
 pub const Storage = struct {
     gpa: std.mem.Allocator,
@@ -133,7 +135,7 @@ pub const Scratch = struct {
         const slots = rows * c.topk;
         out.ids = try mem.alloc(rows * 4);
         inline for (.{ "h", "x", "r", "y", "q" }) |name| @field(out, name) = try mem.alloc(rows * c.hidden * 2);
-        out.queries = try mem.alloc((rows + 8) * c.hidden * 2); // a prompt tile reads 8 rows from its first
+        out.queries = try mem.alloc((rows + attn_rows) * c.hidden * 2); // a prompt attention tile reads attn_rows from its first
         out.bcx = try mem.alloc(rows * 3 * c.hidden * 2);
         out.k = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);
         out.v = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);
