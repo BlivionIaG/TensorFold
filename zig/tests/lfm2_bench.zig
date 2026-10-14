@@ -21,7 +21,6 @@ pub fn main(init: std.process.Init) !void {
     defer pool.pop();
     const m = try q.Model.load(init.gpa, init.io, args[1]);
     defer m.deinit();
-    try windows(m);
     try prompts(m);
     try grouped(m);
     try promptBudget(m);
@@ -50,6 +49,7 @@ pub fn main(init: std.process.Init) !void {
     const pf: f64 = @as(f64, @floatFromInt(t1 - t0)) / 1e9;
     const dc: f64 = @as(f64, @floatFromInt(t2 - t1)) / 1e9;
     std.debug.print("prompt {d} in {d}-row chunks: {d:.2} s, {d:.0} tok/s; decode {d}: {d:.1} tok/s\n", .{ length, chunk, pf, @as(f64, @floatFromInt(length)) / pf, steps, @as(f64, @floatFromInt(steps)) / dc });
+    try windows(m);
 }
 
 const tile = @import("tensorfold").tile_qmm;
