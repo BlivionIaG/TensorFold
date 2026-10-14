@@ -210,9 +210,11 @@ fn dispatchSlots(e: mtl.ComputeEncoder, m: Matrix, ids: mtl.Buffer, groups: ?mtl
     e.dispatchGroups(.{ .width = m.n / twin_columns, .height = slots }, .{ .width = 64 });
 }
 
-/// Whether the twin's rows equal the tiles' for `m` on this GPU (random rows; another chip may round MMAs otherwise).
+/// Whether the twin's rows equal the tiles' for `m` on this GPU at each window kernel (random rows).
 pub fn twinExact(p: *const Pipelines, device: mtl.Device, m: Matrix) !bool {
-    const rows = 40;
+    const widths = [_]usize{ twin_rows, 16, window_rows, 7, 5, 2, 1 };
+    var rows: usize = 0;
+    for (widths) |w| rows += w;
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     const x = try device.buffer(rows * m.k * 2, mtl.ResourceOptions.shared);
@@ -231,9 +233,11 @@ pub fn twinExact(p: *const Pipelines, device: mtl.Device, m: Matrix) !bool {
     const e = cb.compute(.serial);
     encodeSums(e, p, m.k, x, 0, sums, rows);
     try encode(e, p, m, x, 0, sums, 0, tiled, 0, rows);
-    try encodeTwin(e, p, m, x, 0, twin, 0, twin_rows);
-    try encodeTwin(e, p, m, x, twin_rows * m.k * 2, twin, twin_rows * m.n * 2, rows - twin_rows - 1);
-    try encodeTwin(e, p, m, x, (rows - 1) * m.k * 2, twin, (rows - 1) * m.n * 2, 1);
+    var at: usize = 0;
+    for (widths) |w| {
+        try encodeTwin(e, p, m, x, at * m.k * 2, twin, at * m.n * 2, w);
+        at += w;
+    }
     e.end();
     cb.commit();
     cb.wait();
