@@ -15,6 +15,7 @@ pub const Pipelines = struct {
     grouped: [bit_widths.len]mtl.Pipeline,
     grouped_glu: [bit_widths.len]mtl.Pipeline,
     twin: [bit_widths.len]mtl.Pipeline,
+    twin_few: [bit_widths.len]mtl.Pipeline,
     twin_indexed: [bit_widths.len]mtl.Pipeline,
     twin_glu: [bit_widths.len]mtl.Pipeline,
     rows: [bit_widths.len]mtl.Pipeline,
@@ -35,6 +36,7 @@ pub const Pipelines = struct {
             p.grouped[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmm_grouped_q{d}", .{bits}), false);
             p.grouped_glu[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmm_grouped_glu_q{d}", .{bits}), false);
             p.twin[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_q{d}", .{bits}), false);
+            p.twin_few[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_few_q{d}", .{bits}), false);
             p.twin_indexed[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_indexed_q{d}", .{bits}), false);
             p.twin_glu[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_glu_q{d}", .{bits}), false);
             p.rows[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_rows_q{d}", .{bits}), false);
@@ -52,6 +54,7 @@ pub const Pipelines = struct {
         for (p.grouped) |x| x.deinit();
         for (p.grouped_glu) |x| x.deinit();
         for (p.twin) |x| x.deinit();
+        for (p.twin_few) |x| x.deinit();
         for (p.twin_indexed) |x| x.deinit();
         for (p.twin_glu) |x| x.deinit();
         for (p.rows) |x| x.deinit();
@@ -126,7 +129,7 @@ pub fn encodeTwin(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, x: mtl.
     const i = try width(m);
     if (rows == 0 or rows > twin_rows) return error.NoRows;
     const window = rows >= window_rows;
-    e.setPipeline(if (window) p.rows[i] else p.twin[i]);
+    e.setPipeline(if (window) p.rows[i] else if (rows > 1) p.twin_few[i] else p.twin[i]);
     bind(e, m, .{ .k = @intCast(m.k), .n = @intCast(m.n), .r = @intCast(rows) }, x, x_off, y, y_off);
     if (window) return e.dispatchGroups(.{ .width = m.n / window_columns }, .{ .width = 64 });
     const rt = @min(twin_rt, rows);

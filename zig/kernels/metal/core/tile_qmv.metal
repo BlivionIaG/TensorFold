@@ -199,32 +199,41 @@ inline float tf_tq_columns(const device bfloat* x, float one, const device uint8
   return acc;
 }
 
-// Y = X W^T at the tiles' bits for decode and small windows: tg.y takes TQ_RT rows over one code load.
+// Y = X W^T at the tiles' bits for decode: a threadgroup row a row (its own kernel keeps its registers few).
 template <int BITS>
 [[kernel]] void tf_tile_qmv(const device bfloat* X [[buffer(0)]], const device uint8_t* W [[buffer(1)]],
                             const device bfloat* SC [[buffer(2)]], const device bfloat* BI [[buffer(3)]],
                             constant TfTqArgs& a [[buffer(4)]], device bfloat* OUT [[buffer(5)]],
-                            threadgroup float* part [[threadgroup(0)]], uint tid [[thread_index_in_threadgroup]],
-                            uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],
-                            uint3 tg [[threadgroup_position_in_grid]]) {
+                            threadgroup float* part [[threadgroup(0)]], uint sg [[simdgroup_index_in_threadgroup]],
+                            uint lane [[thread_index_in_simdgroup]], uint3 tg [[threadgroup_position_in_grid]]) {
   constexpr int NC = TfTqCols<BITS>::value;
   const int n = (int(tg.x) * TQ_SG + int(sg)) * NC, K = a.K, G = K / 64;
   if (n >= a.N) return;
-  if (a.R > 1) {
-    threadgroup int rowmap[TQ_RT];
-    const int r0 = int(tg.y) * TQ_RT, rows = min(TQ_RT, a.R - r0);
-    if (tid < TQ_RT) rowmap[tid] = r0 + int(tid);
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    const float y = tf_tq_rows<BITS, NC>(X, K, rowmap, rows, a.one, W + size_t(n) * (K * BITS / 8), SC + size_t(n) * G,
-                                         BI + size_t(n) * G, lane, part + sg * TQ_RT * (NC + 1) * 32);
-    const int r = int(lane) / NC;
-    if (r < rows) OUT[size_t(r0 + r) * a.N + n + lane % NC] = bfloat(y);
-    return;
-  }
   const int r = int(tg.y);
   const float y = tf_tq_columns<BITS, NC>(X + size_t(r) * K, a.one, W + size_t(n) * (K * BITS / 8), SC + size_t(n) * G,
                                          BI + size_t(n) * G, K, lane, part + sg * (NC + 1) * 32);
   if (int(lane) < NC) OUT[size_t(r) * a.N + n + lane] = bfloat(y);
+}
+
+// Y = X W^T for small windows: tg.y takes TQ_RT rows over one code load.
+template <int BITS>
+[[kernel]] void tf_tile_qmv_few(const device bfloat* X [[buffer(0)]], const device uint8_t* W [[buffer(1)]],
+                                const device bfloat* SC [[buffer(2)]], const device bfloat* BI [[buffer(3)]],
+                                constant TfTqArgs& a [[buffer(4)]], device bfloat* OUT [[buffer(5)]],
+                                threadgroup float* part [[threadgroup(0)]], uint tid [[thread_index_in_threadgroup]],
+                                uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],
+                                uint3 tg [[threadgroup_position_in_grid]]) {
+  constexpr int NC = TfTqCols<BITS>::value;
+  threadgroup int rowmap[TQ_RT];
+  const int n = (int(tg.x) * TQ_SG + int(sg)) * NC, K = a.K, G = K / 64;
+  if (n >= a.N) return;
+  const int r0 = int(tg.y) * TQ_RT, rows = min(TQ_RT, a.R - r0);
+  if (tid < TQ_RT) rowmap[tid] = r0 + int(tid);
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  const float y = tf_tq_rows<BITS, NC>(X, K, rowmap, rows, a.one, W + size_t(n) * (K * BITS / 8), SC + size_t(n) * G,
+                                       BI + size_t(n) * G, lane, part + sg * TQ_RT * (NC + 1) * 32);
+  const int r = int(lane) / NC;
+  if (r < rows) OUT[size_t(r0 + r) * a.N + n + lane % NC] = bfloat(y);
 }
 
 // The twin by slot (tg.y): expert ids[slot]'s matrix on x row slot / a.R, out row slot.
@@ -345,6 +354,9 @@ template <int BITS, bool GLU>
 template [[host_name("tf_tile_qmv_q4")]] [[kernel]] decltype(tf_tile_qmv<4>) tf_tile_qmv<4>;
 template [[host_name("tf_tile_qmv_q6")]] [[kernel]] decltype(tf_tile_qmv<6>) tf_tile_qmv<6>;
 template [[host_name("tf_tile_qmv_q8")]] [[kernel]] decltype(tf_tile_qmv<8>) tf_tile_qmv<8>;
+template [[host_name("tf_tile_qmv_few_q4")]] [[kernel]] decltype(tf_tile_qmv_few<4>) tf_tile_qmv_few<4>;
+template [[host_name("tf_tile_qmv_few_q6")]] [[kernel]] decltype(tf_tile_qmv_few<6>) tf_tile_qmv_few<6>;
+template [[host_name("tf_tile_qmv_few_q8")]] [[kernel]] decltype(tf_tile_qmv_few<8>) tf_tile_qmv_few<8>;
 template [[host_name("tf_tile_qmv_indexed_q4")]] [[kernel]] decltype(tf_tile_qmv_indexed<4>) tf_tile_qmv_indexed<4>;
 template [[host_name("tf_tile_qmv_indexed_q6")]] [[kernel]] decltype(tf_tile_qmv_indexed<6>) tf_tile_qmv_indexed<6>;
 template [[host_name("tf_tile_qmv_indexed_q8")]] [[kernel]] decltype(tf_tile_qmv_indexed<8>) tf_tile_qmv_indexed<8>;
