@@ -45,10 +45,16 @@ for round in 1 2; do
   $PY $S/mlx_cold.py $M $R/CHANGELOG.md 2048,8192 128 > $O/alt_mlx_r$round.txt 2>&1
 done
 
-echo "== 5 long prompts in process"
-$R/zig-out/bin/tf-lfm2-bench $M 32768 2048 64 > $O/tf_32k.txt 2>&1
-$R/zig-out/bin/tf-lfm2-bench $M 65536 2048 64 > $O/tf_64k.txt 2>&1
-/usr/bin/time -l $PY $S/mlx_cold.py $M $R/CHANGELOG.md 32768,65536,131000 64 > $O/mlx_long.txt 2>&1
+echo "== 5 long prompts in process, alternated (2 rounds at 32k and 64k, then 131k)"
+for round in 1 2; do
+  $R/zig-out/bin/tf-lfm2-bench $M 32768 2048 64 > $O/tf_32k_r$round.txt 2>&1
+  $PY $S/mlx_cold.py $M $R/CHANGELOG.md 32768 64 > $O/mlx_32k_r$round.txt 2>&1
+  $R/zig-out/bin/tf-lfm2-bench $M 65536 2048 64 > $O/tf_64k_r$round.txt 2>&1
+  $PY $S/mlx_cold.py $M $R/CHANGELOG.md 65536 64 > $O/mlx_64k_r$round.txt 2>&1
+done
+$R/zig-out/bin/tf-lfm2-bench $M 131000 2048 64 > $O/tf_131k.txt 2>&1
+/usr/bin/time -l $PY $S/mlx_cold.py $M $R/CHANGELOG.md 131000 64 > $O/mlx_131k.txt 2>&1
+$PY $S/mlx_parts.py $M 32768 $S/prompt_32768.json > $O/mlx_parts_32k.json 2>&1
 
 echo "== 6 6- and 8-bit in process"
 for b in 6 8; do

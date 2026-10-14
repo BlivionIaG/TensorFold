@@ -1,0 +1,15 @@
+{
+ "tokens": 32768,
+ "plain_s": 35.649,
+ "plain_tok_s": 919.2,
+ "timed_run_s": 37.823,
+ "parts_s": {
+  "experts (router + switch_mlp + combine)": 18.424,
+  "attention kernel (sdpa)": 7.103,
+  "conv projections": 5.475,
+  "dense FFN": 1.526,
+  "attention projections": 1.293,
+  "norms": 0.265,
+  "conv kernel": 0.112
+ }
+}
