@@ -101,7 +101,7 @@ pub const twin_rows = 32;
 /// Picks a by-expert twin call takes at most (the kernels' TQ_SLOTS).
 pub const window_slots = 4 * twin_rows;
 /// Rows from which a dense twin call takes the MMA window kernel over the scalar twin (measured crossover).
-pub var window_rows: usize = 8;
+pub const window_rows = 8;
 /// Window rows from which the by-expert twin (each picked expert read once) beats a threadgroup row a slot.
 pub const group_rows = 16;
 /// Columns a scalar twin threadgroup (2 simdgroups of 4) and a window threadgroup (2 simdgroups of 8, one MMA block).
