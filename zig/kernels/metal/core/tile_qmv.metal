@@ -226,10 +226,10 @@ template <int BITS>
   constexpr int NC = TfTqCols<BITS>::value;
   threadgroup int rowmap[TQ_RT];
   const int n = (int(tg.x) * TQ_SG + int(sg)) * NC, K = a.K, G = K / 64;
-  if (n >= a.N) return;
   const int r0 = int(tg.y) * TQ_RT, rows = min(TQ_RT, a.R - r0);
   if (tid < TQ_RT) rowmap[tid] = r0 + int(tid);
   threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (n >= a.N) return;  // after the threadgroup's only barrier: every thread reaches it
   const float y = tf_tq_rows<BITS, NC>(X, K, rowmap, rows, a.one, W + size_t(n) * (K * BITS / 8), SC + size_t(n) * G,
                                        BI + size_t(n) * G, lane, part + sg * TQ_RT * (NC + 1) * 32);
   const int r = int(lane) / NC;
