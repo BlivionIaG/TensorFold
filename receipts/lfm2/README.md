@@ -20,6 +20,7 @@
 | In process, alternated, 32k and 64k, 2 rounds; 131k | `tf_32k_r*.txt`, `mlx_32k_r*.txt`, `tf_64k_r*.txt`, `mlx_64k_r*.txt`, `tf_131k.txt`, `mlx_131k.txt` (c88bd868 only) |
 | mlx-lm at 32k timed by part | `mlx_parts_32k.json` (c88bd868 only) |
 | In process, 6-bit and 8-bit | `tf_6bit_*.txt`, `tf_8bit_*.txt`, `mlx_6bit.txt`, `mlx_8bit.txt` |
+| Drafted replies against `"draft": false` (server `serve MODEL --port 8091 --context 32768`, `scripts/draft_check.py`) | `tf_draft_check.log` (c88bd868 only): each request's `sha` and drafts accepted |
 | Teacher-forced fidelity against mlx-lm | `fidelity_{4,6,8}bit/fidelity.json` (the logit dumps are not included) |
 
 `tile_qmm/` holds the matrices of `tf-tile-check --dump` and `tile_qmm_reference.json` (error against float64, tile_qmm and mlx).
