@@ -1,0 +1,52 @@
+window twin us by width, a row a threadgroup row | window kernels: q 2048x2048; conv in 6144x2048; head; experts glu; experts down; group;
+ 1 rows:     10     24    873     45     28      0 |      9     22    888     49     31      2
+ 2 rows:     11     29    890    101     51      0 |     11     29    886    122     51      3
+ 4 rows:     21     55   1236    187    102      0 |     21     55   1248    220    109      4
+ 8 rows:     37    101   2488    323    195      0 |     34     82   1910    331    174      7
+16 rows:     69    197   5144    616    381      0 |     45    111   2445    540    320     10
+32 rows:    133    391  10206   1214    793      0 |     77    185   3806   1051    633     16
+tiles 6144x2048, 512 rows: 2078 us, 6.20 TFLOPS
+tiles 2048x2048, 512 rows: 688 us, 6.25 TFLOPS
+tiles 11776x2048, 512 rows: 3958 us, 6.24 TFLOPS
+grouped tiles 1536x2048 x64 experts, 8192 rows: 8464 us, 6.09 TFLOPS
+sums+tiles conv in: 8.24 ms x 30 = 247 ms
+sums+tiles conv out: 2.73 ms x 30 = 82 ms
+sums+tiles attn q,k,v,o: 7.04 ms x 10 = 70 ms
+sums+tiles dense x3: 47.64 ms x 2 = 95 ms
+route: 0.90 ms x 38 = 34 ms
+sort+work: 0.11 ms x 38 = 4 ms
+sums+grouped glu gate,up: 18.02 ms x 38 = 685 ms
+sums+grouped down: 9.12 ms x 38 = 347 ms
+combine sorted: 0.15 ms x 38 = 6 ms
+norm: 0.09 ms x 81 = 7 ms
+conv kernel: 0.22 ms x 30 = 7 ms
+attn mma 2k: 3.13 ms x 10 = 31 ms
+prompt chunk budget: 1615 ms for 2048 rows (1268 tok/s)
+attn mma+merge, 2048 rows at 30720 keys: best of 7 86.65 ms, 6.15 TFLOPS
+norm x43: 0.132 ms, 43 launches, 0 MB, 0 GB/s
+conv in twin: 1.014 ms, 30 launches, 212 MB, 209 GB/s
+conv kernel: 0.055 ms, 30 launches, 0 MB, 0 GB/s
+conv out twin: 0.454 ms, 30 launches, 71 MB, 156 GB/s
+attn q,k,v,o twins: 0.458 ms, 40 launches, 59 MB, 129 GB/s
+qk+attn+merge: 0.128 ms, 30 launches, 1 MB, 10 GB/s
+dense gate,up,swiglu,down: 0.387 ms, 8 launches, 81 MB, 210 GB/s
+route: 0.219 ms, 76 launches, 20 MB, 91 GB/s
+experts glu: 2.364 ms, 38 launches, 538 MB, 228 GB/s
+experts down: 1.514 ms, 38 launches, 269 MB, 178 GB/s
+combine+norm: 0.095 ms, 38 launches, 0 MB, 0 GB/s
+head twin (6-bit): 0.831 ms, 1 launches, 213 MB, 256 GB/s
+decode step budget at 64 context: 7.65 ms (131 tok/s)
+norm x43: 0.125 ms, 43 launches, 0 MB, 0 GB/s
+conv in twin: 1.075 ms, 30 launches, 212 MB, 197 GB/s
+conv kernel: 0.053 ms, 30 launches, 0 MB, 0 GB/s
+conv out twin: 0.437 ms, 30 launches, 71 MB, 162 GB/s
+attn q,k,v,o twins: 0.414 ms, 40 launches, 59 MB, 142 GB/s
+qk+attn+merge: 3.844 ms, 30 launches, 671 MB, 175 GB/s
+dense gate,up,swiglu,down: 0.411 ms, 8 launches, 81 MB, 198 GB/s
+route: 0.246 ms, 76 launches, 20 MB, 81 GB/s
+experts glu: 2.341 ms, 38 launches, 538 MB, 230 GB/s
+experts down: 1.778 ms, 38 launches, 269 MB, 151 GB/s
+combine+norm: 0.094 ms, 38 launches, 0 MB, 0 GB/s
+head twin (6-bit): 0.821 ms, 1 launches, 213 MB, 259 GB/s
+decode step budget at 32768 context: 11.64 ms (86 tok/s)
+prompt 32768 in 2048-row chunks: 35.30 s, 928 tok/s; decode 64: 83.6 tok/s

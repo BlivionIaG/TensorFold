@@ -1,0 +1,2 @@
+2048 prompt 1250.8 tok/s (1.64 s) decode 110.4 tok/s peak 14.6 GB
+32768 prompt 1050.8 tok/s (31.18 s) decode 75.8 tok/s peak 15.3 GB

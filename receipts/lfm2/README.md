@@ -101,3 +101,15 @@ Decode (tok/s):
 - Turn two of the 7,991-token chat: TensorFold 0.082 s (7,987 cached), cache off 1.859 s; mlx-lm 0.175 s.
 - Peak memory footprint in process at 131,000 tokens (`/usr/bin/time -l`): TensorFold 17.9 GB, mlx-lm 21.3 GB.
 - The mlx-lm server sends the thinking text at the end of a chat reply, so its chat decode rate (511.7) is not comparable, and the concurrent client cannot read its tokens (the "failed" equality counts).
+
+## Cheap windows, M4 Pro control (lfm2/4-cheap-windows with the one-row fix)
+
+`runs/m4-cheap-windows-control/`: one session on the M4 Pro, 4-bit, `--prompt-cache-gib 0`. Order: mlx-lm, PR head 5a6ee034, cheap windows + fix, mlx-lm, cheap windows + fix, PR head, mlx-lm (served), then the same order in process. `ctl_dec_*` = bench_openai, `ctl_conc_*` = bench_concurrent `--levels 1,4 --alone --serial`, `ctl_ip_*` = tf-lfm2-bench / mlx_cold.py; `control.log` lists the run order with times.
+
+| Served, code, tok/s | single stream | 4 streams total (steady) | slowest first token at 4 streams | 16-row window |
+| --- | --- | --- | --- | --- |
+| mlx-lm a / b / c | 94.4 / 94.5 / 94.2 | 91.6 / 88.5 / 95.4 | 8.5 / 8.9 / 8.2 s | - |
+| PR head a / b | 118.6 / 124.8 | 182.6 (192.2) / 189.8 (199.0) | 0.36 / 0.34 s | 71.2 / 67.8 ms |
+| cheap windows + fix a / b | 129.9 / 127.8 | 223.9 (237.1) / 223.6 (237.1) | 0.36 / 0.35 s | 47.6 / 47.0 ms |
+
+Every TensorFold reply had token_sha f66e3fd7e509 (code) / 57752ac6d7f0 (chat) and equalled its solo run (12 of 12). Single-stream chat (plain one-row rounds): PR head 118.0 / 123.8, cheap windows + fix 115.2 / 115.9 tok/s. In process (prefill / decode after the prompt): 2k PR head 1,276 / 119.6 and 1,198 / 115.7, cheap windows + fix 1,275 / 120.2 and 1,084 / 115.4, mlx-lm 1,251 / 110.4, 1,278 / 111.6, 1,249 / 109.1; 32k PR head 1,024 / 85.0 and 951 / 81.3, cheap windows + fix 1,023 / 83.8 and 928 / 83.6, mlx-lm 1,051 / 75.8, 939 / 75.9, 991 / 74.8.
