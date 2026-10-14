@@ -229,22 +229,29 @@ fn grouped(g: Gpu, s: Synth) !void {
             if (!std.mem.eql(u16, got, bf16s(want, tokens)[(slot / topk) * n ..][0..n])) return error.GroupedDiffers;
         };
     }
+    const groups = try g.device.buffer(tile.groupWords(slots) * 4, opts);
+    defer groups.deinit();
     const T = struct {
         s: Synth,
         ids: mtl.Buffer,
+        groups: ?mtl.Buffer,
         out: mtl.Buffer,
         glu: bool,
         fn encode(c: @This(), e: mtl.ComputeEncoder, p: *const tile.Pipelines) !void {
-            if (c.glu) return tile.encodeTwinGlu(e, p, c.s.matrix(0), c.s.matrix(0), c.s.x, c.out, c.ids, slots, topk);
-            try tile.encodeTwinIndexed(e, p, c.s.matrix(0), c.s.x, c.out, c.ids, slots, topk);
+            if (c.groups) |b| try tile.encodeTwinGroup(e, p, c.ids, slots, b);
+            if (c.glu) return tile.encodeTwinGlu(e, p, c.s.matrix(0), c.s.matrix(0), c.s.x, c.out, c.ids, c.groups, slots, topk);
+            try tile.encodeTwinIndexed(e, p, c.s.matrix(0), c.s.x, c.out, c.ids, c.groups, slots, topk);
         }
     };
     for ([_]bool{ false, true }) |glu| {
         if (glu) try g.run(G{ .s = s, .sums = sums, .map = map, .out = out, .starts = starts, .work = work, .glu = true });
-        try g.run(T{ .s = s, .ids = ids, .out = twin, .glu = glu });
-        for (order, 0..) |slot, j| {
-            if (!std.mem.eql(u16, bf16s(out, slots)[j * n ..][0..n], bf16s(twin, slots)[slot * n ..][0..n])) {
-                return if (glu) error.GluTwinDiffers else error.IndexedTwinDiffers;
+        for ([_]?mtl.Buffer{ null, groups }) |by_expert| {
+            @memset(twin.contents()[0 .. slots * n * 2], 0);
+            try g.run(T{ .s = s, .ids = ids, .groups = by_expert, .out = twin, .glu = glu });
+            for (order, 0..) |slot, j| {
+                if (!std.mem.eql(u16, bf16s(out, slots)[j * n ..][0..n], bf16s(twin, slots)[slot * n ..][0..n])) {
+                    return if (glu) error.GluTwinDiffers else error.IndexedTwinDiffers;
+                }
             }
         }
     }
@@ -289,7 +296,7 @@ pub fn main(init: std.process.Init) !void {
         }
         try grouped(g, s);
         passed += 1;
-        std.debug.print("{d}-bit {d}x{d}: rows alone, twin at widths 1-32, grouped, by slot and gate-up swiglu bit-equal; " ++
+        std.debug.print("{d}-bit {d}x{d}: rows alone, twin at widths 1-32, grouped, by slot and by expert with gate-up swiglu bit-equal; " ++
             "error vs float64 / terms' magnitude: worst {e:.2}, mean {e:.2}\n", .{ bits, n, k, worst, mean });
         if (worst > 1.0 / 128.0) return error.FarFromFloat64;
     }

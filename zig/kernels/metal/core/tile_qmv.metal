@@ -5,6 +5,8 @@ template <int BITS> struct TfTqCols { static constant constexpr int value = 4; }
 constant constexpr int TQ_SG = 2;
 // Rows a scalar twin threadgroup takes over one load of its columns' codes.
 constant constexpr int TQ_RT = 4;
+// Picks a window call takes at most (tf_tile_qmv_group's slots).
+constant constexpr int TQ_SLOTS = 128;
 
 // Group g's 64-step fma chains (the MMA order) and input sum; at 4 bits a code in place meets x * 16^-j (same product).
 template <int BITS, int NC>
@@ -261,6 +263,85 @@ template <int BITS>
   if (int(lane) < NC) OUT[size_t(tg.y) * a.N + n + lane] = tf_tq_swiglu(bfloat(g), bfloat(u));
 }
 
+// Picks by expert, one threadgroup: GROUPS = count, (id, base, count) an expert in first-pick order, then their slots.
+[[kernel]] void tf_tile_qmv_group(const device uint* ids [[buffer(0)]], constant int& slots [[buffer(1)]],
+                                  device uint* groups [[buffer(2)]], uint t [[thread_position_in_threadgroup]]) {
+  threadgroup int first[TQ_SLOTS], cnt[TQ_SLOTS];
+  const int s = int(t);
+  int lead = s, count = 0, pos = 0;
+  if (s < slots)
+    for (int j = 0; j < slots; ++j)
+      if (ids[j] == ids[s]) {
+        ++count;
+        if (j < s) {
+          lead = min(lead, j);
+          ++pos;
+        }
+      }
+  first[s] = s < slots && lead == s;
+  cnt[s] = count;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (s >= slots) return;
+  int item = 0, base = 0;
+  for (int j = 0; j < lead; ++j)
+    if (first[j]) {
+      ++item;
+      base += cnt[j];
+    }
+  groups[1 + 3 * slots + base + pos] = uint(s);
+  if (lead == s) {
+    groups[1 + 3 * item] = ids[s];
+    groups[2 + 3 * item] = uint(base);
+    groups[3 + 3 * item] = uint(count);
+  }
+  if (s == 0) {
+    int n = 0;
+    for (int j = 0; j < slots; ++j) n += first[j];
+    groups[0] = uint(n);
+  }
+}
+
+// The twin by picked expert (item tg.y of GROUPS): its matrix read once for all its slots, TQ_RT slots a pass.
+template <int BITS, bool GLU>
+[[kernel]] void tf_tile_qmv_grouped(const device bfloat* X [[buffer(0)]], const device uint8_t* W [[buffer(1)]],
+                                    const device bfloat* SC [[buffer(2)]], const device bfloat* BI [[buffer(3)]],
+                                    constant TfTqArgs& a [[buffer(4)]], device bfloat* OUT [[buffer(5)]],
+                                    const device uint* groups [[buffer(6)]], const device uint8_t* W2 [[buffer(7)]],
+                                    const device bfloat* SC2 [[buffer(8)]], const device bfloat* BI2 [[buffer(9)]],
+                                    constant int& slots [[buffer(10)]], threadgroup float* part [[threadgroup(0)]],
+                                    uint tid [[thread_index_in_threadgroup]], uint sg [[simdgroup_index_in_threadgroup]],
+                                    uint lane [[thread_index_in_simdgroup]], uint3 tg [[threadgroup_position_in_grid]]) {
+  constexpr int NC = TfTqCols<BITS>::value;
+  threadgroup int xrow[TQ_RT], orow[TQ_RT];
+  if (tg.y >= groups[0]) return;
+  const int n = (int(tg.x) * TQ_SG + int(sg)) * NC, K = a.K, G = K / 64;
+  const uint e = groups[1 + 3 * tg.y], base = groups[2 + 3 * tg.y], count = groups[3 + 3 * tg.y];
+  const device uint* list = groups + 1 + 3 * slots + base;
+  const size_t m = size_t(e) * size_t(a.N) + n;
+  threadgroup float* own = part + sg * TQ_RT * (NC + 1) * 32;
+  for (uint at = 0; at < count; at += TQ_RT) {
+    const int rows = min(TQ_RT, int(count - at));
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (tid < uint(rows)) {
+      const int s = int(list[at + tid]);
+      xrow[tid] = s / a.R;
+      orow[tid] = s;
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    float g, u = 0.0f;
+    if (rows == 1) {
+      const device bfloat* x = X + size_t(xrow[0]) * K;
+      g = tf_tq_columns<BITS, NC>(x, a.one, W + m * (K * BITS / 8), SC + m * G, BI + m * G, K, lane, own);
+      if (GLU) u = tf_tq_columns<BITS, NC>(x, a.one, W2 + m * (K * BITS / 8), SC2 + m * G, BI2 + m * G, K, lane, own);
+    } else {
+      g = tf_tq_rows<BITS, NC>(X, K, xrow, rows, a.one, W + m * (K * BITS / 8), SC + m * G, BI + m * G, lane, own);
+      if (GLU) u = tf_tq_rows<BITS, NC>(X, K, xrow, rows, a.one, W2 + m * (K * BITS / 8), SC2 + m * G, BI2 + m * G, lane, own);
+    }
+    const int r = int(lane) / NC;
+    if (r < rows) OUT[size_t(orow[r]) * a.N + n + lane % NC] = GLU ? tf_tq_swiglu(bfloat(g), bfloat(u)) : bfloat(g);
+  }
+}
+
 template [[host_name("tf_tile_qmv_q4")]] [[kernel]] decltype(tf_tile_qmv<4>) tf_tile_qmv<4>;
 template [[host_name("tf_tile_qmv_q6")]] [[kernel]] decltype(tf_tile_qmv<6>) tf_tile_qmv<6>;
 template [[host_name("tf_tile_qmv_q8")]] [[kernel]] decltype(tf_tile_qmv<8>) tf_tile_qmv<8>;
@@ -270,3 +351,9 @@ template [[host_name("tf_tile_qmv_indexed_q8")]] [[kernel]] decltype(tf_tile_qmv
 template [[host_name("tf_tile_qmv_glu_q4")]] [[kernel]] decltype(tf_tile_qmv_glu<4>) tf_tile_qmv_glu<4>;
 template [[host_name("tf_tile_qmv_glu_q6")]] [[kernel]] decltype(tf_tile_qmv_glu<6>) tf_tile_qmv_glu<6>;
 template [[host_name("tf_tile_qmv_glu_q8")]] [[kernel]] decltype(tf_tile_qmv_glu<8>) tf_tile_qmv_glu<8>;
+template [[host_name("tf_tile_qmv_grouped_q4")]] [[kernel]] decltype(tf_tile_qmv_grouped<4, false>) tf_tile_qmv_grouped<4, false>;
+template [[host_name("tf_tile_qmv_grouped_q6")]] [[kernel]] decltype(tf_tile_qmv_grouped<6, false>) tf_tile_qmv_grouped<6, false>;
+template [[host_name("tf_tile_qmv_grouped_q8")]] [[kernel]] decltype(tf_tile_qmv_grouped<8, false>) tf_tile_qmv_grouped<8, false>;
+template [[host_name("tf_tile_qmv_grouped_glu_q4")]] [[kernel]] decltype(tf_tile_qmv_grouped<4, true>) tf_tile_qmv_grouped<4, true>;
+template [[host_name("tf_tile_qmv_grouped_glu_q6")]] [[kernel]] decltype(tf_tile_qmv_grouped<6, true>) tf_tile_qmv_grouped<6, true>;
+template [[host_name("tf_tile_qmv_grouped_glu_q8")]] [[kernel]] decltype(tf_tile_qmv_grouped<8, true>) tf_tile_qmv_grouped<8, true>;

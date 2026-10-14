@@ -102,7 +102,7 @@ fn windows(m: *q.Model) !void {
     const attn = m.weights.blocks[2].mixer.attention;
     const conv = m.weights.blocks[0].mixer.conv;
     const moe = m.weights.blocks[10].ffn.moe;
-    const names = [_][]const u8{ "q 2048x2048", "conv in 6144x2048", "head", "experts glu", "experts down" };
+    const names = [_][]const u8{ "q 2048x2048", "conv in 6144x2048", "head", "experts glu", "experts down", "group" };
     std.debug.print("window twin us by width, a row a threadgroup row | window kernels:", .{});
     for (names) |n| std.debug.print(" {s};", .{n});
     std.debug.print("\n", .{});
@@ -112,6 +112,7 @@ fn windows(m: *q.Model) !void {
         std.debug.print("{d:2} rows:", .{w});
         for ([_]usize{ 99, was }) |threshold| {
             tile.window_rows = threshold;
+            const groups: ?mtl.Buffer = if (threshold == 99) null else sc.groups;
             inline for (0..names.len) |which| {
                 var best: f64 = 1e9;
                 for (0..3) |_| {
@@ -121,8 +122,15 @@ fn windows(m: *q.Model) !void {
                         0 => try tile.encodeTwin(e, t, tq(attn.q), sc.x, 0, sc.q, 0, w),
                         1 => try tile.encodeTwin(e, t, tq(conv.in), sc.x, 0, sc.bcx, 0, w),
                         2 => try tile.encodeTwin(e, t, tq(m.weights.embedding), sc.x, 0, sc.logits, 0, w),
-                        3 => try tile.encodeTwinGlu(e, t, tq(moe.gate.one), tq(moe.up.one), sc.x, sc.act, sc.picks, w * c.topk, c.topk),
-                        else => try tile.encodeTwinIndexed(e, t, tq(moe.down.one), sc.act, sc.experts, sc.picks, w * c.topk, 1),
+                        3 => {
+                            if (groups != null) try tile.encodeTwinGroup(e, t, sc.picks, w * c.topk, sc.groups);
+                            try tile.encodeTwinGlu(e, t, tq(moe.gate.one), tq(moe.up.one), sc.x, sc.act, sc.picks, groups, w * c.topk, c.topk);
+                        },
+                        4 => {
+                            if (groups != null) try tile.encodeTwinGroup(e, t, sc.picks, w * c.topk, sc.groups);
+                            try tile.encodeTwinIndexed(e, t, tq(moe.down.one), sc.act, sc.experts, sc.picks, groups, w * c.topk, 1);
+                        },
+                        else => if (groups != null) try tile.encodeTwinGroup(e, t, sc.picks, w * c.topk, sc.groups),
                     };
                     e.end();
                     cb.commit();
@@ -488,11 +496,11 @@ fn decodeBudget(m: *q.Model, len: usize) !void {
                         bytes += c.experts * c.hidden * 4;
                         launches_n += 2;
                     } else if (which == 8) {
-                        try tile.encodeTwinGlu(e, t, tq(x.gate.one), tq(x.up.one), sc.x, sc.act, ids, 4, 4);
+                        try tile.encodeTwinGlu(e, t, tq(x.gate.one), tq(x.up.one), sc.x, sc.act, ids, null, 4, 4);
                         bytes += 4 * (linearBytes(x.gate.one) + linearBytes(x.up.one));
                         launches_n += 1;
                     } else if (which == 9) {
-                        try tile.encodeTwinIndexed(e, t, tq(x.down.one), sc.act, sc.experts, ids, 4, 1);
+                        try tile.encodeTwinIndexed(e, t, tq(x.down.one), sc.act, sc.experts, ids, null, 4, 1);
                         bytes += 4 * linearBytes(x.down.one);
                         launches_n += 1;
                     } else {
