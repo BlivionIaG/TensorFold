@@ -51,7 +51,10 @@ inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t
         const device uint* wc = (const device uint*)(w + c * stride + size_t(g) * (GW * 4)) + at;
         const ulong lo = (ulong(wc[1]) << 32) | wc[0];
         #pragma unroll
-        for (int j = 0; j < 8; ++j) p[c] = fma(xf[j], float(uint(lo >> (sh + BITS * j)) & ((1u << BITS) - 1u)), p[c]);
+        for (int j = 0; j < 8; ++j) {
+          const uint q = uint(lo >> (sh + BITS * j));
+          p[c] = fma(xf[j], float(q & ((1u << BITS) - 1u)), p[c]);
+        }
       }
     }
   }
@@ -262,10 +265,10 @@ template <int BITS>
   if (n >= a.N) return;
   const size_t e = ids[tg.y], row = tg.y / uint(a.R), m = e * size_t(a.N) + n;
   threadgroup float* own = part + sg * (NC + 1) * 32;
-  const device bfloat* x = X + row * K;
-  const size_t wo = m * (K * BITS / 8);
-  const float g = tf_tq_columns<BITS, NC>(x, a.one, W + wo, SC + m * G, BI + m * G, K, lane, own);
-  const float u = tf_tq_columns<BITS, NC>(x, a.one, W2 + wo, SC2 + m * G, BI2 + m * G, K, lane, own);
+  const float g = tf_tq_columns<BITS, NC>(X + row * K, a.one, W + m * (K * BITS / 8), SC + m * G, BI + m * G, K,
+                                         lane, own);
+  const float u = tf_tq_columns<BITS, NC>(X + row * K, a.one, W2 + m * (K * BITS / 8), SC2 + m * G, BI2 + m * G, K,
+                                         lane, own);
   if (int(lane) < NC) OUT[size_t(tg.y) * a.N + n + lane] = tf_tq_swiglu(bfloat(g), bfloat(u));
 }
 
