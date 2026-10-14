@@ -1,0 +1,45 @@
+tiles 6144x2048, 512 rows: 587 us, 21.95 TFLOPS
+tiles 2048x2048, 512 rows: 200 us, 21.49 TFLOPS
+tiles 11776x2048, 512 rows: 1076 us, 22.94 TFLOPS
+grouped tiles 1536x2048 x64 experts, 8192 rows: 2317 us, 22.25 TFLOPS
+sums+tiles conv in: 2.22 ms x 30 = 67 ms
+sums+tiles conv out: 0.75 ms x 30 = 22 ms
+sums+tiles attn q,k,v,o: 1.91 ms x 10 = 19 ms
+sums+tiles dense x3: 12.82 ms x 2 = 26 ms
+route: 0.10 ms x 38 = 4 ms
+sort+work: 0.11 ms x 38 = 4 ms
+sums+grouped glu gate,up: 4.85 ms x 38 = 184 ms
+sums+grouped down: 2.43 ms x 38 = 92 ms
+combine sorted: 0.02 ms x 38 = 1 ms
+norm: 0.03 ms x 81 = 2 ms
+conv kernel: 0.04 ms x 30 = 1 ms
+attn mma 2k: 1.04 ms x 10 = 10 ms
+prompt chunk budget: 434 ms for 2048 rows (4724 tok/s)
+attn mma+merge, 2048 rows at 30720 keys: best of 7 23.60 ms, 22.56 TFLOPS
+norm x43: 0.160 ms, 43 launches, 0 MB, 0 GB/s
+conv in twin: 0.354 ms, 30 launches, 212 MB, 600 GB/s
+conv kernel: 0.061 ms, 30 launches, 0 MB, 0 GB/s
+conv out twin: 0.182 ms, 30 launches, 71 MB, 389 GB/s
+attn q,k,v,o twins: 0.216 ms, 40 launches, 59 MB, 273 GB/s
+qk+attn+merge: 0.145 ms, 30 launches, 1 MB, 9 GB/s
+dense gate,up,swiglu,down: 0.140 ms, 8 launches, 81 MB, 583 GB/s
+route: 0.238 ms, 76 launches, 20 MB, 84 GB/s
+experts glu: 0.789 ms, 38 launches, 538 MB, 682 GB/s
+experts down: 0.454 ms, 38 launches, 269 MB, 592 GB/s
+combine+norm: 0.105 ms, 38 launches, 0 MB, 0 GB/s
+head twin (6-bit): 0.192 ms, 1 launches, 213 MB, 1109 GB/s
+decode step budget at 64 context: 3.04 ms (329 tok/s)
+norm x43: 0.147 ms, 43 launches, 0 MB, 0 GB/s
+conv in twin: 0.341 ms, 30 launches, 212 MB, 623 GB/s
+conv kernel: 0.058 ms, 30 launches, 0 MB, 0 GB/s
+conv out twin: 0.181 ms, 30 launches, 71 MB, 392 GB/s
+attn q,k,v,o twins: 0.213 ms, 40 launches, 59 MB, 277 GB/s
+qk+attn+merge: 2.044 ms, 30 launches, 671 MB, 328 GB/s
+dense gate,up,swiglu,down: 0.131 ms, 8 launches, 81 MB, 621 GB/s
+route: 0.243 ms, 76 launches, 20 MB, 82 GB/s
+experts glu: 0.773 ms, 38 launches, 538 MB, 695 GB/s
+experts down: 0.453 ms, 38 launches, 269 MB, 594 GB/s
+combine+norm: 0.108 ms, 38 launches, 0 MB, 0 GB/s
+head twin (6-bit): 0.190 ms, 1 launches, 213 MB, 1121 GB/s
+decode step budget at 32768 context: 4.88 ms (205 tok/s)
+prompt 65536 in 2048-row chunks: 21.47 s, 3052 tok/s; decode 64: 158.7 tok/s

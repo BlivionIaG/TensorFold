@@ -1,0 +1,1 @@
+65536 prompt 9809.8 tok/s (6.68 s) decode 144.7 tok/s peak 16.0 GB

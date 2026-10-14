@@ -66,3 +66,38 @@ The mlx-lm server sends the thinking text at the end of a chat reply. Thus its c
 | mlx-lm server | 93.4, 99.2 |
 
 The adjacent pair (mlx-lm, then TensorFold drafts off): 99.2 and 125.0 tok/s. Every TensorFold reply had the same `token_sha` (f66e3fd7e509) with drafts on and off. At 4 streams with drafts off (`concurrent_off.json`): 186.5 tok/s total for code and 184.9 for chat, each reply equal to its solo run (12 of 12).
+
+## Apple M5 Ultra (5a6ee034)
+
+`runs/m5-ultra-5a6ee034/`: Apple M5 Ultra (64-core GPU), 256 GB, macOS 27.0. TensorFold at 5a6ee034 (the head of the three pull requests, main c7137bb3 merged), built with `-Dcpu=apple_m1`: no M5-specific code, and `tile_qmm` does not use the M5 tensor units. mlx 0.32.3, mlx-lm 0.32.0. 4-bit checkpoint only. One model process at a time. `scripts/` holds the three run scripts.
+
+Exactness: `tf-lfm2-exact` 54 of 54 (4-bit). Served replies have the same `token_sha` as on the M4 Pro (f66e3fd7e509 code, 57752ac6d7f0 chat). At 4 streams, each reply equal to its solo run (12 of 12, code and chat, drafts on and off). Turn two with the cache on equal to the cache-off reply.
+
+Cold prompt, in process, alternated (tok/s, round 1 / round 2):
+
+| Prompt | TensorFold | mlx-lm |
+| --- | --- | --- |
+| 2,048 | 4,482 / 4,482 | 2,467 / 12,167 (round 1 includes warm-up) |
+| 8,192 | 4,394 / 4,396 | 10,825 / 13,322 |
+| 32,768 | 3,709 / 3,709 | 11,622 / 11,631 |
+| 65,536 | 3,052 / 3,052 | 9,810 / 9,817 |
+| 131,000 | 2,247 | 7,226 |
+
+Decode (tok/s):
+
+| Case | TensorFold | mlx-lm |
+| --- | --- | --- |
+| In process, after 2,048 tokens | 256.7 / 257.1 | 205.0 / 205.1 |
+| In process, after 8,192 tokens | 247.6 / 249.3 | 196.8 / 198.4 |
+| In process, after 32,768 tokens | 198.0 / 198.3 | 167.8 / 168.1 |
+| In process, after 65,536 tokens | 158.7 / 159.1 | 144.7 / 144.9 |
+| In process, after 131,000 tokens | 116.3 | 113.4 |
+| Served, 256 tokens, code | 290.2 / 290.6 / 289.8 | 178.8 |
+| Served, 256 tokens, code, `--no-drafts` | 261.8 / 261.2 | — |
+| Served, 4 streams, total, code | 490.3 | 177.8 |
+| Slowest first token at 4 streams, code | 0.11 s | 4.38 s |
+
+- Window costs at load: 1 row 3.8 ms, 2 5.2, 4 7.4, 8 11.4, 16 18.7.
+- Turn two of the 7,991-token chat: TensorFold 0.082 s (7,987 cached), cache off 1.859 s; mlx-lm 0.175 s.
+- Peak memory footprint in process at 131,000 tokens (`/usr/bin/time -l`): TensorFold 17.9 GB, mlx-lm 21.3 GB.
+- The mlx-lm server sends the thinking text at the end of a chat reply, so its chat decode rate (511.7) is not comparable, and the concurrent client cannot read its tokens (the "failed" equality counts).

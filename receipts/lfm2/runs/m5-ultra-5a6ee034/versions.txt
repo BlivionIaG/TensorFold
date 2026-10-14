@@ -1,0 +1,7 @@
+ProductName:		macOS
+ProductVersion:		27.0
+BuildVersion:		26A428
+Apple M5 Ultra
+274877906944
+      Total Number of Cores: 64
+mlx 0.32.3 mlx-lm 0.32.0
