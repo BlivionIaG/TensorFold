@@ -1,0 +1,10 @@
+build 87792521
+mlx 0.32.3 mlx-lm 0.32.0
+ProductName:		macOS
+ProductVersion:		26.5.1
+BuildVersion:		25F80
+Apple M4 Pro
+51539607552
+4-bit 667408d494bde191c2cb9dd4f4549827816b9275
+6-bit 1deec53eb49571e21cdcbf82fd5839248f07ed88
+8-bit 67ab417dd02d0c9545802a726df668620eae049d
