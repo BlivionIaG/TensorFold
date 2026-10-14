@@ -18,6 +18,7 @@
 | mlx-lm server: decode, streams, two turns | `mlx_decode.json`, `mlx_concurrent.json`, `mlx_two_turn.json`, `mlx_footprint.txt` |
 | In process, alternated, 2k and 8k, 2 rounds | `alt_tf_2k_r*.txt`, `alt_tf_8k_r*.txt`, `alt_mlx_r*.txt` |
 | In process, alternated, 32k and 64k, 2 rounds; 131k | `tf_32k_r*.txt`, `mlx_32k_r*.txt`, `tf_64k_r*.txt`, `mlx_64k_r*.txt`, `tf_131k.txt`, `mlx_131k.txt` (c88bd868 only) |
+| TensorFold at 131k under `/usr/bin/time -l`, memory only | `tf_131k_mem.txt` (c88bd868 only) |
 | mlx-lm at 32k timed by part | `mlx_parts_32k.json` (c88bd868 only) |
 | In process, 6-bit and 8-bit | `tf_6bit_*.txt`, `tf_8bit_*.txt`, `mlx_6bit.txt`, `mlx_8bit.txt` |
 | Drafted replies against `"draft": false` (server `serve MODEL --port 8091 --context 32768`, `scripts/draft_check.py`) | `tf_draft_check.log` (c88bd868 only): each request's `sha` and drafts accepted |
@@ -49,6 +50,7 @@ Decode, tok/s:
 
 - Each TensorFold reply at 4 streams was equal to its solo run (12 of 12, code and chat).
 - Turn two of a chat with a 7,991-token history: TensorFold 0.22 s with 7,987 cached tokens, mlx-lm 0.17 s. The TensorFold reply with the cache on was equal to the reply with the cache off.
-- Peak physical footprint: TensorFold server 14.5 GB (cache off) and 14.8 GB (cache on), mlx-lm server 16.7 GB.
+- Peak memory footprint in process at 131,000 tokens (`/usr/bin/time -l`): TensorFold 17.7 GB (`tf_131k_mem.txt`), mlx-lm 21.2 GB (`mlx_131k.txt`). The TensorFold memory run ran while host tests used the machine, so its speed is not a receipt.
+- Peak physical footprint of the servers (`vmmap`). These runs are not like for like: TensorFold, cache off, after cold prompts up to 131,000 tokens: 16.7 GB. TensorFold, cache on, two turns at 8k: 14.8 GB. mlx-lm, decode, streams and two turns, no prompt over 8,055 tokens: 14.5 GB.
 
 The mlx-lm server sends the thinking text at the end of a chat reply. Thus its chat decode rate in `mlx_decode.json` is not comparable.
