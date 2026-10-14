@@ -11,6 +11,7 @@ constant constexpr int TQ_SLOTS = 128;
 // Group g's 64-step fma chains (the MMA order) and input sum; at 4 bits a code in place meets x * 16^-j (same product).
 template <int BITS, int NC>
 inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t stride, int g, thread float* p, float one) {
+  static_assert(BITS == 4 || BITS == 6 || BITS == 8, "codes of 4, 6 or 8 bits");
   constexpr int GW = 2 * BITS;  // words a group of 64 codes
   float t = 0.0f;
   for (int c = 0; c < NC; ++c) p[c] = 0.0f;
@@ -42,19 +43,14 @@ inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t
         for (int j = 0; j < 8; ++j) p[c] = fma(xf[j], float(word & (0xFu << (4 * j))), p[c]);
       }
     } else {
-      // Codes 8 kb.. of this group sit in the two words from bit 8 kb BITS (48 or 64 bits).
+      // Codes 8 kb.. of this group sit in the two words from bit 8 kb BITS (48 or 64 bits, never a third word).
       const int bit = kb * 8 * BITS, at = bit / 32, sh = bit % 32;
       #pragma unroll
       for (int c = 0; c < NC; ++c) {
         const device uint* wc = (const device uint*)(w + c * stride + size_t(g) * (GW * 4)) + at;
-        const ulong v = ((sh + 8 * BITS > 64 ? ulong(wc[2]) << 32 : 0ul) | 0ul);
         const ulong lo = (ulong(wc[1]) << 32) | wc[0];
         #pragma unroll
-        for (int j = 0; j < 8; ++j) {
-          const int o = sh + BITS * j;
-          const uint q = o + BITS <= 64 ? uint(lo >> o) : uint((lo >> o) | (v << (64 - o)));
-          p[c] = fma(xf[j], float(q & ((1u << BITS) - 1u)), p[c]);
-        }
+        for (int j = 0; j < 8; ++j) p[c] = fma(xf[j], float(uint(lo >> (sh + BITS * j)) & ((1u << BITS) - 1u)), p[c]);
       }
     }
   }
@@ -64,20 +60,16 @@ inline float tf_tq_group(const device bfloat* x, const device uint8_t* w, size_t
 // A column's codes 8 kb.. of its group as floats (4 bits in place from the group's words wq, else from the stream).
 template <int BITS>
 inline void tf_tq_cf(const device uint8_t* wg, const thread uint* wq, int kb, thread float* cf) {
+  static_assert(BITS == 4 || BITS == 6 || BITS == 8, "codes of 4, 6 or 8 bits");
   if (BITS == 4) {
     #pragma unroll
     for (int j = 0; j < 8; ++j) cf[j] = float(wq[kb] & (0xFu << (4 * j)));
   } else {
     const int bit = kb * 8 * BITS, at = bit / 32, sh = bit % 32;
     const device uint* wc = (const device uint*)wg + at;
-    const ulong v = ((sh + 8 * BITS > 64 ? ulong(wc[2]) << 32 : 0ul) | 0ul);
     const ulong lo = (ulong(wc[1]) << 32) | wc[0];
     #pragma unroll
-    for (int j = 0; j < 8; ++j) {
-      const int o = sh + BITS * j;
-      const uint q = o + BITS <= 64 ? uint(lo >> o) : uint((lo >> o) | (v << (64 - o)));
-      cf[j] = float(q & ((1u << BITS) - 1u));
-    }
+    for (int j = 0; j < 8; ++j) cf[j] = float(uint(lo >> (sh + BITS * j)) & ((1u << BITS) - 1u));
   }
 }
 
