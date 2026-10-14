@@ -61,66 +61,59 @@ inline float tr_sum(const device bfloat* x, int g, float one) {
   return t;
 }
 
-// OUT[orow[r]] = X[xrow[r]] W^T (GLU: swiglu with W2) on the simdgroup's 8 columns, GI groups at a time (4 MMA chains).
-template <int BITS, bool GLU, int NB>
-inline void tr_window(const device bfloat* X, int K, const threadgroup int* xrow, int rows, const device uint8_t* W,
-                      const device bfloat* SC, const device bfloat* BI, const device uint8_t* W2, const device bfloat* SC2,
-                      const device bfloat* BI2, int n0, int N, device bfloat* OUT, const threadgroup int* orow, float one,
-                      threadgroup float* sums, uint tid, uint lane) {
-  constexpr int GI = NB == 4 ? 1 : NB == 2 ? 2 : (GLU && BITS == 8 ? 2 : 4);
+// OUT[r] = X[r] W^T on the simdgroup's 8 columns, GI groups at a time (4 MMA chains).
+template <int BITS, int NB>
+inline void tr_window(const device bfloat* X, int K, int rows, const device uint8_t* W, const device bfloat* SC,
+                      const device bfloat* BI, int n0, int N, device bfloat* OUT, float one, threadgroup float* sums,
+                      uint tid, uint lane) {
+  constexpr int GI = NB == 4 ? 1 : NB == 2 ? 2 : 4;
   const int G = K / 64;
   const size_t stride = size_t(K) * BITS / 8;
   const TrLane L = tr_lane(lane);
-  threadgroup_barrier(mem_flags::mem_threadgroup);  // xrow and orow are written by the caller
   const device ushort* xb[NB][2];
   #pragma unroll
   for (int rb = 0; rb < NB; ++rb)
-    for (int e = 0; e < 2; ++e) xb[rb][e] = (const device ushort*)(X + size_t(xrow[min(rb * 8 + L.fn + e, rows - 1)]) * K) + L.fm;
+    for (int e = 0; e < 2; ++e) {
+      const int r = min(rb * 8 + L.fn + e, rows - 1);
+      xb[rb][e] = (const device ushort*)(X + size_t(r) * K) + L.fm;
+    }
   const device uint8_t* wc = W + size_t(n0 + L.fm) * stride;
-  const device uint8_t* wc2 = W2 + size_t(n0 + L.fm) * stride;
   const device bfloat* sc = SC + size_t(n0 + L.fm) * G;
   const device bfloat* bi = BI + size_t(n0 + L.fm) * G;
-  const device bfloat* sc2 = SC2 + size_t(n0 + L.fm) * G;
-  const device bfloat* bi2 = BI2 + size_t(n0 + L.fm) * G;
-  float acc[NB][2], acu[NB][2];
+  float acc[NB][2];
   #pragma unroll
-  for (int rb = 0; rb < NB; ++rb) acc[rb][0] = acc[rb][1] = acu[rb][0] = acu[rb][1] = 0.0f;
+  for (int rb = 0; rb < NB; ++rb) acc[rb][0] = acc[rb][1] = 0.0f;
   for (int g0 = 0; g0 < G; g0 += 32) {
     const int gn = min(32, G - g0);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     for (int i = int(tid); i < rows * gn; i += TR_SG * 32) {
       const int r = i / gn, g = i % gn;
-      sums[r * 32 + g] = tr_sum(X + size_t(xrow[r]) * K, g0 + g, one);
+      sums[r * 32 + g] = tr_sum(X + size_t(r) * K, g0 + g, one);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     for (int g = g0; g < g0 + gn; g += GI) {
       const int live = min(GI, g0 + gn - g);
-      uint w[GI][2 * BITS], w2[GI][2 * BITS];
+      uint w[GI][2 * BITS];
       #pragma unroll
       for (int i = 0; i < GI; ++i)
-        if (i < live) {
-          tr_load<BITS>(w[i], wc, g + i);
-          if (GLU) tr_load<BITS>(w2[i], wc2, g + i);
-        }
-      simdgroup_matrix<float, 8, 8> P[GI][NB], Pu[GI][NB];
+        if (i < live) tr_load<BITS>(w[i], wc, g + i);
+      simdgroup_matrix<float, 8, 8> P[GI][NB];
       #pragma unroll
       for (int i = 0; i < GI; ++i)
-        for (int rb = 0; rb < NB; ++rb) P[i][rb] = Pu[i][rb] = simdgroup_matrix<float, 8, 8>(0.0f);
+        for (int rb = 0; rb < NB; ++rb) P[i][rb] = simdgroup_matrix<float, 8, 8>(0.0f);
       #pragma unroll
       for (int kk = 0; kk < 64; kk += 8) {
         #pragma unroll
         for (int i = 0; i < GI; ++i)
           if (i < live) {
-            simdgroup_matrix<bfloat, 8, 8> a, au;
+            simdgroup_matrix<bfloat, 8, 8> a;
             tr_set(a, tr_a<BITS>(w[i], kk, L.fn));
-            if (GLU) tr_set(au, tr_a<BITS>(w2[i], kk, L.fn));
             #pragma unroll
             for (int rb = 0; rb < NB; ++rb) {
               simdgroup_matrix<bfloat, 8, 8> b;
               const int k = (g + i) * 64 + kk;
               tr_set(b, uint(xb[rb][0][k]) | (uint(xb[rb][1][k]) << 16));
               simdgroup_multiply_accumulate(P[i][rb], a, b, P[i][rb]);
-              if (GLU) simdgroup_multiply_accumulate(Pu[i][rb], au, b, Pu[i][rb]);
             }
           }
       }
@@ -128,13 +121,11 @@ inline void tr_window(const device bfloat* X, int K, const threadgroup int* xrow
       for (int i = 0; i < GI; ++i)
         if (i < live) {
           const float s = float(sc[g + i]), bb = float(bi[g + i]);
-          const float su = GLU ? float(sc2[g + i]) : s, bu2 = GLU ? float(bi2[g + i]) : bb;
           #pragma unroll
           for (int rb = 0; rb < NB; ++rb)
             for (int e = 0; e < 2; ++e) {
               const float xs = sums[(rb * 8 + L.fn + e) * 32 + (g + i - g0)];
               acc[rb][e] = fma(bb, xs, fma(s, P[i][rb].thread_elements()[e], acc[rb][e]));
-              if (GLU) acu[rb][e] = fma(bu2, xs, fma(su, Pu[i][rb].thread_elements()[e], acu[rb][e]));
             }
         }
     }
@@ -143,36 +134,22 @@ inline void tr_window(const device bfloat* X, int K, const threadgroup int* xrow
   for (int rb = 0; rb < NB; ++rb)
     for (int e = 0; e < 2; ++e) {
       const int r = rb * 8 + L.fn + e;
-      if (r < rows) {
-        const bfloat v = bfloat(acc[rb][e]);
-        OUT[size_t(orow[r]) * N + n0 + L.fm] = GLU ? tf_tq_swiglu(v, bfloat(acu[rb][e])) : v;
-      }
+      if (r < rows) OUT[size_t(r) * N + n0 + L.fm] = bfloat(acc[rb][e]);
     }
 }
 
-// tr_window at the row blocks `rows` take.
-template <int BITS, bool GLU>
-inline void tr_rows(const device bfloat* X, int K, const threadgroup int* xrow, int rows, const device uint8_t* W,
-                    const device bfloat* SC, const device bfloat* BI, const device uint8_t* W2, const device bfloat* SC2,
-                    const device bfloat* BI2, int n0, int N, device bfloat* OUT, const threadgroup int* orow, float one,
-                    threadgroup float* sums, uint tid, uint lane) {
-  if (rows <= 8) tr_window<BITS, GLU, 1>(X, K, xrow, rows, W, SC, BI, W2, SC2, BI2, n0, N, OUT, orow, one, sums, tid, lane);
-  else if (rows <= 16) tr_window<BITS, GLU, 2>(X, K, xrow, rows, W, SC, BI, W2, SC2, BI2, n0, N, OUT, orow, one, sums, tid, lane);
-  else tr_window<BITS, GLU, 4>(X, K, xrow, rows, W, SC, BI, W2, SC2, BI2, n0, N, OUT, orow, one, sums, tid, lane);
-}
-
-// Y [R, N] = X [R, K] W^T for R <= TR_ROWS rows: tg.x's 16 columns over every row.
+// Y [R, N] = X [R, K] W^T for R <= TR_ROWS rows: tg.x's 16 columns over every row, in the row blocks R takes.
 template <int BITS>
 [[kernel]] void tf_tile_qmv_rows(const device bfloat* X [[buffer(0)]], const device uint8_t* W [[buffer(1)]],
                                  const device bfloat* SC [[buffer(2)]], const device bfloat* BI [[buffer(3)]],
                                  constant TfTqArgs& a [[buffer(4)]], device bfloat* OUT [[buffer(5)]],
                                  uint tid [[thread_index_in_threadgroup]], uint sg [[simdgroup_index_in_threadgroup]],
                                  uint lane [[thread_index_in_simdgroup]], uint3 tg [[threadgroup_position_in_grid]]) {
-  threadgroup int rowmap[TR_ROWS];
   threadgroup float sums[TR_ROWS * 32];
-  if (tid < TR_ROWS) rowmap[tid] = int(tid);
   const int n0 = (int(tg.x) * TR_SG + int(sg)) * 8;
-  tr_rows<BITS, false>(X, a.K, rowmap, a.R, W, SC, BI, W, SC, BI, n0, a.N, OUT, rowmap, a.one, sums, tid, lane);
+  if (a.R <= 8) tr_window<BITS, 1>(X, a.K, a.R, W, SC, BI, n0, a.N, OUT, a.one, sums, tid, lane);
+  else if (a.R <= 16) tr_window<BITS, 2>(X, a.K, a.R, W, SC, BI, n0, a.N, OUT, a.one, sums, tid, lane);
+  else tr_window<BITS, 4>(X, a.K, a.R, W, SC, BI, n0, a.N, OUT, a.one, sums, tid, lane);
 }
 
 template [[host_name("tf_tile_qmv_rows_q4")]] [[kernel]] decltype(tf_tile_qmv_rows<4>) tf_tile_qmv_rows<4>;
