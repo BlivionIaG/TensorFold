@@ -231,7 +231,8 @@ fn moe(enc: Encoder, s: *st.Scratch, x: wts.Moe, scale: f32, total: usize) bool 
         // Wide windows read each picked expert once for its rows (a row's own picks are distinct experts).
         const groups: ?Buffer = if (total >= tile.group_rows) s.groups else null;
         if (groups != null) tile.encodeTwinGroup(e, t, s.picks, slots, s.groups) catch unreachable;
-        tile.encodeTwinGlu(e, t, matrix(x.gate.one), matrix(x.up.one), s.x, s.act, s.picks, groups, slots, c.topk) catch unreachable;
+        const gate = matrix(x.gate.one);
+        tile.encodeTwinGlu(e, t, gate, matrix(x.up.one), s.x, s.act, s.picks, groups, slots, c.topk) catch unreachable;
         tile.encodeTwinIndexed(e, t, matrix(x.down.one), s.act, s.experts, s.picks, groups, slots, 1) catch unreachable;
         return true;
     }

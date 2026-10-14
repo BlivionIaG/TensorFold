@@ -32,16 +32,17 @@ pub const Pipelines = struct {
         defer lib.deinit();
         var p: Pipelines = undefined;
         inline for (bit_widths, 0..) |bits, i| {
-            p.dense[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmm_q{d}", .{bits}), false);
-            p.grouped[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmm_grouped_q{d}", .{bits}), false);
-            p.grouped_glu[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmm_grouped_glu_q{d}", .{bits}), false);
-            p.twin[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_q{d}", .{bits}), false);
-            p.twin_few[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_few_q{d}", .{bits}), false);
-            p.twin_indexed[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_indexed_q{d}", .{bits}), false);
-            p.twin_glu[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_glu_q{d}", .{bits}), false);
-            p.rows[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_rows_q{d}", .{bits}), false);
-            p.twin_grouped[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_grouped_q{d}", .{bits}), false);
-            p.twin_grouped_glu[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_grouped_glu_q{d}", .{bits}), false);
+            const q = std.fmt.comptimePrint("_q{d}", .{bits});
+            p.dense[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmm" ++ q, false);
+            p.grouped[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmm_grouped" ++ q, false);
+            p.grouped_glu[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmm_grouped_glu" ++ q, false);
+            p.twin[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmv" ++ q, false);
+            p.twin_few[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmv_few" ++ q, false);
+            p.twin_indexed[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmv_indexed" ++ q, false);
+            p.twin_glu[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmv_glu" ++ q, false);
+            p.rows[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmv_rows" ++ q, false);
+            p.twin_grouped[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmv_grouped" ++ q, false);
+            p.twin_grouped_glu[i] = try mtl.Pipeline.init(device, lib, "tf_tile_qmv_grouped_glu" ++ q, false);
         }
         p.group = try mtl.Pipeline.init(device, lib, "tf_tile_qmv_group", false);
         p.work = try mtl.Pipeline.init(device, lib, "tf_tile_qmm_work", false);
@@ -143,7 +144,13 @@ pub fn groupWords(slots: usize) usize {
 }
 
 /// A window's picks (expert ids [slots]) by expert into `groups` for encodeTwinIndexed and encodeTwinGlu on them.
-pub fn encodeTwinGroup(e: mtl.ComputeEncoder, p: *const Pipelines, ids: mtl.Buffer, slots: usize, groups: mtl.Buffer) !void {
+pub fn encodeTwinGroup(
+    e: mtl.ComputeEncoder,
+    p: *const Pipelines,
+    ids: mtl.Buffer,
+    slots: usize,
+    groups: mtl.Buffer,
+) !void {
     if (slots == 0 or slots > window_slots) return error.NoRows;
     e.setPipeline(p.group);
     e.setBuffer(ids, 0, 0);
@@ -153,7 +160,17 @@ pub fn encodeTwinGroup(e: mtl.ComputeEncoder, p: *const Pipelines, ids: mtl.Buff
 }
 
 /// The twin by slot (slot y: expert ids[y], x row y / repeat), or with `groups` by expert, one read a picked expert.
-pub fn encodeTwinIndexed(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, x: mtl.Buffer, y: mtl.Buffer, ids: mtl.Buffer, groups: ?mtl.Buffer, slots: usize, repeat: usize) !void {
+pub fn encodeTwinIndexed(
+    e: mtl.ComputeEncoder,
+    p: *const Pipelines,
+    m: Matrix,
+    x: mtl.Buffer,
+    y: mtl.Buffer,
+    ids: mtl.Buffer,
+    groups: ?mtl.Buffer,
+    slots: usize,
+    repeat: usize,
+) !void {
     const i = try width(m);
     if (slots == 0 or repeat == 0 or slots > window_slots) return error.NoRows;
     e.setPipeline(if (groups != null) p.twin_grouped[i] else p.twin_indexed[i]);
@@ -162,9 +179,21 @@ pub fn encodeTwinIndexed(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, 
 }
 
 /// encodeTwinIndexed on gate and up (one shape) into swiglu(gate, up), mlx-lm's compiled swiglu on bf16 rows.
-pub fn encodeTwinGlu(e: mtl.ComputeEncoder, p: *const Pipelines, gate: Matrix, up: Matrix, x: mtl.Buffer, y: mtl.Buffer, ids: mtl.Buffer, groups: ?mtl.Buffer, slots: usize, repeat: usize) !void {
+pub fn encodeTwinGlu(
+    e: mtl.ComputeEncoder,
+    p: *const Pipelines,
+    gate: Matrix,
+    up: Matrix,
+    x: mtl.Buffer,
+    y: mtl.Buffer,
+    ids: mtl.Buffer,
+    groups: ?mtl.Buffer,
+    slots: usize,
+    repeat: usize,
+) !void {
     const i = try width(gate);
-    if (slots == 0 or repeat == 0 or slots > window_slots or up.n != gate.n or up.k != gate.k or up.bits != gate.bits) return error.NoRows;
+    if (slots == 0 or repeat == 0 or slots > window_slots) return error.NoRows;
+    if (up.n != gate.n or up.k != gate.k or up.bits != gate.bits) return error.NoRows;
     e.setPipeline(if (groups != null) p.twin_grouped_glu[i] else p.twin_glu[i]);
     bind(e, gate, .{ .k = @intCast(gate.k), .n = @intCast(gate.n), .r = @intCast(repeat) }, x, 0, y, 0);
     e.setBuffer(up.w, up.w_off, 7);

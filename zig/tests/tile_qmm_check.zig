@@ -239,8 +239,9 @@ fn grouped(g: Gpu, s: Synth) !void {
         glu: bool,
         fn encode(c: @This(), e: mtl.ComputeEncoder, p: *const tile.Pipelines) !void {
             if (c.groups) |b| try tile.encodeTwinGroup(e, p, c.ids, slots, b);
-            if (c.glu) return tile.encodeTwinGlu(e, p, c.s.matrix(0), c.s.matrix(0), c.s.x, c.out, c.ids, c.groups, slots, topk);
-            try tile.encodeTwinIndexed(e, p, c.s.matrix(0), c.s.x, c.out, c.ids, c.groups, slots, topk);
+            const m = c.s.matrix(0);
+            if (c.glu) return tile.encodeTwinGlu(e, p, m, m, c.s.x, c.out, c.ids, c.groups, slots, topk);
+            try tile.encodeTwinIndexed(e, p, m, c.s.x, c.out, c.ids, c.groups, slots, topk);
         }
     };
     for ([_]bool{ false, true }) |glu| {
@@ -296,7 +297,8 @@ pub fn main(init: std.process.Init) !void {
         }
         try grouped(g, s);
         passed += 1;
-        std.debug.print("{d}-bit {d}x{d}: rows alone, twin at widths 1-32, grouped, by slot and by expert with gate-up swiglu bit-equal; " ++
+        std.debug.print("{d}-bit {d}x{d}: rows alone, twin at widths 1-32, grouped, by slot and by expert " ++
+            "with gate-up swiglu bit-equal; " ++
             "error vs float64 / terms' magnitude: worst {e:.2}, mean {e:.2}\n", .{ bits, n, k, worst, mean });
         if (worst > 1.0 / 128.0) return error.FarFromFloat64;
     }
