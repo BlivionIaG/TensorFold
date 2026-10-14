@@ -126,7 +126,7 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("ok prompt {d} in 128-row chunks equals one row at a time\n", .{length});
     }
     for ([_]usize{ 0, 127, 128, 129, 255, 256 }) |prefix| {
-        for ([_]usize{ 1, 2, 7, 8, 15, 16, 17, 32 }) |rows| {
+        for ([_]usize{ 1, 2, 7, 8, 9, 15, 16, 17, 24, 32 }) |rows| {
             try window(m, &wide, &solo, &ids, prefix, rows, @max(1, rows / 2));
             passed += 1;
             std.debug.print("ok prefix {d}, window {d}, partial keep {d}\n", .{ prefix, rows, @max(1, rows / 2) });
