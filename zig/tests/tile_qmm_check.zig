@@ -224,8 +224,7 @@ fn skewedPicks(pick: []u32, tokens: usize) void {
     for (0..tokens) |t| pick[t * 4] = 0;
 }
 
-/// Grouped rows (through a row map) equal each expert's tiles; the twin by slot and by expert and gate-up swiglu
-/// equal them.
+/// Grouped rows (through a row map) equal each expert's tiles; the twin by slot, by expert and gate-up swiglu too.
 fn grouped(g: Gpu, s: Synth, topk: usize, pick: []const u32) !void {
     const slots = pick.len;
     const tokens = slots / topk;
