@@ -17,6 +17,7 @@ pub const Pipelines = struct {
     twin: [bit_widths.len]mtl.Pipeline,
     twin_indexed: [bit_widths.len]mtl.Pipeline,
     twin_glu: [bit_widths.len]mtl.Pipeline,
+    rows: [bit_widths.len]mtl.Pipeline,
     work: mtl.Pipeline,
     xsum: mtl.Pipeline,
 
@@ -33,6 +34,7 @@ pub const Pipelines = struct {
             p.twin[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_q{d}", .{bits}), false);
             p.twin_indexed[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_indexed_q{d}", .{bits}), false);
             p.twin_glu[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_glu_q{d}", .{bits}), false);
+            p.rows[i] = try mtl.Pipeline.init(device, lib, std.fmt.comptimePrint("tf_tile_qmv_rows_q{d}", .{bits}), false);
         }
         p.work = try mtl.Pipeline.init(device, lib, "tf_tile_qmm_work", false);
         p.xsum = try mtl.Pipeline.init(device, lib, "tf_tile_xsum", false);
@@ -46,6 +48,7 @@ pub const Pipelines = struct {
         for (p.twin) |x| x.deinit();
         for (p.twin_indexed) |x| x.deinit();
         for (p.twin_glu) |x| x.deinit();
+        for (p.rows) |x| x.deinit();
         p.work.deinit();
         p.xsum.deinit();
     }
@@ -83,13 +86,19 @@ pub fn encode(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, x: mtl.Buff
 const twin_tg_bytes = 10240;
 /// Rows the twin takes in one call at most (decode and verify windows).
 pub const twin_rows = 32;
-/// Columns a twin threadgroup: 2 simdgroups of 4 columns (n is a multiple of the tile).
-fn twinColumns(bits: u8) usize {
-    _ = bits;
-    return 8;
+/// Rows from which a dense twin call takes the MMA window kernel over the scalar twin (measured crossover).
+pub var window_rows: usize = 8;
+/// Columns a scalar twin threadgroup (2 simdgroups of 4) and a window threadgroup (2 simdgroups of 8, one MMA block).
+const twin_columns = 8;
+const window_columns = 16;
+/// Rows a scalar twin threadgroup takes over one code load (the kernels' TQ_RT).
+const twin_rt = 4;
+/// Staged partials a scalar twin threadgroup of `rt` rows asks for; dense rows stream best at twin_tg_bytes (3 a core).
+fn twinTgBytes(rt: usize) usize {
+    return @max(twin_tg_bytes, 2 * rt * (twin_columns / 2 + 1) * 32 * 4);
 }
 
-/// Each of `rows` rows' group sums (f32 [rows, k / 64] into `sums`), which the twin calls on those rows read.
+/// Each of `rows` rows' group sums (f32 [rows, k / 64] into `sums`), which the tiles on those rows read.
 pub fn encodeSums(e: mtl.ComputeEncoder, p: *const Pipelines, k: usize, x: mtl.Buffer, x_off: usize, sums: mtl.Buffer, rows: usize) void {
     e.setPipeline(p.xsum);
     e.setBuffer(x, x_off, 0);
@@ -102,12 +111,13 @@ pub fn encodeSums(e: mtl.ComputeEncoder, p: *const Pipelines, k: usize, x: mtl.B
 pub fn encodeTwin(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, x: mtl.Buffer, x_off: usize, y: mtl.Buffer, y_off: usize, rows: usize) !void {
     const i = try width(m);
     if (rows == 0 or rows > twin_rows) return error.NoRows;
-    e.setPipeline(p.twin[i]);
+    const window = rows >= window_rows;
+    e.setPipeline(if (window) p.rows[i] else p.twin[i]);
     bind(e, m, .{ .k = @intCast(m.k), .n = @intCast(m.n), .r = @intCast(rows) }, x, x_off, y, y_off);
-    // 4 bits: 4 rows a threadgroup over one load of the codes; partials staged 32 groups a round
-    const rt: usize = if (m.bits == 4) @min(4, rows) else 1;
-    e.setThreadgroupMemory(@max(twin_tg_bytes, 2 * rt * (twinColumns(m.bits) / 2 + 1) * 32 * 4), 0);
-    e.dispatchGroups(.{ .width = m.n / twinColumns(m.bits), .height = (rows + rt - 1) / rt }, .{ .width = 64 });
+    if (window) return e.dispatchGroups(.{ .width = m.n / window_columns }, .{ .width = 64 });
+    const rt = @min(twin_rt, rows);
+    e.setThreadgroupMemory(twinTgBytes(rt), 0);
+    e.dispatchGroups(.{ .width = m.n / twin_columns, .height = (rows + rt - 1) / rt }, .{ .width = 64 });
 }
 
 /// The twin by slot: slot y reads expert ids[y]'s matrix (`m` the first) and x row y / repeat.
@@ -116,9 +126,7 @@ pub fn encodeTwinIndexed(e: mtl.ComputeEncoder, p: *const Pipelines, m: Matrix, 
     if (slots == 0 or repeat == 0) return error.NoRows;
     e.setPipeline(p.twin_indexed[i]);
     bind(e, m, .{ .k = @intCast(m.k), .n = @intCast(m.n), .r = @intCast(repeat) }, x, 0, y, 0);
-    e.setBuffer(ids, 0, 6);
-    e.setThreadgroupMemory(@max(twin_tg_bytes, 2 * (twinColumns(m.bits) / 2 + 1) * 32 * 4), 0);
-    e.dispatchGroups(.{ .width = m.n / twinColumns(m.bits), .height = slots }, .{ .width = 64 });
+    dispatchSlots(e, m, ids, slots);
 }
 
 /// encodeTwinIndexed on gate and up (one shape) into swiglu(gate, up), mlx-lm's compiled swiglu on bf16 rows.
@@ -127,12 +135,17 @@ pub fn encodeTwinGlu(e: mtl.ComputeEncoder, p: *const Pipelines, gate: Matrix, u
     if (slots == 0 or repeat == 0 or up.n != gate.n or up.k != gate.k or up.bits != gate.bits) return error.NoRows;
     e.setPipeline(p.twin_glu[i]);
     bind(e, gate, .{ .k = @intCast(gate.k), .n = @intCast(gate.n), .r = @intCast(repeat) }, x, 0, y, 0);
-    e.setBuffer(ids, 0, 6);
     e.setBuffer(up.w, up.w_off, 7);
     e.setBuffer(up.scales, up.s_off, 8);
     e.setBuffer(up.biases, up.b_off, 9);
-    e.setThreadgroupMemory(@max(twin_tg_bytes, 2 * (twinColumns(gate.bits) / 2 + 1) * 32 * 4), 0);
-    e.dispatchGroups(.{ .width = gate.n / twinColumns(gate.bits), .height = slots }, .{ .width = 64 });
+    dispatchSlots(e, gate, ids, slots);
+}
+
+/// A threadgroup row a slot.
+fn dispatchSlots(e: mtl.ComputeEncoder, m: Matrix, ids: mtl.Buffer, slots: usize) void {
+    e.setBuffer(ids, 0, 6);
+    e.setThreadgroupMemory(twinTgBytes(1), 0);
+    e.dispatchGroups(.{ .width = m.n / twin_columns, .height = slots }, .{ .width = 64 });
 }
 
 /// Whether the twin's rows equal the tiles' for `m` on this GPU (random rows; another chip may round MMAs otherwise).
@@ -157,7 +170,8 @@ pub fn twinExact(p: *const Pipelines, device: mtl.Device, m: Matrix) !bool {
     encodeSums(e, p, m.k, x, 0, sums, rows);
     try encode(e, p, m, x, 0, sums, 0, tiled, 0, rows);
     try encodeTwin(e, p, m, x, 0, twin, 0, twin_rows);
-    try encodeTwin(e, p, m, x, twin_rows * m.k * 2, twin, twin_rows * m.n * 2, rows - twin_rows);
+    try encodeTwin(e, p, m, x, twin_rows * m.k * 2, twin, twin_rows * m.n * 2, rows - twin_rows - 1);
+    try encodeTwin(e, p, m, x, (rows - 1) * m.k * 2, twin, (rows - 1) * m.n * 2, 1);
     e.end();
     cb.commit();
     cb.wait();

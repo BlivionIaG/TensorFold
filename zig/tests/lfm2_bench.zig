@@ -21,6 +21,7 @@ pub fn main(init: std.process.Init) !void {
     defer pool.pop();
     const m = try q.Model.load(init.gpa, init.io, args[1]);
     defer m.deinit();
+    try windows(m);
     try prompts(m);
     try grouped(m);
     try promptBudget(m);
@@ -74,6 +75,65 @@ fn prompts(m: *q.Model) !void {
         cb.wait();
         const t = cb.gpuSeconds() / 20.0;
         std.debug.print("tiles {d}x{d}, {d} rows: {d:.0} us, {d:.2} TFLOPS\n", .{ w.n, w.k, rows, t * 1e6, 2.0 * @as(f64, @floatFromInt(rows * w.n * w.k)) / t / 1e12 });
+    }
+}
+
+/// Each window width's GPU us of the twin calls at their shapes, a row a threadgroup row then the window kernels.
+fn windows(m: *q.Model) !void {
+    const dev = m.device;
+    var sc = try st.Scratch.init(m.gpa, dev, &m.config.attention, st.batch_rows);
+    defer sc.deinit();
+    const slots = st.batch_rows * c.topk;
+    var prng = std.Random.DefaultPrng.init(11);
+    const picks = sc.picks.slice(u32, slots);
+    for (0..st.batch_rows) |r| {
+        var k: usize = 0;
+        while (k < c.topk) {
+            const e = prng.random().uintLessThan(u32, 32);
+            if (std.mem.indexOfScalar(u32, picks[r * c.topk ..][0..k], e) != null) continue;
+            picks[r * c.topk + k] = e;
+            k += 1;
+        }
+    }
+    for (sc.x.slice(u16, st.batch_rows * c.hidden), 0..) |*v, i| v.* = @truncate(@as(u32, @bitCast(@as(f32, @floatFromInt(i % 89)) / 89.0 - 0.5)) >> 16);
+    for (sc.act.slice(u16, slots * c.moe_intermediate), 0..) |*v, i| v.* = @truncate(@as(u32, @bitCast(@as(f32, @floatFromInt(i % 97)) / 97.0 - 0.5)) >> 16);
+    const tq = q.forward.matrix;
+    const t = &m.kernels.tiles;
+    const attn = m.weights.blocks[2].mixer.attention;
+    const conv = m.weights.blocks[0].mixer.conv;
+    const moe = m.weights.blocks[10].ffn.moe;
+    const names = [_][]const u8{ "q 2048x2048", "conv in 6144x2048", "head", "experts glu", "experts down" };
+    std.debug.print("window twin us by width, a row a threadgroup row | window kernels:", .{});
+    for (names) |n| std.debug.print(" {s};", .{n});
+    std.debug.print("\n", .{});
+    const was = tile.window_rows;
+    defer tile.window_rows = was;
+    for ([_]usize{ 1, 2, 4, 8, 16, 32 }) |w| {
+        std.debug.print("{d:2} rows:", .{w});
+        for ([_]usize{ 99, was }) |threshold| {
+            tile.window_rows = threshold;
+            inline for (0..names.len) |which| {
+                var best: f64 = 1e9;
+                for (0..3) |_| {
+                    const cb = m.queue.commandBuffer();
+                    const e = cb.compute(.serial);
+                    for (0..10) |_| switch (which) {
+                        0 => try tile.encodeTwin(e, t, tq(attn.q), sc.x, 0, sc.q, 0, w),
+                        1 => try tile.encodeTwin(e, t, tq(conv.in), sc.x, 0, sc.bcx, 0, w),
+                        2 => try tile.encodeTwin(e, t, tq(m.weights.embedding), sc.x, 0, sc.logits, 0, w),
+                        3 => try tile.encodeTwinGlu(e, t, tq(moe.gate.one), tq(moe.up.one), sc.x, sc.act, sc.picks, w * c.topk, c.topk),
+                        else => try tile.encodeTwinIndexed(e, t, tq(moe.down.one), sc.act, sc.experts, sc.picks, w * c.topk, 1),
+                    };
+                    e.end();
+                    cb.commit();
+                    cb.wait();
+                    if (cb.failure()) |msg| std.debug.print("windows: {s}\n", .{msg});
+                    best = @min(best, cb.gpuSeconds() * 1e5);
+                }
+                std.debug.print(" {d:6.0}", .{best});
+            }
+            std.debug.print("{s}", .{if (threshold == 99) " |" else "\n"});
+        }
     }
 }
 
