@@ -295,3 +295,8 @@ test "work items bound every expert's tiles" {
     try std.testing.expectEqual(@as(usize, 2048 / 32 + 64 + 1), items(2048, 64));
     try std.testing.expectEqual(@as(usize, 0 + 4 + 1), items(4, 64));
 }
+
+test "window_slots is the kernels' TQ_SLOTS" {
+    const line = std.fmt.comptimePrint("constant constexpr int TQ_SLOTS = {d};", .{window_slots});
+    try std.testing.expect(std.mem.indexOf(u8, sources.core_tile_qmm, line) != null);
+}
