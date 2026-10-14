@@ -127,6 +127,17 @@ pub const Launcher = struct {
     /// Which kernels a run takes where two give the same bits; every one defaults on.
     pub const Choices = struct { fuse: bool = true, wide: bool = true, products: affine.Choices = .{} };
 
+    /// The current device's compute units (the HIP attribute), 0 when HIP does not say.
+    fn computeUnits(r: *const runtime.Runtime) u32 {
+        var lib = r.lib;
+        const current = lib.lookup(*const fn (*c_int) callconv(.c) c_int, "hipGetDevice") orelse return 0;
+        var device: c_int = 0;
+        var cus: c_int = 0;
+        runtime.check(current(&device)) catch return 0;
+        runtime.check(r.api.hipDeviceGetAttribute(&cus, .multiprocessor_count, device)) catch return 0;
+        return @intCast(@max(cus, 0));
+    }
+
     /// Loads the code objects on the current device and resolves every kernel the launchers use.
     pub fn load(r: *const runtime.Runtime, choices: Choices, images: [kernels.group_count][]align(8) const u8) Error!Launcher {
         var l: Launcher = undefined;
@@ -244,7 +255,9 @@ pub const Launcher = struct {
         l.sum_partials = try att.function("tf_sum_partials");
         const tiles = l.mods[@backingInt(kernels.Group.affine_tiles)];
         const dot2 = l.mods[@backingInt(kernels.Group.affine_dot2)];
-        l.affine = try affine.Kernels.load(tiles, dot2, caps.Caps.of(kernels.arch) orelse return error.Invalid, choices.products);
+        var products = choices.products;
+        if (products.cus == 0) products.cus = computeUnits(r);
+        l.affine = try affine.Kernels.load(tiles, dot2, caps.Caps.of(kernels.arch) orelse return error.Invalid, products);
         try l.affine.fillByteLut(r, dot2);
         return l;
     }

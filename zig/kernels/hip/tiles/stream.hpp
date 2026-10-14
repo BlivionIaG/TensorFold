@@ -1,6 +1,6 @@
 #pragma once
 
-// Streaming decode tile for 1 to 8 rows: a lane owns a 32-code chunk of a column; no LDS, lanes fold by shuffle.
+// Streaming decode tile for 1 to 16 rows: a lane owns a 32-code chunk of a column; lanes fold by shuffle.
 
 #include <type_traits>
 #include <utility>
@@ -51,8 +51,40 @@ __device__ inline void stream_dots(const typename T::pair (&xp)[RG][16], const u
      ...);
 }
 
+// The block's R rows of x into LDS (R * (2k + k / 8) bytes): chunk q of row r as pairs at [r][v][q][4], sums after.
+template <class Dec, class Act, class T, int R>
+__device__ inline void stream_stage(const typename Dec::Args& a, int row0, uint32_t* pairs, float* sums) {
+    using pair = typename T::pair;
+    const int nch = a.k >> 5;
+    for (int at = threadIdx.x; at < R * nch; at += 32 * kStreamWaves) {
+        const int r = at / nch;
+        const int q = at - r * nch;
+        const u32x4* src = reinterpret_cast<const u32x4*>(Act::row(a, row0 + r < a.m ? row0 + r : 0) + q * 32LL);
+        uint32_t xn[16];
+#pragma unroll
+        for (int v = 0; v < 4; ++v) {
+            const u32x4 t = src[v];
+            xn[4 * v] = t.x;
+            xn[4 * v + 1] = t.y;
+            xn[4 * v + 2] = t.z;
+            xn[4 * v + 3] = t.w;
+        }
+        float s = 0.f;
+#pragma unroll
+        for (int i = 0; i < 16; ++i) s = T::dot(__builtin_bit_cast(pair, xn[i]), __builtin_bit_cast(pair, T::ones), s);
+        sums[at] = s;
+        pair xp[16];
+        stream_x_pairs<Dec, T>(xn, xp, std::make_integer_sequence<int, 16>{});
+        // word by word: a u32x4 built from the pairs' bit casts lost a lane on gfx1100 (hipcc 7.14)
+#pragma unroll
+        for (int i = 0; i < 16; ++i)
+            pairs[((r * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)] = __builtin_bit_cast(uint32_t, xp[i]);
+    }
+    __syncthreads();
+}
+
 // Epi::kPair: a lane's CB columns are CB / 2 gate columns and the same up columns; out is silu(gate) * up.
-template <class Dec, class Act, class T, class Epi, int R, int CB, bool WIDE>
+template <class Dec, class Act, class T, class Epi, int R, int CB, bool WIDE, bool SHARED>
 __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, int gshift, int bx, int pair_cols, float limit) {
     using pair = typename T::pair;
     constexpr bool PAIR = Epi::kPair;
@@ -90,6 +122,11 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
         for (int c = 0; c < CB; ++c) acc[r][c] = 0.f;
     }
 
+    // SHARED: the lanes read x pairs and sums of x from the block's stage instead of loading x (same values, same bits)
+    extern __shared__ uint32_t stage[];
+    if constexpr (SHARED) stream_stage<Dec, Act, T, R>(a, row0, stage, reinterpret_cast<float*>(stage + R * nch * 16));
+    const uint32_t* xs = stage;
+    const float* sums = reinterpret_cast<const float*>(stage + R * nch * 16);
     const typename Dec::StreamTerms terms(a);
 
     // The loads of one round: every column's chunk and its scale and bias, none waited for before the dots.
@@ -122,6 +159,14 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
             float sx[RG];
 #pragma unroll
             for (int r = 0; r < RG; ++r) {
+                if constexpr (SHARED) {
+                    const int row = g * RG + r;
+#pragma unroll
+                    for (int i = 0; i < 16; ++i)
+                        xp[r][i] = __builtin_bit_cast(pair, xs[((row * 4 + (i >> 2)) * nch + q) * 4 + (i & 3)]);
+                    sx[r] = sums[row * nch + q];
+                    continue;
+                }
                 uint32_t xn[16];
                 const u32x4* src =
                     reinterpret_cast<const u32x4*>(xr[g * RG + r] + static_cast<long long>(q) * 32);
@@ -202,9 +247,9 @@ __device__ inline void stream_body(const typename Dec::Args& a, int lpc_log2, in
     }
 }
 
-// Item z of the plan (or plain product, or a group's side) at CB columns a lane, R rows; chunk group is q >> gshift.
+// Item z of a plan (or product, or group side), CB columns a lane, R rows, chunk group q >> gshift; `shared` stages x.
 template <class Dec, class Act, class T, class Epi, int R, int CB, class Sides>
-__device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, int lpc_log2, int gshift) {
+__device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, int lpc_log2, int gshift, int shared) {
     int bx = blockIdx.x;
     if (sides.count > 0) {
         int s = 0;
@@ -219,16 +264,21 @@ __device__ inline void stream_tile(typename Dec::Args& a, const Sides& sides, in
         }
     }
     if (!Dec::take_item(a, blockIdx.z) || static_cast<int>(blockIdx.y) * R >= a.m) return;
-    if constexpr (Dec::kWideBytes == 4) {
-        stream_body<Dec, Act, T, Epi, R, CB, false>(a, lpc_log2, gshift, bx, sides.pair_cols, sides.limit);
-    } else {
-        // every chunk is wide-aligned when the words and the row stride are
-        if (Dec::wide_aligned(a)) {
-            stream_body<Dec, Act, T, Epi, R, CB, true>(a, lpc_log2, gshift, bx, sides.pair_cols, sides.limit);
-        } else {
-            stream_body<Dec, Act, T, Epi, R, CB, false>(a, lpc_log2, gshift, bx, sides.pair_cols, sides.limit);
+    // every chunk is wide-aligned when the words and the row stride are
+    constexpr bool kWide = Dec::kWideBytes != 4;
+    const bool wide = kWide && Dec::wide_aligned(a);
+    const int pc = sides.pair_cols;
+    if constexpr (R <= 2) {
+        if constexpr (kWide) {
+            if (shared && wide)
+                return stream_body<Dec, Act, T, Epi, R, CB, true, true>(a, lpc_log2, gshift, bx, pc, sides.limit);
         }
+        if (shared) return stream_body<Dec, Act, T, Epi, R, CB, false, true>(a, lpc_log2, gshift, bx, pc, sides.limit);
     }
+    if constexpr (kWide) {
+        if (wide) return stream_body<Dec, Act, T, Epi, R, CB, true, false>(a, lpc_log2, gshift, bx, pc, sides.limit);
+    }
+    stream_body<Dec, Act, T, Epi, R, CB, false, false>(a, lpc_log2, gshift, bx, pc, sides.limit);
 }
 
 }  // namespace rocm

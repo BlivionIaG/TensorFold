@@ -343,8 +343,8 @@ using Dot = DotF16;
     template __global__ void affine_dot2_lanes<Dot, BITS, ROWS, 2>(Affine);     \
     template __global__ void affine_dot2_lanes<Dot, BITS, ROWS, 4>(Affine);
 #define TF_STREAM(BITS, R, CB)                                                                     \
-    template __global__ void affine_dot2_stream<Dot, BITS, R, CB, false>(Affine, StreamSides, int, int); \
-    template __global__ void affine_dot2_stream<Dot, BITS, R, CB, true>(Affine, StreamSides, int, int);
+    template __global__ void affine_dot2_stream<Dot, BITS, R, CB, false>(Affine, StreamSides, int, int, int); \
+    template __global__ void affine_dot2_stream<Dot, BITS, R, CB, true>(Affine, StreamSides, int, int, int);
 #if TF_MATRIX
 #define TF_WMMA(BITS) template __global__ void affine_wmma_gemm<BITS>(Affine);
 #else
@@ -353,6 +353,7 @@ using Dot = DotF16;
 #define TF_TILES(BITS)                                                                       \
     template __global__ void affine_dot2_block<Dot, BITS>(Affine);                           \
     template __global__ void affine_gemm_block<Dot, BITS, GemmShape<Dot>::rt>(Affine);       \
+    template __global__ void affine_gemm_rows<Dot, BITS, GemmShape<Dot>::rt, 64>(Affine);    \
     template __global__ void affine_gemm_kp<Dot, BITS, 8, 1, 2, 2, false>(Affine);           \
     template __global__ void affine_gemm_kp<Dot, BITS, 4, 4, 2, 4, true>(Affine);            \
     template __global__ void affine_gemm_kp<Dot, BITS, 4, 8, 2, 4, false>(Affine);           \
