@@ -186,7 +186,8 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
         const subs: u32 = if (seg.rows <= st.split_rows) st.subs else 1;
         const args = AttnArgs{ .len = len, .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .subs = subs };
         const used = (seg.cache.len + seg.rows + st.chunk_keys - 1) / st.chunk_keys * subs;
-        enc.pipe("lfm2_attn_mma");
+        const wide = seg.rows > st.split_rows;
+        if (wide) enc.pipe("lfm2_attn_mma_r2") else enc.pipe("lfm2_attn_mma");
         e.setBuffer(s.queries, base * c.hidden * 2, 0);
         e.setBuffer(cache.keys, 0, 1);
         e.setBuffer(cache.values, 0, 2);
@@ -195,7 +196,8 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, config: *const c.Co
         e.setBuffer(s.pl, 0, 5);
         e.setBuffer(s.po, 0, 6);
         e.setValue(@as(u32, @intCast(seg.rows)), 7);
-        enc.groups(.{ used, c.kv_heads, (seg.rows + 7) / 8 }, .{ 128, 1, 1 });
+        const per_tile: usize = if (wide) st.attn_rows else 8;
+        enc.groups(.{ (seg.rows + per_tile - 1) / per_tile, c.kv_heads, used }, .{ 128, 1, 1 });
         enc.pipe("lfm2_attn_merge");
         e.setBuffer(s.pm, 0, 0);
         e.setBuffer(s.pl, 0, 1);

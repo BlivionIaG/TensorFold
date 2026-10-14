@@ -34,6 +34,7 @@ pub fn main(init: std.process.Init) !void {
     try sorting(m);
     try launches(m);
     try promptBudget(m);
+    try attnLong(m, 30720, 2048);
     try decodeBudget(m, 64);
     try decodeBudget(m, 32768);
     var big = try st.Scratch.init(init.gpa, m.device, &m.config.attention, chunk);
@@ -69,19 +70,6 @@ fn empty(queue: mtl.Queue, what: []const u8) void {
         cb.wait();
     }
     std.debug.print("{s}: empty command buffer {d} us\n", .{ what, @divTrunc(now() - t, 20000) });
-}
-
-fn bound(queue: mtl.Queue, b: mtl.Buffer, bytes: usize) void {
-    const t = now();
-    for (0..20) |_| {
-        const cb = queue.commandBuffer();
-        const e = cb.compute(.serial);
-        e.setBuffer(b, 0, 0);
-        e.end();
-        cb.commit();
-        cb.wait();
-    }
-    std.debug.print("bound {d} MiB buffer: {d} us\n", .{ bytes >> 20, @divTrunc(now() - t, 20000) });
 }
 
 const tile = @import("tensorfold").tile_qmm;
@@ -364,7 +352,7 @@ fn promptBudget(m: *q.Model) !void {
             },
             else => {
                 const kv = cache.blocks[2].attention;
-                e.setPipeline(m.kernels.get("lfm2_attn_mma"));
+                e.setPipeline(m.kernels.get("lfm2_attn_mma_r2"));
                 e.setBuffer(sc.queries, 0, 0);
                 e.setBuffer(kv.keys, 0, 1);
                 e.setBuffer(kv.values, 0, 2);
@@ -373,7 +361,7 @@ fn promptBudget(m: *q.Model) !void {
                 e.setBuffer(sc.pl, 0, 5);
                 e.setBuffer(sc.po, 0, 6);
                 e.setValue(@as(u32, rows), 7);
-                e.dispatchGroups(mtl.Size.of(1, 8, rows / 8), mtl.Size.of(128, 1, 1));
+                e.dispatchGroups(mtl.Size.of(rows / st.attn_rows, 8, 1), mtl.Size.of(128, 1, 1));
                 e.setPipeline(m.kernels.get("lfm2_attn_merge"));
                 e.setBuffer(sc.pm, 0, 0);
                 e.setBuffer(sc.pl, 0, 1);
@@ -391,6 +379,51 @@ fn promptBudget(m: *q.Model) !void {
         std.debug.print("{s}: {d:.2} ms x {d} = {d:.0} ms\n", .{ it.name, ms, it.per, ms * it.per });
     }
     std.debug.print("prompt chunk budget: {d:.0} ms for {d} rows ({d:.0} tok/s)\n", .{ total, rows, rows / total * 1e3 });
+}
+
+/// GPU time of one layer's prompt attention (mma and merge) for `rows` rows over `len` cached keys, best of 7.
+fn attnLong(m: *q.Model, len: usize, rows: usize) !void {
+    const dev = m.device;
+    var sc = try st.Scratch.init(m.gpa, dev, &m.config.attention, rows);
+    defer sc.deinit();
+    var cache = try st.Cache.init(m.gpa, dev, &m.config.attention, len + rows + 64);
+    defer cache.deinit();
+    const kv = cache.blocks[2].attention;
+    const kv_count = c.kv_heads * cache.capacity * c.head_dim;
+    for (kv.keys.slice(u16, kv_count), 0..) |*v, i| v.* = @truncate(@as(u32, @bitCast(@as(f32, @floatFromInt(i % 89)) / 89.0 - 0.5)) >> 16);
+    @memcpy(kv.values.contents()[0 .. kv_count * 2], kv.keys.contents()[0 .. kv_count * 2]);
+    @memcpy(sc.queries.contents()[0 .. rows * c.hidden * 2], kv.keys.contents()[0 .. rows * c.hidden * 2]);
+    const args = [4]u32{ @intCast(len), @intCast(cache.capacity), @bitCast(@as(f32, 0.125)), 1 };
+    const used = (len + rows + st.chunk_keys - 1) / st.chunk_keys;
+    var best: f64 = 1e9;
+    for (0..7) |_| {
+        const cb = m.queue.commandBuffer();
+        const e = cb.compute(.serial);
+        e.setPipeline(m.kernels.get("lfm2_attn_mma_r2"));
+        e.setBuffer(sc.queries, 0, 0);
+        e.setBuffer(kv.keys, 0, 1);
+        e.setBuffer(kv.values, 0, 2);
+        e.setBytes(std.mem.asBytes(&args), 3);
+        e.setBuffer(sc.pm, 0, 4);
+        e.setBuffer(sc.pl, 0, 5);
+        e.setBuffer(sc.po, 0, 6);
+        e.setValue(@as(u32, @intCast(rows)), 7);
+        e.dispatchGroups(mtl.Size.of((rows + st.attn_rows - 1) / st.attn_rows, c.kv_heads, used), mtl.Size.of(128, 1, 1));
+        e.setPipeline(m.kernels.get("lfm2_attn_merge"));
+        e.setBuffer(sc.pm, 0, 0);
+        e.setBuffer(sc.pl, 0, 1);
+        e.setBuffer(sc.po, 0, 2);
+        e.setBytes(std.mem.asBytes(&args), 3);
+        e.setBuffer(sc.y, 0, 4);
+        e.dispatchGroups(mtl.Size.of(c.query_heads, rows, 1), mtl.Size.of(32, 1, 1));
+        e.end();
+        cb.commit();
+        cb.wait();
+        if (cb.failure()) |msg| std.debug.print("attn microbench: {s}\n", .{msg});
+        best = @min(best, cb.gpuSeconds() * 1e3);
+    }
+    const flops = 4.0 * @as(f64, @floatFromInt(c.query_heads * c.head_dim * rows)) * (@as(f64, @floatFromInt(len)) + @as(f64, @floatFromInt(rows)) / 2.0);
+    std.debug.print("attn mma+merge, {d} rows at {d} keys: best of 7 {d:.2} ms, {d:.2} TFLOPS\n", .{ rows, len, best, flops / best / 1e9 });
 }
 
 fn linearBytes(w: q.weights.Linear) usize {
@@ -484,7 +517,7 @@ fn decodeBudget(m: *q.Model, len: usize) !void {
                         e.setBuffer(sc.pl, 0, 5);
                         e.setBuffer(sc.po, 0, 6);
                         e.setValue(@as(u32, 1), 7);
-                        e.dispatchGroups(mtl.Size.of(used, c.kv_heads, 1), mtl.Size.of(128, 1, 1));
+                        e.dispatchGroups(mtl.Size.of(1, c.kv_heads, used), mtl.Size.of(128, 1, 1));
                         e.setPipeline(m.kernels.get("lfm2_attn_merge"));
                         e.setBuffer(sc.pm, 0, 0);
                         e.setBuffer(sc.pl, 0, 1);
