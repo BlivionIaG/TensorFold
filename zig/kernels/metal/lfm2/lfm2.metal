@@ -185,102 +185,159 @@ inline void lfm2_merge(thread float& M, thread float& L, float m, float l, threa
   M = M2;
 }
 
-// Every row's attention partials (one kernel for prompt and decode): a threadgroup a (chunk, kv head, 8 rows).
+// One 8x8x8 MMA on per-lane fragments (the lane's (row fm, columns fn, fn + 1) of each operand), fp32 accumulate.
+inline float2 lfm2_mma(float2 c, vec<bfloat, 2> a, vec<bfloat, 2> b) {
+  simdgroup_matrix<float, 8, 8> C;
+  simdgroup_matrix<bfloat, 8, 8> A, B;
+  reinterpret_cast<thread float2&>(C.thread_elements()) = c;
+  reinterpret_cast<thread vec<bfloat, 2>&>(A.thread_elements()) = a;
+  reinterpret_cast<thread vec<bfloat, 2>&>(B.thread_elements()) = b;
+  simdgroup_multiply_accumulate(C, A, B, C);
+  return reinterpret_cast<thread float2&>(C.thread_elements());
+}
+
 constant constexpr uint KB = 32;   // keys a staged block
-constant constexpr uint KP = 72;   // bf16 a staged key row (64 and pad)
+constant constexpr uint KP = 72;   // bf16 a staged value row (64 and pad)
+constant constexpr uint KT = 36;   // keys a staged transposed K row (32 and pad)
+// A thread's share of a 32-key block: two 8-wide parts of V, the same part of two neighbouring keys of K.
+inline void lfm2_fetch(const device bfloat* kb, const device bfloat* vb, uint j0, uint cap, uint tid, thread uint4* pre) {
+  for (uint i = 0; i < 2; ++i) {
+    const uint idx = tid + 128 * i, k = idx / 8, part = idx % 8;
+    pre[i] = *(const device uint4*)(vb + size_t(min(j0 + k, cap - 1)) * HD + part * 8);
+  }
+  const uint kp = tid % (KB / 2), part = tid / (KB / 2);
+  pre[2] = *(const device uint4*)(kb + size_t(min(j0 + 2 * kp, cap - 1)) * HD + part * 8);
+  pre[3] = *(const device uint4*)(kb + size_t(min(j0 + 2 * kp + 1, cap - 1)) * HD + part * 8);
+}
+
+// The fetched share staged: V by rows, K transposed (the thread's 8 (d, two keys) pairs).
+inline void lfm2_stage(const thread uint4* pre, threadgroup uint* ks, threadgroup bfloat* vs, uint tid) {
+  for (uint i = 0; i < 2; ++i) {
+    const uint idx = tid + 128 * i, k = idx / 8, part = idx % 8;
+    *(threadgroup uint4*)(vs + k * KP + part * 8) = pre[i];
+  }
+  const uint kp = tid % (KB / 2), part = tid / (KB / 2);
+  for (uint d = 0; d < 8; ++d) {
+    const uint lo = (pre[2][d / 2] >> (16 * (d % 2))) & 0xffffu, hi = (pre[3][d / 2] >> (16 * (d % 2))) & 0xffffu;
+    ks[(part * 8 + d) * (KT / 2) + kp] = lo | (hi << 16);
+  }
+}
+
+// Every row's attention partials (one kernel for prompt and decode): a threadgroup a (chunk, kv head, 8 * RB rows).
+template <int RB>  // a simdgroup's RB row blocks share each staged K and V fragment, each block's arithmetic its own
 [[kernel]] void lfm2_attn_mma(const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
                               const device bfloat* values [[buffer(2)]], constant lfm2_attn_args& p [[buffer(3)]],
                               device float* pm [[buffer(4)]], device float* pl [[buffer(5)]], device float* po [[buffer(6)]],
                               constant uint& rows [[buffer(7)]], uint3 tg [[threadgroup_position_in_grid]],
                               uint tid [[thread_index_in_threadgroup]], uint sg [[simdgroup_index_in_threadgroup]],
                               uint lane [[thread_index_in_simdgroup]]) {
-  threadgroup bfloat ks[KB * KP], vs[KB * KP];
-  const uint chunk = tg.x / p.subs, sub0 = p.subs == 1 ? 0 : tg.x % SUBS, sub1 = p.subs == 1 ? SUBS : sub0 + 1;
-  const uint kh = tg.y, r0 = tg.z * 8, head = kh * (QH / KVH) + sg;
+  threadgroup uint ks[2][HD * (KT / 2)];
+  threadgroup bfloat vs[2][KB * KP];
+  // Row tiles first in the grid: the threadgroups in flight walk the same keys together (one chunk, one kv head).
+  const uint chunk = tg.z / p.subs, sub0 = p.subs == 1 ? 0 : tg.z % SUBS, sub1 = p.subs == 1 ? SUBS : sub0 + 1;
+  const uint kh = tg.y, r0 = tg.x * 8 * RB, head = kh * (QH / KVH) + sg;
   const uint qid = lane / 4, fm = (qid & 4) + ((lane / 2) % 4), fn = (qid & 2) * 2 + (lane % 2) * 2;
-  const uint row = r0 + fm;
-  const uint count = p.len + min(row, rows - 1) + 1;  // this lane's row's visible keys
-  const uint top = p.len + min(r0 + 7, rows - 1) + 1;  // the tile's most
+  uint count[RB];  // this lane's rows' visible keys
+  for (int b = 0; b < RB; ++b) count[b] = p.len + min(r0 + 8 * b + fm, rows - 1) + 1;
+  const uint top = p.len + min(r0 + 8 * RB - 1, rows - 1) + 1;  // the tile's most
   if (chunk * PER + sub0 * SUB >= top) return;
-  simdgroup_matrix<bfloat, 8, 8> q[8];
-  for (int d = 0; d < 8; ++d) simdgroup_load(q[d], queries + (size_t(r0) * QH + head) * HD + 8 * d, QH * HD);
+  vec<bfloat, 2> q[RB][8];
+  for (int b = 0; b < RB; ++b)
+    for (int d = 0; d < 8; ++d) q[b][d] = *(const device vec<bfloat, 2>*)(queries + (size_t(r0 + 8 * b + fm) * QH + head) * HD + 8 * d + fn);
   const device bfloat* kb = keys + size_t(kh) * p.cap * HD;
   const device bfloat* vb = values + size_t(kh) * p.cap * HD;
-  float M = -INFINITY, L = 0.0f, O[8][2];
-  for (int d = 0; d < 8; ++d) O[d][0] = O[d][1] = 0.0f;
+  float M[RB], L[RB];
+  float2 O[RB][8];
+  for (int b = 0; b < RB; ++b) {
+    M[b] = -INFINITY;
+    L[b] = 0.0f;
+    for (int d = 0; d < 8; ++d) O[b][d] = float2(0.0f);
+  }
   for (uint sub = sub0; sub < sub1; ++sub) {
     const uint first = chunk * PER + sub * SUB, last = min(top, first + SUB);
-    simdgroup_matrix<float, 8, 8> o[8];
-    for (int d = 0; d < 8; ++d) o[d] = simdgroup_matrix<float, 8, 8>(0.0f);
-    float m = -INFINITY, l = 0.0f;
-    for (uint j0 = first; j0 < last; j0 += KB) {
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      for (uint idx = tid; idx < KB * 8; idx += 128) {
-        const uint k = idx / 8, part = idx % 8;
-        const size_t src = size_t(min(j0 + k, p.cap - 1)) * HD + part * 8;
-        *(threadgroup uint4*)(ks + k * KP + part * 8) = *(const device uint4*)(kb + src);
-        *(threadgroup uint4*)(vs + k * KP + part * 8) = *(const device uint4*)(vb + src);
-      }
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      float sv[4][2];
-      float bm = -INFINITY;
-      for (uint t = 0; t < 4; ++t) {
-        simdgroup_matrix<float, 8, 8> sm(0.0f);
-        for (int d = 0; d < 8; ++d) {
-          simdgroup_matrix<bfloat, 8, 8> kt;
-          simdgroup_load(kt, ks + (8 * t) * KP + 8 * d, KP, ulong2(0, 0), true);
-          simdgroup_multiply_accumulate(sm, q[d], kt, sm);
-        }
-        for (uint e = 0; e < 2; ++e) {
-          const float v = sm.thread_elements()[e] * p.scale;
-          sv[t][e] = j0 + 8 * t + fn + e < count ? v : -INFINITY;
-          bm = max(bm, sv[t][e]);
-        }
-      }
-      bm = max(bm, simd_shuffle_xor(bm, ushort(1)));
-      bm = max(bm, simd_shuffle_xor(bm, ushort(8)));
-      const bool live = bm != -INFINITY;  // per row: a block with no visible key leaves its state as it is
-      const float m2 = live ? max(m, bm) : m;
-      float bsum[4];
-      simdgroup_matrix<bfloat, 8, 8> pb[4];
-      for (uint t = 0; t < 4; ++t) {
-        const float p0 = live ? metal::fast::exp(sv[t][0] - m2) : 0.0f, p1 = live ? metal::fast::exp(sv[t][1] - m2) : 0.0f;
-        float bs = p0 + p1;
-        bs = bs + simd_shuffle_xor(bs, ushort(1));
-        bs = bs + simd_shuffle_xor(bs, ushort(8));
-        bsum[t] = bs;
-        pb[t].thread_elements()[0] = bfloat(p0);
-        pb[t].thread_elements()[1] = bfloat(p1);
-      }
-      const float alpha = live ? metal::fast::exp(m - m2) : 1.0f;
-      l = fma(l, alpha, (bsum[0] + bsum[1]) + (bsum[2] + bsum[3]));
-      m = m2;
-      for (int d = 0; d < 8; ++d) {
-        o[d].thread_elements()[0] *= alpha;
-        o[d].thread_elements()[1] *= alpha;
-        for (uint t = 0; t < 4; ++t) {
-          simdgroup_matrix<bfloat, 8, 8> v;
-          simdgroup_load(v, vs + (8 * t) * KP + 8 * d, KP);
-          simdgroup_multiply_accumulate(o[d], pb[t], v, o[d]);
-        }
-      }
+    float2 o[RB][8];
+    float m[RB], l[RB];
+    for (int b = 0; b < RB; ++b) {
+      m[b] = -INFINITY;
+      l[b] = 0.0f;
+      for (int d = 0; d < 8; ++d) o[b][d] = float2(0.0f);
     }
-    float alpha, beta;
-    lfm2_merge(M, L, m, l, alpha, beta);
-    for (int d = 0; d < 8; ++d)
-      for (int e = 0; e < 2; ++e) O[d][e] = fma(O[d][e], alpha, o[d].thread_elements()[e] * beta);
+    // Two staging buffers: the next block's loads fly over this one's math, then land in the other buffer.
+    uint4 pre[4];
+    lfm2_fetch(kb, vb, first, p.cap, tid, pre);
+    lfm2_stage(pre, ks[0], vs[0], tid);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint buf = 0;
+    for (uint j0 = first; j0 < last; j0 += KB, buf ^= 1) {
+      const bool more = j0 + KB < last;
+      if (more) lfm2_fetch(kb, vb, j0 + KB, p.cap, tid, pre);
+      const threadgroup uint* ksb = ks[buf];
+      const threadgroup bfloat* vsb = vs[buf];
+      float2 sm[RB][4];
+      for (int b = 0; b < RB; ++b)
+        for (uint t = 0; t < 4; ++t) sm[b][t] = float2(0.0f);
+      for (uint t = 0; t < 4; ++t)
+        for (int d = 0; d < 8; ++d) {
+          const vec<bfloat, 2> kt = as_type<vec<bfloat, 2>>(ksb[(8 * d + fm) * (KT / 2) + (8 * t + fn) / 2]);
+          for (int b = 0; b < RB; ++b) sm[b][t] = lfm2_mma(sm[b][t], q[b][d], kt);
+        }
+      vec<bfloat, 2> pb[RB][4];
+      float alpha[RB];
+      for (int b = 0; b < RB; ++b) {
+        float sv[4][2];
+        float bm = -INFINITY;
+        for (uint t = 0; t < 4; ++t)
+          for (uint e = 0; e < 2; ++e) {
+            const float v = sm[b][t][e] * p.scale;
+            sv[t][e] = j0 + 8 * t + fn + e < count[b] ? v : -INFINITY;
+            bm = max(bm, sv[t][e]);
+          }
+        bm = max(bm, simd_shuffle_xor(bm, ushort(1)));
+        bm = max(bm, simd_shuffle_xor(bm, ushort(8)));
+        const bool live = bm != -INFINITY;  // per row: a block with no visible key leaves its state as it is
+        const float m2 = live ? max(m[b], bm) : m[b];
+        float bsum[4];
+        for (uint t = 0; t < 4; ++t) {
+          const float p0 = live ? metal::fast::exp(sv[t][0] - m2) : 0.0f, p1 = live ? metal::fast::exp(sv[t][1] - m2) : 0.0f;
+          float bs = p0 + p1;
+          bs = bs + simd_shuffle_xor(bs, ushort(1));
+          bs = bs + simd_shuffle_xor(bs, ushort(8));
+          bsum[t] = bs;
+          pb[b][t] = vec<bfloat, 2>(bfloat(p0), bfloat(p1));
+        }
+        alpha[b] = live ? metal::fast::exp(m[b] - m2) : 1.0f;
+        l[b] = fma(l[b], alpha[b], (bsum[0] + bsum[1]) + (bsum[2] + bsum[3]));
+        m[b] = m2;
+      }
+      for (int d = 0; d < 8; ++d) {
+        for (int b = 0; b < RB; ++b) o[b][d] *= alpha[b];
+        for (uint t = 0; t < 4; ++t) {
+          const vec<bfloat, 2> v = *(const threadgroup vec<bfloat, 2>*)(vsb + (8 * t + fm) * KP + 8 * d + fn);
+          for (int b = 0; b < RB; ++b) o[b][d] = lfm2_mma(o[b][d], pb[b][t], v);
+        }
+      }
+      if (more) lfm2_stage(pre, ks[buf ^ 1], vs[buf ^ 1], tid);
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    for (int b = 0; b < RB; ++b) {
+      float alpha, beta;
+      lfm2_merge(M[b], L[b], m[b], l[b], alpha, beta);
+      for (int d = 0; d < 8; ++d) O[b][d] = fma(O[b][d], alpha, o[b][d] * beta);
+    }
   }
-  if (row >= rows) return;
-  const size_t at = (size_t(row) * QH + head) * (CHUNKS * p.subs) + chunk * p.subs + sub0;
-  if ((lane & 9) == 0) {
-    pm[at] = M;
-    pl[at] = L;
-  }
-  for (int d = 0; d < 8; ++d) {
-    po[at * HD + 8 * d + fn] = O[d][0];
-    po[at * HD + 8 * d + fn + 1] = O[d][1];
+  for (int b = 0; b < RB; ++b) {
+    const uint row = r0 + 8 * b + fm;
+    if (row >= rows) return;
+    const size_t at = (size_t(row) * QH + head) * (CHUNKS * p.subs) + chunk * p.subs + sub0;
+    if ((lane & 9) == 0) {
+      pm[at] = M[b];
+      pl[at] = L[b];
+    }
+    for (int d = 0; d < 8; ++d) *(device float2*)(po + at * HD + 8 * d + fn) = O[b][d];
   }
 }
+template [[host_name("lfm2_attn_mma")]] [[kernel]] decltype(lfm2_attn_mma<1>) lfm2_attn_mma<1>;
+template [[host_name("lfm2_attn_mma_r2")]] [[kernel]] decltype(lfm2_attn_mma<2>) lfm2_attn_mma<2>;
 
 // The chunks merged in chunk order for (head, row): Y [rows, QH*HD] bf16.
 [[kernel]] void lfm2_attn_merge(const device float* pm [[buffer(0)]], const device float* pl [[buffer(1)]], const device float* po [[buffer(2)]],
