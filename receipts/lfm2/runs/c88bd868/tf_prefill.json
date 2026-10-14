@@ -1,0 +1,72 @@
+[
+ {
+  "tokens": 2048,
+  "seconds": 1.5791680812835693,
+  "tok_s": 1296.8853817861857,
+  "prompt_tokens": 2048,
+  "cached": 0
+ },
+ {
+  "tokens": 2048,
+  "seconds": 1.7340588569641113,
+  "tok_s": 1181.0441103397832,
+  "prompt_tokens": 2048,
+  "cached": 0
+ },
+ {
+  "tokens": 2048,
+  "seconds": 1.5714612007141113,
+  "tok_s": 1303.2456665613745,
+  "prompt_tokens": 2048,
+  "cached": 0
+ },
+ {
+  "tokens": 8192,
+  "seconds": 6.781675815582275,
+  "tok_s": 1207.9610147652913,
+  "prompt_tokens": 8192,
+  "cached": 0
+ },
+ {
+  "tokens": 8192,
+  "seconds": 6.699069976806641,
+  "tok_s": 1222.8563111539581,
+  "prompt_tokens": 8192,
+  "cached": 0
+ },
+ {
+  "tokens": 8192,
+  "seconds": 6.810864686965942,
+  "tok_s": 1202.7841363046248,
+  "prompt_tokens": 8192,
+  "cached": 0
+ },
+ {
+  "tokens": 32768,
+  "seconds": 31.174394845962524,
+  "tok_s": 1051.1190405431034,
+  "prompt_tokens": 32768,
+  "cached": 0
+ },
+ {
+  "tokens": 32768,
+  "seconds": 31.1751971244812,
+  "tok_s": 1051.091990506389,
+  "prompt_tokens": 32768,
+  "cached": 0
+ },
+ {
+  "tokens": 65536,
+  "seconds": 76.17412900924683,
+  "tok_s": 860.3445927428266,
+  "prompt_tokens": 65536,
+  "cached": 0
+ },
+ {
+  "tokens": 131000,
+  "seconds": 216.64553117752075,
+  "tok_s": 604.6743696395831,
+  "prompt_tokens": 131000,
+  "cached": 0
+ }
+]

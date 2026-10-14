@@ -1,0 +1,19 @@
+131000 prompt 610.4 tok/s (214.61 s) decode 38.8 tok/s peak 17.4 GB
+      218.72 real         3.51 user         6.85 sys
+         14473904128  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              921013  page reclaims
+                  44  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   6  voluntary context switches
+               72440  involuntary context switches
+         96404893451  instructions retired
+         39395979277  cycles elapsed
+         21163961096  peak memory footprint

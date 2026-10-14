@@ -1,0 +1,1 @@
+32768 prompt 1077.7 tok/s (30.40 s) decode 79.5 tok/s peak 15.3 GB
