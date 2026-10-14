@@ -1,0 +1,67 @@
+ok prompt 1 in 128-row chunks equals one row at a time
+ok prompt 127 in 128-row chunks equals one row at a time
+ok prompt 128 in 128-row chunks equals one row at a time
+ok prompt 129 in 128-row chunks equals one row at a time
+ok prompt 300 in 128-row chunks equals one row at a time
+ok prefix 0, window 1, partial keep 1
+ok prefix 0, window 2, partial keep 1
+ok prefix 0, window 7, partial keep 3
+ok prefix 0, window 8, partial keep 4
+ok prefix 0, window 9, partial keep 4
+ok prefix 0, window 15, partial keep 7
+ok prefix 0, window 16, partial keep 8
+ok prefix 0, window 17, partial keep 8
+ok prefix 0, window 24, partial keep 12
+ok prefix 0, window 32, partial keep 16
+ok prefix 127, window 1, partial keep 1
+ok prefix 127, window 2, partial keep 1
+ok prefix 127, window 7, partial keep 3
+ok prefix 127, window 8, partial keep 4
+ok prefix 127, window 9, partial keep 4
+ok prefix 127, window 15, partial keep 7
+ok prefix 127, window 16, partial keep 8
+ok prefix 127, window 17, partial keep 8
+ok prefix 127, window 24, partial keep 12
+ok prefix 127, window 32, partial keep 16
+ok prefix 128, window 1, partial keep 1
+ok prefix 128, window 2, partial keep 1
+ok prefix 128, window 7, partial keep 3
+ok prefix 128, window 8, partial keep 4
+ok prefix 128, window 9, partial keep 4
+ok prefix 128, window 15, partial keep 7
+ok prefix 128, window 16, partial keep 8
+ok prefix 128, window 17, partial keep 8
+ok prefix 128, window 24, partial keep 12
+ok prefix 128, window 32, partial keep 16
+ok prefix 129, window 1, partial keep 1
+ok prefix 129, window 2, partial keep 1
+ok prefix 129, window 7, partial keep 3
+ok prefix 129, window 8, partial keep 4
+ok prefix 129, window 9, partial keep 4
+ok prefix 129, window 15, partial keep 7
+ok prefix 129, window 16, partial keep 8
+ok prefix 129, window 17, partial keep 8
+ok prefix 129, window 24, partial keep 12
+ok prefix 129, window 32, partial keep 16
+ok prefix 255, window 1, partial keep 1
+ok prefix 255, window 2, partial keep 1
+ok prefix 255, window 7, partial keep 3
+ok prefix 255, window 8, partial keep 4
+ok prefix 255, window 9, partial keep 4
+ok prefix 255, window 15, partial keep 7
+ok prefix 255, window 16, partial keep 8
+ok prefix 255, window 17, partial keep 8
+ok prefix 255, window 24, partial keep 12
+ok prefix 255, window 32, partial keep 16
+ok prefix 256, window 1, partial keep 1
+ok prefix 256, window 2, partial keep 1
+ok prefix 256, window 7, partial keep 3
+ok prefix 256, window 8, partial keep 4
+ok prefix 256, window 9, partial keep 4
+ok prefix 256, window 15, partial keep 7
+ok prefix 256, window 16, partial keep 8
+ok prefix 256, window 17, partial keep 8
+ok prefix 256, window 24, partial keep 12
+ok prefix 256, window 32, partial keep 16
+ok four streams at prefixes 1, 127, 128, 256: windows of 32 and 16 rows, unequal keeps
+67 forward/cache checks passed, 0 failed, 0 skipped

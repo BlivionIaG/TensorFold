@@ -113,3 +113,7 @@ Decode (tok/s):
 | cheap windows + fix a / b | 129.9 / 127.8 | 223.9 (237.1) / 223.6 (237.1) | 0.36 / 0.35 s | 47.6 / 47.0 ms |
 
 Every TensorFold reply had token_sha f66e3fd7e509 (code) / 57752ac6d7f0 (chat) and equalled its solo run (12 of 12). Single-stream chat (plain one-row rounds): PR head 118.0 / 123.8, cheap windows + fix 115.2 / 115.9 tok/s. In process (prefill / decode after the prompt): 2k PR head 1,276 / 119.6 and 1,198 / 115.7, cheap windows + fix 1,275 / 120.2 and 1,084 / 115.4, mlx-lm 1,251 / 110.4, 1,278 / 111.6, 1,249 / 109.1; 32k PR head 1,024 / 85.0 and 951 / 81.3, cheap windows + fix 1,023 / 83.8 and 928 / 83.6, mlx-lm 1,051 / 75.8, 939 / 75.9, 991 / 74.8.
+
+## Cheap windows (lfm2/4-core-windows, lfm2/5-lfm2-windows)
+
+`runs/cheap-windows-0b96f2a4/`: gates of the final tree and of the core branch alone, the control run (PR head, the window kernels and mlx-lm, alternated, served and in process) and a drafts-off single-stream A/B against the PR head. Apple M4 Pro only. Its `README.md` lists the files.
