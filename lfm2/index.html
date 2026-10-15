@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LFM2.5 on TensorFold</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#060a13;--surface:#0c1424;--surface2:#111b2e;--line:#29384f;--ink:#f1f5ff;--muted:#a9b6cc;--faint:#8b9ab3;--blue:#9bd2ff;
+--violet:#8b6cff;--magenta:#e052c8;--orange:#ff9a5a;--azure:#4f8cff;--slate:#3a4a63;--good:#7ee0b8;
+--grad:linear-gradient(100deg,#4f8cff 0%,#8b6cff 35%,#e052c8 68%,#ff9a5a 100%);
+--sans:"Manrope",Arial,sans-serif;--mono:"DM Mono",ui-monospace,monospace;--ease:cubic-bezier(.2,.8,.2,1)}
+*{box-sizing:border-box}
+html{background:var(--bg)}
+body{margin:0;background:radial-gradient(60% 40% at 80% 0%,rgba(79,140,255,.16),transparent 70%),radial-gradient(50% 35% at 0% 30%,rgba(139,108,255,.10),transparent 70%),var(--bg);color:var(--ink);font:16px/1.65 var(--sans);-webkit-font-smoothing:antialiased}
+main{max-width:1040px;margin:0 auto;padding:56px 20px 96px}
+.eyebrow{font-family:var(--mono);font-size:13px;color:var(--blue);letter-spacing:.02em;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+.eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--blue)}
+h1{font-size:clamp(44px,8vw,86px);line-height:.98;font-weight:700;letter-spacing:-.075em;margin:0 0 18px}
+h1 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+h2{font-size:clamp(30px,4.6vw,48px);line-height:1.02;font-weight:600;letter-spacing:-.06em;margin:0 0 12px}
+h3{font-size:17px;font-weight:600;letter-spacing:-.02em;margin:0 0 4px}
+.lead{color:var(--muted);font-size:17px;max-width:640px;margin:0 0 36px}
+.sub{color:var(--muted);font-size:15px;max-width:720px;margin:0 0 22px}
+section{margin-top:96px}
+code{font-family:var(--mono);font-size:13.5px;color:var(--blue)}
+.card{background:linear-gradient(160deg,rgba(23,35,52,.75),rgba(12,20,36,.9));border:1px solid var(--line);border-radius:18px;padding:22px}
+.hero{padding:30px 30px 22px}
+.hero .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:14px}
+.msw{display:flex;gap:6px}.msw .btn{padding:6px 12px}
+.hero .big{font-size:clamp(84px,14vw,150px);line-height:1;font-weight:500;letter-spacing:-.06em;margin:20px 0 4px}
+.hero .unit{color:var(--muted);font-size:17px;margin-bottom:22px}
+.hero .what{font-size:17px;color:var(--muted);font-weight:600;margin:0}
+.hero .hw{font-size:28px;line-height:1.15;font-weight:700;letter-spacing:-.04em;margin:2px 0 10px}
+.hero .cond{color:var(--muted);font-size:15px;max-width:560px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:24px}
+.stat{border-top:1px solid var(--line);padding:14px 14px 0 0;cursor:pointer;transition:border-color .3s var(--ease)}
+.stat.on{border-top:2px solid var(--ink)}
+.stat .l{font-size:14px;color:var(--muted)}.stat.on .l{color:var(--ink)}
+.stat .v{font-family:var(--mono);font-size:22px;margin-top:8px}
+.dlt{font-family:var(--mono);font-size:12.5px;margin-left:8px;padding:1px 6px;border-radius:6px;vertical-align:3px;font-weight:400;letter-spacing:0;white-space:nowrap}.dlt.up{color:#7ee0b8;background:rgba(126,224,184,.12)}.dlt.dn{color:#ff8a8a;background:rgba(255,138,138,.12)}.dlt.eq{color:var(--muted);background:rgba(255,255,255,.07)}
+.dcap{font-size:12.5px;color:var(--muted);margin-top:10px}
+@media (max-width:820px){.stats{grid-template-columns:repeat(2,1fr);row-gap:14px}}@media (max-width:520px){.stats{grid-template-columns:repeat(2,1fr)}}
+.btn{font:500 13px var(--sans);border:1px solid var(--line);background:var(--surface);color:var(--muted);padding:8px 14px;border-radius:999px;cursor:pointer;transition:all .25s var(--ease)}
+.btn:hover{color:var(--ink);border-color:#3d5170}
+.btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 16px}
+canvas{width:100%;display:block}
+.cap{font-size:15px;min-height:50px;margin-top:12px;color:var(--ink)}
+.out{font-family:var(--mono);font-size:14px;color:var(--muted)}.out b{color:var(--ink);font-weight:400}
+.legend{font-size:13px;color:var(--muted);display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 0}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.bars{display:grid;grid-template-columns:150px 1fr;gap:10px 16px;align-items:center;font-size:14px}
+.bars .lab{color:var(--muted);text-align:right}
+.bar{height:20px;border-radius:5px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-family:var(--mono);font-size:12.5px;white-space:nowrap;transition:width 1s var(--ease)}
+.bar.tf{background:var(--grad);color:#0b0f1a}.bar.mx{background:var(--slate);color:var(--ink);margin-top:4px}
+.pair{display:flex;flex-direction:column}
+.opt{display:grid;grid-template-columns:52px 1fr;gap:16px;padding:22px 0;border-top:1px solid var(--line)}
+.opt .n{font-family:var(--mono);font-size:13px;color:var(--blue);padding-top:3px}
+.opt p{margin:4px 0 10px;color:var(--muted);font-size:15px;max-width:720px}
+.delta{font-family:var(--mono);font-size:13px;display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--ink)}
+.delta.na{color:var(--faint)}
+.cells{display:grid;grid-template-columns:repeat(20,1fr);gap:4px;margin-bottom:10px}
+.cell{height:28px;border-radius:6px;font-family:var(--mono);font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink);transition:transform .2s var(--ease)}
+.cell:hover{transform:translateY(-2px)}
+.cell.sel{outline:2px solid var(--ink);outline-offset:1px}
+.step{display:flex;gap:12px;align-items:flex-start;padding:11px 14px;border-radius:12px;margin-bottom:8px;border:1px solid var(--line);background:rgba(12,20,36,.7)}
+.tag{font-family:var(--mono);font-size:12.5px;padding:3px 8px;border-radius:6px;white-space:nowrap}
+.tag.t{background:rgba(139,108,255,.18);color:#c9bcff}.tag.l{background:rgba(79,140,255,.16);color:var(--blue)}
+.d{font-size:14px;color:var(--muted);line-height:1.55}
+.title{font-size:15px;font-weight:600;margin:6px 0 12px}
+.note{font-size:14px;line-height:1.6;color:var(--faint);margin-top:14px;max-width:820px}
+.gcard{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.gcard .card h3{margin-bottom:6px}.gcard .card p{margin:0;color:var(--muted);font-size:14px}
+.gcard .k{font-family:var(--mono);font-size:12px;color:var(--blue);margin-bottom:10px}
+@media (max-width:760px){.gcard{grid-template-columns:1fr}.cells{grid-template-columns:repeat(10,1fr)}.bars{grid-template-columns:100px 1fr}}
+.gx{padding:26px 0;border-top:1px solid var(--line)}
+.gh{display:flex;align-items:baseline;gap:12px}
+.gh .n{font-family:var(--mono);font-size:13px;color:var(--blue)}
+.gh .ct{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--muted)}
+.gx>p{margin:6px 0 16px;color:var(--muted);font-size:15px;max-width:720px}
+.map{display:grid;gap:6px;position:relative;padding-left:96px}
+.map .lane{position:absolute;left:0;font-family:var(--mono);font-size:12px;color:var(--faint);line-height:34px}
+.map .lane.tf{color:var(--blue);margin-top:40px}
+.op{font-family:var(--mono);font-size:12.5px;min-height:34px;line-height:1.15;overflow-wrap:anywhere;padding:5px 4px;display:flex;align-items:center;justify-content:center;text-align:center;border-radius:8px;background:#1a2638;border:1px solid var(--line);color:var(--muted);padding:0 4px;position:relative}
+.op::after{content:"";position:absolute;bottom:-7px;left:50%;width:1px;height:6px;background:var(--line)}
+.kb{font-family:var(--mono);font-size:13px;min-height:34px;line-height:1.15;overflow-wrap:anywhere;padding:5px 6px;display:flex;align-items:center;justify-content:center;text-align:center;border-radius:8px;padding:0 6px}
+.kb.k{background:var(--grad);color:#0b0f1a;font-weight:500}
+.kb.f{border:1px dashed var(--blue);color:var(--blue)}
+.kb.x{border:1px dashed var(--faint);color:var(--faint)}
+@media (max-width:760px){.map{padding-left:0;padding-top:18px}.map .lane{display:none}.op{font-size:12px;min-height:44px}.kb{font-size:12px;min-height:44px}}
+.cmp{border-top:1px solid var(--line)}
+.cmph,.cmpr{display:grid;grid-template-columns:190px 1fr 1fr;gap:24px;padding:18px 0;border-bottom:1px solid var(--line)}
+.cmph{font-family:var(--mono);font-size:12px;color:var(--faint);padding:10px 0}
+.cmph span:last-child{color:var(--blue)}
+.cmpr .n{font-family:var(--mono);font-size:12px;color:var(--blue);display:block;margin-bottom:4px}
+.cmpr p{margin:0;font-size:14px;color:var(--muted)}
+.cmpr p b{color:var(--ink);font-weight:600}
+@media (max-width:760px){.cmph{display:none}.cmpr{grid-template-columns:1fr;gap:8px}.cmpr p:nth-of-type(1)::before{content:"mlx-lm · ";color:var(--faint)}.cmpr p:nth-of-type(2)::before{content:"TensorFold · ";color:var(--blue)}}
+.flow{grid-column:2/4;display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.fl{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.fl .who{font-family:var(--mono);font-size:11px;width:84px;color:var(--faint)}
+.fl.tf .who{color:var(--blue)}
+.chip{font-family:var(--mono);font-size:11.5px;padding:4px 9px;border-radius:7px;white-space:nowrap}
+.fl.mx .chip{background:#1a2638;color:var(--muted);border:1px solid var(--line)}
+.fl.tf .chip{background:var(--grad);color:#0b0f1a;font-weight:500}
+.fl .ar{color:var(--faint);font-size:12px}
+.fl .cnt{font-family:var(--mono);font-size:11px;color:var(--faint);margin-left:6px}
+@media (max-width:760px){.flow{grid-column:1}.fl .who{width:100%}}
+.grp{display:flex;flex-direction:column;gap:8px}
+.mtag{font-family:var(--mono);font-size:12px;color:var(--faint);margin-bottom:2px}
+.bar.tf.m5{background:linear-gradient(100deg,#8b6cff,#e052c8 60%,#ff9a5a)}
+.bar.mx.m5{background:#4a5a75}
+.bars{grid-template-columns:150px 1fr;row-gap:18px}
+.tbl{display:grid;gap:0;font-size:14px}
+.tr{display:grid;grid-template-columns:1.6fr 1fr 1.2fr 0.8fr;gap:12px;padding:9px 0;border-top:1px solid var(--line);color:var(--muted)}
+.tr.th{font-family:var(--mono);font-size:12px;color:var(--faint);border-top:none}
+.tr .up{color:var(--good)}.tr .dn{color:#f0a37b}
+.gcell{height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;background:var(--surface2);border:1px solid var(--line);color:var(--muted);transition:transform .3s var(--ease)}
+.gcell.lit{background:var(--grad);border-color:transparent;color:#0b0f1a}
+.glab{color:var(--faint);display:flex;align-items:center}
+@media (max-width:760px){.tr{grid-template-columns:1.4fr 1fr 1.2fr 0.8fr;font-size:13px}}
+.scal{display:grid;grid-template-columns:150px 1fr 1fr;gap:10px 16px;align-items:center;font-size:14px}
+.scal .h{font-family:var(--mono);font-size:12px;color:var(--faint)}
+.scal .lab{color:var(--muted);text-align:right}
+.scal .bar{height:22px}
+@media (max-width:760px){.scal{grid-template-columns:96px 1fr 1fr}}
+.cap2{color:var(--muted);font-size:14px;margin:2px 0 16px}
+.card h3{margin-bottom:2px}
+#ggrid{font-size:12.5px}
+.gcell{height:28px;font-weight:500}
+.bar.bf{background:transparent;border:1.5px solid #6f7f99;color:var(--muted)}
+.sw.bf{background:transparent;border:1.5px solid #6f7f99}
+.bar{position:relative}
+.bar.out{color:transparent}
+.bar.out>span{position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%);color:var(--ink);white-space:nowrap}
+footer{margin-top:96px;padding-top:22px;border-top:1px solid var(--line);color:var(--faint);font-size:13px}
+@media (prefers-reduced-motion: reduce){.bar,.stat,.cell{transition:none}}
+a.gh{display:inline!important;color:inherit;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}a.gh:hover{text-decoration-style:solid}
+</style>
+</head>
+<body>
+<main>
+<p class="eyebrow">ashhart/TensorFold <a class="gh" href="https://github.com/ashhart/TensorFold/pull/821" target="_blank" rel="noopener">#821</a> to <a class="gh" href="https://github.com/ashhart/TensorFold/pull/873" target="_blank" rel="noopener">#873</a></p>
+<h1>LFM2.5,<br><span class="g">measured.</span></h1>
+<p class="lead">This page shows LiquidAI's LFM2.5-24B-A2B on the native Metal engine of TensorFold. The engine reads the MLX 4-bit checkpoint as it is stored. The runs are real, on an Apple M4 Pro and an Apple M5 Ultra. Each TensorFold run alternates with an mlx-lm run.</p>
+
+<div class="card hero">
+<div class="top"><span>• Recorded performance</span><span class="msw" id="msw"><button class="btn" data-m="m4">M4 Pro</button><button class="btn on" data-m="m5">M5 Ultra</button></span></div>
+<div class="big" id="hv">129.1</div>
+<div class="unit" id="hu">tokens per second</div>
+<p class="what" id="hwhat">LFM2.5-24B-A2B · MLX 4-bit</p>
+<div class="hw" id="hhw">Apple M5 Ultra, 64-core GPU, 256 GB</div>
+<div class="cond" id="hc">Served greedy code decode, 256 tokens, 1 stream. mlx-lm server: 102.9 tok/s.</div>
+<div class="stats" id="stats">
+<div class="stat on" data-i="0"><div class="l">Decode</div><div class="v" id="sv0">129.1</div></div>
+<div class="stat" data-i="4"><div class="l">Prefill, 2k</div><div class="v" id="sv4">1,310</div></div>
+<div class="stat" data-i="1"><div class="l">4 streams</div><div class="v" id="sv1">192.2</div></div>
+<div class="stat" data-i="2"><div class="l">Peak memory at 131k</div><div class="v" id="sv2">17.7 GB</div></div>
+
+</div>
+<div class="dcap">Green or red shows the difference from mlx-lm in the same session. For memory, lower is better.</div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<section>
+<p class="eyebrow">Inference, measured</p>
+<h2>The results.</h2>
+<p class="sub">This section compares TensorFold with mlx-lm 0.32.0 (mlx 0.32.3) on two machines. The Apple M4 Pro has a 20-core GPU and 48 GB. The Apple M5 Ultra has a 64-core GPU and 256 GB. Each machine runs 1 model process at a time. Both Macs ran the final build, <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/fd2f8e27" target="_blank" rel="noopener">fd2f8e27</a>. It has cheap windows (<a class="gh" href="https://github.com/ashhart/TensorFold/pull/867" target="_blank" rel="noopener">#867</a>, <a class="gh" href="https://github.com/ashhart/TensorFold/pull/868" target="_blank" rel="noopener">#868</a>) and the exact 4-bit decode. The M5 Ultra also uses its tensor units for prompts (<a class="gh" href="https://github.com/ashhart/TensorFold/pull/871" target="_blank" rel="noopener">#871</a>, <a class="gh" href="https://github.com/ashhart/TensorFold/pull/873" target="_blank" rel="noopener">#873</a>). The M4 Pro has no tensor units. In the same session, mlx-lm and TensorFold ran in alternation. Where TensorFold is not faster, the chart shows it.</p>
+<div class="row" id="machs"><button class="btn on" data-m="both">Both Macs</button><button class="btn" data-m="m4">M4 Pro</button><button class="btn" data-m="m5">M5 Ultra</button></div>
+<div class="row" id="charts"><button class="btn on" data-c="decode">Decode</button><button class="btn" data-c="prompt">Prompt</button><button class="btn" data-c="other">Streams · memory · cache</button></div>
+<div class="card"><div id="chartnote" class="sub" style="margin-bottom:18px"></div><div class="bars" id="bars"></div>
+<div class="legend"><span><span class="sw" style="background:var(--grad)"></span>TensorFold</span><span><span class="sw" style="background:var(--slate)"></span>mlx-lm 0.32.0</span></div></div>
+</section>
+<section>
+<p class="eyebrow">Watch it run</p>
+<h2>One pass, forty layers.</h2>
+<p class="sub">This is a schematic of one forward pass. The time on screen is not to scale. On the GPU, the experts take the largest part of the prompt time.</p>
+<div class="card">
+<div class="row"><button class="btn on" id="mDec">Decode · a plain one-token round</button><button class="btn" id="mPro">Prompt · a 2,048-row chunk</button><span style="flex:1"></span><button class="btn" id="aPlay">Pause</button><button class="btn" id="aSlow">Slower</button></div>
+<canvas id="anim" aria-label="Animation of a forward pass through the 40 layers"></canvas>
+<div class="cap" id="acap"></div>
+<div class="out">Output (illustrative words, not model output) · <b id="aout"></b></div>
+</div>
+<div class="legend"><span><span class="sw" style="background:var(--violet)"></span>short conv · 30 layers</span><span><span class="sw" style="background:var(--azure)"></span>attention · 10 layers</span><span><span class="sw" style="background:var(--orange)"></span>MoE · 64 experts, top 4</span><span><span class="sw" style="background:var(--slate)"></span>dense SwiGLU · layers 0-1</span></div>
+</section>
+<section>
+<p class="eyebrow">The quantized weights stay as stored</p>
+<h2>Inside one tile.</h2>
+<p class="sub">Each projection on quantized weights uses <code>tile_qmm</code> (the tiles) or its twin. Both read the codes as the checkpoint stores them. They expand the codes only in threadgroup memory or in registers. No bf16 copy of a weight matrix exists in device memory. On the M5 with tensor units (<a class="gh" href="https://github.com/ashhart/TensorFold/pull/871" target="_blank" rel="noopener">#871</a>, <a class="gh" href="https://github.com/ashhart/TensorFold/pull/873" target="_blank" rel="noopener">#873</a>), prompt projections use <code>core/affine_mm</code> instead. It runs on the tensor units and reads the same stored codes. Decode and windows use the twin on every Mac.</p>
+<div class="card">
+<div class="row"><button class="btn" id="prev">Back</button><button class="btn" id="play">Play</button><button class="btn" id="next">Next</button><span id="stepn" style="font-family:var(--mono);font-size:13px;color:var(--muted);margin-left:6px"></span></div>
+<svg viewBox="0 0 900 300" width="100%" role="img" aria-label="tile_qmm step by step" style="font-family:var(--sans)">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#6f7f99" stroke-width="1.5"/></marker>
+<linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#4f8cff"/><stop offset=".35" stop-color="#8b6cff"/><stop offset=".68" stop-color="#e052c8"/><stop offset="1" stop-color="#ff9a5a"/></linearGradient></defs>
+<rect x="20" y="30" width="180" height="200" rx="12" fill="#0c1424" stroke="#29384f"/>
+<text x="110" y="20" text-anchor="middle" fill="#a9b6cc" font-size="13">device memory · as stored</text>
+<g id="codes"></g>
+<text x="110" y="250" text-anchor="middle" font-size="13" fill="#a9b6cc">4-bit codes, groups of 64</text>
+<text x="110" y="266" text-anchor="middle" font-size="13" fill="#a9b6cc">+ bf16 scale and bias</text>
+<line x1="210" y1="130" x2="268" y2="130" stroke="#6f7f99" marker-end="url(#ar)"/>
+<rect x="275" y="30" width="250" height="200" rx="12" fill="#0c1424" stroke="#29384f"/>
+<text x="400" y="20" text-anchor="middle" fill="#a9b6cc" font-size="13">threadgroup memory</text>
+<g id="stage"></g>
+<line x1="535" y1="130" x2="593" y2="130" stroke="#6f7f99" marker-end="url(#ar)"/>
+<rect x="600" y="30" width="280" height="200" rx="12" fill="#0c1424" stroke="#29384f"/>
+<text x="740" y="20" text-anchor="middle" fill="#a9b6cc" font-size="13">simdgroup MMA · fp32</text>
+<g id="mma"></g>
+<text id="cap" x="450" y="292" text-anchor="middle" font-size="13.5" fill="#f1f5ff"></text>
+</svg>
+</div>
+</section>
+<section>
+<p class="eyebrow">Where the gains come from</p>
+<h2>Same model, different kernels.</h2>
+<p class="sub">Both engines read the same 4-bit weights. mlx-lm runs general array operations from Python. TensorFold runs kernels written for this model. In each diagram, the top row shows mlx-lm. The bottom row shows the TensorFold kernels that do the same work.</p>
+<div class="gx"><div class="gh"><span class="n">01</span><h3>Router</h3><span class="ct">7 operations → 2 kernels</span></div><p>mlx-lm uses 7 operations to pick the 4 experts of each row. TensorFold uses 2 kernels.</p><div class="map" style="grid-template-columns:repeat(7,minmax(0,1fr))"><div class="lane">mlx-lm</div><div class="op">matmul</div><div class="op">sigmoid</div><div class="op">+ bias</div><div class="op">argpartition</div><div class="op">take_along_axis</div><div class="op">sum, divide</div><div class="op">× scale</div><div class="lane tf">TensorFold</div><div class="kb k" style="grid-column:span 1">route logits</div><div class="kb k" style="grid-column:span 6">route select</div></div></div>
+<div class="gx"><div class="gh"><span class="n">02</span><h3>Experts, decode</h3><span class="ct">6 operations → 2 kernels</span></div><p>TensorFold does gate, up and swiglu in one kernel. The next norm does the weighted sum, so the sum needs no kernel launch.</p><div class="map" style="grid-template-columns:repeat(6,minmax(0,1fr))"><div class="lane">mlx-lm</div><div class="op">gather_qmm up</div><div class="op">gather_qmm gate</div><div class="op">swiglu</div><div class="op">gather_qmm down</div><div class="op">× scores</div><div class="op">sum of 4</div><div class="lane tf">TensorFold</div><div class="kb k" style="grid-column:span 3">twin: gate + up + swiglu</div><div class="kb k" style="grid-column:span 1">twin: down</div><div class="kb f" style="grid-column:span 2">inside the next norm</div></div></div>
+<div class="gx"><div class="gh"><span class="n">03</span><h3>Experts, prompt</h3><span class="ct">9 operations → 7 kernels</span></div><p>Both engines sort the rows by expert. mlx-lm copies the rows into the sorted order. TensorFold reads them through a row map and makes no copy. This is the M1 to M4 path. On the M5, the tensor units do the same work in 6 kernels with no work list.</p><div class="map" style="grid-template-columns:repeat(9,minmax(0,1fr))"><div class="lane">mlx-lm</div><div class="op">argsort</div><div class="op">argsort (inverse)</div><div class="op">copy rows</div><div class="op">gather_qmm up</div><div class="op">gather_qmm gate</div><div class="op">swiglu</div><div class="op">gather_qmm down</div><div class="op">unsort</div><div class="op">× scores, sum</div><div class="lane tf">TensorFold</div><div class="kb k" style="grid-column:span 2">sort + work list</div><div class="kb x" style="grid-column:span 1">no copy</div><div class="kb k" style="grid-column:span 3">sums + grouped tile: gate, up, swiglu</div><div class="kb k" style="grid-column:span 1">sums + grouped tile: down</div><div class="kb k" style="grid-column:span 2">combine sorted</div></div></div>
+<div class="gx"><div class="gh"><span class="n">04</span><h3>Short conv</h3><span class="ct">4 operations → one kernel</span></div><p>One kernel does the whole short conv and keeps the new state.</p><div class="map" style="grid-template-columns:repeat(4,minmax(0,1fr))"><div class="lane">mlx-lm</div><div class="op">B × x</div><div class="op">concatenate state</div><div class="op">Conv1d</div><div class="op">C × conv</div><div class="lane tf">TensorFold</div><div class="kb k" style="grid-column:span 4">lfm2_conv</div></div></div>
+<div class="gx"><div class="gh"><span class="n">05</span><h3>Attention</h3><span class="ct">6 operations → 3 kernels</span></div><p>One kernel does the QK norm, RoPE and the cache write. In decode, the attention kernel splits a long context into more parts. On the M5, prompts use a tensor-unit attention kernel (<code>lfm2_attn_nax</code>).</p><div class="map" style="grid-template-columns:repeat(6,minmax(0,1fr))"><div class="lane">mlx-lm</div><div class="op">RMSNorm q</div><div class="op">RMSNorm k</div><div class="op">RoPE q</div><div class="op">RoPE k</div><div class="op">cache update</div><div class="op">sdpa</div><div class="lane tf">TensorFold</div><div class="kb k" style="grid-column:span 5">lfm2_qk</div><div class="kb k" style="grid-column:span 1">attention + merge</div></div></div>
+<div class="gx"><div class="gh"><span class="n">06</span><h3>Dispatch</h3></div><p>mlx-lm builds a graph in Python for each token. TensorFold encodes one command buffer for all 40 layers.</p></div>
+<div class="gx"><div class="gh"><span class="n">07</span><h3>Several streams and draft windows</h3><span class="ct" id="scct"></span></div><p>The lane core puts the streams in 1 step. The rows then share the weight reads. In the PR head, the 4-bit twin reads the dense weights once for up to 4 rows. Cheap windows do this at every bit width. They use MMA from 8 rows. They read each picked expert once from 16 rows. Draft windows use the same path. Each reply equals its solo run.</p><div class="row" id="scm"><button class="btn on" data-m="m4">M4 Pro</button><button class="btn" data-m="m5">M5 Ultra</button></div><div class="scal" id="scal"></div><p class="note" id="scnote"></p></div></div>
+<p class="note">We did not measure each difference alone. The decode gain comes from these differences together. One mlx-lm operation is not always one GPU kernel. The diagrams do not show views such as split and reshape. Sources: mlx-lm 0.32.0 <code>models/lfm2_moe.py</code> and <code>models/switch_layers.py</code>; TensorFold <code>families/lfm2/forward.zig</code>.</p>
+</section>
+
+<section id="cheap">
+<p class="eyebrow">Cheaper windows · <a class="gh" href="https://github.com/ashhart/TensorFold/pull/867" target="_blank" rel="noopener">#867</a> and <a class="gh" href="https://github.com/ashhart/TensorFold/pull/868" target="_blank" rel="noopener">#868</a></p>
+<h2>Cheaper windows.</h2>
+<p class="sub">A window is several rows in 1 step. The rows come from a draft check, or 1 row comes from each stream. Decode time is mostly weight reads. In the PR head (<a class="gh" href="https://github.com/ashhart/TensorFold/pull/821" target="_blank" rel="noopener">#821</a> to <a class="gh" href="https://github.com/ashhart/TensorFold/pull/823" target="_blank" rel="noopener">#823</a>), each extra row costs about half of a 1-row step. <a class="gh" href="https://github.com/ashhart/TensorFold/pull/867" target="_blank" rel="noopener">#867</a> and <a class="gh" href="https://github.com/ashhart/TensorFold/pull/868" target="_blank" rel="noopener">#868</a> share the reads across the rows. 1-row decode does not change. Every row keeps its bits.</p>
+<div class="card">
+<h3>Cost of one step, by rows in the window</h3><p class="cap2">M4 Pro, in ms. The server timed each step at load. Each value is the median of 5 loads, alternated. Lower is better.</p>
+<div class="bars" id="wbars"></div>
+<div class="legend"><span><span class="sw bf"></span>before: PR head <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/5a6ee034" target="_blank" rel="noopener">5a6ee034</a></span><span><span class="sw" style="background:var(--grad)"></span>after: final <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/fd2f8e27" target="_blank" rel="noopener">fd2f8e27</a> (<a class="gh" href="https://github.com/ashhart/TensorFold/pull/867" target="_blank" rel="noopener">#867</a>, <a class="gh" href="https://github.com/ashhart/TensorFold/pull/868" target="_blank" rel="noopener">#868</a>)</span></div>
+</div>
+<div class="gcard" style="margin-top:14px">
+<div class="card"><div class="k">01 · dense projections</div><h3>One read for 4 rows</h3><p>The twin reads each weight once for up to 4 rows, at 4, 6 and 8 bits. From 8 rows it uses simdgroup MMA.</p></div>
+<div class="card"><div class="k">02 · experts</div><h3>One read per expert</h3><p>From 16 rows, the GPU groups the picks by expert. Each picked expert is read once for all of its rows.</p></div>
+<div class="card"><div class="k">03 · 6-bit head</div><h3>Shared head reads</h3><p>The tied embedding head shares its reads across the rows of a window.</p></div>
+</div>
+<div class="card" style="margin-top:14px">
+<h3>Expert reads in one MoE layer, 16-row window</h3><p class="cap2">Each row picks 4 of 64 experts, so there are 64 picks. A lit cell has been read. After the change, all the cells of 1 expert light up together, for 1 read.</p>
+<div class="row"><button class="btn on" id="gBefore">Before: one read per pick</button><button class="btn" id="gAfter">After: one read per expert</button><span style="flex:1"></span><span id="gCount" style="font-family:var(--mono);font-size:14px;color:var(--ink)"></span></div>
+<div id="ggrid" style="display:grid;grid-template-columns:72px repeat(4,1fr);gap:4px;font-family:var(--mono);font-size:12px"></div>
+<p class="note">The picks are an example.</p>
+</div>
+<div class="card" style="margin-top:14px">
+<h3>Result</h3><p class="cap2">M4 Pro, 4-bit, served, in tok/s. The table compares the final build <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/fd2f8e27" target="_blank" rel="noopener">fd2f8e27</a> with the PR head. mlx-lm ran in the same session, alternated. The Mac was in use.</p>
+<div class="tbl">
+<div class="tr th"><span>Case</span><span>PR head</span><span>Final</span><span>mlx-lm</span></div>
+<div class="tr"><span>4 streams, code, total</span><span>190–191</span><span class="up">237–241 (+25%)</span><span>90–95</span></div>
+<div class="tr"><span>4 streams, code, steady</span><span>200</span><span class="up">254–256 (+28%)</span><span>—</span></div>
+<div class="tr"><span>4 streams, chat, total</span><span>187</span><span class="up">227–229 (+22%)</span><span>108–114</span></div>
+<div class="tr"><span>1 stream, code, drafts on</span><span>125–126</span><span class="up">136 (+8%)</span><span>92–97</span></div>
+<div class="tr"><span>1 stream, chat</span><span>122–123</span><span>123 (level)</span><span>—</span></div>
+</div>
+<p class="note">Exactness: the token hashes equal those of the PR head on every request. The draft rounds are the same (204, with 51 of 90 accepted, on code). Each concurrent reply equals its solo run (30 of 30). <code>tf-lfm2-exact</code> at the head of <a class="gh" href="https://github.com/ashhart/TensorFold/pull/873" target="_blank" rel="noopener">#873</a>, <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/76c3f4f8" target="_blank" rel="noopener">76c3f4f8</a>, gave 68 of 68 at 4, 6 and 8 bits on the M4 Pro (8 bits: 3 runs). It gave 68 of 68 on the M5. At <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/fd2f8e27" target="_blank" rel="noopener">fd2f8e27</a> it crashed at 6 and 8 bits on the M4 Pro. A pipeline field was unset on GPUs without tensor units. <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/76c3f4f8" target="_blank" rel="noopener">76c3f4f8</a> fixes this. <code>tf-tile-check</code> passed. 1-row decode has its own kernel. The 4-bit codes are decoded as exact integers through half pairs (1024 + code, minus 1024). There is no integer-to-float convert.</p>
+</div>
+</section>
+<section>
+<p class="eyebrow">Exactness</p>
+<h2>Same bits on every path.</h2>
+<p class="sub">A row gives the same bits in a prompt chunk, in decode and in a draft window. So drafted replies equal plain ones, concurrent replies equal solo ones, and a resumed prompt equals a fresh one.</p>
+<div class="gcard">
+<div class="card"><div class="k">matmul</div><h3>Group sums in k order</h3><p>The tiles (prompt chunks) and the twin (decode rows and windows, 1 to 32) give the same bits for each output by design. At load, <code>twinExact</code> checks this bit for bit. If a GPU differs, every row uses the tiles.</p></div>
+<div class="card"><div class="k">attention</div><h3>Fixed 4,096-key chunks</h3><p>The prompt kernel and the decode kernel come from one template. Each 32-key block has the same arithmetic. The parts merge in a fixed order.</p></div>
+<div class="card"><div class="k">receipts</div><h3>Checked, not assumed</h3><p><code>tf-lfm2-exact</code> at the head of <a class="gh" href="https://github.com/ashhart/TensorFold/pull/873" target="_blank" rel="noopener">#873</a>, <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/76c3f4f8" target="_blank" rel="noopener">76c3f4f8</a>, gave 68 of 68 at 4, 6 and 8 bits on the M4 Pro (8 bits: 3 runs). It gave 68 of 68 on the M5. At <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/fd2f8e27" target="_blank" rel="noopener">fd2f8e27</a> it crashed at 6 and 8 bits on the M4 Pro. A pipeline field was unset on GPUs without tensor units. <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/76c3f4f8" target="_blank" rel="noopener">76c3f4f8</a> fixes this. Replies at 4 streams equal solo: 30 of 30 on the M4 Pro, 12 of 12 on the M5 Ultra.</p></div>
+</div>
+<p class="note">The test used random 4-, 6- and 8-bit matrices, compared with float64. The error of the tiles is 2.4 to 3.9 times less than the error of mx.quantized_matmul on the same data (worst output, mean and worst column). Source: <code>tile_qmm/tile_qmm_reference.json</code>, mlx 0.32.3. This receipt is older. We did not rerun it on the final build.</p>
+<p class="note">On the M5 with tensor units on, one guarantee changes. The tensor units add 16 terms in an order that scalar code does not reproduce. So the prompt bits differ from the PR head. The greedy replies also differ: the code reply takes 216 draft rounds, not 204. These guarantees still hold. Windows equal 1-row decode. Concurrent replies equal solo runs (12 of 12). In the server, a resumed prompt equals a fresh one (2-turn check on the M5 Ultra, build <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/74aff635" target="_blank" rel="noopener">74aff635</a>, an earlier tip).</p>
+</section>
+
+
+
+
+
+
+
+<footer>The numbers come from the receipts in tf-lfm2-receipts: runs/m4-final-fd2f8e27 and runs/m5-final-fd2f8e27. Builds: PR head <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/5a6ee034" target="_blank" rel="noopener">5a6ee034</a> and final <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/fd2f8e27" target="_blank" rel="noopener">fd2f8e27</a>. The M5 Ultra also ran with tensor units off. mlx-lm 0.32.0 on mlx 0.32.3. Apple M4 Pro, macOS 26.5.1: 1 alternated session, with the Mac in use. The first mlx-lm round overlapped another job, so the page uses the second round and the rerun. Apple M5 Ultra, macOS 27.0: 1 alternated session, with turn-2 TTFT included. Float64 comparison: tile_qmm/tile_qmm_reference.json. The head of <a class="gh" href="https://github.com/ashhart/TensorFold/pull/873" target="_blank" rel="noopener">#873</a>, <a class="gh" href="https://github.com/BlivionIaG/TensorFold/commit/76c3f4f8" target="_blank" rel="noopener">76c3f4f8</a>, adds only a fix for GPUs without tensor units.</footer>
+</main>
+
+<script>
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const P={bg:'#060a13',surface:'#0c1424',surface2:'#111b2e',line:'#29384f',ink:'#f1f5ff',muted:'#a9b6cc',faint:'#6f7f99',blue:'#9bd2ff',violet:'#8b6cff',magenta:'#e052c8',orange:'#ff9a5a',azure:'#4f8cff',slate:'#3a4a63',good:'#7ee0b8'};
+const types=[];for(let i=0;i<40;i++)types.push(i%4===2?'attn':'conv');
+
+(function hero(){
+const D={
+m5:{hw:'Apple M5 Ultra, 64-core GPU, 256 GB',b:'fd2f8e27',s:{
+0:['278.8','tokens per second','Served greedy code decode, 256 tokens, 1 stream. mlx-lm: 181.2 tok/s.'],
+4:['12,831','tokens per second, cold prompt','2,048-token prompt, in process, tensor units on. mlx-lm: 12,128 tok/s. TensorFold leads at 2k and 8k, is level at 32k, and is 5.7% and 10.0% behind at 64k and 131k.'],
+1:['557.0','tokens per second, total','Served, 4 streams, code. mlx-lm: 177.2 tok/s. Each reply equals its solo run (12/12).'],
+2:['18.2','GB peak footprint','In process at 131,000 tokens, measured with /usr/bin/time -l, 8,192-row chunks. mlx-lm: 21.3 GB.']}},
+m4:{hw:'Apple M4 Pro, 20-core GPU, 48 GB',b:'fd2f8e27',s:{
+0:['135.6','tokens per second','Served greedy code decode, 256 tokens, 1 stream. mlx-lm: 97.2 tok/s.'],
+4:['1,298','tokens per second, cold prompt','2,048-token prompt, in process. mlx-lm: 1,299 tok/s. Prefill is at parity. The Mac was in use, so rounds vary by up to 12%.'],
+1:['237.4','tokens per second, total','Served, 4 streams, code. mlx-lm: 95.0 tok/s. Each reply equals its solo run.'],
+2:['16.8','GB peak footprint','In process at 131,000 tokens, measured with /usr/bin/time -l. mlx-lm: 19.9 GB.']}}};
+let m='m5',sel='0';
+const X={m5:{'0':181.2,'4':12128,'1':177.2,'2':21.3},m4:{'0':97.2,'4':1299,'1':95.0,'2':19.9}};
+function dl(m,k,v,long){const x=X[m]&&X[m][k];if(!x)return'';const p=(parseFloat(String(v).replace(/,/g,''))/x-1)*100;const good=k==='2'?p<0:p>0;const c=Math.abs(p)<1?'eq':good?'up':'dn';const s=Math.abs(p)<1?'≈ mlx-lm':(p>0?'+':'−')+Math.abs(p).toFixed(0)+'%';return '<span class="dlt '+c+'" title="against mlx-lm in the same session">'+s+(long&&Math.abs(p)>=1?' vs mlx-lm':'')+'</span>'}
+function show(){const d=D[m];document.getElementById('hhw').textContent=d.hw;document.getElementById('hwhat').textContent='LFM2.5-24B-A2B · MLX 4-bit · build '+d.b;for(const k in d.s){const e=document.getElementById('sv'+k);if(e)e.innerHTML=(k==='2'?d.s[k][0]+' GB':d.s[k][0])+dl(m,k,d.s[k][0])}
+const h=d.s[sel];document.getElementById('hv').textContent=h[0];document.getElementById('hu').innerHTML=h[1]+dl(m,sel,h[0],1);document.getElementById('hc').textContent=h[2];
+document.querySelectorAll('.stat').forEach(x=>x.classList.toggle('on',x.dataset.i===sel))}
+document.querySelectorAll('.stat').forEach(s=>s.onclick=()=>{sel=s.dataset.i;show()});
+document.querySelectorAll('#msw .btn').forEach(b=>b.onclick=()=>{m=b.dataset.m;document.querySelectorAll('#msw .btn').forEach(x=>x.classList.toggle('on',x===b));show()});
+show()})();
+
+(function anim(){
+const cv=document.getElementById('anim'),ctx=cv.getContext('2d');const W=900,H=340;
+function size(){const r=window.devicePixelRatio||1;const w=cv.clientWidth||900;cv.width=w*r;cv.height=w*H/W*r;ctx.setTransform(cv.width/W,0,0,cv.height/H,0,0)}
+size();addEventListener('resize',size);
+const words=['Zig','kernels','read','the','4-bit','codes','as','stored','.'];
+let mode='decode',playing=!reduce,slow=1,t=0,last=performance.now(),tok=0,keys=6000,out=[];
+const KEYS_PER_CELL=256,CELLS=64,CHUNK=4096;
+const isAttn=i=>i%4===2;
+function picks(layer,k){const s=new Set();let h=(layer*2654435761+k*40503)>>>0;while(s.size<4){h=(h*1103515245+12345)>>>0;s.add((h>>>8)%64)}return[...s]}
+function rr(x,y,w,h,r,fill,stroke,lw){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw||1;ctx.stroke()}}
+function txt(s,x,y,c,size,align,weight,mono){ctx.fillStyle=c;ctx.font=(weight||400)+' '+(size||12)+'px '+(mono?'"DM Mono",monospace':'Manrope,Arial,sans-serif');ctx.textAlign=align||'left';ctx.textBaseline='middle';ctx.fillText(s,x,y)}
+function grad(x0,x1){const g=ctx.createLinearGradient(x0,0,x1,0);g.addColorStop(0,P.azure);g.addColorStop(.35,P.violet);g.addColorStop(.68,P.magenta);g.addColorStop(1,P.orange);return g}
+function glow(x,y,r,c){const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,c);g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.fillRect(x-r,y-r,2*r,2*r)}
+const X0=130,CW=15,G=2,HX=X0+40*(CW+G)+8;
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;const dur=(mode==='decode'?9:12)*slow;if(playing)t+=dt/dur;
+if(t>=1){t=0;if(mode==='decode'){out.push(words[tok%words.length]);if(out.length>9)out=[];tok++;keys+=1;if(keys>CELLS*KEYS_PER_CELL-1)keys=6000}else{keys+=2048;if(keys>CELLS*KEYS_PER_CELL)keys=2048}}
+draw();requestAnimationFrame(frame)}
+function draw(){ctx.clearRect(0,0,W,H);const pr=mode==='prompt';
+const pe=.07,ph=.88;let phase,L=-1,f=0;
+if(t<pe)phase='embed';else if(t<ph){const p=(t-pe)/(ph-pe);L=Math.min(39,Math.floor(p*40));f=p*40-L;phase=f<.5?'mixer':'ffn'}else phase='head';
+rr(10,50,62,126,10,P.surface,P.line);txt(pr?'2,048 rows':'token',41,64,P.muted,13,'center');
+if(pr){for(let r=0;r<8;r++)for(let c=0;c<3;c++)rr(20+c*15,76+r*11,12,8,2,phase==='embed'?P.blue:P.slate)}else{rr(14,96,54,26,6,phase==='embed'?P.blue:P.surface2,P.line);txt(words[tok%words.length],41,109,phase==='embed'?P.bg:P.ink,11.5,'center',500,true)}
+rr(77,50,48,126,8,phase==='embed'?P.orange:P.surface,P.line);txt('embed',101,113,phase==='embed'?P.bg:P.muted,11.5,'center');
+for(let i=0;i<40;i++){const x=X0+i*(CW+G);const done=L>i||phase==='head';const cur=L===i;
+rr(x,50,CW,60,4,isAttn(i)?P.azure:P.violet);
+rr(x,116,CW,60,4,i<2?P.slate:P.orange);
+if(done){ctx.globalAlpha=.6;rr(x,50,CW,126,4,P.bg);ctx.globalAlpha=1}
+else if(!cur){ctx.globalAlpha=.25;rr(x,50,CW,126,4,P.bg);ctx.globalAlpha=1}
+if(cur){ctx.strokeStyle=P.ink;ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x-2,(phase==='mixer'?48:114),CW+4,64,5);ctx.stroke()}
+if(isAttn(i))txt('A',x+CW/2,40,P.faint,12,'center',500,true)}
+if(L>=0){const x=X0+L*(CW+G)+CW/2;const y=phase==='mixer'?80:146;glow(x,y,pr?34:24,'rgba(224,82,200,.55)');ctx.fillStyle=P.ink;ctx.beginPath();ctx.arc(x,y,pr?5:4,0,7);ctx.fill()}
+rr(HX,50,52,126,10,phase==='head'?grad(HX,HX+52):P.surface,P.line);txt('head',HX+26,100,phase==='head'?P.bg:P.muted,13,'center',600);txt(pr?'last row':'logits',HX+26,120,phase==='head'?P.bg:P.faint,12,'center');
+const by=200,bh=128;
+const convOn=L>=0&&phase==='mixer'&&!isAttn(L);
+rr(10,by,250,bh,12,P.surface,convOn?P.violet:P.line,convOn?1.5:1);txt('Short-conv state',24,by+18,P.ink,14,'left',600);
+const labels=pr?['saved','saved','new rows']:['row t-2','row t-1','new'];
+for(let k=0;k<3;k++){const x=24+k*76;rr(x,by+40,66,30,7,k===2&&convOn?P.violet:P.surface2,k===2?P.violet:P.line);txt(labels[k],x+33,by+55,P.ink,12,'center',500,true)}
+if(convOn){ctx.strokeStyle=P.violet;ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(57,by+76);ctx.quadraticCurveTo(135,by+100,214,by+76);ctx.stroke()}
+txt(convOn?'3 causal taps, then C × conv':'2 rows × 2048 a layer',24,by+106,P.muted,13);
+const attnOn=L>=0&&phase==='mixer'&&isAttn(L);
+rr(275,by,300,bh,12,P.surface,attnOn?P.azure:P.line,attnOn?1.5:1);txt('KV cache · one attention layer',289,by+18,P.ink,14,'left',600);
+const cw=4.2,x0=289;const before=pr&&attnOn?keys-2048:keys;
+for(let k=0;k<CELLS;k++){const lo=k*KEYS_PER_CELL;const filled=lo<keys;const isNew=attnOn&&pr&&lo>=keys-2048&&lo<keys;rr(x0+k*cw,by+40,cw-1,26,1,isNew?P.blue:(filled?P.azure:P.surface2))}
+if(attnOn&&!pr){const xe=x0+(keys/KEYS_PER_CELL)*cw;glow(xe,by+53,14,'rgba(155,210,255,.8)');ctx.fillStyle=P.ink;ctx.fillRect(xe-1,by+38,2,30)}
+for(let k=CHUNK/KEYS_PER_CELL;k<CELLS;k+=CHUNK/KEYS_PER_CELL){ctx.strokeStyle=P.ink;ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(x0+k*cw-.5,by+34);ctx.lineTo(x0+k*cw-.5,by+72);ctx.stroke();ctx.globalAlpha=1}
+if(attnOn&&!pr){const ch=Math.ceil(keys/CHUNK);for(let c=0;c<ch;c++){const parts=c<ch-1?8:Math.ceil((keys-c*CHUNK)/512);for(let s=0;s<parts;s++){const xs=x0+(c*16+s*2)*cw;ctx.fillStyle=s%2?P.blue:P.azure;ctx.fillRect(xs,by+70,cw*2-1.5,3)}}}
+txt('1 cell = 256 keys · | = 4,096 keys',289,by+86,P.faint,12,'left',400,true);
+txt(attnOn?(pr?'16 rows per threadgroup':'8 parts of 512 keys per chunk'):('context: '+keys.toLocaleString('en-US')+' keys'),289,by+106,P.muted,13);
+const moeOn=L>=2&&phase==='ffn';const denseOn=L>=0&&L<2&&phase==='ffn';
+rr(590,by,300,bh,12,P.surface,(moeOn||denseOn)?P.orange:P.line,(moeOn||denseOn)?1.5:1);txt(denseOn?'Dense SwiGLU · layers 0-1':'Experts · 64, top 4',604,by+18,P.ink,14,'left',600);
+const pk=moeOn?picks(L,tok):[];
+for(let e=0;e<64;e++){const r=Math.floor(e/16),c=e%16;const x=604+c*17,y=by+34+r*15;let fill=P.surface2;
+if(moeOn){if(pr){const h=((e*7+L*13)%11);fill=P.orange;ctx.globalAlpha=.25+h*.07}else if(pk.includes(e)){glow(x+7,y+5,12,'rgba(255,154,90,.6)');fill=P.orange}}
+if(denseOn)fill=P.slate;rr(x,y,14,11,3,fill);ctx.globalAlpha=1}
+txt(moeOn?(pr?'all busy · 32-row tiles per expert':'sigmoid + bias picks 4'):(denseOn?'11,776 wide':'router in fp32'),604,by+106,P.muted,13);
+const cap=document.getElementById('acap');let s='';
+if(phase==='embed')s=pr?'Embed · 2,048 token rows. The 6-bit embedding rows are dequantized in the kernel.':'Embed · the token\'s row of the 6-bit embedding is dequantized in the kernel.';
+else if(phase==='head')s=pr?'Head · final norm, then the tied embedding projects only the last row. The conv state and the KV stay for decode.':'Head · final norm, tied embedding projection, next token. The lane core then starts the next round.';
+else if(phase==='mixer')s=isAttn(L)?('Layer '+L+' · attention: Q, K, V '+(pr?'tiles':'twin')+'; QK norm and RoPE; the new K and V go into the cache.'):('Layer '+L+' · short conv: in projection ('+(pr?'tiles':'twin')+'), 3 causal taps over the 2 saved rows, out projection.');
+else s=L<2?('Layer '+L+' · dense SwiGLU, 11,776 wide ('+(pr?'tiles':'twin')+').'):(pr?('Layer '+L+' · MoE: the GPU sorts the 8,192 picks by expert; a grouped tile does gate, up and swiglu for each expert, then down.'):('Layer '+L+' · MoE: fp32 router, sigmoid + bias picks experts '+pk.join(', ')+' (illustrative); twin GLU and down, one threadgroup row per pick; the next norm does the combine.'));
+if(cap.textContent!==s)cap.textContent=s;
+const o=document.getElementById('aout');const os=pr?'(prompt pass: the first token comes after the last chunk)':(out.join(' ')+' _');if(o.textContent!==os)o.textContent=os}
+function setMode(m){mode=m;t=0;keys=m==='prompt'?2048:6000;document.getElementById('mDec').classList.toggle('on',m==='decode');document.getElementById('mPro').classList.toggle('on',m==='prompt')}
+document.getElementById('mDec').onclick=()=>setMode('decode');document.getElementById('mPro').onclick=()=>setMode('prompt');
+const pb=document.getElementById('aPlay');pb.textContent=playing?'Pause':'Play';pb.onclick=()=>{playing=!playing;pb.textContent=playing?'Pause':'Play'};
+const sb=document.getElementById('aSlow');sb.onclick=()=>{slow=slow===1?2.5:1;sb.textContent=slow===1?'Slower':'Faster';sb.classList.toggle('on',slow!==1)};
+requestAnimationFrame(frame);
+})();
+
+(function tileStepper(){
+const NS='http://www.w3.org/2000/svg';
+function el(tag,attrs,parent,text){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(text!=null)e.textContent=text;if(parent)parent.appendChild(e);return e}
+const caps=['1 · Each threadgroup takes a 32×32 output tile. The codes and the scale and bias of each group of 64 inputs wait in device memory.',
+'2 · The tile stages a half-group (32 inputs) of codes and inputs into threadgroup memory, as unscaled bf16 integers. It uses two buffers in turn.',
+'3 · The simdgroup MMAs multiply the codes (as bf16) by the bf16 inputs. They add in fp32, in k order, from zero. The result is the group sum P.',
+'4 · acc = fma(bias, xsum, fma(scale, P, acc)). xsum is the input sum of the group. A pass before the tile computes it.',
+'5 · The steps overlap. While the MMAs use 1 buffer, the next half-group loads into the other buffer. The tile then does the next group, in order, to the end of k.'];
+let st=0,timer=null;
+function draw(){const C=document.getElementById('codes'),S=document.getElementById('stage'),M=document.getElementById('mma');C.innerHTML='';S.innerHTML='';M.innerHTML='';
+for(let r=0;r<8;r++)for(let c=0;c<8;c++){const hot=(st>=1&&c<4&&st<4)||(st===4&&c>=4);el('rect',{x:34+c*19,y:44+r*22,width:16,height:18,rx:3,fill:hot?'#ff9a5a':'#29384f',opacity:hot?1:.6},C);
+if(hot&&r===0)el('text',{x:42+c*19,y:57,'text-anchor':'middle','font-size':11,fill:'#060a13','font-family':'DM Mono, monospace'},C,String((c*5+3)%16));}
+if(st>=1){const bufs=2;for(let b=0;b<bufs;b++){const y=50+b*90;el('rect',{x:292,y,width:216,height:72,rx:8,fill:'none',stroke:b===1?'#9bd2ff':'#8b6cff','stroke-dasharray':b===1?'4 3':'none'},S);
+el('text',{x:400,y:y+16,'text-anchor':'middle','font-size':12.5,fill:'#a9b6cc'},S,b===1?(st===4?'buffer 2 · next half-group loading':'buffer 2 · next half-group'):'buffer 1 · codes + inputs');
+for(let i=0;i<12;i++)el('rect',{x:302+i*17,y:y+28,width:14,height:14,rx:3,fill:'#ff9a5a'},S);
+for(let i=0;i<12;i++)el('rect',{x:302+i*17,y:y+48,width:14,height:14,rx:3,fill:'#4f8cff'},S);}}
+else el('text',{x:400,y:135,'text-anchor':'middle','font-size':13,fill:'#8b9ab3'},S,'empty');
+if(st>=2){for(let r=0;r<4;r++)for(let c=0;c<4;c++)el('rect',{x:620+c*28,y:50+r*28,width:24,height:24,rx:5,fill:'url(#gg)',opacity:.45+.13*((r+c)%4)},M);
+el('text',{x:740,y:180,'text-anchor':'middle','font-size':15,fill:'#f1f5ff','font-family':'DM Mono, monospace'},M,'P = Σ code × x');
+el('text',{x:800,y:110,'text-anchor':'middle','font-size':12.5,fill:'#a9b6cc'},M,'fp32');}
+if(st>=3){el('rect',{x:615,y:190,width:250,height:30,rx:8,fill:'rgba(126,224,184,.14)',stroke:'#7ee0b8'},M);el('text',{x:740,y:210,'text-anchor':'middle','font-size':13,fill:'#7ee0b8','font-family':'DM Mono, monospace'},M,'acc = fma(b, xsum, fma(s, P, acc))');}
+document.getElementById('cap').textContent=caps[st];document.getElementById('stepn').textContent=(st+1)+' / '+caps.length;}
+function go(d){st=(st+d+caps.length)%caps.length;draw()}
+document.getElementById('next').onclick=()=>go(1);document.getElementById('prev').onclick=()=>go(-1);
+document.getElementById('play').onclick=function(){if(timer){clearInterval(timer);timer=null;this.textContent='Play';this.classList.remove('on')}else{timer=setInterval(()=>go(1),2600);this.textContent='Pause';this.classList.add('on')}};
+draw();})();
+
+(function charts(){
+const fmt=v=>cur==='prompt'?v.toLocaleString('en-US'):(Number.isInteger(v)?v.toFixed(1):String(v));
+const data={
+decode:{note:'Decode, 4-bit, in tok/s. Higher is better. Served: bench_openai, 256 tokens, code. In process: after a prompt of that length. M4 Pro: final build (fd2f8e27), with mlx-lm in the same session. The Mac was in use. M5 Ultra: final build (fd2f8e27, tensor units on), with mlx-lm alternated in the same session.',rows:[
+['Served',[135.6,97.2],[278.8,181.2]],['After 2k',[120.9,111.2],[262.2,204.1]],['After 8k',[111.0,102.2],[253.1,198.6]],['After 32k',[85.1,75.2],[201.1,168.4]],['After 64k',[64.9,56.7],[160.0,145.5]],['After 131k',[43.6,36.7],[117.5,113.0]]]},
+prompt:{note:'Cold prompt, 4-bit, in tok/s, in process. Higher is better. M4 Pro: final build (fd2f8e27), alternated with mlx-lm in the same session. The results are at parity, within the noise (the Mac was in use). M5 Ultra: final build (fd2f8e27, tensor units on), alternated with mlx-lm in the same session. TensorFold is ahead at 2k and 8k, and level at 32k. It is 5.7% behind at 64k and 10.0% behind at 131k. The chunks have 2,048 rows at 2k and 8,192 rows above.',rows:[
+['2,048',[1298,1299],[12831,12128]],['8,192',[1280,1265],[13952,13036]],['32,768',[1068,1063],[11636,11618]],['65,536',[820,849],[9250,9805]],['131,000',[592,574],[6511,7234]]]},
+other:{note:'Served, 4 streams: total tok/s (code). Higher is better. M4 Pro: final build (fd2f8e27), with mlx-lm in the same session. M5 Ultra: final build, tensor units on. For peak memory in process at 131,000 tokens, and for turn-2 TTFT with an 8k history, lower is better.',rows:[
+['4 streams, tok/s',[237.4,95.0],[557.0,177.2]],['Peak GB at 131k',[16.8,19.9],[18.2,21.3]],['Turn 2 TTFT, s',[0.222,0.169],[0.061,0.065]]]}};
+let mach='both',cur='decode';
+function chart(){const d=data[cur];document.getElementById('chartnote').textContent=d.note;const B=document.getElementById('bars');B.innerHTML='';
+const ms=mach==='both'?[['M4 Pro',1],['M5 Ultra',2]]:mach==='m4'?[['M4 Pro',1]]:[['M5 Ultra',2]];
+const gmax=cur==='other'?0:Math.max(...d.rows.flatMap(r=>ms.flatMap(([_,k])=>r[k])))*1.08;
+d.rows.forEach(r=>{const max=gmax||Math.max(...ms.flatMap(([_,k])=>r[k]))*1.08;const lab=document.createElement('div');lab.className='lab';lab.textContent=r[0];
+const grp=document.createElement('div');grp.className='grp';
+ms.forEach(([name,k])=>{const pair=document.createElement('div');pair.className='pair';
+ if(mach==='both'){const t=document.createElement('div');t.className='mtag';t.textContent=name;pair.appendChild(t)}
+ [['tf',0],['mx',1]].forEach(([c,x])=>{const b=document.createElement('div');b.className='bar '+c+(k===2?' m5':'');b.style.width='0%';b.textContent=fmt(r[k][x]);pair.appendChild(b);
+ requestAnimationFrame(()=>requestAnimationFrame(()=>{b.style.width=(r[k][x]/max*100)+'%'}))});
+ grp.appendChild(pair)});
+B.appendChild(lab);B.appendChild(grp)});}
+document.querySelectorAll('#charts .btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('#charts .btn').forEach(x=>x.classList.toggle('on',x===b));cur=b.dataset.c;chart()});
+document.querySelectorAll('#machs .btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('#machs .btn').forEach(x=>x.classList.toggle('on',x===b));mach=b.dataset.m;chart()});
+chart();})();
+
+
+</script>
+<script>
+(function cheap(){
+const W=[[1,8.2,8.0],[2,12.0,10.9],[4,19.8,16.2],[8,35.5,27.3],[16,68.6,44.6]];
+const B=document.getElementById('wbars');
+W.forEach(([w,a,b])=>{const lab=document.createElement('div');lab.className='lab';lab.textContent=w+(w===1?' row':' rows');
+const p=document.createElement('div');p.className='pair';
+[[a,'bf'],[b,'tf']].forEach(([v,c])=>{const d=document.createElement('div');d.className='bar '+c;d.style.width='0%';d.textContent=v.toFixed(1)+' ms';p.appendChild(d);
+requestAnimationFrame(()=>requestAnimationFrame(()=>{d.style.width=(v/72*100)+'%'}))});
+B.appendChild(lab);B.appendChild(p)});
+let h,picks;const rnd=()=>(h=(h*1103515245+12345)>>>0)/4294967296;
+for(let seed=1;seed<5000;seed++){h=seed;picks=[];
+ for(let r=0;r<16;r++){const row=new Set();while(row.size<4){const e=rnd()<0.8?Math.floor(rnd()*20):Math.floor(rnd()*64);row.add(e)}picks.push([...row])}
+ if(new Set(picks.flat()).size===28)break}
+const distinct=[...new Set(picks.flat())];
+const G=document.getElementById('ggrid');const cells=[];
+picks.forEach((row,r)=>{const l=document.createElement('div');l.className='glab';l.textContent='row '+(r+1);G.appendChild(l);
+row.forEach(e=>{const c=document.createElement('div');c.className='gcell';c.textContent='E'+e;c.dataset.e=e;G.appendChild(c);cells.push(c)})});
+let mode='before',timer=null;
+const cnt=document.getElementById('gCount');
+function run(){clearInterval(timer);cells.forEach(c=>{c.classList.remove('lit');c.style.transform='none'});
+let i=0,reads=0;const seen=new Set();
+const order=mode==='before'?cells.map((c,k)=>[k]):distinct.map(e=>cells.map((c,k)=>c.dataset.e==e?k:-1).filter(k=>k>=0));
+const total=mode==='before'?64:distinct.length;
+cnt.textContent=(mode==='before'?'expert reads: 0 / 64':'expert reads: 0 / '+total);
+const step=()=>{if(i>=order.length){clearInterval(timer);setTimeout(run,1800);return}
+order[i].forEach(k=>{cells[k].classList.add('lit');cells[k].style.transform='scale(1.05)';setTimeout(()=>cells[k].style.transform='none',250)});
+reads++;i++;cnt.textContent='expert reads: '+reads+' / '+total+(mode==='before'?'':'  (was 64)')};
+if(reduce){order.forEach(o=>o.forEach(k=>cells[k].classList.add('lit')));cnt.textContent='expert reads: '+total+(mode==='before'?'':' (was 64)');return}
+timer=setInterval(step,mode==='before'?110:250)}
+document.getElementById('gBefore').onclick=function(){mode='before';this.classList.add('on');document.getElementById('gAfter').classList.remove('on');run()};
+document.getElementById('gAfter').onclick=function(){mode='after';this.classList.add('on');document.getElementById('gBefore').classList.remove('on');run()};
+run();
+})();
+</script>
+<script>
+(function scaling(){
+const D={m4:{rows:[['PR head 5a6ee034','mx2',125.7,190.7],['Final fd2f8e27','tf',135.6,237.4]],max:260,ct:'190.7 → 237.4 tok/s at 4 streams',note:'M4 Pro, 4-bit, served code, total tok/s (bench_concurrent, 256 tokens). Both builds alternated in 1 session. The Mac was in use. Each reply equals its solo run and has the same tokens as the PR head.'},
+m5:{rows:[['PR head 5a6ee034','mx2',290.9,490.1],['Final fd2f8e27','tf',278.8,557.0]],max:580,ct:'490.1 → 557.0 tok/s at 4 streams',note:'M5 Ultra, 4-bit, served code, total tok/s (bench_concurrent, 256 tokens). Both builds alternated in 1 session. The 4-stream gain comes from cheap windows. The 1-stream result is lower on the M5. With tensor units on, the code reply has different tokens from the PR head (the prompt bits differ). So the server accepts fewer drafts: 216 rounds, not 204, at the same time per round. With tensor units off, 1 stream gives 299.5 tok/s.'}};
+function show(m){const d=D[m];const E=document.getElementById('scal');E.innerHTML='<div></div><div class="h">1 stream</div><div class="h">4 streams, total</div>';
+d.rows.forEach(([n,c,a,b])=>{const l=document.createElement('div');l.className='lab';l.textContent=n;E.appendChild(l);
+[a,b].forEach(v=>{const w=document.createElement('div');const bar=document.createElement('div');bar.className='bar '+(c==='mx2'?'bf':c);bar.style.width='0%';bar.textContent=v.toFixed(1);w.appendChild(bar);E.appendChild(w);
+requestAnimationFrame(()=>requestAnimationFrame(()=>{bar.style.width=(v/d.max*100)+'%'}))})});
+document.getElementById('scct').textContent=d.ct;document.getElementById('scnote').textContent=d.note}
+document.querySelectorAll('#scm .btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('#scm .btn').forEach(x=>x.classList.toggle('on',x===b));show(b.dataset.m)});
+show('m4')})();
+</script>
+
+<script>
+(function fitBars(){
+let t=null;
+function fit(){document.querySelectorAll('.bar').forEach(b=>{
+ let sp=b.querySelector(':scope>span');
+ if(!sp){if(!b.firstChild||b.firstChild.nodeType!==3)return;sp=document.createElement('span');sp.textContent=b.textContent;b.textContent='';b.appendChild(sp)}
+ b.classList.remove('out');const pad=14;if(sp.getBoundingClientRect().width+pad>b.clientWidth)b.classList.add('out')})}
+const later=()=>{clearTimeout(t);t=setTimeout(fit,1150)};
+const mo=new MutationObserver(later);['bars','wbars','tbars','scal'].forEach(id=>{const el=document.getElementById(id);if(el)mo.observe(el,{childList:true})});
+addEventListener('resize',later);later();
+})();
+</script>
+</body>
+</html>

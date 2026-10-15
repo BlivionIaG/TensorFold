@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TensorFold LFM2.5 pages</title>
+<style>:root{--bg:#0b0f1a;--ink:#e8edf6;--muted:#9aa7bd;--line:#22304a}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,sans-serif}main{max-width:640px;margin:0 auto;padding:48px 16px}h1{font-size:28px;margin:0 0 8px}p{color:var(--muted)}a{color:var(--ink)}li{margin:12px 0}</style></head>
+<body><main><h1>LFM2.5 on TensorFold</h1>
+<p>LiquidAI LFM2.5-24B-A2B, MLX 4-bit, on the native Metal engine of TensorFold. Measured on an Apple M4 Pro and an Apple M5 Ultra against mlx-lm. Work for <a href="https://github.com/ashhart/TensorFold/issues/820">ashhart/TensorFold#820</a>.</p>
+<ul>
+<li><a href="lfm2/">The results</a>: TensorFold against mlx-lm on both Macs.</li>
+<li><a href="lfm2/gains/">Three gains after #823</a>: decode, cheap windows and the M5 tensor units.</li>
+</ul>
+<p>Data: the receipts on the <a href="https://github.com/BlivionIaG/TensorFold/tree/lfm2-receipts/receipts/lfm2">lfm2-receipts</a> branch.</p>
+</main></body></html>
