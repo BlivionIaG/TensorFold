@@ -17,4 +17,4 @@ Apple M4 Pro (20-core GPU), 48 GB, macOS 26.5.1. Checkpoint `LFM2.5-24B-A2B-MLX-
 - `footprint_*.txt`: `vmmap -summary` at the end of the session.
 - `serve_*.log`: the server log; its first line has the LFM2 window ms by width.
 
-`long.sh` repeats the 131k prompt in the order p5, p4, head, head, p4, p5 (rounds 3 and 4). `ctl.sh` then runs mlx-lm, p5, head, mlx-lm (served decode and 4 streams). Their files are added when they finish.
+`long.sh` repeats the 131k prompt in the order p5, p4, head, head, p4, p5 (rounds 3 and 4). `ctl.sh` then runs mlx-lm, p5, head, mlx-lm (served decode and 4 streams). `prefill_*_r3.json` and `prefill_*_r4.json` hold the 131k reruns; `*_mlx_r*` and `*_r5.*` hold the control. The mlx-lm server sends the thinking text at the end of a chat reply, so its chat rate is not comparable and the concurrent client cannot read its tokens (the "failed" equality counts).
