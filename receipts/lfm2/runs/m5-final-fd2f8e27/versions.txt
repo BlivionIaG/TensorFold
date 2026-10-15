@@ -1,0 +1,14 @@
+ProductName:		macOS
+ProductVersion:		27.0
+BuildVersion:		26A428
+Apple M5 Ultra
+274877906944
+      Total Number of Cores: 64
+mlx 0.32.3 mlx-lm 0.32.0
+before=T/bin/tensorfold-native (5a6ee034) on=T/final9/out/native/bin/tensorfold-native (fd2f8e27) off=T/final9off/out/native/bin/tensorfold-native (fd2f8e27, tensor units off)
+4519ada9e614d205a6a269fba48f55cf50685f3b07f5e7e003382bc403d9fb21  T/bin/tensorfold-native
+bbde6159f4fca3356e433a3b8c6b4c20ca62cbe72112b04a193f77d1161782a2  T/final9/out/native/bin/tensorfold-native
+2a457009b9211f4d4d1753e6cd339252101e2090ce232043d7268ad4ebe2c122  T/final9off/out/native/bin/tensorfold-native
+024a8fa2e01b678be315b29fd412eb62f33cacbe9648da86ae7a88fb06406548  T/bin/tf-lfm2-bench
+a7a54dd0b16de512b402ee6e3f6ef68579a6dca1dd13c7f79e1fbe6fff51e7aa  T/final9/out/bin/tf-lfm2-bench
+e3ef1dcb4862baf17d005f296ac3730731ab3810fe79a4d9578da2bab86b3f8f  T/final9off/out/bin/tf-lfm2-bench

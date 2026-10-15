@@ -1,0 +1,88 @@
+[
+ {
+  "label": "off_r1",
+  "prompt": "fibonacci-raw",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 299.4771333973962,
+  "decode_tps_all": [
+   299.71,
+   299.43,
+   299.48
+  ],
+  "ttft_s_median": 0.02700400003232062,
+  "evidence": [
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f66e3fd7e509",
+    "output_sha256": "60ec1c6fb44cda5c2c930212b0541c73f232e1cf0fcacfa17d895dbb4d3a7843"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f66e3fd7e509",
+    "output_sha256": "60ec1c6fb44cda5c2c930212b0541c73f232e1cf0fcacfa17d895dbb4d3a7843"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "f66e3fd7e509",
+    "output_sha256": "60ec1c6fb44cda5c2c930212b0541c73f232e1cf0fcacfa17d895dbb4d3a7843"
+   }
+  ],
+  "sample": " and the user is asking for the first 10 entries of the sequence. The user says: \"Does the user want the first 10 entries of the sequence?\" So the answer should"
+ },
+ {
+  "label": "off_r1",
+  "prompt": "gpu-chat-no-think",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 265.0338042861412,
+  "decode_tps_all": [
+   264.85,
+   265.09,
+   265.03
+  ],
+  "ttft_s_median": 0.03250991692766547,
+  "evidence": [
+   {
+    "prompt_tokens": 29,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "57752ac6d7f0",
+    "output_sha256": "3c0733965437bfc9b46bdec4f2eccfa477d5f5d6cc129991d60ca2bedc621a2f"
+   },
+   {
+    "prompt_tokens": 29,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "57752ac6d7f0",
+    "output_sha256": "3c0733965437bfc9b46bdec4f2eccfa477d5f5d6cc129991d60ca2bedc621a2f"
+   },
+   {
+    "prompt_tokens": 29,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "57752ac6d7f0",
+    "output_sha256": "3c0733965437bfc9b46bdec4f2eccfa477d5f5d6cc129991d60ca2bedc621a2f"
+   }
+  ],
+  "sample": "\n**How a GPU does matrix multiplication (in plain English)**  \n\n1. **What a GPU is good at** \u2013 A GPU (Graphics Processing Unit) has thousands of tiny \u201ccores\u201d th"
+ }
+]

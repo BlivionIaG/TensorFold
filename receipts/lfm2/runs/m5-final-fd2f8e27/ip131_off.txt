@@ -1,0 +1,70 @@
+tiles 6144x2048, 512 rows: 723 us, 17.81 TFLOPS
+tiles 2048x2048, 512 rows: 245 us, 17.50 TFLOPS
+tiles 11776x2048, 512 rows: 1069 us, 23.11 TFLOPS
+grouped tiles 1536x2048 x64 experts, 8192 rows: 2316 us, 22.26 TFLOPS
+sums+tiles conv in: 2.21 ms x 30 = 66 ms
+sums+tiles conv out: 0.75 ms x 30 = 22 ms
+sums+tiles attn q,k,v,o: 1.89 ms x 10 = 19 ms
+sums+tiles dense x3: 12.85 ms x 2 = 26 ms
+route: 0.10 ms x 38 = 4 ms
+sort+work: 0.11 ms x 38 = 4 ms
+sums+grouped glu gate,up: 4.85 ms x 38 = 184 ms
+sums+grouped down: 2.43 ms x 38 = 92 ms
+combine sorted: 0.02 ms x 38 = 1 ms
+norm: 0.03 ms x 81 = 2 ms
+conv kernel: 0.03 ms x 30 = 1 ms
+attn mma 2k: 1.03 ms x 10 = 10 ms
+prompt chunk budget: 433 ms for 2048 rows (4730 tok/s)
+attn mma+merge, 2048 rows at 30720 keys: best of 7 23.58 ms, 22.58 TFLOPS
+norm x43: 0.155 ms, 43 launches, 0 MB, 0 GB/s
+conv in twin: 0.351 ms, 30 launches, 212 MB, 605 GB/s
+conv kernel: 0.068 ms, 30 launches, 0 MB, 0 GB/s
+conv out twin: 0.182 ms, 30 launches, 71 MB, 389 GB/s
+attn q,k,v,o twins: 0.215 ms, 40 launches, 59 MB, 274 GB/s
+qk+attn+merge: 0.144 ms, 30 launches, 1 MB, 9 GB/s
+dense gate,up,swiglu,down: 0.136 ms, 8 launches, 81 MB, 596 GB/s
+route: 0.219 ms, 76 launches, 20 MB, 91 GB/s
+experts glu: 0.768 ms, 38 launches, 538 MB, 700 GB/s
+experts down: 0.442 ms, 38 launches, 269 MB, 609 GB/s
+combine+norm: 0.113 ms, 38 launches, 0 MB, 0 GB/s
+head twin (6-bit): 0.193 ms, 1 launches, 213 MB, 1104 GB/s
+decode step budget at 64 context: 2.99 ms (335 tok/s)
+norm x43: 0.140 ms, 43 launches, 0 MB, 0 GB/s
+conv in twin: 0.337 ms, 30 launches, 212 MB, 629 GB/s
+conv kernel: 0.066 ms, 30 launches, 0 MB, 0 GB/s
+conv out twin: 0.180 ms, 30 launches, 71 MB, 394 GB/s
+attn q,k,v,o twins: 0.214 ms, 40 launches, 59 MB, 276 GB/s
+qk+attn+merge: 1.910 ms, 30 launches, 671 MB, 351 GB/s
+dense gate,up,swiglu,down: 0.129 ms, 8 launches, 81 MB, 630 GB/s
+route: 0.229 ms, 76 launches, 20 MB, 87 GB/s
+experts glu: 0.760 ms, 38 launches, 538 MB, 708 GB/s
+experts down: 0.442 ms, 38 launches, 269 MB, 608 GB/s
+combine+norm: 0.112 ms, 38 launches, 0 MB, 0 GB/s
+head twin (6-bit): 0.192 ms, 1 launches, 213 MB, 1106 GB/s
+decode step budget at 32768 context: 4.71 ms (212 tok/s)
+prompt 131000 in 8192-row chunks: 57.20 s, 2290 tok/s (GPU 57.09 s); decode 64: 116.6 tok/s
+window twin us by width: q 2048x2048; conv in 6144x2048; head; experts glu; experts down;
+ 1 rows:      5      9    184     15     10
+ 2 rows:      6     11    183     23     15
+ 4 rows:      9     18    285     40     25
+ 8 rows:     26     27    571     75     45
+16 rows:     35     39    651    140     82
+32 rows:     50     68   1010    248    154
+       59.06 real         0.05 user         4.41 sys
+         13674381312  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              841205  page reclaims
+                   0  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                1616  involuntary context switches
+         14702521599  instructions retired
+         19113561759  cycles elapsed
+         18230159608  peak memory footprint

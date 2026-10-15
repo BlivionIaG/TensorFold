@@ -1,0 +1,2 @@
+67:    out.nax = null; // test build: tensor units off
+69:    if (false) try attnNaxLoad(device, &out);
