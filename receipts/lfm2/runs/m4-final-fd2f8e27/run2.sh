@@ -4,7 +4,7 @@ M=$HOME/.cache/huggingface/hub/models--LiquidAI--LFM2.5-24B-A2B-MLX-4bit/snapsho
 R=tf-lfm2-receipts/receipts/lfm2/scripts; MC=$R/mlx_cold.py; DOC=tf-lfm2-windows/CHANGELOG.md
 G=$S/egate/progress.log
 export HF_HUB_OFFLINE=1
-log(){ echo "$* $(date +%H:%M:%S) | load $(sysctl -n vm.loadavg) | top: $(ps -Ao pcpu,comm -r | sed -n 2,4p | awk '{c=$1; $1=""; n=$0; sub(/.*\//,"",n); printf "%s%% %s; ", c, n}')" >> $O/progress.log; }
+log(){ echo "$* $(date +%H:%M:%S) | load $(sysctl -n vm.loadavg)
 quiet(){ while [ -e $S/egate/HOLD ] || pgrep -x tensorfold-native >/dev/null || pgrep -f "tf-lfm2-(bench|exact)" >/dev/null || pgrep -f "mlxenv/bin/" >/dev/null; do echo "waiting $(date +%H:%M:%S)" >> $O/progress.log; sleep 15; done; sleep 10; }
 up(){ for i in $(seq 1 300); do sleep 2; curl -s localhost:8091/v1/models >/dev/null 2>&1 && return 0; done; return 1; }
 stop(){ kill $1; while kill -0 $1 2>/dev/null; do sleep 1; done; sleep 3; }
