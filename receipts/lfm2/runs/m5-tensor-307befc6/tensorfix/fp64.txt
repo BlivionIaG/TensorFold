@@ -1,0 +1,77 @@
+conv in 6144x2048 (4-bit):
+  prompt tiles: worst 6.264e-4, mean 4.732e-5, worst column 5674 at 6.264e-4
+  prompt tensor: worst 6.264e-4, mean 4.732e-5, worst column 5674 at 6.264e-4
+  decode twin: worst 6.264e-4, mean 4.732e-5, worst column 5674 at 6.264e-4
+  tensor differs from tiles on 313/196608 outputs; twin differs from tiles on 0
+conv out 2048x2048 (4-bit):
+  prompt tiles: worst 5.371e-4, mean 4.577e-5, worst column 584 at 5.371e-4
+  prompt tensor: worst 5.371e-4, mean 4.577e-5, worst column 584 at 5.371e-4
+  decode twin: worst 5.371e-4, mean 4.577e-5, worst column 584 at 5.371e-4
+  tensor differs from tiles on 120/65536 outputs; twin differs from tiles on 0
+attention q 2048x2048 (4-bit):
+  prompt tiles: worst 5.088e-4, mean 4.646e-5, worst column 97 at 5.088e-4
+  prompt tensor: worst 5.088e-4, mean 4.646e-5, worst column 97 at 5.088e-4
+  decode twin: worst 5.088e-4, mean 4.646e-5, worst column 97 at 5.088e-4
+  tensor differs from tiles on 114/65536 outputs; twin differs from tiles on 0
+attention k 512x2048 (4-bit):
+  prompt tiles: worst 5.059e-4, mean 4.602e-5, worst column 81 at 5.059e-4
+  prompt tensor: worst 5.059e-4, mean 4.602e-5, worst column 81 at 5.059e-4
+  decode twin: worst 5.059e-4, mean 4.602e-5, worst column 81 at 5.059e-4
+  tensor differs from tiles on 36/16384 outputs; twin differs from tiles on 0
+attention v 512x2048 (4-bit):
+  prompt tiles: worst 4.775e-4, mean 4.515e-5, worst column 491 at 4.775e-4
+  prompt tensor: worst 4.775e-4, mean 4.515e-5, worst column 491 at 4.775e-4
+  decode twin: worst 4.775e-4, mean 4.515e-5, worst column 491 at 4.775e-4
+  tensor differs from tiles on 26/16384 outputs; twin differs from tiles on 0
+attention out 2048x2048 (4-bit):
+  prompt tiles: worst 6.530e-4, mean 4.805e-5, worst column 1614 at 6.530e-4
+  prompt tensor: worst 6.530e-4, mean 4.805e-5, worst column 1614 at 6.530e-4
+  decode twin: worst 6.530e-4, mean 4.805e-5, worst column 1614 at 6.530e-4
+  tensor differs from tiles on 120/65536 outputs; twin differs from tiles on 0
+dense gate 11776x2048 (4-bit):
+  prompt tiles: worst 7.285e-4, mean 4.678e-5, worst column 530 at 7.285e-4
+  prompt tensor: worst 7.285e-4, mean 4.678e-5, worst column 530 at 7.285e-4
+  decode twin: worst 7.285e-4, mean 4.678e-5, worst column 530 at 7.285e-4
+  tensor differs from tiles on 573/376832 outputs; twin differs from tiles on 0
+dense up 11776x2048 (4-bit):
+  prompt tiles: worst 7.907e-4, mean 4.696e-5, worst column 5265 at 7.907e-4
+  prompt tensor: worst 7.907e-4, mean 4.696e-5, worst column 5265 at 7.907e-4
+  decode twin: worst 7.907e-4, mean 4.696e-5, worst column 5265 at 7.907e-4
+  tensor differs from tiles on 607/376832 outputs; twin differs from tiles on 0
+dense down 2048x11776 (4-bit):
+  prompt tiles: worst 1.776e-4, mean 1.903e-5, worst column 92 at 1.776e-4
+  prompt tensor: worst 1.776e-4, mean 1.903e-5, worst column 92 at 1.776e-4
+  decode twin: worst 1.776e-4, mean 1.903e-5, worst column 92 at 1.776e-4
+  tensor differs from tiles on 107/65536 outputs; twin differs from tiles on 0
+expert gate 1536x2048 (4-bit):
+  prompt tiles: worst 5.554e-4, mean 4.673e-5, worst column 679 at 5.554e-4
+  prompt tensor: worst 5.554e-4, mean 4.673e-5, worst column 679 at 5.554e-4
+  decode twin: worst 5.554e-4, mean 4.673e-5, worst column 679 at 5.554e-4
+  tensor differs from tiles on 80/49152 outputs; twin differs from tiles on 0
+expert up 1536x2048 (4-bit):
+  prompt tiles: worst 6.222e-4, mean 4.706e-5, worst column 925 at 6.222e-4
+  prompt tensor: worst 6.222e-4, mean 4.706e-5, worst column 925 at 6.222e-4
+  decode twin: worst 6.222e-4, mean 4.706e-5, worst column 925 at 6.222e-4
+  tensor differs from tiles on 72/49152 outputs; twin differs from tiles on 0
+expert down 2048x1536 (4-bit):
+  prompt tiles: worst 6.582e-4, mean 5.427e-5, worst column 548 at 6.582e-4
+  prompt tensor: worst 6.582e-4, mean 5.427e-5, worst column 548 at 6.582e-4
+  decode twin: worst 6.582e-4, mean 5.427e-5, worst column 548 at 6.582e-4
+  tensor differs from tiles on 90/65536 outputs; twin differs from tiles on 0
+experts gate+up SwiGLU (absolute error) 1536x2048 (4-bit):
+  prompt tiles: worst 4.605e-3, mean 1.151e-4, worst column 76 at 4.605e-3
+  prompt tensor: worst 4.605e-3, mean 1.151e-4, worst column 76 at 4.605e-3
+  decode twin: worst 4.605e-3, mean 1.151e-4, worst column 76 at 4.605e-3
+  tensor differs from tiles on 137/49152 outputs; twin differs from tiles on 0
+attention, 64 rows at 0 cached keys, 368 (row, head) pairs against float64, absolute error:
+  prompt lfm2_attn_mma_r2: worst 2.625e-3
+  prompt lfm2_attn_nax: worst 2.625e-3
+  decode lfm2_attn_mma (8 rows): worst 2.625e-3
+  tensor differs from mma_r2 on 2/131072 outputs; decode kernel differs from mma_r2 on 0/16384
+attention, 64 rows at 4000 cached keys, 368 (row, head) pairs against float64, absolute error:
+  prompt lfm2_attn_mma_r2: worst 1.280e-4
+  prompt lfm2_attn_nax: worst 1.280e-4
+  decode lfm2_attn_mma (8 rows): worst 1.206e-4
+  tensor differs from mma_r2 on 114/131072 outputs; decode kernel differs from mma_r2 on 0/16384
+0 classes where the tensor path's worst error exceeds the tiles'
+fp64 exit 0

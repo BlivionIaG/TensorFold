@@ -1,0 +1,246 @@
+ok prompt 1 in 128-row chunks equals one row at a time
+slices differ. first difference occurs at index 0 (0x0)
+
+============ expected this output: =============  len: 256000 (0x3E800)
+
+08 40 65 3F 46 3F 07 40  3B 40 CA 3E 80 40 84 40  .@e?F?.@;@.>.@.@
+FB 40 16 40 7C 40 42 40  DB 3F 84 40 53 40 EC 3F  .@.@|@B@.?.@S@.?
+A2 40 11 40 41 40 52 40  9B 40 54 40 A1 40 61 40  .@.@A@R@.@T@.@a@
+55 40 87 40 53 40 CD 3F  1E 40 DC 3F B1 3F 39 40  U@.@S@.?.@.?.?9@
+B0 3F 51 40 5D 40 4F 40  B5 40 78 40 83 40 8A 40  .?Q@]@O@.@x@.@.@
+7F 40 6F 40 76 40 27 40  70 40 4F 40 44 40 0B 40  .@o@v@'@p@O@D@.@
+16 40 70 3F D9 3F C3 3F  1E 40 FA 3F 23 40 43 40  .@p?.?.?.@.?#@C@
+03 40 87 3F 46 40 18 40  99 40 9C 3F 14 40 DC 3F  .@.?F@.@.@.?.@.?
+53 3F B8 3E F8 3F 83 40  86 40 44 40 65 3F 91 40  S?.>.?.@.@D@e?.@
+E5 3F 88 40 A5 3F 00 3F  6F 3F 6F 3F 37 40 3A BF  .?.@.?.?o?o?7@:.
+63 3F 09 BE 0E 40 62 3F  5D 40 B2 3F 7B 40 17 40  c?␉..@b?]@.?{@.@
+55 3C 2A BF 73 40 99 3E  CA 3F A5 3F 6A 3F D7 3F  U<*.s@.>.?.?j?.?
+E8 3F 53 3F 78 3F 52 40  2F 40 FB 3F 85 40 4D BE  .?S?x?R@/@.?.@M.
+C8 3E 5E BF B0 3D A3 BF  0C C0 D5 3E 47 3F 04 C0  .>^..=.....>G?..
+2A C0 F7 BF 08 BF A6 BF  4C 3F 79 BF E4 BF 47 BF  *.......L?y...G.
+19 C0 D6 BE 6B BF A1 BF  9A BF 16 C0 34 BF 86 BE  ....k.......4...
+... truncated, indexes [0x100..] not shown, remaining bytes: 0x3E700 ...
+
+============= instead found this: ==============  len: 256000 (0x3E800)
+
+0D 40 6E 3F 31 3F 12 40  43 40 01 3F 86 40 87 40  ␍@n?1?.@C@.?.@.@
+06 41 19 40 85 40 52 40  09 40 86 40 5D 40 FF 3F  .A.@.@R@␉@.@]@.?
+AC 40 2D 40 5D 40 68 40  99 40 3C 40 AC 40 68 40  .@-@]@h@.@<@.@h@
+71 40 90 40 61 40 EE 3F  32 40 0A 40 E6 3F 54 40  q@.@a@.?2@␊@.?T@
+CB 3F 66 40 6A 40 49 40  C4 40 85 40 93 40 94 40  .?f@j@I@.@.@.@.@
+89 40 79 40 71 40 1F 40  68 40 5B 40 43 40 05 40  .@y@q@.@h@[@C@.@
+0E 40 77 3F D3 3F BB 3F  14 40 04 40 2C 40 48 40  .@w?.?.?.@.@,@H@
+01 40 63 3F 47 40 20 40  99 40 AB 3F 1B 40 C7 3F  .@c?G@ @.@.?.@.?
+5B 3F DE 3E EB 3F 92 40  90 40 53 40 AE 3F 93 40  [?.>.?.@.@S@.?.@
+F1 3F 79 40 90 3F 90 3E  B8 3E 37 3F 2D 40 86 BF  .?y@.?.>.>7?-@..
+46 3F C4 BE E7 3F 42 3F  4F 40 83 3F 5F 40 14 40  F?...?B?O@.?_@.@
+61 BD 8D BF 65 40 EA 3D  93 3F 81 3F 07 3F AC 3F  a...e@.=.?.?.?.?
+C2 3F EE 3E E1 3E 5F 40  4A 40 27 40 86 40 B4 BE  .?.>.>_@J@'@.@..
+F9 3E 7B BF 59 3D A7 BF  04 C0 6C 3E 4B 3F F8 BF  .>{.Y=....l>K?..
+2B C0 F9 BF 22 BF B9 BF  14 3F 8B BF EC BF 43 BF  +..."....?....C.
+15 C0 02 BF 69 BF B4 BF  6D BF 20 C0 2E BF 0E BF  ....i...m. .....
+... truncated, indexes [0x100..] not shown, remaining bytes: 0x3E700 ...
+
+================================================
+
+FAIL prompt 127 in 128-row chunks differs from one row at a time
+slices differ. first difference occurs at index 0 (0x0)
+
+============ expected this output: =============  len: 256000 (0x3E800)
+
+4C 3F EF BE 6D 3F 90 3F  0C 40 83 3E 75 40 7E 40  L?..m?.?.@.>u@~@
+C4 40 10 40 11 40 0E 40  76 3F CF 40 14 40 31 40  .@.@.@.@v?.@.@1@
+8F 40 D9 3F D9 3F 83 40  AA 40 79 40 AA 40 6E 40  .@.?.?.@.@y@.@n@
+1D 40 94 40 D6 3F D2 3F  1C 40 2D 40 CB 3F B9 3F  .@.@.?.?.@-@.?.?
+8F 3F 5E 3F 79 40 7A 40  83 40 82 40 4B 40 4A 40  .?^?y@z@.@.@K@J@
+32 40 B1 3E 39 40 AB 3F  4F 40 58 40 E8 3F 6B 3F  2@.>9@.?O@X@.?k?
+D1 3F 26 3F 50 3F 10 3F  26 3F 09 40 92 3F A5 3F  .?&?P?.?&?␉@.?.?
+36 40 74 BF 2F 3E 08 40  7C 40 2B BF 13 40 DB 3F  6@t./>.@|@+..@.?
+20 BF BA 3E 16 3F 95 40  5F 40 11 40 0A 3F C3 40   ..>.?.@_@.@␊?.@
+86 3F 82 3F 4F 3E 4D 3E  E4 3E BA 40 9B 3F 30 BF  .?.?O>M>.>.@.?0.
+E6 3F 30 3E B8 3E F0 BF  8F 3F A3 40 4D 40 1D 3F  .?0>.>...?.@M@.?
+C3 BE 15 C0 BB 3E 11 40  1E 40 6B 3F CA 3F 18 40  .....>.@.@k?.?.@
+A8 3D BA 3F EE 3E 2B 40  E1 3E 2C 40 17 40 19 3F  .=.?.>+@.>,@.@.?
+C6 BE 09 C0 22 3F 84 BF  B3 BF 59 BF 09 BF B1 BF  ..␉."?....Y.␉...
+30 C0 09 BF 72 BE 2A BF  39 BF B4 BF BF BF 3A BF  0.␉.r.*.9.....:.
+2C C0 47 BF 61 BF 3D BE  CD BF 0E C0 1E BF 6D 3F  ,.G.a.=.......m?
+... truncated, indexes [0x100..] not shown, remaining bytes: 0x3E700 ...
+
+============= instead found this: ==============  len: 256000 (0x3E800)
+
+5B 3F 1A BF 6E 3F 8A 3F  0A 40 55 3E 6E 40 7D 40  [?..n?.?␊@U>n@}@
+BD 40 12 40 0C 40 09 40  8D 3F D0 40 27 40 2E 40  .@.@.@␉@.?.@'@.@
+8F 40 F2 3F 0C 40 84 40  AB 40 68 40 B0 40 68 40  .@.?.@.@.@h@.@h@
+20 40 94 40 E8 3F D0 3F  24 40 47 40 DC 3F B7 3F   @.@.?.?$@G@.?.?
+A6 3F 57 3F 7E 40 86 40  85 40 84 40 46 40 5B 40  .?W?~@.@.@.@F@[@
+35 40 F5 3E 41 40 CA 3F  58 40 7E 40 10 40 6B 3F  5@.>A@.?X@~@.@k?
+D4 3F 2F 3F 6A 3F 81 3F  50 3F 17 40 B4 3F 9F 3F  .?/?j?.?P?.@.?.?
+47 40 6C BF EF 3E 1A 40  86 40 26 BF 31 40 E7 3F  G@l..>.@.@&.1@.?
+15 BF 17 3F 4D 3F A1 40  5B 40 1A 40 51 3F BC 40  ...?M?.@[@.@Q?.@
+7C 3F 8A 3F A0 3E AC 3E  C2 3E C4 40 BE 3F 40 BF  |?.?.>.>.>.@.?@.
+D6 3F 85 3E CE 3E CC BF  A4 3F 9F 40 4B 40 7D 3F  .?.>.>...?.@K@}?
+BA BD 18 C0 08 3F 1D 40  2E 40 49 3F F7 3F 21 40  .....?.@.@I?.?!@
+7A 3B C9 3F 05 3F 32 40  24 3F 2D 40 01 40 21 3F  z;.?.?2@$?-@.@!?
+A6 BE 0B C0 26 3F 69 BF  9D BF 70 BF D7 BE B1 BF  ....&?i...p.....
+24 C0 10 BF B0 BC 11 BF  0E BF B5 BF AC BF 1A BF  $...............
+2C C0 1F BF 51 BF 02 BE  BE BF 04 C0 1A BF 6E 3F  ,...Q.........n?
+... truncated, indexes [0x100..] not shown, remaining bytes: 0x3E700 ...
+
+================================================
+
+FAIL prompt 128 in 128-row chunks differs from one row at a time
+slices differ. first difference occurs at index 0 (0x0)
+
+============ expected this output: =============  len: 256000 (0x3E800)
+
+46 BF 81 BF 01 3F 92 3E  88 3F 86 BF 8E 3F 88 3F  F....?.>.?...?.?
+99 40 95 3F 83 3E AB 3F  AB BD 10 40 8E 3F 67 3E  .@.?.>.?...@.?g>
+FE 3F AA BF 04 BF AF 3F  F7 3F 7C 40 1F 40 3F 3D  .?.....?.?|@.@?=
+F8 3F C0 3F C6 3F 2E 3F  21 40 1E 40 C0 3F B8 BE  .?.?.?.?!@.@.?..
+F9 BD 7D 3F 0F 40 74 3F  F7 3F 28 40 59 40 98 3F  ..}?.@t?.?(@Y@.?
+8C BF 2A 3F 5F 40 17 40  CE 40 BE BF 82 40 A0 BD  ..*?_@.@.@...@..
+0C 40 4E 3F 93 BF 35 3F  98 3F 3A BF 06 40 6A BE  .@N?..5?.?:..@j.
+D6 BE 59 3F 33 3E 20 40  2A 40 17 BF 15 40 04 40  ..Y?3> @*@...@.@
+E9 BF AB BF 2F 40 21 40  E5 3F 7B 3F 0F 3F 60 40  ..../@!@.?{?.?`@
+D0 BF 33 3E 07 C0 CB BF  20 BE AF BF 5A 3F 0D C0  ..3>.... ...Z?␍.
+41 BE C1 BF 10 C0 AB BF  9C BE 8E BE 44 40 D5 3E  A...........D@.>
+6D C0 94 C0 0A 3E 07 3F  23 3F F8 BE E4 BE C6 BE  m...␊>.?#?......
+1C C0 08 BF B3 3D CE 3F  C4 3F 69 3E 1B 3F B8 BF  .....=.?.?i>.?..
+01 C0 05 C0 66 3F 55 C0  81 C0 D4 BF 04 C0 70 C0  ....f?U.......p.
+70 C0 8F BF D1 BF E6 BF  24 C0 48 C0 22 C0 05 C0  p.......$.H."...
+F8 BF 5F BE AE BF F4 BF  24 C0 63 C0 BC BF 9D BF  .._.....$.c.....
+... truncated, indexes [0x100..] not shown, remaining bytes: 0x3E700 ...
+
+============= instead found this: ==============  len: 256000 (0x3E800)
+
+C5 BF CA BF 98 BE 39 BF  36 3F C9 BF 66 3E 52 BE  ......9.6?..f>R.
+60 40 6C 3E F3 BF 47 BF  DA BF F3 3F 90 BF 99 BF  `@l>..G....?....
+49 3F 13 C0 19 C0 A3 BE  BC 3F 35 40 EC 3F 7B BF  I?.......?5@.?{.
+81 3C 09 BF 4B BE 33 BF  00 3F 0B 3F 2D BE CE BF  .<␉.K.3..?.?-...
+F6 BF BC BE 77 3F EF BD  99 3F 4D 3F 1A 40 F1 3E  ....w?...?M?.@.>
+27 C0 E1 BE 12 40 2B 3F  AA 40 DB BF 58 40 9C BF  '....@+?.@..X@..
+8E BE 16 BF 1E C0 05 BF  5F 3D CC BF D5 3F 0D BF  ........_=...?␍.
+A6 BF 20 BF 8F BF 11 3F  9E 3F E2 BF 8E 3F 60 3E  .. ....?.?...?`>
+2D C0 1C C0 AD 3F D4 3F  01 3F 4F BD 8D BF 10 40  -....?.?.?O....@
+36 C0 B6 BF 62 C0 6E C0  03 C0 5B C0 3B BF 93 C0  6...b.n...[.;...
+2C C0 3C C0 82 C0 58 C0  D7 BF 03 C0 C5 3F B8 BD  ,.<...X......?..
+A5 C0 D0 C0 EF BF 06 C0  A1 BF EA BF 3C C0 18 C0  ............<...
+7D C0 F1 BF E8 BF 99 3F  86 3E 04 BF EF BE 08 C0  }......?.>......
+19 C0 37 C0 A0 3E 79 C0  9D C0 20 C0 2A C0 85 C0  ..7..>y... .*...
+8E C0 94 BF 0C C0 2A C0  40 C0 5C C0 39 C0 41 C0  ......*.@.\.9.A.
+1C C0 D0 BE 07 C0 20 C0  46 C0 7F C0 CF BF D5 BF  ...... .F.......
+... truncated, indexes [0x100..] not shown, remaining bytes: 0x3E700 ...
+
+================================================
+
+FAIL prompt 129 in 128-row chunks differs from one row at a time
+slices differ. first difference occurs at index 0 (0x0)
+
+============ expected this output: =============  len: 256000 (0x3E800)
+
+75 3F 8E BE B5 3F BB 3F  2D 40 12 40 A0 40 B8 40  u?...?.?-@.@.@.@
+FA 40 50 40 3B 40 5F 40  29 40 DE 40 26 40 A0 40  .@P@;@_@)@.@&@.@
+C8 40 9D 3F 84 40 34 40  AA 40 82 40 A1 40 7D 40  .@.?.@4@.@.@.@}@
+C4 40 42 40 2F 40 0A 40  69 40 72 3F 02 40 3C 40  .@B@/@␊@i@r?.@<@
+AC 3F F6 3F 29 40 03 40  A1 40 59 40 88 40 7B 40  .?.?)@.@.@Y@.@{@
+48 40 85 3F 83 40 38 40  4C 40 9D 3F 20 40 B5 3F  H@.?.@8@L@.? @.?
+69 3F 99 3E 37 3F DE 3F  C0 3F B7 3F 05 40 71 40  i?.>7?.?.?.?.@q@
+31 40 CE 3C C2 3F 14 40  48 40 A2 BE C8 3F CC 3F  1@.<.?.@H@...?.?
+82 BF 37 3E C1 3F 02 41  B2 40 A2 40 46 40 CB 40  ..7>.?.A.@.@F@.@
+6F 40 D6 3E 60 40 A4 3F  EE 3E C8 3E BC BE FB BE  o@.>`@.?.>.>....
+83 3F 20 BF 6D 3F EB BE  D7 3D AF 3E 40 3F 22 40  .? .m?...=.>@?"@
+88 BE 4A C0 D3 3D 30 40  D3 3D 89 BE AC BE D8 BE  ..J..=0@.=......
+A0 BF 5F 3E 93 BF 85 40  13 40 33 40 22 40 E8 BE  .._>...@.@3@"@..
+86 3E F6 BE B1 BE EA BF  95 BF DD BE 64 BF F9 BF  .>..........d...
+9D BF 79 BF 8C 3E D1 BF  12 BF 47 BF 08 C0 A8 BF  ..y..>....G.....
+F7 BF 94 BE 15 C0 4E BF  97 BF C0 BF 2E BD A8 3E  ......N........>
+... truncated, indexes [0x100..] not shown, remaining bytes: 0x3E700 ...
+
+============= instead found this: ==============  len: 256000 (0x3E800)
+
+9D 3F D0 3C D0 3F CA 3F  3D 40 2B 40 A2 40 C4 40  .?.<.?.?=@+@.@.@
+FE 40 80 40 6A 40 88 40  67 40 DE 40 55 40 C0 40  .@.@j@.@g@.@U@.@
+EE 40 24 40 A3 40 75 40  C3 40 A3 40 C6 40 8D 40  .@$@.@u@.@.@.@.@
+D8 40 77 40 54 40 39 40  87 40 CB 3F 23 40 51 40  .@w@T@9@.@.?#@Q@
+F5 3F 15 40 7A 40 43 40  B1 40 8A 40 9B 40 A1 40  .?.@z@C@.@.@.@.@
+7F 40 DC 3F 8E 40 60 40  62 40 AE 3F 36 40 E2 3F  .@.?.@`@b@.?6@.?
+D4 3F 7E 3F B4 3F 1B 40  E2 3F EF 3F 37 40 6D 40  .?~?.?.@.?.?7@m@
+3D 40 6C 3F E0 3F 18 40  53 40 A2 3C 06 40 06 40  =@l?.?.@S@.<.@.@
+18 BF E5 3E 00 40 12 41  B6 40 C1 40 8B 40 E4 40  ...>.@.A.@.@.@.@
+95 40 90 3F 8F 40 FA 3F  A0 3F 46 3F 0B 3F 98 3E  .@.?.@.?.?F?.?.>
+F9 3F 34 3C E0 3F F2 3E  78 3F 9B 3F C9 3F 30 40  .?4<.?.>x?.?.?0@
+5B BE 25 C0 2E 3F 6F 40  3F 3F F3 3E 39 3E 91 3E  [.%..?o@??.>9>.>
+17 BF 5E 3F 1B BF A7 40  5F 40 7A 40 45 40 3B BE  ..^?...@_@z@E@;.
+10 3F 85 BE A7 BE E2 BF  8F BF 01 BF 16 BF F9 BF  .?..............
+61 BF 0D BF 03 3F 8F BF  1B BF 39 BF 06 C0 99 BF  a.␍..?....9.....
+F3 BF BB BE FA BF 4C BF  A7 BF 9B BF A3 3E C8 3E  ......L......>.>
+... truncated, indexes [0x100..] not shown, remaining bytes: 0x3E700 ...
+
+================================================
+
+FAIL prompt 300 in 128-row chunks differs from one row at a time
+ok prefix 0, window 1, partial keep 1
+ok prefix 0, window 2, partial keep 1
+ok prefix 0, window 7, partial keep 3
+ok prefix 0, window 8, partial keep 4
+ok prefix 0, window 9, partial keep 4
+ok prefix 0, window 15, partial keep 7
+ok prefix 0, window 16, partial keep 8
+ok prefix 0, window 17, partial keep 8
+ok prefix 0, window 24, partial keep 12
+ok prefix 0, window 32, partial keep 16
+ok prefix 127, window 1, partial keep 1
+ok prefix 127, window 2, partial keep 1
+ok prefix 127, window 7, partial keep 3
+ok prefix 127, window 8, partial keep 4
+ok prefix 127, window 9, partial keep 4
+ok prefix 127, window 15, partial keep 7
+ok prefix 127, window 16, partial keep 8
+ok prefix 127, window 17, partial keep 8
+ok prefix 127, window 24, partial keep 12
+ok prefix 127, window 32, partial keep 16
+ok prefix 128, window 1, partial keep 1
+ok prefix 128, window 2, partial keep 1
+ok prefix 128, window 7, partial keep 3
+ok prefix 128, window 8, partial keep 4
+ok prefix 128, window 9, partial keep 4
+ok prefix 128, window 15, partial keep 7
+ok prefix 128, window 16, partial keep 8
+ok prefix 128, window 17, partial keep 8
+ok prefix 128, window 24, partial keep 12
+ok prefix 128, window 32, partial keep 16
+ok prefix 129, window 1, partial keep 1
+ok prefix 129, window 2, partial keep 1
+ok prefix 129, window 7, partial keep 3
+ok prefix 129, window 8, partial keep 4
+ok prefix 129, window 9, partial keep 4
+ok prefix 129, window 15, partial keep 7
+ok prefix 129, window 16, partial keep 8
+ok prefix 129, window 17, partial keep 8
+ok prefix 129, window 24, partial keep 12
+ok prefix 129, window 32, partial keep 16
+ok prefix 255, window 1, partial keep 1
+ok prefix 255, window 2, partial keep 1
+ok prefix 255, window 7, partial keep 3
+ok prefix 255, window 8, partial keep 4
+ok prefix 255, window 9, partial keep 4
+ok prefix 255, window 15, partial keep 7
+ok prefix 255, window 16, partial keep 8
+ok prefix 255, window 17, partial keep 8
+ok prefix 255, window 24, partial keep 12
+ok prefix 255, window 32, partial keep 16
+ok prefix 256, window 1, partial keep 1
+ok prefix 256, window 2, partial keep 1
+ok prefix 256, window 7, partial keep 3
+ok prefix 256, window 8, partial keep 4
+ok prefix 256, window 9, partial keep 4
+ok prefix 256, window 15, partial keep 7
+ok prefix 256, window 16, partial keep 8
+ok prefix 256, window 17, partial keep 8
+ok prefix 256, window 24, partial keep 12
+ok prefix 256, window 32, partial keep 16
+ok prompt 4500 in 4096-row chunks equals 2048-row chunks
+ok four streams at prefixes 1, 127, 128, 256: windows of 32 and 16 rows, unequal keeps
+64 forward/cache checks passed, 4 failed, 0 skipped
+error: ExactnessFailed
+exact exit 1

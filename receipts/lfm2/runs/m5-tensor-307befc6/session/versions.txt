@@ -1,0 +1,8 @@
+ProductName:		macOS
+ProductVersion:		27.0
+BuildVersion:		26A428
+Apple M5 Ultra
+mlx 0.32.3 mlx-lm 0.32.0
+87c3851a
+2ceb6403
+9c4d4424
