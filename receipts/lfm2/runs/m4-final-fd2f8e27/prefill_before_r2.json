@@ -1,0 +1,44 @@
+[
+ {
+  "tokens": 2048,
+  "seconds": 1.6403861045837402,
+  "tok_s": 1248.4865570838854,
+  "prompt_tokens": 2048,
+  "cached": 0
+ },
+ {
+  "tokens": 2048,
+  "seconds": 1.8440546989440918,
+  "tok_s": 1110.5961234082088,
+  "prompt_tokens": 2048,
+  "cached": 0
+ },
+ {
+  "tokens": 8192,
+  "seconds": 6.986343860626221,
+  "tok_s": 1172.5732605531543,
+  "prompt_tokens": 8192,
+  "cached": 0
+ },
+ {
+  "tokens": 8192,
+  "seconds": 6.80518913269043,
+  "tok_s": 1203.7872629649155,
+  "prompt_tokens": 8192,
+  "cached": 0
+ },
+ {
+  "tokens": 32768,
+  "seconds": 31.79129409790039,
+  "tok_s": 1030.7224329746336,
+  "prompt_tokens": 32768,
+  "cached": 0
+ },
+ {
+  "tokens": 65536,
+  "seconds": 76.77500581741333,
+  "tok_s": 853.6111368829853,
+  "prompt_tokens": 65536,
+  "cached": 0
+ }
+]

@@ -1,0 +1,2 @@
+Physical footprint:         14.2G
+Physical footprint (peak):  16.7G

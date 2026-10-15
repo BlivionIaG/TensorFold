@@ -1,0 +1,4 @@
+81331c9a4a1a5c67e0bd88051abfbea6bfd1f0619658ae5b67f33f6406e4a775  SCRATCH/bin-egate/native/bin/tensorfold-native
+be0824d068794d1c204bf6c2429ae5da588416de9d20e31bbaad6352387bb138  SCRATCH/bin-egate/bin/tf-lfm2-bench
+4519ada9e614d205a6a269fba48f55cf50685f3b07f5e7e003382bc403d9fb21  SCRATCH/m5build/native/bin/tensorfold-native
+024a8fa2e01b678be315b29fd412eb62f33cacbe9648da86ae7a88fb06406548  SCRATCH/m5build/bin/tf-lfm2-bench

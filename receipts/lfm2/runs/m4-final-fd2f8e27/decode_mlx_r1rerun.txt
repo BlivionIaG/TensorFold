@@ -1,0 +1,2 @@
+{"label": "mlx_r1rerun", "prompt": "fibonacci-raw", "temperature": 0.0, "decode_tps_median": 91.96102835004943, "decode_tps_all": [91.56, 92.46, 91.96], "ttft_s_median": 0.0729115828871727}
+{"label": "mlx_r1rerun", "prompt": "gpu-chat-no-think", "temperature": 0.0, "decode_tps_median": 303.1440344626079, "decode_tps_all": [303.14, 304.19, 301.94], "ttft_s_median": 2.0170240830630064}
