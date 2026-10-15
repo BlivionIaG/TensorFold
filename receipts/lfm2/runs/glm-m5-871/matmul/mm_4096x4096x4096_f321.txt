@@ -1,0 +1,3 @@
+M 4096 K 4096 N 4096: 16 dispatches a buffer, 4 weight copies, fp32 out
+T/final5/src/zig/kernels/metal/core/affine_mm.metal    1.874 ms (min 1.874 max 1.876)   73.3 TFLOPS, row sums 0.054 ms; differ from first 0/16777216; err rms 1.085e-6 max 5.730e-6 (of rms 1.206e0)
+T/final6/src/zig/kernels/metal/core/affine_mm.metal    1.698 ms (min 1.694 max 1.700)   81.0 TFLOPS, row sums 0.043 ms; differ from first 0/16777216; err rms 1.085e-6 max 5.730e-6 (of rms 1.206e0)

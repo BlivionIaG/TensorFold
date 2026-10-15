@@ -1,0 +1,3 @@
+M 512 K 2048 N 2048: 16 dispatches a buffer, 4 weight copies, fp32 out
+T/final5/src/zig/kernels/metal/core/affine_mm.metal    0.072 ms (min 0.070 max 0.149)   59.5 TFLOPS, row sums 0.010 ms; differ from first 0/1048576; err rms 1.071e-6 max 6.276e-6 (of rms 8.554e-1)
+T/final6/src/zig/kernels/metal/core/affine_mm.metal    0.064 ms (min 0.063 max 0.102)   67.4 TFLOPS, row sums 0.008 ms; differ from first 0/1048576; err rms 1.071e-6 max 6.276e-6 (of rms 8.554e-1)

@@ -1,0 +1,2 @@
+{"label": "g871", "prompt": "fibonacci-raw", "temperature": 0.0, "decode_tps_median": 78.71302317748055, "decode_tps_all": [78.71, 78.72], "ttft_s_median": 0.09560162504203618}
+{"label": "g871", "prompt": "gpu-chat-no-think", "temperature": 0.0, "decode_tps_median": 78.65197267831648, "decode_tps_all": [78.65, 78.66], "ttft_s_median": 0.14307045796886086}
