@@ -1,0 +1,30 @@
+{
+ "m2": {
+  "text": "We need to summarize the latest release (1.0.9) in one sentence. The user also asks \"And the one before it?\" So they want a summary of the previous release (1.0.8) as well. The changelog includes notes about 1.0.8 in several places. The latest release is 1.0.9. The one before it is 1.0.8. We need to summarize both in one sentence each? The user said \"Summarize the latest release in one sentence.\" Then \"And the one before it?\" So likely they want a one-sentence",
+  "usage": {
+   "prompt_tokens": 8055,
+   "completion_tokens": 128,
+   "total_tokens": 8183,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 128
+   }
+  }
+ },
+ "m2b": {
+  "text": "We need to summarize the latest release (1.0.9) in one sentence. The user also asks \"And the one before it?\" So they want a summary of the previous release (1.0.8) as well. The changelog includes notes about 1.0.8 in several places. The latest release is 1.0.9. The one before it is 1.0.8. We need to summarize both in one sentence each? The user said \"Summarize the latest release in one sentence.\" Then \"And the one before it?\" So likely they want a one-sentence",
+  "usage": {
+   "prompt_tokens": 8055,
+   "completion_tokens": 128,
+   "total_tokens": 8183,
+   "prompt_tokens_details": {
+    "cached_tokens": 8051
+   },
+   "completion_tokens_details": {
+    "reasoning_tokens": 128
+   }
+  }
+ }
+}

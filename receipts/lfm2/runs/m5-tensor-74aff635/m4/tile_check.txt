@@ -1,0 +1,5 @@
+4-bit witness (code 7 = 1, x[7] = 2^-126): tiles and twin at widths 1-32 keep bf16 0x0080
+4-bit 96x1536: rows alone, twin at widths 1-32, grouped, by slot and by expert with gate-up swiglu bit-equal; 64 experts at 16 and 32 rows, a top-4 pick on every row; twin at widths 8-32 at K 2048 and 11776; error vs float64 / terms' magnitude: worst 2.19e-3, mean 2.50e-4
+6-bit 96x1536: rows alone, twin at widths 1-32, grouped, by slot and by expert with gate-up swiglu bit-equal; 64 experts at 16 and 32 rows, a top-4 pick on every row; twin at widths 8-32 at K 2048 and 11776; error vs float64 / terms' magnitude: worst 2.46e-3, mean 3.29e-4
+8-bit 96x1536: rows alone, twin at widths 1-32, grouped, by slot and by expert with gate-up swiglu bit-equal; 64 experts at 16 and 32 rows, a top-4 pick on every row; twin at widths 8-32 at K 2048 and 11776; error vs float64 / terms' magnitude: worst 2.45e-3, mean 3.23e-4
+3 widths passed, 0 failed, no tensor units (tiles only)
