@@ -1,0 +1,2 @@
+{"label": "before_r2", "prompt": "fibonacci-raw", "temperature": 0.0, "decode_tps_median": 289.6117540994659, "decode_tps_all": [289.61, 289.75, 289.57], "ttft_s_median": 0.027027332922443748}
+{"label": "before_r2", "prompt": "gpu-chat-no-think", "temperature": 0.0, "decode_tps_median": 260.6735267667626, "decode_tps_all": [260.67, 260.8, 260.47], "ttft_s_median": 0.032587874913588166}

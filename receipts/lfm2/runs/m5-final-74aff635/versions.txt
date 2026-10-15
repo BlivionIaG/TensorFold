@@ -1,0 +1,11 @@
+ProductName:		macOS
+ProductVersion:		27.0
+BuildVersion:		26A428
+Apple M5 Ultra
+274877906944
+mlx 0.32.3 mlx-lm 0.32.0
+before=T/bin/tensorfold-native (5a6ee034) tip=T/final8/out/native/bin/tensorfold-native (74aff635)
+4519ada9e614d205a6a269fba48f55cf50685f3b07f5e7e003382bc403d9fb21  T/bin/tensorfold-native
+87cb1ea5a6f89dd5274778b9c3bba966a477b59e698c6cecefff422f81848933  T/final8/out/native/bin/tensorfold-native
+024a8fa2e01b678be315b29fd412eb62f33cacbe9648da86ae7a88fb06406548  T/bin/tf-lfm2-bench
+b9ea84fd9a0099792686435cf2c4dbccb16b7034d84578abc2e37e1a5c76b879  T/final8/out/bin/tf-lfm2-bench

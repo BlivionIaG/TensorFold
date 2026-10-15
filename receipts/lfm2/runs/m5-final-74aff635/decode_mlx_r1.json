@@ -1,0 +1,88 @@
+[
+ {
+  "label": "mlx_r1",
+  "prompt": "fibonacci-raw",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 181.30007611267646,
+  "decode_tps_all": [
+   181.25,
+   181.5,
+   181.3
+  ],
+  "ttft_s_median": 0.028451541904360056,
+  "evidence": [
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "32fb285f3b3f1b5feaeba1d23b4af699cf1be4abaa344d95dac1a63788ce4b41"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "32fb285f3b3f1b5feaeba1d23b4af699cf1be4abaa344d95dac1a63788ce4b41"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "32fb285f3b3f1b5feaeba1d23b4af699cf1be4abaa344d95dac1a63788ce4b41"
+   }
+  ],
+  "sample": "is there a way to get the first 1000 terms of the Fibonacci sequence? The Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n "
+ },
+ {
+  "label": "mlx_r1",
+  "prompt": "gpu-chat-no-think",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 512.1968975544164,
+  "decode_tps_all": [
+   512.2,
+   512.73,
+   512.02
+  ],
+  "ttft_s_median": 0.945877708029002,
+  "evidence": [
+   {
+    "prompt_tokens": 28,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "1eea4153f2bc60afea1e75daad552973e7d016ad16c5dc8cdb837606bf2406e8"
+   },
+   {
+    "prompt_tokens": 28,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "1eea4153f2bc60afea1e75daad552973e7d016ad16c5dc8cdb837606bf2406e8"
+   },
+   {
+    "prompt_tokens": 28,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": null,
+    "output_sha256": "1eea4153f2bc60afea1e75daad552973e7d016ad16c5dc8cdb837606bf2406e8"
+   }
+  ],
+  "sample": "**How a GPU does matrix multiplication \u2013 plain English**\n\nThink of a matrix multiplication problem as a big table of numbers that you need to fill in.  \nIf you "
+ }
+]

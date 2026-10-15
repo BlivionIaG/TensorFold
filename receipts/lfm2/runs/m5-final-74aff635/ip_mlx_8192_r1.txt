@@ -1,0 +1,1 @@
+8192 prompt 13052.8 tok/s (0.63 s) decode 196.9 tok/s peak 14.8 GB

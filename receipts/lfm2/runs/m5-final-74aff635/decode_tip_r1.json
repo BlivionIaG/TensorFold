@@ -1,0 +1,88 @@
+[
+ {
+  "label": "tip_r1",
+  "prompt": "fibonacci-raw",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 274.28125205550504,
+  "decode_tps_all": [
+   274.7,
+   274.28,
+   273.99
+  ],
+  "ttft_s_median": 0.016745958011597395,
+  "evidence": [
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "dcc30ceea29d",
+    "output_sha256": "dbfd8da912e13938159c90baaf1316fea55c43ebfd00bed41b65248bfeae73b0"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "dcc30ceea29d",
+    "output_sha256": "dbfd8da912e13938159c90baaf1316fea55c43ebfd00bed41b65248bfeae73b0"
+   },
+   {
+    "prompt_tokens": 14,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "dcc30ceea29d",
+    "output_sha256": "dbfd8da912e13938159c90baaf1316fea55c43ebfd00bed41b65248bfeae73b0"
+   }
+  ],
+  "sample": " is a Fibonacci number. So the answer is 1. But the problem says \"What is the nth Fibonacci number?\" So the answer is F_n. But they want a numeric answer? The p"
+ },
+ {
+  "label": "tip_r1",
+  "prompt": "gpu-chat-no-think",
+  "temperature": 0.0,
+  "tokens": 256,
+  "decode_tps_median": 259.4399143537817,
+  "decode_tps_all": [
+   259.44,
+   259.55,
+   259.28
+  ],
+  "ttft_s_median": 0.02059154212474823,
+  "evidence": [
+   {
+    "prompt_tokens": 29,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "ecb946063060",
+    "output_sha256": "79f99c0b4562a27e7846fdde325584de04451e9b4d1f7b1797d9a8bbca8e9ff7"
+   },
+   {
+    "prompt_tokens": 29,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "ecb946063060",
+    "output_sha256": "79f99c0b4562a27e7846fdde325584de04451e9b4d1f7b1797d9a8bbca8e9ff7"
+   },
+   {
+    "prompt_tokens": 29,
+    "cached_tokens": 0,
+    "tokens": 256,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "ecb946063060",
+    "output_sha256": "79f99c0b4562a27e7846fdde325584de04451e9b4d1f7b1797d9a8bbca8e9ff7"
+   }
+  ],
+  "sample": "\n**How a GPU does matrix multiplication (in plain English)**  \n\n1. **What a matrix multiplication needs**  \n   To multiply two matrices, you take each row of th"
+ }
+]
