@@ -145,21 +145,30 @@ pub const Exl3 = struct {
     pub fn hit(g: *const Exl3, s: Stream, x: u64, ids: u64, gate: Packed, up: Packed, down: Packed, y_gate: u64, y_up: u64, y_glu: u64, y_down: u64, tokens: usize, n_lines: usize, topk: usize) !void {
         if (tokens == 0) return;
         const p = try plan(x, gate, up, down, y_gate, y_up, y_glu, y_down, tokens, n_lines, topk);
-        var cur = Cursor{
-            .tokens_left = tokens,
-            .ids = ids,
-            .x = x,
-            .y_gate = y_gate,
-            .y_up = y_up,
-            .y_glu = y_glu,
-            .y_down = y_down,
-        };
-        while (try cur.next(topk, p.gate.k, p.gate.n, p.down.n)) |w| {
-            try g.experts(s, .gate_up, w.x, w.ids, p.gate.trellis, p.gate.suh, p.gate.svh, w.y_gate, w.tokens, p.gate.k, p.gate.n, p.gate.n_lines, topk, p.gate.halves, p.gate.codebook);
-            try g.experts(s, .gate_up, w.x, w.ids, p.up.trellis, p.up.suh, p.up.svh, w.y_up, w.tokens, p.up.k, p.up.n, p.up.n_lines, topk, p.up.halves, p.up.codebook);
-            const slots = std.math.mul(usize, w.tokens, topk) catch return error.Exl3Shape;
-            try g.swiglu(s, w.y_gate, w.y_up, w.y_glu, slots, p.glu_n);
-            try g.experts(s, .down, w.y_glu, w.ids, p.down.trellis, p.down.suh, p.down.svh, w.y_down, slots, p.down.k, p.down.n, p.down.n_lines, 1, p.down.halves, p.down.codebook);
+        var left = tokens;
+        var ids_at = ids;
+        var x_at = x;
+        var y_gate_at = y_gate;
+        var y_up_at = y_up;
+        var y_glu_at = y_glu;
+        var y_down_at = y_down;
+        while (left > 0) {
+            const chunk = try fitRows(left, topk);
+            const slots = std.math.mul(usize, chunk, topk) catch return error.Exl3Shape;
+            try g.experts(s, .gate_up, x_at, ids_at, p.gate.trellis, p.gate.suh, p.gate.svh, y_gate_at, chunk, p.gate.k, p.gate.n, p.gate.n_lines, topk, p.gate.halves, p.gate.codebook);
+            try g.experts(s, .gate_up, x_at, ids_at, p.up.trellis, p.up.suh, p.up.svh, y_up_at, chunk, p.up.k, p.up.n, p.up.n_lines, topk, p.up.halves, p.up.codebook);
+            try g.swiglu(s, y_gate_at, y_up_at, y_glu_at, slots, p.glu_n);
+            try g.experts(s, .down, y_glu_at, ids_at, p.down.trellis, p.down.suh, p.down.svh, y_down_at, slots, p.down.k, p.down.n, p.down.n_lines, 1, p.down.halves, p.down.codebook);
+            ids_at = try bump(ids_at, slots, id_bytes);
+            const x_elems = std.math.mul(usize, chunk, p.gate.k) catch return error.Exl3Shape;
+            x_at = try bump(x_at, x_elems, fp16_bytes);
+            const up_elems = std.math.mul(usize, slots, p.gate.n) catch return error.Exl3Shape;
+            y_gate_at = try bump(y_gate_at, up_elems, fp16_bytes);
+            y_up_at = try bump(y_up_at, up_elems, fp16_bytes);
+            y_glu_at = try bump(y_glu_at, up_elems, fp16_bytes);
+            const down_elems = std.math.mul(usize, slots, p.down.n) catch return error.Exl3Shape;
+            y_down_at = try bump(y_down_at, down_elems, fp16_bytes);
+            left -= chunk;
         }
     }
 
@@ -346,53 +355,6 @@ fn bump(ptr: u64, elems: usize, width: usize) error{Exl3Shape}!u64 {
     return std.math.add(u64, ptr, wide) catch return error.Exl3Shape;
 }
 
-const Window = struct {
-    tokens: usize,
-    ids: u64,
-    x: u64,
-    y_gate: u64,
-    y_up: u64,
-    y_glu: u64,
-    y_down: u64,
-};
-
-const Cursor = struct {
-    tokens_left: usize,
-    ids: u64,
-    x: u64,
-    y_gate: u64,
-    y_up: u64,
-    y_glu: u64,
-    y_down: u64,
-
-    /// Next whole-token chunk. `k` is the gate/up K. `n_up` is the gate/up N. `n_down` is down's N.
-    fn next(c: *Cursor, topk: usize, k: usize, n_up: usize, n_down: usize) error{Exl3Shape}!?Window {
-        if (c.tokens_left == 0) return null;
-        const chunk = try fitRows(c.tokens_left, topk);
-        const slots = std.math.mul(usize, chunk, topk) catch return error.Exl3Shape;
-        const out = Window{
-            .tokens = chunk,
-            .ids = c.ids,
-            .x = c.x,
-            .y_gate = c.y_gate,
-            .y_up = c.y_up,
-            .y_glu = c.y_glu,
-            .y_down = c.y_down,
-        };
-        c.ids = try bump(c.ids, slots, id_bytes);
-        const x_elems = std.math.mul(usize, chunk, k) catch return error.Exl3Shape;
-        c.x = try bump(c.x, x_elems, fp16_bytes);
-        const up_elems = std.math.mul(usize, slots, n_up) catch return error.Exl3Shape;
-        c.y_gate = try bump(c.y_gate, up_elems, fp16_bytes);
-        c.y_up = try bump(c.y_up, up_elems, fp16_bytes);
-        c.y_glu = try bump(c.y_glu, up_elems, fp16_bytes);
-        const down_elems = std.math.mul(usize, slots, n_down) catch return error.Exl3Shape;
-        c.y_down = try bump(c.y_down, down_elems, fp16_bytes);
-        c.tokens_left -= chunk;
-        return out;
-    }
-};
-
 fn testPacked(trellis: u64, suh: u64, svh: u64, k: usize, n: usize, halves: u8, codebook: u8) !Packed {
     return .{
         .trellis = trellis,
@@ -493,29 +455,37 @@ test "tokens times topk above grid.y is split and does not reach the driver" {
     const k: usize = 2560;
     const n_up: usize = 640;
     const n_down: usize = 2560;
-    var cur = Cursor{
-        .tokens_left = tokens,
-        .ids = 0x1000,
-        .x = 0x2000,
-        .y_gate = 0x3000,
-        .y_up = 0x4000,
-        .y_glu = 0x5000,
-        .y_down = 0x6000,
-    };
-    const first = (try cur.next(topk, k, n_up, n_down)).?;
-    try std.testing.expectEqual(@as(usize, 6553), first.tokens);
-    try std.testing.expect(first.tokens * topk <= grid_y_max);
-    const slots = first.tokens * topk;
-    try std.testing.expectEqual(@as(u64, 0x1000) + slots * id_bytes, cur.ids);
-    try std.testing.expectEqual(@as(u64, 0x2000) + first.tokens * k * fp16_bytes, cur.x);
-    try std.testing.expectEqual(@as(u64, 0x3000) + slots * n_up * fp16_bytes, cur.y_gate);
-    try std.testing.expectEqual(@as(u64, 0x4000) + slots * n_up * fp16_bytes, cur.y_up);
-    try std.testing.expectEqual(@as(u64, 0x5000) + slots * n_up * fp16_bytes, cur.y_glu);
-    try std.testing.expectEqual(@as(u64, 0x6000) + slots * n_down * fp16_bytes, cur.y_down);
-    const second = (try cur.next(topk, k, n_up, n_down)).?;
-    try std.testing.expectEqual(@as(usize, 8192 - 6553), second.tokens);
-    try std.testing.expect(second.tokens * topk <= grid_y_max);
-    try std.testing.expect((try cur.next(topk, k, n_up, n_down)) == null);
+    var left = tokens;
+    var ids_at: u64 = 0x1000;
+    var x_at: u64 = 0x2000;
+    var y_gate_at: u64 = 0x3000;
+    var y_up_at: u64 = 0x4000;
+    var y_glu_at: u64 = 0x5000;
+    var y_down_at: u64 = 0x6000;
+    const first = try fitRows(left, topk);
+    try std.testing.expectEqual(@as(usize, 6553), first);
+    try std.testing.expect(first * topk <= grid_y_max);
+    const slots = first * topk;
+    ids_at = try bump(ids_at, slots, id_bytes);
+    x_at = try bump(x_at, first * k, fp16_bytes);
+    const up_elems = slots * n_up;
+    y_gate_at = try bump(y_gate_at, up_elems, fp16_bytes);
+    y_up_at = try bump(y_up_at, up_elems, fp16_bytes);
+    y_glu_at = try bump(y_glu_at, up_elems, fp16_bytes);
+    y_down_at = try bump(y_down_at, slots * n_down, fp16_bytes);
+    try std.testing.expectEqual(@as(u64, 0x1000) + slots * id_bytes, ids_at);
+    try std.testing.expectEqual(@as(u64, 0x2000) + first * k * fp16_bytes, x_at);
+    try std.testing.expectEqual(@as(u64, 0x3000) + slots * n_up * fp16_bytes, y_gate_at);
+    try std.testing.expectEqual(@as(u64, 0x4000) + slots * n_up * fp16_bytes, y_up_at);
+    try std.testing.expectEqual(@as(u64, 0x5000) + slots * n_up * fp16_bytes, y_glu_at);
+    try std.testing.expectEqual(@as(u64, 0x6000) + slots * n_down * fp16_bytes, y_down_at);
+    left -= first;
+    const second = try fitRows(left, topk);
+    try std.testing.expectEqual(@as(usize, 8192 - 6553), second);
+    try std.testing.expect(second * topk <= grid_y_max);
+    left -= second;
+    try std.testing.expectEqual(@as(usize, 0), left);
+    try std.testing.expectEqual(@as(usize, 0), try fitRows(left, topk));
 
     // Down is topk 1, so its rows chunk on 65535, not on the token width.
     var down_left: usize = 6554 * topk;
