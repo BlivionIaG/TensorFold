@@ -25,6 +25,7 @@ pub const step = @import("exl3_step.zig");
 pub const router = @import("exl3_router.zig");
 pub const norm = @import("exl3_norm.zig");
 pub const gdn = @import("exl3_gdn.zig");
+pub const hc = @import("exl3_hc.zig");
 
 test {
     _ = shape;
@@ -48,4 +49,5 @@ test {
     _ = router;
     _ = norm;
     _ = gdn;
+    _ = hc;
 }
