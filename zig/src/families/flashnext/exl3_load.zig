@@ -266,14 +266,11 @@ fn layerIndex(name: []const u8) ?usize {
     return n;
 }
 
-/// `mtp` is a dot-component. A prefix, an infix, or a final component counts.
-/// `notmtp` does not, so an MTP router cannot borrow the decoder shared gate.
-fn isMtpComponent(name: []const u8) bool {
-    return std.mem.startsWith(u8, name, "mtp.") or std.mem.endsWith(u8, name, ".mtp") or std.mem.indexOf(u8, name, ".mtp.") != null;
-}
-
+/// Prefix `mtp.`, infix `.mtp.`, or a final `.mtp`. `notmtp` is not that component.
 fn sameLayer(a: []const u8, b: []const u8) bool {
-    if (isMtpComponent(a) != isMtpComponent(b)) return false;
+    const a_mtp = std.mem.startsWith(u8, a, "mtp.") or std.mem.endsWith(u8, a, ".mtp") or std.mem.indexOf(u8, a, ".mtp.") != null;
+    const b_mtp = std.mem.startsWith(u8, b, "mtp.") or std.mem.endsWith(u8, b, ".mtp") or std.mem.indexOf(u8, b, ".mtp.") != null;
+    if (a_mtp != b_mtp) return false;
     return layerIndex(a) == layerIndex(b);
 }
 
