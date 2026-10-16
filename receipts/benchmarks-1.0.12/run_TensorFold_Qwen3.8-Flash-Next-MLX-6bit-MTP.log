@@ -1,0 +1,35 @@
+community-v1: code and chat, 2 temperatures, 5 repeats after warm-up.
+This generates model replies; use Ctrl-C to cancel. Nothing is uploaded unless you publish.
+The server gets up to 1429 s to load 158 GB of weights; --startup-timeout sets another limit.
+code T=1 warm-up: ok 182.76 delivery tok/s
+code T=1 repeat 1/5: ok 182.80 delivery tok/s
+code T=1 repeat 2/5: error
+code T=1 repeat 3/5: ok 161.13 delivery tok/s
+code T=1 repeat 4/5: ok 163.00 delivery tok/s
+code T=1 repeat 5/5: ok 157.33 delivery tok/s
+chat T=1 warm-up: ok 124.98 delivery tok/s
+chat T=1 repeat 1/5: ok 124.96 delivery tok/s
+chat T=1 repeat 2/5: ok 124.14 delivery tok/s
+chat T=1 repeat 3/5: ok 136.25 delivery tok/s
+chat T=1 repeat 4/5: ok 125.42 delivery tok/s
+chat T=1 repeat 5/5: ok 123.96 delivery tok/s
+code T=0 warm-up: ok 170.18 delivery tok/s
+code T=0 repeat 1/5: ok 170.30 delivery tok/s
+code T=0 repeat 2/5: ok 169.96 delivery tok/s
+code T=0 repeat 3/5: ok 169.91 delivery tok/s
+code T=0 repeat 4/5: ok 169.83 delivery tok/s
+code T=0 repeat 5/5: ok 169.97 delivery tok/s
+chat T=0 warm-up: ok 157.67 delivery tok/s
+chat T=0 repeat 1/5: ok 157.63 delivery tok/s
+chat T=0 repeat 2/5: ok 157.69 delivery tok/s
+chat T=0 repeat 3/5: ok 157.69 delivery tok/s
+chat T=0 repeat 4/5: ok 157.57 delivery tok/s
+chat T=0 repeat 5/5: ok 157.66 delivery tok/s
+Run 3dc1b529-7bf8-4029-96bb-1c8d9624c434 | mlx | TensorFold/Qwen3.8-Flash-Next-MLX-6bit-MTP
+Workload       Temp    Stream delivery tok/s    First text, s    Status
+code           1      not measured              not measured     custom/incomplete
+chat           1      124.96                    0.096            complete
+code           0      169.96                    0.075            complete
+chat           0      157.66                    0.096            complete
+Stream delivery includes transport buffering; it is not an engine token clock.
+Receipt saved: HOME/tf-bench-1.0.12/bench_TensorFold_Qwen3.8-Flash-Next-MLX-6bit-MTP.json

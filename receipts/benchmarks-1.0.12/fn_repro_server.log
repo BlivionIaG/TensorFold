@@ -1,0 +1,18 @@
+info: prompt cache: 5.7 GiB from 5.7 GiB free under the 70% cap (171.5 GiB in use once loaded, 256 GiB of RAM, 2 GiB kept for prompt buffers)
+info: flash next: 171.0 GiB kept wired between requests, inside 70% of 256 GiB of RAM
+[tensorfold] open-file limit raised: soft 256 -> 65536
+[tensorfold] serving 45032a193a5d4126ba8534822cbaf8fb30b3e368 at http://127.0.0.1:8093/v1 (sampling: temperature 1.0, top_k 20, top_p 0.95; drafts: on; context: 262112; loaded in 26.4s)
+[tensorfold] thinking on (the chat template's default): replies reason in reasoning_content before the answer in content, and max_tokens counts both. --no-thinking turns it off; a request can send chat_template_kwargs {"enable_thinking": false}
+[tensorfold] 127.0.0.1 "GET /v1/models HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+info: prompt cache: 14 tokens, resumed at 0, kept 0; 0 states, 0 MiB and 0 MiB spare of 5867 MiB (hits 0, misses 1, evicted 0, refused 0, failed 0)
+info: prompt pass: 0 -> 14 tokens in 82.8 ms (waited 0.0 ms; lookup and restore 0.1 ms, peer handoff 0.0 ms, keeps 0.0 ms)
+[tensorfold] done cmpl-6448279e6392f5f0ab377ade30c3261f prompt=14 cached=0 thinking=False effort=none tokens=1 sha=54363ddee68f finish=stop rounds=0 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+info: prompt cache: 14 tokens, resumed at 0, kept 0; 0 states, 0 MiB and 0 MiB spare of 5867 MiB (hits 0, misses 2, evicted 0, refused 0, failed 0)
+info: prompt pass: 0 -> 14 tokens in 75.8 ms (waited 0.0 ms; lookup and restore 0.0 ms, peer handoff 0.0 ms, keeps 0.0 ms)
+[tensorfold] done cmpl-719b45b34f195334db46b5cfff7965c5 prompt=14 cached=0 thinking=False effort=none tokens=1 sha=54363ddee68f finish=stop rounds=0 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+info: prompt cache: 14 tokens, resumed at 0, kept 0; 0 states, 0 MiB and 0 MiB spare of 5867 MiB (hits 0, misses 3, evicted 0, refused 0, failed 0)
+info: prompt pass: 0 -> 14 tokens in 75.3 ms (waited 0.0 ms; lookup and restore 0.0 ms, peer handoff 0.0 ms, keeps 0.0 ms)
+[tensorfold] done cmpl-a6554728f57a09dfabd7a9ec01a3eaac prompt=14 cached=0 thinking=False effort=none tokens=1 sha=54363ddee68f finish=stop rounds=0 accepted=0/0

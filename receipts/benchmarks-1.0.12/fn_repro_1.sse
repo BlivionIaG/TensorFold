@@ -1,0 +1,6 @@
+data: {"id": "cmpl-6448279e6392f5f0ab377ade30c3261f", "object": "text_completion", "created": 1792176829, "model": "45032a193a5d4126ba8534822cbaf8fb30b3e368", "choices": [{"index": 0, "text": "", "finish_reason": "stop", "logprobs": null}], "exact_mode": "exact", "tensorfold": {"enable_thinking": false, "reasoning_effort": "none", "engine": "flashnext-zig", "tokens_per_second": 0.0, "seconds": 0.000179708, "prefill_seconds": 0.082838542, "prefill_widths": [], "prefill_raised": [], "time_to_first_token": 0.083333291, "sampling": "exact", "drafts": true, "token_sha": "54363ddee68f", "token_sha256": "54363ddee68f4a5db81c9d37e5fb738d28f5b67dc7f725ad7333172b1ea157da", "min_rows": 0}, "speculative": {"rounds": 0, "drafted": 0, "accepted": 0, "acceptance_rate": 0.0, "tokens_per_round": 0.0}}
+
+data: {"id": "cmpl-6448279e6392f5f0ab377ade30c3261f", "object": "text_completion", "created": 1792176829, "model": "45032a193a5d4126ba8534822cbaf8fb30b3e368", "choices": [], "usage": {"prompt_tokens": 14, "completion_tokens": 1, "total_tokens": 15, "prompt_tokens_details": {"cached_tokens": 0}, "completion_tokens_details": {"reasoning_tokens": 0}}}
+
+data: [DONE]
+
