@@ -8,21 +8,6 @@ const std = @import("std");
 /// Current context id on this thread. Rank 0 leaves 0 on the caller. The CUDA lane is not linked here.
 threadlocal var current_context: u32 = 0;
 
-pub const model_type: []const u8 = "";
-pub const formats: []const []const u8 = &.{};
-pub const default_context: i64 = 0;
-pub const max_segments: u32 = 0;
-pub const prompt_rows: u32 = 0;
-
-/// Stored by open. Empty strings and zero counts are a host stand-in, not a serve configuration.
-pub const Options = struct {
-    model_type: []const u8 = model_type,
-    formats: []const []const u8 = formats,
-    default_context: i64 = default_context,
-    max_segments: u32 = max_segments,
-    prompt_rows: u32 = prompt_rows,
-};
-
 pub const Loaded = struct {
     backend: struct {} = .{},
     facts: struct {} = .{},
@@ -30,7 +15,12 @@ pub const Loaded = struct {
     stream_bytes: usize = 0,
     free_streams: u32 = 0,
     learn_bytes: usize = 0,
-    options: Options = .{},
+    /// Empty and zero: this host stand-in does not serve.
+    model_type: []const u8 = "",
+    formats: []const []const u8 = &.{},
+    default_context: i64 = 0,
+    max_segments: u32 = 0,
+    prompt_rows: u32 = 0,
     /// Rank 1's context id. Its thread writes this; rank 0 stays current on the caller.
     context_id: u32 = 0,
     /// Peer access is unsupported on the pair. This stays false; nothing enables it.
