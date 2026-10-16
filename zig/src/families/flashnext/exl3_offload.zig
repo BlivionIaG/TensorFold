@@ -3,7 +3,7 @@
 //! `reap`, then resident. Eviction is LRU among resident lines; an in-flight line
 //! is not reusable until it is reaped. `planRound` does not write either table.
 //! Shared expert 512 is always a hit and never occupies a routed slot.
-//! Generate addresses a line as `(layer, id)` through `scheduleUsedAt`.
+//! Generate addresses a line as `(layer, id)` through `scheduleUsedAt` and `reapAt`.
 //! `schedule` and `onDevice` stay id-only and are not used on a layer-tagged table.
 
 const std = @import("std");
@@ -252,6 +252,7 @@ pub fn stage(v: *Vram, id: u16) error{ Busy, Shared }!usize {
 
 /// Same as `stage`, except a resident whose id is in `keep` is not a victim.
 /// `error.Busy` means every line is in flight or held by `keep`.
+/// Id-only. A newly assigned line is layer 0. Do not call this on a multi-layer table.
 pub fn stageKeeping(v: *Vram, id: u16, keep: []const u16) error{ Busy, Shared }!usize {
     if (id == shared_id or id == Cache.empty_id) return error.Shared;
     if (vramIndex(v.*, id)) |i| {
@@ -261,6 +262,7 @@ pub fn stageKeeping(v: *Vram, id: u16, keep: []const u16) error{ Busy, Shared }!
     }
     const slot = vramEmpty(v.*) orelse vramLruKeep(v.*, keep) orelse return error.Busy;
     v.slots[slot] = id;
+    v.layer[slot] = 0;
     v.line[slot] = .inflight;
     v.stamp[slot] = 0;
     return slot;
@@ -311,12 +313,19 @@ pub fn schedule(
     }
 }
 
-/// The copy of `id` has landed. The line becomes resident at `now`.
-pub fn reap(v: *Vram, id: u16, now: u32) error{NotInflight}!void {
-    const i = vramIndex(v.*, id) orelse return error.NotInflight;
+/// The copy of `(layer, id)` has landed. Another layer's resident or inflight
+/// line is not this copy. Generate calls this, not `reap`.
+pub fn reapAt(v: *Vram, layer: u8, id: u16, now: u32) error{NotInflight}!void {
+    const i = vramIndexAt(v.*, layer, id) orelse return error.NotInflight;
     if (v.line[i] != .inflight) return error.NotInflight;
     v.line[i] = .resident;
     v.stamp[i] = now;
+}
+
+/// Layer-0 wrapper. Does not promote another layer's inflight copy.
+/// Old tests are layer 0. Generate calls `reapAt`.
+pub fn reap(v: *Vram, id: u16, now: u32) error{NotInflight}!void {
+    return reapAt(v, 0, id, now);
 }
 
 /// First occupied slot with this id, on any layer. That alias is what
@@ -634,7 +643,7 @@ pub fn scheduleUsed(
 /// Generate path. Misses sort by `counts[layer]`. A victim scores
 /// `counts[victim.layer][victim.id]`. Keep is `(layer, id)` for this call's ids.
 /// An id outside `owned` stays `.cpu` and is not staged. Shared 512 is a hit
-/// and does not occupy a line.
+/// and does not occupy a line. A landed copy is promoted with `reapAt`.
 pub fn scheduleUsedAt(
     v: *Vram,
     layer: u8,
@@ -1287,6 +1296,75 @@ test "residentAt distinguishes the same expert id on two layers" {
     line[1] = .inflight;
     try std.testing.expect(residentAt(vram, 0, 7));
     try std.testing.expect(!residentAt(vram, 40, 7));
+}
+
+test "reapAt promotes one inflight layer and leaves the other inflight" {
+    var slots = [_]u16{ 7, 7 };
+    var line = [_]Line{ .inflight, .inflight };
+    var stamp = [_]u32{ 0, 0 };
+    var layer = [_]u8{ 0, 40 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    slots = .{ 7, 7 };
+    line = .{ .inflight, .inflight };
+    stamp = .{ 0, 0 };
+    layer = .{ 0, 40 };
+
+    try reapAt(&vram, 0, 7, 3);
+    try std.testing.expect(residentAt(vram, 0, 7));
+    try std.testing.expectEqual(Line.inflight, line[1]);
+    try std.testing.expect(!residentAt(vram, 40, 7));
+    try std.testing.expectEqual(@as(u32, 3), stamp[0]);
+
+    // The other layer's copy is still inflight, then promotable on its own reap.
+    try reapAt(&vram, 40, 7, 4);
+    try std.testing.expect(residentAt(vram, 40, 7));
+    try std.testing.expect(residentAt(vram, 0, 7));
+    try std.testing.expectEqual(@as(u32, 4), stamp[1]);
+    try std.testing.expectEqual(@as(u32, 3), stamp[0]);
+
+    // Layer 0 is already resident. The wrapper must not treat that as the
+    // layer-40 inflight copy, and must not move layer 40.
+    line[1] = .inflight;
+    stamp[1] = 0;
+    try std.testing.expectError(error.NotInflight, reap(&vram, 7, 9));
+    try std.testing.expectEqual(Line.resident, line[0]);
+    try std.testing.expectEqual(Line.inflight, line[1]);
+    try std.testing.expectEqual(@as(u32, 3), stamp[0]);
+    try reapAt(&vram, 40, 7, 9);
+    try std.testing.expect(residentAt(vram, 40, 7));
+    try std.testing.expectEqual(@as(u32, 9), stamp[1]);
+
+    // An inflight copy that exists only on layer 40 is not promoted by `reap`.
+    slots = .{ 7, Cache.empty_id };
+    line = .{ .inflight, .empty };
+    stamp = .{ 0, 0 };
+    layer = .{ 40, 0 };
+    try std.testing.expectError(error.NotInflight, reap(&vram, 7, 1));
+    try std.testing.expectEqual(Line.inflight, line[0]);
+    try std.testing.expect(!residentAt(vram, 40, 7));
+    try reapAt(&vram, 40, 7, 2);
+    try std.testing.expect(residentAt(vram, 40, 7));
+    try std.testing.expectEqual(@as(u8, 40), layer[0]);
+}
+
+test "stageKeeping tags a newly assigned line as layer 0" {
+    var slots = [_]u16{4};
+    var line = [_]Line{.resident};
+    var stamp = [_]u32{1};
+    var layer = [_]u8{40};
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    slots = .{4};
+    line = .{.resident};
+    stamp = .{1};
+    layer = .{40};
+
+    try std.testing.expectEqual(@as(usize, 0), try stageKeeping(&vram, 9, &.{}));
+    try std.testing.expectEqual(@as(u16, 9), slots[0]);
+    try std.testing.expectEqual(@as(u8, 0), layer[0]);
+    try std.testing.expectEqual(Line.inflight, line[0]);
+    try std.testing.expect(vramIndexAt(vram, 0, 9) != null);
+    try std.testing.expectEqual(@as(?usize, null), vramIndexAt(vram, 40, 9));
+    try std.testing.expect(slots[0] != shared_id);
 }
 
 test "a keep on layer 0 does not protect that id on layer 40" {
