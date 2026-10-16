@@ -325,6 +325,8 @@ test "mlp.gate, key_proj, and value_proj stay pinned, and so does mlp.router.wei
         .name = "model.layers.0.mlp.experts.0.gate_proj.trellis",
         .rank = 3,
     }));
-    try std.testing.expectEqual(Home.resident, home(.{ .name = "mtp.fc_embedding.weight", .rank = 2 }));
-    try std.testing.expectEqual(Stay.vram_pinned, try stayOf(.{ .name = "mtp.fc_embedding.weight", .rank = 2 }, 0, 2));
+    try std.testing.expectEqual(Home.plain, home(.{ .name = "mtp.fc_embedding.weight", .rank = 2 }));
+    try std.testing.expectEqual(Stay.host, try stayOf(.{ .name = "mtp.fc_embedding.weight", .rank = 2 }, 0, 2));
+    try std.testing.expectEqual(Home.resident, home(.{ .name = "language_model.mtp.fc_hidden.weight", .rank = 2 }));
+    try std.testing.expectEqual(Stay.vram_pinned, try stayOf(.{ .name = "language_model.mtp.fc_hidden.weight", .rank = 2 }, 0, 2));
 }
