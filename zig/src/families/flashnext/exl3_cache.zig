@@ -181,9 +181,7 @@ pub fn expertBytes(ranks: usize) u64 {
 }
 
 pub fn expertLines(room: u64, ranks: usize) u64 {
-    const one = expertBytes(ranks);
-    if (one == 0) return 0;
-    return room / one;
+    return expertLinesOf(room, expertBytes(ranks));
 }
 
 /// Budget stride for one owned expert until a header span is larger. Not a line count.
@@ -196,13 +194,15 @@ pub fn expertLinesOf(room: u64, line: u64) u64 {
 }
 
 /// KV for every full-attention layer. GDN layers have no KV table.
-pub fn contextKv(tokens: usize, dtype: Dtype) error{HeadDim}!u64 {
-    const layers: u64 = shape.layers / shape.full_attention_interval;
-    return (try layerBytes(tokens, shape.kv_heads, shape.head_dim, dtype)) * layers;
+/// Both heads: one rank keeps the whole head count.
+pub fn contextKv(tokens: usize, dtype: Dtype) error{ HeadDim, Ranks }!u64 {
+    return contextKvRank(tokens, dtype, 1);
 }
 
-/// This rank's KV. Heads are split across `ranks`; `contextKv` still charges all of them.
-pub fn contextKvRank(tokens: usize, dtype: Dtype, ranks: usize) error{HeadDim}!u64 {
+/// This rank's KV. Heads split evenly. A zero rank, or a count that does not
+/// divide the head count, is refused instead of charging zero bytes.
+pub fn contextKvRank(tokens: usize, dtype: Dtype, ranks: usize) error{ HeadDim, Ranks }!u64 {
+    if (ranks == 0 or shape.kv_heads % ranks != 0) return error.Ranks;
     const layers: u64 = shape.layers / shape.full_attention_interval;
     const heads = shape.kv_heads / ranks;
     return (try layerBytes(tokens, heads, shape.head_dim, dtype)) * layers;
@@ -218,7 +218,7 @@ pub const KvFit = struct {
 /// Sized with one head per rank. bf16 is kept while it fits. `.int4` with
 /// `floor_held` false missed the floor; the caller drops lines instead of
 /// starting on int4.
-pub fn kvFit(device: u64, pinned: u64, tokens: usize, expert_floor: u64, ranks: usize) error{HeadDim}!KvFit {
+pub fn kvFit(device: u64, pinned: u64, tokens: usize, expert_floor: u64, ranks: usize) error{ HeadDim, Ranks }!KvFit {
     const order = [_]Dtype{ .bf16, .int8, .int4 };
     for (order) |dtype| {
         const kv = try contextKvRank(tokens, dtype, ranks);
@@ -412,4 +412,13 @@ test "one kv head keeps bf16 through 8205 on the census floor" {
     try std.testing.expectEqual(@as(u64, 100_834_350), kv_room);
     try std.testing.expect(4_102 * both <= kv_room);
     try std.testing.expect(4_103 * both > kv_room);
+    try std.testing.expectEqual(try contextKv(8192, .bf16), try contextKvRank(8192, .bf16, 1));
+}
+
+test "a zero rank does not panic and is not a held bf16 fit" {
+    // Floor 0 would be bf16 with the floor held if a 0-head charge were accepted.
+    try std.testing.expectError(error.Ranks, kvFit(card_bytes, 0, 8192, 0, 0));
+    try std.testing.expectError(error.Ranks, contextKvRank(8192, .bf16, 0));
+    try std.testing.expectError(error.Ranks, contextKvRank(8192, .bf16, 3));
+    try std.testing.expectError(error.Ranks, kvFit(card_bytes, 0, 8192, 0, 4));
 }
