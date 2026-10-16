@@ -23,6 +23,7 @@ pub const attn = @import("exl3_attn.zig");
 pub const reduce = @import("exl3_reduce.zig");
 pub const step = @import("exl3_step.zig");
 pub const router = @import("exl3_router.zig");
+pub const norm = @import("exl3_norm.zig");
 
 test {
     _ = shape;
@@ -44,4 +45,5 @@ test {
     _ = reduce;
     _ = step;
     _ = router;
+    _ = norm;
 }
