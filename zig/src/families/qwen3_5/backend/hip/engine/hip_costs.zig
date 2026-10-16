@@ -28,11 +28,7 @@ pub const Costs = struct {
     step_ms: f64 = 0.0,
 };
 
-pub fn nowNs() u64 {
-    var ts: std.c.timespec = undefined;
-    _ = std.c.clock_gettime(.MONOTONIC, &ts);
-    return @as(u64, @intCast(ts.sec)) * 1_000_000_000 + @as(u64, @intCast(ts.nsec));
-}
+pub const nowNs = @import("hip_serve").backend.nowNs;
 
 const Rig = struct {
     gpa: std.mem.Allocator,
