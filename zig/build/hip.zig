@@ -222,6 +222,8 @@ fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
             .{ .name = "hip", .module = hip },
             .{ .name = "lanes", .module = lanes },
             .{ .name = "core", .module = core },
+            .{ .name = "engine_api", .module = api },
+            .{ .name = "hip_serve", .module = serve },
         },
     });
     const native = b.createModule(.{
