@@ -51,9 +51,9 @@ test "a length mismatch stores nothing" {
 }
 
 test "the fp32 sum rounds to bf16 once" {
-    // 4097 * 2^-20 is one f32 ulp above the bf16 midpoint between 1 and
-    // 1 + 2^-7. One round of the sum steps up. Rounding each partial first
-    // lands on that midpoint and ties back to 1.
+    // 4097 * 2^-20 is eight f32 ulps (2^-20, not 2^-23) above the bf16
+    // midpoint between 1 and 1 + 2^-7. One round of the sum steps up.
+    // Rounding each partial first lands on that midpoint and ties back to 1.
     const rank0 = [_]f32{1};
     const rank1 = [_]f32{@as(f32, 4097) * 0x1p-20};
     var out = [_]f32{0};
