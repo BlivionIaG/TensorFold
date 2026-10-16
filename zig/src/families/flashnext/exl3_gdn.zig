@@ -1,8 +1,5 @@
 //! Host reduction for one GDN out-projection.
-//! `pinRank` walks pinned bytes. A K-split is that walker's `tp.legal` test on
-//! the out_proj axis the caller passes: more than one rank, a non-zero axis,
-//! and a Hadamard cut. `exl3_tp.cut` has no GDN role.
-//! No kernel, conv1d, or recurrent scan.
+//! A K-split is ranks > 1, a non-zero measured K axis, and `tp.legal`: weight `shape[1]`, trellis `shape[0] * tile`, or `suh` / `su`.
 
 const std = @import("std");
 const tp = @import("exl3_tp.zig");
@@ -10,15 +7,13 @@ const tp = @import("exl3_tp.zig");
 /// One token of bf16 hidden, 2560 * 2. Both directions of the exchange use this width.
 const hidden_bytes: u64 = 5120;
 
-/// True when this out_proj was K-split, so the hidden partials have to be reduced.
-/// `axis` is the header axis `pinRank` measures for that tensor (the K side).
-/// Both ranks get the same answer: a partial each, or a full replica each.
+/// True when this out_proj K axis was split. Both ranks get the same answer.
 pub fn outProjSplit(axis: usize, ranks: usize) bool {
     return ranks > 1 and axis != 0 and tp.legal(axis, ranks);
 }
 
 /// Copy `partial0` when the out_proj was replicated. Sum rank 0, then rank 1, when it was K-split.
-/// Lengths are checked before any store. The sum stays fp32; there is no bf16 round.
+/// Lengths are checked before any store.
 pub fn reduceOut(partial0: []const f32, partial1: []const f32, split: bool, out: []f32) error{Length}!void {
     if (partial0.len != partial1.len or partial0.len != out.len) return error.Length;
     if (!split) {
@@ -30,10 +25,8 @@ pub fn reduceOut(partial0: []const f32, partial1: []const f32, split: bool, out:
     }
 }
 
-/// `exl3_bounce_bytes` for the GDN out-projection only.
 /// A replica exchanges nothing. A K-split adds the D2H of this partial and the
-/// H2D of the summed hidden, one layer (`tokens * 5120 * 2`). The caller counts
-/// layers. The MoE hop is not included.
+/// H2D of the summed hidden, one layer (`tokens * 5120 * 2`).
 pub fn bounceBytes(split: bool, tokens: usize) u64 {
     if (!split) return 0;
     const n: u64 = @intCast(tokens);
