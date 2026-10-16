@@ -4,7 +4,7 @@
 // ids are line indices, token-major int32[tokens * topk], read every launch so a graph replay can swap the buffer.
 // Trellis is [line, strips...], suh [line, K], svh [line, N]. y is [tokens * topk, N] in that slot order.
 // SwiGLU is its own kernel between those projections. It does not replace project_nblock.
-// combine has no mask. A CPU slot is a zero weight the host stored. slot_ptrs and hit_mask are not read.
+// combine has no mask. The host stores a finite fp16 zero in a CPU slot's y, and a 0 weight. slot_ptrs and hit_mask are not read.
 // Launch gate/up and down: grid (N/128, tokens * topk), block 32. K and N are multiples of 128.
 // Launch SwiGLU: grid ((n + 127) / 128, rows), block 128. rows is tokens * topk, n is the gate/up N.
 // combine: out[token, n] = sum_s fp32(weights[token, s]) * fp32(y[token, s, n]), fma from 0, then fp16.

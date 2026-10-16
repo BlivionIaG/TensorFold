@@ -1,7 +1,8 @@
 //! EXL3 strips projections. The device decode matches zig/src/core/exl3_format.zig.
 //! Expert launches read ids from a pointer so a graph replay can swap that buffer.
 //! Gate/up and down are the same identity projection. SwiGLU is a separate kernel between them.
-//! A hit passes three packed bases. The id is a line index. Combine has no mask: a CPU slot is weight 0.
+//! A hit passes three packed bases. The id is a line index. Combine has no mask.
+//! A CPU slot needs a finite fp16 zero in `y` before combine. A zero weight alone does not drop NaN.
 
 const std = @import("std");
 const kernels = @import("kernels.zig");
@@ -69,10 +70,13 @@ pub const Exl3 = struct {
     /// One expert matrix for every (token, slot). `ids` is int32[tokens * topk] of line indices.
     /// y is [tokens * topk, N]. The pointers are that one matrix's packed base.
     /// The kernel adds `line * tileSpan(k, n, halves)` to trellis, `line * k` to suh, and `line * n` to svh.
+    /// `tokens * topk` is `grid.y`. The slot is `blockIdx.y`, so a count above `grid_y_max` is refused
+    /// before the driver. `hit` passes whole-token chunks that fit.
     pub fn experts(g: *const Exl3, s: Stream, which: Expert, x: u64, ids: u64, trellis: u64, suh: u64, svh: u64, y: u64, tokens: usize, k: usize, n: usize, n_experts: usize, topk: usize, halves: u8, codebook: u8) !void {
         if (tokens == 0) return;
         if (n_experts == 0 or topk == 0) return error.Exl3Shape;
         const slots = std.math.mul(usize, tokens, topk) catch return error.Exl3Shape;
+        if (slots > grid_y_max) return error.Exl3Shape;
         const dims = try projection(slots, k, n, halves, codebook);
         const experts_i = std.math.cast(i32, n_experts) orelse return error.Exl3Shape;
         const topk_i = std.math.cast(i32, topk) orelse return error.Exl3Shape;
@@ -103,34 +107,65 @@ pub const Exl3 = struct {
 
     /// fp16 rows of `silu(fp32(gate)) * fp32(up)`, the v0.6.6 act_mode 1 formula with limit +inf.
     /// `rows` is `tokens * topk`. `n` is the gate/up N. Launched between the identity projections and down.
+    /// The row is `blockIdx.y`, so each launch has at most `grid_y_max` rows. The next chunk advances
+    /// gate, up, and y by that many rows of `n` fp16 elements.
     pub fn swiglu(g: *const Exl3, s: Stream, gate: u64, up: u64, y: u64, rows: usize, n: usize) !void {
         if (rows == 0) return;
         if (n == 0) return error.Exl3Shape;
-        const rows_i = std.math.cast(i32, rows) orelse return error.Exl3Shape;
         const n_i = std.math.cast(i32, n) orelse return error.Exl3Shape;
         const n_blocks: u32 = @intCast((n + 127) / 128);
-        var a = swigluArgs(gate, up, y, rows_i, n_i);
-        try launch_.launch(g.swiglu_fn, .{
-            .grid = .{ .x = n_blocks, .y = @intCast(rows_i), .z = 1 },
-            .block = .{ .x = 128, .y = 1, .z = 1 },
-        }, s, &a);
+        var left = rows;
+        var gate_at = gate;
+        var up_at = up;
+        var y_at = y;
+        while (left > 0) {
+            const chunk = try fitRows(left, 1);
+            const rows_i: i32 = @intCast(chunk);
+            var a = swigluArgs(gate_at, up_at, y_at, rows_i, n_i);
+            try launch_.launch(g.swiglu_fn, .{
+                .grid = .{ .x = n_blocks, .y = @intCast(rows_i), .z = 1 },
+                .block = .{ .x = 128, .y = 1, .z = 1 },
+            }, s, &a);
+            const cells = std.math.mul(usize, chunk, n) catch return error.Exl3Shape;
+            gate_at = try bump(gate_at, cells, fp16_bytes);
+            up_at = try bump(up_at, cells, fp16_bytes);
+            y_at = try bump(y_at, cells, fp16_bytes);
+            left -= chunk;
+        }
     }
 
     /// Gate, up, SwiGLU, down. `gate`, `up`, and `down` are three packed bases, each with its own strides.
     /// `ids` are line indices into all three. `n_lines` is one past the highest line those arrays hold.
-    /// Down is launched as one token per slot: `expert_slot` reads `x[slot / topk]`, and that kernel is unchanged.
-    /// Combine stays separate. A CPU slot is weight 0 in that buffer. This does not pass `slot_ptrs` or `hit_mask`.
+    /// Whole-token chunks keep `chunk * topk <= grid_y_max`, because the slot is `blockIdx.y`.
+    /// Each chunk advances `ids` by `chunk * topk` int32s, gate/up `x` by `chunk * K` fp16s, and each `y`
+    /// by `chunk * topk * N` fp16s. Down is one token per slot (`topk` 1) and its rows are capped at `grid_y_max`.
+    /// `expert_slot` is unchanged. Combine stays separate. Before combine, the host writes a finite fp16 zero
+    /// into a CPU slot's `y` and a 0 weight. A zero weight alone does not drop NaN. An out-of-range id does not
+    /// store that zero. This does not pass `slot_ptrs` or `hit_mask`.
     pub fn hit(g: *const Exl3, s: Stream, x: u64, ids: u64, gate: Packed, up: Packed, down: Packed, y_gate: u64, y_up: u64, y_glu: u64, y_down: u64, tokens: usize, n_lines: usize, topk: usize) !void {
         if (tokens == 0) return;
         const p = try plan(x, gate, up, down, y_gate, y_up, y_glu, y_down, tokens, n_lines, topk);
-        try launchStep(g, s, ids, p.gate);
-        try launchStep(g, s, ids, p.up);
-        try g.swiglu(s, p.glu_gate, p.glu_up, p.glu_y, p.glu_rows, p.glu_n);
-        try launchStep(g, s, ids, p.down);
+        var cur = Cursor{
+            .tokens_left = tokens,
+            .ids = ids,
+            .x = x,
+            .y_gate = y_gate,
+            .y_up = y_up,
+            .y_glu = y_glu,
+            .y_down = y_down,
+        };
+        while (try cur.next(topk, p.gate.k, p.gate.n, p.down.n)) |w| {
+            try g.experts(s, .gate_up, w.x, w.ids, p.gate.trellis, p.gate.suh, p.gate.svh, w.y_gate, w.tokens, p.gate.k, p.gate.n, p.gate.n_lines, topk, p.gate.halves, p.gate.codebook);
+            try g.experts(s, .gate_up, w.x, w.ids, p.up.trellis, p.up.suh, p.up.svh, w.y_up, w.tokens, p.up.k, p.up.n, p.up.n_lines, topk, p.up.halves, p.up.codebook);
+            const slots = std.math.mul(usize, w.tokens, topk) catch return error.Exl3Shape;
+            try g.swiglu(s, w.y_gate, w.y_up, w.y_glu, slots, p.glu_n);
+            try g.experts(s, .down, w.y_glu, w.ids, p.down.trellis, p.down.suh, p.down.svh, w.y_down, slots, p.down.k, p.down.n, p.down.n_lines, 1, p.down.halves, p.down.codebook);
+        }
     }
 
     /// out[token, n] = sum_s fp32(weights[token, s]) * fp32(y[token, s, n]), then fp16.
-    /// A CPU slot is a 0 weight the host stored before this launch. There is no mask argument.
+    /// The host writes a finite fp16 zero into a CPU slot's `y` before this launch, and a 0 weight.
+    /// `fmaf(0, NaN, acc)` is NaN, so the weight alone does not drop an unwritten slot. There is no mask argument.
     pub fn combine(g: *const Exl3, s: Stream, y: u64, weights: u64, out: u64, tokens: usize, n: usize, topk: usize) !void {
         if (tokens == 0) return;
         if (n == 0 or topk == 0) return error.Exl3Shape;
@@ -291,9 +326,72 @@ fn plan(x: u64, gate: Packed, up: Packed, down: Packed, y_gate: u64, y_up: u64, 
     };
 }
 
-fn launchStep(g: *const Exl3, s: Stream, ids: u64, st: Step) !void {
-    try g.experts(s, st.which, st.x, ids, st.trellis, st.suh, st.svh, st.y, st.tokens, st.k, st.n, st.n_lines, st.topk, st.halves, st.codebook);
+/// CUDA gridDim.y maximum. The expert slot and the SwiGLU row are blockIdx.y, so they cannot exceed this.
+const grid_y_max: usize = 65535;
+const fp16_bytes: usize = 2;
+const id_bytes: usize = 4;
+
+/// Whole rows that fit in grid.y when each row occupies `per` slots. `per` 1 is SwiGLU and down.
+fn fitRows(rows: usize, per: usize) error{Exl3Shape}!usize {
+    if (per == 0) return error.Exl3Shape;
+    const room = grid_y_max / per;
+    if (room == 0) return error.Exl3Shape;
+    if (rows == 0) return 0;
+    return @min(rows, room);
 }
+
+fn bump(ptr: u64, elems: usize, width: usize) error{Exl3Shape}!u64 {
+    const bytes = std.math.mul(usize, elems, width) catch return error.Exl3Shape;
+    const wide = std.math.cast(u64, bytes) orelse return error.Exl3Shape;
+    return std.math.add(u64, ptr, wide) catch return error.Exl3Shape;
+}
+
+const Window = struct {
+    tokens: usize,
+    ids: u64,
+    x: u64,
+    y_gate: u64,
+    y_up: u64,
+    y_glu: u64,
+    y_down: u64,
+};
+
+const Cursor = struct {
+    tokens_left: usize,
+    ids: u64,
+    x: u64,
+    y_gate: u64,
+    y_up: u64,
+    y_glu: u64,
+    y_down: u64,
+
+    /// Next whole-token chunk. `k` is the gate/up K. `n_up` is the gate/up N. `n_down` is down's N.
+    fn next(c: *Cursor, topk: usize, k: usize, n_up: usize, n_down: usize) error{Exl3Shape}!?Window {
+        if (c.tokens_left == 0) return null;
+        const chunk = try fitRows(c.tokens_left, topk);
+        const slots = std.math.mul(usize, chunk, topk) catch return error.Exl3Shape;
+        const out = Window{
+            .tokens = chunk,
+            .ids = c.ids,
+            .x = c.x,
+            .y_gate = c.y_gate,
+            .y_up = c.y_up,
+            .y_glu = c.y_glu,
+            .y_down = c.y_down,
+        };
+        c.ids = try bump(c.ids, slots, id_bytes);
+        const x_elems = std.math.mul(usize, chunk, k) catch return error.Exl3Shape;
+        c.x = try bump(c.x, x_elems, fp16_bytes);
+        const up_elems = std.math.mul(usize, slots, n_up) catch return error.Exl3Shape;
+        c.y_gate = try bump(c.y_gate, up_elems, fp16_bytes);
+        c.y_up = try bump(c.y_up, up_elems, fp16_bytes);
+        c.y_glu = try bump(c.y_glu, up_elems, fp16_bytes);
+        const down_elems = std.math.mul(usize, slots, n_down) catch return error.Exl3Shape;
+        c.y_down = try bump(c.y_down, down_elems, fp16_bytes);
+        c.tokens_left -= chunk;
+        return out;
+    }
+};
 
 fn testPacked(trellis: u64, suh: u64, svh: u64, k: usize, n: usize, halves: u8, codebook: u8) !Packed {
     return .{
@@ -381,4 +479,59 @@ test "three packed bases address a line by the kernel tile span, not 1901213" {
     // An empty batch returns before any launch, even when a stride is the residency line.
     try g.hit(s, 0x40, 0x41, blob, up, down, 1, 2, 3, 4, 0, 1, 1);
     try std.testing.expectError(error.Exl3Shape, g.hit(s, 0x40, 0x41, blob, up, down, 1, 2, 3, 4, 2, 1, 1));
+}
+
+test "tokens times topk above grid.y is split and does not reach the driver" {
+    const topk: usize = 10;
+    const tokens: usize = 8192;
+    try std.testing.expect(tokens * topk > grid_y_max);
+    try std.testing.expectEqual(@as(usize, 6553), try fitRows(6554, topk));
+    try std.testing.expect(6553 * topk <= grid_y_max);
+    try std.testing.expect(6554 * topk > grid_y_max);
+    try std.testing.expectError(error.Exl3Shape, fitRows(1, grid_y_max + 1));
+
+    const k: usize = 2560;
+    const n_up: usize = 640;
+    const n_down: usize = 2560;
+    var cur = Cursor{
+        .tokens_left = tokens,
+        .ids = 0x1000,
+        .x = 0x2000,
+        .y_gate = 0x3000,
+        .y_up = 0x4000,
+        .y_glu = 0x5000,
+        .y_down = 0x6000,
+    };
+    const first = (try cur.next(topk, k, n_up, n_down)).?;
+    try std.testing.expectEqual(@as(usize, 6553), first.tokens);
+    try std.testing.expect(first.tokens * topk <= grid_y_max);
+    const slots = first.tokens * topk;
+    try std.testing.expectEqual(@as(u64, 0x1000) + slots * id_bytes, cur.ids);
+    try std.testing.expectEqual(@as(u64, 0x2000) + first.tokens * k * fp16_bytes, cur.x);
+    try std.testing.expectEqual(@as(u64, 0x3000) + slots * n_up * fp16_bytes, cur.y_gate);
+    try std.testing.expectEqual(@as(u64, 0x4000) + slots * n_up * fp16_bytes, cur.y_up);
+    try std.testing.expectEqual(@as(u64, 0x5000) + slots * n_up * fp16_bytes, cur.y_glu);
+    try std.testing.expectEqual(@as(u64, 0x6000) + slots * n_down * fp16_bytes, cur.y_down);
+    const second = (try cur.next(topk, k, n_up, n_down)).?;
+    try std.testing.expectEqual(@as(usize, 8192 - 6553), second.tokens);
+    try std.testing.expect(second.tokens * topk <= grid_y_max);
+    try std.testing.expect((try cur.next(topk, k, n_up, n_down)) == null);
+
+    // Down is topk 1, so its rows chunk on 65535, not on the token width.
+    var down_left: usize = 6554 * topk;
+    var down_rows: usize = 0;
+    var down_chunks: usize = 0;
+    while (down_left > 0) {
+        const chunk = try fitRows(down_left, 1);
+        try std.testing.expect(chunk <= grid_y_max);
+        down_rows += chunk;
+        down_chunks += 1;
+        down_left -= chunk;
+    }
+    try std.testing.expectEqual(@as(usize, 65540), down_rows);
+    try std.testing.expectEqual(@as(usize, 2), down_chunks);
+
+    var g: Exl3 = undefined;
+    const s = Stream{ .d = undefined, .handle = null };
+    try std.testing.expectError(error.Exl3Shape, g.experts(s, .gate_up, 0x40, 0x41, 0x10, 0x11, 0x12, 0x50, 6554, k, n_up, 8, topk, 4, 2));
 }
