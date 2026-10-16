@@ -63,6 +63,7 @@ pub const exl3_experts: []const u8 = if (available) &Blob("fatbin_exl3_experts")
 pub const exl3_symbols = struct {
     pub const linear_f16 = "exl3_linear_f16";
     pub const gate_up_f16 = "exl3_experts_gate_up_f16";
+    pub const swiglu_f16 = "exl3_experts_swiglu_f16";
     pub const down_f16 = "exl3_experts_down_f16";
     pub const combine_f16 = "exl3_experts_combine_f16";
 };
