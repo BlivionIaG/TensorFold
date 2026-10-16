@@ -1,7 +1,4 @@
-//! Host KV table for one rank.
-//! Rank 0 stores KV head 0. Rank 1 stores KV head 1.
-//! Bytes come from `cache.contextKvRank`. `contextKv` is both heads and is not
-//! allocated on each card. No CUDA, no graph, no attention.
+//! The buffer is `contextKvRank` for this rank's heads.
 
 const std = @import("std");
 const shape = @import("exl3_shape.zig");
@@ -13,9 +10,8 @@ const full_layers: usize = shape.layers / shape.full_attention_interval;
 pub const Table = struct {
     rank: usize,
     ranks: usize,
-    /// First KV head stored in this table.
     head: usize,
-    /// Heads stored here. Two ranks keep one, not both on rank 0.
+    /// Two ranks store one head each, not both on rank 0.
     heads: usize,
     tokens: usize,
     dtype: cache.Dtype,
