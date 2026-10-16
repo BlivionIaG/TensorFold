@@ -26,6 +26,7 @@ pub const Error = error{
     NotFlashNext,
     ShapeMismatch,
     IllegalCut,
+    OutOfMemory,
 };
 
 pub const Request = struct {
@@ -59,6 +60,19 @@ pub const Admitted = struct {
     ssd_experts: bool,
     /// Both PLE modes stay on the host path. Admission does not allocate the table.
     ngram_host: bool,
+    /// Ids as written in config.json. Not `index - 1`.
+    ple_layer_ids: []const u16,
+    /// False when the key is absent. `pleLaunch` then returns `MissingField`.
+    ple_listed: bool,
+
+    pub fn deinit(self: *Admitted, gpa: std.mem.Allocator) void {
+        if (self.ple_layer_ids.len != 0) gpa.free(self.ple_layer_ids);
+    }
+
+    pub fn pleLaunch(self: Admitted) error{MissingField}![]const u16 {
+        if (!self.ple_listed) return error.MissingField;
+        return self.ple_layer_ids;
+    }
 };
 
 const hidden_keys = [_][]const u8{ "hidden_size", "hidden" };
@@ -70,7 +84,7 @@ const vocab_keys = [_][]const u8{ "vocab_size", "vocab" };
 const shard_keys = [_][]const u8{ "split_ngram_parts", "ngram_shards" };
 const bit_keys = [_][]const u8{"ngram_bits"};
 
-pub fn admit(json: []const u8, req: Request) Error!Admitted {
+pub fn admit(gpa: std.mem.Allocator, json: []const u8, req: Request) Error!Admitted {
     if (req.ranks != 1 and req.ranks != 2) return error.IllegalCut;
 
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -101,6 +115,9 @@ pub fn admit(json: []const u8, req: Request) Error!Admitted {
         .ngram_bytes = 0,
     }) == .host;
 
+    // As written. config.zig parse stores index - 1 and rejects exl3.
+    const ple_list = try readPle(gpa, text, root);
+
     return .{
         .model_type = model_type_name,
         .quant_method = shape.quant_method,
@@ -118,7 +135,25 @@ pub fn admit(json: []const u8, req: Request) Error!Admitted {
         .cache_bytes = req.cache_bytes,
         .ssd_experts = req.ssd_experts,
         .ngram_host = host,
+        .ple_layer_ids = ple_list.ids,
+        .ple_listed = ple_list.listed,
     };
+}
+
+const PleList = struct { ids: []const u16, listed: bool };
+
+fn readPle(gpa: std.mem.Allocator, text: std.json.ObjectMap, root: std.json.ObjectMap) Error!PleList {
+    const v = if (text.get("ple_layer_ids")) |item| item else root.get("ple_layer_ids") orelse return .{ .ids = &.{}, .listed = false };
+    if (v == .null) return .{ .ids = &.{}, .listed = false };
+    if (v != .array) return error.BadInteger;
+    if (v.array.items.len == 0) return .{ .ids = &.{}, .listed = true };
+    const ids = try gpa.alloc(u16, v.array.items.len);
+    errdefer gpa.free(ids);
+    for (v.array.items, 0..) |item, i| {
+        const n = try integer(item);
+        ids[i] = std.math.cast(u16, n) orelse return error.BadInteger;
+    }
+    return .{ .ids = ids, .listed = true };
 }
 
 fn textMap(root: std.json.ObjectMap) std.json.ObjectMap {
@@ -221,7 +256,8 @@ const published =
     \\    "moe_intermediate_size": 640,
     \\    "vocab_size": 248320,
     \\    "split_ngram_parts": 128,
-    \\    "ngram_bits": 5
+    \\    "ngram_bits": 5,
+    \\    "ple_layer_ids": [2]
     \\  }
     \\}
 ;
@@ -229,7 +265,9 @@ const published =
 const offload = Request{ .ranks = 1, .ssd_experts = true };
 
 test "published qwen4_exp exl3 shape admits with host experts and an unsized expert cache" {
-    const a = try admit(published, offload);
+    const gpa = std.testing.allocator;
+    var a = try admit(gpa, published, offload);
+    defer a.deinit(gpa);
     try std.testing.expectEqualStrings(model_type_name, a.model_type);
     try std.testing.expectEqualStrings(shape.quant_method, a.quant_method);
     try std.testing.expectEqual(shape.hidden, a.hidden);
@@ -246,13 +284,17 @@ test "published qwen4_exp exl3 shape admits with host experts and an unsized exp
     try std.testing.expectEqual(@as(u64, 0), a.cache_bytes);
     try std.testing.expect(a.ssd_experts);
     try std.testing.expect(a.ngram_host);
+    try std.testing.expectEqualSlices(u16, &.{2}, a.ple_layer_ids);
+    try std.testing.expectEqualSlices(u16, &.{2}, try a.pleLaunch());
 }
 
 test "ranks 2 admits and 4 or 0 are an illegal cut" {
-    const two = try admit(published, .{ .ranks = 2, .ssd_experts = true });
+    const gpa = std.testing.allocator;
+    var two = try admit(gpa, published, .{ .ranks = 2, .ssd_experts = true });
+    defer two.deinit(gpa);
     try std.testing.expectEqual(@as(u8, 2), two.ranks);
-    try std.testing.expectError(error.IllegalCut, admit(published, .{ .ranks = 4, .ssd_experts = true }));
-    try std.testing.expectError(error.IllegalCut, admit(published, .{ .ranks = 0, .ssd_experts = true }));
+    try std.testing.expectError(error.IllegalCut, admit(gpa, published, .{ .ranks = 4, .ssd_experts = true }));
+    try std.testing.expectError(error.IllegalCut, admit(gpa, published, .{ .ranks = 0, .ssd_experts = true }));
 }
 
 test "mlx, affine, and a non-flash model are refused" {
@@ -268,14 +310,16 @@ test "mlx, affine, and a non-flash model are refused" {
     const missing =
         \\{"model_type":"qwen4_exp","hidden_size":2560,"num_hidden_layers":48,"num_experts":512,"num_experts_per_tok":10,"moe_intermediate_size":640,"vocab_size":248320,"split_ngram_parts":128,"ngram_bits":5}
     ;
-    try std.testing.expectError(error.NotExl3, admit(mlx, offload));
-    try std.testing.expectError(error.NotExl3, admit(affine, offload));
-    try std.testing.expectError(error.NotExl3, admit(missing, offload));
-    try std.testing.expectError(error.NotFlashNext, admit(llama, offload));
+    try std.testing.expectError(error.NotExl3, admit(std.testing.allocator, mlx, offload));
+    try std.testing.expectError(error.NotExl3, admit(std.testing.allocator, affine, offload));
+    try std.testing.expectError(error.NotExl3, admit(std.testing.allocator, missing, offload));
+    try std.testing.expectError(error.NotFlashNext, admit(std.testing.allocator, llama, offload));
 }
 
 test "ple on ssd is visible and the n-gram table stays host" {
-    const a = try admit(published, .{ .ple = .ssd, .ranks = 1, .ssd_experts = true });
+    const gpa = std.testing.allocator;
+    var a = try admit(gpa, published, .{ .ple = .ssd, .ranks = 1, .ssd_experts = true });
+    defer a.deinit(gpa);
     try std.testing.expectEqual(PleMode.ssd, a.ple);
     try std.testing.expect(a.ngram_host);
     try std.testing.expect(a.ssd_experts);
@@ -288,9 +332,12 @@ test "kv dtype is only bf16, int8, and int4" {
     try std.testing.expectEqualStrings("int8", names[1]);
     try std.testing.expectEqualStrings("int4", names[2]);
 
-    const as_int8 = try admit(published, .{ .ranks = 1, .kv = .int8, .ssd_experts = true });
+    const gpa = std.testing.allocator;
+    var as_int8 = try admit(gpa, published, .{ .ranks = 1, .kv = .int8, .ssd_experts = true });
+    defer as_int8.deinit(gpa);
     try std.testing.expectEqual(KvDtype.int8, as_int8.kv);
-    const as_int4 = try admit(published, .{ .ranks = 1, .kv = .int4, .ssd_experts = true });
+    var as_int4 = try admit(gpa, published, .{ .ranks = 1, .kv = .int4, .ssd_experts = true });
+    defer as_int4.deinit(gpa);
     try std.testing.expectEqual(KvDtype.int4, as_int4.kv);
 }
 
@@ -304,16 +351,39 @@ test "hidden_size that is not the published width is refused" {
     const layers =
         \\{"model_type":"qwen4_exp","quant_method":"exl3","hidden_size":2560,"num_hidden_layers":12,"num_experts":512,"num_experts_per_tok":10,"moe_intermediate_size":640,"vocab_size":248320,"split_ngram_parts":128,"ngram_bits":5}
     ;
-    try std.testing.expectError(error.ShapeMismatch, admit(wide, offload));
-    try std.testing.expectError(error.ShapeMismatch, admit(experts, offload));
-    try std.testing.expectError(error.ShapeMismatch, admit(layers, offload));
+    try std.testing.expectError(error.ShapeMismatch, admit(std.testing.allocator, wide, offload));
+    try std.testing.expectError(error.ShapeMismatch, admit(std.testing.allocator, experts, offload));
+    try std.testing.expectError(error.ShapeMismatch, admit(std.testing.allocator, layers, offload));
 }
 
 test "ssd_experts is recorded only when the request asks for it" {
-    const on = try admit(published, .{ .ranks = 1, .ssd_experts = true });
+    const gpa = std.testing.allocator;
+    var on = try admit(gpa, published, .{ .ranks = 1, .ssd_experts = true });
+    defer on.deinit(gpa);
     try std.testing.expect(on.ssd_experts);
-    const off = try admit(published, .{ .ranks = 1, .ssd_experts = false });
+    var off = try admit(gpa, published, .{ .ranks = 1, .ssd_experts = false });
+    defer off.deinit(gpa);
     try std.testing.expect(!off.ssd_experts);
     try std.testing.expectEqual(shape.experts, off.experts);
     try std.testing.expectEqual(PleMode.page_cache, off.ple);
+}
+
+test "ple_layer_ids is the configured list and a missing list cannot launch" {
+    const gpa = std.testing.allocator;
+    const no_ple =
+        \\{"model_type":"qwen4_exp","quant_method":"exl3","hidden_size":2560,"num_hidden_layers":48,"num_experts":512,"num_experts_per_tok":10,"moe_intermediate_size":640,"vocab_size":248320,"split_ngram_parts":128,"ngram_bits":5}
+    ;
+    var missing = try admit(gpa, no_ple, offload);
+    defer missing.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 0), missing.ple_layer_ids.len);
+    try std.testing.expectError(error.MissingField, missing.pleLaunch());
+
+    const root_ids =
+        \\{"model_type":"qwen4_exp","quant_method":"exl3","ple_layer_ids":[2,6],"hidden_size":2560,"num_hidden_layers":48,"num_experts":512,"num_experts_per_tok":10,"moe_intermediate_size":640,"vocab_size":248320,"split_ngram_parts":128,"ngram_bits":5}
+    ;
+    var listed = try admit(gpa, root_ids, offload);
+    defer listed.deinit(gpa);
+    try std.testing.expectEqualSlices(u16, &.{ 2, 6 }, listed.ple_layer_ids);
+    try std.testing.expectEqualSlices(u16, &.{ 2, 6 }, try listed.pleLaunch());
+    try std.testing.expect(listed.ple_layer_ids[0] != 1);
 }

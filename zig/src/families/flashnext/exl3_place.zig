@@ -54,6 +54,10 @@ const resident_names = [_][]const u8{
     "dt_bias",
     "indexer",
     "mtp",
+    // Router logits and the PLE pair. `k_proj` is not a substring of `key_proj`.
+    "mlp.gate",
+    "key_proj",
+    "value_proj",
 };
 
 comptime {
@@ -111,7 +115,7 @@ fn isRouted(name: []const u8) bool {
 }
 
 /// Token is a full dot-component, or the name's suffix.
-fn isCentred(name: []const u8) bool {
+pub fn isCentred(name: []const u8) bool {
     for (centred_names) |token| {
         if (std.mem.endsWith(u8, name, token)) {
             if (name.len == token.len or name[name.len - token.len - 1] == '.') return true;
@@ -241,6 +245,9 @@ test "tp 2 pins the decode path, leaves the n-gram on disk, and learns only this
         "model.layers.0.linear_attn.conv1d.weight",
         "model.layers.0.linear_attn.A_log",
         "model.layers.0.linear_attn.dt_bias",
+        "model.language_model.layers.0.mlp.gate.weight",
+        "model.language_model.layers.1.ple.key_proj.weight",
+        "model.language_model.layers.1.ple.value_proj.weight",
     };
     try std.testing.expectEqual(Stay.host, try stayOf(.{
         .name = "model.embed_tokens.weight",
@@ -281,4 +288,23 @@ test "tp 2 pins the decode path, leaves the n-gram on disk, and learns only this
     try std.testing.expectError(error.IllegalCut, stayOf(.{ .name = low, .rank = 3 }, 0, 4));
     try std.testing.expectError(error.RankOutOfRange, stayOf(.{ .name = low, .rank = 3 }, 2, 2));
     try std.testing.expectError(error.IllegalCut, stay(.routed_host, null, 0, 2));
+    try std.testing.expect(std.mem.indexOf(u8, "key_proj", "k_proj") == null);
+    try std.testing.expect(std.mem.indexOf(u8, "value_proj", "v_proj") == null);
+    try std.testing.expect(std.mem.indexOf(u8, "mlp.shared_expert_gate", "mlp.gate") == null);
+}
+
+test "mlp.gate, key_proj, and value_proj stay pinned, and so does mlp.router.weight" {
+    const gate = "model.language_model.layers.0.mlp.gate.weight";
+    const key = "model.language_model.layers.1.ple.key_proj.weight";
+    const value = "model.language_model.layers.1.ple.value_proj.weight";
+    const router = "model.layers.0.mlp.router.weight";
+    const shared_gate = "model.layers.0.mlp.shared_expert_gate.weight";
+    for ([_][]const u8{ gate, key, value, router }) |name| {
+        try std.testing.expectEqual(Home.resident, home(.{ .name = name, .rank = 2 }));
+        try std.testing.expectEqual(Stay.vram_pinned, try stayOf(.{ .name = name, .rank = 2 }, 0, 2));
+        try std.testing.expectEqual(Stay.vram_pinned, try stayOf(.{ .name = name, .rank = 2 }, 1, 2));
+    }
+    // `shared_expert` matches before the resident tokens. This is not the 2560×640 expert.
+    try std.testing.expectEqual(Home.shared_resident, home(.{ .name = shared_gate, .rank = 2 }));
+    try std.testing.expectEqual(Stay.vram_pinned, try stayOf(.{ .name = shared_gate, .rank = 1 }, 0, 2));
 }

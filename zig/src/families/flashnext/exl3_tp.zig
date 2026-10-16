@@ -83,6 +83,18 @@ pub fn refusesColumnSplit(k: usize, n: usize, ranks: usize) bool {
     return !legal(n, ranks);
 }
 
+/// `axis_len` is this tensor's header axis, not a class total. `hc_lowrank` is not a Hadamard cut.
+pub fn share(role: Role, span: u64, axis_len: usize, rank: usize, ranks: usize) error{ IllegalCut, RankOutOfRange }!u64 {
+    const c = try cut(role, rank, ranks);
+    if (span == 0 or c.axis == .replicate or c.axis == .expert_parallel) return span;
+    if (role == .hc_lowrank) {
+        if (axis_len == 0 or axis_len % ranks != 0) return span;
+        return span / @as(u64, ranks);
+    }
+    if (axis_len == 0 or !legal(axis_len, ranks)) return span;
+    return span / @as(u64, ranks);
+}
+
 test "gate is K-split and down is N-split" {
     const gate = try cut(.gate, 0, 2);
     try std.testing.expectEqual(Axis.split_k, gate.axis);
@@ -125,4 +137,15 @@ test "one rank keeps the whole tensor and both ranks of q stay 128-aligned" {
     try std.testing.expectEqual(@as(usize, 512), all.hi);
     try std.testing.expectEqual(@as(usize, 124160), (try cut(.head, 0, 2)).part);
     try std.testing.expect((try cut(.head, 0, 2)).part % 128 == 0);
+}
+
+test "share follows the header axis and hc_lowrank still halves 320" {
+    try std.testing.expectEqual(@as(u64, 500), try share(.q, 1000, shape.qOut(), 0, 2));
+    try std.testing.expectEqual(@as(u64, 1000), try share(.q, 1000, 100, 0, 2));
+    try std.testing.expect(!legal(shape.hc_lowrank, 2));
+    try std.testing.expectEqual(@as(u64, 160), try share(.hc_lowrank, 320, shape.hc_lowrank, 1, 2));
+    try std.testing.expectEqual(@as(u64, 640), try share(.shared, 640, shape.expert_intermediate, 0, 2));
+    try std.testing.expectEqual(@as(u64, 1000), try share(.q, 1000, shape.qOut(), 0, 1));
+    try std.testing.expectError(error.IllegalCut, share(.q, 1000, shape.qOut(), 0, 0));
+    try std.testing.expectError(error.IllegalCut, share(.gate, 1000, shape.hidden, 0, 4));
 }
