@@ -127,7 +127,12 @@ pub fn isCentred(name: []const u8) bool {
 }
 
 fn isResident(name: []const u8) bool {
-    for (resident_names) |token| if (contains(name, token)) return true;
+    for (resident_names) |token| {
+        if (!contains(name, token)) continue;
+        // `mlp.switch_mlp.gate_proj` contains `mlp.gate` and is not the router logits.
+        if (std.mem.eql(u8, token, "mlp.gate") and contains(name, "gate_proj")) continue;
+        return true;
+    }
     return false;
 }
 
@@ -307,4 +312,14 @@ test "mlp.gate, key_proj, and value_proj stay pinned, and so does mlp.router.wei
     // `shared_expert` matches before the resident tokens. This is not the 2560×640 expert.
     try std.testing.expectEqual(Home.shared_resident, home(.{ .name = shared_gate, .rank = 2 }));
     try std.testing.expectEqual(Stay.vram_pinned, try stayOf(.{ .name = shared_gate, .rank = 1 }, 0, 2));
+
+    const switch_gate = "model.layers.0.mlp.switch_mlp.gate_proj.weight";
+    try std.testing.expectEqual(Home.plain, home(.{ .name = switch_gate, .rank = 2 }));
+    try std.testing.expectEqual(Stay.host, try stayOf(.{ .name = switch_gate, .rank = 2 }, 0, 2));
+    try std.testing.expectEqual(Home.routed_host, home(.{
+        .name = "model.layers.0.mlp.experts.0.gate_proj.trellis",
+        .rank = 3,
+    }));
+    try std.testing.expectEqual(Home.resident, home(.{ .name = "mtp.fc_embedding.weight", .rank = 2 }));
+    try std.testing.expectEqual(Stay.vram_pinned, try stayOf(.{ .name = "mtp.fc_embedding.weight", .rank = 2 }, 0, 2));
 }

@@ -182,7 +182,7 @@ fn fullReplica(h: TensorHeader) bool {
     if (place.isCentred(h.name)) return true;
     // Not cut(.gate) or cut(.shared): those fix n at expert_intermediate.
     if (contains(h.name, "mlp.shared_expert_gate")) return true;
-    if (contains(h.name, "mlp.gate")) return true;
+    if (contains(h.name, "mlp.gate") and !contains(h.name, "gate_proj")) return true;
     if (contains(h.name, "key_proj") or contains(h.name, "value_proj")) return true;
     if (contains(h.name, "conv1d") or contains(h.name, "A_log") or contains(h.name, "dt_bias")) return true;
     return false;
@@ -266,10 +266,14 @@ fn layerIndex(name: []const u8) ?usize {
     return n;
 }
 
+/// `mtp` is a dot-component. A prefix, an infix, or a final component counts.
+/// `notmtp` does not, so an MTP router cannot borrow the decoder shared gate.
+fn isMtpComponent(name: []const u8) bool {
+    return std.mem.startsWith(u8, name, "mtp.") or std.mem.endsWith(u8, name, ".mtp") or std.mem.indexOf(u8, name, ".mtp.") != null;
+}
+
 fn sameLayer(a: []const u8, b: []const u8) bool {
-    const a_mtp = std.mem.indexOf(u8, a, ".mtp.") != null;
-    const b_mtp = std.mem.indexOf(u8, b, ".mtp.") != null;
-    if (a_mtp != b_mtp) return false;
+    if (isMtpComponent(a) != isMtpComponent(b)) return false;
     return layerIndex(a) == layerIndex(b);
 }
 
@@ -496,6 +500,25 @@ test "a router layer without mlp.shared_expert_gate fails the launch" {
     try std.testing.expectError(error.MissingSharedGate, requireSharedGate(&.{ gate, shared, other }));
     try std.testing.expectEqual(@as(u64, 7), try pinRank(&.{shared}, 0, 2));
     try std.testing.expectEqual(@as(u64, 2_621_440), try pinRank(&.{gate}, 1, 2));
+}
+
+test "an mtp. prefix does not pair with the decoder shared gate" {
+    const mtp_gate = hdr("mtp.layers.0.mlp.gate", &.{ 512, 2560 }, 2_621_440);
+    const dec_shared = hdr("model.layers.0.mlp.shared_expert_gate", &.{ 1, 2560 }, 7);
+    try std.testing.expectError(error.MissingSharedGate, requireSharedGate(&.{ mtp_gate, dec_shared }));
+
+    const dec_gate = hdr("model.layers.0.mlp.gate", &.{ 512, 2560 }, 2_621_440);
+    const mtp_shared = hdr("mtp.layers.0.mlp.shared_expert_gate", &.{ 1, 2560 }, 7);
+    try std.testing.expectError(error.MissingSharedGate, requireSharedGate(&.{ dec_gate, mtp_shared }));
+
+    try requireSharedGate(&.{ mtp_gate, mtp_shared });
+    const lm_gate = hdr("language_model.mtp.layers.0.mlp.gate", &.{ 512, 2560 }, 2_621_440);
+    const lm_shared = hdr("language_model.mtp.layers.0.mlp.shared_expert_gate", &.{ 1, 2560 }, 7);
+    try requireSharedGate(&.{ lm_gate, lm_shared });
+    try std.testing.expectEqual(@as(u64, 2_621_440), try pinRank(&.{mtp_gate}, 0, 2));
+
+    const switch_gate = hdr("model.layers.0.mlp.switch_mlp.gate_proj.weight", &.{ 640, 2560 }, 400);
+    try std.testing.expectEqual(@as(u64, 0), try pinRank(&.{switch_gate}, 0, 2));
 }
 
 test "the routed bank is not a device weight and a flat 16 GiB cache on a pin is refused" {
