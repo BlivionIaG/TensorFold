@@ -7,6 +7,7 @@ const gate5 = @import("contract_limits.zig");
 const rows_k = @import("contract_rows.zig");
 const mamba_k = @import("contract_mamba.zig");
 const scan_k = @import("contract_scan.zig");
+const moe_k = @import("contract_nemo_moe.zig");
 
 const g = core.contract.gates;
 
@@ -76,6 +77,14 @@ fn run(a: std.mem.Allocator, io: std.Io) !usize {
     for (&scans, std.enums.values(scan_k.Part)) |*m, p| m.* = .init(a, &r, s, &l, p);
     defer for (&scans) |*m| m.deinit();
     for (&scans) |*m| try kernels.append(a, m.kernel());
+    var picks: [3]moe_k.Moe = undefined;
+    for (&picks, [_]moe_k.Which{ .pass, .rank, .localize }) |*m, w| m.* = .init(a, &r, s, &l, w);
+    defer for (&picks) |*m| m.deinit();
+    for (&picks) |*m| try kernels.append(a, m.kernel());
+    var moes: [3]moe_k.Moe = undefined;
+    for (&moes, [_]moe_k.Which{ .relu2, .combine, .combine_f32 }) |*m, w| m.* = .init(a, &r, s, &l, w);
+    defer for (&moes) |*m| m.deinit();
+    for (&moes) |*m| try kernels.append(a, m.kernel());
     var t: g.Tally = .{};
     const t0 = ms(io);
     try g.runAll(a, kernels.items, 0x6b63, &t);
