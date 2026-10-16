@@ -19,6 +19,7 @@ pub const load = @import("exl3_load.zig");
 pub const admit = @import("exl3_admit.zig");
 pub const route = @import("exl3_route.zig");
 pub const reduce = @import("exl3_reduce.zig");
+pub const step = @import("exl3_step.zig");
 
 test {
     _ = shape;
@@ -36,4 +37,5 @@ test {
     _ = admit;
     _ = route;
     _ = reduce;
+    _ = step;
 }
