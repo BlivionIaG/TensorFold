@@ -172,6 +172,7 @@ fn matrixBytes(k: usize, n: usize) u64 {
 }
 
 /// One routed expert as this rank stores it. Two ranks keep half of each matrix.
+/// That half is a cut helper, not the bytes reserved for one resident expert.
 pub fn expertBytes(ranks: usize) u64 {
     const k = shape.hidden;
     const n = shape.expert_intermediate;
@@ -185,22 +186,45 @@ pub fn expertLines(room: u64, ranks: usize) u64 {
     return room / one;
 }
 
+/// Budget stride for one owned expert until a header span is larger. Not a line count.
+pub const full_expert_bytes: u64 = 1_901_213;
+
+/// Lines that fit in `room` at `line` bytes. A zero stride is no lines, not a panic.
+pub fn expertLinesOf(room: u64, line: u64) u64 {
+    if (line == 0) return 0;
+    return room / line;
+}
+
 /// KV for every full-attention layer. GDN layers have no KV table.
 pub fn contextKv(tokens: usize, dtype: Dtype) error{HeadDim}!u64 {
     const layers: u64 = shape.layers / shape.full_attention_interval;
     return (try layerBytes(tokens, shape.kv_heads, shape.head_dim, dtype)) * layers;
 }
 
+/// This rank's KV. Heads are split across `ranks`; `contextKv` still charges all of them.
+pub fn contextKvRank(tokens: usize, dtype: Dtype, ranks: usize) error{HeadDim}!u64 {
+    const layers: u64 = shape.layers / shape.full_attention_interval;
+    const heads = shape.kv_heads / ranks;
+    return (try layerBytes(tokens, heads, shape.head_dim, dtype)) * layers;
+}
+
+pub const KvFit = struct {
+    dtype: Dtype,
+    /// False when even int4 misses `expert_floor`. Not a dtype to start on.
+    floor_held: bool,
+};
+
 /// Widest KV that still leaves `expert_floor` bytes for learned experts.
-/// bf16 is kept while it fits. int4 is the last step, when a long context would
-/// otherwise push the hot experts back to host RAM.
-pub fn kvFit(device: u64, pinned: u64, tokens: usize, expert_floor: u64) error{HeadDim}!Dtype {
+/// Sized with one head per rank. bf16 is kept while it fits. `.int4` with
+/// `floor_held` false missed the floor; the caller drops lines instead of
+/// starting on int4.
+pub fn kvFit(device: u64, pinned: u64, tokens: usize, expert_floor: u64, ranks: usize) error{HeadDim}!KvFit {
     const order = [_]Dtype{ .bf16, .int8, .int4 };
     for (order) |dtype| {
-        const kv = try contextKv(tokens, dtype);
-        if (learnedBytes(device, pinned, kv) >= expert_floor) return dtype;
+        const kv = try contextKvRank(tokens, dtype, ranks);
+        if (learnedBytes(device, pinned, kv) >= expert_floor) return .{ .dtype = dtype, .floor_held = true };
     }
-    return .int4;
+    return .{ .dtype = .int4, .floor_held = false };
 }
 
 /// Routed experts and the n-gram table always live on the host.
@@ -339,18 +363,19 @@ test "device sum is resident plus kv, and a 16 GiB card refuses the overflow" {
         .ngram_bytes = 0,
     }));
 
-    // One rank's 3.05 experts are about 0.90 MiB each. At 8k the bf16 KV is small,
-    // so the lines cover every expert this rank owns and still leave the reserve.
-    const pinned_2g: u64 = 2 << 30;
-    const kv_8k = try contextKv(8192, .bf16);
-    const room = learnedBytes(card_bytes, pinned_2g, kv_8k);
     try std.testing.expectEqual(@as(u64, 1_893_120), expertBytes(1));
     try std.testing.expectEqual(@as(u64, 948_480), expertBytes(2));
-    try std.testing.expect(expertLines(room, 2) >= 256 * 48);
-    try std.testing.expectEqual(Dtype.bf16, try kvFit(card_bytes, pinned_2g, 8192, expertBytes(2) * 256 * 48));
+    try std.testing.expectEqual(@as(u64, 1_901_213), full_expert_bytes);
+    try std.testing.expectEqual(@as(u64, 0), expertLinesOf(1, 0));
+    try std.testing.expectEqual(@as(u64, 1), expertLinesOf(full_expert_bytes, full_expert_bytes));
 
-    const tight_floor: u64 = 600 << 20;
-    try std.testing.expectEqual(Dtype.int8, try kvFit(card_bytes, 15 << 30, 8192, tight_floor));
+    // One head leaves 672 MiB at bf16, so 700 MiB steps to int8. 741 MiB is
+    // this pin's int4 room; one more MiB misses, and that int4 is not a start dtype.
+    const ranks: usize = 2;
+    const tight_pin: u64 = 15 << 30;
+    try std.testing.expectEqual(KvFit{ .dtype = .int8, .floor_held = true }, try kvFit(card_bytes, tight_pin, 8192, 700 << 20, ranks));
+    try std.testing.expectEqual(KvFit{ .dtype = .int4, .floor_held = true }, try kvFit(card_bytes, tight_pin, 8192, 741 << 20, ranks));
+    try std.testing.expectEqual(KvFit{ .dtype = .int4, .floor_held = false }, try kvFit(card_bytes, tight_pin, 8192, 742 << 20, ranks));
     try std.testing.expectEqual(@as(u64, 0), learnedBytes(card_bytes, card_bytes, 0));
 
     // Counting the expert bank as resident is what blows the same card.
@@ -361,4 +386,30 @@ test "device sum is resident plus kv, and a 16 GiB card refuses the overflow" {
         .routed_expert_bytes = 0,
         .ngram_bytes = 0,
     }));
+}
+
+test "one kv head keeps bf16 through 8205 on the census floor" {
+    const pin: u64 = 2_072_396_202;
+    // Fixture floor only. Not a line count the loader hardcodes.
+    const floor = full_expert_bytes * 7752;
+    const ranks: usize = 2;
+    try std.testing.expectEqual(@as(u64, 100_663_296), try contextKvRank(8192, .bf16, ranks));
+
+    const at_8192 = try kvFit(card_bytes, pin, 8192, floor, ranks);
+    try std.testing.expectEqual(Dtype.bf16, at_8192.dtype);
+    try std.testing.expect(at_8192.floor_held);
+    const at_8205 = try kvFit(card_bytes, pin, 8205, floor, ranks);
+    try std.testing.expectEqual(Dtype.bf16, at_8205.dtype);
+    try std.testing.expect(at_8205.floor_held);
+    const at_8206 = try kvFit(card_bytes, pin, 8206, floor, ranks);
+    try std.testing.expectEqual(Dtype.int8, at_8206.dtype);
+    try std.testing.expect(at_8206.floor_held);
+
+    // Both-heads divisor, 24,576 bytes per token. Not a call to kvFit.
+    const both: u64 = 24_576;
+    try std.testing.expectEqual(both, try contextKv(1, .bf16));
+    const kv_room = card_bytes - pin - device_reserve - floor;
+    try std.testing.expectEqual(@as(u64, 100_834_350), kv_room);
+    try std.testing.expect(4_102 * both <= kv_room);
+    try std.testing.expect(4_103 * both > kv_room);
 }

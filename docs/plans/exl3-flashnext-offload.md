@@ -27,11 +27,15 @@ GDN `in_proj` / `out_proj` / `conv1d`, router, hyper-connection,
 centred norms, MTP, `lm_head`). The embedding table stays on the
 host: one row is 5 KiB and the table is about 1.2 GiB. The n-gram
 stays on disk, with a 32-row cache in front of `pread`. `--tp 2`
-owns expert ids 0..255 on rank 0 and 256..511 on rank 1. One
-expert on a rank is 948,480 bytes at 3.05 bpw. `learnedBytes`
-is what a 16 GiB card has left after pinned weights, KV, and a
-256 MiB reserve. KV stays bf16 while that room still covers the
-experts. `residentBytes` is the device-admission figure (routed
+owns expert ids 0..255 on rank 0 and 256..511 on rank 1.
+`expertBytes(2)` is 948,480 bytes, the half-matrix cut: a
+geometry helper, not the residency line. One owned expert's
+budget line is the measured full expert, 1,901,213 bytes, until
+a header span is larger. `learnedBytes` is what a 16 GiB card
+has left after pinned weights, KV, and a 256 MiB reserve. The
+line count is that room divided by the stride at load. KV stays
+bf16, one head per rank, while that room still covers the expert
+floor. `residentBytes` is the device-admission figure (routed
 experts, n-gram, vision, the embedding table, and other plain
 tensors left out). Admission no longer invents a 16 GiB cache on
 top of the weights. The CUDA family is not registered, so `--ple-on-ssd`,
