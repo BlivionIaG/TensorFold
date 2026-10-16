@@ -1,0 +1,35 @@
+community-v1: code and chat, 2 temperatures, 5 repeats after warm-up.
+This generates model replies; use Ctrl-C to cancel. Nothing is uploaded unless you publish.
+The server gets up to 682 s to load 34 GB of weights; --startup-timeout sets another limit.
+code T=1 warm-up: ok 204.49 delivery tok/s
+code T=1 repeat 1/5: ok 204.54 delivery tok/s
+code T=1 repeat 2/5: early_eos 211.37 delivery tok/s
+code T=1 repeat 3/5: ok 207.02 delivery tok/s
+code T=1 repeat 4/5: ok 206.12 delivery tok/s
+code T=1 repeat 5/5: ok 205.85 delivery tok/s
+chat T=1 warm-up: ok 205.86 delivery tok/s
+chat T=1 repeat 1/5: ok 206.11 delivery tok/s
+chat T=1 repeat 2/5: ok 205.93 delivery tok/s
+chat T=1 repeat 3/5: ok 205.54 delivery tok/s
+chat T=1 repeat 4/5: ok 205.57 delivery tok/s
+chat T=1 repeat 5/5: ok 205.66 delivery tok/s
+code T=0 warm-up: ok 210.61 delivery tok/s
+code T=0 repeat 1/5: ok 210.45 delivery tok/s
+code T=0 repeat 2/5: ok 210.35 delivery tok/s
+code T=0 repeat 3/5: ok 210.36 delivery tok/s
+code T=0 repeat 4/5: ok 210.40 delivery tok/s
+code T=0 repeat 5/5: ok 210.35 delivery tok/s
+chat T=0 warm-up: ok 209.52 delivery tok/s
+chat T=0 repeat 1/5: ok 209.85 delivery tok/s
+chat T=0 repeat 2/5: ok 209.58 delivery tok/s
+chat T=0 repeat 3/5: ok 209.86 delivery tok/s
+chat T=0 repeat 4/5: ok 209.54 delivery tok/s
+chat T=0 repeat 5/5: ok 209.83 delivery tok/s
+Run 63f3c1a7-0a7f-4730-9ccf-bd639d0ccc25 | mlx | TensorFold/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-oQ8
+Workload       Temp    Stream delivery tok/s    First text, s    Status
+code           1      not measured              not measured     custom/incomplete
+chat           1      205.66                    0.054            complete
+code           0      210.36                    0.026            complete
+chat           0      209.83                    0.054            complete
+Stream delivery includes transport buffering; it is not an engine token clock.
+Receipt saved: HOME/tf-bench-1.0.12/bench_TensorFold_NVIDIA-Nemotron-3.5-Lightning-30B-A3B-oQ8.json
