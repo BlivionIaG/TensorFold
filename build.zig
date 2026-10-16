@@ -391,6 +391,14 @@ fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
         .link_libc = true,
     }) });
     test_step.dependOn(&b.addRunArtifact(pack_cases).step);
+    const exl3_host = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/src/families/flashnext/exl3.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+    const exl3_host_run = b.addRunArtifact(exl3_host);
+    b.step("test-exl3-flashnext", "Host tests for Flash Next EXL3 n-gram, PLE, cuts, offload, graphs, and KV").dependOn(&exl3_host_run.step);
+    test_step.dependOn(&exl3_host_run.step);
     const load_admission_cases = b.addTest(.{ .root_module = b.createModule(.{
         .root_source_file = b.path("zig/flashnext_load_admission_cases.zig"),
         .target = target,

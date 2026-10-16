@@ -33,6 +33,7 @@ pub const grouped = @import("grouped.zig");
 pub const qlinear = @import("qlinear.zig");
 pub const norms = @import("norms.zig");
 pub const embed_rows = @import("embed_rows.zig");
+pub const exl3 = @import("exl3.zig");
 pub const vit = @import("vit.zig");
 pub const experts = @import("experts.zig");
 pub const sample = @import("sample.zig");
@@ -48,6 +49,7 @@ test {
     _ = @import("qlinear.zig");
     _ = @import("norms.zig");
     _ = @import("embed_rows.zig");
+    _ = @import("exl3.zig");
     _ = @import("vit.zig");
     _ = @import("experts.zig");
     _ = @import("sample.zig");

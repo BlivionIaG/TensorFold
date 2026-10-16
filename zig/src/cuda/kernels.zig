@@ -56,6 +56,16 @@ pub const ck_lane: []const u8 = if (available) &Blob("fatbin_ck_lane").bytes els
 pub const ck_experts: []const u8 = if (available) &Blob("fatbin_ck_experts").bytes else &.{};
 pub const norms: []const u8 = if (available) &Blob("fatbin_norms").bytes else &.{};
 pub const embed_rows: []const u8 = if (available) &Blob("fatbin_embed_rows").bytes else &.{};
+pub const exl3_linear: []const u8 = if (available) &Blob("fatbin_exl3_linear").bytes else &.{};
+pub const exl3_experts: []const u8 = if (available) &Blob("fatbin_exl3_experts").bytes else &.{};
+
+/// extern "C" names in the EXL3 fatbins. Launch shapes live in exl3.zig.
+pub const exl3_symbols = struct {
+    pub const linear_f16 = "exl3_linear_f16";
+    pub const gate_up_f16 = "exl3_experts_gate_up_f16";
+    pub const down_f16 = "exl3_experts_down_f16";
+    pub const combine_f16 = "exl3_experts_combine_f16";
+};
 
 /// Symbols in the gdn image as cuobjdump lists them for the built fatbin (named namespace tf_gdn).
 pub const gdn_symbols = struct {
