@@ -17,6 +17,7 @@ pub const cpu = @import("exl3_cpu.zig");
 pub const place = @import("exl3_place.zig");
 pub const load = @import("exl3_load.zig");
 pub const admit = @import("exl3_admit.zig");
+pub const ple_launch = @import("exl3_ple_launch.zig");
 pub const route = @import("exl3_route.zig");
 
 test {
@@ -33,5 +34,6 @@ test {
     _ = place;
     _ = load;
     _ = admit;
+    _ = ple_launch;
     _ = route;
 }
