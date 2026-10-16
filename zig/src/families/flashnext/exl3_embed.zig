@@ -1,8 +1,8 @@
 //! One embedding row from the host table. Not a VRAM pin and not a device copy.
-//! `stayOf` on the embed name is `host`. One row is `hidden * 2` bytes, and
-//! that same row is what both ranks would receive. The other embed bytes stay
-//! on the host: this function does not copy the table, and it does not call
-//! cudaMemcpy. There is no device on this path.
+//! `stayOf` on `model.language_model.embed_tokens.weight` is `host`. So is
+//! `mtp.fc_embedding`: the `mtp` token would pin it, and it is not the MTP head.
+//! One row is `hidden * 2` bytes. Both ranks receive that same row.
+//! This path does not copy the table and does not call cudaMemcpy.
 
 const std = @import("std");
 const shape = @import("exl3_shape.zig");
@@ -11,21 +11,8 @@ const place = @import("exl3_place.zig");
 /// bf16 hidden width. 2560 * 2.
 pub const row_bytes: usize = shape.hidden * 2;
 
-/// Five embed tensors, measured 2026-10-16. None of this is a device allocation.
-pub const embed_bytes: u64 = 1_274_685_444;
-
-/// `vocab * hidden * 2`. The class is larger. The difference is not a row.
-pub const table_bytes: u64 = @as(u64, shape.vocab) * row_bytes;
-
-/// Bytes that sit with the table on the host and are not gathered.
-pub const extra_host_bytes: u64 = embed_bytes - table_bytes;
-
 comptime {
     std.debug.assert(row_bytes == 5120);
-    std.debug.assert(table_bytes == 1_271_398_400);
-    std.debug.assert(extra_host_bytes == 3_287_044);
-    // Not an integer number of rows, so the tail cannot be indexed as one.
-    std.debug.assert(extra_host_bytes % row_bytes != 0);
 }
 
 /// Copies token `token`'s row. The id is not reduced modulo vocab.
@@ -44,23 +31,30 @@ pub fn gather(table: []const u8, token: i64) error{ TokenOutOfRange, ShortTable 
     return row;
 }
 
-test "stayOf embed is host, and the class is not a device copy" {
-    const names = [_][]const u8{
-        "embed",
-        "model.embed_tokens.weight",
+test "the embed table and mtp.fc_embedding stay on the host" {
+    const host_names = [_]place.Tensor{
+        .{ .name = "model.language_model.embed_tokens.weight", .rank = 2 },
+        .{ .name = "mtp.fc_embedding.trellis", .rank = 3 },
+        .{ .name = "mtp.fc_embedding.suh", .rank = 1 },
+        .{ .name = "mtp.fc_embedding.svh", .rank = 1 },
+        .{ .name = "mtp.fc_embedding.mul1", .rank = 1 },
     };
-    for (names) |name| {
-        try std.testing.expectEqual(place.Stay.host, try place.stayOf(.{ .name = name, .rank = 2 }, 0, 2));
-        try std.testing.expectEqual(place.Stay.host, try place.stayOf(.{ .name = name, .rank = 2 }, 1, 2));
+    for (host_names) |tensor| {
+        try std.testing.expectEqual(place.Stay.host, try place.stayOf(tensor, 0, 2));
+        try std.testing.expectEqual(place.Stay.host, try place.stayOf(tensor, 1, 2));
+        try std.testing.expectEqual(place.Home.plain, place.home(tensor));
     }
     try std.testing.expectEqual(@as(usize, 5120), shape.hidden * 2);
     try std.testing.expectEqual(@as(usize, 5120), row_bytes);
-    try std.testing.expectEqual(@as(u64, 1_271_398_400), table_bytes);
-    try std.testing.expectEqual(@as(u64, 3_287_044), extra_host_bytes);
-    try std.testing.expectEqual(embed_bytes, table_bytes + extra_host_bytes);
-    // The tail is not another gathered row, and it is not uploaded with one.
-    try std.testing.expect(extra_host_bytes % row_bytes != 0);
-    try std.testing.expect(extra_host_bytes != 0);
+
+    // Centred MTP norm, not the embed remainder. Other MTP weights stay pinned.
+    const norm: place.Tensor = .{ .name = "mtp.pre_fc_norm_embedding.weight", .rank = 1 };
+    try std.testing.expectEqual(place.Home.centred_norm, place.home(norm));
+    try std.testing.expectEqual(place.Stay.vram_pinned, try place.stayOf(norm, 0, 2));
+    try std.testing.expectEqual(place.Stay.vram_pinned, try place.stayOf(norm, 1, 2));
+    const head: place.Tensor = .{ .name = "language_model.mtp.fc_hidden.weight", .rank = 2 };
+    try std.testing.expectEqual(place.Stay.vram_pinned, try place.stayOf(head, 0, 2));
+    try std.testing.expectEqual(place.Stay.vram_pinned, try place.stayOf(head, 1, 2));
 }
 
 test "one token copies one row and leaves the rest of the table" {
@@ -87,7 +81,6 @@ test "one token copies one row and leaves the rest of the table" {
     @memset(&one, 0x3C);
     const only = try gather(&one, 0);
     try std.testing.expectEqualSlices(u8, &one, &only);
-    try std.testing.expect(one.len < embed_bytes);
 
     // Past this slice, even inside vocab. The tail is shorter than a row.
     try std.testing.expectError(error.ShortTable, gather(table[0 .. row_bytes + 4], 1));
