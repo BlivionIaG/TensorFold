@@ -82,6 +82,10 @@ pub fn home(t: Tensor) Home {
         return .centred_norm;
     }
 
+    // `mtp` pins the MTP head. `mtp.fc_embedding` is the host embed remainder
+    // (trellis, suh, svh, mul1), not that head and not `pre_fc_norm_embedding`.
+    if (contains(t.name, "mtp.fc_embedding")) return .plain;
+
     if ((kind == .exl3_part or kind == .plain) and isResident(t.name)) return .resident;
     return .plain;
 }
@@ -192,6 +196,7 @@ test "a tensor name picks one home and the host banks stay off device" {
 /// Where the bytes for this rank live. A cut can still split a pinned tensor.
 /// `vram_pinned` is a GEMM or a bias on the decode path of every token.
 /// The embedding table is `host`: one row is 5 KiB, the table is about 1.2 GiB.
+/// `mtp.fc_embedding` stays with that table. The `mtp` token does not pin it.
 /// `vram_learned` is a routed expert this rank may stage. The other rank's ids are not.
 pub const Stay = enum { vram_pinned, vram_learned, host, disk, other_rank, skip };
 
