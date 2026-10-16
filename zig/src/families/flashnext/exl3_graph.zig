@@ -133,15 +133,6 @@ fn cardHolds(rank_pinned: u64, kv_rank: u64, n: usize, stride: u64, workspace: u
     return total <= cache.card_bytes;
 }
 
-fn dropColdest(lines: []LineUse) void {
-    var cold: usize = 0;
-    for (lines[1..], 1..) |line, i| {
-        if (colder(line, lines[cold])) cold = i;
-    }
-    var i = cold;
-    while (i + 1 < lines.len) : (i += 1) lines[i] = lines[i + 1];
-}
-
 /// Lines kept once the batch workspace is placed. Kept rows are packed at the front.
 /// `workspace <= device_reserve` keeps every line.
 /// A larger workspace drops the coldest rows until
@@ -159,8 +150,15 @@ pub fn fitWorkspace(
     if (workspace <= cache.device_reserve) return lines.len;
     var active: usize = lines.len;
     while (active > 0 and !cardHolds(rank_pinned, kv_rank, active, stride, workspace)) {
-        dropColdest(lines[0..active]);
-        active -= 1;
+        var cold: usize = 0;
+        for (lines[1..active], 1..) |line, i| {
+            if (colder(line, lines[cold])) cold = i;
+        }
+        const last = active - 1;
+        const held = lines[cold];
+        lines[cold] = lines[last];
+        lines[last] = held;
+        active = last;
     }
     if (!cardHolds(rank_pinned, kv_rank, active, stride, workspace)) return error.GraphWorkspace;
     return active;
