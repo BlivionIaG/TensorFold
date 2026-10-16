@@ -29,15 +29,15 @@ fn find(layers: []const Layer, id: u16) error{MissingShard}!Found {
     return error.MissingShard;
 }
 
-/// Gathers rows for each admitted id, in list order, through `ple.gather`.
-/// `src` is the page-cache or `Disk` read those gathers already take.
+/// Gathers rows for each admitted id, in list order, through `ple.gatherFrom`.
+/// `reader` is the `Disk` or hot-row reader those gathers already take.
 /// Shard presence is checked before any read, so a missing shard does not
 /// pull a different layer. `dest` is reused and must hold one layer's rows.
 pub fn launch(
     admitted: admit.Admitted,
     layers: []const Layer,
     words_per_row: u32,
-    src: *const fn (file: u32, offset: u64, dest: []u8) anyerror!void,
+    reader: anytype,
     dest: []i16,
 ) !void {
     const ids = try admitted.pleLaunch();
@@ -48,7 +48,7 @@ pub fn launch(
     for (ids) |id| {
         const layer = try find(layers, id);
         const need = layer.rows.len * @as(usize, words_per_row);
-        try ple.gather(layer.shards, words_per_row, layer.rows, src, dest[0..need]);
+        try ple.gatherFrom(layer.shards, words_per_row, layer.rows, reader, dest[0..need]);
     }
 }
 
@@ -129,7 +129,7 @@ const probe = struct {
         n = 0;
     }
 
-    fn read(file_id: u32, at: u64, dest: []u8) anyerror!void {
+    pub fn read(_: @This(), file_id: u32, at: u64, dest: []u8) anyerror!void {
         if (reject != 0 and @as(u64, dest.len) == reject) return error.WholeShard;
         const src = image[file_id];
         const start: usize = @intCast(at);
@@ -142,14 +142,6 @@ const probe = struct {
     }
 };
 
-const bridge = struct {
-    var disk: ?*const ple.Disk = null;
-
-    fn read(file_id: u32, at: u64, dest: []u8) anyerror!void {
-        return disk.?.read(file_id, at, dest);
-    }
-};
-
 test "absent or empty ple_layer_ids is MissingField before any read" {
     var image: [row_b]u8 = @splat(0);
     const files = [_][]const u8{&image};
@@ -158,8 +150,8 @@ test "absent or empty ple_layer_ids is MissingField before any read" {
     const layers = [_]Layer{.{ .id = 2, .shards = &shard, .rows = &.{0} }};
     var dest: [words]i16 = @splat(-1);
 
-    try std.testing.expectError(error.MissingField, launch(fixture(&.{}, false), &layers, words, probe.read, &dest));
-    try std.testing.expectError(error.MissingField, launch(fixture(&.{}, true), &layers, words, probe.read, &dest));
+    try std.testing.expectError(error.MissingField, launch(fixture(&.{}, false), &layers, words, probe{}, &dest));
+    try std.testing.expectError(error.MissingField, launch(fixture(&.{}, true), &layers, words, probe{}, &dest));
     try std.testing.expectEqual(@as(usize, 0), probe.n);
     try std.testing.expectEqual(@as(i16, -1), dest[0]);
 }
@@ -178,7 +170,7 @@ test "launch reads admitted layer 2 and does not read the layer 0 decoy" {
         .{ .id = 2, .shards = &layer2, .rows = &.{0} },
     };
     var dest: [words]i16 = @splat(-1);
-    try launch(fixture(&.{2}, true), &layers, words, probe.read, &dest);
+    try launch(fixture(&.{2}, true), &layers, words, probe{}, &dest);
 
     try std.testing.expectEqual(@as(usize, 1), probe.n);
     try std.testing.expectEqual(@as(u32, 0), probe.file[0]);
@@ -202,11 +194,11 @@ test "a missing shard returns before a different layer is read" {
     var dest: [words]i16 = @splat(-1);
 
     probe.reset(&files, row_b);
-    try std.testing.expectError(error.MissingShard, launch(fixture(&.{ 0, 2 }, true), &layers, words, probe.read, &dest));
+    try std.testing.expectError(error.MissingShard, launch(fixture(&.{ 0, 2 }, true), &layers, words, probe{}, &dest));
     try std.testing.expectEqual(@as(usize, 0), probe.n);
 
     probe.reset(&files, row_b);
-    try std.testing.expectError(error.MissingShard, launch(fixture(&.{ 2, 0 }, true), &layers, words, probe.read, &dest));
+    try std.testing.expectError(error.MissingShard, launch(fixture(&.{ 2, 0 }, true), &layers, words, probe{}, &dest));
     try std.testing.expectEqual(@as(usize, 0), probe.n);
     try std.testing.expectEqual(@as(i16, -1), dest[0]);
 }
@@ -229,13 +221,11 @@ test "a whole-shard read is still WholeShard from Disk" {
     const fds = [_]c_int{try ple.Disk.openPath(z)};
     var disk = ple.Disk{ .fds = &fds, .whole = 2 * row_b };
     defer disk.close();
-    bridge.disk = &disk;
-    defer bridge.disk = null;
 
     const shard = [_]ple.Shard{.{ .file = 0, .offset = 0, .rows = 2 }};
     const layers = [_]Layer{.{ .id = 2, .shards = &shard, .rows = &.{ 0, 1 } }};
     var dest: [2 * words]i16 = @splat(-1);
-    try std.testing.expectError(error.WholeShard, launch(fixture(&.{2}, true), &layers, words, bridge.read, &dest));
+    try std.testing.expectError(error.WholeShard, launch(fixture(&.{2}, true), &layers, words, &disk, &dest));
 }
 
 test "projection disagreement lists ple ids missing from key or value" {
