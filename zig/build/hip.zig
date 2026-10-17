@@ -90,6 +90,7 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.hip })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.family })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.flashnext })).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.nemotron })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.serve })).step);
     test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = host.native })).step);
     // the GPU programs compile on any host against stub kernels, so `test` catches what only they reach
@@ -112,6 +113,20 @@ pub fn steps(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
         "tf-flashnext-hip-test",
         "Flash Next model checks on the GPU (-Dhip-arch)",
     ).dependOn(&b.addInstallArtifact(fx_test, .{}).step);
+    const nem_test = b.addExecutable(.{ .name = "tf-nemotron-hip-test", .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/tests/nemotron_hip/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "hip", .module = gpu.hip },
+            .{ .name = "nemotron", .module = gpu.nemotron },
+        },
+    }) });
+    b.step(
+        "tf-nemotron-hip-test",
+        "Nemotron-H load and skeleton checks on the GPU (-Dhip-arch)",
+    ).dependOn(&b.addInstallArtifact(nem_test, .{}).step);
     const native = server(b, target, gpu, build_options);
     b.step("native-hip", "tensorfold-native with the HIP engines into zig-out/native-hip/bin (-Dhip-arch)").dependOn(&b.addInstallArtifact(native, .{ .dest_dir = .{ .override = .{ .custom = "native-hip/bin" } } }).step);
 }
@@ -127,7 +142,16 @@ fn checksExe(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.buil
     }) });
 }
 
-const Engine = struct { hip: *std.Build.Module, lanes: *std.Build.Module, api: *std.Build.Module, serve: *std.Build.Module, family: *std.Build.Module, flashnext: *std.Build.Module, native: *std.Build.Module };
+const Engine = struct {
+    hip: *std.Build.Module,
+    lanes: *std.Build.Module,
+    api: *std.Build.Module,
+    serve: *std.Build.Module,
+    family: *std.Build.Module,
+    flashnext: *std.Build.Module,
+    nemotron: *std.Build.Module,
+    native: *std.Build.Module,
+};
 
 /// The HIP backend, the Qwen3.5 family over it and the native engines, on `kernels` (a stub on the host).
 fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, kernels: *std.Build.Module, hip_include: ?[]const u8) Engine {
@@ -147,7 +171,11 @@ fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .imports = &.{ .{ .name = "hip", .module = hip }, .{ .name = "lanes", .module = lanes } },
+        .imports = &.{
+            .{ .name = "hip", .module = hip },
+            .{ .name = "lanes", .module = lanes },
+            .{ .name = "engine_api", .module = api },
+        },
     });
     const family = b.createModule(.{
         .root_source_file = b.path("zig/src/families/qwen3_5/hip.zig"),
@@ -175,14 +203,43 @@ fn engineModules(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
             .{ .name = "hip_serve", .module = serve },
         },
     });
+    const nemotron = b.createModule(.{
+        .root_source_file = b.path("zig/src/families/nemotron/hip.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "hip", .module = hip },
+            .{ .name = "lanes", .module = lanes },
+            .{ .name = "core", .module = core },
+            .{ .name = "engine_api", .module = api },
+            .{ .name = "hip_serve", .module = serve },
+        },
+    });
     const native = b.createModule(.{
         .root_source_file = b.path("zig/src/native/hip.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
-        .imports = &.{ .{ .name = "hip", .module = hip }, .{ .name = "engine_api", .module = api }, .{ .name = "lanes", .module = lanes }, .{ .name = "qwen3_5", .module = family }, .{ .name = "flashnext", .module = flashnext } },
+        .imports = &.{
+            .{ .name = "hip", .module = hip },
+            .{ .name = "engine_api", .module = api },
+            .{ .name = "lanes", .module = lanes },
+            .{ .name = "qwen3_5", .module = family },
+            .{ .name = "flashnext", .module = flashnext },
+            .{ .name = "nemotron", .module = nemotron },
+        },
     });
-    return .{ .hip = hip, .lanes = lanes, .api = api, .serve = serve, .family = family, .flashnext = flashnext, .native = native };
+    return .{
+        .hip = hip,
+        .lanes = lanes,
+        .api = api,
+        .serve = serve,
+        .family = family,
+        .flashnext = flashnext,
+        .nemotron = nemotron,
+        .native = native,
+    };
 }
 
 /// The server over the HIP engines, as the CUDA build makes it: the HTTP side keeps its safety checks.
@@ -207,7 +264,7 @@ fn server(b: *std.Build, target: std.Build.ResolvedTarget, e: Engine, build_opti
 const groups = [_][]const u8{
     "ops/ops.hip",           "ops/act.hip",             "attention/attention.hip", "recurrence/gated_delta.hip",
     "attention/prefill.hip", "decode/decode.hip",       "decode/plan.hip",         "tiles/dot2_tiles.hip",
-    "tiles/dot2.hip",        "flashnext/flashnext.hip",
+    "tiles/dot2.hip",        "flashnext/flashnext.hip", "recurrence/mamba.hip",
 };
 
 /// What the group sources include, so an edit to one rebuilds them.
@@ -220,12 +277,13 @@ const headers = [_][]const u8{
     "quant/mlx_tiles.hpp",        "tiles/dot2.hpp",        "tiles/epilogue.hpp",    "tiles/gemm.hpp",
     "tiles/gemm_kp.hpp",          "tiles/matrix_gemm.hpp", "tiles/plan.hpp",        "tiles/stream.hpp",
     "flashnext/streams.hpp",      "flashnext/ngram.hpp",   "flashnext/indexer.hpp", "flashnext/sparse.hpp",
+    "ops/nemotron_moe.hpp",
 };
 
 /// The flags of the kernels' first build: no contraction, wave32 on RDNA, C++20.
 const flags = [_][]const u8{ "-D__HIP_PLATFORM_AMD__=1", "-DUSE_ROCM=1", "-DHIPBLAS_V2", "-fPIC", "-DCUDA_HAS_FP16=1", "-DHIP_ENABLE_WARP_SYNC_BUILTINS=1", "-std=c++20", "-fno-gpu-rdc", "-mno-wavefrontsize64", "-ffp-contract=off" };
 
-const stub = "pub const arch = \"\";\npub const images: [10][]align(8) const u8 = @splat(&.{});\n";
+const stub = "pub const arch = \"\";\npub const images: [11][]align(8) const u8 = @splat(&.{});\n";
 
 /// One code object a group for `arch`, built with the caps table's instruction switches, as the `hip_kernels` module.
 fn kernelObjects(b: *std.Build, hipcc: []const u8, hipcc_resolved: []const u8, device_lib: ?[]const u8, arch: []const u8) *std.Build.Module {
