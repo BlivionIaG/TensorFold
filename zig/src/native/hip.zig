@@ -6,12 +6,13 @@ const api = @import("engine_api");
 const lanes = @import("lanes");
 const qwen35 = @import("qwen3_5");
 const flashnext = @import("flashnext");
+const nemotron = @import("nemotron");
 const Allocator = std.mem.Allocator;
 const admission = hip.admission;
 const modelContext = admission.modelContext;
 
 /// The HIP families: namespaces with `model_type`, `formats`, `default_context`, `prefill_step`, `open` and `follow`.
-const registry = .{ qwen35.native, qwen35.native_moe, flashnext.native };
+const registry = .{ qwen35.native, qwen35.native_moe, flashnext.native, nemotron.native };
 
 pub const backends: []const []const u8 = &.{"hip"};
 /// No per-thread alternate signal stack: its thread-local leaves RCCL's and HIP's threads too little stack to start.
@@ -174,6 +175,11 @@ fn join(
     };
 }
 
+/// The family's refusal of --slide, when it names one.
+fn slideRefused(comptime F: type, o: api.Open) ?[]const u8 {
+    return if (o.slide and @hasDecl(F, "slide_refusal")) F.slide_refusal else null;
+}
+
 /// One loaded model behind the lane host: everything the engine thread reads lives here.
 const Host = struct {
     gpa: Allocator,
@@ -214,6 +220,10 @@ pub fn open(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]c
 }
 
 fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !?api.Opened {
+    if (slideRefused(F, o)) |why| {
+        problem.* = why;
+        return null;
+    }
     const r = ready(F, a, gpa, io, o, problem) catch |err| switch (err) {
         error.Refused => return null,
         else => |x| return x,
@@ -248,6 +258,10 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
 pub fn follow(a: Allocator, gpa: Allocator, io: std.Io, o: api.Open, problem: *[]const u8) !bool {
     inline for (registry) |F| {
         if (std.mem.eql(u8, o.model_type, F.model_type)) {
+            if (slideRefused(F, o)) |why| {
+                problem.* = why;
+                return false;
+            }
             const r = ready(F, a, gpa, io, o, problem) catch |err| switch (err) {
                 error.Refused => return false,
                 else => |x| return x,
@@ -269,6 +283,25 @@ test "every registered family is listed for capabilities" {
     try std.testing.expectEqualStrings("qwen3_5", families[0].model_type);
     try std.testing.expectEqualStrings("qwen3_5_moe", families[1].model_type);
     try std.testing.expectEqualStrings("qwen4_exp", families[2].model_type);
+    try std.testing.expectEqualStrings("nemotron_h", families[3].model_type);
+}
+
+test "Nemotron refuses --slide on HIP before it loads" {
+    const o: api.Open = .{ .dir = "d", .model_type = "nemotron_h", .slide = true };
+    try std.testing.expect(std.mem.indexOf(u8, slideRefused(nemotron.native, o).?, "--slide") != null);
+    try std.testing.expect(slideRefused(nemotron.native, .{ .dir = "d", .model_type = "nemotron_h" }) == null);
+}
+
+test "a family that names a --slide refusal is refused before it loads; the others are not" {
+    const Refuses = struct {
+        pub const slide_refusal = "--slide: this family does not learn on HIP";
+    };
+    const slid: api.Open = .{ .dir = "d", .model_type = "m", .slide = true };
+    try std.testing.expectEqualStrings(Refuses.slide_refusal, slideRefused(Refuses, slid).?);
+    try std.testing.expect(slideRefused(Refuses, .{ .dir = "d", .model_type = "m" }) == null);
+    try std.testing.expect(slideRefused(qwen35.native, slid) == null);
+    try std.testing.expect(slideRefused(qwen35.native_moe, slid) == null);
+    try std.testing.expect(slideRefused(flashnext.native, slid) == null);
 }
 
 test "the group flags: one rank source, a supported world, a master past one rank, a rank inside the world" {
