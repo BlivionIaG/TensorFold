@@ -9,6 +9,7 @@ const mamba_k = @import("contract_mamba.zig");
 const scan_k = @import("contract_scan.zig");
 const moe_k = @import("contract_nemo_moe.zig");
 const walk_k = @import("contract_walk.zig");
+const add_rms_k = @import("contract_add_rms.zig");
 
 const g = core.contract.gates;
 
@@ -89,6 +90,10 @@ fn run(a: std.mem.Allocator, io: std.Io) !usize {
     var walk = walk_k.Walk.init(a, &r, s, &l);
     defer walk.deinit();
     try kernels.append(a, walk.kernel());
+    var add_rms: [3]add_rms_k.AddRms = undefined;
+    for (&add_rms, std.enums.values(add_rms_k.Mode)) |*m, w| m.* = .init(a, &r, s, &l, w);
+    defer for (&add_rms) |*m| m.deinit();
+    for (&add_rms) |*m| try kernels.append(a, m.kernel());
     var t: g.Tally = .{};
     const t0 = ms(io);
     try g.runAll(a, kernels.items, 0x6b63, &t);
