@@ -111,6 +111,11 @@ A gate failure on a kernel already shipped is reported, not hidden. Until its fi
 it pass, the run fails until the entry is removed. Today: affine_mm's 4-bit form gives NaN for an infinite input where
 MLX's formula keeps the infinity, because its codes enter the MMAs as q + 128 and its bias as b - 128 s.
 
+HIP's shipped `affine_dot2_stream` has the same infinity-to-NaN finding, registered on its plain fp32 output.
+The relu^2 replacement retains every non-finite plant and must equal the unfused kernels' bytes. Its stated rule
+checks float64 classes independently: only a float64 infinite affine sum that the plain tile made NaN may inherit
+that discrepancy. A NaN affine reference must remain NaN, so dropping NaN in either relu implementation fails.
+
 ## Coverage
 
 Metal: softmax, RMS norm, bf16 top-k, the row projection (3, 4, 6 and 8 bits), affine_mm (4 and 8 bits), simd_qmm

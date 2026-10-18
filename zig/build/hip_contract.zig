@@ -44,6 +44,12 @@ pub fn steps(b: *std.Build, o: Options) void {
     audit.addDirectoryArg(all.getDirectory());
     const fits = "Every registered HIP launch against each served chip's code objects";
     b.step("hip-kernel-contract-limits", fits).dependOn(&audit.step);
+    const nan_test = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("zig/tests/hip/relu2_nonfinite.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+    }) });
+    o.test_step.dependOn(&b.addRunArtifact(nan_test).step);
     // the runner compiles on any host against stub kernels, so `test` catches what only it reaches
     o.test_step.dependOn(&runner(b, b.graph.host, .Debug, o.host, controls(b, "", null)).step);
 }

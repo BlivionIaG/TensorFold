@@ -9,6 +9,20 @@ pub const Record = struct { launch: limits.HipLaunch, usage: [limits.rdna.len]U 
 
 const rms_ns = "_ZN2tf4rocm10rms_kernelI";
 
+/// The 4-bit stream tile with the relu^2 epilogue, `rows` rows and `cb` columns a lane: DotF16 on RDNA2, else DotBF16.
+fn relu2Tile(comptime rows: u32, comptime cb: u32) limits.HipLaunch {
+    const fmt = "_ZN2tf4rocm24affine_dot2_stream_relu2INS0_{s}ELi4ELi{d}ELi{d}EEEvNS0_6AffineENS0_11StreamSidesEii";
+    const half = std.fmt.comptimePrint(fmt, .{ "6DotF16", rows, cb });
+    const brain = std.fmt.comptimePrint(fmt, .{ "7DotBF16", rows, cb });
+    return .{
+        .name = std.fmt.comptimePrint("relu2 stream tile 4-bit {d}x{d}", .{ rows, cb }),
+        .symbol = brain,
+        .image = "affine_tiles",
+        .threads = 128,
+        .symbols = .{ half, brain, brain, brain },
+    };
+}
+
 /// HIP kernels as launched; tf-hip-kernel-contract limits DIR re-derives the usage records from the code objects.
 pub const records = [_]Record{
     .{
@@ -269,6 +283,78 @@ pub const records = [_]Record{
             .{ .vgprs = 136, .sgprs = 50, .lds = 20544, .private = 0, .bound = 128, .wave = 32 },
             .{ .vgprs = 135, .sgprs = 51, .lds = 20544, .private = 0, .bound = 128, .wave = 32 },
             .{ .vgprs = 131, .sgprs = 52, .lds = 20544, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = relu2Tile(1, 2),
+        .usage = .{
+            .{ .vgprs = 63, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 65, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 65, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 65, .sgprs = 40, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = relu2Tile(1, 4),
+        .usage = .{
+            .{ .vgprs = 101, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 102, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 102, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 102, .sgprs = 40, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = relu2Tile(1, 8),
+        .usage = .{
+            .{ .vgprs = 181, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 178, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 178, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 178, .sgprs = 40, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = relu2Tile(2, 2),
+        .usage = .{
+            .{ .vgprs = 95, .sgprs = 37, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 68, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 68, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 68, .sgprs = 39, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = relu2Tile(2, 4),
+        .usage = .{
+            .{ .vgprs = 93, .sgprs = 37, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 102, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 102, .sgprs = 36, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 102, .sgprs = 39, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = relu2Tile(2, 8),
+        .usage = .{
+            .{ .vgprs = 157, .sgprs = 38, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 158, .sgprs = 37, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 158, .sgprs = 37, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 158, .sgprs = 39, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = relu2Tile(4, 2),
+        .usage = .{
+            .{ .vgprs = 113, .sgprs = 46, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 114, .sgprs = 45, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 114, .sgprs = 45, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 114, .sgprs = 46, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = relu2Tile(4, 4),
+        .usage = .{
+            .{ .vgprs = 147, .sgprs = 46, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 150, .sgprs = 45, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 150, .sgprs = 45, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 150, .sgprs = 46, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
         },
     },
 };
