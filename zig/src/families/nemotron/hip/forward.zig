@@ -113,11 +113,16 @@ pub fn run(
     const d = m.dims;
     const x = try take(o, m.act, rows * d.hidden);
     try o.embedRows(m.embed, ids, rows, x);
+    const normed = try take(o, m.act, rows * d.hidden);
+    const out = try take(o, m.act, rows * d.hidden);
+    try o.rms(x, m.blocks[0].norm, normed, rows, d.hidden, d.eps);
     for (m.blocks, place, 0..) |b, slot, i| {
         const mark = o.arena.mark();
         defer o.arena.release(mark);
-        const normed = try take(o, m.act, rows * d.hidden);
-        try o.rms(x, b.norm, normed, rows, d.hidden, d.eps);
+        // the residual and the next block's norm (the final norm after the last) in one launch
+        const last = i + 1 == m.blocks.len;
+        const next = if (last) m.norm_f else m.blocks[i + 1].norm;
+        const dst = if (last) out else normed;
         const y = switch (b.mixer) {
             .mamba => |w| try mamba.mixer(o, d, m.act, w, ctx.stream.states[slot], normed, rows, null),
             .attention => |w| try attention(
@@ -131,11 +136,9 @@ pub fn run(
             ),
             .moe => |w| try moe.layer(o, d, m.act, w, normed, rows),
         };
-        try hip.reduce.residual(o, m.tp, x, y, rows * d.hidden);
+        try hip.reduce.residualNorm(o, m.tp, x, y, next, dst, rows, d.hidden, d.eps);
         if (ctx.trace) |t| t.layer(t.ctx, i, x, rows) catch return error.BadShape;
     }
-    const out = try take(o, m.act, rows * d.hidden);
-    try o.rms(x, m.norm_f, out, rows, d.hidden, d.eps);
     return out;
 }
 
@@ -162,11 +165,9 @@ pub fn draft(o: Ops, m: *const model.Model, where: Where, ids: u64, hidden: Tens
     const normed = try take(o, m.act, n);
     try o.rms(x, h.attn_norm, normed, rows, d.hidden, d.eps);
     const y = try attention(o, m.act, d, h.attn, where, normed, rows);
-    try hip.reduce.residual(o, null, x, y, n);
-    try o.rms(x, h.moe_norm, normed, rows, d.hidden, d.eps);
+    try hip.reduce.residualNorm(o, null, x, y, h.moe_norm, normed, rows, d.hidden, d.eps);
     const z = try moe.layer(o, d, m.act, h.moe, normed, rows);
-    try hip.reduce.residual(o, null, x, z, n);
-    try o.rms(x, h.final_norm, normed, rows, d.hidden, d.eps);
+    try hip.reduce.residualNorm(o, null, x, z, h.final_norm, normed, rows, d.hidden, d.eps);
     return .{ .logits = try o.project(normed, h.draft, rows, false), .normed = normed };
 }
 
