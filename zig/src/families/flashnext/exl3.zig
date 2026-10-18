@@ -26,6 +26,7 @@ pub const step = @import("exl3_step.zig");
 pub const router = @import("exl3_router.zig");
 pub const norm = @import("exl3_norm.zig");
 pub const gdn = @import("exl3_gdn.zig");
+pub const gdn_cpu = @import("exl3_gdn_cpu.zig");
 pub const hc = @import("exl3_hc.zig");
 pub const head = @import("exl3_head.zig");
 pub const sample = @import("exl3_sample.zig");
@@ -56,6 +57,7 @@ test {
     _ = router;
     _ = norm;
     _ = gdn;
+    _ = gdn_cpu;
     _ = hc;
     _ = head;
     _ = sample;

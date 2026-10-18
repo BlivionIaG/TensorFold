@@ -40,6 +40,7 @@ const glm_lanes_tests = @import("glm_lanes_tests.zig");
 const glm_synth = @import("glm_synth.zig");
 const exl3_window_tests = @import("exl3_window_tests.zig");
 const exl3_real_tests = @import("exl3_real_tests.zig");
+const exl3_gdn_tests = @import("exl3_gdn_tests.zig");
 
 const usage =
     \\usage: tf-cuda-test <command>
@@ -47,6 +48,7 @@ const usage =
     \\  smoke                     copies, fills, launches, argument packing, module globals
     \\  graph                     stream capture, explicit graphs, node and whole-exec updates
     \\  exl3-real <dir> [layer] [expert]  one real EXL3 expert vs the Zig decoder
+    \\  exl3-gdn <dir> [layer ...]  a real EXL3 Gated DeltaNet layer: prefill + decode with state, vs the f64 oracle
     \\  exl3-window               EXL3 graph replay, prefix KV cache, and MTP accept
     \\  overhead [n] [reps]       dependent one-thread kernels: plain stream vs one graph
     \\  overhead-pdl [n] [reps]   the same with programmatic dependent launch on every kernel
@@ -136,6 +138,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "smoke")) return runtime_tests.smoke(gpu);
     if (std.mem.eql(u8, cmd, "graph")) return runtime_tests.graphs(gpu);
     if (std.mem.eql(u8, cmd, "exl3-window")) return exl3_window_tests.run(gpu);
+    if (std.mem.eql(u8, cmd, "exl3-gdn")) return exl3_gdn_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-real")) return exl3_real_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "overhead") or std.mem.eql(u8, cmd, "overhead-pdl")) {
         const n = if (rest.len > 0) try std.fmt.parseInt(usize, rest[0], 10) else 1000;
