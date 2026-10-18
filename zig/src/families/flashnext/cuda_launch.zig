@@ -29,6 +29,7 @@ pub const prompt = @import("cuda_prompt.zig");
 pub const row_path = @import("cuda_rows.zig");
 /// The MTP head's drafts: its forward, the chain, the verify window's rows and their rollback
 pub const mtp = @import("cuda_mtp.zig");
+pub const exl3_pool = @import("cuda_exl3_pool.zig");
 pub const native = @import("cuda_lanes.zig").Namespace(Tri);
 /// Our own glue kernels, which every launch takes when no captured set is loaded
 pub const Glue = glue_.Glue;
