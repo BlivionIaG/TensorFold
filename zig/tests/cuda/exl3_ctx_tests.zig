@@ -506,7 +506,7 @@ fn prefixCache(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usiz
     };
     try feed(&eng, b, chunk, hbuf, null, null);
     std.debug.print("  P1 = A+B run; A prefill {d:.0} ms, snapshot capture {d:.0} ms\n", .{ t_a, t_cap });
-    std.debug.print("  snapshot at |A| = {d} tokens: {d} bytes ({d:.1} MiB): GDN conv+rec {d}, KV {d}, index keys {d}, pooled {d}, PLE {d}\n", .{ a.len, s_bytes, @as(f64, @floatFromInt(s_bytes)) / 1048576.0, store.items.items[0].snap.conv.len + store.items.items[0].snap.rec.len, store.items.items[0].snap.kv.len, store.items.items[0].snap.ik.len, store.items.items[0].snap.pooled.len, if (store.items.items[0].snap.tail) |t| t.len * 8 + 16 else 0 });
+    std.debug.print("  snapshot at |A| = {d} tokens: {d} bytes ({d:.1} MiB): GDN conv+rec {d}, KV {d}, index keys {d}, pooled {d}, PLE {d}\n", .{ a.len, s_bytes, @as(f64, @floatFromInt(s_bytes)) / 1048576.0, store.items.items[0].snap.conv.len + store.items.items[0].snap.rec.len, store.items.items[0].snap.kv.len, store.items.items[0].snap.ik.len, store.items.items[0].snap.pooled.len, (if (store.items.items[0].snap.tail) |t| t.len * 8 + 16 else 0) + (if (store.items.items[0].snap.rows) |r| r.tail.len * 4 + 16 else 0) });
 
     // P2 = A + C from scratch (A in one call, C in the same chunking the restored run uses)
     const p2 = try gpa.alloc(u32, a.len + c.len);
@@ -564,16 +564,25 @@ fn prefixCache(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usiz
     const losses = [_][]const u8{ "GDN recurrent state zeroed", "attention KV zeroed", "PLE conv tail zeroed", "index keys and pooled blocks zeroed" };
     var all_sensitive = true;
     for (losses, 0..) |what, which| {
-        if (which == 2 and eng.ple == null) continue;
+        if (which == 2 and eng.ple == null and eng.ple_rows == null) continue;
         if (which == 3 and eng.opt.first_layer + eng.layers.len < 4) continue; // no attention layer loaded
+        // dense attention reads no index keys: they only matter once a row has more than 2051 keys
+        if (which == 3 and a.len + c.len <= 2051) continue;
         try snap.restore(&eng, hit.snap);
         switch (which) {
             0 => try eng.table.rec.fill8(0, null),
-            1 => try eng.kv_all.fill8(0, null),
-            2 => @memset(eng.ple.?.tail, 0),
+            1 => try eng.b.kv_all.fill8(0, null),
+            2 => if (eng.ple) |*p| {
+                @memset(p.tail, 0);
+            } else {
+                // the `rows` path: the id history and conv tail back to a fresh sequence's zeros
+                var z = try eng.pleState();
+                defer z.deinit(gpa);
+                try eng.pleRestore(z);
+            },
             else => {
-                try eng.ik_all.fill8(0, null);
-                try eng.pooled_all.fill8(0, null);
+                try eng.b.ik_all.fill8(0, null);
+                try eng.b.pooled_all.fill8(0, null);
             },
         }
         try feed(&eng, p2[cached_ctx..], chunk, hbuf, null, lg_x);

@@ -12,6 +12,7 @@
 const std = @import("std");
 const cuda = @import("cuda");
 const fwd = @import("exl3_fwd.zig");
+const plerows = @import("exl3_fwd_plerows.zig");
 const fple = @import("exl3_fwd_ple.zig");
 
 pub const Snapshot = struct {
@@ -24,6 +25,8 @@ pub const Snapshot = struct {
     pooled: []u8,
     hist: ?[fple.context]i64,
     tail: ?[]f64,
+    /// The `rows` PLE implementation's state (id history + conv tail), the engine's default path.
+    rows: ?plerows.State = null,
 
     pub fn deinit(s: *Snapshot, gpa: std.mem.Allocator) void {
         gpa.free(s.conv);
@@ -32,10 +35,12 @@ pub const Snapshot = struct {
         gpa.free(s.ik);
         gpa.free(s.pooled);
         if (s.tail) |t| gpa.free(t);
+        if (s.rows) |*r| r.deinit(gpa);
     }
 
     pub fn bytes(s: *const Snapshot) u64 {
-        const tail: usize = if (s.tail) |t| t.len * 8 else 0;
+        var tail: usize = if (s.tail) |t| t.len * 8 else 0;
+        if (s.rows) |r| tail += r.tail.len * 4 + @sizeOf(@TypeOf(r.history));
         return s.conv.len + s.rec.len + s.kv.len + s.ik.len + s.pooled.len + tail + @sizeOf(usize);
     }
 };
@@ -77,6 +82,7 @@ pub fn capture(e: *fwd.Engine) !Snapshot {
         .pooled = &.{},
         .hist = null,
         .tail = null,
+        .rows = null,
     };
     errdefer gpa.free(s.conv);
     s.rec = try gpa.alloc(u8, n.gdn * cuda.exl3_gdn.rec_bytes);
@@ -101,15 +107,21 @@ pub fn capture(e: *fwd.Engine) !Snapshot {
         } else {
             const kvi = fwd.Layer.kvIndex(lay.index);
             const pb = pooledBlocks(e, pos);
-            try e.kv_all.download(kvi * cap * kv_token, s.kv[ai * pos * kv_token ..][0 .. pos * kv_token]);
-            try e.ik_all.download(kvi * cap * ik_token, s.ik[ai * pos * ik_token ..][0 .. pos * ik_token]);
-            try e.pooled_all.download(kvi * (nb + 2) * block, s.pooled[ai * pb * block ..][0 .. pb * block]);
+            try e.b.kv_all.download(kvi * cap * kv_token, s.kv[ai * pos * kv_token ..][0 .. pos * kv_token]);
+            try e.b.ik_all.download(kvi * cap * ik_token, s.ik[ai * pos * ik_token ..][0 .. pos * ik_token]);
+            try e.b.pooled_all.download(kvi * (nb + 2) * block, s.pooled[ai * pb * block ..][0 .. pb * block]);
             ai += 1;
         }
     }
     if (e.ple) |p| {
         s.hist = p.history;
         s.tail = try gpa.dupe(f64, p.tail);
+    }
+    if (e.ple_rows != null) {
+        var st = try e.pleState();
+        errdefer st.deinit(gpa);
+        try e.pleSnapshot(&st);
+        s.rows = st;
     }
     return s;
 }
@@ -119,6 +131,7 @@ pub fn restore(e: *fwd.Engine, s: *const Snapshot) !void {
     const n = counts(e);
     if (s.layers != e.layers.len or s.pos > e.opt.cap) return error.SnapshotMismatch;
     if ((s.tail != null) != (e.ple != null)) return error.SnapshotMismatch;
+    if ((s.rows != null) != (e.ple_rows != null)) return error.SnapshotMismatch;
     try e.reset();
     const cap = e.opt.cap;
     const nb = cap / 4;
@@ -136,9 +149,9 @@ pub fn restore(e: *fwd.Engine, s: *const Snapshot) !void {
         } else {
             const kvi = fwd.Layer.kvIndex(lay.index);
             const pb = pooledBlocks(e, pos);
-            try e.kv_all.upload(kvi * cap * kv_token, s.kv[ai * pos * kv_token ..][0 .. pos * kv_token]);
-            try e.ik_all.upload(kvi * cap * ik_token, s.ik[ai * pos * ik_token ..][0 .. pos * ik_token]);
-            try e.pooled_all.upload(kvi * (nb + 2) * block, s.pooled[ai * pb * block ..][0 .. pb * block]);
+            try e.b.kv_all.upload(kvi * cap * kv_token, s.kv[ai * pos * kv_token ..][0 .. pos * kv_token]);
+            try e.b.ik_all.upload(kvi * cap * ik_token, s.ik[ai * pos * ik_token ..][0 .. pos * ik_token]);
+            try e.b.pooled_all.upload(kvi * (nb + 2) * block, s.pooled[ai * pb * block ..][0 .. pb * block]);
             ai += 1;
         }
     }
@@ -148,4 +161,5 @@ pub fn restore(e: *fwd.Engine, s: *const Snapshot) !void {
         p.history = s.hist.?;
         @memcpy(p.tail, s.tail.?);
     }
+    if (s.rows) |r| try e.pleRestore(r);
 }
