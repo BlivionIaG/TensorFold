@@ -27,6 +27,7 @@ pub const router = @import("exl3_router.zig");
 pub const norm = @import("exl3_norm.zig");
 pub const gdn = @import("exl3_gdn.zig");
 pub const hc = @import("exl3_hc.zig");
+pub const moe = @import("exl3_moe.zig");
 pub const head = @import("exl3_head.zig");
 pub const sample = @import("exl3_sample.zig");
 pub const lane = @import("exl3_lane.zig");
@@ -57,6 +58,7 @@ test {
     _ = norm;
     _ = gdn;
     _ = hc;
+    _ = moe;
     _ = head;
     _ = sample;
     _ = lane;

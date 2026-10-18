@@ -11,9 +11,9 @@ const strips = @import("exl3_strips.zig");
 const cpu = @import("exl3_cpu.zig");
 
 const Gpu = check.Gpu;
-const shards = 7;
+pub const shards = 7;
 
-const Mat = struct {
+pub const Mat = struct {
     trellis: []const i16,
     suh: []const f16,
     svh: []const f16,
@@ -22,21 +22,36 @@ const Mat = struct {
     halves: u8,
 };
 
-const Pack = struct {
+pub const Pack = struct {
     files: [shards]st.File,
     open: usize = 0,
 
-    fn find(p: *const Pack, name: []const u8) ?st.Tensor {
+    pub fn find(p: *const Pack, name: []const u8) ?st.Tensor {
         for (p.files[0..p.open]) |*f| if (f.get(name)) |t| return t;
         return null;
     }
+
+    /// Maps all seven model shards of `dir`. Pair with `close`.
+    pub fn openAll(p: *Pack, gpu: Gpu, dir: []const u8) !void {
+        for (0..shards) |i| {
+            var path: [512]u8 = undefined;
+            const name = try std.fmt.bufPrint(&path, "{s}/model-{d:0>5}-of-{d:0>5}.safetensors", .{ dir, i + 1, shards });
+            p.files[i] = try st.File.open(gpu.gpa, gpu.io, name);
+            p.open += 1;
+        }
+    }
+
+    pub fn close(p: *Pack, io: std.Io) void {
+        for (p.files[0..p.open]) |*f| f.close(io);
+        p.open = 0;
+    }
 };
 
-fn words16(comptime T: type, bytes: []const u8) []const T {
+pub fn words16(comptime T: type, bytes: []const u8) []const T {
     return @as([*]const T, @ptrCast(@alignCast(bytes.ptr)))[0 .. bytes.len / @sizeOf(T)];
 }
 
-fn mat(p: *const Pack, gpa: std.mem.Allocator, base: []const u8) !Mat {
+pub fn mat(p: *const Pack, gpa: std.mem.Allocator, base: []const u8) !Mat {
     var buf: [160]u8 = undefined;
     const tr = p.find(try std.fmt.bufPrint(&buf, "{s}.trellis", .{base})) orelse return error.MissingTensor;
     const suh = p.find(try std.fmt.bufPrint(&buf, "{s}.suh", .{base})) orelse return error.MissingTensor;
@@ -53,18 +68,18 @@ fn mat(p: *const Pack, gpa: std.mem.Allocator, base: []const u8) !Mat {
     return .{ .trellis = t, .suh = su, .svh = sv, .tiles_k = tr.dim(0), .tiles_n = tr.dim(1), .halves = @intCast(words / 8) };
 }
 
-const Dev = struct {
+pub const Dev = struct {
     trellis: cuda.DeviceBuffer,
     suh: cuda.DeviceBuffer,
     svh: cuda.DeviceBuffer,
-    fn free(d: *Dev) void {
+    pub fn free(d: *Dev) void {
         d.trellis.free();
         d.suh.free();
         d.svh.free();
     }
 };
 
-fn upload(gpu: Gpu, m: Mat) !Dev {
+pub fn upload(gpu: Gpu, m: Mat) !Dev {
     const words = @as(usize, m.halves) * 8;
     const ordered = try gpu.gpa.alloc(i16, m.trellis.len);
     defer gpu.gpa.free(ordered);
@@ -77,9 +92,9 @@ fn upload(gpu: Gpu, m: Mat) !Dev {
     return .{ .trellis = t, .suh = su, .svh = sv };
 }
 
-const Diff = struct { max_abs: f64, peak: f64 };
+pub const Diff = struct { max_abs: f64, peak: f64 };
 
-fn compare(got: []const f16, want: []const f64) Diff {
+pub fn compare(got: []const f16, want: []const f64) Diff {
     var d: Diff = .{ .max_abs = 0, .peak = 0 };
     for (got, want) |g, w| {
         d.max_abs = @max(d.max_abs, @abs(@as(f64, @floatCast(g)) - w));
@@ -88,7 +103,7 @@ fn compare(got: []const f16, want: []const f64) Diff {
     return d;
 }
 
-fn cpuLinear(gpa: std.mem.Allocator, m: Mat, x: []const f64, y: []f64) !void {
+pub fn cpuLinear(gpa: std.mem.Allocator, m: Mat, x: []const f64, y: []f64) !void {
     const k = m.tiles_k * 16;
     const n = m.tiles_n * 16;
     const scratch = try gpa.alloc(f64, 3 * k * n);
@@ -96,7 +111,7 @@ fn cpuLinear(gpa: std.mem.Allocator, m: Mat, x: []const f64, y: []f64) !void {
     try cpu.gemv(.{ .halves = m.halves }, .mul1, m.trellis, m.tiles_k, m.tiles_n, m.suh, m.svh, x, y, scratch);
 }
 
-fn gpuLinear(gpu: Gpu, ex: *const cuda.exl3.Exl3, stream: cuda.Stream, m: Mat, d: Dev, x_dev: u64, y_len: usize) ![]f16 {
+pub fn gpuLinear(gpu: Gpu, ex: *const cuda.exl3.Exl3, stream: cuda.Stream, m: Mat, d: Dev, x_dev: u64, y_len: usize) ![]f16 {
     var y = try cuda.DeviceBuffer.alloc(gpu.d, y_len * 2);
     defer y.free();
     try ex.linear(stream, x_dev, d.trellis.ptr, d.suh.ptr, d.svh.ptr, y.ptr, 1, m.tiles_k * 16, m.tiles_n * 16, m.halves, 2);
@@ -115,13 +130,8 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     const expert: usize = if (rest.len > 2) try std.fmt.parseInt(usize, rest[2], 10) else 0;
 
     var pack: Pack = .{ .files = undefined };
-    defer for (pack.files[0..pack.open]) |*f| f.close(gpu.io);
-    for (0..shards) |i| {
-        var path: [512]u8 = undefined;
-        const p = try std.fmt.bufPrint(&path, "{s}/model-{d:0>5}-of-{d:0>5}.safetensors", .{ dir, i + 1, shards });
-        pack.files[i] = try st.File.open(gpu.gpa, gpu.io, p);
-        pack.open += 1;
-    }
+    defer pack.close(gpu.io);
+    try pack.openAll(gpu, dir);
 
     var ex = try cuda.exl3.Exl3.load(gpu.d);
     defer ex.unload();
