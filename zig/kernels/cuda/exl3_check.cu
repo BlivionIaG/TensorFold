@@ -187,7 +187,7 @@ static void run_linear(const char* name, int halves, int codebook, uint32_t seed
     for (int ri = 0; ri < nlist; ++ri) {
         const int rows = row_list[ri];
         ck(cudaMemset(y_d, 0, y_ref.size() * sizeof(uint16_t)), "zero y");
-        exl3_linear_f16<<<dim3(N / 128, rows), 32>>>(x_d, tr_d, suh_d, svh_d, y_d, rows, K, N, halves, codebook);
+        exl3_linear_f16<<<dim3(N / 128, rows), 512>>>(x_d, tr_d, suh_d, svh_d, y_d, rows, K, N, halves, codebook);
         launch_ok(name);
         ck(cudaMemcpy(y_got.data(), y_d, static_cast<size_t>(rows) * static_cast<size_t>(N) * sizeof(uint16_t), cudaMemcpyDeviceToHost),
            "d2h y");
@@ -276,7 +276,7 @@ static void run_experts(double* max_abs) {
         const int order_a[2] = {1, 0};
         const int order_b[2] = {0, 1};
         ck(cudaMemset(y_d, 0, static_cast<size_t>(topk) * N * sizeof(uint16_t)), "zero slots");
-        kernel<<<dim3(N / 128, tokens * topk), 32>>>(x, ids_a, tr_d, suh_d, svh_d, y_d, tokens, K, N, E, topk, halves, codebook);
+        kernel<<<dim3(N / 128, tokens * topk), 512>>>(x, ids_a, tr_d, suh_d, svh_d, y_d, tokens, K, N, E, topk, halves, codebook);
         launch_ok(tag_a);
         ck(cudaMemcpy(got.data(), y_d, got.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost), "d2h slots");
         for (int s = 0; s < topk; ++s)
@@ -293,7 +293,7 @@ static void run_experts(double* max_abs) {
         compare_f16(ctag, comb_got.data(), comb_exp.data(), N, max_abs);
 
         ck(cudaMemset(y_d, 0, static_cast<size_t>(topk) * N * sizeof(uint16_t)), "zero slots b");
-        kernel<<<dim3(N / 128, tokens * topk), 32>>>(x, ids_b, tr_d, suh_d, svh_d, y_d, tokens, K, N, E, topk, halves, codebook);
+        kernel<<<dim3(N / 128, tokens * topk), 512>>>(x, ids_b, tr_d, suh_d, svh_d, y_d, tokens, K, N, E, topk, halves, codebook);
         launch_ok(tag_b);
         ck(cudaMemcpy(got.data(), y_d, got.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost), "d2h slots b");
         for (int s = 0; s < topk; ++s)

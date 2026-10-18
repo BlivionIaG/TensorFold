@@ -70,6 +70,11 @@ pub const exl3_symbols = struct {
     pub const swiglu_f16 = "exl3_experts_swiglu_f16";
     pub const down_f16 = "exl3_experts_down_f16";
     pub const combine_f16 = "exl3_experts_combine_f16";
+    /// The original one-warp kernels (block 32), kept for the bench and bit-equality checks.
+    pub const linear_f16_ref = "exl3_linear_f16_ref";
+    pub const gate_up_f16_ref = "exl3_experts_gate_up_f16_ref";
+    pub const down_f16_ref = "exl3_experts_down_f16_ref";
+    pub const mul1_probe = "exl3_mul1_probe";
 };
 
 /// extern "C" names in the exl3_gdn fatbin. Launch shapes live in exl3_gdn.zig.

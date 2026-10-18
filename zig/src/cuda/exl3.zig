@@ -23,6 +23,13 @@ pub const Exl3 = struct {
     swiglu_fn: Function,
     down_fn: Function,
     combine_fn: Function,
+    linear_ref_fn: Function,
+    gate_up_ref_fn: Function,
+    down_ref_fn: Function,
+    probe_fn: Function,
+
+    /// Threads per block of the decode-path projections (must equal kFastThreads in exl3_decode.cuh).
+    pub const fast_threads: u32 = 512;
 
     pub fn load(d: *const Driver) !Exl3 {
         if (!kernels.available) return error.BuiltWithoutKernels;
@@ -38,6 +45,10 @@ pub const Exl3 = struct {
             .swiglu_fn = try experts_mod.function(kernels.exl3_symbols.swiglu_f16),
             .down_fn = try experts_mod.function(kernels.exl3_symbols.down_f16),
             .combine_fn = try experts_mod.function(kernels.exl3_symbols.combine_f16),
+            .linear_ref_fn = try linear_mod.function(kernels.exl3_symbols.linear_f16_ref),
+            .gate_up_ref_fn = try experts_mod.function(kernels.exl3_symbols.gate_up_f16_ref),
+            .down_ref_fn = try experts_mod.function(kernels.exl3_symbols.down_f16_ref),
+            .probe_fn = try linear_mod.function(kernels.exl3_symbols.mul1_probe),
         };
     }
 
@@ -46,8 +57,25 @@ pub const Exl3 = struct {
         g.mod_linear.unload();
     }
 
-    /// y[rows, N] = x[rows, K] against one strips-order matrix. Grid (N/128, rows), block 32.
+    /// Counts the 16-bit states whose fp32 mul1 codebook value differs from the binary64 reference into `bad` (u32).
+    pub fn probeMul1(g: *const Exl3, s: Stream, bad: u64) !void {
+        var a: launch_.Args = .{};
+        a.add(bad);
+        try launch_.launch(g.probe_fn, .{ .grid = .{ .x = 256, .y = 1, .z = 1 }, .block = .{ .x = 256, .y = 1, .z = 1 } }, s, &a);
+    }
+
+    /// y[rows, N] = x[rows, K] against one strips-order matrix. Grid (N/128, rows), block `fast_threads`.
     pub fn linear(g: *const Exl3, s: Stream, x: u64, trellis: u64, suh: u64, svh: u64, y: u64, rows: usize, k: usize, n: usize, halves: u8, codebook: u8) !void {
+        return g.linearWith(g.linear_fn, fast_threads, s, x, trellis, suh, svh, y, rows, k, n, halves, codebook);
+    }
+
+    /// The original one-warp kernel (block 32). Bit-identical to `linear`; for the bench and equality checks.
+    pub fn linearRef(g: *const Exl3, s: Stream, x: u64, trellis: u64, suh: u64, svh: u64, y: u64, rows: usize, k: usize, n: usize, halves: u8, codebook: u8) !void {
+        return g.linearWith(g.linear_ref_fn, 32, s, x, trellis, suh, svh, y, rows, k, n, halves, codebook);
+    }
+
+    fn linearWith(g: *const Exl3, f: Function, block: u32, s: Stream, x: u64, trellis: u64, suh: u64, svh: u64, y: u64, rows: usize, k: usize, n: usize, halves: u8, codebook: u8) !void {
+        _ = g;
         if (rows == 0) return;
         const dims = try projection(rows, k, n, halves, codebook);
         var a: launch_.Args = .{};
@@ -61,9 +89,9 @@ pub const Exl3 = struct {
         a.add(dims.n);
         a.add(dims.halves);
         a.add(dims.codebook);
-        try launch_.launch(g.linear_fn, .{
+        try launch_.launch(f, .{
             .grid = .{ .x = dims.n_blocks, .y = dims.rows_u, .z = 1 },
-            .block = .{ .x = 32, .y = 1, .z = 1 },
+            .block = .{ .x = block, .y = 1, .z = 1 },
         }, s, &a);
     }
 
@@ -73,6 +101,24 @@ pub const Exl3 = struct {
     /// `tokens * topk` is `grid.y`. The slot is `blockIdx.y`, so a count above `grid_y_max` is refused
     /// before the driver. `hit` passes whole-token chunks that fit.
     pub fn experts(g: *const Exl3, s: Stream, which: Expert, x: u64, ids: u64, trellis: u64, suh: u64, svh: u64, y: u64, tokens: usize, k: usize, n: usize, n_experts: usize, topk: usize, halves: u8, codebook: u8) !void {
+        const fn_ = switch (which) {
+            .gate_up => g.gate_up_fn,
+            .down => g.down_fn,
+        };
+        return g.expertsWith(fn_, fast_threads, s, x, ids, trellis, suh, svh, y, tokens, k, n, n_experts, topk, halves, codebook);
+    }
+
+    /// The original one-warp expert kernels (block 32); bit-identical to `experts`.
+    pub fn expertsRef(g: *const Exl3, s: Stream, which: Expert, x: u64, ids: u64, trellis: u64, suh: u64, svh: u64, y: u64, tokens: usize, k: usize, n: usize, n_experts: usize, topk: usize, halves: u8, codebook: u8) !void {
+        const fn_ = switch (which) {
+            .gate_up => g.gate_up_ref_fn,
+            .down => g.down_ref_fn,
+        };
+        return g.expertsWith(fn_, 32, s, x, ids, trellis, suh, svh, y, tokens, k, n, n_experts, topk, halves, codebook);
+    }
+
+    fn expertsWith(g: *const Exl3, fn_: Function, block: u32, s: Stream, x: u64, ids: u64, trellis: u64, suh: u64, svh: u64, y: u64, tokens: usize, k: usize, n: usize, n_experts: usize, topk: usize, halves: u8, codebook: u8) !void {
+        _ = g;
         if (tokens == 0) return;
         if (n_experts == 0 or topk == 0) return error.Exl3Shape;
         const slots = std.math.mul(usize, tokens, topk) catch return error.Exl3Shape;
@@ -95,13 +141,9 @@ pub const Exl3 = struct {
         a.add(topk_i);
         a.add(dims.halves);
         a.add(dims.codebook);
-        const fn_ = switch (which) {
-            .gate_up => g.gate_up_fn,
-            .down => g.down_fn,
-        };
         try launch_.launch(fn_, .{
             .grid = .{ .x = dims.n_blocks, .y = dims.rows_u, .z = 1 },
-            .block = .{ .x = 32, .y = 1, .z = 1 },
+            .block = .{ .x = block, .y = 1, .z = 1 },
         }, s, &a);
     }
 

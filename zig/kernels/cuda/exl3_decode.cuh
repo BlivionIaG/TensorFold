@@ -379,6 +379,108 @@ __device__ __forceinline__ void project_nblock(const __half* __restrict__ x_row,
     }
 }
 
+
+// ---- Fast decode-path projection (same numerics as project_nblock, bit for bit) ----
+// Block of kFastThreads threads per 128-column block. Thread t decodes value p = t % 256 of every tile whose
+// index is congruent to t / 256 (mod kFastThreads / 256). The fp32 accumulation order per output column is
+// unchanged (k ascending, one fmaf per k, from 0.f), so results are bit-identical to project_nblock.
+// Codebook mul1 is computed in fp32: h * scale is exact (22 bits) and + bias is exact (20 bits), so one
+// round-to-nearest-even into fp16 equals the binary64 path. The other codebooks keep the binary64 path.
+#ifndef EXL3_FAST_THREADS
+#define EXL3_FAST_THREADS 512
+#endif
+constexpr int kFastThreads = EXL3_FAST_THREADS;
+constexpr int kWtStride = 130;  // halfwords per k row of the decoded tile slab
+
+__device__ __forceinline__ uint16_t mul1_bits_fast(uint32_t s) {
+    const uint32_t x = s * kMul1Mul;
+    const int h = 1024 + static_cast<int>(x & 255u) + static_cast<int>((x >> 8) & 255u) + static_cast<int>((x >> 16) & 255u) +
+                  static_cast<int>(x >> 24);
+    const float scale = __half2float(__ushort_as_half(kMul1ScaleBits));
+    const float bias = __half2float(__ushort_as_half(kMul1BiasBits));
+    return __half_as_ushort(__float2half_rn(__fadd_rn(__fmul_rn(static_cast<float>(h), scale), bias)));
+}
+
+struct FastShared {
+    float xhat[128];
+    float acc[128];
+    uint16_t wt[128 * kWtStride];
+};
+
+__device__ __forceinline__ void project_nblock_fast(const __half* __restrict__ x_row, const int16_t* __restrict__ trellis,
+                                                    const __half* __restrict__ suh, const __half* __restrict__ svh,
+                                                    __half* __restrict__ y_row, int K, int N, int halves, int codebook,
+                                                    int nblock, FastShared& sm) {
+    const int tid = static_cast<int>(threadIdx.x);
+    const int lane = tid & 31;
+    const int tiles_k = K >> 4;
+    const int nw = halves * 4;  // 32-bit words per tile
+    const float scale = had_scale_f32();
+
+    // this thread's value p and its fixed bit window
+    const int p = tid & 255;
+    const int grp = tid >> 8;
+    int prow = 0, pcol = 0;
+    placement(p, &prow, &pcol);
+    const uint32_t ring = static_cast<uint32_t>(nw) * 32u;
+    const uint32_t end = stream_end(halves, p);
+    const uint32_t start = (end + ring - 16u) % ring;
+    const int w0i = static_cast<int>(start >> 5);
+    const int w1i = (w0i + 1 == nw) ? 0 : w0i + 1;
+    const int sh = 48 - static_cast<int>(start & 31u);
+    const bool fastcb = (codebook == kMul1);
+
+    float sum = 0.f;
+    const uint32_t* slab_base = reinterpret_cast<const uint32_t*>(trellis) + static_cast<size_t>(nblock) * static_cast<size_t>(tiles_k) * 8u * static_cast<size_t>(nw);
+
+    for (int kb = 0; kb < K; kb += kHadamard) {
+        if (tid < 32) {
+            float v[4];
+#pragma unroll
+            for (int j = 0; j < 4; ++j) {
+                const int k = kb + 4 * lane + j;
+                v[j] = __half2float(x_row[k]) * __half2float(suh[k]);
+            }
+            fwht128(v, lane);
+#pragma unroll
+            for (int j = 0; j < 4; ++j) sm.xhat[4 * lane + j] = v[j] * scale;
+        }
+        const uint32_t* slab = slab_base + static_cast<size_t>(kb >> 4) * 8u * static_cast<size_t>(nw);
+        uint16_t* dst = sm.wt + prow * kWtStride + pcol;
+#pragma unroll 8
+        for (int t = grp; t < 64; t += kFastThreads / 256) {
+            const uint32_t* tw = slab + static_cast<size_t>(t) * static_cast<size_t>(nw);
+            const uint32_t a = __ldg(tw + w0i);
+            const uint32_t b = __ldg(tw + w1i);
+            const uint64_t v = (static_cast<uint64_t>(a) << 32) | b;
+            const uint32_t s = static_cast<uint32_t>(v >> sh) & 0xffffu;
+            const uint16_t bits = fastcb ? mul1_bits_fast(s) : codebook_bits(codebook, s);
+            // t = tkl * 8 + local
+            dst[(t >> 3) * 16 * kWtStride + (t & 7) * 16] = bits;
+        }
+        __syncthreads();
+        if (tid < 128) {
+#pragma unroll 16
+            for (int k = 0; k < 128; ++k) sum = fmaf(sm.xhat[k], __half2float(__ushort_as_half(sm.wt[k * kWtStride + tid])), sum);
+        }
+        __syncthreads();
+    }
+
+    if (tid < 128) sm.acc[tid] = sum;
+    __syncthreads();
+    if (tid < 32) {
+        float o[4];
+#pragma unroll
+        for (int j = 0; j < 4; ++j) o[j] = sm.acc[4 * lane + j];
+        fwht128(o, lane);
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            const int col = nblock * kHadamard + 4 * lane + j;
+            y_row[col] = __float2half_rn(o[j] * scale * __half2float(svh[col]));
+        }
+    }
+}
+
 #endif  // __CUDACC__
 
 }  // namespace tf_exl3
