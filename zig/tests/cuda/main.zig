@@ -46,6 +46,8 @@ const exl3_attn_tests = @import("exl3_attn_tests.zig");
 const exl3_fwd_tests = @import("exl3_fwd_tests.zig");
 const exl3_offload_tests = @import("exl3_offload_tests.zig");
 const exl3_ple_tests = @import("exl3_ple_tests.zig");
+const exl3_tp_tests = @import("exl3_tp_tests.zig");
+const exl3_fwd_tp = @import("exl3_fwd_tp.zig");
 
 const usage =
     \\usage: tf-cuda-test <command>
@@ -59,6 +61,9 @@ const usage =
     \\  exl3-forward <dir> layer|tf|gen ...  the assembled EXL3 forward (embed, layers, head) vs the f64 oracle; greedy generation
     \\  exl3-offload <dir> [layers]  real expert offload: H2D line pool + Exl3.hit + CPU miss rows vs fully resident, count promotion, graph replay
     \\  exl3-ple <dir> [qbench row] [tokens]  the real n-gram PLE path: ids, mmap vs pread rows, dequant, layer injection, hot-row cache, RSS (host)
+    \\  exl3-gdn-tp <dir> [layer ...]  GDN layers split over both GPUs (host bounce) vs tp=1: byte-identical slices, K-split out_proj within fp16
+    \\  exl3-attn-tp <dir> [layer a] [layer b]  full attention split over both GPUs: prefill, graph decode, synthetic sparse indexer vs tp=1
+    \\  exl3-forward-tp <dir> [layers] [ids]  teacher-forced 16-token prompt on both GPUs (tp=2) vs the tp=1 engine
     \\  exl3-window               EXL3 graph replay, prefix KV cache, and MTP accept
     \\  overhead [n] [reps]       dependent one-thread kernels: plain stream vs one graph
     \\  overhead-pdl [n] [reps]   the same with programmatic dependent launch on every kernel
@@ -155,6 +160,9 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "exl3-forward")) return exl3_fwd_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-offload")) return exl3_offload_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-ple")) return exl3_ple_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-forward-tp")) return exl3_fwd_tp.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-gdn-tp")) return exl3_tp_tests.runGdn(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-attn-tp")) return exl3_tp_tests.runAttn(gpu, rest);
     if (std.mem.eql(u8, cmd, "overhead") or std.mem.eql(u8, cmd, "overhead-pdl")) {
         const n = if (rest.len > 0) try std.fmt.parseInt(usize, rest[0], 10) else 1000;
         const reps = if (rest.len > 1) try std.fmt.parseInt(usize, rest[1], 10) else 20;
