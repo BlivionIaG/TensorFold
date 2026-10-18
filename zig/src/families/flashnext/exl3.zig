@@ -39,6 +39,7 @@ pub const embed = @import("exl3_embed.zig");
 pub const window = @import("exl3_window.zig");
 pub const fwd_cpu = @import("exl3_fwd_cpu.zig");
 pub const fwd_ple = @import("exl3_fwd_ple.zig");
+pub const prefix = @import("exl3_prefix.zig");
 
 test {
     _ = shape;
@@ -51,6 +52,7 @@ test {
     _ = offload;
     _ = graph;
     _ = cache;
+    _ = prefix;
     _ = strips;
     _ = cpu;
     _ = place;

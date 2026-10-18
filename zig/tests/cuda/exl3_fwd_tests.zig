@@ -25,7 +25,7 @@ const vocab = fwd.vocab;
 const context_plus = 2;
 const default_ids = [_]u32{ 760, 6511, 314, 9338, 369, 11751, 13, 1049, 369, 3750, 364, 279, 242476, 300, 21262, 13 };
 
-fn parseIds(gpa: std.mem.Allocator, text: []const u8) ![]u32 {
+pub fn parseIds(gpa: std.mem.Allocator, text: []const u8) ![]u32 {
     var list: std.ArrayList(u32) = .empty;
     errdefer list.deinit(gpa);
     var it = std.mem.splitScalar(u8, text, ',');
@@ -36,13 +36,13 @@ fn parseIds(gpa: std.mem.Allocator, text: []const u8) ![]u32 {
     return list.toOwnedSlice(gpa);
 }
 
-fn nowMs(gpu: Gpu) f64 {
+pub fn nowMs(gpu: Gpu) f64 {
     return @as(f64, @floatFromInt(check.now(gpu.io))) / 1e6;
 }
 
 // -- oracle weights --------------------------------------------------------------------------------------------
 
-fn qmat(gpa: std.mem.Allocator, pack: *const real.Pack, base: []const u8, threads: usize) !cpu.QMat {
+pub fn qmat(gpa: std.mem.Allocator, pack: *const real.Pack, base: []const u8, threads: usize) !cpu.QMat {
     const m = try real.mat(pack, gpa, base);
     defer {
         gpa.free(m.trellis);
@@ -69,7 +69,7 @@ const ExpertCtx = struct {
     }
 };
 
-const OLayer = struct {
+pub const OLayer = struct {
     gpa: std.mem.Allocator,
     index: usize,
     attn_hc: fwd.HcW,
@@ -80,7 +80,7 @@ const OLayer = struct {
     ctx: ExpertCtx,
     state: cpu.LayerState,
 
-    fn create(gpa: std.mem.Allocator, pack: *const real.Pack, l: usize, offset: f32, cap: usize) !*OLayer {
+    pub fn create(gpa: std.mem.Allocator, pack: *const real.Pack, l: usize, offset: f32, cap: usize) !*OLayer {
         const o = try gpa.create(OLayer);
         errdefer gpa.destroy(o);
         o.gpa = gpa;
@@ -142,7 +142,7 @@ const OLayer = struct {
         return o;
     }
 
-    fn destroy(o: *OLayer) void {
+    pub fn destroy(o: *OLayer) void {
         const gpa = o.gpa;
         o.attn_hc.free(gpa);
         o.mlp_hc.free(gpa);
@@ -158,7 +158,7 @@ const OLayer = struct {
         gpa.destroy(o);
     }
 
-    fn weights(o: *OLayer) cpu.LayerW {
+    pub fn weights(o: *OLayer) cpu.LayerW {
         return .{
             .attn_hc = o.attn_hc.weights(),
             .mlp_hc = o.mlp_hc.weights(),
@@ -169,7 +169,7 @@ const OLayer = struct {
 };
 
 /// Embedding rows expanded x4, f64, [rows][10240].
-fn embedStreams(gpa: std.mem.Allocator, table: []const u8, tokens: []const u32) ![]f64 {
+pub fn embedStreams(gpa: std.mem.Allocator, table: []const u8, tokens: []const u32) ![]f64 {
     const h = try gpa.alloc(f64, tokens.len * wide);
     for (tokens, 0..) |tk, t| {
         const row = try embed.gather(table, tk);
@@ -181,13 +181,13 @@ fn embedStreams(gpa: std.mem.Allocator, table: []const u8, tokens: []const u32) 
     return h;
 }
 
-const Err = struct {
+pub const Err = struct {
     max_abs: f64,
     peak: f64,
     rel: f64,
 };
 
-fn errOf(got: anytype, want: []const f64) Err {
+pub fn errOf(got: anytype, want: []const f64) Err {
     var max: f64 = 0;
     var peak: f64 = 0;
     for (want, 0..) |w, i| {
@@ -306,7 +306,7 @@ fn layerCheck(gpu: Gpu, pack: *const real.Pack, l: usize, tokens: []const u32) !
 
 // -- mode: tf ----------------------------------------------------------------------------------------------------
 
-fn argmax(xs: []const f32) usize {
+pub fn argmax(xs: []const f32) usize {
     var best: usize = 0;
     for (xs, 0..) |v, i| if (v > xs[best]) {
         best = i;
