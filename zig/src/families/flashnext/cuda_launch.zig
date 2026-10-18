@@ -20,6 +20,9 @@ pub const moe = @import("cuda_moe.zig");
 pub const attn = @import("cuda_attn.zig");
 pub const ple = @import("cuda_ple.zig");
 pub const ple_check = @import("cuda_ple_check.zig");
+/// An EXL3 pack's n-gram table and draft head rows (cuda_ple.Ngram's `.exl3` format, cuda_mtp_load.draft's EXL3 branch)
+pub const exl3_ple = @import("cuda_exl3_ple.zig");
+pub const exl3_mtp = @import("cuda_exl3_mtp.zig");
 pub const mix = @import("cuda_mix.zig");
 pub const prompt = @import("cuda_prompt.zig");
 /// The row-by-row reference path, for flashnext-prompt
@@ -386,6 +389,7 @@ test {
     _ = row_path;
     _ = @import("cuda_mtp_check.zig");
     _ = @import("cuda_draft_affine.zig");
+    _ = @import("cuda_exl3_mtp.zig");
     _ = @import("cuda_head.zig");
 }
 
