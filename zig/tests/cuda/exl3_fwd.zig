@@ -35,6 +35,7 @@ const fple = @import("exl3_fwd_ple.zig");
 const plerows = @import("exl3_fwd_plerows.zig");
 const policy = @import("exl3_offload.zig");
 const route = @import("exl3_route.zig");
+const gr = @import("exl3_fwd_graph.zig");
 
 const Gpu = check.Gpu;
 pub const hidden = 2560;
@@ -705,6 +706,8 @@ pub const Options = struct {
     profile: bool = false,
     /// Extra attention KV / indexer / pooled-block slots after the 12 (slot 12 is the MTP head's); 0 for the plain model.
     extra_kv: usize = 0,
+    /// Decode-step CUDA graphs (exl3_fwd_graph.zig): per-layer segments captured once and replayed. Needs device_hc and a pool.
+    graph: gr.Mode = .off,
 };
 
 pub const Trace = fwd.Trace;
@@ -867,6 +870,7 @@ pub const Engine = struct {
     /// Router logit gap between the 10th pick and the best unpicked expert, per routed row (parallel to `pick_buf`).
     gap_buf: ?[]f32 = null,
     last_gap: f32 = 0,
+    graph: ?gr.State = null,
 
     fn initCore(gpu: Gpu, pack: *const real.Pack, opt: Options) !Engine {
         const gpa = gpu.gpa;
@@ -983,6 +987,10 @@ pub const Engine = struct {
         errdefer e.deinit();
         const gpa = gpu.gpa;
         if (opt.pool_lines != 0) try e.allocPools();
+        if (opt.graph != .off) {
+            if (!opt.device_hc or opt.pool_lines == 0) return error.GraphNeedsPool;
+            e.graph = gr.State.init(opt.graph);
+        }
         if (opt.ngram_path) |p| {
             e.ngram_file = try st.File.open(gpa, gpu.io, p);
             switch (opt.ple_impl) {
@@ -1000,6 +1008,7 @@ pub const Engine = struct {
     pub fn deinit(e: *Engine) void {
         const gpa = e.gpu.gpa;
         e.stream.synchronize() catch {};
+        if (e.graph) |*g| g.deinit(gpa);
         for (e.layers) |*l| l.deinit(gpa);
         gpa.free(e.layers);
         for (e.attn_host_scales) |s| for (s) |a| gpa.free(a);
@@ -1222,6 +1231,11 @@ pub const Engine = struct {
                 try e.b.h.upload(0, std.mem.sliceAsBytes(h[0 .. rows * wide]));
             }
 
+            if (gr.applies(e, lay, rows)) {
+                try gr.layerStep(e, lay);
+                continue;
+            }
+
             // attention / GDN block
             if (e.opt.profile) {
                 try s.synchronize();
@@ -1273,7 +1287,7 @@ pub const Engine = struct {
         try e.b.h.download(0, std.mem.sliceAsBytes(h[0 .. rows * wide]));
     }
 
-    fn setGap(e: *Engine, logits: []const f32, picks: []const u16) void {
+    pub fn setGap(e: *Engine, logits: []const f32, picks: []const u16) void {
         var lo: f32 = std.math.inf(f32);
         var pm: [experts]bool = @splat(false);
         for (picks[0..topk]) |p| {
@@ -1296,7 +1310,7 @@ pub const Engine = struct {
     }
 
     /// The block's mixer (GDN or attention) for `rows` rows of `e.b.x` into `e.b.br`, queued on the stream.
-    fn mixerRun(e: *Engine, lay: *Layer, rows: usize) !void {
+    pub fn mixerRun(e: *Engine, lay: *Layer, rows: usize) !void {
         if (lay.gdn) |*g| {
             const idx = Layer.gdnIndex(lay.index);
             try e.gdn.forward(&e.ex, e.stream, g.layer(), try e.table.convPtr(0, idx), try e.table.recPtr(0, idx), e.b.x.ptr, rows, e.gdn_scratch, e.b.br.ptr);
@@ -1365,7 +1379,7 @@ pub const Engine = struct {
     /// Hits are touched; every miss is a staged H2D into the line the policy evicts (copy stream, after the compute stream's last
     /// use of that line), reaped at once, and the compute stream waits on the copy event before it reads the line. A miss never
     /// takes the CPU path: `cpu` decisions cannot occur with at least 10 lines (every miss finds a victim outside this row's picks).
-    fn stageRow(e: *Engine, lay: *Layer, ep: *ExpertPool, picks: []const u16, ids_out: *[topk]i32) !void {
+    pub fn stageRow(e: *Engine, lay: *Layer, ep: *ExpertPool, picks: []const u16, ids_out: *[topk]i32) !void {
         const heat = lay.own_heat orelse e.counts;
         const l: u8 = if (lay.own_heat != null) 0 else @intCast(lay.index);
         try policy.observe(&heat[l], picks);
@@ -1396,14 +1410,7 @@ pub const Engine = struct {
         }
     }
 
-    /// One row of the MoE block given its routing: the 10 routed experts (pool lines or on-demand upload), the shared expert
-    /// and the weighted combine, into row `t` of `e.b.br`. Reads row `t` of `e.b.x`. On-demand rows sync (their lines are
-    /// reused by the next row); pool rows only record the compute event the next eviction waits on.
-    pub fn moeCompute(e: *Engine, lay: *Layer, picks: *const [slots]u16, weights: *const [slots]f32, t: usize) !void {
-        const s = e.stream;
-        const bb = &e.b;
-        const x_ptr = bb.x.ptr + t * hidden * 2;
-        const out_ptr = bb.br.ptr + t * hidden * 2;
+    fn recordPicks(e: *Engine, picks: *const [slots]u16) void {
         if (e.pick_buf) |pb| {
             var srt: [topk]u16 = picks[0..topk].*;
             std.mem.sort(u16, &srt, {}, std.sort.asc(u16));
@@ -1413,6 +1420,27 @@ pub const Engine = struct {
             };
             e.pick_n += 1;
         }
+    }
+
+    /// The host half of a one-row pool MoE (`moeCompute` without the launches): picks recorded, weights uploaded, missing lines
+    /// staged, line indices written to row 0 of `ids_all`. The graph segment B reads those fixed buffers.
+    pub fn moeHost(e: *Engine, lay: *Layer, picks: *const [slots]u16, weights: *const [slots]f32) !void {
+        e.recordPicks(picks);
+        try e.b.wts.upload(0, std.mem.sliceAsBytes(weights));
+        var line_ids: [topk]i32 = undefined;
+        try e.stageRow(lay, &lay.ep.?, picks[0..topk], &line_ids);
+        try e.b.ids_all.upload(0, std.mem.sliceAsBytes(&line_ids));
+    }
+
+    /// One row of the MoE block given its routing: the 10 routed experts (pool lines or on-demand upload), the shared expert
+    /// and the weighted combine, into row `t` of `e.b.br`. Reads row `t` of `e.b.x`. On-demand rows sync (their lines are
+    /// reused by the next row); pool rows only record the compute event the next eviction waits on.
+    pub fn moeCompute(e: *Engine, lay: *Layer, picks: *const [slots]u16, weights: *const [slots]f32, t: usize) !void {
+        const s = e.stream;
+        const bb = &e.b;
+        const x_ptr = bb.x.ptr + t * hidden * 2;
+        const out_ptr = bb.br.ptr + t * hidden * 2;
+        e.recordPicks(picks);
         try bb.wts.upload(t * slots * 4, std.mem.sliceAsBytes(weights));
         var ids_ptr = bb.ids.ptr;
         var n_lines: usize = topk;

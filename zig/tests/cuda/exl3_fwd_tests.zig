@@ -19,6 +19,7 @@ const attn_cpu = @import("exl3_attn_cpu.zig");
 const gdn_cpu = @import("exl3_gdn_cpu.zig");
 const embed = @import("exl3_embed.zig");
 const wire = @import("exl3_fwd_wire.zig");
+const fgraph = @import("exl3_fwd_graph_tests.zig");
 
 const Gpu = check.Gpu;
 const hidden = fwd.hidden;
@@ -529,6 +530,8 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         try generate(gpu, &pack, dir, n, count, ids, !(rest.len > 5 and std.mem.eql(u8, rest[5], "nople")));
     } else if (std.mem.eql(u8, mode, "wire")) {
         try wire.run(gpu, &pack, dir, rest[2..]);
+    } else if (std.mem.eql(u8, mode, "graph")) {
+        try fgraph.run(gpu, &pack, dir, rest[2..]);
     } else if (std.mem.eql(u8, mode, "ple-check")) {
         try wire.pleCheck(gpu, &pack, dir);
     } else if (std.mem.eql(u8, mode, "halves")) {

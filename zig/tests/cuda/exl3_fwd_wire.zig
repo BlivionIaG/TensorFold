@@ -18,6 +18,7 @@ const fwd = @import("exl3_fwd.zig");
 const fple = @import("exl3_fwd_ple.zig");
 const plerows = @import("exl3_fwd_plerows.zig");
 const ids_mod = @import("exl3_ple_ids.zig");
+const gr = @import("exl3_fwd_graph.zig");
 
 const Gpu = check.Gpu;
 const hidden = fwd.hidden;
@@ -36,15 +37,16 @@ fn mib(bytes: usize) f64 {
     return @as(f64, @floatFromInt(bytes)) / 1048576.0;
 }
 
-const Cfg = struct {
+pub const Cfg = struct {
     name: []const u8,
     hc: bool = false,
     pool: usize = 0,
     ple: fwd.PleImpl = .f64_reference,
     ssd: bool = false,
     prof: bool = false,
+    graph: gr.Mode = .off,
 
-    fn parse(text: []const u8) !Cfg {
+    pub fn parse(text: []const u8) !Cfg {
         var c: Cfg = .{ .name = text };
         var it = std.mem.splitScalar(u8, text, '+');
         while (it.next()) |tok| {
@@ -53,6 +55,10 @@ const Cfg = struct {
                 c.hc = true;
             } else if (std.mem.eql(u8, tok, "s6b")) {
                 c.ple = .rows;
+            } else if (std.mem.eql(u8, tok, "graph")) {
+                c.graph = .replay;
+            } else if (std.mem.eql(u8, tok, "gref")) {
+                c.graph = .eager;
             } else if (std.mem.eql(u8, tok, "prof")) {
                 c.prof = true;
             } else if (std.mem.eql(u8, tok, "ssd")) {
@@ -66,7 +72,7 @@ const Cfg = struct {
     }
 };
 
-const Result = struct {
+pub const Result = struct {
     top1: [positions]u32,
     logits: []f32, // [positions][vocab]
     cont: [decode_steps + 1]u32, // generated tokens (baseline: its own greedy; others: the teacher-forced ones)
@@ -81,6 +87,7 @@ const Result = struct {
     init_ms: f64,
     pool_mib: f64,
     free_after_mib: f64,
+    graph: gr.Stats = .{},
 };
 
 fn argmax(xs: []const f32) u32 {
@@ -91,7 +98,7 @@ fn argmax(xs: []const f32) u32 {
     return @intCast(best);
 }
 
-fn runCfg(gpu: Gpu, pack: *const real.Pack, dir: []const u8, cfg: Cfg, forced: ?[]const u32) !Result {
+pub fn runCfg(gpu: Gpu, pack: *const real.Pack, dir: []const u8, cfg: Cfg, forced: ?[]const u32) !Result {
     const gpa = gpu.gpa;
     var path_buf: [512]u8 = undefined;
     const ngram_path = try std.fmt.bufPrint(&path_buf, "{s}/ngram_embedding.safetensors", .{dir});
@@ -105,9 +112,11 @@ fn runCfg(gpu: Gpu, pack: *const real.Pack, dir: []const u8, cfg: Cfg, forced: ?
         .ple_impl = cfg.ple,
         .ple_mode = if (cfg.ssd) .ssd else .page_cache,
         .profile = cfg.prof,
+        .graph = cfg.graph,
     });
     defer eng.deinit();
     var r: Result = undefined;
+    r.graph = .{};
     r.init_ms = nowMs(gpu) - t0;
     r.pool_mib = mib(eng.pool_bytes);
     r.free_after_mib = mib((try gpu.ctx.memInfo()).free);
@@ -142,6 +151,7 @@ fn runCfg(gpu: Gpu, pack: *const real.Pack, dir: []const u8, cfg: Cfg, forced: ?
         r.cont[i + 1] = if (forced) |f| f[i + 1] else r.top1[prompt_ids.len + i];
     }
     r.stats = eng.stats;
+    if (eng.graph) |g| r.graph = g.stats;
     r.prof = eng.prof;
     r.pick_n = eng.pick_n;
     r.layer_rows = fwd.layers_total;
@@ -160,7 +170,7 @@ fn minOf(xs: []const f64) f64 {
     return m;
 }
 
-fn describe(c: Cfg, r: Result) void {
+pub fn describe(c: Cfg, r: Result) void {
     std.debug.print("  [{s}] init {d:.0} ms; pool {d:.0} MiB; device free after init {d:.0} MiB; prefill(16 rows) {d:.0} ms; decode step mean {d:.0} ms, min {d:.0} ms (forward + logits + 248k-wide copy, a test measurement)\n", .{
         c.name, r.init_ms, r.pool_mib, r.free_after_mib, r.prefill_ms, mean(&r.step_ms), minOf(&r.step_ms),
     });
@@ -169,6 +179,12 @@ fn describe(c: Cfg, r: Result) void {
         std.debug.print("  [{s}] profile, total over prefill + 15 decode steps (ms):", .{c.name});
         for (names, r.prof) |n, v| std.debug.print(" {s} {d:.0}", .{ n, @as(f64, @floatFromInt(v)) / 1e6 });
         std.debug.print("\n", .{});
+    }
+    if (c.graph != .off) {
+        const g = r.graph;
+        std.debug.print("  [{s}] graph: {d} captures ({d} nodes/A segment, {d} nodes/B segment), {d} replays, {d} eager segments; host enqueue {d:.1} ms total over the decode steps, capture+instantiate {d:.0} ms\n", .{
+            c.name, g.captures, g.nodes_a, g.nodes_b, g.replays, g.eager_segments, @as(f64, @floatFromInt(g.enqueue_ns)) / 1e6, @as(f64, @floatFromInt(g.capture_ns)) / 1e6,
+        });
     }
     if (r.stats.rows != 0) {
         const total = r.stats.hits + r.stats.misses;
@@ -265,6 +281,11 @@ pub fn run(gpu: Gpu, pack: *const real.Pack, dir: []const u8, args: []const [:0]
         std.debug.print("  [{s}] vs [{s}]: top-1 equal at {d}/{d} positions (greedy continuation {s}); logits max |diff| {d:.5} at position {d}, rms rel {e:.2}\n", .{
             cfg.name, base_cfg.name, agree, positions, if (greedy_equal) "identical" else "DIFFERS", lmax, worst_pos, rel,
         });
+        const bytes_equal = std.mem.eql(u8, std.mem.sliceAsBytes(base.logits), std.mem.sliceAsBytes(r.logits));
+        if (cfg.graph != .off) {
+            std.debug.print("  [{s}] logits byte-identical to [{s}] at all {d} positions: {s}\n", .{ cfg.name, base_cfg.name, positions, if (bytes_equal) "yes" else "NO" });
+            if (!bytes_equal) failed = true;
+        }
         if (agree == positions) {
             check.pass("[{s}] equals [{s}]: top-1 at all {d} positions (16-token prompt, 15 decode rows, greedy continuation identical); logits max |diff| {d:.5}, rms rel {e:.2}", .{ cfg.name, base_cfg.name, positions, lmax, rel });
         } else {
@@ -374,7 +395,7 @@ pub fn pleCheck(gpu: Gpu, pack: *const real.Pack, dir: []const u8) !void {
         }
         const hs = r6.hotStats();
         std.debug.print("  S6b [{s}] vs S5: ids {s} on {d} tokens x 16 heads; PLE add-back max |diff| {d:.5}, peak |S5| {d:.4} ({d:.2}% of peak), rms rel {e:.2}{s}\n", .{
-            @tagName(mode), if (ids_equal) "equal" else "DIFFER", rows, max_abs, peak, 100.0 * max_abs / peak, @sqrt(num / den),
+            @tagName(mode),                                                       if (ids_equal) "equal" else "DIFFER", rows, max_abs, peak, 100.0 * max_abs / peak, @sqrt(num / den),
             if (mode == .ssd) "; hot cache lookups/misses printed below" else "",
         });
         if (mode == .ssd) std.debug.print("  S6b [ssd] hot cache (4096 rows): {d} lookups, {d} misses\n", .{ hs.lookups, hs.misses });
