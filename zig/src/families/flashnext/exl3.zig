@@ -39,6 +39,7 @@ pub const embed = @import("exl3_embed.zig");
 pub const window = @import("exl3_window.zig");
 pub const fwd_cpu = @import("exl3_fwd_cpu.zig");
 pub const fwd_ple = @import("exl3_fwd_ple.zig");
+pub const mtp_spec = @import("exl3_mtp_spec.zig");
 pub const tp_split = @import("exl3_tp_split.zig");
 
 test {
@@ -77,5 +78,6 @@ test {
     _ = window;
     _ = fwd_cpu;
     _ = fwd_ple;
+    _ = mtp_spec;
     _ = tp_split;
 }

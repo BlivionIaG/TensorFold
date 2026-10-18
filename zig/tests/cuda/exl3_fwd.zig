@@ -291,9 +291,9 @@ pub const AttnDev = struct {
     iq_scale: cuda.DeviceBuffer,
     ik_scale: cuda.DeviceBuffer,
 
-    fn scale(gpa: std.mem.Allocator, pack: *const real.Pack, l: usize, name: []const u8, offset: f32) ![]f32 {
+    fn scale(gpa: std.mem.Allocator, pack: *const real.Pack, stem: []const u8, name: []const u8, offset: f32) ![]f32 {
         var buf: [160]u8 = undefined;
-        const t = pack.find(try std.fmt.bufPrint(&buf, "model.language_model.layers.{d}.self_attn.{s}", .{ l, name })) orelse return error.MissingTensor;
+        const t = pack.find(try std.fmt.bufPrint(&buf, "{s}.{s}", .{ stem, name })) orelse return error.MissingTensor;
         const w = try f32Of(gpa, t);
         for (w) |*v| v.* += offset;
         return w;
@@ -301,9 +301,15 @@ pub const AttnDev = struct {
 
     /// Returns the weights and, for the oracle, the four host scale arrays (owned by the caller; freed here on error).
     fn load(gpu: Gpu, pack: *const real.Pack, l: usize, offset: f32, host: *[4][]f32) !AttnDev {
+        var sb: [128]u8 = undefined;
+        return loadStem(gpu, pack, try std.fmt.bufPrint(&sb, "model.language_model.layers.{d}.self_attn", .{l}), offset, host);
+    }
+
+    /// The same for the attention block whose tensors are `<stem>.q_proj` ... (the MTP head's is `mtp.layers.0.self_attn`).
+    pub fn loadStem(gpu: Gpu, pack: *const real.Pack, stem: []const u8, offset: f32, host: *[4][]f32) !AttnDev {
         const gpa = gpu.gpa;
-        var nb: [6][128]u8 = undefined;
-        const stem = try std.fmt.bufPrint(&nb[5], "model.language_model.layers.{d}.self_attn", .{l});
+        var nb: [5][128]u8 = undefined;
+        const l = stem;
         var q = try Lin.load(gpu, pack, try std.fmt.bufPrint(&nb[0], "{s}.q_proj", .{stem}));
         errdefer q.free();
         var k = try Lin.load(gpu, pack, try std.fmt.bufPrint(&nb[1], "{s}.k_proj", .{stem}));
@@ -314,12 +320,12 @@ pub const AttnDev = struct {
         errdefer o.free();
         var idx = try Lin.load(gpu, pack, try std.fmt.bufPrint(&nb[4], "{s}.indexer.index_qk_proj", .{stem}));
         errdefer idx.free();
-        try check.expect(q.k == hidden and q.n == 12288 and k.n == 512 and v.n == 512 and o.k == 6144 and o.n == hidden and idx.n == 640, "layer {d} attention shapes", .{l});
+        try check.expect(q.k == hidden and q.n == 12288 and k.n == 512 and v.n == 512 and o.k == 6144 and o.n == hidden and idx.n == 640, "{s} attention shapes", .{l});
         const names = [4][]const u8{ "q_norm.weight", "k_norm.weight", "indexer.q_layernorm.weight", "indexer.k_layernorm.weight" };
         var made: usize = 0;
         errdefer for (host[0..made]) |a| gpa.free(a);
         for (names, 0..) |nm, i| {
-            host[i] = try scale(gpa, pack, l, nm, offset);
+            host[i] = try scale(gpa, pack, stem, nm, offset);
             made += 1;
         }
         var sc: [4]cuda.DeviceBuffer = undefined;
@@ -332,7 +338,7 @@ pub const AttnDev = struct {
         return .{ .q = q, .k = k, .v = v, .o = o, .idx = idx, .q_scale = sc[0], .k_scale = sc[1], .iq_scale = sc[2], .ik_scale = sc[3] };
     }
 
-    fn free(a: *AttnDev) void {
+    pub fn free(a: *AttnDev) void {
         a.q.free();
         a.k.free();
         a.v.free();
@@ -381,6 +387,11 @@ pub const Layer = struct {
     gdn: ?GdnDev = null,
     attn: ?AttnDev = null,
     ep: ?ExpertPool = null,
+    /// Tensor-name stem of a layer outside `model.language_model.layers.N` (the MTP head: `mtp.layers.0`); its routed experts are
+    /// `<stem>.mlp.experts.E.*`. Null for the 48 main layers.
+    stem: ?[]const u8 = null,
+    /// A layer that is not one of the 48 keeps its own expert heat table (policy layer tag 0) instead of `Engine.counts`.
+    own_heat: ?*[layers_total][experts]u32 = null,
 
     pub fn isAttn(index: usize) bool {
         return index % 4 == 3;
@@ -402,6 +413,8 @@ pub const Layer = struct {
         lay.gdn = null;
         lay.attn = null;
         lay.ep = null;
+        lay.stem = null;
+        lay.own_heat = null;
         lay.hc_dev = null;
         lay.gate_dev = null;
         lay.sgate_dev = null;
@@ -460,7 +473,7 @@ pub const Layer = struct {
         return lay;
     }
 
-    fn deinit(l: *Layer, gpa: std.mem.Allocator) void {
+    pub fn deinit(l: *Layer, gpa: std.mem.Allocator) void {
         if (l.hc_dev) |*h| {
             h[0].free();
             h[1].free();
@@ -476,12 +489,26 @@ pub const Layer = struct {
         if (l.gdn) |*g| g.free();
         if (l.attn) |*a| a.free();
         if (l.ep) |*p| p.deinit(gpa);
+        if (l.own_heat) |c| gpa.destroy(c);
     }
 };
 
 // -- routed expert lines on the device ---------------------------------------------------------------------
 
 const projs = [3][]const u8{ "gate_proj", "up_proj", "down_proj" };
+
+/// Tensor `<field>` of routed expert `id`'s projection `proj` in `layer` (or in the layer outside the 48 named by `stem`).
+fn expertTensor(pack: *const real.Pack, layer: usize, stem: ?[]const u8, id: usize, proj: []const u8, field: []const u8) !st.Tensor {
+    var buf: [200]u8 = undefined;
+    const name = if (stem) |sm|
+        try std.fmt.bufPrint(&buf, "{s}.mlp.experts.{d}.{s}.{s}", .{ sm, id, proj, field })
+    else
+        try std.fmt.bufPrint(&buf, "model.language_model.layers.{d}.mlp.experts.{d}.{s}.{s}", .{ layer, id, proj, field });
+    return pack.find(name) orelse {
+        std.debug.print("missing tensor {s}\n", .{name});
+        return error.MissingTensor;
+    };
+}
 
 /// On-demand lines: 10 device lines per projection, refilled synchronously for every row (`pool_lines == 0`).
 const ExpertLines = struct {
@@ -539,10 +566,14 @@ const ExpertLines = struct {
 
     /// Strips-reorders routed expert `e` of `layer` and uploads it as line `line` of each projection.
     fn put(r: *ExpertLines, pack: *const real.Pack, layer: usize, e: usize, line: usize) !void {
+        return r.putStem(pack, layer, null, e, line);
+    }
+
+    fn putStem(r: *ExpertLines, pack: *const real.Pack, layer: usize, stem: ?[]const u8, e: usize, line: usize) !void {
         for (0..3) |p| {
-            const tr = try tensor(pack, "model.language_model.layers.{d}.mlp.experts.{d}.{s}.trellis", .{ layer, e, projs[p] });
-            const su = try tensor(pack, "model.language_model.layers.{d}.mlp.experts.{d}.{s}.suh", .{ layer, e, projs[p] });
-            const sv = try tensor(pack, "model.language_model.layers.{d}.mlp.experts.{d}.{s}.svh", .{ layer, e, projs[p] });
+            const tr = try expertTensor(pack, layer, stem, e, projs[p], "trellis");
+            const su = try expertTensor(pack, layer, stem, e, projs[p], "suh");
+            const sv = try expertTensor(pack, layer, stem, e, projs[p], "svh");
             const tiles_k = r.k[p] / 16;
             const tiles_n = r.n[p] / 16;
             if (tr.rank != 3 or tr.dim(0) != tiles_k or tr.dim(1) != tiles_n) return error.BadShape;
@@ -588,11 +619,11 @@ const ExpertPool = struct {
     const Shapes = struct { spec: cuda.exl3_offload.Spec, biggest: usize };
 
     /// Expert 0's shapes fix the layer's line layout; `fill` refuses an expert that differs.
-    fn shapesOf(pack: *const real.Pack, layer: usize) !Shapes {
+    fn shapesOf(pack: *const real.Pack, layer: usize, stem: ?[]const u8) !Shapes {
         var mats: [3]cuda.exl3_offload.Mat = undefined;
         var biggest: usize = 0;
         for (projs, &mats) |p, *m| {
-            const tr = try tensor(pack, "model.language_model.layers.{d}.mlp.experts.0.{s}.trellis", .{ layer, p });
+            const tr = try expertTensor(pack, layer, stem, 0, p, "trellis");
             if (tr.rank != 3) return error.BadShape;
             m.* = .{ .k = tr.dim(0) * 16, .n = tr.dim(1) * 16, .halves = @intCast(tr.dim(2) / 8) };
             biggest = @max(biggest, tr.bytes.len / 2);
@@ -600,9 +631,9 @@ const ExpertPool = struct {
         return .{ .spec = .{ .gate = mats[0], .up = mats[1], .down = mats[2] }, .biggest = biggest };
     }
 
-    fn init(gpu: Gpu, pack: *const real.Pack, layer: usize, lines: usize) !ExpertPool {
+    fn init(gpu: Gpu, pack: *const real.Pack, layer: usize, stem: ?[]const u8, lines: usize) !ExpertPool {
         const gpa = gpu.gpa;
-        const sh = try shapesOf(pack, layer);
+        const sh = try shapesOf(pack, layer, stem);
         var pool = try cuda.exl3_offload.Pool.init(gpa, gpu.d, sh.spec, lines);
         errdefer pool.deinit();
         const slot_tab = try gpa.alloc(u16, lines);
@@ -627,13 +658,13 @@ const ExpertPool = struct {
     }
 
     /// Expert `id` of `layer` into one staged line (strips order), straight from the mapping.
-    fn fill(p: *ExpertPool, pack: *const real.Pack, layer: usize, id: usize, dst: []u8) !void {
+    fn fill(p: *ExpertPool, pack: *const real.Pack, layer: usize, stem: ?[]const u8, id: usize, dst: []u8) !void {
         const sp = p.pool.spec;
         const mats = [3]cuda.exl3_offload.Mat{ sp.gate, sp.up, sp.down };
         for (projs, mats, p.pool.layout.regions) |pn, m, r| {
-            const tr = try tensor(pack, "model.language_model.layers.{d}.mlp.experts.{d}.{s}.trellis", .{ layer, id, pn });
-            const su = try tensor(pack, "model.language_model.layers.{d}.mlp.experts.{d}.{s}.suh", .{ layer, id, pn });
-            const sv = try tensor(pack, "model.language_model.layers.{d}.mlp.experts.{d}.{s}.svh", .{ layer, id, pn });
+            const tr = try expertTensor(pack, layer, stem, id, pn, "trellis");
+            const su = try expertTensor(pack, layer, stem, id, pn, "suh");
+            const sv = try expertTensor(pack, layer, stem, id, pn, "svh");
             const words = @as(usize, m.halves) * 8;
             if (tr.rank != 3 or tr.dim(0) * 16 != m.k or tr.dim(1) * 16 != m.n or tr.dim(2) != words) return error.NonUniformExperts;
             if (su.bytes.len != r.suh_bytes or sv.bytes.len != r.svh_bytes) return error.BadShape;
@@ -672,6 +703,8 @@ pub const Options = struct {
     vram_reserve: usize = 512 << 20,
     /// Sync after each phase of a device-HC layer and add its wall time to `Engine.prof` (a diagnostic; slows the step).
     profile: bool = false,
+    /// Extra attention KV / indexer / pooled-block slots after the 12 (slot 12 is the MTP head's); 0 for the plain model.
+    extra_kv: usize = 0,
 };
 
 pub const Trace = fwd.Trace;
@@ -724,9 +757,9 @@ const Bufs = struct {
         const nb = opt.cap / 4;
         const slot = cuda.exl3_attn.slot_bytes;
         const dev = opt.device_hc;
-        if (comptime (std.mem.eql(u8, name, "kv_all"))) return 12 * opt.cap * 2 * slot;
-        if (comptime (std.mem.eql(u8, name, "ik_all"))) return 12 * opt.cap * 128 * 2;
-        if (comptime (std.mem.eql(u8, name, "pooled_all"))) return 12 * (nb + 2) * 128 * 2;
+        if (comptime (std.mem.eql(u8, name, "kv_all"))) return (12 + opt.extra_kv) * opt.cap * 2 * slot;
+        if (comptime (std.mem.eql(u8, name, "ik_all"))) return (12 + opt.extra_kv) * opt.cap * 128 * 2;
+        if (comptime (std.mem.eql(u8, name, "pooled_all"))) return (12 + opt.extra_kv) * (nb + 2) * 128 * 2;
         if (comptime (std.mem.eql(u8, name, "pos0"))) return 4;
         if (comptime (std.mem.eql(u8, name, "x") or std.mem.eql(u8, name, "br"))) return R * hidden * 2;
         if (comptime (std.mem.eql(u8, name, "qp"))) return R * 12288 * 2;
@@ -999,7 +1032,7 @@ pub const Engine = struct {
         const lines = e.opt.pool_lines;
         var want: usize = 0;
         for (e.layers) |*l| {
-            const sp = try ExpertPool.shapesOf(e.pack, l.index);
+            const sp = try ExpertPool.shapesOf(e.pack, l.index, null);
             want += lines * (try cuda.exl3_offload.Layout.init(sp.spec)).line_bytes;
         }
         const mem = try e.gpu.ctx.memInfo();
@@ -1014,10 +1047,27 @@ pub const Engine = struct {
             l.ep = null;
         };
         for (e.layers) |*l| {
-            l.ep = try ExpertPool.init(e.gpu, e.pack, l.index, lines);
+            l.ep = try ExpertPool.init(e.gpu, e.pack, l.index, null, lines);
             made += 1;
             e.pool_bytes += l.ep.?.pool.deviceBytes();
         }
+    }
+
+    /// Gives a layer outside the 48 (the MTP head's, `lay.stem` set) its own expert pool of `pool_lines` lines and heat table.
+    /// No-op when the engine runs on-demand lines (`pool_lines == 0`).
+    pub fn allocExtraPool(e: *Engine, lay: *Layer) !void {
+        if (e.opt.pool_lines == 0) return;
+        const gpa = e.gpu.gpa;
+        const heat = try gpa.create([layers_total][experts]u32);
+        errdefer gpa.destroy(heat);
+        heat.* = std.mem.zeroes([layers_total][experts]u32);
+        const sp = try ExpertPool.shapesOf(e.pack, lay.index, lay.stem);
+        const want = e.opt.pool_lines * (try cuda.exl3_offload.Layout.init(sp.spec)).line_bytes;
+        const mem = try e.gpu.ctx.memInfo();
+        if (want + e.opt.vram_reserve > mem.free) return error.NotEnoughVram;
+        lay.ep = try ExpertPool.init(e.gpu, e.pack, lay.index, lay.stem, e.opt.pool_lines);
+        lay.own_heat = heat;
+        e.pool_bytes += lay.ep.?.pool.deviceBytes();
     }
 
     /// New sequence: zero the GDN state, the position and the PLE state. KV needs no clearing (positions are written before
@@ -1275,7 +1325,7 @@ pub const Engine = struct {
     }
 
     /// Queues the full-attention layer for `rows` rows of `e.b.x` (position `pos0` already on the device).
-    fn attnRun(e: *Engine, a: *const AttnDev, kv_index: usize, rows: usize) !void {
+    pub fn attnRun(e: *Engine, a: *const AttnDev, kv_index: usize, rows: usize) !void {
         const cap = e.opt.cap;
         const nb = cap / 4;
         const dims: cuda.exl3_attn.Dims = .{ .tokens = cap };
@@ -1316,20 +1366,21 @@ pub const Engine = struct {
     /// use of that line), reaped at once, and the compute stream waits on the copy event before it reads the line. A miss never
     /// takes the CPU path: `cpu` decisions cannot occur with at least 10 lines (every miss finds a victim outside this row's picks).
     fn stageRow(e: *Engine, lay: *Layer, ep: *ExpertPool, picks: []const u16, ids_out: *[topk]i32) !void {
-        const l: u8 = @intCast(lay.index);
-        try policy.observe(&e.counts[lay.index], picks);
+        const heat = lay.own_heat orelse e.counts;
+        const l: u8 = if (lay.own_heat != null) 0 else @intCast(lay.index);
+        try policy.observe(&heat[l], picks);
         var dec: [topk]policy.Decision = undefined;
         var scr: [topk]u16 = undefined;
         const lb: u64 = ep.pool.layout.line_bytes;
         const pol: policy.Policy = .{ .slots = @intCast(ep.pool.lines), .expert_bytes = lb, .copy_bytes = lb * topk };
         e.now += 1;
-        try policy.scheduleUsedAt(&ep.vram, l, picks, e.counts, pol, e.now, &dec, &scr, policy.allOwned());
+        try policy.scheduleUsedAt(&ep.vram, l, picks, heat, pol, e.now, &dec, &scr, policy.allOwned());
         var cps: [topk]policy.Copy = undefined;
         const n = try policy.stagedCopies(ep.vram, l, picks, &dec, &cps);
         const t0 = check.now(e.gpu.io);
         for (cps[0..n]) |c| {
             try ep.pool.wait(c.line);
-            try ep.fill(e.pack, lay.index, c.id, ep.pool.stagingLine(c.line));
+            try ep.fill(e.pack, lay.index, lay.stem, c.id, ep.pool.stagingLine(c.line));
             try ep.pool.enqueue(c.line, if (e.have_done) e.done else null);
             try policy.reapAt(&ep.vram, l, c.id, e.now);
         }
@@ -1348,7 +1399,7 @@ pub const Engine = struct {
     /// One row of the MoE block given its routing: the 10 routed experts (pool lines or on-demand upload), the shared expert
     /// and the weighted combine, into row `t` of `e.b.br`. Reads row `t` of `e.b.x`. On-demand rows sync (their lines are
     /// reused by the next row); pool rows only record the compute event the next eviction waits on.
-    fn moeCompute(e: *Engine, lay: *Layer, picks: *const [slots]u16, weights: *const [slots]f32, t: usize) !void {
+    pub fn moeCompute(e: *Engine, lay: *Layer, picks: *const [slots]u16, weights: *const [slots]f32, t: usize) !void {
         const s = e.stream;
         const bb = &e.b;
         const x_ptr = bb.x.ptr + t * hidden * 2;
@@ -1375,7 +1426,7 @@ pub const Engine = struct {
             for (&pk, 0..) |*p, i| p.* = try ep.pool.packed_(i);
         } else {
             e.lines.halves = .{ 0, 0, 0 };
-            for (picks[0..topk], 0..) |p, line| try e.lines.put(e.pack, lay.index, p, line);
+            for (picks[0..topk], 0..) |p, line| try e.lines.putStem(e.pack, lay.index, lay.stem, p, line);
             for (&pk, 0..) |*p, i| p.* = try e.lines.packed_(i);
         }
         try e.ex.hit(s, x_ptr, ids_ptr, pk[0], pk[1], pk[2], bb.y_gate.ptr, bb.y_up.ptr, bb.y_glu.ptr, bb.y_down.ptr, 1, n_lines, topk);
