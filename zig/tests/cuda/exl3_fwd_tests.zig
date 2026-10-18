@@ -22,6 +22,7 @@ const wide = fwd.wide;
 const topk = fwd.topk;
 const vocab = fwd.vocab;
 
+const context_plus = 2;
 const default_ids = [_]u32{ 760, 6511, 314, 9338, 369, 11751, 13, 1049, 369, 3750, 364, 279, 242476, 300, 21262, 13 };
 
 fn parseIds(gpa: std.mem.Allocator, text: []const u8) ![]u32 {
@@ -446,12 +447,12 @@ fn teacherForced(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: us
 
 // -- mode: gen ---------------------------------------------------------------------------------------------------
 
-fn generate(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usize, count: usize, prompt: []const u32) !void {
+fn generate(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usize, count: usize, prompt: []const u32, use_ple: bool) !void {
     const gpa = gpu.gpa;
     var path_buf: [512]u8 = undefined;
     const ngram_path = try std.fmt.bufPrint(&path_buf, "{s}/ngram_embedding.safetensors", .{dir});
     var t0 = nowMs(gpu);
-    var eng = try fwd.Engine.init(gpu, pack, .{ .first_layer = 0, .layers = n_layers, .max_rows = @max(prompt.len, 1), .cap = 128, .head = true, .ngram_path = if (n_layers > fwd.ple_layer) ngram_path else null });
+    var eng = try fwd.Engine.init(gpu, pack, .{ .first_layer = 0, .layers = n_layers, .max_rows = @max(prompt.len, 1), .cap = 128, .head = true, .ngram_path = if (n_layers > fwd.ple_layer and use_ple) ngram_path else null });
     defer eng.deinit();
     std.debug.print("== greedy generation, {d} layers: model loaded in {d:.0} ms (PLE {s})\n", .{ n_layers, nowMs(gpu) - t0, if (eng.ple != null) "on" else "off" });
     const lg = try gpa.alloc(f32, prompt.len * vocab);
@@ -495,11 +496,30 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         const ids = if (rest.len > 3) try parseIds(gpu.gpa, rest[3]) else try gpu.gpa.dupe(u32, &default_ids);
         defer gpu.gpa.free(ids);
         try teacherForced(gpu, &pack, dir, n, ids);
+    } else if (std.mem.eql(u8, mode, "ple-ids")) {
+        // prints the 16 n-gram row ids per token for an independent numpy cross-check (tools/exl3_ple_ids.py)
+        var path_buf: [512]u8 = undefined;
+        const ngram_path = try std.fmt.bufPrint(&path_buf, "{s}/ngram_embedding.safetensors", .{dir});
+        var ng = try @import("safetensors.zig").File.open(gpu.gpa, gpu.io, ngram_path);
+        defer ng.close(gpu.io);
+        var p = try fwd.loadPle(gpu, &pack, &ng);
+        defer p.deinit();
+        var seq: [context_plus + default_ids.len]i64 = undefined;
+        seq[0] = fwd.eos_token;
+        seq[1] = fwd.eos_token;
+        for (default_ids, 0..) |t, i| seq[2 + i] = t;
+        for (0..default_ids.len) |i| {
+            var ids: [16]u64 = undefined;
+            p.hash.idsAt(&seq, 2 + i, &ids);
+            std.debug.print("IDS {d}:", .{default_ids[i]});
+            for (ids) |v| std.debug.print(" {d}", .{v});
+            std.debug.print("\n", .{});
+        }
     } else if (std.mem.eql(u8, mode, "gen")) {
         const n = try std.fmt.parseInt(usize, if (rest.len > 2) rest[2] else "48", 10);
         const count = try std.fmt.parseInt(usize, if (rest.len > 3) rest[3] else "16", 10);
         const ids = if (rest.len > 4) try parseIds(gpu.gpa, rest[4]) else try gpu.gpa.dupe(u32, default_ids[0..5]);
         defer gpu.gpa.free(ids);
-        try generate(gpu, &pack, dir, n, count, ids);
+        try generate(gpu, &pack, dir, n, count, ids, !(rest.len > 5 and std.mem.eql(u8, rest[5], "nople")));
     } else return error.UnknownMode;
 }
