@@ -44,7 +44,11 @@ const kernels = [_]Kernel{
     .{ .name = "norms", .flags = &.{"-O3"} }, // ours: RMS norm rows for every family (cuda/norms.zig)
     .{ .name = "embed_rows", .flags = &.{"-O3"} }, // ours: 4-bit affine and bf16 token rows (cuda/embed_rows.zig)
     .{ .name = "exl3_linear", .flags = &.{ "-O3", "--fmad=false" } }, // ours: EXL3 strips projection, Zig decoder order
-    .{ .name = "exl3_experts", .flags = &.{ "-O3", "--fmad=false" } }, // ours: EXL3 routed experts, ids from a pointer, identity epilogue
+    .{ .name = "exl3_experts", .flags = &.{ "-O3", "--fmad=false" } }, // ours: EXL3 routed experts, ids from a pointer; gate/down/combine stay identity, plus exl3_experts_swiglu_f16
+    .{ .name = "exl3_gdn", .flags = glue }, // ours: EXL3 Gated DeltaNet layer: dense a/b, conv + SiLU, delta rule, gated norm (state in place)
+    .{ .name = "exl3_gdn_tp", .flags = glue }, // ours: the exl3_gdn kernels with head counts as arguments, for tp=2 ranks
+    .{ .name = "exl3_attn", .flags = &.{ "-O3", "--fmad=false" } }, // ours: EXL3 full-attention layer: norm+rope+KV write, indexer pool/score/select, sparse decode
+    .{ .name = "exl3_hc", .flags = glue }, // ours: EXL3 hyper-connection pre/post/expand/collapse and the router gate dots (f32 streams, F16 weights)
     .{ .name = "lfm2", .flags = glue }, // ours: LFM2's short convolution, QK norm and rotary, gates and label rows
     .{ .name = "vit", .flags = glue }, // ours: vision towers' LayerNorm, Linear epilogues, activations, unshuffle
     .{ .name = "qmmf", .flags = &.{"-O3"} }, // nvfp4/qmmf.cu's device code (FP8G, FP4), tensorfold_nvfp4_v3

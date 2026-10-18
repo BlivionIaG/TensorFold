@@ -237,6 +237,40 @@ pub const HotRows = struct {
     }
 };
 
+/// `HotRows` with a caller-sized table: `slots` direct-mapped rows of up to `cap` bytes in front of a `Disk`.
+/// The slot comes from a multiplicative hash of the row's (file, offset) key. 4096 slots at ng5 (102 bytes a row) is 408 KiB;
+/// the table is large, so create it on the heap. Same `read` contract as `HotRows`.
+pub fn HotCache(comptime slots: usize, comptime cap: usize) type {
+    return struct {
+        disk: *const Disk,
+        words: u32,
+        misses: u32 = 0,
+        lookups: u32 = 0,
+        tags: [slots]u64 = @splat(std.math.maxInt(u64)),
+        stored: [slots][cap]u8 = undefined,
+
+        const Self = @This();
+
+        pub fn read(self: *Self, file: u32, offset: u64, dest: []u8) !void {
+            const row_bytes: usize = @as(usize, self.words) * 2;
+            if (row_bytes == 0 or row_bytes > cap or dest.len != row_bytes) {
+                return self.disk.read(file, offset, dest);
+            }
+            self.lookups += 1;
+            const key = (@as(u64, file) << 40) | (offset & 0x00ff_ffff_ffff);
+            const slot = @as(usize, @truncate((key *% 0x9E3779B97F4A7C15) >> 20)) % slots;
+            if (self.tags[slot] == key) {
+                @memcpy(dest, self.stored[slot][0..row_bytes]);
+                return;
+            }
+            try self.disk.read(file, offset, dest);
+            self.misses += 1;
+            self.tags[slot] = key;
+            @memcpy(self.stored[slot][0..row_bytes], dest);
+        }
+    };
+}
+
 const words: u32 = 51;
 const row_b: u64 = 102;
 
@@ -536,4 +570,33 @@ test "a repeated n-gram row is served from the small cache" {
     try gatherFrom(&shards, words, &.{6}, &hot, &other);
     try expectRows(&.{6}, &other);
     try std.testing.expectEqual(@as(u32, 2), hot.misses);
+}
+
+test "a sized hot cache serves a repeated row from memory" {
+    const Cache = HotCache(4, 128);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const io = std.testing.io;
+    const alloc = std.testing.allocator;
+    // 3 rows of 102 bytes, row i filled with byte i + 1
+    var bytes: [3 * 102]u8 = undefined;
+    for (0..3) |i| @memset(bytes[i * 102 ..][0..102], @intCast(i + 1));
+    try tmp.dir.writeFile(io, .{ .sub_path = "rows.bin", .data = &bytes });
+    const path = try tmp.dir.realPathFileAlloc(io, "rows.bin", alloc);
+    defer alloc.free(path);
+    const z = try zPath(alloc, path);
+    defer alloc.free(z);
+    const fds = [_]c_int{try Disk.openPath(z)};
+    const disk = Disk{ .fds = &fds };
+    defer disk.close();
+    var cache: Cache = .{ .disk = &disk, .words = 51 };
+    var got: [102]u8 = undefined;
+    try cache.read(0, 102, &got);
+    try std.testing.expectEqual(@as(u8, 2), got[0]);
+    try std.testing.expectEqual(@as(u32, 1), cache.misses);
+    @memset(&got, 0);
+    try cache.read(0, 102, &got);
+    try std.testing.expectEqual(@as(u8, 2), got[101]);
+    try std.testing.expectEqual(@as(u32, 1), cache.misses);
+    try std.testing.expectEqual(@as(u32, 2), cache.lookups);
 }

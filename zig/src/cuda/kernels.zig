@@ -58,13 +58,59 @@ pub const norms: []const u8 = if (available) &Blob("fatbin_norms").bytes else &.
 pub const embed_rows: []const u8 = if (available) &Blob("fatbin_embed_rows").bytes else &.{};
 pub const exl3_linear: []const u8 = if (available) &Blob("fatbin_exl3_linear").bytes else &.{};
 pub const exl3_experts: []const u8 = if (available) &Blob("fatbin_exl3_experts").bytes else &.{};
+pub const exl3_gdn: []const u8 = if (available) &Blob("fatbin_exl3_gdn").bytes else &.{};
+pub const exl3_gdn_tp: []const u8 = if (available) &Blob("fatbin_exl3_gdn_tp").bytes else &.{};
+pub const exl3_attn: []const u8 = if (available) &Blob("fatbin_exl3_attn").bytes else &.{};
+pub const exl3_hc: []const u8 = if (available) &Blob("fatbin_exl3_hc").bytes else &.{};
 
 /// extern "C" names in the EXL3 fatbins. Launch shapes live in exl3.zig.
 pub const exl3_symbols = struct {
     pub const linear_f16 = "exl3_linear_f16";
     pub const gate_up_f16 = "exl3_experts_gate_up_f16";
+    pub const swiglu_f16 = "exl3_experts_swiglu_f16";
     pub const down_f16 = "exl3_experts_down_f16";
     pub const combine_f16 = "exl3_experts_combine_f16";
+    /// The original one-warp kernels (block 32), kept for the bench and bit-equality checks.
+    pub const linear_f16_ref = "exl3_linear_f16_ref";
+    pub const gate_up_f16_ref = "exl3_experts_gate_up_f16_ref";
+    pub const down_f16_ref = "exl3_experts_down_f16_ref";
+    pub const mul1_probe = "exl3_mul1_probe";
+};
+
+/// extern "C" names in the exl3_gdn fatbin. Launch shapes live in exl3_gdn.zig.
+pub const exl3_gdn_symbols = struct {
+    pub const ab_f16 = "exl3_gdn_ab_f16";
+    pub const conv_f16 = "exl3_gdn_conv_f16";
+    pub const delta_f32 = "exl3_gdn_delta_f32";
+    pub const norm_f16 = "exl3_gdn_norm_f16";
+};
+
+/// extern "C" names in the exl3_gdn_tp fatbin (exl3_gdn's kernels with the head counts as arguments).
+pub const exl3_gdn_tp_symbols = struct {
+    pub const ab_f16 = "exl3_gdn_tp_ab_f16";
+    pub const conv_f16 = "exl3_gdn_tp_conv_f16";
+    pub const delta_f32 = "exl3_gdn_tp_delta_f32";
+    pub const norm_f16 = "exl3_gdn_tp_norm_f16";
+};
+
+/// extern "C" names in the exl3_attn fatbin (the full-attention layer's glue, KV write, indexer and decode).
+pub const exl3_attn_symbols = struct {
+    pub const prep = "exl3_attn_prep";
+    pub const pool = "exl3_attn_pool";
+    pub const scores = "exl3_attn_scores";
+    pub const select = "exl3_attn_select";
+    pub const decode = "exl3_attn_decode";
+};
+
+/// extern "C" names in the exl3_hc fatbin (hyper-connection pre/post/expand and the router dots).
+pub const exl3_hc_symbols = struct {
+    pub const expand_bf16 = "exl3_hc_expand_bf16";
+    pub const norm = "exl3_hc_norm";
+    pub const low = "exl3_hc_low";
+    pub const mix = "exl3_hc_mix";
+    pub const out = "exl3_hc_out";
+    pub const post = "exl3_hc_post";
+    pub const gate = "exl3_hc_gate";
 };
 
 /// Symbols in the gdn image as cuobjdump lists them for the built fatbin (named namespace tf_gdn).

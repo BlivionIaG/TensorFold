@@ -3,6 +3,8 @@
 //! `reap`, then resident. Eviction is LRU among resident lines; an in-flight line
 //! is not reusable until it is reaped. `planRound` does not write either table.
 //! Shared expert 512 is always a hit and never occupies a routed slot.
+//! Generate addresses a line as `(layer, id)` through `scheduleUsedAt` and `reapAt`.
+//! `schedule` and `onDevice` stay id-only and are not used on a layer-tagged table.
 
 const std = @import("std");
 const shape = @import("exl3_shape.zig");
@@ -207,19 +209,29 @@ pub const Vram = struct {
     slots: []u16,
     line: []Line,
     stamp: []u32,
+    /// Layer of `slots[i]`. Parallel to the other three slices.
+    layer: []u8,
 
-    pub fn init(slots: []u16, line: []Line, stamp: []u32) Vram {
-        std.debug.assert(slots.len == line.len and slots.len == stamp.len);
+    pub fn init(slots: []u16, line: []Line, stamp: []u32, layer: []u8) Vram {
+        std.debug.assert(slots.len == line.len and slots.len == stamp.len and slots.len == layer.len);
         @memset(slots, Cache.empty_id);
         @memset(line, .empty);
         @memset(stamp, 0);
-        return .{ .slots = slots, .line = line, .stamp = stamp };
+        @memset(layer, 0);
+        return .{ .slots = slots, .line = line, .stamp = stamp, .layer = layer };
     }
 };
 
 /// True once `id` has been reaped into VRAM.
+/// Id-only: the first matching line wins. Generate calls `residentAt`.
 pub fn onDevice(v: Vram, id: u16) bool {
     const i = vramIndex(v, id) orelse return false;
+    return v.line[i] == .resident;
+}
+
+/// True when this layer's copy of `id` is resident. Another layer's copy does not count.
+pub fn residentAt(v: Vram, layer: u8, id: u16) bool {
+    const i = vramIndexAt(v, layer, id) orelse return false;
     return v.line[i] == .resident;
 }
 
@@ -240,6 +252,7 @@ pub fn stage(v: *Vram, id: u16) error{ Busy, Shared }!usize {
 
 /// Same as `stage`, except a resident whose id is in `keep` is not a victim.
 /// `error.Busy` means every line is in flight or held by `keep`.
+/// Id-only. A newly assigned line is layer 0. Do not call this on a multi-layer table.
 pub fn stageKeeping(v: *Vram, id: u16, keep: []const u16) error{ Busy, Shared }!usize {
     if (id == shared_id or id == Cache.empty_id) return error.Shared;
     if (vramIndex(v.*, id)) |i| {
@@ -249,6 +262,7 @@ pub fn stageKeeping(v: *Vram, id: u16, keep: []const u16) error{ Busy, Shared }!
     }
     const slot = vramEmpty(v.*) orelse vramLruKeep(v.*, keep) orelse return error.Busy;
     v.slots[slot] = id;
+    v.layer[slot] = 0;
     v.line[slot] = .inflight;
     v.stamp[slot] = 0;
     return slot;
@@ -299,20 +313,46 @@ pub fn schedule(
     }
 }
 
-/// The copy of `id` has landed. The line becomes resident at `now`.
-pub fn reap(v: *Vram, id: u16, now: u32) error{NotInflight}!void {
-    const i = vramIndex(v.*, id) orelse return error.NotInflight;
+/// The copy of `(layer, id)` has landed. Another layer's resident or inflight
+/// line is not this copy. Generate calls this, not `reap`.
+pub fn reapAt(v: *Vram, layer: u8, id: u16, now: u32) error{NotInflight}!void {
+    const i = vramIndexAt(v.*, layer, id) orelse return error.NotInflight;
     if (v.line[i] != .inflight) return error.NotInflight;
     v.line[i] = .resident;
     v.stamp[i] = now;
 }
 
+/// Layer-0 wrapper. Does not promote another layer's inflight copy.
+/// Old tests are layer 0. Generate calls `reapAt`.
+pub fn reap(v: *Vram, id: u16, now: u32) error{NotInflight}!void {
+    return reapAt(v, 0, id, now);
+}
+
+/// First occupied slot with this id, on any layer. That alias is what
+/// `schedule` and `onDevice` still call. Generate uses `vramIndexAt`.
 fn vramIndex(v: Vram, id: u16) ?usize {
     if (id == Cache.empty_id) return null;
     for (v.slots, 0..) |slot, i| {
         if (slot == id and v.line[i] != .empty) return i;
     }
     return null;
+}
+
+/// Slot whose layer and id both match. The id-only search aliases two layers.
+fn vramIndexAt(v: Vram, layer: u8, id: u16) ?usize {
+    if (id == Cache.empty_id) return null;
+    std.debug.assert(v.layer.len == v.slots.len and v.line.len == v.slots.len);
+    for (v.slots, v.layer, 0..) |slot, lay, i| {
+        if (slot == id and lay == layer and v.line[i] != .empty) return i;
+    }
+    return null;
+}
+
+fn touchAt(v: *Vram, layer: u8, id: u16, now: u32) bool {
+    const i = vramIndexAt(v.*, layer, id) orelse return false;
+    if (v.line[i] != .resident) return false;
+    v.stamp[i] = now;
+    return true;
 }
 
 fn vramEmpty(v: Vram) ?usize {
@@ -343,16 +383,28 @@ fn countOf(counts: []const u32, id: u16) u32 {
     return counts[id];
 }
 
-/// Lowest lifetime count, then oldest stamp, then the higher slot index.
+fn countAt(counts: *const [shape.layers][shape.experts]u32, layer: u8, id: u16) u32 {
+    if (layer >= shape.layers or id >= shape.experts) return 0;
+    return counts[layer][id];
+}
+
+/// Lowest `counts[layer][id]`, then oldest stamp, then the higher slot index.
+/// A keep entry is `(keep_layer, id)`. The same id on another layer is not protected.
 /// Equal counts are the stamp LRU, so a zeroed table matches `vramLruKeep`.
-fn vramCold(v: Vram, counts: []const u32, keep: []const u16) ?usize {
+fn vramCold(
+    v: Vram,
+    counts: *const [shape.layers][shape.experts]u32,
+    keep_layer: u8,
+    keep_ids: []const u16,
+) ?usize {
+    std.debug.assert(v.layer.len == v.slots.len);
     var best: ?usize = null;
     for (v.line, 0..) |state, i| {
         if (state != .resident) continue;
-        if (indexOf(keep, v.slots[i]) != null) continue;
+        if (v.layer[i] == keep_layer and indexOf(keep_ids, v.slots[i]) != null) continue;
         if (best) |b| {
-            const ci = countOf(counts, v.slots[i]);
-            const cb = countOf(counts, v.slots[b]);
+            const ci = countAt(counts, v.layer[i], v.slots[i]);
+            const cb = countAt(counts, v.layer[b], v.slots[b]);
             const colder = ci < cb or
                 (ci == cb and v.stamp[i] < v.stamp[b]) or
                 (ci == cb and v.stamp[i] == v.stamp[b] and i > b);
@@ -446,17 +498,121 @@ pub fn fillOwned(v: *Vram, counts: []const u32, owned: Owned) error{Length}!u16 
     return n;
 }
 
+fn quotaAt(lines: u16, layer: usize) u16 {
+    const n_layers: u16 = @intCast(shape.layers);
+    const base = lines / n_layers;
+    if (layer < @as(usize, lines % n_layers)) return base + 1;
+    return base;
+}
+
+fn placeOwned(v: *Vram, layer: u8, id: u16) bool {
+    // Shared 512 is not a routed line. Callers only pass an owned id.
+    std.debug.assert(id != shared_id and id != Cache.empty_id);
+    const slot = vramEmpty(v.*) orelse return false;
+    v.slots[slot] = id;
+    v.layer[slot] = layer;
+    v.line[slot] = .inflight;
+    v.stamp[slot] = 0;
+    return true;
+}
+
+/// Hottest owned `(layer, id)` that still has stripe room, one line at a time.
+fn placeHottest(
+    v: *Vram,
+    lines: u16,
+    counts: []const [shape.experts]u32,
+    owned: Owned,
+    used: *[shape.layers]u16,
+) u16 {
+    var placed: u16 = 0;
+    while (placed < lines and vramEmpty(v.*) != null) {
+        var found = false;
+        var best_layer: u8 = 0;
+        var best_id: u16 = 0;
+        var best_c: u32 = 0;
+        for (counts, 0..) |row, layer_i| {
+            if (used[layer_i] >= quotaAt(lines, layer_i)) continue;
+            var id = owned.lo;
+            while (id < owned.hi) : (id += 1) {
+                const c = row[id];
+                if (c == 0) continue;
+                if (vramIndexAt(v.*, @intCast(layer_i), id) != null) continue;
+                const layer: u8 = @intCast(layer_i);
+                const better = !found or c > best_c or
+                    (c == best_c and id < best_id) or
+                    (c == best_c and id == best_id and layer < best_layer);
+                if (!better) continue;
+                found = true;
+                best_layer = layer;
+                best_id = id;
+                best_c = c;
+            }
+        }
+        if (!found) break;
+        if (!placeOwned(v, best_layer, best_id)) break;
+        used[best_layer] += 1;
+        placed += 1;
+    }
+    return placed;
+}
+
+/// Id, then layer. An uncapped layer-major walk would park every line on layer 0.
+fn fillStripe(v: *Vram, lines: u16, owned: Owned, used: *[shape.layers]u16, placed: u16) u16 {
+    var n = placed;
+    var id = owned.lo;
+    while (id < owned.hi and n < lines) : (id += 1) {
+        var layer: usize = 0;
+        while (layer < shape.layers and n < lines) : (layer += 1) {
+            if (used[layer] >= quotaAt(lines, layer)) continue;
+            if (vramIndexAt(v.*, @intCast(layer), id) != null) continue;
+            if (!placeOwned(v, @intCast(layer), id)) return n;
+            used[layer] += 1;
+            n += 1;
+        }
+    }
+    return n;
+}
+
+/// Stage up to `lines` owned experts. `lines` is the caller's live count.
+/// Each layer gets `lines / shape.layers`, and the remainder goes one each to the low layers.
+/// A zero histogram fills the lowest owned id on each of those layers.
+/// A warm histogram takes the hottest owned pair that still fits that stripe, then
+/// fills any line still empty. The other rank's ids are not staged.
+pub fn fillOwnedLayers(v: *Vram, lines: u16, counts: []const [shape.experts]u32, owned: Owned) error{Length}!u16 {
+    if (counts.len != shape.layers) return error.Length;
+    if (owned.hi > shape.experts or owned.lo > owned.hi) return error.Length;
+    std.debug.assert(v.layer.len == v.slots.len and v.line.len == v.slots.len);
+    var used: [shape.layers]u16 = @splat(0);
+    const hot = placeHottest(v, lines, counts, owned, &used);
+    return fillStripe(v, lines, owned, &used, hot);
+}
+
 /// `stageKeeping`, but the victim is the coldest lifetime count.
+/// Layer 0 only: a flat histogram does not score another layer's copy.
 pub fn stageUsed(v: *Vram, id: u16, keep: []const u16, counts: []const u32) error{ Busy, Shared, Length }!usize {
     if (counts.len != shape.experts) return error.Length;
+    var table: [shape.layers][shape.experts]u32 = std.mem.zeroes([shape.layers][shape.experts]u32);
+    @memcpy(table[0][0..], counts);
+    return stageUsedAt(v, 0, id, keep, &table);
+}
+
+fn stageUsedAt(
+    v: *Vram,
+    layer: u8,
+    id: u16,
+    keep_ids: []const u16,
+    counts: *const [shape.layers][shape.experts]u32,
+) error{ Busy, Shared, Length }!usize {
+    if (layer >= shape.layers) return error.Length;
     if (id == shared_id or id == Cache.empty_id) return error.Shared;
-    if (vramIndex(v.*, id)) |i| {
+    if (vramIndexAt(v.*, layer, id)) |i| {
         if (v.line[i] == .inflight) return i;
         v.line[i] = .inflight;
         return i;
     }
-    const slot = vramEmpty(v.*) orelse vramCold(v.*, counts, keep) orelse return error.Busy;
+    const slot = vramEmpty(v.*) orelse vramCold(v.*, counts, layer, keep_ids) orelse return error.Busy;
     v.slots[slot] = id;
+    v.layer[slot] = layer;
     v.line[slot] = .inflight;
     v.stamp[slot] = 0;
     return slot;
@@ -465,6 +621,8 @@ pub fn stageUsed(v: *Vram, id: u16, keep: []const u16, counts: []const u32) erro
 /// `schedule`, ordered by lifetime counts from `observe`.
 /// A high count keeps its line even when its stamp is older.
 /// Residents named in `ids` are not victims. `schedule` itself is unchanged.
+/// This is the layer-0 wrapper. It is not the multi-layer path: the flat
+/// histogram is copied into layer 0, so another layer's copy scores 0.
 pub fn scheduleUsed(
     v: *Vram,
     ids: []const u16,
@@ -477,6 +635,28 @@ pub fn scheduleUsed(
 ) error{ Length, Scratch }!void {
     if (decisions.len != ids.len) return error.Length;
     if (counts.len != shape.experts) return error.Length;
+    var table: [shape.layers][shape.experts]u32 = std.mem.zeroes([shape.layers][shape.experts]u32);
+    @memcpy(table[0][0..], counts);
+    return scheduleUsedAt(v, 0, ids, &table, policy, now, decisions, scratch, owned);
+}
+
+/// Generate path. Misses sort by `counts[layer]`. A victim scores
+/// `counts[victim.layer][victim.id]`. Keep is `(layer, id)` for this call's ids.
+/// An id outside `owned` stays `.cpu` and is not staged. Shared 512 is a hit
+/// and does not occupy a line. A landed copy is promoted with `reapAt`.
+pub fn scheduleUsedAt(
+    v: *Vram,
+    layer: u8,
+    ids: []const u16,
+    counts: *const [shape.layers][shape.experts]u32,
+    policy: Policy,
+    now: u32,
+    decisions: []Decision,
+    scratch: []u16,
+    owned: Owned,
+) error{ Length, Scratch }!void {
+    if (decisions.len != ids.len) return error.Length;
+    if (layer >= shape.layers) return error.Length;
 
     var n: usize = 0;
     for (ids, decisions) |id, *decision| {
@@ -484,23 +664,24 @@ pub fn scheduleUsed(
             decision.* = .hit;
             continue;
         }
-        if (onDevice(v.*, id)) {
-            _ = touch(v, id, now);
+        if (residentAt(v.*, layer, id)) {
+            _ = touchAt(v, layer, id, now);
             decision.* = .hit;
             continue;
         }
         decision.* = .cpu;
         if (!inOwned(owned, id)) continue;
-        if (vramIndex(v.*, id) != null) continue;
+        if (vramIndexAt(v.*, layer, id) != null) continue;
         try pushUnique(scratch, &n, id);
     }
-    std.mem.sort(u16, scratch[0..n], UsedOrder{ .counts = counts, .ids = ids }, usedFirst);
+    const row: []const u32 = &counts[layer];
+    std.mem.sort(u16, scratch[0..n], UsedOrder{ .counts = row, .ids = ids }, usedFirst);
 
     const copies = copyCount(policy, n);
     var staged: usize = 0;
     for (scratch[0..n]) |id| {
         if (staged >= copies) break;
-        _ = stageUsed(v, id, ids, counts) catch |err| switch (err) {
+        _ = stageUsedAt(v, layer, id, ids, counts) catch |err| switch (err) {
             error.Length => return error.Length,
             error.Busy, error.Shared => break,
         };
@@ -509,6 +690,49 @@ pub fn scheduleUsed(
             if (asked == id) decision.* = .copy;
         }
     }
+}
+
+/// Line index of `(layer, id)` in any state, or null. The device pool addresses its buffers by this index.
+pub fn lineOf(v: Vram, layer: u8, id: u16) ?usize {
+    return vramIndexAt(v, layer, id);
+}
+
+/// A host-to-device copy the policy asked for: expert `id` into pool line `line`.
+pub const Copy = struct { id: u16, line: u32 };
+
+/// Per pick, the pool line the hit kernel reads, or -1 when the kernel must skip the slot
+/// (a `.copy` or `.cpu` decision, the shared expert, or a line that is not resident).
+/// The kernel ignores a negative id, so the host writes that slot's row into `y` itself.
+pub fn lineIds(v: Vram, layer: u8, ids: []const u16, decisions: []const Decision, out: []i32) error{Length}!void {
+    if (decisions.len != ids.len or out.len != ids.len) return error.Length;
+    for (ids, decisions, out) |id, d, *o| {
+        o.* = -1;
+        if (d != .hit or id == shared_id) continue;
+        const i = vramIndexAt(v, layer, id) orelse continue;
+        if (v.line[i] != .resident) continue;
+        o.* = @intCast(i);
+    }
+}
+
+/// Unique `(id, line)` pairs the round staged: a `.copy` decision whose line is in flight.
+/// Returns how many were written. `out` shorter than the unique count is `error.Length`.
+pub fn stagedCopies(v: Vram, layer: u8, ids: []const u16, decisions: []const Decision, out: []Copy) error{Length}!usize {
+    if (decisions.len != ids.len) return error.Length;
+    var n: usize = 0;
+    for (ids, decisions) |id, d| {
+        if (d != .copy) continue;
+        const i = vramIndexAt(v, layer, id) orelse continue;
+        if (v.line[i] != .inflight) continue;
+        var seen = false;
+        for (out[0..n]) |c| {
+            if (c.id == id) seen = true;
+        }
+        if (seen) continue;
+        if (n >= out.len) return error.Length;
+        out[n] = .{ .id = id, .line = @intCast(i) };
+        n += 1;
+    }
+    return n;
 }
 
 fn benchPolicy(slot_n: u16, expert_bytes: u64, copy_bytes: u64) Policy {
@@ -523,7 +747,8 @@ test "a staged copy is not on device until reap, and LRU drops the older residen
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
 
     try std.testing.expectEqual(@as(usize, 0), try stage(&vram, 4));
     try std.testing.expectEqual(@as(usize, 1), try stage(&vram, 7));
@@ -549,7 +774,8 @@ test "an in-flight line is not reused, and a full in-flight set is busy" {
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     _ = try stage(&vram, 1);
     _ = try stage(&vram, 2);
     try std.testing.expectError(error.Busy, stage(&vram, 3));
@@ -562,7 +788,8 @@ test "schedule touches residents, stages the hottest miss, and will not evict a 
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     var decisions: [4]Decision = undefined;
     var scratch: [4]u16 = undefined;
     const policy = benchPolicy(2, 100, 100);
@@ -601,7 +828,8 @@ test "a zero copy budget stages nothing, and an older resident is the one that m
     var slots = [_]u16{ 4, 7 };
     var line = [_]Line{ .resident, .resident };
     var stamp = [_]u32{ 1, 5 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     slots = .{ 4, 7 };
     line = .{ .resident, .resident };
     stamp = .{ 1, 5 };
@@ -879,7 +1107,8 @@ test "a high count keeps an old stamp and a one-off is the victim" {
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     slots = .{ 1, 4 };
     line = .{ .resident, .resident };
     stamp = .{ 1, 100 };
@@ -904,7 +1133,8 @@ test "zero lifetime counts fall back to stamp LRU" {
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     slots = .{ 4, 7 };
     line = .{ .resident, .resident };
     stamp = .{ 1, 5 };
@@ -923,7 +1153,8 @@ test "lifetime count beats this round's appearances" {
     var slots = [_]u16{Cache.empty_id};
     var line = [_]Line{.empty};
     var stamp = [_]u32{0};
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{0};
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     var counts: [shape.experts]u32 = @splat(0);
     counts[8] = 5;
     const ids = [_]u16{ 3, 3, 3, 3, 8 };
@@ -940,7 +1171,8 @@ test "a resident named this step is kept even when its count is low" {
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     slots = .{ 1, 4 };
     line = .{ .resident, .resident };
     stamp = .{ 1, 100 };
@@ -976,7 +1208,8 @@ test "observed counts seed empty lines and a later round keeps the hot id" {
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     const n = try seedHottest(&vram, &seeded_counts, 2);
     try std.testing.expectEqual(@as(u16, 2), n);
     try std.testing.expectEqual(@as(u16, 1), slots[0]);
@@ -991,7 +1224,8 @@ test "observed counts seed empty lines and a later round keeps the hot id" {
     var wide: [3]u16 = .{ Cache.empty_id, Cache.empty_id, Cache.empty_id };
     var wide_line: [3]Line = .{ .empty, .empty, .empty };
     var wide_stamp: [3]u32 = .{ 0, 0, 0 };
-    var wide_vram = Vram.init(&wide, &wide_line, &wide_stamp);
+    var wide_layer: [3]u8 = .{ 0, 0, 0 };
+    var wide_vram = Vram.init(&wide, &wide_line, &wide_stamp, &wide_layer);
     try std.testing.expectError(error.Length, seedHottest(&wide_vram, counts[0..3], 1));
     try std.testing.expectEqual(Line.empty, wide_line[0]);
 }
@@ -1000,7 +1234,8 @@ test "a rank fills its own lines and does not copy the other rank's expert" {
     var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
     var line = [_]Line{ .empty, .empty };
     var stamp = [_]u32{ 0, 0 };
-    var vram = Vram.init(&slots, &line, &stamp);
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
     var counts: [shape.experts]u32 = @splat(0);
     counts[400] = 100;
     counts[7] = 3;
@@ -1081,4 +1316,327 @@ test "a short scratch or a short decision buffer is refused without writes" {
     var scratch: [2]u16 = undefined;
     try std.testing.expectEqual(@as(u16, 0), try swap(&cache, &[_]u16{2}, 4, off, &scratch));
     try std.testing.expectEqual(@as(u32, 5), freq[0]);
+}
+
+test "residentAt distinguishes the same expert id on two layers" {
+    var slots = [_]u16{ 7, 7 };
+    var line = [_]Line{ .resident, .resident };
+    var stamp = [_]u32{ 1, 2 };
+    var layer = [_]u8{ 0, 40 };
+    const vram = Vram.init(&slots, &line, &stamp, &layer);
+    slots = .{ 7, 7 };
+    line = .{ .resident, .resident };
+    stamp = .{ 1, 2 };
+    layer = .{ 0, 40 };
+
+    try std.testing.expect(residentAt(vram, 0, 7));
+    try std.testing.expect(residentAt(vram, 40, 7));
+    try std.testing.expect(!residentAt(vram, 1, 7));
+    try std.testing.expect(!residentAt(vram, 0, 8));
+    // Id-only lookup still aliases. Generate does not call it on this table.
+    try std.testing.expect(onDevice(vram, 7));
+
+    line[1] = .inflight;
+    try std.testing.expect(residentAt(vram, 0, 7));
+    try std.testing.expect(!residentAt(vram, 40, 7));
+}
+
+test "reapAt promotes one inflight layer and leaves the other inflight" {
+    var slots = [_]u16{ 7, 7 };
+    var line = [_]Line{ .inflight, .inflight };
+    var stamp = [_]u32{ 0, 0 };
+    var layer = [_]u8{ 0, 40 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    slots = .{ 7, 7 };
+    line = .{ .inflight, .inflight };
+    stamp = .{ 0, 0 };
+    layer = .{ 0, 40 };
+
+    try reapAt(&vram, 0, 7, 3);
+    try std.testing.expect(residentAt(vram, 0, 7));
+    try std.testing.expectEqual(Line.inflight, line[1]);
+    try std.testing.expect(!residentAt(vram, 40, 7));
+    try std.testing.expectEqual(@as(u32, 3), stamp[0]);
+
+    // The other layer's copy is still inflight, then promotable on its own reap.
+    try reapAt(&vram, 40, 7, 4);
+    try std.testing.expect(residentAt(vram, 40, 7));
+    try std.testing.expect(residentAt(vram, 0, 7));
+    try std.testing.expectEqual(@as(u32, 4), stamp[1]);
+    try std.testing.expectEqual(@as(u32, 3), stamp[0]);
+
+    // Layer 0 is already resident. The wrapper must not treat that as the
+    // layer-40 inflight copy, and must not move layer 40.
+    line[1] = .inflight;
+    stamp[1] = 0;
+    try std.testing.expectError(error.NotInflight, reap(&vram, 7, 9));
+    try std.testing.expectEqual(Line.resident, line[0]);
+    try std.testing.expectEqual(Line.inflight, line[1]);
+    try std.testing.expectEqual(@as(u32, 3), stamp[0]);
+    try reapAt(&vram, 40, 7, 9);
+    try std.testing.expect(residentAt(vram, 40, 7));
+    try std.testing.expectEqual(@as(u32, 9), stamp[1]);
+
+    // An inflight copy that exists only on layer 40 is not promoted by `reap`.
+    slots = .{ 7, Cache.empty_id };
+    line = .{ .inflight, .empty };
+    stamp = .{ 0, 0 };
+    layer = .{ 40, 0 };
+    try std.testing.expectError(error.NotInflight, reap(&vram, 7, 1));
+    try std.testing.expectEqual(Line.inflight, line[0]);
+    try std.testing.expect(!residentAt(vram, 40, 7));
+    try reapAt(&vram, 40, 7, 2);
+    try std.testing.expect(residentAt(vram, 40, 7));
+    try std.testing.expectEqual(@as(u8, 40), layer[0]);
+}
+
+test "stageKeeping tags a newly assigned line as layer 0" {
+    var slots = [_]u16{4};
+    var line = [_]Line{.resident};
+    var stamp = [_]u32{1};
+    var layer = [_]u8{40};
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    slots = .{4};
+    line = .{.resident};
+    stamp = .{1};
+    layer = .{40};
+
+    try std.testing.expectEqual(@as(usize, 0), try stageKeeping(&vram, 9, &.{}));
+    try std.testing.expectEqual(@as(u16, 9), slots[0]);
+    try std.testing.expectEqual(@as(u8, 0), layer[0]);
+    try std.testing.expectEqual(Line.inflight, line[0]);
+    try std.testing.expect(vramIndexAt(vram, 0, 9) != null);
+    try std.testing.expectEqual(@as(?usize, null), vramIndexAt(vram, 40, 9));
+    try std.testing.expect(slots[0] != shared_id);
+}
+
+test "a keep on layer 0 does not protect that id on layer 40" {
+    var slots = [_]u16{ 7, 7, 3 };
+    var line = [_]Line{ .resident, .resident, .resident };
+    var stamp = [_]u32{ 4, 4, 4 };
+    var layer = [_]u8{ 0, 40, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    slots = .{ 7, 7, 3 };
+    line = .{ .resident, .resident, .resident };
+    stamp = .{ 4, 4, 4 };
+    layer = .{ 0, 40, 0 };
+
+    var counts: [shape.layers][shape.experts]u32 = @splat(@splat(0));
+    counts[0][7] = 10;
+    counts[40][7] = 1;
+    counts[0][3] = 8;
+    const ids = [_]u16{ 7, 9 };
+    var decisions: [2]Decision = undefined;
+    var scratch: [2]u16 = undefined;
+    try scheduleUsedAt(&vram, 0, &ids, &counts, benchPolicy(3, 100, 100), 8, &decisions, &scratch, allOwned());
+
+    try std.testing.expectEqual(Decision.hit, decisions[0]);
+    try std.testing.expectEqual(Decision.copy, decisions[1]);
+    try std.testing.expect(residentAt(vram, 0, 7));
+    try std.testing.expect(residentAt(vram, 0, 3));
+    try std.testing.expect(!residentAt(vram, 40, 7));
+    try std.testing.expect(vramIndexAt(vram, 0, 9) != null);
+    try std.testing.expectEqual(@as(u32, 8), stamp[0]);
+    try std.testing.expectEqual(@as(u32, 4), stamp[2]);
+    try std.testing.expectEqual(@as(u16, 7), slots[0]);
+    try std.testing.expectEqual(@as(u16, 3), slots[2]);
+}
+
+test "scheduleUsed is the layer-0 wrapper and is not the multi-layer path" {
+    var slots = [_]u16{ 1, 4 };
+    var line = [_]Line{ .resident, .resident };
+    var stamp = [_]u32{ 1, 50 };
+    var layer = [_]u8{ 0, 40 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    slots = .{ 1, 4 };
+    line = .{ .resident, .resident };
+    stamp = .{ 1, 50 };
+    layer = .{ 0, 40 };
+
+    // The flat vector says id 4 is hot. The wrapper stores that on layer 0 only,
+    // so the layer-40 copy scores 0 and is the victim.
+    var flat: [shape.experts]u32 = @splat(0);
+    flat[1] = 1;
+    flat[4] = 100;
+    var decisions: [1]Decision = undefined;
+    var scratch: [2]u16 = undefined;
+    const miss = [_]u16{9};
+    try scheduleUsed(&vram, &miss, &flat, benchPolicy(2, 100, 100), 6, &decisions, &scratch, allOwned());
+    try std.testing.expectEqual(Decision.copy, decisions[0]);
+    try std.testing.expectEqual(@as(u16, 1), slots[0]);
+    try std.testing.expectEqual(@as(u8, 0), layer[0]);
+    try std.testing.expectEqual(@as(u16, 9), slots[1]);
+    try std.testing.expectEqual(@as(u8, 0), layer[1]);
+    try std.testing.expect(!residentAt(vram, 40, 4));
+
+    slots = .{ 1, 4 };
+    line = .{ .resident, .resident };
+    stamp = .{ 1, 50 };
+    layer = .{ 0, 40 };
+    var counts: [shape.layers][shape.experts]u32 = @splat(@splat(0));
+    counts[0][1] = 1;
+    counts[40][4] = 100;
+    try scheduleUsedAt(&vram, 0, &miss, &counts, benchPolicy(2, 100, 100), 7, &decisions, &scratch, allOwned());
+    try std.testing.expectEqual(@as(u16, 9), slots[0]);
+    try std.testing.expectEqual(@as(u8, 0), layer[0]);
+    try std.testing.expectEqual(@as(u16, 4), slots[1]);
+    try std.testing.expectEqual(@as(u8, 40), layer[1]);
+    try std.testing.expect(residentAt(vram, 40, 4));
+    try std.testing.expect(!residentAt(vram, 0, 1));
+}
+
+test "scheduleUsedAt does not stage another rank or the shared expert" {
+    var slots = [_]u16{ Cache.empty_id, Cache.empty_id };
+    var line = [_]Line{ .empty, .empty };
+    var stamp = [_]u32{ 0, 0 };
+    var layer = [_]u8{ 0, 0 };
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    var counts: [shape.layers][shape.experts]u32 = @splat(@splat(0));
+    counts[3][400] = 50;
+    counts[3][9] = 1;
+    const ids = [_]u16{ 400, shared_id, 9 };
+    var decisions: [3]Decision = undefined;
+    var scratch: [4]u16 = undefined;
+    const rank0 = Owned{ .lo = 0, .hi = 256 };
+    const policy = benchPolicy(2, 100, 10_000);
+    try std.testing.expectError(error.Length, scheduleUsedAt(&vram, @intCast(shape.layers), &ids, &counts, policy, 4, &decisions, &scratch, rank0));
+    try std.testing.expectEqual(Line.empty, line[0]);
+
+    try scheduleUsedAt(&vram, 3, &ids, &counts, policy, 4, &decisions, &scratch, rank0);
+    try std.testing.expectEqual(Decision.cpu, decisions[0]);
+    try std.testing.expectEqual(Decision.hit, decisions[1]);
+    try std.testing.expectEqual(Decision.copy, decisions[2]);
+    try std.testing.expectEqual(@as(?usize, null), vramIndex(vram, 400));
+    try std.testing.expectEqual(@as(?usize, null), vramIndex(vram, shared_id));
+    try std.testing.expect(!residentAt(vram, 3, 9));
+    try std.testing.expect(vramIndexAt(vram, 3, 9) != null);
+    try std.testing.expectEqual(@as(u16, 9), slots[0]);
+    try std.testing.expectEqual(@as(u8, 3), layer[0]);
+    try std.testing.expectEqual(Line.empty, line[1]);
+    try std.testing.expect(slots[0] != shared_id and slots[1] != shared_id);
+}
+
+test "fillOwnedLayers stripes an explicit line count and skips the other rank" {
+    const wide: u16 = @intCast(shape.layers + 2);
+    var slots: [shape.layers + 2]u16 = @splat(Cache.empty_id);
+    var line: [shape.layers + 2]Line = @splat(.empty);
+    var stamp: [shape.layers + 2]u32 = @splat(0);
+    var layer: [shape.layers + 2]u8 = @splat(0);
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    var counts: [shape.layers][shape.experts]u32 = @splat(@splat(0));
+    const rank0 = Owned{ .lo = 0, .hi = 256 };
+    var short: [2][shape.experts]u32 = @splat(@splat(0));
+    try std.testing.expectError(error.Length, fillOwnedLayers(&vram, wide, &short, rank0));
+    try std.testing.expectError(error.Length, fillOwnedLayers(&vram, wide, &counts, .{ .lo = 4, .hi = 2 }));
+    try std.testing.expectEqual(Line.empty, line[0]);
+
+    const n = try fillOwnedLayers(&vram, wide, &counts, rank0);
+    try std.testing.expectEqual(wide, n);
+    // Id, then layer: slot 1 is layer 1's lowest id, not layer 0's second id.
+    try std.testing.expectEqual(@as(u16, 0), slots[0]);
+    try std.testing.expectEqual(@as(u8, 0), layer[0]);
+    try std.testing.expectEqual(@as(u16, 0), slots[1]);
+    try std.testing.expectEqual(@as(u8, 1), layer[1]);
+    try std.testing.expectEqual(@as(u16, 0), slots[shape.layers - 1]);
+    try std.testing.expectEqual(@as(u8, @intCast(shape.layers - 1)), layer[shape.layers - 1]);
+    try std.testing.expectEqual(@as(u16, 1), slots[shape.layers]);
+    try std.testing.expectEqual(@as(u8, 0), layer[shape.layers]);
+    try std.testing.expectEqual(@as(u16, 1), slots[shape.layers + 1]);
+    try std.testing.expectEqual(@as(u8, 1), layer[shape.layers + 1]);
+    var on_layer0: usize = 0;
+    for (slots, layer) |id, lay| {
+        try std.testing.expect(id < 256);
+        try std.testing.expect(id != shared_id);
+        if (lay == 0) on_layer0 += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 2), on_layer0);
+
+    // Fewer lines than layers: the remainder is layers 0..3, one lowest id each.
+    var few_slots: [4]u16 = @splat(Cache.empty_id);
+    var few_line: [4]Line = @splat(.empty);
+    var few_stamp: [4]u32 = @splat(0);
+    var few_layer: [4]u8 = @splat(0);
+    var few = Vram.init(&few_slots, &few_line, &few_stamp, &few_layer);
+    try std.testing.expectEqual(@as(u16, 4), try fillOwnedLayers(&few, 4, &counts, rank0));
+    try std.testing.expectEqual([_]u16{ 0, 0, 0, 0 }, few_slots);
+    try std.testing.expectEqual([_]u8{ 0, 1, 2, 3 }, few_layer);
+
+    // Rank 1. A hotter id outside Owned is not staged. Layer 0 keeps its hottest owned id.
+    var rank_slots: [4]u16 = @splat(Cache.empty_id);
+    var rank_line: [4]Line = @splat(.empty);
+    var rank_stamp: [4]u32 = @splat(0);
+    var rank_layer: [4]u8 = @splat(0);
+    var rank = Vram.init(&rank_slots, &rank_line, &rank_stamp, &rank_layer);
+    counts[0][1] = 999;
+    counts[0][300] = 5;
+    const rank1 = Owned{ .lo = 256, .hi = 512 };
+    try std.testing.expectEqual(@as(u16, 4), try fillOwnedLayers(&rank, 4, &counts, rank1));
+    try std.testing.expect(vramIndexAt(rank, 0, 300) != null);
+    try std.testing.expect(vramIndexAt(rank, 1, 256) != null);
+    try std.testing.expect(vramIndexAt(rank, 2, 256) != null);
+    try std.testing.expect(vramIndexAt(rank, 3, 256) != null);
+    try std.testing.expectEqual(@as(?usize, null), vramIndex(rank, 1));
+    for (rank_slots) |id| {
+        try std.testing.expect(id >= 256 and id < 512);
+        try std.testing.expect(id != shared_id);
+    }
+}
+
+test "fillOwnedLayers keeps a hot id inside the stripe and does not give its layer a second line" {
+    const lines: u16 = @intCast(shape.layers);
+    var slots: [shape.layers]u16 = @splat(Cache.empty_id);
+    var line: [shape.layers]Line = @splat(.empty);
+    var stamp: [shape.layers]u32 = @splat(0);
+    var layer: [shape.layers]u8 = @splat(0);
+    var vram = Vram.init(&slots, &line, &stamp, &layer);
+    var counts: [shape.layers][shape.experts]u32 = @splat(@splat(0));
+    counts[0][9] = 10;
+    counts[0][8] = 9;
+    const n = try fillOwnedLayers(&vram, lines, &counts, .{ .lo = 0, .hi = 256 });
+    try std.testing.expectEqual(lines, n);
+    try std.testing.expect(vramIndexAt(vram, 0, 9) != null);
+    try std.testing.expectEqual(@as(?usize, null), vramIndexAt(vram, 0, 8));
+    try std.testing.expect(vramIndexAt(vram, 1, 0) != null);
+    try std.testing.expect(vramIndexAt(vram, 40, 0) != null);
+    var on_layer0: usize = 0;
+    for (layer) |lay| {
+        if (lay == 0) on_layer0 += 1;
+    }
+    try std.testing.expectEqual(@as(usize, 1), on_layer0);
+}
+
+test "lineIds maps hits to their line and everything else to -1, stagedCopies lists each staged line once" {
+    var slots: [3]u16 = undefined;
+    var line: [3]Line = undefined;
+    var stamp: [3]u32 = undefined;
+    var layer: [3]u8 = undefined;
+    var v = Vram.init(&slots, &line, &stamp, &layer);
+    var counts: [shape.layers][shape.experts]u32 = @splat(@splat(0));
+    const pol = Policy{ .slots = 3, .expert_bytes = 10, .copy_bytes = 20 };
+    var ids = [_]u16{ 7, 9, 9, 11, 512 };
+    var dec: [5]Decision = undefined;
+    var scratch: [8]u16 = undefined;
+    try observe(&counts[2], &ids);
+    try scheduleUsedAt(&v, 2, &ids, &counts, pol, 1, &dec, &scratch, allOwned());
+    // 3 unique misses (9 twice is hottest), budget for two copies: 9 and 7 copy, 11 cpu, 512 hit.
+    try std.testing.expectEqual(Decision.copy, dec[0]);
+    try std.testing.expectEqual(Decision.copy, dec[1]);
+    try std.testing.expectEqual(Decision.copy, dec[2]);
+    try std.testing.expectEqual(Decision.cpu, dec[3]);
+    try std.testing.expectEqual(Decision.hit, dec[4]);
+    var copies: [4]Copy = undefined;
+    const n = try stagedCopies(v, 2, &ids, &dec, &copies);
+    try std.testing.expectEqual(@as(usize, 2), n);
+    var ln: [5]i32 = undefined;
+    try lineIds(v, 2, &ids, &dec, &ln);
+    try std.testing.expectEqualSlices(i32, &.{ -1, -1, -1, -1, -1 }, &ln);
+    try std.testing.expectError(error.Length, stagedCopies(v, 2, &ids, &dec, copies[0..1]));
+    for (copies[0..n]) |c| try reapAt(&v, 2, c.id, 2);
+    try scheduleUsedAt(&v, 2, &ids, &counts, pol, 3, &dec, &scratch, allOwned());
+    try lineIds(v, 2, &ids, &dec, &ln);
+    try std.testing.expectEqual(@as(i32, @intCast(lineOf(v, 2, 7).?)), ln[0]);
+    try std.testing.expectEqual(@as(i32, @intCast(lineOf(v, 2, 9).?)), ln[1]);
+    try std.testing.expectEqual(ln[1], ln[2]);
+    try std.testing.expect(ln[3] == -1 and ln[4] == -1);
+    try std.testing.expectEqual(@as(?usize, null), lineOf(v, 3, 7));
 }

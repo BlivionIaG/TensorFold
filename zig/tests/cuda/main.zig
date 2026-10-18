@@ -38,12 +38,39 @@ const lfm2_vision_tests = @import("lfm2_vision_tests.zig");
 const radio_tests = @import("radio_tests.zig");
 const glm_lanes_tests = @import("glm_lanes_tests.zig");
 const glm_synth = @import("glm_synth.zig");
+const exl3_window_tests = @import("exl3_window_tests.zig");
+const exl3_real_tests = @import("exl3_real_tests.zig");
+const exl3_bench = @import("exl3_bench.zig");
+const exl3_gdn_tests = @import("exl3_gdn_tests.zig");
+const exl3_moe_tests = @import("exl3_moe_tests.zig");
+const exl3_attn_tests = @import("exl3_attn_tests.zig");
+const exl3_fwd_tests = @import("exl3_fwd_tests.zig");
+const exl3_offload_tests = @import("exl3_offload_tests.zig");
+const exl3_ple_tests = @import("exl3_ple_tests.zig");
+const exl3_mtp_tests = @import("exl3_mtp_tests.zig");
+const exl3_tp_tests = @import("exl3_tp_tests.zig");
+const exl3_fwd_tp = @import("exl3_fwd_tp.zig");
+const exl3_ctx_tests = @import("exl3_ctx_tests.zig");
 
 const usage =
     \\usage: tf-cuda-test <command>
     \\  info                      driver, device and library versions
     \\  smoke                     copies, fills, launches, argument packing, module globals
     \\  graph                     stream capture, explicit graphs, node and whole-exec updates
+    \\  exl3-real <dir> [layer] [expert]  one real EXL3 expert vs the Zig decoder
+    \\  exl3-bench <dir> [launches]  old vs new EXL3 projection kernels on real shapes: bit equality + cudaEvent ms
+    \\  exl3-gdn <dir> [layer ...]  a real EXL3 Gated DeltaNet layer: prefill + decode with state, vs the f64 oracle
+    \\  exl3-moe <dir> [layers]  real MoE block + mlp hyper-connection vs f64 oracles (default layers 0,17)
+    \\  exl3-attn <dir> [layer a] [layer b]  real full-attention layers: KV write, indexer top-k, sparse decode vs the CPU oracle
+    \\  exl3-forward <dir> layer|tf|gen ...  the assembled EXL3 forward (embed, layers, head) vs the f64 oracle; greedy generation
+    \\  exl3-ctx <dir> tf|long|prefix ...  multi-prompt teacher forcing, ~2300-token sparse-indexer prompt, prefix-cache snapshot/restore
+    \\  exl3-offload <dir> [layers]  real expert offload: H2D line pool + Exl3.hit + CPU miss rows vs fully resident, count promotion, graph replay
+    \\  exl3-ple <dir> [qbench row] [tokens]  the real n-gram PLE path: ids, mmap vs pread rows, dequant, layer injection, hot-row cache, RSS (host)
+    \\  exl3-mtp <dir> oracle|spec|spec-reject[+hc][+pN] [count] [ids ...]  the MTP head vs an f64 oracle; single-draft speculative greedy vs serial (stream identity, acceptance)
+    \\  exl3-gdn-tp <dir> [layer ...]  GDN layers split over both GPUs (host bounce) vs tp=1: byte-identical slices, K-split out_proj within fp16
+    \\  exl3-attn-tp <dir> [layer a] [layer b]  full attention split over both GPUs: prefill, graph decode, synthetic sparse indexer vs tp=1
+    \\  exl3-forward-tp <dir> [layers] [ids]  teacher-forced 16-token prompt on both GPUs (tp=2) vs the tp=1 engine
+    \\  exl3-window               EXL3 graph replay, prefix KV cache, and MTP accept
     \\  overhead [n] [reps]       dependent one-thread kernels: plain stream vs one graph
     \\  overhead-pdl [n] [reps]   the same with programmatic dependent launch on every kernel
     \\  launch-ex                 cuLaunchKernelEx: clusters, cooperative grid, PDL on a stream and in a graph
@@ -131,6 +158,20 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "info")) return info(gpu);
     if (std.mem.eql(u8, cmd, "smoke")) return runtime_tests.smoke(gpu);
     if (std.mem.eql(u8, cmd, "graph")) return runtime_tests.graphs(gpu);
+    if (std.mem.eql(u8, cmd, "exl3-window")) return exl3_window_tests.run(gpu);
+    if (std.mem.eql(u8, cmd, "exl3-gdn")) return exl3_gdn_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-real")) return exl3_real_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-bench")) return exl3_bench.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-moe")) return exl3_moe_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-attn")) return exl3_attn_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-forward")) return exl3_fwd_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-ctx")) return exl3_ctx_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-offload")) return exl3_offload_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-ple")) return exl3_ple_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-mtp")) return exl3_mtp_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-forward-tp")) return exl3_fwd_tp.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-gdn-tp")) return exl3_tp_tests.runGdn(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-attn-tp")) return exl3_tp_tests.runAttn(gpu, rest);
     if (std.mem.eql(u8, cmd, "overhead") or std.mem.eql(u8, cmd, "overhead-pdl")) {
         const n = if (rest.len > 0) try std.fmt.parseInt(usize, rest[0], 10) else 1000;
         const reps = if (rest.len > 1) try std.fmt.parseInt(usize, rest[1], 10) else 20;
