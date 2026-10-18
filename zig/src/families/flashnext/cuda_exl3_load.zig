@@ -35,6 +35,11 @@ pub const Ops = struct {
     /// The routed experts' scratch for `moe_rows` rows of 11 slots.
     moe: ?cuda.DeviceBuffer = null,
     moe_rows: usize = 0,
+    /// fp16 rows split into bf16 hi and lo [2, rows, k], and their fp32 products [2, rows, n] (an fp16-input Proj).
+    halves: ?cuda.DeviceBuffer = null,
+    sums: ?cuda.DeviceBuffer = null,
+    glue: ?cuda.Module = null,
+    split_fn: cuda.Function = undefined,
 
     pub fn create(gpa: std.mem.Allocator, d: *const cuda.Driver) !*Ops {
         const o = try gpa.create(Ops);
@@ -54,6 +59,9 @@ pub const Ops = struct {
         if (o.experts) |*x| x.unload();
         if (o.tmp) |*b| b.free();
         if (o.moe) |*b| b.free();
+        if (o.halves) |*b| b.free();
+        if (o.sums) |*b| b.free();
+        if (o.glue) |*m| m.unload();
         o.gpa.destroy(o);
     }
 
@@ -61,6 +69,18 @@ pub const Ops = struct {
     pub fn linear(o: *Ops) !*cuda.exl3.Dense {
         if (o.dense == null) o.dense = try cuda.exl3.Dense.load(o.d);
         return &o.dense.?;
+    }
+
+    /// fn_exl3_split_f16 (flashnext_exl3.cu), loaded on first use.
+    pub fn split(o: *Ops) !cuda.Function {
+        if (o.glue == null) {
+            if (!cuda.kernels.available) return error.BuiltWithoutKernels;
+            var m = try cuda.Module.load(o.d, cuda.kernels.flashnext_exl3);
+            errdefer m.unload();
+            o.split_fn = try m.function("fn_exl3_split_f16");
+            o.glue = m;
+        }
+        return o.split_fn;
     }
 
     pub fn grouped(o: *Ops) !*const cuda.exl3_experts.Experts {
@@ -135,6 +155,8 @@ pub const Proj = struct {
     k: usize,
     n: usize,
     parts: []Part,
+    /// The rows the pass hands in: bf16, or fp16 bit patterns (an EXL3 pack's n-gram rows, cuda_exl3_ple.zig).
+    x: enum { bf16, f16 } = .bf16,
     bufs: std.ArrayList(cuda.DeviceBuffer) = .empty,
     natives: std.ArrayList(projection.Projection) = .empty,
 
@@ -227,6 +249,29 @@ pub fn hasAny(store: *const Store, prefix: []const u8, names: []const []const u8
 /// cuda_projection_load.loadStitched's EXL3 branch: parts side by side in one output row, EXL3 or dense BF16.
 pub fn stitched(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, prefix: []const u8, names: []const []const u8, n: usize, k: usize) !projection.Projection {
     return wrap(gpa, d, store, prefix, names, n, k);
+}
+
+/// cuda_prompt_load's PLE branch: an EXL3 pack's n-gram rows reach key_proj and value_proj as fp16 bit patterns
+/// (cuda_exl3_ple.zig's default, as the reference multiplies fp16 rows by the F16 projections), so both dense
+/// projections take fp16 rows: split exactly into two bf16 rows, two bf16 products summed in fp32
+/// (cuda_exl3_pass.zig). TF_FLASHNEXT_PLE_EMB=bf16 keeps the bf16 lanes (the rows then come rounded to bf16).
+pub fn pleRows(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, key: *projection.Projection, value: *projection.Projection) !void {
+    if (store.exl3_ops == null) return; // not an EXL3 pack: the n-gram rows are bf16
+    if (@import("cuda_exl3_ple.zig").optionsFromEnv().emb != .f16) return;
+    for ([_]*projection.Projection{ key, value }) |q| {
+        const native = q.native orelse return error.UnexpectedTensor;
+        const p = try gpa.create(Proj);
+        p.* = .{ .gpa = gpa, .ops = try opsOf(store, d), .k = q.k, .n = q.n, .parts = &.{}, .x = .f16 };
+        errdefer p.destroy();
+        p.parts = try gpa.alloc(Part, 1);
+        p.parts[0] = .{ .col = 0, .n = q.n, .kind = .{ .native = native } };
+        try p.natives.append(gpa, q.*);
+        var out = projection.Projection.empty(d);
+        out.n = q.n;
+        out.k = q.k;
+        out.exl3 = p;
+        q.* = out;
+    }
 }
 
 /// One layer's routed experts and the shared expert (id `wt.experts_n`) for exl3_experts.Experts.

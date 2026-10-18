@@ -4,6 +4,7 @@
 //!                                                                     indexed is left unclaimed but the vision tower
 //!        tf-cuda-test flashnext-exl3 <pack dir> norms                 the one centred-norm convention and its cross-checks
 //!        tf-cuda-test flashnext-exl3 <pack dir> router [layers] [rows] router picks (device) vs float64 (default 0,3,17)
+//!        tf-cuda-test flashnext-exl3 <pack dir> ple                   PLE key/value from fp16 n-gram rows vs float64
 //!        tf-cuda-test flashnext-exl3 <pack dir> layer [layers]        projections, then one whole decoder layer (prefill
 //!                                                                     8 rows + 4 decode rows) vs the float64 layer (0,3)
 const std = @import("std");
@@ -1067,6 +1068,91 @@ fn layerMode(gpu: Gpu, dir: []const u8, which: []const usize) !void {
     try check.expect(failed == 0, "flashnext-exl3 layer: {d} checks failed", .{failed});
 }
 
+/// The PLE key/value projections of an EXL3 pack take the n-gram rows as fp16 (cuda_exl3_ple.zig's default): through
+/// Pass.lane() (exact split into two bf16 rows, two bf16 products, fp32 sums) against float64 of the fp16 rows times the
+/// stored F16 weights; beside it, the error the rows would carry if rounded to bf16 first (TF_FLASHNEXT_PLE_EMB=bf16).
+fn pleMode(gpu: Gpu, dir: []const u8) !void {
+    var rig: Rig = undefined;
+    try rig.init(gpu, dir, 8, 64);
+    defer rig.deinit();
+    var raw = try RawPack.open(gpu, dir);
+    defer raw.close(gpu);
+    var arena: std.heap.ArenaAllocator = .init(gpu.gpa);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const d: *cuda.Driver = @constCast(gpu.d);
+    // an EXL3 pack's store holds the shared Ops once its first EXL3 matrix loads; this check loads none
+    (try X.load.opsOf(&rig.store, gpu.d)).release();
+    var key = try X.projection_load.load(a, d, &rig.store, "language_model.model.layers.1.ple.key_proj", wide, dims);
+    defer key.free();
+    var value = try X.projection_load.load(a, d, &rig.store, "language_model.model.layers.1.ple.value_proj", dims, dims);
+    defer value.free();
+    try X.load.pleRows(a, d, &rig.store, &key, &value);
+    try check.expect(key.exl3 != null and key.exl3.?.x == .f16 and value.exl3.?.x == .f16, "ple: key/value did not take fp16 rows", .{});
+    var p = rig.pass(&.{});
+    const kw = try f64Of(a, try raw.get("model.language_model.layers.1.ple.key_proj.weight", .{}));
+    const vw = try f64Of(a, try raw.get("model.language_model.layers.1.ple.value_proj.weight", .{}));
+    var prng = std.Random.DefaultPrng.init(0x91e_f16);
+    const rng = prng.random();
+    var worst_key: f64 = 0;
+    var worst_value: f64 = 0;
+    var worst_bf16: f64 = 0;
+    for ([_]usize{ 1, 5, 8 }) |m| {
+        const xh = try a.alloc(f16, m * dims);
+        const xv = try a.alloc(f64, m * dims);
+        const xr = try a.alloc(u16, m * dims); // the same rows rounded to bf16
+        for (xh, xv, xr) |*h, *v, *b| {
+            h.* = @floatCast(rng.floatNorm(f32) * 0.5);
+            v.* = @floatCast(h.*);
+            b.* = bf16Bits(@floatCast(h.*));
+        }
+        var xd = try cuda.DeviceBuffer.fromHost(gpu.d, std.mem.sliceAsBytes(xh));
+        defer xd.free();
+        const want_k = try a.alloc(f64, m * wide);
+        const want_v = try a.alloc(f64, m * dims);
+        for (0..m) |r| {
+            for (0..wide) |j| {
+                var acc: f64 = 0;
+                for (0..dims) |i| acc += xv[r * dims + i] * kw[j * dims + i];
+                want_k[r * wide + j] = acc;
+            }
+            for (0..dims) |j| {
+                var acc: f64 = 0;
+                for (0..dims) |i| acc += xv[r * dims + i] * vw[j * dims + i];
+                want_v[r * dims + j] = acc;
+            }
+        }
+        const got_k = try laneOut(gpu, &p, key, xd.ptr, m, 1);
+        const ek = errOf(got_k.bf.?, want_k);
+        // the value projection as pleBlock reads it: the sum of its 4 fp32 K slices
+        var slices = try cuda.DeviceBuffer.alloc(gpu.d, 4 * m * dims * 4);
+        defer slices.free();
+        try slices.fill8(0xff, p.stream.handle);
+        try p.lane(xd.ptr, p.s.dummy, value, p.s.dummy, slices.ptr, m, 4);
+        const all = try download(f32, gpu, p.stream, slices.ptr, 4 * m * dims);
+        defer gpu.gpa.free(all);
+        const sum = try a.alloc(f64, m * dims);
+        for (sum, 0..) |*o, i| o.* = @as(f64, all[i]) + all[m * dims + i] + all[2 * m * dims + i] + all[3 * m * dims + i];
+        const ev = errOf(sum, want_v);
+        // the bf16-row alternative, on the host in float64: rows rounded to bf16, weights exact
+        const alt = try a.alloc(f64, m * dims);
+        for (0..m) |r| for (0..dims) |j| {
+            var acc: f64 = 0;
+            for (0..dims) |i| acc += bfValue(xr[r * dims + i]) * vw[j * dims + i];
+            alt[r * dims + j] = acc;
+        };
+        const eb = errOf(alt, want_v);
+        std.debug.print("  ple rows={d}: key_proj bf16 out rel {e:.3}; value_proj fp32 slices rel {e:.3}; (bf16-rounded rows would give {e:.3})\n", .{ m, ek.rel, ev.rel, eb.rel });
+        worst_key = @max(worst_key, ek.rel);
+        worst_value = @max(worst_value, ev.rel);
+        worst_bf16 = @max(worst_bf16, eb.rel);
+    }
+    // key: bf16 output rounding (2^-9 of a value); value: fp32 sums of exact products
+    try check.expect(worst_key <= 4e-3, "ple: key_proj from fp16 rows is {e:.3} of peak from float64", .{worst_key});
+    try check.expect(worst_value <= 1e-5, "ple: value_proj from fp16 rows is {e:.3} of peak from float64", .{worst_value});
+    check.pass("ple: fp16 n-gram rows through key/value (exact bf16 split): key {e:.3}, value {e:.3} of peak (bf16-rounded rows: {e:.3})", .{ worst_key, worst_value, worst_bf16 });
+}
+
 fn parseList(gpa: std.mem.Allocator, text: []const u8) ![]usize {
     var list: std.ArrayList(usize) = .empty;
     var it = std.mem.splitScalar(u8, text, ',');
@@ -1080,6 +1166,7 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     const mode = rest[1];
     if (std.mem.eql(u8, mode, "names")) return names(gpu, dir);
     if (std.mem.eql(u8, mode, "norms")) return norms(gpu, dir);
+    if (std.mem.eql(u8, mode, "ple")) return pleMode(gpu, dir);
     if (std.mem.eql(u8, mode, "router")) {
         const which = try parseList(gpu.gpa, if (rest.len > 2) rest[2] else "0,3,17");
         defer gpu.gpa.free(which);

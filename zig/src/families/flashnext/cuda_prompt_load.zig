@@ -332,6 +332,7 @@ fn loadLayerAtRank(gpa: std.mem.Allocator, driver: *cuda.Driver, stream: *cuda.S
         const pp = pre_buf[0..pre.len];
         key_q = try projections.load(gpa, driver, store, try std.fmt.bufPrint(&buf, "{s}.key_proj", .{pp}), wide, dims);
         val_q = try projections.load(gpa, driver, store, try std.fmt.bufPrint(&buf, "{s}.value_proj", .{pp}), dims, dims);
+        try exl3_load.pleRows(gpa, driver, store, &key_q, &val_q);
         const nk = try store.normScale(gpa, try store.tensor(try std.fmt.bufPrint(&buf, "{s}.norm_key.weight", .{pp})));
         defer gpa.free(nk);
         const nq = try store.normScale(gpa, try store.tensor(try std.fmt.bufPrint(&buf, "{s}.norm_query.weight", .{pp})));

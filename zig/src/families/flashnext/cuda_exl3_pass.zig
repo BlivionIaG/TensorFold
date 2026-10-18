@@ -35,6 +35,7 @@ fn part(p: anytype, ops: *load.Ops, pt: load.Part, x: u64, k: usize, m: usize, y
 /// sk - 1 slices zeroed (the slice-summing callers' contract, as the native lane keeps it).
 pub fn lane(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: usize, sk: usize) !void {
     const s = p.stream;
+    if (e.x == .f16) return laneF16(p, x, e, out, slices, m, sk);
     if (sk > 1) {
         if (e.parts.len != 1) return error.UnexpectedTensor;
         try part(p, e.ops, e.parts[0], x, e.k, m, slices, true);
@@ -52,6 +53,28 @@ pub fn lane(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: u
         try part(p, e.ops, pt, x, e.k, m, tmp, false);
         try copy2d(s, out + pt.col * 2, e.n * 2, tmp, pt.n * 2, pt.n * 2, m);
     }
+}
+
+/// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32,
+/// summed in fp32: bf16 [m, n] for sk 1 (fn_sum_slices), else the two products as K slices 0 and 1, the rest zeroed.
+fn laneF16(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: usize, sk: usize) !void {
+    const s = p.stream;
+    if (e.parts.len != 1 or e.parts[0].kind != .native) return error.UnexpectedTensor;
+    const w = e.parts[0].kind.native;
+    const count = m * e.k;
+    const halves = try e.ops.scratch(s, &e.ops.halves, 2 * count * 2);
+    var a: cuda.Args = .{};
+    a.add(x);
+    a.add(halves);
+    a.add(halves + count * 2);
+    a.add(@as(c_longlong, @intCast(count)));
+    try cuda.launch.launch(try e.ops.split(), .{ .grid = .{ .x = @intCast((count + 255) / 256) }, .block = .{ .x = 256 } }, s, &a);
+    const bytes = m * e.n * 4;
+    const sums = if (sk == 1) try e.ops.scratch(s, &e.ops.sums, 2 * bytes) else slices;
+    try p.k.native_lane.matmulF32(s, halves, e.k, m, w, sums, p.s.native_part);
+    try p.k.native_lane.matmulF32(s, halves + count * 2, e.k, m, w, sums + bytes, p.s.native_part);
+    if (sk == 1) return p.sumSlices(sums, out, true, m * e.n, 2);
+    if (sk > 2) try s.d.check(s.d.api.cuMemsetD8Async(slices + 2 * bytes, 0, bytes * (sk - 2), s.handle), "cuMemsetD8Async");
 }
 
 /// Pass.moeBlock() for EXL3 experts: the router's 513 logits (the BF16 rows the Store widened exactly), each row's ten
