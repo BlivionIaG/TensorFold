@@ -7,6 +7,7 @@ const ple = @import("cuda_ple.zig");
 const wt = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_prompt_load.zig");
 const parts = @import("cuda_batch_state.zig");
+const exl3_pass = @import("cuda_exl3_pass.zig");
 
 const layers_n = wt.layers_n;
 const linear_n = wt.linear_n;
@@ -105,6 +106,7 @@ pub fn Pass(comptime Tri: type) type {
 
         /// qmm.cu's lane tile over m rows: out bf16 [m, n] (sk 1) or the unreduced fp32 slices [sk, m, n] in part.
         pub fn lane(self: *Self, x: u64, xs: u64, w: Q4, out: u64, part: u64, m: usize, sk: usize) !void {
+            if (w.exl3) |e| return exl3_pass.lane(self, x, e, out, part, m, sk);
             if (w.native) |native| {
                 if (sk == 1) return self.k.native_lane.matmul(self.stream, x, w.k, m, native, out, self.s.native_part);
                 // Legacy callers consume SK slices; the native lane has already reduced its own shape-driven slices.
@@ -231,7 +233,7 @@ pub fn Pass(comptime Tri: type) type {
             }
         }
 
-        fn gdnBlock(self: *Self, lw: *const Layer, li: usize, keep: LayerKeep) !void {
+        pub fn gdnBlock(self: *Self, lw: *const Layer, li: usize, keep: LayerKeep) !void {
             const s = self.s;
             const n = self.rows;
             try self.lane(s.mixed, s.xsm, lw.proj, s.proj, s.dummy, n, 1);
@@ -363,6 +365,7 @@ pub fn Pass(comptime Tri: type) type {
 
         /// Router, each row's ten experts and the shared one, the grouped expert launches: y [rows, 11, dims] fp32.
         pub fn moeBlock(self: *Self, lw: *const Layer) !void {
+            if (lw.exl3) |x| return exl3_pass.moe(self, lw, x);
             const s = self.s;
             const n = self.rows;
             const pairs = n * slots;
