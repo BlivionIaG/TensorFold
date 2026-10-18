@@ -40,6 +40,7 @@ const glm_lanes_tests = @import("glm_lanes_tests.zig");
 const glm_synth = @import("glm_synth.zig");
 const exl3_window_tests = @import("exl3_window_tests.zig");
 const exl3_real_tests = @import("exl3_real_tests.zig");
+const exl3_bench = @import("exl3_bench.zig");
 const exl3_gdn_tests = @import("exl3_gdn_tests.zig");
 const exl3_moe_tests = @import("exl3_moe_tests.zig");
 const exl3_attn_tests = @import("exl3_attn_tests.zig");
@@ -56,6 +57,7 @@ const usage =
     \\  smoke                     copies, fills, launches, argument packing, module globals
     \\  graph                     stream capture, explicit graphs, node and whole-exec updates
     \\  exl3-real <dir> [layer] [expert]  one real EXL3 expert vs the Zig decoder
+    \\  exl3-bench <dir> [launches]  old vs new EXL3 projection kernels on real shapes: bit equality + cudaEvent ms
     \\  exl3-gdn <dir> [layer ...]  a real EXL3 Gated DeltaNet layer: prefill + decode with state, vs the f64 oracle
     \\  exl3-moe <dir> [layers]  real MoE block + mlp hyper-connection vs f64 oracles (default layers 0,17)
     \\  exl3-attn <dir> [layer a] [layer b]  real full-attention layers: KV write, indexer top-k, sparse decode vs the CPU oracle
@@ -157,6 +159,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "exl3-window")) return exl3_window_tests.run(gpu);
     if (std.mem.eql(u8, cmd, "exl3-gdn")) return exl3_gdn_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-real")) return exl3_real_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-bench")) return exl3_bench.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-moe")) return exl3_moe_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-attn")) return exl3_attn_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-forward")) return exl3_fwd_tests.run(gpu, rest);
