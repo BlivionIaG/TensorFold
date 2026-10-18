@@ -201,7 +201,7 @@ pub const Lin = struct {
 };
 
 fn devBytes(gpu: Gpu, t: st.Tensor) !cuda.DeviceBuffer {
-    return cuda.DeviceBuffer.fromHost(gpu.d, t.bytes);
+    return dupload(gpu, t.bytes);
 }
 
 pub const GdnDev = struct {
@@ -326,7 +326,7 @@ pub const AttnDev = struct {
         var up: usize = 0;
         errdefer for (sc[0..up]) |*b| b.free();
         for (host, &sc) |h, *d| {
-            d.* = try cuda.DeviceBuffer.fromHost(gpu.d, std.mem.sliceAsBytes(h));
+            d.* = try dupload(gpu, std.mem.sliceAsBytes(h));
             up += 1;
         }
         return .{ .q = q, .k = k, .v = v, .o = o, .idx = idx, .q_scale = sc[0], .k_scale = sc[1], .iq_scale = sc[2], .ik_scale = sc[3] };
@@ -900,7 +900,7 @@ pub const Engine = struct {
         var hc_scratch = try cuda.exl3_hc.Scratch.alloc(gpu.d, opt.max_rows);
         errdefer hc_scratch.free();
         const inv = attn_cpu.invFreq();
-        var inv_dev = try cuda.DeviceBuffer.fromHost(gpu.d, std.mem.sliceAsBytes(&inv));
+        var inv_dev = try dupload(gpu, std.mem.sliceAsBytes(&inv));
         errdefer inv_dev.free();
         var b = try Bufs.alloc(gpu, opt);
         errdefer b.free();
@@ -1430,6 +1430,15 @@ pub fn dalloc(gpu: Gpu, bytes: usize) !cuda.DeviceBuffer {
     var b = try cuda.DeviceBuffer.alloc(gpu.d, bytes);
     errdefer b.free();
     try b.fill8(0, null);
+    // fill8 and pageable copies are not ordered against the engine's non-blocking streams (they read all-zero rows intermittently under load)
+    try gpu.ctx.synchronize();
+    return b;
+}
+
+/// `DeviceBuffer.fromHost` followed by a context sync, for the same ordering reason as `dalloc`.
+pub fn dupload(gpu: Gpu, bytes: []const u8) !cuda.DeviceBuffer {
+    const b = try cuda.DeviceBuffer.fromHost(gpu.d, bytes);
+    try gpu.ctx.synchronize();
     return b;
 }
 
