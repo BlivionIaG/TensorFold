@@ -5,7 +5,7 @@ const cuda = @import("cuda");
 const core = @import("core");
 const embed = @import("cuda_embed.zig");
 const hc = @import("cuda_hc.zig");
-const ple_pool = @import("cuda_ple_pool.zig");
+const exl3_ple = @import("cuda_exl3_ple.zig");
 
 const golden: u64 = 0x9E3779B97F4A7C15;
 const mix1: u64 = 0xBF58476D1CE4E5B9;
@@ -342,9 +342,9 @@ pub const Ngram = struct {
     w: [max_shards][]const u8 = undefined,
     s: [max_shards][]const u8 = undefined,
     b: [max_shards][]const u8 = undefined,
-    format: enum { mlx, nvfp4 } = .mlx,
+    format: enum { mlx, nvfp4, exl3 } = .mlx,
     tables: [max_shards]core.nvfp4_rows.Table = undefined,
-    pool: ?*ple_pool.Pool = null, // the gather's parked workers (null: every row on the caller's thread)
+    x3: ?*exl3_ple.Table = null,
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, model_dir: []const u8) !Ngram {
         const cfg = try readSpec(gpa, io, model_dir);
@@ -361,6 +361,7 @@ pub const Ngram = struct {
             .ple_index = cfg.ple_index,
         }), .scale = 1 };
         errdefer g.deinit();
+        if (try exl3_ple.Table.open(gpa, io, model_dir, g.hash, exl3_ple.optionsFromEnv())) |t| return .{ .gpa = gpa, .hash = g.hash, .scale = 1, .format = .exl3, .x3 = t };
         const index_path = try std.fs.path.join(gpa, &.{ model_dir, "model.safetensors.index.json" });
         defer gpa.free(index_path);
         const text = try std.Io.Dir.cwd().readFileAlloc(io, index_path, gpa, .limited(1 << 26));
@@ -417,7 +418,7 @@ pub const Ngram = struct {
     }
 
     pub fn deinit(g: *Ngram) void {
-        if (g.pool) |p| p.destroy();
+        if (g.x3) |t| t.destroy();
         for (g.files.items) |*o| o.close(g.gpa);
         g.files.deinit(g.gpa);
     }
@@ -436,6 +437,7 @@ pub const Ngram = struct {
             switch (g.format) {
                 .mlx => try embed.dequant(g.w[loc.shard], g.s[loc.shard], g.b[loc.shard], dh, loc.local, row),
                 .nvfp4 => try g.tables[loc.shard].gather(&.{loc.local}, row),
+                .exl3 => try g.x3.?.row(loc.shard, loc.local, i % g.hash.heads, row),
             }
         }
     }
@@ -484,7 +486,7 @@ pub const Ngram = struct {
                     v.* = toBf16(f * g.scale);
                 }
             }
-            sumGroups(row, xs[t * (w / 32) ..][0 .. w / 32]);
+            if (g.x3) |x3| x3.sums(row, xs[t * (w / 32) ..][0 .. w / 32]) else sumGroups(row, xs[t * (w / 32) ..][0 .. w / 32]);
         }
         @memcpy(history, hist[0..history.len]);
     }
@@ -516,6 +518,5 @@ test "a fresh window hashes token 7 into sixteen rows" {
 
 test {
     _ = @import("cuda_ple_nvfp4_test.zig");
-    _ = @import("cuda_ple_pool.zig");
-    _ = @import("cuda_ple_pool_gather_test.zig");
+    _ = @import("cuda_exl3_ple.zig");
 }

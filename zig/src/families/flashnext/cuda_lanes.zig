@@ -10,6 +10,7 @@ const lanes_draft = @import("cuda_lanes_draft.zig");
 const snap = @import("cuda_snap.zig");
 const ranks = @import("cuda_rank_engine.zig");
 const config = @import("cuda_config.zig");
+const exl3_memory = @import("cuda_exl3_memory.zig");
 const Glue = @import("cuda_glue.zig").Glue;
 const living = @import("living");
 const slide_mod = @import("cuda_slide.zig");
@@ -28,7 +29,7 @@ pub fn Namespace(comptime Tri: type) type {
     return struct {
         pub const model_type = "qwen4_exp";
         pub const tp_draft_snapshots = false;
-        pub const formats: []const []const u8 = &.{ "mlx-q4g32", "modelopt-mixed" };
+        pub const formats: []const []const u8 = &.{ "mlx-q4g32", "modelopt-mixed", @import("cuda_exl3_config.zig").format };
         // the model's window: past 2,048 keys the block indexer picks each row's 512 best blocks of 4 (cuda_batch.zig)
         pub const default_context: i64 = @intCast(prompt.max_tokens);
         // a prompt runs on the batched pass in chunks of this many rows, one a prefill_step: no staggered segments
@@ -94,11 +95,23 @@ pub fn Namespace(comptime Tri: type) type {
 
         /// Device bytes of the checkpoint: the n-gram tables stay mapped, the MTP head counts; 0 if unread.
         pub fn deviceWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) u64 {
-            return bytes.deviceWeightBytes(gpa, io, dir);
+            if (exl3_memory.isExl3(gpa, io, dir)) return exl3_memory.weightBytes(gpa, io, dir);
+            const main = weights.deviceBytes(gpa, io, dir) catch return 0;
+            return main + mtp.headBytes();
         }
 
         pub fn placementWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, world: usize, rank: usize, drafts: bool) !u64 {
-            return bytes.placementWeightBytes(gpa, io, dir, world, rank, drafts);
+            if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
+            const mode = try config.mode(gpa, io, dir);
+            if (mode == .exl3) return exl3_memory.placement(gpa, io, dir, world, rank, drafts);
+            if (mode == .modelopt) {
+                const main = try @import("cuda_rank_memory.zig").estimate(gpa, io, dir, world, rank);
+                // Dense draft projections and vocabulary rows exceed the affine head's estimate.
+                return main + if (drafts and rank == 0) mtp.headBytes() + (1 << 30) else @as(u64, 0);
+            }
+            if (world != 1) return error.UnsupportedQuantization;
+            const main = try weights.deviceBytes(gpa, io, dir);
+            return main + if (drafts) mtp.headBytes() else @as(u64, 0);
         }
 
         /// The tower's weights and one call's scratch, which rank zero holds beside the text weights with --vision.
