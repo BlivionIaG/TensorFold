@@ -39,6 +39,7 @@ pub const embed = @import("exl3_embed.zig");
 pub const window = @import("exl3_window.zig");
 pub const fwd_cpu = @import("exl3_fwd_cpu.zig");
 pub const fwd_ple = @import("exl3_fwd_ple.zig");
+pub const tp_split = @import("exl3_tp_split.zig");
 
 test {
     _ = shape;
@@ -76,4 +77,5 @@ test {
     _ = window;
     _ = fwd_cpu;
     _ = fwd_ple;
+    _ = tp_split;
 }

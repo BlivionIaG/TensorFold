@@ -59,6 +59,7 @@ pub const embed_rows: []const u8 = if (available) &Blob("fatbin_embed_rows").byt
 pub const exl3_linear: []const u8 = if (available) &Blob("fatbin_exl3_linear").bytes else &.{};
 pub const exl3_experts: []const u8 = if (available) &Blob("fatbin_exl3_experts").bytes else &.{};
 pub const exl3_gdn: []const u8 = if (available) &Blob("fatbin_exl3_gdn").bytes else &.{};
+pub const exl3_gdn_tp: []const u8 = if (available) &Blob("fatbin_exl3_gdn_tp").bytes else &.{};
 pub const exl3_attn: []const u8 = if (available) &Blob("fatbin_exl3_attn").bytes else &.{};
 pub const exl3_hc: []const u8 = if (available) &Blob("fatbin_exl3_hc").bytes else &.{};
 
@@ -77,6 +78,14 @@ pub const exl3_gdn_symbols = struct {
     pub const conv_f16 = "exl3_gdn_conv_f16";
     pub const delta_f32 = "exl3_gdn_delta_f32";
     pub const norm_f16 = "exl3_gdn_norm_f16";
+};
+
+/// extern "C" names in the exl3_gdn_tp fatbin (exl3_gdn's kernels with the head counts as arguments).
+pub const exl3_gdn_tp_symbols = struct {
+    pub const ab_f16 = "exl3_gdn_tp_ab_f16";
+    pub const conv_f16 = "exl3_gdn_tp_conv_f16";
+    pub const delta_f32 = "exl3_gdn_tp_delta_f32";
+    pub const norm_f16 = "exl3_gdn_tp_norm_f16";
 };
 
 /// extern "C" names in the exl3_attn fatbin (the full-attention layer's glue, KV write, indexer and decode).

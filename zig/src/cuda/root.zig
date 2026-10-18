@@ -37,6 +37,7 @@ pub const exl3 = @import("exl3.zig");
 pub const exl3_gdn = @import("exl3_gdn.zig");
 pub const exl3_attn = @import("exl3_attn.zig");
 pub const exl3_hc = @import("exl3_hc.zig");
+pub const exl3_tp = @import("exl3_tp.zig");
 pub const exl3_offload = @import("exl3_offload.zig");
 pub const vit = @import("vit.zig");
 pub const experts = @import("experts.zig");
@@ -57,6 +58,7 @@ test {
     _ = @import("exl3_gdn.zig");
     _ = @import("exl3_attn.zig");
     _ = @import("exl3_hc.zig");
+    _ = @import("exl3_tp.zig");
     _ = @import("exl3_offload.zig");
     _ = @import("vit.zig");
     _ = @import("experts.zig");
