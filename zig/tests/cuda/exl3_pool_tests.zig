@@ -587,7 +587,7 @@ fn missCost(gpu: Gpu, ex: *const exl3e.Experts, s: cuda.Stream, ld: *const Layer
         }
         const w = median(&wall);
         if (k == 0) base = w;
-        std.debug.print("    k={d:>2}: round wall {d:.3} ms (+{d:.3} vs all-hit), copy stream {d:.3} ms ({d:.3} ms/expert), compute span {d:.3} ms (includes its wait on the copies), host stage {d:.3} ms\n", .{
+        std.debug.print("    k={d:>2}: round wall {d:.3} ms (+{d:.3} vs all-hit), copy stream {d:.3} ms ({d:.3} ms/expert), experts compute {d:.3} ms (measured after the stream's wait on the copies), host stage {d:.3} ms\n", .{
             k, w, w - base, median(&copy), if (k > 0) median(&copy) / @as(f64, @floatFromInt(k)) else 0, median(&comp), median(&stage_host),
         });
     }
