@@ -43,6 +43,7 @@ const exl3_real_tests = @import("exl3_real_tests.zig");
 const exl3_gdn_tests = @import("exl3_gdn_tests.zig");
 const exl3_moe_tests = @import("exl3_moe_tests.zig");
 const exl3_attn_tests = @import("exl3_attn_tests.zig");
+const exl3_fwd_tests = @import("exl3_fwd_tests.zig");
 
 const usage =
     \\usage: tf-cuda-test <command>
@@ -53,6 +54,7 @@ const usage =
     \\  exl3-gdn <dir> [layer ...]  a real EXL3 Gated DeltaNet layer: prefill + decode with state, vs the f64 oracle
     \\  exl3-moe <dir> [layers]  real MoE block + mlp hyper-connection vs f64 oracles (default layers 0,17)
     \\  exl3-attn <dir> [layer a] [layer b]  real full-attention layers: KV write, indexer top-k, sparse decode vs the CPU oracle
+    \\  exl3-forward <dir> layer|tf|gen ...  the assembled EXL3 forward (embed, layers, head) vs the f64 oracle; greedy generation
     \\  exl3-window               EXL3 graph replay, prefix KV cache, and MTP accept
     \\  overhead [n] [reps]       dependent one-thread kernels: plain stream vs one graph
     \\  overhead-pdl [n] [reps]   the same with programmatic dependent launch on every kernel
@@ -146,6 +148,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "exl3-real")) return exl3_real_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-moe")) return exl3_moe_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-attn")) return exl3_attn_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-forward")) return exl3_fwd_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "overhead") or std.mem.eql(u8, cmd, "overhead-pdl")) {
         const n = if (rest.len > 0) try std.fmt.parseInt(usize, rest[0], 10) else 1000;
         const reps = if (rest.len > 1) try std.fmt.parseInt(usize, rest[1], 10) else 20;

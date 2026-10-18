@@ -35,6 +35,8 @@ pub const sample = @import("exl3_sample.zig");
 pub const lane = @import("exl3_lane.zig");
 pub const embed = @import("exl3_embed.zig");
 pub const window = @import("exl3_window.zig");
+pub const fwd_cpu = @import("exl3_fwd_cpu.zig");
+pub const fwd_ple = @import("exl3_fwd_ple.zig");
 
 test {
     _ = shape;
@@ -68,4 +70,6 @@ test {
     _ = lane;
     _ = embed;
     _ = window;
+    _ = fwd_cpu;
+    _ = fwd_ple;
 }
