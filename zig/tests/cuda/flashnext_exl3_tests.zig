@@ -594,9 +594,12 @@ fn laneOut(gpu: Gpu, p: *Pass, w: wt.Q4, x: u64, m: usize, sk: usize) !struct { 
         try p.lane(x, s.dummy, w, s.proj, s.dummy, m, 1);
         return .{ .bf = try download(u16, gpu, p.stream, s.proj, m * w.n) };
     }
-    try p.stream.d.check(p.stream.d.api.cuMemsetD8Async(s.part, 0xff, sk * m * w.n * 4, p.stream.handle), "cuMemsetD8Async");
-    try p.lane(x, s.dummy, w, s.dummy, s.part, m, sk);
-    const all = try download(f32, gpu, p.stream, s.part, sk * m * w.n);
+    // the slices in a buffer of their own: a 12,288-wide part's exceeds the pass's out_sk x dims `part`
+    var slices = try cuda.DeviceBuffer.alloc(gpu.d, sk * m * w.n * 4);
+    defer slices.free();
+    try slices.fill8(0xff, p.stream.handle);
+    try p.lane(x, s.dummy, w, s.dummy, slices.ptr, m, sk);
+    const all = try download(f32, gpu, p.stream, slices.ptr, sk * m * w.n);
     defer gpu.gpa.free(all);
     var zero = true;
     for (all[m * w.n ..]) |v| zero = zero and v == 0;
@@ -628,7 +631,10 @@ fn denseRows(a: std.mem.Allocator, w: []const f64, n: usize, k: usize, xb: []con
     return y;
 }
 
-const proj_f32_tol = 3e-4; // the fp16 rotated-input contract: 1.75e-4 .. 2.4e-4 measured on every shape (exl3-pack)
+/// The fp16 rotated-input contract: x * suh after the Hadamard is rounded to fp16 (2^-11 of each term), so a column's
+/// error is a few 1e-4 of the row's peak. exl3-pack measured 1.75e-4 .. 2.4e-4 (uniform rows); here N(0, 1) rows give
+/// 1.3e-4 .. 3.04e-4 (layer 3 q_proj, one row, peak 4.5).
+const proj_f32_tol = 4e-4;
 const proj_bf16_tol = 4e-3; // bf16 output rounding: half an ulp is 2^-9 of a value, at most 1.95e-3 of the peak
 
 fn projections(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l: usize, a: std.mem.Allocator, rng: std.Random) !void {
@@ -768,6 +774,8 @@ const Oracle = struct {
     moe: fwd.MoeW,
     ctx: ExpertCtx,
     state: fwd.LayerState,
+    /// The mixer's state for the staged comparison (fed the device's own inputs), apart from the chained one.
+    staged: fwd.LayerState,
     linear: bool,
 
     fn create(a: std.mem.Allocator, raw: *const RawPack, l: usize, offset: f32, cap: usize) !*Oracle {
@@ -803,6 +811,7 @@ const Oracle = struct {
                 },
             };
             o.state = .{ .gdn = try gdn_cpu.State.init(a, gdn_cpu.qwen) };
+            o.staged = .{ .gdn = try gdn_cpu.State.init(a, gdn_cpu.qwen) };
         } else {
             const stem = "model.language_model.layers.{d}.self_attn";
             var sc: [4][]f32 = undefined;
@@ -821,6 +830,7 @@ const Oracle = struct {
                 .norms = .{ .q = sc[0], .k = sc[1], .iq = sc[2], .ik = sc[3], .inv = attn_cpu.invFreq() },
             };
             o.state = .{ .attn = try attn_cpu.Cache.init(a, cap) };
+            o.staged = .{ .attn = try attn_cpu.Cache.init(a, cap) };
         }
         return o;
     }
@@ -834,8 +844,11 @@ const Oracle = struct {
 
 const Stage = struct { mixer: f64 = 0, streams: f64 = 0, moe: f64 = 0, out: f64 = 0, picks_same: usize = 0, rows: usize = 0 };
 
+/// What the device fed each block: the read-outs' mixed rows and inject gates (bf16), attention's then the MoE's.
+const Taps = struct { attn_mixed: []u16, attn_inj: []u16, mlp_mixed: []u16, mlp_inj: []u16 };
+
 /// The pass's per-layer sequence (cuda_batch.zig Pass.chunk's loop body), stepped with read-backs between blocks.
-fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []const u32, pos0: usize, h_in: []const u16, tr: fwd.Trace, h_out: []u16) !void {
+fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []const u32, pos0: usize, h_in: []const u16, tr: fwd.Trace, h_out: []u16, taps: Taps) !void {
     const s = p.s;
     const n = ids.len;
     p.rows = n;
@@ -845,6 +858,8 @@ fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []const u
     try uploadTo(gpu, p.stream, s.h, std.mem.sliceAsBytes(h_in));
     try p.writeback(0, n);
     try p.readout(lw.attn_hc, 0, n);
+    try tap(gpu, p, s.mixed, taps.attn_mixed[0 .. n * dims]);
+    try tap(gpu, p, s.inj, taps.attn_inj[0 .. n * streams]);
     if (lw.linear) try p.gdnBlock(lw, wt.linearIndex(l), .{}) else try p.attnBlock(lw, wt.attnIndex(l));
     const branch = try download(f32, gpu, p.stream, s.part, n * dims);
     defer gpu.gpa.free(branch);
@@ -854,6 +869,8 @@ fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []const u
     defer gpu.gpa.free(mid);
     for (tr.h_mid[0 .. n * wide], mid) |*d, v| d.* = bfValue(v);
     try p.readout(lw.mlp_hc, 0, n);
+    try tap(gpu, p, s.mixed, taps.mlp_mixed[0 .. n * dims]);
+    try tap(gpu, p, s.inj, taps.mlp_inj[0 .. n * streams]);
     try p.moeBlock(lw);
     const picks = try download(i32, gpu, p.stream, s.picks, n * slots);
     defer gpu.gpa.free(picks);
@@ -876,6 +893,21 @@ fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []const u
     @memcpy(h_out, out);
 }
 
+fn tap(gpu: Gpu, p: *Pass, ptr: u64, out: []u16) !void {
+    const got = try download(u16, gpu, p.stream, ptr, out.len);
+    defer gpu.gpa.free(got);
+    @memcpy(out, got);
+}
+
+fn toF64(a: std.mem.Allocator, bits: []const u16) ![]f64 {
+    const out = try a.alloc(f64, bits.len);
+    for (out, bits) |*o, b| o.* = bfValue(b);
+    return out;
+}
+
+/// Each block against the float64 oracle fed the DEVICE's own input to that block: its error alone.
+const Staged = struct { attn_mixed: f64 = 0, attn_inj: f64 = 0, mixer: f64 = 0, mlp_mixed: f64 = 0, mlp_inj: f64 = 0, moe: f64 = 0, writeback: f64 = 0 };
+
 fn layerCheck(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l: usize, tokens: []const u32) !void {
     var arena: std.heap.ArenaAllocator = .init(gpu.gpa);
     defer arena.deinit();
@@ -897,7 +929,9 @@ fn layerCheck(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l: us
     const table = try raw.get("model.language_model.embed_tokens.weight", .{});
     const calls = [_][2]usize{ .{ 0, prefill }, .{ 8, 1 }, .{ 9, 1 }, .{ 10, 1 }, .{ 11, 1 } };
     var worst: Stage = .{};
+    var alone: Staged = .{};
     var device_ms: f64 = 0;
+    const taps: Taps = .{ .attn_mixed = try a.alloc(u16, R * dims), .attn_inj = try a.alloc(u16, R * streams), .mlp_mixed = try a.alloc(u16, R * dims), .mlp_inj = try a.alloc(u16, R * streams) };
     for (calls) |c| {
         const toks = tokens[c[0] .. c[0] + c[1]];
         const n = c[1];
@@ -913,8 +947,57 @@ fn layerCheck(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l: us
         };
         const hg = try a.alloc(u16, n * wide);
         t0 = check.now(gpu.io);
-        try deviceLayer(gpu, &p, lw, l, toks, c[0], hb, dt, hg);
+        try deviceLayer(gpu, &p, lw, l, toks, c[0], hb, dt, hg, taps);
         device_ms += @as(f64, @floatFromInt(check.now(gpu.io) - t0)) / 1e6;
+        // staged: every block from the device's own input (before the chained oracle updates `ho` in place)
+        {
+            const w = o.weights();
+            const off = r.store.norm_offset;
+            const mixed = try a.alloc(f64, n * dims);
+            const inj = try a.alloc(f64, n * streams);
+            try fwd.hcPreRows(a, w.attn_hc, off, ho, n, mixed, inj);
+            const e_am = errOf(@as([]const u16, taps.attn_mixed[0 .. n * dims]), mixed);
+            const e_ai = errOf(@as([]const u16, taps.attn_inj[0 .. n * streams]), inj);
+            const dev_mixed = try toF64(a, taps.attn_mixed[0 .. n * dims]);
+            const branch = try a.alloc(f64, n * dims);
+            switch (w.mixer) {
+                .gdn => |g| try fwd.gdnBranch(a, g, o.staged.gdn, dev_mixed, n, branch),
+                .attn => |at| try fwd.attnBranch(a, at, &o.staged.attn, c[0], dev_mixed, n, branch),
+            }
+            const e_mx = errOf(dt.attn_branch[0 .. n * dims], branch);
+            const dev_mid = dt.h_mid[0 .. n * wide];
+            try fwd.hcPreRows(a, w.mlp_hc, off, dev_mid, n, mixed, inj);
+            const e_mm = errOf(@as([]const u16, taps.mlp_mixed[0 .. n * dims]), mixed);
+            const e_mi = errOf(@as([]const u16, taps.mlp_inj[0 .. n * streams]), inj);
+            const dev_mlp = try toF64(a, taps.mlp_mixed[0 .. n * dims]);
+            const moe_out = try a.alloc(f64, n * dims);
+            const picks = try a.alloc(u16, n * topk);
+            try fwd.moeBranch(a, w.moe, dev_mlp, n, moe_out, picks);
+            var same_picks = true;
+            for (0..n) |t| {
+                var x = dt.picks[t * topk ..][0..topk].*;
+                var y = picks[t * topk ..][0..topk].*;
+                std.mem.sort(u16, &x, {}, std.sort.asc(u16));
+                std.mem.sort(u16, &y, {}, std.sort.asc(u16));
+                same_picks = same_picks and std.mem.eql(u16, &x, &y);
+            }
+            const e_moe = errOf(dt.mlp_branch[0 .. n * dims], moe_out);
+            // the write-back alone: the device's streams after the mixer plus its MoE branch times its inject gates
+            const wb = try a.alloc(f64, n * wide);
+            for (0..n) |t| for (0..streams) |sidx| for (0..dims) |d| {
+                const at = t * wide + sidx * dims + d;
+                wb[at] = dev_mid[at] + dt.mlp_branch[t * dims + d] * bfValue(taps.mlp_inj[t * streams + sidx]);
+            };
+            const e_wb = errOf(@as([]const u16, hg), wb);
+            std.debug.print("    staged (device input to each block): attn readout mixed rel {e:.3}, inject rel {e:.3}; mixer rel {e:.3}; mlp readout mixed rel {e:.3}, inject rel {e:.3}; MoE rel {e:.3} (picks {s}); write-back rel {e:.3}\n", .{ e_am.rel, e_ai.rel, e_mx.rel, e_mm.rel, e_mi.rel, e_moe.rel, if (same_picks) "equal" else "DIFFER", e_wb.rel });
+            alone.attn_mixed = @max(alone.attn_mixed, e_am.rel);
+            alone.attn_inj = @max(alone.attn_inj, e_ai.rel);
+            alone.mixer = @max(alone.mixer, e_mx.rel);
+            alone.mlp_mixed = @max(alone.mlp_mixed, e_mm.rel);
+            alone.mlp_inj = @max(alone.mlp_inj, e_mi.rel);
+            if (same_picks) alone.moe = @max(alone.moe, e_moe.rel);
+            alone.writeback = @max(alone.writeback, e_wb.rel);
+        }
         try fwd.layerRows(a, o.weights(), &o.state, c[0], r.store.norm_offset, ho, n, ot);
         const e_mix = errOf(dt.attn_branch[0 .. n * dims], ot.attn_branch[0 .. n * dims]);
         const e_mid = errOf(dt.h_mid[0 .. n * wide], ot.h_mid[0 .. n * wide]);
@@ -939,12 +1022,21 @@ fn layerCheck(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l: us
         }
     }
     std.debug.print("  device time for the 5 calls (read-backs between blocks included): {d:.0} ms\n", .{device_ms});
-    // bf16 rounds every activation the pass keeps (mixed, projections, streams); attention's 3% is the old engine's gate
+    std.debug.print("  worst staged: attn readout mixed {e:.3} inject {e:.3}; mixer {e:.3}; mlp readout mixed {e:.3} inject {e:.3}; MoE {e:.3}; write-back {e:.3}\n", .{ alone.attn_mixed, alone.attn_inj, alone.mixer, alone.mlp_mixed, alone.mlp_inj, alone.moe, alone.writeback });
+    std.debug.print("  worst chained: mixer {e:.3}, streams {e:.3}, MoE {e:.3}, output {e:.3}\n", .{ worst.mixer, worst.streams, worst.moe, worst.out });
+    // Each block alone, fed the device's own input: its bf16 output and the roundings inside it (the read-out's act and
+    // inject, the projections' bf16 rows, the MoE weights' bf16) stay under 1% of the peak.
+    const staged = [_]f64{ alone.attn_mixed, alone.attn_inj, alone.mixer, alone.mlp_mixed, alone.mlp_inj, alone.moe, alone.writeback };
+    for (staged) |v| try check.expect(v <= 0.01, "layer {d}: a block alone differs from float64 by {d:.4} of its peak (> 0.01)", .{ l, v });
+    // Chained from the embedding: the old engine's gates (mixer 1% GDN / 3% attention, streams 1%, MoE 2%) hold; its
+    // output gate was 1% with f32 residual streams, and upstream keeps the streams in bf16 between blocks, so the
+    // write-back's rounding lands on top of the chained MoE error: the output gate here is 2% (layer 0 measured 1.23e-2).
     const mixer_tol: f64 = if (wt.linearLayer(l)) 0.01 else 0.03;
     try check.expect(worst.mixer <= mixer_tol, "layer {d}: mixer branch differs from the oracle ({d:.4} > {d})", .{ l, worst.mixer, mixer_tol });
     try check.expect(worst.streams <= 0.01, "layer {d}: streams after the mixer differ ({d:.4})", .{ l, worst.streams });
     try check.expect(worst.moe <= 0.02, "layer {d}: MoE branch differs from the oracle ({d:.4})", .{ l, worst.moe });
-    try check.expect(worst.out <= 0.01, "layer {d}: layer output streams differ ({d:.4})", .{ l, worst.out });
+    try check.expect(worst.out <= 0.02, "layer {d}: layer output streams differ ({d:.4})", .{ l, worst.out });
+    if (worst.out > 0.01) std.debug.print("  NOTE layer {d}: chained output {e:.3} is above the old engine's 1% gate (f32 streams there)\n", .{ l, worst.out });
     check.pass("layer {d} ({s}) through the family's pass (writeback, readout, {s}, write-back, readout, EXL3 moeBlock, write-back) vs float64: mixer rel {e:.3}, streams rel {e:.3}, MoE rel {e:.3}, output rel {e:.3}; picks equal on {d}/{d} rows", .{ l, if (wt.linearLayer(l)) "GDN" else "attention", if (wt.linearLayer(l)) "gdnBlock" else "attnBlock", worst.mixer, worst.streams, worst.moe, worst.out, worst.picks_same, worst.rows });
 }
 
@@ -955,6 +1047,7 @@ fn layerMode(gpu: Gpu, dir: []const u8, which: []const usize) !void {
     var raw = try RawPack.open(gpu, dir);
     defer raw.close(gpu);
     var prng = std.Random.DefaultPrng.init(0xe713_c03e);
+    var failed: usize = 0;
     for (which) |l| {
         const t0 = check.now(gpu.io);
         var lw = try pl.loadLayerRank(gpu.gpa, @constCast(gpu.d), &rig.stream, &rig.store, rig.pack_fn, l, 1, 0);
@@ -963,9 +1056,15 @@ fn layerMode(gpu: Gpu, dir: []const u8, which: []const usize) !void {
         try check.expect(lw.exl3 != null, "layer {d}: experts did not load as EXL3", .{l});
         var arena: std.heap.ArenaAllocator = .init(gpu.gpa);
         defer arena.deinit();
-        try projections(gpu, &rig, &raw, &lw, l, arena.allocator(), prng.random());
-        try layerCheck(gpu, &rig, &raw, &lw, l, &default_ids);
+        // every layer runs, a failed check reported and counted
+        projections(gpu, &rig, &raw, &lw, l, arena.allocator(), prng.random()) catch |err| if (err == error.TestFailed) {
+            failed += 1;
+        } else return err;
+        layerCheck(gpu, &rig, &raw, &lw, l, &default_ids) catch |err| if (err == error.TestFailed) {
+            failed += 1;
+        } else return err;
     }
+    try check.expect(failed == 0, "flashnext-exl3 layer: {d} checks failed", .{failed});
 }
 
 fn parseList(gpa: std.mem.Allocator, text: []const u8) ![]usize {
