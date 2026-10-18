@@ -25,11 +25,19 @@ comptime {
     std.debug.assert((gate_rows + 1) * gate_cols * @sizeOf(u16) == 2_626_560);
 }
 
-fn dot(weight: []const u8, x: []const f32) f32 {
+/// Storage type of the two replicated gate tensors. The published 3.05bpw pack stores both as F16
+/// (safetensors header `F16`, verified: std 0.02 as F16, 1e-6 as bf16), although config.json says bfloat16.
+/// `launch` keeps the bf16 reading; use `launchDtype(.f16, ...)` for the pack.
+pub const Dtype = enum { bf16, f16 };
+
+fn dot(dtype: Dtype, weight: []const u8, x: []const f32) f32 {
     var sum: f32 = 0;
     for (x, 0..) |v, i| {
         const h = std.mem.readInt(u16, weight[i * 2 ..][0..2], .little);
-        const w: f32 = @bitCast(@as(u32, h) << 16);
+        const w: f32 = switch (dtype) {
+            .bf16 => @bitCast(@as(u32, h) << 16),
+            .f16 => @floatCast(@as(f16, @bitCast(h))),
+        };
         sum += w * v;
     }
     return sum;
@@ -42,6 +50,23 @@ fn dot(weight: []const u8, x: []const f32) f32 {
 /// return before any of those stores. An empty gate is the absent `mlp.gate`
 /// token: nothing is invented.
 pub fn launch(
+    rank: usize,
+    gate: []const u8,
+    hidden: []const f32,
+    shared_gate: []const u8,
+    shared_x: []const f32,
+    topk: usize,
+    logits: []f32,
+    picks: []u16,
+    weights: []f32,
+    scratch: []f32,
+) Error!void {
+    return launchDtype(.bf16, rank, gate, hidden, shared_gate, shared_x, topk, logits, picks, weights, scratch);
+}
+
+/// `launch` with the gate tensors' storage type named.
+pub fn launchDtype(
+    dtype: Dtype,
     rank: usize,
     gate: []const u8,
     hidden: []const f32,
@@ -68,9 +93,9 @@ pub fn launch(
     const row_bytes = gate_cols * @sizeOf(u16);
     for (0..gate_rows) |r| {
         const row = gate[r * row_bytes ..][0..row_bytes];
-        logits[r] = dot(row, hidden);
+        logits[r] = dot(dtype, row, hidden);
     }
-    logits[gate_rows] = dot(shared_gate, shared_x);
+    logits[gate_rows] = dot(dtype, shared_gate, shared_x);
     try route.select(logits, topk, picks, weights, scratch);
 }
 
@@ -213,4 +238,27 @@ test "a shared-span mismatch stores nothing" {
     var scratch: [gate_rows]f32 = @splat(4);
     try std.testing.expectError(error.Length, launch(0, gate, &hidden, &shared_gate, &short_x, 1, &logits, &picks, &weights, &scratch));
     try expectUntouched(&logits, &picks, &weights);
+}
+
+test "the same bits read as F16 are not the bf16 value" {
+    const gpa = std.testing.allocator;
+    const gate = try gpa.alloc(u8, gate_bytes);
+    defer gpa.free(gate);
+    @memset(gate, 0);
+    const one_f16: u16 = 0x3c00;
+    std.mem.writeInt(u16, gate[7 * gate_cols * 2 ..][0..2], one_f16, .little);
+    var shared: [gate_cols * 2]u8 = @splat(0);
+    std.mem.writeInt(u16, shared[0..2], one_f16, .little);
+    var hidden: [gate_cols]f32 = @splat(0);
+    hidden[0] = 1;
+    var logits: [gate_rows + 1]f32 = undefined;
+    var picks = [_]u16{ 9, 9 };
+    var weights = [_]f32{ 0, 0 };
+    var scratch: [gate_rows]f32 = undefined;
+    try launchDtype(.f16, 0, gate, &hidden, &shared, &hidden, 1, &logits, &picks, &weights, &scratch);
+    try std.testing.expectEqual(@as(f32, 1), logits[7]);
+    try std.testing.expectEqual(@as(f32, 1), logits[gate_rows]);
+    try std.testing.expectEqual(@as(u16, 7), picks[0]);
+    try launchDtype(.bf16, 0, gate, &hidden, &shared, &hidden, 1, &logits, &picks, &weights, &scratch);
+    try std.testing.expect(logits[7] != 1);
 }
