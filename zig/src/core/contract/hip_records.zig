@@ -357,6 +357,64 @@ pub const records = [_]Record{
             .{ .vgprs = 150, .sgprs = 46, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
         },
     },
+    .{
+        .launch = .{
+            .name = "planned walk tf_plan_kv_write_act",
+            .symbol = "tf_plan_kv_write_act",
+            .image = "plan",
+            .threads = 256,
+        },
+        .usage = .{
+            .{ .vgprs = 20, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 },
+            .{ .vgprs = 20, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 },
+            .{ .vgprs = 20, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 },
+            .{ .vgprs = 20, .sgprs = 28, .lds = 0, .private = 0, .bound = 256, .wave = 32 },
+        },
+    },
+    .{
+        .launch = .{
+            .name = "planned walk tf_plan_score_act_f16",
+            .symbol = "tf_plan_score_act_f16",
+            .image = "plan",
+            .threads = 128,
+            .dynamic = 16 * 128 * 4,
+        },
+        .usage = .{
+            .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 17, .sgprs = 28, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = .{
+            .name = "planned walk tf_plan_score_act_bf16",
+            .symbol = "tf_plan_score_act_bf16",
+            .image = "plan",
+            .threads = 128,
+            .dynamic = 16 * 128 * 4,
+        },
+        .usage = .{
+            .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+            .{ .vgprs = 17, .sgprs = 28, .lds = 0, .private = 0, .bound = 128, .wave = 32 },
+        },
+    },
+    .{
+        .launch = .{
+            .name = "planned walk tf_sum_partials_act",
+            .symbol = "tf_sum_partials_act",
+            .image = "plan",
+            .threads = 256,
+        },
+        .usage = .{
+            .{ .vgprs = 7, .sgprs = 16, .lds = 0, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 6, .sgprs = 18, .lds = 0, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 6, .sgprs = 16, .lds = 0, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 6, .sgprs = 18, .lds = 0, .private = 0, .bound = 1024, .wave = 32 },
+        },
+    },
 };
 
 /// Gate 5's planted HIP controls: a launch past its __launch_bounds__, and 72 KiB of LDS where a workgroup has 64.
