@@ -263,8 +263,8 @@ pub const AttnDev = struct {
         host[1] = try scale(gpa, pack, l, "k_norm.weight", offset, &means[1]);
         host[2] = try scale(gpa, pack, l, "indexer.q_layernorm.weight", offset, &means[2]);
         host[3] = try scale(gpa, pack, l, "indexer.k_layernorm.weight", offset, &means[3]);
-        // Shim for exl3_scan.centredOffset (NormAmbiguous on q/k means 0.27-0.34): the model defines all four as CenteredRMSNorm.
-        try check.expect(means[0] < 0.5 and means[1] < 0.5 and @abs(means[2]) < 0.25 and @abs(means[3]) < 0.25, "layer {d}: attention norms are not gamma-1", .{l});
+        // Shim for exl3_scan.centredOffset (NormAmbiguous: q/k means run 0.27 at layer 3 up to 0.59 at layer 31, indexer norms sit at -0.02..-0.08): the model defines all four as CenteredRMSNorm.
+        try check.expect(means[0] < 0.75 and means[1] < 0.75 and @abs(means[2]) < 0.25 and @abs(means[3]) < 0.25, "layer {d}: attention norms are not gamma-1", .{l});
         return .{
             .q = q,
             .k = k,
