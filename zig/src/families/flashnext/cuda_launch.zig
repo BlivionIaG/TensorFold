@@ -6,6 +6,7 @@ const aot = cuda.aot;
 
 pub const embed = @import("cuda_embed.zig");
 pub const projection = @import("cuda_projection.zig");
+pub const exl3 = @import("cuda_exl3.zig");
 pub const rank_engine = @import("cuda_rank_engine.zig");
 pub const collective = @import("cuda_collective.zig");
 pub const rank_wire = @import("cuda_rank_wire.zig");
@@ -375,6 +376,7 @@ test {
     _ = native;
     _ = @import("cuda_snap.zig");
     _ = @import("cuda_config.zig");
+    _ = @import("cuda_exl3.zig");
     _ = @import("cuda_projection_load.zig");
     _ = @import("cuda_rank_engine.zig");
     _ = @import("cuda_round_graph.zig");
