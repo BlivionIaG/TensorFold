@@ -252,12 +252,11 @@ fn teacherForcing(gpu: Gpu, pack: *const real.Pack, dir: []const u8, cfgs: []con
 
 // -- mode: long -------------------------------------------------------------------------------------------------
 
-fn longContext(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usize, ids: []const u32, with_oracle: bool, gen: usize, expect: []const u32) !void {
+fn longContext(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usize, ids: []const u32, with_oracle: bool, gen: usize, expect: []const u32, chunk: usize) !void {
     const gpa = gpu.gpa;
     var pbuf: [512]u8 = undefined;
     const ngram = try ngramPath(&pbuf, dir);
     const n = ids.len;
-    const chunk: usize = 64;
     const cap = (n + gen + 8 + 3) / 4 * 4;
     std.debug.print("== long context: {d} prompt tokens, {d} layers, cap {d}, oracle {s}\n", .{ n, n_layers, cap, if (with_oracle) "on" else "off" });
     var t0 = nowMs(gpu);
@@ -343,19 +342,24 @@ fn longContext(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usiz
     const embed_table = (pack.find("model.language_model.embed_tokens.weight") orelse return error.MissingTensor).bytes;
     const h = try ft.embedStreams(gpa, embed_table, ids);
     defer gpa.free(h);
+    var ng_file: ?st.File = null;
+    defer if (ng_file) |*f| f.close(gpu.io);
+    var ple_o: ?fple.Ple = null;
+    defer if (ple_o) |*p| p.deinit();
     if (n_layers > fwd.ple_layer) {
-        var ng = try st.File.open(gpa, gpu.io, ngram);
-        defer ng.close(gpu.io);
-        var p = try fwd.loadPle(gpu, pack, &ng);
-        defer p.deinit();
-        const out = try gpa.alloc(f64, n * wide);
-        defer gpa.free(out);
-        try p.rows(ids, h, out);
-        for (h, out) |*d, s| d.* += s;
-        std.debug.print("  oracle PLE done {d:.0} ms\n", .{nowMs(gpu) - t0});
+        ng_file = try st.File.open(gpa, gpu.io, ngram);
+        ple_o = try fwd.loadPle(gpu, pack, &ng_file.?);
     }
     for (0..n_layers) |l| {
         const lt = nowMs(gpu);
+        if (ple_o != null and l == fwd.ple_layer) {
+            // the PLE add-back sits at the start of decoder layer 1, on the streams layer 0 left
+            const out = try gpa.alloc(f64, n * wide);
+            defer gpa.free(out);
+            try ple_o.?.rows(ids, h, out);
+            for (h, out) |*d, s| d.* += s;
+            std.debug.print("  oracle PLE done {d:.0} ms\n", .{nowMs(gpu) - lt});
+        }
         var ol = try ft.OLayer.create(gpa, pack, l, eng.offset, cap);
         defer ol.destroy();
         try cpu.layerRows(gpa, ol.weights(), &ol.state, 0, eng.offset, h, n, null);
@@ -374,15 +378,31 @@ fn longContext(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usiz
         slot_.rel = @max(slot_.rel, e.rel);
     }
     std.debug.print("RESULT streams after {d} layers vs oracle: rows with < 2051 keys: worst per-row rel {d:.5} (max_abs {d:.3}, peak {d:.1}); rows with >= 2051 keys (sparse 512-block selection): worst per-row rel {d:.5} (max_abs {d:.3}, peak {d:.1})\n", .{ n_layers, dense.rel, dense.max_abs, dense.peak, sparse.rel, sparse.max_abs, sparse.peak });
+    // where does it diverge: worst per-row rel per block of 64 rows
+    {
+        var b0: usize = 0;
+        while (b0 < n) : (b0 += 64) {
+            var worst: f64 = 0;
+            var worst_t: usize = b0;
+            for (b0..@min(b0 + 64, n)) |t| {
+                const e = ft.errOf(h_all.?[t * wide ..][0..wide], h[t * wide ..][0..wide]);
+                if (e.rel > worst) {
+                    worst = e.rel;
+                    worst_t = t;
+                }
+            }
+            if (b0 < 512 or b0 % 512 == 0 or worst > 0.1) std.debug.print("  rows {d}..{d}: worst per-row rel {d:.5} at row {d} (token {d})\n", .{ b0, @min(b0 + 64, n) - 1, worst, worst_t, ids[worst_t] });
+        }
+    }
     // mean-over-rows rel in the sparse region as well (worst rows can sit on a different expert pick)
     var srel: f64 = 0;
     var srows: usize = 0;
-    for (split - 1..n) |t| {
+    for (@min(split - 1, n)..n) |t| {
         const e = ft.errOf(h_all.?[t * wide ..][0..wide], h[t * wide ..][0..wide]);
         srel += e.rel;
         srows += 1;
     }
-    std.debug.print("  sparse region mean per-row rel {d:.5} over {d} rows\n", .{ srel / @as(f64, @floatFromInt(srows)), srows });
+    if (srows > 0) std.debug.print("  sparse region mean per-row rel {d:.5} over {d} rows\n", .{ srel / @as(f64, @floatFromInt(srows)), srows });
 
     // logits at the last 8 positions
     const k8: usize = @min(8, last_rows);
@@ -591,7 +611,8 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         const gen = try std.fmt.parseInt(usize, rest[5], 10);
         const expect: []u32 = if (rest.len > 6 and !std.mem.eql(u8, rest[6], "-")) try ft.parseIds(gpa, rest[6]) else try gpa.alloc(u32, 0);
         defer gpa.free(expect);
-        try longContext(gpu, &pack, dir, n, ids, with_oracle, gen, expect);
+        const chunk: usize = if (rest.len > 7) try std.fmt.parseInt(usize, rest[7], 10) else 64;
+        try longContext(gpu, &pack, dir, n, ids, with_oracle, gen, expect, chunk);
     } else if (std.mem.eql(u8, mode, "prefix")) {
         const n = try std.fmt.parseInt(usize, rest[2], 10);
         const a = try ft.parseIds(gpa, rest[3]);
