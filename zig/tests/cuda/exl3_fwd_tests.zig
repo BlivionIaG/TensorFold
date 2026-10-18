@@ -2,6 +2,9 @@
 //! Usage: tf-cuda-test exl3-forward <pack dir> layer [layers, default 0,3]   one decoder layer, real weights, prefill 8 + 4 decode rows
 //!        tf-cuda-test exl3-forward <pack dir> tf <N layers> [ids]            teacher-forced logits after N layers vs the oracle
 //!        tf-cuda-test exl3-forward <pack dir> gen <N layers> <count> [ids]   greedy continuation on the device (no oracle)
+//!        tf-cuda-test exl3-forward <pack dir> wire <cfg> [<cfg> ...]         16-token prompt + 16-token continuation under engine configs, each compared with the first (exl3_fwd_wire.zig)
+//!        tf-cuda-test exl3-forward <pack dir> ple-check                      PLE: S5 f64 reference vs the S6b row path on the real layer-1 input
+//!        tf-cuda-test exl3-forward <pack dir> halves                         every routed expert of every layer has the shape of expert 0 (pool line layout)
 //! `ids` is a comma separated token id list (default: "The capital of France is Paris. It is known for the Eiffel Tower.").
 
 const std = @import("std");
@@ -15,6 +18,7 @@ const hc = @import("exl3_hc.zig");
 const attn_cpu = @import("exl3_attn_cpu.zig");
 const gdn_cpu = @import("exl3_gdn_cpu.zig");
 const embed = @import("exl3_embed.zig");
+const wire = @import("exl3_fwd_wire.zig");
 
 const Gpu = check.Gpu;
 const hidden = fwd.hidden;
@@ -206,13 +210,13 @@ fn toF64(gpa: std.mem.Allocator, xs: anytype) ![]f64 {
 
 // -- mode: layer -------------------------------------------------------------------------------------------------
 
-fn layerCheck(gpu: Gpu, pack: *const real.Pack, l: usize, tokens: []const u32) !void {
+fn layerCheck(gpu: Gpu, pack: *const real.Pack, l: usize, tokens: []const u32, device_hc: bool) !void {
     const gpa = gpu.gpa;
     const prefill_n = 8;
     const cap = 64;
     std.debug.print("== layer {d} ({s}): prefill {d} rows, then {d} single-row decode steps\n", .{ l, if (fwd.Layer.isAttn(l)) "full attention + MoE" else "GDN + MoE", prefill_n, tokens.len - prefill_n });
     var t0 = nowMs(gpu);
-    var eng = try fwd.Engine.init(gpu, pack, .{ .first_layer = l, .layers = 1, .max_rows = 8, .cap = cap, .head = false });
+    var eng = try fwd.Engine.init(gpu, pack, .{ .first_layer = l, .layers = 1, .max_rows = 8, .cap = cap, .head = false, .device_hc = device_hc });
     defer eng.deinit();
     std.debug.print("  device layer loaded in {d:.0} ms\n", .{nowMs(gpu) - t0});
     t0 = nowMs(gpu);
@@ -332,7 +336,7 @@ fn top5(xs: []const f32, out: *[5]usize) void {
     }
 }
 
-fn teacherForced(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usize, tokens: []const u32) !void {
+fn teacherForced(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usize, tokens: []const u32, device_hc: bool) !void {
     const gpa = gpu.gpa;
     const rows = tokens.len;
     var path_buf: [512]u8 = undefined;
@@ -341,9 +345,9 @@ fn teacherForced(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: us
 
     // device
     var t0 = nowMs(gpu);
-    var eng = try fwd.Engine.init(gpu, pack, .{ .first_layer = 0, .layers = n_layers, .max_rows = rows, .cap = 128, .head = true, .ngram_path = if (n_layers > fwd.ple_layer) ngram_path else null });
+    var eng = try fwd.Engine.init(gpu, pack, .{ .first_layer = 0, .layers = n_layers, .max_rows = rows, .cap = 128, .head = true, .ngram_path = if (n_layers > fwd.ple_layer) ngram_path else null, .device_hc = device_hc, .ple_impl = .f64_reference });
     defer eng.deinit();
-    std.debug.print("  device model loaded in {d:.0} ms (PLE {s})\n", .{ nowMs(gpu) - t0, if (eng.ple != null) "on" else "not reached by these layers" });
+    std.debug.print("  device model loaded in {d:.0} ms (PLE {s})\n", .{ nowMs(gpu) - t0, if (eng.hasPle()) "on" else "not reached by these layers" });
     t0 = nowMs(gpu);
     const hg = try gpa.alloc(f32, rows * wide);
     defer gpa.free(hg);
@@ -361,7 +365,7 @@ fn teacherForced(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: us
     var ple_o: ?fple.Ple = null;
     var ng_file: ?@import("safetensors.zig").File = null;
     defer if (ng_file) |*f| f.close(gpu.io);
-    if (eng.ple != null) {
+    if (eng.hasPle()) {
         // independent instance: the same host path, own state
         ng_file = try @import("safetensors.zig").File.open(gpa, gpu.io, ngram_path);
         ple_o = try fwd.loadPle(gpu, pack, &ng_file.?);
@@ -383,7 +387,9 @@ fn teacherForced(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: us
     // collapse + head
     const mixed = try gpa.alloc(f64, rows * hidden);
     defer gpa.free(mixed);
-    try cpu.hcPreRows(gpa, eng.mixer.weights(), eng.offset, h, rows, mixed, null);
+    var mixer_host = if (device_hc) try fwd.HcW.load(gpa, pack, "model.language_model.hyper_connection_mixer", .{}, false) else eng.mixer;
+    defer if (device_hc) mixer_host.free(gpa);
+    try cpu.hcPreRows(gpa, mixer_host.weights(), eng.offset, h, rows, mixed, null);
     var head = try qmat(gpa, pack, "lm_head", 48);
     defer head.deinit(gpa);
     const lo = try gpa.alloc(f64, rows * vocab);
@@ -454,7 +460,7 @@ fn generate(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usize, 
     var t0 = nowMs(gpu);
     var eng = try fwd.Engine.init(gpu, pack, .{ .first_layer = 0, .layers = n_layers, .max_rows = @max(prompt.len, 1), .cap = 128, .head = true, .ngram_path = if (n_layers > fwd.ple_layer and use_ple) ngram_path else null });
     defer eng.deinit();
-    std.debug.print("== greedy generation, {d} layers: model loaded in {d:.0} ms (PLE {s})\n", .{ n_layers, nowMs(gpu) - t0, if (eng.ple != null) "on" else "off" });
+    std.debug.print("== greedy generation, {d} layers: model loaded in {d:.0} ms (PLE {s})\n", .{ n_layers, nowMs(gpu) - t0, if (eng.hasPle()) "on" else "off" });
     const lg = try gpa.alloc(f32, prompt.len * vocab);
     defer gpa.free(lg);
     const hg = try gpa.alloc(f32, prompt.len * wide);
@@ -490,12 +496,12 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         const spec: []const u8 = if (rest.len > 2) rest[2] else "0,3";
         const toks: []const u32 = default_ids[0..12];
         var it = std.mem.splitScalar(u8, spec, ',');
-        while (it.next()) |tok| try layerCheck(gpu, &pack, try std.fmt.parseInt(usize, tok, 10), toks);
+        while (it.next()) |tok| try layerCheck(gpu, &pack, try std.fmt.parseInt(usize, tok, 10), toks, rest.len > 3 and std.mem.eql(u8, rest[3], "hc"));
     } else if (std.mem.eql(u8, mode, "tf")) {
         const n = try std.fmt.parseInt(usize, if (rest.len > 2) rest[2] else "2", 10);
-        const ids = if (rest.len > 3) try parseIds(gpu.gpa, rest[3]) else try gpu.gpa.dupe(u32, &default_ids);
+        const ids = if (rest.len > 3 and !std.mem.eql(u8, rest[3], "default")) try parseIds(gpu.gpa, rest[3]) else try gpu.gpa.dupe(u32, &default_ids);
         defer gpu.gpa.free(ids);
-        try teacherForced(gpu, &pack, dir, n, ids);
+        try teacherForced(gpu, &pack, dir, n, ids, rest.len > 4 and std.mem.eql(u8, rest[4], "hc"));
     } else if (std.mem.eql(u8, mode, "ple-ids")) {
         // prints the 16 n-gram row ids per token for an independent numpy cross-check (tools/exl3_ple_ids.py)
         var path_buf: [512]u8 = undefined;
@@ -521,5 +527,11 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         const ids = if (rest.len > 4) try parseIds(gpu.gpa, rest[4]) else try gpu.gpa.dupe(u32, default_ids[0..5]);
         defer gpu.gpa.free(ids);
         try generate(gpu, &pack, dir, n, count, ids, !(rest.len > 5 and std.mem.eql(u8, rest[5], "nople")));
+    } else if (std.mem.eql(u8, mode, "wire")) {
+        try wire.run(gpu, &pack, dir, rest[2..]);
+    } else if (std.mem.eql(u8, mode, "ple-check")) {
+        try wire.pleCheck(gpu, &pack, dir);
+    } else if (std.mem.eql(u8, mode, "halves")) {
+        try wire.halvesScan(gpu, &pack);
     } else return error.UnknownMode;
 }

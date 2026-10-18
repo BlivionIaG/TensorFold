@@ -60,6 +60,7 @@ pub const exl3_linear: []const u8 = if (available) &Blob("fatbin_exl3_linear").b
 pub const exl3_experts: []const u8 = if (available) &Blob("fatbin_exl3_experts").bytes else &.{};
 pub const exl3_gdn: []const u8 = if (available) &Blob("fatbin_exl3_gdn").bytes else &.{};
 pub const exl3_attn: []const u8 = if (available) &Blob("fatbin_exl3_attn").bytes else &.{};
+pub const exl3_hc: []const u8 = if (available) &Blob("fatbin_exl3_hc").bytes else &.{};
 
 /// extern "C" names in the EXL3 fatbins. Launch shapes live in exl3.zig.
 pub const exl3_symbols = struct {
@@ -85,6 +86,17 @@ pub const exl3_attn_symbols = struct {
     pub const scores = "exl3_attn_scores";
     pub const select = "exl3_attn_select";
     pub const decode = "exl3_attn_decode";
+};
+
+/// extern "C" names in the exl3_hc fatbin (hyper-connection pre/post/expand and the router dots).
+pub const exl3_hc_symbols = struct {
+    pub const expand_bf16 = "exl3_hc_expand_bf16";
+    pub const norm = "exl3_hc_norm";
+    pub const low = "exl3_hc_low";
+    pub const mix = "exl3_hc_mix";
+    pub const out = "exl3_hc_out";
+    pub const post = "exl3_hc_post";
+    pub const gate = "exl3_hc_gate";
 };
 
 /// Symbols in the gdn image as cuobjdump lists them for the built fatbin (named namespace tf_gdn).

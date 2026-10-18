@@ -85,6 +85,7 @@ pub const Ple = struct {
         p.gpa.free(p.conv_w);
         p.gpa.free(p.head_bias);
         p.gpa.free(p.tail);
+        p.gpa.free(p.shards);
     }
 
     pub fn reset(p: *Ple) void {
