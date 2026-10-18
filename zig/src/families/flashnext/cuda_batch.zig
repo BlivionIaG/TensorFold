@@ -7,6 +7,7 @@ const ple = @import("cuda_ple.zig");
 const wt = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_prompt_load.zig");
 const parts = @import("cuda_batch_state.zig");
+const exl3_pass = @import("cuda_exl3_pass.zig");
 
 const layers_n = wt.layers_n;
 const linear_n = wt.linear_n;
@@ -112,6 +113,7 @@ pub fn Pass(comptime Tri: type) type {
 
         /// qmm.cu's lane tile over m rows: out bf16 [m, n] (sk 1) or the unreduced fp32 slices [sk, m, n] in part.
         pub fn lane(self: *Self, x: u64, xs: u64, w: Q4, out: u64, part: u64, m: usize, sk: usize) !void {
+            if (w.exl3) |e| return exl3_pass.lane(self, x, e, out, part, m, sk);
             if (w.native) |native| {
                 if (sk == 1) return self.k.native_lane.matmul(self.stream, x, w.k, m, native, out, self.s.native_part);
                 // Legacy callers consume SK slices; the native lane has already reduced its own shape-driven slices.
@@ -423,6 +425,7 @@ pub fn Pass(comptime Tri: type) type {
 
         /// moeBlock, keeping its input, experts and weights.
         pub fn moeBlockKeep(self: *Self, lw: *const Layer, keep: LayerKeep) !void {
+            if (lw.exl3) |x| return exl3_pass.moe(self, lw, x);
             const s = self.s;
             const n = self.rows;
             const pairs = n * slots;
