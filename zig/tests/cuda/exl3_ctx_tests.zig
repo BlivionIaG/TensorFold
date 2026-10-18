@@ -560,15 +560,20 @@ fn prefixCache(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usiz
     // negative controls: the same restore with one piece of state lost must change the logits, so the identity above is not vacuous
     const lg_x = try gpa.alloc(f32, c.len * vocab);
     defer gpa.free(lg_x);
-    const losses = [_][]const u8{ "GDN recurrent state zeroed", "attention KV zeroed", "PLE conv tail zeroed" };
+    const losses = [_][]const u8{ "GDN recurrent state zeroed", "attention KV zeroed", "PLE conv tail zeroed", "index keys and pooled blocks zeroed" };
     var all_sensitive = true;
     for (losses, 0..) |what, which| {
         if (which == 2 and eng.ple == null) continue;
+        if (which == 3 and eng.opt.first_layer + eng.layers.len < 4) continue; // no attention layer loaded
         try snap.restore(&eng, hit.snap);
         switch (which) {
             0 => try eng.table.rec.fill8(0, null),
             1 => try eng.kv_all.fill8(0, null),
-            else => @memset(eng.ple.?.tail, 0),
+            2 => @memset(eng.ple.?.tail, 0),
+            else => {
+                try eng.ik_all.fill8(0, null);
+                try eng.pooled_all.fill8(0, null);
+            },
         }
         try feed(&eng, p2[cached_ctx..], chunk, hbuf, null, lg_x);
         const d = bitsEqual(lg_s, lg_x);
