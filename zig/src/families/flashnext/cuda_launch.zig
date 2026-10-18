@@ -19,6 +19,8 @@ pub const moe = @import("cuda_moe.zig");
 pub const attn = @import("cuda_attn.zig");
 pub const ple = @import("cuda_ple.zig");
 pub const ple_check = @import("cuda_ple_check.zig");
+/// An EXL3 pack's n-gram table (cuda_ple.Ngram's `.exl3` format)
+pub const exl3_ple = @import("cuda_exl3_ple.zig");
 pub const mix = @import("cuda_mix.zig");
 pub const prompt = @import("cuda_prompt.zig");
 /// The row-by-row reference path, for flashnext-prompt
