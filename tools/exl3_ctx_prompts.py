@@ -78,3 +78,26 @@ for nm, t in (("a", a), ("b", b), ("c", c)):
     print("prefix", nm, len(ids))
 # long A for the sparse-regime prefix test: first 2100 tokens of the needle prompt
 open(os.path.join(out, "prefix_long_a.txt"), "w").write(",".join(map(str, long_ids[:2100])) + "\n")
+
+# needle prompts for `exl3-ctx needle`: one shared document prefix (chat header + log, ~2150 tokens) and three suffixes
+def build_doc(min_tokens):
+    text = "Daily log of a coastal town.\n" + needle + "\n"
+    n = 0
+    while len(encode(text)) < min_tokens:
+        n += 1
+        s_ = subjects[(n * 7) % len(subjects)]
+        g_ = goods[(n * 5 + n // 3) % len(goods)]
+        text += "On day %d the %s recorded %d %s and %d visitors; the wind came from the %s.\n" % (n, s_, 20 + (n * 37) % 90, g_, 3 + (n * 11) % 40, ["north", "south", "east", "west"][n % 4])
+    return text
+doc = [248045, 846, 198] + encode(build_doc(2120))
+open(os.path.join(out, "doc.txt"), "w").write(",".join(map(str, doc)) + "\n")
+tail = [248046, 198, 248045, 74455, 198, 248068, 271, 248069, 271]  # <|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n
+suffixes = [
+    ("chat_code", encode("\nQuestion: What is the secret access code for the vault? Answer briefly.") + tail),
+    ("chat_repeat", encode("\nRepeat the secret code that is mentioned at the top of the log.") + tail),
+    ("plain_forced", encode(question)),
+]
+for i, (nm, ids) in enumerate(suffixes):
+    open(os.path.join(out, "suffix%d.txt" % i), "w").write(",".join(map(str, ids)) + "\n")
+    print("suffix", i, nm, len(ids))
+print("doc", len(doc))

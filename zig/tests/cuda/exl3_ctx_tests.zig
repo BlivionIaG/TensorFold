@@ -587,6 +587,111 @@ fn prefixCache(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usiz
     _ = window;
 }
 
+// -- mode: needle -----------------------------------------------------------------------------------------------
+
+fn top5Print(last: []const f32) void {
+    var five: [5]usize = undefined;
+    for (0..5) |k| {
+        var best: usize = 0;
+        var bv: f32 = -std.math.inf(f32);
+        for (last, 0..) |v, i| {
+            var skip = false;
+            for (five[0..k]) |o| skip = skip or o == i;
+            if (!skip and v > bv) {
+                bv = v;
+                best = i;
+            }
+        }
+        five[k] = best;
+    }
+    std.debug.print("  top5:", .{});
+    for (five) |i| std.debug.print(" {d}({d:.3})", .{ i, last[i] });
+    std.debug.print("\n", .{});
+}
+
+/// One long shared document, then several suffixes: the first runs live, the document state is then restored for each suffix
+/// (the first suffix again, to compare the live and restored continuations), greedy `gen` tokens each.
+fn needleRun(gpu: Gpu, pack: *const real.Pack, dir: []const u8, n_layers: usize, gen: usize, doc: []const u32, suffixes: []const []const u32) !void {
+    const gpa = gpu.gpa;
+    var pbuf: [512]u8 = undefined;
+    const ngram = try ngramPath(&pbuf, dir);
+    const chunk: usize = 64;
+    var max_suffix: usize = 0;
+    for (suffixes) |s| max_suffix = @max(max_suffix, s.len);
+    const cap = (doc.len + max_suffix + gen + 8 + 3) / 4 * 4;
+    std.debug.print("== needle: document {d} tokens, {d} suffixes (max {d} tokens), {d} layers, cap {d}\n", .{ doc.len, suffixes.len, max_suffix, n_layers, cap });
+    var eng = try fwd.Engine.init(gpu, pack, .{ .first_layer = 0, .layers = n_layers, .max_rows = chunk, .cap = cap, .head = true, .ngram_path = if (n_layers > fwd.ple_layer) ngram else null });
+    defer eng.deinit();
+    const hbuf = try gpa.alloc(f32, chunk * wide);
+    defer gpa.free(hbuf);
+    const lg = try gpa.alloc(f32, max_suffix * vocab);
+    defer gpa.free(lg);
+    const dec = try gpa.alloc(f32, vocab);
+    defer gpa.free(dec);
+
+    var t0 = nowMs(gpu);
+    try eng.reset();
+    var off: usize = 0;
+    while (off < doc.len) {
+        const m: usize = @min(chunk, doc.len - off);
+        try eng.forward(doc[off..][0..m], hbuf[0 .. m * wide]);
+        off += m;
+        if ((off / chunk) % 8 == 0 or off == doc.len) std.debug.print("  document {d}/{d} in {d:.0} s\n", .{ off, doc.len, (nowMs(gpu) - t0) / 1000 });
+    }
+    const t_doc = nowMs(gpu) - t0;
+    t0 = nowMs(gpu);
+    var s = try snap.capture(&eng);
+    const t_cap = nowMs(gpu) - t0;
+    const s_bytes = s.bytes();
+    var store = prefix.PrefixStore(snap.Snapshot).init(gpa, 1 << 30);
+    defer store.deinit();
+    store.put(doc, s, s_bytes) catch |err| {
+        s.deinit(gpa);
+        return err;
+    };
+    std.debug.print("  snapshot after the document: {d} bytes ({d:.1} MiB) captured in {d:.0} ms; the document took {d:.0} s\n", .{ s_bytes, @as(f64, @floatFromInt(s_bytes)) / 1048576.0, t_cap, t_doc / 1000 });
+
+    var live_gen: std.ArrayList(u32) = .empty;
+    defer live_gen.deinit(gpa);
+    // runs: suffix 0 live, then restore + suffix 0 again, then restore + each remaining suffix
+    var run_i: usize = 0;
+    while (run_i < suffixes.len + 1) : (run_i += 1) {
+        const si: usize = if (run_i == 0) 0 else run_i - 1;
+        const suf = suffixes[si];
+        if (run_i > 0) {
+            const full = try gpa.alloc(u32, doc.len + suf.len);
+            defer gpa.free(full);
+            @memcpy(full[0..doc.len], doc);
+            @memcpy(full[doc.len..], suf);
+            const hit = store.lookup(full) orelse {
+                try check.expect(false, "prefix store missed the document", .{});
+                return;
+            };
+            t0 = nowMs(gpu);
+            try snap.restore(&eng, hit.snap);
+            std.debug.print("  restored the document ({d} tokens) in {d:.0} ms\n", .{ hit.len, nowMs(gpu) - t0 });
+        }
+        t0 = nowMs(gpu);
+        try feed(&eng, suf, chunk, hbuf, null, lg[0 .. suf.len * vocab]);
+        const last = lg[(suf.len - 1) * vocab ..][0..vocab];
+        std.debug.print("SUFFIX {d} ({s}, {d} tokens, {d:.0} s)\n", .{ si, if (run_i == 0) "live" else "restored", suf.len, (nowMs(gpu) - t0) / 1000 });
+        top5Print(last);
+        var out: std.ArrayList(u32) = .empty;
+        defer out.deinit(gpa);
+        try greedy(&eng, last, gen, &out, hbuf, dec);
+        std.debug.print("SUFFIX {d} GEN ids=", .{si});
+        for (out.items, 0..) |v, i| std.debug.print("{d}{s}", .{ v, if (i + 1 < out.items.len) "," else "\n" });
+        if (run_i == 0) {
+            try live_gen.appendSlice(gpa, out.items);
+        } else if (si == 0) {
+            const same = std.mem.eql(u32, live_gen.items, out.items);
+            std.debug.print("RESULT needle: suffix 0 live vs restored continuation: {s}\n", .{if (same) "IDENTICAL" else "DIFFERENT"});
+            try check.expect(same, "live and restored continuation differ", .{});
+        }
+    }
+    check.pass("needle run: {d}-token document x {d} layers, {d} suffixes finished (outputs above, decode ids with tools/exl3_tok.py)", .{ doc.len, n_layers, suffixes.len });
+}
+
 // -- entry ---------------------------------------------------------------------------------------------------------
 
 pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
@@ -628,5 +733,17 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         defer gpa.free(c);
         const gen = try std.fmt.parseInt(usize, rest[6], 10);
         try prefixCache(gpu, &pack, dir, n, a, b, c, gen);
+    } else if (std.mem.eql(u8, mode, "needle")) {
+        const n = try std.fmt.parseInt(usize, rest[2], 10);
+        const gen = try std.fmt.parseInt(usize, rest[3], 10);
+        const doc = try ft.parseIds(gpa, rest[4]);
+        defer gpa.free(doc);
+        var suffixes: std.ArrayList([]u32) = .empty;
+        defer {
+            for (suffixes.items) |x| gpa.free(x);
+            suffixes.deinit(gpa);
+        }
+        for (rest[5..]) |arg| try suffixes.append(gpa, try ft.parseIds(gpa, arg));
+        try needleRun(gpu, &pack, dir, n, gen, doc, @ptrCast(suffixes.items));
     } else return error.UnknownMode;
 }
