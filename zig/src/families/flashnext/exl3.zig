@@ -7,6 +7,8 @@
 pub const shape = @import("exl3_shape.zig");
 pub const ngram = @import("exl3_ngram.zig");
 pub const ple = @import("exl3_ple.zig");
+pub const ple_ids = @import("exl3_ple_ids.zig");
+pub const ple_cpu = @import("exl3_ple_cpu.zig");
 pub const scan = @import("exl3_scan.zig");
 pub const tp = @import("exl3_tp.zig");
 pub const offload = @import("exl3_offload.zig");
@@ -42,6 +44,8 @@ test {
     _ = shape;
     _ = ngram;
     _ = ple;
+    _ = ple_ids;
+    _ = ple_cpu;
     _ = scan;
     _ = tp;
     _ = offload;
