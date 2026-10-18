@@ -21,6 +21,7 @@ pub const ple_launch = @import("exl3_ple_launch.zig");
 pub const route = @import("exl3_route.zig");
 pub const kv = @import("exl3_kv.zig");
 pub const attn = @import("exl3_attn.zig");
+pub const attn_cpu = @import("exl3_attn_cpu.zig");
 pub const reduce = @import("exl3_reduce.zig");
 pub const step = @import("exl3_step.zig");
 pub const router = @import("exl3_router.zig");
@@ -51,6 +52,7 @@ test {
     _ = route;
     _ = kv;
     _ = attn;
+    _ = attn_cpu;
     _ = reduce;
     _ = step;
     _ = router;
