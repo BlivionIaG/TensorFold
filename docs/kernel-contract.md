@@ -115,6 +115,8 @@ HIP's shipped `affine_dot2_stream` has the same infinity-to-NaN finding, registe
 The relu^2 replacement retains every non-finite plant and must equal the unfused kernels' bytes. Its stated rule
 checks float64 classes independently: only a float64 infinite affine sum that the plain tile made NaN may inherit
 that discrepancy. A NaN affine reference must remain NaN, so dropping NaN in either relu implementation fails.
+The paired relu^2 launch retains its table plants and checks both members the same way: separate-launch bytes,
+raw affine float64 classes, and the corresponding routed or plain stream's actual fp32 sums.
 
 ## Coverage
 
