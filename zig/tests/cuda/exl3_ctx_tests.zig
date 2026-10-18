@@ -4,6 +4,7 @@
 //!   tf-cuda-test exl3-ctx <dir> long <layers> <ids> <oracle 0|1> <gen> <expect csv|->
 //!                                                                      a ~2300 token prompt through the sparse indexer
 //!   tf-cuda-test exl3-ctx <dir> prefix <layers> <A> <B> <C> <gen>      snapshot after A inside A+B, restore for A+C vs from scratch
+//!   tf-cuda-test exl3-ctx <dir> needle <layers> <gen> <doc> <suffix>...  one long document; suffix 0 live, then restored suffixes
 //! `ids` are comma separated token id lists (tools/exl3_ctx_prompts.py writes them).
 
 const std = @import("std");
