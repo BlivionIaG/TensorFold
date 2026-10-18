@@ -433,6 +433,34 @@ pub const records = [_]Record{
             .{ .vgprs = 10, .sgprs = 20, .lds = 2048, .private = 0, .bound = 256, .wave = 32 },
         },
     },
+    .{
+        .launch = .{
+            .name = "planned walk tf_plan_attend_f16",
+            .symbol = "tf_plan_attend_f16",
+            .image = "plan",
+            .threads = 1024,
+        },
+        .usage = .{
+            .{ .vgprs = 38, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 38, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 38, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 38, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 },
+        },
+    },
+    .{
+        .launch = .{
+            .name = "planned walk tf_plan_attend_bf16",
+            .symbol = "tf_plan_attend_bf16",
+            .image = "plan",
+            .threads = 1024,
+        },
+        .usage = .{
+            .{ .vgprs = 36, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 37, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 36, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 },
+            .{ .vgprs = 36, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 },
+        },
+    },
 };
 
 /// Gate 5's planted HIP controls: a launch past its __launch_bounds__, and 72 KiB of LDS where a workgroup has 64.
