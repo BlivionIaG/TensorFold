@@ -102,7 +102,13 @@ pub fn mismatch(text: std.json.ObjectMap, quant: ?std.json.ObjectMap) ?[]const u
 }
 
 pub fn geometry(text: std.json.ObjectMap) ?[]const u8 {
-    for (shapes) |w| if (int(text, w.name) != w.value) return w.name;
+    // a folder Living Weights taught widens the shared expert by its pocket (a whole number of groups, 128 at most)
+    const learned = int(text, learned_key) orelse 0;
+    if (learned < 0 or learned > 128 or @mod(learned, 32) != 0) return learned_key;
+    for (shapes) |w| {
+        const want = if (std.mem.eql(u8, w.name, "shared_expert_intermediate_size")) w.value + learned else w.value;
+        if (int(text, w.name) != want) return w.name;
+    }
     return semantics(text);
 }
 

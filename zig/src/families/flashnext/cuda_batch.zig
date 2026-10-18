@@ -9,7 +9,6 @@ const wt = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_prompt_load.zig");
 const parts = @import("cuda_batch_state.zig");
 const exl3_pass = @import("cuda_exl3_pass.zig");
-const exl3_kvpage = @import("cuda_exl3_kvpage.zig");
 
 const layers_n = wt.layers_n;
 const linear_n = wt.linear_n;
@@ -437,6 +436,11 @@ pub fn Pass(comptime Tri: type) type {
 
         /// Router, each row's ten experts and the shared one, the grouped expert launches: y [rows, 11, dims] fp32.
         pub fn moeBlock(self: *Self, lw: *const Layer) !void {
+            return self.moeBlockKeep(lw, .{});
+        }
+
+        /// moeBlock, keeping its input, experts and weights.
+        pub fn moeBlockKeep(self: *Self, lw: *const Layer, keep: LayerKeep) !void {
             if (lw.exl3) |x| return exl3_pass.moe(self, lw, x);
             const s = self.s;
             const n = self.rows;

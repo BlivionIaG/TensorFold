@@ -5,8 +5,6 @@ const std = @import("std");
 const cuda = @import("cuda");
 const wt = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_exl3_load.zig");
-const pool_ = @import("cuda_exl3_pool.zig");
-const dplan = @import("cuda_exl3_dplan.zig");
 
 const dims = wt.dims;
 const slots = wt.slots;
@@ -24,7 +22,6 @@ fn part(p: anytype, ops: *load.Ops, pt: load.Part, x: u64, k: usize, m: usize, y
     switch (pt.kind) {
         .exl3 => |w| {
             const de = try ops.linear();
-            if (try @import("cuda_exl3_prefill.zig").tilesPart(de, p.stream, w, x, m, y, f32_out)) return; // prefill rows on #806's tiles
             try de.decode(p.stream, w, x, .bf16, m, y, if (f32_out) .f32 else .bf16);
         },
         .native => |w| {
@@ -46,18 +43,16 @@ pub fn lane(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: u
         try s.d.check(s.d.api.cuMemsetD8Async(slices + bytes, 0, bytes * (sk - 1), s.handle), "cuMemsetD8Async");
         return;
     }
-    if (try @import("cuda_exl3_fork.zig").lane(p, x, e, out, m, onePart)) return; // the parts on parallel streams
-    for (e.parts) |pt| try onePart(p, e, pt, x, m, out);
-}
-
-/// One part of a bf16 sk-1 lane() on the pass's stream: one part over the whole row, or a single row, writes its
-/// columns in place; otherwise through the stitch buffer.
-fn onePart(p: anytype, e: *const load.Proj, pt: load.Part, x: u64, m: usize, out: u64) !void {
-    const s = p.stream;
-    if (pt.n == e.n or m == 1) return part(p, e.ops, pt, x, e.k, m, out + pt.col * 2, false);
-    const tmp = try e.ops.scratch(s, &e.ops.tmp, m * pt.n * 2);
-    try part(p, e.ops, pt, x, e.k, m, tmp, false);
-    try copy2d(s, out + pt.col * 2, e.n * 2, tmp, pt.n * 2, pt.n * 2, m);
+    for (e.parts) |pt| {
+        // one part over the whole row, or a single row: the part writes its columns in place
+        if (pt.n == e.n or m == 1) {
+            try part(p, e.ops, pt, x, e.k, m, out + pt.col * 2, false);
+            continue;
+        }
+        const tmp = try e.ops.scratch(s, &e.ops.tmp, m * pt.n * 2);
+        try part(p, e.ops, pt, x, e.k, m, tmp, false);
+        try copy2d(s, out + pt.col * 2, e.n * 2, tmp, pt.n * 2, pt.n * 2, m);
+    }
 }
 
 /// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32,
@@ -84,15 +79,11 @@ fn laneF16(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: us
 
 /// Pass.moeBlock() for EXL3 experts: the router's 513 logits (the BF16 rows the Store widened exactly), each row's ten
 /// picks and the shared slot (id 512), then every slot's expert output, fp32 y [rows, 11, dims], in blocks of rows.
-/// Offloaded layers cut each block in two: segment A (block, router, top-k) ends with the picks on the host, the pool
-/// plans hits and misses, and segment B (copies on the copy engine, then the experts on its tables) follows.
 pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
-    if (x.tp != null) return @import("cuda_exl3_tp.zig").moe(p, lw, x); // expert parallel (plan step 10)
     const s = p.s;
     const n = p.rows;
     try p.tri.routerMany(s.mixed, lw.router.ptr, s.router_l, dims, n);
     try p.tri.topkMany(s.router_l, s.picks, s.wts, n);
-    if (x.needsPool()) return error.Exl3PoolNotAttached;
     const ex = try x.ops.grouped();
     const block = @min(n, moe_rows);
     const bytes = try cuda.exl3_experts.scratchBytes(x.layer, block, slots);
@@ -103,188 +94,6 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
         var sc = try cuda.exl3_experts.scratch(base, x.layer, block, slots);
         // runSlots leaves each slot's fp32 output in sc.y [rows * slots, dims]: the pass's y rows are that layout
         sc.y = s.y + r0 * slots * dims * 4;
-        const xin = s.mixed + r0 * dims * 2;
-        const picks = s.picks + r0 * slots * 4;
-        if (x.pool) |pool| {
-            if (dplan.active) |dp| if (dp.indexOf(pool)) |i| { // a decode round planned on the device (no host cut)
-                try dplan.runLayer(dp, p.stream, i, ex, x.layer, xin, picks, rows, sc, 0, 0);
-                continue;
-            };
-            try pooled(p.stream, x.ops, pool, ex, x.layer, xin, picks, rows, sc, 0, 0);
-            continue;
-        }
-        try ex.runSlots(p.stream, x.layer, xin, dims, .bf16, picks, rows, sc);
+        try ex.runSlots(p.stream, x.layer, s.mixed + r0 * dims * 2, dims, .bf16, s.picks + r0 * slots * 4, rows, sc);
     }
-}
-
-/// Host time of the A/B cut (the picks D2H and its wait) and of Pool.plan, summed over every pooled block (read by
-/// tf-cuda-test flashnext-exl3-engine).
-pub var pool_time: struct { cut_ns: u64 = 0, plan_ns: u64 = 0, blocks: u64 = 0 } = .{};
-
-/// One block of `rows` rows through `pool`: per-slot outputs in sc.y, and with `wts` != 0 the last pass also combines
-/// every slot (sc.y keeps the earlier passes' slots; a slot no pass ran reads its stale, finite value at weight 0) into
-/// fp32 `out` [rows, dims] (expert parallel's rank branch, cuda_exl3_tp.moe).
-pub fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
-    const host = (ops.picks orelse return error.Exl3ScratchNotReserved).slice(i32)[0 .. rows * slots];
-    // the device planned the last decode rounds of this pool: its residency back to the host pools first (the MTP
-    // layer's pool is never device-planned: a draft step leaves the decoder pools on the device)
-    if (dplan.current()) |dp| if (dp.indexOf(pool) != null) try dp.toHost();
-    const io = pool.io;
-    const t0 = std.Io.Clock.awake.now(io).toNanoseconds();
-    // end of segment A: the block's picks reach the host (the only host wait of the layer)
-    try st.d.check(st.d.api.cuMemcpyDtoHAsync_v2(host.ptr, picks, rows * slots * 4, st.handle), "cuMemcpyDtoHAsync");
-    try st.synchronize();
-    const t1 = std.Io.Clock.awake.now(io).toNanoseconds();
-    const r = try pool.plan(host, rows);
-    pool_time.cut_ns += @intCast(t1 - t0);
-    pool_time.plan_ns += @intCast(std.Io.Clock.awake.now(io).toNanoseconds() - t1);
-    pool_time.blocks += 1;
-    // segment B, a pass at a time: its copies and table rewrites, then the experts on the pool's tables
-    for (0..r.n_passes) |j| {
-        try pool.stage(r, j, st);
-        const last = j + 1 == r.n_passes;
-        try ex.run(st, layer, xin, dims, .bf16, pool.picksFor(r, j, picks), if (last) wts else 0, rows, if (last) out else 0, sc);
-        try pool.release(r, j, st);
-    }
-}
-
-/// Every offloaded experts layer of a loaded engine (the 48 decoder layers, then the MTP layer if any).
-pub fn offloadedLayers(layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, out: []*load.Experts) usize {
-    var n: usize = 0;
-    for (layers) |*l| if (l.exl3) |x| if (x.needsPool()) {
-        out[n] = x;
-        n += 1;
-    };
-    if (mtp) |l| if (l.exl3) |x| if (x.needsPool()) {
-        out[n] = x;
-        n += 1;
-    };
-    return n;
-}
-
-pub const Budget = struct {
-    /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB,
-    /// else the larger of 1 GiB and a 32nd of the card, native/cuda_memory.zig reserveBytes) plus `margin`.
-    reserve: ?u64 = null,
-    /// What the pools leave beyond the server's reserve: allocator rounding and the copy streams' own memory.
-    margin: u64 = 256 << 20,
-    /// Bytes the family still allocates after the pools: each admitted stream's caches (Loaded.stream_bytes) times
-    /// the streams the pools must leave room for.
-    other: u64 = 0,
-    /// Lines a layer, or null: from free memory (cuda_exl3_round.linesFor).
-    lines: ?usize = null,
-    /// Rows a planned round holds (the pass's block of routed rows).
-    max_rows: usize = moe_rows,
-};
-
-/// TF_FLASHNEXT_EXL3_LINES (lines a layer), TF_FLASHNEXT_EXL3_RESERVE_MB and TF_FLASHNEXT_EXL3_STREAMS (streams the
-/// pools leave cache room for; 1 by default) over `stream_bytes`.
-pub fn budgetFromEnv(stream_bytes: u64) Budget {
-    var b: Budget = .{ .other = stream_bytes };
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_LINES")) |v| b.lines = std.fmt.parseInt(usize, std.mem.span(v), 10) catch null;
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_RESERVE_MB")) |v| b.reserve = if (std.fmt.parseInt(u64, std.mem.span(v), 10)) |mb| mb << 20 else |_| null;
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS")) |v| b.other = stream_bytes * (std.fmt.parseInt(u64, std.mem.span(v), 10) catch 1);
-    return b;
-}
-
-pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0 };
-
-/// The sizing hook (cuda_lanes_load.zig, once everything else of the family is allocated): reserves every EXL3
-/// scratch of `rows`-row passes, then gives each offloaded layer the same number of lines from what is free after
-/// `b.reserve` and `b.other`, with one lifetime use table shared by the decoder layers (the MTP layer keeps its own).
-/// A no-op for a checkpoint without offloaded experts.
-pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cuda.Stream, layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, rows: usize, b: Budget) !Attached {
-    var all: [wt.layers_n + 1]*load.Experts = undefined;
-    const n = offloadedLayers(layers, mtp, &all);
-    var out: Attached = .{};
-    // every distinct Ops (the engine's store and the MTP head's) reserves its scratch now
-    var seen: [4]*load.Ops = undefined;
-    var n_seen: usize = 0;
-    for (layers) |*l| if (l.exl3) |x| try reserveOnce(x.ops, &seen, &n_seen, st, rows);
-    if (mtp) |l| if (l.exl3) |x| try reserveOnce(x.ops, &seen, &n_seen, st, rows);
-    // expert parallel (cuda_exl3_tp.zig): its masks, sums and block scratch, before the pools take what is free
-    for (layers) |*l| if (l.exl3) |x| if (x.tp != null) {
-        try @import("cuda_exl3_tp.zig").reserve(x.ops, st, x.layer, rows);
-        break;
-    };
-    if (n == 0) return out;
-    for (all[0..n]) |x| {
-        out.line_bytes = @max(out.line_bytes, x.lineBytes());
-        out.bank_bytes += x.bank.?.bytes.len;
-        out.bank_ns += x.bank_ns;
-    }
-    var free: usize = 0;
-    var total: usize = 0;
-    try d.check(d.api.cuMemGetInfo_v2(&free, &total), "cuMemGetInfo");
-    out.free_before = free;
-    const reserve = b.reserve orelse serverReserve(total) + b.margin;
-    // beside its lines a layer holds the shared expert's region, its six tables and its masked picks (sized for the
-    // fewest lines, the most passes); counted as fixed bytes before the lines share what is left
-    var fixed: u64 = 0;
-    for (all[0..n]) |x| {
-        for (x.shared) |t| fixed += (t.len + 255) / 256 * 256;
-        fixed += cuda.exl3_pool.Tables.init(wt.experts_n + 1).bytes + pool_.passesFor(pool_.min_lines) * b.max_rows * slots * 4 + (64 << 10);
-    }
-    const lines = b.lines orelse try pool_.linesFor(free, reserve, b.other + fixed, out.line_bytes, n, pool_.min_lines);
-    if (lines < pool_.min_lines) return error.PoolTooSmall;
-    out.lines = lines;
-    _ = gpa;
-    // the first decoder layer's pool owns the lifetime use table the other decoder layers share
-    var counts: ?*[pool_.shape.layers][pool_.shape.experts]u32 = null;
-    var decoder: u8 = 0;
-    for (all[0..n]) |x| {
-        const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
-        try x.attach(io, d, if (is_mtp) 0 else decoder, lines, b.max_rows, if (is_mtp) null else counts);
-        if (is_mtp) dplan.mtp_pool = x.pool.?; // the draft head's experts plan on the device too (cuda_exl3_chain.zig)
-        if (!is_mtp and counts == null) counts = x.pool.?.counts;
-        if (!is_mtp) decoder += 1;
-        out.device_bytes += x.pool.?.deviceBytes();
-        out.layers += 1;
-    }
-    std.log.info("flashnext exl3: {d} offloaded expert layers, {d} lines a layer of {d:.2} MiB ({d:.2} GiB on the device, {d:.2} GiB free before); pinned host bank {d:.2} GiB copied in {d:.1} s", .{ out.layers, out.lines, @as(f64, @floatFromInt(out.line_bytes)) / (1 << 20), @as(f64, @floatFromInt(out.device_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.free_before)) / (1 << 30), @as(f64, @floatFromInt(out.bank_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.bank_ns)) / 1e9 });
-    return out;
-}
-
-/// native/cuda_memory.zig reserveBytes for a discrete card: TENSORFOLD_MEMORY_RESERVE_GIB, else max(1 GiB, total / 32).
-fn serverReserve(total: u64) u64 {
-    if (std.c.getenv("TENSORFOLD_MEMORY_RESERVE_GIB")) |v| {
-        const g = std.fmt.parseFloat(f64, std.mem.trim(u8, std.mem.span(v), " ")) catch 0;
-        if (g >= 0.5) return @intFromFloat(g * (1 << 30));
-    }
-    return @max(@as(u64, 1 << 30), total / 32);
-}
-
-fn reserveOnce(o: *load.Ops, seen: []*load.Ops, n: *usize, st: cuda.Stream, rows: usize) !void {
-    for (seen[0..n.*]) |x| if (x == o) return;
-    if (n.* == seen.len) return error.Invalid;
-    seen[n.*] = o;
-    n.* += 1;
-    try o.reserve(st, rows, moe_rows, slots);
-}
-
-/// Pool statistics summed over every attached layer.
-pub fn poolStats(layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer) pool_.Stats {
-    var t: pool_.Stats = .{};
-    var all: [wt.layers_n + 1]*load.Experts = undefined;
-    const n = offloadedPools(layers, mtp, &all);
-    for (all[0..n]) |x| {
-        const s = x.pool.?.stats;
-        inline for (@typeInfo(pool_.Stats).@"struct".field_names) |f| {
-            @field(t, f) += @field(s, f);
-        }
-    }
-    return t;
-}
-
-fn offloadedPools(layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, out: []*load.Experts) usize {
-    var n: usize = 0;
-    for (layers) |*l| if (l.exl3) |x| if (x.pool != null) {
-        out[n] = x;
-        n += 1;
-    };
-    if (mtp) |l| if (l.exl3) |x| if (x.pool != null) {
-        out[n] = x;
-        n += 1;
-    };
-    return n;
 }

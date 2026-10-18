@@ -33,6 +33,10 @@ pub const snapshot = @import("cuda_snap.zig");
 pub const row_path = @import("cuda_rows.zig");
 /// The MTP head's drafts: its forward, the chain, the verify window's rows and their rollback
 pub const mtp = @import("cuda_mtp.zig");
+/// Each layer's Living Weights pocket in the forward
+pub const pocket = @import("cuda_pocket.zig");
+/// Living Weights' trainer over the batched pass
+pub const train = @import("cuda_train.zig");
 pub const exl3_pool = @import("cuda_exl3_pool.zig");
 pub const native = @import("cuda_lanes.zig").Namespace(Tri);
 /// Our own glue kernels, which every launch takes when no captured set is loaded

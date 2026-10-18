@@ -69,43 +69,9 @@ pub fn decodeRow(words: []const i16, bits: usize, bias: []const f16, out: []f16)
     const width = try wordsPerRow(bits);
     if (words.len != width or bias.len != row_values or out.len != row_values) return error.NgramWidth;
     const scale: f32 = @floatCast(@as(f16, @bitCast(words[0])));
-    // `state(words, bits, i)` for every i at once: value j is stream bits [j * bits, (j + 1) * bits); state i is
-    // values i, i - 1, ... (tail-biting) packed `bits` apart from bit 0, the low 16 bits (the same bits as `state`)
-    var vals: [row_values]u32 = undefined;
-    const mask: u32 = (@as(u32, 1) << @intCast(bits)) - 1;
-    for (&vals, 0..) |*v, j| {
-        const sb = j * bits;
-        const wi = 1 + (sb >> 4);
-        const lo: u32 = @as(u16, @bitCast(words[wi]));
-        const hi: u32 = if (wi + 1 < words.len) @as(u16, @bitCast(words[wi + 1])) else 0;
-        v.* = ((lo | (hi << 16)) >> @intCast(sb & 15)) & mask;
-    }
     for (out, bias, 0..) |*o, b, i| {
-        var acc: u32 = 0;
-        var k: usize = 0;
-        while (k * bits < 16) : (k += 1) acc |= vals[(i + row_values - k) % row_values] << @intCast(k * bits);
-        const cb: f32 = @floatCast(fmt.codebookValue(.mul1, @truncate(acc)));
+        const cb: f32 = @floatCast(fmt.codebookValue(.mul1, state(words, bits, i)));
         o.* = @floatCast(cb * scale + @as(f32, @floatCast(b)));
-    }
-}
-
-test "exl3 ple: the packed decode's states equal `state` for every value at every width" {
-    var prng = std.Random.DefaultPrng.init(11);
-    for (2..9) |bits| {
-        const n = try wordsPerRow(bits);
-        var words: [1 + row_values * 8 / 16]i16 = undefined;
-        for (words[0..n]) |*w| w.* = @bitCast(prng.random().int(u16));
-        words[0] = @bitCast(@as(f16, 0.5));
-        var bias: [row_values]f16 = undefined;
-        for (&bias) |*b| b.* = @floatCast(prng.random().float(f32) - 0.5);
-        var got: [row_values]f16 = undefined;
-        try decodeRow(words[0..n], bits, &bias, &got);
-        const scale: f32 = @floatCast(@as(f16, @bitCast(words[0])));
-        for (got, bias, 0..) |g, b, i| {
-            const cb: f32 = @floatCast(fmt.codebookValue(.mul1, state(words[0..n], bits, i)));
-            const want: f16 = @floatCast(cb * scale + @as(f32, @floatCast(b)));
-            try std.testing.expectEqual(@as(u16, @bitCast(want)), @as(u16, @bitCast(g)));
-        }
     }
 }
 
