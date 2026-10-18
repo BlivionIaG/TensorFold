@@ -26,7 +26,7 @@ const slots = topk + 1;
 const eps: f32 = 1e-6;
 const layers_total = 48;
 
-fn f16Copy(gpa: std.mem.Allocator, t: st.Tensor) ![]f16 {
+pub fn f16Copy(gpa: std.mem.Allocator, t: st.Tensor) ![]f16 {
     if (t.dtype != .f16) return error.WrongDtype;
     const out = try gpa.alloc(f16, t.bytes.len / 2);
     @memcpy(std.mem.sliceAsBytes(out), t.bytes);
@@ -41,7 +41,7 @@ fn f32Of(gpa: std.mem.Allocator, t: st.Tensor) ![]f32 {
     return out;
 }
 
-fn tensor(pack: *const real.Pack, comptime fmt: []const u8, args: anytype) !st.Tensor {
+pub fn tensor(pack: *const real.Pack, comptime fmt: []const u8, args: anytype) !st.Tensor {
     var buf: [200]u8 = undefined;
     const name = try std.fmt.bufPrint(&buf, fmt, args);
     return pack.find(name) orelse {
@@ -50,14 +50,14 @@ fn tensor(pack: *const real.Pack, comptime fmt: []const u8, args: anytype) !st.T
     };
 }
 
-fn freeMat(gpa: std.mem.Allocator, m: real.Mat) void {
+pub fn freeMat(gpa: std.mem.Allocator, m: real.Mat) void {
     gpa.free(m.trellis);
     gpa.free(m.suh);
     gpa.free(m.svh);
 }
 
 /// All 512 experts of one projection, strips-reordered and packed into one line-indexed device matrix.
-const Stack = struct {
+pub const Stack = struct {
     trellis: cuda.DeviceBuffer,
     suh: cuda.DeviceBuffer,
     svh: cuda.DeviceBuffer,
@@ -65,13 +65,13 @@ const Stack = struct {
     n: usize,
     halves: u8,
 
-    fn free(s: *Stack) void {
+    pub fn free(s: *Stack) void {
         s.trellis.free();
         s.suh.free();
         s.svh.free();
     }
 
-    fn packed_(s: Stack) !cuda.exl3.Packed {
+    pub fn packed_(s: Stack) !cuda.exl3.Packed {
         return .{
             .trellis = s.trellis.ptr,
             .suh = s.suh.ptr,
@@ -85,7 +85,7 @@ const Stack = struct {
     }
 };
 
-fn loadStack(gpu: Gpu, pack: *const real.Pack, layer: usize, proj: []const u8) !Stack {
+pub fn loadStack(gpu: Gpu, pack: *const real.Pack, layer: usize, proj: []const u8) !Stack {
     const gpa = gpu.gpa;
     const first = try tensor(pack, "model.language_model.layers.{d}.mlp.experts.0.{s}.trellis", .{ layer, proj });
     if (first.rank != 3) return error.BadShape;
@@ -126,7 +126,7 @@ fn loadStack(gpu: Gpu, pack: *const real.Pack, layer: usize, proj: []const u8) !
 
 const OracleExpert = struct { id: usize, gate: moe.Dense, up: moe.Dense, down: moe.Dense };
 
-fn denseOf(gpa: std.mem.Allocator, m: real.Mat) !moe.Dense {
+pub fn denseOf(gpa: std.mem.Allocator, m: real.Mat) !moe.Dense {
     return moe.Dense.init(gpa, m.halves, m.trellis, m.tiles_k, m.tiles_n, m.suh, m.svh);
 }
 
@@ -170,9 +170,9 @@ fn branchValue(d: usize) f32 {
     return @floatCast(0.75 * @cos(0.05 * x) + 0.1);
 }
 
-const Err = struct { max_abs: f64, peak: f64, rms_rel: f64 };
+pub const Err = struct { max_abs: f64, peak: f64, rms_rel: f64 };
 
-fn errOf(got: anytype, want: []const f64) Err {
+pub fn errOf(got: anytype, want: []const f64) Err {
     var max: f64 = 0;
     var peak: f64 = 0;
     var se: f64 = 0;

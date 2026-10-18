@@ -692,6 +692,49 @@ pub fn scheduleUsedAt(
     }
 }
 
+/// Line index of `(layer, id)` in any state, or null. The device pool addresses its buffers by this index.
+pub fn lineOf(v: Vram, layer: u8, id: u16) ?usize {
+    return vramIndexAt(v, layer, id);
+}
+
+/// A host-to-device copy the policy asked for: expert `id` into pool line `line`.
+pub const Copy = struct { id: u16, line: u32 };
+
+/// Per pick, the pool line the hit kernel reads, or -1 when the kernel must skip the slot
+/// (a `.copy` or `.cpu` decision, the shared expert, or a line that is not resident).
+/// The kernel ignores a negative id, so the host writes that slot's row into `y` itself.
+pub fn lineIds(v: Vram, layer: u8, ids: []const u16, decisions: []const Decision, out: []i32) error{Length}!void {
+    if (decisions.len != ids.len or out.len != ids.len) return error.Length;
+    for (ids, decisions, out) |id, d, *o| {
+        o.* = -1;
+        if (d != .hit or id == shared_id) continue;
+        const i = vramIndexAt(v, layer, id) orelse continue;
+        if (v.line[i] != .resident) continue;
+        o.* = @intCast(i);
+    }
+}
+
+/// Unique `(id, line)` pairs the round staged: a `.copy` decision whose line is in flight.
+/// Returns how many were written. `out` shorter than the unique count is `error.Length`.
+pub fn stagedCopies(v: Vram, layer: u8, ids: []const u16, decisions: []const Decision, out: []Copy) error{Length}!usize {
+    if (decisions.len != ids.len) return error.Length;
+    var n: usize = 0;
+    for (ids, decisions) |id, d| {
+        if (d != .copy) continue;
+        const i = vramIndexAt(v, layer, id) orelse continue;
+        if (v.line[i] != .inflight) continue;
+        var seen = false;
+        for (out[0..n]) |c| {
+            if (c.id == id) seen = true;
+        }
+        if (seen) continue;
+        if (n >= out.len) return error.Length;
+        out[n] = .{ .id = id, .line = @intCast(i) };
+        n += 1;
+    }
+    return n;
+}
+
 fn benchPolicy(slot_n: u16, expert_bytes: u64, copy_bytes: u64) Policy {
     return .{
         .slots = slot_n,
@@ -1560,4 +1603,40 @@ test "fillOwnedLayers keeps a hot id inside the stripe and does not give its lay
         if (lay == 0) on_layer0 += 1;
     }
     try std.testing.expectEqual(@as(usize, 1), on_layer0);
+}
+
+test "lineIds maps hits to their line and everything else to -1, stagedCopies lists each staged line once" {
+    var slots: [3]u16 = undefined;
+    var line: [3]Line = undefined;
+    var stamp: [3]u32 = undefined;
+    var layer: [3]u8 = undefined;
+    var v = Vram.init(&slots, &line, &stamp, &layer);
+    var counts: [shape.layers][shape.experts]u32 = @splat(@splat(0));
+    const pol = Policy{ .slots = 3, .expert_bytes = 10, .copy_bytes = 20 };
+    var ids = [_]u16{ 7, 9, 9, 11, 512 };
+    var dec: [5]Decision = undefined;
+    var scratch: [8]u16 = undefined;
+    try observe(&counts[2], &ids);
+    try scheduleUsedAt(&v, 2, &ids, &counts, pol, 1, &dec, &scratch, allOwned());
+    // 3 unique misses (9 twice is hottest), budget for two copies: 9 and 7 copy, 11 cpu, 512 hit.
+    try std.testing.expectEqual(Decision.copy, dec[0]);
+    try std.testing.expectEqual(Decision.copy, dec[1]);
+    try std.testing.expectEqual(Decision.copy, dec[2]);
+    try std.testing.expectEqual(Decision.cpu, dec[3]);
+    try std.testing.expectEqual(Decision.hit, dec[4]);
+    var copies: [4]Copy = undefined;
+    const n = try stagedCopies(v, 2, &ids, &dec, &copies);
+    try std.testing.expectEqual(@as(usize, 2), n);
+    var ln: [5]i32 = undefined;
+    try lineIds(v, 2, &ids, &dec, &ln);
+    try std.testing.expectEqualSlices(i32, &.{ -1, -1, -1, -1, -1 }, &ln);
+    try std.testing.expectError(error.Length, stagedCopies(v, 2, &ids, &dec, copies[0..1]));
+    for (copies[0..n]) |c| try reapAt(&v, 2, c.id, 2);
+    try scheduleUsedAt(&v, 2, &ids, &counts, pol, 3, &dec, &scratch, allOwned());
+    try lineIds(v, 2, &ids, &dec, &ln);
+    try std.testing.expectEqual(@as(i32, @intCast(lineOf(v, 2, 7).?)), ln[0]);
+    try std.testing.expectEqual(@as(i32, @intCast(lineOf(v, 2, 9).?)), ln[1]);
+    try std.testing.expectEqual(ln[1], ln[2]);
+    try std.testing.expect(ln[3] == -1 and ln[4] == -1);
+    try std.testing.expectEqual(@as(?usize, null), lineOf(v, 3, 7));
 }
