@@ -50,6 +50,7 @@ const exl3_ple_tests = @import("exl3_ple_tests.zig");
 const exl3_mtp_tests = @import("exl3_mtp_tests.zig");
 const exl3_tp_tests = @import("exl3_tp_tests.zig");
 const exl3_fwd_tp = @import("exl3_fwd_tp.zig");
+const exl3_ctx_tests = @import("exl3_ctx_tests.zig");
 
 const usage =
     \\usage: tf-cuda-test <command>
@@ -62,6 +63,7 @@ const usage =
     \\  exl3-moe <dir> [layers]  real MoE block + mlp hyper-connection vs f64 oracles (default layers 0,17)
     \\  exl3-attn <dir> [layer a] [layer b]  real full-attention layers: KV write, indexer top-k, sparse decode vs the CPU oracle
     \\  exl3-forward <dir> layer|tf|gen ...  the assembled EXL3 forward (embed, layers, head) vs the f64 oracle; greedy generation
+    \\  exl3-ctx <dir> tf|long|prefix ...  multi-prompt teacher forcing, ~2300-token sparse-indexer prompt, prefix-cache snapshot/restore
     \\  exl3-offload <dir> [layers]  real expert offload: H2D line pool + Exl3.hit + CPU miss rows vs fully resident, count promotion, graph replay
     \\  exl3-ple <dir> [qbench row] [tokens]  the real n-gram PLE path: ids, mmap vs pread rows, dequant, layer injection, hot-row cache, RSS (host)
     \\  exl3-mtp <dir> oracle|spec|spec-reject[+hc][+pN] [count] [ids ...]  the MTP head vs an f64 oracle; single-draft speculative greedy vs serial (stream identity, acceptance)
@@ -163,6 +165,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "exl3-moe")) return exl3_moe_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-attn")) return exl3_attn_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-forward")) return exl3_fwd_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-ctx")) return exl3_ctx_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-offload")) return exl3_offload_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-ple")) return exl3_ple_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-mtp")) return exl3_mtp_tests.run(gpu, rest);

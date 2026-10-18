@@ -41,6 +41,7 @@ pub const fwd_cpu = @import("exl3_fwd_cpu.zig");
 pub const fwd_ple = @import("exl3_fwd_ple.zig");
 pub const mtp_spec = @import("exl3_mtp_spec.zig");
 pub const tp_split = @import("exl3_tp_split.zig");
+pub const prefix = @import("exl3_prefix.zig");
 
 test {
     _ = shape;
@@ -53,6 +54,7 @@ test {
     _ = offload;
     _ = graph;
     _ = cache;
+    _ = prefix;
     _ = strips;
     _ = cpu;
     _ = place;
