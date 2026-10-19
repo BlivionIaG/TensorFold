@@ -29,7 +29,7 @@ const snap_ring = 64;
 
 const SlotState = enum(u8) { free, pending };
 
-pub const Stats = struct { copies: u64 = 0, wasted: u64 = 0, ring_full: u64 = 0, release_waits: u64 = 0, compute_waits: u64 = 0 };
+pub const Stats = struct { copies: u64 = 0, wasted: u64 = 0, ring_full: u64 = 0, release_waits: u64 = 0, compute_waits: u64 = 0, reseeded: u64 = 0 };
 
 pub const Ring = struct {
     gpa: std.mem.Allocator,
@@ -185,8 +185,10 @@ pub const Ring = struct {
         }
     }
 
-    /// After a prefill: every pool empty (policy state, routed table entries), the device idle.
-    pub fn end(r: *Ring, s: cuda.Stream) !void {
+    /// After a prefill: every pool empty (policy state, routed table entries), the device idle; then, with `reseed`,
+    /// each pool refills its lines with its layer's hottest experts of the prefills so far (copies queued on the copy
+    /// engine, nothing waits for them but the first rounds that read those lines).
+    pub fn end(r: *Ring, s: cuda.Stream, reseed: bool) !void {
         try r.closeBatch();
         try r.copy.synchronize();
         try s.synchronize();
@@ -201,6 +203,38 @@ pub const Ring = struct {
             p.prev_n = 0;
             @memset(p.lines.line_pending, false);
             @memset(p.lines.line_epoch, 0);
+        }
+        if (!reseed) return;
+        for (r.pools, 0..) |p, l| {
+            var order: [routed_n]u16 = undefined;
+            var n: usize = 0;
+            for (0..routed_n) |id| {
+                if (r.counts[l][id] == 0) continue;
+                order[n] = @intCast(id);
+                n += 1;
+            }
+            const Ctx = struct {
+                c: *const [routed_n]u32,
+                fn hotter(c: @This(), a: u16, b: u16) bool {
+                    if (c.c[a] != c.c[b]) return c.c[a] > c.c[b];
+                    return a < b;
+                }
+            };
+            std.mem.sort(u16, order[0..n], Ctx{ .c = &r.counts[l] }, Ctx.hotter);
+            const take = @min(n, p.opt.lines, p.opt.max_rows * p.opt.slots);
+            if (take == 0) continue;
+            const rows = (take + p.opt.slots - 1) / p.opt.slots;
+            var fake: [routed_n + 16]i32 = undefined;
+            const picks = fake[0 .. rows * p.opt.slots];
+            @memset(picks, -1);
+            for (order[0..take], 0..) |id, i| picks[i] = id;
+            const rd = try p.plan(picks, rows);
+            // the pool's copy stream does the copies; the ring's stream takes the gates and the release
+            for (0..rd.n_passes) |j| {
+                try p.stage(rd, j, r.copy);
+                try p.release(rd, j, r.copy);
+            }
+            r.stats.reseeded += rd.misses_();
         }
     }
 

@@ -48,8 +48,11 @@ const pss_n = batch.pss_n;
 
 pub const Options = struct {
     enabled: bool = true,
-    /// Rows a deep chunk holds (rounded down to whole sub-blocks).
+    /// Rows a deep chunk holds (whole attention blocks).
     rows: usize = 8192,
+    /// The deep chunk the server reserves at load (reserveFor): its buffers come out of the pools' share of the card
+    /// (0.16 GiB a 1024 rows), so the server takes fewer than `rows` unless TF_FLASHNEXT_EXL3_PREFILL_ROWS says.
+    serve_rows: usize = 4096,
     /// The shortest prompt that takes this path.
     min_rows: usize = 512,
     /// New experts a pass stages at most, as a fraction of the layer's lines (0.5: double buffering).
@@ -70,16 +73,23 @@ pub const Options = struct {
     /// the reference 128-row blocks: 1.4-2x faster at 128+ rows, a different fp32 order (bf16-level changes; the
     /// same float64 error, tf-cuda-test exl3-prefill dense). TF_FLASHNEXT_EXL3_PREFILL_TILES=0: the reference.
     tiles: bool = true,
+    /// After a ring prefill, refill every pool with its layer's hottest experts of the prefills (measured: decode hit
+    /// +5%, ms/token unchanged, prefill +0.17 s; off by default, TF_FLASHNEXT_EXL3_PREFILL_RESEED=1).
+    reseed: bool = false,
 };
 
 pub fn optionsFromEnv() Options {
     var o: Options = .{};
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL")) |v| o.enabled = !std.mem.eql(u8, std.mem.span(v), "0");
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_ROWS")) |v| o.rows = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.rows;
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_ROWS")) |v| {
+        o.rows = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.rows;
+        o.serve_rows = o.rows;
+    }
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_MIN")) |v| o.min_rows = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.min_rows;
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_PREFETCH")) |v| o.prefetch = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_KERNEL")) |v| o.slots_kernel = std.mem.eql(u8, std.mem.span(v), "slots");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TILES")) |v| o.tiles = !std.mem.eql(u8, std.mem.span(v), "0");
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RESEED")) |v| o.reseed = std.mem.eql(u8, std.mem.span(v), "1");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING")) |v| o.ring = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_PASS")) |v| o.ring_pass = @max(1, std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_pass);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD")) |v| o.ring_ahead = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_ahead;
@@ -258,9 +268,25 @@ pub fn reserveFor(e: *prompt.Engine, context: usize, tp: usize) void {
         const x = l.exl3 orelse return;
         if (x.bank == null) return;
     }
-    const rows = @min(o.rows, (context + att_rows - 1) / att_rows * att_rows);
+    const rows = @min(o.serve_rows, (context + att_rows - 1) / att_rows * att_rows);
     if (rows < o.min_rows) return;
     reserve(e.gpa, e.driver, e, rows) catch |err| std.log.warn("flashnext exl3 prefill: deep chunks of {d} rows refused ({t}); prompts take the batched pass", .{ rows, err });
+}
+
+/// Rows a serving lane prefills a step (cuda_lanes.zig `step`): a deep chunk when this engine holds deep buffers,
+/// else the engine's chunk; at most `draft_rows` (the lane's draft keeps that many rows of streams).
+pub fn stepRows(e: *const prompt.Engine, draft_rows: ?usize) usize {
+    var n = e.chunk;
+    if (deep) |dp| if (dp.owner == @as(*const anyopaque, e) and opts().enabled) {
+        n = @max(n, dp.rows);
+    };
+    if (draft_rows) |r| n = @min(n, @max(r, 1));
+    return n;
+}
+
+/// Rows of streams a lane's MTP draft keeps (cuda_lanes.zig, cuda_lanes_load.zig): a whole step's.
+pub fn draftRows(e: *const prompt.Engine) usize {
+    return stepRows(e, null);
 }
 
 /// The engine's deinit: frees the deep chunk's buffers if `owner` made them.
@@ -349,7 +375,7 @@ pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq
     }
     defer tiles_on = false;
     if (rg) |r| try r.begin(p.stream);
-    defer if (rg) |r| r.end(p.stream) catch |err| std.log.err("flashnext exl3 prefill: ring end: {t}", .{err});
+    defer if (rg) |r| r.end(p.stream, o.reseed) catch |err| std.log.err("flashnext exl3 prefill: ring end: {t}", .{err});
     var at: usize = 0;
     while (at < ids.len) {
         const n = @min(deep_rows, ids.len - at);
