@@ -55,6 +55,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
         own.engine.image_factory = own.vision;
     }
     errdefer if (own.vision) |v| v.deinit();
+    try @import("cuda_exl3_kv.zig").setup(own.engine, o.kv8, mode == .exl3); // K10: int8 KV, host index keys, chunk
     // the pass's scratch for a full chunk, once for the engine (every prompt, window, round and head pass)
     _ = try own.engine.reserve(@min(o.context, own.engine.chunk));
     // the MTP head unless --no-drafts (TF_FLASHNEXT_DRAFTS and _CONFIDENCE: the chain's rule, 6 and 0.60)
@@ -71,11 +72,14 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     errdefer own.logits.free();
     own.lanes = .empty;
     own.next = 0;
-    var stream_bytes = prompt.seqBytes(window);
+    try @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
+    var stream_bytes = @import("cuda_exl3_kv.zig").engineSeqBytes(@import("cuda_exl3_kv.zig").of(own.engine), window);
     if (own.head) |h| {
-        stream_bytes += mtp.Draft.bytes(window, h.ids.len, own.engine.chunk);
-    } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(window, 1, own.engine.chunk);
+        stream_bytes += mtp.Draft.bytes(window, h.ids.len, @import("cuda_exl3_prefill.zig").draftRows(own.engine));
+    } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(1, 1, own.engine.chunk); // rank 1's window (no head cache)
     if (o.vision) |v| stream_bytes += @as(usize, v.image_tokens) * @import("cuda_prompt_wt.zig").dims * 2 + 16 * o.context;
+    @import("cuda_exl3_kv.zig").logStream(own.engine, window, stream_bytes); // K10: what a stream holds, by piece
+    own.stream_bytes = stream_bytes;
     _ = try @import("cuda_exl3_pass.zig").attach(gpa, io, driver, own.stream, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, @import("cuda_exl3_pass.zig").budgetFromEnv(stream_bytes));
     return .{
         .vision = own.vision,
@@ -84,6 +88,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
         .rows = if (own.head != null) mtp.max_rows else 2,
         .prompt_rows = @intCast(own.engine.chunk),
         .stream_bytes = stream_bytes,
+        .host_snaps = @import("cuda_exl3_kv.zig").snapHost(o.context, mode == .exl3),
         .ctx = own,
         .deinit = F.release,
         .target = own,
