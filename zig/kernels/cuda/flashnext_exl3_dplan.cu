@@ -9,7 +9,8 @@
 // fn_exl3_dcopy runs next. Every line must fit: the caller only plans rounds of at most `lines` distinct experts.
 //
 // State, per layer (u32 words at `st`): line_id[L] (expert or -1), stamp[L], line_of[512] (line or -1), counts[512],
-// then now, rounds, hit_slots, miss_slots, copies, evictions, overflow.
+// then now, rounds, hit_slots, miss_slots, copies, evictions, overflow, in-place reads (more misses than lines
+// free of the round's experts: read from the mapped bank in place for that round).
 
 #include <stdint.h>
 
@@ -18,7 +19,7 @@
 #define DP_MAXU 256
 
 struct DpMisc {
-    unsigned now, rounds, hit_slots, miss_slots, copies, evictions, overflow, pad;
+    unsigned now, rounds, hit_slots, miss_slots, copies, evictions, overflow, inplace;
 };
 
 __device__ __forceinline__ bool dp_colder(unsigned ca, unsigned sa, int ia, unsigned cb, unsigned sb, int ib) {
@@ -37,7 +38,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     int* __restrict__ k2t2, const long long* __restrict__ src, const long long* __restrict__ lens,
     const int* __restrict__ k2, unsigned long long line_base, unsigned long long line_bytes, unsigned long long off0,
     unsigned long long off1, unsigned long long off2, long long* __restrict__ work, int* __restrict__ work_n,
-    int* __restrict__ hit_picks, int* __restrict__ miss_picks) {
+    int* __restrict__ hit_picks, int* __restrict__ miss_picks, int* __restrict__ ovf, int* __restrict__ ovf_n) {
     int* line_id = reinterpret_cast<int*>(st);
     unsigned* stamp = st + lines;
     int* line_of = reinterpret_cast<int*>(st + 2 * lines);
@@ -48,7 +49,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     __shared__ unsigned short app[DP_MAXU];
     __shared__ unsigned short miss[DP_MAXU];
     __shared__ unsigned keep[DP_EXPERTS / 32];
-    __shared__ int n_uniq, n_miss, n_copy;
+    __shared__ int n_uniq, n_miss, n_copy, n_ovf;
     __shared__ unsigned now;
     __shared__ unsigned rkey_c[256], rkey_s[256];
     __shared__ int rkey_i[256];
@@ -103,11 +104,11 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
             }
             miss[b + 1] = x;
         }
-        if (nu > lines) over = true;
-        if (over) misc->overflow += 1;
+        if (over) misc->overflow += 1;  // more distinct experts than DP_MAXU: the caller's row bound prevents it
         n_uniq = nu;
-        n_miss = over ? 0 : nm;  // an overflowing round is the caller's bug: plan nothing, the flag says so
+        n_miss = over ? 0 : nm;
         n_copy = 0;
+        n_ovf = 0;
     }
     __syncthreads();
     // the split (optional): picks held when the round started (and the shared expert) vs the misses this round copies;
@@ -193,12 +194,40 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
                 n_copy += 1;
                 misc->copies += 1;
             } else {
-                misc->overflow += 1;
+                // no line is free of this round's experts: the expert is read in place from the mapped host bank
+                // this round (same bytes, so the same results; slower), and its entries are cleared after the round
+                for (int w = 0; w < 3; ++w) {
+                    tabs[w][id] = src[id * 3 + w];
+                    k2s[w][id] = k2[id * 3 + w];
+                }
+                ovf[n_ovf] = id;
+                n_ovf += 1;
+                misc->inplace += 1;
             }
         }
         __syncthreads();
     }
-    if (t == 0) *work_n = n_copy;
+    if (t == 0) {
+        *work_n = n_copy;
+        *ovf_n = n_ovf;
+    }
+}
+
+// After the round's experts: the in-place (host-bank) experts' table entries cleared again (they hold no line).
+extern "C" __global__ void fn_exl3_drestore(const int* __restrict__ ovf, const int* __restrict__ ovf_n,
+                                           long long* __restrict__ tab0, long long* __restrict__ tab1,
+                                           long long* __restrict__ tab2, int* __restrict__ k2t0, int* __restrict__ k2t1,
+                                           int* __restrict__ k2t2) {
+    const int n = *ovf_n;
+    for (int i = threadIdx.x; i < n; i += blockDim.x) {
+        const int id = ovf[i];
+        tab0[id] = 0;
+        tab1[id] = 0;
+        tab2[id] = 0;
+        k2t0[id] = 0;
+        k2t1[id] = 0;
+        k2t2[id] = 0;
+    }
 }
 
 // The planned copies: each segment {src (host bank, mapped), dst (a line), len (bytes, a multiple of 16)} read as

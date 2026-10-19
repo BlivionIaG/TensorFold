@@ -8,7 +8,7 @@
 //!   flashnext-exl3-graph RANK WORLD PORT DIR eq GOLDEN [STEPS] [MODES]
 //!                                                          the real pack at tp=1/2: each golden prompt prefilled,
 //!                                                          then STEPS greedy decode rounds and the same continuation
-//!                                                          as verify windows (rows 3,1,4,2,...) under each mode
+//!                                                          as verify windows (rows 3,1,4,2,8,16,...) under each mode
 //!                                                          (off = host cut, dplan = device plan eager, graph):
 //!                                                          every step's logits bit-equal to off's, ms/token, hit rate
 const std = @import("std");
@@ -119,6 +119,7 @@ fn planCase(gpu: Gpu, lines: usize, max_rows: usize, rounds: usize, seed: u64) !
         try picks_dev.upload(0, std.mem.sliceAsBytes(picks[0..n]));
         try dp.plan(s, 0, picks_dev.ptr, rows);
         try dp.join(s);
+        try dp.restore(s, 0);
         if (round % 37 == 36) try dp.toHost(); // owner switches mid-stream keep both views consistent
     }
     try s.synchronize();
@@ -369,7 +370,7 @@ const Run = struct {
     copies: f64 = 0,
 };
 
-const win_sizes = [_]usize{ 3, 1, 4, 2 };
+const win_sizes = [_]usize{ 3, 1, 4, 2, 8, 16 };
 
 fn runMode(g: *Eng, ids: []const u32, steps: usize, r: *Run) !void {
     const a = g.gpu.gpa;
@@ -400,7 +401,7 @@ fn runMode(g: *Eng, ids: []const u32, steps: usize, r: *Run) !void {
     try g.forward(ids, .{ .logits = .last });
     var at: usize = 0;
     var k: usize = 0;
-    const host = try a.alloc(u16, 4 * vocab);
+    const host = try a.alloc(u16, 16 * vocab);
     defer a.free(host);
     const tw = check.now(g.gpu.io);
     while (at < steps) : (k += 1) {
@@ -507,7 +508,7 @@ fn eqMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, golde
         }
         graph.force = null;
     }
-    if (dplan.current()) |dp| if (rank == 0) std.debug.print("RESULT dplan owner switches: {d} pushes, {d} pulls\n", .{ dp.pushes, dp.pulls });
+    if (dplan.current()) |dp| if (rank == 0) std.debug.print("RESULT dplan owner switches: {d} pushes, {d} pulls; {d} experts read in place (rounds with more misses than free lines)\n", .{ dp.pushes, dp.pulls, dp.inplace });
     try check.expect(all_ok, "rank {d}: a device-plan or graph step's logits differ from the host cut's", .{rank});
     check.pass("rank {d}/{d}: decode rounds and verify windows on the device plan and in graphs are bit-identical to the host cut ({d} steps a prompt)", .{ rank, world, steps });
 }

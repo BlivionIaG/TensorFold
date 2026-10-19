@@ -38,7 +38,7 @@ fn workCap(max_rows: usize) usize {
 pub const Owner = enum { host, device };
 
 /// Device statistics of a layer (the misc words after now).
-pub const Misc = extern struct { now: u32, rounds: u32, hit_slots: u32, miss_slots: u32, copies: u32, evictions: u32, overflow: u32, pad: u32 };
+pub const Misc = extern struct { now: u32, rounds: u32, hit_slots: u32, miss_slots: u32, copies: u32, evictions: u32, overflow: u32, inplace: u32 };
 
 pub const DevPlan = struct {
     gpa: std.mem.Allocator,
@@ -46,6 +46,7 @@ pub const DevPlan = struct {
     mod: cuda.Module,
     plan_fn: cuda.Function,
     copy_fn: cuda.Function,
+    restore_fn: cuda.Function,
     pools: []*pool_.Pool,
     lines: usize,
     words: usize,
@@ -73,6 +74,8 @@ pub const DevPlan = struct {
     seen: []Misc,
     pushes: u64 = 0,
     pulls: u64 = 0,
+    /// Experts read in place from the host bank (more misses than free lines in a round), summed at each pull.
+    inplace: u64 = 0,
 
     const static_bytes = experts_n * 3 * (8 + 8 + 4);
 
@@ -94,8 +97,11 @@ pub const DevPlan = struct {
         errdefer mirror.free();
         var statics = try cuda.DeviceBuffer.alloc(d, pools.len * static_bytes);
         errdefer statics.free();
-        const max_rows = lines / 10;
-        var work = try cuda.DeviceBuffer.alloc(d, workCap(max_rows) * 9 * 8 + 256);
+        // rows a planned round may hold (MTP verify windows reach 16): more distinct misses than lines free of the
+        // round's experts are read in place from the mapped bank for that round (fn_exl3_dplan), so any row count
+        // up to this bound plans in one pass
+        const max_rows = maxRows();
+        var work = try cuda.DeviceBuffer.alloc(d, workCap(max_rows) * 9 * 8 + 256 + (experts_n + 64) * 4);
         errdefer work.free();
         const seen = try gpa.alloc(Misc, pools.len);
         errdefer gpa.free(seen);
@@ -129,6 +135,7 @@ pub const DevPlan = struct {
             .mod = mod,
             .plan_fn = try mod.function("fn_exl3_dplan"),
             .copy_fn = try mod.function("fn_exl3_dcopy"),
+            .restore_fn = try mod.function("fn_exl3_drestore"),
             .pools = own,
             .lines = lines,
             .words = words,
@@ -195,7 +202,7 @@ pub const DevPlan = struct {
             }
             @memcpy(counts, &p.counts[p.opt.layer]);
             const misc: *Misc = @ptrCast(m[2 * lines + 2 * experts_n ..][0..misc_words]);
-            misc.* = .{ .now = p.now, .rounds = 0, .hit_slots = 0, .miss_slots = 0, .copies = 0, .evictions = 0, .overflow = 0, .pad = 0 };
+            misc.* = .{ .now = p.now, .rounds = 0, .hit_slots = 0, .miss_slots = 0, .copies = 0, .evictions = 0, .overflow = 0, .inplace = 0 };
             dp.seen[i] = misc.*;
         }
         try s.d.check(s.d.api.cuMemcpyHtoDAsync_v2(dp.state.ptr, dp.mirror.bytes.ptr, dp.state.len, s.handle), "cuMemcpyHtoDAsync");
@@ -234,6 +241,7 @@ pub const DevPlan = struct {
             p.stats.misses += misc.copies - was.copies;
             p.stats.evictions += misc.evictions - was.evictions;
             overflow += misc.overflow;
+            dp.inplace += misc.inplace - was.inplace;
             dp.seen[i] = misc.*;
             // the device's rounds finished (synchronized above): no line waits for a reader, nothing is in flight
             @memset(p.lines.line_epoch, 0);
@@ -244,7 +252,7 @@ pub const DevPlan = struct {
         dp.owner = .host;
         dp.pulls += 1;
         if (overflow != 0) {
-            std.log.err("flashnext exl3 dplan: {d} rounds overflowed the lines (a planned round had more distinct experts than lines)", .{overflow});
+            std.log.err("flashnext exl3 dplan: {d} rounds had more distinct experts than the planner holds (256): results of those rounds are wrong", .{overflow});
             return error.PoolPasses;
         }
     }
@@ -258,9 +266,25 @@ pub const DevPlan = struct {
         for (dp.pools, 0..) |_, i| {
             const m = dp.mirrorOf(i);
             const misc: *const Misc = @ptrCast(m[2 * dp.lines + 2 * experts_n ..][0..misc_words]);
-            inline for (.{ "rounds", "hit_slots", "miss_slots", "copies", "evictions", "overflow" }) |f| @field(t, f) += @field(misc, f) - @field(dp.seen[i], f);
+            inline for (.{ "rounds", "hit_slots", "miss_slots", "copies", "evictions", "overflow", "inplace" }) |f| @field(t, f) += @field(misc, f) - @field(dp.seen[i], f);
         }
         return t;
+    }
+
+    /// The in-place experts of the last plan ([512] int32) and their count after it.
+    fn ovfList(dp: *const DevPlan) u64 {
+        return dp.work.ptr + workCap(dp.max_rows) * 9 * 8 + 256;
+    }
+
+    /// After the round's experts (on `s`): the in-place experts' table entries cleared.
+    pub fn restore(dp: *DevPlan, s: cuda.Stream, i: usize) !void {
+        const p = dp.pools[i];
+        var a: cuda.Args = .{};
+        a.add(dp.ovfList());
+        a.add(dp.ovfList() + experts_n * 4);
+        for (0..3) |w| a.add(p.lines.table(w));
+        for (0..3) |w| a.add(p.lines.widths(w));
+        try cuda.launch.launch(dp.restore_fn, .{ .grid = .{ .x = 1 }, .block = .{ .x = 256 } }, s, &a);
     }
 
     /// `s` waits for the last plan's copies (runLayer joins them itself; a caller of `plan` alone needs this).
@@ -302,6 +326,8 @@ pub const DevPlan = struct {
         a.add(work_n);
         a.add(if (dp.overlap) dp.split.ptr else @as(u64, 0));
         a.add(if (dp.overlap) dp.split.ptr + dp.max_rows * 11 * 4 else @as(u64, 0));
+        a.add(dp.ovfList());
+        a.add(dp.ovfList() + experts_n * 4);
         try cuda.launch.launch(dp.plan_fn, .{ .grid = .{ .x = 1 }, .block = .{ .x = 256 } }, s, &a);
         var c: cuda.Args = .{};
         c.add(work);
@@ -378,11 +404,21 @@ pub fn releaseFor(owner: *const anyopaque) void {
 /// host cut's single pass runs it (cuda_exl3_pass.pooled): same kernels, same inputs, so the same bits.
 pub fn runLayer(dp: *DevPlan, st: cuda.Stream, i: usize, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
     try dp.plan(st, i, picks, rows);
-    if (!dp.overlap) return ex.run(st, layer, xin, 2560, .bf16, picks, wts, rows, out, sc);
-    // held experts while the copies run, then the misses' experts and (expert parallel) the combine of every slot
-    try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr, 0, rows, 0, sc);
-    try st.wait(dp.ev_copy);
-    try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr + dp.max_rows * 11 * 4, wts, rows, out, sc);
+    if (!dp.overlap) {
+        try ex.run(st, layer, xin, 2560, .bf16, picks, wts, rows, out, sc);
+    } else {
+        // held experts while the copies run, then the misses' experts and (expert parallel) the combine of every slot
+        try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr, 0, rows, 0, sc);
+        try st.wait(dp.ev_copy);
+        try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr + dp.max_rows * 11 * 4, wts, rows, out, sc);
+    }
+    try dp.restore(st, i);
+}
+
+/// TF_FLASHNEXT_EXL3_GRAPH_ROWS: rows a device-planned round holds at most (default 16, the MTP window).
+fn maxRows() usize {
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_ROWS") orelse return 16;
+    return @max(1, std.fmt.parseInt(usize, std.mem.span(v), 10) catch 16);
 }
 
 /// TF_FLASHNEXT_EXL3_OVERLAP=1 turns the split on (default off: compiled, not yet run on the real pack, unmeasured).
