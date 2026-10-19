@@ -72,7 +72,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     errdefer own.logits.free();
     own.lanes = .empty;
     own.next = 0;
-    @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
+    try @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
     var stream_bytes = @import("cuda_exl3_kv.zig").engineSeqBytes(own.engine.kv, window);
     if (own.head) |h| {
         stream_bytes += mtp.Draft.bytes(window, h.ids.len, @import("cuda_exl3_prefill.zig").draftRows(own.engine));
