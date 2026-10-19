@@ -39,6 +39,8 @@ const elementwise = @import("launches/elementwise.zig");
 const draw = @import("launches/draw.zig");
 const tp = @import("launches/tp.zig");
 const flashnext = @import("launches/flashnext.zig");
+const mamba = @import("launches/mamba.zig");
+const nemotron_moe = @import("launches/nemotron_moe.zig");
 
 pub const ConvArgs = conv.ConvArgs;
 pub const PlanArgs = plan.PlanArgs;
@@ -49,6 +51,8 @@ pub const Launcher = struct {
     r: *const runtime.Runtime,
     mods: [kernels.group_count]Module,
     rms: Triple,
+    /// rms_kernel after tf_add (or tf_add_wide) in one launch, fp16 and bf16.
+    add_rms: [2]Function,
     conv_decode: Function,
     conv_rows: Function,
     rope_decode: Function,
@@ -80,10 +84,17 @@ pub const Launcher = struct {
     affine: affine.Kernels,
     /// Flash Next's kernels: its residual streams, n-gram rows, indexer and sparse attention.
     fnx: flashnext.Fns,
+    /// Nemotron's Mamba-2 mixer kernels.
+    mamba: mamba.Fns,
+    /// Nemotron-H's MoE pick and relu^2 (nemotron_moe.hpp).
+    nemo: nemotron_moe.Fns,
 
     const PlanFns = struct {
         kv_write: Function,
+        kv_write_act: Function,
         score: [2]Function, // fp16, bf16
+        score_act: [2]Function,
+        sum_act: Function,
         apply: [2]Function,
         keep: Function,
         gather: Function,
@@ -157,7 +168,10 @@ pub const Launcher = struct {
         l.dec = .{ .router = .{ try dec.function("tf_router_decode_f16"), try dec.function("tf_router_decode_bf16") }, .tail = try dec.function("tf_tail"), .conv_split = try dec.function("tf_conv_split"), .rms2 = try dec.function("tf_rms2"), .gnorm_out = try dec.function("tf_gnorm_out"), .select = try dec.function("tf_select_decode") };
         l.plan = .{
             .kv_write = try pl.function("tf_plan_kv_write"),
+            .kv_write_act = try pl.function("tf_plan_kv_write_act"),
             .score = .{ try pl.function("tf_plan_score_f16"), try pl.function("tf_plan_score_bf16") },
+            .score_act = .{ try pl.function("tf_plan_score_act_f16"), try pl.function("tf_plan_score_act_bf16") },
+            .sum_act = try pl.function("tf_sum_partials_act"),
             .apply = .{ try pl.function("tf_plan_apply_f16"), try pl.function("tf_plan_apply_bf16") },
             .keep = try pl.function("tf_plan_keep"),
             .gather = try pl.function("tf_plan_gather"),
@@ -203,6 +217,7 @@ pub const Launcher = struct {
             try act.function(ns ++ "10rms_kernelI6__halfEEvPKT_PKfPS3_if"),
             try act.function(ns ++ "10rms_kernelI12hip_bfloat16EEvPKT_PKfPS3_if"),
         };
+        l.add_rms = .{ try act.function("tf_add_rms_f16"), try act.function("tf_add_rms_bf16") };
         l.conv_decode = try act.function("tf_conv_decode");
         l.conv_rows = try act.function("tf_conv_rows");
         l.rope_decode = try act.function("tf_rope_decode");
@@ -253,8 +268,10 @@ pub const Launcher = struct {
             try att.function(ns ++ "10fa_prefillI12hip_bfloat16Li64EEEvPKfPKT_S7_Pfiiiiifixxxxxx"),
             try att.function(ns ++ "10fa_prefillIfLi32EEEvPKfPKT_S6_Pfiiiiifixxxxxx"),
         };
+        l.nemo = try nemotron_moe.Fns.load(ops);
         l.softmax_stats = try att.function("tf_softmax_stats");
         l.sum_partials = try att.function("tf_sum_partials");
+        l.mamba = try mamba.Fns.load(l.mods[@backingInt(kernels.Group.mamba)]);
         const tiles = l.mods[@backingInt(kernels.Group.affine_tiles)];
         const dot2 = l.mods[@backingInt(kernels.Group.affine_dot2)];
         l.affine = try affine.Kernels.load(tiles, dot2, caps.Caps.of(kernels.arch) orelse return error.Invalid, choices.products);
@@ -271,6 +288,7 @@ pub const Launcher = struct {
     pub const tf_rms2 = norms.tf_rms2;
     pub const tf_gnorm_out = norms.tf_gnorm_out;
     pub const tf_tail = norms.tf_tail;
+    pub const tf_add_rms = norms.tf_add_rms;
     pub const tf_conv_decode = conv.tf_conv_decode;
     pub const tf_conv_rows = conv.tf_conv_rows;
     pub const tf_conv_split = conv.tf_conv_split;
@@ -302,6 +320,8 @@ pub const Launcher = struct {
     pub const tf_gated_delta = recurrence.tf_gated_delta;
     pub const planKvWrite = plan.planKvWrite;
     pub const planCausal = plan.planCausal;
+    pub const planCausalAs = plan.planCausalAs;
+    pub const planKvWriteAct = plan.planKvWriteAct;
     pub const planGatedDelta = plan.planGatedDelta;
     pub const planKeep = plan.planKeep;
     pub const planGdnReplay = plan.planGdnReplay;
@@ -330,6 +350,11 @@ pub const Launcher = struct {
     pub const fn_idx_scores = flashnext.idxScores;
     pub const fn_idx_select = flashnext.idxSelect;
     pub const fn_sparse_attention = flashnext.sparseAttention;
+    pub const tf_mamba_conv = mamba.tf_mamba_conv;
+    pub const tf_mamba_dt = mamba.tf_mamba_dt;
+    pub const tf_mamba_scan = mamba.tf_mamba_scan;
+    pub const tf_mamba_gnorm = mamba.tf_mamba_gnorm;
+    pub const tf_mamba_window = mamba.tf_mamba_window;
 
     /// Launches on `s`; the counting stream runs nothing.
     pub fn go(l: *const Launcher, f: Function, grid: Dim3, block: Dim3, shared: u32, s: S, args: *Args) Error!void {
