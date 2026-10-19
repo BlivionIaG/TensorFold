@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+  "requested_reply_tokens": 16,
+  "temperature": 0,
+  "seed": 1234,
+  "rows": [
+    {
+      "phase": "first",
+      "prompt_tokens": 32768,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "05077566309d",
+      "token_sha256": "05077566309d40b067b484bf596782684c305327f91e5910d48bcae8e1d712d2",
+      "output_sha256": "87c24788d6abb7788a4bd0f9f3a469c07334372b7bedfd422569764153098e83",
+      "ttft_s": 17.408343065995723,
+      "decode_tps": 67.41515647259793
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 32768,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "05077566309d",
+      "token_sha256": "05077566309d40b067b484bf596782684c305327f91e5910d48bcae8e1d712d2",
+      "output_sha256": "87c24788d6abb7788a4bd0f9f3a469c07334372b7bedfd422569764153098e83",
+      "ttft_s": 17.48268224200001,
+      "decode_tps": 68.521362086662,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 32768,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "05077566309d",
+      "token_sha256": "05077566309d40b067b484bf596782684c305327f91e5910d48bcae8e1d712d2",
+      "output_sha256": "87c24788d6abb7788a4bd0f9f3a469c07334372b7bedfd422569764153098e83",
+      "ttft_s": 17.54560026699619,
+      "decode_tps": 68.42953714665823,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    }
+  ],
+  "qualified": true,
+  "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+  "rig": "V620tp1",
+  "tree": "c46",
+  "condition": "cold_32768",
+  "hold_index": 0,
+  "raw_sha256": "2d00a7e67556b53e11bb33536ab9d3ab51bb7bab644fe2b175a1cc0cb0e520cc",
+  "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+  "receipt_schema": "bench_cache_annotated_v1"
+}

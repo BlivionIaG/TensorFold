@@ -1,0 +1,418 @@
+{
+  "raw_sha256": "b4723cd041702690479a9da42d0451e853a95e1f9e0a0b3cb92e0aa0538e8b02",
+  "redaction": "Personal home prefix only; all benchmark log lines and original line numbers retained.",
+  "lines": [
+    {
+      "raw_line": 1,
+      "text": "01:23:01 tree=c46 arch=gfx1030 world=1 devs=2 commit=8649e9858b38e9ef3dcd8d579879c6512a363050 binary=<USER_HOME>/nh/d46/out-gfx1030/native-hip/bin/tensorfold-native binary_sha256=73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225"
+    },
+    {
+      "raw_line": 2,
+      "text": "01:23:01 tree=d46 arch=gfx1030 world=1 devs=2 commit=cc18314dce85b0968496b35333bdd8618b2f9227 binary=<USER_HOME>/nh/sf46/out-gfx1030/native-hip/bin/tensorfold-native binary_sha256=b723be2765a15a9f2867a72cb2cf42fed22638c3aa7c65ae5e13b54c12756875"
+    },
+    {
+      "raw_line": 3,
+      "text": "01:23:01 prompt8192.json sha256=8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de"
+    },
+    {
+      "raw_line": 4,
+      "text": "01:23:01 prompt32768.json sha256=445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0"
+    },
+    {
+      "raw_line": 5,
+      "text": "01:23:01 client decode/bench_openai.py sha256=7496ddfe6e474c1c50ef8fe6a33770e63069531f999d98acff0b8f28613e61eb"
+    },
+    {
+      "raw_line": 6,
+      "text": "01:23:01 client decode/bench_evidence.py sha256=119c396f24f3c13e181429bc69acff39f34254efd4789c5673a3dcbc54738d93"
+    },
+    {
+      "raw_line": 7,
+      "text": "01:23:01 client cold/bench_cache.py sha256=4575cc3d1f04e33de9998eb681f9aa0459172be8089c14569fbd83437b15ec14"
+    },
+    {
+      "raw_line": 8,
+      "text": "01:23:01 client cold/bench_concurrent.py sha256=c47f401c28e60836080f4cbe9d81e1971262e76bd713b4c349b477d4c7f9bf83"
+    },
+    {
+      "raw_line": 9,
+      "text": "01:23:01 client cold/bench_evidence.py sha256=54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff"
+    },
+    {
+      "raw_line": 10,
+      "text": "01:23:01 client cold/bench_auth.py sha256=1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b"
+    },
+    {
+      "raw_line": 11,
+      "text": "01:23:01 harness ab.sh sha256=6aa1a560bc6e114e6e1a1a83f550899af8f5ecaca62918a5491e91642ea9f091"
+    },
+    {
+      "raw_line": 12,
+      "text": "01:23:01 harness ab_validate.py sha256=e1854f1aa02ccf79bb42f71ce56131e837a668f52e07e403facdf7636702eaf7"
+    },
+    {
+      "raw_line": 13,
+      "text": "01:23:01 harness capture_identity.py sha256=b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005"
+    },
+    {
+      "raw_line": 14,
+      "text": "01:23:01 output=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299"
+    },
+    {
+      "raw_line": 15,
+      "text": "01:23:29 decode_on c46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/decode_on_c46_33501.json"
+    },
+    {
+      "raw_line": 16,
+      "text": "fibonacci-raw decode_tps 180.74953399634526 all [180.63, 180.75, 180.77]"
+    },
+    {
+      "raw_line": 17,
+      "text": "gpu-chat-no-think decode_tps 156.68673142967515 all [156.8, 156.69, 156.63]"
+    },
+    {
+      "raw_line": 18,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 19,
+      "text": "01:24:06 decode_on d46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/decode_on_d46_33502.json"
+    },
+    {
+      "raw_line": 20,
+      "text": "fibonacci-raw decode_tps 121.63548375438508 all [121.5, 121.77, 121.64]"
+    },
+    {
+      "raw_line": 21,
+      "text": "gpu-chat-no-think decode_tps 107.42465666218695 all [107.42, 107.33, 107.8]"
+    },
+    {
+      "raw_line": 22,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 23,
+      "text": "01:24:44 decode_on d46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/decode_on_d46_33503.json"
+    },
+    {
+      "raw_line": 24,
+      "text": "fibonacci-raw decode_tps 121.2859622974564 all [121.38, 121.29, 121.25]"
+    },
+    {
+      "raw_line": 25,
+      "text": "gpu-chat-no-think decode_tps 107.0662322245434 all [107.66, 107.07, 106.99]"
+    },
+    {
+      "raw_line": 26,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 27,
+      "text": "01:25:16 decode_on c46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/decode_on_c46_33504.json"
+    },
+    {
+      "raw_line": 28,
+      "text": "fibonacci-raw decode_tps 179.58118831534833 all [179.47, 179.58, 179.61]"
+    },
+    {
+      "raw_line": 29,
+      "text": "gpu-chat-no-think decode_tps 156.43318037846188 all [156.45, 156.43, 156.37]"
+    },
+    {
+      "raw_line": 30,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 31,
+      "text": "fibonacci-raw decode_tps 180.74953399634526 all [180.63, 180.75, 180.77]"
+    },
+    {
+      "raw_line": 32,
+      "text": "gpu-chat-no-think decode_tps 156.68673142967515 all [156.8, 156.69, 156.63]"
+    },
+    {
+      "raw_line": 33,
+      "text": "fibonacci-raw decode_tps 121.63548375438508 all [121.5, 121.77, 121.64]"
+    },
+    {
+      "raw_line": 34,
+      "text": "gpu-chat-no-think decode_tps 107.42465666218695 all [107.42, 107.33, 107.8]"
+    },
+    {
+      "raw_line": 35,
+      "text": "fibonacci-raw decode_tps 121.2859622974564 all [121.38, 121.29, 121.25]"
+    },
+    {
+      "raw_line": 36,
+      "text": "gpu-chat-no-think decode_tps 107.0662322245434 all [107.66, 107.07, 106.99]"
+    },
+    {
+      "raw_line": 37,
+      "text": "fibonacci-raw decode_tps 179.58118831534833 all [179.47, 179.58, 179.61]"
+    },
+    {
+      "raw_line": 38,
+      "text": "gpu-chat-no-think decode_tps 156.43318037846188 all [156.45, 156.43, 156.37]"
+    },
+    {
+      "raw_line": 39,
+      "text": "PASS token_sha equal across old,new,new,old"
+    },
+    {
+      "raw_line": 40,
+      "text": "01:25:26 PASS decode_on token_sha equal across c46,d46,d46,c46"
+    },
+    {
+      "raw_line": 41,
+      "text": "01:25:56 decode_off c46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/decode_off_c46_33505.json"
+    },
+    {
+      "raw_line": 42,
+      "text": "fibonacci-raw decode_tps 133.3676697370597 all [133.37, 133.37, 133.37]"
+    },
+    {
+      "raw_line": 43,
+      "text": "gpu-chat-no-think decode_tps 133.0903599527856 all [133.18, 133.09, 133.08]"
+    },
+    {
+      "raw_line": 44,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 45,
+      "text": "01:26:39 decode_off d46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/decode_off_d46_33506.json"
+    },
+    {
+      "raw_line": 46,
+      "text": "fibonacci-raw decode_tps 91.0070798379022 all [91.02, 91.01, 90.95]"
+    },
+    {
+      "raw_line": 47,
+      "text": "gpu-chat-no-think decode_tps 90.90377788288255 all [90.92, 90.9, 90.89]"
+    },
+    {
+      "raw_line": 48,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 49,
+      "text": "01:27:21 decode_off d46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/decode_off_d46_33507.json"
+    },
+    {
+      "raw_line": 50,
+      "text": "fibonacci-raw decode_tps 90.85669069720724 all [90.9, 90.86, 90.84]"
+    },
+    {
+      "raw_line": 51,
+      "text": "gpu-chat-no-think decode_tps 90.71847883670111 all [90.75, 90.72, 90.72]"
+    },
+    {
+      "raw_line": 52,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 53,
+      "text": "01:27:56 decode_off c46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/decode_off_c46_33508.json"
+    },
+    {
+      "raw_line": 54,
+      "text": "fibonacci-raw decode_tps 132.95590381346784 all [132.98, 132.96, 132.93]"
+    },
+    {
+      "raw_line": 55,
+      "text": "gpu-chat-no-think decode_tps 132.71029406496416 all [132.78, 132.71, 132.63]"
+    },
+    {
+      "raw_line": 56,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 57,
+      "text": "fibonacci-raw decode_tps 133.3676697370597 all [133.37, 133.37, 133.37]"
+    },
+    {
+      "raw_line": 58,
+      "text": "gpu-chat-no-think decode_tps 133.0903599527856 all [133.18, 133.09, 133.08]"
+    },
+    {
+      "raw_line": 59,
+      "text": "fibonacci-raw decode_tps 91.0070798379022 all [91.02, 91.01, 90.95]"
+    },
+    {
+      "raw_line": 60,
+      "text": "gpu-chat-no-think decode_tps 90.90377788288255 all [90.92, 90.9, 90.89]"
+    },
+    {
+      "raw_line": 61,
+      "text": "fibonacci-raw decode_tps 90.85669069720724 all [90.9, 90.86, 90.84]"
+    },
+    {
+      "raw_line": 62,
+      "text": "gpu-chat-no-think decode_tps 90.71847883670111 all [90.75, 90.72, 90.72]"
+    },
+    {
+      "raw_line": 63,
+      "text": "fibonacci-raw decode_tps 132.95590381346784 all [132.98, 132.96, 132.93]"
+    },
+    {
+      "raw_line": 64,
+      "text": "gpu-chat-no-think decode_tps 132.71029406496416 all [132.78, 132.71, 132.63]"
+    },
+    {
+      "raw_line": 65,
+      "text": "PASS token_sha equal across old,new,new,old"
+    },
+    {
+      "raw_line": 66,
+      "text": "01:28:06 PASS decode_off token_sha equal across c46,d46,d46,c46"
+    },
+    {
+      "raw_line": 67,
+      "text": "01:28:29 cold_8192 c46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/cold_8192_c46_33509.json"
+    },
+    {
+      "raw_line": 68,
+      "text": "cold 8192 ttft 3.465196149991243 prefill_tps 2364.0797361559753"
+    },
+    {
+      "raw_line": 69,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 70,
+      "text": "01:28:59 cold_8192 d46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/cold_8192_d46_33510.json"
+    },
+    {
+      "raw_line": 71,
+      "text": "cold 8192 ttft 3.4617333589994814 prefill_tps 2366.444538168495"
+    },
+    {
+      "raw_line": 72,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 73,
+      "text": "01:29:28 cold_8192 d46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/cold_8192_d46_33511.json"
+    },
+    {
+      "raw_line": 74,
+      "text": "cold 8192 ttft 3.4620523000048706 prefill_tps 2366.226529850076"
+    },
+    {
+      "raw_line": 75,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 76,
+      "text": "01:29:56 cold_8192 c46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/cold_8192_c46_33512.json"
+    },
+    {
+      "raw_line": 77,
+      "text": "cold 8192 ttft 3.4620764440041967 prefill_tps 2366.210028142888"
+    },
+    {
+      "raw_line": 78,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 79,
+      "text": "cold 8192 ttft 3.465196149991243 prefill_tps 2364.0797361559753"
+    },
+    {
+      "raw_line": 80,
+      "text": "cold 8192 ttft 3.4617333589994814 prefill_tps 2366.444538168495"
+    },
+    {
+      "raw_line": 81,
+      "text": "cold 8192 ttft 3.4620523000048706 prefill_tps 2366.226529850076"
+    },
+    {
+      "raw_line": 82,
+      "text": "cold 8192 ttft 3.4620764440041967 prefill_tps 2366.210028142888"
+    },
+    {
+      "raw_line": 83,
+      "text": "PASS token_sha equal across old,new,new,old"
+    },
+    {
+      "raw_line": 84,
+      "text": "01:30:06 PASS cold_8192 token_sha equal across c46,d46,d46,c46"
+    },
+    {
+      "raw_line": 85,
+      "text": "01:31:12 cold_32768 c46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/cold_32768_c46_33513.json"
+    },
+    {
+      "raw_line": 86,
+      "text": "cold 32768 ttft 17.408343065995723 prefill_tps 1882.3158456709639"
+    },
+    {
+      "raw_line": 87,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 88,
+      "text": "01:32:25 cold_32768 d46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/cold_32768_d46_33514.json"
+    },
+    {
+      "raw_line": 89,
+      "text": "cold 32768 ttft 17.453989797999384 prefill_tps 1877.3930991844595"
+    },
+    {
+      "raw_line": 90,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 91,
+      "text": "01:33:37 cold_32768 d46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/cold_32768_d46_33515.json"
+    },
+    {
+      "raw_line": 92,
+      "text": "cold 32768 ttft 17.46109120400797 prefill_tps 1876.6295655381791"
+    },
+    {
+      "raw_line": 93,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 94,
+      "text": "01:34:50 cold_32768 c46 file=<USER_HOME>/hcx/streamfix/logs/ab/sf_v620tp1_20261020T012301_1603299/cold_32768_c46_33516.json"
+    },
+    {
+      "raw_line": 95,
+      "text": "cold 32768 ttft 17.581542220999836 prefill_tps 1863.7727901287908"
+    },
+    {
+      "raw_line": 96,
+      "text": "VALID"
+    },
+    {
+      "raw_line": 97,
+      "text": "cold 32768 ttft 17.408343065995723 prefill_tps 1882.3158456709639"
+    },
+    {
+      "raw_line": 98,
+      "text": "cold 32768 ttft 17.453989797999384 prefill_tps 1877.3930991844595"
+    },
+    {
+      "raw_line": 99,
+      "text": "cold 32768 ttft 17.46109120400797 prefill_tps 1876.6295655381791"
+    },
+    {
+      "raw_line": 100,
+      "text": "cold 32768 ttft 17.581542220999836 prefill_tps 1863.7727901287908"
+    },
+    {
+      "raw_line": 101,
+      "text": "PASS token_sha equal across old,new,new,old"
+    },
+    {
+      "raw_line": 102,
+      "text": "01:35:00 PASS cold_32768 token_sha equal across c46,d46,d46,c46"
+    },
+    {
+      "raw_line": 103,
+      "text": "01:35:00 AB_DONE"
+    }
+  ]
+}
