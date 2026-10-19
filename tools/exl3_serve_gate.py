@@ -45,3 +45,12 @@ for p in golden["prompts"]:
     report.append(row)
     print(json.dumps(row, indent=1))
 print("DRAFTED==UNDRAFTED on every prompt:", ok)
+# EXL3_GATE_BENCH=N: one longer greedy reply (the 16-id prompt, N tokens), drafts off then on, twice each
+n = int(__import__("os").environ.get("EXL3_GATE_BENCH", "0"))
+if n:
+    ids = golden["prompts"][0]["ids"]
+    for draft in (False, True, False, True):
+        r = ask(ids, draft, n)
+        tf, sp = r["tensorfold"], r.get("speculative", {})
+        print(f"BENCH {n} tokens drafts={draft}: decode {tf['tokens_per_second']:.2f} tok/s ({1000 / tf['tokens_per_second']:.1f} ms/token), "
+              f"prefill {tf['prefill_seconds'] * 1000:.0f} ms, accepted {sp.get('accepted')}/{sp.get('drafted')}, sha {tf['token_sha256'][:12]}")

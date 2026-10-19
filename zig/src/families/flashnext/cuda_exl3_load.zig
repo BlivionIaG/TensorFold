@@ -451,7 +451,9 @@ fn align256(n: usize) usize {
 pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, mlp: []const u8, world: usize, rank: usize) !*Experts {
     if (world != 1 or rank != 0) return error.UnsupportedQuantization; // expert parallel cuts: plan step 10
     const count = wt.experts_n + 1;
-    const offload = offloaded();
+    // TF_FLASHNEXT_EXL3_MTP_RESIDENT=1: the MTP layer's experts stay on the device (0.88 GiB) instead of a pool
+    const mtp_resident = std.mem.indexOf(u8, mlp, "mtp.") != null and if (std.c.getenv("TF_FLASHNEXT_EXL3_MTP_RESIDENT")) |v| std.mem.eql(u8, std.mem.span(v), "1") else false;
+    const offload = offloaded() and !mtp_resident;
     const x = try gpa.create(Experts);
     x.* = .{ .gpa = gpa, .ops = try opsOf(store, d), .layer = undefined };
     errdefer x.destroy();
