@@ -117,6 +117,8 @@ each prompt through an all-on-device sequence, then the same Engine with a paged
 | 200,000 | bit-equal | 128/128 equal | 24/24 (200,128 rows) | 244,232 / 254,237 (+4.1%) | 69.44 / 70.61 (+1.17) |
 | 65,536 needle at 0.2 | bit-equal | 24/24 equal | 24/24 | 75,385 / 76,342 | 51.93 / 50.76 |
 | 131,072 needle at 0.2 | bit-equal | 24/24 equal | 24/24 | 159,563 / 164,551 | 49.17 / 49.63 |
+| 65,536 needle at 0.35 | bit-equal | 24/24 equal | 24/24 | 75,384 / 76,314 | 59.65 / 58.89 |
+| 98,304 needle at 0.35 | bit-equal | 24/24 equal | 24/24 | 115,648 / 118,685 | 50.21 / 49.83 |
 
 Copies and memory (paged runs):
 
@@ -134,14 +136,22 @@ prefill 90.4 vs 90.9 GiB).
 **Needle**: a sentence with a 5-digit code inserted at 20% of the text and a question appended. At 131,072 tokens
 both caches answer "70259" (the code; position ~26k, far outside the window and long since evicted from and fetched
 back into the slots). At 65,536 both caches emit `<|im_end|>` and start a chat turn instead of answering (identical
-tokens: the model's behaviour on this prompt, not the cache's).
+tokens: the model's behaviour on this prompt, not the cache's). With the code at 35% of the text both caches answer "48613" at 65,536 tokens and
+"70259" at 98,304 tokens.
+
+**tp=2 serve** (`tensorfold-native serve --tp 2 --context 65536 --prompt-cache-gib 0`, both cards, upstream's
+expert-parallel EXL3 path; `~/tensorfold-c-kvpage/tpkv.sh`): two real-text prompts of 27,632 and 57,546 tokens,
+greedy 32 tokens, `TF_FLASHNEXT_KVPAGE` off then on: **the completions are identical** on both prompts. With paging
+the stream budget is smaller, so the expert pools grow from 52 / 59 to 63 / 71 lines a layer (rank 0 / rank 1) and
+the requests take 123 s / 260 s instead of 132 s / 278 s (prefill plus 32 tokens, one run each). Not instrumented:
+per-rank paging counters at tp=2 (the hit/miss numbers above are tp=1); the tp=2 equality is over 2 × 32 tokens.
 
 ## 4. Cost (why it is cheap, and what it is not)
 
 Decode: +0.5 / +0.9 / +1.2 ms a token at 32k / 65k / 200k on 63-69 ms tokens (+0.7-1.7%). 8.3 MiB at ~12.5 GB/s is
 ~0.7 ms; the plan/remap launches the rest. Prefill: +0.6% / +2.1% / +4.1% (90 GiB of fetches at 200k ≈ 7.5 s at PCIe
 rate, 10 s measured, of 244 s). Memory: −4.09 GiB a 200k stream on the card for 4.6 GiB of pinned host memory.
-Not measured: MTP verify windows through the paged cache in the engine (the replay gives 22-33 MiB a 4-row window at
+Not measured: MTP verify windows (the tp=2 serve run had drafts at the server default; only its completions were compared) through the paged cache in the engine (the replay gives 22-33 MiB a 4-row window at
 200k, ≈ 2-2.7 ms, *estimate*); decode rounds of several lanes (the hook runs per lane, not exercised here); expert-pool
 contention for PCIe beyond what the decode numbers above contain.
 
