@@ -143,16 +143,18 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 5. **KV paging** is default off. The 200k bit-equality gate is single-card only; TP=2 checks are shorter and
    sequential, and the 200k × 2 TP=2 gate used resident KV. Paging is not graph-safe (window/epoch are host state),
    refuses prompt-cache snapshots, and is not exercised with MTP windows or multiple lanes. With host indexer keys,
-   sequence placement can allocate resident K/V while budget accounting assumes paging; fix this before combining
-   the modes. Serving also needs to fail safely on paging-cache overflow instead of continuing with missing
-   mappings. At 200k, consecutive rows share only 49% of their selected blocks, hit rate 0.83 with a 384 MiB cache.
+   allocation and budget accounting used to disagree; this is fixed and built in commit `8528ca2c`, with a short
+   eager TP=2 smoke on both ranks. Serving still needs to fail safely on paging-cache overflow instead of continuing
+   with missing mappings. At 200k, consecutive rows share only 49% of their selected blocks, hit rate 0.83 with a
+   384 MiB cache.
 6. **200k reference parity is not established:** a saved 200k prefill comparison exited 1 with max logit
    difference 1.1406 and top-1 6009 versus 19251 (reference margin 0.25). The successful 200k × 2 needle answers
    establish retrieval/serving behavior for those prompts, not strict full-logit parity.
 7. **Graph path:** warm-up of all window shapes at load, rank-1 independent enqueue and async readback are not
    done; a rank-0 shutdown hang was seen once with graphs on after rank 1 exited. Neither decode nor prefill graphs
    have a repeatable measured speedup yet. MTP verification also has a redundant GPU best-selection/readback
-   boundary after full-logit readback; a graph-specific overlap optimization is under investigation.
+   boundary after full-logit readback. An opt-in verify-tail experiment preserved output/hash but showed no
+   observable speed change in one TP=2 A/B pair; no graph speedup is claimed.
 8. **Prefill at tp=2 is only about 2% faster than tp=1 at equal chunk sizes:** the replicated dense work
    (projections, GDN, attention, hyper-connections) is the bottleneck, not the experts.
 9. **Blocking NCCL is opt-in** until its init has a timeout.
@@ -171,9 +173,8 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 1. Meet the graph acceptance gate: reduce decode host boundaries (first target is MTP verify's redundant best-
    selection/readback), make decode graphs measurably faster than optimized eager decode, and extend prefill capture
    beyond dense sub-blocks without losing reduction overlap. Recheck with repeated TP=2 gates before changing defaults.
-2. Fix the paging/indexer allocation-budget mismatch and add a serving overflow guard. Then make dynamic BF16 KV
-   paging replay-safe and rerun the 200k × 2 TP=2 test on the exact PR head with paging, graphs, and concurrent
-   requests enabled together.
+2. Add a serving overflow guard. Then make dynamic BF16 KV paging replay-safe, add paged snapshots/MTP rollback, and
+   rerun the 200k × 2 TP=2 test on the exact PR head with paging, graphs, and concurrent requests enabled together.
 3. Add an init timeout to the blocking NCCL communicator before making it the tp=2 default.
 4. Make the HTTP and prefill gates fail on strict mismatches, compare full hashes, and require reference artifacts
    for long-context parity runs; investigate the 200k reference-logit failure.

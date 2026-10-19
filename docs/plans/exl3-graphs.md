@@ -103,6 +103,12 @@ helped DPLAN eager in these runs, while graph changes were mixed and near measur
 or fix the graph-vs-eager decode gap. The earlier controlled serve gate remains the relevant result: graphs did not
 reliably beat DPLAN eager.
 
+Local, uncommitted MTP verify-tail A/B (TP=2, blocking NCCL, graph mode): moving the existing greedy `Head.best`
+selection and its small result copy onto the main forward stream before the graph's completion boundary preserved
+the serving outputs and bench hash, but the paired 128-token gate showed no observable decode-time change at its
+reported precision. This is one A/B pair, not a repeatability proof; the optimization remains opt-in and is not
+claimed as a graph speedup.
+
 ## Not proven / open
 
 - Prefill graph capture/replay is now validated with TP=2 deep prefill at chunk sizes 1024, 2048 and 4096, including
@@ -114,6 +120,8 @@ reliably beat DPLAN eager.
 - The overlap split (`TF_FLASHNEXT_EXL3_OVERLAP=1`) is unvalidated on the pack.
 - Graphs stay opt-in (`TF_FLASHNEXT_EXL3_GRAPH=1`); a repeatable decode speed win over `TF_FLASHNEXT_EXL3_DPLAN=1`
   remains unproven.
+- The greedy verify-tail experiment has no demonstrated benefit and stays default-off pending a repeated profile or
+  a measured GPU/host critical-path reduction.
 - 200k contexts, int8 KV and 2+ concurrent streams in the server under graphs were not run (the engine test covers
   two streams in one round, bit-equal).
 
