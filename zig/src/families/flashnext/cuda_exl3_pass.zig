@@ -146,8 +146,11 @@ pub fn offloadedLayers(layers: []const @import("cuda_prompt_load.zig").Layer, mt
 }
 
 pub const Budget = struct {
-    /// Device bytes left free for the CUDA context, cuBLAS-free kernels' workspaces and fragmentation.
-    reserve: u64 = 768 << 20,
+    /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB,
+    /// else the larger of 1 GiB and a 32nd of the card, native/cuda_memory.zig reserveBytes) plus `margin`.
+    reserve: ?u64 = null,
+    /// What the pools leave beyond the server's reserve: allocator rounding and the copy streams' own memory.
+    margin: u64 = 256 << 20,
     /// Bytes the family still allocates after the pools: each admitted stream's caches (Loaded.stream_bytes) times
     /// the streams the pools must leave room for.
     other: u64 = 0,
@@ -162,7 +165,7 @@ pub const Budget = struct {
 pub fn budgetFromEnv(stream_bytes: u64) Budget {
     var b: Budget = .{ .other = stream_bytes };
     if (std.c.getenv("TF_FLASHNEXT_EXL3_LINES")) |v| b.lines = std.fmt.parseInt(usize, std.mem.span(v), 10) catch null;
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_RESERVE_MB")) |v| b.reserve = (std.fmt.parseInt(u64, std.mem.span(v), 10) catch 768) << 20;
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_RESERVE_MB")) |v| b.reserve = if (std.fmt.parseInt(u64, std.mem.span(v), 10)) |mb| mb << 20 else |_| null;
     if (std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS")) |v| b.other = stream_bytes * (std.fmt.parseInt(u64, std.mem.span(v), 10) catch 1);
     return b;
 }
@@ -192,19 +195,25 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     var total: usize = 0;
     try d.check(d.api.cuMemGetInfo_v2(&free, &total), "cuMemGetInfo");
     out.free_before = free;
-    // per layer: its lines plus three tables, masked picks and the shared expert's region (counted as `other`)
-    const per_layer_fixed: u64 = 1 << 20;
-    const lines = b.lines orelse try pool_.linesFor(free, b.reserve, b.other + per_layer_fixed * n, out.line_bytes, n, pool_.min_lines);
+    const reserve = b.reserve orelse serverReserve(total) + b.margin;
+    // beside its lines a layer holds the shared expert's region, its six tables and its masked picks (sized for the
+    // fewest lines, the most passes); counted as fixed bytes before the lines share what is left
+    var fixed: u64 = 0;
+    for (all[0..n]) |x| {
+        for (x.shared) |t| fixed += (t.len + 255) / 256 * 256;
+        fixed += cuda.exl3_pool.Tables.init(wt.experts_n + 1).bytes + pool_.passesFor(pool_.min_lines) * b.max_rows * slots * 4 + (64 << 10);
+    }
+    const lines = b.lines orelse try pool_.linesFor(free, reserve, b.other + fixed, out.line_bytes, n, pool_.min_lines);
     if (lines < pool_.min_lines) return error.PoolTooSmall;
     out.lines = lines;
-    const counts = try gpa.create([pool_.shape.layers][pool_.shape.experts]u32);
-    errdefer gpa.destroy(counts);
-    counts.* = @splat(@splat(0));
-    shared_counts = counts;
+    _ = gpa;
+    // the first decoder layer's pool owns the lifetime use table the other decoder layers share
+    var counts: ?*[pool_.shape.layers][pool_.shape.experts]u32 = null;
     var decoder: u8 = 0;
     for (all[0..n]) |x| {
         const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
         try x.attach(io, d, if (is_mtp) 0 else decoder, lines, b.max_rows, if (is_mtp) null else counts);
+        if (!is_mtp and counts == null) counts = x.pool.?.counts;
         if (!is_mtp) decoder += 1;
         out.device_bytes += x.pool.?.deviceBytes();
         out.layers += 1;
@@ -213,8 +222,14 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     return out;
 }
 
-/// The decoder layers' lifetime use table (the pools read it; freed with the process).
-pub var shared_counts: ?*[pool_.shape.layers][pool_.shape.experts]u32 = null;
+/// native/cuda_memory.zig reserveBytes for a discrete card: TENSORFOLD_MEMORY_RESERVE_GIB, else max(1 GiB, total / 32).
+fn serverReserve(total: u64) u64 {
+    if (std.c.getenv("TENSORFOLD_MEMORY_RESERVE_GIB")) |v| {
+        const g = std.fmt.parseFloat(f64, std.mem.trim(u8, std.mem.span(v), " ")) catch 0;
+        if (g >= 0.5) return @intFromFloat(g * (1 << 30));
+    }
+    return @max(@as(u64, 1 << 30), total / 32);
+}
 
 fn reserveOnce(o: *load.Ops, seen: []*load.Ops, n: *usize, st: cuda.Stream, rows: usize) !void {
     for (seen[0..n.*]) |x| if (x == o) return;
