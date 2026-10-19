@@ -179,7 +179,6 @@ pub const Scratch = struct {
     mod: cuda.Module,
     mask_fn: cuda.Function,
     place_fn: cuda.Function,
-    combine_fn: cuda.Function,
     /// Masked picks (int32) and weights (fp32) [rows, 11]; the rank's combined branch, then the ranks' sum [rows, D].
     picks: ?cuda.DeviceBuffer = null,
     wts: ?cuda.DeviceBuffer = null,
@@ -194,7 +193,7 @@ pub const Scratch = struct {
         var m = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_tp);
         errdefer m.unload();
         const t = try gpa.create(Scratch);
-        t.* = .{ .gpa = gpa, .d = d, .mod = m, .mask_fn = try m.function("fn_exl3_tp_mask"), .place_fn = try m.function("fn_exl3_tp_place"), .combine_fn = try m.function("fn_exl3_tp_combine") };
+        t.* = .{ .gpa = gpa, .d = d, .mod = m, .mask_fn = try m.function("fn_exl3_tp_mask"), .place_fn = try m.function("fn_exl3_tp_place") };
         return t;
     }
 
@@ -242,17 +241,6 @@ pub const Scratch = struct {
         a.add(@as(c_int, @intCast(r.lo)));
         a.add(@as(c_int, @intCast(r.hi)));
         try cuda.launch.launch(t.mask_fn, .{ .grid = .{ .x = @intCast((n + 255) / 256) }, .block = .{ .x = 256 } }, s, &a);
-    }
-
-    /// A deep prefill chunk's rank branch: sum [rows, D] over each row's slots the rank holds (fp32, slot order).
-    pub fn combine(t: *const Scratch, s: cuda.Stream, picks: u64, wts: u64, y: u64, sum: u64, rows: usize, r: Rank) !void {
-        var a: cuda.Args = .{};
-        a.add(picks);
-        a.add(wts);
-        a.add(y);
-        a.add(sum);
-        for ([_]usize{ dims, slots, r.lo, r.hi }) |v| a.add(@as(c_int, @intCast(v)));
-        try cuda.launch.launch(t.combine_fn, .{ .grid = .{ .x = @intCast(rows) }, .block = .{ .x = 256 } }, s, &a);
     }
 
     /// The summed branch [rows, D] into y [rows, 11, D] slot 0 (others 0) and weights {1, 0, ...}.
