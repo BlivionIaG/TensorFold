@@ -42,6 +42,7 @@ const exl3_ple2_tests = @import("exl3_ple2_tests.zig");
 const exl3_draft_tests = @import("exl3_draft_tests.zig");
 const exl3_pool_tests = @import("exl3_pool_tests.zig");
 const exl3_kv_tests = @import("exl3_kv_tests.zig");
+const exl3_kvpage_tests = @import("exl3_kvpage_tests.zig");
 const exl3_prefill_tests = @import("exl3_prefill_tests.zig");
 const exl3_candidate_tests = @import("exl3_candidate_tests.zig");
 const experts3_tests = @import("experts3_tests.zig");
@@ -87,6 +88,7 @@ const flashnext_exl3_tests = @import("flashnext_exl3_tests.zig");
 const flashnext_exl3_tp_tests = @import("flashnext_exl3_tp_tests.zig");
 const flashnext_exl3_engine_tests = @import("flashnext_exl3_engine_tests.zig");
 const flashnext_exl3_tp_engine_tests = @import("flashnext_exl3_tp_engine_tests.zig");
+const flashnext_exl3_graph_tests = @import("flashnext_exl3_graph_tests.zig");
 const ggml_tests = @import("ggml_tests.zig");
 const paged_tests = @import("paged_tests.zig");
 
@@ -119,6 +121,7 @@ const usage =
     \\  flashnext-exl3-tp RANK PORT DIR layer [layers]|sum|head|memory  EXL3 expert parallel on two ranks vs tp=1 and float64
     \\  flashnext-exl3-engine DIR tf|gen GOLDEN [LINES] | bench [LINES]  the family's Engine with the offload pool vs the reference golden
     \\  flashnext-exl3-tpe RANK WORLD PORT DIR tf|gen GOLDEN DUMP | bench | hit FILES | graph  the Engine at tp=1/2 with per-rank pools
+    \\  flashnext-exl3-graph plan | RANK WORLD PORT DIR eq GOLDEN [STEPS] [MODES]  the pool planned on the device and decode graphs vs the host cut
     \\  flashnext-attn            Flash Next's own attention glue, pooling and block scores against float64 (synthetic)
     \\  info                      driver, device and library versions
     \\  smoke                     copies, fills, launches, argument packing, module globals
@@ -205,6 +208,7 @@ const usage =
     \\  exl3-prefill DIR experts|copy [LAYER]|dense  EXL3 prefill pieces on the pack: grouped experts by rows, expert-major passes, line copies, prompt Dense
     \\  exl3-pool DIR [equal|graph|bench|hit FILES] [LAYERS]  Flash Next EXL3 expert offload pool on Experts' pointer tables vs fully resident
     \\  exl3-kv kernel|bench [CAP]|real DIR ...  int8 KV attention kernels vs upstream and float64; KV placement timings; real-pass KV quality
+    \\  exl3-kvpage DIR trace|...  dynamic KV paging: selection traces, the paged cache vs all-on-device
     \\  exl3-tiles [DIR]          EXL3's tile candidate: codebooks and tiles bit-equal, FP64, rows through qlinear and Dense
     \\  train-pack MODEL EXAMPLES [COUNT]   training passes holding several sequences against one a pass: differences, time
     \\  kernel-contract           the registered kernels through the contract's gates, each planted control red (needs -Dnvcc)
@@ -276,6 +280,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "flashnext-exl3-tp")) return flashnext_exl3_tp_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "flashnext-exl3-engine")) return flashnext_exl3_engine_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "flashnext-exl3-tpe")) return flashnext_exl3_tp_engine_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "flashnext-exl3-graph")) return flashnext_exl3_graph_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "info")) return info(gpu);
     if (std.mem.eql(u8, cmd, "smoke")) return runtime_tests.smoke(gpu);
     if (std.mem.eql(u8, cmd, "shared-context")) return runtime_tests.sharedContext(gpu);
@@ -329,6 +334,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "exl3-draft")) return exl3_draft_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-pool")) return exl3_pool_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-kv")) return exl3_kv_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-kvpage")) return exl3_kvpage_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-prefill")) return exl3_prefill_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "nccl-lat")) return exl3_pack_tests.ncclLatency(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-tiles")) return exl3_candidate_tests.run(gpu, if (rest.len > 0) rest[0] else null);

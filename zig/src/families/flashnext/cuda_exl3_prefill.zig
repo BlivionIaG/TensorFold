@@ -356,6 +356,7 @@ fn now(io: std.Io) i96 {
 pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq, ids: []const u32, hooks: batch.Hooks) !bool {
     const o = opts();
     if (!applies(e, seq, ids, hooks, o)) return false;
+    try @import("cuda_exl3_dplan.zig").toHost(); // the pools' residency on the host before planning a prompt
     if (ids.len == 0 or seq.fed + ids.len > seq.cap) return error.UnexpectedTensor;
     const s = try e.reserve(@min(ids.len, e.chunk));
     const sub = s.cap / att_rows * att_rows;
@@ -501,14 +502,17 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
             try upload(st, dp.dptr(dp.lay.ple_emb), std.mem.sliceAsBytes(emb));
             try upload(st, dp.dptr(dp.lay.ple_xs), std.mem.sliceAsBytes(xs));
         }
-        for (0..n_sub) |b| {
+        const pg = try @import("cuda_exl3_graph.zig").prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles_on, &.{}); // the dense half replays as a graph
+        errdefer @import("cuda_exl3_graph.zig").prefillAbort(p, pg);
+        if (pg != .replayed) for (0..n_sub) |b| {
             const m = @min(sub, n - b * sub);
             p.s = &views[b];
             p.rows = m;
             p.pos0 = pos0 + b * sub;
             p.pending = if (layer > 0) layer - 1 else null;
             try layerBlock(Tri, p, lw, layer, m);
-        }
+        };
+        try @import("cuda_exl3_graph.zig").prefillEnd(p, pg);
         if (rg) |r| try ringMoe(Tri, dp, r, p, lw, layer, n, o) else try moe(Tri, dp, p, lw, layer, n, o);
     }
     stats.chunks += 1;

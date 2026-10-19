@@ -7,6 +7,7 @@ const gdn = @import("cuda_gdn.zig");
 const ple = @import("cuda_ple.zig");
 const weights = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_prompt_load.zig");
+const kvpage = @import("cuda_exl3_kvpage.zig");
 pub const batch = @import("cuda_batch.zig");
 const fb = @import("cuda_fn_back.zig");
 const pocket = @import("cuda_pocket.zig");
@@ -231,6 +232,7 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         @import("cuda_exl3_prefill.zig").releaseFor(e);
+        @import("cuda_exl3_graph.zig").releaseFor(e);
         e.round_graph.clear();
         e.pockets.deinit();
         if (e.batch_s) |*bs| bs.free(e.gpa);
@@ -299,9 +301,12 @@ pub const Engine = struct {
         errdefer freeOwned(e.gpa, conv);
         const state = try zeros(e.gpa, e.driver, e.stream.*, linear_n, state_n * 4);
         errdefer freeOwned(e.gpa, state);
-        const kc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
+        // K/V paged to host memory (TF_FLASHNEXT_KVPAGE): kc/vc stay one row (cuda_exl3_kvpage.zig holds the rest)
+        const paged = try kvpage.forSeq(e.gpa, e.driver, cap, e.chunk);
+        errdefer if (paged) |pg| pg.destroy();
+        const kc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, (if (paged != null) 1 else cap) * kv_heads * head_dim * 2);
         errdefer freeOwned(e.gpa, kc);
-        const vc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
+        const vc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, (if (paged != null) 1 else cap) * kv_heads * head_dim * 2);
         errdefer freeOwned(e.gpa, vc);
         const ikc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * index_dim * 2);
         errdefer freeOwned(e.gpa, ikc);
@@ -322,6 +327,7 @@ pub const Engine = struct {
             .fed = 0,
             .logits = logits,
             .cap = cap,
+            .paged = paged,
         };
     }
 
@@ -380,6 +386,7 @@ pub const Engine = struct {
             .seq = seq.view(scores),
             .hooks = hooks,
         };
+        if (try @import("cuda_exl3_graph.zig").forward(e, &p, seq, ids)) return; // EXL3 offload: a window on the device plan
         var at: usize = 0;
         while (at < ids.len) {
             const n = @min(s.cap, ids.len - at);
@@ -431,7 +438,7 @@ pub const Engine = struct {
         const has_media = for (seqs) |q| {
             if (q.media != null) break true;
         } else false;
-        if (e.collective != null and round_graph.enabled() and !has_media) {
+        if (try @import("cuda_exl3_graph.zig").round(e, &p, seqs, ids, scores, out)) {} else if (e.collective != null and round_graph.enabled() and !has_media) {
             const key = try round_graph.Key.init(seqs, s.ids, scores, out);
             try e.round_graph.run(key, &p, ids);
         } else try p.chunk(ids, 0, null);
@@ -464,10 +471,11 @@ pub const Seq = struct {
     /// int8 K/V scales beside the codes in kc/vc, and the indexer keys' mapped host buffer (cuda_exl3_kv.newSeq).
     kv8: ?@import("cuda_exl3_kv.zig").SeqKv8 = null,
     ikc_host: ?cuda.HostBuffer = null,
+    paged: ?*kvpage.Paged = null,
 
     /// The caches a batched pass reads and leaves; `scores` the engine's block scores (Engine.reserveScores).
     pub fn view(s: *Seq, scores: u64) batch.SeqState {
-        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .kv8 = s.kv8 };
+        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .kv8 = s.kv8, .paged = s.paged };
     }
 
     pub fn deinit(s: *Seq, gpa: std.mem.Allocator) void {
@@ -486,6 +494,7 @@ pub const Seq = struct {
         gpa.free(s.ikc);
         gpa.free(s.pooled);
         if (s.tail.ptr != 0) s.tail.free();
+        if (s.paged) |pg| pg.destroy();
         gpa.free(s.logits);
     }
 };
