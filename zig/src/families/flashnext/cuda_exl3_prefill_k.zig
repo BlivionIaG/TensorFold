@@ -17,12 +17,15 @@ pub const Kernels = struct {
     rotate: cuda.Function,
     gu: cuda.Function,
     down: cuda.Function,
+    /// Expert parallel: a rank's combined branch over its own slots, and the ranks' sum placed for the write-back.
+    tp_combine: cuda.Function,
+    tp_place: cuda.Function,
 
     pub fn load(d: *const cuda.Driver) !Kernels {
         if (!cuda.kernels.available) return error.BuiltWithoutKernels;
         var mod = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_prefill);
         errdefer mod.unload();
-        return .{ .mod = mod, .rotate = try mod.function("tf_exl3pf_rotate"), .gu = try mod.function("tf_exl3pf_gu"), .down = try mod.function("tf_exl3pf_down") };
+        return .{ .mod = mod, .rotate = try mod.function("tf_exl3pf_rotate"), .gu = try mod.function("tf_exl3pf_gu"), .down = try mod.function("tf_exl3pf_down"), .tp_combine = try mod.function("tf_exl3pf_tp_combine"), .tp_place = try mod.function("tf_exl3pf_tp_place") };
     }
 
     pub fn unload(k: *Kernels) void {
@@ -166,6 +169,33 @@ pub fn run(k: *const Kernels, s: cuda.Stream, l: exl3e.Layer, x: u64, stride: us
     dn.add(@as(i32, @intCast(w)));
     dn.add(@as(i32, @intCast(d)));
     try cuda.launch.launch(k.down, .{ .grid = .{ .x = @intCast(d / 256), .y = @intCast(n_items) }, .block = .{ .x = 256 } }, s, &dn);
+}
+
+/// Expert parallel: sum[r] = the fp32 fmaf chain over row r's slots whose pick is in [lo, hi), in slot order.
+pub fn tpCombine(k: *const Kernels, s: cuda.Stream, y: u64, wts: u64, picks: u64, sum: u64, rows: usize, slots: usize, d: usize, lo: usize, hi: usize) !void {
+    if (rows == 0) return;
+    var a: cuda.Args = .{};
+    a.add(y);
+    a.add(wts);
+    a.add(picks);
+    a.add(sum);
+    a.add(@as(i32, @intCast(slots)));
+    a.add(@as(i32, @intCast(d)));
+    a.add(@as(i32, @intCast(lo)));
+    a.add(@as(i32, @intCast(hi)));
+    try cuda.launch.launch(k.tp_combine, .{ .grid = .{ .x = @intCast(rows) }, .block = .{ .x = 256 } }, s, &a);
+}
+
+/// Expert parallel: y[r, 0] = sum[r] and weights {1, 0, ...} (the write-back then writes the sum's bf16).
+pub fn tpPlace(k: *const Kernels, s: cuda.Stream, sum: u64, y: u64, wts: u64, rows: usize, slots: usize, d: usize) !void {
+    if (rows == 0) return;
+    var a: cuda.Args = .{};
+    a.add(sum);
+    a.add(y);
+    a.add(wts);
+    a.add(@as(i32, @intCast(slots)));
+    a.add(@as(i32, @intCast(d)));
+    try cuda.launch.launch(k.tp_place, .{ .grid = .{ .x = @intCast(rows) }, .block = .{ .x = 256 } }, s, &a);
 }
 
 test "exl3: prefill plan groups pairs by expert into items of at most 64" {

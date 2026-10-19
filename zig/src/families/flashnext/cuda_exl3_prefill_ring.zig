@@ -35,9 +35,11 @@ pub const Ring = struct {
     gpa: std.mem.Allocator,
     d: *const cuda.Driver,
     pools: [layers_n]*pool_.Pool,
-    off: [3]usize,
-    line_bytes: usize,
     addr: []u64,
+    /// Each slot's projection offsets and room (its pool's line layout: under expert parallel a rank's layers hold
+    /// different widest experts, so their lines differ; an expert only goes into a slot it fits).
+    off: [][3]u32,
+    room_of: [][3]u32,
     state: []SlotState,
     owner: []u32, // (layer << 16 | id) + 1, 0: none
     epoch_of: []u64,
@@ -61,24 +63,32 @@ pub const Ring = struct {
     /// The open batch: its layer and copies.
     open_layer: ?usize = null,
     open_n: usize = 0,
+    /// The routed ids this rank holds (expert parallel, cuda_exl3_tp.zig): a prefetch never guesses another rank's.
+    own_lo: usize = 0,
+    own_hi: usize = routed_n,
     stats: Stats = .{},
 
     /// A ring over `pools` (one per decoder layer, every line the same layout); error.Invalid otherwise.
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, pools: []const *pool_.Pool) !*Ring {
         if (pools.len != layers_n) return error.Invalid;
-        const lay = pools[0].lines.layout;
+        // the tables' entries: 513 (routed and shared), or 512 on an expert-parallel rank without the shared expert
+        const te = pools[0].lines.spec.experts;
+        if (te != table_n and te != routed_n) return error.Invalid;
         var n: usize = 0;
         for (pools) |p| {
-            if (p.lines.layout.line_bytes != lay.line_bytes or !std.mem.eql(usize, &p.lines.layout.off, &lay.off)) return error.Invalid;
-            if (p.lines.spec.experts != table_n) return error.Invalid;
+            if (p.lines.spec.experts != te) return error.Invalid;
             n += p.opt.lines;
         }
         const r = try gpa.create(Ring);
         errdefer gpa.destroy(r);
-        r.* = .{ .gpa = gpa, .d = d, .pools = undefined, .off = lay.off, .line_bytes = lay.line_bytes, .addr = undefined, .state = undefined, .owner = undefined, .epoch_of = undefined, .copy = undefined, .cev = undefined, .rev = undefined, .tlay = cuda.exl3_pool.Tables.init(table_n), .shadow = undefined, .snaps = undefined };
+        r.* = .{ .gpa = gpa, .d = d, .pools = undefined, .off = undefined, .room_of = undefined, .addr = undefined, .state = undefined, .owner = undefined, .epoch_of = undefined, .copy = undefined, .cev = undefined, .rev = undefined, .tlay = cuda.exl3_pool.Tables.init(te), .shadow = undefined, .snaps = undefined };
         @memcpy(&r.pools, pools);
         r.addr = try gpa.alloc(u64, n);
         errdefer gpa.free(r.addr);
+        r.off = try gpa.alloc([3]u32, n);
+        errdefer gpa.free(r.off);
+        r.room_of = try gpa.alloc([3]u32, n);
+        errdefer gpa.free(r.room_of);
         r.state = try gpa.alloc(SlotState, n);
         errdefer gpa.free(r.state);
         r.owner = try gpa.alloc(u32, n);
@@ -87,7 +97,13 @@ pub const Ring = struct {
         errdefer gpa.free(r.epoch_of);
         var k: usize = 0;
         for (pools) |p| for (0..p.opt.lines) |i| {
+            const lay = p.lines.layout;
             r.addr[k] = p.lines.at(i, 0);
+            for (0..3) |w| {
+                const stop = if (w < 2) lay.off[w + 1] else lay.line_bytes;
+                r.off[k][w] = @intCast(lay.off[w]);
+                r.room_of[k][w] = @intCast(stop - lay.off[w]);
+            }
             k += 1;
         };
         r.copy = try cuda.Stream.init(d, true);
@@ -119,6 +135,8 @@ pub const Ring = struct {
         for (&r.cev) |*e| e.deinit();
         r.copy.deinit();
         r.gpa.free(r.epoch_of);
+        r.gpa.free(r.room_of);
+        r.gpa.free(r.off);
         r.gpa.free(r.owner);
         r.gpa.free(r.state);
         r.gpa.free(r.addr);
@@ -289,8 +307,18 @@ pub const Ring = struct {
             r.stats.ring_full += 1;
             return false;
         }
-        // the oldest slots are consumed first; skip any still pending
-        while (r.state[r.next] == .pending) r.next = (r.next + 1) % r.slots();
+        const p = r.pools[layer];
+        const src = p.src.routed[id];
+        // the oldest slots are consumed first; skip any still pending, or too small for this expert
+        var tried: usize = 0;
+        while (r.state[r.next] == .pending or !fits(r.room_of[r.next], src)) {
+            r.next = (r.next + 1) % r.slots();
+            tried += 1;
+            if (tried == r.slots()) {
+                r.stats.ring_full += 1;
+                return false;
+            }
+        }
         const k = r.next;
         r.next = (r.next + 1) % r.slots();
         // the open batch's snapshot first (it must not see the evicted expert gone), then the wait for the slot's
@@ -304,11 +332,9 @@ pub const Ring = struct {
             r.slot[ol][oid] = -1;
             for (0..3) |w| r.ptrEntry(ol, w, oid).* = 0;
         }
-        const p = r.pools[layer];
-        const src = p.src.routed[id];
         const dst = r.addr[k];
-        for (src, r.off) |s, o| try r.d.check(r.d.api.cuMemcpyHtoDAsync_v2(dst + o, s.ptr, s.len, r.copy.handle), "cuMemcpyHtoDAsync");
-        for (0..3) |w| r.ptrEntry(layer, w, id).* = dst + r.off[w];
+        for (src, r.off[k]) |s, o| try r.d.check(r.d.api.cuMemcpyHtoDAsync_v2(dst + o, s.ptr, s.len, r.copy.handle), "cuMemcpyHtoDAsync");
+        for (0..3) |w| r.ptrEntry(layer, w, id).* = dst + r.off[k][w];
         r.slot[layer][id] = @intCast(k);
         r.batch_of[layer][id] = r.batches;
         r.owner[k] = @intCast(((layer << 16) | id) + 1);
@@ -380,6 +406,7 @@ pub const Ring = struct {
                 have += 1;
                 continue;
             }
+            if (id < r.own_lo or id >= r.own_hi) continue;
             order[n] = @intCast(id);
             n += 1;
         }
@@ -410,6 +437,19 @@ pub const Ring = struct {
     }
 };
 
+fn fits(room: [3]u32, src: [3][]const u8) bool {
+    for (room, src) |n, s| if (s.len > n) return false;
+    return true;
+}
+
 fn upload(s: cuda.Stream, dst: u64, bytes: []const u8) !void {
     try s.d.check(s.d.api.cuMemcpyHtoDAsync_v2(dst, bytes.ptr, bytes.len, s.handle), "cuMemcpyHtoDAsync");
+}
+
+test "exl3: a ring slot takes an expert only if each projection fits its line's room" {
+    const big: [300]u8 = @splat(0);
+    const room: [3]u32 = .{ 256, 512, 256 };
+    try std.testing.expect(fits(room, .{ big[0..256], big[0..300], big[0..10] }));
+    try std.testing.expect(!fits(room, .{ big[0..300], big[0..10], big[0..10] }));
+    try std.testing.expect(fits(room, .{ &.{}, &.{}, &.{} }));
 }
