@@ -39,6 +39,8 @@ fn seqRows(seq: *const prompt.Seq) kv.Rows {
 pub const Snap = struct {
     rank_id: u64 = 0,
     buf: cuda.DeviceBuffer,
+    /// The pinned host memory `buf` borrows (states parked on the host: `on_host`), or null (device memory).
+    host: ?cuda.HostBuffer = null,
     at: usize,
     history: [2]i64,
     head: bool,
@@ -93,13 +95,25 @@ fn move(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, base: u64, at: usize,
 }
 
 /// A copy of `seq` (and of the head's cache, with `d`) as it stands after `seq.fed` tokens.
+/// Kept states go to mapped pinned host memory (copied at ~14 GB/s by the same DtoD copies; the device keeps none of
+/// them): set once at load (cuda_lanes_load.zig, TF_FLASHNEXT_SNAP_HOST), and the native host then budgets the prompt
+/// cache in host memory (Loaded.host_snaps).
+pub var on_host: bool = false;
+
 pub fn save(gpa: std.mem.Allocator, driver: *const cuda.Driver, stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft) !*Snap {
     const at = seq.fed;
     if (d) |h| if (h.len != at or h.drafted != 0) return error.NotAtMark;
     const snap = try gpa.create(Snap);
     errdefer gpa.destroy(snap);
-    snap.* = .{ .buf = try cuda.DeviceBuffer.alloc(driver, bytesKv(at, d != null, seqRows(seq))), .at = at, .history = seq.history, .head = d != null };
-    errdefer snap.buf.free();
+    const n = bytesKv(at, d != null, seqRows(seq));
+    snap.* = .{ .buf = undefined, .at = at, .history = seq.history, .head = d != null };
+    if (on_host) {
+        var h = try cuda.HostBuffer.allocMapped(driver, @max(n, 256));
+        errdefer h.free();
+        snap.buf = .{ .d = driver, .ptr = try h.device(), .len = n, .borrowed = true };
+        snap.host = h;
+    } else snap.buf = try cuda.DeviceBuffer.alloc(driver, n);
+    errdefer if (snap.host) |*h| h.free() else snap.buf.free();
     try move(stream, seq, d, snap.buf.ptr, at, .save);
     try stream.synchronize();
     return snap;
@@ -123,6 +137,7 @@ pub fn restore(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, snap: *const S
 pub fn drop(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
     stream.synchronize() catch {};
     snap.buf.free();
+    if (snap.host) |*h| h.free();
     gpa.destroy(snap);
 }
 

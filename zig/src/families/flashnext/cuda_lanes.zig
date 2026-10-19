@@ -62,6 +62,8 @@ pub fn Namespace(comptime Tri: type) type {
             stream_bytes: usize,
             /// Every stream allocates its own sequence; none rides on the engine's.
             free_streams: u32 = 0,
+            /// Kept prompt states in pinned host memory (cuda_snap.on_host): the native host budgets them there.
+            host_snaps: bool = false,
             ctx: *anyopaque,
             deinit: *const fn (*anyopaque) void,
             lone: ?LoneRun = null,
@@ -108,7 +110,7 @@ pub fn Namespace(comptime Tri: type) type {
         }
 
         pub fn rankRoom(ptr: *anyopaque, local: u64) !u64 {
-            if (of(ptr).ranks) |r| return r.room(local);
+            if (of(ptr).ranks) |r| return @import("cuda_exl3_kv.zig").rankRoom(r, local, of(ptr).stream_bytes);
             return local;
         }
 
@@ -154,6 +156,8 @@ pub fn Namespace(comptime Tri: type) type {
             logits: cuda.DeviceBuffer,
             drawn: [ring]u32 = undefined,
             next: u64 = 0,
+            /// This rank's Loaded.stream_bytes (rankRoom agrees the ranks' rooms in streams, not bytes).
+            stream_bytes: usize = 0,
 
             fn tri(self: *Cuda) Tri {
                 return .{ .set = if (self.set) |*x| x else null, .own = &self.glue, .s = self.stream };
@@ -516,7 +520,7 @@ pub fn Namespace(comptime Tri: type) type {
         // -- the prompt cache's copies ------------------------------------------------------------------------
 
         fn snapBytes(ptr: *anyopaque, at: u32) u64 {
-            return snap.bytesKv(at, of(ptr).head != null, of(ptr).engine.kv.rows());
+            return snap.bytesKv(at, of(ptr).head != null, @import("cuda_exl3_kv.zig").of(of(ptr).engine).rows());
         }
 
         /// The owner stream's state, its prompt pass standing at `at` (a drafting stream's with the head's rows).

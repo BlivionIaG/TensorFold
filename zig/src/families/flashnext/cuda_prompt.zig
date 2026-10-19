@@ -138,8 +138,6 @@ pub const Engine = struct {
     round_graph: round_graph.Cache = .{},
     image_factory: ?*@import("cuda_images.zig").Vision = null,
     collective: ?*@import("cuda_collective.zig").Collective = null,
-    /// What new sequences hold: int8 K/V, indexer keys on the host (cuda_exl3_kv.zig; bf16 on the device by default).
-    kv: @import("cuda_exl3_kv.zig").EngineKv = .{},
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, driver: *cuda.Driver, stream: *cuda.Stream, model_dir: []const u8) !*Engine {
         return initRank(gpa, io, driver, stream, model_dir, 1, 0);
@@ -158,7 +156,6 @@ pub const Engine = struct {
         e.collective = null;
         e.image_factory = null;
         e.round_graph = .{};
-        e.kv = .{};
         errdefer for (e.layers[0..e.n_layers]) |*l| l.free(gpa);
         e.model_dir = try gpa.dupe(u8, model_dir);
         errdefer gpa.free(e.model_dir);
@@ -220,7 +217,7 @@ pub const Engine = struct {
         if (e.batch_s) |*bs| bs.free(e.gpa);
         if (e.scores) |*b| b.free();
         e.batch_k.deinit();
-        @import("cuda_exl3_kv.zig").release(e.gpa, &e.kv);
+        @import("cuda_exl3_kv.zig").forget(e.gpa, e);
         e.ngram.deinit();
         for (e.layers[0..e.n_layers]) |*l| l.free(e.gpa);
         e.head_q.free();
@@ -235,7 +232,7 @@ pub const Engine = struct {
     pub fn newSeq(e: *Engine, cap: usize) !Seq {
         e.round_graph.clear();
         if (cap == 0) return error.UnexpectedTensor;
-        if (@import("cuda_exl3_kv.zig").placedFor(e)) return @import("cuda_exl3_kv.zig").newSeq(e, Seq, cap); // K10 placement
+        if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_exl3_kv.zig").newSeq(e, Seq, cap); // K10 placement
         const logits = try e.gpa.alloc(u8, vocab * 2);
         errdefer e.gpa.free(logits);
         const conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
