@@ -37,14 +37,14 @@ const topk = slots - 1;
 const experts_n = wt.experts_n;
 
 /// "The capital of France is Paris. It is known for the Eiffel Tower." (exl3_fwd_tests.zig's default ids)
-const default_ids = [_]u32{ 760, 6511, 314, 9338, 369, 11751, 13, 1049, 369, 3750, 364, 279, 242476, 300, 21262, 13 };
+pub const default_ids = [_]u32{ 760, 6511, 314, 9338, 369, 11751, 13, 1049, 369, 3750, 364, 279, 242476, 300, 21262, 13 };
 
 // -- the raw pack (the oracle's view: tensors exactly as stored, no widening) -------------------------------------
 
-const RawPack = struct {
+pub const RawPack = struct {
     files: std.ArrayList(st.File) = .empty,
 
-    fn open(gpu: Gpu, dir: []const u8) !RawPack {
+    pub fn open(gpu: Gpu, dir: []const u8) !RawPack {
         var p: RawPack = .{};
         var buf: [512]u8 = undefined;
         for (0..7) |i| {
@@ -54,12 +54,12 @@ const RawPack = struct {
         return p;
     }
 
-    fn close(p: *RawPack, gpu: Gpu) void {
+    pub fn close(p: *RawPack, gpu: Gpu) void {
         for (p.files.items) |*f| f.close(gpu.io);
         p.files.deinit(gpu.gpa);
     }
 
-    fn get(p: *const RawPack, comptime fmt: []const u8, args: anytype) !st.Tensor {
+    pub fn get(p: *const RawPack, comptime fmt: []const u8, args: anytype) !st.Tensor {
         var buf: [256]u8 = undefined;
         const name = try std.fmt.bufPrint(&buf, fmt, args);
         for (p.files.items) |*f| if (f.get(name)) |t| return t;
@@ -119,13 +119,13 @@ fn bf16Bits(v: f32) u16 {
     return @intCast((b + 0x7fff + ((b >> 16) & 1)) >> 16);
 }
 
-fn bfValue(bits: u16) f64 {
+pub fn bfValue(bits: u16) f64 {
     return @as(f32, @bitCast(@as(u32, bits) << 16));
 }
 
-const Err = struct { max_abs: f64 = 0, peak: f64 = 0, rel: f64 = 0 };
+pub const Err = struct { max_abs: f64 = 0, peak: f64 = 0, rel: f64 = 0 };
 
-fn errOf(got: anytype, want: []const f64) Err {
+pub fn errOf(got: anytype, want: []const f64) Err {
     var e: Err = .{};
     for (want, 0..) |w, i| {
         const g: f64 = switch (@TypeOf(got)) {
@@ -139,7 +139,7 @@ fn errOf(got: anytype, want: []const f64) Err {
     return e;
 }
 
-fn download(comptime T: type, gpu: Gpu, s: cuda.Stream, ptr: u64, n: usize) ![]T {
+pub fn download(comptime T: type, gpu: Gpu, s: cuda.Stream, ptr: u64, n: usize) ![]T {
     try s.synchronize();
     const out = try gpu.gpa.alloc(T, n);
     const b: cuda.DeviceBuffer = .{ .d = gpu.d, .ptr = ptr, .len = n * @sizeOf(T) };
@@ -148,7 +148,7 @@ fn download(comptime T: type, gpu: Gpu, s: cuda.Stream, ptr: u64, n: usize) ![]T
 }
 
 /// A pageable copy into the pass's scratch: the legacy-stream copy is ordered against nothing, so drain both sides.
-fn uploadTo(gpu: Gpu, s: cuda.Stream, ptr: u64, bytes: []const u8) !void {
+pub fn uploadTo(gpu: Gpu, s: cuda.Stream, ptr: u64, bytes: []const u8) !void {
     try s.synchronize();
     const b: cuda.DeviceBuffer = .{ .d = gpu.d, .ptr = ptr, .len = bytes.len };
     try b.upload(0, bytes);
@@ -485,9 +485,9 @@ fn router(gpu: Gpu, dir: []const u8, layers: []const usize, rows: usize) !void {
 
 // -- the pass rig -----------------------------------------------------------------------------------------------------
 
-const Pass = batch.Pass(flash.Tri);
+pub const Pass = batch.Pass(flash.Tri);
 
-const Rig = struct {
+pub const Rig = struct {
     gpu: Gpu,
     stream: cuda.Stream,
     glue: flash.Glue,
@@ -507,8 +507,10 @@ const Rig = struct {
     history: [2]i64 = .{ 0, 0 },
     scores: cuda.DeviceBuffer = undefined,
     cap: usize,
+    /// The ranks' NCCL owner when a check runs two ranks (flashnext_exl3_tp_tests.zig); null: one rank.
+    collective: ?*flash.collective.Collective = null,
 
-    fn init(r: *Rig, gpu: Gpu, dir: []const u8, rows: usize, cap: usize) !void {
+    pub fn init(r: *Rig, gpu: Gpu, dir: []const u8, rows: usize, cap: usize) !void {
         r.* = .{ .gpu = gpu, .stream = try cuda.Stream.init(gpu.d, true), .glue = undefined, .k = undefined, .s = undefined, .store = undefined, .pack_mod = undefined, .pack_fn = undefined, .cap = cap };
         r.glue = try flash.Glue.load(gpu.d);
         r.k = try batch.Kernels.load(gpu.d);
@@ -548,12 +550,12 @@ const Rig = struct {
         return b;
     }
 
-    fn reset(r: *Rig) !void {
+    pub fn reset(r: *Rig) !void {
         for (r.bufs.items) |b| try b.fill8(0, r.stream.handle);
         try r.stream.synchronize();
     }
 
-    fn deinit(r: *Rig) void {
+    pub fn deinit(r: *Rig) void {
         r.stream.synchronize() catch {};
         for (r.bufs.items) |*b| b.free();
         r.bufs.deinit(r.gpu.gpa);
@@ -565,7 +567,7 @@ const Rig = struct {
         r.stream.deinit();
     }
 
-    fn pass(r: *Rig, layers: []const pl.Layer) Pass {
+    pub fn pass(r: *Rig, layers: []const pl.Layer) Pass {
         return .{
             .gpa = r.gpu.gpa,
             .io = r.gpu.io,
@@ -573,7 +575,7 @@ const Rig = struct {
             .tri = .{ .own = &r.glue, .s = r.stream },
             .k = &r.k,
             .s = &r.s,
-            .m = .{ .table_w = 0, .table_s = 0, .table_b = 0, .layers = layers, .mixer = undefined, .head = undefined, .ngram = undefined },
+            .m = .{ .table_w = 0, .table_s = 0, .table_b = 0, .layers = layers, .mixer = undefined, .head = undefined, .ngram = undefined, .collective = r.collective },
             .seq = .{ .conv = &r.conv, .state = &r.state, .kc = &r.kc, .vc = &r.vc, .ikc = &r.ikc, .pooled = &r.pooled, .tail = r.tail, .history = &r.history, .cap = r.cap, .scores = r.scores.ptr },
             .hooks = .{},
         };
@@ -846,10 +848,10 @@ const Oracle = struct {
 const Stage = struct { mixer: f64 = 0, streams: f64 = 0, moe: f64 = 0, out: f64 = 0, picks_same: usize = 0, rows: usize = 0 };
 
 /// What the device fed each block: the read-outs' mixed rows and inject gates (bf16), attention's then the MoE's.
-const Taps = struct { attn_mixed: []u16, attn_inj: []u16, mlp_mixed: []u16, mlp_inj: []u16 };
+pub const Taps = struct { attn_mixed: []u16, attn_inj: []u16, mlp_mixed: []u16, mlp_inj: []u16 };
 
 /// The pass's per-layer sequence (cuda_batch.zig Pass.chunk's loop body), stepped with read-backs between blocks.
-fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []const u32, pos0: usize, h_in: []const u16, tr: fwd.Trace, h_out: []u16, taps: Taps) !void {
+pub fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []const u32, pos0: usize, h_in: []const u16, tr: fwd.Trace, h_out: []u16, taps: Taps) !void {
     const s = p.s;
     const n = ids.len;
     p.rows = n;
@@ -909,7 +911,7 @@ fn toF64(a: std.mem.Allocator, bits: []const u16) ![]f64 {
 /// Each block against the float64 oracle fed the DEVICE's own input to that block: its error alone.
 const Staged = struct { attn_mixed: f64 = 0, attn_inj: f64 = 0, mixer: f64 = 0, mlp_mixed: f64 = 0, mlp_inj: f64 = 0, moe: f64 = 0, writeback: f64 = 0 };
 
-fn layerCheck(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l: usize, tokens: []const u32) !void {
+pub fn layerCheck(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l: usize, tokens: []const u32) !void {
     var arena: std.heap.ArenaAllocator = .init(gpu.gpa);
     defer arena.deinit();
     const a = arena.allocator();

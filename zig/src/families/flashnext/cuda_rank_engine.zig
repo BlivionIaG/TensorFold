@@ -240,8 +240,9 @@ pub const Session = struct {
         return item.value_ptr;
     }
 
-    pub fn save(s: *Session, q: *prompt.Seq) !*snaps.Snap {
-        const kept = try snaps.save(s.gpa, s.engine.driver, s.engine.stream.*, q, null);
+    /// `d`: rank 0's head cache (a drafting stream); rank 1 keeps the sequence alone (it never runs the head).
+    pub fn save(s: *Session, q: *prompt.Seq, d: ?*mtp.Draft) !*snaps.Snap {
+        const kept = try snaps.save(s.gpa, s.engine.driver, s.engine.stream.*, q, d);
         errdefer snaps.drop(s.gpa, s.engine.stream.*, kept);
         kept.rank_id = s.next_object;
         s.next_object = std.math.add(u64, s.next_object, 1) catch return error.BadRankFrame;
@@ -250,11 +251,13 @@ pub const Session = struct {
         return kept;
     }
 
-    pub fn restore(s: *Session, q: *prompt.Seq, kept: *const snaps.Snap) !void {
+    pub fn restore(s: *Session, q: *prompt.Seq, d: ?*mtp.Draft, kept: *const snaps.Snap) !void {
         if (kept.at > q.cap) return error.SequenceTooShort;
+        // refused before rank 1 hears of it (snaps.restore's own check, made first)
+        if (d) |hd| if (!kept.head or kept.at > hd.cap) return error.NoHeadState;
         const h = try s.command(.{ .kind = .restore, .object = q.rank_id, .arg = kept.rank_id }, &.{});
         errdefer s.poison();
-        try snaps.restore(s.engine.stream.*, q, null, kept);
+        try snaps.restore(s.engine.stream.*, q, d, kept);
         try s.ack(h);
     }
 
@@ -368,6 +371,11 @@ pub const Session = struct {
                 const q = s.seqs.get(h.object) orelse return error.UnknownRankSequence;
                 const kept = s.saved.get(h.arg) orelse return error.UnknownRankSnapshot;
                 try snaps.restore(s.engine.stream.*, q, null, kept);
+                // a drafting sequence's verify window starts over at the restored mark, as rank 0's head cache does
+                if (s.windows.getPtr(h.object)) |d| {
+                    d.reset();
+                    d.len = kept.at;
+                }
             },
             .drop_snap => {
                 const entry = s.saved.fetchRemove(h.object) orelse return error.UnknownRankSnapshot;

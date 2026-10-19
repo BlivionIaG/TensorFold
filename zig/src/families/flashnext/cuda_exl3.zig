@@ -4,6 +4,8 @@ pub const store = @import("cuda_exl3_store.zig");
 pub const memory = @import("cuda_exl3_memory.zig");
 pub const load = @import("cuda_exl3_load.zig");
 pub const pass = @import("cuda_exl3_pass.zig");
+pub const tp = @import("cuda_exl3_tp.zig");
+pub const kv = @import("cuda_exl3_kv.zig");
 /// The upstream modules an EXL3 check drives (tf-cuda-test flashnext-exl3): the store, loaders and the batched pass.
 pub const prompt_wt = @import("cuda_prompt_wt.zig");
 pub const prompt_load = @import("cuda_prompt_load.zig");
@@ -16,4 +18,6 @@ test {
     _ = memory;
     _ = load;
     _ = pass;
+    _ = tp;
+    _ = kv;
 }

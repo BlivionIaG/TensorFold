@@ -16,7 +16,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     if (o.segments != 1) return error.UnsupportedOption;
     if ((o.tp != 1 and o.tp != 2) or o.rank >= o.tp) return error.BadRank;
     const mode = try config.mode(gpa, io, dir);
-    if (o.tp != 1 and (mode != .modelopt or captured != null)) return error.UnsupportedQuantization;
+    if (o.tp != 1 and ((mode != .modelopt and mode != .exl3) or captured != null)) return error.UnsupportedQuantization;
     if (o.slide and (mode != .affine or o.tp != 1)) return error.UnsupportedLearningFormat;
     if (o.slide and captured != null) return error.TrainingOnCapturedGlue;
     const driver: *cuda.Driver = @constCast(ctx.d);
@@ -79,6 +79,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
         stream_bytes += mtp.Draft.bytes(window, h.ids.len, own.engine.chunk);
     } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(window, 1, own.engine.chunk);
     if (o.vision) |v| stream_bytes += @as(usize, v.image_tokens) * @import("cuda_prompt_wt.zig").dims * 2 + 16 * o.context;
+    _ = try @import("cuda_exl3_pass.zig").attach(gpa, io, driver, own.stream, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, @import("cuda_exl3_pass.zig").budgetFromEnv(stream_bytes));
     return .{
         .vision = own.vision,
         .backend = own.backend(),
