@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "baseline_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "final_source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "qualification": "Actual final source at production O3; earlier O2 runs are historical and excluded.",
+  "checks": [
+    {
+      "arch": "gfx1100",
+      "fixtures": 1080,
+      "finite_input_nan_controls": 60,
+      "byte_mismatches": 0,
+      "local_raw_dumps_rehashed": true,
+      "actual_expanded_device_flags_verified": [
+        "-O3",
+        "-ffp-contract=off",
+        "-std=c++20"
+      ]
+    },
+    {
+      "arch": "gfx1030",
+      "fixtures": 540,
+      "finite_input_nan_controls": 24,
+      "byte_mismatches": 0,
+      "local_raw_dumps_rehashed": true,
+      "actual_expanded_device_flags_verified": [
+        "-O3",
+        "-ffp-contract=off",
+        "-std=c++20"
+      ]
+    }
+  ],
+  "comparison": "Exact full bytes, including NaN payloads and signed zeros; no canonicalization.",
+  "limits": [
+    "Sampled fixtures, not exhaustive finite coverage.",
+    "gfx1030 exercises served fp16; gfx1100 exercises bf16 and additional fp16 instantiations.",
+    "Routed fixture uses one item with expert offset/reversed members; no multi-item batch claim.",
+    "Signed-zero inputs are included; output negative-zero counts are reported without claiming they must be positive."
+  ],
+  "reproduction": "Use build.py against exact clean tracked sources; execute on the same GPU and compare.py. Build/execute commands are retained in workflow.sh; replace environment paths and choose allocated devices."
+}

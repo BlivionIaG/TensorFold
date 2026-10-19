@@ -1,0 +1,616 @@
+01000000-01765000 r--p 00000000 fc:00 136437798                          $HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test
+01765000-018d5000 r-xp 00764000 fc:00 136437798                          $HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test
+018d5000-018da000 r--p 008d3000 fc:00 136437798                          $HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test
+018da000-018e0000 rw-p 008d7000 fc:00 136437798                          $HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test
+0b632000-0cec5000 rw-p 00000000 00:00 0                                  [heap]
+7f025fe00000-7f0260800000 rw-s 5dad89000 00:07 1103                      /dev/dri/renderD130
+7f0260a00000-7f0268c00000 rw-s 5d2189000 00:07 1103                      /dev/dri/renderD130
+7f0268e00000-7f026a000000 rw-s 5d0f89000 00:07 1103                      /dev/dri/renderD130
+7f029b400000-7f029be00000 rw-s 5bd989000 00:07 1103                      /dev/dri/renderD130
+7f029c000000-7f029ca00000 rw-s 5bcf89000 00:07 1103                      /dev/dri/renderD130
+7f029cc00000-7f02a4e00000 rw-s 5b4d89000 00:07 1103                      /dev/dri/renderD130
+7f02a5000000-7f02a6200000 rw-s 5b3b89000 00:07 1103                      /dev/dri/renderD130
+7f02a6400000-7f02a7600000 rw-s 5b2989000 00:07 1103                      /dev/dri/renderD130
+7f02a7800000-7f02b7a00000 rw-s 5a2789000 00:07 1103                      /dev/dri/renderD130
+7f02b7c00000-7f02b8000000 rw-s 5a2389000 00:07 1103                      /dev/dri/renderD130
+7f02b8200000-7f02b8400000 rw-s 5a2189000 00:07 1103                      /dev/dri/renderD130
+7f02b8600000-7f02b8a00000 rw-s 5a1d89000 00:07 1103                      /dev/dri/renderD130
+7f02b8c00000-7f02b8e00000 rw-s 5a1b89000 00:07 1103                      /dev/dri/renderD130
+7f02b9000000-7f02b9800000 rw-s 5a1389000 00:07 1103                      /dev/dri/renderD130
+7f02b9a00000-7f02ba400000 rw-s 5a0989000 00:07 1103                      /dev/dri/renderD130
+7f02ba600000-7f02bb000000 rw-s 59ff89000 00:07 1103                      /dev/dri/renderD130
+7f02bb200000-7f02c3400000 rw-s 597d89000 00:07 1103                      /dev/dri/renderD130
+7f02c3600000-7f02c4800000 rw-s 596b89000 00:07 1103                      /dev/dri/renderD130
+7f02c4a00000-7f02c5c00000 rw-s 595989000 00:07 1103                      /dev/dri/renderD130
+7f02c5e00000-7f02d6000000 rw-s 585789000 00:07 1103                      /dev/dri/renderD130
+7f02d6200000-7f02d6600000 rw-s 585389000 00:07 1103                      /dev/dri/renderD130
+7f02d6800000-7f02d6a00000 rw-s 585189000 00:07 1103                      /dev/dri/renderD130
+7f02d6c00000-7f02d7000000 rw-s 584d89000 00:07 1103                      /dev/dri/renderD130
+7f02d7200000-7f02d7600000 rw-s 584989000 00:07 1103                      /dev/dri/renderD130
+7f02d7800000-7f02d8000000 rw-s 584189000 00:07 1103                      /dev/dri/renderD130
+7f02d8200000-7f02d8c00000 rw-s 583789000 00:07 1103                      /dev/dri/renderD130
+7f02d8e00000-7f02d9800000 rw-s 582d89000 00:07 1103                      /dev/dri/renderD130
+7f02d9a00000-7f02e1c00000 rw-s 57ab89000 00:07 1103                      /dev/dri/renderD130
+7f02e1e00000-7f02e3000000 rw-s 579989000 00:07 1103                      /dev/dri/renderD130
+7f02e3200000-7f02e4400000 rw-s 578789000 00:07 1103                      /dev/dri/renderD130
+7f02e4600000-7f02f4800000 rw-s 568589000 00:07 1103                      /dev/dri/renderD130
+7f02f4a00000-7f02f4e00000 rw-s 568189000 00:07 1103                      /dev/dri/renderD130
+7f02f5000000-7f02f5200000 rw-s 567f89000 00:07 1103                      /dev/dri/renderD130
+7f02f5400000-7f02f5800000 rw-s 567b89000 00:07 1103                      /dev/dri/renderD130
+7f02f5a00000-7f02f5e00000 rw-s 567789000 00:07 1103                      /dev/dri/renderD130
+7f02f6000000-7f02f6200000 rw-s 567589000 00:07 1103                      /dev/dri/renderD130
+7f02f6400000-7f02f6c00000 rw-s 566d89000 00:07 1103                      /dev/dri/renderD130
+7f02f6e00000-7f02f7800000 rw-s 566389000 00:07 1103                      /dev/dri/renderD130
+7f02f7a00000-7f02f8400000 rw-s 565989000 00:07 1103                      /dev/dri/renderD130
+7f02f8600000-7f0300800000 rw-s 55d789000 00:07 1103                      /dev/dri/renderD130
+7f0300a00000-7f0301c00000 rw-s 55c589000 00:07 1103                      /dev/dri/renderD130
+7f0301e00000-7f0303000000 rw-s 55b389000 00:07 1103                      /dev/dri/renderD130
+7f0303200000-7f0313400000 rw-s 54b189000 00:07 1103                      /dev/dri/renderD130
+7f0313600000-7f0313a00000 rw-s 54ad89000 00:07 1103                      /dev/dri/renderD130
+7f0313c00000-7f0313e00000 rw-s 54ab89000 00:07 1103                      /dev/dri/renderD130
+7f0314000000-7f0314400000 rw-s 54a789000 00:07 1103                      /dev/dri/renderD130
+7f0314600000-7f0314a00000 rw-s 54a389000 00:07 1103                      /dev/dri/renderD130
+7f0314c00000-7f0314e00000 rw-s 54a189000 00:07 1103                      /dev/dri/renderD130
+7f0315000000-7f0315800000 rw-s 549989000 00:07 1103                      /dev/dri/renderD130
+7f0315a00000-7f0316400000 rw-s 548f89000 00:07 1103                      /dev/dri/renderD130
+7f0316600000-7f0317000000 rw-s 548589000 00:07 1103                      /dev/dri/renderD130
+7f0317200000-7f031f400000 rw-s 540389000 00:07 1103                      /dev/dri/renderD130
+7f031f600000-7f0320800000 rw-s 53f189000 00:07 1103                      /dev/dri/renderD130
+7f0320a00000-7f0321c00000 rw-s 53df89000 00:07 1103                      /dev/dri/renderD130
+7f0321e00000-7f0332000000 rw-s 52dd89000 00:07 1103                      /dev/dri/renderD130
+7f0332200000-7f0332600000 rw-s 52d989000 00:07 1103                      /dev/dri/renderD130
+7f0332800000-7f0332a00000 rw-s 52d789000 00:07 1103                      /dev/dri/renderD130
+7f0332c00000-7f0333000000 rw-s 52d389000 00:07 1103                      /dev/dri/renderD130
+7f0333200000-7f0333400000 rw-s 52d189000 00:07 1103                      /dev/dri/renderD130
+7f0333600000-7f0333e00000 rw-s 52c989000 00:07 1103                      /dev/dri/renderD130
+7f0334000000-7f0334a00000 rw-s 52bf89000 00:07 1103                      /dev/dri/renderD130
+7f0334c00000-7f0335600000 rw-s 52b589000 00:07 1103                      /dev/dri/renderD130
+7f0335800000-7f033da00000 rw-s 523389000 00:07 1103                      /dev/dri/renderD130
+7f033dc00000-7f033ee00000 rw-s 522189000 00:07 1103                      /dev/dri/renderD130
+7f033f000000-7f0340200000 rw-s 520f89000 00:07 1103                      /dev/dri/renderD130
+7f0340400000-7f0350600000 rw-s 510d89000 00:07 1103                      /dev/dri/renderD130
+7f0350800000-7f0350c00000 rw-s 510989000 00:07 1103                      /dev/dri/renderD130
+7f0350e00000-7f0351200000 rw-s 510589000 00:07 1103                      /dev/dri/renderD130
+7f0351400000-7f0351600000 rw-s 510389000 00:07 1103                      /dev/dri/renderD130
+7f0351800000-7f0351c00000 rw-s 50ff89000 00:07 1103                      /dev/dri/renderD130
+7f0351e00000-7f0352600000 rw-s 50f789000 00:07 1103                      /dev/dri/renderD130
+7f0352800000-7f0353200000 rw-s 50ed89000 00:07 1103                      /dev/dri/renderD130
+7f0353400000-7f0353e00000 rw-s 50e389000 00:07 1103                      /dev/dri/renderD130
+7f0354000000-7f035c200000 rw-s 506189000 00:07 1103                      /dev/dri/renderD130
+7f035c400000-7f035d600000 rw-s 504f89000 00:07 1103                      /dev/dri/renderD130
+7f035d800000-7f035ea00000 rw-s 503d89000 00:07 1103                      /dev/dri/renderD130
+7f035ec00000-7f036ee00000 rw-s 4f3b89000 00:07 1103                      /dev/dri/renderD130
+7f036f000000-7f036f400000 rw-s 4f3789000 00:07 1103                      /dev/dri/renderD130
+7f036f600000-7f036f800000 rw-s 4f3589000 00:07 1103                      /dev/dri/renderD130
+7f036fa00000-7f036fe00000 rw-s 4f3189000 00:07 1103                      /dev/dri/renderD130
+7f0370000000-7f0370400000 rw-s 4f2d89000 00:07 1103                      /dev/dri/renderD130
+7f0370600000-7f0370800000 rw-s 4f2b89000 00:07 1103                      /dev/dri/renderD130
+7f0370a00000-7f0371200000 rw-s 4f2389000 00:07 1103                      /dev/dri/renderD130
+7f0371400000-7f0371e00000 rw-s 4f1989000 00:07 1103                      /dev/dri/renderD130
+7f0372000000-7f0372a00000 rw-s 4f0f89000 00:07 1103                      /dev/dri/renderD130
+7f0372c00000-7f037ae00000 rw-s 4e8d89000 00:07 1103                      /dev/dri/renderD130
+7f037b000000-7f037c200000 rw-s 4e7b89000 00:07 1103                      /dev/dri/renderD130
+7f037c400000-7f037d600000 rw-s 4e6989000 00:07 1103                      /dev/dri/renderD130
+7f037d800000-7f038da00000 rw-s 4d6789000 00:07 1103                      /dev/dri/renderD130
+7f038dc00000-7f038e000000 rw-s 4d6389000 00:07 1103                      /dev/dri/renderD130
+7f038e200000-7f038e400000 rw-s 4d6189000 00:07 1103                      /dev/dri/renderD130
+7f038e600000-7f038ea00000 rw-s 4d5d89000 00:07 1103                      /dev/dri/renderD130
+7f038ec00000-7f038f000000 rw-s 4d5989000 00:07 1103                      /dev/dri/renderD130
+7f038f200000-7f038fa00000 rw-s 4d5189000 00:07 1103                      /dev/dri/renderD130
+7f038fc00000-7f0390600000 rw-s 4d4789000 00:07 1103                      /dev/dri/renderD130
+7f0390800000-7f0391200000 rw-s 4d3d89000 00:07 1103                      /dev/dri/renderD130
+7f0391400000-7f0399600000 rw-s 4cbb89000 00:07 1103                      /dev/dri/renderD130
+7f0399800000-7f039aa00000 rw-s 4ca989000 00:07 1103                      /dev/dri/renderD130
+7f039ac00000-7f039be00000 rw-s 4c9789000 00:07 1103                      /dev/dri/renderD130
+7f039c000000-7f03ac200000 rw-s 4b9589000 00:07 1103                      /dev/dri/renderD130
+7f03ac400000-7f03ac800000 rw-s 4b9189000 00:07 1103                      /dev/dri/renderD130
+7f03aca00000-7f03acc00000 rw-s 4b8f89000 00:07 1103                      /dev/dri/renderD130
+7f03ace00000-7f03ad200000 rw-s 4b8b89000 00:07 1103                      /dev/dri/renderD130
+7f03ad400000-7f03ad600000 rw-s 4b8989000 00:07 1103                      /dev/dri/renderD130
+7f03ad800000-7f03ae000000 rw-s 4b8189000 00:07 1103                      /dev/dri/renderD130
+7f03ae200000-7f03aec00000 rw-s 4b7789000 00:07 1103                      /dev/dri/renderD130
+7f03aee00000-7f03af800000 rw-s 4b6d89000 00:07 1103                      /dev/dri/renderD130
+7f03afa00000-7f03b7c00000 rw-s 4aeb89000 00:07 1103                      /dev/dri/renderD130
+7f03b7e00000-7f03b9000000 rw-s 4ad989000 00:07 1103                      /dev/dri/renderD130
+7f03b9200000-7f03ba400000 rw-s 4ac789000 00:07 1103                      /dev/dri/renderD130
+7f03ba600000-7f03ca800000 rw-s 49c589000 00:07 1103                      /dev/dri/renderD130
+7f03caa00000-7f03cae00000 rw-s 49c189000 00:07 1103                      /dev/dri/renderD130
+7f03cb000000-7f03cb200000 rw-s 49bf89000 00:07 1103                      /dev/dri/renderD130
+7f03cb400000-7f03cb800000 rw-s 49bb89000 00:07 1103                      /dev/dri/renderD130
+7f03cba00000-7f03cbe00000 rw-s 49b789000 00:07 1103                      /dev/dri/renderD130
+7f03cc000000-7f03cc200000 rw-s 49b589000 00:07 1103                      /dev/dri/renderD130
+7f03cc400000-7f03ccc00000 rw-s 49ad89000 00:07 1103                      /dev/dri/renderD130
+7f03cce00000-7f03cd800000 rw-s 49a389000 00:07 1103                      /dev/dri/renderD130
+7f03cda00000-7f03ce400000 rw-s 499989000 00:07 1103                      /dev/dri/renderD130
+7f03ce600000-7f03d6800000 rw-s 491789000 00:07 1103                      /dev/dri/renderD130
+7f03d6a00000-7f03d7c00000 rw-s 490589000 00:07 1103                      /dev/dri/renderD130
+7f03d7e00000-7f03d9000000 rw-s 48f389000 00:07 1103                      /dev/dri/renderD130
+7f03d9200000-7f03e9400000 rw-s 47f189000 00:07 1103                      /dev/dri/renderD130
+7f03e9600000-7f03e9a00000 rw-s 47ed89000 00:07 1103                      /dev/dri/renderD130
+7f03e9c00000-7f03e9e00000 rw-s 47eb89000 00:07 1103                      /dev/dri/renderD130
+7f03ea000000-7f03ea400000 rw-s 47e789000 00:07 1103                      /dev/dri/renderD130
+7f03ea600000-7f03eaa00000 rw-s 47e389000 00:07 1103                      /dev/dri/renderD130
+7f03eac00000-7f03eae00000 rw-s 47e189000 00:07 1103                      /dev/dri/renderD130
+7f03eb000000-7f03eb800000 rw-s 47d989000 00:07 1103                      /dev/dri/renderD130
+7f03eba00000-7f03ec400000 rw-s 47cf89000 00:07 1103                      /dev/dri/renderD130
+7f03ec600000-7f03ed000000 rw-s 47c589000 00:07 1103                      /dev/dri/renderD130
+7f03ed200000-7f03f5400000 rw-s 474389000 00:07 1103                      /dev/dri/renderD130
+7f03f5600000-7f03f6800000 rw-s 473189000 00:07 1103                      /dev/dri/renderD130
+7f03f6a00000-7f03f7c00000 rw-s 471f89000 00:07 1103                      /dev/dri/renderD130
+7f03f7e00000-7f0408000000 rw-s 461d89000 00:07 1103                      /dev/dri/renderD130
+7f0408200000-7f0408600000 rw-s 461989000 00:07 1103                      /dev/dri/renderD130
+7f0408800000-7f0408c00000 rw-s 461589000 00:07 1103                      /dev/dri/renderD130
+7f0408e00000-7f0409000000 rw-s 461389000 00:07 1103                      /dev/dri/renderD130
+7f0409200000-7f0409600000 rw-s 460f89000 00:07 1103                      /dev/dri/renderD130
+7f0409800000-7f040a000000 rw-s 460789000 00:07 1103                      /dev/dri/renderD130
+7f040a200000-7f040ac00000 rw-s 45fd89000 00:07 1103                      /dev/dri/renderD130
+7f040ae00000-7f040b800000 rw-s 45f389000 00:07 1103                      /dev/dri/renderD130
+7f040ba00000-7f0413c00000 rw-s 457189000 00:07 1103                      /dev/dri/renderD130
+7f0413e00000-7f0415000000 rw-s 455f89000 00:07 1103                      /dev/dri/renderD130
+7f0415200000-7f0416400000 rw-s 454d89000 00:07 1103                      /dev/dri/renderD130
+7f0416600000-7f0426800000 rw-s 444b89000 00:07 1103                      /dev/dri/renderD130
+7f0426a00000-7f0426e00000 rw-s 444789000 00:07 1103                      /dev/dri/renderD130
+7f0427000000-7f0427200000 rw-s 444589000 00:07 1103                      /dev/dri/renderD130
+7f0427400000-7f0427800000 rw-s 444189000 00:07 1103                      /dev/dri/renderD130
+7f0427a00000-7f0427c00000 rw-s 443f89000 00:07 1103                      /dev/dri/renderD130
+7f0427e00000-7f0428600000 rw-s 443789000 00:07 1103                      /dev/dri/renderD130
+7f0428800000-7f0429200000 rw-s 442d89000 00:07 1103                      /dev/dri/renderD130
+7f0429400000-7f0429e00000 rw-s 442389000 00:07 1103                      /dev/dri/renderD130
+7f042a000000-7f0432200000 rw-s 43a189000 00:07 1103                      /dev/dri/renderD130
+7f0432400000-7f0433600000 rw-s 438f89000 00:07 1103                      /dev/dri/renderD130
+7f0433800000-7f0434a00000 rw-s 437d89000 00:07 1103                      /dev/dri/renderD130
+7f0434c00000-7f0444e00000 rw-s 427b89000 00:07 1103                      /dev/dri/renderD130
+7f0445000000-7f0445400000 rw-s 427789000 00:07 1103                      /dev/dri/renderD130
+7f0445600000-7f0445800000 rw-s 427589000 00:07 1103                      /dev/dri/renderD130
+7f0445a00000-7f0445e00000 rw-s 427189000 00:07 1103                      /dev/dri/renderD130
+7f0446000000-7f0446400000 rw-s 426d89000 00:07 1103                      /dev/dri/renderD130
+7f0446600000-7f0446800000 rw-s 426b89000 00:07 1103                      /dev/dri/renderD130
+7f0446a00000-7f0447200000 rw-s 426389000 00:07 1103                      /dev/dri/renderD130
+7f0447400000-7f0447e00000 rw-s 425989000 00:07 1103                      /dev/dri/renderD130
+7f0448000000-7f0448a00000 rw-s 424f89000 00:07 1103                      /dev/dri/renderD130
+7f0448c00000-7f0450e00000 rw-s 41cd89000 00:07 1103                      /dev/dri/renderD130
+7f0451000000-7f0452200000 rw-s 41bb89000 00:07 1103                      /dev/dri/renderD130
+7f0452400000-7f0453600000 rw-s 41a989000 00:07 1103                      /dev/dri/renderD130
+7f0453800000-7f0463a00000 rw-s 40a789000 00:07 1103                      /dev/dri/renderD130
+7f0463c00000-7f0464000000 rw-s 40a389000 00:07 1103                      /dev/dri/renderD130
+7f0464200000-7f0464400000 rw-s 40a189000 00:07 1103                      /dev/dri/renderD130
+7f0464600000-7f0464a00000 rw-s 409d89000 00:07 1103                      /dev/dri/renderD130
+7f0464c00000-7f0465000000 rw-s 409989000 00:07 1103                      /dev/dri/renderD130
+7f0465200000-7f0465a00000 rw-s 409189000 00:07 1103                      /dev/dri/renderD130
+7f0465c00000-7f0466600000 rw-s 408789000 00:07 1103                      /dev/dri/renderD130
+7f0466800000-7f0467200000 rw-s 407d89000 00:07 1103                      /dev/dri/renderD130
+7f0467400000-7f046f600000 rw-s 3ffb89000 00:07 1103                      /dev/dri/renderD130
+7f046f800000-7f0470a00000 rw-s 3fe989000 00:07 1103                      /dev/dri/renderD130
+7f0470c00000-7f0471e00000 rw-s 3fd789000 00:07 1103                      /dev/dri/renderD130
+7f0472000000-7f0482200000 rw-s 3ed589000 00:07 1103                      /dev/dri/renderD130
+7f0482400000-7f0482800000 rw-s 3ed189000 00:07 1103                      /dev/dri/renderD130
+7f0482a00000-7f0482c00000 rw-s 3ecf89000 00:07 1103                      /dev/dri/renderD130
+7f0482e00000-7f0483200000 rw-s 3ecb89000 00:07 1103                      /dev/dri/renderD130
+7f0483400000-7f0483800000 rw-s 3ec789000 00:07 1103                      /dev/dri/renderD130
+7f0483a00000-7f0483c00000 rw-s 3ec589000 00:07 1103                      /dev/dri/renderD130
+7f0483e00000-7f0484600000 rw-s 3ebd89000 00:07 1103                      /dev/dri/renderD130
+7f0484800000-7f0485200000 rw-s 3eb389000 00:07 1103                      /dev/dri/renderD130
+7f0485400000-7f0485e00000 rw-s 3ea989000 00:07 1103                      /dev/dri/renderD130
+7f0486000000-7f048e200000 rw-s 3e2789000 00:07 1103                      /dev/dri/renderD130
+7f048e400000-7f048f600000 rw-s 3e1589000 00:07 1103                      /dev/dri/renderD130
+7f048f800000-7f0490a00000 rw-s 3e0389000 00:07 1103                      /dev/dri/renderD130
+7f0490c00000-7f04a0e00000 rw-s 3d0189000 00:07 1103                      /dev/dri/renderD130
+7f04a1000000-7f04a1400000 rw-s 3cfd89000 00:07 1103                      /dev/dri/renderD130
+7f04a1600000-7f04a1800000 rw-s 3cfb89000 00:07 1103                      /dev/dri/renderD130
+7f04a1a00000-7f04a1e00000 rw-s 3cf789000 00:07 1103                      /dev/dri/renderD130
+7f04a2000000-7f04a2200000 rw-s 3cf589000 00:07 1103                      /dev/dri/renderD130
+7f04a2400000-7f04a2c00000 rw-s 3ced89000 00:07 1103                      /dev/dri/renderD130
+7f04a2e00000-7f04a3800000 rw-s 3ce389000 00:07 1103                      /dev/dri/renderD130
+7f04a3a00000-7f04a4400000 rw-s 3cd989000 00:07 1103                      /dev/dri/renderD130
+7f04a4600000-7f04ac800000 rw-s 3c5789000 00:07 1103                      /dev/dri/renderD130
+7f04aca00000-7f04adc00000 rw-s 3c4589000 00:07 1103                      /dev/dri/renderD130
+7f04ade00000-7f04af000000 rw-s 3c3389000 00:07 1103                      /dev/dri/renderD130
+7f04af200000-7f04bf400000 rw-s 3b3189000 00:07 1103                      /dev/dri/renderD130
+7f04bf600000-7f04bfa00000 rw-s 3b2d89000 00:07 1103                      /dev/dri/renderD130
+7f04bfc00000-7f04bfe00000 rw-s 3b2b89000 00:07 1103                      /dev/dri/renderD130
+7f04c0000000-7f04c0400000 rw-s 3b2789000 00:07 1103                      /dev/dri/renderD130
+7f04c0600000-7f04c0a00000 rw-s 3b2389000 00:07 1103                      /dev/dri/renderD130
+7f04c0c00000-7f04c1400000 rw-s 3b1b89000 00:07 1103                      /dev/dri/renderD130
+7f04c1600000-7f04c2000000 rw-s 3b1189000 00:07 1103                      /dev/dri/renderD130
+7f04c2200000-7f04c2c00000 rw-s 3b0789000 00:07 1103                      /dev/dri/renderD130
+7f04c2e00000-7f04cb000000 rw-s 3a8589000 00:07 1103                      /dev/dri/renderD130
+7f04cb200000-7f04cc400000 rw-s 3a7389000 00:07 1103                      /dev/dri/renderD130
+7f04cc600000-7f04cd800000 rw-s 3a6189000 00:07 1103                      /dev/dri/renderD130
+7f04cda00000-7f04ddc00000 rw-s 395f89000 00:07 1103                      /dev/dri/renderD130
+7f04dde00000-7f04de200000 rw-s 395b89000 00:07 1103                      /dev/dri/renderD130
+7f04de400000-7f04de600000 rw-s 395989000 00:07 1103                      /dev/dri/renderD130
+7f04de800000-7f04dec00000 rw-s 395589000 00:07 1103                      /dev/dri/renderD130
+7f04dee00000-7f04df200000 rw-s 395189000 00:07 1103                      /dev/dri/renderD130
+7f04df400000-7f04df600000 rw-s 394f89000 00:07 1103                      /dev/dri/renderD130
+7f04df800000-7f04e0000000 rw-s 394789000 00:07 1103                      /dev/dri/renderD130
+7f04e0200000-7f04e0c00000 rw-s 393d89000 00:07 1103                      /dev/dri/renderD130
+7f04e0e00000-7f04e1800000 rw-s 393389000 00:07 1103                      /dev/dri/renderD130
+7f04e1a00000-7f04e9c00000 rw-s 38b189000 00:07 1103                      /dev/dri/renderD130
+7f04e9e00000-7f04eb000000 rw-s 389f89000 00:07 1103                      /dev/dri/renderD130
+7f04eb200000-7f04ec400000 rw-s 388d89000 00:07 1103                      /dev/dri/renderD130
+7f04ec600000-7f04fc800000 rw-s 378b89000 00:07 1103                      /dev/dri/renderD130
+7f04fca00000-7f04fce00000 rw-s 378789000 00:07 1103                      /dev/dri/renderD130
+7f04fd000000-7f04fd200000 rw-s 378589000 00:07 1103                      /dev/dri/renderD130
+7f04fd400000-7f04fd800000 rw-s 378189000 00:07 1103                      /dev/dri/renderD130
+7f04fda00000-7f04fde00000 rw-s 377d89000 00:07 1103                      /dev/dri/renderD130
+7f04fe000000-7f04fe200000 rw-s 377b89000 00:07 1103                      /dev/dri/renderD130
+7f04fe400000-7f04fec00000 rw-s 377389000 00:07 1103                      /dev/dri/renderD130
+7f04fee00000-7f04ff800000 rw-s 376989000 00:07 1103                      /dev/dri/renderD130
+7f04ffa00000-7f0500400000 rw-s 375f89000 00:07 1103                      /dev/dri/renderD130
+7f0500600000-7f0508800000 rw-s 36dd89000 00:07 1103                      /dev/dri/renderD130
+7f0508a00000-7f0509c00000 rw-s 36cb89000 00:07 1103                      /dev/dri/renderD130
+7f0509e00000-7f050b000000 rw-s 36b989000 00:07 1103                      /dev/dri/renderD130
+7f050b200000-7f051b400000 rw-s 35b789000 00:07 1103                      /dev/dri/renderD130
+7f051b600000-7f051ba00000 rw-s 35b389000 00:07 1103                      /dev/dri/renderD130
+7f051bc00000-7f051be00000 rw-s 35b189000 00:07 1103                      /dev/dri/renderD130
+7f051c000000-7f051c400000 rw-s 35ad89000 00:07 1103                      /dev/dri/renderD130
+7f051c600000-7f051c800000 rw-s 35ab89000 00:07 1103                      /dev/dri/renderD130
+7f051ca00000-7f051d200000 rw-s 35a389000 00:07 1103                      /dev/dri/renderD130
+7f051d400000-7f051de00000 rw-s 359989000 00:07 1103                      /dev/dri/renderD130
+7f051e000000-7f051ea00000 rw-s 358f89000 00:07 1103                      /dev/dri/renderD130
+7f051ec00000-7f0526e00000 rw-s 350d89000 00:07 1103                      /dev/dri/renderD130
+7f0527000000-7f0528200000 rw-s 34fb89000 00:07 1103                      /dev/dri/renderD130
+7f0528400000-7f0529600000 rw-s 34e989000 00:07 1103                      /dev/dri/renderD130
+7f0529800000-7f0539a00000 rw-s 33e789000 00:07 1103                      /dev/dri/renderD130
+7f0539c00000-7f053a000000 rw-s 33e389000 00:07 1103                      /dev/dri/renderD130
+7f053a200000-7f053a600000 rw-s 33df89000 00:07 1103                      /dev/dri/renderD130
+7f053a800000-7f053aa00000 rw-s 33dd89000 00:07 1103                      /dev/dri/renderD130
+7f053ac00000-7f053b000000 rw-s 33d989000 00:07 1103                      /dev/dri/renderD130
+7f053b200000-7f053ba00000 rw-s 33d189000 00:07 1103                      /dev/dri/renderD130
+7f053bc00000-7f053c600000 rw-s 33c789000 00:07 1103                      /dev/dri/renderD130
+7f053c800000-7f053d200000 rw-s 33bd89000 00:07 1103                      /dev/dri/renderD130
+7f053d400000-7f0545600000 rw-s 333b89000 00:07 1103                      /dev/dri/renderD130
+7f0545800000-7f0546a00000 rw-s 332989000 00:07 1103                      /dev/dri/renderD130
+7f0546c00000-7f0547e00000 rw-s 331789000 00:07 1103                      /dev/dri/renderD130
+7f0548000000-7f0558200000 rw-s 321589000 00:07 1103                      /dev/dri/renderD130
+7f0558400000-7f0558800000 rw-s 321189000 00:07 1103                      /dev/dri/renderD130
+7f0558a00000-7f0558c00000 rw-s 320f89000 00:07 1103                      /dev/dri/renderD130
+7f0558e00000-7f0559200000 rw-s 320b89000 00:07 1103                      /dev/dri/renderD130
+7f0559400000-7f0559800000 rw-s 320789000 00:07 1103                      /dev/dri/renderD130
+7f0559a00000-7f0559c00000 rw-s 320589000 00:07 1103                      /dev/dri/renderD130
+7f0559e00000-7f055a600000 rw-s 31fd89000 00:07 1103                      /dev/dri/renderD130
+7f055a800000-7f055b200000 rw-s 31f389000 00:07 1103                      /dev/dri/renderD130
+7f055b400000-7f055be00000 rw-s 31e989000 00:07 1103                      /dev/dri/renderD130
+7f055c000000-7f0564200000 rw-s 316789000 00:07 1103                      /dev/dri/renderD130
+7f0564400000-7f0565600000 rw-s 315589000 00:07 1103                      /dev/dri/renderD130
+7f0565800000-7f0566a00000 rw-s 314389000 00:07 1103                      /dev/dri/renderD130
+7f0566c00000-7f0576e00000 rw-s 304189000 00:07 1103                      /dev/dri/renderD130
+7f0577000000-7f0577400000 rw-s 303d89000 00:07 1103                      /dev/dri/renderD130
+7f0577600000-7f0577800000 rw-s 303b89000 00:07 1103                      /dev/dri/renderD130
+7f0595e00000-7f0596000000 rw-s 2e6989000 00:07 1103                      /dev/dri/renderD130
+7f0596800000-7f0596a00000 rw-s 2e6389000 00:07 1103                      /dev/dri/renderD130
+7f05b4400000-7f05b4600000 rw-s 2c9989000 00:07 1103                      /dev/dri/renderD130
+7f05b5400000-7f05b5600000 rw-s 2c8f89000 00:07 1103                      /dev/dri/renderD130
+7f05d3000000-7f05d3200000 rw-s 2ac589000 00:07 1103                      /dev/dri/renderD130
+7f05d4000000-7f05d4200000 rw-s 2abb89000 00:07 1103                      /dev/dri/renderD130
+7f05f2200000-7f05f2400000 rw-s 28ed89000 00:07 1103                      /dev/dri/renderD130
+7f0610400000-7f0610600000 rw-s 271f89000 00:07 1103                      /dev/dri/renderD130
+7f0610e00000-7f0611000000 rw-s 271989000 00:07 1103                      /dev/dri/renderD130
+7f062ea00000-7f062ec00000 rw-s 254f89000 00:07 1103                      /dev/dri/renderD130
+7f062fa00000-7f062fc00000 rw-s 254589000 00:07 1103                      /dev/dri/renderD130
+7f064d600000-7f064d800000 rw-s 237b89000 00:07 1103                      /dev/dri/renderD130
+7f066be00000-7f066c000000 rw-s 21a989000 00:07 1103                      /dev/dri/renderD130
+7f066ce00000-7f066d000000 rw-s 219f89000 00:07 1103                      /dev/dri/renderD130
+7f068aa00000-7f068ac00000 rw-s 1fd589000 00:07 1103                      /dev/dri/renderD130
+7f068b400000-7f068b600000 rw-s 1fcf89000 00:07 1103                      /dev/dri/renderD130
+7f06a9000000-7f06a9200000 rw-s 1e0589000 00:07 1103                      /dev/dri/renderD130
+7f06c7800000-7f06c7a00000 rw-s 1c3389000 00:07 1103                      /dev/dri/renderD130
+7f06c8800000-7f06c8a00000 rw-s 1c2989000 00:07 1103                      /dev/dri/renderD130
+7f06e6400000-7f06e6600000 rw-s 1a5f89000 00:07 1103                      /dev/dri/renderD130
+7f06e7400000-7f06e7600000 rw-s 1a5589000 00:07 1103                      /dev/dri/renderD130
+7f0705000000-7f0705200000 rw-s 188b89000 00:07 1103                      /dev/dri/renderD130
+7f0705a00000-7f0705c00000 rw-s 188589000 00:07 1103                      /dev/dri/renderD130
+7f0723c00000-7f0723e00000 rw-s 16b789000 00:07 1103                      /dev/dri/renderD130
+7f0760200000-7f0760400000 rw-s 131589000 00:07 1103                      /dev/dri/renderD130
+7f0761c00000-7f0761e00000 rw-s 14e989000 00:07 1103                      /dev/dri/renderD130
+7f0762000000-7f0762200000 rw-s 14df89000 00:07 1103                      /dev/dri/renderD130
+7f0762800000-7f0763200000 rw-s 5da389000 00:07 1103                      /dev/dri/renderD130
+7f0763400000-7f0764600000 rw-s 5cfd89000 00:07 1103                      /dev/dri/renderD130
+7f0764800000-7f0774a00000 rw-s 5bfb89000 00:07 1103                      /dev/dri/renderD130
+7f0774c00000-7f0775000000 rw-s 5bf789000 00:07 1103                      /dev/dri/renderD130
+7f0775200000-7f0775400000 rw-s 5bf589000 00:07 1103                      /dev/dri/renderD130
+7f0775600000-7f0775a00000 rw-s 5bf189000 00:07 1103                      /dev/dri/renderD130
+7f0775c00000-7f0775e00000 rw-s 5bef89000 00:07 1103                      /dev/dri/renderD130
+7f0776000000-7f0776800000 rw-s 5be789000 00:07 1103                      /dev/dri/renderD130
+7f0776a00000-7f0776c00000 rw-s 5be589000 00:07 1103                      /dev/dri/renderD130
+7f0776e00000-7f0777000000 rw-s 5be389000 00:07 1103                      /dev/dri/renderD130
+7f07bde00000-7f07be000000 rw-s 11ef89000 00:07 1103                      /dev/dri/renderD130
+7f07c05ff000-7f07c0e00000 rw-p 00000000 00:00 0 
+7f07c0e00000-7f07c1600000 rw-s 00000000 00:01 191469                     /dev/zero (deleted)
+7f0c47200000-7f0c47400000 rw-s 604389000 00:07 1103                      /dev/dri/renderD130
+7f0c47600000-7f0c47800000 rw-s 604189000 00:07 1103                      /dev/dri/renderD130
+7f0c47a00000-7f0c47c00000 rw-s 603f89000 00:07 1103                      /dev/dri/renderD130
+7f0c47e00000-7f0c48000000 rw-s 603d89000 00:07 1103                      /dev/dri/renderD130
+7f0c48200000-7f0c48400000 rw-s 603b89000 00:07 1103                      /dev/dri/renderD130
+7f0c48600000-7f0c48800000 rw-s 603989000 00:07 1103                      /dev/dri/renderD130
+7f0c48a00000-7f0c48c00000 rw-s 603789000 00:07 1103                      /dev/dri/renderD130
+7f0c48e00000-7f0c49000000 rw-s 603589000 00:07 1103                      /dev/dri/renderD130
+7f0c49200000-7f0c49400000 rw-s 603389000 00:07 1103                      /dev/dri/renderD130
+7f0c49600000-7f0c49800000 rw-s 603189000 00:07 1103                      /dev/dri/renderD130
+7f0c49a00000-7f0c49c00000 rw-s 602f89000 00:07 1103                      /dev/dri/renderD130
+7f0c49e00000-7f0c4a000000 rw-s 602d89000 00:07 1103                      /dev/dri/renderD130
+7f0c4a200000-7f0c4a400000 rw-s 602b89000 00:07 1103                      /dev/dri/renderD130
+7f0c4a600000-7f0c4a800000 rw-s 602989000 00:07 1103                      /dev/dri/renderD130
+7f0c4aa00000-7f0c4ac00000 rw-s 602789000 00:07 1103                      /dev/dri/renderD130
+7f0c4ae00000-7f0c4b000000 rw-s 602589000 00:07 1103                      /dev/dri/renderD130
+7f0c4b200000-7f0c4b400000 rw-s 602389000 00:07 1103                      /dev/dri/renderD130
+7f0c4b600000-7f0c4b800000 rw-s 602189000 00:07 1103                      /dev/dri/renderD130
+7f0c4ba00000-7f0c4bc00000 rw-s 601f89000 00:07 1103                      /dev/dri/renderD130
+7f0c4be00000-7f0c4c000000 rw-s 601d89000 00:07 1103                      /dev/dri/renderD130
+7f0c4c200000-7f0c4c400000 rw-s 601b89000 00:07 1103                      /dev/dri/renderD130
+7f0c4c600000-7f0c4c800000 rw-s 601989000 00:07 1103                      /dev/dri/renderD130
+7f0c4ca00000-7f0c4cc00000 rw-s 601789000 00:07 1103                      /dev/dri/renderD130
+7f0c4ce00000-7f0c4d000000 rw-s 601589000 00:07 1103                      /dev/dri/renderD130
+7f0c4d200000-7f0c4d400000 rw-s 601389000 00:07 1103                      /dev/dri/renderD130
+7f0c4d600000-7f0c4d800000 rw-s 601189000 00:07 1103                      /dev/dri/renderD130
+7f0c4da00000-7f0c4dc00000 rw-s 600f89000 00:07 1103                      /dev/dri/renderD130
+7f0c4de00000-7f0c4e000000 rw-s 600d89000 00:07 1103                      /dev/dri/renderD130
+7f0c4e200000-7f0c4e400000 rw-s 600b89000 00:07 1103                      /dev/dri/renderD130
+7f0c4e600000-7f0c4e800000 rw-s 600989000 00:07 1103                      /dev/dri/renderD130
+7f0c5dc00000-7f0c5de00000 rw-s 600789000 00:07 1103                      /dev/dri/renderD130
+7f0c5e000000-7f0c5e200000 rw-s 600589000 00:07 1103                      /dev/dri/renderD130
+7f0c5e400000-7f0c5e600000 rw-s 600389000 00:07 1103                      /dev/dri/renderD130
+7f0c5e800000-7f0c5ea00000 rw-s 600189000 00:07 1103                      /dev/dri/renderD130
+7f0c5ec00000-7f0c5ee00000 rw-s 5fff89000 00:07 1103                      /dev/dri/renderD130
+7f0c5f000000-7f0c5f200000 rw-s 5ffd89000 00:07 1103                      /dev/dri/renderD130
+7f0c5f400000-7f0c5f600000 rw-s 5ffb89000 00:07 1103                      /dev/dri/renderD130
+7f0c5f800000-7f0c5fa00000 rw-s 5ff989000 00:07 1103                      /dev/dri/renderD130
+7f0c5fc00000-7f0c5fe00000 rw-s 5ff789000 00:07 1103                      /dev/dri/renderD130
+7f0c60000000-7f0c60200000 rw-s 5ff589000 00:07 1103                      /dev/dri/renderD130
+7f0c60400000-7f0c60600000 rw-s 5ff389000 00:07 1103                      /dev/dri/renderD130
+7f0c60800000-7f0c60a00000 rw-s 5ff189000 00:07 1103                      /dev/dri/renderD130
+7f0c60c00000-7f0c60e00000 rw-s 5fef89000 00:07 1103                      /dev/dri/renderD130
+7f0c61000000-7f0c61200000 rw-s 5fed89000 00:07 1103                      /dev/dri/renderD130
+7f0c61400000-7f0c61600000 rw-s 5feb89000 00:07 1103                      /dev/dri/renderD130
+7f0c61800000-7f0c61a00000 rw-s 5fe989000 00:07 1103                      /dev/dri/renderD130
+7f0c61c00000-7f0c61e00000 rw-s 5fe789000 00:07 1103                      /dev/dri/renderD130
+7f0c62000000-7f0c62200000 rw-s 5fe589000 00:07 1103                      /dev/dri/renderD130
+7f0c62400000-7f0c62600000 rw-s 5fe389000 00:07 1103                      /dev/dri/renderD130
+7f0c62800000-7f0c62a00000 rw-s 5fe189000 00:07 1103                      /dev/dri/renderD130
+7f0c62c00000-7f0c62e00000 rw-s 5fdf89000 00:07 1103                      /dev/dri/renderD130
+7f0c63000000-7f0c63200000 rw-s 5fdd89000 00:07 1103                      /dev/dri/renderD130
+7f0c63400000-7f0c63600000 rw-s 5fdb89000 00:07 1103                      /dev/dri/renderD130
+7f0c63800000-7f0c63a00000 rw-s 5fd989000 00:07 1103                      /dev/dri/renderD130
+7f0c63c00000-7f0c63e00000 rw-s 5fd789000 00:07 1103                      /dev/dri/renderD130
+7f0c64000000-7f0c64200000 rw-s 5fd589000 00:07 1103                      /dev/dri/renderD130
+7f0c64400000-7f0c64600000 rw-s 5fd389000 00:07 1103                      /dev/dri/renderD130
+7f0c64800000-7f0c64a00000 rw-s 5fd189000 00:07 1103                      /dev/dri/renderD130
+7f0c64c00000-7f0c64e00000 rw-s 5fcf89000 00:07 1103                      /dev/dri/renderD130
+7f0c65000000-7f0c65200000 rw-s 5fcd89000 00:07 1103                      /dev/dri/renderD130
+7f0c81a00000-7f0c81c00000 rw-s 5e3189000 00:07 1103                      /dev/dri/renderD130
+7f0c81e00000-7f0c82000000 rw-s 5e2f89000 00:07 1103                      /dev/dri/renderD130
+7f0c82200000-7f0c82400000 rw-s 5e2d89000 00:07 1103                      /dev/dri/renderD130
+7f0c82600000-7f0c82800000 rw-s 5e2b89000 00:07 1103                      /dev/dri/renderD130
+7f0c82a00000-7f0c82c00000 rw-s 5e2989000 00:07 1103                      /dev/dri/renderD130
+7f0c82e00000-7f0c83000000 rw-s 5e2789000 00:07 1103                      /dev/dri/renderD130
+7f0c83200000-7f0c83400000 rw-s 5e2589000 00:07 1103                      /dev/dri/renderD130
+7f0c83600000-7f0c83800000 rw-s 5e2389000 00:07 1103                      /dev/dri/renderD130
+7f0c83a00000-7f0c83c00000 rw-s 5e2189000 00:07 1103                      /dev/dri/renderD130
+7f0c83e00000-7f0c84000000 rw-s 5e1f89000 00:07 1103                      /dev/dri/renderD130
+7f0c89200000-7f0c89400000 rw-s 5df589000 00:07 1103                      /dev/dri/renderD130
+7f0c89a00000-7f0c89c00000 rw-s 5df189000 00:07 1103                      /dev/dri/renderD130
+7f0c91200000-7f0c92a01000 rw-p 00000000 00:00 0 
+7f0c92c00000-7f0d92c00000 ---p 00000000 00:00 0 
+7f0d92e00000-7f0e92e00000 ---p 00000000 00:00 0 
+7f0e93000000-7f0f93000000 ---p 00000000 00:00 0 
+7f0f93200000-7f1093200000 ---p 00000000 00:00 0 
+7f1093400000-7f1193400000 ---p 00000000 00:00 0 
+7f1193600000-7f1293600000 ---p 00000000 00:00 0 
+7f1293800000-7f1393800000 ---p 00000000 00:00 0 
+7f1393a00000-7f139c600000 ---s 101872000 00:07 1103                      /dev/dri/renderD130
+7f139c600000-7f139cf00000 ---s 604589000 00:07 1103                      /dev/dri/renderD130
+7f139cf00000-7f1493a00000 ---p 00000000 00:00 0 
+7f1493c00000-7f1593c00000 ---p 00000000 00:00 0 
+7f1593e00000-7f1693e00000 ---p 00000000 00:00 0 
+7f1694000000-7f1694021000 rw-p 00000000 00:00 0 
+7f1694021000-7f1698000000 ---p 00000000 00:00 0 
+7f1698400000-7f1698800000 rw-s 00000000 00:01 191468                     /dev/zero (deleted)
+7f1698a00000-7f1698e00000 rw-s 00000000 00:01 191467                     /dev/zero (deleted)
+7f1699000000-7f1699400000 rw-s 00000000 00:01 191463                     /dev/zero (deleted)
+7f1699600000-7f1699a00000 rw-s 00000000 00:01 191461                     /dev/zero (deleted)
+7f1699c00000-7f169b401000 rw-p 00000000 00:00 0 
+7f169b600000-7f169bc49000 rw-s 00000000 00:01 293367                     /dev/zero (deleted)
+7f169be00000-7f169bfff000 rw-s 10024c000 00:07 1075                      /dev/dri/renderD128
+7f169c000000-7f169c021000 rw-p 00000000 00:00 0 
+7f169c021000-7f16a0000000 ---p 00000000 00:00 0 
+7f16a0400000-7f16a0500000 rw-s 00000000 00:01 191465                     /dev/zero (deleted)
+7f16a0600000-7f16a0700000 rw-s 00000000 00:01 191459                     /dev/zero (deleted)
+7f16a0800000-7f16a0e49000 rw-s 10a4f8000 00:07 1103                      /dev/dri/renderD130
+7f16a1000000-7f16a11ff000 rw-s 100881000 00:07 1075                      /dev/dri/renderD128
+7f16a1200000-7f16a2a01000 rw-p 00000000 00:00 0 
+7f16a2c00000-7f16a3000000 rw-s 00000000 00:01 309374                     /dev/zero (deleted)
+7f16a3040000-7f16a304c000 rw-s 00000000 00:01 191462                     /dev/zero (deleted)
+7f16a3050000-7f16a305c000 rw-s 10c379000 00:07 1103                      /dev/dri/renderD130
+7f16a3060000-7f16a307b000 rw-s 00000000 00:01 191456                     /dev/zero (deleted)
+7f16a3080000-7f16a309b000 rw-s 10ab4e000 00:07 1103                      /dev/dri/renderD130
+7f16a30a0000-7f16a30c3000 rw-s 00000000 00:01 309385                     /dev/zero (deleted)
+7f16a30d0000-7f16a30dd000 rw-s 00000000 00:01 191457                     /dev/zero (deleted)
+7f16a30e0000-7f16a3103000 rw-s 10a4d5000 00:07 1103                      /dev/dri/renderD130
+7f16a3110000-7f16a311d000 rw-s 10ab69000 00:07 1103                      /dev/dri/renderD130
+7f16a3120000-7f16a313c000 rw-s 00000000 00:01 309384                     /dev/zero (deleted)
+7f16a3140000-7f16a315c000 rw-s 10a4b9000 00:07 1103                      /dev/dri/renderD130
+7f16a3160000-7f16a3173000 rw-s 00000000 00:01 309383                     /dev/zero (deleted)
+7f16a317c000-7f16a31fd000 rw-p 00000000 00:00 0 
+7f16a31fd000-7f16a4a00000 rw-p 00000000 00:00 0 
+7f16a4a00000-7f16a4c00000 rw-s 100044000 00:07 1075                      /dev/dri/renderD128
+7f16a4c10000-7f16a4c1d000 rw-s 00000000 00:01 191455                     /dev/zero (deleted)
+7f16a4c20000-7f16a4c33000 rw-s 10a4a6000 00:07 1103                      /dev/dri/renderD130
+7f16a4c40000-7f16a4c56000 rw-s 00000000 00:01 309381                     /dev/zero (deleted)
+7f16a4c60000-7f16a4c76000 rw-s 10a485000 00:07 1103                      /dev/dri/renderD130
+7f16a4c80000-7f16a4ca9000 rw-s 00000000 00:01 309376                     /dev/zero (deleted)
+7f16a4cb9000-7f16a4cf4000 r--p 00000000 fc:00 3607102205                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so
+7f16a4cf4000-7f16a4d77000 r-xp 0003a000 fc:00 3607102205                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so
+7f16a4d77000-7f16a4d7c000 r--p 000bc000 fc:00 3607102205                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so
+7f16a4d7c000-7f16a4d7e000 rw-p 000c0000 fc:00 3607102205                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so
+7f16a4d7e000-7f16a4e00000 rw-p 00000000 00:00 0 
+7f16a4e00000-7f16a547b000 r--p 00000000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7f16a547b000-7f16a95e6000 r-xp 0067b000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7f16a95e6000-7f16abd0d000 r--p 047e6000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7f16abd0d000-7f16abe27000 r--p 06f0d000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7f16abe27000-7f16abe2c000 rw-p 07027000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7f16abe2c000-7f16abed7000 rw-p 00000000 00:00 0 
+7f16abee0000-7f16abef3000 rw-s 00000000 00:01 309380                     /dev/zero (deleted)
+7f16abf00000-7f16abf13000 rw-s 10a472000 00:07 1103                      /dev/dri/renderD130
+7f16abf18000-7f16abf19000 rw-s 11cf88000 00:07 1103                      /dev/dri/renderD130
+7f16abf1a000-7f16abf1b000 rw-s 00000000 00:01 191466                     /dev/zero (deleted)
+7f16abf1c000-7f16abf1d000 ---s 10c386000 00:07 1103                      /dev/dri/renderD130
+7f16abf1e000-7f16abf1f000 rw-s 10c385000 00:07 1103                      /dev/dri/renderD130
+7f16abf20000-7f16abf49000 rw-s 100044000 00:07 1103                      /dev/dri/renderD130
+7f16abf4a000-7f16abf4b000 rw-s 00000000 00:01 191464                     /dev/zero (deleted)
+7f16abf4c000-7f16abf4d000 rw-s 00000000 00:01 191460                     /dev/zero (deleted)
+7f16abf4e000-7f16abf4f000 ---s 10ab77000 00:07 1103                      /dev/dri/renderD130
+7f16abf50000-7f16abf5d000 rw-s 10ab41000 00:07 1103                      /dev/dri/renderD130
+7f16abf5e000-7f16abf5f000 rw-s 10ab76000 00:07 1103                      /dev/dri/renderD130
+7f16abf60000-7f16ac000000 rw-p 00000000 00:00 0 
+7f16ac000000-7f16ac8f4000 r--p 00000000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7f16ac8f4000-7f16afb54000 r-xp 008f4000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7f16afb54000-7f16b05be000 r--p 03b54000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7f16b05be000-7f16b07cb000 r--p 045be000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7f16b07cb000-7f16b07da000 rw-p 047cb000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7f16b07da000-7f16b07ec000 rw-p 00000000 00:00 0 
+7f16b07ee000-7f16b07ef000 rw-s 00000000 00:01 191458                     /dev/zero (deleted)
+7f16b07f0000-7f16b07fb000 rw-s 00000000 00:01 309382                     /dev/zero (deleted)
+7f16b07fc000-7f16b07fd000 rw-s 00000000 00:01 191454                     /dev/zero (deleted)
+7f16b07fe000-7f16b07ff000 rw-s 00000000 00:01 191453                     /dev/zero (deleted)
+7f16b0800000-7f16b0942000 r-xp 00000000 fc:00 17790487                   /usr/lib64/libstdc++.so.6.0.34
+7f16b0942000-7f16b0a62000 r--p 00142000 fc:00 17790487                   /usr/lib64/libstdc++.so.6.0.34
+7f16b0a62000-7f16b0a73000 r--p 00261000 fc:00 17790487                   /usr/lib64/libstdc++.so.6.0.34
+7f16b0a73000-7f16b0a74000 rw-p 00272000 fc:00 17790487                   /usr/lib64/libstdc++.so.6.0.34
+7f16b0a74000-7f16b0a78000 rw-p 00000000 00:00 0 
+7f16b0a7a000-7f16b0a7b000 rw-s 00000000 00:01 191452                     /dev/zero (deleted)
+7f16b0a7c000-7f16b0a7e000 rw-s 00000000 00:01 191451                     /dev/zero (deleted)
+7f16b0a80000-7f16b0a8b000 rw-s 10a49b000 00:07 1103                      /dev/dri/renderD130
+7f16b0a8c000-7f16b0a8d000 rw-s 00000000 00:01 309379                     /dev/zero (deleted)
+7f16b0a8e000-7f16b0a90000 rw-s cb16400000000000 00:07 1067               /dev/kfd
+7f16b0a92000-7f16b0a93000 ---s 10006e000 00:07 1103                      /dev/dri/renderD130
+7f16b0a94000-7f16b0a95000 rw-s 10006d000 00:07 1103                      /dev/dri/renderD130
+7f16b0a96000-7f16b0a97000 rw-s 00000000 00:01 309378                     /dev/zero (deleted)
+7f16b0a98000-7f16b0a99000 rw-s 00000000 00:01 309377                     /dev/zero (deleted)
+7f16b0a9a000-7f16b0c00000 rw-p 00000000 00:00 0 
+7f16b0c00000-7f16b0c9f000 r--p 00000000 fc:00 3607114976                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0
+7f16b0c9f000-7f16b0ddf000 r-xp 0009e000 fc:00 3607114976                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0
+7f16b0ddf000-7f16b0de9000 r--p 001dd000 fc:00 3607114976                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0
+7f16b0de9000-7f16b101d000 rw-p 001e6000 fc:00 3607114976                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0
+7f16b101d000-7f16b1020000 rw-p 00000000 00:00 0 
+7f16b1022000-7f16b1023000 rw-s 00000000 00:01 309375                     /dev/zero (deleted)
+7f16b1024000-7f16b1025000 rw-s 00000000 00:01 309373                     /dev/zero (deleted)
+7f16b1026000-7f16b1027000 rw-s 00000000 00:01 309372                     /dev/zero (deleted)
+7f16b1028000-7f16b1029000 rw-s 00000000 00:01 309371                     /dev/zero (deleted)
+7f16b102a000-7f16b102b000 rw-s 00000000 00:01 309370                     /dev/zero (deleted)
+7f16b102c000-7f16b102d000 rw-s 00000000 00:01 309369                     /dev/zero (deleted)
+7f16b102e000-7f16b102f000 rw-s 00000000 00:01 309368                     /dev/zero (deleted)
+7f16b1030000-7f16b1031000 rw-s 00000000 00:01 309367                     /dev/zero (deleted)
+7f16b1032000-7f16b1033000 rw-s 00000000 00:01 309366                     /dev/zero (deleted)
+7f16b1034000-7f16b1035000 rw-s 00000000 00:01 309365                     /dev/zero (deleted)
+7f16b1036000-7f16b1037000 rw-s 00000000 00:01 309364                     /dev/zero (deleted)
+7f16b1038000-7f16b1040000 rw-s 100244000 00:07 1075                      /dev/dri/renderD128
+7f16b1041000-7f16b1131000 rw-p 00000000 00:00 0 
+7f16b1131000-7f16b1135000 r--p 00000000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7f16b1135000-7f16b11ee000 r-xp 00004000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7f16b11ee000-7f16b11fe000 r--p 000bd000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7f16b11fe000-7f16b11ff000 r--p 000cc000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7f16b11ff000-7f16b1200000 rw-p 000cd000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7f16b1200000-7f16b12c1000 r--p 00000000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7f16b12c1000-7f16b1895000 r-xp 000c1000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7f16b1895000-7f16b1df4000 r--p 00695000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7f16b1df4000-7f16b1e34000 r--p 00bf3000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7f16b1e34000-7f16b1e3b000 rw-p 00c33000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7f16b1e3b000-7f16b1e64000 rw-p 00000000 00:00 0 
+7f16b1e64000-7f16b1eda000 rw-p 00000000 00:00 0 
+7f16b1eda000-7f16b1ede000 r--p 00000000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7f16b1ede000-7f16b1efc000 r-xp 00004000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7f16b1efc000-7f16b1f09000 r--p 00022000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7f16b1f09000-7f16b1f0a000 r--p 0002e000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7f16b1f0a000-7f16b1f0b000 rw-p 0002f000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7f16b1f0b000-7f16b1f8d000 r-xp 00000000 fc:00 17635942                   /usr/lib64/libm.so.6
+7f16b1f8d000-7f16b1ffe000 r--p 00082000 fc:00 17635942                   /usr/lib64/libm.so.6
+7f16b1ffe000-7f16b1fff000 r--p 000f2000 fc:00 17635942                   /usr/lib64/libm.so.6
+7f16b1fff000-7f16b2000000 rw-p 000f3000 fc:00 17635942                   /usr/lib64/libm.so.6
+7f16b2000000-7f16b21af000 r--p 00000000 fc:00 3607109528                 /opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000
+7f16b21af000-7f16b26de000 r-xp 001ae000 fc:00 3607109528                 /opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000
+7f16b26de000-7f16b26e8000 r--p 006dc000 fc:00 3607109528                 /opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000
+7f16b26e8000-7f16b3b88000 rw-p 006e5000 fc:00 3607109528                 /opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000
+7f16b3b88000-7f16b3b92000 rw-p 00000000 00:00 0 
+7f16b3b94000-7f16b3b96000 r--p 00000000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7f16b3b96000-7f16b3ba9000 r-xp 00002000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7f16b3ba9000-7f16b3bab000 r--p 00015000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7f16b3bab000-7f16b3bac000 r--p 00016000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7f16b3bac000-7f16b3bad000 rw-p 00017000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7f16b3bad000-7f16b3bb1000 r--p 00000000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7f16b3bb1000-7f16b3bb7000 r-xp 00004000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7f16b3bb7000-7f16b3bba000 r--p 0000a000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7f16b3bba000-7f16b3bbb000 r--p 0000c000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7f16b3bbb000-7f16b3bbc000 rw-p 0000d000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7f16b3bbc000-7f16b3bc3000 r--p 00000000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7f16b3bc3000-7f16b3bc8000 r-xp 00007000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7f16b3bc8000-7f16b3bcc000 r--p 0000c000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7f16b3bcc000-7f16b3bd0000 r--p 0000f000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7f16b3bd0000-7f16b3bd1000 rw-p 00013000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7f16b3bd1000-7f16b3bd6000 r--p 00000000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7f16b3bd6000-7f16b3be0000 r-xp 00005000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7f16b3be0000-7f16b3be4000 r--p 0000f000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7f16b3be4000-7f16b3be5000 r--p 00013000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7f16b3be5000-7f16b3be6000 rw-p 00014000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7f16b3be6000-7f16b3bea000 r--p 00000000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7f16b3bea000-7f16b3bfb000 r-xp 00004000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7f16b3bfb000-7f16b3c00000 r--p 00015000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7f16b3c00000-7f16b3c01000 r--p 00019000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7f16b3c01000-7f16b3c02000 rw-p 0001a000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7f16b3c02000-7f16b3c05000 r--p 00000000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7f16b3c05000-7f16b3c18000 r-xp 00003000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7f16b3c18000-7f16b3c1e000 r--p 00016000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7f16b3c1e000-7f16b3c1f000 r--p 0001c000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7f16b3c1f000-7f16b3c20000 rw-p 0001d000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7f16b3c20000-7f16b3c43000 r-xp 00000000 fc:00 17790322                   /usr/lib64/libgcc_s-15-20260722.so.1
+7f16b3c43000-7f16b3c4a000 r--p 00023000 fc:00 17790322                   /usr/lib64/libgcc_s-15-20260722.so.1
+7f16b3c4a000-7f16b3c4b000 r--p 0002a000 fc:00 17790322                   /usr/lib64/libgcc_s-15-20260722.so.1
+7f16b3c4b000-7f16b3c4c000 rw-p 00000000 00:00 0 
+7f16b3c4c000-7f16b3c66000 r--p 00000000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7f16b3c66000-7f16b3ceb000 r-xp 0001a000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7f16b3ceb000-7f16b3d09000 r--p 0009f000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7f16b3d09000-7f16b3d0b000 r--p 000bc000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7f16b3d0b000-7f16b3d0d000 rw-p 000be000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7f16b3d0d000-7f16b3d26000 rw-p 00000000 00:00 0 
+7f16b3d26000-7f16b3d30000 r--p 00000000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7f16b3d30000-7f16b3d5d000 r-xp 0000a000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7f16b3d5d000-7f16b3d68000 r--p 00037000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7f16b3d68000-7f16b3d69000 r--p 00041000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7f16b3d69000-7f16b3d6a000 rw-p 00042000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7f16b3d6c000-7f16b3d6d000 rw-s 1c79000000000000 00:07 1067               /dev/kfd
+7f16b3d6e000-7f16b3d6f000 rw-s 10e9800000000000 00:07 1067               /dev/kfd
+7f16b3d70000-7f16b3d71000 rw-s 126b000000000000 00:07 1067               /dev/kfd
+7f16b3d72000-7f16b3d73000 rw-s 371a000000000000 00:07 1067               /dev/kfd
+7f16b3d74000-7f16b3d75000 rw-s 2075400000000000 00:07 1067               /dev/kfd
+7f16b3d76000-7f16b3d77000 rw-s 2ce5c00000000000 00:07 1067               /dev/kfd
+7f16b3d78000-7f16b3d79000 rw-s 2e67400000000000 00:07 1067               /dev/kfd
+7f16b3d7a000-7f16b3d7b000 rw-s b16400000000000 00:07 1067                /dev/kfd
+7f16b3d7c000-7f16b3d7f000 rw-p 00000000 00:00 0 
+7f16b3d7f000-7f16b3eed000 r-xp 00000000 fc:00 17607748                   /usr/lib64/libc.so.6
+7f16b3eed000-7f16b3f63000 r--p 0016e000 fc:00 17607748                   /usr/lib64/libc.so.6
+7f16b3f63000-7f16b3f67000 r--p 001e3000 fc:00 17607748                   /usr/lib64/libc.so.6
+7f16b3f67000-7f16b3f69000 rw-p 001e7000 fc:00 17607748                   /usr/lib64/libc.so.6
+7f16b3f69000-7f16b3f71000 rw-p 00000000 00:00 0 
+7f16b3f72000-7f16b3f73000 rw-s 4f6800000000000 00:07 1067                /dev/kfd
+7f16b3f74000-7f16b3f75000 rw-s 83a400000000000 00:07 1067                /dev/kfd
+7f16b3f76000-7f16b3f77000 r-xp 00000000 fc:00 17635954                   /usr/lib64/libpthread.so.0
+7f16b3f77000-7f16b3f78000 r--p 00001000 fc:00 17635954                   /usr/lib64/libpthread.so.0
+7f16b3f78000-7f16b3f79000 r--p 00001000 fc:00 17635954                   /usr/lib64/libpthread.so.0
+7f16b3f79000-7f16b3f7a000 rw-p 00000000 00:00 0 
+7f16b3f7a000-7f16b3f7b000 r-xp 00000000 fc:00 17635956                   /usr/lib64/librt.so.1
+7f16b3f7b000-7f16b3f7c000 r--p 00001000 fc:00 17635956                   /usr/lib64/librt.so.1
+7f16b3f7c000-7f16b3f7d000 r--p 00001000 fc:00 17635956                   /usr/lib64/librt.so.1
+7f16b3f7d000-7f16b3f7e000 rw-p 00000000 00:00 0 
+7f16b3f7e000-7f16b3f7f000 r-xp 00000000 fc:00 17635930                   /usr/lib64/libdl.so.2
+7f16b3f7f000-7f16b3f80000 r--p 00001000 fc:00 17635930                   /usr/lib64/libdl.so.2
+7f16b3f80000-7f16b3f81000 r--p 00001000 fc:00 17635930                   /usr/lib64/libdl.so.2
+7f16b3f81000-7f16b3f85000 rw-p 00000000 00:00 0 
+7f16b3f85000-7f16b3f89000 r--p 00000000 00:00 0                          [vvar]
+7f16b3f89000-7f16b3f8b000 r--p 00000000 00:00 0                          [vvar_vclock]
+7f16b3f8b000-7f16b3f8d000 r-xp 00000000 00:00 0                          [vdso]
+7f16b3f8d000-7f16b3fb7000 r-xp 00000000 fc:00 17607519                   /usr/lib64/ld-linux-x86-64.so.2
+7f16b3fb7000-7f16b3fc3000 r--p 0002a000 fc:00 17607519                   /usr/lib64/ld-linux-x86-64.so.2
+7f16b3fc3000-7f16b3fc5000 r--p 00035000 fc:00 17607519                   /usr/lib64/ld-linux-x86-64.so.2
+7f16b3fc5000-7f16b3fc6000 rw-p 00037000 fc:00 17607519                   /usr/lib64/ld-linux-x86-64.so.2
+7f16b3fc6000-7f16b3fc7000 rw-p 00000000 00:00 0 
+7ffc23ef9000-7ffc23f1b000 rw-p 00000000 00:00 0                          [stack]
+ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0                  [vsyscall]

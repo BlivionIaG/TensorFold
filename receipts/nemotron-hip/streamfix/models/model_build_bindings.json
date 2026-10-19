@@ -1,0 +1,76 @@
+{
+  "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "tree": "sf46",
+  "architectures": {
+    "gfx1100": {
+      "command": [
+        "$HOME/hcx/zb.sh",
+        "sf46",
+        "sf_model_build_sf46_gfx1100.log",
+        "native-hip",
+        "tf-nemotron-hip-test",
+        "tf-qwen35-test",
+        "tf-flashnext-hip-test",
+        "hip-kernel-build",
+        "-Dhip-arch=gfx1100",
+        "-Doptimize=ReleaseFast",
+        "--prefix",
+        "$HOME/nh/sf46/out-gfx1100"
+      ],
+      "exit_status": 0,
+      "binaries": {
+        "tensorfold-native": {
+          "path": "$HOME/nh/sf46/out-gfx1100/native-hip/bin/tensorfold-native",
+          "sha256": "3ab94bee690e74e88835da05e925d2d7eb5b6c36e9e13bc6c5c59148a90d104e"
+        },
+        "tf-nemotron-hip-test": {
+          "path": "$HOME/nh/sf46/out-gfx1100/bin/tf-nemotron-hip-test",
+          "sha256": "6f9c16432206948b554de9ae7b8496f7a6ea69fc212981f263332f8a2628a21d"
+        },
+        "tf-qwen35-test": {
+          "path": "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+          "sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24"
+        },
+        "tf-flashnext-hip-test": {
+          "path": "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+          "sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654"
+        }
+      }
+    },
+    "gfx1030": {
+      "command": [
+        "$HOME/hcx/zb.sh",
+        "sf46",
+        "sf_model_build_sf46_gfx1030.log",
+        "native-hip",
+        "tf-nemotron-hip-test",
+        "tf-qwen35-test",
+        "tf-flashnext-hip-test",
+        "hip-kernel-build",
+        "-Dhip-arch=gfx1030",
+        "-Doptimize=ReleaseFast",
+        "--prefix",
+        "$HOME/nh/sf46/out-gfx1030"
+      ],
+      "exit_status": 0,
+      "binaries": {
+        "tensorfold-native": {
+          "path": "$HOME/nh/sf46/out-gfx1030/native-hip/bin/tensorfold-native",
+          "sha256": "b723be2765a15a9f2867a72cb2cf42fed22638c3aa7c65ae5e13b54c12756875"
+        },
+        "tf-nemotron-hip-test": {
+          "path": "$HOME/nh/sf46/out-gfx1030/bin/tf-nemotron-hip-test",
+          "sha256": "be8857b4228286e6723c610317e42b3762d0756944b47f86328a518c872f9726"
+        },
+        "tf-qwen35-test": {
+          "path": "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+          "sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085"
+        },
+        "tf-flashnext-hip-test": {
+          "path": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39"
+        }
+      }
+    }
+  }
+}

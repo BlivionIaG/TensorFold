@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "resource_metadata_hydration_only",
+  "dump_sha256": "2be05f9fed47e7e6fbb72c8b8d3e5ae1ae81a0309fbb34d7a5c6ea1bf4eb452a",
+  "declared_build_source_commit": "b953f3fb97444d9132e3fb0efb02d04adee5d2c8",
+  "chip_order": [
+    "gfx1030",
+    "gfx1100",
+    "gfx1151",
+    "gfx1201"
+  ],
+  "qualification_claim": false,
+  "written": true,
+  "files": [
+    {
+      "path": "zig/src/core/contract/hip_records_stream_plain.zig",
+      "records": 48,
+      "before_sha256": "08ffb733d914ea290f74e775617181398930a1ed99b85c88829ff88cf6c79253",
+      "after_sha256": "1e5e926c952f90bb9c861996b233df515cb1823baeb8271052b0be655cabfa83"
+    },
+    {
+      "path": "zig/src/core/contract/hip_records_stream_swiglu.zig",
+      "records": 48,
+      "before_sha256": "a7d15d5b2c8e1eb199c6e308b8bb032457d8d0fdca5ff528ae2fe70ae289958a",
+      "after_sha256": "260942c53841599a5f4a97602fbb9e654d7216657ee99715d5844e3adbfe935b"
+    },
+    {
+      "path": "zig/src/core/contract/hip_records.zig",
+      "records": 8,
+      "before_sha256": "b3abaa2276946c7957c6185acacaaf22cb7048840ad2ed5a442050983d705288",
+      "after_sha256": "9c7372455dc30707a3d4f6fc3255e5a5d031943413c9693ddb3f85d5d8208ad3"
+    },
+    {
+      "path": "zig/src/core/contract/hip_records_pair.zig",
+      "records": 8,
+      "before_sha256": "f0d3e786978f804d0bdf7f6fd8355a92acf011beff7cd5444a28ed819714b7e4",
+      "after_sha256": "9b2d2a9e6193cfe55ac168528fbda25770a2fa9927b8af19eed126bcf72da110"
+    }
+  ]
+}

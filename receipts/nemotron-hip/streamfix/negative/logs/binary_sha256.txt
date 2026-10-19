@@ -1,0 +1,1 @@
+53c0d38da00fe338013ca133d1f70de12941486b8664b0ac1ec93d40996aa38c  out-gfx1100/bin/tf-hip-kernel-contract

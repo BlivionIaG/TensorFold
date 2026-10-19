@@ -1,0 +1,47 @@
+{
+  "source_commit": "1596156e21769324b675ef5e0caae0452f361660",
+  "tree": "<REVIEW_SOURCE>",
+  "cache_directories": {
+    "ZIG_LOCAL_CACHE_DIR": "<MAC_WORK>/local",
+    "ZIG_GLOBAL_CACHE_DIR": "<MAC_WORK>/global"
+  },
+  "stages": [
+    {
+      "stage": "gate",
+      "command": [
+        "<ZIG>",
+        "build",
+        "test",
+        "test-kernel-contract",
+        "test-golden",
+        "fuzz-cortheon",
+        "-Dcpu=apple_m1",
+        "--summary",
+        "all"
+      ],
+      "exit_status": 0,
+      "elapsed_seconds": 196.66,
+      "exact_summary_lines": [
+        "Build Summary: 312/312 steps succeeded; 4423/4439 tests passed (16 skipped)"
+      ],
+      "log": "mac_1596156e_retry.gate.log"
+    },
+    {
+      "stage": "plain",
+      "command": [
+        "<ZIG>",
+        "build",
+        "--summary",
+        "all"
+      ],
+      "exit_status": 0,
+      "elapsed_seconds": 82.694,
+      "exact_summary_lines": [
+        "Build Summary: 220/220 steps succeeded"
+      ],
+      "log": "mac_1596156e_retry.plain.log"
+    }
+  ],
+  "head_after": "1596156e21769324b675ef5e0caae0452f361660",
+  "status_after": ""
+}

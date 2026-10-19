@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "source_comparison_only",
+  "validated": true,
+  "from_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "to_commit": "1596156e21769324b675ef5e0caae0452f361660",
+  "changed_paths": [
+    "zig/tests/hip/contract_stream.zig"
+  ],
+  "runtime_claim": false,
+  "patch_file": "cc18314d_to_1596156e.patch",
+  "patch_sha256": "b6faf72389223ad532fd3256533525c38217023569ac80d2a1eaae78ffeb3d64",
+  "from_tree": "126a9731bd9ec737c29143c99ad64acfb35badab",
+  "to_tree": "b9e1edb458d9c1553b837d55058b0e06695bd54b",
+  "unchanged_production_tree_blobs": {
+    "zig/kernels": "2b2d4eb6903a429cb41bd95f515ca598e62cd1a8",
+    "zig/src": "4f1ea7ded9f4e6b0fa11a6e5474fb61c6129e649",
+    "zig/build": "3bd8f1f6e57475096fa84a2a6f901f69d9775602",
+    "tools": "f715dc559c756128385557ea5a875803e27fb3ae",
+    "docs": "a563e84e65407d041996401953af79b539315f26",
+    "build.zig": "8361b06746416453df9087144cacd571a2e0e226",
+    "build.zig.zon": "dbcb0ed4d6790a38ba142419361e36b7306d467d"
+  },
+  "per_head_comparisons": [
+    {
+      "pr": "NEW",
+      "measured_or_previous_source": "5bc41272725297f3784e233db0475884d47b3634",
+      "review_source": "e0e1c8e97fa14478e60af840942fe28526267bf6",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "49",
+      "measured_or_previous_source": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "review_source": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "changed_paths": []
+    },
+    {
+      "pr": "28",
+      "measured_or_previous_source": "075acc8793e2bdc7114b6c62f91ed833f7192a2d",
+      "review_source": "d48e06d1fc69eb78097e1cedee7bc9cebb0d9290",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "29",
+      "measured_or_previous_source": "b891b45c55ac80cf43400dee8f76f99e9f4eb056",
+      "review_source": "729c4d773d4cf85e8d97f20be2e029517103b539",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "48",
+      "measured_or_previous_source": "529b9e5e379fddb8803e8874f475400c60287773",
+      "review_source": "27b6f3258f0cc992248f900cc19a78c5fe161ca7",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "30",
+      "measured_or_previous_source": "18cbf4c569653da34c09bf127935ccbeedc5da34",
+      "review_source": "1ce5639abee1c0e33cbf433661aa4658c2cc5c6e",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "31",
+      "measured_or_previous_source": "7c691f1c71dd9a69ecdceda64a0e52b7a5c7fb64",
+      "review_source": "62ab5832ffb219106be0c7902bc398ab78b3c1e1",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "32",
+      "measured_or_previous_source": "c365b416cff55de31690db32fe8857487e95cd4b",
+      "review_source": "3eec493f2e2e41063403adf7996e982f4f1e813b",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "33",
+      "measured_or_previous_source": "194fb4fbb0daa8877bd87e751045eda71203db44",
+      "review_source": "ad92984a407f7b3fc6f17a4e2d220792607a44cf",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "34",
+      "measured_or_previous_source": "409b267b59243353b1fbe7564fbdad28b0c3bc38",
+      "review_source": "99eef0db22f21688360da0779d65dfb7dc12ff58",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "35",
+      "measured_or_previous_source": "2bd7354e021ee2198b8fb9733b0fecbef493b81a",
+      "review_source": "6d921a0fde1dba1e14c6d739d3f7f2e64d1ae696",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "36",
+      "measured_or_previous_source": "16bc4aaaaa2614dd745ebadefa6c2334886536f1",
+      "review_source": "20e50ad33a2ac7bb4f3dbdb53d35b55f5d7001ce",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "37",
+      "measured_or_previous_source": "308473fc46dae4818d2cdc3bdb356bd5e5078c4e",
+      "review_source": "4af5b2de0ad530a4853e20b557d12df15c5541c3",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "38",
+      "measured_or_previous_source": "71b781c57f75bbdb3b0faee9e6e40571c6f062ad",
+      "review_source": "96380eeacbefeb0d6c36015143f31bac0d564ca8",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "39",
+      "measured_or_previous_source": "d2afe0dbab0cf4553b2ae1743de3f7b387f6c624",
+      "review_source": "bb4e4823ca8ca7dd8d2e422374ac9668e03f5d0f",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "40",
+      "measured_or_previous_source": "18cb560424a87eec567d49d35c8e1c498984215a",
+      "review_source": "a272142d7db38285fd46cb39c835c8db18c1bda4",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "41",
+      "measured_or_previous_source": "6f0dabe077b3d70b32f08b54cf674141039f6ad3",
+      "review_source": "ca40e2dfbf75714b0b0c9f05ca54496c5ecb8546",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "42",
+      "measured_or_previous_source": "434389adcfc91b4d75394b2bdbd5969b2e93463c",
+      "review_source": "b25f13001942ee1cfa68a1c44be81d81d4fb42ea",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "43",
+      "measured_or_previous_source": "8084a2d999b21e48a40dfc565a4a02c6c7ba75ff",
+      "review_source": "8f1b1cb9d57d88fe84d22ff0de696f03c7975f91",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "44",
+      "measured_or_previous_source": "470a275188febcc91ad1511e7a9aafc2e4832a6b",
+      "review_source": "6edf466e0dae8141636e081185ef0da365b10f9d",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "45",
+      "measured_or_previous_source": "f35eaa03375d0bf9c30577002c3f277d0c5dc827",
+      "review_source": "a56d4f10ba6a3297edd0bf35b9ac071f7790430e",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    },
+    {
+      "pr": "46",
+      "measured_or_previous_source": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "review_source": "1596156e21769324b675ef5e0caae0452f361660",
+      "changed_paths": [
+        "zig/tests/hip/contract_stream.zig"
+      ]
+    }
+  ],
+  "scope": "Only the deterministic 2-bit stress fixture changes. Random and nonfinite fills, thresholds, production kernels, engine, serving, model-family code and resource records remain identical. No new runtime measurement is claimed.",
+  "measured_runtime_sources": {
+    "models_nemotron_ab_finite": "cc18314dce85b0968496b35333bdd8618b2f9227",
+    "negative": "5f453065422cf278c0a367a2094a15c1085b209d"
+  },
+  "qualification_requirements": "Rerun actual review-head contracts, Mac/Linux host suites, stub and static checks; preserved native/model measurements retain their measured IDs."
+}

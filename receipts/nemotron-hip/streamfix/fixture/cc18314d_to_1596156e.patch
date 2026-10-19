@@ -1,0 +1,18 @@
+diff --git a/zig/tests/hip/contract_stream.zig b/zig/tests/hip/contract_stream.zig
+index ac3ecbdfab8bc03212c2d109944f76b1157cb3f0..b6e689f0a932589c92532b2dde881fef00cdfe22 100644
+--- a/zig/tests/hip/contract_stream.zig
++++ b/zig/tests/hip/contract_stream.zig
+@@ -76,6 +76,13 @@ pub const Stream = struct {
+         const a = self.arena.allocator();
+         const f = try contract.affine.Affine.init(a, shape, cfg.bits, cfg.group);
+         try f.fill(fill, seed);
++        // Two-bit codes are 3/1 in the mirrored halves: fixed 255/256 inputs lose eight unit nudges in low precision.
++        if (fill == .stress and cfg.bits == 2) for (0..shape.rows) |r| {
++            for (0..shape.k) |i| {
++                const nudge = i >= shape.k / 2 and i < shape.k / 2 + 8;
++                f.x[r * shape.k + i] = c.toBf16(if (nudge) 256 else 255);
++            }
++        };
+         // Table plants supplement every original x plant and leave ordinary columns finite in the last row.
+         if (fill == .nonfinite) {
+             const groups = shape.k / cfg.group;

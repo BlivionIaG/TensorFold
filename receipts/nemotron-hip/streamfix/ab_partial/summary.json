@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "validated_conditions": [
+    "decode_on"
+  ],
+  "complete_ab": false,
+  "publication_qualified": false,
+  "source_commits": {
+    "c46": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+    "d46": "cc18314dce85b0968496b35333bdd8618b2f9227"
+  },
+  "review_top": "1596156e21769324b675ef5e0caae0452f361660",
+  "review_source_bridge_required": true,
+  "limitations": [
+    "Only completed drafts-on quartets are included here.",
+    "Drafts-off and cold8192/32768 results are pending the complete run; no full A/B pass is claimed.",
+    "Remaining exact-head qualification is separate and still required."
+  ],
+  "runs": [
+    {
+      "rig": "W7800tp2",
+      "order": [
+        "old",
+        "new",
+        "new",
+        "old"
+      ],
+      "receipts": [
+        {
+          "file": "W7800tp2/decode_on_c46_31501.json",
+          "raw_sha256": "6998a082d8c26809240e901ea04770400bd1e2c818e4862eab6868f9d64f574e",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256"
+        },
+        {
+          "file": "W7800tp2/decode_on_d46_31502.json",
+          "raw_sha256": "a7a45a64ce275331ca28efb0bcfe1ee0b2e21421cee2f0eb0bc7874af897d4df",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "3ab94bee690e74e88835da05e925d2d7eb5b6c36e9e13bc6c5c59148a90d104e"
+        },
+        {
+          "file": "W7800tp2/decode_on_d46_31503.json",
+          "raw_sha256": "ac4100d7819dc95c9d9b6546a3442d2168feee54b8114ccc6948a8d181ad8eae",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "3ab94bee690e74e88835da05e925d2d7eb5b6c36e9e13bc6c5c59148a90d104e"
+        },
+        {
+          "file": "W7800tp2/decode_on_c46_31504.json",
+          "raw_sha256": "3d67ad1bcf25969d901167646f61cc586f7d499a51851bfa36ecb2eaaf322a89",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256"
+        }
+      ],
+      "source_binary_bindings": {
+        "c46": {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256"
+        },
+        "d46": {
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "3ab94bee690e74e88835da05e925d2d7eb5b6c36e9e13bc6c5c59148a90d104e"
+        }
+      },
+      "prompts": {
+        "fibonacci-raw": {
+          "decode_tps_hold_order": [
+            258.33624389548913,
+            164.63686744507055,
+            158.61078962238568,
+            251.94807561053972
+          ],
+          "old_mean": 255.14215975301443,
+          "new_mean": 161.6238285337281,
+          "delta_percent": -36.653421492478934,
+          "complete_reply_and_token_sha_equal": true
+        },
+        "gpu-chat-no-think": {
+          "decode_tps_hold_order": [
+            218.2117528195322,
+            143.02620255277185,
+            140.68329333746024,
+            212.35904933710802
+          ],
+          "old_mean": 215.2854010783201,
+          "new_mean": 141.85474794511606,
+          "delta_percent": -34.108514913414965,
+          "complete_reply_and_token_sha_equal": true
+        }
+      },
+      "measured_clients_and_harnesses": [
+        "client decode/bench_openai.py sha256=7496ddfe6e474c1c50ef8fe6a33770e63069531f999d98acff0b8f28613e61eb",
+        "client decode/bench_evidence.py sha256=119c396f24f3c13e181429bc69acff39f34254efd4789c5673a3dcbc54738d93",
+        "client cold/bench_cache.py sha256=4575cc3d1f04e33de9998eb681f9aa0459172be8089c14569fbd83437b15ec14",
+        "client cold/bench_concurrent.py sha256=c47f401c28e60836080f4cbe9d81e1971262e76bd713b4c349b477d4c7f9bf83",
+        "client cold/bench_evidence.py sha256=54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+        "client cold/bench_auth.py sha256=1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+        "harness ab.sh sha256=6aa1a560bc6e114e6e1a1a83f550899af8f5ecaca62918a5491e91642ea9f091",
+        "harness ab_validate.py sha256=e1854f1aa02ccf79bb42f71ce56131e837a668f52e07e403facdf7636702eaf7",
+        "harness capture_identity.py sha256=b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005"
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "order": [
+        "old",
+        "new",
+        "new",
+        "old"
+      ],
+      "receipts": [
+        {
+          "file": "V620tp1/decode_on_c46_33501.json",
+          "raw_sha256": "29c12203da438fab73bbbbd70313b7517430631487bc80eb6f1544f2698718db",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225"
+        },
+        {
+          "file": "V620tp1/decode_on_d46_33502.json",
+          "raw_sha256": "3c5d4983bd3257a366c0c3ab98c0ddced51a2de28b4493314a969aa1df936c86",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "b723be2765a15a9f2867a72cb2cf42fed22638c3aa7c65ae5e13b54c12756875"
+        },
+        {
+          "file": "V620tp1/decode_on_d46_33503.json",
+          "raw_sha256": "376083174c25a252d897d182448ec2678d5f4c39774a1f7e6faa873d2de97bef",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "b723be2765a15a9f2867a72cb2cf42fed22638c3aa7c65ae5e13b54c12756875"
+        },
+        {
+          "file": "V620tp1/decode_on_c46_33504.json",
+          "raw_sha256": "12f1c56a0f41f1686acc7be8a9e45fd5aea567b94be1434485e3e7f93d76cd12",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225"
+        }
+      ],
+      "source_binary_bindings": {
+        "c46": {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225"
+        },
+        "d46": {
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "b723be2765a15a9f2867a72cb2cf42fed22638c3aa7c65ae5e13b54c12756875"
+        }
+      },
+      "prompts": {
+        "fibonacci-raw": {
+          "decode_tps_hold_order": [
+            180.74953399634526,
+            121.63548375438508,
+            121.2859622974564,
+            179.58118831534833
+          ],
+          "old_mean": 180.1653611558468,
+          "new_mean": 121.46072302592074,
+          "delta_percent": -32.58375403202246,
+          "complete_reply_and_token_sha_equal": true
+        },
+        "gpu-chat-no-think": {
+          "decode_tps_hold_order": [
+            156.68673142967515,
+            107.42465666218695,
+            107.0662322245434,
+            156.43318037846188
+          ],
+          "old_mean": 156.55995590406852,
+          "new_mean": 107.24544444336517,
+          "delta_percent": -31.498802599893814,
+          "complete_reply_and_token_sha_equal": true
+        }
+      },
+      "measured_clients_and_harnesses": [
+        "client decode/bench_openai.py sha256=7496ddfe6e474c1c50ef8fe6a33770e63069531f999d98acff0b8f28613e61eb",
+        "client decode/bench_evidence.py sha256=119c396f24f3c13e181429bc69acff39f34254efd4789c5673a3dcbc54738d93",
+        "client cold/bench_cache.py sha256=4575cc3d1f04e33de9998eb681f9aa0459172be8089c14569fbd83437b15ec14",
+        "client cold/bench_concurrent.py sha256=c47f401c28e60836080f4cbe9d81e1971262e76bd713b4c349b477d4c7f9bf83",
+        "client cold/bench_evidence.py sha256=54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+        "client cold/bench_auth.py sha256=1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+        "harness ab.sh sha256=6aa1a560bc6e114e6e1a1a83f550899af8f5ecaca62918a5491e91642ea9f091",
+        "harness ab_validate.py sha256=e1854f1aa02ccf79bb42f71ce56131e837a668f52e07e403facdf7636702eaf7",
+        "harness capture_identity.py sha256=b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005"
+      ]
+    }
+  ]
+}

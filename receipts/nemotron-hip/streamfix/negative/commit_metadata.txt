@@ -1,0 +1,7 @@
+commit 5f453065422cf278c0a367a2094a15c1085b209d
+Author:     BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>
+AuthorDate: 2026-10-20T00:18:45+02:00
+Commit:     BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>
+CommitDate: 2026-10-20T00:18:45+02:00
+
+    test(hip): bind strict old-header control to its actual resource metadata

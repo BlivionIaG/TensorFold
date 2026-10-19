@@ -1,0 +1,433 @@
+{
+  "schema_version": 1,
+  "validated": true,
+  "measured_sources": {
+    "c46": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+    "d46": "cc18314dce85b0968496b35333bdd8618b2f9227"
+  },
+  "review_top": "1596156e21769324b675ef5e0caae0452f361660",
+  "review_source_bridge_required": true,
+  "publication_qualified": false,
+  "rigs": [
+    {
+      "rig": "v620tp1",
+      "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+      "comparisons": [
+        {
+          "name": "decode",
+          "bytes": 117440512,
+          "sha256": "f8f07c8e68296e96a21bb80abb65d46762acdc485b4941375a99deb10a1bb411",
+          "identical": true
+        },
+        {
+          "name": "chat_full",
+          "bytes": 30932992,
+          "sha256": "b171033e305019256ad7d744258d8a7340c81e1cf44761ac11bf68ad2957fd1f",
+          "identical": true
+        },
+        {
+          "name": "code_full",
+          "bytes": 24641536,
+          "sha256": "d33e867303b2e3e62c9c6f9cbe164bb8809d0da817d9bbed8199b7fa5a871f0e",
+          "identical": true
+        },
+        {
+          "name": "story_full",
+          "bytes": 24641536,
+          "sha256": "0f5195506bf0f528ae6057160dd1af4d278b4c93384f476fb082612aeb6c4de8",
+          "identical": true
+        }
+      ],
+      "harness_sha256": "e05e21af42dc046e25edae2dc96362f83e3352f175078f991c8f7a10a4fd340f",
+      "gate_validator_sha256": "f215c3d257ae65c0726cc3d749cbb8a275eee56dc38a9df58e77412bac6fe361",
+      "runs": [
+        {
+          "tree": "d46",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "93008bc7989370393147d134c4c6979109b68607293d28ff883f0f6e254a26e9",
+          "kind": "decode",
+          "name": "decode",
+          "input_sha256": "4a9fa11fc45a3f60a596d4054a1da7bb0cd11dd303fad81b4a98c2efbde3c6d2",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 117440512,
+            "sha256": "f8f07c8e68296e96a21bb80abb65d46762acdc485b4941375a99deb10a1bb411"
+          },
+          "runtime_identity_file": "v620tp1/d46_decode.identity.json"
+        },
+        {
+          "tree": "d46",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "93008bc7989370393147d134c4c6979109b68607293d28ff883f0f6e254a26e9",
+          "kind": "teacher",
+          "name": "chat_full",
+          "input_sha256": "77672030c4c244f1a2f5e2c74ec08b411919faee4648e25451dd4be313084e9b",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 30932992,
+            "sha256": "b171033e305019256ad7d744258d8a7340c81e1cf44761ac11bf68ad2957fd1f"
+          },
+          "runtime_identity_file": "v620tp1/d46_chat_full.identity.json"
+        },
+        {
+          "tree": "d46",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "93008bc7989370393147d134c4c6979109b68607293d28ff883f0f6e254a26e9",
+          "kind": "teacher",
+          "name": "code_full",
+          "input_sha256": "d28c73de397a229498fcfdf973f9beda444e57bc82b421d01632f2327e872109",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 24641536,
+            "sha256": "d33e867303b2e3e62c9c6f9cbe164bb8809d0da817d9bbed8199b7fa5a871f0e"
+          },
+          "runtime_identity_file": "v620tp1/d46_code_full.identity.json"
+        },
+        {
+          "tree": "d46",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "93008bc7989370393147d134c4c6979109b68607293d28ff883f0f6e254a26e9",
+          "kind": "teacher",
+          "name": "story_full",
+          "input_sha256": "c3f54b797d0ca4cc8b8ae26e1cadd951e0f0061eaf48f8023b26d4ffbe388e5c",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 24641536,
+            "sha256": "0f5195506bf0f528ae6057160dd1af4d278b4c93384f476fb082612aeb6c4de8"
+          },
+          "runtime_identity_file": "v620tp1/d46_story_full.identity.json"
+        },
+        {
+          "tree": "sf46",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "be8857b4228286e6723c610317e42b3762d0756944b47f86328a518c872f9726",
+          "kind": "decode",
+          "name": "decode",
+          "input_sha256": "4a9fa11fc45a3f60a596d4054a1da7bb0cd11dd303fad81b4a98c2efbde3c6d2",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 117440512,
+            "sha256": "f8f07c8e68296e96a21bb80abb65d46762acdc485b4941375a99deb10a1bb411"
+          },
+          "runtime_identity_file": "v620tp1/sf46_decode.identity.json"
+        },
+        {
+          "tree": "sf46",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "be8857b4228286e6723c610317e42b3762d0756944b47f86328a518c872f9726",
+          "kind": "teacher",
+          "name": "chat_full",
+          "input_sha256": "77672030c4c244f1a2f5e2c74ec08b411919faee4648e25451dd4be313084e9b",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 30932992,
+            "sha256": "b171033e305019256ad7d744258d8a7340c81e1cf44761ac11bf68ad2957fd1f"
+          },
+          "runtime_identity_file": "v620tp1/sf46_chat_full.identity.json"
+        },
+        {
+          "tree": "sf46",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "be8857b4228286e6723c610317e42b3762d0756944b47f86328a518c872f9726",
+          "kind": "teacher",
+          "name": "code_full",
+          "input_sha256": "d28c73de397a229498fcfdf973f9beda444e57bc82b421d01632f2327e872109",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 24641536,
+            "sha256": "d33e867303b2e3e62c9c6f9cbe164bb8809d0da817d9bbed8199b7fa5a871f0e"
+          },
+          "runtime_identity_file": "v620tp1/sf46_code_full.identity.json"
+        },
+        {
+          "tree": "sf46",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "be8857b4228286e6723c610317e42b3762d0756944b47f86328a518c872f9726",
+          "kind": "teacher",
+          "name": "story_full",
+          "input_sha256": "c3f54b797d0ca4cc8b8ae26e1cadd951e0f0061eaf48f8023b26d4ffbe388e5c",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 24641536,
+            "sha256": "0f5195506bf0f528ae6057160dd1af4d278b4c93384f476fb082612aeb6c4de8"
+          },
+          "runtime_identity_file": "v620tp1/sf46_story_full.identity.json"
+        }
+      ]
+    },
+    {
+      "rig": "w7800tp2",
+      "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+      "comparisons": [
+        {
+          "name": "decode",
+          "bytes": 117440512,
+          "sha256": "08e152477e73fe3ca386540aa25606345df1822d3859bcf155386ee496e8ca13",
+          "identical": true
+        },
+        {
+          "name": "chat_full",
+          "bytes": 30932992,
+          "sha256": "649178c5a811121df6375b16663178e40b358bf4a95da491a2cb735c23808034",
+          "identical": true
+        },
+        {
+          "name": "code_full",
+          "bytes": 24641536,
+          "sha256": "fa5580dadfca03afff4d9b8fbc97a9d71df519c3b1963d667e625e576057dd32",
+          "identical": true
+        },
+        {
+          "name": "story_full",
+          "bytes": 24641536,
+          "sha256": "37ad32c153ef2858c43cf1c9548bfe6aa2f049bf05fd7faf4f7ec28254f1752b",
+          "identical": true
+        }
+      ],
+      "harness_sha256": "e05e21af42dc046e25edae2dc96362f83e3352f175078f991c8f7a10a4fd340f",
+      "gate_validator_sha256": "f215c3d257ae65c0726cc3d749cbb8a275eee56dc38a9df58e77412bac6fe361",
+      "runs": [
+        {
+          "tree": "d46",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9",
+          "kind": "decode",
+          "name": "decode",
+          "input_sha256": "4a9fa11fc45a3f60a596d4054a1da7bb0cd11dd303fad81b4a98c2efbde3c6d2",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 1,
+              "exit_status": 0
+            },
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 117440512,
+            "sha256": "08e152477e73fe3ca386540aa25606345df1822d3859bcf155386ee496e8ca13"
+          },
+          "runtime_identity_file": "w7800tp2/d46_decode.identity.json"
+        },
+        {
+          "tree": "d46",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9",
+          "kind": "teacher",
+          "name": "chat_full",
+          "input_sha256": "77672030c4c244f1a2f5e2c74ec08b411919faee4648e25451dd4be313084e9b",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 1,
+              "exit_status": 0
+            },
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 30932992,
+            "sha256": "649178c5a811121df6375b16663178e40b358bf4a95da491a2cb735c23808034"
+          },
+          "runtime_identity_file": "w7800tp2/d46_chat_full.identity.json"
+        },
+        {
+          "tree": "d46",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9",
+          "kind": "teacher",
+          "name": "code_full",
+          "input_sha256": "d28c73de397a229498fcfdf973f9beda444e57bc82b421d01632f2327e872109",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 1,
+              "exit_status": 0
+            },
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 24641536,
+            "sha256": "fa5580dadfca03afff4d9b8fbc97a9d71df519c3b1963d667e625e576057dd32"
+          },
+          "runtime_identity_file": "w7800tp2/d46_code_full.identity.json"
+        },
+        {
+          "tree": "d46",
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9",
+          "kind": "teacher",
+          "name": "story_full",
+          "input_sha256": "c3f54b797d0ca4cc8b8ae26e1cadd951e0f0061eaf48f8023b26d4ffbe388e5c",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 1,
+              "exit_status": 0
+            },
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 24641536,
+            "sha256": "37ad32c153ef2858c43cf1c9548bfe6aa2f049bf05fd7faf4f7ec28254f1752b"
+          },
+          "runtime_identity_file": "w7800tp2/d46_story_full.identity.json"
+        },
+        {
+          "tree": "sf46",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "6f9c16432206948b554de9ae7b8496f7a6ea69fc212981f263332f8a2628a21d",
+          "kind": "decode",
+          "name": "decode",
+          "input_sha256": "4a9fa11fc45a3f60a596d4054a1da7bb0cd11dd303fad81b4a98c2efbde3c6d2",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 1,
+              "exit_status": 0
+            },
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 117440512,
+            "sha256": "08e152477e73fe3ca386540aa25606345df1822d3859bcf155386ee496e8ca13"
+          },
+          "runtime_identity_file": "w7800tp2/sf46_decode.identity.json"
+        },
+        {
+          "tree": "sf46",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "6f9c16432206948b554de9ae7b8496f7a6ea69fc212981f263332f8a2628a21d",
+          "kind": "teacher",
+          "name": "chat_full",
+          "input_sha256": "77672030c4c244f1a2f5e2c74ec08b411919faee4648e25451dd4be313084e9b",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 1,
+              "exit_status": 0
+            },
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 30932992,
+            "sha256": "649178c5a811121df6375b16663178e40b358bf4a95da491a2cb735c23808034"
+          },
+          "runtime_identity_file": "w7800tp2/sf46_chat_full.identity.json"
+        },
+        {
+          "tree": "sf46",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "6f9c16432206948b554de9ae7b8496f7a6ea69fc212981f263332f8a2628a21d",
+          "kind": "teacher",
+          "name": "code_full",
+          "input_sha256": "d28c73de397a229498fcfdf973f9beda444e57bc82b421d01632f2327e872109",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 1,
+              "exit_status": 0
+            },
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 24641536,
+            "sha256": "fa5580dadfca03afff4d9b8fbc97a9d71df519c3b1963d667e625e576057dd32"
+          },
+          "runtime_identity_file": "w7800tp2/sf46_code_full.identity.json"
+        },
+        {
+          "tree": "sf46",
+          "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+          "binary_sha256": "6f9c16432206948b554de9ae7b8496f7a6ea69fc212981f263332f8a2628a21d",
+          "kind": "teacher",
+          "name": "story_full",
+          "input_sha256": "c3f54b797d0ca4cc8b8ae26e1cadd951e0f0061eaf48f8023b26d4ffbe388e5c",
+          "finite": true,
+          "rank_exits": [
+            {
+              "rank": 1,
+              "exit_status": 0
+            },
+            {
+              "rank": 0,
+              "exit_status": 0
+            }
+          ],
+          "output": {
+            "bytes": 24641536,
+            "sha256": "37ad32c153ef2858c43cf1c9548bfe6aa2f049bf05fd7faf4f7ec28254f1752b"
+          },
+          "runtime_identity_file": "w7800tp2/sf46_story_full.identity.json"
+        }
+      ]
+    }
+  ]
+}

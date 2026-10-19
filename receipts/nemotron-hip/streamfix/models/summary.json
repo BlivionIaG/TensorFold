@@ -1,0 +1,585 @@
+{
+  "schema_version": 1,
+  "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "state": "complete",
+  "stages": [
+    {
+      "name": "linux_full",
+      "command": [
+        "$HOME/hcx/zb.sh",
+        "sf46",
+        "sf46_final_linux_full.log",
+        "test",
+        "test-kernel-contract",
+        "test-golden",
+        "fuzz-cortheon",
+        "--cache-dir",
+        "/tmp/sf46-final-host-cache",
+        "--summary",
+        "all"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 418.703,
+      "log": "linux_full.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exact_summary": "Build Summary: 172/172 steps succeeded; 2530/2540 tests passed (10 skipped)",
+      "raw_log": "linux_full.raw.log",
+      "raw_log_sha256": "4eb240f445d87bcbb9a735a83b9a9ce5f0586fc3242bc3dc97a89f34ba42a6f4"
+    },
+    {
+      "name": "linux_plain",
+      "command": [
+        "$HOME/hcx/zb.sh",
+        "sf46",
+        "sf46_final_linux_plain.log",
+        "--cache-dir",
+        "/tmp/sf46-final-host-cache",
+        "--summary",
+        "all"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 167.548,
+      "log": "linux_plain.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "exact_summary": "Build Summary: 17/17 steps succeeded",
+      "raw_log": "linux_plain.raw.log",
+      "raw_log_sha256": "7c3ecd7057fafb8641e886afcff268874746d409531ec0bd97e0de38eb60a673"
+    },
+    {
+      "name": "kernels_gfx1100",
+      "command": [
+        "$HOME/hcx/zb.sh",
+        "sf46",
+        "sf46_final_kernels_gfx1100.log",
+        "hip-kernel-test",
+        "-Dhip-arch=gfx1100",
+        "-Doptimize=ReleaseFast",
+        "--summary",
+        "all",
+        "--verbose"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 596.417,
+      "log": "kernels_gfx1100.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "arch": "gfx1100",
+      "devices": "0",
+      "exact_summary": "Build Summary: 15/15 steps succeeded; 103/103 tests passed",
+      "raw_log_sha256": "825ee0295c3e4a437c068a0a29de6b7fb29d682754a439305c3c1c1c2aa17169",
+      "test_binaries": [
+        {
+          "sha256": "114f7f7ad5933af464ad715f47ebe151d1f5c9d8b44e440666e81de25addc259",
+          "path": "$HOME/nh/sf46/.zig-cache/o/af14505fc074d30e36ce669dcc0a8be5/test"
+        }
+      ]
+    },
+    {
+      "name": "qwen_gfx1100_Qwen3.5-9B-MLX-4bit",
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.5-9B-MLX-4bit",
+        "$HOME/tf-truth/ids512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1100_Qwen3.5-9B-MLX-4bit.npy",
+        "--decode"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 11.642,
+      "log": "qwen_gfx1100_Qwen3.5-9B-MLX-4bit.log",
+      "log_sha256": "19a8646f2f858df19079789dcc33fb5b382e097468b1c8f46a8dcaf23ef5805d",
+      "arch": "gfx1100",
+      "devices": "0",
+      "model": "Qwen3.5-9B-MLX-4bit",
+      "binary_sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+      "output_bytes": 254279808,
+      "output_sha256": "572b6857081cdc3b3399089f3223dfe1098de731b2f4934819984c0bc88e0897",
+      "reference_file": "ql110_gfx1100_Qwen3.5-9B-MLX-4bit_m110.npy",
+      "reference_sha256": "572b6857081cdc3b3399089f3223dfe1098de731b2f4934819984c0bc88e0897",
+      "equality": "byte-identical"
+    },
+    {
+      "name": "qwen_gfx1100_Qwen3.6-35B-A3B-MLX-4bit-MTP",
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.6-35B-A3B-MLX-4bit-MTP",
+        "$HOME/tf-truth/ids35_512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1100_Qwen3.6-35B-A3B-MLX-4bit-MTP.npy",
+        "--decode"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 23.932,
+      "log": "qwen_gfx1100_Qwen3.6-35B-A3B-MLX-4bit-MTP.log",
+      "log_sha256": "07d19f5bb716f920a3f97420a7c1ebe8909f7c36b5fc38e38310ab9c3dd528a4",
+      "arch": "gfx1100",
+      "devices": "0",
+      "model": "Qwen3.6-35B-A3B-MLX-4bit-MTP",
+      "binary_sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+      "output_bytes": 254279808,
+      "output_sha256": "b5cb132cf6d7b6d49240e37891641e935923541204835394f1c88d9feba457c7",
+      "reference_file": "ql110_gfx1100_Qwen3.6-35B-A3B-MLX-4bit-MTP_m110.npy",
+      "reference_sha256": "b5cb132cf6d7b6d49240e37891641e935923541204835394f1c88d9feba457c7",
+      "equality": "byte-identical"
+    },
+    {
+      "name": "qwen_gfx1100_Qwen3.8-27B-MLX-4bit",
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.8-27B-MLX-4bit",
+        "$HOME/tf-truth/ids512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1100_Qwen3.8-27B-MLX-4bit.npy",
+        "--decode"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 29.582,
+      "log": "qwen_gfx1100_Qwen3.8-27B-MLX-4bit.log",
+      "log_sha256": "b1320fdb6ba762fe0cbc3b84eca132fd3978001dbcfec2e8098ec9aebe3a1110",
+      "arch": "gfx1100",
+      "devices": "0",
+      "model": "Qwen3.8-27B-MLX-4bit",
+      "binary_sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+      "output_bytes": 254279808,
+      "output_sha256": "71c8f6bdcdfb05c7ffbcdacdd677a396d095cc2bf0c27493dff8e6ec07b304bc",
+      "reference_file": "ql110_gfx1100_Qwen3.8-27B-MLX-4bit_m110.npy",
+      "reference_sha256": "71c8f6bdcdfb05c7ffbcdacdd677a396d095cc2bf0c27493dff8e6ec07b304bc",
+      "equality": "byte-identical"
+    },
+    {
+      "name": "kernels_gfx1030",
+      "command": [
+        "$HOME/hcx/zb.sh",
+        "sf46",
+        "sf46_final_kernels_gfx1030.log",
+        "hip-kernel-test",
+        "-Dhip-arch=gfx1030",
+        "-Doptimize=ReleaseFast",
+        "--summary",
+        "all",
+        "--verbose"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 743.135,
+      "log": "kernels_gfx1030.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "arch": "gfx1030",
+      "devices": "2",
+      "exact_summary": "Build Summary: 15/15 steps succeeded; 103/103 tests passed",
+      "raw_log_sha256": "8521534ce75d00b5cabb9004c37535f602a0c9c0e7a748786b4c27073a252a09",
+      "test_binaries": [
+        {
+          "sha256": "07261cecfe6333986fe5312e6ae2fb8fa076a3e2a9248b404dd58c873822a1b2",
+          "path": "$HOME/nh/sf46/.zig-cache/o/e95f575a3a0769d0c752868c376807cb/test"
+        }
+      ]
+    },
+    {
+      "name": "qwen_gfx1030_Qwen3.5-9B-MLX-4bit",
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.5-9B-MLX-4bit",
+        "$HOME/tf-truth/ids512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1030_Qwen3.5-9B-MLX-4bit.npy",
+        "--decode"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 11.94,
+      "log": "qwen_gfx1030_Qwen3.5-9B-MLX-4bit.log",
+      "log_sha256": "4a4c7bd91368a1f85a8592c39f8dd6594cf242453bbbc2b8a13da36b9146aa01",
+      "arch": "gfx1030",
+      "devices": "2",
+      "model": "Qwen3.5-9B-MLX-4bit",
+      "binary_sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+      "output_bytes": 254279808,
+      "output_sha256": "f21051f68ad38f5ca42c459002b7b4c9ca9bc4ee7447111eeaa65159ad2b4392",
+      "reference_file": "ql110_gfx1030_Qwen3.5-9B-MLX-4bit_m110.npy",
+      "reference_sha256": "f21051f68ad38f5ca42c459002b7b4c9ca9bc4ee7447111eeaa65159ad2b4392",
+      "equality": "byte-identical"
+    },
+    {
+      "name": "qwen_gfx1030_Qwen3.6-35B-A3B-MLX-4bit-MTP",
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.6-35B-A3B-MLX-4bit-MTP",
+        "$HOME/tf-truth/ids35_512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1030_Qwen3.6-35B-A3B-MLX-4bit-MTP.npy",
+        "--decode"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 24.666,
+      "log": "qwen_gfx1030_Qwen3.6-35B-A3B-MLX-4bit-MTP.log",
+      "log_sha256": "12abb7b7f463686f6069b9a403cd12eeafd030bdb05ba2f6d68991b7069b0af5",
+      "arch": "gfx1030",
+      "devices": "2",
+      "model": "Qwen3.6-35B-A3B-MLX-4bit-MTP",
+      "binary_sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+      "output_bytes": 254279808,
+      "output_sha256": "3ffda248708db9f6c3f106f620c80309f9972885b11b2c5b77f0f0d736074473",
+      "reference_file": "ql110_gfx1030_Qwen3.6-35B-A3B-MLX-4bit-MTP_m110.npy",
+      "reference_sha256": "3ffda248708db9f6c3f106f620c80309f9972885b11b2c5b77f0f0d736074473",
+      "equality": "byte-identical"
+    },
+    {
+      "name": "qwen_gfx1030_Qwen3.8-27B-MLX-4bit",
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.8-27B-MLX-4bit",
+        "$HOME/tf-truth/ids512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1030_Qwen3.8-27B-MLX-4bit.npy",
+        "--decode"
+      ],
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "exit_status": 0,
+      "elapsed_seconds": 31.783,
+      "log": "qwen_gfx1030_Qwen3.8-27B-MLX-4bit.log",
+      "log_sha256": "1e7cd3ea8c116c54acf65146ddc739a34a3ef6d3d7a9f16b590a8bf776d9d63f",
+      "arch": "gfx1030",
+      "devices": "2",
+      "model": "Qwen3.8-27B-MLX-4bit",
+      "binary_sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+      "output_bytes": 254279808,
+      "output_sha256": "3b06e4aa182841060294553efdd1d81425f92d64e3d0820c9388054f6aa69d9f",
+      "reference_file": "ql110_gfx1030_Qwen3.8-27B-MLX-4bit_m110.npy",
+      "reference_sha256": "3b06e4aa182841060294553efdd1d81425f92d64e3d0820c9388054f6aa69d9f",
+      "equality": "byte-identical"
+    },
+    {
+      "name": "flash_gfx1100_on",
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "binary_sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+      "arch": "gfx1100",
+      "devices": "0,1",
+      "world": 2,
+      "mode": "on",
+      "hashes": [
+        "6fbb0a3f895f7fa1",
+        "6fbb0a3f895f7fa1",
+        "6fbb0a3f895f7fa1"
+      ],
+      "elapsed_seconds": 26.06,
+      "ranks": [
+        {
+          "rank": 1,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-3bit-MTP",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--port",
+            "29940",
+            "--hash",
+            "--repeat",
+            "3"
+          ],
+          "log": "flash_gfx1100_on.rank1.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "rank": 0,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-3bit-MTP",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--port",
+            "29940",
+            "--hash",
+            "--repeat",
+            "3"
+          ],
+          "log": "flash_gfx1100_on.rank0.log",
+          "log_sha256": "7f509aa19ebe43c74460f75a3de13ec621be364e11211a7754deebfa71c0a35e"
+        }
+      ]
+    },
+    {
+      "name": "flash_gfx1100_off",
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "binary_sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+      "arch": "gfx1100",
+      "devices": "0,1",
+      "world": 2,
+      "mode": "off",
+      "hashes": [
+        "6fbb0a3f895f7fa1",
+        "6fbb0a3f895f7fa1",
+        "6fbb0a3f895f7fa1"
+      ],
+      "elapsed_seconds": 26.061,
+      "ranks": [
+        {
+          "rank": 1,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-3bit-MTP",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--port",
+            "29941",
+            "--hash",
+            "--repeat",
+            "3",
+            "--policy",
+            "graphs=off"
+          ],
+          "log": "flash_gfx1100_off.rank1.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "rank": 0,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-3bit-MTP",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--port",
+            "29941",
+            "--hash",
+            "--repeat",
+            "3",
+            "--policy",
+            "graphs=off"
+          ],
+          "log": "flash_gfx1100_off.rank0.log",
+          "log_sha256": "fbf3d7626570c198209faa0c26c38c85647fe9c1dc94eb70c9a11dddd575efe7"
+        }
+      ]
+    },
+    {
+      "name": "flash_gfx1030_on",
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "binary_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "arch": "gfx1030",
+      "devices": "2,3,4,5",
+      "world": 4,
+      "mode": "on",
+      "hashes": [
+        "349d29968cc98589",
+        "349d29968cc98589",
+        "349d29968cc98589"
+      ],
+      "elapsed_seconds": 31.062,
+      "ranks": [
+        {
+          "rank": 1,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+            "--tp",
+            "4",
+            "--rank",
+            "1",
+            "--port",
+            "29944",
+            "--hash",
+            "--repeat",
+            "3"
+          ],
+          "log": "flash_gfx1030_on.rank1.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "rank": 2,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+            "--tp",
+            "4",
+            "--rank",
+            "2",
+            "--port",
+            "29944",
+            "--hash",
+            "--repeat",
+            "3"
+          ],
+          "log": "flash_gfx1030_on.rank2.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "rank": 3,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+            "--tp",
+            "4",
+            "--rank",
+            "3",
+            "--port",
+            "29944",
+            "--hash",
+            "--repeat",
+            "3"
+          ],
+          "log": "flash_gfx1030_on.rank3.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "rank": 0,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+            "--tp",
+            "4",
+            "--rank",
+            "0",
+            "--port",
+            "29944",
+            "--hash",
+            "--repeat",
+            "3"
+          ],
+          "log": "flash_gfx1030_on.rank0.log",
+          "log_sha256": "283b15a7f2276fd05a59a5df1929f0b3ffb7ad0a1331baf2b366d11bdae3a50f"
+        }
+      ]
+    },
+    {
+      "name": "flash_gfx1030_off",
+      "source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+      "binary_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "arch": "gfx1030",
+      "devices": "2,3,4,5",
+      "world": 4,
+      "mode": "off",
+      "hashes": [
+        "349d29968cc98589",
+        "349d29968cc98589",
+        "349d29968cc98589"
+      ],
+      "elapsed_seconds": 33.062,
+      "ranks": [
+        {
+          "rank": 1,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+            "--tp",
+            "4",
+            "--rank",
+            "1",
+            "--port",
+            "29945",
+            "--hash",
+            "--repeat",
+            "3",
+            "--policy",
+            "graphs=off"
+          ],
+          "log": "flash_gfx1030_off.rank1.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "rank": 2,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+            "--tp",
+            "4",
+            "--rank",
+            "2",
+            "--port",
+            "29945",
+            "--hash",
+            "--repeat",
+            "3",
+            "--policy",
+            "graphs=off"
+          ],
+          "log": "flash_gfx1030_off.rank2.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "rank": 3,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+            "--tp",
+            "4",
+            "--rank",
+            "3",
+            "--port",
+            "29945",
+            "--hash",
+            "--repeat",
+            "3",
+            "--policy",
+            "graphs=off"
+          ],
+          "log": "flash_gfx1030_off.rank3.log",
+          "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "rank": 0,
+          "exit_status": 0,
+          "command": [
+            "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+            "generate",
+            "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+            "--tp",
+            "4",
+            "--rank",
+            "0",
+            "--port",
+            "29945",
+            "--hash",
+            "--repeat",
+            "3",
+            "--policy",
+            "graphs=off"
+          ],
+          "log": "flash_gfx1030_off.rank0.log",
+          "log_sha256": "32e6a14779f74343096649ba3a55f6e68610393b6d00a1035acb32d4710e252d"
+        }
+      ]
+    }
+  ],
+  "gpu_authorization": {
+    "kind": "contracts paused and GPUs explicitly reserved for models",
+    "sha256": "1cb4f35b518a8e795e3017ab87d0528cdc01e04f5aca3dbf017765d0475a2e92"
+  },
+  "build_marker_sha256": "b3375fe322ee11d14fb4da927ef5204bcc4239c86fd854262b98b2c3a372e97d",
+  "result": "PASS"
+}

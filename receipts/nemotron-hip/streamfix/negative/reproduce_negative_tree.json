@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "reproducible_negative_source_tree",
+  "final_candidate_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "measured_negative_commit": "5f453065422cf278c0a367a2094a15c1085b209d",
+  "negative_tree": "41cf2bb3a75fedd447352e8cc1888553cb3b2f08",
+  "patch_file": "cc18314d_to_negative.patch",
+  "patch_sha256": "b7977afd91b751c418b7a1fe089b6f16ccf3c415cf70e0163f49a6275c3195a5",
+  "commit_metadata_sha256": "1a31cfc9e2491d8fb30e7b014cf3eb915b8304910ab2bd9abcd8da1a8161cfbb",
+  "commands": [
+    "git checkout --detach cc18314dce85b0968496b35333bdd8618b2f9227",
+    "git apply --index --binary cc18314d_to_negative.patch",
+    "git write-tree"
+  ],
+  "expected_write_tree": "41cf2bb3a75fedd447352e8cc1888553cb3b2f08",
+  "runtime_claim": false,
+  "actual_measurement_commands": [
+    "hcx/zb.sh sfnegative streamfix/negative/objects.log hip-kernel-contract-objects -Dhip-arch=gfx1100 -Doptimize=ReleaseFast --prefix out-gfx1100",
+    "hcx/zb.sh sfnegative streamfix/negative/limits_stale.log hip-kernel-contract-limits -Dhip-arch=gfx1100 -Doptimize=ReleaseFast --prefix out-gfx1100",
+    "hcx/zb.sh sfnegative streamfix/negative/limits_qualified_build.log hip-kernel-contract-limits tf-hip-kernel-contract -Dhip-arch=gfx1100 -Doptimize=ReleaseFast --prefix out-gfx1100",
+    "HIP_VISIBLE_DEVICES=1 out-gfx1100/bin/tf-hip-kernel-contract"
+  ],
+  "status": "Source tree reconstruction verified in a temporary Git index; completed runtime result is separately recorded in the packaged result and raw logs."
+}

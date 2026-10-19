@@ -1,0 +1,63 @@
+{
+  "raw_sha256": "f8de5fa25fad20b76642282e1f3f542133777913299ac7c7cac7144f99213149",
+  "processes": [
+    {
+      "pid": 1602205,
+      "executable": {
+        "path": "<USER_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+        "sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9"
+      },
+      "libraries": {
+        "<USER_HOME>/.local/rocm-rdna/lib/librccl.so.1.0": {
+          "sha256": "47044220951dccc5081a65417485da0669e8e6e8ebe7e431413706136183140a",
+          "bytes": 238551992
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "bytes": 28856816
+        }
+      }
+    },
+    {
+      "pid": 1602206,
+      "executable": {
+        "path": "<USER_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+        "sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9"
+      },
+      "libraries": {
+        "<USER_HOME>/.local/rocm-rdna/lib/librccl.so.1.0": {
+          "sha256": "47044220951dccc5081a65417485da0669e8e6e8ebe7e431413706136183140a",
+          "bytes": 238551992
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "bytes": 28856816
+        }
+      }
+    }
+  ],
+  "checkpoint_metadata": {
+    "model-00001-of-00004.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n7cc60a26a46712e471d74c64dc4460558b15194a879a99426c5647ef1d588ca6\n1792069418.7133656\n",
+    "README.md.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n398d8760ff48afe83be5c4fcf992f81a684223f7\n1792069355.9111753\n",
+    "model-00003-of-00004.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\nfcc12aa6d00fa75447fc01ba7efe288e5bae025ae44aaad0afde265ac3abb7f1\n1792069416.790278\n",
+    "config.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\nf3b94f4d971ab6f331c616a456bcb362c320ac94\n1792069355.9827874\n",
+    "generation_config.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\na41201df53f9d0769947989353b5d02e70491c56\n1792069356.0095394\n",
+    "chat_template.jinja.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\nd85b0c772f8fe585063847c5f6bf5ec48eb210be\n1792069356.027189\n",
+    "LICENSE.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n4d76cc87c9edb280753e3bee3b499ae461113835\n1792069356.0575962\n",
+    ".gitattributes.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n52373fe24473b1aa44333d318f578ae6bf04b49b\n1792069356.06313\n",
+    "model.safetensors.index.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n21843de40b11f8b1d45760afc0ff0a36ff27aac2\n1792069356.3321784\n",
+    "tokenizer_config.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n3231c597ea1b4b28e5a533222996ddc2dc27f53a\n1792069356.403445\n",
+    "tokenizer.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n623c34567aebb18582765289fbe23d901c62704d6518d71866e0e58db892b5b7\n1792069356.6195898\n",
+    "model-00004-of-00004.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n6fcd77b940874080dce8c63843c93957d96565284b7810063e592b6febd63089\n1792069394.0222912\n",
+    "mtp-4bit.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n4953d2323861b48db04d01e86559eb8b944f750ca1c1088409e2a65c6350f5f7\n1792069415.2523382\n",
+    "model-00002-of-00004.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\ned6020dad4cdeac47bb24d31ce8d212a607476358845b8620f1767b2fae30b3a\n1792069434.7565498\n"
+  }
+}

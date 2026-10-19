@@ -1,0 +1,2925 @@
+{
+  "driver_pid": 1569060,
+  "observation": "actual /proc/PID/maps samples; union per process",
+  "processes": [
+    {
+      "pid": 1569086,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.5-9B-MLX-4bit",
+        "$HOME/tf-truth/ids512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1100_Qwen3.5-9B-MLX-4bit.npy",
+        "--decode"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+      "executable_sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+      "stage": "qwen_gfx1100_Qwen3.5-9B-MLX-4bit",
+      "first_observed_unix": 1792449981.379134,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test": {
+          "sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+          "size_bytes": 20131952
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        }
+      },
+      "last_observed_unix": 1792449987.837587,
+      "maps_sha256": "0044dcd5016ea5123a3e81c118af9fc7c9a5c047755ba962e4db55a5be7e7aca"
+    },
+    {
+      "pid": 1570270,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.6-35B-A3B-MLX-4bit-MTP",
+        "$HOME/tf-truth/ids35_512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1100_Qwen3.6-35B-A3B-MLX-4bit-MTP.npy",
+        "--decode"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+      "executable_sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+      "stage": "qwen_gfx1100_Qwen3.6-35B-A3B-MLX-4bit-MTP",
+      "first_observed_unix": 1792449988.5800447,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test": {
+          "sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+          "size_bytes": 20131952
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        }
+      },
+      "last_observed_unix": 1792450012.357751,
+      "maps_sha256": "5051cfd71bedf0c2bfeb97d6c75cc482398b1fed7a7cad88b929c79e61bf3649"
+    },
+    {
+      "pid": 1570687,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.8-27B-MLX-4bit",
+        "$HOME/tf-truth/ids512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1100_Qwen3.8-27B-MLX-4bit.npy",
+        "--decode"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test",
+      "executable_sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+      "stage": "qwen_gfx1100_Qwen3.8-27B-MLX-4bit",
+      "first_observed_unix": 1792450013.2436507,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-qwen35-test": {
+          "sha256": "f30f987083d75b3e59e01ca8da742ca4a5fda0b625b0e83f67cc41340f2e5b24",
+          "size_bytes": 20131952
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        }
+      },
+      "last_observed_unix": 1792450042.5786,
+      "maps_sha256": "f0aaaa40fc2657af83e7ad4d51becd2bb1278702e8fb0b7a493a23413c6709e8"
+    },
+    {
+      "pid": 1573542,
+      "command": [
+        "./.zig-cache/o/e95f575a3a0769d0c752868c376807cb/test",
+        "--cache-dir=./.zig-cache",
+        "--seed=0xb49963a4",
+        "--listen=-"
+      ],
+      "executable": "$HOME/nh/sf46/.zig-cache/o/e95f575a3a0769d0c752868c376807cb/test",
+      "executable_sha256": "07261cecfe6333986fe5312e6ae2fb8fa076a3e2a9248b404dd58c873822a1b2",
+      "stage": "kernels_gfx1030",
+      "first_observed_unix": 1792450200.845082,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "$HOME/nh/sf46/.zig-cache/o/e95f575a3a0769d0c752868c376807cb/test": {
+          "sha256": "07261cecfe6333986fe5312e6ae2fb8fa076a3e2a9248b404dd58c873822a1b2",
+          "size_bytes": 60569717
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        }
+      },
+      "last_observed_unix": 1792450786.2071414,
+      "maps_sha256": "a2542155ccee757ac2866038c628b1cba74fd59a506e12d207674f418d26c117"
+    },
+    {
+      "pid": 1579795,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.5-9B-MLX-4bit",
+        "$HOME/tf-truth/ids512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1030_Qwen3.5-9B-MLX-4bit.npy",
+        "--decode"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+      "executable_sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+      "stage": "qwen_gfx1030_Qwen3.5-9B-MLX-4bit",
+      "first_observed_unix": 1792450786.6690886,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test": {
+          "sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+          "size_bytes": 18559280
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        }
+      },
+      "last_observed_unix": 1792450798.332824,
+      "maps_sha256": "78172fde6ba8d5e22b229749bac836a382ae6e5934f8d43544a8e70ba63edcda"
+    },
+    {
+      "pid": 1579888,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.6-35B-A3B-MLX-4bit-MTP",
+        "$HOME/tf-truth/ids35_512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1030_Qwen3.6-35B-A3B-MLX-4bit-MTP.npy",
+        "--decode"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+      "executable_sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+      "stage": "qwen_gfx1030_Qwen3.6-35B-A3B-MLX-4bit-MTP",
+      "first_observed_unix": 1792450799.215465,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test": {
+          "sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+          "size_bytes": 18559280
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        }
+      },
+      "last_observed_unix": 1792450823.713915,
+      "maps_sha256": "28c73f2f4c895c7643d78b4e648d38c3ab6a7cd8c5d50c7c7f49ad1fe97ac4ec"
+    },
+    {
+      "pid": 1580379,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+        "logits",
+        "$HOME/models/Qwen3.8-27B-MLX-4bit",
+        "$HOME/tf-truth/ids512.npy",
+        "$HOME/hcx/streamfix/final_models/qwen_gfx1030_Qwen3.8-27B-MLX-4bit.npy",
+        "--decode"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test",
+      "executable_sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+      "stage": "qwen_gfx1030_Qwen3.8-27B-MLX-4bit",
+      "first_observed_unix": 1792450824.6048243,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-qwen35-test": {
+          "sha256": "4d641269a59c0d3499fe456e587ea213101ccb5433efd84c7b4b3792eb6a9085",
+          "size_bytes": 18559280
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        }
+      },
+      "last_observed_unix": 1792450856.1062784,
+      "maps_sha256": "a8bc70b27d97d5ed4a673a632c9aef45a0ef999188cdac13470fe777db17d0b7"
+    },
+    {
+      "pid": 1580462,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-3bit-MTP",
+        "--tp",
+        "2",
+        "--rank",
+        "1",
+        "--port",
+        "29940",
+        "--hash",
+        "--repeat",
+        "3"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+      "executable_sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+      "stage": "flash_gfx1100_on",
+      "first_observed_unix": 1792450856.8774073,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test": {
+          "sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+          "size_bytes": 17162416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450880.9500265,
+      "maps_sha256": "c9698f4614ec3d49734f0c9f9a41f4cd6797711bf79a9fe2efd1446fdd433bb3"
+    },
+    {
+      "pid": 1580463,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-3bit-MTP",
+        "--tp",
+        "2",
+        "--rank",
+        "0",
+        "--port",
+        "29940",
+        "--hash",
+        "--repeat",
+        "3"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+      "executable_sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+      "stage": "flash_gfx1100_on",
+      "first_observed_unix": 1792450856.8788977,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test": {
+          "sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+          "size_bytes": 17162416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450881.6023128,
+      "maps_sha256": "f7a794cacc1369eb4daac3ff4d509ae8138ebfd86963d82aaf78f405981a5698"
+    },
+    {
+      "pid": 1581157,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-3bit-MTP",
+        "--tp",
+        "2",
+        "--rank",
+        "1",
+        "--port",
+        "29941",
+        "--hash",
+        "--repeat",
+        "3",
+        "--policy",
+        "graphs=off"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+      "executable_sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+      "stage": "flash_gfx1100_off",
+      "first_observed_unix": 1792450882.8765175,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test": {
+          "sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+          "size_bytes": 17162416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450907.794981,
+      "maps_sha256": "30c0fa4ae466611be6244b10cf4e6353bfa8ded3fbbc4d91791013dcf0c3041f"
+    },
+    {
+      "pid": 1581158,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-3bit-MTP",
+        "--tp",
+        "2",
+        "--rank",
+        "0",
+        "--port",
+        "29941",
+        "--hash",
+        "--repeat",
+        "3",
+        "--policy",
+        "graphs=off"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test",
+      "executable_sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+      "stage": "flash_gfx1100_off",
+      "first_observed_unix": 1792450882.8778734,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "$HOME/nh/sf46/out-gfx1100/bin/tf-flashnext-hip-test": {
+          "sha256": "267ec719d275aebcc666b2c2bde55590e631c35dd173dec0b41fae03dd227654",
+          "size_bytes": 17162416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450907.3326855,
+      "maps_sha256": "b8fb518e3927d0ffb00190dd40f681586d93845c811e99af2de6251bfe437420"
+    },
+    {
+      "pid": 1581307,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+        "--tp",
+        "4",
+        "--rank",
+        "1",
+        "--port",
+        "29944",
+        "--hash",
+        "--repeat",
+        "3"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+      "executable_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "stage": "flash_gfx1030_on",
+      "first_observed_unix": 1792450909.0276463,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test": {
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+          "size_bytes": 15589744
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450938.1539042,
+      "maps_sha256": "f4d2b991426bb2f96aeff96716a6e7f11af8a082d67f9c45a978c4a6a5454e3e"
+    },
+    {
+      "pid": 1581308,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+        "--tp",
+        "4",
+        "--rank",
+        "2",
+        "--port",
+        "29944",
+        "--hash",
+        "--repeat",
+        "3"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+      "executable_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "stage": "flash_gfx1030_on",
+      "first_observed_unix": 1792450909.029025,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test": {
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+          "size_bytes": 15589744
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450938.2959192,
+      "maps_sha256": "590f32b033e4f7e0bb89042e4be3d568877937efc181a956eeea568faee1f1b9"
+    },
+    {
+      "pid": 1581309,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+        "--tp",
+        "4",
+        "--rank",
+        "3",
+        "--port",
+        "29944",
+        "--hash",
+        "--repeat",
+        "3"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+      "executable_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "stage": "flash_gfx1030_on",
+      "first_observed_unix": 1792450909.0302787,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test": {
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+          "size_bytes": 15589744
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450938.2996387,
+      "maps_sha256": "9c96a07e1723f1ffa76a735cffe64bfa1a28fa887538da801ec2739f7b4e92e6"
+    },
+    {
+      "pid": 1581310,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+        "--tp",
+        "4",
+        "--rank",
+        "0",
+        "--port",
+        "29944",
+        "--hash",
+        "--repeat",
+        "3"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+      "executable_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "stage": "flash_gfx1030_on",
+      "first_observed_unix": 1792450909.0315294,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test": {
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+          "size_bytes": 15589744
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450939.3831015,
+      "maps_sha256": "0953a51e9d23c5b3b4de5b3c1e72bccddf8711d76cc2db69ebe9728360e8569c"
+    },
+    {
+      "pid": 1581835,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+        "--tp",
+        "4",
+        "--rank",
+        "1",
+        "--port",
+        "29945",
+        "--hash",
+        "--repeat",
+        "3",
+        "--policy",
+        "graphs=off"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+      "executable_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "stage": "flash_gfx1030_off",
+      "first_observed_unix": 1792450940.0399446,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test": {
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+          "size_bytes": 15589744
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450971.0544906,
+      "maps_sha256": "d181c67d68f80821c31339b5ab6ddd762b695406a491e02da164b163ce435c67"
+    },
+    {
+      "pid": 1581836,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+        "--tp",
+        "4",
+        "--rank",
+        "2",
+        "--port",
+        "29945",
+        "--hash",
+        "--repeat",
+        "3",
+        "--policy",
+        "graphs=off"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+      "executable_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "stage": "flash_gfx1030_off",
+      "first_observed_unix": 1792450940.0412533,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test": {
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+          "size_bytes": 15589744
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450971.0912304,
+      "maps_sha256": "9caa9012ba85d4262103d82deb2ab8235708f7377d2162d36b8043f942dd5e96"
+    },
+    {
+      "pid": 1581837,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+        "--tp",
+        "4",
+        "--rank",
+        "3",
+        "--port",
+        "29945",
+        "--hash",
+        "--repeat",
+        "3",
+        "--policy",
+        "graphs=off"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+      "executable_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "stage": "flash_gfx1030_off",
+      "first_observed_unix": 1792450940.0425265,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test": {
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+          "size_bytes": 15589744
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450971.1126947,
+      "maps_sha256": "e7a84149df8d22e6bad4aa89df5d39c16057425bbf13a911bbac2125eeb454d6"
+    },
+    {
+      "pid": 1581838,
+      "command": [
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+        "generate",
+        "$HOME/models/Qwen3.8-Flash-Next-MLX-4bit-MTP",
+        "--tp",
+        "4",
+        "--rank",
+        "0",
+        "--port",
+        "29945",
+        "--hash",
+        "--repeat",
+        "3",
+        "--policy",
+        "graphs=off"
+      ],
+      "executable": "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test",
+      "executable_sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+      "stage": "flash_gfx1030_off",
+      "first_observed_unix": 1792450940.0437999,
+      "mapped_files": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": {
+          "sha256": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+          "size_bytes": 28856816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1": {
+          "sha256": "cc7c1d8faa3f067072c6496cdaba16ed792d94130c41b2b0d5f01bc6367631f5",
+          "size_bytes": 1198616
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2": {
+          "sha256": "27361c0c552d2afd5ecf9079f356309ed827e9a27d35f2fc68c7b5e6b5c83199",
+          "size_bytes": 129576
+        },
+        "/usr/lib64/ld-linux-x86-64.so.2": {
+          "sha256": "94d6dcbe7e1dd2d6fff619aa76f6a8ebc6acf37a18ef67562889e8d075fd4518",
+          "size_bytes": 983464
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7": {
+          "sha256": "5fc4ab0e6899318ece9bea43d3d397d20053418a5e40cb6bc86efe19a801c75e",
+          "size_bytes": 879168
+        },
+        "/usr/lib64/libgcc_s-15-20260722.so.1": {
+          "sha256": "5c4a8dcab096509ff454c0516cf364ecc9c727f67973d174606a590bd35baf05",
+          "size_bytes": 182368
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git": {
+          "sha256": "6e5800b4246c6edb0db86078f28ecad407a3eb0fd1172d744c4b0a9a421c9da7",
+          "size_bytes": 133699168
+        },
+        "/usr/lib64/libstdc++.so.6.0.34": {
+          "sha256": "07d0c3d58cb58d6eebb22ee5c079c1968150e1ca2b3f61d9cbf423003c410b3e",
+          "size_bytes": 2639880
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git": {
+          "sha256": "1a3a13c86dd3e67a308d2233d7ce9f72194efd0983632f9fc4f9ba5e5970cad5",
+          "size_bytes": 90165816
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1": {
+          "sha256": "15402b36e2fdb0762e0b6590c3470fccec5e80cc8010c84ac4835573d592c02d",
+          "size_bytes": 218464
+        },
+        "/usr/lib64/libdl.so.2": {
+          "sha256": "9db1e55748e995dfc7469f87709d16e8c280daa58ab50a5c90f0ec9c153e1cff",
+          "size_bytes": 11256
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0": {
+          "sha256": "197d173d1e5aa1aea1acc655bdf3340888b72ba5a082982e58276761f7080236",
+          "size_bytes": 967760
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1": {
+          "sha256": "5485dbf004f79fe2ca51a11ff89625299a8602bb46ebc4f2a25471e81825faf5",
+          "size_bytes": 251416
+        },
+        "/usr/lib64/libm.so.6": {
+          "sha256": "0ee3607107c776849da1e050a7accb6b84acffb75b40de6c51877aadb77cfac6",
+          "size_bytes": 1013240
+        },
+        "/usr/lib64/libpthread.so.0": {
+          "sha256": "f6cd66d34787e7e3b64bf9ef562357607bf6836ab2ec642d1161d80a838d4daf",
+          "size_bytes": 11272
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1": {
+          "sha256": "333b980e3f706f7196c73a33967c7979e9fd47b6d5f5f51ed3990142ef4142cb",
+          "size_bytes": 219056
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2": {
+          "sha256": "cf203bcf5f42df87c5e292b254ea6cd801c3612027c04e5f29bfc71607877775",
+          "size_bytes": 360336
+        },
+        "/usr/lib64/librt.so.1": {
+          "sha256": "637a4480b85302f25c90a96549deb976303716331399acc0e645feaf99311d88",
+          "size_bytes": 11416
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0": {
+          "sha256": "7e7d63d3ff95582b4ac87ea915c6797c44fed2473c457feaef805886913a0e83",
+          "size_bytes": 339976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so": {
+          "sha256": "fe4102b002321cea17405cf9c6aa04cf46e726bea5666c40ac8639684314de02",
+          "size_bytes": 104016
+        },
+        "/usr/lib64/libc.so.6": {
+          "sha256": "61ffe37ef5fc0004f60308dc5b56f9fc6c19a7a751e632da91202419d0cf92a1",
+          "size_bytes": 2451336
+        },
+        "$HOME/nh/sf46/out-gfx1030/bin/tf-flashnext-hip-test": {
+          "sha256": "09fe526bf6472c0a7e13f3322152e2fbdc30a0a5713daf480f0405ef2e599e39",
+          "size_bytes": 15589744
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0": {
+          "sha256": "8aab37bd71b96a08db1ff6ac8fe841aae1b6025c75f1c15e43494eb33d1fb868",
+          "size_bytes": 12821104
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": {
+          "sha256": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+          "size_bytes": 4828160
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200": {
+          "sha256": "f83b147afcb0b69336ac0cea582766168b11c0187857198d588fdd10c1f9bac8",
+          "size_bytes": 546968
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so": {
+          "sha256": "2e0d58830155cc71116cf9cb732c07e6179b53e015f5d8250355a4835a766658",
+          "size_bytes": 795528
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0": {
+          "sha256": "1f42251154236bc821aabd1e1710c680aac3984291ad20bbb94d61c05c0775a3",
+          "size_bytes": 7704
+        },
+        "/etc/ld.so.cache": {
+          "sha256": "9191ac0a711c2527b516326d165e1ae1cc5ce153722f3454d8cfbd3588097446",
+          "size_bytes": 71619
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0": {
+          "sha256": "d76589e7b52c058a66c72e9f9b10d43ab6d302f30b327e5403f252a49cc6f361",
+          "size_bytes": 5803976
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0": {
+          "sha256": "d73ed5e00af232ae518ff738218d3795f7b66c60208c2b11f78183f27f373175",
+          "size_bytes": 76672
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401": {
+          "sha256": "143a22f67c87d800b62d1be821cc7680a3e4258fd4be6f4a4912457e0f6d0bce",
+          "size_bytes": 16680
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200": {
+          "sha256": "ab2dc13a18577ce7d313088ab90d5dcf945ac3f49a061a65381799b4a64fc0c0",
+          "size_bytes": 116032
+        },
+        "/opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0": {
+          "sha256": "e66ab139f55222a33755ac2776a3a1f8482aa8198c88050e4b18749173cfa6d1",
+          "size_bytes": 4092800
+        },
+        "/usr/lib64/libnl-route-3.so.200.26.0": {
+          "sha256": "846695b3d633cc4ff2f0c449545f4c222ebcda47bd1667aa886ce511f127917c",
+          "size_bytes": 639408
+        },
+        "/usr/lib64/libnl-3.so.200.26.0": {
+          "sha256": "35054b7919c5a56685f5959a6453ea17166535ee6c18d549d220a847eb1e0827",
+          "size_bytes": 142600
+        },
+        "/usr/lib64/libmlx5.so.1.25.58.0": {
+          "sha256": "5d28f4c1e96ed193e26c3b37ce4566995b6b2b7c50923d7071e2050f4dff9aed",
+          "size_bytes": 485880
+        },
+        "/usr/lib64/libibverbs.so.1.14.58.0": {
+          "sha256": "5affeeba5657d7dcc58daa2409c8e1b8cf09a86cb45c44ee13990b381b609adb",
+          "size_bytes": 133992
+        }
+      },
+      "last_observed_unix": 1792450972.0207913,
+      "maps_sha256": "edc9740c11dd0bdbb90ec34aca646f4eafcb3381b77707b88ffb06f8bdbf28a3"
+    }
+  ]
+}

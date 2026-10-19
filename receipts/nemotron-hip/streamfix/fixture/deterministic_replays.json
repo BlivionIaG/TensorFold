@@ -1,0 +1,191 @@
+{
+  "target": -8,
+  "K": 2048,
+  "first_half": 255,
+  "second_half": 255,
+  "first_eight_second_half": 256,
+  "maximum_sum_abs_qx": 1044488,
+  "exact_fp32_integer_range": 16777216,
+  "reduced_replays": [
+    {
+      "group": 32,
+      "accumulator": "f16",
+      "order": "seq",
+      "whole_grouped_direct": [
+        "nan",
+        "inf",
+        "inf"
+      ]
+    },
+    {
+      "group": 32,
+      "accumulator": "f16",
+      "order": "pair",
+      "whole_grouped_direct": [
+        "nan",
+        "nan",
+        "nan"
+      ]
+    },
+    {
+      "group": 32,
+      "accumulator": "f16",
+      "order": "stride",
+      "whole_grouped_direct": [
+        "nan",
+        -776.0,
+        32.0
+      ]
+    },
+    {
+      "group": 32,
+      "accumulator": "bf16",
+      "order": "seq",
+      "whole_grouped_direct": [
+        131072.0,
+        -960.0,
+        -65536.0
+      ]
+    },
+    {
+      "group": 32,
+      "accumulator": "bf16",
+      "order": "pair",
+      "whole_grouped_direct": [
+        -4096.0,
+        -2048.0,
+        -1024.0
+      ]
+    },
+    {
+      "group": 32,
+      "accumulator": "bf16",
+      "order": "stride",
+      "whole_grouped_direct": [
+        -4096.0,
+        -1056.0,
+        -960.0
+      ]
+    },
+    {
+      "group": 64,
+      "accumulator": "f16",
+      "order": "seq",
+      "whole_grouped_direct": [
+        "nan",
+        "inf",
+        "inf"
+      ]
+    },
+    {
+      "group": 64,
+      "accumulator": "f16",
+      "order": "pair",
+      "whole_grouped_direct": [
+        "nan",
+        "nan",
+        "nan"
+      ]
+    },
+    {
+      "group": 64,
+      "accumulator": "f16",
+      "order": "stride",
+      "whole_grouped_direct": [
+        "nan",
+        "nan",
+        32.0
+      ]
+    },
+    {
+      "group": 64,
+      "accumulator": "bf16",
+      "order": "seq",
+      "whole_grouped_direct": [
+        131072.0,
+        -896.0,
+        -65536.0
+      ]
+    },
+    {
+      "group": 64,
+      "accumulator": "bf16",
+      "order": "pair",
+      "whole_grouped_direct": [
+        -4096.0,
+        -2048.0,
+        -1024.0
+      ]
+    },
+    {
+      "group": 64,
+      "accumulator": "bf16",
+      "order": "stride",
+      "whole_grouped_direct": [
+        -4096.0,
+        -2048.0,
+        -960.0
+      ]
+    },
+    {
+      "group": 128,
+      "accumulator": "f16",
+      "order": "seq",
+      "whole_grouped_direct": [
+        "nan",
+        "inf",
+        "inf"
+      ]
+    },
+    {
+      "group": 128,
+      "accumulator": "f16",
+      "order": "pair",
+      "whole_grouped_direct": [
+        "nan",
+        "nan",
+        "nan"
+      ]
+    },
+    {
+      "group": 128,
+      "accumulator": "f16",
+      "order": "stride",
+      "whole_grouped_direct": [
+        "nan",
+        "nan",
+        32.0
+      ]
+    },
+    {
+      "group": 128,
+      "accumulator": "bf16",
+      "order": "seq",
+      "whole_grouped_direct": [
+        131072.0,
+        -88576.0,
+        -65536.0
+      ]
+    },
+    {
+      "group": 128,
+      "accumulator": "bf16",
+      "order": "pair",
+      "whole_grouped_direct": [
+        -4096.0,
+        -88064.0,
+        -1024.0
+      ]
+    },
+    {
+      "group": 128,
+      "accumulator": "bf16",
+      "order": "stride",
+      "whole_grouped_direct": [
+        -4096.0,
+        -88064.0,
+        -960.0
+      ]
+    }
+  ]
+}

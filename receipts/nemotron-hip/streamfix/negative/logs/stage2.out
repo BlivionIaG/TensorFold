@@ -1,0 +1,5 @@
+QUALIFIED_BUILD_STATUS 0
+GPU_NEGATIVE_START HIP_VISIBLE_DEVICES=1
+NEGATIVE_RUN_STATUS 1
+SUMMARY gfx1100 49 kernels: 30 pass gates 1-4, 19 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 132324 ms, limits 3894 ms
+NEGATIVE_CONTROL_EXPECTED_FAILURE_PASS

@@ -1,0 +1,13 @@
+{
+  "measurement": "before GPU model checks",
+  "files": {
+    "ids512.npy": {
+      "sha256": "a72bf149107951e824f2c5c588904b3e13126929e55815d16b48942c5d3db576",
+      "size_bytes": 4224
+    },
+    "ids35_512.npy": {
+      "sha256": "a72bf149107951e824f2c5c588904b3e13126929e55815d16b48942c5d3db576",
+      "size_bytes": 4224
+    }
+  }
+}

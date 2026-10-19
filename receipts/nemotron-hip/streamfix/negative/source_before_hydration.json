@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "old_production_headers_strict_fixture_control",
+  "snapshot_before_resource_hydration": "b953f3fb97444d9132e3fb0efb02d04adee5d2c8",
+  "old_production_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "files": [
+    {
+      "path": "zig/kernels/hip/quant/mlx_decoder.hpp",
+      "sha256": "ca5b0a64a03160149e2fb8f1e01982d05565c96bbb32eecb85955f8777385832",
+      "blob": "eb9a567e2c51ef715b1c74c2f809f13f891b5c7f"
+    },
+    {
+      "path": "zig/kernels/hip/tiles/stream.hpp",
+      "sha256": "cc3ec0fdab8dd17d2bedd6328885eb7b88c4ccd985d7dab174acd12d7347181b",
+      "blob": "d854445677123c197d1c8114049c58a00329a119"
+    },
+    {
+      "path": "zig/tests/hip/contract_stream.zig",
+      "sha256": "b253112dc53fc9c2bebd08574343bcdfcd4238f70c722efba622594bdc6999b1",
+      "blob": "ac3ecbdfab8bc03212c2d109944f76b1157cb3f0"
+    },
+    {
+      "path": "zig/tests/hip/contract_relu2.zig",
+      "sha256": "f714984e77edf09bf7423c9cbe12edf1709f9ba3493f88abcc3bf9e40b5a0db9",
+      "blob": "89d2adadd0b607b9dc29d532d15f0b5f95f64696"
+    },
+    {
+      "path": "zig/tests/hip/contract_relu2_pair.zig",
+      "sha256": "712845696e1a37a09d2ddf6fe20b3283b5a09194d377f5e1a455cc292edc1b05",
+      "blob": "93c90b7b492d3e6bc5a7ff75dddcfe36fb200e27"
+    }
+  ],
+  "resource_status": "actual old-header metadata derivation in progress; no qualified negative run yet",
+  "runtime_claim": false,
+  "plain_fixture_source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "other_strict_fixture_source_commit": "0cb981eed5611caa5768f48a1e85828e10dbd068",
+  "fixture_note": "Only contract_stream.zig was copied from final candidate; existing single/paired strict class fixtures remain from the prototype parent and their actual blobs are listed."
+}

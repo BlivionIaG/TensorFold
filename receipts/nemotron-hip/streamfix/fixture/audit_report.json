@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "publication_performed": false,
+  "review_source_commit": "1596156e21769324b675ef5e0caae0452f361660",
+  "measured_native_model_source_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "negative_measured_source_commit": "5f453065422cf278c0a367a2094a15c1085b209d",
+  "files": [
+    {
+      "file": "cpu_validated.json",
+      "raw_sha256": "e0e5fc9f4d17b6fc55339c2512517532ea962ad16db1227a3cd3e4a71628d906",
+      "published_sha256": "e0e5fc9f4d17b6fc55339c2512517532ea962ad16db1227a3cd3e4a71628d906",
+      "normalized_paths": false
+    },
+    {
+      "file": "probe.zig",
+      "raw_sha256": "25a6164b42c2b6506077baf729f636faa2cdea37edb7b8ba8c46d52c17b31514",
+      "published_sha256": "25a6164b42c2b6506077baf729f636faa2cdea37edb7b8ba8c46d52c17b31514",
+      "normalized_paths": false
+    },
+    {
+      "file": "probe.log",
+      "raw_sha256": "72899b3f527fe049dc52d0a53ddfffd5d857d638b544bdcc3b013537d6e701b7",
+      "published_sha256": "72899b3f527fe049dc52d0a53ddfffd5d857d638b544bdcc3b013537d6e701b7",
+      "normalized_paths": false
+    },
+    {
+      "file": "probe_actual_rows.zig",
+      "raw_sha256": "2deb3d1eef56d0ede9b814064028736211e5f209c18919e26b18525510f773f1",
+      "published_sha256": "2deb3d1eef56d0ede9b814064028736211e5f209c18919e26b18525510f773f1",
+      "normalized_paths": false
+    },
+    {
+      "file": "probe_actual_rows.log",
+      "raw_sha256": "a3ae2f7b52ef52d23d887fae1a94d5c4271eac88ffebe969f5939821ccb03256",
+      "published_sha256": "a3ae2f7b52ef52d23d887fae1a94d5c4271eac88ffebe969f5939821ccb03256",
+      "normalized_paths": false
+    },
+    {
+      "file": "old_probe.zig",
+      "raw_sha256": "65169c8be5f17f8b33993b7d41a546bf3289e07a3c8c717317d3cd7e913fccae",
+      "published_sha256": "65169c8be5f17f8b33993b7d41a546bf3289e07a3c8c717317d3cd7e913fccae",
+      "normalized_paths": false
+    },
+    {
+      "file": "old_probe.log",
+      "raw_sha256": "9eeed5c6f46651cec0c0e9c5e0e61880c443a592090b4ca0a2df6428c63f9898",
+      "published_sha256": "9eeed5c6f46651cec0c0e9c5e0e61880c443a592090b4ca0a2df6428c63f9898",
+      "normalized_paths": false
+    },
+    {
+      "file": "actual_runner_indices.json",
+      "raw_sha256": "580621bb8286d53f3a8c28d2d0afff3fa85fad2ea354737f2693095edac9a832",
+      "published_sha256": "580621bb8286d53f3a8c28d2d0afff3fa85fad2ea354737f2693095edac9a832",
+      "normalized_paths": false
+    },
+    {
+      "file": "deterministic_replays.json",
+      "raw_sha256": "f0f465b4ca8d3f12def36e81c176de3c9bbee393d0650d40f9969f673f4ff5ba",
+      "published_sha256": "f0f465b4ca8d3f12def36e81c176de3c9bbee393d0650d40f9969f673f4ff5ba",
+      "normalized_paths": false
+    },
+    {
+      "file": "source_bridge_cc18314d_1596156e.json",
+      "raw_sha256": "939870c46616ed84305b167d59942c330b75d5105b8fba4c4575f522ea10c728",
+      "published_sha256": "939870c46616ed84305b167d59942c330b75d5105b8fba4c4575f522ea10c728",
+      "normalized_paths": false
+    },
+    {
+      "file": "source_bridge_cc18314d_1596156e.md",
+      "raw_sha256": "679b30cfae9c2b0b05e598156b870634756ee688991d69e56c98310d06e2c3d0",
+      "published_sha256": "679b30cfae9c2b0b05e598156b870634756ee688991d69e56c98310d06e2c3d0",
+      "normalized_paths": false
+    },
+    {
+      "file": "cc18314d_to_1596156e.patch",
+      "raw_sha256": "b6faf72389223ad532fd3256533525c38217023569ac80d2a1eaae78ffeb3d64",
+      "published_sha256": "b6faf72389223ad532fd3256533525c38217023569ac80d2a1eaae78ffeb3d64",
+      "normalized_paths": false
+    },
+    {
+      "file": "static_validated.json",
+      "raw_sha256": "bbfd3a8517be939e6e7ef4f3511f3fd9ba938150d4c59ff36188906baa0b608d",
+      "published_sha256": "bbfd3a8517be939e6e7ef4f3511f3fd9ba938150d4c59ff36188906baa0b608d",
+      "normalized_paths": false
+    },
+    {
+      "file": "source/contract_stream.zig",
+      "raw_sha256": "ce73e2605d0942a7bfe6c3698cd630ba2742990a2a5de043d3067d782e2c4b27",
+      "published_sha256": "ce73e2605d0942a7bfe6c3698cd630ba2742990a2a5de043d3067d782e2c4b27",
+      "normalized_paths": false
+    },
+    {
+      "file": "static_1596156e.json",
+      "raw_sha256": "e9eeeb0314ef627511e0a5ae281616eb1ddf5da54e47fc7405a0edf20c3204c0",
+      "published_sha256": "e9eeeb0314ef627511e0a5ae281616eb1ddf5da54e47fc7405a0edf20c3204c0",
+      "normalized_paths": false
+    },
+    {
+      "file": "hip_stub/1596156e_stub_command.txt",
+      "raw_sha256": "95f043a3d728cbfb717bf52b1cb4685ae9646eb2ceaf79ec22de2438111755dd",
+      "published_sha256": "8d7c63f4bb21c2dc3b4b2213f060d63820bad7a6c2ec7d93afb2729b43148bcf",
+      "normalized_paths": true
+    },
+    {
+      "file": "hip_stub/1596156e_stub.log",
+      "raw_sha256": "f891dbdfc0402cd4ba60fab1be3245dfec559c5d7afc7e21b87e795a73d05e5f",
+      "published_sha256": "f891dbdfc0402cd4ba60fab1be3245dfec559c5d7afc7e21b87e795a73d05e5f",
+      "normalized_paths": false
+    },
+    {
+      "file": "hip_stub/kernels.zig",
+      "raw_sha256": "88bb8c9237bbb76e3f12f8e3335bf0b77b2b9b1333f11544b268739b3e893d65",
+      "published_sha256": "88bb8c9237bbb76e3f12f8e3335bf0b77b2b9b1333f11544b268739b3e893d65",
+      "normalized_paths": false
+    },
+    {
+      "file": "hip_stub/controls.zig",
+      "raw_sha256": "06afc6270548704a953a4db0f1e878b336d076fa21e7dd95b8af4228717c12e9",
+      "published_sha256": "06afc6270548704a953a4db0f1e878b336d076fa21e7dd95b8af4228717c12e9",
+      "normalized_paths": false
+    },
+    {
+      "file": "mac/mac_1596156e_retry.json",
+      "raw_sha256": "bee29943b99b2b2c66343ca70d527fca1154c5532991694123bf4795937898cf",
+      "published_sha256": "64e17d42be8b50bffaf566d75ff04d3e955008d6401b15d3ce005a5a22be47f3",
+      "normalized_paths": true
+    },
+    {
+      "file": "mac/mac_1596156e_retry.gate.log",
+      "raw_sha256": "04b8f1f4c59752e18f6f4d84a808e0e2b4f3f7cb70e8217279d219055e67ef25",
+      "published_sha256": "a12b43b383f5e01215233ee3c36d94bb3ef36656029c30af8f4b5bcdb37dbe41",
+      "normalized_paths": true
+    },
+    {
+      "file": "mac/mac_1596156e_retry.plain.log",
+      "raw_sha256": "a399c2381b12e65df62113254b91a8ef37f89cf690ec625eb2293674bc5a01a4",
+      "published_sha256": "a399c2381b12e65df62113254b91a8ef37f89cf690ec625eb2293674bc5a01a4",
+      "normalized_paths": false
+    }
+  ],
+  "cpu_validated": true,
+  "source_bridge_only": true,
+  "static_validated": true,
+  "hip_stub_exit": 0,
+  "mac_status": "PASS actual review source: all requested Mac gates and plain build",
+  "failed_sandbox_attempt": {
+    "reason": "Metal compiler module-cache write permission denied; attempt aborted, no numerical conclusion",
+    "raw_log_sha256": "051b973b42d5ba09d7a3b2de6fe12609f7afba1e0fddb63500d2a784f244e4c5",
+    "raw_log_kept_local": true
+  },
+  "path_redaction": "Only private executable/work/cache paths are replaced by named placeholders. Original raw SHA256 and published SHA256 are recorded separately.",
+  "staged_sha256": {
+    "actual_runner_indices.json": "580621bb8286d53f3a8c28d2d0afff3fa85fad2ea354737f2693095edac9a832",
+    "deterministic_replays.json": "f0f465b4ca8d3f12def36e81c176de3c9bbee393d0650d40f9969f673f4ff5ba",
+    "probe.log": "72899b3f527fe049dc52d0a53ddfffd5d857d638b544bdcc3b013537d6e701b7",
+    "static_1596156e.json": "e9eeeb0314ef627511e0a5ae281616eb1ddf5da54e47fc7405a0edf20c3204c0",
+    "probe_actual_rows.log": "a3ae2f7b52ef52d23d887fae1a94d5c4271eac88ffebe969f5939821ccb03256",
+    "old_probe.log": "9eeed5c6f46651cec0c0e9c5e0e61880c443a592090b4ca0a2df6428c63f9898",
+    "cc18314d_to_1596156e.patch": "b6faf72389223ad532fd3256533525c38217023569ac80d2a1eaae78ffeb3d64",
+    "reproduce_mac.sh": "beb1dda9850906d542da9ac1d850af81f03f15fd6cde6459ab9ef976c2ad956e",
+    "README.md": "09cee6b118cf775eae918fd1911e347ba2d1276c9445495e12b70f05342cbce5",
+    "cpu_validated.json": "e0e5fc9f4d17b6fc55339c2512517532ea962ad16db1227a3cd3e4a71628d906",
+    "source_bridge_cc18314d_1596156e.json": "939870c46616ed84305b167d59942c330b75d5105b8fba4c4575f522ea10c728",
+    "probe_actual_rows.zig": "2deb3d1eef56d0ede9b814064028736211e5f209c18919e26b18525510f773f1",
+    "old_probe.zig": "65169c8be5f17f8b33993b7d41a546bf3289e07a3c8c717317d3cd7e913fccae",
+    "reproduce_cpu.sh": "7a21747fd6263706873994a4ee2aa933a12eacc5173fbaf59acd68521ff6e03e",
+    "mac_validated.json": "825613251408a9be95e32011fd942a8764723777ed34aa12bea678ac6d1176d7",
+    "source_bridge_cc18314d_1596156e.md": "679b30cfae9c2b0b05e598156b870634756ee688991d69e56c98310d06e2c3d0",
+    "probe.zig": "25a6164b42c2b6506077baf729f636faa2cdea37edb7b8ba8c46d52c17b31514",
+    "static_validated.json": "bbfd3a8517be939e6e7ef4f3511f3fd9ba938150d4c59ff36188906baa0b608d",
+    "source/contract_stream.zig": "ce73e2605d0942a7bfe6c3698cd630ba2742990a2a5de043d3067d782e2c4b27",
+    "mac/mac_1596156e_retry.plain.log": "a399c2381b12e65df62113254b91a8ef37f89cf690ec625eb2293674bc5a01a4",
+    "mac/mac_1596156e_retry.json": "64e17d42be8b50bffaf566d75ff04d3e955008d6401b15d3ce005a5a22be47f3",
+    "mac/mac_1596156e_retry.gate.log": "a12b43b383f5e01215233ee3c36d94bb3ef36656029c30af8f4b5bcdb37dbe41",
+    "hip_stub/kernels.zig": "88bb8c9237bbb76e3f12f8e3335bf0b77b2b9b1333f11544b268739b3e893d65",
+    "hip_stub/controls.zig": "06afc6270548704a953a4db0f1e878b336d076fa21e7dd95b8af4228717c12e9",
+    "hip_stub/1596156e_stub.log": "f891dbdfc0402cd4ba60fab1be3245dfec559c5d7afc7e21b87e795a73d05e5f",
+    "hip_stub/1596156e_stub_command.txt": "8d7c63f4bb21c2dc3b4b2213f060d63820bad7a6c2ec7d93afb2729b43148bcf"
+  }
+}

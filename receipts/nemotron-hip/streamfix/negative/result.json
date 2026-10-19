@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "measured_source_commit": "5f453065422cf278c0a367a2094a15c1085b209d",
+  "final_candidate_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "actual_old_headers_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "binary_sha256": "53c0d38da00fe338013ca133d1f70de12941486b8664b0ac1ec93d40996aa38c",
+  "expected_exit": 1,
+  "actual_exit": 1,
+  "summary": "SUMMARY gfx1100 49 kernels: 30 pass gates 1-4, 19 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 132324 ms, limits 3894 ms",
+  "numerical_failures": [
+    "FAIL nonfinite hip affine_dot2_stream (2-bit, group 32, fp32 out): 3 of 160 outputs differ in class; first at 85: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (2-bit, group 64, fp32 out): 9 of 160 outputs differ in class; first at 68: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (2-bit, group 128, fp32 out): 8 of 160 outputs differ in class; first at 37: nan where float64 gives pos_inf",
+    "FAIL nonfinite hip affine_dot2_stream (3-bit, group 32, fp32 out): 7 of 160 outputs differ in class; first at 64: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (3-bit, group 64, fp32 out): 12 of 160 outputs differ in class; first at 64: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (3-bit, group 128, fp32 out): 12 of 160 outputs differ in class; first at 37: nan where float64 gives pos_inf",
+    "FAIL nonfinite hip affine_dot2_stream (4-bit, group 32, fp32 out): 9 of 160 outputs differ in class; first at 71: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (4-bit, group 64, fp32 out): 610 of 9280 outputs differ in class; first at 1861: nan where float64 gives pos_inf",
+    "FAIL nonfinite hip affine_dot2_stream (4-bit, group 128, fp32 out): 12 of 160 outputs differ in class; first at 37: nan where float64 gives pos_inf",
+    "FAIL nonfinite hip affine_dot2_stream (5-bit, group 32, fp32 out): 4 of 160 outputs differ in class; first at 65: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (5-bit, group 64, fp32 out): 15 of 160 outputs differ in class; first at 71: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (5-bit, group 128, fp32 out): 13 of 160 outputs differ in class; first at 37: nan where float64 gives pos_inf",
+    "FAIL nonfinite hip affine_dot2_stream (6-bit, group 32, fp32 out): 14 of 160 outputs differ in class; first at 64: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (6-bit, group 64, fp32 out): 8 of 160 outputs differ in class; first at 65: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (6-bit, group 128, fp32 out): 14 of 160 outputs differ in class; first at 37: nan where float64 gives pos_inf",
+    "FAIL nonfinite hip affine_dot2_stream (8-bit, group 32, fp32 out): 11 of 160 outputs differ in class; first at 65: nan where float64 gives neg_inf",
+    "FAIL nonfinite hip affine_dot2_stream (8-bit, group 64, fp32 out): 13 of 160 outputs differ in class; first at 39: nan where float64 gives pos_inf",
+    "FAIL nonfinite hip affine_dot2_stream (8-bit, group 128, fp32 out): 13 of 160 outputs differ in class; first at 37: nan where float64 gives pos_inf",
+    "FAIL nonfinite hip affine_dot2_stream_relu2 (4-bit, bf16): non-finite output class differs from float64"
+  ],
+  "failure_count": 19,
+  "breakdown": {
+    "plain_stream": 18,
+    "single_relu2": 1,
+    "paired_relu2": 0
+  },
+  "resource_audit": "PASS; all four chips; every record current; controls red",
+  "stage1": "Initial actual-old dump exited 1 because fixed-header records were stale; not the final numerical negative evidence.",
+  "stage2": "Actual-old resources hydrated, fresh limits audit/build exit 0, strict numerical run exit 1 with zero limit problems.",
+  "reproduction": "Apply the supplied patch to the final candidate and verify the exact tree hash before building. No experimental branch is required.",
+  "compiler_verbose_capture": "No expanded compiler invocation was recorded for this negative build; the exact build source, commands and resource audit are retained. Finite O3 compiler logs are separate evidence."
+}

@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "validated": true,
+  "artifact_kind": "cpu_stress_fixture_proof",
+  "base_measured_production_commit": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "review_source_commit": "1596156e21769324b675ef5e0caae0452f361660",
+  "changed_paths": [
+    "zig/tests/hip/contract_stream.zig"
+  ],
+  "fixture_sha256": "ce73e2605d0942a7bfe6c3698cd630ba2742990a2a5de043d3067d782e2c4b27",
+  "patch_sha256": "b6faf72389223ad532fd3256533525c38217023569ac80d2a1eaae78ffeb3d64",
+  "original_defect": {
+    "actual_runner_index": 15,
+    "width": 2,
+    "group": 32,
+    "K": 2048,
+    "rng_columns": 4096,
+    "float16_replays": {
+      "sequential": "infinity",
+      "pairwise": "NaN",
+      "strided": -8
+    },
+    "reference": -8,
+    "minimum_margin": 0,
+    "required_margin": 100
+  },
+  "deterministic_fix": {
+    "codes": "3 then1; identical every column",
+    "tables": "scale1, bias-2",
+    "x": "255 except first8 values of mirrored half256",
+    "reference": -8,
+    "max_sum_abs_qx": 1044488,
+    "fp32_exact_range": 16777216,
+    "seed_independent": true,
+    "reason": "All operand products and any intermediate integer sum remain below2^24. Complete group halves cancel except eight unit nudges. All f16/bf16 whole/grouped/direct replays differ or become nonfinite; the best-case replay remains far beyond100x."
+  },
+  "coverage": {
+    "widths": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      8
+    ],
+    "groups": [
+      32,
+      64,
+      128
+    ],
+    "runner_seed_indices": [
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "additional_seed_range": "128 seeds: 0x100000+0x12345*i",
+    "seed_count_per_geometry": 168,
+    "orders": [
+      "sequential",
+      "pairwise",
+      "strided"
+    ],
+    "simulated_structures": [
+      "whole",
+      "grouped",
+      "direct"
+    ],
+    "actual_served_geometry_seed_cases": 3024,
+    "additional_row1_geometry_seed_cases": 2352,
+    "two_bit_columns_reduced_to_one": true,
+    "column_reduction_reason": "All two-bit code columns are identical, tables constant, and fixed x independent of RNG consumption; one simulated column proves all4096 served outputs. The original failing control preserves RNG consumption of4096 columns before inspecting one."
+  },
+  "cpu_results": {
+    "full_row1_matrix_cases": 3024,
+    "full_row1_min_f16": 6167325.507788162,
+    "full_row1_min_bf16": 16777216,
+    "actual_row2_matrix_cases": 2352,
+    "actual_row2_min_f16": 7916010.366197183,
+    "actual_row2_min_bf16": 16777216,
+    "all_fp32_best_replays_exact": true,
+    "thresholds_unchanged": true
+  },
+  "evidence_sha256": {
+    "probe.zig": "25a6164b42c2b6506077baf729f636faa2cdea37edb7b8ba8c46d52c17b31514",
+    "probe.log": "72899b3f527fe049dc52d0a53ddfffd5d857d638b544bdcc3b013537d6e701b7",
+    "probe_actual_rows.zig": "2deb3d1eef56d0ede9b814064028736211e5f209c18919e26b18525510f773f1",
+    "probe_actual_rows.log": "a3ae2f7b52ef52d23d887fae1a94d5c4271eac88ffebe969f5939821ccb03256",
+    "old_probe.zig": "65169c8be5f17f8b33993b7d41a546bf3289e07a3c8c717317d3cd7e913fccae",
+    "old_probe.log": "9eeed5c6f46651cec0c0e9c5e0e61880c443a592090b4ca0a2df6428c63f9898",
+    "actual_runner_indices.json": "580621bb8286d53f3a8c28d2d0afff3fa85fad2ea354737f2693095edac9a832",
+    "deterministic_replays.json": "f0f465b4ca8d3f12def36e81c176de3c9bbee393d0650d40f9969f673f4ff5ba"
+  },
+  "gpu_claim": false,
+  "implementation_limit": "CPU probes replay the exact deterministic stress transformation using the unchanged affine reference/simulator module; GPU fixture dispatch is separately qualified by final review-head contracts."
+}

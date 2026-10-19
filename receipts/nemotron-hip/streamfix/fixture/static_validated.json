@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "validated": true,
+  "review_source_commit": "1596156e21769324b675ef5e0caae0452f361660",
+  "commits_checked": 30,
+  "fmt_exit": 0,
+  "diff_check_exit": 0,
+  "lean_new_problems": 0,
+  "lean_baseline_problems": 503,
+  "new_source_over600": [],
+  "private_added_paths": [],
+  "public_noreply_identity": true,
+  "tool_attribution": false,
+  "new_fixture_patch_over120": [],
+  "inherited_long_lines": [
+    {
+      "path": "docs/recipes/SKILL.md",
+      "columns": 220,
+      "comment": false
+    },
+    {
+      "path": "docs/recipes/SKILL.md",
+      "columns": 193,
+      "comment": false
+    },
+    {
+      "path": "docs/recipes/SKILL.md",
+      "columns": 158,
+      "comment": false
+    },
+    {
+      "path": "docs/recipes/SKILL.md",
+      "columns": 191,
+      "comment": false
+    },
+    {
+      "path": "zig/tests/hip/contract_stream.zig",
+      "columns": 169,
+      "comment": false
+    },
+    {
+      "path": "zig/tests/hip/contract_stream.zig",
+      "columns": 144,
+      "comment": false
+    }
+  ],
+  "long_line_scope": "Inherited long code/Markdown lines are unchanged from the preserved cc183 stack. The fixture-only patch adds none; no overlong comments/docstrings introduced.",
+  "raw_report": "static_1596156e.json",
+  "raw_report_sha256": "e9eeeb0314ef627511e0a5ae281616eb1ddf5da54e47fc7405a0edf20c3204c0"
+}

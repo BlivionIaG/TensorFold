@@ -1,0 +1,53 @@
+{
+  "source_commit": "1596156e21769324b675ef5e0caae0452f361660",
+  "stages": [
+    {
+      "stage": "full",
+      "command": [
+        "$HOME/hcx/zb.sh",
+        "sf47",
+        "streamfix/review159_full.log",
+        "test",
+        "test-kernel-contract",
+        "test-golden",
+        "fuzz-cortheon",
+        "--cache-dir",
+        "/tmp/stream-review159-host-cache",
+        "--summary",
+        "all"
+      ],
+      "exit_status": 0,
+      "elapsed_seconds": 326.859,
+      "summary": [
+        "Build Summary: 172/172 steps succeeded; 2530/2540 tests passed (10 skipped)"
+      ],
+      "raw_log_sha256": "1384f27fb2a07efdcfd307ddd191336b4457c6021b3896a5630ecc7786892704",
+      "public_log": "review159_full.log",
+      "public_log_sha256": "1384f27fb2a07efdcfd307ddd191336b4457c6021b3896a5630ecc7786892704"
+    },
+    {
+      "stage": "plain",
+      "command": [
+        "$HOME/hcx/zb.sh",
+        "sf47",
+        "streamfix/review159_plain.log",
+        "--cache-dir",
+        "/tmp/stream-review159-host-cache",
+        "--summary",
+        "all"
+      ],
+      "exit_status": 0,
+      "elapsed_seconds": 165.045,
+      "summary": [
+        "Build Summary: 17/17 steps succeeded"
+      ],
+      "raw_log_sha256": "76c0ca55d36f59d708a5d27bcc48cb652ba8d3d5275851a369a08284058f1770",
+      "public_log": "review159_plain.log",
+      "public_log_sha256": "76c0ca55d36f59d708a5d27bcc48cb652ba8d3d5275851a369a08284058f1770"
+    }
+  ],
+  "zig_version": "0.17.0",
+  "validated": true,
+  "tree_clean_after": true,
+  "measured_source_commit": "1596156e21769324b675ef5e0caae0452f361660"
+}

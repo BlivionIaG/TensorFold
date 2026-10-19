@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "validated": true,
+  "scope": "scheduling checkpoints only; remaining exact-head qualification still required before publication",
+  "complete_stack_qualified": false,
+  "review_top": "1596156e21769324b675ef5e0caae0452f361660",
+  "measured_model_source": "cc18314dce85b0968496b35333bdd8618b2f9227",
+  "required_tags": [
+    "NEW",
+    "41",
+    "46"
+  ],
+  "receipts": [
+    {
+      "tag": "NEW",
+      "source_commit": "e0e1c8e97fa14478e60af840942fe28526267bf6",
+      "expected_kernel_count": 23,
+      "architectures": {
+        "gfx1100": {
+          "summary": "SUMMARY gfx1100 23 kernels: 23 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 17531 ms, limits 2033 ms",
+          "raw_log_sha256": "790d330481390245aede1041469243c8bc824c6f530b4f12b7360c26ff60f5c3",
+          "binary_sha256": "e0e9c7c47686b8e66fc4687192d13d21cbea364b8167b7829d3450ff21eb70dc"
+        },
+        "gfx1030": {
+          "summary": "SUMMARY gfx1030 23 kernels: 23 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 17541 ms, limits 1755 ms",
+          "raw_log_sha256": "08bd37548d7f0a67686dabeb91f424d4e5f9ac7ab2b06df6aee3e498eae4a933",
+          "binary_sha256": "4b1991323ce96232f26637ca2fb7fc71bcb320934975d9e9b4e43718581b8267"
+        }
+      },
+      "four_chip_limits_sha256": "f70bbace5d1a6262e93e3c3e08daee528d686b1dfcbbeb1dfb5649eb6325c5fd"
+    },
+    {
+      "tag": "41",
+      "source_commit": "ca40e2dfbf75714b0b0c9f05ca54496c5ecb8546",
+      "expected_kernel_count": 43,
+      "architectures": {
+        "gfx1100": {
+          "summary": "SUMMARY gfx1100 43 kernels: 43 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 72956 ms, limits 2927 ms",
+          "raw_log_sha256": "7d4c35b6abee757e96f671c2f0663dc2f2461dd97e6c1f3ef4f8768ade7db0e7",
+          "binary_sha256": "1111c150428510bba2dc1d682129175816b7c1fd220417770850efa067345b7a"
+        },
+        "gfx1030": {
+          "summary": "SUMMARY gfx1030 43 kernels: 43 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 75276 ms, limits 2406 ms",
+          "raw_log_sha256": "3e817a0434f359e6e827b15e99aaa7579e0e689ff80068bfe2de01a459d3ddce",
+          "binary_sha256": "b7b89df30bf8b1efa65a9ce4d7c977f6abe1da2c320519c9c9b7bbc4ab434b79"
+        }
+      },
+      "four_chip_limits_sha256": "18aee85fb08abae5e72133c9fab5da3836e9ffd63e8506e4296ecd56ad4688a2"
+    },
+    {
+      "tag": "46",
+      "source_commit": "1596156e21769324b675ef5e0caae0452f361660",
+      "expected_kernel_count": 49,
+      "architectures": {
+        "gfx1100": {
+          "summary": "SUMMARY gfx1100 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 132374 ms, limits 3979 ms",
+          "raw_log_sha256": "a823c4d30faf436678e57916f253989e587776d9685c00bdcc4c31f67c647c41",
+          "binary_sha256": "93f8c849fa040c81d964388955f4f9e22b84c836cc9bdcb653d1b99537c5c93e"
+        },
+        "gfx1030": {
+          "summary": "SUMMARY gfx1030 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 136027 ms, limits 3491 ms",
+          "raw_log_sha256": "caceedefc550d602e44ab7bff32f17910153c8e97a8a9dc2c2c05ceb5d62a39a",
+          "binary_sha256": "fee9f2e40f6844bddf8dc010e4be770a357e6168a142ec05191d68dbe8093f31"
+        }
+      },
+      "four_chip_limits_sha256": "1075d29d28e8e9c6ba20fd513e97216eaa877d112e5ed46e50a5fa8134cf4c5d"
+    }
+  ]
+}
