@@ -19,6 +19,7 @@ test "the code objects load on this device and every kernel the launchers use re
 
 test {
     _ = @import("kernel_tests/gdn.zig");
+    _ = @import("kernel_tests/mamba.zig");
     _ = @import("kernel_tests/decode.zig");
     _ = @import("kernel_tests/chain.zig");
     _ = @import("kernel_tests/attention.zig");
@@ -29,4 +30,8 @@ test {
     _ = @import("kernel_tests/graph_split.zig");
     _ = @import("kernel_tests/flashnext.zig");
     _ = @import("kernel_tests/flashnext_attn.zig");
+    _ = @import("kernel_tests/nemotron/moe.zig");
+    _ = @import("kernel_tests/nemotron/pick.zig");
+    _ = @import("kernel_tests/nemotron/attention.zig");
+    _ = @import("kernel_tests/nemotron/fixture.zig");
 }
