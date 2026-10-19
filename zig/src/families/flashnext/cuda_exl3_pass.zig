@@ -23,6 +23,7 @@ fn part(p: anytype, ops: *load.Ops, pt: load.Part, x: u64, k: usize, m: usize, y
     switch (pt.kind) {
         .exl3 => |w| {
             const de = try ops.linear();
+            if (try @import("cuda_exl3_prefill.zig").tilesPart(de, p.stream, w, x, m, y, f32_out)) return; // prefill rows on #806's tiles
             try de.decode(p.stream, w, x, .bf16, m, y, if (f32_out) .f32 else .bf16);
         },
         .native => |w| {
