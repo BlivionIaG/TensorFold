@@ -80,6 +80,7 @@ fn laneF16(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: us
 /// Pass.moeBlock() for EXL3 experts: the router's 513 logits (the BF16 rows the Store widened exactly), each row's ten
 /// picks and the shared slot (id 512), then every slot's expert output, fp32 y [rows, 11, dims], in blocks of rows.
 pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
+    if (x.tp != null) return @import("cuda_exl3_tp.zig").moe(p, lw, x); // expert parallel (plan step 10)
     const s = p.s;
     const n = p.rows;
     try p.tri.routerMany(s.mixed, lw.router.ptr, s.router_l, dims, n);

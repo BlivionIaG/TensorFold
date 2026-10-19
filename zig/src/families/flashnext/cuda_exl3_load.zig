@@ -40,6 +40,8 @@ pub const Ops = struct {
     sums: ?cuda.DeviceBuffer = null,
     glue: ?cuda.Module = null,
     split_fn: cuda.Function = undefined,
+    /// Expert parallel's masks, sums and kernels (cuda_exl3_tp.zig), made on first use.
+    tp: ?*@import("cuda_exl3_tp.zig").Scratch = null,
 
     pub fn create(gpa: std.mem.Allocator, d: *const cuda.Driver) !*Ops {
         const o = try gpa.create(Ops);
@@ -62,6 +64,7 @@ pub const Ops = struct {
         if (o.halves) |*b| b.free();
         if (o.sums) |*b| b.free();
         if (o.glue) |*m| m.unload();
+        if (o.tp) |t| t.destroy();
         o.gpa.destroy(o);
     }
 
@@ -283,6 +286,8 @@ pub const Experts = struct {
     /// Each expert's and projection's trellis words on the device, for a pool to rewrite (gate, up, down; 513 each).
     trellis: [3][]u64 = .{ &.{}, &.{}, &.{} },
     halves: [3][]i32 = .{ &.{}, &.{}, &.{} },
+    /// The ids this rank holds under expert parallel (cuda_exl3_tp.zig); null: one rank holds all 513.
+    tp: ?@import("cuda_exl3_tp.zig").Rank = null,
 
     pub fn destroy(x: *Experts) void {
         for (x.bufs.items) |*b| b.free();
@@ -309,7 +314,7 @@ pub fn hasExperts(store: *const Store, mlp: []const u8) bool {
 
 /// Every routed expert of `mlp` resident, the shared expert as id 512 (the same 2560 x 640 x 2560 shape).
 pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, mlp: []const u8, world: usize, rank: usize) !*Experts {
-    if (world != 1 or rank != 0) return error.UnsupportedQuantization; // expert parallel cuts: plan step 10
+    if (world != 1 or rank != 0) return @import("cuda_exl3_tp.zig").experts(gpa, d, store, mlp, world, rank); // plan step 10
     const count = wt.experts_n + 1;
     const x = try gpa.create(Experts);
     x.* = .{ .gpa = gpa, .ops = try opsOf(store, d), .layer = undefined };

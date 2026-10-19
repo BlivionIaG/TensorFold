@@ -16,7 +16,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     if (o.segments != 1 or o.slide) return error.UnsupportedOption;
     if ((o.tp != 1 and o.tp != 2) or o.rank >= o.tp) return error.BadRank;
     const mode = try config.mode(gpa, io, dir);
-    if (o.tp != 1 and (mode != .modelopt or captured != null)) return error.UnsupportedQuantization;
+    if (o.tp != 1 and ((mode != .modelopt and mode != .exl3) or captured != null)) return error.UnsupportedQuantization;
     const driver: *cuda.Driver = @constCast(ctx.d);
     const own = try gpa.create(Cuda);
     errdefer gpa.destroy(own);

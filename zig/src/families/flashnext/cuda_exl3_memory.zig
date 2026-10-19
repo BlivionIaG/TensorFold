@@ -121,10 +121,10 @@ pub fn weightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) u64 {
     return main + (headBytes(gpa, io, dir, o) catch return 0);
 }
 
-/// A rank's placement bytes. Tensor parallel EXL3 is refused until its cut rules land (expert parallel, plan step 10).
+/// A rank's placement bytes; at world 2 the expert-parallel rank's (cuda_exl3_tp.zig, plan step 10).
 pub fn placement(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, world: usize, rank: usize, drafts: bool) !u64 {
     if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
-    if (world != 1) return error.UnsupportedQuantization;
+    if (world != 1) return @import("cuda_exl3_tp.zig").placement(gpa, io, dir, world, rank, drafts);
     const o = options();
     return try deviceBytes(gpa, io, dir, o) + if (drafts) try headBytes(gpa, io, dir, o) else @as(u64, 0);
 }
@@ -161,7 +161,7 @@ test "exl3: dense F16 weights count as their BF16 device packing, norms as fp32"
     try std.testing.expectEqual(@as(u64, 0), try tensorBytes("model.visual.blocks.0.attn.qkv.weight", entry(.bf16, &.{ 3456, 1152 }, 3456 * 1152 * 2), .{}));
 }
 
-test "exl3: tensor parallel placement is refused until the EXL3 cut rules open it" {
+test "exl3: placement names an EXL3 checkpoint and refuses worlds past 2 (world 2: cuda_exl3_tp.zig's test)" {
     const a = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -169,7 +169,5 @@ test "exl3: tensor parallel placement is refused until the EXL3 cut rules open i
     const dir = try tmp.dir.realPathFileAlloc(std.testing.io, ".", a);
     defer a.free(dir);
     try std.testing.expect(isExl3(a, std.testing.io, dir));
-    try std.testing.expectError(error.UnsupportedQuantization, placement(a, std.testing.io, dir, 2, 0, false));
-    try std.testing.expectError(error.UnsupportedQuantization, placement(a, std.testing.io, dir, 2, 1, true));
     try std.testing.expectError(error.BadRank, placement(a, std.testing.io, dir, 3, 0, false));
 }
