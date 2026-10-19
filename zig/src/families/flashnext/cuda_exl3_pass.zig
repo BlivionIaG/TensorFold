@@ -124,7 +124,9 @@ pub var pool_time: struct { cut_ns: u64 = 0, plan_ns: u64 = 0, blocks: u64 = 0 }
 /// fp32 `out` [rows, dims] (expert parallel's rank branch, cuda_exl3_tp.moe).
 pub fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
     const host = (ops.picks orelse return error.Exl3ScratchNotReserved).slice(i32)[0 .. rows * slots];
-    try dplan.toHost(); // the device planned the last decode rounds: its residency back to the host pools first
+    // the device planned the last decode rounds of this pool: its residency back to the host pools first (the MTP
+    // layer's pool is never device-planned: a draft step leaves the decoder pools on the device)
+    if (dplan.current()) |dp| if (dp.indexOf(pool) != null) try dp.toHost();
     const io = pool.io;
     const t0 = std.Io.Clock.awake.now(io).toNanoseconds();
     // end of segment A: the block's picks reach the host (the only host wait of the layer)

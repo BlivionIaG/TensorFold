@@ -36,7 +36,8 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     long long* __restrict__ tab1, long long* __restrict__ tab2, int* __restrict__ k2t0, int* __restrict__ k2t1,
     int* __restrict__ k2t2, const long long* __restrict__ src, const long long* __restrict__ lens,
     const int* __restrict__ k2, unsigned long long line_base, unsigned long long line_bytes, unsigned long long off0,
-    unsigned long long off1, unsigned long long off2, long long* __restrict__ work, int* __restrict__ work_n) {
+    unsigned long long off1, unsigned long long off2, long long* __restrict__ work, int* __restrict__ work_n,
+    int* __restrict__ hit_picks, int* __restrict__ miss_picks) {
     int* line_id = reinterpret_cast<int*>(st);
     unsigned* stamp = st + lines;
     int* line_of = reinterpret_cast<int*>(st + 2 * lines);
@@ -109,6 +110,17 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
         n_copy = 0;
     }
     __syncthreads();
+    // the split (optional): picks held when the round started (and the shared expert) vs the misses this round copies;
+    // the experts of the first set run while the copies of the second land
+    if (hit_picks != nullptr) {
+        for (int i = t; i < n; i += blockDim.x) {
+            const int p = picks[i];
+            const bool held = p >= DP_SHARED || (p >= 0 && line_of[p] >= 0);
+            hit_picks[i] = p < 0 ? -1 : (held ? p : -1);
+            miss_picks[i] = p < 0 ? -1 : (held ? -1 : p);
+        }
+        __syncthreads();
+    }
     const unsigned long long offs[3] = {off0, off1, off2};
     long long* tabs[3] = {tab0, tab1, tab2};
     int* k2s[3] = {k2t0, k2t1, k2t2};

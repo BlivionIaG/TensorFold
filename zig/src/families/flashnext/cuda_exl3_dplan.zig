@@ -60,6 +60,15 @@ pub const DevPlan = struct {
     /// The stream the last device round ran on (toHost waits for it).
     stream: ?cuda.Stream = null,
     copy_blocks: u32 = 144,
+    /// Overlap (TF_FLASHNEXT_EXL3_OVERLAP): the held experts compute while the misses' copies run on `side`, then the
+    /// misses' experts (and the combine) follow; the per-slot outputs are the single pass's (each slot is written by
+    /// the one pass that holds its expert, as the host cut's split rounds do).
+    overlap: bool = false,
+    side: cuda.Stream,
+    ev_plan: cuda.Event,
+    ev_copy: cuda.Event,
+    /// The split's masked picks [max_rows * 11] each: held (and the shared expert), then the misses.
+    split: cuda.DeviceBuffer,
     /// Device statistics already added to the pools' (a pull adds the difference).
     seen: []Misc,
     pushes: u64 = 0,
@@ -90,6 +99,14 @@ pub const DevPlan = struct {
         errdefer work.free();
         const seen = try gpa.alloc(Misc, pools.len);
         errdefer gpa.free(seen);
+        var side = try cuda.Stream.init(d, true);
+        errdefer side.deinit();
+        var ev_plan = try cuda.Event.init(d, false);
+        errdefer ev_plan.deinit();
+        var ev_copy = try cuda.Event.init(d, false);
+        errdefer ev_copy.deinit();
+        var split = try cuda.DeviceBuffer.alloc(d, 2 * max_rows * 11 * 4);
+        errdefer split.free();
         // every expert's three host-bank addresses (mapped: unified addressing), byte counts and widths
         const host = try gpa.alloc(u8, static_bytes);
         defer gpa.free(host);
@@ -121,12 +138,22 @@ pub const DevPlan = struct {
             .statics = statics,
             .work = work,
             .seen = seen,
+            .side = side,
+            .ev_plan = ev_plan,
+            .ev_copy = ev_copy,
+            .split = split,
+            .overlap = overlapFromEnv(pools[0]),
         };
         if (std.c.getenv("TF_FLASHNEXT_EXL3_DCOPY_BLOCKS")) |v| dp.copy_blocks = std.fmt.parseInt(u32, std.mem.span(v), 10) catch dp.copy_blocks;
         return dp;
     }
 
     pub fn deinit(dp: *DevPlan) void {
+        dp.side.synchronize() catch {};
+        dp.split.free();
+        dp.ev_copy.deinit();
+        dp.ev_plan.deinit();
+        dp.side.deinit();
         dp.work.free();
         dp.statics.free();
         dp.mirror.free();
@@ -180,6 +207,7 @@ pub const DevPlan = struct {
     pub fn toHost(dp: *DevPlan) !void {
         if (dp.owner == .host) return;
         if (dp.stream) |s| try s.synchronize();
+        try dp.side.synchronize();
         try dp.d.check(dp.d.api.cuMemcpyDtoH_v2(dp.mirror.bytes.ptr, dp.state.ptr, dp.state.len), "cuMemcpyDtoH");
         const lines = dp.lines;
         var overflow: u64 = 0;
@@ -235,6 +263,11 @@ pub const DevPlan = struct {
         return t;
     }
 
+    /// `s` waits for the last plan's copies (runLayer joins them itself; a caller of `plan` alone needs this).
+    pub fn join(dp: *DevPlan, s: cuda.Stream) !void {
+        if (dp.overlap) try s.wait(dp.ev_copy);
+    }
+
     /// The index of `p` among the planned pools, or null (the MTP layer's pool, another engine's).
     pub fn indexOf(dp: *const DevPlan, p: *const pool_.Pool) ?usize {
         const i = p.opt.layer;
@@ -267,11 +300,18 @@ pub const DevPlan = struct {
         for (p.lines.layout.off) |o| a.add(@as(u64, o));
         a.add(work);
         a.add(work_n);
+        a.add(if (dp.overlap) dp.split.ptr else @as(u64, 0));
+        a.add(if (dp.overlap) dp.split.ptr + dp.max_rows * 11 * 4 else @as(u64, 0));
         try cuda.launch.launch(dp.plan_fn, .{ .grid = .{ .x = 1 }, .block = .{ .x = 256 } }, s, &a);
         var c: cuda.Args = .{};
         c.add(work);
         c.add(work_n);
-        try cuda.launch.launch(dp.copy_fn, .{ .grid = .{ .x = dp.copy_blocks }, .block = .{ .x = 256 } }, s, &c);
+        if (!dp.overlap) return cuda.launch.launch(dp.copy_fn, .{ .grid = .{ .x = dp.copy_blocks }, .block = .{ .x = 256 } }, s, &c);
+        // the copies on the side stream (a fork in a captured graph); `s` joins them before the misses' experts
+        try dp.ev_plan.record(s);
+        try dp.side.wait(dp.ev_plan);
+        try cuda.launch.launch(dp.copy_fn, .{ .grid = .{ .x = dp.copy_blocks }, .block = .{ .x = 256 } }, dp.side, &c);
+        try dp.ev_copy.record(dp.side);
     }
 };
 
@@ -338,5 +378,16 @@ pub fn releaseFor(owner: *const anyopaque) void {
 /// host cut's single pass runs it (cuda_exl3_pass.pooled): same kernels, same inputs, so the same bits.
 pub fn runLayer(dp: *DevPlan, st: cuda.Stream, i: usize, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
     try dp.plan(st, i, picks, rows);
-    try ex.run(st, layer, xin, 2560, .bf16, picks, wts, rows, out, sc);
+    if (!dp.overlap) return ex.run(st, layer, xin, 2560, .bf16, picks, wts, rows, out, sc);
+    // held experts while the copies run, then the misses' experts and (expert parallel) the combine of every slot
+    try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr, 0, rows, 0, sc);
+    try st.wait(dp.ev_copy);
+    try ex.run(st, layer, xin, 2560, .bf16, dp.split.ptr + dp.max_rows * 11 * 4, wts, rows, out, sc);
+}
+
+/// TF_FLASHNEXT_EXL3_OVERLAP=1 turns the split on (default off: compiled, not yet run on the real pack, unmeasured).
+fn overlapFromEnv(p: *const pool_.Pool) bool {
+    _ = p;
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_OVERLAP") orelse return false;
+    return std.mem.eql(u8, std.mem.span(v), "1");
 }
