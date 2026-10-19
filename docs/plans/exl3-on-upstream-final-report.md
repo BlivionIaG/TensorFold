@@ -16,10 +16,11 @@ The user's acceptance target is TP=2 with CUDA graphs on both decode and prefill
 performance. BF16 is the main KV format; dynamic KV paging to RAM is also required. CPU expert execution is
 deferred. Decode graphs match eager for eligible captured shapes, but input preparation, the MTP chain's absorb
 step, and host readback remain outside capture. No repeatable graph speedup over optimized blocking-NCCL eager
-decode has been demonstrated. Prefill graphs capture only each layer's dense sub-blocks; expert scheduling,
-ring copies and reductions remain eager. The recorded TP=2 prefill result fell from 1,474 to 1,324 rows/s
-(about 10%), as capture removed reduction overlap. Graph performance and full prefill coverage are therefore open
-acceptance gates.
+decode has been demonstrated. Prefill graphs capture each layer's dense sub-blocks; expert scheduling and ring
+copies remain eager. A new event-wait-node path preserves overlap with TP=2 sub-block reductions and passes the
+bit-equality gate. Across 8192-row prompts with 1024-, 2048- and 4096-row chunks, graph throughput tracks eager
+within run variation; a graph-specific prefill win is not demonstrated. An 8192-row chunk OOMed and fell back to
+the non-deep path, so it is excluded from graph results. Graph performance remains an open acceptance gate.
 
 The near-200k × 2 TP=2 BF16 needle test (195,938 and 195,957 prompt tokens) passed on this tree before the final
 agent changes; it was not rerun on the exact PR head. Treat that result as demonstrated on a near-final tree, not
@@ -89,14 +90,17 @@ and 380.1 / 693.2 s with drafts; the earlier 304 / 554 s figures are not reconci
 ## What graphs do and do not give
 
 For eligible shapes, decode graphs match eager bit for bit, but a repeatable performance win over the optimized
-eager path has **not been demonstrated** on this hardware. The decode
-speedup came from removing host stalls: the pool's per-layer host wait (replaced by the device planner), thread
-spawns in the n-gram gather, and the non-blocking NCCL communicator's host cost. Once those are gone a step is bound
-by GPU kernels (profile: about 20 ms of kernels per token; dense EXL3 projections 6 ms, bf16 hyper-connection
-lanes 4.5 ms, all-reduces 2 - 3.5 ms, experts 3 ms). With drafts on, the first drafted request after start is
-slower in the recorded gate; graph instantiation now runs on a worker, but graph execution still synchronizes for
-results and the recorded timings do not isolate first-use capture from replay. Graphs stay opt-in
-(`TF_FLASHNEXT_EXL3_GRAPH=1`). Prefill layer graphs at tp=2 are bit-equal but 10% slower, so they are opt-in too
+eager path has **not been demonstrated** on this hardware. The decode speedup came from removing host stalls: the
+pool's per-layer host wait (replaced by the device planner), thread spawns in the n-gram gather, and the non-blocking
+NCCL communicator's host cost. Once those are gone a step is bound by GPU kernels (profile: about 20 ms of kernels
+per token; dense EXL3 projections 6 ms, bf16 hyper-connection lanes 4.5 ms, all-reduces 2 - 3.5 ms, experts 3 ms).
+With drafts on, the first drafted request after start is slower in the recorded gate; graph instantiation now runs
+on a worker, but graph execution still synchronizes for results and timings do not isolate first-use capture from
+replay. A TP=2 projection-fork experiment preserved logits but did not produce a repeatable graph-specific gain.
+Graphs stay opt-in (`TF_FLASHNEXT_EXL3_GRAPH=1`). Prefill graph captures now preserve sub-block reduction overlap
+with external event-wait nodes and pass bit parity. At chunk sizes 1024, 2048 and 4096, graph throughput remained
+within run variation of eager; the former 10% regression is removed, but a speedup is not proven. An 8192-row
+chunk request OOMed and used fallback, so it is not counted. Prefill graphs remain opt-in
 (`TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1`).
 
 ## Switches
@@ -144,7 +148,9 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
    difference 1.1406 and top-1 6009 versus 19251 (reference margin 0.25). The successful 200k × 2 needle answers
    establish retrieval/serving behavior for those prompts, not strict full-logit parity.
 7. **Graph path:** warm-up of all window shapes at load, rank-1 independent enqueue and async readback are not
-   done; a rank-0 shutdown hang was seen once with graphs on after rank 1 exited.
+   done; a rank-0 shutdown hang was seen once with graphs on after rank 1 exited. Neither decode nor prefill graphs
+   have a repeatable measured speedup yet. MTP verification also has a redundant GPU best-selection/readback
+   boundary after full-logit readback; a graph-specific overlap optimization is under investigation.
 8. **Prefill at tp=2 is only about 2% faster than tp=1 at equal chunk sizes:** the replicated dense work
    (projections, GDN, attention, hyper-connections) is the bottleneck, not the experts.
 9. **Blocking NCCL is opt-in** until its init has a timeout.
@@ -160,9 +166,9 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 
 ## Next steps
 
-1. Meet the graph acceptance gate: reduce decode host boundaries (including the MTP absorb/readback path), make
-   decode graphs measurably faster than optimized eager decode, and graph prefill expert passes while preserving
-   reduction overlap. Recheck prefill and decode with repeatable TP=2 gates before changing defaults.
+1. Meet the graph acceptance gate: reduce decode host boundaries (first target is MTP verify's redundant best-
+   selection/readback), make decode graphs measurably faster than optimized eager decode, and extend prefill capture
+   beyond dense sub-blocks without losing reduction overlap. Recheck with repeated TP=2 gates before changing defaults.
 2. Fix the paging/indexer allocation-budget mismatch and add a serving overflow guard. Then make dynamic BF16 KV
    paging replay-safe and rerun the 200k × 2 TP=2 test on the exact PR head with paging, graphs, and concurrent
    requests enabled together.

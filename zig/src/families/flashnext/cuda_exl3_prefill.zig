@@ -270,6 +270,7 @@ var deep: ?*Deep = null;
 /// Frees the deep chunk's buffers (the engine's deinit, or a test).
 pub fn release() void {
     if (deep) |dp| {
+        @import("cuda_exl3_graph.zig").clearPrefill();
         if (dp.ring) |r| r.deinit();
         if (dp.red) |*rs| {
             rs.synchronize() catch {};
@@ -572,16 +573,19 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
             try upload(st, dp.dptr(dp.lay.ple_emb), std.mem.sliceAsBytes(emb));
             try upload(st, dp.dptr(dp.lay.ple_xs), std.mem.sliceAsBytes(xs));
         }
-        const pg = try @import("cuda_exl3_graph.zig").prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles_on, dp.red_ev[0..dp.red_n]); // the dense half replays as a graph, after the previous layer's sums
+        const pg = try @import("cuda_exl3_graph.zig").prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles_on, dp.red_ev[0..dp.red_n]);
         errdefer @import("cuda_exl3_graph.zig").prefillAbort(p, pg);
-        if (pg != .eager) dp.red_n = 0; // a replay or capture waited for every sub-block's sum already (prefillBegin)
         if (pg != .replayed) for (0..n_sub) |b| {
             const m = @min(sub, n - b * sub);
             p.s = &views[b];
             p.rows = m;
             p.pos0 = pos0 + b * sub;
             p.pending = if (layer > 0) layer - 1 else null;
-            if (b < dp.red_n) try st.wait(dp.red_ev[b]); // expert parallel: this sub-block's rows summed
+            if (b < dp.red_n) switch (pg) {
+                .eager => try st.wait(dp.red_ev[b]),
+                .capturing => try st.waitExternal(dp.red_ev[b]),
+                .replayed => unreachable,
+            };
             try layerBlock(Tri, p, lw, layer, m);
         };
         try @import("cuda_exl3_graph.zig").prefillEnd(p, pg);

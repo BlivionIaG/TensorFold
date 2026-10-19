@@ -48,8 +48,11 @@ Measured first, then chosen over "graph A / host plan / graph B per layer":
 The expert-major deep prefill's dense half of each layer (sub-blocks: HC, DeltaNet/attention, write-backs, router,
 top-k) is captured per layer (`prefillBegin/End` hook in `cuda_exl3_prefill.chunk`): a DeltaNet layer's graph depends
 only on the chunk's shape and replays for later chunks; an attention layer's launch geometry follows the position, so
-it is re-captured each chunk and updated in place. The experts' half stays eager: its passes, ring copies and member
-lists are planned on the host from each layer's picks (data-dependent shapes).
+it is re-captured each chunk and updated in place. For TP=2, the graph captures each sub-block's wait on its incoming
+NCCL sum as an external event-wait node. This is intended to preserve the eager schedule where ready sub-blocks begin
+while later sub-block reductions are still running. Graphs are cleared before their reduction events are destroyed.
+The experts' half stays eager: its passes, ring copies and member lists are planned on the host from each layer's picks
+(data-dependent shapes).
 
 ## Measurements (par1-cs13, 2x 5060 Ti, idle cards under gpurun)
 
@@ -86,18 +89,31 @@ Replays: 301 of 417 graph-eligible steps in the gate (72%), 11 captures (9 of th
 on the device plan (keys not yet seen 6 times: every request brings new sequence/draft buffers, so new keys). With
 drafts on, a capture (15-20 ms of host work the GPU waits for) costs more than the replays save on a GPU-bound step.
 
-Prefill (deep chunks of 1024 rows, 4096-row prompt, 5 runs, last-row logits and 8 decode steps bit-equal): tp=2
-(with exl3-c-tpprefill's uncommitted work applied) eager 770.2 rows/s, graphs 770.3-772.6; tp=1 498.7 vs 499.1.
-A prompt after the first: 144 DeltaNet layer replays and 48 attention-layer in-place updates.
+Prefill graph overlap validation (TP=2, 8192-row prompt, last-row logits plus 8 decode steps bit-equal): graphs
+capture and replay the dense half of each layer, with external event-wait nodes for each expert-parallel reduction.
+The graphs are cleared before those events are destroyed. With 1024-row chunks, eager measured 770.5 rows/s and
+steady graph runs 771.0-772.0; with 2048-row chunks, eager measured 1116.3 and graphs 1112.1-1117.1; with
+4096-row chunks, eager measured 1468.0 and graph replays 1469.5-1471.1. These small differences are within run
+variation; a graph speedup is not demonstrated. An 8192-row chunk OOMed and fell back to the non-deep path, so its
+output is not a valid graph measurement. The larger fitting chunk improves prefill throughput for both modes; it
+does not establish a graph-specific win.
+
+Decode fork experiment (TP=2, same kernels and bit-equal logits): toggling multipart projection stream forking on
+helped DPLAN eager in these runs, while graph changes were mixed and near measurement noise. This does not explain
+or fix the graph-vs-eager decode gap. The earlier controlled serve gate remains the relevant result: graphs did not
+reliably beat DPLAN eager.
 
 ## Not proven / open
 
-- Prefill graphs at tp=2 need the tp=2 deep prefill (branch `exl3-c-tpprefill`, not merged here).
+- Prefill graph capture/replay is now validated with TP=2 deep prefill at chunk sizes 1024, 2048 and 4096, including
+  bit-identical logits and post-prefill decode. It restores the lost reduction overlap but has not shown a repeatable
+  throughput win over eager.
 - The experts' half of prefill is not graphed (host-planned passes).
 - In-place reads are proven bit-equal (tp=2, 24 lines, 2936 reads) but slow; windows at few lines lose to the host
   cut's DMA passes.
 - The overlap split (`TF_FLASHNEXT_EXL3_OVERLAP=1`) is unvalidated on the pack.
-- Graphs stay opt-in (`TF_FLASHNEXT_EXL3_GRAPH=1`); `TF_FLASHNEXT_EXL3_DPLAN=1` alone gives the same decode speed.
+- Graphs stay opt-in (`TF_FLASHNEXT_EXL3_GRAPH=1`); a repeatable decode speed win over `TF_FLASHNEXT_EXL3_DPLAN=1`
+  remains unproven.
 - 200k contexts, int8 KV and 2+ concurrent streams in the server under graphs were not run (the engine test covers
   two streams in one round, bit-equal).
 
@@ -143,7 +159,8 @@ Tried, no gain or rejected:
 - resident MTP experts (`TF_FLASHNEXT_EXL3_MTP_RESIDENT=1`): costs rank 0 17 pool lines, no change;
 - `NCCL_PROTO=LL`: captured all-reduce 19.8 -> 11.4 us, serve drafts off 24.3/22.0 -> 23.8/21.1 ms, but tp=2 deep
   prefill 1473 -> 1288 rows/s (-12%): not set by default (it is process-wide);
-- prefill layer graphs at tp=2: bit-equal, 1474 -> 1324 rows/s (lose the reduction overlap): now opt-in.
+- prefill layer graphs at tp=2 before external event waits: bit-equal, 1474 -> 1324 rows/s. The measured external
+  event-wait change restores the overlap and bit parity; it does not produce a repeatable graph-specific speedup.
 
 What remains is kernel time: ~6 ms of 1-3-row EXL3 projections (decode-bound at ~190-290 GB/s), ~4.5 ms of bf16 HC
 lanes (already 290-390 GB/s of 448), ~3 ms of experts, ~2 ms of collectives, ~1.5 ms of rank-0 wait. Faster

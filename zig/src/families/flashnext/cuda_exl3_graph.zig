@@ -572,6 +572,8 @@ const PKey = struct {
     base: u64,
     base_cap: usize,
     seq: [5]u64,
+    wait_count: usize,
+    wait_key: u64,
     scores: u64,
     tiles: bool,
 };
@@ -585,9 +587,8 @@ var pcur: ?PKey = null;
 
 pub var prefill_stats: struct { captures: u64 = 0, updates: u64 = 0, replays: u64 = 0, eager: u64 = 0, capture_ns: u64 = 0 } = .{};
 
-/// TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1 captures prefill layers under TF_FLASHNEXT_EXL3_GRAPH=1 (default off: bit-equal
-/// but no faster at tp=1, and 10% slower at tp=2, where a graph must wait for every sub-block's all-reduce before
-/// the layer instead of overlapping them with the layer's sub-blocks: 1474 -> 1324 rows/s on 8192 rows).
+/// TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1 captures prefill layers under TF_FLASHNEXT_EXL3_GRAPH=1 (default off pending
+/// measurements). TP=2 graphs capture each incoming sub-block reduction as an external event wait.
 fn prefillEnabled() bool {
     if (!enabled() or broken) return false;
     const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_PREFILL") orelse return false;
@@ -628,11 +629,15 @@ pub fn clearPrefill() void {
 
 /// Before a layer's sub-blocks: `.replayed` (the graph ran; skip the sub-blocks), `.capturing` (run them: they are
 /// recorded; then `prefillEnd`), or `.eager` (run them; `prefillEnd` is a no-op).
-/// `waits`: events of other streams the sub-blocks wait on (expert parallel's per-sub-block sums): a graph cannot wait
-/// on work outside it, so a replay or a capture waits for all of them first.
+/// External event waits for expert-parallel sub-blocks are captured in order with the dense work.
 pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool, waits: []const cuda.Event) !Prefill {
     if (!prefillEnabled()) return .eager;
     const q = p.seq;
+    var wait_key: u64 = 0;
+    for (waits) |ev| {
+        const handle = if (ev.handle) |h| @intFromPtr(h) else 0;
+        wait_key = std.hash.Wyhash.hash(wait_key, std.mem.asBytes(&handle));
+    }
     const key: PKey = .{
         .layer = layer,
         .rows = rows,
@@ -642,6 +647,8 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         .base = base.ids,
         .base_cap = base.cap,
         .seq = .{ if (q.conv.len > 0) q.conv[0].ptr else 0, if (q.kc.len > 0) q.kc[0].ptr else 0, q.tail.ptr, q.cap, if (q.state.len > 0) q.state[0].ptr else 0 },
+        .wait_count = waits.len,
+        .wait_key = wait_key,
         .scores = q.scores,
         .tiles = tiles,
     };
@@ -649,7 +656,6 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
     for (&pentries) |*e| if (e.*) |*x| if (std.meta.eql(x.key, key)) {
         x.used = clock;
         prefill_stats.replays += 1;
-        for (waits) |ev| try p.stream.wait(ev);
         try x.exec.launchOn(p.stream);
         return .replayed;
     };
@@ -657,7 +663,6 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         prefill_stats.eager += 1;
         return .eager;
     }
-    for (waits) |ev| try p.stream.wait(ev);
     try cuda.graph.beginCapture(p.stream, .thread_local);
     capturing = true;
     pcur = key;
