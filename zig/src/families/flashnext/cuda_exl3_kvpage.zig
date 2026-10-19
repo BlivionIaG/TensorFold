@@ -154,16 +154,6 @@ pub const Config = struct {
     slots: usize = 49152,
     /// The most rows one attention call writes (the engine's chunk / a deep prefill's sub-block).
     rows: usize = 1536,
-
-    pub fn forChunk(cfg: Config, chunk: usize) Config {
-        var out = cfg;
-        out.rows = @max(out.rows, chunk);
-        return out;
-    }
-
-    pub fn validate(cfg: Config) !void {
-        if (cfg.window < wt.dense_keys or cfg.slots == 0 or cfg.rows == 0) return error.KvPageConfig;
-    }
 };
 
 /// A test's override of the environment (null: read it).
@@ -181,11 +171,7 @@ pub fn configFromEnv() ?Config {
     const v = std.c.getenv("TF_FLASHNEXT_KVPAGE") orelse return null;
     if (!std.mem.eql(u8, std.mem.span(v), "1")) return null;
     const d: Config = .{};
-    var rows = envUsize("TF_FLASHNEXT_KVPAGE_ROWS", d.rows);
-    if (std.mem.eql(u8, std.mem.span(std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL") orelse "1"), "1")) {
-        rows = @max(rows, envUsize("TF_FLASHNEXT_EXL3_PREFILL_ROWS", 4096));
-    }
-    return .{ .window = envUsize("TF_FLASHNEXT_KVPAGE_WINDOW", d.window), .slots = envUsize("TF_FLASHNEXT_KVPAGE_SLOTS", d.slots), .rows = rows };
+    return .{ .window = envUsize("TF_FLASHNEXT_KVPAGE_WINDOW", d.window), .slots = envUsize("TF_FLASHNEXT_KVPAGE_SLOTS", d.slots), .rows = envUsize("TF_FLASHNEXT_KVPAGE_ROWS", d.rows) };
 }
 
 const Kern = struct {
@@ -210,47 +196,6 @@ const attn_n = wt.attn_n;
 const ctl_n: usize = 8;
 const work_n: usize = att_rows * top;
 
-pub const SnapshotLayout = struct {
-    cap: usize,
-    cfg: Config,
-    at: usize,
-    wr: usize,
-    nblocks: usize,
-    canonical: usize,
-    device: usize,
-    tables: usize,
-    total: usize,
-
-    pub fn init(cap: usize, cfg: Config, at: usize) !SnapshotLayout {
-        try cfg.validate();
-        if (cap == 0 or at > cap) return error.KvPageRows;
-        _ = try std.math.mul(usize, cap, attn_n * 2 * row_bytes);
-        const wr = try std.math.add(usize, try std.math.add(usize, cfg.window, cfg.rows), ratio);
-        const nblocks = try std.math.add(usize, (try std.math.add(usize, cap, ratio - 1)) / ratio, 1);
-        const canonical = try std.math.mul(usize, at, attn_n * 2 * row_bytes);
-        const rows = try std.math.add(usize, try std.math.mul(usize, attn_n, wr), try std.math.mul(usize, ratio, cfg.slots));
-        const device = try std.math.mul(usize, rows, 2 * row_bytes);
-        const words = try std.math.add(usize, try std.math.mul(usize, attn_n, try std.math.add(usize, try std.math.mul(usize, 2, nblocks), ctl_n)), try std.math.mul(usize, 2, cfg.slots));
-        const tables = try std.math.mul(usize, words, 4);
-        return .{ .cap = cap, .cfg = cfg, .at = at, .wr = wr, .nblocks = nblocks, .canonical = canonical, .device = device, .tables = tables, .total = try std.math.add(usize, canonical, try std.math.add(usize, device, tables)) };
-    }
-};
-
-pub const Snapshot = struct {
-    layout: SnapshotLayout,
-    win0: [attn_n]usize,
-    rebases: [attn_n]u64,
-    written: [attn_n]u64,
-
-    pub fn validate(image: Snapshot) !void {
-        const expected = try SnapshotLayout.init(image.layout.cap, image.layout.cfg, image.layout.at);
-        if (!std.meta.eql(expected, image.layout)) return error.KvPageSnapshotLayout;
-        for (image.win0) |origin| {
-            if (origin % ratio != 0 or origin > image.layout.at or image.layout.at - origin > image.layout.wr) return error.KvPageWindow;
-        }
-    }
-};
-
 /// Counters of one layer (kvp_plan's ctl) plus the host's window moves.
 pub const Stats = struct {
     misses: u64 = 0,
@@ -259,7 +204,6 @@ pub const Stats = struct {
     overflow: bool = false,
     rebases: u64 = 0,
     written_rows: u64 = 0,
-    epoch: u32 = 0,
 
     pub fn add(a: *Stats, b: Stats) void {
         a.misses += b.misses;
@@ -268,7 +212,6 @@ pub const Stats = struct {
         a.overflow = a.overflow or b.overflow;
         a.rebases += b.rebases;
         a.written_rows += b.written_rows;
-        a.epoch = @max(a.epoch, b.epoch);
     }
 };
 
@@ -285,7 +228,6 @@ pub const Paged = struct {
     nblocks: usize,
     host: cuda.HostBuffer,
     host_dev: u64,
-    status_host: cuda.HostBuffer,
     dev: cuda.DeviceBuffer,
     /// blk2slot [12][nblocks] i32, mark [12][nblocks] u32, ctl [12][8] i32, slot2blk [slots] i32, stamp [slots] u32.
     tabs: cuda.DeviceBuffer,
@@ -294,21 +236,19 @@ pub const Paged = struct {
     win0: [attn_n]usize = @splat(0),
     rebases: [attn_n]u64 = @splat(0),
     written: [attn_n]u64 = @splat(0),
-    graph_prepared: bool = false,
+    epoch: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, cfg: Config) !*Paged {
-        try cfg.validate();
+        if (cfg.window < wt.dense_keys or cfg.slots == 0 or cfg.rows == 0) return error.KvPageConfig;
         const pg = try gpa.create(Paged);
         errdefer gpa.destroy(pg);
         const nblocks = cdiv(cap, ratio) + 1;
-        pg.* = .{ .gpa = gpa, .d = d, .k = undefined, .cfg = cfg, .cap = cap, .wr = cfg.window + cfg.rows + ratio, .nblocks = nblocks, .host = undefined, .host_dev = 0, .status_host = undefined, .dev = undefined, .tabs = undefined, .work = undefined };
+        pg.* = .{ .gpa = gpa, .d = d, .k = undefined, .cfg = cfg, .cap = cap, .wr = cfg.window + cfg.rows + ratio, .nblocks = nblocks, .host = undefined, .host_dev = 0, .dev = undefined, .tabs = undefined, .work = undefined };
         pg.k = try Kern.load(d);
         errdefer pg.k.module.unload();
         pg.host = try cuda.HostBuffer.allocMapped(d, attn_n * 2 * cap * row_bytes);
         errdefer pg.host.free();
         pg.host_dev = try pg.host.device();
-        pg.status_host = try cuda.HostBuffer.alloc(d, attn_n * ctl_n * 4);
-        errdefer pg.status_host.free();
         pg.dev = try cuda.DeviceBuffer.alloc(d, pg.devBytes());
         errdefer pg.dev.free();
         pg.tabs = try cuda.DeviceBuffer.alloc(d, pg.tabWords() * 4);
@@ -325,7 +265,6 @@ pub const Paged = struct {
         pg.work.free();
         pg.tabs.free();
         pg.dev.free();
-        pg.status_host.free();
         pg.host.free();
         pg.k.module.unload();
         pg.gpa.destroy(pg);
@@ -389,14 +328,12 @@ pub const Paged = struct {
         try pg.d.check(pg.d.api.cuMemsetD32_v2(ptr, value, words), "cuMemsetD32");
     }
 
-    /// An empty cache with a fresh device clock and every window at 0.
+    /// An empty cache: no block in a slot, every slot free, every window at 0 (the stats are kept).
     fn resetTables(pg: *Paged, stream: ?cuda.Stream) !void {
         const t = pg.tab(0);
         try pg.memset32(t.blk2slot_all, 0xFFFF_FFFF, attn_n * pg.nblocks, stream);
         try pg.memset32(t.slot2blk, 0xFFFF_FFFF, pg.cfg.slots, stream);
         try pg.memset32(t.stamp, 0, pg.cfg.slots, stream);
-        try pg.memset32(pg.tabs.ptr + attn_n * pg.nblocks * 4, 0, attn_n * pg.nblocks, stream);
-        try pg.memset32(t.ctl, 0, attn_n * ctl_n, stream);
         pg.win0 = @splat(0);
     }
 
@@ -412,7 +349,6 @@ pub const Paged = struct {
         const new0 = (pos0 -| pg.cfg.window) / ratio * ratio;
         if (new0 <= w0) return error.KvPageWindow;
         const shift = new0 - w0;
-        if (pos0 < w0 or pos0 > w0 + pg.wr or shift > pg.wr) return error.KvPageWindow;
         for ([_][2]u64{ .{ pg.devK(ai), pg.hostK(ai) }, .{ pg.devV(ai), pg.hostV(ai) } }) |dh| {
             try pg.copy(stream, dh[1] + w0 * row_bytes, dh[0], shift * row_bytes);
             const len = pos0 - new0;
@@ -431,51 +367,12 @@ pub const Paged = struct {
     /// Every row the sequence holds written out to host memory (the window's rows too): host K/V then equal what an
     /// all-on-device cache would hold, for a check or a snapshot.
     pub fn flush(pg: *Paged, stream: cuda.Stream, fed: usize) !void {
-        _ = try pg.snapshot(fed);
-        for (0..attn_n) |ai| try pg.flushLayer(stream, ai, fed);
-    }
-
-    pub fn snapshot(pg: *const Paged, at: usize) !Snapshot {
-        const image: Snapshot = .{ .layout = try SnapshotLayout.init(pg.cap, pg.cfg, at), .win0 = pg.win0, .rebases = pg.rebases, .written = pg.written };
-        try image.validate();
-        if (pg.wr != image.layout.wr or pg.nblocks != image.layout.nblocks or pg.dev.len != image.layout.device or pg.tabs.len != image.layout.tables or pg.host.bytes.len != attn_n * 2 * pg.cap * row_bytes) return error.KvPageSnapshotLayout;
-        return image;
-    }
-
-    pub fn validateSnapshot(pg: *const Paged, image: Snapshot) !void {
-        try image.validate();
-        const expected = try SnapshotLayout.init(pg.cap, pg.cfg, image.layout.at);
-        if (!std.meta.eql(expected, image.layout) or pg.wr != expected.wr or pg.nblocks != expected.nblocks or pg.dev.len != expected.device or pg.tabs.len != expected.tables or pg.host.bytes.len != attn_n * 2 * pg.cap * row_bytes) return error.KvPageSnapshotLayout;
-    }
-
-    pub fn moveSnapshot(pg: *Paged, stream: cuda.Stream, base: u64, image: Snapshot, saving: bool) !void {
-        var offset: usize = 0;
-        const prefix = image.layout.at * row_bytes;
-        for (0..attn_n) |ai| for ([_]u64{ pg.hostK(ai), pg.hostV(ai) }) |address| {
-            if (saving) try pg.copy(stream, base + offset, address, prefix) else try pg.copy(stream, address, base + offset, prefix);
-            offset += prefix;
-        };
-        for ([_]cuda.DeviceBuffer{ pg.dev, pg.tabs }) |buffer| {
-            if (saving) try pg.copy(stream, base + offset, buffer.ptr, buffer.len) else try pg.copy(stream, buffer.ptr, base + offset, buffer.len);
-            offset += buffer.len;
+        for (0..attn_n) |ai| {
+            const w0 = pg.win0[ai];
+            if (fed <= w0) continue;
+            try pg.copy(stream, pg.hostK(ai) + w0 * row_bytes, pg.devK(ai), (fed - w0) * row_bytes);
+            try pg.copy(stream, pg.hostV(ai) + w0 * row_bytes, pg.devV(ai), (fed - w0) * row_bytes);
         }
-        std.debug.assert(offset == image.layout.total);
-    }
-
-    pub fn publishSnapshot(pg: *Paged, image: Snapshot) void {
-        pg.win0 = image.win0;
-        pg.rebases = image.rebases;
-        pg.written = image.written;
-        pg.graph_prepared = false;
-    }
-
-    pub fn flushLayer(pg: *Paged, stream: cuda.Stream, ai: usize, fed: usize) !void {
-        if (fed > pg.cap) return error.KvPageRows;
-        const w0 = pg.win0[ai];
-        if (fed <= w0) return;
-        if (fed - w0 > pg.wr) return error.KvPageWindow;
-        try pg.copy(stream, pg.hostK(ai) + w0 * row_bytes, pg.devK(ai), (fed - w0) * row_bytes);
-        try pg.copy(stream, pg.hostV(ai) + w0 * row_bytes, pg.devV(ai), (fed - w0) * row_bytes);
     }
 
     /// The host copy of layer `ai`'s K (v false) or V rows (after `flush`).
@@ -487,7 +384,7 @@ pub const Paged = struct {
     pub fn stats(pg: *const Paged, ai: usize) !Stats {
         var c: [ctl_n]i32 = undefined;
         try pg.d.check(pg.d.api.cuMemcpyDtoH_v2(&c, pg.tab(ai).ctl, ctl_n * 4), "cuMemcpyDtoH");
-        return .{ .misses = @intCast(c[3]), .needed = @intCast(c[4]), .calls = @intCast(c[5]), .overflow = c[2] != 0, .rebases = pg.rebases[ai], .written_rows = pg.written[ai], .epoch = @bitCast(c[6]) };
+        return .{ .misses = @intCast(c[3]), .needed = @intCast(c[4]), .calls = @intCast(c[5]), .overflow = c[2] != 0, .rebases = pg.rebases[ai], .written_rows = pg.written[ai] };
     }
 
     pub fn total(pg: *const Paged) !Stats {
@@ -496,28 +393,19 @@ pub const Paged = struct {
         return t;
     }
 
-    pub fn stageStatus(pg: *Paged, stream: cuda.Stream) !void {
-        const ctl = pg.tab(0).ctl;
-        try pg.d.check(pg.d.api.cuMemcpyDtoHAsync_v2(pg.status_host.bytes.ptr, ctl, attn_n * ctl_n * 4, stream.handle), "cuMemcpyDtoHAsync");
-    }
-
-    pub fn checkStatus(pg: *const Paged) !void {
-        const controls: []const i32 = @alignCast(std.mem.bytesAsSlice(i32, pg.status_host.bytes[0 .. attn_n * ctl_n * 4]));
-        for (0..attn_n) |ai| if (controls[ai * ctl_n + 2] != 0) return error.KvPageOverflow;
-    }
-
     /// One call's paging after fn_qsa_select listed `m` rows' keys in qids / qnk / qspr: the plan (hits stamped, the
     /// misses given the least recently used slots), the misses' rows fetched from host memory, the lists remapped.
     pub fn page(pg: *Paged, stream: cuda.Stream, ai: usize, qids: u64, qnk: u64, qspr: u64, m: usize) !void {
         const t = pg.tab(ai);
         const w0 = pg.win0[ai];
+        pg.epoch += 1;
         const need = pg.work.ptr;
         const miss = need + work_n * 4;
         const fetch = miss + work_n * 4;
         var a: cuda.Args = .{};
         for ([_]u64{ qids, qnk, qspr }) |v| a.add(v);
         for ([_]usize{ m, idw, top, ratio, w0 }) |v| a.add(cint(v));
-        a.add(pg.tab(0).ctl);
+        a.add(@as(c_uint, pg.epoch));
         a.add(t.blk2slot);
         a.add(t.blk2slot_all);
         a.add(cint(ai * pg.nblocks));
@@ -534,31 +422,7 @@ pub const Paged = struct {
         for ([_]usize{ idw, w0, pg.slotBase(ai) }) |v| r.add(cint(v));
         r.add(t.blk2slot);
         r.add(cint(ratio));
-        r.add(t.ctl);
         try cuda.launch.launch(pg.k.remap, .{ .grid = .{ .x = @intCast(m) }, .block = .{ .x = 256 } }, stream, &r);
-    }
-
-    pub fn validateRange(pg: *const Paged, ai: usize, pos0: usize, n: usize) !void {
-        if (ai >= attn_n or n == 0 or n > pg.cfg.rows or pos0 > pg.cap or n > pg.cap - pos0) return error.KvPageRows;
-        _ = try windowPlan(pg.cfg, pg.wr, pg.win0[ai], pos0, n);
-    }
-
-    pub fn prepareLayer(pg: *Paged, stream: cuda.Stream, ai: usize, pos0: usize, n: usize) !void {
-        try pg.validateRange(ai, pos0, n);
-        if (pos0 == 0 and ai == 0) try pg.resetTables(stream);
-        const w0 = try windowPlan(pg.cfg, pg.wr, pg.win0[ai], pos0, n);
-        if (w0 != pg.win0[ai]) try pg.rebase(ai, pos0, stream);
-    }
-
-    pub fn prepareGraph(pg: *Paged, stream: cuda.Stream, pos0: usize, n: usize) !void {
-        for (0..attn_n) |ai| try pg.validateRange(ai, pos0, n);
-        for (0..attn_n) |ai| try pg.prepareLayer(stream, ai, pos0, n);
-        pg.graph_prepared = true;
-    }
-
-    pub fn graphKey(pg: *const Paged) [6]u64 {
-        const shape = [_]usize{ pg.cap, pg.wr, pg.cfg.window, pg.cfg.rows, pg.cfg.slots };
-        return .{ pg.dev.ptr, pg.tabs.ptr, pg.work.ptr, pg.host_dev, std.hash.Wyhash.hash(0, std.mem.asBytes(&shape)), std.hash.Wyhash.hash(0, std.mem.asBytes(&pg.win0)) };
     }
 
     /// Test support: the window's start of layer `ai` set by hand (the rows before it then come from host memory).
@@ -587,10 +451,12 @@ pub const Paged = struct {
     pub fn attnRows(pg: *Paged, p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype) !void {
         const s = p.s;
         const pos0 = p.pos0;
-        if (pg.graph_prepared) {
-            try pg.validateRange(ai, pos0, n);
-            if (pos0 + n > pg.win0[ai] + pg.wr) return error.KvPageWindow;
-        } else try pg.prepareLayer(p.stream, ai, pos0, n);
+        if (pos0 + n > pg.cap) return error.UnexpectedTensor;
+        if (n > pg.cfg.rows) return error.KvPageRows;
+        // a new sequence starts at layer 0, position 0 (the prompt runs layer-major: no other layer has a row yet)
+        if (pos0 == 0 and ai == 0) try pg.resetTables(p.stream);
+        if (pos0 < pg.win0[ai]) return error.KvPageRewind;
+        if (pos0 + n > pg.win0[ai] + pg.wr) try pg.rebase(ai, pos0, p.stream);
         const w0 = pg.win0[ai];
         const kd = pg.devK(ai);
         const vd = pg.devV(ai);
@@ -620,16 +486,6 @@ pub const Paged = struct {
     }
 };
 
-pub fn windowPlan(cfg: Config, wr: usize, w0: usize, pos0: usize, n: usize) !usize {
-    if (n == 0 or n > cfg.rows) return error.KvPageRows;
-    if (pos0 == 0) return 0;
-    if (pos0 < w0) return error.KvPageRewind;
-    if (pos0 - w0 > wr) return error.KvPageRows;
-    const next = if (pos0 - w0 + n > wr) (pos0 -| cfg.window) / ratio * ratio else w0;
-    if (@min(@min(n, att_rows) * top, next / ratio) > cfg.slots) return error.KvPageCapacity;
-    return next;
-}
-
 /// Device bytes of a paged sequence's K/V side for `cap` tokens under `cfg` (windows, slots, tables, work lists).
 pub fn deviceBytesFor(cap: usize, cfg: Config) usize {
     const wr = cfg.window + cfg.rows + ratio;
@@ -637,10 +493,17 @@ pub fn deviceBytesFor(cap: usize, cfg: Config) usize {
     return 2 * (attn_n * wr + ratio * cfg.slots) * row_bytes + (attn_n * (2 * nblocks + ctl_n) + 2 * cfg.slots) * 4 + work_n * 4 * 4;
 }
 
+/// A stream's device bytes (cuda_prompt.seqBytes: `dense`) with paging on: its K/V replaced by the paged side.
+pub fn streamBytes(dense: usize, cap: usize) usize {
+    const cfg = configFromEnv() orelse return dense;
+    return dense -| attn_n * cap * 2 * row_bytes +| deviceBytesFor(cap, cfg);
+}
+
 /// A new sequence's paged store when the environment (or a test) turns paging on, else null.
 pub fn forSeq(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, chunk: usize) !?*Paged {
-    const cfg = configFromEnv() orelse return null;
-    return try Paged.init(gpa, d, cap, cfg.forChunk(chunk));
+    var cfg = configFromEnv() orelse return null;
+    cfg.rows = @max(cfg.rows, chunk);
+    return try Paged.init(gpa, d, cap, cfg);
 }
 
 test "exl3: kvpage tables and device bytes" {
@@ -654,90 +517,4 @@ test "exl3: kvpage tables and device bytes" {
     try std.testing.expectEqual(@as(usize, 1024), row_bytes);
     // 200k: the default shape's device side is about half a GiB (upstream's K/V: 4.58 GiB)
     try std.testing.expect(deviceBytesFor(200_016, cfg) < 5 << 27);
-}
-
-test "exl3: kvpage window boundaries and conservative capacity" {
-    const cfg: Config = .{ .window = 2052, .rows = 256, .slots = 512 };
-    const wr = cfg.window + cfg.rows + ratio;
-    try std.testing.expectEqual(@as(usize, 0), try windowPlan(cfg, wr, 0, wr - 1, 1));
-    try std.testing.expectEqual(@as(usize, 260), try windowPlan(cfg, wr, 0, wr, 1));
-    try std.testing.expectEqual(@as(usize, 0), try windowPlan(cfg, wr, 260, 0, 256));
-    try std.testing.expectError(error.KvPageRewind, windowPlan(cfg, wr, 260, 259, 1));
-    try std.testing.expectError(error.KvPageRows, windowPlan(cfg, wr, 0, wr + 1, 1));
-    try std.testing.expectError(error.KvPageCapacity, windowPlan(cfg, wr, 8192, 8192, 256));
-    try std.testing.expectEqual(@as(usize, 8192), try windowPlan(cfg, wr, 8192, 8192, 1));
-}
-
-test "exl3: kvpage graph key changes on rebase and host store replacement" {
-    var pg: Paged = undefined;
-    pg.dev.ptr = 1;
-    pg.tabs.ptr = 2;
-    pg.work.ptr = 3;
-    pg.host_dev = 4;
-    pg.cap = 200_016;
-    pg.cfg = .{};
-    pg.wr = pg.cfg.window + pg.cfg.rows + ratio;
-    pg.win0 = @splat(0);
-    const first = pg.graphKey();
-    try std.testing.expectEqual(first, pg.graphKey());
-    pg.win0[0] = 4;
-    try std.testing.expect(!std.meta.eql(first, pg.graphKey()));
-    pg.win0[0] = 0;
-    pg.host_dev = 5;
-    try std.testing.expect(!std.meta.eql(first, pg.graphKey()));
-}
-
-test "exl3: kvpage host preparation writes back and compacts once before replay" {
-    const Fake = struct {
-        var copies: usize = 0;
-        fn copy(dst: u64, src: u64, bytes: usize, _: cuda.abi.Stream) callconv(.c) cuda.abi.Result {
-            std.debug.assert(dst + bytes <= src or src + bytes <= dst);
-            const target: [*]u8 = @ptrFromInt(dst);
-            const source: [*]const u8 = @ptrFromInt(src);
-            @memcpy(target[0..bytes], source[0..bytes]);
-            copies += 1;
-            return cuda.abi.success;
-        }
-    };
-    Fake.copies = 0;
-    var driver: cuda.Driver = undefined;
-    driver.api.cuMemcpyDtoDAsync_v2 = Fake.copy;
-    const stream: cuda.Stream = .{ .d = &driver, .handle = null };
-    var pg: Paged = undefined;
-    pg.d = &driver;
-    pg.cfg = .{ .window = 2052, .rows = 256, .slots = 512 };
-    pg.cap = 8192;
-    pg.wr = pg.cfg.window + pg.cfg.rows + ratio;
-    pg.win0 = @splat(0);
-    pg.rebases = @splat(0);
-    pg.written = @splat(0);
-    const device = try std.testing.allocator.alloc(u8, pg.devBytes());
-    defer std.testing.allocator.free(device);
-    pg.dev.ptr = @intFromPtr(device.ptr);
-    const host = try std.testing.allocator.alloc(u8, 2 * pg.cap * row_bytes);
-    defer std.testing.allocator.free(host);
-    @memset(host, 0);
-    pg.host_dev = @intFromPtr(host.ptr);
-    for (0..2) |side| {
-        const start = if (side == 0) pg.devK(0) else pg.devV(0);
-        const words: [*]u32 = @ptrFromInt(start);
-        for (0..pg.wr) |position| @memset(words[position * (row_bytes / 4) ..][0 .. row_bytes / 4], @as(u32, @intCast(position + side * pg.cap)));
-    }
-    const before = pg.win0[0];
-    const pos0 = pg.wr;
-    try pg.prepareLayer(stream, 0, pos0, 1);
-    const moved = pg.win0[0];
-    try std.testing.expect(moved > before);
-    try std.testing.expectEqual(@as(u64, 1), pg.rebases[0]);
-    try std.testing.expectEqual(@as(u64, moved), pg.written[0]);
-    for (0..2) |side| {
-        const written: [*]const u32 = @ptrFromInt(pg.host_dev + side * pg.cap * row_bytes);
-        const kept: [*]const u32 = @ptrFromInt(if (side == 0) pg.devK(0) else pg.devV(0));
-        for (0..moved) |position| for (written[position * (row_bytes / 4) ..][0 .. row_bytes / 4]) |word| try std.testing.expectEqual(@as(u32, @intCast(position + side * pg.cap)), word);
-        for (moved..pos0) |position| for (kept[(position - moved) * (row_bytes / 4) ..][0 .. row_bytes / 4]) |word| try std.testing.expectEqual(@as(u32, @intCast(position + side * pg.cap)), word);
-    }
-    const copies = Fake.copies;
-    try pg.prepareLayer(stream, 0, pos0, 1);
-    try std.testing.expectEqual(copies, Fake.copies);
-    try std.testing.expectEqual(@as(u64, 1), pg.rebases[0]);
 }

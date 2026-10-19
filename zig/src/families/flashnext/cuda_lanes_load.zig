@@ -78,7 +78,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     own.next = 0;
     if (o.slide) own.lay = try @import("cuda_slide.zig").layoutOf(gpa, io, dir);
     try @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
-    var stream_bytes = @import("cuda_exl3_kv.zig").engineSeqBytes(@import("cuda_exl3_kv.zig").of(own.engine), window);
+    var stream_bytes = @import("cuda_exl3_kvpage.zig").streamBytes(@import("cuda_exl3_kv.zig").engineSeqBytes(@import("cuda_exl3_kv.zig").of(own.engine), window), window); // ours: placement-aware bytes, then paged K/V
     if (own.head) |h| {
         stream_bytes += mtp.Draft.bytes(window, h.ids.len, @import("cuda_exl3_prefill.zig").draftRows(own.engine));
     } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(1, 1, own.engine.chunk); // rank 1's window (no head cache)

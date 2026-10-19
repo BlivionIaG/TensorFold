@@ -299,7 +299,6 @@ const Eng = struct {
         _ = try g.e.reserveScores(cap_default, @min(cap_default, g.e.chunk));
         g.seq = try g.e.newSeq(cap_default);
         g.out = try cuda.DeviceBuffer.alloc(gpu.d, out_rows * vocab * 2);
-        X.prefill.reserveFor(g.e, cap_default, world);
         g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, xpass.budgetFromEnv(0));
         std.debug.print("RESULT rank {d}/{d} load: {d:.1} s; {d} lines a layer x {d} layers ({d:.2} GiB of pool)\n", .{ rank, world, ms(t0, check.now(gpu.io)) / 1e3, g.attached.lines, g.attached.layers, gib(g.attached.device_bytes) });
         return g;
@@ -534,25 +533,15 @@ fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, 
         try g.reset();
         _ = try g.swap(3);
         const p0 = graph.prefill_stats;
-        const f0 = X.prefill.stats;
         const t0 = check.now(gpu.io);
         try g.forward(ids, .{ .logits = .last });
         const t1 = check.now(gpu.io);
         const p1 = graph.prefill_stats;
-        const f1 = X.prefill.stats;
-        try check.expect(f1.chunks > f0.chunks and f1.rows >= f0.rows + n, "rank {d}: deep prefill ran instead of falling back", .{rank});
-        if (m == .graph) try check.expect(p1.captures + p1.updates + p1.replays > p0.captures + p0.updates + p0.replays, "rank {d}: prefill graph captured or replayed a layer", .{rank});
         hs[0] = std.hash.Wyhash.hash(0, g.seq.logits);
         var tok = prompt.argmax(g.seq.logits);
         for (0..steps) |i| {
             tok = try g.round(tok);
             hs[i + 1] = std.hash.Wyhash.hash(0, g.seq.logits);
-        }
-        if (g.seq.paged) |pg| {
-            try g.stream.synchronize();
-            const pager = try pg.total();
-            try check.expect(!pager.overflow and pager.epoch > 0 and pager.calls > 0 and pager.rebases > 0, "rank {d}: paged prefill/decode advances epochs and crosses a window without overflow", .{rank});
-            std.debug.print("PAGER rank {d}/{d} {s}: device epoch {d}, calls {d}, rebases {d}, written rows {d}, misses {d}\n", .{ rank, world, @tagName(m), pager.epoch, pager.calls, pager.rebases, pager.written_rows, pager.misses });
         }
         const h = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(hs));
         if (world == 2) try check.expect(try g.swap(h) == h, "rank {d}: the ranks' prefill logits differ", .{rank});
@@ -566,248 +555,7 @@ fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, 
     check.pass("rank {d}/{d}: deep prefill of {d} rows with layer graphs and the decode after it bit-identical to eager", .{ rank, world, n });
 }
 
-/// One warmed TP2 deep-prefill forward inside a CUDA-profiler API range for Nsight Systems.
-/// The profiler window excludes graph warm-up and host setup; no per-layer synchronization is added.
-fn prefillProfMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, n: usize, which: []const u8) !void {
-    var stage: []const u8 = "engine initialization";
-    errdefer std.debug.print("prefill-prof rank={d} failed during {s}\n", .{ rank, stage });
-    const a = gpu.gpa;
-    const g = try Eng.init(gpu, rank, world, port, dir);
-    defer g.deinit();
-    defer graph.force = null;
-    try check.expect(g.seq.paged != null, "prefill profiler requires BF16 KV paging", .{});
-    const ids = try a.alloc(u32, n);
-    defer a.free(ids);
-    var prng = std.Random.DefaultPrng.init(0x9e3779b9);
-    for (ids) |*x| x.* = 200 + prng.random().uintLessThan(u32, 60000);
-    const use_graphs = std.mem.eql(u8, which, "graph");
-    if (!use_graphs and !std.mem.eql(u8, which, "eager")) return error.BadMode;
-    graph.force = if (use_graphs) .graph else .off;
-    try dplan.toHost();
-    stage = "graph warm-up";
-    // Warm paging and, for graph mode, capture each layer shape before the measured forward.
-    for (0..if (use_graphs) @as(usize, 2) else 1) |_| {
-        try g.reset();
-        _ = try g.swap(3);
-        try g.forward(ids, .{ .logits = .last });
-        try g.stream.synchronize();
-    }
-    const before = graph.prefill_stats;
-    const f_before = X.prefill.stats;
-    stage = "profile setup";
-    try g.reset();
-    _ = try g.swap(3);
-    try g.stream.synchronize();
-    var prof = try Profiler.open();
-    _ = prof.start();
-    stage = "measured forward";
-    const t0 = check.now(gpu.io);
-    try g.forward(ids, .{ .logits = .last });
-    const t1 = check.now(gpu.io);
-    _ = prof.stop();
-    try g.stream.synchronize();
-    const after = graph.prefill_stats;
-    const f_after = X.prefill.stats;
-    if (use_graphs and after.replays == before.replays) return error.NoPrefillGraphReplay;
-    const hash = std.hash.Wyhash.hash(0, g.seq.logits);
-    stage = "rank hash check";
-    if (world == 2) try check.expect(try g.swap(hash) == hash, "rank {d}: profiled prefill logits differ across ranks", .{rank});
-    std.debug.print("RESULT prefill-prof rank={d}/{d} mode={s} rows={d}: {d:.1} ms wall, graphs replayed {d}, eager {d}, captured {d}, updated {d}; expert copies {d} (prefetch {d}), passes {d}, pick wait {d:.1} ms, plan {d:.1} ms; logits {x}; Nsight range excludes warm-up\n", .{ rank, world, which, n, ms(t0, t1), after.replays - before.replays, after.eager - before.eager, after.captures - before.captures, after.updates - before.updates, f_after.copies - f_before.copies, f_after.prefetched - f_before.prefetched, f_after.passes - f_before.passes, @as(f64, @floatFromInt(f_after.host_wait_ns - f_before.host_wait_ns)) / 1e6, @as(f64, @floatFromInt(f_after.plan_ns - f_before.plan_ns)) / 1e6, hash });
-}
-
-fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize) !void {
-    const snaps = flash.snapshot;
-    const allocator = gpu.gpa;
-    const g = try Eng.init(gpu, rank, world, port, dir);
-    defer g.deinit();
-    defer graph.force = null;
-    try check.expect(g.seq.paged != null, "snapshot test requires BF16 paging", .{});
-    var second = try g.e.newSeq(cap_default);
-    defer second.deinit(allocator);
-    const ids = try allocator.alloc(u32, 16384);
-    defer allocator.free(ids);
-    var random = std.Random.DefaultPrng.init(0x736e6170);
-    for (ids) |*token| token.* = 200 + random.random().uintLessThan(u32, 60000);
-    graph.force = .graph;
-    try g.forward(ids[0..3075], .{ .logits = .last });
-    try g.e.forward(flash.Tri, g.tri(), &second, ids[4096..6917], .{ .logits = .last });
-    const first_saved = try snaps.save(allocator, gpu.d, g.stream, &g.seq, null);
-    defer snaps.drop(allocator, g.stream, first_saved);
-    const second_saved = try snaps.save(allocator, gpu.d, g.stream, &second, null);
-    defer snaps.drop(allocator, g.stream, second_saved);
-    const expected = try allocator.alloc(u8, (steps + 1) * 2 * vocab * 2);
-    defer allocator.free(expected);
-    var reference: [2]?*snaps.Snap = .{ null, null };
-    defer for (reference) |item| if (item) |saved| snaps.drop(allocator, g.stream, saved);
-    for ([_]graph.Mode{ .off, .graph, .graph }, 0..) |mode, run_index| {
-        graph.force = mode;
-        try dplan.toHost();
-        g.e.round_graph.clear();
-        try snaps.restore(g.stream, &g.seq, null, first_saved);
-        try snaps.restore(g.stream, &second, null, second_saved);
-        const before = graph.stats;
-        const prefill_before = graph.prefill_stats;
-        try g.forward(ids[3075..11267], .{ .logits = .last });
-        try g.e.forward(flash.Tri, g.tri(), &second, ids[6917..15109], .{ .logits = .last });
-        var tokens = [_]u32{ prompt.argmax(g.seq.logits), prompt.argmax(second.logits) };
-        const sequences = [_]*prompt.Seq{ &g.seq, &second };
-        for (0..steps + 1) |step| {
-            if (step > 0) {
-                try g.e.round(flash.Tri, g.tri(), &sequences, &tokens, g.out.ptr);
-                tokens = .{ prompt.argmax(g.seq.logits), prompt.argmax(second.logits) };
-            }
-            for (sequences, 0..) |sequence, lane| {
-                const wanted = expected[(step * 2 + lane) * vocab * 2 ..][0 .. vocab * 2];
-                if (run_index == 0) @memcpy(wanted, sequence.logits) else try check.expect(std.mem.eql(u8, wanted, sequence.logits), "rank {d} snapshot {s} lane {d} step {d} BF16 logits", .{ rank, @tagName(mode), lane, step });
-            }
-        }
-        for (sequences, 0..) |sequence, lane| {
-            const saved = try snaps.save(allocator, gpu.d, g.stream, sequence, null);
-            if (run_index == 0) {
-                reference[lane] = saved;
-            } else {
-                defer snaps.drop(allocator, g.stream, saved);
-                const previous = reference[lane].?;
-                const canonical = saved.paged.?.layout.canonical;
-                const state_offset = saved.paged.?.layout.total;
-                try check.expect(std.mem.eql(u8, previous.host.?.bytes[0..canonical], saved.host.?.bytes[0..canonical]), "rank {d} snapshot lane {d} exact canonical BF16 history", .{ rank, lane });
-                try check.expect(std.mem.eql(u8, previous.host.?.bytes[state_offset..previous.buf.len], saved.host.?.bytes[state_offset..saved.buf.len]), "rank {d} snapshot lane {d} exact recurrent/index/PLE state", .{ rank, lane });
-            }
-        }
-        if (mode == .graph) {
-            try check.expect(graph.prefill_stats.replays > prefill_before.replays, "rank {d} prefill graph replay after restore", .{rank});
-            try check.expect(graph.stats.replays > before.replays, "rank {d} concurrent decode graph replay after restore", .{rank});
-        }
-        std.debug.print("SNAPSHOT rank {d}/{d} {s}: two paged lanes, {d} decode steps, exact state and logits; prefill replays {d}, decode replays {d}\n", .{ rank, world, @tagName(mode), steps, graph.prefill_stats.replays - prefill_before.replays, graph.stats.replays - before.replays });
-    }
-    check.pass("rank {d}/{d}: concurrent paged snapshots preserve BF16 continuation and graph prefill/decode", .{ rank, world });
-}
-
-/// cuProfilerStart/Stop from libcuda (nsys --capture-range=cudaProfilerApi), looked up at run time.
-const Profiler = struct {
-    lib: std.DynLib,
-    start: *const fn () callconv(.c) c_int,
-    stop: *const fn () callconv(.c) c_int,
-    fn open() !Profiler {
-        var lib = try std.DynLib.open("libcuda.so.1");
-        return .{ .start = lib.lookup(*const fn () callconv(.c) c_int, "cuProfilerStart") orelse return error.MissingSymbol, .stop = lib.lookup(*const fn () callconv(.c) c_int, "cuProfilerStop") orelse return error.MissingSymbol, .lib = lib };
-    }
-};
-
-/// A profiling window for nsys: `steps` decode rounds (one row) then `steps` verify windows of `rows` rows, after a
-/// warm-up that captures their graphs (TF_FLASHNEXT_EXL3_GRAPH_AFTER=1 recommended), inside cuProfilerStart/Stop.
-fn profMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize, rows: usize, which: []const u8) !void {
-    const a = gpu.gpa;
-    const g = try Eng.init(gpu, rank, world, port, dir);
-    defer g.deinit();
-    const ids = [_]u32{ 760, 6511, 314, 9338, 369, 11751, 13, 1049, 369, 3750, 364, 279, 242476, 300, 21262, 13 };
-    graph.force = if (std.mem.eql(u8, which, "graph")) .graph else if (std.mem.eql(u8, which, "dplan")) .dplan else .off;
-    var prof = try Profiler.open();
-    const toks = try a.alloc(u32, 4 * steps * rows + 64);
-    defer a.free(toks);
-    var phase: usize = 0;
-    while (phase < 2) : (phase += 1) {
-        try dplan.toHost();
-        try g.reset();
-        try g.forward(&ids, .{ .logits = .last });
-        var tok = prompt.argmax(g.seq.logits);
-        _ = try g.swap(5);
-        if (phase == 1) _ = prof.start();
-        const t0 = check.now(gpu.io);
-        for (0..steps) |i| {
-            tok = try g.round(tok);
-            toks[i] = tok;
-        }
-        const t1 = check.now(gpu.io);
-        for (0..steps) |i| {
-            for (0..rows) |j| toks[steps + i * rows + j] = toks[(i * rows + j) % steps];
-            try g.forward(toks[steps + i * rows ..][0..rows], .{ .logits = .all, .logits_out = g.out.ptr });
-        }
-        const t2 = check.now(gpu.io);
-        if (phase == 1) _ = prof.stop();
-        if (rank == 0) std.debug.print("RESULT prof tp={d} {s} phase {d}: rounds {d:.2} ms each, windows of {d} rows {d:.2} ms each; graph captures {d} replays {d}; host prepare {d:.3} ms a step\n", .{ world, which, phase, ms(t0, t1) / @as(f64, @floatFromInt(steps)), rows, ms(t1, t2) / @as(f64, @floatFromInt(steps)), graph.stats.captures, graph.stats.replays, @as(f64, @floatFromInt(graph.stats.prepare_ns)) / 1e6 / @as(f64, @floatFromInt(@max(graph.stats.prepares, 1))) });
-    }
-    graph.force = null;
-}
-
-/// Host cost of the n-gram rows a step gathers (Ngram.rows), 1 and 3 tokens, fresh random histories.
-fn ngramMode(gpu: Gpu, dir: []const u8) !void {
-    const a = gpu.gpa;
-    var ng = try flash.ple.Ngram.init(a, gpu.io, dir);
-    defer ng.deinit();
-    const w = ng.width();
-    const emb = try a.alloc(u16, 4 * w);
-    defer a.free(emb);
-    const xs = try a.alloc(f32, 4 * w / 32);
-    defer a.free(xs);
-    var prng = std.Random.DefaultPrng.init(7);
-    for ([_]usize{ 1, 3 }) |n| for (0..2) |rep| {
-        var tot: f64 = 0;
-        var worst: f64 = 0;
-        const reps = 64;
-        for (0..reps) |_| {
-            var hist = [2]i64{ prng.random().uintLessThan(u32, 240000), prng.random().uintLessThan(u32, 240000) };
-            var ids: [3]u32 = undefined;
-            for (&ids) |*x| x.* = prng.random().uintLessThan(u32, 240000);
-            const h0 = hist;
-            const t0 = check.now(gpu.io);
-            try ng.rows(&hist, ids[0..n], emb[0 .. n * w], xs[0 .. n * w / 32]);
-            var t = ms(t0, check.now(gpu.io));
-            if (rep == 1) { // the same rows again: their pages are resident now
-                hist = h0;
-                const t1 = check.now(gpu.io);
-                try ng.rows(&hist, ids[0..n], emb[0 .. n * w], xs[0 .. n * w / 32]);
-                t = ms(t1, check.now(gpu.io));
-            }
-            tot += t;
-            worst = @max(worst, t);
-        }
-        std.debug.print("RESULT ngram rows of {d} tokens (pass {d}, 1 = warm repeat): {d:.3} ms mean, {d:.3} ms worst\n", .{ n, rep, tot / reps, worst });
-    };
-}
-
-/// A scheduling change's bits: every golden prompt's decode rounds and windows (runMode) under `which` (off, dplan,
-/// graph) with the parallel projection parts (X.fork) off, off again and on; logits compared bit for bit, ms/token.
-fn forkMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, golden_path: []const u8, steps: usize, which: []const u8) !void {
-    const a = gpu.gpa;
-    const text = try std.Io.Dir.cwd().readFileAlloc(gpu.io, golden_path, a, .limited(1 << 26));
-    defer a.free(text);
-    var parsed = try std.json.parseFromSlice(std.json.Value, a, text, .{});
-    defer parsed.deinit();
-    const g = try Eng.init(gpu, rank, world, port, dir);
-    defer g.deinit();
-    graph.force = if (std.mem.eql(u8, which, "graph")) .graph else if (std.mem.eql(u8, which, "dplan")) .dplan else .off;
-    defer graph.force = null;
-    defer X.fork.force = null;
-    var ok = true;
-    for (parsed.value.object.get("prompts").?.array.items) |p| {
-        const ids = try ints(a, p.object.get("ids").?);
-        defer a.free(ids);
-        var runs: [3]Run = undefined;
-        for (&runs) |*r| r.* = .{ .ids = try a.alloc(u32, steps + 1), .round_h = try a.alloc(u64, steps), .window_h = try a.alloc(u64, steps) };
-        defer for (&runs) |*r| {
-            a.free(r.ids);
-            a.free(r.round_h);
-            a.free(r.window_h);
-        };
-        for ([_]bool{ false, false, true }, 0..) |on, i| {
-            X.fork.force = on;
-            try runMode(g, ids, steps, &runs[i]);
-        }
-        const same = std.mem.eql(u64, runs[1].round_h, runs[2].round_h) and std.mem.eql(u64, runs[1].window_h, runs[2].window_h) and std.mem.eql(u32, runs[1].ids, runs[2].ids);
-        ok = ok and same;
-        if (world == 2) {
-            const h = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(runs[2].round_h));
-            try check.expect(try g.swap(h) == h, "rank {d}: the ranks differ", .{rank});
-        }
-        if (rank == 0) std.debug.print("RESULT tp={d} {s} {s}: decode {d:.2} -> {d:.2} ms/token, windows {d:.2} -> {d:.2} ms/row (serial -> parallel parts); logits {s}\n", .{ world, which, p.object.get("name").?.string, runs[1].ms_token, runs[2].ms_token, runs[1].ms_window_row, runs[2].ms_window_row, if (same) "bit-equal" else "DIFFER" });
-    }
-    try check.expect(ok, "rank {d}: parallel parts changed the logits", .{rank});
-    check.pass("rank {d}/{d}: parallel projection parts give the same bits ({s})", .{ rank, world, which });
-}
-
 pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
-    if (rest.len >= 2 and std.mem.eql(u8, rest[0], "ngram")) return ngramMode(gpu, rest[1]);
     if (rest.len < 1) return error.MissingArgument;
     if (std.mem.eql(u8, rest[0], "plan")) return planMode(gpu);
     if (rest.len < 6) return error.MissingArgument;
@@ -817,13 +565,9 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     const dir = rest[3];
     const mode = rest[4];
     if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
-    const steps = if (rest.len > 6 and !std.mem.eql(u8, mode, "prefill-prof")) try std.fmt.parseInt(usize, rest[6], 10) else 48;
+    const steps = if (rest.len > 6) try std.fmt.parseInt(usize, rest[6], 10) else 48;
     const which: []const u8 = if (rest.len > 7) rest[7] else "dplan,graph";
-    if (std.mem.eql(u8, mode, "snapshot")) return snapshotMode(gpu, rank, world, port, dir, steps);
-    if (std.mem.eql(u8, mode, "fork")) return forkMode(gpu, rank, world, port, dir, rest[5], steps, which);
-    if (std.mem.eql(u8, mode, "prof")) return profMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps, which);
     if (std.mem.eql(u8, mode, "prefill")) return prefillMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps);
-    if (std.mem.eql(u8, mode, "prefill-prof")) return prefillProfMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), if (rest.len > 6) rest[6] else "graph");
     if (std.mem.eql(u8, mode, "eq")) return eqMode(gpu, rank, world, port, dir, rest[5], steps, which);
     return error.UnknownMode;
 }

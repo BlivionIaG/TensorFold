@@ -14,28 +14,6 @@
 //!       ms, copies and device bytes.
 //!       NEEDLE_AT (a fraction, e.g. 0.25): a sentence with a 5-digit code inserted that far into the text and a
 //!       question about it appended; the greedy answer must contain the code (both caches)
-//!
-//! BF16 paged snapshot acceptance plan (the format/order contract is in cuda_snap.zig):
-//! 1. Host-driver fakes: allocate/save/restore failures at every section, queued copies drained before freeing,
-//!    truncated/unknown formats and checked-size overflow, exact byte admission, incompatible capacity/geometry,
-//!    no mutation on preflight rejection, and no successful publication after a partial copy failure.
-//! 2. Kernel lifecycle: save at 0, 1, 3, 4, dense/sparse boundaries, and immediately before/after several rebases.
-//!    Seed distinct BF16 bit patterns (including NaNs/signed zero) per layer/K/V/row, dirty window tails and occupied
-//!    LRU slots; compare canonical rows, device windows/slots, both mapping directions, marks, epochs and stamps.
-//!    Test same-sequence rewind, restore into a distinct compatible sequence, source drop, repeated restore and
-//!    snapshot drop while two other sequences remain live. Host snapshots must remain immutable through each case.
-//! 3. Model continuation: save, run a suffix, restore, then require bit-identical eager logits and flushed BF16 K/V
-//!    for that suffix; repeat across a window rebase and with partial pooled blocks and PLE n-gram history.
-//! 4. MTP: require a settled head mark; reject outstanding drafts. Populate verification cache before restore and
-//!    inject a delayed pre-restore publication; neither may survive the generation change. Check restored head
-//!    rows, len/drafted/rows, recurrent rollback state and drafted/serial continuation equality across rebases.
-//! 5. TP2/graphs: two distinct live histories, staggered rebases, capture/replay before AND after restore, and drop/
-//!    recreation of one lane while the other remains live. Compare every rank's canonical K/V and outputs to eager;
-//!    require both attention and GDN graph reuse where compatible, and recapture when origin arguments differ.
-//! 6. Inject one-rank overflow, copy failure, delayed instantiation and peer failure. Require bounded failure,
-//!    joined producers, no failed-batch results or stale verification results, no live-buffer reuse and clean drop.
-//! 7. After those gates, two concurrent 200k TP2 requests with BF16 RAM paging, snapshot branch/reuse and MTP, graph
-//!    prefill/decode parity, host/device peak accounting and cold/warm timings. No gate above has been run here.
 const std = @import("std");
 const cuda = @import("cuda");
 const check = @import("check.zig");
@@ -148,79 +126,7 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, mode, "trace")) return traceRun(gpu, dir, rest[2..]);
     if (std.mem.eql(u8, mode, "cmp")) return cmpRun(gpu, dir, rest[2..]);
     if (std.mem.eql(u8, mode, "kernel")) return kernelRun(gpu, if (rest.len > 2) try std.fmt.parseInt(usize, rest[2], 10) else 6144);
-    if (std.mem.eql(u8, mode, "kernel-graph")) return kernelReplay(gpu, 49152, true, false);
-    if (std.mem.eql(u8, mode, "window-graph")) return kernelReplay(gpu, 49152, true, true);
-    if (std.mem.eql(u8, mode, "overflow-graph")) return overflowReplay(gpu);
-    if (std.mem.eql(u8, mode, "snapshot")) return snapshotLifecycle(gpu);
     return error.UnknownMode;
-}
-
-fn snapshotSequence(gpu: Gpu, stream: cuda.Stream) !prompt.Seq {
-    var engine: prompt.Engine = undefined;
-    engine.gpa = gpu.gpa;
-    engine.driver = @constCast(gpu.d);
-    var owned_stream = stream;
-    engine.stream = &owned_stream;
-    engine.chunk = 256;
-    engine.eos = 0;
-    engine.round_graph = .{};
-    engine.page_config = .{ .window = 2052, .slots = 16, .rows = 256 };
-    return engine.newSeq(8192);
-}
-
-fn snapshotLifecycle(gpu: Gpu) !void {
-    const snaps = @import("flashnext").snapshot;
-    var stream = try cuda.Stream.init(gpu.d, true);
-    defer stream.deinit();
-    var destination = try snapshotSequence(gpu, stream);
-    defer destination.deinit(gpu.gpa);
-    for ([_]usize{ 0, 1, 3, 4, 2051, 2052, 4096, 4099, 6147 }) |at| {
-        var source: ?prompt.Seq = try snapshotSequence(gpu, stream);
-        defer if (source) |*sequence| sequence.deinit(gpu.gpa);
-        const pg = source.?.paged.?;
-        source.?.fed = at;
-        source.?.history = .{ @intCast(at), 73 };
-        for (0..12) |layer| {
-            const origin = (at -| 2052) / 4 * 4;
-            pg.win0[layer] = origin;
-            pg.rebases[layer] = layer + 3;
-            pg.written[layer] = origin;
-            for (0..2) |side| {
-                const host = pg.hostMut(layer, side == 1);
-                const words: []u16 = std.mem.bytesAsSlice(u16, @as([]align(2) u8, @alignCast(host)));
-                for (words, 0..) |*word, index| word.* = @truncate(index + layer * 997 + side * 32768);
-            }
-        }
-        try pg.dev.fill8(0xFF, stream.handle);
-        const words = try gpu.gpa.alloc(u32, pg.tabs.len / 4);
-        defer gpu.gpa.free(words);
-        try pg.tabs.download(0, std.mem.sliceAsBytes(words));
-        const ctl_at = 24 * pg.nblocks;
-        const inverse_at = ctl_at + 12 * 8;
-        for (0..12) |layer| {
-            words[ctl_at + layer * 8] = 73;
-            words[ctl_at + layer * 8 + 6] = @intCast(31 + layer);
-            if (at >= 4) {
-                words[layer * pg.nblocks] = @intCast(layer);
-                words[12 * pg.nblocks + layer * pg.nblocks] = @intCast(31 + layer);
-                words[inverse_at + layer] = @intCast(layer * pg.nblocks);
-                words[inverse_at + pg.cfg.slots + layer] = @intCast(19 + layer);
-            }
-        }
-        try pg.tabs.upload(0, std.mem.sliceAsBytes(words));
-        const saved = try snaps.save(gpu.gpa, gpu.d, stream, &source.?, null);
-        defer snaps.drop(gpu.gpa, stream, saved);
-        source.?.deinit(gpu.gpa);
-        source = null;
-        for (0..2) |_| {
-            try snaps.restore(stream, &destination, null, saved);
-            const again = try snaps.save(gpu.gpa, gpu.d, stream, &destination, null);
-            defer snaps.drop(gpu.gpa, stream, again);
-            try check.expect(std.meta.eql(saved.paged.?, again.paged.?), "snapshot pager counters at {d}", .{at});
-            try check.expect(std.mem.eql(u8, saved.host.?.bytes[0..saved.buf.len], again.host.?.bytes[0..again.buf.len]), "snapshot exact BF16, windows, slots, tables and ordinary state at {d}", .{at});
-        }
-    }
-    check.pass("BF16 paged snapshot source-drop, distinct destination, repeated restore at nine boundaries", .{});
 }
 
 fn traceRun(gpu: Gpu, dir: []const u8, rest: []const [:0]const u8) !void {
@@ -461,10 +367,6 @@ const Model = struct {
 };
 
 fn kernelRun(gpu: Gpu, slots: usize) !void {
-    return kernelReplay(gpu, slots, false, false);
-}
-
-fn kernelReplay(gpu: Gpu, slots: usize, graphed: bool, moving: bool) !void {
     const a = gpu.gpa;
     const idw = flash.exl3.prompt_wt.index_idw;
     const row = kvp.row_bytes;
@@ -482,7 +384,6 @@ fn kernelReplay(gpu: Gpu, slots: usize, graphed: bool, moving: bool) !void {
         for (0..cap) |p| for (0..row / 4) |i| {
             h[p * (row / 4) + i] = @intCast((p *% 2654435761 +% i *% 40503 +% v *% 977) & 0xFFFF_FFFF);
         };
-        if (moving) try gpu.d.check(gpu.d.api.cuMemcpyHtoD_v2(pg.devRows(0, v == 1), pg.hostRows(0, v == 1).ptr + w0 * row, pg.wr * row), "cuMemcpyHtoD");
     }
     var ids_d = try cuda.DeviceBuffer.alloc(gpu.d, 256 * idw * 4);
     defer ids_d.free();
@@ -531,27 +432,8 @@ fn kernelReplay(gpu: Gpu, slots: usize, graphed: bool, moving: bool) !void {
     var keys_checked: usize = 0;
     var plan_ns: i96 = 0;
     const calls: usize = 60;
-    var execs: [2]?cuda.graph.Exec = @splat(null);
-    defer for (&execs) |*exec| if (exec.*) |*e| e.deinit();
-    var captured_window = w0;
-    var captures: usize = 0;
-    var replays: usize = 0;
     for (0..calls) |c| {
         const m: usize = if (c % 10 == 9) 64 else 1;
-        const pos0 = w0 + pg.wr - 70 + c;
-        if (moving) {
-            try pg.prepareLayer(stream, 0, pos0, m);
-            const win = pg.win0[0];
-            for (0..2) |v| try gpu.d.check(gpu.d.api.cuMemcpyHtoDAsync_v2(pg.devRows(0, v == 1) + (pos0 - win) * row, pg.hostRows(0, v == 1).ptr + pos0 * row, m * row, stream.handle), "cuMemcpyHtoDAsync");
-            if (win != captured_window) {
-                try stream.synchronize();
-                for (&execs) |*exec| if (exec.*) |*e| {
-                    e.deinit();
-                    exec.* = null;
-                };
-                captured_window = win;
-            }
-        }
         var need = std.AutoHashMap(u32, void).init(a);
         defer need.deinit();
         for (0..m) |r| {
@@ -573,7 +455,7 @@ fn kernelReplay(gpu: Gpu, slots: usize, graphed: bool, moving: bool) !void {
                 out[j * 4 + t] = @intCast(b * 4 + t);
             };
             // 3 tail keys inside the window
-            for (0..3) |t| out[2048 + t] = @intCast(if (moving) pos0 - 3 + t else w0 + 100 + c * 4 + t);
+            for (0..3) |t| out[2048 + t] = @intCast(w0 + 100 + c * 4 + t);
             nk[r] = 2051;
             for (sorted) |b| try need.put(b, {});
         }
@@ -587,22 +469,10 @@ fn kernelReplay(gpu: Gpu, slots: usize, graphed: bool, moving: bool) !void {
         try gpu.d.check(gpu.d.api.cuMemcpyHtoD_v2(sp_d.ptr, sp.ptr, m * 4), "cuMemcpyHtoD");
         const before = try pg.stats(0);
         const t0 = check.now(gpu.io);
-        if (graphed) {
-            const slot: usize = @intFromBool(m == 64);
-            if (execs[slot] == null) {
-                try cuda.graph.beginCapture(stream, .thread_local);
-                try pg.page(stream, 0, ids_d.ptr, nk_d.ptr, sp_d.ptr, m);
-                var template = try cuda.graph.endCapture(stream);
-                defer template.deinit();
-                execs[slot] = try template.instantiate();
-                captures += 1;
-            } else replays += 1;
-            try execs[slot].?.launchOn(stream);
-        } else try pg.page(stream, 0, ids_d.ptr, nk_d.ptr, sp_d.ptr, m);
+        try pg.page(stream, 0, ids_d.ptr, nk_d.ptr, sp_d.ptr, m);
         try stream.synchronize();
         plan_ns += check.now(gpu.io) - t0;
         const after = try pg.stats(0);
-        try check.expect(after.epoch == c + 1 and after.calls == c + 1, "pager device epoch/calls advance exactly once on launch {d}", .{c + 1});
         gpu_miss += after.misses - before.misses;
         try gpu.d.check(gpu.d.api.cuMemcpyDtoH_v2(back.ptr, ids_d.ptr, m * idw * 4), "cuMemcpyDtoH");
         try gpu.d.check(gpu.d.api.cuMemcpyDtoH_v2(dk.ptr, pg.devRows(0, false), dk.len), "cuMemcpyDtoH");
@@ -613,8 +483,8 @@ fn kernelReplay(gpu: Gpu, slots: usize, graphed: bool, moving: bool) !void {
             const p: usize = @intCast(ids[r * idw + ki]);
             const q: usize = @intCast(back[r * idw + ki]);
             keys_checked += 1;
-            if (p >= pg.win0[0]) {
-                bad += @intFromBool(q != p - pg.win0[0]);
+            if (p >= w0) {
+                bad += @intFromBool(q != p - w0);
                 continue;
             }
             if (q < lay[1] or q >= lay[0]) {
@@ -625,181 +495,9 @@ fn kernelReplay(gpu: Gpu, slots: usize, graphed: bool, moving: bool) !void {
         };
     }
     const st = try pg.stats(0);
-    if (graphed) {
-        std.debug.print("pager graphs: captures {d}, replays {d}, device epoch {d}, calls {d}, rebases {d}, written rows {d}\n", .{ captures, replays, st.epoch, st.calls, st.rebases, st.written_rows });
-        try check.expect(replays > 0 and st.epoch == calls and st.calls == calls, "captured pager executes fresh epochs", .{});
-    }
-    if (moving) {
-        const fed = w0 + pg.wr - 70 + calls + 63;
-        try pg.flushLayer(stream, 0, fed);
-        try stream.synchronize();
-        for (0..2) |v| {
-            const words = std.mem.bytesAsSlice(u32, pg.hostRows(0, v == 1));
-            for (0..fed) |position| for (0..row / 4) |column| {
-                const expected: u32 = @truncate(position *% 2654435761 +% column *% 40503 +% v *% 977);
-                if (words[position * (row / 4) + column] != expected) bad += 1;
-            };
-        }
-        try check.expect(st.rebases > 0 and st.written_rows > 0 and captures > 2, "window moves flush rows and recapture pager graphs", .{});
-    }
     std.debug.print("kernel: {d} calls ({d} keys checked): bad {d}; misses GPU {d}, host LRU model {d}; needed {d}; overflow {}; plan+fetch+remap {d:.1} us a call (incl. launch + sync)\n", .{ calls, keys_checked, bad, gpu_miss, model_miss, st.needed, st.overflow, @as(f64, @floatFromInt(plan_ns)) / 1e3 / @as(f64, @floatFromInt(calls)) });
     try check.expect(bad == 0 and !st.overflow, "every remapped key reads its own host row", .{});
     const diff = @as(f64, @floatFromInt(@max(gpu_miss, model_miss) - @min(gpu_miss, model_miss))) / @as(f64, @floatFromInt(@max(model_miss, 1)));
     try check.expect(diff < 0.05, "misses within 5% of the LRU model ({d:.3})", .{diff});
     check.pass("exl3-kvpage kernel", .{});
-}
-
-fn overflowReplay(gpu: Gpu) !void {
-    const idw = flash.exl3.prompt_wt.index_idw;
-    var stream = try cuda.Stream.init(gpu.d, true);
-    defer stream.deinit();
-    const pg = try kvp.Paged.init(gpu.gpa, gpu.d, 4096, .{ .window = 2052, .rows = 1, .slots = 1 });
-    defer pg.destroy();
-    pg.setWindow(0, 2052);
-    var ids = try cuda.DeviceBuffer.alloc(gpu.d, idw * 4);
-    defer ids.free();
-    var nk = try cuda.DeviceBuffer.alloc(gpu.d, 4);
-    defer nk.free();
-    var sp = try cuda.DeviceBuffer.alloc(gpu.d, 4);
-    defer sp.free();
-    var input: [idw]i32 = @splat(0);
-    for (0..2048) |index| input[index] = @intCast(index);
-    try ids.upload(0, std.mem.sliceAsBytes(&input));
-    const count: i32 = 2048;
-    const sparse: i32 = 1;
-    try nk.upload(0, std.mem.asBytes(&count));
-    try sp.upload(0, std.mem.asBytes(&sparse));
-    try cuda.graph.beginCapture(stream, .thread_local);
-    try pg.page(stream, 0, ids.ptr, nk.ptr, sp.ptr, 1);
-    var template = try cuda.graph.endCapture(stream);
-    defer template.deinit();
-    var exec = try template.instantiate();
-    defer exec.deinit();
-    for (0..2) |_| {
-        try nk.upload(0, std.mem.asBytes(&count));
-        try exec.launchOn(stream);
-        try stream.synchronize();
-        var actual: i32 = -1;
-        try gpu.d.check(gpu.d.api.cuMemcpyDtoH_v2(&actual, nk.ptr, 4), "cuMemcpyDtoH");
-        const stats = try pg.stats(0);
-        try check.expect(actual == 0 and stats.overflow and stats.misses == 0, "overflow suppresses fetch and attention key reads on every replay", .{});
-    }
-    check.pass("exl3-kvpage graph overflow fails closed before key reads", .{});
-}
-
-test "exl3: invalid paged snapshot geometry rejects before allocation, CUDA access or TP peer dispatch" {
-    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
-    var driver: cuda.Driver = undefined;
-    var stream: cuda.Stream = .{ .d = &driver, .handle = null };
-    var engine: prompt.Engine = undefined;
-    engine.driver = &driver;
-    engine.stream = &stream;
-    var session: flash.rank_engine.Session = undefined;
-    session.gpa = failing.allocator();
-    session.engine = &engine;
-    session.next_object = 77;
-    var pager: kvp.Paged = undefined;
-    pager.cfg = .{ .window = 0 };
-    pager.cap = 200_016;
-    var seq: prompt.Seq = undefined;
-    seq.invalidated = false;
-    seq.paged = &pager;
-    var draft: flash.mtp.Draft = undefined;
-    draft.verify_cache = .{ .generation = 17, .ready = 17, .rows = 4, .position = 200_000 };
-    const before = draft.verify_cache;
-    for ([_]usize{ 0, 1, 3, 4, 2051, 2052, 4096, 200_000 }) |at| {
-        seq.fed = at;
-        seq.cap = 200_016;
-        seq.history = .{ 81, 93 };
-        try std.testing.expectError(error.KvPageConfig, session.save(&seq, null));
-        try std.testing.expectError(error.KvPageConfig, session.save(&seq, &draft));
-        try std.testing.expectEqual(at, seq.fed);
-        try std.testing.expectEqual([2]i64{ 81, 93 }, seq.history);
-        try std.testing.expectEqual(@as(u64, 77), session.next_object);
-        try std.testing.expectEqualDeep(before, draft.verify_cache);
-    }
-    try std.testing.expectEqual(@as(usize, 0), failing.alloc_index);
-    try std.testing.expect(!failing.has_induced_failure);
-}
-
-test "exl3: paged flush orders all pending BF16 window rows before host snapshot reads" {
-    const Fake = struct {
-        const Copy = struct { dst: u64, src: u64, len: usize };
-        var pending: [24]Copy = undefined;
-        var count: usize = 0;
-
-        fn copy(dst: u64, src: u64, len: usize, _: cuda.abi.Stream) callconv(.c) cuda.abi.Result {
-            std.debug.assert(count < pending.len);
-            pending[count] = .{ .dst = dst, .src = src, .len = len };
-            count += 1;
-            return cuda.abi.success;
-        }
-
-        fn sync(_: cuda.abi.Stream) callconv(.c) cuda.abi.Result {
-            for (pending[0..count]) |item| {
-                const dst: [*]u8 = @ptrFromInt(item.dst);
-                const src: [*]const u8 = @ptrFromInt(item.src);
-                @memcpy(dst[0..item.len], src[0..item.len]);
-            }
-            count = 0;
-            return cuda.abi.success;
-        }
-
-        fn pattern(ai: usize, side: usize, position: usize) u8 {
-            return @intCast(ai * 7 + side * 3 + position);
-        }
-    };
-    Fake.count = 0;
-    var driver: cuda.Driver = undefined;
-    driver.api.cuMemcpyDtoDAsync_v2 = Fake.copy;
-    driver.api.cuStreamSynchronize = Fake.sync;
-    const stream: cuda.Stream = .{ .d = &driver, .handle = null };
-    var pg: kvp.Paged = undefined;
-    pg.d = &driver;
-    pg.cfg = .{ .window = 2052, .rows = 1, .slots = 1 };
-    pg.cap = 32;
-    pg.wr = pg.cfg.window + pg.cfg.rows + 4;
-    const layout = try kvp.SnapshotLayout.init(pg.cap, pg.cfg, 20);
-    pg.nblocks = layout.nblocks;
-    pg.dev.len = layout.device;
-    pg.tabs.len = layout.tables;
-    pg.rebases = @splat(7);
-    pg.written = @splat(12);
-    const a = std.testing.allocator;
-    const device = try a.alloc(u8, pg.devBytes());
-    defer a.free(device);
-    const host = try a.alignedAlloc(u8, .@"16", 24 * pg.cap * kvp.row_bytes);
-    defer a.free(host);
-    @memset(host, 0xFF);
-    pg.dev.ptr = @intFromPtr(device.ptr);
-    pg.host = .{ .d = &driver, .bytes = @alignCast(host) };
-    pg.host_dev = @intFromPtr(host.ptr);
-    const fed: usize = 20;
-    for (0..12) |ai| {
-        pg.win0[ai] = ai % 3 * 4;
-        for (0..2) |side| {
-            const canonical = pg.hostMut(ai, side == 1);
-            for (0..pg.win0[ai]) |position| @memset(canonical[position * kvp.row_bytes ..][0..kvp.row_bytes], Fake.pattern(ai, side, position));
-            const window: [*]u8 = @ptrFromInt(pg.devRows(ai, side == 1));
-            for (pg.win0[ai]..fed) |position| @memset(window[(position - pg.win0[ai]) * kvp.row_bytes ..][0..kvp.row_bytes], Fake.pattern(ai, side, position));
-        }
-    }
-    const origins = pg.win0;
-    try pg.flush(stream, fed);
-    try std.testing.expectEqual(@as(usize, 24), Fake.count);
-    for (0..12) |ai| for (0..2) |side| {
-        try std.testing.expectEqual(@as(u8, 0xFF), pg.hostRows(ai, side == 1)[pg.win0[ai] * kvp.row_bytes]);
-    };
-    try stream.synchronize();
-    try std.testing.expectEqual(@as(usize, 0), Fake.count);
-    for (0..12) |ai| for (0..2) |side| {
-        const canonical = pg.hostRows(ai, side == 1);
-        for (0..fed) |position| for (canonical[position * kvp.row_bytes ..][0..kvp.row_bytes]) |byte| {
-            try std.testing.expectEqual(Fake.pattern(ai, side, position), byte);
-        };
-        for (canonical[fed * kvp.row_bytes ..]) |byte| try std.testing.expectEqual(@as(u8, 0xFF), byte);
-    };
-    try std.testing.expectEqual(origins, pg.win0);
-    try std.testing.expectEqual(@as([12]u64, @splat(7)), pg.rebases);
-    try std.testing.expectEqual(@as([12]u64, @splat(12)), pg.written);
 }

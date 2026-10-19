@@ -1,46 +1,6 @@
 # Dynamic KV paging for long contexts (KVP)
 
-## Snapshot and cache reuse validation (2026-10-20)
-
-Version 1 snapshots preserve canonical BF16 RAM rows after flushing every dirty window, the full compact device
-windows and slot payloads, both mapping directions, marks, clocks, epochs and LRU stamps. They also retain recurrent
-and convolution state, partial raw index keys, complete pooled blocks, PLE tail/history, next logits, and an optional
-settled MTP head. Restore copies into destination allocations; source lifetime does not constrain snapshot lifetime.
-Transient MTP verification generations and captured sequence graphs are invalidated before restored state is used.
-
-The pager configuration is frozen on the loaded engine. Paged serving lanes allocate the configured context capacity
-already included in stream admission, so different prompt lengths use compatible table strides. Snapshot admission
-includes its fixed windows, tables and header in addition to logical history; paged snapshots are charged to host RAM.
-Capacity or geometry changes are rejected before mutation. This format preserves the warm pager cache, rather than
-reconstructing a cold cache.
-
-TP2 restore validates both ranks, copies and waits on both ranks, then commits. The owning scheduler remains excluded
-until acknowledgements complete. A copy or peer failure poisons the session; a partially restored destination cannot
-execute. Failed asynchronous submissions drain before their memory is freed, following the existing CUDA completion
-policy (terminate the rank if neither its stream nor context can drain).
-
-Current scope: snapshot/cache reuse correctness and prefill/decode graph replay with two ordinary-length lanes.
-The two concurrent 200,000-token gate is deferred. Its later sizing candidate is `--context 200256 --parallel 2`,
-`TF_FLASHNEXT_EXL3_STREAMS=2`, BF16, host IKC and snapshots, paging window 4096 / slots 49152 / rows 2048, engine chunk
-512 and deep prefill rows 2048. The serving client must assert the exact prompt-token count and return nonzero on any
-failed check. Configuration is a sizing candidate, not a validated capacity claim.
-
-Validation: focused host/lifecycle coverage passes, including restore-copy submission failures, preflight rejection,
-source drop/repeated restore, MTP stale-publication rejection, TP2 prepare/copy/commit ordering, and failed-completion
-draining. CUDA lifecycle tests pass at boundaries 0, 1, 3, 4, 2051, 2052, 4096, 4099 and 6147, checking windows,
-slots and mapping tables. The TP2 two-GPU graph test passes with two paged BF16 lanes and exact state/logit parity;
-each rank replayed prefill graphs 72 times and decode graphs 5 times after restore. A real TP2 HTTP chat-history gate
-with BF16 paging, graphs, MTP drafting and two concurrent requests passed warm, branch and rewind reuse at 12,040
-prompt tokens: warm/rewind reused 12,033 tokens, branch reused 12,023, and all response hashes matched the cold
-baseline. With capture-after=1, each rank observed 72 prefill graph replays and 216 captures. With the default
-capture-after=2, each rank observed 0 prefill replays, 192 eager layer executions and 96 captures, with lower
-one-time capture cost. Decode logs expose host preparation and capture time; capture-after=2 reduced cumulative
-capture time versus capture-after=1. Paired DPLAN-vs-graph gates preserved exact hashes, but timings show no
-repeatable graph speedup. This proves ordinary-length cache reuse, not 200k capacity.
-Live-rank overflow/failure injection remains open. The user explicitly defers 200k × 2 until graphs and cache reuse
-are optimized. Int8 KV is out of scope; BF16 is the required primary format.
-
-Status: active implementation, 2026-10-20. Branch `exl3-c-main`. Task: prove a dynamic KV
+Status: prototype, 2026-10-19. Branch `exl3-c-kvpage` (from `exl3-c-main` at c5bfe87b). Task: prove a dynamic KV
 paging cache at long context on upstream's attention kernels: a sequence's full bf16 K/V in pinned host memory, the
 card holding a recent dense window plus an LRU cache of the 4-key blocks the sparse indexer selects.
 
@@ -197,66 +157,15 @@ contention for PCIe beyond what the decode numbers above contain.
 
 ## 5. Limits and next steps
 
-1. A call whose union of blocks outside the window exceeds the free slots must fail closed. Device-side overflow
-   signalling and a host-side
-   check before consuming the result are wired into the forward path; synthetic and 16k TP=2 deep-prefill tests
-   pass. The planned 200k × 2 stress/overflow-injection gate remains open. Slots must be >= ~24k at 200k with
-   256-row prompt calls (replay max 23.6k).
-2. Paged prompt-cache snapshots now flush and preserve BF16 host K/V, device windows, table/LRU metadata, recurrent,
-   indexer, PLE and MTP state. TP2 restore validates and commits both ranks before resuming. Ordinary-context two-lane
-   warm/branch/rewind cache reuse passes with exact cold-output parity; deterministic failure injection on live ranks
-   remains open.
-3. Paging captures and replays both deep-prefill layer graphs and decode graphs at TP=2. The 16,384-row CUDA test
-   verifies exact graph-vs-eager state/logit parity; the 12,040-token two-request HTTP test records actual prefill
-   graph replay and paging snapshots. These establish correctness, not a speed benefit. Paired DPLAN-vs-graph runs
-   remain within variation; optimize/profile before claiming graphs improve performance.
+1. A call whose union of blocks outside the window exceeds the free slots **overflows** (a sticky flag in the
+   counters; that call's keys would be wrong). Slots must be >= ~24k at 200k with 256-row prompt calls (replay max
+   23.6k). The minimum change: smaller attention row blocks for paged prompt calls (the scratch's positions are per
+   256 rows today), or a host check of the flag after each prefill chunk.
+2. Prompt-cache snapshots refuse a paged sequence (`error.KvPageSnapshot`); serve must run with
+   `--prompt-cache-gib 0`. Next: snapshot = flush + host copy of the host store (no device bytes at all).
+3. Not graph-capturable as written: the epoch, window start and slot base are host-side kernel arguments; moving them
+   into a device word (one tiny kernel a call) is the change.
 4. The fetch is on the compute stream. Overlap needs prediction (prefetch for row t+1 from row t's selection), but at
    200k consecutive rows share only half their blocks, so most misses are new blocks; not worth it at +1 ms a token.
 5. int8 K/V (K10) is out of scope here (bf16 only, as asked); the paging and int8 would compose (the host store and
    slots would halve).
-
-## 6. Acceptance gates (current requirement)
-
-BF16 remains the production KV format. RAM paging is a capacity tier for the same BF16 rows, not a reason to switch
-to int8. The single-card 200k parity result and the short TP=2 parity run above are prototype evidence only; they do
-not satisfy the following acceptance gates:
-
-1. **Graph performance (immediate):** keep the DPLAN-vs-graph A/B on the same TP2, two-lane BF16-paged workload;
-   profile capture/replay, host prepare time and eager fallback by phase. Optimize prefill and decode separately,
-   preserving exact outputs and NCCL overlap. Do not enable graphs by default until repeated runs show a benefit.
-2. **Safety:** deterministically inject slot overflow and restore/copy failures on TP2; fail closed before attention
-   consumes invalid rows, drain both ranks, and prove the session is discarded cleanly.
-3. **Cache lifecycle:** retain exact warm/branch/rewind parity and exercise eviction/reload and sequence reuse with
-   MTP draft rejection/rollback. Existing ordinary-context two-lane tests pass; failure cleanup remains open.
-4. **Long context (later):** only after graph and cache reuse are optimized, prove the 200k × 2 TP2 capacity target
-   with BF16 paging and graphs enabled. Keep a resident-BF16 comparison where it fits; otherwise compare every
-   fetched/evicted K/V row against the resident oracle in bounded fixtures plus full-request logits/tokens.
-5. **Observability:** expose per-rank overflow, hit/miss, pinned-RAM and device-byte counters in the acceptance logs.
-
-Until these pass, paging stays opt-in and must not be described as production-ready. CPU expert execution and int8 KV
-remain out of scope for this BF16 paging milestone.
-
-## 7. Integration audit (updated 2026-10-20)
-
-The allocator/admission mismatch is fixed in commit `8528ca2c`: when host indexer keys are enabled, the
-placement-aware `newSeq` path honors the BF16 pager instead of allocating resident K/V, and the admission budget
-uses the same sequence layout, configured chunk and one-row placeholders. Quantized KV and split-head placement are
-rejected when paging is enabled. Later work adds pager-aware snapshot state and TP2 graph replay counters.
-
-Latest hardware gates (par1-cs13, both 5060 Ti cards, TP=2): graph snapshot/restore parity passes on both ranks.
-The 12,040-token two-request HTTP gate passes with BF16 paging, MTP, graph mode and exact warm/branch/rewind cache
-parity; each rank logs prefill replays and captures. Four alternating 4,139-token DPLAN/graph runs also preserve exact
-cross-mode hashes and cache hits, but do not show a repeatable graph speedup. The 16,384-row deep-prefill graph gate
-continues to pass eager parity. This is ordinary-context correctness, not 200k × 2 capacity.
-
-Remaining blockers:
-
-- **Graph performance:** repeated same-workload TP2 A/B and phase-level profiling are still needed; graphs are correct
-  but have not demonstrated a speed win.
-- **Overflow stress:** deterministic TP2 overflow/failure cleanup and clean collective drain remain open.
-- **Mixed serving:** two-lane cache reuse passes at 12k tokens with MTP and graphs; long-context paging and mixed
-  failure/rollback under cache eviction remain unproven.
-
-The next priority is graph profiling/optimization and deterministic TP2 overflow/failure cleanup. The 200k × 2
-capacity run is deferred until those are complete. For resident parity, use replicated attention
-(`TF_FLASHNEXT_ATTN_SPLIT=0`) so a different attention reduction order does not confound the cache comparison.
