@@ -113,7 +113,7 @@ pub var stats: Stats = .{};
 const stale_after: u64 = 512;
 
 /// Graphs kept (LRU): a round and up to `max_rows` window sizes per stream, at two seams.
-const cache_n = 32;
+const cache_n = 128;
 var entries: [cache_n]?Entry = @splat(null);
 var clock: u64 = 0;
 /// A capture that failed once turns graphs off for the process (the steps keep the device plan).
@@ -163,7 +163,7 @@ fn sameShape(a: Key, b: Key) bool {
 /// Keys seen without a graph, and how often (a key is captured at its `after`-th sighting; one-off shapes, e.g. a
 /// request's rare window sizes, stay eager).
 const Seen = struct { key: Key, n: u32, used: u64 };
-var seen: [64]?Seen = @splat(null);
+var seen: [256]?Seen = @splat(null);
 
 fn sighting(key: Key) u32 {
     var oldest: usize = 0;
@@ -225,7 +225,9 @@ fn note(key: Key, o: Outcome) void {
         if (c[0] + c[1] + c[2] + c[3] == 0) continue;
         w.print(" {s}{d}:{d}/{d}/{d}/{d}", .{ if (k == 0) "round" else "win", r, c[0], c[1], c[2], c[3] }) catch break;
     };
-    std.log.info("flashnext exl3 graph coverage after {d} steps (replay/eager/instantiated/updated):{s}", .{ steps_seen, w.buffered() });
+    const rs = @import("cuda_exl3_recycle.zig").stats;
+    const cs = @import("cuda_exl3_chain.zig").stats;
+    std.log.info("flashnext exl3 graph coverage after {d} steps (replay/eager/instantiated/updated):{s}; recycled seqs {d}/{d} drafts {d}/{d} (reused/kept); draft chains {d}: {d} replays, {d} captures ({d} updates), {d} eager", .{ steps_seen, w.buffered(), rs.seq_reused, rs.seq_kept, rs.draft_reused, rs.draft_kept, cs.chains, cs.replays, cs.captures, cs.updates, cs.eager });
 }
 
 /// TF_FLASHNEXT_EXL3_GRAPH_DEBUG=1: which key fields changed since the last step of the same kind and rows.
@@ -241,7 +243,7 @@ fn debugKey(key: Key) void {
     inline for (@typeInfo(Key).@"struct".field_names) |f| {
         if (!std.meta.eql(@field(prev, f), @field(key, f))) w.print(" {s}", .{f}) catch {};
     }
-    std.log.info("flashnext exl3 graph key ({s} of {d} rows) changed:{s} keep {x} state0 {x}", .{ if (key.kind == 1) "round" else "window", key.rows, w.buffered(), key.keep, key.seq[0][4] });
+    std.log.info("flashnext exl3 graph key ({s} of {d} rows) changed:{s} keep {x} seq {x} {x} {x} {d} {x} out {x} streams {x} scratch {x} scores {x}", .{ if (key.kind == 1) "round" else "window", key.rows, w.buffered(), key.keep, key.seq[0][0], key.seq[0][1], key.seq[0][2], key.seq[0][3], key.seq[0][4], key.output, key.streams, key.scratch, key.scores });
 }
 
 fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {

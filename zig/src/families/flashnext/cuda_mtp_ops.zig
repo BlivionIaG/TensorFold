@@ -112,6 +112,8 @@ pub fn Ops(comptime Tri: type) type {
             if (next.len == 0) return;
             if (d.len + next.len > d.cap) return error.PromptTooLong;
             if (try @import("cuda_exl3_prefill.zig").head(Tri, o, d, next, rows, scores)) return; // EXL3: the head expert-major over a deep chunk
+            const planned = try @import("cuda_exl3_chain.zig").enter(o.e, @min(next.len, piece_rows)); // graphs: the head's experts on the device planner
+            defer @import("cuda_exl3_chain.zig").leave(planned);
             const want = @max(@as(usize, 32), 2 * @min(next.len, piece_rows));
             const s = try e.reserve(want);
             const piece = @max(@as(usize, 1), @min(piece_rows, s.cap / 2));
@@ -209,6 +211,7 @@ pub fn Ops(comptime Tri: type) type {
 
         /// Python decode.draft: absorb the kept rows, then chain up to `count` drafts, the first always kept.
         pub fn draft(o: Self, d: *Draft, next: []const u32, rows: u64, position: u64, count: usize, sm: ?Sampling, confidence: f64, out: *Chain) !void {
+            if (try @import("cuda_exl3_chain.zig").draft(Tri, o, d, next, rows, position, count, sm, confidence, out)) return; // graphs: the greedy chain as one graph
             out.n = 0;
             try o.absorb(d, next, rows, count > 0);
             var j: usize = 0;

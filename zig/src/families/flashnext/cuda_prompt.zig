@@ -235,8 +235,8 @@ pub const Engine = struct {
     pub fn newSeq(e: *Engine, cap: usize) !Seq {
         e.round_graph.clear();
         if (cap == 0) return error.UnexpectedTensor;
-        if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_exl3_kv.zig").newSeq(e, Seq, cap); // K10 placement
         if (try @import("cuda_exl3_recycle.zig").takeSeq(e, cap)) |kept| return kept; // graphs: a finished stream's buffers
+        if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_exl3_kv.zig").newSeq(e, Seq, cap); // K10 placement
         const logits = try e.gpa.alloc(u8, vocab * 2);
         errdefer e.gpa.free(logits);
         const conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
