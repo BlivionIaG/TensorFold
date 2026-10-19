@@ -114,12 +114,22 @@ pub const Pool = struct {
         var bytes: [3]usize = .{ 0, 0, 0 };
         const k2 = try gpa.alloc([3]i32, shape.experts);
         errdefer gpa.free(k2);
-        for (src.routed, k2) |e, *w| for (0..3) |p| {
-            // trellis bytes = tiles * 16 * k2 (k2 half-bits a value, 8 * k2 int16 words a 16x16 tile)
-            if (e[p].len == 0 or e[p].len % (tiles * 16) != 0) return error.Invalid;
+        var held: usize = 0;
+        for (src.routed, k2) |e, *w| {
+            // an expert another rank holds (expert parallel, cuda_exl3_tp.zig): no bytes, never picked here
+            if (e[0].len == 0 and e[1].len == 0 and e[2].len == 0) {
+                w.* = .{ 0, 0, 0 };
+                continue;
+            }
+            held += 1;
+            for (0..3) |p| {
+                // trellis bytes = tiles * 16 * k2 (k2 half-bits a value, 8 * k2 int16 words a 16x16 tile)
+                if (e[p].len == 0 or e[p].len % (tiles * 16) != 0) return error.Invalid;
             w[p] = @intCast(e[p].len / (tiles * 16));
-            bytes[p] = @max(bytes[p], e[p].len);
-        };
+                bytes[p] = @max(bytes[p], e[p].len);
+            }
+        }
+        if (held == 0) return error.Invalid;
         const table_e: usize = if (src.shared != null) shape.experts + 1 else shape.experts;
         var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging });
         errdefer lines.deinit();
@@ -286,6 +296,7 @@ pub const Pool = struct {
     }
 
     fn loadCopy(p: *Pool, c: round_.Copy) !void {
+        if (p.k2[c.id][0] == 0) return error.Invalid; // another rank's expert reached the planner unmasked
         const ev: ?usize = if (c.evicted == offload.Cache.empty_id) null else c.evicted;
         try p.lines.load(c.line, c.id, p.src.routed[c.id], p.k2[c.id], ev, p.opt.direct, p.io);
     }

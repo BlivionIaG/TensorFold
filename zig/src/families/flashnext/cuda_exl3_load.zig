@@ -105,7 +105,7 @@ pub const Ops = struct {
         return &o.experts.?;
     }
 
-    fn noteWeight(o: *Ops, w: cuda.exl3.Weight, row_n: usize) void {
+    pub fn noteWeight(o: *Ops, w: cuda.exl3.Weight, row_n: usize) void {
         o.max_k = @max(o.max_k, w.k);
         o.max_z = @max(o.max_z, cuda.exl3.Linear.zBytes(w, 128));
         o.max_counters = @max(o.max_counters, cuda.exl3.Linear.counterBytes(w));
@@ -144,11 +144,12 @@ pub const Ops = struct {
     }
 
     /// Every scratch buffer's address and size: unchanged across a pass means nothing grew (nor synchronised) in it.
-    pub fn fingerprint(o: *const Ops) [8][2]u64 {
-        var f: [8][2]u64 = @splat(.{ 0, 0 });
+    pub fn fingerprint(o: *const Ops) [12][2]u64 {
+        var f: [12][2]u64 = @splat(.{ 0, 0 });
+        if (o.tp) |t| f[8..12].* = @import("cuda_exl3_tp.zig").fingerprint(t);
         const de: ?cuda.exl3.Dense = o.dense;
         const bufs = [8]?cuda.DeviceBuffer{ o.tmp, o.moe, o.halves, o.sums, if (de) |x| x.xh else null, if (de) |x| x.z else null, if (de) |x| x.counters else null, null };
-        for (bufs, &f) |b, *e| if (b) |x| {
+        for (bufs, f[0..8]) |b, *e| if (b) |x| {
             e.* = .{ x.ptr, x.len };
         };
         if (o.picks) |h| f[7] = .{ @intFromPtr(h.bytes.ptr), h.bytes.len };
@@ -164,6 +165,7 @@ pub const Ops = struct {
         if (o.dense) |de| for ([_]?cuda.DeviceBuffer{ de.xh, de.z, de.counters }) |b| if (b) |x| {
             n += x.len;
         };
+        if (o.tp) |t| n += @import("cuda_exl3_tp.zig").reservedBytes(t);
         return n;
     }
 
@@ -322,11 +324,21 @@ pub fn load(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, prefix: []co
 
 /// Engine.initRank's head for an EXL3 pack: `lm_head` (5-bit, K = 2,560, N = 248,320) as one EXL3 projection that
 /// Pass.lane() runs through exl3.Dense (bf16 logits, as the dense BF16 head writes them); null for any other pack.
-/// A vocabulary-split head (TF_FLASHNEXT_SHARD_HEAD) is refused: EXL3 columns are cut by 128-wide Hadamard blocks.
-pub fn head(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, world: usize) !?projection.Projection {
+/// At tp=2 the head is split by vocabulary by default (cuda_exl3_tp.headProjection: 124,160 columns a rank at whole
+/// 128-column Hadamard blocks, joined by cuda_batch.zig projectHead's ncclAllGather); TF_FLASHNEXT_SHARD_HEAD=0 keeps
+/// the whole head on both ranks. At tp=1 a split is refused.
+pub fn head(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, world: usize, rank: usize) !?projection.Projection {
     if (!has(store, "language_model.lm_head")) return null;
-    if (world != 1 or try @import("cuda_head.zig").enabled()) return error.BadHeadSharding;
+    if (shardHead(world)) return try @import("cuda_exl3_tp.zig").headProjection(gpa, d, store, "language_model.lm_head", world, rank);
+    if (world == 1 and try @import("cuda_head.zig").enabled()) return error.BadHeadSharding;
     return try load(gpa, d, store, "language_model.lm_head", wt.vocab, wt.dims);
+}
+
+/// Whether an EXL3 head is split at `world`: at 2 unless TF_FLASHNEXT_SHARD_HEAD=0; never at 1.
+pub fn shardHead(world: usize) bool {
+    if (world != 2) return false;
+    const v = std.c.getenv("TF_FLASHNEXT_SHARD_HEAD") orelse return true;
+    return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
 /// Whether any of `prefix`'s parts is an EXL3 matrix (cuda_projection_load.loadStitched's branch).
@@ -431,7 +443,7 @@ pub const Experts = struct {
         const p = try x.gpa.create(pool_.Pool);
         errdefer x.gpa.destroy(p);
         const l = x.layer;
-        p.* = try pool_.Pool.init(x.gpa, io, d, .{ .routed = x.routed, .shared = x.shared }, .{ .suh_g = l.suh_g, .suh_u = l.suh_u, .svh_g = l.svh_g, .svh_u = l.svh_u, .suh_d = l.suh_d, .svh_d = l.svh_d }, .{
+        p.* = try pool_.Pool.init(x.gpa, io, d, .{ .routed = x.routed, .shared = if (x.shared[0].len == 0) null else x.shared }, .{ .suh_g = l.suh_g, .suh_u = l.suh_u, .svh_g = l.svh_g, .svh_u = l.svh_u, .suh_d = l.suh_d, .svh_d = l.svh_d }, .{
             .layer = which,
             .lines = lines,
             .dims = wt.dims,
