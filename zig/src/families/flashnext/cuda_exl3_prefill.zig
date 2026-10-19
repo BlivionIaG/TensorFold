@@ -17,7 +17,8 @@
 //! The hook: Engine.forward calls `forward` first; it declines (false) for anything but a plain prompt on one rank of an
 //! EXL3 checkpoint with pooled or resident experts, no media, no window keep, no logits for every row.
 //! TF_FLASHNEXT_EXL3_PREFILL=0 turns it off; _ROWS sets the deep chunk (default 8192), _MIN the shortest prompt
-//! that takes it (default 512 rows).
+//! that takes it (default 512 rows), _TILES=0 keeps the dense projections on the reference kernels, _RING=0 stages
+//! each layer into its own lines, _KERNEL=slots runs the experts through runSlots (the batched pass's bits).
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -66,8 +67,9 @@ pub const Options = struct {
     /// Layers ahead the ring prefetches (the guess: the hottest experts, as many as the current layer used).
     ring_ahead: usize = 2,
     /// Dense EXL3 projections of a deep chunk's sub-blocks on #806's prompt tiles (Dense.prompt, .tiles) instead of
-    /// the reference 128-row blocks: about 1.6x faster at prompt rows, a different fp32 order (bf16-level changes).
-    tiles: bool = false,
+    /// the reference 128-row blocks: 1.4-2x faster at 128+ rows, a different fp32 order (bf16-level changes; the
+    /// same float64 error, tf-cuda-test exl3-prefill dense). TF_FLASHNEXT_EXL3_PREFILL_TILES=0: the reference.
+    tiles: bool = true,
 };
 
 pub fn optionsFromEnv() Options {
@@ -77,7 +79,7 @@ pub fn optionsFromEnv() Options {
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_MIN")) |v| o.min_rows = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.min_rows;
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_PREFETCH")) |v| o.prefetch = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_KERNEL")) |v| o.slots_kernel = std.mem.eql(u8, std.mem.span(v), "slots");
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TILES")) |v| o.tiles = std.mem.eql(u8, std.mem.span(v), "1");
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TILES")) |v| o.tiles = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING")) |v| o.ring = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_PASS")) |v| o.ring_pass = @max(1, std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_pass);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD")) |v| o.ring_ahead = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_ahead;
@@ -960,4 +962,33 @@ fn warmTiles(e: *prompt.Engine) !void {
     if (de.candidate_mod) |*old| old.unload();
     de.candidate_mod = mod;
     de.candidate_k = k;
+}
+
+test "exl3: prefill passes keep each expert's pairs together, items relative to their pass" {
+    var dp: Deep = undefined;
+    // pairs 0..8: experts 5, 512, 2 / 2, 512, 7 / 5, 512, 5 (-1 and out-of-table ids skipped)
+    const picks = [_]i32{ 5, 512, 2, 2, 512, 7, 5, 512, 5, -1, 600 };
+    @memset(&dp.cnt, 0);
+    for (picks) |pk_| {
+        if (pk_ < 0 or pk_ >= table_n) continue;
+        dp.cnt[@intCast(pk_)] += 1;
+    }
+    // pass 0: the shared expert and 5; pass 1: 2 and 7
+    dp.order[0] = shared_id;
+    dp.order[1] = 5;
+    dp.order[2] = 2;
+    dp.order[3] = 7;
+    dp.passes[0] = .{ .id_lo = 0, .id_hi = 2, .m_lo = 0, .m_n = 0, .i_lo = 0, .i_n = 0 };
+    dp.passes[1] = .{ .id_lo = 2, .id_hi = 4, .m_lo = 0, .m_n = 0, .i_lo = 0, .i_n = 0 };
+    dp.n_passes = 2;
+    var members: [16]i32 = undefined;
+    var items: [3 * 16]i32 = undefined;
+    const c = build(&dp, &picks, &members, &items);
+    try std.testing.expectEqual(@as(usize, 9), c.members);
+    try std.testing.expectEqual(@as(usize, 4), c.items);
+    try std.testing.expectEqualSlices(i32, &.{ 1, 4, 7, 0, 6, 8, 2, 3, 5 }, members[0..9]);
+    try std.testing.expectEqual(Pass{ .id_lo = 0, .id_hi = 2, .m_lo = 0, .m_n = 6, .i_lo = 0, .i_n = 2 }, dp.passes[0]);
+    try std.testing.expectEqual(Pass{ .id_lo = 2, .id_hi = 4, .m_lo = 6, .m_n = 3, .i_lo = 2, .i_n = 2 }, dp.passes[1]);
+    // (expert, first within its pass, count)
+    try std.testing.expectEqualSlices(i32, &.{ 512, 0, 3, 5, 3, 3, 2, 0, 2, 7, 2, 1 }, items[0..12]);
 }

@@ -895,6 +895,29 @@ fn prefillOnce(g: *Eng, ids: []const u32, deep_on: bool, out: []u16) !f64 {
     return ms_;
 }
 
+/// Greedy decode rounds after each engine-mode prefill (TF_TEST_DECODE, default 32; 0: none).
+var decode_steps: usize = 32;
+
+fn decodeAfter(g: *Eng, n: usize) !void {
+    var out = try cuda.DeviceBuffer.alloc(g.gpu.d, vocab * 2);
+    defer out.free();
+    var tok = prompt.argmax(g.seq.logits);
+    const before = g.poolStats();
+    const t0 = check.now(g.gpu.io);
+    var first: f64 = 0;
+    for (0..decode_steps) |i| {
+        const q = [_]*prompt.Seq{&g.seq};
+        try g.e.round(flash.Tri, g.tri(), &q, (&tok)[0..1], out.ptr);
+        tok = prompt.argmax(g.seq.logits);
+        if (i == 7) first = @as(f64, @floatFromInt(check.now(g.gpu.io) - t0)) / 1e6;
+    }
+    const t = @as(f64, @floatFromInt(check.now(g.gpu.io) - t0)) / 1e6;
+    const after = g.poolStats();
+    const hits = after.hit_slots - before.hit_slots;
+    const all = hits + after.miss_slots - before.miss_slots;
+    std.debug.print("        decode after {d} tokens: {d:.2} ms/token over {d} steps (first 8: {d:.2} ms/token; hit {d:.1}%)\n", .{ n, t / @as(f64, @floatFromInt(decode_steps)), decode_steps, first / 8, 100 * @as(f64, @floatFromInt(hits)) / @as(f64, @floatFromInt(@max(all, 1))) });
+}
+
 /// The deep chunk's rows for the next prefills (engine mode's ROWS list), else the environment's.
 var rows_override: ?usize = null;
 
@@ -929,6 +952,7 @@ fn engineRun(gpu: Gpu, dir: []const u8, rest: []const [:0]const u8) !void {
     var max_n: usize = 0;
     for (ns[0..n_ns]) |n| max_n = @max(max_n, n);
     if (max_n > all_ids.len) return error.NotEnoughIds;
+    if (std.c.getenv("TF_TEST_DECODE")) |v| decode_steps = std.fmt.parseInt(usize, std.mem.span(v), 10) catch decode_steps;
     const o = xpre.optionsFromEnv();
     var max_r = o.rows;
     for (rs[0..n_rs]) |r| max_r = @max(max_r, r);
@@ -958,11 +982,14 @@ fn engineRun(gpu: Gpu, dir: []const u8, rest: []const [:0]const u8) !void {
         const p1 = g.poolStats();
         const xs_ = xpre.stats;
         std.debug.print("PREFILL {d:6} tokens ({s}): {d:9.1} ms = {d:7.1} rows/s; pool copies {d} ({d:.1} GiB, {d:.2} a layer per 1k rows), deep chunks {d}, passes {d}, prefetched {d}, members {d}; host: picks wait {d:.1} ms, plan {d:.1} ms\n", .{ n, if (o.enabled) "expert-major deep" else "batched pass", t_new, @as(f64, @floatFromInt(n)) / (t_new / 1e3), p1.misses - p0.misses, @as(f64, @floatFromInt(p1.misses - p0.misses)) * 1.758 / 1024, @as(f64, @floatFromInt(p1.misses - p0.misses)) / 48 / (@as(f64, @floatFromInt(n)) / 1000), xs_.chunks, xs_.passes, xs_.prefetched, xs_.members, @as(f64, @floatFromInt(xs_.host_wait_ns)) / 1e6, @as(f64, @floatFromInt(xs_.plan_ns)) / 1e6 });
+        // decode after the prefill: the pools were left empty by the ring (or hold the batched pass's lines)
+        if (decode_steps > 0) try decodeAfter(g, n);
         if (!cmp) continue;
         const q0 = g.poolStats();
         const t_old = try prefillOnce(g, ids, false, old);
         const q1 = g.poolStats();
         std.debug.print("        same prompt, batched pass: {d:9.1} ms = {d:7.1} rows/s; pool copies {d}\n", .{ t_old, @as(f64, @floatFromInt(n)) / (t_old / 1e3), q1.misses - q0.misses });
+        if (decode_steps > 0) try decodeAfter(g, n);
         var dmax: f32 = 0;
         var peak: f32 = 0;
         var same: usize = 0;

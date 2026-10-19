@@ -21,4 +21,6 @@ test {
     _ = pass;
     _ = tp;
     _ = prefill_k;
+    _ = prefill;
+    _ = @import("cuda_exl3_prefill_ring.zig");
 }
