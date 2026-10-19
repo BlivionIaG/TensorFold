@@ -21,8 +21,9 @@ ring copies and reductions remain eager. The recorded TP=2 prefill result fell f
 (about 10%), as capture removed reduction overlap. Graph performance and full prefill coverage are therefore open
 acceptance gates.
 
-The 200k × 2 TP=2 BF16 needle test passed on this tree before the final agent changes; it was not rerun on the
-exact PR head. Treat that result as demonstrated on a near-final tree, not as a final-head gate. Separately,
+The near-200k × 2 TP=2 BF16 needle test (195,938 and 195,957 prompt tokens) passed on this tree before the final
+agent changes; it was not rerun on the exact PR head. Treat that result as demonstrated on a near-final tree, not
+as a final-head gate or an exact-200k test. Separately,
 single-card KV paging at 200k matched resident BF16 K/V, but KV paging has not been combined with TP=2 serving,
 CUDA graphs, multiple lanes, or prompt snapshots. Its changing host-side window offsets currently prevent safe
 graph replay. There is also an allocation/budget mismatch when paging is combined with host indexer keys: the
@@ -32,7 +33,7 @@ under-reservation. Paging overflow sets a device flag, but serving does not yet 
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),
-on one card and at tp=2. Hooks in upstream files are one line each; the rest is new files under
+on one card and at tp=2. Integration touches existing upstream files and adds new files under
 `zig/src/families/flashnext/cuda_exl3_*.zig`, `zig/kernels/cuda/flashnext_exl3_*.cu` and `zig/tests/cuda/`.
 
 | Area | What exists | Main files |
@@ -59,7 +60,7 @@ upstream-quality reference (`tools/exl3_ref_golden.py`).
   configuration; layers 0, 3 and 17 are bit-identical to tp=1 when run all-resident. The serving script's hash
   checks are truncated and it can exit successfully after a golden mismatch; interpret its status as evidence,
   not a strict pass/fail gate.
-- **200k context, 2 concurrent requests, tp=2, bf16 KV:** two needle requests of about 196k tokens sent together
+- **Near-200k context, 2 concurrent requests, tp=2, bf16 KV:** 195,938- and 195,957-token needle requests sent together
   were both answered correctly, with drafts on and off, drafted equal to undrafted.
 - **KV paging:** at 200k on one card, last-row logits, 128 greedy tokens and every K/V row are bit-equal to keeping
   K/V on the card; sequence VRAM fell from 5.484 GiB to 1.391 GiB. TP=2 paging has only been tried sequentially
@@ -80,8 +81,10 @@ The three lower rows were reproduced on the final branch head (`44d65597`) by a 
 `2c5d814cfa80` and drafted equal to undrafted in every configuration; two of three golden prompts match.
 
 Prefill, real text, rows per second: tp=2 deep 1,555 at 8k, 1,486 at 32k, 1,421 at 65k, 1,225 for a real 200k
-prompt (tp=1 deep: 1,531 / 1,461 / 1,395 / 818). The old batched pass ran at 100 - 210. A 200k prompt prefills in
-168 s on one card; two 196k prompts interleaved took 304 s and 554 s at tp=2.
+prompt (tp=1 deep: 1,531 / 1,461 / 1,395 / 818). The old batched pass ran at 100 - 210 rows/s. A prior note's
+168 s “on one card” duration is near the tp=2 rate (about 163 s by the reported rate), not the tp=1 rate (about
+244 s); its configuration is unverified, so it is excluded. Saved concurrent-run logs show 312.1 / 562.5 s without drafts
+and 380.1 / 693.2 s with drafts; the earlier 304 / 554 s figures are not reconciled to those logs.
 
 ## What graphs do and do not give
 
