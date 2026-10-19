@@ -260,23 +260,6 @@ pub const Session = struct {
     }
 
     pub fn restore(s: *Session, q: *prompt.Seq, d: ?*mtp.Draft, kept: *const snaps.Snap) !void {
-        if (kept.paged != null) {
-            try snaps.validateRestore(q, d, kept);
-            const check = try s.command(.{ .kind = .restore_check, .object = q.rank_id, .arg = kept.rank_id }, &.{});
-            errdefer {
-                q.invalidated = true;
-                s.poison();
-            }
-            try s.ack(check);
-            s.engine.round_graph.clear();
-            const copying = try s.command(.{ .kind = .restore, .object = q.rank_id, .arg = kept.rank_id }, &.{});
-            try snaps.restoreData(s.engine.stream.*, q, d, kept);
-            try s.ack(copying);
-            const commit = try s.command(.{ .kind = .restore_commit, .object = q.rank_id, .arg = kept.rank_id }, &.{});
-            try s.ack(commit);
-            snaps.publishRestore(q, d, kept);
-            return;
-        }
         if (kept.at > q.cap) return error.SequenceTooShort;
         // refused before rank 1 hears of it (snaps.restore's own check, made first)
         if (d) |hd| if (!kept.head or kept.at > hd.cap) return error.NoHeadState;
@@ -397,43 +380,12 @@ pub const Session = struct {
             .restore => {
                 const q = s.seqs.get(h.object) orelse return error.UnknownRankSequence;
                 const kept = s.saved.get(h.arg) orelse return error.UnknownRankSnapshot;
-                s.engine.round_graph.clear();
-                if (kept.paged != null) {
-                    const pending = s.restoring orelse return error.BadRankFrame;
-                    if (pending.sequence != h.object or pending.snapshot != h.arg) return error.BadRankFrame;
-                    if (s.windows.getPtr(h.object)) |d| d.verify_cache.invalidate();
-                    try snaps.restoreData(s.engine.stream.*, q, null, kept);
-                } else {
-                    try snaps.restore(s.engine.stream.*, q, null, kept);
-                    // a drafting sequence's verify window starts over at the restored mark, as rank 0's head cache does
-                    if (s.windows.getPtr(h.object)) |d| {
-                        d.reset();
-                        d.len = kept.at;
-                    }
-                }
-            },
-            .restore_check => {
-                if (s.restoring != null) return error.BadRankFrame;
-                const q = s.seqs.get(h.object) orelse return error.UnknownRankSequence;
-                const kept = s.saved.get(h.arg) orelse return error.UnknownRankSnapshot;
-                if (kept.paged == null) return error.BadRankFrame;
-                try snaps.validateRestore(q, null, kept);
-                s.restoring = .{ .sequence = h.object, .snapshot = h.arg };
-            },
-            .restore_commit => {
-                const pending = s.restoring orelse return error.BadRankFrame;
-                if (pending.sequence != h.object or pending.snapshot != h.arg) return error.BadRankFrame;
-                const q = s.seqs.get(h.object) orelse return error.UnknownRankSequence;
-                if (!q.invalidated) return error.BadRankFrame;
-                const kept = s.saved.get(h.arg) orelse return error.UnknownRankSnapshot;
-                snaps.publishRestore(q, null, kept);
+                try snaps.restore(s.engine.stream.*, q, null, kept);
+                // a drafting sequence's verify window starts over at the restored mark, as rank 0's head cache does
                 if (s.windows.getPtr(h.object)) |d| {
                     d.reset();
-                    d.open = false;
                     d.len = kept.at;
-                    d.fed0 = kept.at;
                 }
-                s.restoring = null;
             },
             .drop_snap => {
                 const entry = s.saved.fetchRemove(h.object) orelse return error.UnknownRankSnapshot;

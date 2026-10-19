@@ -34,7 +34,7 @@ pub const records = true;
 pub const backends: []const []const u8 = &.{"cuda"};
 // ours: --tp (and --rank, --master, --master-port) for Flash Next's two ranks; cuda_refusal.zig keeps it to 1 or 2,
 // and every family without rank options refuses it (cuda_refusal.family)
-pub const serves: []const []const u8 = &.{ "--tp", "--mtp-drafts", "--mtp-confidence" };
+pub const serves: []const []const u8 = &.{ "--tp", "--mtp-drafts", "--mtp-confidence", "--policy" };
 pub const families: []const api.Family = blk: {
     var out: [registry.len + 4]api.Family = undefined;
     for (registry, 0..) |F, i| out[i] = .{ .model_type = F.model_type, .formats = F.formats };

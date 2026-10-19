@@ -28,7 +28,8 @@ pub const captured_head_entries = [_][]const u8{ "_rmsnorm", "_add_streams" };
 pub fn Namespace(comptime Tri: type) type {
     return struct {
         pub const model_type = "qwen4_exp";
-        pub const tp_draft_snapshots = false;
+        // ours: rank 0 saves the head's rows with the sequence, rank 1 the sequence (cuda_rank_engine.Session.save)
+        pub const tp_draft_snapshots = true;
         pub const formats: []const []const u8 = &.{ "mlx-q4g32", "modelopt-mixed", @import("cuda_exl3_config.zig").format };
         // the model's window: past 2,048 keys the block indexer picks each row's 512 best blocks of 4 (cuda_batch.zig)
         pub const default_context: i64 = @intCast(prompt.max_tokens);
@@ -590,16 +591,9 @@ pub fn Namespace(comptime Tri: type) type {
         fn snapRestore(ptr: *anyopaque, owner: ?*anyopaque, saved: *anyopaque) anyerror!void {
             const self = of(ptr);
             const s: *lanes.Stream = @ptrCast(@alignCast(owner orelse return error.NoStream));
-            const l = self.lane(s) catch |err| {
-                std.log.warn("flashnext: a kept state was not restored: no lane ({t})", .{err});
-                return err;
-            };
+            const l = try self.lane(s);
             if (self.ranks) |r| return r.restore(&l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved)));
-            self.engine.round_graph.clear();
-            snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved))) catch |err| {
-                std.log.warn("flashnext: a kept state was not restored ({t})", .{err});
-                return err;
-            };
+            try snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved)));
         }
 
         fn snapDrop(ptr: *anyopaque, saved: *anyopaque) void {

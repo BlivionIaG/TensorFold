@@ -56,7 +56,15 @@ pub const Options = struct {
     /// Double buffering: a round that fits without them does not evict the previous round's lines, so its copies
     /// need not wait for the previous round's compute.
     double_buffer: bool = true,
+    /// Masked-pick buffers for this many passes of a split round (0: the round's own bound, uniq + 1).
+    max_passes: usize = 0,
 };
+
+/// Passes a round of a `lines`-line pool can split into when nothing prefetches (`prefetch_bytes` 0): pass 0 and one
+/// pass a full pool of misses over the 512 routed experts, plus one for rounding.
+pub fn passesFor(lines: usize) usize {
+    return 2 + (shape.experts + lines - 1) / lines;
+}
 
 pub const Stats = struct {
     rounds: u64 = 0,
@@ -106,12 +114,22 @@ pub const Pool = struct {
         var bytes: [3]usize = .{ 0, 0, 0 };
         const k2 = try gpa.alloc([3]i32, shape.experts);
         errdefer gpa.free(k2);
-        for (src.routed, k2) |e, *w| for (0..3) |p| {
-            // trellis bytes = tiles * 16 * k2 (k2 half-bits a value, 8 * k2 int16 words a 16x16 tile)
-            if (e[p].len == 0 or e[p].len % (tiles * 16) != 0) return error.Invalid;
+        var held: usize = 0;
+        for (src.routed, k2) |e, *w| {
+            // an expert another rank holds (expert parallel, cuda_exl3_tp.zig): no bytes, never picked here
+            if (e[0].len == 0 and e[1].len == 0 and e[2].len == 0) {
+                w.* = .{ 0, 0, 0 };
+                continue;
+            }
+            held += 1;
+            for (0..3) |p| {
+                // trellis bytes = tiles * 16 * k2 (k2 half-bits a value, 8 * k2 int16 words a 16x16 tile)
+                if (e[p].len == 0 or e[p].len % (tiles * 16) != 0) return error.Invalid;
             w[p] = @intCast(e[p].len / (tiles * 16));
-            bytes[p] = @max(bytes[p], e[p].len);
-        };
+                bytes[p] = @max(bytes[p], e[p].len);
+            }
+        }
+        if (held == 0) return error.Invalid;
         const table_e: usize = if (src.shared != null) shape.experts + 1 else shape.experts;
         var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging });
         errdefer lines.deinit();
@@ -142,7 +160,9 @@ pub const Pool = struct {
         errdefer if (own) gpa.destroy(c);
         var rnd = try Round.init(gpa, n, opt.max_rows * opt.slots);
         errdefer rnd.deinit(gpa);
-        const pick_bytes = rnd.passes.len * opt.max_rows * opt.slots * 4;
+        const passes_n = if (opt.max_passes == 0) rnd.passes.len else @min(opt.max_passes, rnd.passes.len);
+        if (opt.max_passes != 0 and opt.prefetch_bytes != 0) return error.Invalid; // in-flight prefetches lengthen rounds
+        const pick_bytes = passes_n * opt.max_rows * opt.slots * 4;
         var picks_host = try cuda.HostBuffer.alloc(d, pick_bytes);
         errdefer picks_host.free();
         var picks_dev = try cuda.DeviceBuffer.alloc(d, pick_bytes);
@@ -245,6 +265,7 @@ pub const Pool = struct {
             else => return e,
         };
         const r = &p.round;
+        if (r.n_passes * p.opt.max_rows * p.opt.slots * 4 > p.picks_dev.len) return error.PoolPasses;
         p.picks_n = picks.len;
         p.prev_n = r.n_ids;
         @memcpy(p.prev[0..r.n_ids], r.ids[0..r.n_ids]);
@@ -275,6 +296,7 @@ pub const Pool = struct {
     }
 
     fn loadCopy(p: *Pool, c: round_.Copy) !void {
+        if (p.k2[c.id][0] == 0) return error.Invalid; // another rank's expert reached the planner unmasked
         const ev: ?usize = if (c.evicted == offload.Cache.empty_id) null else c.evicted;
         try p.lines.load(c.line, c.id, p.src.routed[c.id], p.k2[c.id], ev, p.opt.direct, p.io);
     }

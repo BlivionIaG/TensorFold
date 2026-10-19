@@ -6,6 +6,8 @@ pub const deepseek_release_message = "DeepSeek-V4.1 is not served by this releas
 
 /// Flags refused whatever the family; null when `o` may open.
 pub fn backend(o: api.Open) ?[]const u8 {
+    if (std.mem.eql(u8, o.model_type, "deepseek_v4") or std.mem.eql(u8, o.model_type, "deepseek_v41"))
+        return deepseek_release_message;
     if (o.tp != 1 and o.tp != 2) return "--tp: the CUDA engine runs one or two ranks (one process a GPU): serve --tp 1 or --tp 2";
     if (o.mtp_drafts) |n| if (n > nemotron.native.max_drafts) return std.fmt.comptimePrint("--mtp-drafts: the CUDA engine drafts at most {d}", .{nemotron.native.max_drafts});
     if (o.mtp_confidence) |c| if (!(c >= 0 and c <= 1)) return "--mtp-confidence must be from 0 to 1";

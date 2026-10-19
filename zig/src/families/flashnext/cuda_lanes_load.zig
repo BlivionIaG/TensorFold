@@ -19,6 +19,8 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     const chunk = try prompt.chunkRows();
     const mode = try config.mode(gpa, io, dir);
     if (o.tp != 1 and ((mode != .modelopt and mode != .exl3) or captured != null)) return error.UnsupportedQuantization;
+    if (o.slide and (mode != .affine or o.tp != 1)) return error.UnsupportedLearningFormat;
+    if (o.slide and captured != null) return error.TrainingOnCapturedGlue;
     const driver: *cuda.Driver = @constCast(ctx.d);
     const own = try gpa.create(Cuda);
     errdefer gpa.destroy(own);
@@ -80,8 +82,6 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
         stream_bytes += mtp.Draft.bytes(window, h.ids.len, @import("cuda_exl3_prefill.zig").draftRows(own.engine));
     } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(1, 1, own.engine.chunk); // rank 1's window (no head cache)
     if (o.vision) |v| stream_bytes += @as(usize, v.image_tokens) * @import("cuda_prompt_wt.zig").dims * 2 + 16 * o.context;
-    try @import("cuda_exl3_kv.zig").logStream(own.engine, window, stream_bytes); // K10: what a stream holds, by piece
-    own.stream_bytes = stream_bytes;
     _ = try @import("cuda_exl3_pass.zig").attach(gpa, io, driver, own.stream, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, @import("cuda_exl3_pass.zig").budgetFromEnv(stream_bytes));
     return .{
         .layout = own.kv.layout,
