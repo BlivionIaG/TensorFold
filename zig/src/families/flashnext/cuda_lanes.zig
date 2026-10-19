@@ -47,7 +47,7 @@ pub fn Namespace(comptime Tri: type) type {
             pub const min_prompt: u32 = 512;
         };
 
-        pub const Options = struct { vision: ?@import("cuda_images.zig").Limits = null, context: usize, drafts: bool, segments: usize = 1, slide: bool = false, tp: usize = 1, rank: usize = 0, master: ?[]const u8 = null, master_port: u16 = 29551 };
+        pub const Options = struct { vision: ?@import("cuda_images.zig").Limits = null, context: usize, drafts: bool, segments: usize = 1, slide: bool = false, tp: usize = 1, rank: usize = 0, master: ?[]const u8 = null, master_port: u16 = 29551, kv8: bool = false };
 
         /// One stream's prompt-and-reply driver, as native/cuda.zig types it; this family has none.
         pub const LoneRun = *const fn (ctx: *anyopaque, s: *lanes.Stream, hooks: *anyopaque, committed: *const fn (*anyopaque) void, yield: *const fn (*anyopaque) bool, resumed: bool) anyerror!bool;
@@ -516,7 +516,7 @@ pub fn Namespace(comptime Tri: type) type {
         // -- the prompt cache's copies ------------------------------------------------------------------------
 
         fn snapBytes(ptr: *anyopaque, at: u32) u64 {
-            return snap.bytes(at, of(ptr).head != null);
+            return snap.bytesKv(at, of(ptr).head != null, of(ptr).engine.kv.rows());
         }
 
         /// The owner stream's state, its prompt pass standing at `at` (a drafting stream's with the head's rows).
