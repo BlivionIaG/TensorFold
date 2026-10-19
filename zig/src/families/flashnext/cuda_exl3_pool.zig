@@ -56,7 +56,15 @@ pub const Options = struct {
     /// Double buffering: a round that fits without them does not evict the previous round's lines, so its copies
     /// need not wait for the previous round's compute.
     double_buffer: bool = true,
+    /// Masked-pick buffers for this many passes of a split round (0: the round's own bound, uniq + 1).
+    max_passes: usize = 0,
 };
+
+/// Passes a round of a `lines`-line pool can split into when nothing prefetches (`prefetch_bytes` 0): pass 0 and one
+/// pass a full pool of misses over the 512 routed experts, plus one for rounding.
+pub fn passesFor(lines: usize) usize {
+    return 2 + (shape.experts + lines - 1) / lines;
+}
 
 pub const Stats = struct {
     rounds: u64 = 0,
@@ -142,7 +150,9 @@ pub const Pool = struct {
         errdefer if (own) gpa.destroy(c);
         var rnd = try Round.init(gpa, n, opt.max_rows * opt.slots);
         errdefer rnd.deinit(gpa);
-        const pick_bytes = rnd.passes.len * opt.max_rows * opt.slots * 4;
+        const passes_n = if (opt.max_passes == 0) rnd.passes.len else @min(opt.max_passes, rnd.passes.len);
+        if (opt.max_passes != 0 and opt.prefetch_bytes != 0) return error.Invalid; // in-flight prefetches lengthen rounds
+        const pick_bytes = passes_n * opt.max_rows * opt.slots * 4;
         var picks_host = try cuda.HostBuffer.alloc(d, pick_bytes);
         errdefer picks_host.free();
         var picks_dev = try cuda.DeviceBuffer.alloc(d, pick_bytes);
@@ -245,6 +255,7 @@ pub const Pool = struct {
             else => return e,
         };
         const r = &p.round;
+        if (r.n_passes * p.opt.max_rows * p.opt.slots * 4 > p.picks_dev.len) return error.PoolPasses;
         p.picks_n = picks.len;
         p.prev_n = r.n_ids;
         @memcpy(p.prev[0..r.n_ids], r.ids[0..r.n_ids]);

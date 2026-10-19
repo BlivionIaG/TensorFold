@@ -13,6 +13,7 @@ const cuda = @import("cuda");
 const core = @import("core");
 const wt = @import("cuda_prompt_wt.zig");
 const projection = @import("cuda_projection.zig");
+const pool_ = @import("cuda_exl3_pool.zig");
 
 const Tensor = core.safetensors.Tensor;
 const Store = wt.Store;
@@ -42,6 +43,18 @@ pub const Ops = struct {
     split_fn: cuda.Function = undefined,
     /// Expert parallel's masks, sums and kernels (cuda_exl3_tp.zig), made on first use.
     tp: ?*@import("cuda_exl3_tp.zig").Scratch = null,
+    /// Sizing maxima over what was loaded (`reserve` allocates every scratch for them once, before any round): the
+    /// widest EXL3 input, Dense's split partials and counters for 128 rows, the widest part narrower than its row,
+    /// an fp16-input projection's k and n, and one experts layer's shape.
+    max_k: usize = 0,
+    max_z: usize = 0,
+    max_counters: usize = 0,
+    max_part_n: usize = 0,
+    max_f16_k: usize = 0,
+    max_f16_n: usize = 0,
+    moe_layer: ?cuda.exl3_experts.Layer = null,
+    /// Pinned [moe_rows, slots] int32: one block's router picks on the host (the offload pool's A/B cut).
+    picks: ?cuda.HostBuffer = null,
 
     pub fn create(gpa: std.mem.Allocator, d: *const cuda.Driver) !*Ops {
         const o = try gpa.create(Ops);
@@ -63,6 +76,7 @@ pub const Ops = struct {
         if (o.moe) |*b| b.free();
         if (o.halves) |*b| b.free();
         if (o.sums) |*b| b.free();
+        if (o.picks) |*b| b.free();
         if (o.glue) |*m| m.unload();
         if (o.tp) |t| t.destroy();
         o.gpa.destroy(o);
@@ -89,6 +103,68 @@ pub const Ops = struct {
     pub fn grouped(o: *Ops) !*const cuda.exl3_experts.Experts {
         if (o.experts == null) o.experts = try cuda.exl3_experts.Experts.load(o.d);
         return &o.experts.?;
+    }
+
+    fn noteWeight(o: *Ops, w: cuda.exl3.Weight, row_n: usize) void {
+        o.max_k = @max(o.max_k, w.k);
+        o.max_z = @max(o.max_z, cuda.exl3.Linear.zBytes(w, 128));
+        o.max_counters = @max(o.max_counters, cuda.exl3.Linear.counterBytes(w));
+        if (w.n != row_n) o.max_part_n = @max(o.max_part_n, w.n);
+    }
+
+    /// Every scratch the EXL3 calls of a pass of up to `rows` rows read, allocated now (after `s` drains), so no call
+    /// inside a round grows a buffer (a growth synchronises, and would move an address a captured graph holds).
+    pub fn reserve(o: *Ops, s: cuda.Stream, rows: usize, moe_rows: usize, slots: usize) !void {
+        try s.synchronize();
+        if (o.max_k > 0) {
+            const de = try o.linear();
+            try grow(o.d, &de.xh, 128 * o.max_k * 2);
+            if (o.max_z > 0) try grow(o.d, &de.z, o.max_z);
+            try grow(o.d, &de.counters, o.max_counters);
+        }
+        if (o.max_part_n > 0) try grow(o.d, &o.tmp, rows * o.max_part_n * 2);
+        if (o.max_f16_k > 0) {
+            _ = try o.split();
+            try grow(o.d, &o.halves, 2 * rows * o.max_f16_k * 2);
+            try grow(o.d, &o.sums, 2 * rows * o.max_f16_n * 4);
+        }
+        if (o.moe_layer) |l| {
+            _ = try o.grouped();
+            try grow(o.d, &o.moe, try cuda.exl3_experts.scratchBytes(l, moe_rows, slots));
+            if (o.picks == null) o.picks = try cuda.HostBuffer.alloc(o.d, moe_rows * slots * 4);
+        }
+    }
+
+    fn grow(d: *const cuda.Driver, slot: *?cuda.DeviceBuffer, bytes: usize) !void {
+        if (bytes == 0) return;
+        if (slot.*) |b| if (b.len >= bytes) return;
+        if (slot.*) |*b| b.free();
+        slot.* = null;
+        slot.* = try cuda.DeviceBuffer.alloc(d, bytes);
+    }
+
+    /// Every scratch buffer's address and size: unchanged across a pass means nothing grew (nor synchronised) in it.
+    pub fn fingerprint(o: *const Ops) [8][2]u64 {
+        var f: [8][2]u64 = @splat(.{ 0, 0 });
+        const de: ?cuda.exl3.Dense = o.dense;
+        const bufs = [8]?cuda.DeviceBuffer{ o.tmp, o.moe, o.halves, o.sums, if (de) |x| x.xh else null, if (de) |x| x.z else null, if (de) |x| x.counters else null, null };
+        for (bufs, &f) |b, *e| if (b) |x| {
+            e.* = .{ x.ptr, x.len };
+        };
+        if (o.picks) |h| f[7] = .{ @intFromPtr(h.bytes.ptr), h.bytes.len };
+        return f;
+    }
+
+    /// Device bytes `reserve` holds (for the pool's budget).
+    pub fn reservedBytes(o: *const Ops) usize {
+        var n: usize = 0;
+        for ([_]?cuda.DeviceBuffer{ o.tmp, o.moe, o.halves, o.sums }) |b| if (b) |x| {
+            n += x.len;
+        };
+        if (o.dense) |de| for ([_]?cuda.DeviceBuffer{ de.xh, de.z, de.counters }) |b| if (b) |x| {
+            n += x.len;
+        };
+        return n;
     }
 
     /// At least `bytes` of part scratch; a growth waits for `s` first (an older call may still read the old buffer).
@@ -202,7 +278,9 @@ fn wrap(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, prefix: []const 
         if (has(store, name)) {
             const m = try mat(store, name);
             if (m.k != k) return error.UnexpectedTensor;
-            try parts.append(gpa, .{ .col = col, .n = m.n, .kind = .{ .exl3 = try p.exl3Part(d, m) } });
+            const w = try p.exl3Part(d, m);
+            p.ops.noteWeight(w, n);
+            try parts.append(gpa, .{ .col = col, .n = m.n, .kind = .{ .exl3 = w } });
             col += m.n;
             i += 1;
             continue;
@@ -242,6 +320,15 @@ pub fn load(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, prefix: []co
     return wrap(gpa, d, store, prefix, &.{""}, n, k);
 }
 
+/// Engine.initRank's head for an EXL3 pack: `lm_head` (5-bit, K = 2,560, N = 248,320) as one EXL3 projection that
+/// Pass.lane() runs through exl3.Dense (bf16 logits, as the dense BF16 head writes them); null for any other pack.
+/// A vocabulary-split head (TF_FLASHNEXT_SHARD_HEAD) is refused: EXL3 columns are cut by 128-wide Hadamard blocks.
+pub fn head(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, world: usize) !?projection.Projection {
+    if (!has(store, "language_model.lm_head")) return null;
+    if (world != 1 or try @import("cuda_head.zig").enabled()) return error.BadHeadSharding;
+    return try load(gpa, d, store, "language_model.lm_head", wt.vocab, wt.dims);
+}
+
 /// Whether any of `prefix`'s parts is an EXL3 matrix (cuda_projection_load.loadStitched's branch).
 pub fn hasAny(store: *const Store, prefix: []const u8, names: []const []const u8) bool {
     var buf: [256]u8 = undefined;
@@ -266,6 +353,8 @@ pub fn pleRows(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, key: *pro
         const p = try gpa.create(Proj);
         p.* = .{ .gpa = gpa, .ops = try opsOf(store, d), .k = q.k, .n = q.n, .parts = &.{}, .x = .f16 };
         errdefer p.destroy();
+        p.ops.max_f16_k = @max(p.ops.max_f16_k, q.k);
+        p.ops.max_f16_n = @max(p.ops.max_f16_n, q.n);
         p.parts = try gpa.alloc(Part, 1);
         p.parts[0] = .{ .col = 0, .n = q.n, .kind = .{ .native = native } };
         try p.natives.append(gpa, q.*);
@@ -278,6 +367,9 @@ pub fn pleRows(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, key: *pro
 }
 
 /// One layer's routed experts and the shared expert (id `wt.experts_n`) for exl3_experts.Experts.
+/// Resident (TF_FLASHNEXT_EXL3_ROUTED=device): every trellis on the device, `layer` complete at load.
+/// Offloaded (the default): the routed and shared trellis words in `bank` (pinned host memory, one region a layer),
+/// the stacked suh/svh on the device, and `layer`'s six tables are the pool's (`attach`, once the family has sized it).
 pub const Experts = struct {
     gpa: std.mem.Allocator,
     ops: *Ops,
@@ -288,12 +380,25 @@ pub const Experts = struct {
     halves: [3][]i32 = .{ &.{}, &.{}, &.{} },
     /// The ids this rank holds under expert parallel (cuda_exl3_tp.zig); null: one rank holds all 513.
     tp: ?@import("cuda_exl3_tp.zig").Rank = null,
+    bank: ?cuda.HostBuffer = null,
+    /// The pool's Source: every routed expert's gate/up/down bytes inside `bank`, and the shared expert's.
+    routed: [][3][]const u8 = &.{},
+    shared: [3][]const u8 = .{ &.{}, &.{}, &.{} },
+    pool: ?*pool_.Pool = null,
+    /// Host time the bank's copies took at load (ns).
+    bank_ns: u64 = 0,
 
     pub fn destroy(x: *Experts) void {
+        if (x.pool) |p| {
+            p.deinit();
+            x.gpa.destroy(p);
+        }
         for (x.bufs.items) |*b| b.free();
         x.bufs.deinit(x.gpa);
         for (x.trellis) |t| x.gpa.free(t);
         for (x.halves) |h| x.gpa.free(h);
+        x.gpa.free(x.routed);
+        if (x.bank) |*b| b.free();
         x.ops.release();
         x.gpa.destroy(x);
     }
@@ -304,6 +409,43 @@ pub const Experts = struct {
         x.bufs.appendAssumeCapacity(b);
         return b.ptr;
     }
+
+    /// Whether the routed experts wait for a pool (offloaded, none attached yet).
+    pub fn needsPool(x: *const Experts) bool {
+        return x.bank != null and x.pool == null;
+    }
+
+    /// Bytes of one pool line of this layer (gate, up and down of its widest expert, 256-aligned).
+    pub fn lineBytes(x: *const Experts) usize {
+        var bytes: [3]usize = .{ 0, 0, 0 };
+        for (x.routed) |e| for (0..3) |j| {
+            bytes[j] = @max(bytes[j], e[j].len);
+        };
+        return cuda.exl3_pool.Layout.init(bytes).line_bytes;
+    }
+
+    /// Makes the pool: `lines` device lines, `counts` the family's lifetime use table (null: the pool's own), `layer`
+    /// the policy's index; then `layer`'s tables are the pool's (fixed addresses, rewritten in place on a swap).
+    pub fn attach(x: *Experts, io: std.Io, d: *const cuda.Driver, which: u8, lines: usize, max_rows: usize, counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !void {
+        if (x.bank == null or x.pool != null) return error.Invalid;
+        const p = try x.gpa.create(pool_.Pool);
+        errdefer x.gpa.destroy(p);
+        const l = x.layer;
+        p.* = try pool_.Pool.init(x.gpa, io, d, .{ .routed = x.routed, .shared = x.shared }, .{ .suh_g = l.suh_g, .suh_u = l.suh_u, .svh_g = l.svh_g, .svh_u = l.svh_u, .suh_d = l.suh_d, .svh_d = l.svh_d }, .{
+            .layer = which,
+            .lines = lines,
+            .dims = wt.dims,
+            .width = wt.moe_w,
+            .max_rows = max_rows,
+            .slots = wt.slots,
+            .direct = true, // the bank is pinned: one H2D a projection on the copy engine, no staging memcpy
+            .codebook = .mul1,
+            .act_mode = l.act_mode,
+            .max_passes = pool_.passesFor(lines),
+        }, counts);
+        x.pool = p;
+        x.layer = p.tables();
+    }
 };
 
 /// Whether `mlp` (".mlp" of a layer) holds EXL3 experts.
@@ -312,10 +454,23 @@ pub fn hasExperts(store: *const Store, mlp: []const u8) bool {
     return store.has(std.fmt.bufPrint(&buf, "{s}.shared_expert.gate_proj.trellis", .{mlp}) catch return false);
 }
 
-/// Every routed expert of `mlp` resident, the shared expert as id 512 (the same 2560 x 640 x 2560 shape).
+/// TF_FLASHNEXT_EXL3_ROUTED=device keeps every routed expert on the device (cuda_exl3_memory.zig reads the same).
+pub fn offloaded() bool {
+    return @import("cuda_exl3_memory.zig").options().routed_on_host;
+}
+
+fn align256(n: usize) usize {
+    return (n + 255) / 256 * 256;
+}
+
+/// Every routed expert of `mlp`, the shared expert as id 512 (the same 2560 x 640 x 2560 shape): resident, or with
+/// their trellis words in one pinned host region (see `Experts`).
 pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, mlp: []const u8, world: usize, rank: usize) !*Experts {
     if (world != 1 or rank != 0) return @import("cuda_exl3_tp.zig").experts(gpa, d, store, mlp, world, rank); // plan step 10
     const count = wt.experts_n + 1;
+    // TF_FLASHNEXT_EXL3_MTP_RESIDENT=1: the MTP layer's experts stay on the device (0.88 GiB) instead of a pool
+    const mtp_resident = std.mem.indexOf(u8, mlp, "mtp.") != null and if (std.c.getenv("TF_FLASHNEXT_EXL3_MTP_RESIDENT")) |v| std.mem.eql(u8, std.mem.span(v), "1") else false;
+    const offload = offloaded() and !mtp_resident;
     const x = try gpa.create(Experts);
     x.* = .{ .gpa = gpa, .ops = try opsOf(store, d), .layer = undefined };
     errdefer x.destroy();
@@ -331,15 +486,34 @@ pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, mlp: []co
     var scales: [6]std.ArrayList(u8) = @splat(.empty);
     defer for (&scales) |*l| l.deinit(gpa);
     var buf: [256]u8 = undefined;
+    const nameOf = struct {
+        fn f(b: []u8, m: []const u8, e: usize, proj: []const u8) ![]const u8 {
+            if (e == wt.experts_n) return std.fmt.bufPrint(b, "{s}.shared_expert.{s}", .{ m, proj });
+            return std.fmt.bufPrint(b, "{s}.experts.{d}.{s}", .{ m, e, proj });
+        }
+    }.f;
+    var at: usize = 0;
+    if (offload) {
+        // the bank's size first (headers only), then one pinned region for the layer
+        var total: usize = 0;
+        for (0..count) |e| {
+            for (projs) |proj| total += align256((try mat(store, try nameOf(&buf, mlp, e, proj))).trellis.len);
+            store.release();
+        }
+        x.bank = try cuda.HostBuffer.alloc(d, total);
+        x.routed = try gpa.alloc([3][]const u8, wt.experts_n);
+    }
+    const t0 = std.Io.Clock.awake.now(store.io).toNanoseconds();
     for (0..count) |e| {
         for (projs, 0..) |proj, j| {
-            const name = if (e == wt.experts_n)
-                try std.fmt.bufPrint(&buf, "{s}.shared_expert.{s}", .{ mlp, proj })
-            else
-                try std.fmt.bufPrint(&buf, "{s}.experts.{d}.{s}", .{ mlp, e, proj });
-            const m = try mat(store, name);
+            const m = try mat(store, try nameOf(&buf, mlp, e, proj));
             if (m.k != ks[j] or m.n != ns[j]) return error.UnexpectedTensor;
-            x.trellis[j][e] = try x.up(d, m.trellis);
+            if (x.bank) |bank| {
+                const dst = bank.bytes[at..][0..m.trellis.len];
+                @memcpy(dst, m.trellis);
+                at += align256(m.trellis.len);
+                if (e == wt.experts_n) x.shared[j] = dst else x.routed[e][j] = dst;
+            } else x.trellis[j][e] = try x.up(d, m.trellis);
             x.halves[j][e] = @intCast(m.halves);
             try scales[2 * j].appendSlice(gpa, m.suh);
             try scales[2 * j + 1].appendSlice(gpa, m.svh);
@@ -347,13 +521,15 @@ pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, mlp: []co
         // each expert's mapped pages are read once: release them so the 513 experts never pin a shard's worth
         store.release();
     }
+    x.bank_ns = @intCast(std.Io.Clock.awake.now(store.io).toNanoseconds() - t0);
     x.layer = .{
-        .gate = try x.up(d, std.mem.sliceAsBytes(x.trellis[0])),
-        .up = try x.up(d, std.mem.sliceAsBytes(x.trellis[1])),
-        .down = try x.up(d, std.mem.sliceAsBytes(x.trellis[2])),
-        .gate_k2 = try x.up(d, std.mem.sliceAsBytes(x.halves[0])),
-        .up_k2 = try x.up(d, std.mem.sliceAsBytes(x.halves[1])),
-        .down_k2 = try x.up(d, std.mem.sliceAsBytes(x.halves[2])),
+        // offloaded: the pool's tables replace these at attach (0 until then; a pass refuses an unattached layer)
+        .gate = if (offload) 0 else try x.up(d, std.mem.sliceAsBytes(x.trellis[0])),
+        .up = if (offload) 0 else try x.up(d, std.mem.sliceAsBytes(x.trellis[1])),
+        .down = if (offload) 0 else try x.up(d, std.mem.sliceAsBytes(x.trellis[2])),
+        .gate_k2 = if (offload) 0 else try x.up(d, std.mem.sliceAsBytes(x.halves[0])),
+        .up_k2 = if (offload) 0 else try x.up(d, std.mem.sliceAsBytes(x.halves[1])),
+        .down_k2 = if (offload) 0 else try x.up(d, std.mem.sliceAsBytes(x.halves[2])),
         .suh_g = try x.up(d, scales[0].items),
         .svh_g = try x.up(d, scales[1].items),
         .suh_u = try x.up(d, scales[2].items),
@@ -367,6 +543,7 @@ pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, mlp: []co
         // fp32 SwiGLU between the grouped GEMMs (GLM's mode 0 rounds to bf16 there)
         .act_mode = 1,
     };
+    x.ops.moe_layer = x.layer;
     return x;
 }
 
