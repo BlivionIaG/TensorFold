@@ -18,11 +18,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     // refused before the stream, the glue or a captured set loads
     const chunk = try prompt.chunkRows();
     const mode = try config.mode(gpa, io, dir);
-    if (o.tp != 1 and (mode != .modelopt or captured != null)) return error.UnsupportedQuantization;
-    if (o.slide and (mode != .affine or o.tp != 1)) return error.UnsupportedLearningFormat;
-    if (o.slide and captured != null) return error.TrainingOnCapturedGlue;
-    const page_tokens = try @import("cuda_kv_lanes.zig").paging();
-    if (page_tokens > 0 and (o.tp != 1 or o.slide or captured != null)) return error.FlashNextPagesUnsupported;
+    if (o.tp != 1 and ((mode != .modelopt and mode != .exl3) or captured != null)) return error.UnsupportedQuantization;
     const driver: *cuda.Driver = @constCast(ctx.d);
     const own = try gpa.create(Cuda);
     errdefer gpa.destroy(own);
@@ -84,12 +80,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
         stream_bytes += mtp.Draft.bytes(window, h.ids.len, own.engine.chunk);
     } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(window, 1, own.engine.chunk);
     if (o.vision) |v| stream_bytes += @as(usize, v.image_tokens) * @import("cuda_prompt_wt.zig").dims * 2 + 16 * o.context;
-    if (page_tokens > 0) {
-        // the lane's head runs at the engine's chunk: its cache on the stream's pages, its buffers in the run
-        own.kv.head = if (own.head) |h| .{ .draft_n = h.ids.len, .rows = own.engine.chunk } else null;
-        const head_bytes = if (own.head) |h| mtp.Draft.bytes(window, h.ids.len, own.engine.chunk) else 0;
-        own.kv.layout = @import("cuda_kv_lanes.zig").layout(o.context, page_tokens, own.kv.head, stream_bytes - own_seq_bytes - head_bytes);
-    }
+    _ = try @import("cuda_exl3_pass.zig").attach(gpa, io, driver, own.stream, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, @import("cuda_exl3_pass.zig").budgetFromEnv(stream_bytes));
     return .{
         .layout = own.kv.layout,
         .vision = own.vision,
