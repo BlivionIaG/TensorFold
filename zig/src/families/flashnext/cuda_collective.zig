@@ -33,6 +33,11 @@ pub const Collective = struct {
             try link.send(std.mem.asBytes(&id), until);
         } else try link.receive(std.mem.asBytes(&id), until);
         var config: nccl.Config = .{};
+        // TF_FLASHNEXT_NCCL_BLOCKING=1: a blocking communicator (NCCL enqueues on the calling thread; a nonblocking
+        // one hands each collective to its own thread, ~100 us of host time an eager collective)
+        if (std.c.getenv("TF_FLASHNEXT_NCCL_BLOCKING")) |v| if (std.mem.eql(u8, std.mem.span(v), "1")) {
+            config.blocking = 1;
+        };
         errdefer c.abort();
         try c.submitted(c.api.ncclCommInitRankConfig(&c.comm, 2, id, @intCast(rank), &config));
         try c.wait(null, until);
@@ -60,6 +65,7 @@ pub const Collective = struct {
 
     fn wait(c: *Collective, stream: ?cuda.Stream, until: u64) !void {
         errdefer c.abort();
+        var polls: u32 = 0;
         while (true) {
             try c.link.checkPeer();
             if (wire.now() >= until) return error.RankTimeout;
@@ -71,7 +77,10 @@ pub const Collective = struct {
                     if (try s.done()) return;
                 } else return;
             }
-            wire.pause();
+            // a nonblocking enqueue lands within tens of microseconds: poll that long before sleeping (each sleep
+            // of 50 us cost every eager or captured collective ~100 us of host time)
+            polls += 1;
+            if (polls < 4096) std.atomic.spinLoopHint() else wire.pause();
         }
     }
 
