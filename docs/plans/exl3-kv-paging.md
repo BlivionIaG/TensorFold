@@ -169,3 +169,55 @@ contention for PCIe beyond what the decode numbers above contain.
    200k consecutive rows share only half their blocks, so most misses are new blocks; not worth it at +1 ms a token.
 5. int8 K/V (K10) is out of scope here (bf16 only, as asked); the paging and int8 would compose (the host store and
    slots would halve).
+
+## 6. Acceptance gates (current requirement)
+
+BF16 remains the production KV format. RAM paging is a capacity tier for the same BF16 rows, not a reason to switch
+to int8. The single-card 200k parity result and the short TP=2 parity run above are prototype evidence only; they do
+not satisfy the following acceptance gates:
+
+1. **TP=2, two cards:** run two concurrent requests with BF16 KV paging enabled and prove the paged outputs match the
+   resident-BF16 reference at the same context lengths. Exercise both ranks' page tables and report per-rank host,
+   device, pool and page-cache budgets.
+2. **Long context:** prove the intended long-context target with two active TP=2 requests, not a TP=1 or one-request
+   proxy. Keep a resident-BF16 comparison where it fits; otherwise compare every fetched/evicted K/V row against the
+   resident oracle in bounded fixtures plus full-request logits/tokens.
+3. **CUDA graphs:** capture and replay both prefill and decode with BF16 paging enabled. Paging metadata and window
+   movement must be graph-safe; eager/graph logits and cache rows must match. Graphs must show a repeatable benefit
+   over eager for both phases before being considered complete.
+4. **State lifecycle:** support snapshot save/restore and sequence reuse, or make the server's supported lifecycle
+   explicit and reject unsupported operations before mutating either rank. Verify paged snapshots preserve host K/V,
+   device window, block maps and sequence position.
+5. **Safety and observability:** slot overflow must fail closed before attention consumes remapped rows. Exercise
+   eviction/reload, tail-window rebases, two concurrent sequences and failure cleanup; expose per-rank overflow,
+   hit/miss, pinned-RAM and device-byte counters.
+
+Until these pass, paging stays opt-in and must not be described as production-ready. CPU expert execution and int8 KV
+remain out of scope for this BF16 paging milestone.
+
+## 7. Integration audit (2026-10-19)
+
+The allocator/admission mismatch is fixed in the current working tree: when host indexer keys are enabled, the
+placement-aware `newSeq` path now honors the BF16 pager instead of allocating resident K/V, and the admission budget
+uses the same sequence layout, configured chunk and one-row placeholders. Quantized KV and split-head placement are
+rejected when paging is enabled. Host regressions cover the layout arithmetic and the allocator dispatch. This code
+is not yet committed or hardware-validated.
+
+Remaining source-level blockers:
+
+- **Graph state:** replay currently captures fixed host `win0`/epoch arguments and fixed window rebases/writebacks.
+  Correctness needs a replay-safe pager state update covering metadata and every actual window move, then replay-count
+  and long-run cache-row checks—not merely successful capture.
+- **Overflow:** the planner sets an overflow flag but remapping can still consume missing slot mappings. The forward
+  path must fail closed or retry before emitting output, and both TP ranks must leave the collective sequence
+  consistently.
+- **Snapshots:** paged snapshots currently return `KvPageSnapshot`; support must flush and preserve BF16 host K/V,
+  sequence/indexer/recurrent/PLE/MTP state, then restore coherent window and table metadata. MTP verify-tail cache state
+  must be invalidated on restore.
+- **Mixed serving:** two-lane decode, MTP draft rejection/rollback across rebases, and concurrent long contexts are
+  not proven with the pager. Existing TP=2 HTTP equality was short and sequential.
+
+The next device gate is allocation accounting on both TP=2 ranks with BF16 K/V, host indexer keys, and chunks 1024
+and 4096. Then complete replay-safe paging, overflow failure, and snapshot handling before attempting the final
+two-request 200k TP=2 graph gate. For resident parity, use replicated attention (`TF_FLASHNEXT_ATTN_SPLIT=0`) so a
+different attention reduction order does not confound the cache comparison.

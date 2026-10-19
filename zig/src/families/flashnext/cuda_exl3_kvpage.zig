@@ -154,6 +154,16 @@ pub const Config = struct {
     slots: usize = 49152,
     /// The most rows one attention call writes (the engine's chunk / a deep prefill's sub-block).
     rows: usize = 1536,
+
+    pub fn forChunk(cfg: Config, chunk: usize) Config {
+        var out = cfg;
+        out.rows = @max(out.rows, chunk);
+        return out;
+    }
+
+    pub fn validate(cfg: Config) !void {
+        if (cfg.window < wt.dense_keys or cfg.slots == 0 or cfg.rows == 0) return error.KvPageConfig;
+    }
 };
 
 /// A test's override of the environment (null: read it).
@@ -239,7 +249,7 @@ pub const Paged = struct {
     epoch: u32 = 0,
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, cfg: Config) !*Paged {
-        if (cfg.window < wt.dense_keys or cfg.slots == 0 or cfg.rows == 0) return error.KvPageConfig;
+        try cfg.validate();
         const pg = try gpa.create(Paged);
         errdefer gpa.destroy(pg);
         const nblocks = cdiv(cap, ratio) + 1;
@@ -493,17 +503,10 @@ pub fn deviceBytesFor(cap: usize, cfg: Config) usize {
     return 2 * (attn_n * wr + ratio * cfg.slots) * row_bytes + (attn_n * (2 * nblocks + ctl_n) + 2 * cfg.slots) * 4 + work_n * 4 * 4;
 }
 
-/// A stream's device bytes (cuda_prompt.seqBytes: `dense`) with paging on: its K/V replaced by the paged side.
-pub fn streamBytes(dense: usize, cap: usize) usize {
-    const cfg = configFromEnv() orelse return dense;
-    return dense -| attn_n * cap * 2 * row_bytes +| deviceBytesFor(cap, cfg);
-}
-
 /// A new sequence's paged store when the environment (or a test) turns paging on, else null.
 pub fn forSeq(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, chunk: usize) !?*Paged {
-    var cfg = configFromEnv() orelse return null;
-    cfg.rows = @max(cfg.rows, chunk);
-    return try Paged.init(gpa, d, cap, cfg);
+    const cfg = configFromEnv() orelse return null;
+    return try Paged.init(gpa, d, cap, cfg.forChunk(chunk));
 }
 
 test "exl3: kvpage tables and device bytes" {

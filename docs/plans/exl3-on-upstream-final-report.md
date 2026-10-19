@@ -27,9 +27,11 @@ agent changes; it was not rerun on the exact PR head. Treat that result as demon
 as a final-head gate or an exact-200k test. Separately,
 single-card KV paging at 200k matched resident BF16 K/V, but KV paging has not been combined with TP=2 serving,
 CUDA graphs, multiple lanes, or prompt snapshots. Its changing host-side window offsets currently prevent safe
-graph replay. There is also an allocation/budget mismatch when paging is combined with host indexer keys: the
-sequence can take the resident-KV allocation path while the planner budgets it as paged, risking VRAM
-under-reservation. Paging overflow sets a device flag, but serving does not yet reject or retry the request.
+graph replay. The host-indexer allocation/budget mismatch is fixed in the current uncommitted tree: actual paged
+allocations and stream admission now use one layout, including chunk sizing and one-row BF16 placeholders. A short
+TP=2 eager smoke with BF16 paging and host indexer keys loaded on both ranks and completed the existing gate with
+drafted equal to undrafted. This does not prove graph replay, long context or two-request concurrency. Paging
+overflow still sets a device flag without a serving fail-closed or retry path.
 
 ## What this adds
 
@@ -45,7 +47,7 @@ on one card and at tp=2. Integration touches existing upstream files and adds ne
 | Prefill | Expert-major deep chunks (thousands of rows), one ring of lines across all layers, 64-member tile kernel for the mul1 3-bit experts, tp=2 version with overlapped per-sub-block reduction, expert-major MTP head | `cuda_exl3_prefill*.zig`, `flashnext_exl3_prefill.cu` |
 | MTP | Draft rows, drafts with the prompt cache at tp=2, rank 1 keeps no head cache in its windows | `cuda_exl3_mtp.zig`, `cuda_rank_engine.zig` hooks |
 | Long context | Attention head split across ranks (12 query heads + 1 KV head each), indexer keys in mapped pinned host memory, 1024-row chunk, prompt states parked in host memory | `cuda_exl3_heads.zig`, `cuda_exl3_kv.zig`, `cuda_snap.zig` |
-| KV paging | Full K/V of the 12 attention layers in pinned host memory with a device window and block cache; default off | `cuda_exl3_kvpage.zig`, `flashnext_exl3_kvpage.cu` |
+| KV paging | Full BF16 K/V of the 12 attention layers in pinned host memory with a device window and block cache; allocation/budget geometry now unified, default off | `cuda_exl3_kvpage.zig`, `cuda_exl3_kv.zig`, `flashnext_exl3_kvpage.cu` |
 | CUDA graphs | Eligible decode rounds/windows capture the 48-layer pass, NCCL sums and head gathers; prefill captures dense layer sub-blocks; greedy MTP proposals have a conditional graph; graph instantiation runs on a worker | `cuda_exl3_dplan.zig`, `cuda_exl3_graph.zig`, `cuda_exl3_chain.zig`, `cuda_exl3_recycle.zig` |
 | int8 KV | Kernels built and measured, not used by default (decision: bf16 KV is the main path) | `cuda_exl3_kv.zig`, `flashnext_exl3_kv.cu` |
 
