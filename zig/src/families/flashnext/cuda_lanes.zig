@@ -61,6 +61,18 @@ pub fn Namespace(comptime Tri: type) type {
 
         pub const Options = struct { vision: ?@import("cuda_images.zig").Limits = null, context: usize, drafts: bool, segments: usize = 1, slide: bool = false, tp: usize = 1, rank: usize = 0, master: ?[]const u8 = null, master_port: u16 = 29551, kv8: bool = false };
 
+        /// Living Weights' learner (--slide): lessons put neurons in each layer's pocket beside its shared expert.
+        pub const slide = slide_mod.Slide(Tri);
+
+        /// The first file a lesson would rewrite through a link, or null: a teaching copy may hard-link the others.
+        pub const linked = slide_mod.linked;
+
+        /// What a learner over the loaded engine `p` learns into; `dir` must outlive it.
+        pub fn learnModel(p: *anyopaque, dir: []const u8) slide.Model {
+            const own: *Cuda = @ptrCast(@alignCast(p));
+            return .{ .e = own.engine, .tri = own.tri(), .dir = dir, .lay = own.lay };
+        }
+
         /// One stream's prompt-and-reply driver, as native/cuda.zig types it; this family has none.
         pub const LoneRun = *const fn (ctx: *anyopaque, s: *lanes.Stream, hooks: *anyopaque, committed: *const fn (*anyopaque) void, yield: *const fn (*anyopaque) bool, resumed: bool) anyerror!bool;
         pub const Loaded = struct {
@@ -161,6 +173,8 @@ pub fn Namespace(comptime Tri: type) type {
             logits: cuda.DeviceBuffer,
             drawn: [ring]u32 = undefined,
             next: u64 = 0,
+            /// --slide: the pocket's layout, from config.json at load.
+            lay: living.Layout = undefined,
             /// This rank's Loaded.stream_bytes (rankRoom agrees the ranks' rooms in streams, not bytes).
             stream_bytes: usize = 0,
 
@@ -306,7 +320,7 @@ pub fn Namespace(comptime Tri: type) type {
                     l.filled = kept.at;
                     s.cached = @intCast(kept.at);
                 } else |err| switch (err) {
-                    error.SequenceTooShort, error.NoHeadState, error.KvPageSnapshotLayout => {
+                    error.SequenceTooShort, error.NoHeadState => {
                         std.log.warn("flashnext: kept state at {d} not restored ({t})", .{ kept.at, err });
                         s.reuse_failed = true;
                     },
@@ -572,8 +586,6 @@ pub fn Namespace(comptime Tri: type) type {
         // -- the prompt cache's copies ------------------------------------------------------------------------
 
         fn snapBytes(ptr: *anyopaque, at: u32) u64 {
-            const self = of(ptr);
-            if (self.engine.page_config) |cfg| return snap.pagedBytes(@min(self.context + mtp.max_rows, prompt.max_tokens), cfg.forChunk(self.engine.chunk), at, self.head != null) catch std.math.maxInt(u64);
             return snap.bytesKv(at, of(ptr).head != null, @import("cuda_exl3_kv.zig").of(of(ptr).engine).rows());
         }
 
@@ -591,9 +603,15 @@ pub fn Namespace(comptime Tri: type) type {
         fn snapRestore(ptr: *anyopaque, owner: ?*anyopaque, saved: *anyopaque) anyerror!void {
             const self = of(ptr);
             const s: *lanes.Stream = @ptrCast(@alignCast(owner orelse return error.NoStream));
-            const l = try self.lane(s);
+            const l = self.lane(s) catch |err| {
+                std.log.warn("flashnext: a kept state was not restored: no lane ({t})", .{err});
+                return err;
+            };
             if (self.ranks) |r| return r.restore(&l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved)));
-            try snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved)));
+            snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved))) catch |err| {
+                std.log.warn("flashnext: a kept state was not restored ({t})", .{err});
+                return err;
+            };
         }
 
         fn snapDrop(ptr: *anyopaque, saved: *anyopaque) void {

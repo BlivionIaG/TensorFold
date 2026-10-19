@@ -349,6 +349,11 @@ pub fn Pass(comptime Tri: type) type {
         }
 
         pub fn attnBlock(self: *Self, lw: *const Layer, ai: usize) !void {
+            return self.attnBlockKeep(lw, ai, .{});
+        }
+
+        /// attnBlock, keeping its q|gate, k and v projections and o_proj's input.
+        pub fn attnBlockKeep(self: *Self, lw: *const Layer, ai: usize, keep: LayerKeep) !void {
             if (@import("cuda_exl3_heads.zig").isSplit(lw)) return @import("cuda_exl3_heads.zig").attnBlock(self, lw, ai); // tp=2 head split
             const s = self.s;
             const n = self.rows;
@@ -386,7 +391,6 @@ pub fn Pass(comptime Tri: type) type {
         /// `n` rows of self.seq from self.pos0: rope, cache writes and pooling, then scores, selection and attention.
         fn attnRows(self: *Self, lw: *const Layer, ai: usize, pa: u64, n: usize, at: RowsAt) !void {
             if (self.seq.kv8) |c| return @import("cuda_exl3_kv.zig").attnRows(self, lw, ai, pa, n, at, c); // int8 KV (K10)
-            if (exl3_kvpage.takes(self.seq)) return exl3_kvpage.attnRows(self, lw, ai, pa, n, at);
             const s = self.s;
             const kc = self.seq.kc[ai].ptr;
             const vc = self.seq.vc[ai].ptr;

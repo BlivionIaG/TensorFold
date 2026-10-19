@@ -415,6 +415,7 @@ pub const Scratch = struct {
         n += pairs * moe_w * 2 + pairs * dims * 4 + cap * dims * 2;
         n += cap * dims * 2 + cap * (dims / 32) * 4 + cap * wide * 2 + cap * dims * 2 + 4 * cap * dims * 4;
         n += cap * wide * 2 * 2 + cap * streams * 4 + vocab * 2 + @min(cap, head_local_rows) * vocab + half * 4 + 4096;
+        n += cap * dims * 4 + cap * pocket_stride * 4;
         return n;
     }
 
