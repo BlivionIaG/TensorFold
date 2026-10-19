@@ -139,6 +139,7 @@ pub const Engine = struct {
     round_graph: round_graph.Cache = .{},
     image_factory: ?*@import("cuda_images.zig").Vision = null,
     collective: ?*@import("cuda_collective.zig").Collective = null,
+    page_config: ?kvpage.Config = null,
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, driver: *cuda.Driver, stream: *cuda.Stream, model_dir: []const u8) !*Engine {
         return initRank(gpa, io, driver, stream, model_dir, 1, 0);
@@ -156,6 +157,7 @@ pub const Engine = struct {
         e.n_layers = 0;
         e.collective = null;
         e.image_factory = null;
+        e.page_config = kvpage.configFromEnv();
         e.round_graph = .{};
         errdefer for (e.layers[0..e.n_layers]) |*l| l.free(gpa);
         e.model_dir = try gpa.dupe(u8, model_dir);
@@ -244,7 +246,7 @@ pub const Engine = struct {
         const state = try zeros(e.gpa, e.driver, e.stream.*, linear_n, state_n * 4);
         errdefer freeOwned(e.gpa, state);
         // K/V paged to host memory (TF_FLASHNEXT_KVPAGE): kc/vc stay one row (cuda_exl3_kvpage.zig holds the rest)
-        const paged = try kvpage.forSeq(e.gpa, e.driver, cap, e.chunk);
+        const paged = if (e.page_config) |cfg| try kvpage.Paged.init(e.gpa, e.driver, cap, cfg.forChunk(e.chunk)) else null;
         errdefer if (paged) |pg| pg.destroy();
         const kc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, (if (paged != null) 1 else cap) * kv_heads * head_dim * 2);
         errdefer freeOwned(e.gpa, kc);
@@ -323,6 +325,7 @@ pub const Engine = struct {
 
     /// The batched pass over `ids` from `seq.fed` in chunks of at most `chunk` rows; a window's hooks take one chunk.
     pub fn forward(e: *Engine, comptime Tri: type, tri: Tri, seq: *Seq, ids: []const u32, hooks: batch.Hooks) !void {
+        if (seq.invalidated) return error.SnapshotDestinationInvalid;
         if (try @import("cuda_exl3_prefill.zig").forward(e, Tri, tri, seq, ids, hooks)) {
             const one = [_]*Seq{seq};
             return e.finishPaged(&one);
@@ -367,6 +370,7 @@ pub const Engine = struct {
         if (seqs.len == 0 or seqs.len != ids.len) return error.UnexpectedTensor;
         var cap: usize = 0;
         for (seqs) |q| {
+            if (q.invalidated) return error.SnapshotDestinationInvalid;
             if (q.fed + 1 > q.cap) return error.UnexpectedTensor;
             cap = @max(cap, q.cap);
         }
@@ -410,6 +414,7 @@ pub const Engine = struct {
 
 /// One stream's caches. `fed` tokens have already gone through the model.
 pub const Seq = struct {
+    invalidated: bool = false,
     media: ?@import("cuda_media.zig").State = null,
     rank_id: u64 = 0,
     conv: []cuda.DeviceBuffer,
@@ -434,6 +439,7 @@ pub const Seq = struct {
     }
 
     pub fn deinit(s: *Seq, gpa: std.mem.Allocator) void {
+        if (s.invalidated) cuda.completion.drain(s.tail.d, .{ .d = s.tail.d, .handle = null }, "invalid snapshot destination did not drain");
         if (@import("cuda_exl3_recycle.zig").giveSeq(s)) return; // graphs: kept for the next stream (stable addresses)
         @import("cuda_exl3_graph.zig").releaseSeq(s);
         if (s.media) |*m| m.deinit();

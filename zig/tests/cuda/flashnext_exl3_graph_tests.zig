@@ -566,6 +566,74 @@ fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, 
     check.pass("rank {d}/{d}: deep prefill of {d} rows with layer graphs and the decode after it bit-identical to eager", .{ rank, world, n });
 }
 
+fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize) !void {
+    const snaps = flash.snapshot;
+    const allocator = gpu.gpa;
+    const g = try Eng.init(gpu, rank, world, port, dir);
+    defer g.deinit();
+    defer graph.force = null;
+    try check.expect(g.seq.paged != null, "snapshot test requires BF16 paging", .{});
+    var second = try g.e.newSeq(cap_default);
+    defer second.deinit(allocator);
+    const ids = try allocator.alloc(u32, 16384);
+    defer allocator.free(ids);
+    var random = std.Random.DefaultPrng.init(0x736e6170);
+    for (ids) |*token| token.* = 200 + random.random().uintLessThan(u32, 60000);
+    graph.force = .graph;
+    try g.forward(ids[0..3075], .{ .logits = .last });
+    try g.e.forward(flash.Tri, g.tri(), &second, ids[4096..6917], .{ .logits = .last });
+    const first_saved = try snaps.save(allocator, gpu.d, g.stream, &g.seq, null);
+    defer snaps.drop(allocator, g.stream, first_saved);
+    const second_saved = try snaps.save(allocator, gpu.d, g.stream, &second, null);
+    defer snaps.drop(allocator, g.stream, second_saved);
+    const expected = try allocator.alloc(u8, (steps + 1) * 2 * vocab * 2);
+    defer allocator.free(expected);
+    var reference: [2]?*snaps.Snap = .{ null, null };
+    defer for (reference) |item| if (item) |saved| snaps.drop(allocator, g.stream, saved);
+    for ([_]graph.Mode{ .off, .graph, .graph }, 0..) |mode, run_index| {
+        graph.force = mode;
+        try dplan.toHost();
+        g.e.round_graph.clear();
+        try snaps.restore(g.stream, &g.seq, null, first_saved);
+        try snaps.restore(g.stream, &second, null, second_saved);
+        const before = graph.stats;
+        const prefill_before = graph.prefill_stats;
+        try g.forward(ids[3075..11267], .{ .logits = .last });
+        try g.e.forward(flash.Tri, g.tri(), &second, ids[6917..15109], .{ .logits = .last });
+        var tokens = [_]u32{ prompt.argmax(g.seq.logits), prompt.argmax(second.logits) };
+        const sequences = [_]*prompt.Seq{ &g.seq, &second };
+        for (0..steps + 1) |step| {
+            if (step > 0) {
+                try g.e.round(flash.Tri, g.tri(), &sequences, &tokens, g.out.ptr);
+                tokens = .{ prompt.argmax(g.seq.logits), prompt.argmax(second.logits) };
+            }
+            for (sequences, 0..) |sequence, lane| {
+                const wanted = expected[(step * 2 + lane) * vocab * 2 ..][0 .. vocab * 2];
+                if (run_index == 0) @memcpy(wanted, sequence.logits) else try check.expect(std.mem.eql(u8, wanted, sequence.logits), "rank {d} snapshot {s} lane {d} step {d} BF16 logits", .{ rank, @tagName(mode), lane, step });
+            }
+        }
+        for (sequences, 0..) |sequence, lane| {
+            const saved = try snaps.save(allocator, gpu.d, g.stream, sequence, null);
+            if (run_index == 0) {
+                reference[lane] = saved;
+            } else {
+                defer snaps.drop(allocator, g.stream, saved);
+                const previous = reference[lane].?;
+                const canonical = saved.paged.?.layout.canonical;
+                const state_offset = saved.paged.?.layout.total;
+                try check.expect(std.mem.eql(u8, previous.host.?.bytes[0..canonical], saved.host.?.bytes[0..canonical]), "rank {d} snapshot lane {d} exact canonical BF16 history", .{ rank, lane });
+                try check.expect(std.mem.eql(u8, previous.host.?.bytes[state_offset..previous.buf.len], saved.host.?.bytes[state_offset..saved.buf.len]), "rank {d} snapshot lane {d} exact recurrent/index/PLE state", .{ rank, lane });
+            }
+        }
+        if (mode == .graph) {
+            try check.expect(graph.prefill_stats.replays > prefill_before.replays, "rank {d} prefill graph replay after restore", .{rank});
+            try check.expect(graph.stats.replays > before.replays, "rank {d} concurrent decode graph replay after restore", .{rank});
+        }
+        std.debug.print("SNAPSHOT rank {d}/{d} {s}: two paged lanes, {d} decode steps, exact state and logits; prefill replays {d}, decode replays {d}\n", .{ rank, world, @tagName(mode), steps, graph.prefill_stats.replays - prefill_before.replays, graph.stats.replays - before.replays });
+    }
+    check.pass("rank {d}/{d}: concurrent paged snapshots preserve BF16 continuation and graph prefill/decode", .{ rank, world });
+}
+
 /// cuProfilerStart/Stop from libcuda (nsys --capture-range=cudaProfilerApi), looked up at run time.
 const Profiler = struct {
     lib: std.DynLib,
@@ -702,6 +770,7 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
     const steps = if (rest.len > 6) try std.fmt.parseInt(usize, rest[6], 10) else 48;
     const which: []const u8 = if (rest.len > 7) rest[7] else "dplan,graph";
+    if (std.mem.eql(u8, mode, "snapshot")) return snapshotMode(gpu, rank, world, port, dir, steps);
     if (std.mem.eql(u8, mode, "fork")) return forkMode(gpu, rank, world, port, dir, rest[5], steps, which);
     if (std.mem.eql(u8, mode, "prof")) return profMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps, which);
     if (std.mem.eql(u8, mode, "prefill")) return prefillMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps);

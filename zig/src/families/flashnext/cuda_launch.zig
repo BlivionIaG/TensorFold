@@ -25,6 +25,7 @@ pub const exl3_ple = @import("cuda_exl3_ple.zig");
 pub const exl3_mtp = @import("cuda_exl3_mtp.zig");
 pub const mix = @import("cuda_mix.zig");
 pub const prompt = @import("cuda_prompt.zig");
+pub const snapshot = @import("cuda_snap.zig");
 /// The row-by-row reference path, for flashnext-prompt
 pub const row_path = @import("cuda_rows.zig");
 /// The MTP head's drafts: its forward, the chain, the verify window's rows and their rollback

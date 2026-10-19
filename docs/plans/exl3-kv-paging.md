@@ -1,7 +1,42 @@
 # Dynamic KV paging for long contexts (KVP)
 
-Status: prototype, 2026-10-19. Branch `exl3-c-main` (integration worktree; base commit `85313cae` plus uncommitted
-gate fixes). Task: prove a dynamic KV
+## Snapshot and cache reuse validation (2026-10-20)
+
+Version 1 snapshots preserve canonical BF16 RAM rows after flushing every dirty window, the full compact device
+windows and slot payloads, both mapping directions, marks, clocks, epochs and LRU stamps. They also retain recurrent
+and convolution state, partial raw index keys, complete pooled blocks, PLE tail/history, next logits, and an optional
+settled MTP head. Restore copies into destination allocations; source lifetime does not constrain snapshot lifetime.
+Transient MTP verification generations and captured sequence graphs are invalidated before restored state is used.
+
+The pager configuration is frozen on the loaded engine. Paged serving lanes allocate the configured context capacity
+already included in stream admission, so different prompt lengths use compatible table strides. Snapshot admission
+includes its fixed windows, tables and header in addition to logical history; paged snapshots are charged to host RAM.
+Capacity or geometry changes are rejected before mutation. This format preserves the warm pager cache, rather than
+reconstructing a cold cache.
+
+TP2 restore validates both ranks, copies and waits on both ranks, then commits. The owning scheduler remains excluded
+until acknowledgements complete. A copy or peer failure poisons the session; a partially restored destination cannot
+execute. Failed asynchronous submissions drain before their memory is freed, following the existing CUDA completion
+policy (terminate the rank if neither its stream nor context can drain).
+
+Current scope: snapshot/cache reuse correctness and useful prefill/decode graph replay with two ordinary-length lanes.
+The two concurrent 200,000-token gate is deferred. Its later sizing candidate is `--context 200256 --parallel 2`,
+`TF_FLASHNEXT_EXL3_STREAMS=2`, BF16, host IKC and snapshots, paging window 4096 / slots 49152 / rows 2048, engine chunk
+512 and deep prefill rows 2048. The serving client must assert the exact prompt-token count and return nonzero on any
+failed check. Configuration is a sizing candidate, not a validated capacity claim.
+
+Validation: focused host/lifecycle coverage passes, including restore-copy submission failures, preflight rejection,
+source drop/repeated restore, MTP stale-publication rejection, TP2 prepare/copy/commit ordering, and failed-completion
+draining. CUDA lifecycle tests pass at boundaries 0, 1, 3, 4, 2051, 2052, 4096, 4099 and 6147, checking windows,
+slots and mapping tables. The TP2 two-GPU graph test passes with two paged BF16 lanes and exact state/logit parity;
+each rank replayed prefill graphs 72 times and decode graphs 5 times after restore. A real TP2 HTTP chat-history gate
+with BF16 paging, graphs enabled, MTP drafting and two concurrent requests passed warm, branch and rewind reuse:
+each reused 4,122 of 4,139 prompt tokens, and every response hash exactly matched its cold-cache baseline. This proves
+ordinary-length cache reuse, not 200k capacity. Overflow/failure injection on live ranks and a paged snapshot test
+with those failures remain open. The user explicitly defers 200k × 2 until graph and cache behavior are optimized.
+Int8 KV is out of scope; BF16 is the required primary format.
+
+Status: active implementation, 2026-10-20. Branch `exl3-c-main`. Task: prove a dynamic KV
 paging cache at long context on upstream's attention kernels: a sequence's full bf16 K/V in pinned host memory, the
 card holding a recent dense window plus an LRU cache of the 4-key blocks the sparse indexer selects.
 

@@ -210,6 +210,47 @@ const attn_n = wt.attn_n;
 const ctl_n: usize = 8;
 const work_n: usize = att_rows * top;
 
+pub const SnapshotLayout = struct {
+    cap: usize,
+    cfg: Config,
+    at: usize,
+    wr: usize,
+    nblocks: usize,
+    canonical: usize,
+    device: usize,
+    tables: usize,
+    total: usize,
+
+    pub fn init(cap: usize, cfg: Config, at: usize) !SnapshotLayout {
+        try cfg.validate();
+        if (cap == 0 or at > cap) return error.KvPageRows;
+        _ = try std.math.mul(usize, cap, attn_n * 2 * row_bytes);
+        const wr = try std.math.add(usize, try std.math.add(usize, cfg.window, cfg.rows), ratio);
+        const nblocks = try std.math.add(usize, (try std.math.add(usize, cap, ratio - 1)) / ratio, 1);
+        const canonical = try std.math.mul(usize, at, attn_n * 2 * row_bytes);
+        const rows = try std.math.add(usize, try std.math.mul(usize, attn_n, wr), try std.math.mul(usize, ratio, cfg.slots));
+        const device = try std.math.mul(usize, rows, 2 * row_bytes);
+        const words = try std.math.add(usize, try std.math.mul(usize, attn_n, try std.math.add(usize, try std.math.mul(usize, 2, nblocks), ctl_n)), try std.math.mul(usize, 2, cfg.slots));
+        const tables = try std.math.mul(usize, words, 4);
+        return .{ .cap = cap, .cfg = cfg, .at = at, .wr = wr, .nblocks = nblocks, .canonical = canonical, .device = device, .tables = tables, .total = try std.math.add(usize, canonical, try std.math.add(usize, device, tables)) };
+    }
+};
+
+pub const Snapshot = struct {
+    layout: SnapshotLayout,
+    win0: [attn_n]usize,
+    rebases: [attn_n]u64,
+    written: [attn_n]u64,
+
+    pub fn validate(image: Snapshot) !void {
+        const expected = try SnapshotLayout.init(image.layout.cap, image.layout.cfg, image.layout.at);
+        if (!std.meta.eql(expected, image.layout)) return error.KvPageSnapshotLayout;
+        for (image.win0) |origin| {
+            if (origin % ratio != 0 or origin > image.layout.at or image.layout.at - origin > image.layout.wr) return error.KvPageWindow;
+        }
+    }
+};
+
 /// Counters of one layer (kvp_plan's ctl) plus the host's window moves.
 pub const Stats = struct {
     misses: u64 = 0,
@@ -390,7 +431,42 @@ pub const Paged = struct {
     /// Every row the sequence holds written out to host memory (the window's rows too): host K/V then equal what an
     /// all-on-device cache would hold, for a check or a snapshot.
     pub fn flush(pg: *Paged, stream: cuda.Stream, fed: usize) !void {
+        _ = try pg.snapshot(fed);
         for (0..attn_n) |ai| try pg.flushLayer(stream, ai, fed);
+    }
+
+    pub fn snapshot(pg: *const Paged, at: usize) !Snapshot {
+        const image: Snapshot = .{ .layout = try SnapshotLayout.init(pg.cap, pg.cfg, at), .win0 = pg.win0, .rebases = pg.rebases, .written = pg.written };
+        try image.validate();
+        if (pg.wr != image.layout.wr or pg.nblocks != image.layout.nblocks or pg.dev.len != image.layout.device or pg.tabs.len != image.layout.tables or pg.host.bytes.len != attn_n * 2 * pg.cap * row_bytes) return error.KvPageSnapshotLayout;
+        return image;
+    }
+
+    pub fn validateSnapshot(pg: *const Paged, image: Snapshot) !void {
+        try image.validate();
+        const expected = try SnapshotLayout.init(pg.cap, pg.cfg, image.layout.at);
+        if (!std.meta.eql(expected, image.layout) or pg.wr != expected.wr or pg.nblocks != expected.nblocks or pg.dev.len != expected.device or pg.tabs.len != expected.tables or pg.host.bytes.len != attn_n * 2 * pg.cap * row_bytes) return error.KvPageSnapshotLayout;
+    }
+
+    pub fn moveSnapshot(pg: *Paged, stream: cuda.Stream, base: u64, image: Snapshot, saving: bool) !void {
+        var offset: usize = 0;
+        const prefix = image.layout.at * row_bytes;
+        for (0..attn_n) |ai| for ([_]u64{ pg.hostK(ai), pg.hostV(ai) }) |address| {
+            if (saving) try pg.copy(stream, base + offset, address, prefix) else try pg.copy(stream, address, base + offset, prefix);
+            offset += prefix;
+        };
+        for ([_]cuda.DeviceBuffer{ pg.dev, pg.tabs }) |buffer| {
+            if (saving) try pg.copy(stream, base + offset, buffer.ptr, buffer.len) else try pg.copy(stream, buffer.ptr, base + offset, buffer.len);
+            offset += buffer.len;
+        }
+        std.debug.assert(offset == image.layout.total);
+    }
+
+    pub fn publishSnapshot(pg: *Paged, image: Snapshot) void {
+        pg.win0 = image.win0;
+        pg.rebases = image.rebases;
+        pg.written = image.written;
+        pg.graph_prepared = false;
     }
 
     pub fn flushLayer(pg: *Paged, stream: cuda.Stream, ai: usize, fed: usize) !void {

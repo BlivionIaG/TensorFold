@@ -55,15 +55,25 @@ pub fn takeSeq(e: *prompt.Engine, cap: usize) !?prompt.Seq {
     return null;
 }
 
+fn canRetainSeq(s: *const prompt.Seq) bool {
+    return !s.invalidated and s.media == null and s.kv8 == null and s.ikc_host == null and s.paged == null;
+}
+
 /// Seq.deinit's hook: true when the sequence was kept for reuse (a plain one: no media, int8 or paged KV).
 pub fn giveSeq(s: *prompt.Seq) bool {
-    if (draining or !enabled() or s.media != null or s.kv8 != null or s.ikc_host != null or s.paged != null) return false;
+    if (draining or !enabled() or !canRetainSeq(s)) return false;
     for (&seqs) |*slot| if (slot.* == null) {
         slot.* = s.*;
         stats.seq_kept += 1;
         return true;
     };
     return false;
+}
+
+test "exl3: invalidated restore destinations are never retained for reuse" {
+    var sequence: prompt.Seq = undefined;
+    sequence.invalidated = true;
+    try std.testing.expect(!canRetainSeq(&sequence));
 }
 
 /// Draft.init's hook: a kept draft window of the same shape, its caches zeroed and its state reset; null: allocate.

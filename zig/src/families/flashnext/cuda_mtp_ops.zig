@@ -176,7 +176,7 @@ pub fn Ops(comptime Tri: type) type {
             try o.forwardMain(seq, ids[at..stop], .{ .logits = if (last) .last else .none, .streams = d.streams.ptr });
             const head_to = @min(stop, ids.len - 1);
             if (head_to > at) try o.forwardHead(d, ids[at + 1 .. head_to + 1], d.streams.ptr, false);
-            if (last) d.prompt_last = d.streams.ptr + (stop - 1 - at) * wide * 2;
+            d.prompt_last = d.streams.ptr + (stop - 1 - at) * wide * 2;
         }
 
         /// The whole prompt a chunk of the engine's rows at a time, from an empty head cache.

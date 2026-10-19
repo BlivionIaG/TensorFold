@@ -308,7 +308,6 @@ pub const SeqKv8 = struct {
     }
 };
 
-
 /// TF_FLASHNEXT_KV=int8 (or int8r: rotated groups), TF_FLASHNEXT_IKC_HOST=1|0 (default: on with int8).
 pub fn fromEnv(kv8_flag: bool) struct { int8: bool, rot: bool, ikc_host: bool } {
     var int8 = kv8_flag;
@@ -386,6 +385,7 @@ pub fn logStream(e: anytype, window: usize, stream_bytes: usize) !void {
 pub fn snapHost(context: usize, exl3: bool) bool {
     var on = exl3 and context > 32768;
     if (std.c.getenv("TF_FLASHNEXT_SNAP_HOST")) |v| on = std.mem.eql(u8, std.mem.span(v), "1");
+    if (kvpage.configFromEnv() != null) on = true;
     @import("cuda_snap.zig").on_host = on;
     return on;
 }
@@ -477,7 +477,7 @@ pub fn newSeq(e: anytype, comptime Seq: type, cap: usize) !Seq {
     const st = e.stream.*;
     const attn = wt.attn_n;
     const kv = of(e);
-    const layout = try sequenceLayout(kv, cap, e.chunk, kvpage.configFromEnv());
+    const layout = try sequenceLayout(kv, cap, e.chunk, e.page_config);
     const paged = if (layout.paging) |cfg| try kvpage.Paged.init(gpa, d, cap, cfg) else null;
     errdefer if (paged) |pg| pg.destroy();
     const logits = try gpa.alloc(u8, wt.vocab * 2);
@@ -676,6 +676,7 @@ test "exl3: newSeq with host indexer keys enters the paging allocator" {
     engine.stream = &stream;
     engine.chunk = 4096;
     engine.round_graph = .{};
+    engine.page_config = kvpage.force;
     (try entryOf(&engine)).ikc_host = true;
     defer forget(engine.gpa, &engine);
     try std.testing.expectError(error.BuiltWithoutKernels, engine.newSeq(8192));

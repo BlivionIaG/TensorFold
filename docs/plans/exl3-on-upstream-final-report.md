@@ -24,14 +24,11 @@ the non-deep path, so it is excluded from graph results. Graph performance remai
 
 The near-200k × 2 TP=2 BF16 needle test (195,938 and 195,957 prompt tokens) passed on this tree before the final
 agent changes; it was not rerun on the exact PR head. Treat that result as demonstrated on a near-final tree, not
-as a final-head gate or an exact-200k test. Separately,
-single-card KV paging at 200k matched resident BF16 K/V, but KV paging has not been combined with TP=2 serving,
-CUDA graphs, multiple lanes, or prompt snapshots. Its changing host-side window offsets currently prevent safe
-graph replay. The host-indexer allocation/budget mismatch is fixed in the current uncommitted tree: actual paged
-allocations and stream admission now use one layout, including chunk sizing and one-row BF16 placeholders. A short
-TP=2 eager smoke with BF16 paging and host indexer keys loaded on both ranks and completed the existing gate with
-drafted equal to undrafted. This does not prove graph replay, long context or two-request concurrency. Paging
-overflow still sets a device flag without a serving fail-closed or retry path.
+as a final-head gate or an exact-200k test. The follow-up implementation now combines BF16 paging, snapshots, TP=2,
+graphs, MTP and two concurrent HTTP chat histories at ordinary lengths. Restored graph state/logits match exactly;
+warm, branch and rewind cache phases each reuse 4,122/4,139 prompt tokens with exact response hashes versus cold
+cache. The 200k × 2 gate remains explicitly deferred. Live-rank overflow/failure injection and repeatable graph
+speedup remain open; no graph performance win is claimed. BF16 is required; int8 KV is out of scope.
 
 ## What this adds
 
@@ -137,28 +134,21 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
    and failed at positions 18 and 33; logits also differ due to fp32 reduction order. At 65k and 200k the
    deep-prefill last row swaps a near-tie pair between tp=1 and tp=2. The single-layer 16-position top-1 check
    does not cover this case.
-4. **200k x 2 is tight on rank 0** (11 lines per layer, floor 10) and slow while both requests prefill: decode ran
-   at 0.4 - 10 tokens per second while the other request prefilled. Prompt-cache reuse with drafts did not work at
-   196k (a state kept without the MTP head's rows cannot serve a drafting stream).
-5. **KV paging** remains default off and BF16-only. The 200k resident-parity result is single-card. A new TP=2
-   correctness gate on both cards passed 16,384 rows of deep prefill plus 256 decode steps with BF16 paging and
-   prefill/decode graphs enabled: actual graph captures/replays and page-window rebases occurred, and graph outputs
-   were bit-identical to eager on both ranks. This does not yet prove 200k × 2 concurrency, snapshots, MTP rollback,
-   or overflow failure cleanup. The allocator/admission accounting fix is in `8528ca2c`; graph prefill showed no
-   meaningful speedup in this gate. A follow-up audit found unsafe generic-round-graph fallback for paged sequences,
-   a graph-lifetime hazard on sequence destruction, and independent async-instantiation readiness across TP ranks.
-   The current implementation adds bounded TP-rank readiness rendezvous while retaining async instantiation,
-   targeted graph invalidation on sequence drop, paged fallback exclusion, and early snapshot rejection. Agent host
-   tests pass; the integrated CUDA-test and native builds pass, and a fresh TP=2 two-GPU 16k BF16-paged gate passes
-   with async instantiation enabled. Full pager-aware snapshots remain unimplemented because they require budget
-   and TP2 lifecycle integration. At 200k, consecutive rows share only 49% of their selected blocks, hit rate 0.83
-   with a 384 MiB cache.
+4. **200k x 2 remains deferred.** Rank-0 pool headroom is tight and simultaneous prefill can hurt decode. The prior
+   near-200k resident-BF16 retrieval gate is not a claim for paged 200k capacity. Ordinary-length prompt-cache reuse
+   now works with TP=2, BF16 paging, MTP and graph mode: two concurrent chat histories passed warm, branch and rewind
+   phases with 4,122/4,139 prompt tokens reused and exact response-hash parity against cold-cache baselines.
+5. **BF16 KV paging and snapshots now pass ordinary-length TP=2 correctness gates.** A two-GPU graph test restored
+   two paged lanes and preserved exact state/logits; each rank replayed prefill graphs 72 times and decode graphs 5
+   times. The HTTP cache gate proves actual snapshot reuse, MTP continuation and two concurrent requests. Still open:
+   repeatable graph speedup/profiling, live-rank overflow and failure injection, and long-context paged capacity.
+   200k × 2 is deliberately not the next gate. The user’s priority is to make graph execution and cache reuse robust
+   and fast first. Int8 KV is out of scope; BF16 remains the primary and required format.
 6. **200k reference parity is not established:** a saved 200k prefill comparison exited 1 with max logit
    difference 1.1406 and top-1 6009 versus 19251 (reference margin 0.25). The successful 200k × 2 needle answers
    establish retrieval/serving behavior for those prompts, not strict full-logit parity.
-7. **Graph path:** warm-up of all window shapes at load, rank-1 independent enqueue and async readback are not
-   done; a rank-0 shutdown hang was seen once with graphs on after rank 1 exited. Neither decode nor prefill graphs
-   have a repeatable measured speedup yet. MTP verification also has a redundant GPU best-selection/readback
+7. **Graph path:** graphs execute and replay for both prefill and decode, including TP2 BF16 paged snapshot restore.
+   However, neither decode nor prefill graphs have a repeatable measured speedup yet. MTP verification also has a redundant GPU best-selection/readback
    boundary after full-logit readback. An opt-in verify-tail experiment preserved output/hash but showed no
    observable speed change in one TP=2 A/B pair; no graph speedup is claimed.
 8. **Prefill at tp=2 is only about 2% faster than tp=1 at equal chunk sizes:** the replicated dense work
@@ -179,8 +169,9 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 1. Meet the graph acceptance gate: reduce decode host boundaries (first target is MTP verify's redundant best-
    selection/readback), make decode graphs measurably faster than optimized eager decode, and extend prefill capture
    beyond dense sub-blocks without losing reduction overlap. Recheck with repeated TP=2 gates before changing defaults.
-2. Exercise fail-closed paging overflow and collective cleanup, implement paged snapshots/MTP rollback, and rerun
-   the 200k × 2 TP=2 test with BF16 paging, graphs, and concurrent requests enabled together.
+2. Exercise fail-closed paging overflow and collective cleanup on live TP2 ranks; snapshots/MTP rollback and
+   ordinary-context cache reuse are implemented and pass their current correctness gates. Defer the 200k × 2
+   acceptance run until graph execution and cache reuse are optimized.
 3. Add an init timeout to the blocking NCCL communicator before making it the tp=2 default.
 4. Make the HTTP and prefill gates fail on strict mismatches, compare full hashes, and require reference artifacts
    for long-context parity runs; investigate the 200k reference-logit failure.

@@ -151,7 +151,76 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, mode, "kernel-graph")) return kernelReplay(gpu, 49152, true, false);
     if (std.mem.eql(u8, mode, "window-graph")) return kernelReplay(gpu, 49152, true, true);
     if (std.mem.eql(u8, mode, "overflow-graph")) return overflowReplay(gpu);
+    if (std.mem.eql(u8, mode, "snapshot")) return snapshotLifecycle(gpu);
     return error.UnknownMode;
+}
+
+fn snapshotSequence(gpu: Gpu, stream: cuda.Stream) !prompt.Seq {
+    var engine: prompt.Engine = undefined;
+    engine.gpa = gpu.gpa;
+    engine.driver = @constCast(gpu.d);
+    var owned_stream = stream;
+    engine.stream = &owned_stream;
+    engine.chunk = 256;
+    engine.eos = 0;
+    engine.round_graph = .{};
+    engine.page_config = .{ .window = 2052, .slots = 16, .rows = 256 };
+    return engine.newSeq(8192);
+}
+
+fn snapshotLifecycle(gpu: Gpu) !void {
+    const snaps = @import("flashnext").snapshot;
+    var stream = try cuda.Stream.init(gpu.d, true);
+    defer stream.deinit();
+    var destination = try snapshotSequence(gpu, stream);
+    defer destination.deinit(gpu.gpa);
+    for ([_]usize{ 0, 1, 3, 4, 2051, 2052, 4096, 4099, 6147 }) |at| {
+        var source: ?prompt.Seq = try snapshotSequence(gpu, stream);
+        defer if (source) |*sequence| sequence.deinit(gpu.gpa);
+        const pg = source.?.paged.?;
+        source.?.fed = at;
+        source.?.history = .{ @intCast(at), 73 };
+        for (0..12) |layer| {
+            const origin = (at -| 2052) / 4 * 4;
+            pg.win0[layer] = origin;
+            pg.rebases[layer] = layer + 3;
+            pg.written[layer] = origin;
+            for (0..2) |side| {
+                const host = pg.hostMut(layer, side == 1);
+                const words: []u16 = std.mem.bytesAsSlice(u16, @as([]align(2) u8, @alignCast(host)));
+                for (words, 0..) |*word, index| word.* = @truncate(index + layer * 997 + side * 32768);
+            }
+        }
+        try pg.dev.fill8(0xFF, stream.handle);
+        const words = try gpu.gpa.alloc(u32, pg.tabs.len / 4);
+        defer gpu.gpa.free(words);
+        try pg.tabs.download(0, std.mem.sliceAsBytes(words));
+        const ctl_at = 24 * pg.nblocks;
+        const inverse_at = ctl_at + 12 * 8;
+        for (0..12) |layer| {
+            words[ctl_at + layer * 8] = 73;
+            words[ctl_at + layer * 8 + 6] = @intCast(31 + layer);
+            if (at >= 4) {
+                words[layer * pg.nblocks] = @intCast(layer);
+                words[12 * pg.nblocks + layer * pg.nblocks] = @intCast(31 + layer);
+                words[inverse_at + layer] = @intCast(layer * pg.nblocks);
+                words[inverse_at + pg.cfg.slots + layer] = @intCast(19 + layer);
+            }
+        }
+        try pg.tabs.upload(0, std.mem.sliceAsBytes(words));
+        const saved = try snaps.save(gpu.gpa, gpu.d, stream, &source.?, null);
+        defer snaps.drop(gpu.gpa, stream, saved);
+        source.?.deinit(gpu.gpa);
+        source = null;
+        for (0..2) |_| {
+            try snaps.restore(stream, &destination, null, saved);
+            const again = try snaps.save(gpu.gpa, gpu.d, stream, &destination, null);
+            defer snaps.drop(gpu.gpa, stream, again);
+            try check.expect(std.meta.eql(saved.paged.?, again.paged.?), "snapshot pager counters at {d}", .{at});
+            try check.expect(std.mem.eql(u8, saved.host.?.bytes[0..saved.buf.len], again.host.?.bytes[0..again.buf.len]), "snapshot exact BF16, windows, slots, tables and ordinary state at {d}", .{at});
+        }
+    }
+    check.pass("BF16 paged snapshot source-drop, distinct destination, repeated restore at nine boundaries", .{});
 }
 
 fn traceRun(gpu: Gpu, dir: []const u8, rest: []const [:0]const u8) !void {
@@ -618,7 +687,7 @@ fn overflowReplay(gpu: Gpu) !void {
     check.pass("exl3-kvpage graph overflow fails closed before key reads", .{});
 }
 
-test "exl3: paged snapshot save rejects before allocation, CUDA access or TP peer dispatch" {
+test "exl3: invalid paged snapshot geometry rejects before allocation, CUDA access or TP peer dispatch" {
     var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = 0 });
     var driver: cuda.Driver = undefined;
     var stream: cuda.Stream = .{ .d = &driver, .handle = null };
@@ -630,7 +699,10 @@ test "exl3: paged snapshot save rejects before allocation, CUDA access or TP pee
     session.engine = &engine;
     session.next_object = 77;
     var pager: kvp.Paged = undefined;
+    pager.cfg = .{ .window = 0 };
+    pager.cap = 200_016;
     var seq: prompt.Seq = undefined;
+    seq.invalidated = false;
     seq.paged = &pager;
     var draft: flash.mtp.Draft = undefined;
     draft.verify_cache = .{ .generation = 17, .ready = 17, .rows = 4, .position = 200_000 };
@@ -639,8 +711,8 @@ test "exl3: paged snapshot save rejects before allocation, CUDA access or TP pee
         seq.fed = at;
         seq.cap = 200_016;
         seq.history = .{ 81, 93 };
-        try std.testing.expectError(error.KvPageSnapshot, session.save(&seq, null));
-        try std.testing.expectError(error.KvPageSnapshot, session.save(&seq, &draft));
+        try std.testing.expectError(error.KvPageConfig, session.save(&seq, null));
+        try std.testing.expectError(error.KvPageConfig, session.save(&seq, &draft));
         try std.testing.expectEqual(at, seq.fed);
         try std.testing.expectEqual([2]i64{ 81, 93 }, seq.history);
         try std.testing.expectEqual(@as(u64, 77), session.next_object);
@@ -687,6 +759,10 @@ test "exl3: paged flush orders all pending BF16 window rows before host snapshot
     pg.cfg = .{ .window = 2052, .rows = 1, .slots = 1 };
     pg.cap = 32;
     pg.wr = pg.cfg.window + pg.cfg.rows + 4;
+    const layout = try kvp.SnapshotLayout.init(pg.cap, pg.cfg, 20);
+    pg.nblocks = layout.nblocks;
+    pg.dev.len = layout.device;
+    pg.tabs.len = layout.tables;
     pg.rebases = @splat(7);
     pg.written = @splat(12);
     const a = std.testing.allocator;
