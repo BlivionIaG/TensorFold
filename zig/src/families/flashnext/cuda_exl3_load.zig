@@ -140,6 +140,18 @@ pub const Ops = struct {
         slot.* = try cuda.DeviceBuffer.alloc(d, bytes);
     }
 
+    /// Every scratch buffer's address and size: unchanged across a pass means nothing grew (nor synchronised) in it.
+    pub fn fingerprint(o: *const Ops) [8][2]u64 {
+        var f: [8][2]u64 = @splat(.{ 0, 0 });
+        const de: ?cuda.exl3.Dense = o.dense;
+        const bufs = [8]?cuda.DeviceBuffer{ o.tmp, o.moe, o.halves, o.sums, if (de) |x| x.xh else null, if (de) |x| x.z else null, if (de) |x| x.counters else null, null };
+        for (bufs, &f) |b, *e| if (b) |x| {
+            e.* = .{ x.ptr, x.len };
+        };
+        if (o.picks) |h| f[7] = .{ @intFromPtr(h.bytes.ptr), h.bytes.len };
+        return f;
+    }
+
     /// Device bytes `reserve` holds (for the pool's budget).
     pub fn reservedBytes(o: *const Ops) usize {
         var n: usize = 0;

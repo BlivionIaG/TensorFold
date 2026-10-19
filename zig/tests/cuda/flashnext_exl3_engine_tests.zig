@@ -265,6 +265,8 @@ fn tfMode(gpu: Gpu, dir: []const u8, golden_path: []const u8, lines: ?usize) !vo
     defer g.deinit();
     try g.reset();
     const n = ids.len;
+    const ops = g.e.layers[0].exl3.?.ops;
+    const before = ops.fingerprint();
     const t0 = check.now(gpu.io);
     try g.e.forward(flash.Tri, g.tri(), &g.seq, ids, .{ .logits = .all, .logits_out = g.out.ptr });
     try g.stream.synchronize();
@@ -277,6 +279,20 @@ fn tfMode(gpu: Gpu, dir: []const u8, golden_path: []const u8, lines: ?usize) !vo
     defer a.free(hrows);
     try gpu.d.check(gpu.d.api.cuMemcpyDtoH_v2(hrows.ptr, g.e.batch_s.?.mixed, n * dims * 2), "cuMemcpyDtoH");
     std.debug.print("teacher-forced pass: {d} rows in {d:.1} ms (first pass: includes every miss's copy)\n", .{ n, ms(t0, t1) });
+    // one decode round too, then every EXL3 scratch buffer must be where Ops.reserve put it
+    {
+        var tok = prompt.argmax(g.seq.logits);
+        const q = [_]*prompt.Seq{&g.seq};
+        try g.e.round(flash.Tri, g.tri(), &q, (&tok)[0..1], g.out.ptr);
+        tok = prompt.argmax(g.seq.logits);
+    }
+    const after = ops.fingerprint();
+    try check.expect(std.mem.eql(u8, std.mem.sliceAsBytes(&before), std.mem.sliceAsBytes(&after)), "an EXL3 scratch buffer grew inside a pass", .{});
+    check.pass("EXL3 scratch reserved up front: the {d} scratch buffers kept their addresses and sizes through a {d}-row prompt pass and a decode round", .{ blk: {
+        var k: usize = 0;
+        for (after) |e| k += @intFromBool(e[1] != 0);
+        break :blk k;
+    }, n });
 
     std.debug.print(" pos  input  ours top1 (logit)  golden top1 (logit)  match  top5 overlap  max|dlogit| on golden top5\n", .{});
     var top1_ok: usize = 0;
