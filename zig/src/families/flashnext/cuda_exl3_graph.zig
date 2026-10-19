@@ -437,7 +437,9 @@ pub fn clearPrefill() void {
 
 /// Before a layer's sub-blocks: `.replayed` (the graph ran; skip the sub-blocks), `.capturing` (run them: they are
 /// recorded; then `prefillEnd`), or `.eager` (run them; `prefillEnd` is a no-op).
-pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool) !Prefill {
+/// `waits`: events of other streams the sub-blocks wait on (expert parallel's per-sub-block sums): a graph cannot wait
+/// on work outside it, so a replay or a capture waits for all of them first.
+pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool, waits: []const cuda.Event) !Prefill {
     if (!prefillEnabled()) return .eager;
     const q = p.seq;
     const key: PKey = .{
@@ -456,6 +458,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
     for (&pentries) |*e| if (e.*) |*x| if (std.meta.eql(x.key, key)) {
         x.used = clock;
         prefill_stats.replays += 1;
+        for (waits) |ev| try p.stream.wait(ev);
         try x.exec.launchOn(p.stream);
         return .replayed;
     };
@@ -463,6 +466,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         prefill_stats.eager += 1;
         return .eager;
     }
+    for (waits) |ev| try p.stream.wait(ev);
     try cuda.graph.beginCapture(p.stream, .thread_local);
     capturing = true;
     pcur = key;
