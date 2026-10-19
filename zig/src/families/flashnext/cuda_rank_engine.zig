@@ -235,7 +235,8 @@ pub const Session = struct {
         const item = try s.windows.getOrPut(s.gpa, q.rank_id);
         if (!item.found_existing) {
             errdefer _ = s.windows.remove(q.rank_id);
-            item.value_ptr.* = try mtp.Draft.init(s.gpa, s.engine.driver, s.engine.stream.*, q.cap, 1, s.engine.chunk);
+            // rank 1 never runs the head: its window keeps the rollback buffers and a one-entry head cache, not q.cap's
+            item.value_ptr.* = try mtp.Draft.init(s.gpa, s.engine.driver, s.engine.stream.*, 1, 1, s.engine.chunk);
         }
         return item.value_ptr;
     }
