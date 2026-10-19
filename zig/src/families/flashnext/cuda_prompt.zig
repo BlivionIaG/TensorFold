@@ -213,6 +213,7 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         @import("cuda_exl3_prefill.zig").releaseFor(e);
+        @import("cuda_exl3_graph.zig").releaseFor(e);
         e.round_graph.clear();
         if (e.batch_s) |*bs| bs.free(e.gpa);
         if (e.scores) |*b| b.free();
@@ -318,6 +319,7 @@ pub const Engine = struct {
             .seq = seq.view(scores),
             .hooks = hooks,
         };
+        if (try @import("cuda_exl3_graph.zig").forward(e, &p, seq, ids)) return; // EXL3 offload: a window on the device plan
         var at: usize = 0;
         while (at < ids.len) {
             const n = @min(s.cap, ids.len - at);
@@ -360,7 +362,7 @@ pub const Engine = struct {
         const has_media = for (seqs) |q| {
             if (q.media != null) break true;
         } else false;
-        if (e.collective != null and round_graph.enabled() and !has_media) {
+        if (try @import("cuda_exl3_graph.zig").round(e, &p, seqs, ids, scores, out)) {} else if (e.collective != null and round_graph.enabled() and !has_media) {
             const key = try round_graph.Key.init(seqs, s.ids, scores, out);
             try e.round_graph.run(key, &p, ids);
         } else try p.chunk(ids, 0, null);

@@ -6,6 +6,7 @@ const cuda = @import("cuda");
 const wt = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_exl3_load.zig");
 const pool_ = @import("cuda_exl3_pool.zig");
+const dplan = @import("cuda_exl3_dplan.zig");
 
 const dims = wt.dims;
 const slots = wt.slots;
@@ -103,6 +104,10 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
         const xin = s.mixed + r0 * dims * 2;
         const picks = s.picks + r0 * slots * 4;
         if (x.pool) |pool| {
+            if (dplan.active) |dp| if (dp.indexOf(pool)) |i| { // a decode round planned on the device (no host cut)
+                try dplan.runLayer(dp, p.stream, i, ex, x.layer, xin, picks, rows, sc, 0, 0);
+                continue;
+            };
             try pooled(p.stream, x.ops, pool, ex, x.layer, xin, picks, rows, sc, 0, 0);
             continue;
         }
@@ -119,6 +124,7 @@ pub var pool_time: struct { cut_ns: u64 = 0, plan_ns: u64 = 0, blocks: u64 = 0 }
 /// fp32 `out` [rows, dims] (expert parallel's rank branch, cuda_exl3_tp.moe).
 pub fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
     const host = (ops.picks orelse return error.Exl3ScratchNotReserved).slice(i32)[0 .. rows * slots];
+    try dplan.toHost(); // the device planned the last decode rounds: its residency back to the host pools first
     const io = pool.io;
     const t0 = std.Io.Clock.awake.now(io).toNanoseconds();
     // end of segment A: the block's picks reach the host (the only host wait of the layer)

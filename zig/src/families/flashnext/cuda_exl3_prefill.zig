@@ -338,6 +338,7 @@ fn now(io: std.Io) i96 {
 pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq, ids: []const u32, hooks: batch.Hooks) !bool {
     const o = opts();
     if (!applies(e, seq, ids, hooks, o)) return false;
+    try @import("cuda_exl3_dplan.zig").toHost(); // the pools' residency on the host before planning a prompt
     if (ids.len == 0 or seq.fed + ids.len > seq.cap) return error.UnexpectedTensor;
     const s = try e.reserve(@min(ids.len, e.chunk));
     const sub = s.cap / att_rows * att_rows;
