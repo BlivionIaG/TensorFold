@@ -123,7 +123,7 @@ struct MlxDecoder {
 
     // A non-finite stream sum: replay full groups only when an actual operand is non-finite.
     template <typename T>
-    __device__ __attribute__((noinline)) static float repair_stream(const Args& a, const typename T::elem* x,
+    __device__ __attribute__((always_inline)) static inline float repair_stream(const Args& a, const typename T::elem* x,
                                                                    int col, float original) {
         const int groups = a.k / a.group;
         const int words_row = row_words<int>(a);
