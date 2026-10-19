@@ -161,6 +161,7 @@ pub const Uploads = struct {
     event: cuda.Event,
 
     pub fn copy(u: Uploads, dst: u64, bytes: []const u8) !void {
+        if (@import("cuda_exl3_graph.zig").capturing) return @import("cuda_exl3_graph.zig").pinnedCopy(u.stream, dst, bytes); // a copy node reads the pinned bytes at each replay
         try cuda.copy_source.enqueue(u.stream.d, dst, bytes, u.stream);
     }
     pub fn record(u: Uploads) !void {
