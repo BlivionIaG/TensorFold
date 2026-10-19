@@ -227,6 +227,7 @@ pub const Uploads = struct {
     event: cuda.Event,
 
     pub fn copy(u: Uploads, dst: u64, bytes: []const u8) !void {
+        if (@import("cuda_exl3_graph.zig").capturing) return @import("cuda_exl3_graph.zig").pinnedCopy(u.stream, dst, bytes); // a copy node reads the pinned bytes at each replay
         try cuda.copy_source.enqueue(u.stream.d, dst, bytes, u.stream);
     }
     pub fn record(u: Uploads) !void {
@@ -530,8 +531,8 @@ pub const SeqState = struct {
     cap: usize,
     /// Block scores for an attention block's rows [min(rows, att_rows), scoreStride(cap)] fp32 (the engine's).
     scores: u64,
-    /// The attention caches' pages (pt 0: kc, vc, ikc and pooled are contiguous rows).
-    pg: @import("cuda_glue.zig").Pg = .{},
+    /// The K/V paged to host memory with a device block cache (cuda_exl3_kvpage.zig), else kc/vc hold it all.
+    paged: ?*@import("cuda_exl3_kvpage.zig").Paged = null,
 };
 
 /// The block scores' row stride for a cache of `cap` tokens: its blocks rounded up to 16 (the captured _scores').
