@@ -108,7 +108,8 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     }
 }
 
-/// Pool counters every pass reads (TF_FLASHNEXT_EXL3_POOL_STATS=1 prints them at the engine's end).
+/// Host time of the A/B cut (the picks D2H and its wait) and of Pool.plan, summed over every pooled block (read by
+/// tf-cuda-test flashnext-exl3-engine).
 pub var pool_time: struct { cut_ns: u64 = 0, plan_ns: u64 = 0, blocks: u64 = 0 } = .{};
 
 fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch) !void {
