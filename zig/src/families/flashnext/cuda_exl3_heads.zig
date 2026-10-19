@@ -38,9 +38,11 @@ comptime {
     std.debug.assert(rank_pw == 7296 and rank_out_k == 3072);
 }
 
-/// Whether attention layers split at `world`: at 2 unless TF_FLASHNEXT_ATTN_SPLIT=0; never at 1.
+/// Whether attention layers split at `world`: at 2 unless TF_FLASHNEXT_ATTN_SPLIT=0; never at 1. K/V paging
+/// (TF_FLASHNEXT_KVPAGE=1) reads the replicated layout only, so it takes precedence over the split.
 pub fn splitAt(world: usize) bool {
     if (world != 2) return false;
+    if (@import("cuda_exl3_kvpage.zig").configFromEnv() != null) return false;
     const v = std.c.getenv("TF_FLASHNEXT_ATTN_SPLIT") orelse return true;
     return !std.mem.eql(u8, std.mem.span(v), "0");
 }

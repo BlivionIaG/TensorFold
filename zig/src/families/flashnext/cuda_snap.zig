@@ -66,6 +66,7 @@ fn attnPiecesRow(kc: []cuda.DeviceBuffer, vc: []cuda.DeviceBuffer, ikc: []cuda.D
 
 /// Each piece of the sequence (and the head's cache, with `d`) to or from its place in the buffer at `base`.
 fn move(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, base: u64, at: usize, way: Way) !void {
+    if (seq.paged != null) return error.KvPageSnapshot; // paged K/V (cuda_exl3_kvpage.zig) has no snapshot yet
     const dr = stream.d;
     var off: u64 = 0;
     var pieces: [13]Piece = undefined;
