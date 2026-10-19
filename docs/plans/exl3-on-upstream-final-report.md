@@ -8,7 +8,7 @@ wrapper, not benchmarks.
 ## Current handover (2026-10-19)
 
 Draft PR [#50](https://github.com/BlivionIaG/TensorFold/pull/50) is open from
-`exl3-on-upstream-wip` (current report head `79a3db12`; runtime code head `44d65597`) into the fork's
+`exl3-on-upstream-wip` (report-only commits atop runtime code head `44d65597`) into the fork's
 `upstream-v1.1.0` base, copied from upstream tag
 `v1.1.0`. It is intentionally one large draft to split later. No final merge-readiness claim is made here.
 
