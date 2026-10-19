@@ -102,7 +102,7 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
         const xin = s.mixed + r0 * dims * 2;
         const picks = s.picks + r0 * slots * 4;
         if (x.pool) |pool| {
-            try pooled(p.stream, x.ops, pool, ex, x.layer, xin, picks, rows, sc);
+            try pooled(p.stream, x.ops, pool, ex, x.layer, xin, picks, rows, sc, 0, 0);
             continue;
         }
         try ex.runSlots(p.stream, x.layer, xin, dims, .bf16, picks, rows, sc);
@@ -113,7 +113,10 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
 /// tf-cuda-test flashnext-exl3-engine).
 pub var pool_time: struct { cut_ns: u64 = 0, plan_ns: u64 = 0, blocks: u64 = 0 } = .{};
 
-fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch) !void {
+/// One block of `rows` rows through `pool`: per-slot outputs in sc.y, and with `wts` != 0 the last pass also combines
+/// every slot (sc.y keeps the earlier passes' slots; a slot no pass ran reads its stale, finite value at weight 0) into
+/// fp32 `out` [rows, dims] (expert parallel's rank branch, cuda_exl3_tp.moe).
+pub fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
     const host = (ops.picks orelse return error.Exl3ScratchNotReserved).slice(i32)[0 .. rows * slots];
     const io = pool.io;
     const t0 = std.Io.Clock.awake.now(io).toNanoseconds();
@@ -128,7 +131,8 @@ fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, ex: *const cuda.ex
     // segment B, a pass at a time: its copies and table rewrites, then the experts on the pool's tables
     for (0..r.n_passes) |j| {
         try pool.stage(r, j, st);
-        try ex.runSlots(st, layer, xin, dims, .bf16, pool.picksFor(r, j, picks), rows, sc);
+        const last = j + 1 == r.n_passes;
+        try ex.run(st, layer, xin, dims, .bf16, pool.picksFor(r, j, picks), if (last) wts else 0, rows, if (last) out else 0, sc);
         try pool.release(r, j, st);
     }
 }
@@ -187,6 +191,11 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     var n_seen: usize = 0;
     for (layers) |*l| if (l.exl3) |x| try reserveOnce(x.ops, &seen, &n_seen, st, rows);
     if (mtp) |l| if (l.exl3) |x| try reserveOnce(x.ops, &seen, &n_seen, st, rows);
+    // expert parallel (cuda_exl3_tp.zig): its masks, sums and block scratch, before the pools take what is free
+    for (layers) |*l| if (l.exl3) |x| if (x.tp != null) {
+        try @import("cuda_exl3_tp.zig").reserve(x.ops, st, x.layer, rows);
+        break;
+    };
     if (n == 0) return out;
     for (all[0..n]) |x| {
         out.line_bytes = @max(out.line_bytes, x.lineBytes());

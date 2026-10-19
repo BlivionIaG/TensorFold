@@ -174,7 +174,7 @@ pub const Engine = struct {
         e.eos = try ple.eosOf(gpa, io, e.model_dir);
         e.mixer = try loadHc(gpa, driver, &e.store, "language_model.model.hyper_connection_mixer", false);
         errdefer e.mixer.free();
-        const exl3_head = try @import("cuda_exl3_load.zig").head(gpa, driver, &e.store, world);
+        const exl3_head = try @import("cuda_exl3_load.zig").head(gpa, driver, &e.store, world, rank);
         const head_tensor = if (exl3_head == null) try e.store.tensor("language_model.lm_head.weight") else undefined;
         if (exl3_head) |q| e.head_q = q else if (head_tensor.dtype == .bf16) {
             if (!head_tensor.is(.bf16, &.{ vocab, dims })) return error.UnexpectedTensor;

@@ -15,7 +15,11 @@
 //!  - every expert table keeps its 513 global ids (the offload pool's tables, `shared_id` 512 and its policy are
 //!    unchanged); the stacked suh/svh scales hold only the rank's rows, their base pointers shifted by `lo` rows so the
 //!    kernels' `scale[e * width]` still indexes by global id;
-//!  - attention, GDN, hyper-connections, the router and KV are replicated, as upstream's ModelOpt tp does.
+//!  - attention, GDN, hyper-connections, the router and KV are replicated, as upstream's ModelOpt tp does;
+//!  - offloaded (the default): each rank's routed trellis in its own pinned bank (its 256 experts, about 21 GiB a
+//!    process) and its own pool per layer (cuda_exl3_pass.attach sizes it from the rank's free memory), planning on the
+//!    rank's masked picks: the same lines cover half the experts, so a rank's hit rate is higher than tp=1's;
+//!  - the lm_head split by vocabulary (cuda_exl3_load.shardHead, default at tp=2): 124,160 columns a rank.
 //!
 //! The MoE branch (`moe`, the hook in cuda_exl3_pass.moe): the router and top-k run on both ranks (same rows, same
 //! picks); `fn_exl3_tp_mask` turns the other rank's slots into pick -1, weight 0; `Experts.run` combines the rank's
@@ -77,10 +81,23 @@ fn up(x: *load.Experts, d: *const cuda.Driver, bytes: []const u8) !u64 {
     return b.ptr;
 }
 
-/// cuda_exl3_load.experts at world 2: the rank's experts resident, the 513-entry tables (other ids zero), the scales'
-/// rows lo..hi with their bases shifted to global ids.
+fn align256(n: usize) usize {
+    return (n + 255) / 256 * 256;
+}
+
+fn expertName(b: []u8, mlp: []const u8, e: usize, proj: []const u8) ![]const u8 {
+    if (e == wt.experts_n) return std.fmt.bufPrint(b, "{s}.shared_expert.{s}", .{ mlp, proj });
+    return std.fmt.bufPrint(b, "{s}.experts.{d}.{s}", .{ mlp, e, proj });
+}
+
+/// cuda_exl3_load.experts at world 2: the rank's experts, the 513-entry tables (other ids zero), the scales' rows
+/// lo..hi with their bases shifted to global ids. Offloaded (the default, cuda_exl3_load.offloaded): only the rank's
+/// own trellis words go to a pinned host bank (about half the tp=1 bank a process), the other rank's ids stay empty
+/// in `routed` (the pool never stages them: their picks are masked to -1 before it plans), and the pool attached by
+/// cuda_exl3_pass.attach owns the tables. Resident (TF_FLASHNEXT_EXL3_ROUTED=device): the rank's experts on the device.
 pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store, mlp: []const u8, world: usize, rank: usize) !*load.Experts {
     const r = try Rank.init(world, rank);
+    const offload = load.offloaded();
     const x = try gpa.create(load.Experts);
     x.* = .{ .gpa = gpa, .ops = try load.opsOf(store, d), .layer = undefined, .tp = r };
     errdefer x.destroy();
@@ -96,32 +113,48 @@ pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store, mlp: [
     var scales: [6]std.ArrayList(u8) = @splat(.empty);
     defer for (&scales) |*l| l.deinit(gpa);
     var buf: [256]u8 = undefined;
+    var at: usize = 0;
+    if (offload) {
+        // the bank's size from the headers of the rank's own experts, then one pinned region for the layer
+        var total: usize = 0;
+        for (r.lo..r.hi) |e| {
+            for (projs) |proj| total += align256((try load.mat(store, try expertName(&buf, mlp, e, proj))).trellis.len);
+            store.release();
+        }
+        x.bank = try cuda.HostBuffer.alloc(d, total);
+        x.routed = try gpa.alloc([3][]const u8, wt.experts_n);
+        for (x.routed) |*e| e.* = .{ &.{}, &.{}, &.{} };
+    }
+    const t0 = std.Io.Clock.awake.now(store.io).toNanoseconds();
     for (r.lo..r.hi) |e| {
         for (projs, 0..) |proj, j| {
-            const name = if (e == wt.experts_n)
-                try std.fmt.bufPrint(&buf, "{s}.shared_expert.{s}", .{ mlp, proj })
-            else
-                try std.fmt.bufPrint(&buf, "{s}.experts.{d}.{s}", .{ mlp, e, proj });
-            const m = try load.mat(store, name);
+            const m = try load.mat(store, try expertName(&buf, mlp, e, proj));
             if (m.k != ks[j] or m.n != ns[j]) return error.UnexpectedTensor;
-            x.trellis[j][e] = try up(x, d, m.trellis);
+            if (x.bank) |bank| {
+                const dst = bank.bytes[at..][0..m.trellis.len];
+                @memcpy(dst, m.trellis);
+                at += align256(m.trellis.len);
+                if (e == wt.experts_n) x.shared[j] = dst else x.routed[e][j] = dst;
+            } else x.trellis[j][e] = try up(x, d, m.trellis);
             x.halves[j][e] = @intCast(m.halves);
             try scales[2 * j].appendSlice(gpa, m.suh);
             try scales[2 * j + 1].appendSlice(gpa, m.svh);
         }
         store.release();
     }
+    x.bank_ns = @intCast(std.Io.Clock.awake.now(store.io).toNanoseconds() - t0);
     // a scale row's fp16 count: suh_g D, svh_g I, suh_u D, svh_u I, suh_d I, svh_d D
     const rows = [6]usize{ dims, width, dims, width, width, dims };
     var base: [6]u64 = undefined;
     for (&base, scales, rows) |*b, l, n| b.* = try up(x, d, l.items) - r.lo * n * 2;
     x.layer = .{
-        .gate = try up(x, d, std.mem.sliceAsBytes(x.trellis[0])),
-        .up = try up(x, d, std.mem.sliceAsBytes(x.trellis[1])),
-        .down = try up(x, d, std.mem.sliceAsBytes(x.trellis[2])),
-        .gate_k2 = try up(x, d, std.mem.sliceAsBytes(x.halves[0])),
-        .up_k2 = try up(x, d, std.mem.sliceAsBytes(x.halves[1])),
-        .down_k2 = try up(x, d, std.mem.sliceAsBytes(x.halves[2])),
+        // offloaded: the pool's tables replace these at attach (0 until then; a pass refuses an unattached layer)
+        .gate = if (offload) 0 else try up(x, d, std.mem.sliceAsBytes(x.trellis[0])),
+        .up = if (offload) 0 else try up(x, d, std.mem.sliceAsBytes(x.trellis[1])),
+        .down = if (offload) 0 else try up(x, d, std.mem.sliceAsBytes(x.trellis[2])),
+        .gate_k2 = if (offload) 0 else try up(x, d, std.mem.sliceAsBytes(x.halves[0])),
+        .up_k2 = if (offload) 0 else try up(x, d, std.mem.sliceAsBytes(x.halves[1])),
+        .down_k2 = if (offload) 0 else try up(x, d, std.mem.sliceAsBytes(x.halves[2])),
         .suh_g = base[0],
         .svh_g = base[1],
         .suh_u = base[2],
@@ -228,6 +261,35 @@ pub fn scratchOf(ops: *load.Ops) !*Scratch {
     return ops.tp.?;
 }
 
+/// Every expert-parallel scratch a pass of up to `rows` rows reads, allocated now (cuda_exl3_pass.attach, before the
+/// pools size themselves from free memory), so no round grows a buffer (a growth synchronises the stream and moves an
+/// address a captured graph would hold): the masked picks, weights and the ranks' sum for `rows` rows, Experts.run's
+/// scratch for a block (zeroed), and the pinned picks of the pool's A/B cut.
+pub fn reserve(ops: *load.Ops, s: cuda.Stream, l: cuda.exl3_experts.Layer, rows: usize) !void {
+    const t = try scratchOf(ops);
+    try t.ensure(s, l, rows);
+    if (ops.picks == null) ops.picks = try cuda.HostBuffer.alloc(ops.d, moe_rows * slots * 4);
+    try s.synchronize();
+}
+
+/// The expert-parallel buffers' addresses and sizes (cuda_exl3_load.Ops.fingerprint's tail).
+pub fn fingerprint(t: *const Scratch) [4][2]u64 {
+    var f: [4][2]u64 = @splat(.{ 0, 0 });
+    for ([4]?cuda.DeviceBuffer{ t.picks, t.wts, t.sum, t.moe }, &f) |b, *e| if (b) |x| {
+        e.* = .{ x.ptr, x.len };
+    };
+    return f;
+}
+
+/// Device bytes the expert-parallel scratch holds.
+pub fn reservedBytes(t: *const Scratch) usize {
+    var n: usize = 0;
+    for ([4]?cuda.DeviceBuffer{ t.picks, t.wts, t.sum, t.moe }) |b| if (b) |x| {
+        n += x.len;
+    };
+    return n;
+}
+
 /// The rank's half of the MoE branch, then the ranks' sum: cuda_exl3_pass.moe for a layer whose experts carry a rank.
 /// `p` is the pass (`*cuda_batch.Pass(Tri)`); on return s.y / s.wts hold what the write-back reads.
 pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
@@ -245,11 +307,18 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     const mw = t.wts.?.ptr;
     const sum = t.sum.?.ptr;
     try t.mask(st, s.picks, s.wts, mp, mw, n * slots, r);
+    if (x.needsPool()) return error.Exl3PoolNotAttached;
     const sc = try cuda.exl3_experts.scratch(t.moe.?.ptr, x.layer, t.moe_cap, slots);
     var r0: usize = 0;
     while (r0 < n) : (r0 += t.moe_cap) {
         const rows = @min(t.moe_cap, n - r0);
-        try ex.run(st, x.layer, s.mixed + r0 * dims * 2, dims, .bf16, mp + r0 * slots * 4, mw + r0 * slots * 4, rows, sum + r0 * dims * 4, sc);
+        const xin = s.mixed + r0 * dims * 2;
+        // offloaded: the rank's own pool plans on the rank's masked picks (the other rank's slots are -1)
+        if (x.pool) |pool| {
+            try @import("cuda_exl3_pass.zig").pooled(st, x.ops, pool, ex, x.layer, xin, mp + r0 * slots * 4, rows, sc, mw + r0 * slots * 4, sum + r0 * dims * 4);
+            continue;
+        }
+        try ex.run(st, x.layer, xin, dims, .bf16, mp + r0 * slots * 4, mw + r0 * slots * 4, rows, sum + r0 * dims * 4, sc);
     }
     try c.sum(st, sum, n * dims);
     try t.place(st, sum, s.y, s.wts, n);
@@ -270,6 +339,9 @@ pub fn expertOf(name: []const u8) ?usize {
 /// One tensor's device bytes on rank `r`: memory.tensorBytes for what the rank holds, 0 for the other rank's experts.
 pub fn tensorBytes(name: []const u8, e: core.safetensors.Entry, o: memory.Options, r: Rank) !u64 {
     if (expertOf(name)) |id| if (!r.owns(id)) return 0;
+    // the vocabulary-split head (load.shardHead): half the trellis and svh a rank, suh whole
+    if (r.world == 2 and load.shardHead(2) and (std.mem.eql(u8, name, "lm_head.trellis") or std.mem.eql(u8, name, "lm_head.svh")))
+        return (try memory.tensorBytes(name, e, o)) / 2;
     return memory.tensorBytes(name, e, o);
 }
 
@@ -354,6 +426,8 @@ pub fn headProjection(gpa: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store,
     const st = cuda.exl3.strides(m.k, n, m.halves, false);
     p.parts = try gpa.alloc(load.Part, 1);
     p.parts[0] = .{ .col = 0, .n = n, .kind = .{ .exl3 = .{ .trellis = bufs[0], .suh = bufs[1], .svh = bufs[2], .k = @intCast(m.k), .n = @intCast(n), .halves = m.halves, .codebook = .mul1, .stride_k = st.k, .stride_nb = st.nb } } };
+    // the shard's Dense scratch (split partials, counters) is reserved with the rest at attach
+    p.ops.noteWeight(p.parts[0].kind.exl3, n);
     store.release();
     var out = projection.Projection.empty(d);
     out.n = n;
@@ -401,6 +475,13 @@ test "exl3: expert tensors count on their own rank only; the router, the shared 
     const router = "model.language_model.layers.0.mlp.gate.weight";
     try std.testing.expectEqual(try tensorBytes(router, e, .{}, r0), try tensorBytes(router, e, .{}, r1));
     try std.testing.expect(try tensorBytes(router, e, .{}, r0) > 0);
+}
+
+test "exl3: the split head counts half its trellis and svh a rank" {
+    const r0 = try Rank.init(2, 0);
+    const tr: core.safetensors.Entry = .{ .dtype = .i16, .rank = 3, .shape = .{ 160, 15520, 80, 1, 1 }, .begin = 0, .end = 160 * 15520 * 80 * 2 };
+    if (load.shardHead(2)) try std.testing.expectEqual(tr.end / 2, try tensorBytes("lm_head.trellis", tr, .{}, r0));
+    try std.testing.expectEqual(tr.end, try tensorBytes("lm_head.trellis", tr, .{}, try Rank.init(1, 0)));
 }
 
 test "exl3: tensor parallel placement opens at world 2 and still refuses other worlds" {
