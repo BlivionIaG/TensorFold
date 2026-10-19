@@ -217,6 +217,7 @@ pub const Engine = struct {
         if (e.batch_s) |*bs| bs.free(e.gpa);
         if (e.scores) |*b| b.free();
         e.batch_k.deinit();
+        @import("cuda_exl3_kv.zig").forget(e.gpa, e);
         e.ngram.deinit();
         for (e.layers[0..e.n_layers]) |*l| l.free(e.gpa);
         e.head_q.free();
@@ -231,6 +232,7 @@ pub const Engine = struct {
     pub fn newSeq(e: *Engine, cap: usize) !Seq {
         e.round_graph.clear();
         if (cap == 0) return error.UnexpectedTensor;
+        if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_exl3_kv.zig").newSeq(e, Seq, cap); // K10 placement
         const logits = try e.gpa.alloc(u8, vocab * 2);
         errdefer e.gpa.free(logits);
         const conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
@@ -388,14 +390,18 @@ pub const Seq = struct {
     fed: usize,
     logits: []u8,
     cap: usize,
+    /// int8 K/V scales beside the codes in kc/vc, and the indexer keys' mapped host buffer (cuda_exl3_kv.newSeq).
+    kv8: ?@import("cuda_exl3_kv.zig").SeqKv8 = null,
+    ikc_host: ?cuda.HostBuffer = null,
 
     /// The caches a batched pass reads and leaves; `scores` the engine's block scores (Engine.reserveScores).
     pub fn view(s: *Seq, scores: u64) batch.SeqState {
-        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores };
+        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .kv8 = s.kv8 };
     }
 
     pub fn deinit(s: *Seq, gpa: std.mem.Allocator) void {
         if (s.media) |*m| m.deinit();
+        @import("cuda_exl3_kv.zig").deinitSeq(gpa, &s.kv8, &s.ikc_host);
         freeBufs(s.conv);
         freeBufs(s.state);
         freeBufs(s.kc);

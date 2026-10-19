@@ -70,12 +70,13 @@ pub const Ring = struct {
         var n: usize = 0;
         for (pools) |p| {
             if (p.lines.layout.line_bytes != lay.line_bytes or !std.mem.eql(usize, &p.lines.layout.off, &lay.off)) return error.Invalid;
-            if (p.lines.spec.experts != table_n) return error.Invalid;
+            // 513 entries with the shared expert, 512 on the expert-parallel rank without it (cuda_exl3_tp.zig)
+            if (p.lines.spec.experts != pools[0].lines.spec.experts or (p.lines.spec.experts != table_n and p.lines.spec.experts != routed_n)) return error.Invalid;
             n += p.opt.lines;
         }
         const r = try gpa.create(Ring);
         errdefer gpa.destroy(r);
-        r.* = .{ .gpa = gpa, .d = d, .pools = undefined, .off = lay.off, .line_bytes = lay.line_bytes, .addr = undefined, .state = undefined, .owner = undefined, .epoch_of = undefined, .copy = undefined, .cev = undefined, .rev = undefined, .tlay = cuda.exl3_pool.Tables.init(table_n), .shadow = undefined, .snaps = undefined };
+        r.* = .{ .gpa = gpa, .d = d, .pools = undefined, .off = lay.off, .line_bytes = lay.line_bytes, .addr = undefined, .state = undefined, .owner = undefined, .epoch_of = undefined, .copy = undefined, .cev = undefined, .rev = undefined, .tlay = cuda.exl3_pool.Tables.init(pools[0].lines.spec.experts), .shadow = undefined, .snaps = undefined };
         @memcpy(&r.pools, pools);
         r.addr = try gpa.alloc(u64, n);
         errdefer gpa.free(r.addr);
@@ -380,6 +381,7 @@ pub const Ring = struct {
                 have += 1;
                 continue;
             }
+            if (r.pools[layer].k2[id][0] == 0) continue; // the other rank's expert (expert parallel): no bytes here
             order[n] = @intCast(id);
             n += 1;
         }

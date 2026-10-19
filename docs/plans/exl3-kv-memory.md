@@ -309,6 +309,81 @@ KV (upstream PR #637), not in 1.1.0.
 - `cuda_mtp_draft.zig`: the head's cache the same way (two lines).
 - `cuda_batch_state.zig` Scratch: skip `head_local` when the head is whole (one line); default chunk 1024 for EXL3.
 
+## 9. bf16 at tp=2: built and measured (L1, branch `exl3-c-longctx`)
+
+User decision (2026-10-19): **bf16 K/V is the default**; the int8 cache above stays in the tree behind a flag
+(`--kv-cache fp8` or `TF_FLASHNEXT_KV=int8`, hooked per lane in `Pass.attnRows`), not validated past one 32k
+single-card gate. What was built for 200k x 2 concurrent at tp=2 on bf16, all **measured** on par1-cs13 (two 5060 Ti):
+
+- **Attention head split** (`cuda_exl3_heads.zig`, default at tp=2, `TF_FLASHNEXT_ATTN_SPLIT=0` keeps upstream's
+  replicated attention): rank r loads q|k|v|indexer columns of its 12 query heads and KV head r (7,296-wide row, whole
+  128-column EXL3 blocks) and o_proj input rows 3072r.. (whole 128-row blocks); the pass runs upstream's kernels with
+  NQ 12, NKV 1 and one fp32 all-reduce of [rows, 2560] a layer. Sequences hold one KV head a rank.
+- **Indexer raw keys in mapped pinned host memory** (`TF_FLASHNEXT_IKC_HOST=1`; on by default with int8 only).
+- **Chunk 1024** for EXL3 (unless `TF_FLASHNEXT_CHUNK`), **`head_local` sized for logits passes only** (0 rows with
+  a whole head, 64 with the vocabulary-split head at tp=2): scratch 0.700 GiB a card.
+- **Rank 1's MTP windows without a head cache** (it never runs the head): 0.44 GiB less a drafting stream at 200k.
+- **Prompt states parked in host memory** (`cuda_snap.on_host`, `Loaded.host_snaps`; `TF_FLASHNEXT_SNAP_HOST`, on by
+  default for EXL3 past 32,768 tokens): the native host budgets the prompt cache in host memory.
+- **Rank rooms agreed in streams** (`rankRoom`): rank 1's smaller streams no longer make the native host refuse
+  `--parallel 2` by comparing rank 0's stream bytes with rank 1's byte room.
+- **Deep (expert-major) prefill at tp=2** (separate commit; another agent owns tp=2 prefill): 16,384 tokens in
+  15.8 s vs 57.5 s on the batched pass, same 32 greedy tokens after it.
+
+A stream at a 200,016-token window, device bytes (startup line `flashnext: a stream at a ... window holds`):
+
+| | K/V | index keys | pooled | DeltaNet | draft and rest | rank 0 | rank 1 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| upstream (replicated bf16) | 4.578 | 0.572 | 0.143 | 0.108 | 0.594 | 5.995 | 5.995 |
+| head split | 2.289 | 0.572 | 0.143 | 0.108 | 0.594 | 3.706 | 3.706 |
+| + index keys on host (0.572 GiB host a stream a rank) | 2.289 | 0 | 0.143 | 0.108 | 0.594 / 0.153 | 3.134 | 2.692 |
+
+Pool lines a layer at 200k x 2 (`TF_FLASHNEXT_EXL3_STREAMS=2 --parallel 2`, drafts on; the pool's floor is 10):
+
+| configuration | rank 0 | rank 1 |
+|---|---:|---:|
+| replicated bf16 | PoolTooSmall | PoolTooSmall |
+| head split | PoolTooSmall | PoolTooSmall |
+| split + host index keys, no deep prefill, 1 GiB reserve | 13 | 20 (before the rank-1 window change) |
+| + deep prefill 2048 rows (0.34 GiB), 1 GiB reserve | PoolTooSmall (about 9) | 26 |
+| + deep prefill 2048 rows, `TENSORFOLD_MEMORY_RESERVE_GIB=0.75` | 12 | 29 |
+
+Rank 0 binds: beside rank 1 it holds the MTP head (0.475 GiB of weights) and each drafting stream's head cache
+(0.44 GiB at 200k, bf16, two KV heads) (*estimate*: `--no-drafts` frees 2 x 0.59 GiB of draft state, about 14
+lines, and the head's 0.475 GiB, about 5 more).
+
+The served configuration that fits 200k x 2 at tp=2 on bf16 (measured, startup lines): head split + host index keys
++ deep prefill 2048 rows + `TENSORFOLD_MEMORY_RESERVE_GIB=0.75`, `TF_FLASHNEXT_EXL3_STREAMS=2 --parallel 2
+--context 200000`: rank 0 **12 lines a layer**, rank 1 **29**, "2 streams at once, 3.15 GiB each at a 200000-token
+window", an 8 GiB prompt cache in host memory. With the default 1 GiB reserve rank 0 falls to about 9 lines, below the
+pool's floor of 10. **The minimum extra lever** with drafts on is therefore one of: the 0.25 GiB reserve cut used here,
+deep prefill rows 1024 instead of 2048 (0.17 GiB), chunk 512 (scratch 0.35 GiB less, prompt +17% on the batched
+pass), or the MTP head's draft cache in host memory / one KV head (0.44 GiB a stream); paging K/V to host memory (the
+paging agent) is the lever that changes the picture (2.29 GiB a stream a rank of K/V).
+
+Validation (measured, par1-cs13, tp=2 unless said):
+
+| check | result |
+|---|---|
+| needle at 195,938 / 195,957 prompt tokens (chat, real text, needle at 50% / 25% depth), 2 requests at once | both answers correct, drafts off and drafts on; drafted == undrafted token_sha256 on both |
+| needle at 8,158 / 8,131 and 32,719 / 32,709 tokens, 2 at once (200k x 2 config, batched prefill) | all correct, drafted == undrafted |
+| golden serve gate at 32k, split (default) and `TF_FLASHNEXT_ATTN_SPLIT=0` | France and Once-upon equal the golden, drafts == no drafts on all three; ids16 sha e947fa499c6e (the known near-tie, as on exl3-c-main) |
+| golden serve gate, single card at 32k | France / Once-upon equal golden; ids16 071c1653e472 (as exl3-c-main) |
+| greedy 32 tokens after 8,192 / 32,000 real ids, split vs replicated | different after 3-4 tokens at both lengths (split is not bit-identical: fp32 order of the o_proj sum); not shown to be a near-tie (no logprobs on this server) |
+| deep prefill tp=2 vs batched tp=2, 16,384 ids | same 32 greedy tokens; at 4,096 ids they part after 3 words |
+| prompt state parked in host memory, single card, 15,955-token chat prompt three times | 2nd and 3rd resume at 15,948 tokens, prefill 0.15 s vs 19.3 s, same reply sha |
+
+At 196k x 2 the two prefills took 312 s and 563 s (interleaved, deep 2048 rows); decode of a stream while the other
+prefills is 0.4-10 tok/s (the rounds share the cards with the other's deep chunks). The 196k drafts-on pass did not
+reuse the drafts-off states: a state kept without the MTP head's rows cannot serve a drafting stream (`NoHeadState`,
+upstream's rule), so both prompts were prefilled again.
+
+Hook points for a KV block cache (file:line on `exl3-c-longctx`): prep writes K/V at `cuda_batch.zig:334`
+(upstream path) and `cuda_exl3_heads.zig:215` (split path); attention reads K/V by key id after the selection at
+`cuda_batch.zig:361-363` and `cuda_exl3_heads.zig:241-250` (`s.qids` holds each row's key ids between the two
+launches); the per-layer K/V buffers are made in `cuda_exl3_kv.zig` `newSeq` (`:463`, with the mapped-host pattern
+the index keys use at `:476`); snapshots copy them in `cuda_snap.zig` `move` (`:75`).
+
 ## How to reproduce
 
 ```bash
