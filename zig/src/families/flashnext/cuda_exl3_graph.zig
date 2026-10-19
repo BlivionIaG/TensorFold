@@ -85,9 +85,94 @@ pub fn pinnedCopy(s: cuda.Stream, dst: u64, bytes: []const u8) !void {
 
 /// `template`: the graph an update took this exec's parameters from, kept while the exec uses them (a tp graph's
 /// NCCL resources are tied to the graph they were captured in).
-const Entry = struct { key: Key, exec: cuda.graph.Exec, used: u64, template: ?cuda.graph.Graph = null };
+const Entry = struct { key: Key, exec: cuda.graph.Exec = undefined, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null };
+
+/// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs
+/// eagerly meanwhile, and replays from the next sighting after the instantiation landed).
+pub const Pending = struct {
+    thread: std.Thread = undefined,
+    done: std.atomic.Value(bool) = .init(false),
+    graph: cuda.graph.Graph,
+    exec: ?cuda.graph.Exec = null,
+    ctx: ?*anyopaque,
+    keep_template: bool,
+
+    fn main(pd: *Pending) void {
+        if (ctxApi()) |api| _ = api.set(pd.ctx);
+        pd.exec = pd.graph.instantiate() catch null;
+        pd.done.store(true, .release);
+    }
+};
+
+const CtxApi = struct { get: *const fn (*?*anyopaque) callconv(.c) c_int, set: *const fn (?*anyopaque) callconv(.c) c_int };
+var ctx_api: ?CtxApi = null;
+var ctx_lib: ?std.DynLib = null;
+fn ctxApi() ?CtxApi {
+    if (ctx_api) |a| return a;
+    var lib = std.DynLib.open("libcuda.so.1") catch return null;
+    const a: CtxApi = .{
+        .get = lib.lookup(*const fn (*?*anyopaque) callconv(.c) c_int, "cuCtxGetCurrent") orelse return null,
+        .set = lib.lookup(*const fn (?*anyopaque) callconv(.c) c_int, "cuCtxSetCurrent") orelse return null,
+    };
+    ctx_lib = lib;
+    ctx_api = a;
+    return a;
+}
+
+/// TF_FLASHNEXT_EXL3_GRAPH_ASYNC=0 instantiates on the step's thread.
+pub fn asyncInstantiate() bool {
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_ASYNC") orelse return true;
+    return !std.mem.eql(u8, std.mem.span(v), "0");
+}
+
+/// Starts instantiating `g` on a worker thread (it owns `g` from here); null when that is not possible.
+pub fn startInstantiate(g: cuda.graph.Graph, keep_template: bool) !?*Pending {
+    if (!asyncInstantiate()) return null;
+    const api = ctxApi() orelse return null;
+    var ctx: ?*anyopaque = null;
+    if (api.get(&ctx) != 0) return null;
+    const pd = try std.heap.c_allocator.create(Pending);
+    pd.* = .{ .graph = g, .ctx = ctx, .keep_template = keep_template };
+    pd.thread = std.Thread.spawn(.{}, Pending.main, .{pd}) catch |err| {
+        std.heap.c_allocator.destroy(pd);
+        return err;
+    };
+    return pd;
+}
+
+/// The finished instantiation's exec (the graph template freed), or null while it runs; error when it failed.
+pub fn takePending(pd: *Pending) !?cuda.graph.Exec {
+    if (!pd.done.load(.acquire)) return null;
+    pd.thread.join();
+    defer std.heap.c_allocator.destroy(pd);
+    pd.graph.deinit();
+    return pd.exec orelse error.CudaFailed;
+}
+
+/// A pending entry whose instantiation finished becomes a usable graph (or is dropped if it failed); true if usable.
+fn settle(x: *Entry) bool {
+    const pd = x.pending orelse return true;
+    if (!pd.done.load(.acquire)) return false;
+    pd.thread.join();
+    x.pending = null;
+    defer std.heap.c_allocator.destroy(pd);
+    if (pd.exec) |e| {
+        x.exec = e;
+        if (pd.keep_template) x.template = pd.graph else pd.graph.deinit();
+        return true;
+    }
+    pd.graph.deinit();
+    return false;
+}
 
 fn drop(x: *Entry) void {
+    if (x.pending) |pd| {
+        pd.thread.join();
+        if (pd.exec) |*e| e.deinit();
+        pd.graph.deinit();
+        std.heap.c_allocator.destroy(pd);
+        return;
+    }
     x.exec.deinit();
     if (x.template) |*g| g.deinit();
 }
@@ -251,6 +336,18 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
     clock += 1;
     if (find(key)) |e| {
         e.used = clock;
+        if (!settle(e)) {
+            if (e.pending == null) {
+                // the instantiation failed: forget the key, run eagerly
+                for (&entries) |*en| if (en.*) |*x| if (x == e) {
+                    en.* = null;
+                };
+            }
+            stats.eager_dplan += 1;
+            note(key, .eager);
+            pass.prepared = true;
+            return pass.chunk(ids, pos0, null);
+        }
         stats.replays += 1;
         note(key, .replay);
         return e.exec.launchOn(pass.stream);
@@ -285,7 +382,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         var free_slot = false;
         for (&entries) |*e| free_slot = free_slot or e.* == null;
         if (!tp or tpUpdate()) {
-            for (&entries) |*e| if (e.*) |*x| if (sameShape(x.key, key) and (!free_slot or clock - x.used > stale_after)) {
+            for (&entries) |*e| if (e.*) |*x| if (x.pending == null and sameShape(x.key, key) and (!free_slot or clock - x.used > stale_after)) {
                 // every earlier launch finished (each step ends on the host), so the old parameters are free to go
                 const r = try x.exec.update(graph);
                 if (r == .success) {
@@ -304,6 +401,27 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
                 }
             };
         }
+        if (asyncInstantiate()) if (ctxApi()) |api| {
+            var ctx: ?*anyopaque = null;
+            if (api.get(&ctx) == 0) {
+                const pd = try std.heap.c_allocator.create(Pending);
+                pd.* = .{ .graph = graph, .ctx = ctx, .keep_template = tp };
+                kept = true;
+                pd.thread = std.Thread.spawn(.{}, Pending.main, .{pd}) catch |err| {
+                    kept = false;
+                    std.heap.c_allocator.destroy(pd);
+                    return err;
+                };
+                const sl = slot();
+                sl.* = .{ .key = key, .used = clock, .pending = pd };
+                note(key, .instantiated);
+                stats.captures += 1;
+                // this step runs eagerly while the graph instantiates
+                capturing = false;
+                pass.prepared = true;
+                return pass.chunk(ids, pos0, null);
+            }
+        };
         var exec = try graph.instantiate();
         errdefer exec.deinit();
         try exec.upload(pass.stream);

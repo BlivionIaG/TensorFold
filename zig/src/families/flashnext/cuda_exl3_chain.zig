@@ -63,7 +63,7 @@ const Key = struct {
     confidence: u64,
 };
 
-const Entry = struct { key: Key, exec: cuda.graph.Exec, used: u64 };
+const Entry = struct { key: Key, exec: cuda.graph.Exec = undefined, used: u64, pending: ?*graph.Pending = null };
 
 const State = struct {
     head: usize,
@@ -196,7 +196,7 @@ fn stateFor(e: *prompt.Engine, h: *const mtp.Head) !*State {
 
 fn release(s: *State) void {
     for (&entries) |*en| if (en.*) |*x| {
-        x.exec.deinit();
+        dropEntry(x);
         en.* = null;
     };
     s.cond.lib.close();
@@ -338,11 +338,15 @@ pub fn draft(comptime Tri: type, o: anytype, d: *mtp.Draft, next: []const u32, r
     var ps = p;
     ps.stream = st.side;
     ps.tri = tri_side;
-    run(Tri, key, o, &p, &ps, d, st, picks, heads, len0, confidence) catch |err| {
+    const launched = run(Tri, key, o, &p, &ps, d, st, picks, heads, len0, confidence) catch |err| {
         std.log.warn("flashnext exl3 chain: the draft chain could not be captured ({t}); chains run eagerly", .{err});
         broken = true;
         return err;
     };
+    if (!launched) {
+        stats.eager += 1;
+        return eagerChain(o, d, count, picks, confidence, out);
+    }
     // the chain's records, once
     const stream = p.stream;
     try stream.d.check(stream.d.api.cuMemcpyDtoHAsync_v2(st.best_host.bytes.ptr, st.best.ptr, picks * 16, stream.handle), "cuMemcpyDtoHAsync");
@@ -396,12 +400,23 @@ fn sameShape(a: Key, b: Key) bool {
     return std.meta.eql(x, b);
 }
 
-fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch.Pass(Tri), d: *mtp.Draft, st: *State, picks: usize, heads: usize, len0: usize, confidence: f64) !void {
+/// Replays the chain's graph (true), or captures it; a new graph instantiates on a worker thread and this chain runs
+/// eagerly (false), as does every chain until it landed.
+fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch.Pass(Tri), d: *mtp.Draft, st: *State, picks: usize, heads: usize, len0: usize, confidence: f64) !bool {
     clock += 1;
     for (&entries) |*en| if (en.*) |*x| if (std.meta.eql(x.key, key)) {
         x.used = clock;
+        if (x.pending) |pd| {
+            const got = graph.takePending(pd) catch {
+                en.* = null;
+                return false;
+            };
+            x.exec = got orelse return false;
+            x.pending = null;
+        }
         stats.replays += 1;
-        return x.exec.launchOn(p.stream);
+        try x.exec.launchOn(p.stream);
+        return true;
     };
     try cuda.graph.beginCapture(p.stream, .thread_local);
     graph.capturing = true;
@@ -416,7 +431,8 @@ fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch
     };
     graph.capturing = false;
     var g = try cuda.graph.endCapture(p.stream);
-    defer g.deinit();
+    var owned = true;
+    defer if (owned) g.deinit();
     stats.captures += 1;
     // a stale graph of the same shape (another stream's buffers) is updated in place; else a new one
     var oldest: usize = 0;
@@ -432,18 +448,42 @@ fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch
             oldest = i;
         }
     }
-    for (&entries) |*en| if (en.*) |*x| if (sameShape(x.key, key) and clock - x.used > 64) {
+    for (&entries) |*en| if (en.*) |*x| if (x.pending == null and sameShape(x.key, key) and clock - x.used > 64) {
         if ((try x.exec.update(g)) == .success) {
             x.key = key;
             x.used = clock;
             stats.updates += 1;
-            return x.exec.launchOn(p.stream);
+            try x.exec.launchOn(p.stream);
+            return true;
         }
     };
+    if (entries[oldest]) |*x| dropEntry(x);
+    entries[oldest] = null;
+    if (try graph.startInstantiate(g, false)) |pd| {
+        owned = false;
+        entries[oldest] = .{ .key = key, .used = clock, .pending = pd };
+        return false;
+    }
     var exec = try g.instantiate();
     errdefer exec.deinit();
     try exec.upload(p.stream);
-    if (entries[oldest]) |*x| x.exec.deinit();
     entries[oldest] = .{ .key = key, .exec = exec, .used = clock };
     try exec.launchOn(p.stream);
+    return true;
+}
+
+fn dropEntry(x: *Entry) void {
+    if (x.pending) |pd| {
+        while (true) {
+            const got = graph.takePending(pd) catch break;
+            if (got) |e| {
+                var ex = e;
+                ex.deinit();
+                break;
+            }
+            std.Thread.yield() catch {};
+        }
+        return;
+    }
+    x.exec.deinit();
 }
