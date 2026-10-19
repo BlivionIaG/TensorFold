@@ -11,6 +11,7 @@ pub const prefill_k = @import("cuda_exl3_prefill_k.zig");
 pub const prefill = @import("cuda_exl3_prefill.zig");
 pub const dplan = @import("cuda_exl3_dplan.zig");
 pub const graph = @import("cuda_exl3_graph.zig");
+pub const fork = @import("cuda_exl3_fork.zig");
 /// The upstream modules an EXL3 check drives (tf-cuda-test flashnext-exl3): the store, loaders and the batched pass.
 pub const prompt_wt = @import("cuda_prompt_wt.zig");
 pub const prompt_load = @import("cuda_prompt_load.zig");
@@ -31,4 +32,5 @@ test {
     _ = @import("cuda_exl3_prefill_ring.zig");
     _ = dplan;
     _ = graph;
+    _ = fork;
 }

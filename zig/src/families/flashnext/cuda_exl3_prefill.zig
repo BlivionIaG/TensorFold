@@ -574,6 +574,7 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
         }
         const pg = try @import("cuda_exl3_graph.zig").prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles_on, dp.red_ev[0..dp.red_n]); // the dense half replays as a graph, after the previous layer's sums
         errdefer @import("cuda_exl3_graph.zig").prefillAbort(p, pg);
+        if (pg != .eager) dp.red_n = 0; // a replay or capture waited for every sub-block's sum already (prefillBegin)
         if (pg != .replayed) for (0..n_sub) |b| {
             const m = @min(sub, n - b * sub);
             p.s = &views[b];

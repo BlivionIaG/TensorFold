@@ -638,6 +638,46 @@ fn ngramMode(gpu: Gpu, dir: []const u8) !void {
     };
 }
 
+/// A scheduling change's bits: every golden prompt's decode rounds and windows (runMode) under `which` (off, dplan,
+/// graph) with the parallel projection parts (X.fork) off, off again and on; logits compared bit for bit, ms/token.
+fn forkMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, golden_path: []const u8, steps: usize, which: []const u8) !void {
+    const a = gpu.gpa;
+    const text = try std.Io.Dir.cwd().readFileAlloc(gpu.io, golden_path, a, .limited(1 << 26));
+    defer a.free(text);
+    var parsed = try std.json.parseFromSlice(std.json.Value, a, text, .{});
+    defer parsed.deinit();
+    const g = try Eng.init(gpu, rank, world, port, dir);
+    defer g.deinit();
+    graph.force = if (std.mem.eql(u8, which, "graph")) .graph else if (std.mem.eql(u8, which, "dplan")) .dplan else .off;
+    defer graph.force = null;
+    defer X.fork.force = null;
+    var ok = true;
+    for (parsed.value.object.get("prompts").?.array.items) |p| {
+        const ids = try ints(a, p.object.get("ids").?);
+        defer a.free(ids);
+        var runs: [3]Run = undefined;
+        for (&runs) |*r| r.* = .{ .ids = try a.alloc(u32, steps + 1), .round_h = try a.alloc(u64, steps), .window_h = try a.alloc(u64, steps) };
+        defer for (&runs) |*r| {
+            a.free(r.ids);
+            a.free(r.round_h);
+            a.free(r.window_h);
+        };
+        for ([_]bool{ false, false, true }, 0..) |on, i| {
+            X.fork.force = on;
+            try runMode(g, ids, steps, &runs[i]);
+        }
+        const same = std.mem.eql(u64, runs[1].round_h, runs[2].round_h) and std.mem.eql(u64, runs[1].window_h, runs[2].window_h) and std.mem.eql(u32, runs[1].ids, runs[2].ids);
+        ok = ok and same;
+        if (world == 2) {
+            const h = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(runs[2].round_h));
+            try check.expect(try g.swap(h) == h, "rank {d}: the ranks differ", .{rank});
+        }
+        if (rank == 0) std.debug.print("RESULT tp={d} {s} {s}: decode {d:.2} -> {d:.2} ms/token, windows {d:.2} -> {d:.2} ms/row (serial -> parallel parts); logits {s}\n", .{ world, which, p.object.get("name").?.string, runs[1].ms_token, runs[2].ms_token, runs[1].ms_window_row, runs[2].ms_window_row, if (same) "bit-equal" else "DIFFER" });
+    }
+    try check.expect(ok, "rank {d}: parallel parts changed the logits", .{rank});
+    check.pass("rank {d}/{d}: parallel projection parts give the same bits ({s})", .{ rank, world, which });
+}
+
 pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if (rest.len >= 2 and std.mem.eql(u8, rest[0], "ngram")) return ngramMode(gpu, rest[1]);
     if (rest.len < 1) return error.MissingArgument;
@@ -651,6 +691,7 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
     const steps = if (rest.len > 6) try std.fmt.parseInt(usize, rest[6], 10) else 48;
     const which: []const u8 = if (rest.len > 7) rest[7] else "dplan,graph";
+    if (std.mem.eql(u8, mode, "fork")) return forkMode(gpu, rank, world, port, dir, rest[5], steps, which);
     if (std.mem.eql(u8, mode, "prof")) return profMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps, which);
     if (std.mem.eql(u8, mode, "prefill")) return prefillMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps);
     if (std.mem.eql(u8, mode, "eq")) return eqMode(gpu, rank, world, port, dir, rest[5], steps, which);

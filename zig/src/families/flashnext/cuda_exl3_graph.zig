@@ -416,11 +416,13 @@ var pcur: ?PKey = null;
 
 pub var prefill_stats: struct { captures: u64 = 0, updates: u64 = 0, replays: u64 = 0, eager: u64 = 0, capture_ns: u64 = 0 } = .{};
 
-/// TF_FLASHNEXT_EXL3_GRAPH_PREFILL=0 keeps prefill eager under TF_FLASHNEXT_EXL3_GRAPH=1.
+/// TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1 captures prefill layers under TF_FLASHNEXT_EXL3_GRAPH=1 (default off: bit-equal
+/// but no faster at tp=1, and 10% slower at tp=2, where a graph must wait for every sub-block's all-reduce before
+/// the layer instead of overlapping them with the layer's sub-blocks: 1474 -> 1324 rows/s on 8192 rows).
 fn prefillEnabled() bool {
     if (!enabled() or broken) return false;
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_PREFILL") orelse return true;
-    return !std.mem.eql(u8, std.mem.span(v), "0");
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_PREFILL") orelse return false;
+    return std.mem.eql(u8, std.mem.span(v), "1");
 }
 
 fn pshape(k: PKey) PKey {

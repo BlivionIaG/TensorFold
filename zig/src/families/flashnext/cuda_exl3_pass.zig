@@ -46,16 +46,18 @@ pub fn lane(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: u
         try s.d.check(s.d.api.cuMemsetD8Async(slices + bytes, 0, bytes * (sk - 1), s.handle), "cuMemsetD8Async");
         return;
     }
-    for (e.parts) |pt| {
-        // one part over the whole row, or a single row: the part writes its columns in place
-        if (pt.n == e.n or m == 1) {
-            try part(p, e.ops, pt, x, e.k, m, out + pt.col * 2, false);
-            continue;
-        }
-        const tmp = try e.ops.scratch(s, &e.ops.tmp, m * pt.n * 2);
-        try part(p, e.ops, pt, x, e.k, m, tmp, false);
-        try copy2d(s, out + pt.col * 2, e.n * 2, tmp, pt.n * 2, pt.n * 2, m);
-    }
+    if (try @import("cuda_exl3_fork.zig").lane(p, x, e, out, m, onePart)) return; // the parts on parallel streams
+    for (e.parts) |pt| try onePart(p, e, pt, x, m, out);
+}
+
+/// One part of a bf16 sk-1 lane() on the pass's stream: one part over the whole row, or a single row, writes its
+/// columns in place; otherwise through the stitch buffer.
+fn onePart(p: anytype, e: *const load.Proj, pt: load.Part, x: u64, m: usize, out: u64) !void {
+    const s = p.stream;
+    if (pt.n == e.n or m == 1) return part(p, e.ops, pt, x, e.k, m, out + pt.col * 2, false);
+    const tmp = try e.ops.scratch(s, &e.ops.tmp, m * pt.n * 2);
+    try part(p, e.ops, pt, x, e.k, m, tmp, false);
+    try copy2d(s, out + pt.col * 2, e.n * 2, tmp, pt.n * 2, pt.n * 2, m);
 }
 
 /// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32,
