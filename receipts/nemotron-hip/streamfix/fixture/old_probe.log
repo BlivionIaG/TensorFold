@@ -1,0 +1,6 @@
+1/1 old_probe.test.original two bit fixture is weak at actual PR31 runner seed...OLD index15 group32 sequential: want-8 gotinf missinfx
+OLD index15 group32 pairwise: want-8 gotnan missinfx
+OLD index15 group32 strided: want-8 got-8 miss0x
+REPRODUCED original fixture fp16 minimum margin0x; required100x
+OK
+All 1 tests passed.

@@ -1,0 +1,21 @@
+1/1 probe.test.fixture2 full width group seed matrix...PASS bits 2 group 32 K2048: 168 seeds, all f32 replays exact
+PASS bits 2 group 64 K2048: 168 seeds, all f32 replays exact
+PASS bits 2 group 128 K2048: 168 seeds, all f32 replays exact
+PASS bits 3 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 3 group 64 K512: 168 seeds, all f32 replays exact
+PASS bits 3 group 128 K512: 168 seeds, all f32 replays exact
+PASS bits 4 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 4 group 64 K2688: 168 seeds, all f32 replays exact
+PASS bits 4 group 128 K512: 168 seeds, all f32 replays exact
+PASS bits 5 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 5 group 64 K512: 168 seeds, all f32 replays exact
+PASS bits 5 group 128 K512: 168 seeds, all f32 replays exact
+PASS bits 6 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 6 group 64 K512: 168 seeds, all f32 replays exact
+PASS bits 6 group 128 K512: 168 seeds, all f32 replays exact
+PASS bits 8 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 8 group 64 K512: 168 seeds, all f32 replays exact
+PASS bits 8 group 128 K512: 168 seeds, all f32 replays exact
+FIXTURE2_PASS cases=3024 min_f16=6167325.507788162 min_bf16=16777216
+OK
+All 1 tests passed.

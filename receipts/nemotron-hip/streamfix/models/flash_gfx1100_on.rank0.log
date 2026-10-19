@@ -1,0 +1,20 @@
+loaded in 19.3 s, 32.08 GiB on the device
+prompt 5 tokens in 0.046 s (108.5 tok/s); 31 tokens in 0.658 s (47.10 tok/s)
+logits hash 6fbb0a3f895f7fa1
+ids { 11751, 11, 264, 3177, 421, 682, 1248, 978, 264, 7489, 314, 8323, 7431, 321, 3712, 11, 694, 424, 369, 524, 279, 7526, 3177, 303, 9338, 539, 6823, 13, 11751, 11, 440, 264 }
+---
+The capital of France is Paris, a city that has long been a symbol of French culture and history, but it is not the largest city in France by population. Paris, with a
+---
+prompt 5 tokens in 0.037 s (135.8 tok/s); 31 tokens in 0.623 s (49.73 tok/s)
+logits hash 6fbb0a3f895f7fa1
+ids { 11751, 11, 264, 3177, 421, 682, 1248, 978, 264, 7489, 314, 8323, 7431, 321, 3712, 11, 694, 424, 369, 524, 279, 7526, 3177, 303, 9338, 539, 6823, 13, 11751, 11, 440, 264 }
+---
+The capital of France is Paris, a city that has long been a symbol of French culture and history, but it is not the largest city in France by population. Paris, with a
+---
+prompt 5 tokens in 0.037 s (135.4 tok/s); 31 tokens in 0.624 s (49.72 tok/s)
+logits hash 6fbb0a3f895f7fa1
+ids { 11751, 11, 264, 3177, 421, 682, 1248, 978, 264, 7489, 314, 8323, 7431, 321, 3712, 11, 694, 424, 369, 524, 279, 7526, 3177, 303, 9338, 539, 6823, 13, 11751, 11, 440, 264 }
+---
+The capital of France is Paris, a city that has long been a symbol of French culture and history, but it is not the largest city in France by population. Paris, with a
+---
+info: graphs: 1 captured (26 ms each), 91 of 93 rounds replayed

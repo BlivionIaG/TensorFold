@@ -1,0 +1,82 @@
+info(verbose): $HOME/.local/zig-0.17.0/zig build-exe --cache-dir .zig-cache --global-cache-dir $HOME/.cache/zig --build-root . --zig-lib-dir $HOME/.local/zig-0.17.0/lib --name configurer -fsingle-threaded --dep @build --dep @dependencies -Mroot=$HOME/.local/zig-0.17.0/lib/compiler/configurer.zig -M@dependencies=.zig-cache/o/ce72526ee7fc0580e3a089da327c554a/dependencies.zig -M@build=build.zig --listen=-
+info(verbose): $HOME/.local/zig-0.17.0/zig test -cflags -D__HIP_PLATFORM_AMD__ -- zig/src/hip/device_arch.c -I /opt/rocm/core-7.14/include --dep hip_kernels --dep core --dep sys --dep checkpoint_config -Mroot=zig/src/hip/kernel_tests.zig -Mhip_kernels=.zig-cache/o/df9367c1fa638becf4a2dcdfcf61d559/kernels.zig --dep tokenizer --dep sys --dep checkpoint_config -Mcore=zig/src/core/root.zig --dep checkpoint_config -Msys=zig/src/platform/sys.zig -Mcheckpoint_config=zig/src/core/checkpoint_config.zig --dep sys --dep checkpoint_config -Mtokenizer=zig/src/core/tokenizer/tokenizer.zig -lc --cache-dir .zig-cache --global-cache-dir $HOME/.cache/zig --build-root . --name test --zig-lib-dir $HOME/.local/zig-0.17.0/lib/ --listen=-
+info(verbose): ./.zig-cache/o/af14505fc074d30e36ce669dcc0a8be5/test --cache-dir=./.zig-cache --seed=0xe6d76e4c --listen=-
+hip-kernel-test
++- run test w
+  argmax in parts: 180 cases, the one-block argmax's ids
+  nemotron moe pick (bf16): pick 0.00e0, weight 3.22e-8, out 0.00e0 of bound 1.56e-2, bad 0
+  nemotron moe pick (bf16): pick 0.00e0, weight 3.73e-8, out 0.00e0 of bound 1.56e-2, bad 0
+  nemotron moe pick (bf16): pick 0.00e0, weight 8.02e-8, out 0.00e0 of bound 1.56e-2, bad 0
+  nemotron moe pick (bf16): pick 0.00e0, weight 3.23e-8, out 0.00e0 of bound 1.56e-2, bad 0
+  nemotron moe pick (bf16): pick 0.00e0, weight 1.27e-8, out 0.00e0 of bound 1.56e-2, bad 0
+  nemotron moe layer (bf16): pick 0.00e0, weight 3.07e-8, out 5.47e-3 of bound 1.56e-2, bad 0
+  nemotron moe layer (bf16): pick 0.00e0, weight 8.80e-8, out 5.51e-3 of bound 1.56e-2, bad 0
+  nemotron moe layer lightning (bf16): pick 0.00e0, weight 2.17e-8, out 3.87e-3 of bound 1.56e-2, bad 0
+  nemotron moe no bias (bf16): pick 2.03e-1, weight 3.00e-8, out 4.33e-3 of bound 1.56e-2, bad 0
+  nemotron moe no norm (bf16): pick 0.00e0, weight 7.61e-1, out 3.69e0 of bound 1.56e-2, bad 0
+  nemotron moe: prompt rows equal to decode rows: 13 of 16
+  nemotron moe two ranks: worst 3.00e-3 of the row's largest
+  nemotron rank pick: 144 cases, the same bytes as the pass a pick at a time
+  nemotron pick, 1 rows: rank 6.12 us a launch, pass 7.53 us (back to back)
+  nemotron pick, 4 rows: rank 6.11 us a launch, pass 7.52 us (back to back)
+  nemotron pick, 16 rows: rank 6.12 us a launch, pass 7.54 us (back to back)
+  nemotron pick, 64 rows: rank 6.35 us a launch, pass 7.55 us (back to back)
+nemotron attention q x1: 1 keys: planned 0.00e0, paged tile 0.00e0 of the float64 scale
+nemotron attention q x1: 2 keys: planned 1.14e-7, paged tile 1.37e-3 of the float64 scale
+nemotron attention q x1: 63 keys: planned 3.55e-7, paged tile 1.70e-3 of the float64 scale
+nemotron attention q x1: 64 keys: planned 3.26e-7, paged tile 1.79e-3 of the float64 scale
+nemotron attention q x1: 65 keys: planned 3.79e-7, paged tile 1.92e-3 of the float64 scale
+nemotron attention q x1: 127 keys: planned 4.50e-7, paged tile 1.87e-3 of the float64 scale
+nemotron attention q x1: 128 keys: planned 3.44e-7, paged tile 1.78e-3 of the float64 scale
+nemotron attention q x1: 129 keys: planned 4.12e-7, paged tile 1.90e-3 of the float64 scale
+nemotron attention q x1: 1000 keys: planned 3.13e-7, paged tile 1.78e-3 of the float64 scale
+nemotron attention q x1: 4097 keys: planned 2.78e-7, paged tile 1.61e-3 of the float64 scale
+nemotron attention q x1: 16385 keys: planned 6.60e-7, paged tile 2.47e-3 of the float64 scale
+nemotron attention q x1: 65536 keys: planned 9.68e-7, paged tile 2.01e-3 of the float64 scale
+nemotron attention q x16: 1 keys: planned 0.00e0, paged tile 0.00e0 of the float64 scale
+nemotron attention q x16: 2 keys: planned 1.54e-7, paged tile 5.31e-4 of the float64 scale
+nemotron attention q x16: 63 keys: planned 4.95e-7, paged tile 8.04e-4 of the float64 scale
+nemotron attention q x16: 64 keys: planned 4.29e-7, paged tile 9.19e-4 of the float64 scale
+nemotron attention q x16: 65 keys: planned 5.37e-7, paged tile 1.04e-3 of the float64 scale
+nemotron attention q x16: 127 keys: planned 5.04e-7, paged tile 9.51e-4 of the float64 scale
+nemotron attention q x16: 128 keys: planned 4.29e-7, paged tile 1.03e-3 of the float64 scale
+nemotron attention q x16: 129 keys: planned 5.75e-7, paged tile 1.15e-3 of the float64 scale
+nemotron attention q x16: 1000 keys: planned 5.21e-7, paged tile 8.50e-4 of the float64 scale
+nemotron attention q x16: 4097 keys: planned 5.71e-7, paged tile 8.61e-4 of the float64 scale
+nemotron attention q x16: 16385 keys: planned 7.64e-7, paged tile 1.05e-3 of the float64 scale
+nemotron attention q x16: 65536 keys: planned 1.38e-6, paged tile 6.11e-4 of the float64 scale
+  nemotron planned walk in the activation type and in one block: the casts' bytes
+  nemotron planned key write from the activation type: the cast keys' bytes
+  nemotron moe sum + add + rms: 72 cases, the same bytes as tf_nemo_combine, tf_add and tf_rms
+  nemotron add + rms: 128 cases, the same bytes as tf_add and tf_rms
+  nemotron add + rms, 1 rows: 7.48 us merged, 16.03 us as tf_add and tf_rms, 5.71 and 10.30 alone (back to back)
+  nemotron add + rms, 4 rows: 7.47 us merged, 16.07 us as tf_add and tf_rms, 5.72 and 10.32 alone (back to back)
+  nemotron mamba window: 48 cases, the bytes of the mixer a row at a time
+  nemotron mamba window, 1 rows: 20.25 us the four launches, 16.31 us the window (back to back)
+  nemotron mamba window, 4 rows: 22.22 us the four launches, 18.38 us the window (back to back)
+  nemotron relu2 epilogue: 36 layers and 12 shared ups by the epilogue, the same bytes
+  nemotron moe layer, 1 rows: 155.9 us with the relu^2 epilogue, 130.6 us without (back to back)
+  nemotron moe layer, 2 rows: 292.0 us with the relu^2 epilogue, 268.5 us without (back to back)
+  nemotron moe layer, 3 rows: 606.4 us with the relu^2 epilogue, 602.5 us without (back to back)
+  nemotron moe layer, 4 rows: 758.7 us with the relu^2 epilogue, 756.4 us without (back to back)
+  nemotron moe layer, 8 rows: 1398.5 us with the relu^2 epilogue, 1400.1 us without (back to back)
+  nemotron fc1 and shared up in one launch: 8 rows, the bytes of two launches
+failed command: ./.zig-cache/o/af14505fc074d30e36ce669dcc0a8be5/test --cache-dir=./.zig-cache --seed=0xe6d76e4c --listen=-
+
+Build Summary: 15/15 steps succeeded; 103/103 tests passed
+hip-kernel-test success
++- run test 103 pass (103 total) 9m MaxRSS:1G
+   +- compile test debug native cached 40ms MaxRSS:37M
+      +- WriteFile group0.hsaco cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group0.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group1.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group2.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group3.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group4.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group5.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group6.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group7.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group8.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group9.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group10.hsaco) cached
+

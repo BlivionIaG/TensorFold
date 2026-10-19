@@ -1,0 +1,17 @@
+1/1 probe_actual_rows.test.fixture2 actual two-row stress geometries...PASS bits 3 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 3 group 64 K512: 168 seeds, all f32 replays exact
+PASS bits 3 group 128 K512: 168 seeds, all f32 replays exact
+PASS bits 4 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 4 group 128 K512: 168 seeds, all f32 replays exact
+PASS bits 5 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 5 group 64 K512: 168 seeds, all f32 replays exact
+PASS bits 5 group 128 K512: 168 seeds, all f32 replays exact
+PASS bits 6 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 6 group 64 K512: 168 seeds, all f32 replays exact
+PASS bits 6 group 128 K512: 168 seeds, all f32 replays exact
+PASS bits 8 group 32 K512: 168 seeds, all f32 replays exact
+PASS bits 8 group 64 K512: 168 seeds, all f32 replays exact
+PASS bits 8 group 128 K512: 168 seeds, all f32 replays exact
+FIXTURE2_PASS cases=2352 min_f16=7916010.366197183 min_bf16=16777216
+OK
+All 1 tests passed.

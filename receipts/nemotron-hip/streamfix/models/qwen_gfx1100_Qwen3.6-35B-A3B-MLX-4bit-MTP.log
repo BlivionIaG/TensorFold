@@ -1,0 +1,3 @@
+policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots 
+wrote 512 decoded rows x 248320 logits to $HOME/hcx/streamfix/final_models/qwen_gfx1100_Qwen3.6-35B-A3B-MLX-4bit-MTP.npy
+info: graphs: 3 captured (3 ms each), 508 of 511 rounds replayed
