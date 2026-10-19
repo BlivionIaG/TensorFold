@@ -101,6 +101,9 @@ pub const Stats = struct {
     capture_ns: u64 = 0,
     /// Captures that updated a cached graph of the same shape in place instead of instantiating one.
     updates: u64 = 0,
+    /// Host time of `prepare` (ids, positions, n-gram rows) before a step's launch, and how many.
+    prepare_ns: u64 = 0,
+    prepares: u64 = 0,
 };
 
 pub var stats: Stats = .{};
@@ -323,7 +326,10 @@ pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u6
     }
     var hist: [max_lanes][2]i64 = undefined;
     for (seqs, 0..) |q, i| hist[i] = q.history;
+    const tp0 = std.Io.Clock.awake.now(p.io).toNanoseconds();
     try prepareRound(p, ids);
+    stats.prepare_ns += @intCast(std.Io.Clock.awake.now(p.io).toNanoseconds() - tp0);
+    stats.prepares += 1;
     run(key, p, ids, 0) catch |err| {
         if (strict()) return err;
         std.log.warn("flashnext exl3 graph: a decode round could not be captured ({t}); rounds run eagerly on the device plan", .{err});
@@ -355,7 +361,10 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
         Key.seams(seq.fed + n, &key.chunks[0], &key.score_tiles[0]);
         if (hooks.keep) |kp| key.keep = std.hash.Wyhash.hash(@intFromPtr(kp), std.mem.asBytes(kp));
         const hist = seq.history;
+        const tp0 = std.Io.Clock.awake.now(p.io).toNanoseconds();
         try prepareWindow(p, ids, seq.fed);
+        stats.prepare_ns += @intCast(std.Io.Clock.awake.now(p.io).toNanoseconds() - tp0);
+        stats.prepares += 1;
         run(key, p, ids, seq.fed) catch |err| {
             if (strict()) return err;
             std.log.warn("flashnext exl3 graph: a window could not be captured ({t}); windows run eagerly on the device plan", .{err});
