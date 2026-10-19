@@ -283,12 +283,16 @@ pub fn Namespace(comptime Tri: type) type {
                 const saved = s.reuse.saved orelse return l;
                 const kept: *snap.Snap = @ptrCast(@alignCast(saved));
                 if (kept.at != s.reuse.at or kept.at == 0 or kept.at >= ids.len) {
+                    std.log.warn("flashnext: kept state at {d} not restored for reuse at {d} of {d} ids", .{ kept.at, s.reuse.at, ids.len });
                     s.reuse_failed = true;
                 } else if (if (self.ranks) |r| r.restore(&l.seq, if (l.draft) |*d| d else null, kept) else snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, kept)) |_| {
                     l.filled = kept.at;
                     s.cached = @intCast(kept.at);
                 } else |err| switch (err) {
-                    error.SequenceTooShort, error.NoHeadState => s.reuse_failed = true,
+                    error.SequenceTooShort, error.NoHeadState => {
+                        std.log.warn("flashnext: kept state at {d} not restored ({t})", .{ kept.at, err });
+                        s.reuse_failed = true;
+                    },
                     else => return err,
                 }
                 return l;
@@ -537,9 +541,15 @@ pub fn Namespace(comptime Tri: type) type {
         fn snapRestore(ptr: *anyopaque, owner: ?*anyopaque, saved: *anyopaque) anyerror!void {
             const self = of(ptr);
             const s: *lanes.Stream = @ptrCast(@alignCast(owner orelse return error.NoStream));
-            const l = try self.lane(s);
+            const l = self.lane(s) catch |err| {
+                std.log.warn("flashnext: a kept state was not restored: no lane ({t})", .{err});
+                return err;
+            };
             if (self.ranks) |r| return r.restore(&l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved)));
-            try snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved)));
+            snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved))) catch |err| {
+                std.log.warn("flashnext: a kept state was not restored ({t})", .{err});
+                return err;
+            };
         }
 
         fn snapDrop(ptr: *anyopaque, saved: *anyopaque) void {
