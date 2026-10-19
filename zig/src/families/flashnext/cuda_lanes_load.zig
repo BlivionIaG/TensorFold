@@ -71,9 +71,10 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     errdefer own.logits.free();
     own.lanes = .empty;
     own.next = 0;
+    @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
     var stream_bytes = prompt.seqBytes(window);
     if (own.head) |h| {
-        stream_bytes += mtp.Draft.bytes(window, h.ids.len, own.engine.chunk);
+        stream_bytes += mtp.Draft.bytes(window, h.ids.len, @import("cuda_exl3_prefill.zig").draftRows(own.engine));
     } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(window, 1, own.engine.chunk);
     if (o.vision) |v| stream_bytes += @as(usize, v.image_tokens) * @import("cuda_prompt_wt.zig").dims * 2 + 16 * o.context;
     _ = try @import("cuda_exl3_pass.zig").attach(gpa, io, driver, own.stream, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, @import("cuda_exl3_pass.zig").budgetFromEnv(stream_bytes));
