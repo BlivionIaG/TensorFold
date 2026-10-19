@@ -215,6 +215,7 @@ pub const Engine = struct {
     pub fn deinit(e: *Engine) void {
         @import("cuda_exl3_prefill.zig").releaseFor(e);
         @import("cuda_exl3_graph.zig").releaseFor(e);
+        @import("cuda_exl3_recycle.zig").drain(e.gpa);
         e.round_graph.clear();
         if (e.batch_s) |*bs| bs.free(e.gpa);
         if (e.scores) |*b| b.free();
@@ -235,6 +236,7 @@ pub const Engine = struct {
         e.round_graph.clear();
         if (cap == 0) return error.UnexpectedTensor;
         if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_exl3_kv.zig").newSeq(e, Seq, cap); // K10 placement
+        if (try @import("cuda_exl3_recycle.zig").takeSeq(e, cap)) |kept| return kept; // graphs: a finished stream's buffers
         const logits = try e.gpa.alloc(u8, vocab * 2);
         errdefer e.gpa.free(logits);
         const conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
@@ -408,6 +410,7 @@ pub const Seq = struct {
     }
 
     pub fn deinit(s: *Seq, gpa: std.mem.Allocator) void {
+        if (@import("cuda_exl3_recycle.zig").giveSeq(s)) return; // graphs: kept for the next stream (stable addresses)
         if (s.media) |*m| m.deinit();
         @import("cuda_exl3_kv.zig").deinitSeq(gpa, &s.kv8, &s.ikc_host);
         freeBufs(s.conv);

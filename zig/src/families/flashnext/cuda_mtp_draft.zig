@@ -96,6 +96,7 @@ pub const Draft = struct {
 
     /// A head cache of `cap` entries; `rows` the widest prompt chunk whose streams it keeps.
     pub fn init(gpa: std.mem.Allocator, driver: *cuda.Driver, stream: cuda.Stream, cap: usize, draft_n: usize, rows: usize) !Draft {
+        if (try @import("cuda_exl3_recycle.zig").takeDraft(stream, cap, draft_n, rows)) |kept| return kept; // graphs: stable addresses
         var d: Draft = .{ .gpa = gpa, .cap = cap, .rows_cap = @max(rows, max_rows), .kc = undefined, .vc = undefined, .ikc = undefined, .pooled = undefined, .streams = undefined, .out = undefined, .logits = undefined, .dlogits = undefined, .best = undefined, .saved = undefined, .host = undefined };
         d.kc = try cuda.DeviceBuffer.alloc(driver, cap * kv_heads * head_dim * 2);
         errdefer d.kc.free();
@@ -154,6 +155,7 @@ pub const Draft = struct {
     }
 
     pub fn deinit(d: *Draft) void {
+        if (@import("cuda_exl3_recycle.zig").giveDraft(d)) return; // graphs: kept for the next stream
         d.gpa.free(d.host);
         for (&d.spare) |*b| b.free();
         d.saved.free();

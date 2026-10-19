@@ -49,7 +49,7 @@ pub const Key = struct {
     kind: u8,
     rows: usize,
     /// Per lane (a window: lane 0): the sequence's buffers, its attention chunks and score tiles at the step's end.
-    seq: [max_lanes][4]u64 = @splat(@splat(0)),
+    seq: [max_lanes][5]u64 = @splat(@splat(0)),
     chunks: [max_lanes]u32 = @splat(0),
     score_tiles: [max_lanes]u32 = @splat(0),
     /// The pass's scratch (its first buffer and its row capacity, which sets every other buffer's offset).
@@ -67,8 +67,9 @@ pub const Key = struct {
         tiles.* = if (end / wt.index_ratio > wt.index_top) @intCast(((end + 3) / 4 + 63) / 64) else 0;
     }
 
-    fn seqOf(q: anytype) [4]u64 {
-        return .{ if (q.kc.len > 0) q.kc[0].ptr else 0, if (q.conv.len > 0) q.conv[0].ptr else 0, q.tail.ptr, q.cap };
+    /// The DeltaNet state set is in the key: a drafting stream swaps it with its window's spare set (Draft.settle).
+    fn seqOf(q: anytype) [5]u64 {
+        return .{ if (q.kc.len > 0) q.kc[0].ptr else 0, if (q.conv.len > 0) q.conv[0].ptr else 0, q.tail.ptr, q.cap, if (q.state.len > 0) q.state[0].ptr else 0 };
     }
 };
 
@@ -107,6 +108,9 @@ pub const Stats = struct {
 };
 
 pub var stats: Stats = .{};
+
+/// Steps after which a graph nobody replayed counts as stale (another stream's, or a finished one's).
+const stale_after: u64 = 512;
 
 /// Graphs kept (LRU): a round and up to `max_rows` window sizes per stream, at two seams.
 const cache_n = 32;
@@ -191,28 +195,67 @@ fn tpUpdate() bool {
     return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_AFTER: the sighting of a key that captures it (default 6; 1 captures at once). A capture
-/// costs about a step and a half (15-20 ms at tp=2) and a replay saves little on a GPU-bound step, so only keys that
-/// keep coming back are captured (each request's own buffers make new keys; tp=2 serve gate: 6 matches the device
-/// plan's drafted speed, 2 lost 4 ms a token to captures).
+/// TF_FLASHNEXT_EXL3_GRAPH_AFTER: the sighting of a key that captures it (default 2; 1 captures at once). With a
+/// blocking communicator a capture costs 3-7 ms and an in-place update 1-3 ms, and recycled stream buffers
+/// (cuda_exl3_recycle.zig) keep keys stable across requests, so a key is captured once and replayed from then on.
 fn after() u32 {
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_AFTER") orelse return 6;
-    return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 6);
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_AFTER") orelse return 2;
+    return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
 }
 
 /// Captures `pass.chunk(ids, pos0, null)` (prepared) under `key`, or replays the graph captured under it. A key not
 /// yet seen `after()` times runs eagerly (prepared, uncaptured). A new key whose shape matches a cached graph's
 /// updates that graph in place (cudaGraphExecUpdate) instead of instantiating one, except with a collective (NCCL's
 /// captured resources belong to the graph they were captured in, so a tp graph is always instantiated).
+/// Coverage by step kind (0 round, 1 window) and rows (1..16): replays, eager first sightings, captures that
+/// instantiated, captures that updated in place. TF_FLASHNEXT_EXL3_GRAPH_LOG=N logs it every N steps (default 256).
+pub const Outcome = enum { replay, eager, instantiated, updated };
+pub var coverage: [2][17][4]u32 = @splat(@splat(@splat(0)));
+var steps_seen: u64 = 0;
+
+fn note(key: Key, o: Outcome) void {
+    coverage[key.kind - 1][@min(key.rows, 16)][@backingInt(o)] += 1;
+    steps_seen += 1;
+    const every: u64 = if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_LOG")) |v| std.fmt.parseInt(u64, std.mem.span(v), 10) catch 256 else 256;
+    if (every == 0 or steps_seen % every != 0) return;
+    var buf: [1024]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    for (0..2) |k| for (1..17) |r| {
+        const c = coverage[k][r];
+        if (c[0] + c[1] + c[2] + c[3] == 0) continue;
+        w.print(" {s}{d}:{d}/{d}/{d}/{d}", .{ if (k == 0) "round" else "win", r, c[0], c[1], c[2], c[3] }) catch break;
+    };
+    std.log.info("flashnext exl3 graph coverage after {d} steps (replay/eager/instantiated/updated):{s}", .{ steps_seen, w.buffered() });
+}
+
+/// TF_FLASHNEXT_EXL3_GRAPH_DEBUG=1: which key fields changed since the last step of the same kind and rows.
+var last_key: [2][17]?Key = @splat(@splat(null));
+fn debugKey(key: Key) void {
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_DEBUG") orelse return;
+    if (!std.mem.eql(u8, std.mem.span(v), "1")) return;
+    const lk = &last_key[key.kind - 1][@min(key.rows, 16)];
+    defer lk.* = key;
+    const prev = lk.* orelse return;
+    var buf: [256]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    inline for (@typeInfo(Key).@"struct".field_names) |f| {
+        if (!std.meta.eql(@field(prev, f), @field(key, f))) w.print(" {s}", .{f}) catch {};
+    }
+    std.log.info("flashnext exl3 graph key ({s} of {d} rows) changed:{s} keep {x} state0 {x}", .{ if (key.kind == 1) "round" else "window", key.rows, w.buffered(), key.keep, key.seq[0][4] });
+}
+
 fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
+    debugKey(key);
     clock += 1;
     if (find(key)) |e| {
         e.used = clock;
         stats.replays += 1;
+        note(key, .replay);
         return e.exec.launchOn(pass.stream);
     }
     if (sighting(key) < after()) {
         stats.eager_dplan += 1;
+        note(key, .eager);
         pass.prepared = true;
         return pass.chunk(ids, pos0, null);
     }
@@ -235,8 +278,12 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
     var how: []const u8 = "instantiated";
     const tp = pass.m.collective != null;
     const at: *Entry = blk: {
+        // a same-shape graph is updated in place only when it is stale (its key not used for a while, e.g. a finished
+        // stream's) or the cache is full: two live variants of one shape (a window's state ping-pong) keep two graphs
+        var free_slot = false;
+        for (&entries) |*e| free_slot = free_slot or e.* == null;
         if (!tp or tpUpdate()) {
-            for (&entries) |*e| if (e.*) |*x| if (sameShape(x.key, key)) {
+            for (&entries) |*e| if (e.*) |*x| if (sameShape(x.key, key) and (!free_slot or clock - x.used > stale_after)) {
                 // every earlier launch finished (each step ends on the host), so the old parameters are free to go
                 const r = try x.exec.update(graph);
                 if (r == .success) {
@@ -249,6 +296,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
                         kept = true;
                     }
                     stats.updates += 1;
+                    note(key, .updated);
                     how = "updated";
                     break :blk x;
                 }
@@ -259,6 +307,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         try exec.upload(pass.stream);
         const sl = slot();
         sl.* = .{ .key = key, .exec = exec, .used = clock };
+        note(key, .instantiated);
         break :blk &sl.*.?;
     };
     stats.captures += 1;
@@ -359,7 +408,7 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
         var key: Key = .{ .kind = 2, .rows = n, .scratch = p.s.ids, .scratch_cap = p.s.cap, .scores = p.seq.scores, .output = hooks.logits_out, .streams = hooks.streams, .plan = dp.state.ptr };
         key.seq[0] = Key.seqOf(seq);
         Key.seams(seq.fed + n, &key.chunks[0], &key.score_tiles[0]);
-        if (hooks.keep) |kp| key.keep = std.hash.Wyhash.hash(@intFromPtr(kp), std.mem.asBytes(kp));
+        if (hooks.keep) |kp| key.keep = std.hash.Wyhash.hash(1, std.mem.asBytes(kp)); // its contents (the buffers the graph writes), not where the Draft struct sits
         const hist = seq.history;
         const tp0 = std.Io.Clock.awake.now(p.io).toNanoseconds();
         try prepareWindow(p, ids, seq.fed);
@@ -402,7 +451,7 @@ const PKey = struct {
     deep: u64,
     base: u64,
     base_cap: usize,
-    seq: [4]u64,
+    seq: [5]u64,
     scores: u64,
     tiles: bool,
 };
@@ -472,7 +521,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         .deep = deep,
         .base = base.ids,
         .base_cap = base.cap,
-        .seq = .{ if (q.conv.len > 0) q.conv[0].ptr else 0, if (q.kc.len > 0) q.kc[0].ptr else 0, q.tail.ptr, q.cap },
+        .seq = .{ if (q.conv.len > 0) q.conv[0].ptr else 0, if (q.kc.len > 0) q.kc[0].ptr else 0, q.tail.ptr, q.cap, if (q.state.len > 0) q.state[0].ptr else 0 },
         .scores = q.scores,
         .tiles = tiles,
     };

@@ -261,7 +261,7 @@ pub fn Namespace(comptime Tri: type) type {
                     s.proposer = null;
                 }
                 // a window's rows past the reply's last token (its drafts) still need cache slots
-                const cap = @min(ids.len + s.max_new + (if (drafting) mtp.max_rows else 0), prompt.max_tokens);
+                const cap = @import("cuda_exl3_recycle.zig").roundCap(@min(ids.len + s.max_new + (if (drafting) mtp.max_rows else 0), prompt.max_tokens), @min(prompt.max_tokens, self.context + mtp.max_rows)); // graphs: capacities in buckets
                 gop.value_ptr.* = .{ .seq = (if (self.ranks) |r| r.create(cap) else self.engine.newSeq(cap)) catch |err| {
                     self.lanes.removeByPtr(gop.key_ptr);
                     return err;
