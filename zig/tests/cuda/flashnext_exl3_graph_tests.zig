@@ -299,6 +299,7 @@ const Eng = struct {
         _ = try g.e.reserveScores(cap_default, @min(cap_default, g.e.chunk));
         g.seq = try g.e.newSeq(cap_default);
         g.out = try cuda.DeviceBuffer.alloc(gpu.d, out_rows * vocab * 2);
+        X.prefill.reserveFor(g.e, cap_default, world);
         g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, xpass.budgetFromEnv(0));
         std.debug.print("RESULT rank {d}/{d} load: {d:.1} s; {d} lines a layer x {d} layers ({d:.2} GiB of pool)\n", .{ rank, world, ms(t0, check.now(gpu.io)) / 1e3, g.attached.lines, g.attached.layers, gib(g.attached.device_bytes) });
         return g;
@@ -533,15 +534,25 @@ fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, 
         try g.reset();
         _ = try g.swap(3);
         const p0 = graph.prefill_stats;
+        const f0 = X.prefill.stats;
         const t0 = check.now(gpu.io);
         try g.forward(ids, .{ .logits = .last });
         const t1 = check.now(gpu.io);
         const p1 = graph.prefill_stats;
+        const f1 = X.prefill.stats;
+        try check.expect(f1.chunks > f0.chunks and f1.rows >= f0.rows + n, "rank {d}: deep prefill ran instead of falling back", .{rank});
+        if (m == .graph) try check.expect(p1.captures + p1.updates + p1.replays > p0.captures + p0.updates + p0.replays, "rank {d}: prefill graph captured or replayed a layer", .{rank});
         hs[0] = std.hash.Wyhash.hash(0, g.seq.logits);
         var tok = prompt.argmax(g.seq.logits);
         for (0..steps) |i| {
             tok = try g.round(tok);
             hs[i + 1] = std.hash.Wyhash.hash(0, g.seq.logits);
+        }
+        if (g.seq.paged) |pg| {
+            try g.stream.synchronize();
+            const pager = try pg.total();
+            try check.expect(!pager.overflow and pager.epoch > 0 and pager.calls > 0 and pager.rebases > 0, "rank {d}: paged prefill/decode advances epochs and crosses a window without overflow", .{rank});
+            std.debug.print("PAGER rank {d}/{d} {s}: device epoch {d}, calls {d}, rebases {d}, written rows {d}, misses {d}\n", .{ rank, world, @tagName(m), pager.epoch, pager.calls, pager.rebases, pager.written_rows, pager.misses });
         }
         const h = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(hs));
         if (world == 2) try check.expect(try g.swap(h) == h, "rank {d}: the ranks' prefill logits differ", .{rank});

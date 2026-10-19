@@ -364,6 +364,7 @@ pub fn logStream(e: anytype, window: usize, stream_bytes: usize) !void {
     const kv = of(e);
     const layout = try sequenceLayout(kv, window, e.chunk, kvpage.configFromEnv());
     const b = layout.bytes;
+    if (layout.paging) |cfg| std.log.info("flashnext: BF16 K/V RAM paging enabled: window {d}, slots {d}, rows {d}", .{ cfg.window, cfg.slots, cfg.rows });
     std.log.info("flashnext: a stream at a {d}-token window holds {d:.3} GiB on the device (K/V {d:.3} {s}, indexer keys {d:.3}, pooled {d:.3}, DeltaNet {d:.3}, draft and the rest {d:.3}) and {d:.3} GiB of mapped host memory; chunk {d} rows, scratch {d:.3} GiB", .{
         window,
         @as(f64, @floatFromInt(stream_bytes)) / gib,

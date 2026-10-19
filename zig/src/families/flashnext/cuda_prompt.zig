@@ -283,6 +283,17 @@ pub const Engine = struct {
         try e.stream.synchronize();
     }
 
+    fn finishPaged(e: *Engine, seqs: []const *Seq) !void {
+        var any = false;
+        for (seqs) |q| if (q.paged) |pg| {
+            try pg.stageStatus(e.stream.*);
+            any = true;
+        };
+        if (!any) return;
+        try e.complete();
+        for (seqs) |q| if (q.paged) |pg| try pg.checkStatus();
+    }
+
     /// Block scores for a `cap`-token sequence's chunks of up to `rows` rows, reallocated only to grow.
     pub fn reserveScores(e: *Engine, cap: usize, rows: usize) !u64 {
         const need = batch.scoreBytes(cap, rows);
@@ -312,7 +323,10 @@ pub const Engine = struct {
 
     /// The batched pass over `ids` from `seq.fed` in chunks of at most `chunk` rows; a window's hooks take one chunk.
     pub fn forward(e: *Engine, comptime Tri: type, tri: Tri, seq: *Seq, ids: []const u32, hooks: batch.Hooks) !void {
-        if (try @import("cuda_exl3_prefill.zig").forward(e, Tri, tri, seq, ids, hooks)) return; // EXL3 offload: expert-major deep chunks
+        if (try @import("cuda_exl3_prefill.zig").forward(e, Tri, tri, seq, ids, hooks)) {
+            const one = [_]*Seq{seq};
+            return e.finishPaged(&one);
+        }
         if (ids.len == 0 or seq.fed + ids.len > seq.cap) return error.UnexpectedTensor;
         if ((hooks.keep != null or hooks.logits == .all) and ids.len > e.chunk) return error.UnexpectedTensor;
         const s = try e.reserve(@min(ids.len, e.chunk));
@@ -328,7 +342,10 @@ pub const Engine = struct {
             .seq = seq.view(scores),
             .hooks = hooks,
         };
-        if (try @import("cuda_exl3_graph.zig").forward(e, &p, seq, ids)) return; // EXL3 offload: a window on the device plan
+        if (try @import("cuda_exl3_graph.zig").forward(e, &p, seq, ids)) {
+            const one = [_]*Seq{seq};
+            return e.finishPaged(&one);
+        }
         var at: usize = 0;
         while (at < ids.len) {
             const n = @min(s.cap, ids.len - at);
@@ -338,7 +355,10 @@ pub const Engine = struct {
             try p.chunk(ids[at..][0..n], seq.fed + at, if (last and hooks.logits != .none) seq.logits else null);
             at += n;
         }
-        if (hooks.logits == .none) try e.complete();
+        if (seq.paged != null) {
+            const one = [_]*Seq{seq};
+            try e.finishPaged(&one);
+        } else if (hooks.logits == .none) try e.complete();
         seq.fed += ids.len;
     }
 
@@ -371,11 +391,15 @@ pub const Engine = struct {
         const has_media = for (seqs) |q| {
             if (q.media != null) break true;
         } else false;
-        if (try @import("cuda_exl3_graph.zig").round(e, &p, seqs, ids, scores, out)) {} else if (e.collective != null and round_graph.enabled() and !has_media) {
+        const has_paged = for (seqs) |q| {
+            if (q.paged != null) break true;
+        } else false;
+        if (try @import("cuda_exl3_graph.zig").round(e, &p, seqs, ids, scores, out)) {} else if (e.collective != null and round_graph.enabled() and !has_media and !has_paged) {
             const key = try round_graph.Key.init(seqs, s.ids, scores, out);
             try e.round_graph.run(key, &p, ids);
         } else try p.chunk(ids, 0, null);
-        try e.complete();
+        try e.finishPaged(seqs);
+        if (!has_paged) try e.complete();
         const d = e.stream.d;
         for (seqs, 0..) |q, r| {
             try d.check(d.api.cuMemcpyDtoH_v2(q.logits.ptr, out + r * vocab * 2, vocab * 2), "cuMemcpyDtoH");
@@ -411,6 +435,7 @@ pub const Seq = struct {
 
     pub fn deinit(s: *Seq, gpa: std.mem.Allocator) void {
         if (@import("cuda_exl3_recycle.zig").giveSeq(s)) return; // graphs: kept for the next stream (stable addresses)
+        @import("cuda_exl3_graph.zig").releaseSeq(s);
         if (s.media) |*m| m.deinit();
         @import("cuda_exl3_kv.zig").deinitSeq(gpa, &s.kv8, &s.ikc_host);
         freeBufs(s.conv);

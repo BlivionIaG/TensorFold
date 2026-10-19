@@ -166,6 +166,7 @@ pub fn Namespace(comptime Tri: type) type {
             fn ops(self: *Cuda) Ops {
                 return .{ .e = self.engine, .tri = self.tri(), .h = self.head.?, .main = if (self.ranks != null) .{
                     .ptr = self,
+                    .rank = self.ranks.?.rank,
                     .forward = mainForward,
                     .verify = mainVerify,
                     .rollback = mainRollback,
@@ -177,9 +178,9 @@ pub fn Namespace(comptime Tri: type) type {
                 return self.ranks.?.forward(Tri, self.tri(), q, ids, hooks);
             }
 
-            fn mainVerify(ptr: *anyopaque, q: *prompt.Seq, d: *mtp.Draft, ids: []const u32) anyerror!void {
+            fn mainVerify(ptr: *anyopaque, q: *prompt.Seq, d: *mtp.Draft, ids: []const u32, tail: ?prompt.batch.Hooks.OutputTail) anyerror!void {
                 const self = of(ptr);
-                return self.ranks.?.verify(Tri, self.tri(), q, d, ids);
+                return self.ranks.?.verifyWithTail(Tri, self.tri(), q, d, ids, tail);
             }
 
             fn mainRollback(ptr: *anyopaque, q: *prompt.Seq, d: *mtp.Draft, keep: usize) anyerror!void {
@@ -430,7 +431,7 @@ pub fn Namespace(comptime Tri: type) type {
                     var row_ids: [mtp.max_rows]u32 = undefined;
                     row_ids[0] = w.pending;
                     @memcpy(row_ids[1..rows], w.tokens);
-                    try self.ops().verify(&l.seq, d, row_ids[0..rows]);
+                    try self.ops().verifySampled(&l.seq, d, row_ids[0..rows], w.stream.sampling);
                     try self.ops().draws(d, w.stream.sampling, o.sampled[0..rows]);
                 } else {
                     if (rows != 1) return error.CannotRewind;

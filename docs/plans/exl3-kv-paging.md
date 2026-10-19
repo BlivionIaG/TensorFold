@@ -1,6 +1,7 @@
 # Dynamic KV paging for long contexts (KVP)
 
-Status: prototype, 2026-10-19. Branch `exl3-c-kvpage` (from `exl3-c-main` at c5bfe87b). Task: prove a dynamic KV
+Status: prototype, 2026-10-19. Branch `exl3-c-main` (integration worktree; base commit `85313cae` plus uncommitted
+gate fixes). Task: prove a dynamic KV
 paging cache at long context on upstream's attention kernels: a sequence's full bf16 K/V in pinned host memory, the
 card holding a recent dense window plus an LRU cache of the 4-key blocks the sparse indexer selects.
 
@@ -157,14 +158,17 @@ contention for PCIe beyond what the decode numbers above contain.
 
 ## 5. Limits and next steps
 
-1. A call whose union of blocks outside the window exceeds the free slots **overflows** (a sticky flag in the
-   counters; that call's keys would be wrong). Slots must be >= ~24k at 200k with 256-row prompt calls (replay max
-   23.6k). The minimum change: smaller attention row blocks for paged prompt calls (the scratch's positions are per
-   256 rows today), or a host check of the flag after each prefill chunk.
+1. A call whose union of blocks outside the window exceeds the free slots must fail closed. Device-side overflow
+   signalling and a host-side
+   check before consuming the result are wired into the forward path; synthetic and 16k TP=2 deep-prefill tests
+   pass. The planned 200k × 2 stress/overflow-injection gate remains open. Slots must be >= ~24k at 200k with
+   256-row prompt calls (replay max 23.6k).
 2. Prompt-cache snapshots refuse a paged sequence (`error.KvPageSnapshot`); serve must run with
    `--prompt-cache-gib 0`. Next: snapshot = flush + host copy of the host store (no device bytes at all).
-3. Not graph-capturable as written: the epoch, window start and slot base are host-side kernel arguments; moving them
-   into a device word (one tiny kernel a call) is the change.
+3. Paging now captures and replays both deep-prefill layer graphs and decode graphs at TP=2. A 16,384-row deep
+   prefill plus 256 decode steps passed strict graph-vs-eager output parity on both ranks, including actual prefill
+   captures/replays and pager rebases. This establishes correctness for the tested shape, not long-context lifecycle
+   coverage or performance benefit; no meaningful prefill speedup was measured.
 4. The fetch is on the compute stream. Overlap needs prediction (prefetch for row t+1 from row t's selection), but at
    200k consecutive rows share only half their blocks, so most misses are new blocks; not worth it at +1 ms a token.
 5. int8 K/V (K10) is out of scope here (bf16 only, as asked); the paging and int8 would compose (the host store and
@@ -197,27 +201,40 @@ remain out of scope for this BF16 paging milestone.
 
 ## 7. Integration audit (2026-10-19)
 
-The allocator/admission mismatch is fixed in the current working tree: when host indexer keys are enabled, the
-placement-aware `newSeq` path now honors the BF16 pager instead of allocating resident K/V, and the admission budget
+The allocator/admission mismatch is fixed in commit `8528ca2c`: when host indexer keys are enabled, the
+placement-aware `newSeq` path honors the BF16 pager instead of allocating resident K/V, and the admission budget
 uses the same sequence layout, configured chunk and one-row placeholders. Quantized KV and split-head placement are
-rejected when paging is enabled. Host regressions cover the layout arithmetic and the allocator dispatch. This code
-is not yet committed or hardware-validated.
+rejected when paging is enabled. The current uncommitted test fix sizes the device window for enabled deep-prefill
+chunks and asserts actual graph-prefill capture/replay rather than mere completion.
 
-Remaining source-level blockers:
+Latest hardware gate (par1-cs13, both 5060 Ti cards, TP=2): each rank ran BF16 paged 16,384-row deep prefill and
+256 decode steps with CUDA graph prefill and decode enabled. Deep chunks reached 4096 rows; pager rebases and page
+fetches occurred; both ranks reported graph prefill captures/replays; graph logits matched eager bit-for-bit. The
+gate exited 0 on both ranks. This is correctness for the tested shape, not a two-sequence/200k acceptance run.
+Measured 16k prefill elapsed time was effectively unchanged between eager and graph runs, so graph performance
+remains open. The initial gate used synchronous graph instantiation; after adding bounded TP-rank rendezvous, the
+integrated build and a fresh two-GPU gate also passed with asynchronous instantiation enabled. Both ranks completed
+all eager/graph comparisons, including actual graph captures/replays and page rebases. The final test output was
+`PASS` on both ranks. The implementation retains per-sequence graph invalidation and excludes paged sequences from
+the unsafe generic graph fallback. Paged snapshots remain rejected; a correct implementation needs pager-aware
+memory budgeting and TP2 lifecycle integration, not a shallow copy.
 
-- **Graph state:** replay currently captures fixed host `win0`/epoch arguments and fixed window rebases/writebacks.
-  Correctness needs a replay-safe pager state update covering metadata and every actual window move, then replay-count
-  and long-run cache-row checks—not merely successful capture.
-- **Overflow:** the planner sets an overflow flag but remapping can still consume missing slot mappings. The forward
-  path must fail closed or retry before emitting output, and both TP ranks must leave the collective sequence
-  consistently.
+Remaining blockers:
+
+- **Graph performance:** the graph path is correct for tested paged prefill/decode, but no repeatable win against
+  optimized eager execution has been shown. Deep expert-prefill graphs and 200k/multi-request runs remain untested.
+- **Overflow stress:** fail-closed reporting is wired; prove it with deterministic overflow injection at TP=2 and
+  verify both ranks drain collectives and discard the affected sequence cleanly.
+- **Graph/lifetime:** validate the TP2 readiness rendezvous under delayed/failed instantiation, the paged fallback
+  exclusion, and targeted invalidation under sequence drop/recreation on both ranks.
 - **Snapshots:** paged snapshots currently return `KvPageSnapshot`; support must flush and preserve BF16 host K/V,
   sequence/indexer/recurrent/PLE/MTP state, then restore coherent window and table metadata. MTP verify-tail cache state
   must be invalidated on restore.
 - **Mixed serving:** two-lane decode, MTP draft rejection/rollback across rebases, and concurrent long contexts are
   not proven with the pager. Existing TP=2 HTTP equality was short and sequential.
 
-The next device gate is allocation accounting on both TP=2 ranks with BF16 K/V, host indexer keys, and chunks 1024
-and 4096. Then complete replay-safe paging, overflow failure, and snapshot handling before attempting the final
-two-request 200k TP=2 graph gate. For resident parity, use replicated attention (`TF_FLASHNEXT_ATTN_SPLIT=0`) so a
+The next device gates are deterministic TP=2 overflow/failure cleanup, snapshot lifecycle, and two simultaneous
+200k-context TP=2 requests with BF16 paging and graph-prefill/decode enabled. The 16k graph gate has passed; profile
+and optimize graph vs eager separately, and do not call the hard graph requirement complete until both prefill and
+decode show a repeatable benefit. For resident parity, use replicated attention (`TF_FLASHNEXT_ATTN_SPLIT=0`) so a
 different attention reduction order does not confound the cache comparison.

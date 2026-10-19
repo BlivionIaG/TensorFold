@@ -83,12 +83,18 @@ pub const Keep = struct {
 
 /// A caller's view into the pass. Without any, the pass is the server's prompt pass.
 pub const Hooks = struct {
+    pub const OutputTail = struct {
+        ptr: *anyopaque,
+        enqueue: *const fn (*anyopaque, cuda.Stream) anyerror!void,
+    };
+
     logits: Logits = .last,
     /// Device [rows, vocab] bf16 for `.all` (else the pass's own buffer for the last row).
     logits_out: u64 = 0,
     keep: ?*Keep = null,
     /// Device [rows, wide] bf16: every row's streams after the last MoE write-back (the MTP head's input); 0: none.
     streams: u64 = 0,
+    output_tail: ?OutputTail = null,
 };
 
 /// The kernels the pass launches besides the captured Triton ones, loaded once.

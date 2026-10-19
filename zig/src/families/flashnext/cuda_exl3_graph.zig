@@ -20,6 +20,8 @@ const std = @import("std");
 const cuda = @import("cuda");
 const dplan = @import("cuda_exl3_dplan.zig");
 const wt = @import("cuda_prompt_wt.zig");
+const collective = @import("cuda_collective.zig");
+const wire = @import("cuda_rank_wire.zig");
 
 const dims = wt.dims;
 const vocab = wt.vocab;
@@ -50,6 +52,7 @@ pub const Key = struct {
     rows: usize,
     /// Per lane (a window: lane 0): the sequence's buffers, its attention chunks and score tiles at the step's end.
     seq: [max_lanes][5]u64 = @splat(@splat(0)),
+    paging: [max_lanes][6]u64 = @splat(@splat(0)),
     chunks: [max_lanes]u32 = @splat(0),
     score_tiles: [max_lanes]u32 = @splat(0),
     /// The pass's scratch (its first buffer and its row capacity, which sets every other buffer's offset).
@@ -85,7 +88,7 @@ pub fn pinnedCopy(s: cuda.Stream, dst: u64, bytes: []const u8) !void {
 
 /// `template`: the graph an update took this exec's parameters from, kept while the exec uses them (a tp graph's
 /// NCCL resources are tied to the graph they were captured in).
-const Entry = struct { key: Key, exec: cuda.graph.Exec = undefined, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null };
+const Entry = struct { key: Key, exec: ?cuda.graph.Exec = null, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null, cohort: u64 = 0 };
 
 /// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs
 /// eagerly meanwhile, and replays from the next sighting after the instantiation landed).
@@ -96,9 +99,17 @@ pub const Pending = struct {
     exec: ?cuda.graph.Exec = null,
     ctx: ?*anyopaque,
     keep_template: bool,
+    started_ns: u64 = 0,
 
     fn main(pd: *Pending) void {
-        if (ctxApi()) |api| _ = api.set(pd.ctx);
+        const api = ctxApi() orelse {
+            pd.done.store(true, .release);
+            return;
+        };
+        if (api.set(pd.ctx) != 0) {
+            pd.done.store(true, .release);
+            return;
+        }
         pd.exec = pd.graph.instantiate() catch null;
         pd.done.store(true, .release);
     }
@@ -132,7 +143,7 @@ pub fn startInstantiate(g: cuda.graph.Graph, keep_template: bool) !?*Pending {
     var ctx: ?*anyopaque = null;
     if (api.get(&ctx) != 0) return null;
     const pd = try std.heap.c_allocator.create(Pending);
-    pd.* = .{ .graph = g, .ctx = ctx, .keep_template = keep_template };
+    pd.* = .{ .graph = g, .ctx = ctx, .keep_template = keep_template, .started_ns = wire.now() };
     pd.thread = std.Thread.spawn(.{}, Pending.main, .{pd}) catch |err| {
         std.heap.c_allocator.destroy(pd);
         return err;
@@ -151,7 +162,7 @@ pub fn takePending(pd: *Pending) !?cuda.graph.Exec {
 
 /// A pending entry whose instantiation finished becomes a usable graph (or is dropped if it failed); true if usable.
 fn settle(x: *Entry) bool {
-    const pd = x.pending orelse return true;
+    const pd = x.pending orelse return x.exec != null;
     if (!pd.done.load(.acquire)) return false;
     pd.thread.join();
     x.pending = null;
@@ -173,7 +184,7 @@ fn drop(x: *Entry) void {
         std.heap.c_allocator.destroy(pd);
         return;
     }
-    x.exec.deinit();
+    if (x.exec) |*e| e.deinit();
     if (x.template) |*g| g.deinit();
 }
 
@@ -209,6 +220,35 @@ pub fn clear() void {
     for (&entries) |*e| if (e.*) |*x| {
         drop(x);
         e.* = null;
+    };
+    seen = @splat(null);
+}
+
+fn references(key: Key, tail: u64) bool {
+    if (tail == 0) return false;
+    for (key.seq) |seq| if (seq[2] == tail) return true;
+    return false;
+}
+
+pub fn releaseSeq(seq: anytype) void {
+    const tail = seq.tail.ptr;
+    if (tail == 0) return;
+    for (&entries) |*entry| if (entry.*) |*x| if (references(x.key, tail)) {
+        drop(x);
+        entry.* = null;
+    };
+    for (&seen) |*entry| if (entry.*) |x| if (references(x.key, tail)) {
+        entry.* = null;
+    };
+    for (&last_key) |*kinds| for (kinds) |*key| if (key.*) |k| if (references(k, tail)) {
+        key.* = null;
+    };
+    for (&pentries) |*entry| if (entry.*) |*x| if (x.key.seq[2] == tail) {
+        x.exec.deinit();
+        entry.* = null;
+    };
+    for (&pseen) |*entry| if (entry.*) |x| if (x.key.seq[2] == tail) {
+        entry.* = null;
     };
 }
 
@@ -334,6 +374,7 @@ fn debugKey(key: Key) void {
 fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
     debugKey(key);
     clock += 1;
+    if (pass.m.collective) |c| return runTogether(c, key, pass, ids, pos0);
     if (find(key)) |e| {
         e.used = clock;
         if (!settle(e)) {
@@ -350,7 +391,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         }
         stats.replays += 1;
         note(key, .replay);
-        return e.exec.launchOn(pass.stream);
+        return e.exec.?.launchOn(pass.stream);
     }
     if (sighting(key) < after()) {
         stats.eager_dplan += 1;
@@ -382,9 +423,9 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         var free_slot = false;
         for (&entries) |*e| free_slot = free_slot or e.* == null;
         if (!tp or tpUpdate()) {
-            for (&entries) |*e| if (e.*) |*x| if (x.pending == null and sameShape(x.key, key) and (!free_slot or clock - x.used > stale_after)) {
+            for (&entries) |*e| if (e.*) |*x| if (x.exec != null and x.pending == null and sameShape(x.key, key) and (!free_slot or clock - x.used > stale_after)) {
                 // every earlier launch finished (each step ends on the host), so the old parameters are free to go
-                const r = try x.exec.update(graph);
+                const r = try x.exec.?.update(graph);
                 if (r == .success) {
                     x.key = key;
                     x.used = clock;
@@ -405,7 +446,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
             var ctx: ?*anyopaque = null;
             if (api.get(&ctx) == 0) {
                 const pd = try std.heap.c_allocator.create(Pending);
-                pd.* = .{ .graph = graph, .ctx = ctx, .keep_template = tp };
+                pd.* = .{ .graph = graph, .ctx = ctx, .keep_template = tp, .started_ns = wire.now() };
                 kept = true;
                 pd.thread = std.Thread.spawn(.{}, Pending.main, .{pd}) catch |err| {
                     kept = false;
@@ -434,7 +475,119 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
     const t2 = std.Io.Clock.awake.now(pass.io).toNanoseconds();
     stats.capture_ns += @intCast(t2 - t0);
     std.log.info("flashnext exl3 graph: captured a {s} of {d} rows in {d:.1} ms + {s} in {d:.1} ms ({d} captures, {d} updates, {d} replays, {d} eager, {d} declined steps, {d} residency pulls so far)", .{ if (key.kind == 1) "decode round" else "window", key.rows, @as(f64, @floatFromInt(t1 - t0)) / 1e6, how, @as(f64, @floatFromInt(t2 - t1)) / 1e6, stats.captures, stats.updates, stats.replays, stats.eager_dplan, stats.declined, if (dplan.current()) |dp| dp.pulls else 0 });
-    try at.exec.launchOn(pass.stream);
+    try at.exec.?.launchOn(pass.stream);
+}
+
+fn graphSignature(key: Key, pos0: usize) u64 {
+    var hash = std.hash.Wyhash.init(0);
+    std.hash.autoHash(&hash, .{ key.kind, key.rows, key.chunks, key.score_tiles, key.scratch_cap, key.keep != 0, key.streams != 0, pos0 });
+    for (key.seq, key.paging) |seq, paging| std.hash.autoHash(&hash, .{ seq[3], paging[4], paging[5] });
+    return hash.final();
+}
+
+fn graphVote(entry: ?*Entry, timeout_ms: u64) collective.GraphVote {
+    const x = entry orelse return .{ .state = .capture };
+    if (settle(x)) return .{ .state = .ready, .cohort = x.cohort };
+    if (x.pending) |pd| {
+        const elapsed = wire.now() -| pd.started_ns;
+        return .{ .state = if (elapsed >= timeout_ms *| std.time.ns_per_ms) .timed_out else .pending, .cohort = x.cohort };
+    }
+    return .{ .state = .failed, .cohort = x.cohort };
+}
+
+fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
+    errdefer c.failGraph();
+    const signature = graphSignature(key, pos0);
+    var entry = find(key);
+    if (entry) |x| x.used = clock;
+    const vote = if (entry != null) graphVote(entry, c.graphTimeoutMs()) else collective.GraphVote{
+        .state = if (sighting(key) < after()) .eager else .capture,
+    };
+    const decision = try c.graphAgree(signature, vote);
+    switch (decision.choice) {
+        .eager => {
+            stats.eager_dplan += 1;
+            note(key, .eager);
+            pass.prepared = true;
+            return pass.chunk(ids, pos0, null);
+        },
+        .replay => {
+            stats.replays += 1;
+            note(key, .replay);
+            return entry.?.exec.?.launchOn(pass.stream);
+        },
+        .capture => {},
+    }
+    const started = std.Io.Clock.awake.now(pass.io).toNanoseconds();
+    try cuda.graph.beginCapture(pass.stream, .thread_local);
+    pass.prepared = true;
+    capturing = true;
+    pass.chunk(ids, pos0, null) catch |err| {
+        capturing = false;
+        if (cuda.graph.endCapture(pass.stream)) |g| {
+            var discarded = g;
+            discarded.deinit();
+        } else |_| {}
+        return err;
+    };
+    capturing = false;
+    var graph = try cuda.graph.endCapture(pass.stream);
+    var kept = false;
+    defer if (!kept) graph.deinit();
+    var updated = false;
+    if (tpUpdate()) {
+        var free_slot = false;
+        for (entries) |e| free_slot = free_slot or e == null;
+        for (&entries) |*candidate| if (candidate.*) |*x| if (x.exec != null and x.pending == null and sameShape(x.key, key) and
+            (if (entry) |current| x == current else (!free_slot or clock - x.used > stale_after)))
+        {
+            if (try x.exec.?.update(graph) == .success) {
+                if (x.template) |*old| old.deinit();
+                x.template = graph;
+                kept = true;
+                x.key = key;
+                x.used = clock;
+                x.cohort = decision.cohort;
+                entry = x;
+                updated = true;
+                break;
+            }
+        };
+    }
+    if (!updated) {
+        const target = if (entry) |old| blk: {
+            drop(old);
+            for (&entries) |*candidate| if (candidate.*) |*x| if (x == old) {
+                candidate.* = null;
+                break :blk candidate;
+            };
+            unreachable;
+        } else slot();
+        if (try startInstantiate(graph, true)) |pending| {
+            target.* = .{ .key = key, .used = clock, .pending = pending, .cohort = decision.cohort };
+        } else {
+            var exec = try graph.instantiate();
+            errdefer exec.deinit();
+            try exec.upload(pass.stream);
+            target.* = .{ .key = key, .exec = exec, .used = clock, .template = graph, .cohort = decision.cohort };
+        }
+        kept = true;
+        entry = &target.*.?;
+    }
+    stats.captures += 1;
+    if (updated) stats.updates += 1;
+    note(key, if (updated) .updated else .instantiated);
+    stats.capture_ns += @intCast(std.Io.Clock.awake.now(pass.io).toNanoseconds() - started);
+    const installed = try c.graphAgree(signature ^ 0x696e7374616c6c, graphVote(entry, c.graphTimeoutMs()));
+    switch (installed.choice) {
+        .replay => try entry.?.exec.?.launchOn(pass.stream),
+        .eager => {
+            stats.eager_dplan += 1;
+            pass.prepared = true;
+            try pass.chunk(ids, pos0, null);
+        },
+        .capture => return error.GraphRendezvousMismatch,
+    }
 }
 
 /// A round's host inputs (what chunk's stage and gather would write), outside capture and replay.
@@ -488,9 +641,15 @@ pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u6
         try p.chunk(ids, 0, null);
         return true;
     }
+    for (seqs) |q| if (q.paged) |pg| for (0..wt.attn_n) |ai| try pg.validateRange(ai, q.fed, 1);
+    defer for (seqs) |q| if (q.paged) |pg| {
+        pg.graph_prepared = false;
+    };
+    for (seqs) |q| if (q.paged) |pg| try pg.prepareGraph(p.stream, q.fed, 1);
     var key: Key = .{ .kind = 1, .rows = ids.len, .scratch = p.s.ids, .scratch_cap = p.s.cap, .scores = scores, .output = out, .plan = dp.state.ptr };
     for (seqs, 0..) |q, i| {
         key.seq[i] = Key.seqOf(q);
+        if (q.paged) |pg| key.paging[i] = pg.graphKey();
         Key.seams(q.fed + 1, &key.chunks[i], &key.score_tiles[i]);
     }
     var hist: [max_lanes][2]i64 = undefined;
@@ -500,6 +659,10 @@ pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u6
     stats.prepare_ns += @intCast(std.Io.Clock.awake.now(p.io).toNanoseconds() - tp0);
     stats.prepares += 1;
     run(key, p, ids, 0) catch |err| {
+        if (p.m.collective) |c| {
+            c.failGraph();
+            return err;
+        }
         if (strict()) return err;
         std.log.warn("flashnext exl3 graph: a decode round could not be captured ({t}); rounds run eagerly on the device plan", .{err});
         broken = true;
@@ -525,8 +688,13 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
         stats.eager_dplan += 1;
         try p.chunk(ids, seq.fed, null);
     } else {
+        defer if (seq.paged) |pg| {
+            pg.graph_prepared = false;
+        };
+        if (seq.paged) |pg| try pg.prepareGraph(p.stream, seq.fed, n);
         var key: Key = .{ .kind = 2, .rows = n, .scratch = p.s.ids, .scratch_cap = p.s.cap, .scores = p.seq.scores, .output = hooks.logits_out, .streams = hooks.streams, .plan = dp.state.ptr };
         key.seq[0] = Key.seqOf(seq);
+        if (seq.paged) |pg| key.paging[0] = pg.graphKey();
         Key.seams(seq.fed + n, &key.chunks[0], &key.score_tiles[0]);
         if (hooks.keep) |kp| key.keep = std.hash.Wyhash.hash(1, std.mem.asBytes(kp)); // its contents (the buffers the graph writes), not where the Draft struct sits
         const hist = seq.history;
@@ -535,6 +703,10 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
         stats.prepare_ns += @intCast(std.Io.Clock.awake.now(p.io).toNanoseconds() - tp0);
         stats.prepares += 1;
         run(key, p, ids, seq.fed) catch |err| {
+            if (p.m.collective) |c| {
+                c.failGraph();
+                return err;
+            }
             if (strict()) return err;
             std.log.warn("flashnext exl3 graph: a window could not be captured ({t}); windows run eagerly on the device plan", .{err});
             broken = true;
@@ -543,6 +715,7 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
             try p.chunk(ids, seq.fed, null);
         };
     }
+    if (hooks.output_tail) |tail| try tail.enqueue(tail.ptr, p.stream);
     // the pass's head(.all) copies the last row's scores to the host after the step (outside the graph)
     if (p.m.collective) |c| try c.finish(p.stream) else try p.stream.synchronize();
     const d = p.stream.d;
@@ -572,6 +745,7 @@ const PKey = struct {
     base: u64,
     base_cap: usize,
     seq: [5]u64,
+    paging: [6]u64,
     wait_count: usize,
     wait_key: u64,
     scores: u64,
@@ -633,6 +807,13 @@ pub fn clearPrefill() void {
 pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool, waits: []const cuda.Event) !Prefill {
     if (!prefillEnabled()) return .eager;
     const q = p.seq;
+    if (!linear) if (q.paged) |pg| {
+        try pg.prepareLayer(p.stream, wt.attnIndex(layer), pos0, rows);
+        pg.graph_prepared = true;
+    };
+    errdefer if (q.paged) |pg| {
+        pg.graph_prepared = false;
+    };
     var wait_key: u64 = 0;
     for (waits) |ev| {
         const handle = if (ev.handle) |h| @intFromPtr(h) else 0;
@@ -647,6 +828,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         .base = base.ids,
         .base_cap = base.cap,
         .seq = .{ if (q.conv.len > 0) q.conv[0].ptr else 0, if (q.kc.len > 0) q.kc[0].ptr else 0, q.tail.ptr, q.cap, if (q.state.len > 0) q.state[0].ptr else 0 },
+        .paging = if (!linear) (if (q.paged) |pg| pg.graphKey() else @splat(0)) else @splat(0),
         .wait_count = waits.len,
         .wait_key = wait_key,
         .scores = q.scores,
@@ -672,6 +854,9 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
 /// After a layer's sub-blocks ran under `.capturing`: the graph is instantiated (or a cached one of the same shape
 /// updated) and launched.
 pub fn prefillEnd(p: anytype, how: Prefill) !void {
+    defer if (p.seq.paged) |pg| {
+        pg.graph_prepared = false;
+    };
     if (how != .capturing) return;
     const t0 = std.Io.Clock.awake.now(p.io).toNanoseconds();
     capturing = false;
@@ -714,6 +899,7 @@ pub fn prefillEnd(p: anytype, how: Prefill) !void {
 
 /// A failed capture: closed and dropped; prefill graphs stay off for the process (the chunk's error propagates).
 pub fn prefillAbort(p: anytype, how: Prefill) void {
+    if (p.seq.paged) |pg| pg.graph_prepared = false;
     if (how != .capturing) return;
     capturing = false;
     pcur = null;
@@ -723,4 +909,219 @@ pub fn prefillAbort(p: anytype, how: Prefill) void {
     } else |_| {}
     std.log.warn("flashnext exl3 graph: a prefill layer could not be captured; prefill and decode graphs are off", .{});
     broken = true;
+}
+
+const GraphTestDriver = struct {
+    var exec_drops: usize = 0;
+    var graph_drops: usize = 0;
+    var launches: usize = 0;
+
+    fn dropExec(_: cuda.abi.GraphExec) callconv(.c) c_int {
+        exec_drops += 1;
+        return 0;
+    }
+
+    fn dropGraph(_: cuda.abi.Graph) callconv(.c) c_int {
+        graph_drops += 1;
+        return 0;
+    }
+
+    fn instantiate(out: *cuda.abi.GraphExec, _: cuda.abi.Graph, _: u64) callconv(.c) c_int {
+        out.* = @ptrFromInt(1);
+        return 0;
+    }
+
+    fn getContext(out: *?*anyopaque) callconv(.c) c_int {
+        out.* = @ptrFromInt(1);
+        return 0;
+    }
+
+    fn setContext(_: ?*anyopaque) callconv(.c) c_int {
+        return 0;
+    }
+
+    fn driver() cuda.Driver {
+        var d: cuda.Driver = undefined;
+        d.api.cuGraphExecDestroy = dropExec;
+        d.api.cuGraphDestroy = dropGraph;
+        d.api.cuGraphLaunch = launch;
+        d.api.cuGraphInstantiateWithFlags = instantiate;
+        return d;
+    }
+
+    fn launch(_: cuda.abi.GraphExec, _: cuda.abi.Stream) callconv(.c) c_int {
+        launches += 1;
+        return 0;
+    }
+
+    fn abort(_: cuda.nccl.Comm) callconv(.c) cuda.nccl.Result {
+        return 0;
+    }
+
+    fn control(link: wire.Link) collective.Collective {
+        var c: collective.Collective = undefined;
+        c.comm = @ptrFromInt(1);
+        c.api.ncclCommAbort = abort;
+        c.link = link;
+        c.failed = false;
+        c.timeout_ms = 1000;
+        c.graph_step = 0;
+        return c;
+    }
+
+    fn finishPending(pd: *Pending, driver_: *cuda.Driver) void {
+        pd.exec = .{ .d = driver_, .handle = @ptrFromInt(1) };
+        pd.done.store(true, .release);
+    }
+};
+
+test "exl3: sequence graph retirement removes mixed lanes and pending work without evicting a live owner" {
+    clear();
+    defer clear();
+    GraphTestDriver.exec_drops = 0;
+    GraphTestDriver.graph_drops = 0;
+    var driver = GraphTestDriver.driver();
+    const exec: cuda.graph.Exec = .{ .d = &driver, .handle = @ptrFromInt(1) };
+    var key: Key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 };
+    key.seq[0][2] = 100;
+    const owner_key = key;
+    entries[0] = .{ .key = key, .exec = exec, .used = 1 };
+    key.seq[0][2] = 200;
+    const live_key = key;
+    entries[1] = .{ .key = key, .exec = exec, .used = 1 };
+    key.rows = 2;
+    key.seq[1][2] = 100;
+    entries[2] = .{ .key = key, .exec = exec, .used = 1 };
+    const pending = try std.heap.c_allocator.create(Pending);
+    pending.* = .{ .graph = .{ .d = &driver, .handle = @ptrFromInt(1) }, .ctx = null, .keep_template = true };
+    pending.thread = try std.Thread.spawn(.{}, GraphTestDriver.finishPending, .{ pending, &driver });
+    entries[3] = .{ .key = owner_key, .pending = pending, .used = 1 };
+    const live_pending = try std.heap.c_allocator.create(Pending);
+    live_pending.* = .{ .graph = .{ .d = &driver, .handle = @ptrFromInt(1) }, .ctx = null, .keep_template = true };
+    live_pending.thread = try std.Thread.spawn(.{}, GraphTestDriver.finishPending, .{ live_pending, &driver });
+    var live_pending_key = live_key;
+    live_pending_key.rows = 3;
+    entries[4] = .{ .key = live_pending_key, .pending = live_pending, .used = 1 };
+    const pkey: PKey = .{ .layer = 0, .rows = 32, .sub = 16, .pos0 = 0, .deep = 1, .base = 2, .base_cap = 32, .seq = .{ 1, 2, 100, 32, 3 }, .paging = @splat(0), .wait_count = 0, .wait_key = 0, .scores = 4, .tiles = false };
+    pentries[0] = .{ .key = pkey, .exec = exec, .used = 1 };
+    var live_pkey = pkey;
+    live_pkey.seq[2] = 200;
+    pentries[1] = .{ .key = live_pkey, .exec = exec, .used = 1 };
+    seen[0] = .{ .key = owner_key, .n = 10, .used = 1 };
+    seen[1] = .{ .key = live_key, .n = 10, .used = 1 };
+    pseen[0] = .{ .key = pkey, .n = 10 };
+    pseen[1] = .{ .key = live_pkey, .n = 10 };
+    const Seq = struct { tail: struct { ptr: u64 } };
+    releaseSeq(Seq{ .tail = .{ .ptr = 100 } });
+    try std.testing.expect(find(owner_key) == null);
+    try std.testing.expect(find(live_key) != null);
+    try std.testing.expect(entries[2] == null and entries[3] == null);
+    try std.testing.expect(entries[4].?.pending == live_pending);
+    try std.testing.expect(pentries[0] == null and pentries[1] != null);
+    try std.testing.expect(seen[0] == null and seen[1] != null);
+    try std.testing.expect(pseen[0] == null and pseen[1] != null);
+    try std.testing.expectEqual(@as(usize, 4), GraphTestDriver.exec_drops);
+    try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.graph_drops);
+    try std.testing.expectEqual(@as(u32, 1), sighting(owner_key));
+    releaseSeq(Seq{ .tail = .{ .ptr = 100 } });
+    try std.testing.expectEqual(@as(usize, 4), GraphTestDriver.exec_drops);
+}
+
+test "exl3: pending graph deadlines and failed instantiation never expose an executable" {
+    var pending: Pending = .{ .graph = undefined, .ctx = null, .keep_template = true, .started_ns = wire.now() };
+    var entry: Entry = .{ .key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 }, .pending = &pending, .used = 1, .cohort = 7 };
+    try std.testing.expectEqual(collective.GraphState.pending, graphVote(&entry, 1000).state);
+    pending.started_ns = wire.now() -| 2 * std.time.ns_per_ms;
+    try std.testing.expectEqual(collective.GraphState.timed_out, graphVote(&entry, 1).state);
+    entry.pending = null;
+    try std.testing.expectEqual(collective.GraphState.failed, graphVote(&entry, 1000).state);
+    drop(&entry);
+}
+
+test "exl3: asynchronous TP instantiation preserves its NCCL template until owner retirement" {
+    if (!asyncInstantiate()) return error.SkipZigTest;
+    const previous_api = ctx_api;
+    defer ctx_api = previous_api;
+    ctx_api = .{ .get = GraphTestDriver.getContext, .set = GraphTestDriver.setContext };
+    var driver = GraphTestDriver.driver();
+    const graph: cuda.graph.Graph = .{ .d = &driver, .handle = @ptrFromInt(1) };
+    GraphTestDriver.exec_drops = 0;
+    GraphTestDriver.graph_drops = 0;
+    const pending = (try startInstantiate(graph, true)).?;
+    var entry: Entry = .{ .key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 }, .pending = pending, .used = 1, .cohort = 9 };
+    defer drop(&entry);
+    const until = wire.deadline(1000);
+    while (!pending.done.load(.acquire)) {
+        if (wire.now() >= until) return error.RankTimeout;
+        wire.pause();
+    }
+    const vote = graphVote(&entry, 1000);
+    try std.testing.expectEqual(collective.GraphState.ready, vote.state);
+    try std.testing.expectEqual(@as(u64, 9), vote.cohort);
+    try std.testing.expect(entry.pending == null and entry.exec != null and entry.template != null);
+    try std.testing.expectEqual(@as(usize, 0), GraphTestDriver.graph_drops);
+}
+
+test "exl3: rendezvous signatures compare topology and paging origins without device addresses" {
+    var key: Key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 };
+    key.seq[0] = .{ 1, 2, 100, 4096, 3 };
+    key.paging[0] = .{ 10, 20, 30, 40, 50, 60 };
+    const signature = graphSignature(key, 4096);
+    key.seq[0][0] = 1000;
+    key.seq[0][2] = 1001;
+    key.paging[0][0] = 1002;
+    key.output = 1003;
+    try std.testing.expectEqual(signature, graphSignature(key, 4096));
+    try std.testing.expect(signature != graphSignature(key, 4097));
+    key.paging[0][5] += 1;
+    try std.testing.expect(signature != graphSignature(key, 4096));
+}
+
+test "exl3: TP decode dispatch stays eager while its peer instantiates and replays only after agreement" {
+    clear();
+    defer clear();
+    var pair: [2]std.posix.socket_t = undefined;
+    if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &pair) != 0) return error.SocketPair;
+    defer for (pair) |fd| {
+        _ = std.c.close(fd);
+    };
+    const nonblock: c_int = @bitCast(@as(u32, @bitCast(std.c.O{ .NONBLOCK = true })));
+    for (pair) |fd| {
+        const flags = std.c.fcntl(fd, std.c.F.GETFL);
+        if (flags < 0 or std.c.fcntl(fd, std.c.F.SETFL, flags | nonblock) < 0) return error.Nonblocking;
+    }
+    const key: Key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 };
+    const Peer = struct {
+        fn main(link: wire.Link, signature: u64) void {
+            var c = GraphTestDriver.control(link);
+            const first = c.graphAgree(signature, .{ .state = .pending, .cohort = 7 }) catch @panic("first peer agreement failed");
+            std.debug.assert(first.choice == .eager);
+            const second = c.graphAgree(signature, .{ .state = .ready, .cohort = 7 }) catch @panic("second peer agreement failed");
+            std.debug.assert(second.choice == .replay);
+        }
+    };
+    const thread = try std.Thread.spawn(.{}, Peer.main, .{ wire.Link{ .fd = pair[1] }, graphSignature(key, 0) });
+    defer thread.join();
+    var c = GraphTestDriver.control(.{ .fd = pair[0] });
+    var driver = GraphTestDriver.driver();
+    GraphTestDriver.launches = 0;
+    entries[0] = .{ .key = key, .used = 1, .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .cohort = 7 };
+    const Pass = struct {
+        io: std.Io = std.testing.io,
+        stream: cuda.Stream,
+        m: struct { collective: ?*collective.Collective },
+        prepared: bool = false,
+        chunks: usize = 0,
+
+        fn chunk(p: *@This(), _: []const u32, _: usize, _: ?[]u8) !void {
+            p.chunks += 1;
+        }
+    };
+    var pass: Pass = .{ .stream = cuda.Stream.borrowed(&driver, null), .m = .{ .collective = &c } };
+    try run(key, &pass, &.{1}, 0);
+    try std.testing.expectEqual(@as(usize, 1), pass.chunks);
+    try std.testing.expectEqual(@as(usize, 0), GraphTestDriver.launches);
+    try run(key, &pass, &.{1}, 0);
+    try std.testing.expectEqual(@as(usize, 1), pass.chunks);
+    try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.launches);
 }

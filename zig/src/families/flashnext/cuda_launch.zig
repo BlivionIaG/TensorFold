@@ -394,6 +394,12 @@ test {
     _ = @import("cuda_head.zig");
 }
 
+test "exl3: greedy verification host contracts" {
+    _ = @import("cuda_mtp_ops.zig");
+    _ = @import("cuda_mtp_draft.zig");
+    _ = @import("cuda_mtp_verify_cache.zig");
+}
+
 test "embed grid is one program per row and per group of 32" {
     try std.testing.expectEqual([3]u32{ 4, 80, 1 }, embedGrid(4, 2560));
 }

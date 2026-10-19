@@ -140,13 +140,19 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 4. **200k x 2 is tight on rank 0** (11 lines per layer, floor 10) and slow while both requests prefill: decode ran
    at 0.4 - 10 tokens per second while the other request prefilled. Prompt-cache reuse with drafts did not work at
    196k (a state kept without the MTP head's rows cannot serve a drafting stream).
-5. **KV paging** is default off. The 200k bit-equality gate is single-card only; TP=2 checks are shorter and
-   sequential, and the 200k × 2 TP=2 gate used resident KV. Paging is not graph-safe (window/epoch are host state),
-   refuses prompt-cache snapshots, and is not exercised with MTP windows or multiple lanes. With host indexer keys,
-   allocation and budget accounting used to disagree; this is fixed and built in commit `8528ca2c`, with a short
-   eager TP=2 smoke on both ranks. Serving still needs to fail safely on paging-cache overflow instead of continuing
-   with missing mappings. At 200k, consecutive rows share only 49% of their selected blocks, hit rate 0.83 with a
-   384 MiB cache.
+5. **KV paging** remains default off and BF16-only. The 200k resident-parity result is single-card. A new TP=2
+   correctness gate on both cards passed 16,384 rows of deep prefill plus 256 decode steps with BF16 paging and
+   prefill/decode graphs enabled: actual graph captures/replays and page-window rebases occurred, and graph outputs
+   were bit-identical to eager on both ranks. This does not yet prove 200k × 2 concurrency, snapshots, MTP rollback,
+   or overflow failure cleanup. The allocator/admission accounting fix is in `8528ca2c`; graph prefill showed no
+   meaningful speedup in this gate. A follow-up audit found unsafe generic-round-graph fallback for paged sequences,
+   a graph-lifetime hazard on sequence destruction, and independent async-instantiation readiness across TP ranks.
+   The current implementation adds bounded TP-rank readiness rendezvous while retaining async instantiation,
+   targeted graph invalidation on sequence drop, paged fallback exclusion, and early snapshot rejection. Agent host
+   tests pass; the integrated CUDA-test and native builds pass, and a fresh TP=2 two-GPU 16k BF16-paged gate passes
+   with async instantiation enabled. Full pager-aware snapshots remain unimplemented because they require budget
+   and TP2 lifecycle integration. At 200k, consecutive rows share only 49% of their selected blocks, hit rate 0.83
+   with a 384 MiB cache.
 6. **200k reference parity is not established:** a saved 200k prefill comparison exited 1 with max logit
    difference 1.1406 and top-1 6009 versus 19251 (reference margin 0.25). The successful 200k × 2 needle answers
    establish retrieval/serving behavior for those prompts, not strict full-logit parity.
@@ -173,8 +179,8 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 1. Meet the graph acceptance gate: reduce decode host boundaries (first target is MTP verify's redundant best-
    selection/readback), make decode graphs measurably faster than optimized eager decode, and extend prefill capture
    beyond dense sub-blocks without losing reduction overlap. Recheck with repeated TP=2 gates before changing defaults.
-2. Add a serving overflow guard. Then make dynamic BF16 KV paging replay-safe, add paged snapshots/MTP rollback, and
-   rerun the 200k × 2 TP=2 test on the exact PR head with paging, graphs, and concurrent requests enabled together.
+2. Exercise fail-closed paging overflow and collective cleanup, implement paged snapshots/MTP rollback, and rerun
+   the 200k × 2 TP=2 test with BF16 paging, graphs, and concurrent requests enabled together.
 3. Add an init timeout to the blocking NCCL communicator before making it the tp=2 default.
 4. Make the HTTP and prefill gates fail on strict mismatches, compare full hashes, and require reference artifacts
    for long-context parity runs; investigate the 200k reference-logit failure.
