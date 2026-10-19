@@ -349,11 +349,7 @@ pub fn Pass(comptime Tri: type) type {
         }
 
         pub fn attnBlock(self: *Self, lw: *const Layer, ai: usize) !void {
-            return self.attnBlockKeep(lw, ai, .{});
-        }
-
-        /// attnBlock, keeping its q|gate, k and v projections and o_proj's input.
-        pub fn attnBlockKeep(self: *Self, lw: *const Layer, ai: usize, keep: LayerKeep) !void {
+            if (@import("cuda_exl3_heads.zig").isSplit(lw)) return @import("cuda_exl3_heads.zig").attnBlock(self, lw, ai); // tp=2 head split
             const s = self.s;
             const n = self.rows;
             const pa = s.proj;
@@ -389,6 +385,7 @@ pub fn Pass(comptime Tri: type) type {
 
         /// `n` rows of self.seq from self.pos0: rope, cache writes and pooling, then scores, selection and attention.
         fn attnRows(self: *Self, lw: *const Layer, ai: usize, pa: u64, n: usize, at: RowsAt) !void {
+            if (self.seq.kv8) |c| return @import("cuda_exl3_kv.zig").attnRows(self, lw, ai, pa, n, at, c); // int8 KV (K10)
             const s = self.s;
             const kc = self.seq.kc[ai].ptr;
             const vc = self.seq.vc[ai].ptr;
@@ -576,8 +573,13 @@ pub fn Pass(comptime Tri: type) type {
         }
 
         /// Column tiles keep their own reduction order; each gathered row restores global vocabulary order.
-        pub fn projectHead(self: *Self, out: u64, n: usize) !void {
-            return @import("cuda_batch_head.zig").projectHead(self, out, n);
+        fn projectHead(self: *Self, out: u64, n: usize) !void {
+            const s = self.s;
+            if (self.m.head.n == vocab) return self.lane(s.mixed, s.xsm, self.m.head, out, s.dummy, n, 1);
+            if (self.m.head.n != vocab / 2 or n > @min(s.cap, parts.head_local_rows)) return error.UnexpectedTensor;
+            const c = self.m.collective orelse return error.TensorParallelUnavailable;
+            try self.lane(s.mixed, s.xsm, self.m.head, s.head_local, s.dummy, n, 1);
+            for (0..n) |r| try c.gather(self.stream, s.head_local + r * vocab, out + r * vocab * 2, vocab / 2);
         }
 
         /// After a layer's experts, when something adds to or keeps its output: the slots' fp32 sum, adds, kept branch.

@@ -49,8 +49,9 @@ pub const pocket_stride: usize = 128;
 pub const fused_rows: usize = 1024;
 /// Rows a pass holds at most unless asked for more.
 pub const default_chunk: usize = 1536;
-/// The most rows TF_FLASHNEXT_CHUNK may ask for (the largest measured pass; its scratch is about 13 GiB more).
-pub const max_chunk: usize = 16384;
+/// Rows of `head_local` (a vocabulary-split head's local logits) a scratch holds at most: every row by default; an
+/// EXL3 engine sets it to its widest logits pass (0 with a whole head, cuda_exl3_kv.zig setup, K10 lever 3).
+pub var head_local_rows: usize = std.math.maxInt(usize);
 const ratio = wt.index_ratio;
 const top = wt.index_top;
 const idw = wt.index_idw;
@@ -408,8 +409,7 @@ pub const Scratch = struct {
         n += cap * moe_w * 6 + cap * dims * 4;
         n += pairs * moe_w * 2 + pairs * dims * 4 + cap * dims * 2;
         n += cap * dims * 2 + cap * (dims / 32) * 4 + cap * wide * 2 + cap * dims * 2 + 4 * cap * dims * 4;
-        n += cap * wide * 2 * 2 + cap * streams * 4 + vocab * 2 + cap * vocab + half * 4 + 4096;
-        n += cap * dims * 4 + cap * pocket_stride * 4;
+        n += cap * wide * 2 * 2 + cap * streams * 4 + vocab * 2 + @min(cap, head_local_rows) * vocab + half * 4 + 4096;
         return n;
     }
 
@@ -486,7 +486,7 @@ pub const Scratch = struct {
         s.ple_pss = try s.add(gpa, d, cap * streams * 4);
         s.ple_nrow = try s.add(gpa, d, cap * wide * 2);
         s.logits = try s.add(gpa, d, vocab * 2);
-        s.head_local = try s.add(gpa, d, cap * vocab);
+        s.head_local = try s.add(gpa, d, @min(cap, head_local_rows) * vocab);
         var inv: [half]f32 = undefined;
         for (&inv, 0..) |*o, i| o.* = @floatCast(std.math.pow(f64, 10_000_000.0, -@as(f64, @floatFromInt(i)) / @as(f64, half)));
         s.inv = try s.add(gpa, d, half * 4);
@@ -515,6 +515,8 @@ pub const Scratch = struct {
 /// A sequence's state the pass reads and leaves as the row-by-row path would.
 pub const SeqState = struct {
     media: ?@import("cuda_media.zig").View = null,
+    /// An int8 K/V cache (kc/vc hold its codes; cuda_exl3_kv.zig); null: bf16 kc/vc.
+    kv8: ?@import("cuda_exl3_kv.zig").SeqKv8 = null,
     conv: []cuda.DeviceBuffer,
     state: []cuda.DeviceBuffer,
     kc: []cuda.DeviceBuffer,
