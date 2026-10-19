@@ -1,0 +1,60 @@
+2026-10-19_13:00:33 hold h1 pr38 decode start: commit 44c37c5f52b91806de323e72f22fb95a683e007c binary 15c45dfdb30f2b4b0e07c988fe73d9cee8a72d46424e97346022a51e107d8583, serve --context 65536 --parallel 4
+2026-10-19_13:00:57   bench_openai exit 0: fibonacci-raw 211.63 [206.03, 211.63, 214.26]; gpu-chat-no-think 175.61 [175.81, 175.61, 175.41]; 
+2026-10-19_13:01:03 hold h1 pr38 decode done, load 1792407634.071113855..1792407643.126146596
+2026-10-19_13:01:06 hold h1 pr38 decodeoff start: commit 44c37c5f52b91806de323e72f22fb95a683e007c binary 15c45dfdb30f2b4b0e07c988fe73d9cee8a72d46424e97346022a51e107d8583, serve --context 65536 --parallel 4 --no-drafts
+2026-10-19_13:01:32   bench_openai exit 0: fibonacci-raw 132.21 [132.21, 132.42, 132.14]; gpu-chat-no-think 132.15 [132.15, 132.34, 132.14]; 
+2026-10-19_13:01:38 hold h1 pr38 decodeoff done, load 1792407666.558215691..1792407673.606930683
+2026-10-19_13:01:41 hold h1 pr38 prefill:2048 8192 32768 65536 start: commit 44c37c5f52b91806de323e72f22fb95a683e007c binary 15c45dfdb30f2b4b0e07c988fe73d9cee8a72d46424e97346022a51e107d8583, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_13:01:53   2048 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [0.395, 0.402, 0.403] cached [0, 0, 0] sha adafb7a418699dc9 all equal True == draft false True plain cached 0 
+2026-10-19_13:02:01   8192 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [1.733, 1.741, 1.745] cached [0, 0, 0] sha cd5ab82cd82267ff all equal True == draft false True plain cached 0 
+2026-10-19_13:02:39   32768 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [8.992, 9.062, 9.119] cached [0, 0, 0] sha 132876962ac928f3 all equal True == draft false True plain cached 0 
+2026-10-19_13:04:15   65536 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [23.697, 23.684, 23.65] cached [0, 0, 0] sha 60049d7f13388407 all equal True == draft false True plain cached 0 
+2026-10-19_13:04:21 hold h1 pr38 prefill:2048 8192 32768 65536 done, load 1792407701.732898423..1792407708.779429650
+2026-10-19_13:04:24 hold h2 pr44 decode start: commit b86e111b24d192e2bfdcdfb426c217c3b7be713a binary 17b02b5e1d23015ca7d7d90e62427e4e03e6c799882e77723198a3e6c401458d, serve --context 65536 --parallel 4
+2026-10-19_13:04:44   bench_openai exit 0: fibonacci-raw 246.04 [246.4, 245.91, 246.04]; gpu-chat-no-think 208.64 [208.06, 209.68, 208.64]; 
+2026-10-19_13:04:50 hold h2 pr44 decode done, load 1792407864.580408242..1792407871.630013901
+2026-10-19_13:04:53 hold h2 pr44 decodeoff start: commit b86e111b24d192e2bfdcdfb426c217c3b7be713a binary 17b02b5e1d23015ca7d7d90e62427e4e03e6c799882e77723198a3e6c401458d, serve --context 65536 --parallel 4 --no-drafts
+2026-10-19_13:05:17   bench_openai exit 0: fibonacci-raw 143.92 [144.2, 143.92, 143.65]; gpu-chat-no-think 143.25 [143.93, 143.24, 143.25]; 
+2026-10-19_13:05:23 hold h2 pr44 decodeoff done, load 1792407893.406606106..1792407900.454420444
+2026-10-19_13:05:27 hold h3 pr46 decode start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 286f49435358e478735d91d78e5abd485d825ec6cf2162ae63e8669b857e9f27, serve --context 65536 --parallel 4
+2026-10-19_13:05:46   bench_openai exit 0: fibonacci-raw 244.68 [237.16, 246.19, 244.68]; gpu-chat-no-think 204.18 [204.4, 204.18, 203.82]; 
+2026-10-19_13:05:53 hold h3 pr46 decode done, load 1792407927.268572153..1792407934.314901897
+2026-10-19_13:05:56 hold h3 pr46 decodeoff start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 286f49435358e478735d91d78e5abd485d825ec6cf2162ae63e8669b857e9f27, serve --context 65536 --parallel 4 --no-drafts
+2026-10-19_13:06:20   bench_openai exit 0: fibonacci-raw 145.98 [146.01, 145.98, 145.64]; gpu-chat-no-think 144.98 [145.24, 144.73, 144.98]; 
+2026-10-19_13:06:27 hold h3 pr46 decodeoff done, load 1792407956.335568358..1792407963.386149540
+2026-10-19_13:06:30 hold h3 pr46 prefill:2048 8192 32768 65536 start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 286f49435358e478735d91d78e5abd485d825ec6cf2162ae63e8669b857e9f27, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_13:06:45   2048 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [0.404, 0.414, 0.412] cached [0, 0, 0] sha adafb7a418699dc9 all equal True == draft false True plain cached 0 
+2026-10-19_13:06:53   8192 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [1.776, 1.789, 1.789] cached [0, 0, 0] sha cd5ab82cd82267ff all equal True == draft false True plain cached 0 
+2026-10-19_13:07:31   32768 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [9.276, 9.334, 9.317] cached [0, 0, 0] sha 132876962ac928f3 all equal True == draft false True plain cached 0 
+2026-10-19_13:09:07   65536 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [23.809, 23.724, 23.689] cached [0, 0, 0] sha 60049d7f13388407 all equal True == draft false True plain cached 0 
+2026-10-19_13:09:14 hold h3 pr46 prefill:2048 8192 32768 65536 done, load 1792407991.169948039..1792408000.228316946
+2026-10-19_13:09:17 hold h4 pr46 decode start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 286f49435358e478735d91d78e5abd485d825ec6cf2162ae63e8669b857e9f27, serve --context 65536 --parallel 4
+2026-10-19_13:09:39   bench_openai exit 0: fibonacci-raw 244.11 [244.11, 243.81, 244.35]; gpu-chat-no-think 206.94 [195.93, 207.38, 206.94]; 
+2026-10-19_13:09:45 hold h4 pr46 decode done, load 1792408157.440163362..1792408166.500837961
+2026-10-19_13:09:48 hold h4 pr46 decodeoff start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 286f49435358e478735d91d78e5abd485d825ec6cf2162ae63e8669b857e9f27, serve --context 65536 --parallel 4 --no-drafts
+2026-10-19_13:10:14   bench_openai exit 0: fibonacci-raw 145.87 [145.87, 145.69, 146.28]; gpu-chat-no-think 145.67 [145.99, 145.67, 145.55]; 
+2026-10-19_13:10:20 hold h4 pr46 decodeoff done, load 1792408188.412226083..1792408197.475264081
+2026-10-19_13:10:24 hold h4 pr46 prefill:2048 8192 32768 65536 start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 286f49435358e478735d91d78e5abd485d825ec6cf2162ae63e8669b857e9f27, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_13:10:38   2048 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [0.403, 0.413, 0.413] cached [0, 0, 0] sha adafb7a418699dc9 all equal True == draft false True plain cached 0 
+2026-10-19_13:10:46   8192 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [1.781, 1.791, 1.794] cached [0, 0, 0] sha cd5ab82cd82267ff all equal True == draft false True plain cached 0 
+2026-10-19_13:11:24   32768 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [9.282, 9.345, 9.332] cached [0, 0, 0] sha 132876962ac928f3 all equal True == draft false True plain cached 0 
+2026-10-19_13:13:01   65536 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [23.847, 23.817, 23.862] cached [0, 0, 0] sha 60049d7f13388407 all equal True == draft false True plain cached 0 
+2026-10-19_13:13:07 hold h4 pr46 prefill:2048 8192 32768 65536 done, load 1792408224.236671766..1792408233.304807758
+2026-10-19_13:13:11 hold h5 pr44 decode start: commit b86e111b24d192e2bfdcdfb426c217c3b7be713a binary 17b02b5e1d23015ca7d7d90e62427e4e03e6c799882e77723198a3e6c401458d, serve --context 65536 --parallel 4
+2026-10-19_13:13:33   bench_openai exit 0: fibonacci-raw 239.99 [236.82, 241.59, 239.99]; gpu-chat-no-think 203.24 [199.04, 203.48, 203.24]; 
+2026-10-19_13:13:40 hold h5 pr44 decode done, load 1792408391.246046651..1792408400.303825588
+2026-10-19_13:13:43 hold h5 pr44 decodeoff start: commit b86e111b24d192e2bfdcdfb426c217c3b7be713a binary 17b02b5e1d23015ca7d7d90e62427e4e03e6c799882e77723198a3e6c401458d, serve --context 65536 --parallel 4 --no-drafts
+2026-10-19_13:14:10   bench_openai exit 0: fibonacci-raw 142.09 [142.22, 142.09, 141.83]; gpu-chat-no-think 140.58 [141.09, 140.58, 140.35]; 
+2026-10-19_13:14:16 hold h5 pr44 decodeoff done, load 1792408423.382383181..1792408432.448176873
+2026-10-19_13:14:19 hold h6 pr38 decode start: commit 44c37c5f52b91806de323e72f22fb95a683e007c binary 15c45dfdb30f2b4b0e07c988fe73d9cee8a72d46424e97346022a51e107d8583, serve --context 65536 --parallel 4
+2026-10-19_13:14:43   bench_openai exit 0: fibonacci-raw 201.72 [208.44, 201.72, 198.1]; gpu-chat-no-think 172.13 [172.27, 168.04, 172.13]; 
+2026-10-19_13:14:49 hold h6 pr38 decode done, load 1792408460.015524749..1792408469.077104271
+2026-10-19_13:14:52 hold h6 pr38 decodeoff start: commit 44c37c5f52b91806de323e72f22fb95a683e007c binary 15c45dfdb30f2b4b0e07c988fe73d9cee8a72d46424e97346022a51e107d8583, serve --context 65536 --parallel 4 --no-drafts
+2026-10-19_13:15:21   bench_openai exit 0: fibonacci-raw 126.91 [127.03, 126.87, 126.91]; gpu-chat-no-think 126.49 [126.78, 126.39, 126.49]; 
+2026-10-19_13:15:27 hold h6 pr38 decodeoff done, load 1792408493.087481823..1792408502.151741829
+2026-10-19_13:15:30 hold h6 pr38 prefill:2048 8192 32768 65536 start: commit 44c37c5f52b91806de323e72f22fb95a683e007c binary 15c45dfdb30f2b4b0e07c988fe73d9cee8a72d46424e97346022a51e107d8583, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_13:15:45   2048 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [0.41, 0.417, 0.42] cached [0, 0, 0] sha adafb7a418699dc9 all equal True == draft false True plain cached 0 
+2026-10-19_13:15:53   8192 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [1.814, 1.822, 1.831] cached [0, 0, 0] sha cd5ab82cd82267ff all equal True == draft false True plain cached 0 
+2026-10-19_13:16:32   32768 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [9.442, 9.483, 9.45] cached [0, 0, 0] sha 132876962ac928f3 all equal True == draft false True plain cached 0 
+2026-10-19_13:18:10   65536 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [24.063, 24.061, 24.119] cached [0, 0, 0] sha 60049d7f13388407 all equal True == draft false True plain cached 0 
+2026-10-19_13:18:16 hold h6 pr38 prefill:2048 8192 32768 65536 done, load 1792408531.054158486..1792408540.116085590

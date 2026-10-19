@@ -1,0 +1,58 @@
+{
+ "source_commit": "82e68433d0d8647e3ca5a0d48f82f5ffc01397ed",
+ "binary_sha256": "36b84ba7ee88d758fd196637eec5029b799a77001aa1ce0464dbb8622c812a3f",
+ "test_tool_sha256": "3223bcffec3f60bfee76720a85625a6f0105ff445f2d57639ee675eb4029024a",
+ "rig": "v620-tp2",
+ "hold": "h4",
+ "tree": "pr46",
+ "mode": "decode",
+ "server_args": "serve <checkpoint> --name m --port <port> --context 65536 --parallel 4 --tp 2 --rank <r> --master 127.0.0.1 --master-port <port>",
+ "librccl_mapped": [
+  "librccl.so.1.0"
+ ],
+ "server_start_epoch": 1792391718.3350155,
+ "server_healthy_epoch": 1792391725.37774,
+ "load_to_health_s": 7.04,
+ "work_done_epoch": 1792391739.5644212,
+ "server_stopped_epoch": 1792391745.211034,
+ "vram_before_start": {
+  "card6": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "17752064"
+  },
+  "card7": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "17752064"
+  }
+ },
+ "vram_after_health": {
+  "card6": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "31716352000"
+  },
+  "card7": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "26034626560"
+  }
+ },
+ "vram_after_work": {
+  "card6": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "31781318656"
+  },
+  "card7": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "26099593216"
+  }
+ },
+ "vram_after_stop": {
+  "card6": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "17416192"
+  },
+  "card7": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "17416192"
+  }
+ }
+}

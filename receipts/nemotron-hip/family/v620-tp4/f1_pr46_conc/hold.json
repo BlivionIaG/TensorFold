@@ -1,0 +1,90 @@
+{
+ "source_commit": "82e68433d0d8647e3ca5a0d48f82f5ffc01397ed",
+ "binary_sha256": "36b84ba7ee88d758fd196637eec5029b799a77001aa1ce0464dbb8622c812a3f",
+ "test_tool_sha256": "3223bcffec3f60bfee76720a85625a6f0105ff445f2d57639ee675eb4029024a",
+ "rig": "v620-tp4",
+ "hold": "f1",
+ "tree": "pr46",
+ "mode": "conc",
+ "server_args": "serve <checkpoint> --name m --port <port> --context 65536 --parallel 4 --tp 4 --rank <r> --master 127.0.0.1 --master-port <port>",
+ "librccl_mapped": [
+  "librccl.so.1.0"
+ ],
+ "server_start_epoch": 1792420139.3635557,
+ "server_healthy_epoch": 1792420148.4254746,
+ "load_to_health_s": 9.06,
+ "work_done_epoch": 1792420182.601311,
+ "server_stopped_epoch": 1792420188.837728,
+ "vram_before_start": {
+  "card4": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21327872"
+  },
+  "card5": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21327872"
+  },
+  "card6": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21327872"
+  },
+  "card7": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21327872"
+  }
+ },
+ "vram_after_health": {
+  "card4": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "31853592576"
+  },
+  "card5": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "25018138624"
+  },
+  "card6": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "25018142720"
+  },
+  "card7": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "25005613056"
+  }
+ },
+ "vram_after_work": {
+  "card4": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "31985938432"
+  },
+  "card5": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "25149222912"
+  },
+  "card6": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "25149239296"
+  },
+  "card7": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "25136697344"
+  }
+ },
+ "vram_after_stop": {
+  "card4": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21479424"
+  },
+  "card5": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21479424"
+  },
+  "card6": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21479424"
+  },
+  "card7": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21479424"
+  }
+ }
+}

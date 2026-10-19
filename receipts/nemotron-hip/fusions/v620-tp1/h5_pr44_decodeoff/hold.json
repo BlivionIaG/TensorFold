@@ -1,0 +1,40 @@
+{
+ "source_commit": "b86e111b24d192e2bfdcdfb426c217c3b7be713a",
+ "binary_sha256": "88408c5ff6c93720aaa77556a501696e9860769b0721325a11653ffcc592d234",
+ "test_tool_sha256": "64ee8f8f52f046450c01e120ff48518620000a0020a285bbacae654de92ce731",
+ "rig": "v620-tp1",
+ "hold": "h5",
+ "tree": "pr44",
+ "mode": "decodeoff",
+ "server_args": "serve <checkpoint> --name m --port <port> --context 65536 --parallel 4 --no-drafts",
+ "librccl_mapped": [],
+ "server_start_epoch": 1792392264.7835598,
+ "server_healthy_epoch": 1792392268.8141804,
+ "load_to_health_s": 4.03,
+ "work_done_epoch": 1792392288.3418212,
+ "server_stopped_epoch": 1792392293.7725155,
+ "vram_before_start": {
+  "card5": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21135360"
+  }
+ },
+ "vram_after_health": {
+  "card5": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "31173025792"
+  }
+ },
+ "vram_after_work": {
+  "card5": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "31173693440"
+  }
+ },
+ "vram_after_stop": {
+  "card5": {
+   "VRAM Total Memory (B)": "32195477504",
+   "VRAM Total Used Memory (B)": "21135360"
+  }
+ }
+}

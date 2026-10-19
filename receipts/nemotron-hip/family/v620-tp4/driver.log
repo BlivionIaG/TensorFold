@@ -1,0 +1,13 @@
+2026-10-19_16:28:26 hold f1 pr46 decode start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 36b84ba7ee88d758fd196637eec5029b799a77001aa1ce0464dbb8622c812a3f, serve --context 65536 --parallel 4
+2026-10-19_16:28:49   bench_openai exit 0: fibonacci-raw 238.58 [231.67, 238.58, 238.64]; gpu-chat-no-think 177.48 [172.51, 177.48, 177.54]; 
+2026-10-19_16:28:56 hold f1 pr46 decode done, load 1792420106.328427264..1792420115.388354763
+2026-10-19_16:28:59 hold f1 pr46 conc start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 36b84ba7ee88d758fd196637eec5029b799a77001aa1ce0464dbb8622c812a3f, serve --context 65536 --parallel 4
+2026-10-19_16:29:42   bench_concurrent levels 1,4 exit 0: code n 1 agg 235.3 alone 3/0/0 serial 1/0/0; code n 4 agg 495.0 alone 12/0/0 serial 1/0/0; chat n 1 agg 175.2 alone 3/0/0 serial 1/0/0; chat n 4 agg 369.5 alone 12/0/0 serial 1/0/0; 
+2026-10-19_16:29:48 hold f1 pr46 conc done, load 1792420139.363555767..1792420148.425474567
+2026-10-19_16:29:51 hold f1 pr46 conc8 start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 36b84ba7ee88d758fd196637eec5029b799a77001aa1ce0464dbb8622c812a3f, serve --context 32768 --parallel 8
+2026-10-19_16:31:01   bench_concurrent levels 1,4,8 exit 0: code n 1 agg 239.6 alone 3/0/0 serial 1/0/0; code n 4 agg 487.4 alone 12/0/0 serial 1/0/0; code n 8 agg 506.8 alone 24/0/0 serial 1/0/0; chat n 1 agg 177.4 alone 3/0/0 serial 1/0/0; chat n 4 agg 369.2 alone 12/0/0 serial 1/0/0; chat n 8 agg 426.8 alone 24/0/0 serial 1/0/0; 
+2026-10-19_16:31:08 hold f1 pr46 conc8 done, load 1792420192.190966828..1792420201.247511321
+2026-10-19_16:31:11 hold f2 pr46 long:131072 262080 start: commit 82e68433d0d8647e3ca5a0d48f82f5ffc01397ed binary 36b84ba7ee88d758fd196637eec5029b799a77001aa1ce0464dbb8622c812a3f, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_16:35:33   131072 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [61.765, 61.995, 61.993] cached [0, 0, 0] sha cfdc90dbc1e14be9 all equal True == draft false True plain cached 0 
+2026-10-19_16:47:48   262080 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [182.962, 183.091, 183.269] cached [0, 0, 0] sha 3af710fa207e3012 all equal True == draft false True plain cached 0 
+2026-10-19_16:48:00 hold f2 pr46 long:131072 262080 done, load 1792420271.574927047..1792420280.633999153

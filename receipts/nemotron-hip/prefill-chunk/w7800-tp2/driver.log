@@ -1,0 +1,32 @@
+2026-10-19_13:41:20 hold h1 pr37 prefill:2048 8192 32768 65536 131072 262080 start: commit fc555ad4f1c4e92306c457e5a3a67180034e788f binary 4585afcf7d6050442f7ab31ef3306d7039be80afbb05539788542c12a303b68c, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_13:41:33   2048 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [0.637, 0.645, 0.649] cached [0, 0, 0] sha adafb7a418699dc9 all equal True == draft false True plain cached 0 
+2026-10-19_13:41:45   8192 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [2.73, 2.748, 2.757] cached [0, 0, 0] sha cd5ab82cd82267ff all equal True == draft false True plain cached 0 
+2026-10-19_13:42:39   32768 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [13.297, 13.334, 13.276] cached [0, 0, 0] sha 132876962ac928f3 all equal True == draft false True plain cached 0 
+2026-10-19_13:44:49   65536 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [32.112, 32.15, 32.141] cached [0, 0, 0] sha 60049d7f13388407 all equal True == draft false True plain cached 0 
+2026-10-19_13:50:40   131072 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [87.284, 87.332, 87.343] cached [0, 0, 0] sha cfdc90dbc1e14be9 all equal True == draft false True plain cached 0 
+2026-10-19_14:08:35   262080 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [268.033, 268.225, 267.955] cached [0, 0, 0] sha 3af710fa207e3012 all equal True == draft false True plain cached 0 
+2026-10-19_14:08:41 hold h1 pr37 prefill:2048 8192 32768 65536 131072 262080 done, load 1792410080.258401088..1792410087.305420327
+2026-10-19_14:08:44 hold h2 pr38 prefill:2048 8192 32768 65536 131072 262080 start: commit 44c37c5f52b91806de323e72f22fb95a683e007c binary 15c45dfdb30f2b4b0e07c988fe73d9cee8a72d46424e97346022a51e107d8583, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_14:08:56   2048 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [0.411, 0.417, 0.419] cached [0, 0, 0] sha adafb7a418699dc9 all equal True == draft false True plain cached 0 
+2026-10-19_14:09:04   8192 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [1.803, 1.815, 1.817] cached [0, 0, 0] sha cd5ab82cd82267ff all equal True == draft false True plain cached 0 
+2026-10-19_14:09:43   32768 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [9.389, 9.448, 9.435] cached [0, 0, 0] sha 132876962ac928f3 all equal True == draft false True plain cached 0 
+2026-10-19_14:11:21   65536 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [24.118, 24.094, 24.135] cached [0, 0, 0] sha 60049d7f13388407 all equal True == draft false True plain cached 0 
+2026-10-19_14:16:03   131072 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [69.951, 69.927, 69.915] cached [0, 0, 0] sha cfdc90dbc1e14be9 all equal True == draft false True plain cached 0 
+2026-10-19_14:31:24   262080 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [228.97, 228.964, 229.934] cached [0, 0, 0] sha 3af710fa207e3012 all equal True == draft false True plain cached 0 
+2026-10-19_14:31:30 hold h2 pr38 prefill:2048 8192 32768 65536 131072 262080 done, load 1792411724.485817822..1792411731.534560865
+2026-10-19_14:31:33 hold h3 pr38 prefill:2048 8192 32768 65536 131072 262080 start: commit 44c37c5f52b91806de323e72f22fb95a683e007c binary 15c45dfdb30f2b4b0e07c988fe73d9cee8a72d46424e97346022a51e107d8583, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_14:31:45   2048 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [0.407, 0.416, 0.416] cached [0, 0, 0] sha adafb7a418699dc9 all equal True == draft false True plain cached 0 
+2026-10-19_14:31:53   8192 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [1.798, 1.807, 1.809] cached [0, 0, 0] sha cd5ab82cd82267ff all equal True == draft false True plain cached 0 
+2026-10-19_14:32:32   32768 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [9.356, 9.421, 9.411] cached [0, 0, 0] sha 132876962ac928f3 all equal True == draft false True plain cached 0 
+2026-10-19_14:34:10   65536 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [24.086, 24.106, 24.154] cached [0, 0, 0] sha 60049d7f13388407 all equal True == draft false True plain cached 0 
+2026-10-19_14:38:52   131072 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [70.057, 69.973, 70.109] cached [0, 0, 0] sha cfdc90dbc1e14be9 all equal True == draft false True plain cached 0 
+2026-10-19_14:54:17   262080 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [228.976, 230.606, 230.979] cached [0, 0, 0] sha 3af710fa207e3012 all equal True == draft false True plain cached 0 
+2026-10-19_14:54:23 hold h3 pr38 prefill:2048 8192 32768 65536 131072 262080 done, load 1792413093.494016877..1792413100.541364811
+2026-10-19_14:54:26 hold h4 pr37 prefill:2048 8192 32768 65536 131072 262080 start: commit fc555ad4f1c4e92306c457e5a3a67180034e788f binary 4585afcf7d6050442f7ab31ef3306d7039be80afbb05539788542c12a303b68c, serve --context 262144 --parallel 1 --prompt-cache-gib 0
+2026-10-19_14:54:39   2048 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [0.64, 0.648, 0.651] cached [0, 0, 0] sha adafb7a418699dc9 all equal True == draft false True plain cached 0 
+2026-10-19_14:54:51   8192 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [2.742, 2.758, 2.766] cached [0, 0, 0] sha cd5ab82cd82267ff all equal True == draft false True plain cached 0 
+2026-10-19_14:55:45   32768 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [13.325, 13.322, 13.268] cached [0, 0, 0] sha 132876962ac928f3 all equal True == draft false True plain cached 0 
+2026-10-19_14:57:55   65536 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [32.127, 32.134, 32.208] cached [0, 0, 0] sha 60049d7f13388407 all equal True == draft false True plain cached 0 
+2026-10-19_15:03:47   131072 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [87.235, 87.372, 87.351] cached [0, 0, 0] sha cfdc90dbc1e14be9 all equal True == draft false True plain cached 0 
+2026-10-19_15:21:42   262080 cold exit 0 plain exit 0: qualified True fixture==ids True ttft [268.321, 268.299, 268.159] cached [0, 0, 0] sha 3af710fa207e3012 all equal True == draft false True plain cached 0 
+2026-10-19_15:21:48 hold h4 pr37 prefill:2048 8192 32768 65536 131072 262080 done, load 1792414466.301336347..1792414473.346678793

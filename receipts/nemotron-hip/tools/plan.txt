@@ -1,0 +1,24 @@
+fusions h1 pr38 decode
+fusions h1 pr38 decodeoff
+fusions h1 pr38 prefill:2048 8192 32768 65536
+fusions h2 pr44 decode
+fusions h2 pr44 decodeoff
+fusions h3 pr46 decode
+fusions h3 pr46 decodeoff
+fusions h3 pr46 prefill:2048 8192 32768 65536
+fusions h4 pr46 decode
+fusions h4 pr46 decodeoff
+fusions h4 pr46 prefill:2048 8192 32768 65536
+fusions h5 pr44 decode
+fusions h5 pr44 decodeoff
+fusions h6 pr38 decode
+fusions h6 pr38 decodeoff
+fusions h6 pr38 prefill:2048 8192 32768 65536
+family f1 pr46 decode
+family f1 pr46 conc
+family f1 pr46 conc8
+family f2 pr46 long:131072 262080
+prefill-chunk h1 pr37 prefill:2048 8192 32768 65536 131072 262080
+prefill-chunk h2 pr38 prefill:2048 8192 32768 65536 131072 262080
+prefill-chunk h3 pr38 prefill:2048 8192 32768 65536 131072 262080
+prefill-chunk h4 pr37 prefill:2048 8192 32768 65536 131072 262080

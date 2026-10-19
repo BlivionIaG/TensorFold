@@ -1,0 +1,53 @@
+{
+ "samples": 161,
+ "seconds": 986,
+ "ranks_peak_vmhwm_gib": {
+  "rank 0": 6.6,
+  "rank 1": 5.31,
+  "rank 2": 5.31,
+  "rank 3": 5.29
+ },
+ "ranks_peak_vmrss_gib": {
+  "rank 0": 1.07,
+  "rank 1": 0.84,
+  "rank 2": 0.84,
+  "rank 3": 0.84
+ },
+ "vram_gib": {
+  "card4": {
+   "before_start": 0.02,
+   "after_health": 9.24,
+   "peak": 9.27,
+   "after_stop": 0.02,
+   "total": 30
+  },
+  "card5": {
+   "before_start": 0.02,
+   "after_health": 7.93,
+   "peak": 7.96,
+   "after_stop": 0.02,
+   "total": 30
+  },
+  "card6": {
+   "before_start": 0.02,
+   "after_health": 7.93,
+   "peak": 7.96,
+   "after_stop": 0.02,
+   "total": 30
+  },
+  "card7": {
+   "before_start": 0.02,
+   "after_health": 7.91,
+   "peak": 7.95,
+   "after_stop": 0.02,
+   "total": 30
+  }
+ },
+ "load_to_health_s": 9.06,
+ "startup": [
+  "[tensorfold] HIP gfx1030 device 0, rank 0 of 4: Nemotron-H model 5.26 GiB, MTP head loaded; 1 stream at once, 1.07 GiB each at a 262144-token window, of 21.60 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows",
+  "[tensorfold] HIP gfx1030 device 1, rank 1 of 4: Nemotron-H model 4.24 GiB, MTP head off; 1 stream at once, 1.07 GiB each at a 262144-token window, of 22.61 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows",
+  "[tensorfold] HIP gfx1030 device 2, rank 2 of 4: Nemotron-H model 4.24 GiB, MTP head off; 1 stream at once, 1.07 GiB each at a 262144-token window, of 22.61 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows",
+  "[tensorfold] HIP gfx1030 device 3, rank 3 of 4: Nemotron-H model 4.24 GiB, MTP head off; 1 stream at once, 1.07 GiB each at a 262144-token window, of 22.61 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows"
+ ]
+}

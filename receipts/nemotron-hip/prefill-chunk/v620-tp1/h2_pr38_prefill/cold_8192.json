@@ -1,0 +1,59 @@
+{
+  "source_commit": "44c37c5f52b91806de323e72f22fb95a683e007c",
+  "binary_sha256": "4202931c50611156a2ba558d37527459d79749da951eb7687e3e6bffbd0ffc48",
+  "rig": "v620-tp1",
+  "hold": "h2",
+  "tree": "pr38",
+  "ids_sha256": "921f521cd5803e29161e56c98b818c03dddf8dcbd1de6f076d57f9013825ade1",
+  "schema_version": 1,
+  "fixture_sha256": "921f521cd5803e29161e56c98b818c03dddf8dcbd1de6f076d57f9013825ade1",
+  "requested_reply_tokens": 16,
+  "temperature": 0,
+  "seed": 1234,
+  "rows": [
+    {
+      "phase": "first",
+      "prompt_tokens": 8192,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "5c418c36f5e1",
+      "token_sha256": "5c418c36f5e1f55d8d87b9169cedb6c9dafef11708ef752dc352d42344a9c4d6",
+      "output_sha256": "16d0bb75b539ce5fb6aff4f774e0c30d3310e192888f8c48d8520ac345159e02",
+      "ttft_s": 3.56581418299902,
+      "decode_tps": 90.41265093285033
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 8192,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "5c418c36f5e1",
+      "token_sha256": "5c418c36f5e1f55d8d87b9169cedb6c9dafef11708ef752dc352d42344a9c4d6",
+      "output_sha256": "16d0bb75b539ce5fb6aff4f774e0c30d3310e192888f8c48d8520ac345159e02",
+      "ttft_s": 3.569812906000152,
+      "decode_tps": 95.79342523383322,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 8192,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "5c418c36f5e1",
+      "token_sha256": "5c418c36f5e1f55d8d87b9169cedb6c9dafef11708ef752dc352d42344a9c4d6",
+      "output_sha256": "16d0bb75b539ce5fb6aff4f774e0c30d3310e192888f8c48d8520ac345159e02",
+      "ttft_s": 3.5721355699988635,
+      "decode_tps": 95.7358542086446,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    }
+  ],
+  "qualified": true
+}

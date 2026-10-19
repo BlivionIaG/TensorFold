@@ -1,0 +1,59 @@
+{
+  "source_commit": "fc555ad4f1c4e92306c457e5a3a67180034e788f",
+  "binary_sha256": "f396b11de3c4b95e6bb2c544316d1ba641aef7d6ee61993ea1b687836cf36080",
+  "rig": "v620-tp1",
+  "hold": "h1",
+  "tree": "pr37",
+  "ids_sha256": "6cd03c840e970559a354e5ddd8dfcf46248212cf6803d1056d9e931b702cddcb",
+  "schema_version": 1,
+  "fixture_sha256": "6cd03c840e970559a354e5ddd8dfcf46248212cf6803d1056d9e931b702cddcb",
+  "requested_reply_tokens": 16,
+  "temperature": 0,
+  "seed": 1234,
+  "rows": [
+    {
+      "phase": "first",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "c62de829e274",
+      "token_sha256": "c62de829e274093ed7c9766c90c7520f86457baf5f108a018436bbc3d1a59b3e",
+      "output_sha256": "7123e39a8a4d6ce8b1a47cca8b35f24f8a9c2e873731738d53ade74e9dec103f",
+      "ttft_s": 1.2697787459983374,
+      "decode_tps": 138.87685932282935
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "c62de829e274",
+      "token_sha256": "c62de829e274093ed7c9766c90c7520f86457baf5f108a018436bbc3d1a59b3e",
+      "output_sha256": "7123e39a8a4d6ce8b1a47cca8b35f24f8a9c2e873731738d53ade74e9dec103f",
+      "ttft_s": 1.2722105120010383,
+      "decode_tps": 136.3929087626881,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 2048,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "c62de829e274",
+      "token_sha256": "c62de829e274093ed7c9766c90c7520f86457baf5f108a018436bbc3d1a59b3e",
+      "output_sha256": "7123e39a8a4d6ce8b1a47cca8b35f24f8a9c2e873731738d53ade74e9dec103f",
+      "ttft_s": 1.2727852360003453,
+      "decode_tps": 142.3672260470158,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    }
+  ],
+  "qualified": true
+}

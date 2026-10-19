@@ -1,0 +1,33 @@
+{
+ "samples": 209,
+ "seconds": 1196,
+ "ranks_peak_vmhwm_gib": {
+  "rank 0": 10.61,
+  "rank 1": 9.35
+ },
+ "ranks_peak_vmrss_gib": {
+  "rank 0": 1.11,
+  "rank 1": 0.92
+ },
+ "vram_gib": {
+  "card9": {
+   "before_start": 0.03,
+   "after_health": 13.38,
+   "peak": 13.41,
+   "after_stop": 0.03,
+   "total": 45
+  },
+  "card8": {
+   "before_start": 0.03,
+   "after_health": 12.05,
+   "peak": 12.08,
+   "after_stop": 0.03,
+   "total": 45
+  }
+ },
+ "load_to_health_s": 7.05,
+ "startup": [
+  "[tensorfold] HIP gfx1100 device 0, rank 0 of 2: Nemotron-H model 9.28 GiB, MTP head loaded; 1 stream at once, 1.14 GiB each at a 262144-token window, of 32.15 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows",
+  "[tensorfold] HIP gfx1100 device 1, rank 1 of 2: Nemotron-H model 8.27 GiB, MTP head off; 1 stream at once, 1.14 GiB each at a 262144-token window, of 33.17 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows"
+ ]
+}

@@ -1,0 +1,25 @@
+{
+  "source_commit": "44c37c5f52b91806de323e72f22fb95a683e007c",
+  "binary_sha256": "4202931c50611156a2ba558d37527459d79749da951eb7687e3e6bffbd0ffc48",
+  "rig": "v620-tp4",
+  "hold": "h1",
+  "tree": "pr38",
+  "draft": false,
+  "ids_sha256": "2737dee209b232f542b0e327e5a15d4fc346cdc87479aa05170170eae65a3750",
+  "requested_reply_tokens": 16,
+  "temperature": 0,
+  "seed": 1234,
+  "row": {
+    "prompt_tokens": 65536,
+    "cached_tokens": 0,
+    "tokens": 16,
+    "cache_state": "cold",
+    "complete": true,
+    "token_sha": "60049d7f1338",
+    "token_sha256": "60049d7f13388407e02df910163b45ef71728f4bfdbf1382f5a11ca81af2561b",
+    "output_sha256": "e8e5f3fe40b5545a2142da0e2bbd884bdd26b88048a65d34a757c50658b198ac",
+    "ttft_s": 23.661026055000548,
+    "decode_tps": 75.26743498029317,
+    "error": null
+  }
+}

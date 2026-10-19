@@ -1,0 +1,2 @@
+[tensorfold] HIP rank 2 of 4: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots (rank 0's) 
+[tensorfold] HIP gfx1030 device 2, rank 2 of 4: Nemotron-H model 4.24 GiB, MTP head off; 1 stream at once, 1.07 GiB each at a 262144-token window, of 22.61 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows
