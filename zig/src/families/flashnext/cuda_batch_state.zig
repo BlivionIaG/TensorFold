@@ -445,6 +445,8 @@ pub const SeqState = struct {
     cap: usize,
     /// Block scores for an attention block's rows [min(rows, att_rows), scoreStride(cap)] fp32 (the engine's).
     scores: u64,
+    /// The K/V paged to host memory with a device block cache (cuda_exl3_kvpage.zig), else kc/vc hold it all.
+    paged: ?*@import("cuda_exl3_kvpage.zig").Paged = null,
 };
 
 /// The block scores' row stride for a cache of `cap` tokens: its blocks rounded up to 16 (the captured _scores').

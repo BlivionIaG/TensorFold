@@ -6,6 +6,7 @@ pub const load = @import("cuda_exl3_load.zig");
 pub const pass = @import("cuda_exl3_pass.zig");
 pub const tp = @import("cuda_exl3_tp.zig");
 pub const kv = @import("cuda_exl3_kv.zig");
+pub const kvpage = @import("cuda_exl3_kvpage.zig");
 pub const prefill_k = @import("cuda_exl3_prefill_k.zig");
 pub const prefill = @import("cuda_exl3_prefill.zig");
 /// The upstream modules an EXL3 check drives (tf-cuda-test flashnext-exl3): the store, loaders and the batched pass.
@@ -22,6 +23,7 @@ test {
     _ = pass;
     _ = tp;
     _ = kv;
+    _ = kvpage;
     _ = prefill_k;
     _ = prefill;
     _ = @import("cuda_exl3_prefill_ring.zig");

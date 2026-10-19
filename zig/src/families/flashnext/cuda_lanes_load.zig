@@ -72,7 +72,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     own.lanes = .empty;
     own.next = 0;
     @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
-    var stream_bytes = prompt.seqBytes(window);
+    var stream_bytes = @import("cuda_exl3_kvpage.zig").streamBytes(prompt.seqBytes(window), window); // ours: paged K/V
     if (own.head) |h| {
         stream_bytes += mtp.Draft.bytes(window, h.ids.len, @import("cuda_exl3_prefill.zig").draftRows(own.engine));
     } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(window, 1, own.engine.chunk);

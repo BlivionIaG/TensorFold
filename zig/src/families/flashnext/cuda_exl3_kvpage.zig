@@ -1,0 +1,520 @@
+//! Dynamic KV paging for long contexts (docs/plans/exl3-kv-paging.md): a sequence's full K/V of the 12 attention
+//! layers in pinned host memory, the card holding a recent dense window and an LRU-like cache of the 4-key blocks
+//! the sparse indexer selects. Upstream's attention kernels are unchanged: they read K/V through the rows' key lists,
+//! so the paged path rewrites each list into positions of one compact device buffer [window | block slots].
+//!
+//! Also the selection trace (TF_FLASHNEXT_KVPAGE_TRACE): every attention row's selected blocks, recorded after
+//! fn_qsa_select, for the offline cache replay (tools/exl3_kvpage_replay.py).
+//!
+//! The hook in the pass is one line at the top of cuda_batch.zig attnRows (`takes` / `attnRows` here).
+
+const std = @import("std");
+const cuda = @import("cuda");
+const wt = @import("cuda_prompt_wt.zig");
+const parts = @import("cuda_batch_state.zig");
+
+const head_dim = wt.head_dim;
+const kv_heads = wt.kv_heads;
+const ratio = wt.index_ratio;
+const top = wt.index_top;
+const idw = wt.index_idw;
+const att_rows = parts.att_rows;
+/// One token's K (or V) in one attention layer: [2][256] bf16.
+pub const row_bytes: usize = kv_heads * head_dim * 2;
+
+fn cdiv(a: usize, b: usize) usize {
+    return (a + b - 1) / b;
+}
+
+fn cint(v: usize) c_int {
+    return @intCast(v);
+}
+
+// -- the selection trace --------------------------------------------------------------------------------------------
+
+/// Records: u32 layer (attention index), u32 first position, u32 rows, u32 kind (0 prompt, 1 decode round); then a
+/// row each: u16 count (0: the row is dense, else 512) and that many u16 block ids (block = key / 4), in block order.
+pub const Trace = struct {
+    gpa: std.mem.Allocator,
+    out: std.ArrayList(u8) = .empty,
+    /// Record prompt rows too (else only decode rounds).
+    prompt: bool = true,
+    rows: usize = 0,
+    ids: []i32 = &.{},
+    nk: []i32 = &.{},
+    sp: []i32 = &.{},
+
+    pub fn init(gpa: std.mem.Allocator, prompt: bool) !Trace {
+        return .{ .gpa = gpa, .prompt = prompt, .ids = try gpa.alloc(i32, att_rows * idw), .nk = try gpa.alloc(i32, att_rows), .sp = try gpa.alloc(i32, att_rows) };
+    }
+
+    pub fn deinit(t: *Trace) void {
+        t.out.deinit(t.gpa);
+        t.gpa.free(t.ids);
+        t.gpa.free(t.nk);
+        t.gpa.free(t.sp);
+    }
+
+    fn word(t: *Trace, v: u32) !void {
+        try t.out.appendSlice(t.gpa, std.mem.asBytes(&v));
+    }
+
+    /// The `m` rows at `pos` the select kernel just listed in s.qids / qnk / qspr (one sync and three small copies).
+    fn record(t: *Trace, stream: cuda.Stream, ai: usize, pos: usize, m: usize, decode: bool, qids: u64, qnk: u64, qspr: u64) !void {
+        if (!decode and !t.prompt) return;
+        try stream.synchronize();
+        const d = stream.d;
+        try d.check(d.api.cuMemcpyDtoH_v2(t.ids.ptr, qids, m * idw * 4), "cuMemcpyDtoH");
+        try d.check(d.api.cuMemcpyDtoH_v2(t.nk.ptr, qnk, m * 4), "cuMemcpyDtoH");
+        try d.check(d.api.cuMemcpyDtoH_v2(t.sp.ptr, qspr, m * 4), "cuMemcpyDtoH");
+        try t.word(@intCast(ai));
+        try t.word(@intCast(pos));
+        try t.word(@intCast(m));
+        try t.word(@intFromBool(decode));
+        for (0..m) |r| {
+            if (t.sp[r] == 0) {
+                try t.out.appendSlice(t.gpa, &[2]u8{ 0, 0 });
+                continue;
+            }
+            const cnt: u16 = @intCast(top);
+            try t.out.appendSlice(t.gpa, std.mem.asBytes(&cnt));
+            const row = t.ids[r * idw ..][0 .. top * ratio];
+            for (0..top) |j| {
+                const b: u16 = @intCast(@divTrunc(row[j * ratio], @as(i32, ratio)));
+                try t.out.appendSlice(t.gpa, std.mem.asBytes(&b));
+            }
+        }
+        t.rows += m;
+    }
+};
+
+/// The active trace, if any (a test sets it; the pass reads it).
+pub var trace: ?*Trace = null;
+
+// -- the pass hook --------------------------------------------------------------------------------------------------
+
+/// Whether attnRows runs here: a trace is on, or the sequence's K/V are paged.
+pub fn takes(seq: anytype) bool {
+    return trace != null or seq.paged != null;
+}
+
+/// cuda_batch.zig attnRows (rope, cache writes, pooling, then each 256-row block's scores, selection and attention)
+/// with the trace after each selection, or with the sequence's paged K/V. `at` is the pass's RowsAt.
+pub fn attnRows(p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype) !void {
+    if (p.seq.media != null) return error.KvPageMedia;
+    if (p.seq.paged) |pg| return pg.attnRows(p, lw, ai, pa, n, at);
+    const s = p.s;
+    const kc = p.seq.kc[ai].ptr;
+    const vc = p.seq.vc[ai].ptr;
+    const ikc = p.seq.ikc[ai].ptr;
+    const pooled = p.seq.pooled[ai].ptr;
+    try p.tri.attnPrep(pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kc, vc, at.iq, ikc, s.dummy, s.dummy, wt.eps, n, 0);
+    try p.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, wt.eps, n);
+    const nb = parts.scoreStride(p.seq.cap);
+    var r0: usize = 0;
+    var b: usize = 0;
+    while (r0 < n) : ({
+        r0 += att_rows;
+        b += 1;
+    }) {
+        const m = @min(att_rows, n - r0);
+        const ends = p.pos0 + r0 + m;
+        if (ends > p.seq.cap) return error.UnexpectedTensor;
+        const pos = at.pos + b * 16;
+        try select(p, at.iq + r0 * wt.index_heads * wt.index_dim * 2, pooled, pos, nb, m, ends);
+        if (trace) |t| try t.record(p.stream, ai, p.pos0 + r0, m, p.lanes.len > 0, s.qids, s.qnk, s.qspr);
+        const chunks = cdiv(@min(ends, wt.dense_keys), 512);
+        try p.tri.attnChunks(at.q + r0 * wt.q_heads * head_dim * 2, kc, vc, pos, s.po, s.pm, s.pl, s.qids, s.qnk, s.qspr, m, kv_heads, chunks, true);
+        try p.tri.attnMerge(s.po, s.pm, s.pl, pos, at.ao + r0 * wt.out_k * 2, s.qnk, s.qspr, m, kv_heads, true);
+    }
+}
+
+/// Block scores (rows past `top` complete blocks) and fn_qsa_select into s.qids / qnk / qspr, as upstream.
+pub fn select(p: anytype, iq: u64, pooled: u64, pos: u64, nb: usize, m: usize, ends: usize) !void {
+    const s = p.s;
+    if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)));
+    var a: cuda.Args = .{};
+    a.add(p.seq.scores);
+    a.add(pos);
+    a.add(s.qids);
+    a.add(s.qnk);
+    a.add(s.qspr);
+    for ([_]usize{ nb, idw, top, ratio }) |v| a.add(cint(v));
+    try cuda.launch.launch(p.k.select, .{ .grid = .{ .x = @intCast(m) }, .block = .{ .x = 1024 } }, p.stream, &a);
+}
+
+// -- the paged store ------------------------------------------------------------------------------------------------
+
+/// Shape of a paged sequence's device side (TF_FLASHNEXT_KVPAGE=1 turns it on for every new sequence; the sizes
+/// from TF_FLASHNEXT_KVPAGE_WINDOW / _SLOTS / _ROWS).
+pub const Config = struct {
+    /// Tokens kept dense on the card before a call's first row (>= 2051, so a dense row's keys are all in it).
+    window: usize = 4096,
+    /// 4-key block slots, one pool for the 12 layers (the prompt's layer-major order gives one layer all of it).
+    slots: usize = 49152,
+    /// The most rows one attention call writes (the engine's chunk / a deep prefill's sub-block).
+    rows: usize = 1536,
+};
+
+/// A test's override of the environment (null: read it).
+pub var force: ?Config = null;
+pub var force_off: bool = false;
+
+fn envUsize(name: [*:0]const u8, default: usize) usize {
+    const v = std.c.getenv(name) orelse return default;
+    return std.fmt.parseInt(usize, std.mem.span(v), 10) catch default;
+}
+
+pub fn configFromEnv() ?Config {
+    if (force_off) return null;
+    if (force) |c| return c;
+    const v = std.c.getenv("TF_FLASHNEXT_KVPAGE") orelse return null;
+    if (!std.mem.eql(u8, std.mem.span(v), "1")) return null;
+    const d: Config = .{};
+    return .{ .window = envUsize("TF_FLASHNEXT_KVPAGE_WINDOW", d.window), .slots = envUsize("TF_FLASHNEXT_KVPAGE_SLOTS", d.slots), .rows = envUsize("TF_FLASHNEXT_KVPAGE_ROWS", d.rows) };
+}
+
+const Kern = struct {
+    module: cuda.Module,
+    plan: cuda.Function,
+    fetch: cuda.Function,
+    remap: cuda.Function,
+
+    fn load(d: *const cuda.Driver) !Kern {
+        if (!cuda.kernels.available) return error.BuiltWithoutKernels;
+        var k: Kern = undefined;
+        k.module = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_kvpage);
+        errdefer k.module.unload();
+        k.plan = try k.module.function("kvp_plan");
+        k.fetch = try k.module.function("kvp_fetch");
+        k.remap = try k.module.function("kvp_remap");
+        return k;
+    }
+};
+
+const attn_n = wt.attn_n;
+const ctl_n: usize = 8;
+const work_n: usize = att_rows * top;
+
+/// Counters of one layer (kvp_plan's ctl) plus the host's window moves.
+pub const Stats = struct {
+    misses: u64 = 0,
+    needed: u64 = 0,
+    calls: u64 = 0,
+    overflow: bool = false,
+    rebases: u64 = 0,
+    written_rows: u64 = 0,
+
+    pub fn add(a: *Stats, b: Stats) void {
+        a.misses += b.misses;
+        a.needed += b.needed;
+        a.calls += b.calls;
+        a.overflow = a.overflow or b.overflow;
+        a.rebases += b.rebases;
+        a.written_rows += b.written_rows;
+    }
+};
+
+/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256];
+/// on the card, for K and for V, [12 windows of wr rows | 4 * slots rows] [2][256] bf16 and the block tables.
+pub const Paged = struct {
+    gpa: std.mem.Allocator,
+    d: *const cuda.Driver,
+    k: Kern,
+    cfg: Config,
+    cap: usize,
+    /// Window rows: the kept window, one call's rows, and a block's slack.
+    wr: usize,
+    nblocks: usize,
+    host: cuda.HostBuffer,
+    host_dev: u64,
+    dev: cuda.DeviceBuffer,
+    /// blk2slot [12][nblocks] i32, mark [12][nblocks] u32, ctl [12][8] i32, slot2blk [slots] i32, stamp [slots] u32.
+    tabs: cuda.DeviceBuffer,
+    /// need, miss [att_rows * 512] i32 and fetch [2 * att_rows * 512] i32 (one call's, shared by the layers).
+    work: cuda.DeviceBuffer,
+    win0: [attn_n]usize = @splat(0),
+    rebases: [attn_n]u64 = @splat(0),
+    written: [attn_n]u64 = @splat(0),
+    epoch: u32 = 0,
+
+    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, cfg: Config) !*Paged {
+        if (cfg.window < wt.dense_keys or cfg.slots == 0 or cfg.rows == 0) return error.KvPageConfig;
+        const pg = try gpa.create(Paged);
+        errdefer gpa.destroy(pg);
+        const nblocks = cdiv(cap, ratio) + 1;
+        pg.* = .{ .gpa = gpa, .d = d, .k = undefined, .cfg = cfg, .cap = cap, .wr = cfg.window + cfg.rows + ratio, .nblocks = nblocks, .host = undefined, .host_dev = 0, .dev = undefined, .tabs = undefined, .work = undefined };
+        pg.k = try Kern.load(d);
+        errdefer pg.k.module.unload();
+        pg.host = try cuda.HostBuffer.allocMapped(d, attn_n * 2 * cap * row_bytes);
+        errdefer pg.host.free();
+        pg.host_dev = try pg.host.device();
+        pg.dev = try cuda.DeviceBuffer.alloc(d, pg.devBytes());
+        errdefer pg.dev.free();
+        pg.tabs = try cuda.DeviceBuffer.alloc(d, pg.tabWords() * 4);
+        errdefer pg.tabs.free();
+        pg.work = try cuda.DeviceBuffer.alloc(d, work_n * 4 * 4);
+        errdefer pg.work.free();
+        try pg.dev.fill8(0, null);
+        try pg.tabs.fill8(0, null);
+        try pg.resetTables(null);
+        return pg;
+    }
+
+    pub fn destroy(pg: *Paged) void {
+        pg.work.free();
+        pg.tabs.free();
+        pg.dev.free();
+        pg.host.free();
+        pg.k.module.unload();
+        pg.gpa.destroy(pg);
+    }
+
+    /// Device bytes of the K/V side (windows and slots).
+    pub fn devBytes(pg: *const Paged) usize {
+        return 2 * pg.rowsDev() * row_bytes;
+    }
+
+    /// Device bytes in all: K/V side, tables and the call's work lists (deviceBytesFor, a host test checks).
+    pub fn deviceBytes(pg: *const Paged) usize {
+        return pg.devBytes() + pg.tabWords() * 4 + work_n * 4 * 4;
+    }
+
+    /// Rows of the K (or V) buffer: the 12 windows, then the slots.
+    fn rowsDev(pg: *const Paged) usize {
+        return attn_n * pg.wr + ratio * pg.cfg.slots;
+    }
+
+    fn tabWords(pg: *const Paged) usize {
+        return attn_n * (2 * pg.nblocks + ctl_n) + 2 * pg.cfg.slots;
+    }
+
+    /// Layer `ai`'s window base in the K buffer (its kernels index from here).
+    fn devK(pg: *const Paged, ai: usize) u64 {
+        return pg.dev.ptr + ai * pg.wr * row_bytes;
+    }
+
+    fn devV(pg: *const Paged, ai: usize) u64 {
+        return pg.dev.ptr + (pg.rowsDev() + ai * pg.wr) * row_bytes;
+    }
+
+    /// Rows from layer `ai`'s window base to the first slot.
+    fn slotBase(pg: *const Paged, ai: usize) usize {
+        return (attn_n - ai) * pg.wr;
+    }
+
+    fn hostK(pg: *const Paged, ai: usize) u64 {
+        return pg.host_dev + (2 * ai) * pg.cap * row_bytes;
+    }
+
+    fn hostV(pg: *const Paged, ai: usize) u64 {
+        return pg.host_dev + (2 * ai + 1) * pg.cap * row_bytes;
+    }
+
+    const Tab = struct { blk2slot: u64, mark: u64, ctl: u64, slot2blk: u64, stamp: u64, blk2slot_all: u64 };
+
+    fn tab(pg: *const Paged, ai: usize) Tab {
+        const base = pg.tabs.ptr;
+        const nb = pg.nblocks * 4;
+        const all = base;
+        const marks = base + attn_n * nb;
+        const ctls = marks + attn_n * nb;
+        const s2b = ctls + attn_n * ctl_n * 4;
+        return .{ .blk2slot = all + ai * nb, .mark = marks + ai * nb, .ctl = ctls + ai * ctl_n * 4, .slot2blk = s2b, .stamp = s2b + pg.cfg.slots * 4, .blk2slot_all = all };
+    }
+
+    fn memset32(pg: *const Paged, ptr: u64, value: u32, words: usize, stream: ?cuda.Stream) !void {
+        if (stream) |s| return pg.d.check(pg.d.api.cuMemsetD32Async(ptr, value, words, s.handle), "cuMemsetD32Async");
+        try pg.d.check(pg.d.api.cuMemsetD32_v2(ptr, value, words), "cuMemsetD32");
+    }
+
+    /// An empty cache: no block in a slot, every slot free, every window at 0 (the stats are kept).
+    fn resetTables(pg: *Paged, stream: ?cuda.Stream) !void {
+        const t = pg.tab(0);
+        try pg.memset32(t.blk2slot_all, 0xFFFF_FFFF, attn_n * pg.nblocks, stream);
+        try pg.memset32(t.slot2blk, 0xFFFF_FFFF, pg.cfg.slots, stream);
+        try pg.memset32(t.stamp, 0, pg.cfg.slots, stream);
+        pg.win0 = @splat(0);
+    }
+
+    fn copy(pg: *const Paged, stream: cuda.Stream, dst: u64, src: u64, n: usize) !void {
+        if (n == 0) return;
+        try pg.d.check(pg.d.api.cuMemcpyDtoDAsync_v2(dst, src, n, stream.handle), "cuMemcpyDtoDAsync");
+    }
+
+    /// Moves the window so rows [pos0, pos0 + n) fit: the rows that leave it are written out to host memory, the
+    /// last `window` tokens before pos0 move to the window's start (pieces no longer than the shift: no overlap).
+    fn rebase(pg: *Paged, ai: usize, pos0: usize, stream: cuda.Stream) !void {
+        const w0 = pg.win0[ai];
+        const new0 = (pos0 -| pg.cfg.window) / ratio * ratio;
+        if (new0 <= w0) return error.KvPageWindow;
+        const shift = new0 - w0;
+        for ([_][2]u64{ .{ pg.devK(ai), pg.hostK(ai) }, .{ pg.devV(ai), pg.hostV(ai) } }) |dh| {
+            try pg.copy(stream, dh[1] + w0 * row_bytes, dh[0], shift * row_bytes);
+            const len = pos0 - new0;
+            var at: usize = 0;
+            while (at < len) {
+                const piece = @min(shift, len - at);
+                try pg.copy(stream, dh[0] + at * row_bytes, dh[0] + (shift + at) * row_bytes, piece * row_bytes);
+                at += piece;
+            }
+        }
+        pg.win0[ai] = new0;
+        pg.rebases[ai] += 1;
+        pg.written[ai] += shift;
+    }
+
+    /// Every row the sequence holds written out to host memory (the window's rows too): host K/V then equal what an
+    /// all-on-device cache would hold, for a check or a snapshot.
+    pub fn flush(pg: *Paged, stream: cuda.Stream, fed: usize) !void {
+        for (0..attn_n) |ai| {
+            const w0 = pg.win0[ai];
+            if (fed <= w0) continue;
+            try pg.copy(stream, pg.hostK(ai) + w0 * row_bytes, pg.devK(ai), (fed - w0) * row_bytes);
+            try pg.copy(stream, pg.hostV(ai) + w0 * row_bytes, pg.devV(ai), (fed - w0) * row_bytes);
+        }
+    }
+
+    /// The host copy of layer `ai`'s K (v false) or V rows (after `flush`).
+    pub fn hostRows(pg: *const Paged, ai: usize, v: bool) []const u8 {
+        const off = (2 * ai + @intFromBool(v)) * pg.cap * row_bytes;
+        return pg.host.bytes[off..][0 .. pg.cap * row_bytes];
+    }
+
+    pub fn stats(pg: *const Paged, ai: usize) !Stats {
+        var c: [ctl_n]i32 = undefined;
+        try pg.d.check(pg.d.api.cuMemcpyDtoH_v2(&c, pg.tab(ai).ctl, ctl_n * 4), "cuMemcpyDtoH");
+        return .{ .misses = @intCast(c[3]), .needed = @intCast(c[4]), .calls = @intCast(c[5]), .overflow = c[2] != 0, .rebases = pg.rebases[ai], .written_rows = pg.written[ai] };
+    }
+
+    pub fn total(pg: *const Paged) !Stats {
+        var t: Stats = .{};
+        for (0..attn_n) |ai| t.add(try pg.stats(ai));
+        return t;
+    }
+
+    /// One call's paging after fn_qsa_select listed `m` rows' keys in qids / qnk / qspr: the plan (hits stamped, the
+    /// misses given the least recently used slots), the misses' rows fetched from host memory, the lists remapped.
+    pub fn page(pg: *Paged, stream: cuda.Stream, ai: usize, qids: u64, qnk: u64, qspr: u64, m: usize) !void {
+        const t = pg.tab(ai);
+        const w0 = pg.win0[ai];
+        pg.epoch += 1;
+        const need = pg.work.ptr;
+        const miss = need + work_n * 4;
+        const fetch = miss + work_n * 4;
+        var a: cuda.Args = .{};
+        for ([_]u64{ qids, qnk, qspr }) |v| a.add(v);
+        for ([_]usize{ m, idw, top, ratio, w0 }) |v| a.add(cint(v));
+        a.add(@as(c_uint, pg.epoch));
+        a.add(t.blk2slot);
+        a.add(t.blk2slot_all);
+        a.add(cint(ai * pg.nblocks));
+        for ([_]u64{ t.slot2blk, t.stamp, t.mark }) |v| a.add(v);
+        a.add(cint(pg.cfg.slots));
+        for ([_]u64{ t.ctl, need, miss, fetch }) |v| a.add(v);
+        try cuda.launch.launch(pg.k.plan, .{ .grid = .{ .x = 1 }, .block = .{ .x = 1024 } }, stream, &a);
+        var f: cuda.Args = .{};
+        for ([_]u64{ pg.hostK(ai), pg.hostV(ai), pg.devK(ai), pg.devV(ai), t.ctl, fetch }) |v| f.add(v);
+        for ([_]usize{ pg.slotBase(ai), row_bytes / 16, ratio }) |v| f.add(cint(v));
+        try cuda.launch.launch(pg.k.fetch, .{ .grid = .{ .x = 128 }, .block = .{ .x = 256 } }, stream, &f);
+        var r: cuda.Args = .{};
+        for ([_]u64{ qids, qnk, qspr }) |v| r.add(v);
+        for ([_]usize{ idw, w0, pg.slotBase(ai) }) |v| r.add(cint(v));
+        r.add(t.blk2slot);
+        r.add(cint(ratio));
+        try cuda.launch.launch(pg.k.remap, .{ .grid = .{ .x = @intCast(m) }, .block = .{ .x = 256 } }, stream, &r);
+    }
+
+    /// Test support: the window's start of layer `ai` set by hand (the rows before it then come from host memory).
+    pub fn setWindow(pg: *Paged, ai: usize, w0: usize) void {
+        pg.win0[ai] = w0;
+    }
+
+    /// Test support: the device K (v false) or V buffer from layer `ai`'s window base: rows [0, slotRows(ai)).
+    pub fn devRows(pg: *const Paged, ai: usize, v: bool) u64 {
+        return if (v) pg.devV(ai) else pg.devK(ai);
+    }
+
+    /// Test support: rows from layer `ai`'s window base to the end of the slots, and the first slot's row.
+    pub fn slotRows(pg: *const Paged, ai: usize) [2]usize {
+        return .{ pg.slotBase(ai) + ratio * pg.cfg.slots, pg.slotBase(ai) };
+    }
+
+    /// Test support: the host K/V of layer `ai` to write directly.
+    pub fn hostMut(pg: *Paged, ai: usize, v: bool) []u8 {
+        const off = (2 * ai + @intFromBool(v)) * pg.cap * row_bytes;
+        return pg.host.bytes[off..][0 .. pg.cap * row_bytes];
+    }
+
+    /// attnRows over the paged cache: prep writes the rows into the window (its base offset by -win0 rows), and
+    /// each 256-row block's key lists go through kvp_plan / kvp_fetch / kvp_remap before upstream's chunks and merge.
+    pub fn attnRows(pg: *Paged, p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype) !void {
+        const s = p.s;
+        const pos0 = p.pos0;
+        if (pos0 + n > pg.cap) return error.UnexpectedTensor;
+        if (n > pg.cfg.rows) return error.KvPageRows;
+        // a new sequence starts at layer 0, position 0 (the prompt runs layer-major: no other layer has a row yet)
+        if (pos0 == 0 and ai == 0) try pg.resetTables(p.stream);
+        if (pos0 < pg.win0[ai]) return error.KvPageRewind;
+        if (pos0 + n > pg.win0[ai] + pg.wr) try pg.rebase(ai, pos0, p.stream);
+        const w0 = pg.win0[ai];
+        const kd = pg.devK(ai);
+        const vd = pg.devV(ai);
+        const ikc = p.seq.ikc[ai].ptr;
+        const pooled = p.seq.pooled[ai].ptr;
+        try p.tri.attnPrep(pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kd -% w0 * row_bytes, vd -% w0 * row_bytes, at.iq, ikc, s.dummy, s.dummy, wt.eps, n, 0);
+        try p.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, wt.eps, n);
+        const nb = parts.scoreStride(p.seq.cap);
+        var r0: usize = 0;
+        var b: usize = 0;
+        while (r0 < n) : ({
+            r0 += att_rows;
+            b += 1;
+        }) {
+            const m = @min(att_rows, n - r0);
+            const ends = pos0 + r0 + m;
+            const pos = at.pos + b * 16;
+            try select(p, at.iq + r0 * wt.index_heads * wt.index_dim * 2, pooled, pos, nb, m, ends);
+            if (trace) |tr| try tr.record(p.stream, ai, pos0 + r0, m, p.lanes.len > 0, s.qids, s.qnk, s.qspr);
+            if (ends / ratio > top) {
+                try pg.page(p.stream, ai, s.qids, s.qnk, s.qspr, m);
+            } else if (w0 != 0) return error.KvPageWindow;
+            const chunks = cdiv(@min(ends, wt.dense_keys), 512);
+            try p.tri.attnChunks(at.q + r0 * wt.q_heads * head_dim * 2, kd, vd, pos, s.po, s.pm, s.pl, s.qids, s.qnk, s.qspr, m, kv_heads, chunks, true);
+            try p.tri.attnMerge(s.po, s.pm, s.pl, pos, at.ao + r0 * wt.out_k * 2, s.qnk, s.qspr, m, kv_heads, true);
+        }
+    }
+};
+
+/// Device bytes of a paged sequence's K/V side for `cap` tokens under `cfg` (windows, slots, tables, work lists).
+pub fn deviceBytesFor(cap: usize, cfg: Config) usize {
+    const wr = cfg.window + cfg.rows + ratio;
+    const nblocks = cdiv(cap, ratio) + 1;
+    return 2 * (attn_n * wr + ratio * cfg.slots) * row_bytes + (attn_n * (2 * nblocks + ctl_n) + 2 * cfg.slots) * 4 + work_n * 4 * 4;
+}
+
+/// A stream's device bytes (cuda_prompt.seqBytes: `dense`) with paging on: its K/V replaced by the paged side.
+pub fn streamBytes(dense: usize, cap: usize) usize {
+    const cfg = configFromEnv() orelse return dense;
+    return dense - attn_n * cap * 2 * row_bytes + deviceBytesFor(cap, cfg);
+}
+
+/// A new sequence's paged store when the environment (or a test) turns paging on, else null.
+pub fn forSeq(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, chunk: usize) !?*Paged {
+    var cfg = configFromEnv() orelse return null;
+    cfg.rows = @max(cfg.rows, chunk);
+    return try Paged.init(gpa, d, cap, cfg);
+}
+
+test "exl3: kvpage tables and device bytes" {
+    const cfg: Config = .{};
+    try std.testing.expect(cfg.window >= wt.dense_keys);
+    // 200k tokens: the device side of the default shape against upstream's K/V for the same sequence
+    const wr = cfg.window + cfg.rows + ratio;
+    const dev = 2 * (attn_n * wr + ratio * cfg.slots) * row_bytes;
+    const full = attn_n * 2 * 200_016 * row_bytes;
+    try std.testing.expect(dev * 8 < full);
+    try std.testing.expectEqual(@as(usize, 1024), row_bytes);
+    // 200k: the default shape's device side is about half a GiB (upstream's K/V: 4.58 GiB)
+    try std.testing.expect(deviceBytesFor(200_016, cfg) < 5 << 27);
+}
