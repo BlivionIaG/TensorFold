@@ -100,3 +100,52 @@ A prompt after the first: 144 DeltaNet layer replays and 48 attention-layer in-p
 - Graphs stay opt-in (`TF_FLASHNEXT_EXL3_GRAPH=1`); `TF_FLASHNEXT_EXL3_DPLAN=1` alone gives the same decode speed.
 - 200k contexts, int8 KV and 2+ concurrent streams in the server under graphs were not run (the engine test covers
   two streams in one round, bit-equal).
+
+## Making tp=2 decode faster (branch exl3-c-fast, base exl3-c-main 7988c6fa)
+
+Profile (nsys, `flashnext-exl3-graph prof`: cuProfilerStart/Stop over 16 graphed rounds of 1 row and 16 verify
+windows of 3 rows, both ranks, idle cards, ~99% hits), per round: rank 0 wall 20.2 ms (GPU busy 19.6), rank 1 19.6;
+EXL3 dense projections 6.1 (GDN in_proj q|k|v 2.2, z / attention 1.4, GDN out_proj 1.1, lm_head half 0.56),
+native bf16 lanes (HC down/up, mixer) 4.5, NCCL 3.5 on rank 0 vs 2.0 on rank 1 (60 all-reduces; rank 0 waits ~1.5 ms
+for rank 1's shared expert and extra misses), experts 2.9 / 3.3, HC glue 0.9, router/top-k 0.6, GDN 0.5, device
+plan 0.25, miss copies 0.24 / 0.74, attention 0.1. Serve profile with drafts on: the GPU idled about half the time;
+every kernel ran eagerly (verify windows rarely repeat a graph key) and each eager all-reduce cost ~294 us of host
+time (6801 cudaStreamWaitEvent calls = 2.0 s on rank 0 over one 128-token request).
+
+What helped (all bit-identical: same kernels on the same inputs):
+
+1. The n-gram rows a step gathers on the host (`Ngram.rows`, EXL3 table): inline instead of items/4 threads, and a
+   one-pass row unpack: 0.6-0.8 ms a token -> 0.05-0.13 ms (3-row window 2.35 -> 0.15-0.36 ms). It sat on the
+   critical path in both modes (graph: before launch; eager: joined at layer 1).
+2. `TF_FLASHNEXT_NCCL_BLOCKING=1`: a blocking NCCL communicator. Eager all-reduce 109 us -> 20.6 us (the captured
+   one is 20 us); `Collective.wait` also spins before its 50 us sleeps. Opt-in: a blocking init has no deadline if
+   the peer never joins.
+3. Multi-part EXL3 projections' parts on parallel streams (`cuda_exl3_fork.zig`, default on): GPU busy 19.6 -> 18.8
+   ms a round, within noise end to end.
+
+Serve gate at tp=2 (BENCH 128 tokens twice, ms/token; DRAFTED==UNDRAFTED and sha 2c5d814cfa80 in every run):
+
+| tree / config | drafts off | drafts on |
+|---|---|---|
+| 7988c6fa eager | 30.1 / 29.7 | 14.9 / 14.6 |
+| 7988c6fa `GRAPH=1` | 25.7 / 23.5 | 15.4 / 14.8 |
+| exl3-c-fast `GRAPH=1 NCCL_BLOCKING=1` | 23.7 / 21.4 | 12.9 / 12.0 |
+| exl3-c-fast `NCCL_BLOCKING=1` (eager) | 23.4 / 21.3 | 12.2 / 11.6 |
+
+With cheap eager collectives the step is GPU-bound and graphs no longer add speed (drafts on they lose a little to
+captures of keys that do not repeat).
+
+Tried, no gain or rejected:
+- upstream's EXL3 linear body re-instantiated at 2-4 programs an SM (128 registers, small spills): bit-equal,
+  19.67 -> 19.71 ms/token (the 1-row projection is bound by trellis decode and its serial k walk, not occupancy);
+- the device plan's held/miss overlap split (`TF_FLASHNEXT_EXL3_OVERLAP=1`): 22.3 -> 22.1 ms rounds, 29.4 -> 29.9 ms
+  windows; stays off;
+- resident MTP experts (`TF_FLASHNEXT_EXL3_MTP_RESIDENT=1`): costs rank 0 17 pool lines, no change;
+- `NCCL_PROTO=LL`: captured all-reduce 19.8 -> 11.4 us, serve drafts off 24.3/22.0 -> 23.8/21.1 ms, but tp=2 deep
+  prefill 1473 -> 1288 rows/s (-12%): not set by default (it is process-wide);
+- prefill layer graphs at tp=2: bit-equal, 1474 -> 1324 rows/s (lose the reduction overlap): now opt-in.
+
+What remains is kernel time: ~6 ms of 1-3-row EXL3 projections (decode-bound at ~190-290 GB/s), ~4.5 ms of bf16 HC
+lanes (already 290-390 GB/s of 448), ~3 ms of experts, ~2 ms of collectives, ~1.5 ms of rank-0 wait. Faster
+projection kernels with a different split or fewer HC bytes change the fp32 order (numerics) and would have to be
+default-off with logit diffs; the MTP head runs on rank 0 alone (rank 1 idle ~28% with drafts on).
