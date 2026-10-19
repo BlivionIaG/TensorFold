@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "curated_completed_proof_excerpts",
+  "source_binding_provenance": "Explicit operator bindings; a filename or run label does not prove source identity.",
+  "raw_logs_published": false,
+  "proofs": [
+    {
+      "id": "finite-gfx1100",
+      "file": "finite-gfx1100.json",
+      "packaged_sha256": "bd492acde39e5e06af096dcb0727b93bd734ef616c53821b1963e9b7d321d73b"
+    },
+    {
+      "id": "finite-gfx1030",
+      "file": "finite-gfx1030.json",
+      "packaged_sha256": "6cfb9e7d5bd6f428d737a1fd5636ec2fb125a7cc602957de434489c04c9dbb4c"
+    },
+    {
+      "id": "contract-pr41-gfx1100",
+      "file": "contract-pr41-gfx1100.json",
+      "packaged_sha256": "9f312d41f1143fc5dcc68aee762486a7a52f93f9d9f2593c087c1f0650ef2aac"
+    },
+    {
+      "id": "contract-pr41-gfx1030",
+      "file": "contract-pr41-gfx1030.json",
+      "packaged_sha256": "0b3d9b61703a98cad98c3f5da5ad3eea81248bddaae009145999b6e21339ea86"
+    },
+    {
+      "id": "contract-pr42-gfx1100",
+      "file": "contract-pr42-gfx1100.json",
+      "packaged_sha256": "12ac3296c99ab1e473b636d5de780ecc6a9aa9994e18cb71424f5341b6996b0f"
+    },
+    {
+      "id": "contract-pr42-gfx1030",
+      "file": "contract-pr42-gfx1030.json",
+      "packaged_sha256": "180df55f1d644762d4a9e7cb8b255dbd8a6a000597ccfde897ed86197249189a"
+    },
+    {
+      "id": "contract-pr43-gfx1100",
+      "file": "contract-pr43-gfx1100.json",
+      "packaged_sha256": "5bdf9f36545c0b6f210aeffe1fff3e3af5f5c60afc15bb728aadd5635d852b82"
+    },
+    {
+      "id": "contract-pr43-gfx1030",
+      "file": "contract-pr43-gfx1030.json",
+      "packaged_sha256": "c8ef8e07fc6d6b1ffaa94deb5090736dac3035a2b7ee8c2eb78bbe80c3da8ec8"
+    },
+    {
+      "id": "contract-pr45-gfx1100",
+      "file": "contract-pr45-gfx1100.json",
+      "packaged_sha256": "1c85ff40e4abadc867a3608a7a02f98ab7e13a6a6d135cdd7472617c8135b2b1"
+    },
+    {
+      "id": "contract-pr45-gfx1030",
+      "file": "contract-pr45-gfx1030.json",
+      "packaged_sha256": "3959cfe6f9fbbfae5d46a3b5ec4a0bee1b2b5e9030ca0408a00c4997e22801ae"
+    },
+    {
+      "id": "contract-pr46-gfx1100",
+      "file": "contract-pr46-gfx1100.json",
+      "packaged_sha256": "a37b449753f3779c630eb13b85c8e828ef87c522010b46a1b47fb4f48fe44a93"
+    },
+    {
+      "id": "contract-pr46-gfx1030",
+      "file": "contract-pr46-gfx1030.json",
+      "packaged_sha256": "1227e6757a2c01a4de1b387b3caf2b6afb832967fd5dacb29a6c181906607531"
+    },
+    {
+      "id": "negative-final6",
+      "file": "negative-final6.json",
+      "packaged_sha256": "d597781bbeb44352f544eff2a2642c1cb7750c0a780498afceaba82140206cbe"
+    },
+    {
+      "id": "mac-final6",
+      "file": "mac-final6.json",
+      "packaged_sha256": "f456925b86799d81ff0ec76e05a5405be06cfa5847356b3c1f54bc7f4764035f"
+    },
+    {
+      "id": "linux-pr41",
+      "file": "linux-pr41.json",
+      "packaged_sha256": "91e4eaa41d2e6d903a6e937d1e431b1aa3057eacf8c1da3626b491547df5a797"
+    },
+    {
+      "id": "linux-pr46",
+      "file": "linux-pr46.json",
+      "packaged_sha256": "4b579793491bc1504463073a85a21148f97c568ce6dba49f236e92ece6e98482"
+    },
+    {
+      "id": "limits-final6",
+      "file": "limits-final6.json",
+      "packaged_sha256": "0f630047907aad6d75e9be65432ae8ec4fd2de0b57bec3dcf732c1f98cfd3eb6"
+    },
+    {
+      "id": "shared-pr41",
+      "file": "shared-pr41.json",
+      "packaged_sha256": "4c79b54bb4eaead59d5ad56489ff1ae16ea46a1b9bc38a27bc7555a4e91bc4db"
+    },
+    {
+      "id": "shared-pr46",
+      "file": "shared-pr46.json",
+      "packaged_sha256": "3b592a4d7ef26790078b55eb537b50e92cc11c083caac0747bedc0f2aea22f1b"
+    },
+    {
+      "id": "nemotron-w7800",
+      "file": "nemotron-w7800.json",
+      "packaged_sha256": "077bd7a596affa7468c67d5b486cc66dd1c7e80403c1dfd9b9c8b7dac1397e2b"
+    },
+    {
+      "id": "nemotron-v620",
+      "file": "nemotron-v620.json",
+      "packaged_sha256": "ba5ae89cac2d23b5ed62db403ab5de1d80a13f9b2ec8f8637331050bcc35b7f3"
+    }
+  ],
+  "source_bridge_sha256": "d26b601eec2cc746dce15428cef55ed7f04ed5c69947dab8d2ec251987b9146c",
+  "bindings_sha256": "312ef95dac8722c92348524b33656fb8e23af5fd43e1f84fc225ee7a973f80e8",
+  "packager_sha256": "aba689eb5e20be1b06c758f2a195d1c3a74cc8e830978361b48255a70260842e",
+  "limitations": "Exact selected lines only. Unselected stages are not qualified. Cached counts remain executed counts; source bridges establish source differences, not binary identity or runtime reruns.",
+  "reproduction": {
+    "expression_source": {
+      "file": "reproduction/bitid.hip",
+      "sha256": "88127590176b66f297e22324e54e8968a902925edd52c5789b06594d85d0079c"
+    },
+    "header_dependency": {
+      "path": "zig/kernels/hip/ops/common.hpp",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548"
+    },
+    "compile_recipe": "hipcc -std=c++20 -D__HIP_PLATFORM_AMD__=1 -mno-wavefrontsize64 -ffp-contract=off -I CHECKOUT/zig/kernels/hip --offload-arch=gfx1100 --offload-arch=gfx1030 reproduction/bitid.hip -o bitid",
+    "run_recipe": "HIP_VISIBLE_DEVICES=DEVICE timeout -s KILL 900 ./bitid",
+    "recipe_scope": "Original runner flags with workstation paths normalized to CHECKOUT and DEVICE; this package does not rerun compilation.",
+    "mutation_source": {
+      "file": "reproduction/mutate_relu2.py",
+      "sha256": "90a294af0f7eee12b059a979c74ed76345680be3197b0de12c8b0ca469515686"
+    }
+  }
+}

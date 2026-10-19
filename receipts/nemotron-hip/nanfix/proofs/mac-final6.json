@@ -1,0 +1,31 @@
+{
+  "id": "mac-final6",
+  "kind": "mac",
+  "raw_log": "mac_8649e985.log",
+  "raw_sha256": "9f08fe78eeaa0daab42f77496028bc1f38b8d35a60cabcd796778a09f1a08590",
+  "proof_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "review_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "source_bridge_required": false,
+  "selected_lines": [
+    {
+      "raw_line": 1,
+      "text": "gate exit 0: Build Summary: 302/302 steps succeeded; 91/92 tests passed (1 skipped)"
+    },
+    {
+      "raw_line": 2,
+      "text": "test-kernel-contract fuzz-cortheon exit 0: Build Summary: 12/12 steps succeeded; 39/39 tests passed"
+    },
+    {
+      "raw_line": 3,
+      "text": "plain zig build exit 0"
+    },
+    {
+      "raw_line": 4,
+      "text": "test-golden success"
+    },
+    {
+      "raw_line": 7,
+      "text": "DONE"
+    }
+  ]
+}

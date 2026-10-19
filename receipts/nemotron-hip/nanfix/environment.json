@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "captured_during_run": "2026-10-19",
+  "os": "Fedora Linux 43 (Server Edition)",
+  "kernel": "7.1.7-100.p2p_post7.fc43.x86_64",
+  "hip": "7.14.60850-0000000",
+  "zig": "0.17.0",
+  "benchmark_client_python": "3.12.14",
+  "inference_server": "tensorfold-native, HIP backend",
+  "checkpoint": "TensorFold/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "checkpoint_provenance": "Same retained checkpoint directory and MTP head as the file-hash-verified historical family receipts in the parent README.",
+  "rccl": {
+    "version": "RDNA build 2.30.4",
+    "binary_sha256": "47044220951dccc5081a65417485da0669e8e6e8ebe7e431413706136183140a",
+    "qualification": "Current configured library hash rechecked during the A/B; tp2 uses the retained RDNA library configuration."
+  },
+  "rigs": [
+    {
+      "name": "V620tp1",
+      "gpus": 1,
+      "device": "Radeon PRO V620 32 GB",
+      "arch": "gfx1030"
+    },
+    {
+      "name": "W7800tp2",
+      "gpus": 2,
+      "device": "Radeon PRO W7800 48 GB",
+      "arch": "gfx1100"
+    }
+  ],
+  "server_settings": {
+    "common": [
+      "serve",
+      "CHECKPOINT",
+      "--name",
+      "m",
+      "--port",
+      "PORT",
+      "--context",
+      "65536"
+    ],
+    "decode": [
+      "--parallel",
+      "4"
+    ],
+    "decode_off_additional": [
+      "--no-drafts"
+    ],
+    "cold": [
+      "--parallel",
+      "1",
+      "--prompt-cache-gib",
+      "0"
+    ],
+    "tp2_additional": [
+      "--tp",
+      "2",
+      "--rank",
+      "RANK",
+      "--master",
+      "127.0.0.1",
+      "--master-port",
+      "MASTER_PORT"
+    ],
+    "otherwise": "defaults at the named source revision"
+  },
+  "run_boundaries": "Fresh server for each hold; whole process group stopped after the client; one model per GPU set. Other GPU sets shared the host; before/after order alternates."
+}

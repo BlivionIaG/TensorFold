@@ -1,0 +1,28 @@
+{
+  "id": "negative-final6",
+  "kind": "negative",
+  "raw_log": "resume_negative.out",
+  "raw_sha256": "87f288ca3c0679563f6dbc4ffbcadf5ca7696ae29a0550d3e11c16a1dcdfeb0e",
+  "proof_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "review_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "source_bridge_required": false,
+  "selected_lines": [
+    {
+      "raw_line": 1,
+      "text": "FAIL nonfinite hip affine_dot2_stream_relu2 (4-bit, bf16): non-finite output differs from the unfused kernels' bytes"
+    },
+    {
+      "raw_line": 2,
+      "text": "FAIL nonfinite hip affine_dot2_stream_relu2_pair (4-bit, bf16): pair class mismatch outside the shipped stream infinity finding"
+    },
+    {
+      "raw_line": 3,
+      "text": "SUMMARY gfx1100 32 kernels: 30 pass gates 1-4, 2 fail, 1 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 119848 ms, limits 623 ms"
+    },
+    {
+      "raw_line": 4,
+      "text": "NEGATIVE_PROOF_PASS exit=1"
+    }
+  ],
+  "mutation": "StreamRelu2 fmaxf-only"
+}

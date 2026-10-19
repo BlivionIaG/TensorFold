@@ -1,0 +1,71 @@
+{
+  "id": "contract-pr42-gfx1030",
+  "kind": "contract",
+  "raw_log": "kc_d42_gfx1030.log",
+  "raw_sha256": "4b1bd159d7ac0461096b008d83f0db0ebb619138c486da3a4a24379a56768b73",
+  "proof_source_commit": "9455857f00a8697d2811ea73b0ccf13dbdd58712",
+  "review_source_commit": "9455857f00a8697d2811ea73b0ccf13dbdd58712",
+  "source_bridge_required": false,
+  "selected_lines": [
+    {
+      "raw_line": 21,
+      "text": "FAIL nonfinite control: fmax row max: 1 of 8 outputs differ in class; first at 0: finite where float64 gives nan"
+    },
+    {
+      "raw_line": 22,
+      "text": "CONTROL control: fmax row max: red at nonfinite, as planted"
+    },
+    {
+      "raw_line": 23,
+      "text": "FAIL repeat control: atomic-add row sum: 4 of 4 repeats differ from the first run's bytes, first at byte 0"
+    },
+    {
+      "raw_line": 24,
+      "text": "CONTROL control: atomic-add row sum: red at repeat, as planted"
+    },
+    {
+      "raw_line": 25,
+      "text": "FAIL repeat control: row sum writing its input: 4 of 4 repeats differ from the first run's bytes, first at byte 0"
+    },
+    {
+      "raw_line": 26,
+      "text": "CONTROL control: row sum writing its input: red at repeat, as planted"
+    },
+    {
+      "raw_line": 27,
+      "text": "FAIL shapes control: row sum losing a tail input: at 8x1x1 output 0 is 0.000000e0 where float64 gives 8.398438e-1: 2396744.29 of its bound"
+    },
+    {
+      "raw_line": 28,
+      "text": "CONTROL control: row sum losing a tail input: red at shapes, as planted"
+    },
+    {
+      "raw_line": 29,
+      "text": "FAIL sums control: dot summed in half: 53477376.0x over its exact-sum bound at k 4096: not fp32 sums (fp16 would miss 53477376x, bf16 16777216x)"
+    },
+    {
+      "raw_line": 30,
+      "text": "CONTROL control: dot summed in half: red at sums, as planted"
+    },
+    {
+      "raw_line": 111,
+      "text": "FAIL nonfinite hip affine_dot2_stream (4-bit, fp32 out): 585 of 9280 outputs differ in class; first at 3712: nan where float64 gives neg_inf"
+    },
+    {
+      "raw_line": 112,
+      "text": "KNOWN nonfinite hip affine_dot2_stream (4-bit, fp32 out): shipped affine_dot2_stream: an infinite input becomes NaN"
+    },
+    {
+      "raw_line": 116,
+      "text": "INHERITED hip affine_dot2_stream_relu2 (4-bit, fp16): 594 shipped stream infinity mismatches"
+    },
+    {
+      "raw_line": 117,
+      "text": "PASS nonfinite hip affine_dot2_stream_relu2 (4-bit, fp16): the stated rule holds: the unfused bytes; only the shipped stream tile may turn an infinite sum into NaN"
+    },
+    {
+      "raw_line": 167,
+      "text": "SUMMARY gfx1030 28 kernels: 28 pass gates 1-4, 0 fail, 1 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 89084 ms, limits 246 ms"
+    }
+  ]
+}

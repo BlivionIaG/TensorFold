@@ -1,0 +1,63 @@
+{
+  "id": "nemotron-w7800",
+  "kind": "nemotron",
+  "raw_log": "nem_w7800final3.log",
+  "raw_sha256": "90d42f18657ad77f07c186ad613e35da9ce9bd8f05b3fc3b4a384c7cb6b3911d",
+  "proof_source_commit": "4bd16a188427b1768be13fc14a3f5d490414da87",
+  "review_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "source_bridge_required": true,
+  "selected_lines": [
+    {
+      "raw_line": 1,
+      "text": "22:28:31 dec_w7800tp2_d46 exit 0"
+    },
+    {
+      "raw_line": 2,
+      "text": "22:28:41 dec_w7800tp2_c46 exit 0"
+    },
+    {
+      "raw_line": 3,
+      "text": "22:28:41 decode w7800tp2 d46 == c46: IDENTICAL (117440512 bytes)"
+    },
+    {
+      "raw_line": 4,
+      "text": "22:28:48 teach_w7800tp2_chat_full_d46 exit 0"
+    },
+    {
+      "raw_line": 5,
+      "text": "22:28:56 teach_w7800tp2_chat_full_c46 exit 0"
+    },
+    {
+      "raw_line": 6,
+      "text": "22:28:56 teacher chat_full w7800tp2 d46 == c46: IDENTICAL (30932992 bytes)"
+    },
+    {
+      "raw_line": 7,
+      "text": "22:29:03 teach_w7800tp2_code_full_d46 exit 0"
+    },
+    {
+      "raw_line": 8,
+      "text": "22:29:11 teach_w7800tp2_code_full_c46 exit 0"
+    },
+    {
+      "raw_line": 9,
+      "text": "22:29:11 teacher code_full w7800tp2 d46 == c46: IDENTICAL (24641536 bytes)"
+    },
+    {
+      "raw_line": 10,
+      "text": "22:29:18 teach_w7800tp2_story_full_d46 exit 0"
+    },
+    {
+      "raw_line": 11,
+      "text": "22:29:26 teach_w7800tp2_story_full_c46 exit 0"
+    },
+    {
+      "raw_line": 12,
+      "text": "22:29:26 teacher story_full w7800tp2 d46 == c46: IDENTICAL (24641536 bytes)"
+    },
+    {
+      "raw_line": 13,
+      "text": "NEM_DONE"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+  "requested_reply_tokens": 16,
+  "temperature": 0,
+  "seed": 1234,
+  "rows": [
+    {
+      "phase": "first",
+      "prompt_tokens": 32768,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "05077566309d",
+      "token_sha256": "05077566309d40b067b484bf596782684c305327f91e5910d48bcae8e1d712d2",
+      "output_sha256": "87c24788d6abb7788a4bd0f9f3a469c07334372b7bedfd422569764153098e83",
+      "ttft_s": 17.360269855998922,
+      "decode_tps": 67.41321408211716
+    },
+    {
+      "phase": "repeated",
+      "prompt_tokens": 32768,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "05077566309d",
+      "token_sha256": "05077566309d40b067b484bf596782684c305327f91e5910d48bcae8e1d712d2",
+      "output_sha256": "87c24788d6abb7788a4bd0f9f3a469c07334372b7bedfd422569764153098e83",
+      "ttft_s": 17.473768129006203,
+      "decode_tps": 68.48653813776527,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    },
+    {
+      "phase": "concurrent",
+      "prompt_tokens": 32768,
+      "cached_tokens": 0,
+      "tokens": 16,
+      "cache_state": "cold",
+      "complete": true,
+      "token_sha": "05077566309d",
+      "token_sha256": "05077566309d40b067b484bf596782684c305327f91e5910d48bcae8e1d712d2",
+      "output_sha256": "87c24788d6abb7788a4bd0f9f3a469c07334372b7bedfd422569764153098e83",
+      "ttft_s": 17.52980719700281,
+      "decode_tps": 68.50413261590536,
+      "equal_first_tokens": true,
+      "equal_first_output": true
+    }
+  ],
+  "qualified": true,
+  "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+  "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+  "rig": "V620tp1",
+  "tree": "c46",
+  "condition": "cold_32768",
+  "hold_index": 0,
+  "raw_sha256": "c44d833944ed8e35d03bcdd4eb8ff3d7f28e8a4d202df691a0fe5718bd95f110",
+  "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+  "receipt_schema": "bench_cache_annotated_v1"
+}

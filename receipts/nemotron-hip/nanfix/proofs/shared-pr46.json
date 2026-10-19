@@ -1,0 +1,67 @@
+{
+  "id": "shared-pr46",
+  "kind": "shared",
+  "raw_log": "p_d46_production4bd/summary.log",
+  "raw_sha256": "ce10af608cda5d1536b39237e6cceeb6ad0415e2c454d9cebaccd85d3aa2dd8f",
+  "proof_source_commit": "4bd16a188427b1768be13fc14a3f5d490414da87",
+  "review_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "source_bridge_required": true,
+  "selected_lines": [
+    {
+      "raw_line": 4,
+      "text": "22:07:40 hip-kernel-test gfx1100 exit 0: Build Summary: 15/15 steps succeeded; 103/103 tests passed"
+    },
+    {
+      "raw_line": 5,
+      "text": "22:17:29 hip-kernel-test gfx1030 exit 0: Build Summary: 15/15 steps succeeded; 103/103 tests passed"
+    },
+    {
+      "raw_line": 7,
+      "text": "22:20:15 logits gfx1100 Qwen3.5-9B-MLX-4bit exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 8,
+      "text": "22:20:37 logits gfx1100 Qwen3.6-35B-A3B-MLX-4bit-MTP exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 9,
+      "text": "22:21:03 logits gfx1100 Qwen3.8-27B-MLX-4bit exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 10,
+      "text": "22:21:54 fn w7800: 2 of 2 runs all equal; hashes 6fbb0a3f895f7fa1 6fbb0a3f895f7fa1 6fbb0a3f895f7fa1 |hashes 6fbb0a3f895f7fa1 6fbb0a3f895f7fa1 6fbb0a3f895f7fa1 |"
+    },
+    {
+      "raw_line": 11,
+      "text": "HALF11_DONE"
+    },
+    {
+      "raw_line": 14,
+      "text": "22:27:51 logits gfx1030 Qwen3.5-9B-MLX-4bit exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 15,
+      "text": "22:28:14 logits gfx1030 Qwen3.6-35B-A3B-MLX-4bit-MTP exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 16,
+      "text": "22:28:44 logits gfx1030 Qwen3.8-27B-MLX-4bit exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 18,
+      "text": "HALF30_DONE"
+    },
+    {
+      "raw_line": 19,
+      "text": "22:30:18 v620_d46_on exit 0: hashes 349d29968cc98589 349d29968cc98589 349d29968cc98589 ; all equal to 349d29968cc98589: yes; info: graphs: 1 captured (46 ms each), 91 of 93 rounds replayed "
+    },
+    {
+      "raw_line": 20,
+      "text": "22:30:52 v620_d46_off exit 0: hashes 349d29968cc98589 349d29968cc98589 349d29968cc98589 ; all equal to 349d29968cc98589: yes; "
+    },
+    {
+      "raw_line": 21,
+      "text": "FN_DONE"
+    }
+  ]
+}

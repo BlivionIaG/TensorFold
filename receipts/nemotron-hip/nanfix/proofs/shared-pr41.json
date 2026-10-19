@@ -1,0 +1,63 @@
+{
+  "id": "shared-pr41",
+  "kind": "shared",
+  "raw_log": "p_d41/summary.log",
+  "raw_sha256": "c26786809ab40004c1ef3a75db85fe8e899f23b55b17b230f321297790d9f64d",
+  "proof_source_commit": "3a8fed4bdaab840095010c28f1d7681f0f784520",
+  "review_source_commit": "0c8ff6077d24a7f9aa610c87441aa50a9f55aa84",
+  "source_bridge_required": true,
+  "selected_lines": [
+    {
+      "raw_line": 3,
+      "text": "19:32:31 hip-kernel-test gfx1100 exit 0: Build Summary: 15/15 steps succeeded; 99/99 tests passed"
+    },
+    {
+      "raw_line": 5,
+      "text": "19:35:46 logits gfx1100 Qwen3.5-9B-MLX-4bit exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 6,
+      "text": "19:36:08 logits gfx1100 Qwen3.6-35B-A3B-MLX-4bit-MTP exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 7,
+      "text": "19:36:34 logits gfx1100 Qwen3.8-27B-MLX-4bit exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 8,
+      "text": "19:37:24 fn w7800: 2 of 2 runs all equal; hashes 6fbb0a3f895f7fa1 6fbb0a3f895f7fa1 6fbb0a3f895f7fa1 |hashes 6fbb0a3f895f7fa1 6fbb0a3f895f7fa1 6fbb0a3f895f7fa1 |"
+    },
+    {
+      "raw_line": 9,
+      "text": "HALF11_DONE"
+    },
+    {
+      "raw_line": 13,
+      "text": "20:10:17 hip-kernel-test gfx1030 exit 0: Build Summary: 15/15 steps succeeded; 99/99 tests passed"
+    },
+    {
+      "raw_line": 14,
+      "text": "21:26:08 logits gfx1030 Qwen3.5-9B-MLX-4bit exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 15,
+      "text": "21:26:31 logits gfx1030 Qwen3.6-35B-A3B-MLX-4bit-MTP exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 16,
+      "text": "21:27:01 logits gfx1030 Qwen3.8-27B-MLX-4bit exit 0 IDENTICAL to main (254279808 bytes)"
+    },
+    {
+      "raw_line": 17,
+      "text": "21:27:33 v620_d41_on exit 0: hashes 349d29968cc98589 349d29968cc98589 349d29968cc98589 ; all equal to 349d29968cc98589: yes; info: graphs: 1 captured (43 ms each), 91 of 93 rounds replayed "
+    },
+    {
+      "raw_line": 18,
+      "text": "21:28:04 v620_d41_off exit 0: hashes 349d29968cc98589 349d29968cc98589 349d29968cc98589 ; all equal to 349d29968cc98589: yes; "
+    },
+    {
+      "raw_line": 19,
+      "text": "FN_DONE"
+    }
+  ]
+}

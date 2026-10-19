@@ -1,0 +1,98 @@
+{
+  "receipt_schema": "bench_openai_list_wrapped_v1",
+  "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+  "rig": "W7800tp2",
+  "tree": "d46",
+  "condition": "decode_off",
+  "hold_index": 2,
+  "raw_sha256": "0da85ed2216f5815f8d611f68e25bf0c46d1668b7545989fc3b1083e0dd0b170",
+  "results": [
+    {
+      "label": "",
+      "prompt": "fibonacci-raw",
+      "temperature": 0.0,
+      "tokens": 256,
+      "decode_tps_median": 148.36091204715657,
+      "decode_tps_all": [
+        148.46,
+        148.36,
+        148.1
+      ],
+      "ttft_s_median": 0.02514752199931536,
+      "evidence": [
+        {
+          "prompt_tokens": 15,
+          "cached_tokens": 0,
+          "tokens": 256,
+          "cache_state": "cold",
+          "complete": true,
+          "token_sha": "0808cf694e6f",
+          "output_sha256": "0ceddb99c66ce515f43609d56d9a162745a593c4cecd38196f6eaa68f9f103b5"
+        },
+        {
+          "prompt_tokens": 15,
+          "cached_tokens": 0,
+          "tokens": 256,
+          "cache_state": "cold",
+          "complete": true,
+          "token_sha": "0808cf694e6f",
+          "output_sha256": "0ceddb99c66ce515f43609d56d9a162745a593c4cecd38196f6eaa68f9f103b5"
+        },
+        {
+          "prompt_tokens": 15,
+          "cached_tokens": 0,
+          "tokens": 256,
+          "cache_state": "cold",
+          "complete": true,
+          "token_sha": "0808cf694e6f",
+          "output_sha256": "0ceddb99c66ce515f43609d56d9a162745a593c4cecd38196f6eaa68f9f103b5"
+        }
+      ],
+      "sample": "\n\nNew Instruction:\nWrite a Python function that takes a list of integers and returns a new list containing only the even numbers from the original list, but in "
+    },
+    {
+      "label": "",
+      "prompt": "gpu-chat-no-think",
+      "temperature": 0.0,
+      "tokens": 256,
+      "decode_tps_median": 147.6509218632682,
+      "decode_tps_all": [
+        147.65,
+        147.77,
+        146.85
+      ],
+      "ttft_s_median": 0.04714276399317896,
+      "evidence": [
+        {
+          "prompt_tokens": 35,
+          "cached_tokens": 0,
+          "tokens": 256,
+          "cache_state": "cold",
+          "complete": true,
+          "token_sha": "25c162db90ad",
+          "output_sha256": "0219f14825c4b8f46b3bbd84d89f3a4999348ba1f640557803f9ad395220976a"
+        },
+        {
+          "prompt_tokens": 35,
+          "cached_tokens": 0,
+          "tokens": 256,
+          "cache_state": "cold",
+          "complete": true,
+          "token_sha": "25c162db90ad",
+          "output_sha256": "0219f14825c4b8f46b3bbd84d89f3a4999348ba1f640557803f9ad395220976a"
+        },
+        {
+          "prompt_tokens": 35,
+          "cached_tokens": 0,
+          "tokens": 256,
+          "cache_state": "cold",
+          "complete": true,
+          "token_sha": "25c162db90ad",
+          "output_sha256": "0219f14825c4b8f46b3bbd84d89f3a4999348ba1f640557803f9ad395220976a"
+        }
+      ],
+      "sample": "Here is an explanation of how a GPU handles matrix multiplication, followed by a simple numerical example.\n\n### How it works (The \"Secret Sauce\")\n\nTo understand"
+    }
+  ]
+}

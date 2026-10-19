@@ -1,0 +1,990 @@
+{
+  "schema_version": 1,
+  "comparison_order": [
+    "c46",
+    "d46",
+    "d46",
+    "c46"
+  ],
+  "source_commits": {
+    "c46": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+    "d46": "8649e9858b38e9ef3dcd8d579879c6512a363050"
+  },
+  "runs": [
+    {
+      "rig": "V620tp1",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "prompt_file_sha256": {
+        "8192": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+        "32768": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0"
+      },
+      "builds": {
+        "c46": {
+          "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+          "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0"
+        },
+        "d46": {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225"
+        }
+      }
+    },
+    {
+      "rig": "W7800tp2",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "prompt_file_sha256": {
+        "8192": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+        "32768": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0"
+      },
+      "builds": {
+        "c46": {
+          "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+          "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e"
+        },
+        "d46": {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256"
+        }
+      }
+    }
+  ],
+  "files": [
+    {
+      "file": "V620tp1/decode_on_c46_36101.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+      "rig": "V620tp1",
+      "tree": "c46",
+      "condition": "decode_on",
+      "hold_index": 0,
+      "raw_sha256": "b52205b77c49ed1f0cbed574a37c7d11b75b0449bd0eb27598f07ac7409845c1",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "5f148e6742b70dfbd3fdda2d2608631aa2d493171674a84867c559c5ae169699"
+    },
+    {
+      "file": "V620tp1/decode_on_d46_36102.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rig": "V620tp1",
+      "tree": "d46",
+      "condition": "decode_on",
+      "hold_index": 1,
+      "raw_sha256": "9e9850392cc29998a01c57f92f5f881e7dd72c8dd0f307948bab66d985eacec2",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "746e5f8583a62ac48fe2b8b3d13fb392ffa2a63940e85607ff9806f760317f45"
+    },
+    {
+      "file": "V620tp1/decode_on_d46_36103.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rig": "V620tp1",
+      "tree": "d46",
+      "condition": "decode_on",
+      "hold_index": 2,
+      "raw_sha256": "3c0eb12756ba2174d0c179cbae167b5155367a5970a863e8423e0a0eb4e01f66",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "38cd51bda2ffbb3446e0a893531d64d880639671bfc26591de1238f8f0c50211"
+    },
+    {
+      "file": "V620tp1/decode_on_c46_36104.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+      "rig": "V620tp1",
+      "tree": "c46",
+      "condition": "decode_on",
+      "hold_index": 3,
+      "raw_sha256": "def76abeb97cf472e3e90e28c20e04f1e37094e38e40f473c3706be497460831",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "854178daabda06b1ec8584a62f99c99e6e4e8239a6261f378d5bf330fa74266f"
+    },
+    {
+      "file": "V620tp1/decode_off_c46_36105.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+      "rig": "V620tp1",
+      "tree": "c46",
+      "condition": "decode_off",
+      "hold_index": 0,
+      "raw_sha256": "96f8683eb862df26dc4d0480e607629b89d63c5a3f1f82d59da15c967faee7a6",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "9dfbdc65fbd0a832af6b7c5aef1b0b2ba5c0a7dc5236b5bc9795f85795001630"
+    },
+    {
+      "file": "V620tp1/decode_off_d46_36106.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rig": "V620tp1",
+      "tree": "d46",
+      "condition": "decode_off",
+      "hold_index": 1,
+      "raw_sha256": "50aa7d3d3d34d1f35bf163245ce5a544e59741d22f3a4f840a57d99ba43e1383",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "0d7924d8b29fc8fadf005e4eb843211a9762a1876562a4ab10ebe82f4572ecaf"
+    },
+    {
+      "file": "V620tp1/decode_off_d46_36107.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rig": "V620tp1",
+      "tree": "d46",
+      "condition": "decode_off",
+      "hold_index": 2,
+      "raw_sha256": "26b8287674935b995a8514ca79a13612b89adfeb3e0a5479f69de7af17972d06",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "da772318a7ce8275f4f7f01b62d933af1c14dc14870de42947d04fe2521e4a63"
+    },
+    {
+      "file": "V620tp1/decode_off_c46_36108.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+      "rig": "V620tp1",
+      "tree": "c46",
+      "condition": "decode_off",
+      "hold_index": 3,
+      "raw_sha256": "09fcd2a7bd3ed3d3ff7d09ca47a71739099dda1ff53e4fe73c817157e7c10d92",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "847a0b8f958e3a1c76a4a6ea5782d85658c465fb4dc836e2a2a03545e86350ed"
+    },
+    {
+      "file": "V620tp1/cold_8192_c46_36109.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+      "rig": "V620tp1",
+      "tree": "c46",
+      "condition": "cold_8192",
+      "hold_index": 0,
+      "raw_sha256": "290de79396a41cecd5ba0ea9454ff632b1f220cb201b62c832c2e3ac87c50174",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "10d67d4a92522cced0f34905ff72349f6cf8f158ee8f82366bd58252549f56ba"
+    },
+    {
+      "file": "V620tp1/cold_8192_d46_36110.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rig": "V620tp1",
+      "tree": "d46",
+      "condition": "cold_8192",
+      "hold_index": 1,
+      "raw_sha256": "becbd517762803778fe74798181152b6cd6b559df4b9649a5bc1864d12047864",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "15efce8abc1cdfe406042f5126d4f34349c80a5625980c5b3b84d9db14f00873"
+    },
+    {
+      "file": "V620tp1/cold_8192_d46_36111.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rig": "V620tp1",
+      "tree": "d46",
+      "condition": "cold_8192",
+      "hold_index": 2,
+      "raw_sha256": "fa22fa9dcc7dde3c2b83e2c463fb5433ffa34a3506b3c74874a53644e5ff6391",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "fd008851ff32b2c507b54e3cc07a7291e442b851d0df85ab9d714cadad2afd95"
+    },
+    {
+      "file": "V620tp1/cold_8192_c46_36112.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+      "rig": "V620tp1",
+      "tree": "c46",
+      "condition": "cold_8192",
+      "hold_index": 3,
+      "raw_sha256": "0ffc54990d88add22b58d3659b4e8a55977f6dcdbab0c26c21fb69371eb4b552",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "b8ceb04d254bfd87c8762b00d2fa3a9409f9c8a166ea787dd5be7e8dc17ee99e"
+    },
+    {
+      "file": "V620tp1/cold_32768_c46_36113.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+      "rig": "V620tp1",
+      "tree": "c46",
+      "condition": "cold_32768",
+      "hold_index": 0,
+      "raw_sha256": "c44d833944ed8e35d03bcdd4eb8ff3d7f28e8a4d202df691a0fe5718bd95f110",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "ffffa4738ca7070647c3ce17062c36369806610cf67b6e592a618c3e35548174"
+    },
+    {
+      "file": "V620tp1/cold_32768_d46_36114.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rig": "V620tp1",
+      "tree": "d46",
+      "condition": "cold_32768",
+      "hold_index": 1,
+      "raw_sha256": "cb24f64226e763c5b829404038b1858b7b08a4f316a597b86f09bcbf99fbfd99",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "9ea7f574d0a06aa0de0346079fe78faae90a60f55dce99f294faffe8d9aa199e"
+    },
+    {
+      "file": "V620tp1/cold_32768_d46_36115.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rig": "V620tp1",
+      "tree": "d46",
+      "condition": "cold_32768",
+      "hold_index": 2,
+      "raw_sha256": "9058493e7a4f10205954a39a6bb0a91565c8e99bd129ca30a3e6ae85e1604ffb",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "8e50d4045f48849b8dd58b9dcb2d95e6c8ca7f9b8d4e99af4be38006b417182c"
+    },
+    {
+      "file": "V620tp1/cold_32768_c46_36116.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "07a01f0a6b10eb69d4f4d3198b63276b3f43ab39c09f91923f782333c0d75ea0",
+      "rig": "V620tp1",
+      "tree": "c46",
+      "condition": "cold_32768",
+      "hold_index": 3,
+      "raw_sha256": "201616750a10036373c1486f53f334c7fbf61d9c8257ae99897b96aaa6e9645c",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "settings": {
+        "arch": "gfx1030",
+        "world": 1,
+        "devices": "2",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "69a3000ae6a974ea0e28514d668b4de35fa27296975209f04a25d749a27b02ea"
+    },
+    {
+      "file": "W7800tp2/decode_on_c46_36601.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e",
+      "rig": "W7800tp2",
+      "tree": "c46",
+      "condition": "decode_on",
+      "hold_index": 0,
+      "raw_sha256": "f14cb96d2f6886d83b6b9deca37ecd9b37a48049ed6560994b377af4e5a4e7f6",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "7e3f8f6b57b38a120ba3046e16f3b4c44c8f9ef07e4975fb4406c1bd11a2aa8a"
+    },
+    {
+      "file": "W7800tp2/decode_on_d46_36602.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rig": "W7800tp2",
+      "tree": "d46",
+      "condition": "decode_on",
+      "hold_index": 1,
+      "raw_sha256": "e70219804d81519f0721e7904146d8c2a4a4278d7f5eec8dc7c725b727aa4959",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "bd011bc5e9b68a59a5ce5654b37a432256d4581ca78df00dd161f2ad12eb4dc0"
+    },
+    {
+      "file": "W7800tp2/decode_on_d46_36603.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rig": "W7800tp2",
+      "tree": "d46",
+      "condition": "decode_on",
+      "hold_index": 2,
+      "raw_sha256": "02b393d68f1bb98a60de59066b6ce93382ab2c13d54332268700fa5a1c0103f1",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "c3fc0d2a02705878d4199f8c5273668770b096b2cae479fdba90a095736bbb24"
+    },
+    {
+      "file": "W7800tp2/decode_on_c46_36604.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e",
+      "rig": "W7800tp2",
+      "tree": "c46",
+      "condition": "decode_on",
+      "hold_index": 3,
+      "raw_sha256": "f857272556ffc7808bac4933f4ee07f3e7e4ca6651c56ed389f5a6fc82b5eb43",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "b613296352ef39681404a3a37068d44ceb4c8e9acfb054cf523e046e3e7042b1"
+    },
+    {
+      "file": "W7800tp2/decode_off_c46_36605.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e",
+      "rig": "W7800tp2",
+      "tree": "c46",
+      "condition": "decode_off",
+      "hold_index": 0,
+      "raw_sha256": "a2d21df3935246d42931b46f47ed58cbec835dea1a018a6f35e00fa7f6cece27",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "b89e9cf1f1c6198f4d079d5e19e9ded77f091b39095f385a10b69c0143123f6a"
+    },
+    {
+      "file": "W7800tp2/decode_off_d46_36606.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rig": "W7800tp2",
+      "tree": "d46",
+      "condition": "decode_off",
+      "hold_index": 1,
+      "raw_sha256": "ffa792b717e79e15d2e4f430d0450893dc0be02e6cb244cfa999648b795c1997",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "bf589239657e4a135ece8b745c62d8a4c912b8d29adb9d00907a30cb1c4c29ea"
+    },
+    {
+      "file": "W7800tp2/decode_off_d46_36607.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rig": "W7800tp2",
+      "tree": "d46",
+      "condition": "decode_off",
+      "hold_index": 2,
+      "raw_sha256": "0da85ed2216f5815f8d611f68e25bf0c46d1668b7545989fc3b1083e0dd0b170",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "1ef8a9bbaffb0810330702e9551cfa3985c7d622beaf8a0afee7cfab596617cd"
+    },
+    {
+      "file": "W7800tp2/decode_off_c46_36608.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e",
+      "rig": "W7800tp2",
+      "tree": "c46",
+      "condition": "decode_off",
+      "hold_index": 3,
+      "raw_sha256": "b0293761cb3da69035a1e495ec3cd8ac666316cbd1bc48c8899498dec030d299",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "6eb986341da98ef13294acd9bab745c2ad4ed1082001b9662f7a22b34408cf85"
+    },
+    {
+      "file": "W7800tp2/cold_8192_c46_36609.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e",
+      "rig": "W7800tp2",
+      "tree": "c46",
+      "condition": "cold_8192",
+      "hold_index": 0,
+      "raw_sha256": "0b8162daf124a9a9e3931169ac0810e8bde928be09d537114db164cc4a69d9ae",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "9a99b1fe25f8c16e6331c6ff9f7257d2ea16cacea3cc23cc86c16aab61412758"
+    },
+    {
+      "file": "W7800tp2/cold_8192_d46_36610.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rig": "W7800tp2",
+      "tree": "d46",
+      "condition": "cold_8192",
+      "hold_index": 1,
+      "raw_sha256": "198f01728a541cc618d93a7f11e63d92d63e38e03f515e33ce5d5630d003fe44",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "ecbbb02aab25c166b773d7c8ff4f1a0eb6fa4598b1eae9baaf24ce18d8cd9b7f"
+    },
+    {
+      "file": "W7800tp2/cold_8192_d46_36611.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rig": "W7800tp2",
+      "tree": "d46",
+      "condition": "cold_8192",
+      "hold_index": 2,
+      "raw_sha256": "9092068275191aef6c0edd2a8c5be505f3bbcfd9ccef6f224d66cb97df404759",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "a8ae965ede97cd309e2479c44fd285001eb1017fabba20b8039b19bf03af310c"
+    },
+    {
+      "file": "W7800tp2/cold_8192_c46_36612.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e",
+      "rig": "W7800tp2",
+      "tree": "c46",
+      "condition": "cold_8192",
+      "hold_index": 3,
+      "raw_sha256": "609a1f270491a75e393c80e3554d54b01a2c3054f3b4c1197b2f1b252b5c4464",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "fd0c826c6b7322b6e13f4f39f2411fdff7c685f1e8d72b2b3ee75270e6c940cf"
+    },
+    {
+      "file": "W7800tp2/cold_32768_c46_36613.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e",
+      "rig": "W7800tp2",
+      "tree": "c46",
+      "condition": "cold_32768",
+      "hold_index": 0,
+      "raw_sha256": "095b088a0a34a4a812277cf2318e99d17a5cdca060c2b2d988489beafd4ca8a4",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "60b163d4552d4ca19c0dd084e4c6e590667621588bba8558757dec4a4120ba99"
+    },
+    {
+      "file": "W7800tp2/cold_32768_d46_36614.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rig": "W7800tp2",
+      "tree": "d46",
+      "condition": "cold_32768",
+      "hold_index": 1,
+      "raw_sha256": "b2b27a82a48eb1b2349902ec66a0770eb0f9c1a265e3f0cea7dfbf355899d998",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "f1c56ed955a0756545c2eb2b3539ba78ecd89fa69faeb319d3020be7d4237bc2"
+    },
+    {
+      "file": "W7800tp2/cold_32768_d46_36615.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rig": "W7800tp2",
+      "tree": "d46",
+      "condition": "cold_32768",
+      "hold_index": 2,
+      "raw_sha256": "c7c2e9a6e29f42320e757f8735cd32a4c4832c53d1a2a6e62a4da03923831cd8",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "12b32172407867cb9590be0119c9e1b9555d0f63db6f5be1535520810b634375"
+    },
+    {
+      "file": "W7800tp2/cold_32768_c46_36616.json",
+      "source_commit": "55b9084440a40a81ae47ee11d89c06f1ecb3a548",
+      "binary_sha256": "86feaa7b641f284aeef649d2f2b2d7341598f24e6ac7fe0793931a24495a890e",
+      "rig": "W7800tp2",
+      "tree": "c46",
+      "condition": "cold_32768",
+      "hold_index": 3,
+      "raw_sha256": "4b2faa148cd914773231882ff846494e2fa583ccb7e45a24f89f235c40f39282",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "settings": {
+        "arch": "gfx1100",
+        "world": 2,
+        "devices": "0,1",
+        "context": 65536,
+        "decode_parallel": 4,
+        "cold_parallel": 1,
+        "cold_prompt_cache_gib": 0,
+        "decode_tokens": 256,
+        "decode_repetitions": 3,
+        "cold_tokens": 16,
+        "cold_repeats": 1,
+        "cold_streams": 1
+      },
+      "packaged_sha256": "c5d806a1f831082a1b6ab29079fb83e5a54e812a8bfba743a56ea11f47a02ef7"
+    }
+  ],
+  "validators": {
+    "ab_validate.py": {
+      "sha256": "e1854f1aa02ccf79bb42f71ce56131e837a668f52e07e403facdf7636702eaf7",
+      "version": "sha256-addressed source",
+      "role": "measured-run harness"
+    },
+    "summarize_ab.py": {
+      "sha256": "d4ff370e37e4057b992290c43e99c16c324948731f88e9fe64c7cb1e177c87d4",
+      "version": "sha256-addressed source",
+      "role": "post-run validation"
+    },
+    "package_nanfix_receipts.py": {
+      "sha256": "deec71fc46b0c3b574e437f47fd53104da435551bcd9d902b5ca81d8ad4f5d45",
+      "version": "sha256-addressed source",
+      "role": "post-run validation"
+    },
+    "ab.sh": {
+      "sha256": "664c459cef0a9f03e5f997a8a25e7c44fd2f08db3a421c52a4a6eac7eee0d09a",
+      "version": "sha256-addressed source",
+      "role": "measured-run harness"
+    }
+  },
+  "fixtures": {
+    "8192": {
+      "ids_file": "ids/prompt8192.json",
+      "prompt_file_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "fixture_sha256": "8a86591e41e349486f3ec73b497947aaba3c970916c5ca970404e417247de0de",
+      "tokens": 8192,
+      "request_file": "requests/cold8192.json",
+      "request_sha256": "7be0dbe35d89021cfa64068393d24608f74a5994829073f8e8cdf922e28d4431",
+      "method": "POST",
+      "endpoint": "/v1/completions",
+      "phases": [
+        "first",
+        "repeated",
+        "concurrent"
+      ]
+    },
+    "32768": {
+      "ids_file": "ids/prompt32768.json",
+      "prompt_file_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "fixture_sha256": "445efeef8cca2bad96a6c8be7f2e5d1e344997ce143aae760ed9b51979bb1fc0",
+      "tokens": 32768,
+      "request_file": "requests/cold32768.json",
+      "request_sha256": "51b1843ea9f20ac9233d2b7d5e92be68833ff7400233d3515a8c9ad75121f814",
+      "method": "POST",
+      "endpoint": "/v1/completions",
+      "phases": [
+        "first",
+        "repeated",
+        "concurrent"
+      ]
+    }
+  },
+  "benchmark_clients": {
+    "tools/decode/bench_openai.py": {
+      "sha256": "7496ddfe6e474c1c50ef8fe6a33770e63069531f999d98acff0b8f28613e61eb"
+    },
+    "tools/decode/bench_evidence.py": {
+      "sha256": "119c396f24f3c13e181429bc69acff39f34254efd4789c5673a3dcbc54738d93"
+    },
+    "tools/cold/bench_cache.py": {
+      "sha256": "4575cc3d1f04e33de9998eb681f9aa0459172be8089c14569fbd83437b15ec14"
+    },
+    "tools/cold/bench_concurrent.py": {
+      "sha256": "c47f401c28e60836080f4cbe9d81e1971262e76bd713b4c349b477d4c7f9bf83"
+    },
+    "tools/cold/bench_evidence.py": {
+      "sha256": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff"
+    },
+    "tools/cold/bench_auth.py": {
+      "sha256": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b"
+    }
+  },
+  "source_bridge": {
+    "file": "source_bridge.json",
+    "sha256": "d26b601eec2cc746dce15428cef55ed7f04ed5c69947dab8d2ec251987b9146c",
+    "runtime_claim": false
+  }
+}

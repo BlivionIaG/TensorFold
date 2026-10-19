@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "source_comparison_only",
+  "runtime_claim": false,
+  "bridges": [
+    {
+      "pr": 41,
+      "proof_source_commit": "3a8fed4bdaab840095010c28f1d7681f0f784520",
+      "review_source_commit": "0c8ff6077d24a7f9aa610c87441aa50a9f55aa84",
+      "changed_files": [
+        {
+          "path": "docs/kernel-contract.md",
+          "status": "M",
+          "proof_blob": "1fa0f8aded61510041cee022cb97561a2c5f7a1f",
+          "review_blob": "42e1ce5ccb50f9fb24ff694dba14778ff93e39b9"
+        },
+        {
+          "path": "zig/build/hip_contract.zig",
+          "status": "M",
+          "proof_blob": "d6e6bf5084ee383f94c2fee4e61fee6c48f8060c",
+          "review_blob": "df9c942662180bcb532db580e330f7a7b61f280c"
+        },
+        {
+          "path": "zig/tests/hip/contract_main.zig",
+          "status": "M",
+          "proof_blob": "467cb212ad124532f54fe0e5ce70aa11f453addf",
+          "review_blob": "cf8e097a05137641d3a8b050065bbef19eea3cd0"
+        },
+        {
+          "path": "zig/tests/hip/contract_relu2.zig",
+          "status": "M",
+          "proof_blob": "ad20ec6ed337719c71534d40b769a698d79fad85",
+          "review_blob": "2ae7941aa98610a0e4d2c18bee7619dbc98caed6"
+        },
+        {
+          "path": "zig/tests/hip/relu2_nonfinite.zig",
+          "status": "A",
+          "proof_blob": null,
+          "review_blob": "6e80de9066fa984fd0943289306ac10e16b6103d"
+        }
+      ],
+      "git_diff_sha256": "fe3c73330ba5c248169c1ea79987cc21b0e6a9d104d7e00365553f2bafd4bc8f",
+      "scope": "Only contract documentation, HIP contract build wiring and HIP contract tests/oracle change; production source is identical.",
+      "runtime_evidence_scope": "Runtime results retain the proof source commit and its measured binary hash. This source comparison does not claim identical built binaries or rerun runtime tests at the review source.",
+      "verification_commands": [
+        "git diff --name-status 3a8fed4bdaab840095010c28f1d7681f0f784520 0c8ff6077d24a7f9aa610c87441aa50a9f55aa84",
+        "git diff --binary 3a8fed4bdaab840095010c28f1d7681f0f784520 0c8ff6077d24a7f9aa610c87441aa50a9f55aa84 | shasum -a 256"
+      ],
+      "proof_ref_publication": "Publish proof commit refs alongside this evidence; commit IDs identify the measured sources."
+    },
+    {
+      "pr": 46,
+      "proof_source_commit": "4bd16a188427b1768be13fc14a3f5d490414da87",
+      "review_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "changed_files": [
+        {
+          "path": "docs/kernel-contract.md",
+          "status": "M",
+          "proof_blob": "42e1ce5ccb50f9fb24ff694dba14778ff93e39b9",
+          "review_blob": "3e07b0ba1802f2bc44b78bf804ef203597e4ae4e"
+        },
+        {
+          "path": "zig/tests/hip/contract_relu2_pair.zig",
+          "status": "M",
+          "proof_blob": "d8fd81ee2b0d7edd4e2858c80c094875e36f7ad8",
+          "review_blob": "743a93b9be166f80367b648ab1773d37b8a330d4"
+        }
+      ],
+      "git_diff_sha256": "ca4fd86711c433dba7d98077daf868b157491793385474c06f516a22a388dac3",
+      "scope": "Only contract documentation, HIP contract build wiring and HIP contract tests/oracle change; production source is identical.",
+      "runtime_evidence_scope": "Runtime results retain the proof source commit and its measured binary hash. This source comparison does not claim identical built binaries or rerun runtime tests at the review source.",
+      "verification_commands": [
+        "git diff --name-status 4bd16a188427b1768be13fc14a3f5d490414da87 8649e9858b38e9ef3dcd8d579879c6512a363050",
+        "git diff --binary 4bd16a188427b1768be13fc14a3f5d490414da87 8649e9858b38e9ef3dcd8d579879c6512a363050 | shasum -a 256"
+      ],
+      "proof_ref_publication": "Publish proof commit refs alongside this evidence; commit IDs identify the measured sources."
+    }
+  ]
+}

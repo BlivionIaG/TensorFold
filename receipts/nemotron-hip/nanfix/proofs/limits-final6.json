@@ -1,0 +1,15 @@
+{
+  "id": "limits-final6",
+  "kind": "limits",
+  "raw_log": "lim_d46.log",
+  "raw_sha256": "7a0db8f8a191887be74a7135d5b33145dbd00378874c227b17e5b9facc256a72",
+  "proof_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "review_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "source_bridge_required": false,
+  "selected_lines": [
+    {
+      "raw_line": 241,
+      "text": "PASS kernel-contract-limits: every registered launch fits gfx1030, gfx1100, gfx1151 and gfx1201, every record current, every control red"
+    }
+  ]
+}

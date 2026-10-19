@@ -1,0 +1,45 @@
+{
+  "id": "finite-gfx1030",
+  "kind": "finite",
+  "raw_log": "bitid_2.log",
+  "raw_sha256": "c0030c6be5a95c20d1c66df861c42e1e083565804b8dfc2fe3c774730fb6fc84",
+  "proof_source_commit": null,
+  "review_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "source_bridge_required": false,
+  "selected_lines": [
+    {
+      "raw_line": 1,
+      "text": "dt kind 1 clamp [0, inf]: 761880 inputs, 0 differ"
+    },
+    {
+      "raw_line": 2,
+      "text": "dt kind 1 clamp [0.001, 0.1]: 761880 inputs, 0 differ"
+    },
+    {
+      "raw_line": 3,
+      "text": "relu2 and its epilogue kind 1: 4278190082 non-NaN fp32 inputs, 0 differ"
+    },
+    {
+      "raw_line": 4,
+      "text": "dt kind 2 clamp [0, inf]: 783384 inputs, 0 differ"
+    },
+    {
+      "raw_line": 5,
+      "text": "dt kind 2 clamp [0.001, 0.1]: 783384 inputs, 0 differ"
+    },
+    {
+      "raw_line": 6,
+      "text": "relu2 and its epilogue kind 2: 4278190082 non-NaN fp32 inputs, 0 differ"
+    },
+    {
+      "raw_line": 7,
+      "text": "PASS every finite input keeps its bits"
+    },
+    {
+      "raw_line": 8,
+      "text": "exit 0"
+    }
+  ],
+  "expression_source_sha256": "88127590176b66f297e22324e54e8968a902925edd52c5789b06594d85d0079c",
+  "qualification": "Standalone expression proof; this does not claim execution of an engine binary at the review commit."
+}

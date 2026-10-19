@@ -26,7 +26,7 @@ Built from clean checkouts of each head with `zig build native-hip tf-nemotron-h
 | pr46 | #46 `82e68433d0d8647e3ca5a0d48f82f5ffc01397ed` | gfx1030 | `36b84ba7ee88d758fd196637eec5029b799a77001aa1ce0464dbb8622c812a3f` | `3223bcffec3f60bfee76720a85625a6f0105ff445f2d57639ee675eb4029024a` |
 | pr46 | #46 `82e68433d0d8647e3ca5a0d48f82f5ffc01397ed` | gfx1100 | `286f49435358e478735d91d78e5abd485d825ec6cf2162ae63e8669b857e9f27` | `dd5f5627bbe75ef18263abbf1cb63323eee5eaa88af708f46381b729adb3722c` |
 
-Later heads of these pull requests add HIP kernel-contract test and registry files only; the measured engine and kernel code is the code of these commits.
+These measurements retain the source commits and binary hashes listed above. The later NaN-fix restack also changes NaN propagation in the dt clamps and relu² kernels. See [NaN-fix receipts](nanfix/README.md) for the source comparisons, exhaustive finite-bit checks, model equality and alternating before/after measurements; historical receipts are not relabelled as new binary runs.
 
 ## Inputs
 

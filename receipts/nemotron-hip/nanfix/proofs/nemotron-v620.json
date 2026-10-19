@@ -1,0 +1,63 @@
+{
+  "id": "nemotron-v620",
+  "kind": "nemotron",
+  "raw_log": "nem_v620final3.log",
+  "raw_sha256": "fd4bf9a6fc58a92b2b0ba666565ea374244447564f555ff253d20573dddaf06e",
+  "proof_source_commit": "4bd16a188427b1768be13fc14a3f5d490414da87",
+  "review_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "source_bridge_required": true,
+  "selected_lines": [
+    {
+      "raw_line": 1,
+      "text": "22:34:35 dec_v620tp1_d46 exit 0"
+    },
+    {
+      "raw_line": 2,
+      "text": "22:34:40 dec_v620tp1_c46 exit 0"
+    },
+    {
+      "raw_line": 3,
+      "text": "22:34:40 decode v620tp1 d46 == c46: IDENTICAL (117440512 bytes)"
+    },
+    {
+      "raw_line": 4,
+      "text": "22:34:43 teach_v620tp1_chat_full_d46 exit 0"
+    },
+    {
+      "raw_line": 5,
+      "text": "22:34:46 teach_v620tp1_chat_full_c46 exit 0"
+    },
+    {
+      "raw_line": 6,
+      "text": "22:34:46 teacher chat_full v620tp1 d46 == c46: IDENTICAL (30932992 bytes)"
+    },
+    {
+      "raw_line": 7,
+      "text": "22:34:49 teach_v620tp1_code_full_d46 exit 0"
+    },
+    {
+      "raw_line": 8,
+      "text": "22:34:52 teach_v620tp1_code_full_c46 exit 0"
+    },
+    {
+      "raw_line": 9,
+      "text": "22:34:52 teacher code_full v620tp1 d46 == c46: IDENTICAL (24641536 bytes)"
+    },
+    {
+      "raw_line": 10,
+      "text": "22:34:55 teach_v620tp1_story_full_d46 exit 0"
+    },
+    {
+      "raw_line": 11,
+      "text": "22:34:58 teach_v620tp1_story_full_c46 exit 0"
+    },
+    {
+      "raw_line": 12,
+      "text": "22:34:59 teacher story_full v620tp1 d46 == c46: IDENTICAL (24641536 bytes)"
+    },
+    {
+      "raw_line": 13,
+      "text": "NEM_DONE"
+    }
+  ]
+}

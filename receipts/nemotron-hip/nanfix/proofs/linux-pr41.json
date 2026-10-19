@@ -1,0 +1,15 @@
+{
+  "id": "linux-pr41",
+  "kind": "linux",
+  "raw_log": "linux_d41_final4.log",
+  "raw_sha256": "ec1f8a9c4ec9ddb7c6d85b4666944423c5473001cefd066a3817c27ac40d0f75",
+  "proof_source_commit": "0c8ff6077d24a7f9aa610c87441aa50a9f55aa84",
+  "review_source_commit": "0c8ff6077d24a7f9aa610c87441aa50a9f55aa84",
+  "source_bridge_required": false,
+  "selected_lines": [
+    {
+      "raw_line": 310,
+      "text": "Build Summary: 167/167 steps succeeded; 2523/2533 tests passed (10 skipped)"
+    }
+  ]
+}
