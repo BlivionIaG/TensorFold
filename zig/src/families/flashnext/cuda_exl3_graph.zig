@@ -181,16 +181,20 @@ fn sighting(key: Key) u32 {
     return 1;
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=1: tp graphs too are updated in place (their template kept alive); default off.
+/// TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0: tp graphs are always instantiated; default: updated in place like tp=1's,
+/// their captured template kept alive with the exec (NCCL's captured resources belong to it).
 fn tpUpdate() bool {
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE") orelse return false;
-    return std.mem.eql(u8, std.mem.span(v), "1");
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE") orelse return true;
+    return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_AFTER: the sighting of a key that captures it (default 2; 1 captures at once).
+/// TF_FLASHNEXT_EXL3_GRAPH_AFTER: the sighting of a key that captures it (default 6; 1 captures at once). A capture
+/// costs about a step and a half (15-20 ms at tp=2) and a replay saves little on a GPU-bound step, so only keys that
+/// keep coming back are captured (each request's own buffers make new keys; tp=2 serve gate: 6 matches the device
+/// plan's drafted speed, 2 lost 4 ms a token to captures).
 fn after() u32 {
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_AFTER") orelse return 2;
-    return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_AFTER") orelse return 6;
+    return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 6);
 }
 
 /// Captures `pass.chunk(ids, pos0, null)` (prepared) under `key`, or replays the graph captured under it. A key not
@@ -427,6 +431,13 @@ fn psighting(k: PKey) u32 {
     return 1;
 }
 
+/// TF_FLASHNEXT_EXL3_GRAPH_PREFILL_AFTER: the sighting of a layer shape that captures it (default 2: a chunk takes
+/// seconds, a capture milliseconds).
+fn prefillAfter() u32 {
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_PREFILL_AFTER") orelse return 2;
+    return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
+}
+
 pub fn clearPrefill() void {
     for (&pentries) |*e| if (e.*) |*x| {
         x.exec.deinit();
@@ -462,7 +473,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         try x.exec.launchOn(p.stream);
         return .replayed;
     };
-    if (psighting(key) < after()) {
+    if (psighting(key) < prefillAfter()) {
         prefill_stats.eager += 1;
         return .eager;
     }

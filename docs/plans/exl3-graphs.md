@@ -29,10 +29,14 @@ Measured first, then chosen over "graph A / host plan / graph B per layer":
   head's gathers (both ranks capture the same calls). Pinned uploads (ids, positions, n-gram rows) become copy nodes
   read at replay; `prepare` rewrites them before each launch. Keys: rows, the sequences' buffers, attention chunk and
   score-tile seams, scratch address and capacity, scores, logits, keep/streams, planner state. A key is captured at
-  its 2nd sighting (`TF_FLASHNEXT_EXL3_GRAPH_AFTER`); a new key of a cached shape updates that exec in place at tp=1
-  (`cuGraphExecUpdate`), at tp=2 only with `TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=1` (NCCL's captured resources belong to
-  their graph; the template is then kept alive).
-- Fallbacks: windows wider than lines/10 rows, media, or no pools take the host cut (eager), with a residency pull;
+  its 6th sighting (`TF_FLASHNEXT_EXL3_GRAPH_AFTER`, prefill layers at the 2nd: `..._PREFILL_AFTER`); a new key of a
+  cached shape updates that exec in place (`cuGraphExecUpdate`, 2-3 ms instead of a 20-35 ms instantiate), at tp=2
+  too: the captured template is kept alive with the exec because NCCL's captured resources belong to it
+  (`TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0` instantiates instead).
+- A round with more misses than lines free of its own experts reads the extra experts in place from the mapped bank
+  (same bytes; slower) and clears their entries afterwards (`fn_exl3_drestore`), so any round up to
+  `TF_FLASHNEXT_EXL3_GRAPH_ROWS` (16, the MTP window) plans on the device.
+- Fallbacks: more than 16 rows, media, or no pools take the host cut (eager), with a residency pull;
   a failed capture turns graphs off for the process and runs the step eagerly on the device plan
   (`TF_FLASHNEXT_EXL3_GRAPH_STRICT=1` makes it an error instead).
 - `TF_FLASHNEXT_EXL3_DPLAN=1` alone: the device plan launched eagerly (no capture).
@@ -67,13 +71,32 @@ Why graphs add little over the device plan: a step is GPU-bound. nsys (tp=1): ~2
 grouped experts 5.5 ms, rows=1 EXL3 linears ~7 ms, native HC lanes ~4.4 ms) plus ~10 ms of expert copies at 86%
 hits; host launch gaps were already hidden. The host cut's cost was the waits (both ranks stall at tp=2).
 
-Serve gate at tp=2 (tpgate template, BENCH 128 tokens, ms/token): eager 29.1/27.4 drafts off, 16.1/15.2 drafts on;
-graphs 26.6/24.1 drafts off, 20.3/19.8 drafts on (first version: a pull of every decoder pool's residency on each
-draft step, fixed since); DRAFTED==UNDRAFTED and the same BENCH sha as eager in every run.
+Serve gate at tp=2 (tpgate template, two BENCH runs of 128 tokens, ms/token; DRAFTED==UNDRAFTED and BENCH sha
+2c5d814cfa80, the eager one, in every run):
+
+| config | drafts off | drafts on |
+|--------|-----------|-----------|
+| eager (host cut) | 29.1 / 27.4 | 16.1 / 15.2 |
+| device plan, no capture (`DPLAN=1`) | 26.9 / 24.5 | 16.3 / 15.6 |
+| graphs, capture at 2nd sighting, tp=2 instantiate | 26.6 / 24.1 | 20.3 / 19.8 |
+| graphs, 2nd sighting, in-place updates | 26.6 / 24.1 | 18.8 / 17.6 |
+| graphs, 6th sighting, in-place updates (default) | 26.7 / 24.2 | 17.4 / 16.3 |
+
+Replays: 301 of 417 graph-eligible steps in the gate (72%), 11 captures (9 of them in-place updates), 105 steps eager
+on the device plan (keys not yet seen 6 times: every request brings new sequence/draft buffers, so new keys). With
+drafts on, a capture (15-20 ms of host work the GPU waits for) costs more than the replays save on a GPU-bound step.
+
+Prefill (deep chunks of 1024 rows, 4096-row prompt, 5 runs, last-row logits and 8 decode steps bit-equal): tp=2
+(with exl3-c-tpprefill's uncommitted work applied) eager 770.2 rows/s, graphs 770.3-772.6; tp=1 498.7 vs 499.1.
+A prompt after the first: 144 DeltaNet layer replays and 48 attention-layer in-place updates.
 
 ## Not proven / open
 
 - Prefill graphs at tp=2 need the tp=2 deep prefill (branch `exl3-c-tpprefill`, not merged here).
 - The experts' half of prefill is not graphed (host-planned passes).
-- Windows wider than lines/10 rows (MTP chains up to 16) take the host cut.
-- The overlap split; tp=2 in-place updates of NCCL graphs (bit-equal in the engine test, no update happened there).
+- In-place reads are proven bit-equal (tp=2, 24 lines, 2936 reads) but slow; windows at few lines lose to the host
+  cut's DMA passes.
+- The overlap split (`TF_FLASHNEXT_EXL3_OVERLAP=1`) is unvalidated on the pack.
+- Graphs stay opt-in (`TF_FLASHNEXT_EXL3_GRAPH=1`); `TF_FLASHNEXT_EXL3_DPLAN=1` alone gives the same decode speed.
+- 200k contexts, int8 KV and 2+ concurrent streams in the server under graphs were not run (the engine test covers
+  two streams in one round, bit-equal).
