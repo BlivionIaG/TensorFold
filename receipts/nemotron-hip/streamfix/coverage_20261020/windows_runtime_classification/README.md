@@ -1,0 +1,9 @@
+# Windows failure classification correction
+
+The earlier interpretation of generic `run test w` / `failed command: ...test.exe` blocks as runtime failures was unsupported. Zig0.17's same-version local source explicitly renders stderr regardless of step success; `w` is reached only after the test-result/error branches are clear. The verbose command label does not itself prove a nonzero process exit.
+
+Every retained draft Windows log and the existing main-equivalent documentation control was independently rescanned. Each final summary's direct failed-step count is entirely accounted for by compile-error steps:22 in12 draft jobs and23 in10. Reported executed tests all passed or skipped. The other failing tree entries are dependent/unrun steps; this is not successful execution of those test roots. The52 normalized compiler diagnostics still match the existing source-equivalent control. No separately reported runtime-test failure remains established by these archived logs.
+
+Compiler CI remains failed; this does not repair CI, prove one root cause, qualify unrun GPU/model work, or classify desktop/Linux failures. Exact Windows compiler binary SHA is unavailable: the retained source interpretation is explicitly tied to the locally installed same-version compiler source hashes, not an invented binary match. Raw CI logs remain locally preserved; prior immutable public copies normalize CI checkout/temp paths. The root audit maps original and public hashes and verifies identical final compiler-summary lines in both. Original public job links remain. No workflow, build, source or test was changed or rerun for this classification.
+
+Source excerpts retain exact line numbers/full original source SHA and MIT license. Only private local paths in these audit copies are normalized; original raw CI and full tool-source hashes remain explicitly bound alongside prior public hashes.

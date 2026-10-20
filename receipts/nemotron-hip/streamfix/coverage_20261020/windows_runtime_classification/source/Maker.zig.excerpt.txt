@@ -1,0 +1,152 @@
+Full original file SHA256: c8b7f6f8afdc7896addc0e19f0c4502874d2d1ba058f4ab4f9534b11468e4fbe
+
+Maker.zig:2540-2564
+2540:         const make_step = maker.stepByIndex(step_index);
+2541:         test_pass_count += make_step.test_results.passCount();
+2542:         test_skip_count += make_step.test_results.skip_count;
+2543:         test_fail_count += make_step.test_results.fail_count;
+2544:         test_crash_count += make_step.test_results.crash_count;
+2545:         test_timeout_count += make_step.test_results.timeout_count;
+2546: 
+2547:         test_count += make_step.test_results.test_count;
+2548: 
+2549:         switch (make_step.state) {
+2550:             .precheck_unstarted => unreachable,
+2551:             .precheck_started => unreachable,
+2552:             .precheck_done => unreachable,
+2553:             .dependency_failure, .dependency_skipped => pending_count += 1,
+2554:             .success => success_count += 1,
+2555:             .skipped, .skipped_oom => skipped_count += 1,
+2556:             .failure => {
+2557:                 failure_count += 1;
+2558:                 const compile_errors_len = make_step.result_error_bundle.errorMessageCount();
+2559:                 if (compile_errors_len > 0) {
+2560:                     total_compile_errors += compile_errors_len;
+2561:                 }
+2562:             },
+2563:         }
+2564:     }
+
+Maker.zig:2857-2870
+2857:     // No matter the result, we want to display error/warning messages.
+2858:     if (maker.protocol_server == null and
+2859:         (make_step.result_error_bundle.errorMessageCount() > 0 or
+2860:             make_step.result_error_msgs.items.len > 0 or
+2861:             make_step.result_stderr.len > 0))
+2862:     {
+2863:         const stderr = try io.lockStderr(&stdio_buffer_allocation, graph.stderr_mode);
+2864:         defer io.unlockStderr();
+2865:         printErrorMessages(maker, step_index, .{}, stderr.terminal(), maker.error_style, maker.multiline_errors) catch |err| switch (err) {
+2866:             error.Canceled => |e| return e,
+2867:             error.WriteFailed => switch (stderr.file_writer.err.?) {
+2868:                 error.Canceled => |e| return e,
+2869:                 else => {},
+2870:             },
+
+Maker.zig:3080-3170
+3080: fn printStepFailure(
+3081:     maker: *Maker,
+3082:     step_index: Configuration.Step.Index,
+3083:     stderr: Io.Terminal,
+3084:     dim: bool,
+3085: ) !void {
+3086:     const w = stderr.writer;
+3087:     const s = maker.stepByIndex(step_index);
+3088:     if (s.result_error_bundle.errorMessageCount() > 0) {
+3089:         try stderr.setColor(.red);
+3090:         try w.print(" {d} errors\n", .{
+3091:             s.result_error_bundle.errorMessageCount(),
+3092:         });
+3093:     } else if (!s.test_results.isSuccess()) {
+3094:         // These first values include all of the test "statuses". Every test is either passsed,
+3095:         // skipped, failed, crashed, or timed out.
+3096:         try stderr.setColor(.green);
+3097:         try w.print(" {d} pass", .{s.test_results.passCount()});
+3098:         try stderr.setColor(.reset);
+3099:         if (dim) try stderr.setColor(.dim);
+3100:         if (s.test_results.skip_count > 0) {
+3101:             try w.writeAll(", ");
+3102:             try stderr.setColor(.yellow);
+3103:             try w.print("{d} skip", .{s.test_results.skip_count});
+3104:             try stderr.setColor(.reset);
+3105:             if (dim) try stderr.setColor(.dim);
+3106:         }
+3107:         if (s.test_results.fail_count > 0) {
+3108:             try w.writeAll(", ");
+3109:             try stderr.setColor(.red);
+3110:             try w.print("{d} fail", .{s.test_results.fail_count});
+3111:             try stderr.setColor(.reset);
+3112:             if (dim) try stderr.setColor(.dim);
+3113:         }
+3114:         if (s.test_results.crash_count > 0) {
+3115:             try w.writeAll(", ");
+3116:             try stderr.setColor(.red);
+3117:             try w.print("{d} crash", .{s.test_results.crash_count});
+3118:             try stderr.setColor(.reset);
+3119:             if (dim) try stderr.setColor(.dim);
+3120:         }
+3121:         if (s.test_results.timeout_count > 0) {
+3122:             try w.writeAll(", ");
+3123:             try stderr.setColor(.red);
+3124:             try w.print("{d} timeout", .{s.test_results.timeout_count});
+3125:             try stderr.setColor(.reset);
+3126:             if (dim) try stderr.setColor(.dim);
+3127:         }
+3128:         try w.print(" ({d} total)", .{s.test_results.test_count});
+3129: 
+3130:         // Memory leaks are intentionally written after the total, because is isn't a test *status*,
+3131:         // but just a flag that any tests -- even passed ones -- can have. We also use a different
+3132:         // separator, so it looks like:
+3133:         //   2 pass, 1 skip, 2 fail (5 total); 2 leaks
+3134:         if (s.test_results.leak_count > 0) {
+3135:             try w.writeAll("; ");
+3136:             try stderr.setColor(.red);
+3137:             try w.print("{d} leaks", .{s.test_results.leak_count});
+3138:             try stderr.setColor(.reset);
+3139:             if (dim) try stderr.setColor(.dim);
+3140:         }
+3141: 
+3142:         // It's usually not helpful to know how many error logs there were because they tend to
+3143:         // just come with other errors (e.g. crashes and leaks print stack traces, and clean
+3144:         // failures print error traces). So only mention them if they're the only thing causing
+3145:         // the failure.
+3146:         const show_err_logs: bool = show: {
+3147:             var alt_results = s.test_results;
+3148:             alt_results.log_err_count = 0;
+3149:             break :show alt_results.isSuccess();
+3150:         };
+3151:         if (show_err_logs) {
+3152:             try w.writeAll("; ");
+3153:             try stderr.setColor(.red);
+3154:             try w.print("{d} error logs", .{s.test_results.log_err_count});
+3155:             try stderr.setColor(.reset);
+3156:             if (dim) try stderr.setColor(.dim);
+3157:         }
+3158: 
+3159:         try w.writeAll("\n");
+3160:     } else if (s.result_error_msgs.items.len > 0) {
+3161:         try stderr.setColor(.red);
+3162:         try w.writeAll(" failure\n");
+3163:     } else {
+3164:         assert(s.result_stderr.len > 0);
+3165:         try stderr.setColor(.red);
+3166:         try w.writeAll(" w\n");
+3167:     }
+3168: }
+3169: 
+3170: fn printPrefix(node: *PrintNode, stderr: Io.Terminal) !void {
+
+Maker.zig:3354-3366
+3354:     }
+3355: 
+3356:     if (error_style.verboseContext()) {
+3357:         if (failing_step.result_failed_command) |cmd_str| {
+3358:             try stderr.setColor(.red);
+3359:             try writer.writeAll("failed command: ");
+3360:             try stderr.setColor(.reset);
+3361:             try writer.writeAll(cmd_str);
+3362:             try writer.writeByte('\n');
+3363:         }
+3364:     }
+3365: 
+3366:     if (failing_step.result_oom) {

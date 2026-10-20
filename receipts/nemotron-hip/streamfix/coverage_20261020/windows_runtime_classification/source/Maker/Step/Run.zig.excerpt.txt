@@ -1,0 +1,48 @@
+Full original file SHA256: ab3f954cfcc9c015dc5b8026a36704a23e743fc4a86a2c03c29b8a5c95300de7
+
+Maker/Step/Run.zig:1664-1682
+1664: 
+1665:                 // Report an error if the child terminated uncleanly or if we were still trying to run more tests.
+1666:                 step.takeResultStderr(gpa, stderr_owned);
+1667:                 keep_stderr_owned = true;
+1668: 
+1669:                 const tests_done = test_metadata != null and test_metadata.?.next_index == std.math.maxInt(u32);
+1670:                 if (!tests_done or !termMatches(.{ .exited = 0 }, term)) {
+1671:                     // The individual unit test results are irrelevant: the test runner itself broke!
+1672:                     // Fail immediately without populating `s.test_results`.
+1673:                     return step.fail(maker, "test process unexpectedly {f}", .{fmtTerm(term)});
+1674:                 }
+1675: 
+1676:                 // We're done with all of the tests! Commit the test results and return.
+1677:                 step.test_results = test_results;
+1678:                 if (test_metadata) |tm| {
+1679:                     run.cached_test_metadata = tm.toCachedTestMetadata();
+1680:                     if (maker.web_server) |ws| {
+1681:                         if (graph.time_report) {
+1682:                             ws.updateTimeReportRunTest(
+
+Maker/Step/Run.zig:2405-2428
+2405:             },
+2406:             error.MakeFailed, error.OutOfMemory, error.Canceled => |e| return e,
+2407:         }
+2408:         return step.fail(maker, "failed to spawn and capture stdio from {s}: {t}", .{ argv[0], err });
+2409:     };
+2410: 
+2411:     const generic_result = switch (conf_run.flags.stdio) {
+2412:         .infer_from_args, .inherit, .check => opt_generic_result.?,
+2413:         .zig_test, .protocol => {
+2414:             assert(opt_generic_result == null);
+2415:             // Specific errors have already been reported, and test results are populated. All we need
+2416:             // to do is report step failure if any test failed.
+2417:             if (!step.test_results.isSuccess()) return error.MakeFailed;
+2418:             return;
+2419:         },
+2420:     };
+2421:     assert(fuzz_context == null);
+2422: 
+2423:     // Capture stdout and stderr to GeneratedFile objects.
+2424:     const Stream = struct {
+2425:         captured: ?Configuration.Step.Run.CapturedStream,
+2426:         bytes: ?[]const u8,
+2427:         trim_whitespace: Configuration.Step.Run.TrimWhitespace,
+2428:     };

@@ -1,0 +1,374 @@
+{
+  "scope": "Archived Windows log scan; stderr-only w is not failure. Compiler errors and dependency failures remain separate",
+  "files": [
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1082_zig-windows_118365122558.log",
+      "sha256": "b6bc011e4045d86418b41c14b103ef9339b379e46cce255dc422bf6dfc4d8ad1",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1142,
+          "text": "2026-10-19T23:39:21.1770596Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-19T23:39:21.1736358Z Build Summary: 167/213 steps succeeded (22 failed); 1423/1438 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1083_zig-windows_118405290817.log",
+      "sha256": "1b779ba4abd49a707a432b811c81434c916c9164fb9a1eef6d1cfda02b6b7783",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1148,
+          "text": "2026-10-20T01:50:58.7165191Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:50:58.7128065Z Build Summary: 167/213 steps succeeded (22 failed); 1423/1438 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1084_zig-windows_118405291435.log",
+      "sha256": "f828e69e56bd3c12877b9fd58aaa023241524a54c3fca89630bb59b9b78c8b1a",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1125,
+          "text": "2026-10-20T01:43:47.7925953Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:43:47.7878946Z Build Summary: 167/213 steps succeeded (22 failed); 1424/1439 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1085_zig-windows_118405287804.log",
+      "sha256": "de706dbdb42450ab19ae421beb453c51dc816767b2da8c633ccabfb11d04a26a",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1147,
+          "text": "2026-10-20T01:50:37.8430871Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:50:37.8392134Z Build Summary: 167/213 steps succeeded (22 failed); 1430/1445 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1086_zig-windows_118405288516.log",
+      "sha256": "96054b68ea901b07ddce58f83c0c7eb12b7b845d5b56cbfae772eb4f27e18bf9",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1117,
+          "text": "2026-10-20T01:59:03.1639441Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:59:03.1606077Z Build Summary: 167/213 steps succeeded (22 failed); 1431/1446 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1087_zig-windows_118405284987.log",
+      "sha256": "1c5750e654a1e652762550c8d38f7844aaa9922ee4e1ea08905968a0c05f5470",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1146,
+          "text": "2026-10-20T01:45:04.1440919Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:45:04.1397797Z Build Summary: 167/213 steps succeeded (22 failed); 1432/1447 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1088_zig-windows_118405289900.log",
+      "sha256": "683995c06c7d52b53da93fc5cafa638b53e34155c4f928ae2958a5fdd31e5575",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1148,
+          "text": "2026-10-20T01:49:21.2070505Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:49:21.2034331Z Build Summary: 167/213 steps succeeded (22 failed); 1432/1447 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1089_zig-windows_118405285839.log",
+      "sha256": "adf54b01154b7227b9613c0804d893614224d90bb86614a9ce12a3b31327c589",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1143,
+          "text": "2026-10-20T01:43:07.2706224Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:43:07.2675697Z Build Summary: 167/213 steps succeeded (22 failed); 1447/1462 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1090_zig-windows_118405287356.log",
+      "sha256": "b8ace51ab612a631eb6a2eb6431f20bdb419c060e63ac398eb0364c1f2b3ab2c",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1146,
+          "text": "2026-10-20T01:55:58.1598097Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:55:58.1574823Z Build Summary: 167/213 steps succeeded (22 failed); 1448/1463 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1091_zig-windows_118405283485.log",
+      "sha256": "639294c41612c7f1abecc772a29ccd00fc47506adcb601a7f3105314d4d63d7a",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1143,
+          "text": "2026-10-20T01:43:49.1912969Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:43:49.1892364Z Build Summary: 167/213 steps succeeded (22 failed); 1450/1465 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1092_zig-windows_118405284598.log",
+      "sha256": "5e54aa6b3b85e926d447fbefd09c9fb863d818b3c099b0abfd78fc1724ebd921",
+      "stderr_only_w_blocks": 16,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1145,
+          "text": "2026-10-20T02:04:15.1995580Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T02:04:15.1970171Z Build Summary: 169/215 steps succeeded (22 failed); 1478/1494 tests passed (16 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1093_zig-windows_118405290831.log",
+      "sha256": "503987c155c968d491f7ce31151363453b4105fad62b85faa6ec73b69c3680a4",
+      "stderr_only_w_blocks": 16,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1155,
+          "text": "2026-10-20T01:51:52.9853621Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:51:52.9839499Z Build Summary: 169/215 steps succeeded (22 failed); 1479/1495 tests passed (16 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1094_zig-windows_118405289220.log",
+      "sha256": "4c18a55a11313730299f7779b2f93018120e803afaa031a97b98a20c2c8cf2f3",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1176,
+          "text": "2026-10-20T01:57:22.9086045Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:57:22.9043431Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1095_zig-windows_118405290653.log",
+      "sha256": "553bb1d40bcf45826fa21e09dd52e25407a81719b46e19540cb947875acb3b01",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1161,
+          "text": "2026-10-20T02:06:33.5966891Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T02:06:33.5944989Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1096_zig-windows_118405291967.log",
+      "sha256": "84f8326de791f83a7ab66e7d9147bdb4455a7b8a422894415f5b44aea97ede20",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1119,
+          "text": "2026-10-20T01:56:01.4690404Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:56:01.4661369Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1097_zig-windows_118405288652.log",
+      "sha256": "1041ab79f5c78e169d2d565b7e2a1e285183bb28c70bdd013c914956c7e8c5d3",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1152,
+          "text": "2026-10-20T01:58:38.6113198Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:58:38.6062543Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1098_zig-windows_118405282029.log",
+      "sha256": "dc0e54c11bb8347733e4a0bda967b600385439037b2aeb219641f23b52fd09e1",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1166,
+          "text": "2026-10-20T01:45:41.7988349Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:45:41.7947231Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1099_zig-windows_118405287051.log",
+      "sha256": "a37274299b5cad7ba074a78aa1b248f3a0bebc9559c2b87a1c2a615ec9967795",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1156,
+          "text": "2026-10-20T01:43:43.5151637Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:43:43.5122615Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1100_zig-windows_118405293578.log",
+      "sha256": "830895e5a545a326dae283606ebd1d9a0426a0affa2058014266b48fe3e27417",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1172,
+          "text": "2026-10-20T01:52:20.2813278Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:52:20.2780282Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1101_zig-windows_118405284289.log",
+      "sha256": "dd0d51456068d4fe6184e96d65508978f5f1577e154ce78b1af77a9e971f8025",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1159,
+          "text": "2026-10-20T01:54:11.2647505Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:54:11.2601377Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1102_zig-windows_118405293030.log",
+      "sha256": "42e94137c24798e836a842f12a8c6c67a577cff3c593bf2d81d2b1ad410cc260",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1129,
+          "text": "2026-10-20T01:49:49.1180568Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:49:49.1153902Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../../contributing_refresh_20261020/ci/pr1103_zig-windows_118405296668.log",
+      "sha256": "5a448e3d300654663ff17d9450023ca3c7f9cd195fc4ecd5d12b1f4e3d007fea",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1154,
+          "text": "2026-10-20T01:55:42.3432798Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T01:55:42.3386314Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 23,
+      "final_tree_other_direct_failure_lines": []
+    },
+    {
+      "file": "../ci_docs_control/control_pr1128_windows.log",
+      "sha256": "b2bec6f4c174543474fd093288b4dd3c044f9d884de3f332873b2aacc0d2a5e6",
+      "stderr_only_w_blocks": 15,
+      "explicit_test_failure_or_exit_messages": [
+        {
+          "line": 1120,
+          "text": "2026-10-20T19:59:04.1208578Z error: the following build command exited with code 1:"
+        }
+      ],
+      "build_summary": [
+        "2026-10-20T19:59:04.1174066Z Build Summary: 165/211 steps succeeded (22 failed); 1423/1438 tests passed (15 skipped)"
+      ],
+      "final_tree_direct_compile_error_steps": 22,
+      "final_tree_other_direct_failure_lines": []
+    }
+  ],
+  "conclusion": "All23 final failure trees list direct compiler-error steps plus transitive dependencies (22 direct steps throughPR1093/control;23 atPR1094 onward); no separately reported runtime test failure. Only matched explicit exit is overall build exit1. w blocks are stderr-only rendering, not failed runtime tests."
+}

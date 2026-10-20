@@ -1,0 +1,236 @@
+{
+  "all23_audited": true,
+  "scope": "Every direct failed step in final summaries is a compile-error step; all reported executed tests passed or skipped. No assertion of success for unrun dependent roots.",
+  "rows": [
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1082_zig-windows_118365122558.log",
+      "original_sha256": "b6bc011e4045d86418b41c14b103ef9339b379e46cce255dc422bf6dfc4d8ad1",
+      "public_sha256": "298503ccb1ed67ef11928b3065e334355da32e37ef28e433c6d636bb24abba37",
+      "compile_summary_lines_sha256": "2fb39ab6c6798852ea31c0547add8a3d9b10f9d4931127970c0e7926b4af2ee5",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1423,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1083_zig-windows_118405290817.log",
+      "original_sha256": "1b779ba4abd49a707a432b811c81434c916c9164fb9a1eef6d1cfda02b6b7783",
+      "public_sha256": "bbeb2f43b1f9cd496aa3a51ee11d21b15ab8d43fc4f16f748669e7de4d87dcec",
+      "compile_summary_lines_sha256": "e9cb0658c275bfeb794f433829af200eb9669d5c00ab08e0dd6291124f1d94c7",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1423,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1084_zig-windows_118405291435.log",
+      "original_sha256": "f828e69e56bd3c12877b9fd58aaa023241524a54c3fca89630bb59b9b78c8b1a",
+      "public_sha256": "06894410675b177b4e782ab688714379081379f0e24260298b020cc058ef8bdf",
+      "compile_summary_lines_sha256": "46e27ed85ff1265b266dba717962f6b883e1224888539b7df78821a1a5cf7612",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1424,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1085_zig-windows_118405287804.log",
+      "original_sha256": "de706dbdb42450ab19ae421beb453c51dc816767b2da8c633ccabfb11d04a26a",
+      "public_sha256": "2b4ee2fe00d5b8cd2d5cdc6f3cfde9f5f05e66488b5b3fbb9404056735ae2430",
+      "compile_summary_lines_sha256": "1dab2874a16a9c8facc352ea87ac01d06a236be2bae0e63511028115ac216999",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1430,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1086_zig-windows_118405288516.log",
+      "original_sha256": "96054b68ea901b07ddce58f83c0c7eb12b7b845d5b56cbfae772eb4f27e18bf9",
+      "public_sha256": "94e4d6b7ddc64f53c221a3f6ce9678e31042c40dac00c5001812cb0efca0e4c6",
+      "compile_summary_lines_sha256": "7e6bca514d2046fe5be10045cc75dac6715c8ff008a8b14c2cebaffb07682013",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1431,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1087_zig-windows_118405284987.log",
+      "original_sha256": "1c5750e654a1e652762550c8d38f7844aaa9922ee4e1ea08905968a0c05f5470",
+      "public_sha256": "5384a8d0e6849c936f046b70feeef0e5c5a3a56d3b682935859f14571ace4d21",
+      "compile_summary_lines_sha256": "f7db5ed0b94031df7d5ffc624aabbaff7e5c1fe30b804ddb66d35fbf91dc6625",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1432,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1088_zig-windows_118405289900.log",
+      "original_sha256": "683995c06c7d52b53da93fc5cafa638b53e34155c4f928ae2958a5fdd31e5575",
+      "public_sha256": "c618846a0d123a0638d858867561c662803106467d0faf9b20993b45de5b1074",
+      "compile_summary_lines_sha256": "eaafb582744dad32a2237f2a4190fad96390d3eaf3bda3da389b6d790f103147",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1432,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1089_zig-windows_118405285839.log",
+      "original_sha256": "adf54b01154b7227b9613c0804d893614224d90bb86614a9ce12a3b31327c589",
+      "public_sha256": "eb848377603b86c898380e8434914bbc73d161c8a871e53ab54abda4c402b0d1",
+      "compile_summary_lines_sha256": "5bc32100f380133928f8231e5ce285ebc807fd98dbf9f75c8453d61d8b3e567e",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1447,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1090_zig-windows_118405287356.log",
+      "original_sha256": "b8ace51ab612a631eb6a2eb6431f20bdb419c060e63ac398eb0364c1f2b3ab2c",
+      "public_sha256": "06fdcf4ca9bf8275b5ed02d931dd6a9b6aa307278f8ed2d82864cabc1102e63d",
+      "compile_summary_lines_sha256": "75832ce2247ab9c73fb879c455616429ba8c47d78cd9091ecc6fefbed7af8de8",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1448,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1091_zig-windows_118405283485.log",
+      "original_sha256": "639294c41612c7f1abecc772a29ccd00fc47506adcb601a7f3105314d4d63d7a",
+      "public_sha256": "73827ba5c486ce6cb0c982e6b892cabc1bf47268bfe7afb120c0cefe6d4995b1",
+      "compile_summary_lines_sha256": "0eeafa2cc00d8a994f865b618790e2ac3e815b5a6052244fe68e3a71fbaab867",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1450,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1092_zig-windows_118405284598.log",
+      "original_sha256": "5e54aa6b3b85e926d447fbefd09c9fb863d818b3c099b0abfd78fc1724ebd921",
+      "public_sha256": "c68c749276cacaa91cc0c64f3e82ece08a2869e160aa2b743f97fa9f75513d56",
+      "compile_summary_lines_sha256": "5182aa60844e2db203e221c8d82b19cedcfde9ea625335b725bbdbc7801c62d9",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1478,
+      "executed_tests_skipped": 16,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1093_zig-windows_118405290831.log",
+      "original_sha256": "503987c155c968d491f7ce31151363453b4105fad62b85faa6ec73b69c3680a4",
+      "public_sha256": "28e6c47d6f9409bc921479e6824c10319e9e3209031dcc5a85390b5434c40788",
+      "compile_summary_lines_sha256": "18fdd311e88f6255e45822c3d5a98728f3951f85d5d5c30f105bf67bfc81f3b7",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1479,
+      "executed_tests_skipped": 16,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1094_zig-windows_118405289220.log",
+      "original_sha256": "4c18a55a11313730299f7779b2f93018120e803afaa031a97b98a20c2c8cf2f3",
+      "public_sha256": "ba15bba0436b365e46275900ab6c8342479e5267c1bc66ac0d7519bbb77fea3e",
+      "compile_summary_lines_sha256": "3a9bac3677485a6f558b2a59d95a1e7906ee26262c61f36f111bf34a71e348be",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1095_zig-windows_118405290653.log",
+      "original_sha256": "553bb1d40bcf45826fa21e09dd52e25407a81719b46e19540cb947875acb3b01",
+      "public_sha256": "732777f00c94379d9f4264acbf44353dc5913929e704d197db942c4570915659",
+      "compile_summary_lines_sha256": "e6de9c873b066bdfed6d16c9f1f80787273cf512afbe5ccc7402fe31b98666be",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1096_zig-windows_118405291967.log",
+      "original_sha256": "84f8326de791f83a7ab66e7d9147bdb4455a7b8a422894415f5b44aea97ede20",
+      "public_sha256": "1536d0d1350f01e8044b1d991affe71b2233a687ec32510494e13faa45fe93c0",
+      "compile_summary_lines_sha256": "0bfd366114979f9164da16a03a66d23ce164db51c34d0d5286ff6871c8921c9f",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1097_zig-windows_118405288652.log",
+      "original_sha256": "1041ab79f5c78e169d2d565b7e2a1e285183bb28c70bdd013c914956c7e8c5d3",
+      "public_sha256": "9f34297e635e879d0d8cc4dd0a13244f778e3d183d02e7b2b937b9738c6e57b4",
+      "compile_summary_lines_sha256": "150a07793e0b81485414981582ef62097dbbc67503d61a0462f1edc3dedaec1d",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1098_zig-windows_118405282029.log",
+      "original_sha256": "dc0e54c11bb8347733e4a0bda967b600385439037b2aeb219641f23b52fd09e1",
+      "public_sha256": "8b541a5106435d932f2d317c89ad1610f3ba41947e4b2ff53dd0f4e6e6e7f95e",
+      "compile_summary_lines_sha256": "64e07e88089561c8d919743d92061865a48c7bcafda3b94f3827e06c4fbd3291",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1099_zig-windows_118405287051.log",
+      "original_sha256": "a37274299b5cad7ba074a78aa1b248f3a0bebc9559c2b87a1c2a615ec9967795",
+      "public_sha256": "8f2d5f914d0a39383fbef87e663811b19cad672c45a215c46523f901832a963c",
+      "compile_summary_lines_sha256": "5d39b89a202864524c25da6ef2156e427da46f082cef2b3e9c9bd9377e9a9fc3",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1100_zig-windows_118405293578.log",
+      "original_sha256": "830895e5a545a326dae283606ebd1d9a0426a0affa2058014266b48fe3e27417",
+      "public_sha256": "f2cffab0c3346d0fa99d828e9ea80725a0b8f3c76d5a57e6d3d03a125a60e274",
+      "compile_summary_lines_sha256": "a139812e3851bc22cae891c50ced96e78d00afaf0cadc757c80bfefbcd02375c",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1101_zig-windows_118405284289.log",
+      "original_sha256": "dd0d51456068d4fe6184e96d65508978f5f1577e154ce78b1af77a9e971f8025",
+      "public_sha256": "ab06386c42cf3682a3fe97b9585693e022a2a1657b5c90094c68e9b2c11ead39",
+      "compile_summary_lines_sha256": "a86a650dd33aa6a17e65b65ef23e1f51e22349bb0aa353f504e280443a205581",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1102_zig-windows_118405293030.log",
+      "original_sha256": "42e94137c24798e836a842f12a8c6c67a577cff3c593bf2d81d2b1ad410cc260",
+      "public_sha256": "8dd045103e3ebfb6ca250d254ba85168b8645ac0f4aad85f15e1b2eb5aa95d1b",
+      "compile_summary_lines_sha256": "339b1d2f377f78c5bbef21d397945267710d47afd3e424c31eadfcbb510132cb",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "contributing_refresh_20261020/ci/pr1103_zig-windows_118405296668.log",
+      "original_sha256": "5a448e3d300654663ff17d9450023ca3c7f9cd195fc4ecd5d12b1f4e3d007fea",
+      "public_sha256": "d35d68dbaa1be804a6103225952cf48ac220e520e89018467624206b8c79ab14",
+      "compile_summary_lines_sha256": "c4082b257557979d831789ff84ae721af4489fa21c3e9e8162cc7035e8abba84",
+      "failed_compile_steps": 23,
+      "executed_tests_passed": 1451,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    },
+    {
+      "archive": "coverage_20261020/ci_docs_control/control_pr1128_windows.log",
+      "original_sha256": "b2bec6f4c174543474fd093288b4dd3c044f9d884de3f332873b2aacc0d2a5e6",
+      "public_sha256": "b2bec6f4c174543474fd093288b4dd3c044f9d884de3f332873b2aacc0d2a5e6",
+      "compile_summary_lines_sha256": "c48d0465524afaa0467e6bac62f7e435d982be94b2d058c65ac9b487adf680bf",
+      "failed_compile_steps": 22,
+      "executed_tests_passed": 1423,
+      "executed_tests_skipped": 15,
+      "all_executed_tests_accounted_for": true
+    }
+  ]
+}

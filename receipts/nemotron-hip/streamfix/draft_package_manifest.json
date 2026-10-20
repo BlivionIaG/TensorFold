@@ -3779,8 +3779,8 @@
     },
     {
       "path": "coverage_20261020/public_manifest.json",
-      "sha256": "f6546693910add56f87c007f2f327a0decef7d29001396867b283012746e74c9",
-      "bytes": 237494
+      "sha256": "ceac3c80b9b88bd865c079a81651d0200be2519fe0dd4d37eb60f948793e0ea8",
+      "bytes": 241432
     },
     {
       "path": "coverage_20261020/publication/bodies/issue1081.md",
@@ -4701,6 +4701,51 @@
       "path": "coverage_20261020/windows_baseline/windows_pr1082_actual_graph.py",
       "sha256": "a294a98a1e326869c65befd115ed793b082c097fd89a72cbfa15c167b32e8228",
       "bytes": 2363
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/README.md",
+      "sha256": "9357efb4f00e5f3375a9c31b9bf9f55b81f036f65ac8841c82f5125e7d7bbb5f",
+      "bytes": 1893
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/failed_steps_independent_audit.json",
+      "sha256": "708af544efec25647edb9dfc1b7e86f84d769492eb77010756fccd09d4d5a6cc",
+      "bytes": 57159
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/public_manifest.json",
+      "sha256": "6cafca154ec7fb6593e64dbd324897738e0ee415ee764167820a4e24466c3cbd",
+      "bytes": 3278
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/root_independent_summary_audit.json",
+      "sha256": "aa71cd35c6938b5968e810d4cbd3d00017c3e0e652352691bfacdd4d486701e1",
+      "bytes": 12775
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/runtime_explicit_failure_scan.json",
+      "sha256": "0456382af8ad4fae192d3c2b3bee0f9531f161b5947d7e4d3250adfe60933e73",
+      "bytes": 16359
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/runtime_stderr_rendering_source_audit.json",
+      "sha256": "87a4bf3537ef1c7af01bac98f925fffaa817960f8c79bfeae853efb8fdbdb467",
+      "bytes": 2620
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/source/LICENSE",
+      "sha256": "5c537d6853e005298a285d508cff9ac7192cea23576c840d485b2b586a7ff177",
+      "bytes": 1080
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/source/Maker/Step/Run.zig.excerpt.txt",
+      "sha256": "7940e57151aad89541886c791526283d380d9f3f7153750153bb36a5fbc9c45f",
+      "bytes": 2501
+    },
+    {
+      "path": "coverage_20261020/windows_runtime_classification/source/Maker.zig.excerpt.txt",
+      "sha256": "7b2ffc85027e1de44c715586b856251aa8c475023e53323164ed6bfc74812df5",
+      "bytes": 6969
     },
     {
       "path": "critical_contracts/CRITICAL_CONTRACTS_ALL_PASS.json",

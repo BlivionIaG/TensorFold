@@ -1,0 +1,45 @@
+{
+  "scope": "Read-only local Zig0.17 source interpretation of retained CI log rendering; no PE execution, rerun or source mutation",
+  "tool_source_files": [
+    {
+      "path": "<LOCAL_ZIG_0_17_0>/lib/compiler/Maker.zig",
+      "sha256": "c8b7f6f8afdc7896addc0e19f0c4502874d2d1ba058f4ab4f9534b11468e4fbe"
+    },
+    {
+      "path": "<LOCAL_ZIG_0_17_0>/lib/compiler/Maker/Step/Run.zig",
+      "sha256": "ab3f954cfcc9c015dc5b8026a36704a23e743fc4a86a2c03c29b8a5c95300de7"
+    },
+    {
+      "path": "<LOCAL_ZIG_0_17_0>/lib/compiler/test_runner.zig",
+      "sha256": "10fd30c8c1f34b8fa00c6b353ef71dce151bf37e3ee1f87f099f79c22b45f443"
+    },
+    {
+      "path": "<LOCAL_ZIG_0_17_0>/lib/compiler/Maker/Step.zig",
+      "sha256": "3329f00e818c67d07adc3785b1e8d8b5f32c097ec4e0774c377ed0b6fd644f9d"
+    }
+  ],
+  "findings": [
+    {
+      "classification": "stderr-only display, not runtime failure",
+      "source": "compiler/Maker.zig:3080-3166",
+      "detail": "printStepFailure emits w only after no error bundle, successful test_results, and no result_error_msgs; final branch requires nonempty result_stderr."
+    },
+    {
+      "classification": "misleading command label is not exit evidence",
+      "source": "compiler/Maker.zig:2857-2864,3290-3365",
+      "detail": "Messages displayed no matter the result; printErrorMessages prints failed command label for retained command whenever verbose context, without a failure predicate."
+    },
+    {
+      "classification": "actual test process abnormal termination separately reported",
+      "source": "compiler/Maker/Step/Run.zig:1670-1677,2413-2418",
+      "detail": "Completed protocol tests require exited0 before results committed; abnormal exit produces explicit test process unexpectedly diagnostic. Test-results failure produces MakeFailed separately."
+    }
+  ],
+  "conclusion": "Do not classify generic run test w/test.exe command blocks as failed runtime steps. The 15 (or16) stderr-only blocks are not additional unexplained runtime failures. Existing CI overall failure/compiler diagnostics remain real; this does not establish CI green or attribute any other failure.",
+  "limitations": [
+    "Local same-version runner source hash bound; Windows CI exact compiler binary hash not retained.",
+    "Generic run test names/cache object hashes do not identify source module; no module identity reconstructed.",
+    "Warnings may describe intentional negative controls or actual operational events; no causal claim made from adjacency.",
+    "No conclusion about separately explicit failure/error/test process unexpectedly blocks beyond existing audit."
+  ]
+}
