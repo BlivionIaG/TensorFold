@@ -1,0 +1,17 @@
+{
+  "scope": "Independent local issue content review; no publication",
+  "issue_sha256": "db3e64f2488cef19bee2aa8f1d65199bb9d3e1f31e5d608efa6b483ac5832873",
+  "characters": 18721,
+  "source_head_title_CI_rows_checked": 22,
+  "direct_runner5_foundation23_relu43_vs_tree49_scopes": "PASS",
+  "shared_source_counts_rates_and_gap_mapping": "PASS",
+  "current_CI_contexts_inheritance_uncertainty": "PASS",
+  "documented_version_flag_not_invented_gate": "PASS",
+  "localized_fixes": [
+    "binary hashes not retained binaries",
+    "request logs versus whole-hold work counters",
+    "precision current reference implementation"
+  ],
+  "remaining_render_blocker": "ARCHIVE_RECEIPT_COMMIT_PENDING",
+  "public_writes": false
+}

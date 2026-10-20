@@ -1,0 +1,547 @@
+{
+  "audit_kind": "local_read_only_incremental_source_and_existing_static_evidence",
+  "live_capture_sha256": "3bf05f8fceefbf78e1cc6297a00b87147726835bb178a42e888ed22685ee8528",
+  "publication_sha256": "94161a5f908a39d6cbc892c27834d338ebe44fee3bf69349bbe19cb9aeace45e",
+  "static_receipt_sha256": "807874dbe42d2e84483cc0686143eb9f4eb8bcd4ecf641030e931a924964bc68",
+  "review_top": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
+  "all22_live_heads_match_publication": true,
+  "all22_incremental_predecessor_compare_links_match": true,
+  "all30_existing_static_receipt_rows_covered": true,
+  "baseline_lean_problems": 503,
+  "new_lean_problems_each_commit": 0,
+  "source_size_over600": [],
+  "added_comment_lines_over120": [],
+  "public_noreply_identity_and_no_tool_trailers": true,
+  "block_comment_delimiters_for_manual_review": [],
+  "rows": [
+    {
+      "pr": 1082,
+      "key": "49",
+      "predecessor": "76aafcf274e60a5e31a59ce145b2f71f7b366e9d",
+      "head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "commits": [
+        "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5"
+      ],
+      "incremental_files": [
+        "docs/kernel-contract.md",
+        "docs/recipes/SKILL.md",
+        "zig/build/hip.zig",
+        "zig/build/hip_contract.zig",
+        "zig/kernels/hip/contract_controls.hip",
+        "zig/src/core/contract.zig",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/core/contract/hsaco.zig",
+        "zig/src/core/contract/limits.zig",
+        "zig/tests/hip/contract_limits.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_rig.zig",
+        "zig/tests/hip/contract_rows.zig"
+      ],
+      "purpose": "feat(hip): the kernel contract runs on HIP",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1083,
+      "key": "NEW",
+      "predecessor": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "head": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
+      "commits": [
+        "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf"
+      ],
+      "incremental_files": [
+        "docs/kernel-contract.md",
+        "zig/kernels/hip/quant/mlx_decoder.hpp",
+        "zig/kernels/hip/tiles/stream.hpp",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/core/contract/hip_records_stream.zig",
+        "zig/src/core/contract/hip_records_stream_plain.zig",
+        "zig/src/core/contract/hip_records_stream_swiglu.zig",
+        "zig/src/core/contract/limits.zig",
+        "zig/tests/hip/contract_limits.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_stream.zig"
+      ],
+      "purpose": "fix(hip): preserve the MLX stream nonfinite classes",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1084,
+      "key": "28",
+      "predecessor": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
+      "head": "5b12f74a27326797a540d094387e7ffa472b55ed",
+      "commits": [
+        "5b12f74a27326797a540d094387e7ffa472b55ed"
+      ],
+      "incremental_files": [
+        "zig/src/families/qwen3_5/backend/hip/engine/hip_prefix.zig"
+      ],
+      "purpose": "fix(qwen3_5): no prompt cache step goes to the other ranks once the group stopped",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1085,
+      "key": "29",
+      "predecessor": "5b12f74a27326797a540d094387e7ffa472b55ed",
+      "head": "6af43c9db14516a85fbe22351eb0d3e485bd41bb",
+      "commits": [
+        "926e0a3969b90141d78acc084c01529d70010ed4",
+        "6af43c9db14516a85fbe22351eb0d3e485bd41bb"
+      ],
+      "incremental_files": [
+        "zig/build/hip.zig",
+        "zig/src/families/qwen3_5/backend/hip/engine/hip_costs.zig",
+        "zig/src/families/qwen3_5/backend/hip/engine/hip_lanes.zig",
+        "zig/src/families/qwen3_5/backend/hip/engine/hip_prefix.zig",
+        "zig/src/families/qwen3_5/backend/hip/engine/worker.zig",
+        "zig/src/families/qwen3_5/backend/hip/forward/pages.zig",
+        "zig/src/families/qwen3_5/backend/hip/forward/state.zig",
+        "zig/src/hip_serve/backend.zig",
+        "zig/src/hip_serve/costs.zig",
+        "zig/src/hip_serve/pages.zig",
+        "zig/src/hip_serve/prefix.zig",
+        "zig/src/hip_serve/protocol.zig",
+        "zig/src/hip_serve/serve.zig",
+        "zig/src/hip_serve/snapshots.zig",
+        "zig/tests/qwen35/check_radix.zig",
+        "zig/tests/qwen35/lanes_session.zig"
+      ],
+      "purpose": "refactor(hip): shared HIP serving pieces and lane cost timing in hip_serve; Qwen3.5 on them",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1086,
+      "key": "48",
+      "predecessor": "6af43c9db14516a85fbe22351eb0d3e485bd41bb",
+      "head": "754786d613dde5539d3a0c534007a1a9733cfaf8",
+      "commits": [
+        "754786d613dde5539d3a0c534007a1a9733cfaf8"
+      ],
+      "incremental_files": [
+        "zig/src/native/hip.zig"
+      ],
+      "purpose": "fix(hip): refuse --kv-cache fp8 by name until HIP has fp8 caches",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1087,
+      "key": "30",
+      "predecessor": "754786d613dde5539d3a0c534007a1a9733cfaf8",
+      "head": "7bf5f195fb06c0651a1a5d74277f24cc70da591c",
+      "commits": [
+        "7bf5f195fb06c0651a1a5d74277f24cc70da591c"
+      ],
+      "incremental_files": [
+        "zig/src/native/hip.zig"
+      ],
+      "purpose": "feat(hip): a HIP family can refuse --slide and --mtp-confidence by name before it loads",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1088,
+      "key": "31",
+      "predecessor": "7bf5f195fb06c0651a1a5d74277f24cc70da591c",
+      "head": "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2",
+      "commits": [
+        "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2"
+      ],
+      "incremental_files": [
+        "zig/build/hip.zig",
+        "zig/kernels/hip/recurrence/mamba.hip",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests.zig",
+        "zig/src/hip/kernel_tests/mamba.zig",
+        "zig/src/hip/kernels.zig",
+        "zig/src/hip/launches.zig",
+        "zig/src/hip/launches/mamba.zig",
+        "zig/src/hip/ops/mamba.zig",
+        "zig/src/hip/ops/ops.zig",
+        "zig/tests/hip/contract_kit.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_mamba.zig",
+        "zig/tests/hip/contract_scan.zig"
+      ],
+      "purpose": "feat(hip): Nemotron Mamba-2 mixer kernels, launches, ops and tests",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1089,
+      "key": "32",
+      "predecessor": "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2",
+      "head": "9b56916fa71d40f9dcd924956c09a3c5f7e18019",
+      "commits": [
+        "9b56916fa71d40f9dcd924956c09a3c5f7e18019"
+      ],
+      "incremental_files": [
+        "zig/src/hip/moe.zig"
+      ],
+      "purpose": "refactor(hip): the routed MoE's tile choice is public, its rule tested",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1090,
+      "key": "33",
+      "predecessor": "9b56916fa71d40f9dcd924956c09a3c5f7e18019",
+      "head": "6e73bf059c5646e683d680ab78ed5326aa9fba87",
+      "commits": [
+        "6e73bf059c5646e683d680ab78ed5326aa9fba87"
+      ],
+      "incremental_files": [
+        "zig/build/hip.zig",
+        "zig/kernels/hip/ops/nemotron_moe.hpp",
+        "zig/kernels/hip/ops/ops.hip",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests.zig",
+        "zig/src/hip/kernel_tests/nemotron/fixture.zig",
+        "zig/src/hip/kernel_tests/nemotron/moe.zig",
+        "zig/src/hip/kernel_tests/nemotron/pick.zig",
+        "zig/src/hip/launches.zig",
+        "zig/src/hip/launches/nemotron_moe.zig",
+        "zig/src/hip/moe_nemotron.zig",
+        "zig/src/hip/root.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_nemo_moe.zig"
+      ],
+      "purpose": "feat(hip): Nemotron-H MoE layer on the shared expert plan and products, its pick ranked on 512 threads",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1091,
+      "key": "34",
+      "predecessor": "6e73bf059c5646e683d680ab78ed5326aa9fba87",
+      "head": "9c206c22bf386348f2f1eb473a31ef8370163b5e",
+      "commits": [
+        "9c206c22bf386348f2f1eb473a31ef8370163b5e"
+      ],
+      "incremental_files": [
+        "zig/kernels/hip/decode/plan.hip",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests.zig",
+        "zig/src/hip/kernel_tests/nemotron/attention.zig",
+        "zig/src/hip/launches/plan.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_walk.zig"
+      ],
+      "purpose": "perf(hip): the planned values walk splits a KV head's query heads while its grid is small",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1092,
+      "key": "35",
+      "predecessor": "9c206c22bf386348f2f1eb473a31ef8370163b5e",
+      "head": "74b506e50265ccef559ce66d8d1cd55db55655ae",
+      "commits": [
+        "4a7c64c6aab76f0aa845b86523d8eae78ce3f310",
+        "74b506e50265ccef559ce66d8d1cd55db55655ae"
+      ],
+      "incremental_files": [
+        "zig/build/hip.zig",
+        "zig/src/families/nemotron/fixtures/config.json",
+        "zig/src/families/nemotron/fixtures/index.json",
+        "zig/src/families/nemotron/fixtures/mtp_names.txt",
+        "zig/src/families/nemotron/hip.zig",
+        "zig/src/families/nemotron/hip/admit.zig",
+        "zig/src/families/nemotron/hip/engine.zig",
+        "zig/src/families/nemotron/hip/forward.zig",
+        "zig/src/families/nemotron/hip/head.zig",
+        "zig/src/families/nemotron/hip/lanes.zig",
+        "zig/src/families/nemotron/hip/load.zig",
+        "zig/src/families/nemotron/hip/mamba.zig",
+        "zig/src/families/nemotron/hip/model.zig",
+        "zig/src/families/nemotron/hip/moe.zig",
+        "zig/src/families/nemotron/hip/native.zig",
+        "zig/src/families/nemotron/hip/pages.zig",
+        "zig/src/families/nemotron/hip/plan.zig",
+        "zig/src/families/nemotron/hip/prefix.zig",
+        "zig/src/families/nemotron/hip/tensors.zig",
+        "zig/src/native/hip.zig",
+        "zig/tests/nemotron_hip/gen.zig",
+        "zig/tests/nemotron_hip/main.zig",
+        "zig/tests/nemotron_hip/replay.zig"
+      ],
+      "purpose": "feat(nemotron): Nemotron-H on the native HIP engine, one GPU: admission, loader, forward and lane backend",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1093,
+      "key": "36",
+      "predecessor": "74b506e50265ccef559ce66d8d1cd55db55655ae",
+      "head": "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e",
+      "commits": [
+        "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e"
+      ],
+      "incremental_files": [
+        "zig/src/families/nemotron/hip.zig",
+        "zig/src/families/nemotron/hip/engine.zig",
+        "zig/src/families/nemotron/hip/lanes.zig",
+        "zig/src/families/nemotron/hip/native.zig",
+        "zig/src/families/nemotron/hip/pages.zig",
+        "zig/src/families/nemotron/hip/plan.zig",
+        "zig/src/families/nemotron/hip/worker.zig",
+        "zig/tests/nemotron_hip/gen.zig",
+        "zig/tests/nemotron_hip/group.zig",
+        "zig/tests/nemotron_hip/main.zig",
+        "zig/tests/nemotron_hip/replay.zig"
+      ],
+      "purpose": "feat(nemotron): tensor parallelism on HIP: followers run rank 0's steps, the cache and drafts agreed across ranks",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1094,
+      "key": "37",
+      "predecessor": "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e",
+      "head": "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6",
+      "commits": [
+        "da5936be79ff9c29513be08a6076f224f5c81596",
+        "b3da64459813339c3473d1a82ad5572c2444040f",
+        "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6"
+      ],
+      "incremental_files": [
+        "zig/src/families/nemotron/hip.zig",
+        "zig/src/families/nemotron/hip/costs.zig",
+        "zig/src/families/nemotron/hip/engine.zig",
+        "zig/src/families/nemotron/hip/forward.zig",
+        "zig/src/families/nemotron/hip/graphs.zig",
+        "zig/src/families/nemotron/hip/head.zig",
+        "zig/src/families/nemotron/hip/lanes.zig",
+        "zig/src/families/nemotron/hip/mamba.zig",
+        "zig/src/families/nemotron/hip/native.zig",
+        "zig/src/families/nemotron/hip/pages.zig",
+        "zig/src/families/nemotron/hip/round.zig",
+        "zig/src/families/nemotron/hip/worker.zig",
+        "zig/tests/nemotron_hip/gen.zig",
+        "zig/tests/nemotron_hip/group.zig",
+        "zig/tests/nemotron_hip/main.zig",
+        "zig/tests/nemotron_hip/replay.zig"
+      ],
+      "purpose": "feat(nemotron): lane rounds, lane costs and graph replay for the Nemotron HIP engine, and the decode-path test",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1095,
+      "key": "38",
+      "predecessor": "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6",
+      "head": "42529bfab171c2f30d7ce3641b78ca3b0ff821fc",
+      "commits": [
+        "42529bfab171c2f30d7ce3641b78ca3b0ff821fc"
+      ],
+      "incremental_files": [
+        "zig/src/families/nemotron/hip/engine.zig",
+        "zig/tests/nemotron_hip/gen.zig"
+      ],
+      "purpose": "perf(nemotron): HIP prompts in 2048-row chunks, so the routed experts get enough rows a tile",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1096,
+      "key": "39",
+      "predecessor": "42529bfab171c2f30d7ce3641b78ca3b0ff821fc",
+      "head": "d6134300b3fed9baa29842e20d28ce738fd77574",
+      "commits": [
+        "d6134300b3fed9baa29842e20d28ce738fd77574"
+      ],
+      "incremental_files": [
+        "zig/kernels/hip/ops/act.hip",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests.zig",
+        "zig/src/hip/kernel_tests/nemotron/fused.zig",
+        "zig/src/hip/launches.zig",
+        "zig/src/hip/launches/norms.zig",
+        "zig/src/hip/moe_nemotron.zig",
+        "zig/src/hip/ops/norms.zig",
+        "zig/src/hip/ops/ops.zig",
+        "zig/src/hip/reduce.zig",
+        "zig/tests/hip/contract_add_rms.zig",
+        "zig/tests/hip/contract_main.zig"
+      ],
+      "purpose": "perf(hip): the residual add and the RMS norm in one launch, the Nemotron MoE sum among its inputs",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1097,
+      "key": "40",
+      "predecessor": "d6134300b3fed9baa29842e20d28ce738fd77574",
+      "head": "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257",
+      "commits": [
+        "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257"
+      ],
+      "incremental_files": [
+        "zig/kernels/hip/recurrence/mamba.hip",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests.zig",
+        "zig/src/hip/kernel_tests/nemotron/window.zig",
+        "zig/src/hip/launches.zig",
+        "zig/src/hip/launches/mamba.zig",
+        "zig/src/hip/ops/mamba.zig",
+        "zig/src/hip/ops/ops.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_window.zig"
+      ],
+      "purpose": "perf(hip): a Mamba-2 window in three launches, each row's state kept in its snapshot slot",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1098,
+      "key": "41",
+      "predecessor": "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257",
+      "head": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
+      "commits": [
+        "f8cd5a4d72805fabe7350746ce9ba91274b54d29"
+      ],
+      "incremental_files": [
+        "docs/kernel-contract.md",
+        "zig/kernels/hip/quant/mlx_tiles.hpp",
+        "zig/kernels/hip/tiles/dot2_tiles.hip",
+        "zig/kernels/hip/tiles/epilogue.hpp",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests.zig",
+        "zig/src/hip/kernel_tests/nemotron/epilogue.zig",
+        "zig/src/hip/launches/affine.zig",
+        "zig/src/hip/moe_nemotron.zig",
+        "zig/src/hip/ops/ops.zig",
+        "zig/src/hip/ops/project.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_relu2.zig"
+      ],
+      "purpose": "perf(hip): Nemotron's relu^2 as the stream tile's epilogue for one-row MoE layers",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1099,
+      "key": "42",
+      "predecessor": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
+      "head": "8a1c6ae90a9212c481607eb6633697543e6cb3ff",
+      "commits": [
+        "8a1c6ae90a9212c481607eb6633697543e6cb3ff"
+      ],
+      "incremental_files": [
+        "zig/kernels/hip/decode/plan.hip",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests/nemotron/attention.zig",
+        "zig/src/hip/launches.zig",
+        "zig/src/hip/launches/plan.zig",
+        "zig/src/hip/ops/plan.zig",
+        "zig/tests/hip/contract_kv_write.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_walk.zig"
+      ],
+      "purpose": "perf(hip): the planned decode walk reads q and writes its rows in the activation type",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1100,
+      "key": "43",
+      "predecessor": "8a1c6ae90a9212c481607eb6633697543e6cb3ff",
+      "head": "3f991646915e24bb1c7c638ec118e27880d5a031",
+      "commits": [
+        "3f991646915e24bb1c7c638ec118e27880d5a031"
+      ],
+      "incremental_files": [
+        "zig/kernels/hip/ops/draw.hpp",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests.zig",
+        "zig/src/hip/kernel_tests/argmax.zig",
+        "zig/src/hip/launches.zig",
+        "zig/src/hip/launches/draw.zig",
+        "zig/src/hip/ops/draw.zig",
+        "zig/tests/hip/contract_argmax.zig",
+        "zig/tests/hip/contract_main.zig"
+      ],
+      "purpose": "perf(hip): the argmax of a wide logits row in parts across the card",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1101,
+      "key": "44",
+      "predecessor": "3f991646915e24bb1c7c638ec118e27880d5a031",
+      "head": "e22da9dab3e8d70d5dbe150be39ed3794d6bffda",
+      "commits": [
+        "64b2e8a17d42df6de779cf9620e461505ea9c041",
+        "3a7560c51042077dc33c388ca02b6eb53c7902f1",
+        "9d27ea9ac8ea014e4f32f3539d037757c2468014",
+        "674730c5ea9596da2aa21bab803fce6c6088d3be",
+        "e22da9dab3e8d70d5dbe150be39ed3794d6bffda"
+      ],
+      "incremental_files": [
+        "zig/src/families/nemotron/hip/forward.zig",
+        "zig/src/families/nemotron/hip/lanes.zig",
+        "zig/src/families/nemotron/hip/mamba.zig",
+        "zig/src/families/nemotron/hip/moe.zig",
+        "zig/src/families/nemotron/hip/round.zig",
+        "zig/tests/nemotron_hip/gen.zig"
+      ],
+      "purpose": "perf(nemotron): fewer launches a HIP decode token: q, k and v grouped, the residual and next norm merged, Mamba windows in three launches",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1102,
+      "key": "45",
+      "predecessor": "e22da9dab3e8d70d5dbe150be39ed3794d6bffda",
+      "head": "52840409d2e30ea7e55d9d79c10375cb2ffce6c5",
+      "commits": [
+        "52840409d2e30ea7e55d9d79c10375cb2ffce6c5"
+      ],
+      "incremental_files": [
+        "zig/kernels/hip/decode/plan.hip",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/hip/kernel_tests/nemotron/attention.zig",
+        "zig/src/hip/launches.zig",
+        "zig/src/hip/launches/plan.zig",
+        "zig/src/hip/ops/plan.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_walk.zig"
+      ],
+      "purpose": "perf(hip): the planned decode walk in one launch a query head for spans up to 4096 keys",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    },
+    {
+      "pr": 1103,
+      "key": "46",
+      "predecessor": "52840409d2e30ea7e55d9d79c10375cb2ffce6c5",
+      "head": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
+      "commits": [
+        "60a8da5243ef313fcab23bdb0d85c790a5cda935"
+      ],
+      "incremental_files": [
+        "docs/kernel-contract.md",
+        "zig/kernels/hip/quant/mlx_tiles.hpp",
+        "zig/kernels/hip/tiles/dot2_tiles.hip",
+        "zig/src/core/contract/hip_records.zig",
+        "zig/src/core/contract/hip_records_pair.zig",
+        "zig/src/hip/kernel_tests/nemotron/epilogue.zig",
+        "zig/src/hip/launches/affine.zig",
+        "zig/src/hip/launches/affine_pair.zig",
+        "zig/src/hip/moe_nemotron.zig",
+        "zig/src/hip/ops/ops.zig",
+        "zig/src/hip/ops/project.zig",
+        "zig/tests/hip/contract_main.zig",
+        "zig/tests/hip/contract_relu2_pair.zig"
+      ],
+      "purpose": "perf(hip): one row's routed fc1 and shared up in one launch, both with the relu^2 epilogue",
+      "incremental_compare_link_verified": true,
+      "static_receipt_all_checks_verified": true
+    }
+  ],
+  "runtime_not_repeated": true,
+  "qualification_complete": false
+}
