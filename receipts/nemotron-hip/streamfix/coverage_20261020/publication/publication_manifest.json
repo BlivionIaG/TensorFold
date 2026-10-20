@@ -1,6 +1,7 @@
 {
   "repository": "ashhart/TensorFold",
-  "evidence_commit": "514e2c8a4131bd84ce09f1a964c9fa703ef07c79",
+  "evidence_commit": "f8f4dfa2293e1fde7cada4045d5e072ab0daf58e",
+  "previous_publication_manifest": "https://github.com/BlivionIaG/TensorFold/blob/f8f4dfa2293e1fde7cada4045d5e072ab0daf58e/receipts/nemotron-hip/streamfix/coverage_20261020/publication/publication_manifest.json",
   "all22_still_draft": true,
   "source_heads_unchanged": true,
   "complete_qualification": false,
@@ -10,9 +11,8 @@
       "head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
       "branch": "nemhip-draft/00-hip-contract",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1082",
-      "expected_previous_body_sha256": "29d9e7077e5b96e21731408261b6e670ab3887f0e66e9ca4d32c5093c745ebf7",
-      "body_sha256": "5f8554b4991798ef359cbf31f6c8c7a849ec03df75809231b7eceb69faecdd04",
+      "expected_previous_body_sha256": "5f8554b4991798ef359cbf31f6c8c7a849ec03df75809231b7eceb69faecdd04",
+      "body_sha256": "cf8af9a9ce601aef9bceb1df53660562cb7a274d5f378820dd71e2b17f97a57d",
       "file": "bodies/pr1082.md"
     },
     {
@@ -20,9 +20,8 @@
       "head": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
       "branch": "nemhip-draft/00a-stream-nonfinite",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1083",
-      "expected_previous_body_sha256": "e75a1e9f21625ce4e8442b49de9a51b0901c0a8c9719e8910749b7311d75f835",
-      "body_sha256": "0a1ebf458ebb9c0204e439f77273f1883c32bddbfe69e67ef58f3ecb49a64616",
+      "expected_previous_body_sha256": "0a1ebf458ebb9c0204e439f77273f1883c32bddbfe69e67ef58f3ecb49a64616",
+      "body_sha256": "d93840d4c0606dae6ed6c5c6242f175cc25113a7b76ca5719c555421944fded0",
       "file": "bodies/pr1083.md"
     },
     {
@@ -30,9 +29,8 @@
       "head": "5b12f74a27326797a540d094387e7ffa472b55ed",
       "branch": "nemhip-draft/01-qwen35-prefix-stop",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1084",
-      "expected_previous_body_sha256": "7e309d6acb60a436f1f15eed3f92da9dab69a045634cc30fd48f3e6a4bdc5bf3",
-      "body_sha256": "8fa1604b97a407dee312ed0d5ba96403602f9a4950cedb751263cd5c3791e626",
+      "expected_previous_body_sha256": "8fa1604b97a407dee312ed0d5ba96403602f9a4950cedb751263cd5c3791e626",
+      "body_sha256": "023f4479505622211aa812804cfe236d297d77784a680e210e4cd57eaeac0df6",
       "file": "bodies/pr1084.md"
     },
     {
@@ -40,9 +38,8 @@
       "head": "6af43c9db14516a85fbe22351eb0d3e485bd41bb",
       "branch": "nemhip-draft/02-hip-serve",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1085",
-      "expected_previous_body_sha256": "1e31c9ad82d56b80bb28f90a5913f04d96b8d66e96e7dc212e11469bca551c04",
-      "body_sha256": "b607012b4823326756bad2195d2ea068ada3e4584b714b31554ffa755607944b",
+      "expected_previous_body_sha256": "b607012b4823326756bad2195d2ea068ada3e4584b714b31554ffa755607944b",
+      "body_sha256": "a8a34ca6d092a9f9cc4bc48294cf9de583b929e44574d090efcea3213030d303",
       "file": "bodies/pr1085.md"
     },
     {
@@ -50,9 +47,8 @@
       "head": "754786d613dde5539d3a0c534007a1a9733cfaf8",
       "branch": "nemhip-draft/02a-kv8-refusal",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1086",
-      "expected_previous_body_sha256": "36d148af27f8c5829092b0d16bc02929ea8cb137b3e6a097f288437019056581",
-      "body_sha256": "cf4db356dc5c1055d71a9863385c05404af294f25c15ae5f7663aa9b610ce114",
+      "expected_previous_body_sha256": "cf4db356dc5c1055d71a9863385c05404af294f25c15ae5f7663aa9b610ce114",
+      "body_sha256": "8fd25f658b0357559545f1be166b85170dd04d67de25562725ade561cdda37b0",
       "file": "bodies/pr1086.md"
     },
     {
@@ -60,9 +56,8 @@
       "head": "7bf5f195fb06c0651a1a5d74277f24cc70da591c",
       "branch": "nemhip-draft/03-slide-refusal",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1087",
-      "expected_previous_body_sha256": "d739d181a4520bbc38bc7b17c8bbe7930743de17cfa1f1685e32246931d0adef",
-      "body_sha256": "bb2d1106a6ec37d58bfb393d75526c744579fe206382150ef8af3dd822da5e4b",
+      "expected_previous_body_sha256": "bb2d1106a6ec37d58bfb393d75526c744579fe206382150ef8af3dd822da5e4b",
+      "body_sha256": "4f23e5995bb4398c86c1231a187fa236d438687c30c1ca3cfd6879f57af2a8c9",
       "file": "bodies/pr1087.md"
     },
     {
@@ -70,9 +65,8 @@
       "head": "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2",
       "branch": "nemhip-draft/04-mamba-kernels",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1088",
-      "expected_previous_body_sha256": "834dfa7dfdbe18c88bc6508ec4636c89428b85d15df4457c107a3b097aaa00d4",
-      "body_sha256": "48933119d9bcac51d35dedd81a09eefabdc7ba0693f29a826527f27ad519a4a7",
+      "expected_previous_body_sha256": "48933119d9bcac51d35dedd81a09eefabdc7ba0693f29a826527f27ad519a4a7",
+      "body_sha256": "b62feabe66a9e6813d492b0d2aeba3512b41f4b3f52adb65a1af751b9d518ac3",
       "file": "bodies/pr1088.md"
     },
     {
@@ -80,9 +74,8 @@
       "head": "9b56916fa71d40f9dcd924956c09a3c5f7e18019",
       "branch": "nemhip-draft/05-moe-tile",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1089",
-      "expected_previous_body_sha256": "46aed4f110d2976d7d2f58639d946fc7d4b3076d8d049a1e01ea1c0bb97bbc98",
-      "body_sha256": "7cc3289db488539d0ed5b757336aa15132be0ae911dcd4630481b17a224d961e",
+      "expected_previous_body_sha256": "7cc3289db488539d0ed5b757336aa15132be0ae911dcd4630481b17a224d961e",
+      "body_sha256": "754f7a963a5636dd76d5c318a9a4d903dd3483225084fc7bdbad2c8188c14ecf",
       "file": "bodies/pr1089.md"
     },
     {
@@ -90,9 +83,8 @@
       "head": "6e73bf059c5646e683d680ab78ed5326aa9fba87",
       "branch": "nemhip-draft/06-nemotron-moe",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1090",
-      "expected_previous_body_sha256": "a54c4bb3d7b8011b8c1ed944e16af35946e1e7795a2705a8e005a2f6ea368b3b",
-      "body_sha256": "ab468f9a40cc178c0e8b81e2090eb155946bba864b277bb3d02feaf42508771d",
+      "expected_previous_body_sha256": "ab468f9a40cc178c0e8b81e2090eb155946bba864b277bb3d02feaf42508771d",
+      "body_sha256": "137a0dc9464e75a223d26b9d85fa0aa52e9ba05d84e1e016685d58f44c0a48f7",
       "file": "bodies/pr1090.md"
     },
     {
@@ -100,9 +92,8 @@
       "head": "9c206c22bf386348f2f1eb473a31ef8370163b5e",
       "branch": "nemhip-draft/07-plan-walk",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1091",
-      "expected_previous_body_sha256": "866f87ea8ad53231b48399755737cbf597f339478820208e3548ce9505043318",
-      "body_sha256": "f50d94feff42cb8ef197f93e4ad2dae6b1353399f55a4c0815850f7ea64e43d7",
+      "expected_previous_body_sha256": "f50d94feff42cb8ef197f93e4ad2dae6b1353399f55a4c0815850f7ea64e43d7",
+      "body_sha256": "e128c16f75e0c5c13aa2ed6b4acb1e1d0856a7ae512b34a0b171fe5aa04e355a",
       "file": "bodies/pr1091.md"
     },
     {
@@ -110,9 +101,8 @@
       "head": "74b506e50265ccef559ce66d8d1cd55db55655ae",
       "branch": "nemhip-draft/08-nemotron-engine",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1092",
-      "expected_previous_body_sha256": "5da20bdcfcaf9eb4a6544fcb781510e475069a0514d32518c022082b61e6532b",
-      "body_sha256": "5eef8186a4fabbb6ee8eca0e9c55e763f25a4e220c30362b97f202813be2b137",
+      "expected_previous_body_sha256": "5eef8186a4fabbb6ee8eca0e9c55e763f25a4e220c30362b97f202813be2b137",
+      "body_sha256": "61805c339bf4157b98c06ee8720be45bdd8206c2bd0ba38bf44a4a36a01ad46d",
       "file": "bodies/pr1092.md"
     },
     {
@@ -120,9 +110,8 @@
       "head": "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e",
       "branch": "nemhip-draft/09-nemotron-tp",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1093",
-      "expected_previous_body_sha256": "0f915f3adce7eb7be9f3305b8d43a70f95bfba6860ae50de4616d1c288f96d46",
-      "body_sha256": "03b0dd79ac16482db7ea47a2224ddec299644c107625f353360e56ee6477ae53",
+      "expected_previous_body_sha256": "03b0dd79ac16482db7ea47a2224ddec299644c107625f353360e56ee6477ae53",
+      "body_sha256": "1ac0004a2d492e79afc1dbd103b3f522fd5f010a6e3ae99274f8b946d6fae64d",
       "file": "bodies/pr1093.md"
     },
     {
@@ -130,9 +119,8 @@
       "head": "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6",
       "branch": "nemhip-draft/10-nemotron-rounds",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1094",
-      "expected_previous_body_sha256": "a6f6789134f24228c2aaf88bcf51aea61313899818ce85699a0ca24a866dc368",
-      "body_sha256": "51c1433c8ff448f0acbc34cee23b8b7b41162b17337268e4a11083bfe543c8f8",
+      "expected_previous_body_sha256": "51c1433c8ff448f0acbc34cee23b8b7b41162b17337268e4a11083bfe543c8f8",
+      "body_sha256": "7ac5b1620c52577d721193e0170c633930e2540869055e562d2227486570bb9b",
       "file": "bodies/pr1094.md"
     },
     {
@@ -140,9 +128,8 @@
       "head": "42529bfab171c2f30d7ce3641b78ca3b0ff821fc",
       "branch": "nemhip-draft/11-prefill-chunk",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1095",
-      "expected_previous_body_sha256": "7270c1edb9f0c456e55dccd4add9e6d25dff66d50edd0e59a19d5e8d425c786d",
-      "body_sha256": "1cd15c87fbebdd3a10d5a61e968edc5388cb5d5c769e973a30ce41fb281114ad",
+      "expected_previous_body_sha256": "1cd15c87fbebdd3a10d5a61e968edc5388cb5d5c769e973a30ce41fb281114ad",
+      "body_sha256": "ea2593d282a51ae9c686df8159f1c90d2238d1e753f34387ddbab54493a39b7b",
       "file": "bodies/pr1095.md"
     },
     {
@@ -150,9 +137,8 @@
       "head": "d6134300b3fed9baa29842e20d28ce738fd77574",
       "branch": "nemhip-draft/12-add-rms",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1096",
-      "expected_previous_body_sha256": "a0f1bd6ac075605f605988491dd025ae3f2321cdfef0b737915ca4d5dd5d9672",
-      "body_sha256": "1f527010ccd6970cfdf5d7f79f7d965ca0cf90febfd39186f5e4783682b72caf",
+      "expected_previous_body_sha256": "1f527010ccd6970cfdf5d7f79f7d965ca0cf90febfd39186f5e4783682b72caf",
+      "body_sha256": "e98cd6492ba6c5483ce53de06f64cd6c35457c4ed8d63bcd3c38bd968b849836",
       "file": "bodies/pr1096.md"
     },
     {
@@ -160,9 +146,8 @@
       "head": "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257",
       "branch": "nemhip-draft/13-mamba-window",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1097",
-      "expected_previous_body_sha256": "db94fb73fae937fb269b4a81d4be21974cda4f3c6986e46317f18c18de62fc29",
-      "body_sha256": "567a46a0e73c973aa374fa814b20e2433a0ac867afd62acc43d16c69e11e1038",
+      "expected_previous_body_sha256": "567a46a0e73c973aa374fa814b20e2433a0ac867afd62acc43d16c69e11e1038",
+      "body_sha256": "26487ff08fedb0032f2b72dd3a2d2c73c861cae29beb04b2c7e75fdd110dff7b",
       "file": "bodies/pr1097.md"
     },
     {
@@ -170,9 +155,8 @@
       "head": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
       "branch": "nemhip-draft/14-relu2-epilogue",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1098",
-      "expected_previous_body_sha256": "ef1f1b76b28e819ae21706f22a2dd1d1c1b81e23f0d226f8b819dc9b111216bc",
-      "body_sha256": "0f57b4d8e1bc8dba02175f8fd60db03504668116541e7cf231de8d262731a552",
+      "expected_previous_body_sha256": "0f57b4d8e1bc8dba02175f8fd60db03504668116541e7cf231de8d262731a552",
+      "body_sha256": "987e44832cf98892f46ba55bddea212d4061b85fb1cd540e19972692cd269ee6",
       "file": "bodies/pr1098.md"
     },
     {
@@ -180,9 +164,8 @@
       "head": "8a1c6ae90a9212c481607eb6633697543e6cb3ff",
       "branch": "nemhip-draft/15-plan-act",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1099",
-      "expected_previous_body_sha256": "3a52444b5db5666ae3c17933a6bba267de4b88cf9fe356c7020dd9bcf98a1d40",
-      "body_sha256": "38706d8136ccc2804666da7c65a5e4c7b856b4f0091dc0e9a85ba3b0aee44e35",
+      "expected_previous_body_sha256": "38706d8136ccc2804666da7c65a5e4c7b856b4f0091dc0e9a85ba3b0aee44e35",
+      "body_sha256": "a2c4a817696383fd05dad62b1ef9ae4f9f5bda5c4883e8c290ad31dbac7f969d",
       "file": "bodies/pr1099.md"
     },
     {
@@ -190,9 +173,8 @@
       "head": "3f991646915e24bb1c7c638ec118e27880d5a031",
       "branch": "nemhip-draft/16-argmax-parts",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1100",
-      "expected_previous_body_sha256": "08154d4ef42b0ec82d5f24f20fcaed1498653e9ae0c80c9878e413595faa9278",
-      "body_sha256": "cfe57ad2ae51729c163772da86027af57f2e40a7606fce9ee8b8fd13d4b6d3da",
+      "expected_previous_body_sha256": "cfe57ad2ae51729c163772da86027af57f2e40a7606fce9ee8b8fd13d4b6d3da",
+      "body_sha256": "bbd1335e5f2108ccd8227fa409be94dff7496111d19822ca297a30a84faba98f",
       "file": "bodies/pr1100.md"
     },
     {
@@ -200,9 +182,8 @@
       "head": "e22da9dab3e8d70d5dbe150be39ed3794d6bffda",
       "branch": "nemhip-draft/17-nemotron-fused",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1101",
-      "expected_previous_body_sha256": "92848afe842194ba02bd1f706b72bbd2d266cc653d826d4134e8abf440beaa05",
-      "body_sha256": "26d767107e702928b9e2a5d2e4f0dcb9bdb7870a61464608783843e86d30735b",
+      "expected_previous_body_sha256": "26d767107e702928b9e2a5d2e4f0dcb9bdb7870a61464608783843e86d30735b",
+      "body_sha256": "0fbcb7aaf401f637c435741f079eab1fe1e5e5b1b6ff7ad0ed469a9766e9f4cd",
       "file": "bodies/pr1101.md"
     },
     {
@@ -210,9 +191,8 @@
       "head": "52840409d2e30ea7e55d9d79c10375cb2ffce6c5",
       "branch": "nemhip-draft/18-plan-attend",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1102",
-      "expected_previous_body_sha256": "3b1634327d0b5bdc3d1138c2a487d02df3903cd3180d05ce48d82219689aa509",
-      "body_sha256": "9dd2c5b5ce2fc999b041d4f6077a711a3fb6f1d45ae4bc178951ff663a1d9f08",
+      "expected_previous_body_sha256": "9dd2c5b5ce2fc999b041d4f6077a711a3fb6f1d45ae4bc178951ff663a1d9f08",
+      "body_sha256": "40d9af164225c93f0e898aadfa80ccbd9f5921905725882a9e919d11751a3fd1",
       "file": "bodies/pr1102.md"
     },
     {
@@ -220,15 +200,14 @@
       "head": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
       "branch": "nemhip-draft/19-moe-pair",
       "base": "main",
-      "url": "https://github.com/ashhart/TensorFold/pull/1103",
-      "expected_previous_body_sha256": "f1214c0bbe8bd00f8978349b7ff19855437aeae4118dd5bc47c09327e70f8606",
-      "body_sha256": "8a0b144b329baca5b060bd15350b54ac5396cbcb1acd8df9c41170f1dac7247c",
+      "expected_previous_body_sha256": "8a0b144b329baca5b060bd15350b54ac5396cbcb1acd8df9c41170f1dac7247c",
+      "body_sha256": "af93a9f73aaefec7164c193a584bb294984e7ef1986a388d114dfd4acbf2d79c",
       "file": "bodies/pr1103.md"
     }
   ],
   "issue": {
-    "expected_previous_body_sha256": "cadd8b60c11b0c91c6e33ada11ea04a9f71324c91df83b2b3a6c05eee94fb316",
-    "body_sha256": "db73e2e6c929df6d59a31d0553b5677e4bd778a20ea02222b933876ceaa0040f",
+    "expected_previous_body_sha256": "db73e2e6c929df6d59a31d0553b5677e4bd778a20ea02222b933876ceaa0040f",
+    "body_sha256": "5b1e8f782b04f4c31fbebae190458871fe0865d3e3244f11bf32d7d25ee3335e",
     "file": "bodies/issue1081.md"
   }
 }
