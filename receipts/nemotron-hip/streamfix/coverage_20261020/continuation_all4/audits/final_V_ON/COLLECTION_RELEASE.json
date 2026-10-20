@@ -1,0 +1,11 @@
+{
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "boot_id": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+  "state_sha256": "90594fb168a66cf73de257c3c9252f3f67b57f2195db07bf0e1214834f368ae4",
+  "all_downloads_verified": true,
+  "owned_groups_gone": true,
+  "independent_audit_pass": true,
+  "run_directory": "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_v_on_pair1/runs/20261020T234217",
+  "independent_audit_sha256": "867325821ff3feb5924a7de2c6b213649a101c7d816affa9eb8c2a07652e4a81",
+  "released_at_utc": "2026-10-20T22:03:05Z"
+}

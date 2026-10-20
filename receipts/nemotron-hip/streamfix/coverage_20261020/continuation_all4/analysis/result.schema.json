@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Independent source-bound selected-pair measurement reduction",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "validated_available_raw",
+    "selected_pair_matrix_raw_complete",
+    "original_full_matrix_complete",
+    "statistical_confidence_claimed",
+    "full_contributing_qualified",
+    "true_token_itl_distribution_available",
+    "independent_blocks_not_single_boot_run",
+    "pending_blocks",
+    "selected_blocks",
+    "validated_cell_files",
+    "validated_requests_including_warmups",
+    "validated_measured_requests",
+    "cells",
+    "comparisons",
+    "errors"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "original_full_matrix_complete": {
+      "const": false
+    },
+    "statistical_confidence_claimed": {
+      "const": false
+    },
+    "full_contributing_qualified": {
+      "const": false
+    },
+    "true_token_itl_distribution_available": {
+      "const": false
+    },
+    "independent_blocks_not_single_boot_run": {
+      "const": true
+    },
+    "validated_available_raw": {
+      "type": "boolean"
+    },
+    "selected_pair_matrix_raw_complete": {
+      "type": "boolean"
+    },
+    "pending_blocks": {
+      "type": "array"
+    },
+    "selected_blocks": {
+      "type": "array"
+    },
+    "cells": {
+      "type": "array"
+    },
+    "comparisons": {
+      "type": "array"
+    },
+    "errors": {
+      "type": "array"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "selected_pair_matrix_raw_complete": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "validated_cell_files": {
+            "const": 32
+          },
+          "validated_requests_including_warmups": {
+            "const": 576
+          },
+          "validated_measured_requests": {
+            "const": 432
+          },
+          "pending_blocks": {
+            "maxItems": 0
+          },
+          "selected_blocks": {
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "comparisons": {
+            "minItems": 16,
+            "maxItems": 16
+          },
+          "validated_available_raw": {
+            "const": true
+          }
+        }
+      }
+    }
+  ]
+}

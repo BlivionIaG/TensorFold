@@ -1,0 +1,19 @@
+# Offline selected-pair reducer (unlaunched analysis only)
+
+`reduce_selected_pairs.py` is separate from every frozen benchmark/fullmatrix/screen reducer. It derives descriptive OLD/NEW comparisons from an explicit four-block selection; it never contacts the server, starts models or modifies runtime receipts. Supply the common local receipt root as its first argument. Example using the checked-in pending selection:
+
+```sh
+python3 reduce_selected_pairs.py "$RECEIPT_ROOT" --selection selection.pending.json --partial --output existing_pair_only.json
+```
+
+The actual test contains only the original completed eight W7800 OFF files:144 requests/108 measured, four case comparisons. Three future blocks have null run roots and remain explicitly pending, without invented times/results. Original thirdhold orphan files remain retained and excluded. For each actual future block, provide its relative run root and exact state.json SHA only after successful collection. Omit `--partial` for final validation: it requires all four independent pairs,32 files/576 requests/432 measured and16 exact rig×mode×shape×C comparisons. It never declares the original interrupted fullmatrix or CONTRIBUTING complete.
+
+The explicit loader checks each selected block/rig/mode, source729 versus8649, exact native binary hashes, old1/new2 order,8capacity, perhold teardown/PG records, allfour cases, rawfile/clientexit hashes, rawIDfixture hashes and actual sent bodies. Requests are warmup+3measured, T0/seed1234/ignoreEOS/exactlength/cache0; full server token hashes are compared across modes, sources andconcurrency for each rig/fixture. Content+reasoning hashes are independently rebuilt from raw SSE. No server token hash is misrepresented as independently regenerated output token IDs.
+
+Fresh pair blocks must have matching explicit boot UUIDs at start/end and complete2hold runtime state. The historical W OFF firstpair has no perhold boot UUID field in its older runner; its continuity is supported by the same uninterrupted original coordinator/advisory-lock PID and the two recorded completed holds. This limitation is explicit in the result rather than fabricating a boot binding. Across independent blocks, boot UUIDs may differ; no singleboot or ABBA claim is made.
+
+Per-request client/serverTTFT, serverprefillelapsed, serverdecodeelapsed/rate, deliverymeanTPOT, servermeaninterval and actual chunkgap arrays are retained. Each cell keeps all3 measured batch values, means and medians. Aggregate completion/prompt/total E2E rates use actual batchwall; deliverywindow and weightedserverprefillservice rates remain distinct. Pooled batchwall rate excludes interbatchgaps; elapsed firstsent→lastcomplete includes them. Latency and throughput percent changes keep their respective denominators. No baseline first/last drift estimate exists for a singlebaselinehold. True pertoken ITL distribution and pure GPU prefill compute are unavailable, not fabricated.
+
+`result.schema.json` describes output invariants. The existing-pair test is actual CPU analysis of retained raw data, not simulated future benchmark evidence. No GPU/remote/GitHub calls occur. The supporting input selection deliberately preserves future nulls until actual collected state is available.
+
+Actual TP2 teardown classification now requires rank0 exit0, every rank alive before the explicitly intentional teardown, no forced-timeout kill and PGgone. TP2 workers alone may record intentional SIGTERM(-15); allother negative exits fail. Eight mutated-copy negativecontrols are retained in continuation_first2/independent_first2_source_rank_audit.json. The original all-exit0 supervisor failure remains immutable history. ON requests omit draft because nativeAPI defaults totrue; observedruntime.drafts must still exactlymatchmode. The initial postrunparser KeyError(draft) is retained separately; no requests/benchmath changed.

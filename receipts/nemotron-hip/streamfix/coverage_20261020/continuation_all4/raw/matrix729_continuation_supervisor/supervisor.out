@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_continuation_supervisor/supervisor.py", line 103, in <module>
+    cleanup_state(state);boot();lockfree();rec.update(complete=True,finished_utc=now(),state_sha256=sha(run/'state.json'),launch_result_sha256=sha(P/'launch_result.json'));save()
+    ~~~~~~~~~~~~~^^^^^^^
+  File "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_continuation_supervisor/supervisor.py", line 68, in cleanup_state
+    assert all(r['actual_exit_status']==0 and not r.get('forced_kill_after_term_timeout',False)for r in hold['ranks']),'Native hold abnormal exit/forcedkill'
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Native hold abnormal exit/forcedkill

@@ -1,0 +1,31 @@
+{
+  "launcher_pid": 111666,
+  "started_utc": "2026-10-20T21:42:17Z",
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "boot_id": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+  "allocation_sha256": "20010e4c68d9a613314d058a9689201340b6588c9cd897e4b4a2c1253d043ea4",
+  "payload_sha256": "e5d0a9513cd473a262517ce41edb629f827ebb79a4aa0c7f19f7fbaaf06d9eec",
+  "selected_block": {
+    "rig": "V620tp1",
+    "mode": "on"
+  },
+  "prior_pairs": [
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "state_sha256": "9a0742067ccd00030a8590793fefedad1b78f73e9844daacce5038a706382e4f",
+      "launch_result_sha256": "9b0f6a2dc556179191490f29f7aba63d293a08621ca18297c6922b12fa68c103",
+      "all_owned_pids_and_groups_absent": true,
+      "worker_exit_scope": "TP2 rank1 intentional SIGTERM accepted only alive-before-teardown, exact intentional reason, no forced kill and group absent; rank0 must0"
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "on",
+      "state_sha256": "fa3e5d5a4b4bd3f312def26e46b69657bf39f0e7e37665f507ca7f1f7b6b3b6d",
+      "launch_result_sha256": "583104388f80afcf75758ddd95c84221bc295f2cdeb0f71c37dbf6fb384d4ab2",
+      "all_owned_pids_and_groups_absent": true,
+      "worker_exit_scope": "TP2 rank1 intentional SIGTERM accepted only alive-before-teardown, exact intentional reason, no forced kill and group absent; rank0 must0"
+    }
+  ],
+  "original_supervisor_status": "Preserved failed_stopped on strict rank1-zero check; no benchmark rerun for completed W on pair"
+}

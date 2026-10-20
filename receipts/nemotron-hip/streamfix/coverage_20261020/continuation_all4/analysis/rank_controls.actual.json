@@ -1,0 +1,77 @@
+{
+  "validated": true,
+  "reducer_sha256": "15e3c1e1be2c3771c04db245df1d5aeb14473bc1726806efe9dee5daf2b8893d",
+  "actual_record_sha256": {
+    "selected_existing_w_off/W7800tp2/off_1_old.run.json": "5404403309e3d61273f8ed9150516ebd26f3efa4d81f94c1867d04acccb32f26",
+    "raw/matrix729_v_off_pair1/runs/20261020T230018/V620tp1/off_1_old.run.json": "f7d35aec5c8d6546adea80771475ff64c2a1b478f8d8f4583a0e18f9168193c4"
+  },
+  "controls": [
+    {
+      "control": "worker_SIGKILL",
+      "mutated_fields": {
+        "actual_exit_status": -9
+      },
+      "red": true,
+      "scope": "Mutated copy of an actual record; not a runtime or numerical failure"
+    },
+    {
+      "control": "worker_SIGSEGV",
+      "mutated_fields": {
+        "actual_exit_status": -11
+      },
+      "red": true,
+      "scope": "Mutated copy of an actual record; not a runtime or numerical failure"
+    },
+    {
+      "control": "worker_not_alive_before_teardown",
+      "mutated_fields": {
+        "alive_before_intentional_teardown": false
+      },
+      "red": true,
+      "scope": "Mutated copy of an actual record; not a runtime or numerical failure"
+    },
+    {
+      "control": "worker_unexpected_reason",
+      "mutated_fields": {
+        "exit_reason": "unexpected earlier exit"
+      },
+      "red": true,
+      "scope": "Mutated copy of an actual record; not a runtime or numerical failure"
+    },
+    {
+      "control": "worker_forced_timeout_kill",
+      "mutated_fields": {
+        "forced_kill_after_term_timeout": true
+      },
+      "red": true,
+      "scope": "Mutated copy of an actual record; not a runtime or numerical failure"
+    },
+    {
+      "control": "worker_group_still_present",
+      "mutated_fields": {
+        "process_group_gone": false
+      },
+      "red": true,
+      "scope": "Mutated copy of an actual record; not a runtime or numerical failure"
+    },
+    {
+      "control": "rank0_SIGTERM",
+      "mutated_fields": {
+        "actual_exit_status": -15
+      },
+      "red": true,
+      "scope": "Mutated copy of an actual record; not a runtime or numerical failure"
+    },
+    {
+      "control": "TP1_SIGTERM",
+      "mutated_fields": {
+        "actual_exit_status": -15
+      },
+      "red": true,
+      "scope": "Mutated copy of an actual record; not a runtime or numerical failure"
+    }
+  ],
+  "all8_red": true,
+  "actual_baseline_worker_sigterm_accepted_only_under_explicit_intentional_conditions": true,
+  "no_GPU_network_or_runtime_changes": true
+}

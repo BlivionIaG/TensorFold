@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "blocks": [
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "scope": "recovered_first_pair",
+      "run_root": "selected_existing_w_off",
+      "state_sha256": "583b59051f89f9446e5106a90b4c943b22259a5cf4c47c8d14e5d28a858f8dfd",
+      "hold_records": [
+        {
+          "file": "W7800tp2/off_1_old.run.json",
+          "sha256": "5404403309e3d61273f8ed9150516ebd26f3efa4d81f94c1867d04acccb32f26",
+          "original_sha256": "7e8094c6881fa44688a0059739acb0219875492c27361620887397721dd53cef"
+        },
+        {
+          "file": "W7800tp2/off_2_new.run.json",
+          "sha256": "1473e4d3c0b12f5293a498e276518fad5ff5edb9f840db63b0264bef36e7ec32",
+          "original_sha256": "9fd5da3b92058535aa60a81478148bd1f1cbb710bca750aae18259c74fef5f1e"
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "scope": "completed_fresh_pair",
+      "run_root": "raw/matrix729_v_off_pair1/runs/20261020T230018",
+      "state_sha256": "4e070385c37e8aa37f6481c844fea1b27724bce5cb96e2b819f2a656ee7c08a1",
+      "status": "ACTUAL_COLLECTED_COMPLETE_PAIR",
+      "original_state_sha256": "9a0742067ccd00030a8590793fefedad1b78f73e9844daacce5038a706382e4f"
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "on",
+      "scope": "completed_fresh_pair",
+      "run_root": "raw/matrix729_w_on_pair1/runs/20261020T232155",
+      "state_sha256": "cdbe5658a2b9d553123fba0410e811d667627e11c3b07338e0d3200d058f28a7",
+      "status": "ACTUAL_COLLECTED_COMPLETE_PAIR",
+      "original_state_sha256": "fa3e5d5a4b4bd3f312def26e46b69657bf39f0e7e37665f507ca7f1f7b6b3b6d"
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "on",
+      "scope": "completed_fresh_pair",
+      "run_root": "raw/matrix729_v_on_pair1/runs/20261020T234217",
+      "state_sha256": "ee59223dc06e6cb7b053335857ade5d07976902641b216d2da62081fad8da7d3",
+      "status": "ACTUAL_COLLECTED_COMPLETE_PAIR",
+      "original_state_sha256": "90594fb168a66cf73de257c3c9252f3f67b57f2195db07bf0e1214834f368ae4"
+    }
+  ],
+  "excluded_orphan_data": "All thirdcandidateholdcomplete2cells andpartial3requests remain in recoveredarchive; neverselected",
+  "scope": "4independentdescriptivepairs; noABBA/no singlebootmatrix/noqualification",
+  "fixtures": {
+    "code_1024_512": {
+      "file": "raw/matrix729_v_off_pair1/fixtures/code_1024_512.ids.json"
+    },
+    "prose_16384_1024": {
+      "file": "raw/matrix729_v_off_pair1/fixtures/prose_16384_1024.ids.json"
+    }
+  },
+  "public_binding_scope": "Only metadata hash bindings remapped to privacy-normalized copies; all actualHTTP/SSE cells unchanged. Original bindings retained in manifests/audits."
+}

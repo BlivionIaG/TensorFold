@@ -1,0 +1,156 @@
+[tensorfold] HIP rank 0 of 1: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots 
+info: lane costs ms by window rows 1:7.48 2:8.98 3:11.29 4:12.47; shared rows 2:8.96 4:12.56 8:20.55 12:27.14 16:33.73; head step 0.481
+[tensorfold] open-file limit raised: soft 1024 -> 524288
+[tensorfold] HIP gfx1030 device 0, rank 0 of 1: Nemotron-H model 17.34 GiB, MTP head loaded; 8 streams at once, 0.71 GiB each at a 65536-token window, of 9.51 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows
+[tensorfold] serving m at http://127.0.0.1:20502/v1 (sampling: temperature 1.0, top_p 0.95; drafts: off; context: 65536; loaded in 4.0s)
+[tensorfold] thinking on (the chat template's default): replies reason in reasoning_content before the answer in content, and max_tokens counts both. --no-thinking turns it off; a request can send chat_template_kwargs {"enable_thinking": false}
+[tensorfold] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "GET /v1/models HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-d54b85862ad8d663db8c630c18782a48 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-bf7db4632cae4ac7e2e5577eb5a85bca prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-e570c978c544f78d8d961b0c48dba453 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-30b2afd0705cdaef5dbc68c6c37ff72f prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-24b00781373946081430da97e2a184ff prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-3cd7fce961ff727672efa7bdc696fd00 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-66a17c49969f3d4eeaf6743565d080f5 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-3718ebf00730afd390f6e53adee1b707 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-674720a91c72d3d079c3f46e8d257b8d prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-cb9d404dd219d6d5049563202be9563c prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-0e1c2a9a87f4a0645f1769e5e066ca13 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-950a6782af06a60087dfa4dc9834b6f5 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-75d0dde42dc6462636eab4227eafc512 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-0f1012ce6abe72362ab915184ef7f968 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-0b52e9580193aff2dfd3fbe47b6fd8a6 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-a3e7e10aa20a47c56ffe0e5b2e56c5af prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-9fe9668f310f6143da47e4bd1c00b617 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-01b116de788d738fb3adc302637c1643 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-b7d5c10bc6f463467413be055f9c9e82 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-ddc36d213014657d8b175b6dbc43bf0c prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-2f5dae50d3e3ab0892bc2509d74ca099 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-ea245b5464eb6912b240aff57d0df311 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-0078071fde0c5007dd2c999ffdeaca4e prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-24a2f06584d546c877a13f84179c80d5 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-14c616a65ea90c5f087e0fb111ca333d prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-9b143966fa631fa9a684ee242b47e6e5 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-5b107a62ac383482f4de5512a31d654f prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-f784098db068baa71559c79252d4b28d prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-79361bae0c9b3dda287e49e78cd49078 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-e9eb186783892e361faa71072cc6a237 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-b172ebf09499ba46f36082cedb6b7fcf prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-64b2360f3c24dbd93d73860f1e43fd31 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-2fbc8b903a684ab56a29b1702a22c75d prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-0b76468305c9ca6e0d1d4a2f2722ba8d prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-3a04368036b957decc3cad4a542d3a99 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] done cmpl-5666ad9bef8a446356c55ff0f39c4274 prompt=1024 cached=0 thinking=False effort=none tokens=512 sha=c990e991c2f5 finish=length rounds=511 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-005e60e4bfd2a2b228e431aa0cdffbdc prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-1f080b3ace824ec96228fbdb07d44d90 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-c5e94ea3a4ce591a631a50d55ffbdeba prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-239c862c0287173268c18d084da9d6e1 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-e6f9993eefac3fe5fff96575c6c1cb0d prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-71e20e078251175a58ace9a6d1df18e2 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-65bc1181733cbdc2503f8da8fbfefdf2 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-7f488561edf33d9193b62244b1696305 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-c1e70bcde5026126f939e6eb6d349ee6 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-4db3963812541f8de7b5890d45f90599 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-1a9f6879662407916deb0541bb021a00 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-0e11a2348d45735c94b686e5e353279d prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-ae5f1ab5397425cc69637a664e1568ca prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-182bb5d65b4eb8ae3ba3676ff392a357 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-076879cb3ce7c90a8f4301939bc78781 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-3ce41a8caf579963c8857518785bd995 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-9debf2ba03b0b4e53e1d230001d1aaa2 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-44d35f927e079c0728e2e516b0648386 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-bf0c09ae576855cc0f35a20d8b2e6f36 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-6ab92ad922c48ee3679af4f6e7262320 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-f4c385dac6ea95f86655c04a5f92d19d prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-7e38184ae59e1ba69ad298f8d147e259 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-17b119a2dd224d1cfcb73ce4edcc7019 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-9e3bebbcb796faa39a06c53a3b06073f prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-82e6fddd03c4548c0aadd46679d49c6e prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-6cc42e58680953762b7d45238d308a27 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-39aa395ddbecbee35f46850598689be4 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-3c7a26e10bc6483917709ac3d622f2c6 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-ab934b3f75e71c04da3139d08bc0d48e prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-499e4103790289dfb185fd0658f13b9d prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-4a521a5adad85c393e816ba71b604a64 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-64b5d0ef541798edffda92049a454120 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-16f9739b973af801cd8c9d73a18cefa6 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-9da1995835fe544c7a1b4b0d6fbbc947 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-c0de97a9eee3cc6c75102bbfe1ba48de prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+[tensorfold] done cmpl-0c5a4f8feb0a215ee26d19d6d099ae79 prompt=16384 cached=0 thinking=False effort=none tokens=1024 sha=ef9ed190f9e0 finish=length rounds=1023 accepted=0/0
+info: backend verify: 12524 calls, 26689 us each
+info: backend keep: 6268 calls, 1 us each
+info: draft head: 16 chained steps, 24 drafts
+info: round graphs: 8 captured (2.1 ms each), 6288 of 6304 rounds replayed

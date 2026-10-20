@@ -1,0 +1,18 @@
+{
+  "harness": {
+    "run.py": "e85e4a5764d8b5e0b54bed3eff7bbc8fe404ef80c6a00cee70a140250c692b5d",
+    "capture_identity.py": "b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005",
+    "observe_memory_env.py": "8a69ded9f346c6ca703cc61edd9c854ee86cf005a0524ec44d548379b65f5d3b"
+  },
+  "clients": {
+    "matrix_client.py": "4d324f4bdb863d7c4b85321134440344807401cf22ca2e75170395cc1f269920",
+    "clients/bench_concurrent.py": "a80e5fc214c0fd5a60bff6dedb55fe8f0671000c9770742a38868ffc5726761f",
+    "clients/bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+    "clients/bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b"
+  },
+  "python": {
+    "path": "<REMOTE_HOME>/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+    "sha256": "4ae14dda295474da4b2a60c1d559dfa61449dac23151df7139dc79c19a9b9f76"
+  },
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8"
+}

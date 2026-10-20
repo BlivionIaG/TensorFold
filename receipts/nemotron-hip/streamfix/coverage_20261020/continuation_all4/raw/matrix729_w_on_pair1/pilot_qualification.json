@@ -1,0 +1,20 @@
+{
+  "parent_approved_full_matrix": true,
+  "candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "client_sha256": "4d324f4bdb863d7c4b85321134440344807401cf22ca2e75170395cc1f269920",
+  "pilot_summary_path": "~/hcx/streamfix/optimization/matrix_pilot4bf_3/runs/20261020T090316/state.json",
+  "pilot_summary_sha256": "3034f0b736d1d49f67b9a312b444c9596d1ce6305405156749e5ee85df7a1eae",
+  "pilot_measured_source_commit": "4bf29888c4494b5396758c68dc69ff05f46e9784",
+  "scope": "Source-identical server/API capability reuse only; pilot remained measured4bf; actual729 eachhold checks capacity8/context/runtime/cache/output",
+  "source_api_bridge": {
+    "changed_paths_4bf_to_729": [
+      "zig/kernels/hip/tiles/stream.hpp",
+      "zig/src/core/contract/hip_records.zig",
+      "zig/src/core/contract/hip_records_pair.zig",
+      "zig/src/core/contract/hip_records_stream_plain.zig",
+      "zig/src/core/contract/hip_records_stream_swiglu.zig"
+    ],
+    "server_lane_native_adapter_unchanged": true
+  },
+  "root_review": "Unchanged host/API protocol reused from actual4bf pilot; actual729 capacity/runtime/source/output verified perhold. Does not relabel pilot source."
+}

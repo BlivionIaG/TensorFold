@@ -1,0 +1,107 @@
+{
+  "observed_at_utc": "2026-10-20T21:38:53.278249+00:00",
+  "boot_id": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+  "controllers": [
+    {
+      "block": "matrix729_v_off_pair1",
+      "role": "launcher_pid",
+      "pid": 62530,
+      "present": false,
+      "argv": null
+    },
+    {
+      "block": "matrix729_v_off_pair1",
+      "role": "coordinator_pid",
+      "pid": 62531,
+      "present": false,
+      "argv": null
+    },
+    {
+      "block": "matrix729_v_off_pair1",
+      "role": "observer_pid",
+      "pid": 62532,
+      "present": false,
+      "argv": null
+    },
+    {
+      "block": "matrix729_w_on_pair1",
+      "role": "launcher_pid",
+      "pid": 88103,
+      "present": false,
+      "argv": null
+    },
+    {
+      "block": "matrix729_w_on_pair1",
+      "role": "coordinator_pid",
+      "pid": 88104,
+      "present": false,
+      "argv": null
+    },
+    {
+      "block": "matrix729_w_on_pair1",
+      "role": "observer_pid",
+      "pid": 88105,
+      "present": false,
+      "argv": null
+    }
+  ],
+  "ranks": [
+    {
+      "block": "matrix729_v_off_pair1",
+      "hold": "off_1_old.run.json",
+      "rank": 0,
+      "pid": 62548,
+      "pid_present": false,
+      "process_group_absent_observed": true,
+      "argv": null
+    },
+    {
+      "block": "matrix729_v_off_pair1",
+      "hold": "off_2_new.run.json",
+      "rank": 0,
+      "pid": 75754,
+      "pid_present": false,
+      "process_group_absent_observed": true,
+      "argv": null
+    },
+    {
+      "block": "matrix729_w_on_pair1",
+      "hold": "on_1_old.run.json",
+      "rank": 1,
+      "pid": 88118,
+      "pid_present": false,
+      "process_group_absent_observed": true,
+      "argv": null
+    },
+    {
+      "block": "matrix729_w_on_pair1",
+      "hold": "on_1_old.run.json",
+      "rank": 0,
+      "pid": 88122,
+      "pid_present": false,
+      "process_group_absent_observed": true,
+      "argv": null
+    },
+    {
+      "block": "matrix729_w_on_pair1",
+      "hold": "on_2_new.run.json",
+      "rank": 1,
+      "pid": 96858,
+      "pid_present": false,
+      "process_group_absent_observed": true,
+      "argv": null
+    },
+    {
+      "block": "matrix729_w_on_pair1",
+      "hold": "on_2_new.run.json",
+      "rank": 0,
+      "pid": 96862,
+      "pid_present": false,
+      "process_group_absent_observed": true,
+      "argv": null
+    }
+  ],
+  "all_owned_rank_groups_absent": true,
+  "all_owned_controller_pids_absent": true,
+  "read_only": true
+}

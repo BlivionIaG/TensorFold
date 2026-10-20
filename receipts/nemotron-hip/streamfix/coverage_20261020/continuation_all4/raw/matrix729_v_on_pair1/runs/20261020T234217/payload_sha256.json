@@ -1,0 +1,17 @@
+{
+  "MEASUREMENT_SCOPE.md": "29d7cf78d27fbb37ef66e44452f7c7d40a99786e2d28524974fa628f7ac2d4ef",
+  "capture_identity.py": "b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005",
+  "clients/bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b",
+  "clients/bench_concurrent.py": "a80e5fc214c0fd5a60bff6dedb55fe8f0671000c9770742a38868ffc5726761f",
+  "clients/bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+  "config.json": "2f2b824b511917460247a4cd4b485b28de9fcb3008dbf5954d864293c095b098",
+  "fixtures/code_1024_512.ids.json": "fdecab4eb1392c27d160b5d0bfbd236274614fb80b1c01e4edc5828e0b15499e",
+  "fixtures/fixture_receipt.json": "781a2072129e418dcad2a1cd8147e2e1a59861ec7df6e48d539c9108fe5d3fa0",
+  "fixtures/prose_16384_1024.ids.json": "51e13c227097b4fa1e0a6cc854f2a77208bf2301c1aa478bb8e76b2f47f4defa",
+  "launch_off_dec83.py": "336d3fd90ebd5448b960fb3c1585071fc039489df6a5dea24c55c2650be18c5c",
+  "matrix_client.py": "4d324f4bdb863d7c4b85321134440344807401cf22ca2e75170395cc1f269920",
+  "observe_memory_env.py": "8a69ded9f346c6ca703cc61edd9c854ee86cf005a0524ec44d548379b65f5d3b",
+  "pilot_independent_audit.json": "43d5865d87e606592a7e6dfd0a38f8895b404b7298e662171af464581104d0b4",
+  "pilot_qualification.json": "53a0893a96a520291644d9fefe0aac4ef6cd6388d6075daa3b0ea2201bfc9d50",
+  "run.py": "e85e4a5764d8b5e0b54bed3eff7bbc8fe404ef80c6a00cee70a140250c692b5d"
+}

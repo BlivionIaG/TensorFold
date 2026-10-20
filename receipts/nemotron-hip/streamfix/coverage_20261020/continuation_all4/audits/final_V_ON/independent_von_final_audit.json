@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "independent_audit_pass": true,
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "boot_id": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+  "state_sha256": "90594fb168a66cf73de257c3c9252f3f67b57f2195db07bf0e1214834f368ae4",
+  "payload_sha256": "e5d0a9513cd473a262517ce41edb629f827ebb79a4aa0c7f19f7fbaaf06d9eec",
+  "recovery_manifest_sha256": "a4cc37fed46fc288d2507884306986978ff2f3cca0f59e4bb46d48bd26671167",
+  "archive": {
+    "bytes": 52469760,
+    "sha256": "b151db2cbc27e65e78673c433a2a591eb04bba6b6c43da2dfc455764cd66c5e7"
+  },
+  "actual_downloaded_files": 86,
+  "all_downloads_verified": true,
+  "owned_groups_gone": true,
+  "launcher_and_observer_actual_exit0": true,
+  "records": [
+    {
+      "file": "runs/20261020T234217/V620tp1/on_1_old.run.json",
+      "sha256": "46c56c76582f309988e8b85fcaa575c40b69b47c39a177d7d63d3a921d9cfbe0",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "runtime_identity_sha256": "79057914ac26ef1907b64ef35062e4f285c08c10ea957fd72ba397746dff09ad",
+      "rank": {
+        "rank": 0,
+        "pid": 111682,
+        "argv": [
+          "<REMOTE_HOME>/nh/d46/out-gfx1030/native-hip/bin/tensorfold-native",
+          "serve",
+          "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+          "--name",
+          "m",
+          "--port",
+          "23505",
+          "--dashboard",
+          "--context",
+          "65536",
+          "--parallel",
+          "8",
+          "--prompt-cache-gib",
+          "0",
+          "--checkpoint-slots",
+          "0",
+          "--snapshot-dir",
+          "none",
+          "--max-snapshots",
+          "0"
+        ],
+        "log": "on_1_old.r0.log",
+        "alive_before_intentional_teardown": true,
+        "actual_exit_status": 0,
+        "exit_reason": "intentional native-server teardown",
+        "process_group_gone": true
+      }
+    },
+    {
+      "file": "runs/20261020T234217/V620tp1/on_2_new.run.json",
+      "sha256": "1782aa43bc6a13e5a589da95638448de7e8c977866870fc82c906ce48f4ce69a",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "runtime_identity_sha256": "e8b1e1408aa9dec24a74b3739f0814410bcb5cf65e05d68acb964fb641156579",
+      "rank": {
+        "rank": 0,
+        "pid": 124530,
+        "argv": [
+          "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+          "serve",
+          "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+          "--name",
+          "m",
+          "--port",
+          "23506",
+          "--dashboard",
+          "--context",
+          "65536",
+          "--parallel",
+          "8",
+          "--prompt-cache-gib",
+          "0",
+          "--checkpoint-slots",
+          "0",
+          "--snapshot-dir",
+          "none",
+          "--max-snapshots",
+          "0"
+        ],
+        "log": "on_2_new.r0.log",
+        "alive_before_intentional_teardown": true,
+        "actual_exit_status": 0,
+        "exit_reason": "intentional native-server teardown",
+        "process_group_gone": true
+      }
+    }
+  ],
+  "default_admission_observed": true,
+  "observed_rank_environment_samples": 2,
+  "complete_selected_cells": 32,
+  "selected_requests": 576,
+  "selected_measured_requests": 432,
+  "selected_pairs": 16,
+  "reduction_sha256": "0e2e641e6fb42712dc0a0deae027487eceb4b7c4f211a5a9a7fbeffb3ed19172",
+  "V620_ON_completion_end_to_end_tps": [
+    {
+      "shape": "code_1024_512",
+      "concurrency": 1,
+      "old_tps": 177.59360302336285,
+      "new_tps": 171.54456001960705,
+      "change_percent": -3.406115367207252
+    },
+    {
+      "shape": "code_1024_512",
+      "concurrency": 8,
+      "old_tps": 274.0257653847597,
+      "new_tps": 270.1100480422026,
+      "change_percent": -1.4289595495004082
+    },
+    {
+      "shape": "prose_16384_1024",
+      "concurrency": 1,
+      "old_tps": 68.50111643978464,
+      "new_tps": 67.76886197784314,
+      "change_percent": -1.0689671935276812
+    },
+    {
+      "shape": "prose_16384_1024",
+      "concurrency": 8,
+      "old_tps": 79.70492200846647,
+      "new_tps": 79.22926654133347,
+      "change_percent": -0.5967705069487073
+    }
+  ],
+  "all_remote_collection_io_released": true,
+  "scope": "Four descriptive independent old/new pairs; no ABBA or statisticalconfidence. Historical Woff is priorboot. Additional line81 alternating baselinecontrols pending; no fullCONTRIBUTING qualification. True pertokenITL unavailable; TPOT/chunkgaps separate.",
+  "raw_failed_supervisor_preserved": true
+}

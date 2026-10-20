@@ -1,0 +1,373 @@
+{
+  "validated_completed_first2_blocks_and_existing_Woff": true,
+  "archive": {
+    "file": "raw.tar",
+    "bytes": 166789120,
+    "sha256": "e85843e1cc18a901aff042a2ac4e027eed014f1f82d4710890453a08ba905b06"
+  },
+  "downloaded_files": 179,
+  "rank_classifications": [
+    {
+      "rig": "W7800tp2",
+      "hold": "off_1_old.run.json",
+      "source": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "run_record_sha256": "7e8094c6881fa44688a0059739acb0219875492c27361620887397721dd53cef",
+      "ranks": [
+        {
+          "rank": 1,
+          "pid": 102670,
+          "actual_exit_status": -15,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "intentional_tp_worker_sigterm",
+          "log_sha256": "3d5047dffaf7b1e0b7ad572bd0acbfcbe87156c29d18598d82a83ad2f21fd2da",
+          "startup_first_line": "[tensorfold] HIP rank 1 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots (rank 0's) "
+        },
+        {
+          "rank": 0,
+          "pid": 102674,
+          "actual_exit_status": 0,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "clean_exit_0",
+          "log_sha256": "caa36965c44b09862e55843977aca2786c28148cf7f5b745172988595030a6cc",
+          "startup_first_line": "[tensorfold] HIP rank 0 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots "
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "hold": "off_2_new.run.json",
+      "source": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+      "run_record_sha256": "9fd5da3b92058535aa60a81478148bd1f1cbb710bca750aae18259c74fef5f1e",
+      "ranks": [
+        {
+          "rank": 1,
+          "pid": 110406,
+          "actual_exit_status": -15,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "intentional_tp_worker_sigterm",
+          "log_sha256": "3d5047dffaf7b1e0b7ad572bd0acbfcbe87156c29d18598d82a83ad2f21fd2da",
+          "startup_first_line": "[tensorfold] HIP rank 1 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots (rank 0's) "
+        },
+        {
+          "rank": 0,
+          "pid": 110413,
+          "actual_exit_status": 0,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "clean_exit_0",
+          "log_sha256": "54f33535c8d35de4aadb8776539becc4787e4eff20d62cadf84d07e3a7ce6896",
+          "startup_first_line": "[tensorfold] HIP rank 0 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots "
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "hold": "on_1_old.run.json",
+      "source": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "run_record_sha256": "1a770e569a1183285457b45ad05de314d3202a71136939b44c99ac274f49e297",
+      "ranks": [
+        {
+          "rank": 1,
+          "pid": 88118,
+          "actual_exit_status": -15,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "intentional_tp_worker_sigterm",
+          "log_sha256": "3d5047dffaf7b1e0b7ad572bd0acbfcbe87156c29d18598d82a83ad2f21fd2da",
+          "startup_first_line": "[tensorfold] HIP rank 1 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots (rank 0's) "
+        },
+        {
+          "rank": 0,
+          "pid": 88122,
+          "actual_exit_status": 0,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "clean_exit_0",
+          "log_sha256": "bf07af8e5a16185cec5fe791c10e051ccc7695c19d713c8c3475d9fb1ac68bb3",
+          "startup_first_line": "[tensorfold] HIP rank 0 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots "
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "hold": "on_2_new.run.json",
+      "source": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+      "run_record_sha256": "c2eea1ff90378f33568d92d555535dac9feab86f24cbed1e3d94323113861039",
+      "ranks": [
+        {
+          "rank": 1,
+          "pid": 96858,
+          "actual_exit_status": -15,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "intentional_tp_worker_sigterm",
+          "log_sha256": "3d5047dffaf7b1e0b7ad572bd0acbfcbe87156c29d18598d82a83ad2f21fd2da",
+          "startup_first_line": "[tensorfold] HIP rank 1 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots (rank 0's) "
+        },
+        {
+          "rank": 0,
+          "pid": 96862,
+          "actual_exit_status": 0,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "clean_exit_0",
+          "log_sha256": "e430d3a0606931f95aba6be0faf278aa77d9e37144b3fc0d8d71a19083bf0e83",
+          "startup_first_line": "[tensorfold] HIP rank 0 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots "
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "hold": "off_1_old.run.json",
+      "source": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "run_record_sha256": "d619d9563b8a1c3e4f054f9024a8c8146c506cdb40fffccf915bba4c495715b6",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 62548,
+          "actual_exit_status": 0,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "clean_exit_0",
+          "log_sha256": "569d0f63e00e1aefbd63a6a6656e759146c31381258d7a1d02a71bbe1be158ef",
+          "startup_first_line": "[tensorfold] HIP rank 0 of 1: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots "
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "hold": "off_2_new.run.json",
+      "source": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "run_record_sha256": "ab070bdd38cc8d9b37687050241600115839d488e40fe2b5527d2a2d4175507e",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 75754,
+          "actual_exit_status": 0,
+          "alive_before_intentional_teardown": true,
+          "exit_reason": "intentional native-server teardown",
+          "process_group_gone": true,
+          "forced_kill_flag": false,
+          "classification": "clean_exit_0",
+          "log_sha256": "6e082f52c5195ff5195da8ea80000a446c4464e64458651af57d8e546195cd83",
+          "startup_first_line": "[tensorfold] HIP rank 0 of 1: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots "
+        }
+      ]
+    }
+  ],
+  "eight_negative_controls": [
+    {
+      "control": "worker_SIGKILL",
+      "red": true,
+      "origin": "Mutatedcopyofactualrecordonly;noGPU/source/runtimechange"
+    },
+    {
+      "control": "worker_SIGSEGV",
+      "red": true,
+      "origin": "Mutatedcopyofactualrecordonly;noGPU/source/runtimechange"
+    },
+    {
+      "control": "worker_not_alive_before_teardown",
+      "red": true,
+      "origin": "Mutatedcopyofactualrecordonly;noGPU/source/runtimechange"
+    },
+    {
+      "control": "worker_unexpected_reason",
+      "red": true,
+      "origin": "Mutatedcopyofactualrecordonly;noGPU/source/runtimechange"
+    },
+    {
+      "control": "worker_forced_timeout_kill",
+      "red": true,
+      "origin": "Mutatedcopyofactualrecordonly;noGPU/source/runtimechange"
+    },
+    {
+      "control": "worker_group_still_present",
+      "red": true,
+      "origin": "Mutatedcopyofactualrecordonly;noGPU/source/runtimechange"
+    },
+    {
+      "control": "rank0_SIGTERM",
+      "red": true,
+      "origin": "Mutatedcopyofactualrecordonly;noGPU/source/runtimechange"
+    },
+    {
+      "control": "TP1_SIGTERM",
+      "red": true,
+      "origin": "Mutatedcopyofactualrecordonly;noGPU/source/runtimechange"
+    }
+  ],
+  "source_worker_path_proof": [
+    {
+      "path": "zig/src/server/main.zig",
+      "identical_both_measured_commits": true,
+      "sha256": "62cf30e4afc76dd872c91f85537b77ed090b5afe86abd08adc9c1ace13f0458e"
+    },
+    {
+      "path": "zig/src/server/serve.zig",
+      "identical_both_measured_commits": true,
+      "sha256": "e32b5f3c2f929428eb91032a883ef5a9d7e52af16e4993136d8a1c3c2963f235"
+    },
+    {
+      "path": "zig/src/server/engines.zig",
+      "identical_both_measured_commits": true,
+      "sha256": "a00d4efa7a5fe872751308adfcfd3862b4507e602b1efd072c79f70d91bf0071"
+    },
+    {
+      "path": "zig/src/families/nemotron/hip/native.zig",
+      "identical_both_measured_commits": true,
+      "sha256": "323ed95a87f6291fc5a6c8f2e0d4d11af80376499f3343d4c82b45487357a67b"
+    },
+    {
+      "path": "zig/src/families/nemotron/hip/worker.zig",
+      "identical_both_measured_commits": true,
+      "sha256": "d5ef1b2a5d2910cf3575c9dc43740f0a9c1e2fa6262abe83b021b1cf49ce52f4"
+    }
+  ],
+  "source_explanation": "server/main.zig rank>0 branch returns engines.follow before rank0 serve.run; TERM/INT handlers installed only by serve.run via serve.installSignals. NativeHIPfollow drives rankworker, with no explicitHTTPsignalhandler. ActualcontrolledworkerSIGTERM-15 is expected distinct fromrank0clean0; samepattern bothold/new and historicalWoff. No unexpectedpremeasurementexit orforcedkill accepted.",
+  "raw_failed_supervisor_preserved": true,
+  "raw_supervisor_failure": "Native hold abnormal exit/forcedkill due allrankexit0rule; no originalrecord rewritten",
+  "postrun_analysis_parser_failure_preserved": "selected_first3_reduction.attempt1_parser.json; ONbodydefaultdrafttrue had noexplicitdraftkey, now validatedusingactualdefault+runtimeboolean; nobenchmarkmethodchange",
+  "completed_selected_cells": 24,
+  "retained_selected_requests": 432,
+  "selected_measured_requests": 324,
+  "case_comparisons": 12,
+  "final_Von_pending": true,
+  "all_remote_collection_io_released": true,
+  "cleanup": {
+    "observed_at_utc": "2026-10-20T21:38:53.278249+00:00",
+    "boot_id": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+    "controllers": [
+      {
+        "block": "matrix729_v_off_pair1",
+        "role": "launcher_pid",
+        "pid": 62530,
+        "present": false,
+        "argv": null
+      },
+      {
+        "block": "matrix729_v_off_pair1",
+        "role": "coordinator_pid",
+        "pid": 62531,
+        "present": false,
+        "argv": null
+      },
+      {
+        "block": "matrix729_v_off_pair1",
+        "role": "observer_pid",
+        "pid": 62532,
+        "present": false,
+        "argv": null
+      },
+      {
+        "block": "matrix729_w_on_pair1",
+        "role": "launcher_pid",
+        "pid": 88103,
+        "present": false,
+        "argv": null
+      },
+      {
+        "block": "matrix729_w_on_pair1",
+        "role": "coordinator_pid",
+        "pid": 88104,
+        "present": false,
+        "argv": null
+      },
+      {
+        "block": "matrix729_w_on_pair1",
+        "role": "observer_pid",
+        "pid": 88105,
+        "present": false,
+        "argv": null
+      }
+    ],
+    "ranks": [
+      {
+        "block": "matrix729_v_off_pair1",
+        "hold": "off_1_old.run.json",
+        "rank": 0,
+        "pid": 62548,
+        "pid_present": false,
+        "process_group_absent_observed": true,
+        "argv": null
+      },
+      {
+        "block": "matrix729_v_off_pair1",
+        "hold": "off_2_new.run.json",
+        "rank": 0,
+        "pid": 75754,
+        "pid_present": false,
+        "process_group_absent_observed": true,
+        "argv": null
+      },
+      {
+        "block": "matrix729_w_on_pair1",
+        "hold": "on_1_old.run.json",
+        "rank": 1,
+        "pid": 88118,
+        "pid_present": false,
+        "process_group_absent_observed": true,
+        "argv": null
+      },
+      {
+        "block": "matrix729_w_on_pair1",
+        "hold": "on_1_old.run.json",
+        "rank": 0,
+        "pid": 88122,
+        "pid_present": false,
+        "process_group_absent_observed": true,
+        "argv": null
+      },
+      {
+        "block": "matrix729_w_on_pair1",
+        "hold": "on_2_new.run.json",
+        "rank": 1,
+        "pid": 96858,
+        "pid_present": false,
+        "process_group_absent_observed": true,
+        "argv": null
+      },
+      {
+        "block": "matrix729_w_on_pair1",
+        "hold": "on_2_new.run.json",
+        "rank": 0,
+        "pid": 96862,
+        "pid_present": false,
+        "process_group_absent_observed": true,
+        "argv": null
+      }
+    ],
+    "all_owned_rank_groups_absent": true,
+    "all_owned_controller_pids_absent": true,
+    "read_only": true
+  },
+  "reducer_sha256": "15e3c1e1be2c3771c04db245df1d5aeb14473bc1726806efe9dee5daf2b8893d",
+  "no_model_jobs_or_gpu_harness_math_changes": true
+}
