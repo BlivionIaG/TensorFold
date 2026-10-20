@@ -75,13 +75,13 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     own.lanes = .empty;
     own.next = 0;
     if (o.slide) own.lay = try @import("cuda_slide.zig").layoutOf(gpa, io, dir);
-    try @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
-    var stream_bytes = @import("cuda_exl3_kvpage.zig").streamBytes(@import("cuda_exl3_kv.zig").engineSeqBytes(@import("cuda_exl3_kv.zig").of(own.engine), window), window); // ours: placement-aware bytes, then paged K/V
+    @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
+    var stream_bytes = try @import("cuda_exl3_kv.zig").engineSeqBytes(@import("cuda_exl3_kv.zig").of(own.engine), window, own.engine.chunk);
     if (own.head) |h| {
         stream_bytes += mtp.Draft.bytes(window, h.ids.len, @import("cuda_exl3_prefill.zig").draftRows(own.engine));
     } else if (o.drafts and o.tp == 2) stream_bytes += mtp.Draft.bytes(1, 1, own.engine.chunk); // rank 1's window (no head cache)
     if (o.vision) |v| stream_bytes += @as(usize, v.image_tokens) * @import("cuda_prompt_wt.zig").dims * 2 + 16 * o.context;
-    @import("cuda_exl3_kv.zig").logStream(own.engine, window, stream_bytes); // K10: what a stream holds, by piece
+    try @import("cuda_exl3_kv.zig").logStream(own.engine, window, stream_bytes); // K10: what a stream holds, by piece
     own.stream_bytes = stream_bytes;
     _ = try @import("cuda_exl3_pass.zig").attach(gpa, io, driver, own.stream, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, @import("cuda_exl3_pass.zig").budgetFromEnv(stream_bytes));
     return .{

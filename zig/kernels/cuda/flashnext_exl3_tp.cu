@@ -25,21 +25,3 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_tp_place(const float* 
     for (int i = threadIdx.x; i < d; i += blockDim.x) out[i] = k == 0 ? in[i] : 0.0f;
     if (k == 0 && threadIdx.x < slots) wts[r * slots + threadIdx.x] = threadIdx.x == 0 ? 1.0f : 0.0f;
 }
-
-// A deep prefill chunk's rank branch (cuda_exl3_prefill.zig at tp=2): sum[r, :] = the fp32 fmaf chain over the slots
-// of row r whose pick the rank holds ([LO, HI)), in slot order, weight times the slot's y. Slots of the other rank are
-// never written in the deep chunk's y (no pass ran them), so they are skipped, not weighted by 0. Program a row.
-extern "C" __global__ void __launch_bounds__(256) fn_exl3_tp_combine(const int* __restrict__ pick, const float* __restrict__ wts,
-                                                                     const float* __restrict__ y, float* __restrict__ sum,
-                                                                     int d, int slots, int lo, int hi) {
-    const int r = blockIdx.x;
-    for (int i = threadIdx.x; i < d; i += blockDim.x) {
-        float acc = 0.0f;
-        for (int k = 0; k < slots; ++k) {
-            const int p = pick[r * slots + k];
-            if (p < lo || p >= hi) continue;
-            acc = fmaf(wts[r * slots + k], y[(static_cast<long long>(r) * slots + k) * d + i], acc);
-        }
-        sum[static_cast<long long>(r) * d + i] = acc;
-    }
-}

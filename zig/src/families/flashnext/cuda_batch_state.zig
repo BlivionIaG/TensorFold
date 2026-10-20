@@ -123,6 +123,11 @@ comptime {
 
 /// A caller's view into the pass. Without any, the pass is the server's prompt pass.
 pub const Hooks = struct {
+    pub const OutputTail = struct {
+        ptr: *anyopaque,
+        enqueue: *const fn (*anyopaque, cuda.Stream) anyerror!void,
+    };
+
     logits: Logits = .last,
     /// Device [rows, vocab] bf16 for `.all` (else the pass's own buffer for the last row).
     logits_out: u64 = 0,
@@ -131,6 +136,7 @@ pub const Hooks = struct {
     streams: u64 = 0,
     /// A training pass's adds to each layer's MoE output, in place of the model's own (Model.pocket).
     moe_add: ?MoeAdd = null,
+    output_tail: ?OutputTail = null,
 };
 
 /// The kernels the pass launches besides the captured Triton ones, loaded once.
