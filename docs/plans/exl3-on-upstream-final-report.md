@@ -1,16 +1,16 @@
-# EXL3 Qwen3.8-Flash-Next on upstream TensorFold: final report
+# EXL3 Qwen3.8-Flash-Next on upstream TensorFold v1.1.0: final report
 
-Branch `exl3-on-upstream-wip` (staging branch `exl3-c-main`), originally based on upstream tag `v1.1.0` and now merged with current upstream `main`.
+Branch `exl3-on-upstream-wip` (staging branch `exl3-c-main`), based on upstream tag `v1.1.0`.
 Machine: par1-cs13, two RTX 5060 Ti 16 GiB (sm_120), 251 GB RAM, pack
 `Qwen3.8-Flash-Next-exl3-3.05bpw`. All measurements are test measurements on idle cards under a lock
 wrapper, not benchmarks.
 
-## Current handover (2026-10-20)
+## Current handover (2026-10-19)
 
-Upstream draft PR [#1113](https://github.com/ashhart/TensorFold/pull/1113) is open from the fork branch
-`exl3-on-upstream-wip` into upstream `main`. The branch integrates current upstream at `d1018b318`; exact upstream
-commit ancestry is retained. The PR description contains the proposed dependency-ordered split plan. This remains
-one large draft and is not merge-ready.
+Draft PR [#50](https://github.com/BlivionIaG/TensorFold/pull/50) is open from
+`exl3-on-upstream-wip` (report-only commits atop runtime code head `44d65597`) into the fork's
+`upstream-v1.1.0` base, copied from upstream tag
+`v1.1.0`. It is intentionally one large draft to split later. No final merge-readiness claim is made here.
 
 The user's acceptance target is TP=2 with CUDA graphs on both decode and prefill, and graphs must improve
 performance. BF16 is the main KV format; dynamic KV paging to RAM is also required. CPU expert execution is
@@ -29,21 +29,6 @@ graphs, MTP and two concurrent HTTP chat histories at ordinary lengths. Restored
 warm, branch and rewind cache phases each reuse 4,122/4,139 prompt tokens with exact response hashes versus cold
 cache. The 200k × 2 gate remains explicitly deferred. Live-rank overflow/failure injection and repeatable graph
 speedup remain open; no graph performance win is claimed. BF16 is required; int8 KV is out of scope.
-
-## 2026-10-20 upstream-main integration and release checks
-
-The merge resolves the shared Flash Next hooks against current upstream `main`. On par1-cs13, Zig 0.17
-`zig build test-cuda-host` passes after fixing a test fixture that left the new paging option undefined;
-`zig build native -Dnvcc=nvcc -Dsm=120 -j16` also passes. `zig fmt --check zig/src zig/tests` passes after formatting
-the three reported Zig files. These checks validate compilation and host tests only; the final-head TP=2 serving,
-graph-performance, BF16 paging/snapshot/cache-reuse, and 200k × 2 gates remain to be rerun.
-
-The lean checker does not pass: current upstream `main` has 444 findings and this branch has 1,761, leaving
-1,317 new findings. Treat this as an explicit CONTRIBUTING blocker; the PR stays draft. On 2026-10-20, removed
-118 tool co-author/session trailer lines from the 76 feature commits using a commit-object rewrite scoped to the
-feature range. Original author identities, subjects, complete tree, and exact upstream `main` commit IDs are
-preserved. The branch history is now grouped into five implementation commits, one upstream integration merge,
-and one focused documentation commit. The draft omits the obsolete v1.1.0 and int8-first planning memos.
 
 ## 2026-10-20 prefill graph profile addendum
 
@@ -79,6 +64,7 @@ on one card and at tp=2. Integration touches existing upstream files and adds ne
 | Long context | Attention head split across ranks (12 query heads + 1 KV head each), indexer keys in mapped pinned host memory, 1024-row chunk, prompt states parked in host memory | `cuda_exl3_heads.zig`, `cuda_exl3_kv.zig`, `cuda_snap.zig` |
 | KV paging | Full BF16 K/V of the 12 attention layers in pinned host memory with a device window and block cache; allocation/budget geometry now unified, default off | `cuda_exl3_kvpage.zig`, `cuda_exl3_kv.zig`, `flashnext_exl3_kvpage.cu` |
 | CUDA graphs | Eligible decode rounds/windows capture the 48-layer pass, NCCL sums and head gathers; prefill captures dense layer sub-blocks; greedy MTP proposals have a conditional graph; graph instantiation runs on a worker | `cuda_exl3_dplan.zig`, `cuda_exl3_graph.zig`, `cuda_exl3_chain.zig`, `cuda_exl3_recycle.zig` |
+| int8 KV | Kernels built and measured, not used by default (decision: bf16 KV is the main path) | `cuda_exl3_kv.zig`, `flashnext_exl3_kv.cu` |
 
 ## Verification
 
@@ -162,6 +148,7 @@ versus eager time before making more topology changes.
 | `TF_FLASHNEXT_ATTN_SPLIT=0` | Replicated attention at tp=2 (the split is on by default) | split on |
 | `TF_FLASHNEXT_IKC_HOST=1` | Indexer keys in mapped pinned host memory (needed for 200k x 2) | off |
 | `TF_FLASHNEXT_KVPAGE=1` | K/V paging to host memory; takes precedence over the head split | off |
+| `TF_FLASHNEXT_KV=int8` / `--kv-cache fp8` | int8 KV | off |
 | `TF_FLASHNEXT_EXL3_PREFILL=0` | Turn the deep prefill off | on |
 | `TF_FLASHNEXT_SHARD_HEAD=0` | Whole lm_head on both ranks | split on |
 | `TF_FLASHNEXT_DRAFT_HEAD=affine4` | Cheaper draft head; changes which drafts are proposed (88/111 accepted instead of 90/113), output stays bit-equal | off |
@@ -235,10 +222,10 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 
 ## Branch map
 
-`exl3-c-main` merges: core adapter, pool, PLE, draft rows, expert-parallel TP=2, serving, split `lm_head`, deep
-prefill, BF16 KV paging, snapshots/cache reuse, and CUDA graphs. Current design and validation notes:
-`docs/plans/exl3-kv-paging.md` and `docs/plans/exl3-graphs.md`. Superseded v1.1.0 and int8-first planning memos
-were removed from the draft because they describe obsolete decisions and conflict with the BF16 paging scope.
+`exl3-c-main` merges: core adapter, pool, PLE, draft rows, expert-parallel tp=2 (earlier streams), single-card
+serving, tp=2 pools + split lm_head + MTP, KV memory levers (head split, host indexer keys, chunk, host snapshots),
+KV paging, CUDA graphs and the stall fixes, tp=2 deep prefill. Design notes: `docs/plans/exl3-on-upstream-1.1.0.md`,
+`docs/plans/exl3-kv-memory.md`, `docs/plans/exl3-kv-paging.md`, `docs/plans/exl3-graphs.md`.
 
 Not done on purpose: no change to `docs/recipes`, no family or model registration (held until the strict golden
 gate passes).

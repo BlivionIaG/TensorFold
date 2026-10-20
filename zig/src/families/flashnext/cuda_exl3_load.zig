@@ -70,6 +70,7 @@ pub const Ops = struct {
     pub fn release(o: *Ops) void {
         o.refs -= 1;
         if (o.refs != 0) return;
+        @import("cuda_exl3_fork.zig").release(o);
         if (o.dense) |*x| x.unload();
         if (o.experts) |*x| x.unload();
         if (o.tmp) |*b| b.free();
@@ -121,6 +122,7 @@ pub const Ops = struct {
             try grow(o.d, &de.xh, 128 * o.max_k * 2);
             if (o.max_z > 0) try grow(o.d, &de.z, o.max_z);
             try grow(o.d, &de.counters, o.max_counters);
+            try @import("cuda_exl3_fork.zig").reserve(o); // parallel parts' branches (decode projections)
         }
         if (o.max_part_n > 0) try grow(o.d, &o.tmp, rows * o.max_part_n * 2);
         if (o.max_f16_k > 0) {

@@ -143,6 +143,10 @@ pub const Engine = struct {
     round_graph: round_graph.Cache = .{},
     image_factory: ?*@import("cuda_images.zig").Vision = null,
     collective: ?*@import("cuda_collective.zig").Collective = null,
+    /// Each layer's Living Weights pocket, from a taught folder's shards or the learner: every pass adds it.
+    pockets: pocket.Pockets = .{},
+    /// During a round of taught and untaught streams: its rows' pocket scales (0 on an untaught row); 0: none.
+    taught_rows: u64 = 0,
     page_config: ?kvpage.Config = null,
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, driver: *cuda.Driver, stream: *cuda.Stream, model_dir: []const u8) !*Engine {
@@ -232,6 +236,7 @@ pub const Engine = struct {
     pub fn deinit(e: *Engine) void {
         @import("cuda_exl3_prefill.zig").releaseFor(e);
         @import("cuda_exl3_graph.zig").releaseFor(e);
+        @import("cuda_exl3_recycle.zig").drain(e.gpa);
         e.round_graph.clear();
         e.pockets.deinit();
         if (e.batch_s) |*bs| bs.free(e.gpa);
@@ -302,6 +307,7 @@ pub const Engine = struct {
         errdefer if (paged) |*p| p.deinit(e.gpa);
         e.round_graph.clear();
         if (cap == 0) return error.UnexpectedTensor;
+        if (try @import("cuda_exl3_recycle.zig").takeSeq(e, cap)) |kept| return kept; // graphs: a finished stream's buffers
         if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_exl3_kv.zig").newSeq(e, Seq, cap); // K10 placement
         const logits = try e.gpa.alloc(u8, vocab * 2);
         errdefer e.gpa.free(logits);
@@ -310,7 +316,7 @@ pub const Engine = struct {
         const state = try zeros(e.gpa, e.driver, e.stream.*, linear_n, state_n * 4);
         errdefer freeOwned(e.gpa, state);
         // K/V paged to host memory (TF_FLASHNEXT_KVPAGE): kc/vc stay one row (cuda_exl3_kvpage.zig holds the rest)
-        const paged = try kvpage.forSeq(e.gpa, e.driver, cap, e.chunk);
+        const paged = if (e.page_config) |cfg| try kvpage.Paged.init(e.gpa, e.driver, cap, cfg.forChunk(e.chunk)) else null;
         errdefer if (paged) |pg| pg.destroy();
         const kc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, (if (paged != null) 1 else cap) * kv_heads * head_dim * 2);
         errdefer freeOwned(e.gpa, kc);
@@ -419,7 +425,11 @@ pub const Engine = struct {
 
     /// The batched pass over `ids` from `seq.fed` in chunks of at most `chunk` rows; a window's hooks take one chunk.
     pub fn forward(e: *Engine, comptime Tri: type, tri: Tri, seq: *Seq, ids: []const u32, hooks: batch.Hooks) !void {
-        if (try @import("cuda_exl3_prefill.zig").forward(e, Tri, tri, seq, ids, hooks)) return; // EXL3 offload: expert-major deep chunks
+        if (seq.invalidated) return error.SnapshotDestinationInvalid;
+        if (try @import("cuda_exl3_prefill.zig").forward(e, Tri, tri, seq, ids, hooks)) {
+            const one = [_]*Seq{seq};
+            return e.finishPaged(&one);
+        }
         if (ids.len == 0 or seq.fed + ids.len > seq.cap) return error.UnexpectedTensor;
         if ((hooks.keep != null or hooks.logits == .all) and ids.len > e.chunk) return error.UnexpectedTensor;
         const s = try e.reserve(@min(ids.len, e.chunk));
@@ -435,7 +445,10 @@ pub const Engine = struct {
             .seq = seq.view(scores),
             .hooks = hooks,
         };
-        if (try @import("cuda_exl3_graph.zig").forward(e, &p, seq, ids)) return; // EXL3 offload: a window on the device plan
+        if (try @import("cuda_exl3_graph.zig").forward(e, &p, seq, ids)) {
+            const one = [_]*Seq{seq};
+            return e.finishPaged(&one);
+        }
         var at: usize = 0;
         while (at < ids.len) {
             const n = @min(s.cap, ids.len - at);
@@ -495,7 +508,10 @@ pub const Engine = struct {
         const has_media = for (seqs) |q| {
             if (q.media != null) break true;
         } else false;
-        if (try @import("cuda_exl3_graph.zig").round(e, &p, seqs, ids, scores, out)) {} else if (e.collective != null and round_graph.enabled() and !has_media) {
+        const has_paged = for (seqs) |q| {
+            if (q.paged != null) break true;
+        } else false;
+        if (try @import("cuda_exl3_graph.zig").round(e, &p, seqs, ids, scores, out)) {} else if (e.collective != null and round_graph.enabled() and !has_media and !has_paged) {
             const key = try round_graph.Key.init(seqs, s.ids, scores, out);
             try e.round_graph.run(key, &p, ids);
         } else try p.chunk(ids, 0, null);

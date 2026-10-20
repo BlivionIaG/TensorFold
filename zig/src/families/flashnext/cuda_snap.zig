@@ -68,6 +68,7 @@ const wt = @import("cuda_prompt_wt.zig");
 const gdn = @import("cuda_gdn.zig");
 const Draft = @import("cuda_mtp_draft.zig").Draft;
 const kv = @import("cuda_exl3_kv.zig");
+const pager = @import("cuda_exl3_kvpage.zig");
 
 const conv_bytes = (gdn.taps - 1) * gdn.conv_dim * 2;
 const state_bytes = wt.state_n * 4;
@@ -199,6 +200,65 @@ fn move(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, base: u64, at: usize,
     std.debug.assert(off == bytesKv(at, d != null, rows));
 }
 
+fn movePaged(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, snap: *const Snap, way: Way) !void {
+    const image = snap.paged.?;
+    const pg = seq.paged.?;
+    try pg.moveSnapshot(stream, snap.buf.ptr, image, way == .save);
+    var offset = image.layout.total;
+    const pieces = [_]Piece{
+        .{ .bufs = seq.conv, .n = conv_bytes },
+        .{ .bufs = seq.state, .n = state_bytes },
+        .{ .bufs = seq.ikc, .n = snap.at * index_row },
+        .{ .bufs = seq.pooled, .n = snap.at / wt.index_ratio * index_row },
+        .{ .bufs = (&seq.tail)[0..1], .n = tail_bytes },
+    };
+    for (pieces) |piece| for (piece.bufs) |buffer| {
+        try copyPiece(stream, snap.buf.ptr + offset, buffer.ptr, piece.n, way);
+        offset += piece.n;
+    };
+    if (snap.head) {
+        const head_n = attnBytes(snap.at) + (if (snap.at == 0) @as(usize, 0) else wt.wide * 2);
+        if (d) |head| {
+            const head_pieces = attnPieces((&head.kc)[0..1], (&head.vc)[0..1], (&head.ikc)[0..1], (&head.pooled)[0..1], snap.at);
+            for (head_pieces) |piece| for (piece.bufs) |buffer| {
+                try copyPiece(stream, snap.buf.ptr + offset, buffer.ptr, piece.n, way);
+                offset += piece.n;
+            };
+            if (snap.at > 0) {
+                try copyPiece(stream, snap.buf.ptr + offset, if (way == .save) head.prompt_last else head.streams.ptr, wt.wide * 2, way);
+                offset += wt.wide * 2;
+            }
+        } else offset += head_n;
+    }
+    std.debug.assert(offset + seq.logits.len == snap.buf.len);
+}
+
+fn copyPiece(stream: cuda.Stream, stored: u64, live: u64, len: usize, way: Way) !void {
+    if (len == 0) return;
+    const dst, const src = if (way == .save) .{ stored, live } else .{ live, stored };
+    try stream.d.check(stream.d.api.cuMemcpyDtoDAsync_v2(dst, src, len, stream.handle), "cuMemcpyDtoDAsync");
+}
+
+fn quiesce(stream: cuda.Stream) !void {
+    try stream.d.synchronize();
+}
+
+fn validatePagedSeq(seq: *const prompt.Seq, d: ?*Draft, at: usize) !void {
+    if (seq.cap != seq.paged.?.cap or seq.conv.len != wt.linear_n or seq.state.len != wt.linear_n or seq.ikc.len != wt.attn_n or seq.pooled.len != wt.attn_n or seq.tail.len < tail_bytes) return error.KvPageSnapshotLayout;
+    const pieces = [_]Piece{ .{ .bufs = seq.conv, .n = conv_bytes }, .{ .bufs = seq.state, .n = state_bytes }, .{ .bufs = seq.ikc, .n = at * index_row }, .{ .bufs = seq.pooled, .n = at / wt.index_ratio * index_row } };
+    for (pieces) |piece| for (piece.bufs) |buffer| if (buffer.len < piece.n) return error.KvPageSnapshotLayout;
+    if (d) |head| {
+        const head_pieces = attnPieces((&head.kc)[0..1], (&head.vc)[0..1], (&head.ikc)[0..1], (&head.pooled)[0..1], at);
+        for (head_pieces) |piece| for (piece.bufs) |buffer| if (buffer.len < piece.n) return error.NoHeadState;
+    }
+}
+
+fn discard(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
+    cuda.completion.drain(stream.d, stream, "snapshot copies did not drain");
+    if (snap.host) |*h| h.free() else snap.buf.free();
+    gpa.destroy(snap);
+}
+
 /// A copy of `seq` (and of the head's cache, with `d`) as it stands after `seq.fed` tokens.
 /// Kept states go to mapped pinned host memory (copied at ~14 GB/s by the same DtoD copies; the device keeps none of
 /// them): set once at load (cuda_lanes_load.zig, TF_FLASHNEXT_SNAP_HOST), and the native host then budgets the prompt
@@ -245,17 +305,13 @@ pub fn save(gpa: std.mem.Allocator, driver: *const cuda.Driver, stream: cuda.Str
 fn allocate(gpa: std.mem.Allocator, driver: *const cuda.Driver, n: usize, at: usize, history: [2]i64, head: bool, image: ?pager.Snapshot) !*Snap {
     const snap = try gpa.create(Snap);
     errdefer gpa.destroy(snap);
-    const n = bytesKv(at, d != null, seqRows(seq));
-    snap.* = .{ .buf = undefined, .at = at, .history = seq.history, .head = d != null };
-    if (on_host) {
-        var h = try cuda.HostBuffer.allocMapped(driver, @max(n, 256));
-        errdefer h.free();
-        snap.buf = .{ .d = driver, .ptr = try h.device(), .len = n, .borrowed = true };
-        snap.host = h;
+    snap.* = .{ .buf = undefined, .at = at, .history = history, .head = head, .paged = image };
+    if (on_host or image != null) {
+        var host = try cuda.HostBuffer.allocMapped(driver, @max(n, 256));
+        errdefer host.free();
+        snap.buf = .{ .d = driver, .ptr = try host.device(), .len = n, .borrowed = true };
+        snap.host = host;
     } else snap.buf = try cuda.DeviceBuffer.alloc(driver, n);
-    errdefer if (snap.host) |*h| h.free() else snap.buf.free();
-    try move(stream, seq, d, snap.buf.ptr, at, .save);
-    try stream.synchronize();
     return snap;
 }
 
@@ -312,10 +368,7 @@ pub fn restore(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, snap: *const S
 }
 
 pub fn drop(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
-    stream.synchronize() catch {};
-    snap.buf.free();
-    if (snap.host) |*h| h.free();
-    gpa.destroy(snap);
+    discard(gpa, stream, snap);
 }
 
 test "a placed state's bytes: int8 codes and scales or one KV head a token, the head's rows upstream's" {
