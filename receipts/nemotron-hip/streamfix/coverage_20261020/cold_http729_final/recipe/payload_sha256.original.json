@@ -1,0 +1,18 @@
+{
+  "run.py": "ae17e67bf8f0364635eceae11a63521dae9a6753f45e0051f39b1c434816ab9a",
+  "config.json": "a2eb40221952d6b59766a355c2becdedbee7a0f9b1ee795f3384e5eb407b63bb",
+  "clients/bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+  "fixtures/cold_131072.json": "b5e535a7604a223156e586061241c35c975d3ea027852507efda6b87573e7371",
+  "fixtures/cold_2048.json": "bb9b596da0e3ad4fe989c8760eec2117eb6feb0c116c0d78cce0323d3e9ff707",
+  "fixtures/cold_262080.json": "238b6c1adeedf5fcc80375c1c67508f80366107bd448fba96786be4486cfc686",
+  "fixtures/cold_32768.json": "be5e31c3a936b2e3c22fd1c54ce46b2f0727e8ec7a7e261b4befce0792d3fbef",
+  "fixtures/cold_65536.json": "9dc155b38d10a9fa4aa29c7a62aca68f2ee054dc788d6613701c6baaca74f128",
+  "fixtures/cold_8192.json": "491b9aeeda2c9862a68d8654e9782cfb8ba5d804b57bd79d14cc20dd7a02ce30",
+  "fixtures/document.txt": "ffc5579ab66539fe31edceb122313ff6b7d11da67e7a7635d2c6a8f578b6e6cf",
+  "fixtures/plain_131072.json": "4aacc089370e80920ceb5ea9c8b4a8c0ff76708b57629d0416ab707f4f9d25d0",
+  "fixtures/plain_2048.json": "c38adb27df11fc5274590be6566cd9d908491f5a06484e32ef411600b38d555c",
+  "fixtures/plain_262080.json": "db080561b13eb77de0bb3361724e66ef60240e6e5cd9f2c3fdb965ea39135401",
+  "fixtures/plain_32768.json": "23d93bb6fa92374198940c09d1308190d0c04dc704948abadf39ea6627befee8",
+  "fixtures/plain_65536.json": "d1a2070970998fd96643eb0a86a084b56cfb176968518e91032da076ce2ccb06",
+  "fixtures/plain_8192.json": "967ef8adabc5a797a976b03788761973410db1e1190a2867dbbad9569e8f599f"
+}

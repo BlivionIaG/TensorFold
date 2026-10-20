@@ -1,0 +1,156 @@
+{
+  "started_at_utc": "2026-10-20T20:52:51.295687+00:00",
+  "pid": 73280,
+  "collector_sha256": "ac93c7317f1b99a45cfb8e2b3393948abd85d78448d20c650e9b698c9120867d",
+  "driver_sha256": "22f719206746538f939dc4bd6587b79e7a95aa52ff313d8308d5a4b8123c9b00",
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "complete": true,
+  "released": true,
+  "attempts": [
+    {
+      "poll": 0,
+      "at_utc": "2026-10-20T20:52:52.379436+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "e942c78b55475e0d4f82a3a8df7e5e1357fb9db680a42230cbabf413be62c6a6",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": [
+        "V620tp1_cold_262080_2.json"
+      ]
+    },
+    {
+      "poll": 1,
+      "at_utc": "2026-10-20T20:53:28.175027+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 2,
+      "at_utc": "2026-10-20T20:54:03.996885+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 3,
+      "at_utc": "2026-10-20T20:54:39.703359+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 4,
+      "at_utc": "2026-10-20T20:55:15.289945+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 5,
+      "at_utc": "2026-10-20T20:55:50.823035+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 6,
+      "at_utc": "2026-10-20T20:56:26.492126+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 7,
+      "at_utc": "2026-10-20T20:57:02.128887+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 8,
+      "at_utc": "2026-10-20T20:57:37.743751+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 9,
+      "at_utc": "2026-10-20T20:58:13.387750+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 10,
+      "at_utc": "2026-10-20T20:58:49.267174+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "1b4ea0c195d7052064140ea8098c4e5f2835e51713bdb05acd70476ae4b701ee",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 37,
+      "copied_files": []
+    },
+    {
+      "poll": 11,
+      "at_utc": "2026-10-20T20:59:29.211627+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "c25d8796a958990f2534a1d8d774a0cbd85fcbb11383560b0e30f1c4ac037b2c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 48,
+      "copied_files": [
+        "V620tp1_cancel_cacheon_6.identity.json",
+        "V620tp1_cold_262080_105.r0.log",
+        "V620tp1_plain_262080.json",
+        "V620tp1_resume_cacheoff_4.identity.json",
+        "V620tp1_resume_cacheoff_4.r0.log",
+        "V620tp1_resume_cacheon_3.identity.json",
+        "V620tp1_resume_cacheon_3.r0.log",
+        "V620tp1_resume_fresh.json",
+        "V620tp1_resume_frozen_turn2.request.json",
+        "V620tp1_resume_reused.json",
+        "V620tp1_resume_turn1.json"
+      ]
+    },
+    {
+      "poll": 12,
+      "at_utc": "2026-10-20T21:00:08.523337+00:00",
+      "collector_actual_exit": 0,
+      "stdout_sha256": "cafb85775b95b929c2c9daf9390aec9b7d5d45b842cba06f3edbdad3e506572f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verified_files": 56,
+      "copied_files": [
+        "V620tp1_cancel_cacheoff_7.identity.json",
+        "V620tp1_cancel_cacheoff_7.r0.log",
+        "V620tp1_cancel_cacheon_6.r0.log",
+        "V620tp1_cancel_fresh.json",
+        "V620tp1_cancel_frozen_turn2.request.json",
+        "V620tp1_cancel_prefix.json",
+        "V620tp1_cancel_reused.json",
+        "V620tp1_cancel_turn1.json"
+      ]
+    }
+  ],
+  "automatic_copies_stop_after_release": true,
+  "phase": "released",
+  "released_at_utc": "2026-10-20T21:00:08Z",
+  "marker_sha256": "1ef39111469e5e829340dc25e56724f6b7b0d9c2fbfaa4f9fdaa8ada378a029b",
+  "final_downloads": 57
+}

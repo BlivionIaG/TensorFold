@@ -1630,6 +1630,510 @@
       "public_sha256": "1263cb92fb12cead4e724a94f0e85c80db6c42432010402ba24eaad67ae44b21",
       "bytes": 2305,
       "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "cold_http729_final/README.md",
+      "public_sha256": "328915245e976b69c286d4fd9ca27dea464a2dc4b4496490f8eb373ae8183792",
+      "bytes": 2864,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/collection/COLLECTION_RELEASE.json",
+      "public_sha256": "601214e196eb75c047da2d05cf6b903ab3448527cb3d9faaaccb2e8d14111344",
+      "bytes": 637,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/collection/final_download_manifest.json",
+      "public_sha256": "d7873f7ff4b5ee89e4e01856149e5122612f4ba0a2003d2c4f5693e4955ef0b7",
+      "bytes": 8875,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/collection/release.stderr",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/collection/release.stdout",
+      "public_sha256": "d060fffd50935c7d16857a64626ec5fd6a42c128254dcd08ff9a65955b044176",
+      "bytes": 730,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/collection/release_request.local.json",
+      "public_sha256": "8af216f89e9f864f51841a001a068fb5d3467e6f1189f6a91e45cc9c65bd453a",
+      "bytes": 9782,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/collection/state.json",
+      "public_sha256": "b71248a3c1e7a1850bf2d3151ac6d9375d9071e646fafbee13205f96d22a2ca2",
+      "bytes": 6045,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/independent_audit.json",
+      "public_sha256": "59be302b0e0ab886e2ba1bf69c49609fef1518f910818ac59ce55e20cbc67e59",
+      "bytes": 14225,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/public_manifest.json",
+      "public_sha256": "df829e2f72afd83a1ac369548ddf958d45ebf81daf9ae61891e72c76ce3863a0",
+      "bytes": 27380,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_cacheoff_7.identity.json",
+      "public_sha256": "9a6c43a7cba122d7bfcda15a71d5aabf5bddadc6e2d354219a1e36abfbfce580",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_cacheoff_7.r0.log",
+      "public_sha256": "da0dfeb31d15e0f971bb190e41e2b30acf127d920fc9c9f3d99e61ada55183b9",
+      "bytes": 1543,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_cacheon_6.identity.json",
+      "public_sha256": "e05aa42523e1e4958d6d51a42fa67d67164c17a7011f1466d3ea7ebbac919858",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_cacheon_6.r0.log",
+      "public_sha256": "a605e2a6b36ce7bf0b48e0a8ef674241661e3e3efd0187416c78c09af8e0187b",
+      "bytes": 1971,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_fresh.json",
+      "public_sha256": "5c278a49ff200c8ed0dba2829b4b80275ac4f80440ad1ef236e49f1b696032d5",
+      "bytes": 102976,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_frozen_turn2.request.json",
+      "public_sha256": "46cef32771d01d8d5f0a36642f20376e62f30f098388d11a6733f70e1034a974",
+      "bytes": 96254,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_prefix.json",
+      "public_sha256": "460ef131a7af879ae814175524662d3b5b368e82b84e740b9e68efe93087882e",
+      "bytes": 97730,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_reused.json",
+      "public_sha256": "4dc31113708bee8655be04e505329f78633e3909991b6fa9ef2012e34ab4fdec",
+      "bytes": 102991,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cancel_turn1.json",
+      "public_sha256": "aa166f1420709537eba09028d62c674acf44fd0f8e76254708d07a966c32b26c",
+      "bytes": 103987,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_131072_0.json",
+      "public_sha256": "fa4df2bd4b745b0d06f9206fb60da7f9e7c197662cd153421eab53e903e253c8",
+      "bytes": 1618795,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_131072_1.json",
+      "public_sha256": "f1ffc6a668b0554f51150fb9815c61a97298d0821ed3c39718d4f750a568cd95",
+      "bytes": 1618793,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_131072_104.identity.json",
+      "public_sha256": "64f0b01a3e5e87b6aea85b95950c825ad46adb04dc7f0d52d90711c723303f7e",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_131072_104.r0.log",
+      "public_sha256": "1fa7d99f9cddb78cc6b4a178811bc5a8f9001c670deb0fdb4ac7ceb0d3edcc9f",
+      "bytes": 2235,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_131072_2.json",
+      "public_sha256": "a17854d5cea687c638313cfd5daaa9b2d0bd7b3080b864184faaaaa8f4a01b87",
+      "bytes": 1618794,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_2048_0.json",
+      "public_sha256": "caae528830900c4cfffd36e41d57c059cb43a41dff6b2d5eba4323175be382d2",
+      "bytes": 30977,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_2048_1.json",
+      "public_sha256": "78757a9b9d23e2ce6b8642c8cd3461922f5e174ac01202524604f8da9a44339b",
+      "bytes": 30975,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_2048_100.identity.json",
+      "public_sha256": "c8e7b62a7aa61ee557a06e325cd6c56d886dc23470d59198b2f02fe7826a8ef1",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_2048_100.r0.log",
+      "public_sha256": "a0acb5601159efb57faa308d8c0a361a67c7883c38c5b55c1b18c616c90fbf4e",
+      "bytes": 2225,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_2048_2.json",
+      "public_sha256": "2d9a7e8cf20e2f9a51a3a27ebd0e940034570230a8d08347a13197546dec8a6c",
+      "bytes": 30975,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_262080_0.json",
+      "public_sha256": "da4190cf3bd2046d8a128e18cdc12b19483094075b40b4cd2aef769fe19fa188",
+      "bytes": 3222895,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_262080_1.json",
+      "public_sha256": "e3012782d0a457616cac3a7a84fa917b8660684b575c5b4bbe4242a8e4c39ac6",
+      "bytes": 3222898,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_262080_105.identity.json",
+      "public_sha256": "91a1e41144ea6b8ab596b7fecdeafa938209449e4f30f28d870c0c8bca6e7c2f",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_262080_105.r0.log",
+      "public_sha256": "37ef398e9a1343887255dcc9612f53931eb2c3f15e4ff829a83e3533d6fa986a",
+      "bytes": 2234,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_262080_2.json",
+      "public_sha256": "a662c2d4f5617286b8e9e3e6f6edfcf191fc5d4b8e39ac20f70c90fb73f63897",
+      "bytes": 3222897,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_32768_0.json",
+      "public_sha256": "550c46b659073c4c3db5ec798454d44a846ff21f7423dca2ecef8960563e39c7",
+      "bytes": 408693,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_32768_1.json",
+      "public_sha256": "8c7118a45991eeb8a23969e20caaf329d6ecc2310e7035576dc075124a5f7c03",
+      "bytes": 408683,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_32768_102.identity.json",
+      "public_sha256": "cc1afb0c9c6a2c978671280c0fed0eae959cb338b49a74b8e3596998cd5b990e",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_32768_102.r0.log",
+      "public_sha256": "56c7a7e22ccc8c4a177a3b7216e8028273ad370696b2468f593379209a83b554",
+      "bytes": 2226,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_32768_2.json",
+      "public_sha256": "8cf50ca089aed97360362d2905aca47076ad706c9d80a91a52a40baa542457c1",
+      "bytes": 408693,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_65536_0.json",
+      "public_sha256": "5e2d5d835552c10af014521545e289983d88c17f25ef6624b0648fdf1c040386",
+      "bytes": 810040,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_65536_1.json",
+      "public_sha256": "85321f447cee1c159021ed04fc4f41a7a20431fb048ea489d0a6f59574aebdfc",
+      "bytes": 810032,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_65536_103.identity.json",
+      "public_sha256": "930c78f5c19e5a0020d687d7d963eef8c889a77656932399a223a158a635bd6c",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_65536_103.r0.log",
+      "public_sha256": "099c84f2c59470ecda344e09d2a1269f4ef7d571615d9fbdc38ac5fb463655e3",
+      "bytes": 2227,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_65536_2.json",
+      "public_sha256": "3c4fe89cea5408044b7b81a88f09964ce26953f6cbf5545a9bcc86e9896e3d8d",
+      "bytes": 810059,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_8192_0.json",
+      "public_sha256": "f567f85ce240786db4c8f2c30dd6c084b5939c1a7c2f56831ae8628e23a84575",
+      "bytes": 107641,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_8192_1.json",
+      "public_sha256": "6aacefe23fc30071fc6f0f3b230da0767ea06ea7a6f893c7edde688ddf3e275f",
+      "bytes": 107638,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_8192_101.identity.json",
+      "public_sha256": "786591214697fe42ea952634193ac5ecab6d37ff98d91d4ddaa19d2a9b57518b",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_8192_101.r0.log",
+      "public_sha256": "5d46767115b137023d45d58f8341cc9d832cbf9ba0015c60a822501c2a6ce572",
+      "bytes": 2223,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_cold_8192_2.json",
+      "public_sha256": "d4010d341e95c0b0f638a17493bad1bca5c94c3319897e4947a2d85ebc2a5ba2",
+      "bytes": 107630,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_plain_131072.json",
+      "public_sha256": "d856926a0944986d5b127987837f3011280ef6fba31ed2470da5422c51b70959",
+      "bytes": 1619206,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_plain_2048.json",
+      "public_sha256": "14806042188cc3d38bd3d79f6247d5573fb2dfc072b23ff07c5fdf87ead4c65b",
+      "bytes": 35015,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_plain_262080.json",
+      "public_sha256": "d7b1a953874f02104e400fdba64a3b7450ed8a9cd59e0332bc737f44cfc0a5cb",
+      "bytes": 3226953,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_plain_32768.json",
+      "public_sha256": "11d797efd3f03057ee6cd84109980d008c55014053565fb147e83347487ff335",
+      "bytes": 411527,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_plain_65536.json",
+      "public_sha256": "8932b40998d5941b4f82110c29a1a4b651af643475f97930c9741ff8a9e20c08",
+      "bytes": 812507,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_plain_8192.json",
+      "public_sha256": "23c29743169b5a791603581b9661a7fa10c40ca9f4d962cdbd06ed215a9a57b7",
+      "bytes": 110484,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_resume_cacheoff_4.identity.json",
+      "public_sha256": "d10812bfaf12608ddda853b91e3bb870dd887706288b5d2517d0bbb8f566fd3c",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_resume_cacheoff_4.r0.log",
+      "public_sha256": "10795aea7e6ed89310da9ff02080b3024b19852e7fef04bd6e23b3ddac0395aa",
+      "bytes": 1543,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_resume_cacheon_3.identity.json",
+      "public_sha256": "dcb354344f999a642bd4f80b3ce29b14dce1dc57c33e655e50360ecf0d3c5f88",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_resume_cacheon_3.r0.log",
+      "public_sha256": "472279b96ede7cf05e2e42d4aa4a0a533848ea819ce4782f1b5fb8ed663e988c",
+      "bytes": 1791,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_resume_fresh.json",
+      "public_sha256": "c2d6c173e15255461604b5cbeb97816fbb84bb815f752c72b90b55c965ce0af6",
+      "bytes": 102978,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_resume_frozen_turn2.request.json",
+      "public_sha256": "46cef32771d01d8d5f0a36642f20376e62f30f098388d11a6733f70e1034a974",
+      "bytes": 96254,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_resume_reused.json",
+      "public_sha256": "75c3fbb6d9478e94dab54f90dcb7a0fe076c439c49735f00b7c3bdfd976d83f2",
+      "bytes": 102991,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/V620tp1_resume_turn1.json",
+      "public_sha256": "84506acc72d1c924d96a7e0601058f1fe8b587710835e17a424298a9735fb040",
+      "bytes": 103981,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/allocation.raw.json",
+      "public_sha256": "39bf02762d7f7b4178b64bc3d11307800a6ee9fe1c77eaa928b149a140e830e0",
+      "bytes": 744,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/config.raw.json",
+      "public_sha256": "a2eb40221952d6b59766a355c2becdedbee7a0f9b1ee795f3384e5eb407b63bb",
+      "bytes": 1266,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/native_builds.raw.json",
+      "public_sha256": "fc02f51002aefea4e479faa941eded93b29ad5a2600a2625958994155a174b84",
+      "bytes": 1821,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/raw/summary.json",
+      "public_sha256": "7a797f0ae6f4ba39734c4935f98234cdb8a21773ea8f6fc7befe346895753e9e",
+      "bytes": 70259,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/capture_identity.py",
+      "public_sha256": "b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005",
+      "bytes": 1439,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/clients/bench_evidence.py",
+      "public_sha256": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+      "bytes": 2969,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/config.json",
+      "public_sha256": "a2eb40221952d6b59766a355c2becdedbee7a0f9b1ee795f3384e5eb407b63bb",
+      "bytes": 1266,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/cold_131072.json",
+      "public_sha256": "b5e535a7604a223156e586061241c35c975d3ea027852507efda6b87573e7371",
+      "bytes": 822929,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/cold_2048.json",
+      "public_sha256": "bb9b596da0e3ad4fe989c8760eec2117eb6feb0c116c0d78cce0323d3e9ff707",
+      "bytes": 12995,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/cold_262080.json",
+      "public_sha256": "238b6c1adeedf5fcc80375c1c67508f80366107bd448fba96786be4486cfc686",
+      "bytes": 1644742,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/cold_32768.json",
+      "public_sha256": "be5e31c3a936b2e3c22fd1c54ce46b2f0727e8ec7a7e261b4befce0792d3fbef",
+      "bytes": 205181,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/cold_65536.json",
+      "public_sha256": "9dc155b38d10a9fa4aa29c7a62aca68f2ee054dc788d6613701c6baaca74f128",
+      "bytes": 409542,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/cold_8192.json",
+      "public_sha256": "491b9aeeda2c9862a68d8654e9782cfb8ba5d804b57bd79d14cc20dd7a02ce30",
+      "bytes": 51571,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/document.txt",
+      "public_sha256": "ffc5579ab66539fe31edceb122313ff6b7d11da67e7a7635d2c6a8f578b6e6cf",
+      "bytes": 95206,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/plain_131072.json",
+      "public_sha256": "4aacc089370e80920ceb5ea9c8b4a8c0ff76708b57629d0416ab707f4f9d25d0",
+      "bytes": 822945,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/plain_2048.json",
+      "public_sha256": "c38adb27df11fc5274590be6566cd9d908491f5a06484e32ef411600b38d555c",
+      "bytes": 13011,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/plain_262080.json",
+      "public_sha256": "db080561b13eb77de0bb3361724e66ef60240e6e5cd9f2c3fdb965ea39135401",
+      "bytes": 1644758,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/plain_32768.json",
+      "public_sha256": "23d93bb6fa92374198940c09d1308190d0c04dc704948abadf39ea6627befee8",
+      "bytes": 205197,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/plain_65536.json",
+      "public_sha256": "d1a2070970998fd96643eb0a86a084b56cfb176968518e91032da076ce2ccb06",
+      "bytes": 409558,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/fixtures/plain_8192.json",
+      "public_sha256": "967ef8adabc5a797a976b03788761973410db1e1190a2867dbbad9569e8f599f",
+      "bytes": 51587,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/payload_sha256.original.json",
+      "public_sha256": "d1d0125b0e63ffd4e927fdda80fbaf3f4cd78915e264253bcdd6cd043f6e6807",
+      "bytes": 1544,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_final/recipe/run.py",
+      "public_sha256": "ae17e67bf8f0364635eceae11a63521dae9a6753f45e0051f39b1c434816ab9a",
+      "bytes": 18496,
+      "curated_submanifest": "cold_http729_final/public_manifest.json"
     }
   ]
 }

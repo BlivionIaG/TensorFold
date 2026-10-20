@@ -1,0 +1,2119 @@
+{
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "modes": [
+    "cold",
+    "resume",
+    "cancel"
+  ],
+  "selected_rigs": [
+    "V620tp1"
+  ],
+  "cases": [
+    {
+      "rig": "V620tp1",
+      "mode": "cold",
+      "pass": true,
+      "sizes": [
+        {
+          "prompt_tokens": 2048,
+          "pass": true,
+          "three_cold_equal_plain": true
+        },
+        {
+          "prompt_tokens": 8192,
+          "pass": true,
+          "three_cold_equal_plain": true
+        },
+        {
+          "prompt_tokens": 32768,
+          "pass": true,
+          "three_cold_equal_plain": true
+        },
+        {
+          "prompt_tokens": 65536,
+          "pass": true,
+          "three_cold_equal_plain": true
+        },
+        {
+          "prompt_tokens": 131072,
+          "pass": true,
+          "three_cold_equal_plain": true
+        },
+        {
+          "prompt_tokens": 262080,
+          "pass": true,
+          "three_cold_equal_plain": true
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "resume",
+      "pass": true,
+      "cache_reuse_observed": true,
+      "cancel_scope": null,
+      "identical_frozen_turn2_hashes": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "cancel",
+      "pass": true,
+      "drain_samples": [
+        {
+          "running": 1,
+          "waiting": 0,
+          "decode_tokens_per_second": 8.5,
+          "prefill_tokens_per_second": 412.1763703617626,
+          "generation_tokens_running": 1,
+          "prompt_tokens_total": 16414,
+          "generation_tokens_total": 16,
+          "mtp_drafted_total": 14,
+          "mtp_accepted_total": 7,
+          "decode_rounds_total": 9,
+          "memory": {
+            "active": 23720424952,
+            "cache": 0,
+            "peak": 23720424952
+          }
+        },
+        {
+          "running": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 12.5,
+          "prefill_tokens_per_second": 412.1763703617626,
+          "generation_tokens_running": 0,
+          "prompt_tokens_total": 32869,
+          "generation_tokens_total": 17,
+          "mtp_drafted_total": 20,
+          "mtp_accepted_total": 13,
+          "decode_rounds_total": 11,
+          "memory": {
+            "active": 23720424952,
+            "cache": 0,
+            "peak": 23720424952
+          }
+        }
+      ],
+      "cache_reuse_observed": true,
+      "cancel_scope": "First-output disconnect/drain and later frozen-request equality; not forced partial-MTP/reset API",
+      "identical_frozen_turn2_hashes": true
+    }
+  ],
+  "complete": true,
+  "all_selected_pass": true,
+  "lock_proofs": [
+    {
+      "path": "<REMOTE_HOME>/opt/gpu.lock",
+      "inode": 245218121,
+      "held": true
+    },
+    {
+      "path": "<REMOTE_HOME>/w1012/build.lock",
+      "inode": 6815605900,
+      "held": true
+    }
+  ],
+  "scope": "Owned rigs serial; shared host, no physical exclusivity or unreported pinned-memory claim",
+  "memory_admission_environment": {
+    "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+    "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+  },
+  "capture_identity_sha256": "b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005",
+  "host_context": {
+    "boot_id": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+    "ram_kib": {
+      "MemTotal": 527988124,
+      "MemAvailable": 516643560
+    },
+    "loadavg": [
+      4.0302734375,
+      4.142578125,
+      2.47509765625
+    ],
+    "context_tokens": 262144,
+    "parallel": 1,
+    "capability_scope": "Actual native health and request/refusal records; no inferred support or pinned-memory total"
+  },
+  "servers": [
+    {
+      "rig": "V620tp1",
+      "mode": "cold_2048",
+      "cache_gib": 0,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 21946,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21600",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "0"
+          ],
+          "log": "V620tp1_cold_2048_100.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "a0acb5601159efb57faa308d8c0a361a67c7883c38c5b55c1b18c616c90fbf4e"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792527417.3310583,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 21946,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18580772,
+                "VmRSS": 412132
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412132,
+                "Pss": 408393,
+                "Private_Clean": 149312,
+                "Private_Dirty": 258772,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_context_2048",
+          "at": 1792527420.992039,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 21946,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18580772,
+                "VmRSS": 414712
+              },
+              "smaps_rollup_kib": {
+                "Rss": 414712,
+                "Pss": 410954,
+                "Private_Clean": 149888,
+                "Private_Dirty": 260708,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 24.0,
+            "prefill_tokens_per_second": 2538.6539409497914,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 8192,
+            "generation_tokens_total": 64,
+            "mtp_drafted_total": 39,
+            "mtp_accepted_total": 30,
+            "decode_rounds_total": 30,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 22941461496,
+          "cache": 0,
+          "peak": 22941461496
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_cold_2048_100.identity.json",
+        "sha256": "2c2894bd13897ba3426d18cd929075f203f66e4b938260917e180b00881de862"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "cold_8192",
+      "cache_gib": 0,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 22569,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21601",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "0"
+          ],
+          "log": "V620tp1_cold_8192_101.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "5d46767115b137023d45d58f8341cc9d832cbf9ba0015c60a822501c2a6ce572"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792527425.777003,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 22569,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18583144,
+                "VmRSS": 412872
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412872,
+                "Pss": 408994,
+                "Private_Clean": 149892,
+                "Private_Dirty": 258784,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_context_8192",
+          "at": 1792527440.2696974,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 22569,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18583144,
+                "VmRSS": 415548
+              },
+              "smaps_rollup_kib": {
+                "Rss": 415548,
+                "Pss": 411895,
+                "Private_Clean": 150824,
+                "Private_Dirty": 260816,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 8.0,
+            "prefill_tokens_per_second": 2353.6449782428763,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 32768,
+            "generation_tokens_total": 64,
+            "mtp_drafted_total": 42,
+            "mtp_accepted_total": 21,
+            "decode_rounds_total": 39,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 22941461496,
+          "cache": 0,
+          "peak": 22941461496
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_cold_8192_101.identity.json",
+        "sha256": "6b3055293fcf05102f7b04f512a8b22130c3553cf8fe720e7bbe6e996e2243df"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "cold_32768",
+      "cache_gib": 0,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 22770,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21602",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "0"
+          ],
+          "log": "V620tp1_cold_32768_102.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "56c7a7e22ccc8c4a177a3b7216e8028273ad370696b2468f593379209a83b554"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792527445.0807953,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 22770,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18580748,
+                "VmRSS": 412888
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412888,
+                "Pss": 409241,
+                "Private_Clean": 150220,
+                "Private_Dirty": 258768,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_context_32768",
+          "at": 1792527517.03062,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 22770,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18580748,
+                "VmRSS": 415608
+              },
+              "smaps_rollup_kib": {
+                "Rss": 415608,
+                "Pss": 411778,
+                "Private_Clean": 150568,
+                "Private_Dirty": 260844,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 8.0,
+            "prefill_tokens_per_second": 1837.584556661146,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 131072,
+            "generation_tokens_total": 64,
+            "mtp_drafted_total": 42,
+            "mtp_accepted_total": 24,
+            "decode_rounds_total": 39,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 22941461496,
+          "cache": 0,
+          "peak": 22941461496
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_cold_32768_102.identity.json",
+        "sha256": "a7cb54e15f989d8e19e5c3b075ac658c53c19c5f090ab2fd1b8d47ec732cca14"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "cold_65536",
+      "cache_gib": 0,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 24724,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21603",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "0"
+          ],
+          "log": "V620tp1_cold_65536_103.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "099c84f2c59470ecda344e09d2a1269f4ef7d571615d9fbdc38ac5fb463655e3"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792527521.808879,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 24724,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18585004,
+                "VmRSS": 412816
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412816,
+                "Pss": 409046,
+                "Private_Clean": 149904,
+                "Private_Dirty": 258776,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_context_65536",
+          "at": 1792527705.7640483,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 24724,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18585004,
+                "VmRSS": 416284
+              },
+              "smaps_rollup_kib": {
+                "Rss": 416284,
+                "Pss": 412332,
+                "Private_Clean": 150544,
+                "Private_Dirty": 261600,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 8.0,
+            "prefill_tokens_per_second": 1435.7023732513437,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 262144,
+            "generation_tokens_total": 64,
+            "mtp_drafted_total": 48,
+            "mtp_accepted_total": 18,
+            "decode_rounds_total": 42,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 22941461496,
+          "cache": 0,
+          "peak": 22941461496
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_cold_65536_103.identity.json",
+        "sha256": "f6272e74be5a6c3d01764f8396eb9faafab2784d00c13642136be303ecd33b4e"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "cold_131072",
+      "cache_gib": 0,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 29558,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21604",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "0"
+          ],
+          "log": "V620tp1_cold_131072_104.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "1fa7d99f9cddb78cc6b4a178811bc5a8f9001c670deb0fdb4ac7ceb0d3edcc9f"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792527726.8792071,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 29558,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18581916,
+                "VmRSS": 412952
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412952,
+                "Pss": 408935,
+                "Private_Clean": 149968,
+                "Private_Dirty": 258772,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_context_131072",
+          "at": 1792528252.647568,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 29558,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18581916,
+                "VmRSS": 416032
+              },
+              "smaps_rollup_kib": {
+                "Rss": 416032,
+                "Pss": 411999,
+                "Private_Clean": 150608,
+                "Private_Dirty": 261208,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 8.0,
+            "prefill_tokens_per_second": 1001.1709006013756,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 524288,
+            "generation_tokens_total": 64,
+            "mtp_drafted_total": 33,
+            "mtp_accepted_total": 3,
+            "decode_rounds_total": 57,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 22941461496,
+          "cache": 0,
+          "peak": 22941461496
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_cold_131072_104.identity.json",
+        "sha256": "8114ac9ad741a9af7410a5241ff8b9b1d4e276a064dc3ab2b3ac647bcce9fd25"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "cold_262080",
+      "cache_gib": 0,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 37229,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21605",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "0"
+          ],
+          "log": "V620tp1_cold_262080_105.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "37ef398e9a1343887255dcc9612f53931eb2c3f15e4ff829a83e3533d6fa986a"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792528257.378075,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 37229,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18581884,
+                "VmRSS": 412656
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412656,
+                "Pss": 408854,
+                "Private_Clean": 149908,
+                "Private_Dirty": 258772,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_context_262080",
+          "at": 1792529932.0506349,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 37229,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18581884,
+                "VmRSS": 415852
+              },
+              "smaps_rollup_kib": {
+                "Rss": 415852,
+                "Pss": 412041,
+                "Private_Clean": 150548,
+                "Private_Dirty": 261324,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 8.0,
+            "prefill_tokens_per_second": 627.379535544976,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 1048320,
+            "generation_tokens_total": 64,
+            "mtp_drafted_total": 42,
+            "mtp_accepted_total": 30,
+            "decode_rounds_total": 30,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 22941461496,
+          "cache": 0,
+          "peak": 22941461496
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_cold_262080_105.identity.json",
+        "sha256": "267fd291b646dfedac89c5e84dbd5910c85bef62914339067beeafb39d74e6f8"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "resume_cacheon",
+      "cache_gib": 1,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 60531,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21503",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "1"
+          ],
+          "log": "V620tp1_resume_cacheon_3.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "472279b96ede7cf05e2e42d4aa4a0a533848ea819ce4782f1b5fb8ed663e988c"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792529936.8351893,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 60531,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18581748,
+                "VmRSS": 412844
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412844,
+                "Pss": 408871,
+                "Private_Clean": 149908,
+                "Private_Dirty": 258784,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 23622249464,
+              "cache": 0,
+              "peak": 23622249464
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_reuse",
+          "at": 1792529944.9799771,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 60531,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18581748,
+                "VmRSS": 415612
+              },
+              "smaps_rollup_kib": {
+                "Rss": 415612,
+                "Pss": 411636,
+                "Private_Clean": 150548,
+                "Private_Dirty": 260908,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 16.0,
+            "prefill_tokens_per_second": 410.58775353555234,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 32869,
+            "generation_tokens_total": 32,
+            "mtp_drafted_total": 26,
+            "mtp_accepted_total": 16,
+            "decode_rounds_total": 15,
+            "memory": {
+              "active": 23720424952,
+              "cache": 0,
+              "peak": 23720424952
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 23622249464,
+          "cache": 0,
+          "peak": 23622249464
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_resume_cacheon_3.identity.json",
+        "sha256": "138c443ce5fbe8495fef162c380e4d66074ec0694cff7be97b4b38072b6148f8"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "resume_cacheoff",
+      "cache_gib": 0,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 60628,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21504",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "0"
+          ],
+          "log": "V620tp1_resume_cacheoff_4.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "10795aea7e6ed89310da9ff02080b3024b19852e7fef04bd6e23b3ddac0395aa"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792529949.7193747,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 60628,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18581072,
+                "VmRSS": 412840
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412840,
+                "Pss": 408907,
+                "Private_Clean": 149956,
+                "Private_Dirty": 258776,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_fresh",
+          "at": 1792529957.559417,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 60628,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18581072,
+                "VmRSS": 417156
+              },
+              "smaps_rollup_kib": {
+                "Rss": 415604,
+                "Pss": 411668,
+                "Private_Clean": 150596,
+                "Private_Dirty": 260896,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 8.0,
+            "prefill_tokens_per_second": 2147.6829021538115,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 16455,
+            "generation_tokens_total": 16,
+            "mtp_drafted_total": 12,
+            "mtp_accepted_total": 9,
+            "decode_rounds_total": 6,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 22941461496,
+          "cache": 0,
+          "peak": 22941461496
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_resume_cacheoff_4.identity.json",
+        "sha256": "f5fa0bb29a18b6b621104973473ce9aeae7d500c8da3590cbe1f0c7e87afeb5e"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "cancel_cacheon",
+      "cache_gib": 1,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 61041,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21506",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "1"
+          ],
+          "log": "V620tp1_cancel_cacheon_6.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "a605e2a6b36ce7bf0b48e0a8ef674241661e3e3efd0187416c78c09af8e0187b"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792529962.343609,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 61041,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18582756,
+                "VmRSS": 412928
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412928,
+                "Pss": 408916,
+                "Private_Clean": 149956,
+                "Private_Dirty": 258788,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 23622249464,
+              "cache": 0,
+              "peak": 23622249464
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_reuse",
+          "at": 1792529971.017868,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 61041,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18582756,
+                "VmRSS": 415740
+              },
+              "smaps_rollup_kib": {
+                "Rss": 415740,
+                "Pss": 411732,
+                "Private_Clean": 150596,
+                "Private_Dirty": 260956,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 20.5,
+            "prefill_tokens_per_second": 146.7998605569096,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 49324,
+            "generation_tokens_total": 33,
+            "mtp_drafted_total": 32,
+            "mtp_accepted_total": 22,
+            "decode_rounds_total": 17,
+            "memory": {
+              "active": 23720424952,
+              "cache": 0,
+              "peak": 23720424952
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 23622249464,
+          "cache": 0,
+          "peak": 23622249464
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_cancel_cacheon_6.identity.json",
+        "sha256": "a6c1fa86e0602b3c14bd858b2ab5bf2664910c6af817425b4b23297d63aad9d4"
+      },
+      "cleanup_owned_groups_gone": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "cancel_cacheoff",
+      "cache_gib": 0,
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 61515,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+            "serve",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "--name",
+            "m",
+            "--port",
+            "21507",
+            "--dashboard",
+            "--context",
+            "262144",
+            "--parallel",
+            "1",
+            "--prompt-cache-gib",
+            "0"
+          ],
+          "log": "V620tp1_cancel_cacheoff_7.r0.log",
+          "alive_before_intentional_teardown": true,
+          "actual_exit_status": 0,
+          "process_group_gone": true,
+          "log_sha256": "da0dfeb31d15e0f971bb190e41e2b30acf127d920fc9c9f3d99e61ada55183b9"
+        }
+      ],
+      "memory": [
+        {
+          "phase": "after_health",
+          "at": 1792529975.8067923,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 61515,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18585068,
+                "VmRSS": 412804
+              },
+              "smaps_rollup_kib": {
+                "Rss": 412804,
+                "Pss": 408859,
+                "Private_Clean": 149912,
+                "Private_Dirty": 258776,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 0.0,
+            "prefill_tokens_per_second": 0.0,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 0,
+            "generation_tokens_total": 0,
+            "mtp_drafted_total": 0,
+            "mtp_accepted_total": 0,
+            "decode_rounds_total": 0,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        },
+        {
+          "phase": "after_fresh",
+          "at": 1792529983.6253657,
+          "ranks": [
+            {
+              "rank": 0,
+              "pid": 61515,
+              "status_kib": {
+                "VmLck": 0,
+                "VmPin": 0,
+                "VmHWM": 18585068,
+                "VmRSS": 417124
+              },
+              "smaps_rollup_kib": {
+                "Rss": 415428,
+                "Pss": 411479,
+                "Private_Clean": 150552,
+                "Private_Dirty": 260756,
+                "Locked": 0
+              }
+            }
+          ],
+          "server_stats": {
+            "running": 0,
+            "waiting": 0,
+            "decode_tokens_per_second": 8.0,
+            "prefill_tokens_per_second": 2153.2598769722385,
+            "generation_tokens_running": 0,
+            "prompt_tokens_total": 16455,
+            "generation_tokens_total": 16,
+            "mtp_drafted_total": 12,
+            "mtp_accepted_total": 9,
+            "decode_rounds_total": 6,
+            "memory": {
+              "active": 22941461496,
+              "cache": 0,
+              "peak": 22941461496
+            }
+          },
+          "scope": "VmHWM resident peak; PSS snapshot not exact peak; VmPin/Locked not complete ROCm pinned allocation. HIP allocator fields only as reported."
+        }
+      ],
+      "memory_admission_environment": {
+        "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+        "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+      },
+      "health": {
+        "status": "ok",
+        "model": "m",
+        "model_ids": [
+          "m"
+        ],
+        "max_batch_size": 1,
+        "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots",
+        "warming": false,
+        "memory": {
+          "active": 22941461496,
+          "cache": 0,
+          "peak": 22941461496
+        },
+        "live": {
+          "connections": 0,
+          "waiting": 0,
+          "decode_tokens_per_second": 0.0,
+          "prefill_tokens_per_second": 0.0
+        },
+        "version": "1.0.12",
+        "backend": "hip"
+      },
+      "identity": {
+        "file": "V620tp1_cancel_cacheoff_7.identity.json",
+        "sha256": "46ded02a195a98f94a7ee91be36ffea45aa2bb5006e7a7f0450e1fed2a55a2bd"
+      },
+      "cleanup_owned_groups_gone": true
+    }
+  ],
+  "overlap_observations": [
+    {
+      "shared_observations": [],
+      "processes_inspected": 62,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [],
+      "processes_inspected": 67,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [],
+      "processes_inspected": 62,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [],
+      "processes_inspected": 68,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [
+        {
+          "pid": 27653,
+          "executable": "python",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": null,
+            "HIP_VISIBLE_DEVICES": "6,7,8,9"
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28443,
+          "executable": "VLLM::EngineCore",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28664,
+          "executable": "VLLM::Worker_TP0_EP0",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28665,
+          "executable": "VLLM::Worker_TP1_EP1",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28666,
+          "executable": "VLLM::Worker_TP2_EP2",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28667,
+          "executable": "VLLM::Worker_TP3_EP3",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        }
+      ],
+      "processes_inspected": 73,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [
+        {
+          "pid": 27653,
+          "executable": "python",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": null,
+            "HIP_VISIBLE_DEVICES": "6,7,8,9"
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28443,
+          "executable": "VLLM::EngineCore",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28664,
+          "executable": "VLLM::Worker_TP0_EP0",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28665,
+          "executable": "VLLM::Worker_TP1_EP1",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28666,
+          "executable": "VLLM::Worker_TP2_EP2",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 28667,
+          "executable": "VLLM::Worker_TP3_EP3",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 36143,
+          "executable": "python",
+          "scope": "CPU HTTP benchmark client allowed"
+        }
+      ],
+      "processes_inspected": 74,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [
+        {
+          "pid": 45753,
+          "executable": "python",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": null,
+            "HIP_VISIBLE_DEVICES": "6,7,8,9"
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46395,
+          "executable": "VLLM::EngineCore",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46449,
+          "executable": "VLLM::Worker_TP0_EP0",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46450,
+          "executable": "VLLM::Worker_TP1_EP1",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46451,
+          "executable": "VLLM::Worker_TP2_EP2",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46452,
+          "executable": "VLLM::Worker_TP3_EP3",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 57078,
+          "executable": "python",
+          "scope": "CPU HTTP benchmark client allowed"
+        }
+      ],
+      "processes_inspected": 78,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [
+        {
+          "pid": 45753,
+          "executable": "python",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": null,
+            "HIP_VISIBLE_DEVICES": "6,7,8,9"
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46395,
+          "executable": "VLLM::EngineCore",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46449,
+          "executable": "VLLM::Worker_TP0_EP0",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46450,
+          "executable": "VLLM::Worker_TP1_EP1",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46451,
+          "executable": "VLLM::Worker_TP2_EP2",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46452,
+          "executable": "VLLM::Worker_TP3_EP3",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 57078,
+          "executable": "python",
+          "scope": "CPU HTTP benchmark client allowed"
+        }
+      ],
+      "processes_inspected": 78,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [
+        {
+          "pid": 45753,
+          "executable": "python",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": null,
+            "HIP_VISIBLE_DEVICES": "6,7,8,9"
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46395,
+          "executable": "VLLM::EngineCore",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46449,
+          "executable": "VLLM::Worker_TP0_EP0",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46450,
+          "executable": "VLLM::Worker_TP1_EP1",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46451,
+          "executable": "VLLM::Worker_TP2_EP2",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46452,
+          "executable": "VLLM::Worker_TP3_EP3",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 57078,
+          "executable": "python",
+          "scope": "CPU HTTP benchmark client allowed"
+        }
+      ],
+      "processes_inspected": 78,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    },
+    {
+      "shared_observations": [
+        {
+          "pid": 45753,
+          "executable": "python",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": null,
+            "HIP_VISIBLE_DEVICES": "6,7,8,9"
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46395,
+          "executable": "VLLM::EngineCore",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46449,
+          "executable": "VLLM::Worker_TP0_EP0",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46450,
+          "executable": "VLLM::Worker_TP1_EP1",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46451,
+          "executable": "VLLM::Worker_TP2_EP2",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 46452,
+          "executable": "VLLM::Worker_TP3_EP3",
+          "device_environment": {
+            "ROCR_VISIBLE_DEVICES": null,
+            "CUDA_VISIBLE_DEVICES": "6,7,8,9",
+            "HIP_VISIBLE_DEVICES": null
+          },
+          "mapping_status": "direct_mask_no_overlap",
+          "mapping_scope": "Numeric mask observation only; unknown is not evidence of collision or physical-host isolation"
+        },
+        {
+          "pid": 57078,
+          "executable": "python",
+          "scope": "CPU HTTP benchmark client allowed"
+        }
+      ],
+      "processes_inspected": 78,
+      "scope": "Known model process/direct numeric mask scan only; unknown mappings are observations, not physical-host exclusivity"
+    }
+  ]
+}

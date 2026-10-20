@@ -1,0 +1,14 @@
+[tensorfold] HIP rank 0 of 1: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots 
+info: lane costs ms by window rows 1:7.51 2:9.00 3:11.29 4:12.51; shared rows 2:8.99 4:12.59; head step 0.464
+[tensorfold] open-file limit raised: soft 1024 -> 524288
+[tensorfold] HIP gfx1030 device 0, rank 0 of 1: Nemotron-H model 17.34 GiB, MTP head loaded; 1 stream at once, 2.02 GiB each at a 262144-token window, of 9.51 GiB left after the model and 2.0 GiB of scratch; prompt cache 0.00 GiB (0 pages, 0 snapshots); prompts in 2048-row chunks; windows of 4 rows
+[tensorfold] serving m at http://127.0.0.1:21504/v1 (sampling: temperature 1.0, top_p 0.95; drafts: on; context: 262144; loaded in 3.4s)
+[tensorfold] thinking on (the chat template's default): replies reason in reasoning_content before the answer in content, and max_tokens counts both. --no-thinking turns it off; a request can send chat_template_kwargs {"enable_thinking": false}
+[tensorfold] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" 200 -
+[tensorfold] done chatcmpl-37b8b0ad4bf84b07f852069604f0d1c9 prompt=16455 cached=0 thinking=False effort=none tokens=16 sha=75cc516bb609 finish=length rounds=6 accepted=9/12
+info: backend verify: 6 calls, 21133 us each
+info: backend keep: 2 calls, 2 us each
+info: backend draft: 7 calls, 2540 us each
+info: draft head: 22 chained steps, 36 drafts
+info: round graphs: 6 captured (1.9 ms each), 42 of 54 rounds replayed
