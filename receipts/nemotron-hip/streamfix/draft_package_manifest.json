@@ -1438,6 +1438,21 @@
       "bytes": 8205
     },
     {
+      "path": "coverage_20261020/matrix_transport_checkpoint/README.md",
+      "sha256": "942fdb2af9bf5bb2979d3a7dc451b0f15df829b4c86b74df9480488e885a8d78",
+      "bytes": 920
+    },
+    {
+      "path": "coverage_20261020/matrix_transport_checkpoint/first_pair_unbalanced.json",
+      "sha256": "73250f1f144779e10db1d59ff83972aaa6aebe0a7c51417761cd3502dfe66fc5",
+      "bytes": 11626
+    },
+    {
+      "path": "coverage_20261020/matrix_transport_checkpoint/transport_loss_checkpoint.json",
+      "sha256": "71cf8a9d97c7a60457caad013d5d23e9940c1da4f78e4f019a36edcc8f6b90d2",
+      "bytes": 3723
+    },
+    {
       "path": "coverage_20261020/oracle_subset729/derive.py",
       "sha256": "9b47edeaffb8a902d7d9805085f0fd4f28dd2507ec3dfcbff5a85f0df32e2717",
       "bytes": 4159
@@ -1454,8 +1469,8 @@
     },
     {
       "path": "coverage_20261020/public_manifest.json",
-      "sha256": "9d5b6ac63f144d677891892612cc4e26de9588e4ef115b51c855a7737544b5a0",
-      "bytes": 19672
+      "sha256": "73bb55d33bfaa30890964c60b514d07a6cf310d46ee84b9b0d878d4e13ba1bcf",
+      "bytes": 23608
     },
     {
       "path": "coverage_20261020/publication/bodies/issue1081.md",
@@ -1716,6 +1731,61 @@
       "path": "coverage_20261020/teacherforced729/w7800tp2_story_full_r1_rows.json",
       "sha256": "98b5d9929a539bb0e2ac313417a07037c81c6796d644ad64e462a40d4b482d34",
       "bytes": 18229
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/README.md",
+      "sha256": "f845ce7b1a6f2fb9697e94e110175862176c64d1fa91d5d9977e18a2899b265c",
+      "bytes": 1339
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/all22_source_blobs.json",
+      "sha256": "aee811dcd36c5952508202de04a2dfb0a4a5a409f3d1e54394697930d382f020",
+      "bytes": 3572
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/main_d101.log",
+      "sha256": "e7509b14145e99a7dc0fe8b15d81d5d45453f7bf548b40e330f2e7099c689d78",
+      "bytes": 664
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/pr1082_actual_graph.log",
+      "sha256": "e7509b14145e99a7dc0fe8b15d81d5d45453f7bf548b40e330f2e7099c689d78",
+      "bytes": 664
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/pr1082_actual_graph_result.json",
+      "sha256": "feb1552e655d78cb9451dd51f37925ec38f9921b283c2b5e20536fbf2666d710",
+      "bytes": 2024
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/result.json",
+      "sha256": "916f0d0f9a77adefed2df9230b8b18f32142c45bd5f66a78049735a7ab49eaa9",
+      "bytes": 2856
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/summary.json",
+      "sha256": "028e5622b98813d50197ecfe2643117d2af59b551380ee04fd3b91119c4fb958",
+      "bytes": 5541
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/windows_baseline_compare.outer.log",
+      "sha256": "27a5d926d2ccb5d9d4f1aadef0a9ef2ff2ae4f89d7a255a946b15d08c71d7245",
+      "bytes": 1859
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/windows_baseline_compare.py",
+      "sha256": "7d3fe26464a92d5667cc8707a1ef58a6a3376156dab46fcd1e84272b4aa5c7e7",
+      "bytes": 3031
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/windows_pr1082_actual_graph.outer.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "coverage_20261020/windows_baseline/windows_pr1082_actual_graph.py",
+      "sha256": "a294a98a1e326869c65befd115ed793b082c097fd89a72cbfa15c167b32e8228",
+      "bytes": 2363
     },
     {
       "path": "critical_contracts/CRITICAL_CONTRACTS_ALL_PASS.json",

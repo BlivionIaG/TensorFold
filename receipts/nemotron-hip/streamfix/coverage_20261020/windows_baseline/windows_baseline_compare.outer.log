@@ -1,0 +1,14 @@
+Traceback (most recent call last):
+  File "<LOCAL_TEMP_PATH>", line 15, in <module>
+    row={'name':name,'source_commit':head,'tree':subprocess.check_output(['git','-C',str(T),'rev-parse','HEAD^{tree}'],text=True).strip(),'worktree':str(T),'argv':A,'source_files':{p:sha(T/p)for p in ['zig/src/core/checkpoint_identity.zig','zig/src/core/digest_key.zig','zig/src/platform/sys.zig','zig/src/core/checkpoint_config.zig','zig/src/core/save_guard.zig']},'started_utc':datetime.datetime.now(datetime.timezone.utc).isoformat()};R['runs'].append(row);log=D/(name+'.log')
+                                                                                                                                                                                       ~~~^^^^^
+  File "<LOCAL_TEMP_PATH>", line 5, in <lambda>
+    sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest();R={'scope':'LocalMac Windows-target compilation only; no PE execution, no GPU, no source edits','started_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'compiler':{'path':str(Z),'sha256':sha(Z),'version':subprocess.check_output([str(Z),'version'],text=True).strip()},'driver_sha256':sha(Path(__file__)),'runs':[],'complete':False}
+                                ~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 777, in read_bytes
+    with self.open(mode='rb', buffering=0) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '<LOCAL_TEMP_PATH>'

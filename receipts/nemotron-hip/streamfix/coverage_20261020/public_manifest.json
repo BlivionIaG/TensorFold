@@ -479,6 +479,101 @@
       "public_sha256": "bf275bf53fb1e63d600362d58a5aa2837ef380a862d0ab29ea408f12f147b9c0",
       "bytes": 10406,
       "generated_or_published_body": true
+    },
+    {
+      "path": "windows_baseline/summary.json",
+      "original_sha256": "62c882ce1612f654d3bf47234b8e813e152f8a70772d38808675cfea37f25dbc",
+      "public_sha256": "028e5622b98813d50197ecfe2643117d2af59b551380ee04fd3b91119c4fb958",
+      "bytes": 5541,
+      "redacted": true
+    },
+    {
+      "path": "windows_baseline/result.json",
+      "original_sha256": "dd2facd9683d441e16f280b2bb6d91fa96a19adff6e2d9cb336f4ff3becdbb9b",
+      "public_sha256": "916f0d0f9a77adefed2df9230b8b18f32142c45bd5f66a78049735a7ab49eaa9",
+      "bytes": 2856,
+      "redacted": true
+    },
+    {
+      "path": "windows_baseline/pr1082_actual_graph.log",
+      "original_sha256": "e7509b14145e99a7dc0fe8b15d81d5d45453f7bf548b40e330f2e7099c689d78",
+      "public_sha256": "e7509b14145e99a7dc0fe8b15d81d5d45453f7bf548b40e330f2e7099c689d78",
+      "bytes": 664,
+      "redacted": false
+    },
+    {
+      "path": "windows_baseline/pr1082_actual_graph_result.json",
+      "original_sha256": "6a1e2d4f80945f6b2b2c8486a67b20031dcb19c78dd924d95f0287b603fd28f3",
+      "public_sha256": "feb1552e655d78cb9451dd51f37925ec38f9921b283c2b5e20536fbf2666d710",
+      "bytes": 2024,
+      "redacted": true
+    },
+    {
+      "path": "windows_baseline/main_d101.log",
+      "original_sha256": "e7509b14145e99a7dc0fe8b15d81d5d45453f7bf548b40e330f2e7099c689d78",
+      "public_sha256": "e7509b14145e99a7dc0fe8b15d81d5d45453f7bf548b40e330f2e7099c689d78",
+      "bytes": 664,
+      "redacted": false
+    },
+    {
+      "path": "windows_baseline/windows_baseline_compare.py",
+      "original_sha256": "537567fd013505897d93f24cf5fa21888793711af7e46d17e84c334e3b4368b8",
+      "public_sha256": "7d3fe26464a92d5667cc8707a1ef58a6a3376156dab46fcd1e84272b4aa5c7e7",
+      "bytes": 3031,
+      "redacted": true
+    },
+    {
+      "path": "windows_baseline/windows_pr1082_actual_graph.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "redacted": false
+    },
+    {
+      "path": "windows_baseline/windows_baseline_compare.outer.log",
+      "original_sha256": "a808e9680a10d6772e37c73799d4410d1eb7d80905f27169fcaecade8a941130",
+      "public_sha256": "27a5d926d2ccb5d9d4f1aadef0a9ef2ff2ae4f89d7a255a946b15d08c71d7245",
+      "bytes": 1859,
+      "redacted": true
+    },
+    {
+      "path": "windows_baseline/windows_pr1082_actual_graph.py",
+      "original_sha256": "d53a605d3686b5a628694176d9a637d9e4bbe3c1d9355dba1dd8ca8ccba2553e",
+      "public_sha256": "a294a98a1e326869c65befd115ed793b082c097fd89a72cbfa15c167b32e8228",
+      "bytes": 2363,
+      "redacted": true
+    },
+    {
+      "path": "windows_baseline/all22_source_blobs.json",
+      "public_sha256": "aee811dcd36c5952508202de04a2dfb0a4a5a409f3d1e54394697930d382f020",
+      "bytes": 3572,
+      "generated": true
+    },
+    {
+      "path": "windows_baseline/README.md",
+      "public_sha256": "f845ce7b1a6f2fb9697e94e110175862176c64d1fa91d5d9977e18a2899b265c",
+      "bytes": 1339,
+      "generated": true
+    },
+    {
+      "path": "matrix_transport_checkpoint/transport_loss_checkpoint.json",
+      "original_sha256": "71cf8a9d97c7a60457caad013d5d23e9940c1da4f78e4f019a36edcc8f6b90d2",
+      "public_sha256": "71cf8a9d97c7a60457caad013d5d23e9940c1da4f78e4f019a36edcc8f6b90d2",
+      "bytes": 3723,
+      "redacted": false
+    },
+    {
+      "path": "matrix_transport_checkpoint/first_pair_unbalanced.json",
+      "original_sha256": "73250f1f144779e10db1d59ff83972aaa6aebe0a7c51417761cd3502dfe66fc5",
+      "public_sha256": "73250f1f144779e10db1d59ff83972aaa6aebe0a7c51417761cd3502dfe66fc5",
+      "bytes": 11626,
+      "redacted": false
+    },
+    {
+      "path": "matrix_transport_checkpoint/README.md",
+      "public_sha256": "942fdb2af9bf5bb2979d3a7dc451b0f15df829b4c86b74df9480488e885a8d78",
+      "bytes": 920,
+      "generated": true
     }
   ]
 }

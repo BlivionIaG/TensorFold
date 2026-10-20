@@ -1,0 +1,115 @@
+{
+  "scope": "Static offending-file equality across all22 heads; only main and firsthead compiled",
+  "files": [
+    {
+      "pr": 1082,
+      "head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1083,
+      "head": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1084,
+      "head": "5b12f74a27326797a540d094387e7ffa472b55ed",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1085,
+      "head": "6af43c9db14516a85fbe22351eb0d3e485bd41bb",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1086,
+      "head": "754786d613dde5539d3a0c534007a1a9733cfaf8",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1087,
+      "head": "7bf5f195fb06c0651a1a5d74277f24cc70da591c",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1088,
+      "head": "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1089,
+      "head": "9b56916fa71d40f9dcd924956c09a3c5f7e18019",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1090,
+      "head": "6e73bf059c5646e683d680ab78ed5326aa9fba87",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1091,
+      "head": "9c206c22bf386348f2f1eb473a31ef8370163b5e",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1092,
+      "head": "74b506e50265ccef559ce66d8d1cd55db55655ae",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1093,
+      "head": "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1094,
+      "head": "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1095,
+      "head": "42529bfab171c2f30d7ce3641b78ca3b0ff821fc",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1096,
+      "head": "d6134300b3fed9baa29842e20d28ce738fd77574",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1097,
+      "head": "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1098,
+      "head": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1099,
+      "head": "8a1c6ae90a9212c481607eb6633697543e6cb3ff",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1100,
+      "head": "3f991646915e24bb1c7c638ec118e27880d5a031",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1101,
+      "head": "e22da9dab3e8d70d5dbe150be39ed3794d6bffda",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1102,
+      "head": "52840409d2e30ea7e55d9d79c10375cb2ffce6c5",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    },
+    {
+      "pr": 1103,
+      "head": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47"
+    }
+  ]
+}

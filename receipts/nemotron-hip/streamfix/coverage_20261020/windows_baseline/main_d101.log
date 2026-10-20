@@ -1,0 +1,8 @@
+zig/src/core/digest_key.zig:34:42: error: expected type 'u128', found 'i64'
+        return .{ .device = 0, .inode = s.inode, .size = s.size, .mtime = s.mtime.toNanoseconds(), .ctime = s.ctime.toNanoseconds() };
+                                        ~^~~~~~
+zig/src/core/digest_key.zig:34:42: note: unsigned 128-bit int cannot represent all possible signed 64-bit values
+referenced by:
+    finishWithStats: zig/src/core/checkpoint_identity.zig:279:51
+    test.whole and split consumers share cached file digests and still check manifests: zig/src/core/checkpoint_identity_test.zig:136:93
+    1 reference(s) hidden; use '-freference-trace=3' to see all references
