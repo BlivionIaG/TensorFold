@@ -125,7 +125,7 @@ pub const Pool = struct {
             for (0..3) |p| {
                 // trellis bytes = tiles * 16 * k2 (k2 half-bits a value, 8 * k2 int16 words a 16x16 tile)
                 if (e[p].len == 0 or e[p].len % (tiles * 16) != 0) return error.Invalid;
-            w[p] = @intCast(e[p].len / (tiles * 16));
+                w[p] = @intCast(e[p].len / (tiles * 16));
                 bytes[p] = @max(bytes[p], e[p].len);
             }
         }
