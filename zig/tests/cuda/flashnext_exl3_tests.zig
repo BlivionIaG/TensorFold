@@ -275,7 +275,7 @@ fn names(gpu: Gpu, dir: []const u8) !void {
     while (it.next()) |kv| {
         const name = kv.key_ptr.*;
         const home = place.home(.{ .name = name, .rank = if (std.mem.endsWith(u8, name, ".trellis")) 3 else 1, .file = kv.value_ptr.string });
-        homes[@intFromEnum(home)] += 1;
+        homes[@backingInt(home)] += 1;
         if (n.claimed.contains(name)) {
             // a routed expert's part must be the routed bank's, a shared expert's part the resident one's
             if (std.mem.indexOf(u8, name, ".mlp.experts.") != null and home != .routed_host) disagree += 1;
@@ -294,7 +294,7 @@ fn names(gpu: Gpu, dir: []const u8) !void {
     std.debug.print("  EXL3 widths (halves: count):", .{});
     for (n.by_halves, 0..) |c, h| if (c > 0) std.debug.print(" {d}:{d}", .{ h, c });
     std.debug.print("\n  header homes (exl3_place):", .{});
-    for (homes, 0..) |c, i| if (c > 0) std.debug.print(" {s}={d}", .{ @tagName(@as(place.Home, @enumFromInt(i))), c });
+    for (homes, 0..) |c, i| if (c > 0) std.debug.print(" {s}={d}", .{ @tagName(@as(place.Home, @fromBackingInt(@intCast(i)))), c });
     std.debug.print("\n", .{});
     try check.expect(n.missing == 0, "names: {d} tensors the family reads do not resolve", .{n.missing});
     try check.expect(unclaimed == 0, "names: {d} indexed tensors no family loader reads (vision excepted)", .{unclaimed});
