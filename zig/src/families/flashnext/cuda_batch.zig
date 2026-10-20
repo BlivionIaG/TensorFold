@@ -350,12 +350,12 @@ pub fn Pass(comptime Tri: type) type {
         }
 
         pub fn attnBlock(self: *Self, lw: *const Layer, ai: usize) !void {
+            if (@import("cuda_exl3_heads.zig").isSplit(lw)) return @import("cuda_exl3_heads.zig").attnBlock(self, lw, ai);
             return self.attnBlockKeep(lw, ai, .{});
         }
 
         /// attnBlock, keeping its q|gate, k and v projections and o_proj's input.
         pub fn attnBlockKeep(self: *Self, lw: *const Layer, ai: usize, keep: LayerKeep) !void {
-            if (@import("cuda_exl3_heads.zig").isSplit(lw)) return @import("cuda_exl3_heads.zig").attnBlock(self, lw, ai); // tp=2 head split
             const s = self.s;
             const n = self.rows;
             const pa = s.proj;
@@ -442,12 +442,12 @@ pub fn Pass(comptime Tri: type) type {
 
         /// Router, each row's ten experts and the shared one, the grouped expert launches: y [rows, 11, dims] fp32.
         pub fn moeBlock(self: *Self, lw: *const Layer) !void {
+            if (lw.exl3) |x| return exl3_pass.moe(self, lw, x);
             return self.moeBlockKeep(lw, .{});
         }
 
         /// moeBlock, keeping its input, experts and weights.
         pub fn moeBlockKeep(self: *Self, lw: *const Layer, keep: LayerKeep) !void {
-            if (lw.exl3) |x| return exl3_pass.moe(self, lw, x);
             const s = self.s;
             const n = self.rows;
             const pairs = n * slots;

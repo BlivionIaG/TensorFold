@@ -32,8 +32,6 @@ const registry = .{ nemotron.native, nemotron.omni, glm.native, qwen35.native, q
 /// --record opens here (engines.zig refuses it for a backend without this).
 pub const records = true;
 pub const backends: []const []const u8 = &.{"cuda"};
-// ours: --tp (and --rank, --master, --master-port) for Flash Next's two ranks; cuda_refusal.zig keeps it to 1 or 2,
-// and every family without rank options refuses it (cuda_refusal.family)
 pub const serves: []const []const u8 = &.{ "--tp", "--mtp-drafts", "--mtp-confidence", "--policy" };
 pub const families: []const api.Family = blk: {
     var out: [registry.len + 4]api.Family = undefined;

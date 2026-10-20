@@ -173,10 +173,10 @@ pub fn Namespace(comptime Tri: type) type {
             logits: cuda.DeviceBuffer,
             drawn: [ring]u32 = undefined,
             next: u64 = 0,
-            /// --slide: the pocket's layout, from config.json at load.
-            lay: living.Layout = undefined,
             /// This rank's Loaded.stream_bytes (rankRoom agrees the ranks' rooms in streams, not bytes).
             stream_bytes: usize = 0,
+            /// --slide: the pocket's layout, from config.json at load.
+            lay: living.Layout = undefined,
 
             pub fn tri(self: *Cuda) Tri {
                 return .{ .set = if (self.set) |*x| x else null, .own = &self.glue, .s = self.stream };

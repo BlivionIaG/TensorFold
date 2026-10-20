@@ -141,6 +141,7 @@ fn release(comptime Cuda: type, comptime open: anytype) !void {
     engine.chunk = 16;
     engine.eos = 7;
     engine.round_graph = .{};
+    engine.page_config = null;
     var self: Cuda = undefined;
     self.gpa = a;
     self.context = 64;

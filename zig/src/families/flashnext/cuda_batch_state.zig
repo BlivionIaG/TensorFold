@@ -142,9 +142,9 @@ pub const Hooks = struct {
     keep: ?*Keep = null,
     /// Device [rows, wide] bf16: every row's streams after the last MoE write-back (the MTP head's input); 0: none.
     streams: u64 = 0,
+    output_tail: ?OutputTail = null,
     /// A training pass's adds to each layer's MoE output, in place of the model's own (Model.pocket).
     moe_add: ?MoeAdd = null,
-    output_tail: ?OutputTail = null,
 };
 
 /// The kernels the pass launches besides the captured Triton ones, loaded once.
