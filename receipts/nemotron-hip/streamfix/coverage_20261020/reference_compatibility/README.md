@@ -1,0 +1,13 @@
+# Reference-server compatibility and measured metadata
+
+This is source/configuration and header evidence, not a reference-server speed run or proof of an executed model-load failure.
+
+The actual previous release v1.1.1 (b10231b94f8adf3d4132acebdc0a1ac87e53a838) has a HIP family registry containing Qwen3.5 and Flash, without Nemotron. The retained exact release HIP source and Git blob support that static capability statement. No previous-release Nemotron throughput or executed refusal is claimed.
+
+Installed vLLM accepted the exact checkpoint configuration with resolved quantization null. Its inspected registry/dense unquantized loading path has no direct MLX affine4 implementation: packed U32 embedding shape131072x336 plus group64 BF16 scales/biases is different from a dense floating131072x2688 parameter. Source-file hashes and exact checkpoint config/revision are recorded; the installed source snapshot is not a Git checkout, so its commit is unavailable. This does not prove ROCm Mamba unsupported: inspected Triton/RDNA2 paths exist, but a stock model load/runtime was not executed.
+
+Actual metadata-only reads cover four main safetensors shards plus mtp-4bit.safetensors, with header hashes and file sizes. The417 hypothetical dense tensor shapes total65,826,532,480bytes (61.3057357GiB) if every retained tensor is stored BF16, including MTP. This is theoretical storage, not actual conversion, allocated VRAM, runtime admission or a prescription to cast FP32 state tensors. Shape/name separation gives58.8184973GiB main and2.4872384GiB MTP under that same hypothetical assumption. Free disk at observation was185.8126488GiB, not a reservation. A dense30B reference cannot be assumed to fit V620TP1; WTP2 also needs actual admission including runtime/KV/workspace.
+
+The retained tiny CPU dequantization check uses constructed synthetic codes/scales/biases, not checkpoint weight payload. It checks the historical affine unpack formula and explicit BF16/FP16 rounding without importing the historical oracle's model monkeypatches. The older preparation plan predates restored access; actual header sizing is now supplied, while real-weight validation, streaming-derived checkpoint conversion and stock-server runtime remain unperformed. No GPTQ/AWQ format equivalence is asserted. Original checkpoint files were never changed.
+
+Private home/temp/SSH aliases are replaced in public copies. manifest.json maps original to public hashes; raw hash references within copied records remain original identities. No performance comparison or contribution waiver is inferred from these compatibility observations.

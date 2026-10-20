@@ -1,0 +1,82 @@
+{
+  "baseline": {
+    "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+    "tree": "~/nh/d46",
+    "build_manifest": "~/hcx/streamfix/baseline_model_tools_built.json"
+  },
+  "candidate": {
+    "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+    "tree": "~/nh/sfopt",
+    "build_manifest": "~/hcx/streamfix/optimization/decode_recovery/native_builds.json"
+  },
+  "correctness_marker": "~/hcx/streamfix/optimization/correctness729833/INLINE_CORRECTNESS_ALL_PASS",
+  "correctness_result": "~/hcx/streamfix/optimization/correctness729833/result.json",
+  "parent_allocation": "~/hcx/streamfix/optimization/matrix_published729_1/parent_allocation.json",
+  "output_root": "~/hcx/streamfix/optimization/matrix_published729_1/runs",
+  "model": "~/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "python": "~/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+  "client": "~/hcx/streamfix/optimization/matrix_published729_1/matrix_client.py",
+  "runtime_library_dir": "~/.local/rocm-rdna/lib",
+  "rigs": {
+    "W7800tp2": {
+      "devices": "0,1",
+      "arch": "gfx1100",
+      "world": 2,
+      "port_start": 15500
+    },
+    "V620tp1": {
+      "devices": "2",
+      "arch": "gfx1030",
+      "world": 1,
+      "port_start": 17500
+    }
+  },
+  "frozen_client_sha256": {
+    "matrix_client.py": "4d324f4bdb863d7c4b85321134440344807401cf22ca2e75170395cc1f269920",
+    "clients/bench_concurrent.py": "a80e5fc214c0fd5a60bff6dedb55fe8f0671000c9770742a38868ffc5726761f",
+    "clients/bench_evidence.py": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+    "clients/bench_auth.py": "1896120b70d0df05646870a252697e20ce84c63e09dcba88b2a4e5a55ccb3c5b"
+  },
+  "frozen_native_sha256": {
+    "old": {
+      "gfx1100": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "gfx1030": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225"
+    },
+    "new": {
+      "gfx1100": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+      "gfx1030": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49"
+    }
+  },
+  "correctness_result_sha256": "a1c15f0df0d01cf51448e8f8b5cd1649f842347f88b07e9eafc3f82b5c4e3734",
+  "native_build_manifest_sha256": {
+    "old": "e32c27cbc8dafe4823fd0020c52da56df80e28074a9aa7906de6fdc355cbbd47",
+    "new": "6a305669eb42c359c39835d7fa66a277ed0c139dede2330d590a6e58ae8c2c9d"
+  },
+  "pilot_qualification": "~/hcx/streamfix/optimization/matrix_published729_1/pilot_qualification.json",
+  "fixtures": [
+    {
+      "name": "code_1024_512",
+      "path": "~/hcx/streamfix/optimization/matrix_published729_1/fixtures/code_1024_512.ids.json",
+      "sha256": "fdecab4eb1392c27d160b5d0bfbd236274614fb80b1c01e4edc5828e0b15499e",
+      "prompt_tokens": 1024,
+      "tokens": 512
+    },
+    {
+      "name": "prose_16384_1024",
+      "path": "~/hcx/streamfix/optimization/matrix_published729_1/fixtures/prose_16384_1024.ids.json",
+      "sha256": "51e13c227097b4fa1e0a6cc854f2a77208bf2301c1aa478bb8e76b2f47f4defa",
+      "prompt_tokens": 16384,
+      "tokens": 1024
+    }
+  ],
+  "measurement_protocol": {
+    "measured_repetitions_per_cell": 3,
+    "warmup_batches_per_cell": 1,
+    "server_holds": 16,
+    "cell_files": 64,
+    "requests_including_warmups": 1152,
+    "measured_requests": 864,
+    "scope": "Requested paired benchmark measurements; no confidence claim or performance optimization threshold"
+  }
+}

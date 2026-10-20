@@ -1,0 +1,88 @@
+{
+  "scope": "Static compatibility/configuration and actual header-only metadata; no tensor payload or reference runtime benchmark",
+  "files": [
+    {
+      "path": "previous_release_scope.json",
+      "original_sha256": "378c686fab3d08321188c243440ff40f9f107a47aa7fade5b6f1fcfe3c2bc601",
+      "public_sha256": "378c686fab3d08321188c243440ff40f9f107a47aa7fade5b6f1fcfe3c2bc601",
+      "bytes": 532,
+      "redacted": false
+    },
+    {
+      "path": "release_hip.zig",
+      "original_sha256": "b6235bacd573ebe134638e22fa0dbe5f530fc9876daaaf843a8230c9aaebed83",
+      "public_sha256": "b6235bacd573ebe134638e22fa0dbe5f530fc9876daaaf843a8230c9aaebed83",
+      "bytes": 14956,
+      "redacted": false
+    },
+    {
+      "path": "vllm_config_preflight.json",
+      "original_sha256": "b7c8cfbadc786b7e15f2980669ada177b2281d314246506a021ae449dbd2a597",
+      "public_sha256": "b7c8cfbadc786b7e15f2980669ada177b2281d314246506a021ae449dbd2a597",
+      "bytes": 441,
+      "redacted": false
+    },
+    {
+      "path": "vllm_mlx_loader_source_audit.json",
+      "original_sha256": "5b43336fa150bba74eea07683fa0ee5f9e739ec75af38d98f58521c83634f187",
+      "public_sha256": "5b43336fa150bba74eea07683fa0ee5f9e739ec75af38d98f58521c83634f187",
+      "bytes": 3811,
+      "redacted": false
+    },
+    {
+      "path": "source_metadata_binding.json",
+      "original_sha256": "8167eab065e86cbb8be8ec7611be1cdcf94619d96d9c98de0b59917468595e92",
+      "public_sha256": "8167eab065e86cbb8be8ec7611be1cdcf94619d96d9c98de0b59917468595e92",
+      "bytes": 1735,
+      "redacted": false
+    },
+    {
+      "path": "header_inventory.json",
+      "original_sha256": "594b3f8dde9b73d9cef59b8011ead771298a94ffacada7bd3e970389c09b37cf",
+      "public_sha256": "594b3f8dde9b73d9cef59b8011ead771298a94ffacada7bd3e970389c09b37cf",
+      "bytes": 86959,
+      "redacted": false
+    },
+    {
+      "path": "reference_header_inventory.py",
+      "original_sha256": "828bb9cda382afb82a29b8b7a7574deb031d2c098911f04bda0bb9db5748eac2",
+      "public_sha256": "828bb9cda382afb82a29b8b7a7574deb031d2c098911f04bda0bb9db5748eac2",
+      "bytes": 1827,
+      "redacted": false
+    },
+    {
+      "path": "independent_metadata_audit.json",
+      "original_sha256": "a46544ec01d875a0c59c29401b45db06db3ef2c91f960a955a525fc228c6f24c",
+      "public_sha256": "a46544ec01d875a0c59c29401b45db06db3ef2c91f960a955a525fc228c6f24c",
+      "bytes": 1447,
+      "redacted": false
+    },
+    {
+      "path": "dequant_cpu_sample.json",
+      "original_sha256": "6a9d077bb5950d52c4423f579dcb7cae10ff0a18f1dd0f42695e891d8cb61ca1",
+      "public_sha256": "6a9d077bb5950d52c4423f579dcb7cae10ff0a18f1dd0f42695e891d8cb61ca1",
+      "bytes": 1505,
+      "redacted": false
+    },
+    {
+      "path": "synthetic_dequant_sample.py",
+      "original_sha256": "bda0d9889fdbb6fd1f2e57da0d5ed3b1ea649b558981ba75f91469071d36c2b6",
+      "public_sha256": "6c95850acbd33532607fdb496a6cdb5d59ce1a537f46a8a4935b363466a63249",
+      "bytes": 2583,
+      "redacted": true
+    },
+    {
+      "path": "derived_reference_preparation_plan.json",
+      "original_sha256": "595ec4e440d25822148013d9b4e3da2ed48b4efd44a06f1771d6480d751eba09",
+      "public_sha256": "595ec4e440d25822148013d9b4e3da2ed48b4efd44a06f1771d6480d751eba09",
+      "bytes": 2121,
+      "redacted": false
+    },
+    {
+      "path": "README.md",
+      "public_sha256": "57424f846157f184ee9ad0b5ad024bdf59ca5752add665eadf072b4117957cfd",
+      "bytes": 2621,
+      "generated": true
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "time_utc": "2026-10-20T19:40:58Z",
+  "scope": "CPU configuration preflight only; no weights loaded, server launched or reference speed measured",
+  "checkpoint_config_sha256": "2d4bdc543efd8ccd68fccbf1231b1d1216ab2a0482229ea5638d448127973b27",
+  "quantization_config": {
+    "group_size": 64,
+    "bits": 4,
+    "mode": "affine"
+  },
+  "model_type": "nemotron_h",
+  "result": "configuration accepted",
+  "resolved_quantization": null
+}

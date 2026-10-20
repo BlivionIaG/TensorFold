@@ -1,0 +1,19 @@
+{
+  "validated_retained_metadata": true,
+  "source_binding_sha256": "8167eab065e86cbb8be8ec7611be1cdcf94619d96d9c98de0b59917468595e92",
+  "inventory_sha256": "594b3f8dde9b73d9cef59b8011ead771298a94ffacada7bd3e970389c09b37cf",
+  "helper_sha256": "828bb9cda382afb82a29b8b7a7574deb031d2c098911f04bda0bb9db5748eac2",
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "files": 5,
+  "derived_rows": 417,
+  "theoretical_all_bf16_bytes": 65826532480,
+  "theoretical_all_bf16_gib": 61.30573570728302,
+  "name_prefix_backbone_gib": 58.16224730014801,
+  "nonbackbone_gib": 3.1434884071350098,
+  "free_fs_gib_observed": 185.81264877319336,
+  "limits": "Metadata sums recomputed locally; source-file/header hashes are capturebindings, no new independent remote file reread. Theoretical allBF16 transform counts MTP; prefixsplit is descriptive not approved conversion policy. No reservation/actualweights/conversion/loader/memoryadmission/model execution.",
+  "helper_review": "Headeronlyseek/read with bounded64MiBheader; 4bitpackedshape\u00d78/group64scalevalidation; safetensorsmetadata suffices size arithmetic. Actualaffineformula/sample tensors remain separately unexecuted; synthetic test only.",
+  "vllm_source_commit": "unknown; installed nongit snapshot has six exact sourcefile hashbindings, not a Gitcommit",
+  "derived_base_backbone_plus_lm_head_gib": 58.81849730014801,
+  "derived_mtp_layers_prefix_gib": 2.4872384071350098
+}

@@ -1,0 +1,16 @@
+{
+  "execution": false,
+  "source_checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "reuse_inventory_pending": "Remote currently unreachable; historical script does not write HFstate cache, but absence of othercache not established",
+  "next_cpu_only": "Run reference_header_inventory.py on exactmodel; inspect bounded~/models/*/config.json andHFcache refs for reusable derivedsamecheckpoint beforeconversion; read tiny actual rows/scales/biases andcomparehistoricaldequant() vsstreamchunk converter",
+  "streaming_conversion_plan": [
+    "Build output-safetensors index from header-only shape/dtype plan before data writes; <=1GiB outputshards, row/expert chunks sized<=64MiB transient",
+    "Memmap sourcefiles/read bounded aligned packedrows+matching group scale/bias slices; unpack little-endian4bit; exact historical FP32multhenadd; roundonceBF16 orFP16 explicitly",
+    "Specialcase3Dexperts preserving expertaxis and map switch_mlp.fc1/fc2 to HFexperts layout; transpose conv(C,K,1)\u2192(C,1,K) exactly as historicalscript; verify vLLM stock namespace needs (do notdouble-mapbackbone)",
+    "Write each outputshard temp+fsync+rename; hash inputheader/sourcefiles andactualderivedshards, retain per-tensor shape/dtype/dequant policy inmanifest. No full raw/out dictionaries or entirecheckpoint inRAM",
+    "Copy exact tokenizer/config metadata into newdistinctdirectory; remove MLXquantization fields onlythere, set explicitdtype andstockNemotron architecture; preserve original checkpoint/revision and validate originalcustomdtsettings\u2014not monkeypatch stockmodel",
+    "Keep MTP preservation/omission explicit (vLLMmapper dropsmtp), report bytes bothwith/without ifneeded; no silent tensorloss",
+    "Before fullconversion rootreview actualfreebytes, outputsize, toolSHA, formula/realrowchecks and checkpointreuse search; then separate futureGPUallocation aftermatrix+colddone"
+  ],
+  "capacity_scope": "W7800TP2 has96GBtotalGPUmemory perroot; dense~60GB needs actualheaderestimate/runtime/KV/admission proof. V620TP1 32GB cannot fitdense30Bweights; no matchedTP1 dense reference claim."
+}

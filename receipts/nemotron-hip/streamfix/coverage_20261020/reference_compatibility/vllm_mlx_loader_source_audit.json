@@ -1,0 +1,54 @@
+{
+  "scope": "Read-only installed-source and bounded safetensors header audit; no tensors loaded, model launch, conversion, GPU use or performance measurement",
+  "candidate_source": "729833615595df66c9f9a438ce9a85061843f010",
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "installed_vllm_source": "vllm-rdna-0.31.0-final",
+  "config_preflight": "configuration accepted; resolved_quantization null",
+  "observed_header": {
+    "embedding_weight": {
+      "dtype": "U32",
+      "shape": [
+        131072,
+        336
+      ]
+    },
+    "embedding_scales_biases": {
+      "dtype": "BF16",
+      "shape": [
+        131072,
+        42
+      ]
+    },
+    "hidden_size": 2688,
+    "mixer_in_proj_weight": {
+      "dtype": "U32",
+      "shape": [
+        10304,
+        336
+      ]
+    },
+    "first_shard_header_bytes": 24986
+  },
+  "direct_loader_assessment": "MLX affine4 group64 packed layout is not directly supported by the inspected stock quantization registry/UnquantizedLinearMethod path. Config acceptance does not establish weight compatibility. No actual model-load failure was executed.",
+  "source_evidence": [
+    "nemotron_h.py:734 maps backbone\u2192model and embeddings\u2192embed_tokens; no MLX unpack mapping; :917 AutoWeightsLoader",
+    "linear.py:165-205 UnquantizedLinearMethod allocates dense [output,input] floating weights",
+    "quantization/__init__.py:16-52 registered methods contain no MLX affine method",
+    "config/model.py:1340-1345 dispatch uses quant_method when normalized quantization metadata exists",
+    "mamba/ops/ssu_dispatch.py:154 Triton default; :352 backend registry; no inspected unconditional ROCm rejection",
+    "mamba/ops/causal_conv1d.py:741-744 and1301-1307 explicit RDNA2 dispatch exists"
+  ],
+  "actionable_plan": [
+    "First CPU-only tiny synthetic/one-row packed-weight dequantization validation against existing native affine formula; retain pack bit-order/group64/scale/bias/shape checks and exact converter/version/source hashes. Do not treat GPTQ/AWQ as interchangeable metadata.",
+    "If authorized, make a separately named derived HF safetensors checkpoint by streaming original shard tensors, unpack uint32 eight4-bit values per word, affine scale+bias per64 group; disclose FP32 reconstruction then chosen BF16 orFP16 output rounding. Preserve tokenizer/config model architecture and nonquantized tensors; validate special conv/experts/name layouts against stock loader. Remove MLX quantization metadata only in derivative. Original checkpoint untouched.",
+    "Estimate whole-checkpoint dense bytes from all safetensors headers before conversion; BF16/FP16 around60GB for30B means V620TP1 likely cannot host full weights, WTP2 may still be admission constrained with KV/runtime buffers. Record actual metadata estimate before assigning any capacity claim.",
+    "After conversion review/allocation only, test stock vLLM loader and Triton Mamba with small context/eager mode as a separate reference compatibility preflight; retain real errors. ROCm Mamba runtime support remains unexecuted, not declared unsupported.",
+    "If derivative works, run original frozen prompts/token counts as standard-server reference with exact derivative precision/config disclosed. It is derived from same quantized checkpoint, not identical packed-kernel arithmetic or an executed previous-release comparison."
+  ],
+  "remaining_limitations": [
+    "No demonstrated direct-loader compatibility or executed standard-server baseline yet",
+    "No Mamba unsupported verdict: source provides a Triton path and RDNA dispatch, actual device execution untested",
+    "Previous release v1.1.1 b10231b94f8adf3d4132acebdc0a1ac87e53a838 lacks Nemotron HIP registration; no executed old-release comparison",
+    "No upstream requirement waived"
+  ]
+}

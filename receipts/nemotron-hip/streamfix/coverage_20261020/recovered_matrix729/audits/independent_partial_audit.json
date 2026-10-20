@@ -1,0 +1,224 @@
+{
+  "validated_recovered_partial": true,
+  "source_scope": "Published729 versus8649 only",
+  "payload_all_files_hash_match": true,
+  "parent_allocation_hash_match": true,
+  "complete_cells": [
+    {
+      "file": "W7800tp2/off_1_old.code_1024_512.c1.json",
+      "bytes": 1459948,
+      "sha256": "61f272325dcebb010aed7a015cb6c7105ca0f665e85514132faccf1a82e9bc49",
+      "complete": true,
+      "retained_complete_requests": 4,
+      "measured_requests": 3,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_1_old.code_1024_512.c8.json",
+      "bytes": 11331868,
+      "sha256": "a85003b1f5f2864a55c2ff4f2b5a54b7a2a672993d4fc2ba489720bca13ce852",
+      "complete": true,
+      "retained_complete_requests": 32,
+      "measured_requests": 24,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_1_old.prose_16384_1024.c1.json",
+      "bytes": 4311298,
+      "sha256": "5deef71a87a870c79f73320b7303b28d7ecdeff734b6820a4287718e201cf33b",
+      "complete": true,
+      "retained_complete_requests": 4,
+      "measured_requests": 3,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_1_old.prose_16384_1024.c8.json",
+      "bytes": 32561861,
+      "sha256": "b5a651403f06745e2cf1ea1ecf10770764de62550da8b35f4468247b1eed9eb8",
+      "complete": true,
+      "retained_complete_requests": 32,
+      "measured_requests": 24,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_2_new.code_1024_512.c1.json",
+      "bytes": 1462387,
+      "sha256": "28c79598a75c16604be43894ba181404cfc37bd1ef7f915bb824d53ceee390ff",
+      "complete": true,
+      "retained_complete_requests": 4,
+      "measured_requests": 3,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_2_new.code_1024_512.c8.json",
+      "bytes": 11337701,
+      "sha256": "86d3eed04068f95743d2e7c640356779fe0eca9c51b9263322aa9ac2b6b80656",
+      "complete": true,
+      "retained_complete_requests": 32,
+      "measured_requests": 24,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_2_new.prose_16384_1024.c1.json",
+      "bytes": 4315619,
+      "sha256": "ca931f2c5286482af0ce56cf9610b5587afcd5f6750630d377c44e19d1c77a46",
+      "complete": true,
+      "retained_complete_requests": 4,
+      "measured_requests": 3,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_2_new.prose_16384_1024.c8.json",
+      "bytes": 32575465,
+      "sha256": "19d1bcc4de5ceed7d5d30b12dbe99f21a4eee16a60eac4b367e19261d5ec053a",
+      "complete": true,
+      "retained_complete_requests": 32,
+      "measured_requests": 24,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_3_new.code_1024_512.c1.json",
+      "bytes": 1462299,
+      "sha256": "52d05f57b8924d6a5942e6d5593f2defc13a781f85db94639672407c89a89be5",
+      "complete": true,
+      "retained_complete_requests": 4,
+      "measured_requests": 3,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    },
+    {
+      "file": "W7800tp2/off_3_new.code_1024_512.c8.json",
+      "bytes": 11338895,
+      "sha256": "6ae2b31a3faa64affa1eee335f9b2b7445719add32d2af4a35d2adf003fb773d",
+      "complete": true,
+      "retained_complete_requests": 32,
+      "measured_requests": 24,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured",
+        "measured"
+      ]
+    }
+  ],
+  "partial_cells_preserved": [
+    {
+      "file": "W7800tp2/off_3_new.prose_16384_1024.c1.json",
+      "bytes": 3287540,
+      "sha256": "67b8a94d350a0e2cdd4185111056b1014ef4ed99e16aa19ff7608495381fa4bc",
+      "complete": false,
+      "retained_complete_requests": 3,
+      "measured_requests": 2,
+      "phases": [
+        "warmup",
+        "measured",
+        "measured"
+      ]
+    }
+  ],
+  "total_retained_complete_requests": 183,
+  "measured_requests": 137,
+  "warmup_requests": 46,
+  "whole_matrix_complete": false,
+  "balanced_quartets": 0,
+  "full_performance_qualification": false,
+  "v620_cells": 0,
+  "on_cells": 0,
+  "cross_all_retained_output_hashes_equal": true,
+  "hashes": {
+    "(1024, 512)": [
+      "938033a361e7785dcd470a0534b67c9811096f9ef6c158695b42232e5a93a109",
+      "8d2fa7d81d93784fa4f61ccfd8d5e79d833a9bf0ddb0cd8a696f7c2c52b9ee60"
+    ],
+    "(16384, 1024)": [
+      "a596d361647751d1ca3b70c124b658ebfef0e8b860724b428dee9de3615efda2",
+      "bdf746cd705d87e317a1b986cdd4162ae8687db2ef1cb1e2dedd685e5785f785"
+    ]
+  },
+  "holds": [
+    {
+      "file": "W7800tp2/off_1_old.run.json",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "identity_sha256": "f824e9dd36a1825259b77b179ee29c34588c05993009f109c8ddbf78b3ec9504",
+      "actual_capacity": 8,
+      "teardown_recorded": true,
+      "complete_client_cells": 4
+    },
+    {
+      "file": "W7800tp2/off_2_new.run.json",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+      "identity_sha256": "bb38267cb71e8c23c5dd93dd3e4aa603ba40d0671c2a7e0b4876959019b4c85c",
+      "actual_capacity": 8,
+      "teardown_recorded": true,
+      "complete_client_cells": 4
+    },
+    {
+      "file": "W7800tp2/off_3_new.run.json",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+      "identity_sha256": "761aaf631ef95c193520bc935b38a2d8c0c74c8b67a66e9959086065a8aac89a",
+      "actual_capacity": 8,
+      "teardown_recorded": false,
+      "complete_client_cells": 2
+    }
+  ],
+  "archive": {
+    "file": "raw.tar",
+    "bytes": 117995520,
+    "sha256": "50e8e68c1645f7974fdffe8743c553506396fc766b9a3c725f20dd535170df20"
+  },
+  "current_process_observation": {
+    "observed_at_utc": "2026-10-20T20:12:50.588265+00:00",
+    "boot_id": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+    "old_controller_pids_actual_present": [],
+    "matching_native_or_matrix_processes_observed": [],
+    "scope": "Read-only currentboot observation; absentoldPIDs not a graceful priorrun cleanup receipt"
+  },
+  "scope_caveat": "Thirdhold unfinished;11thcell has2measured+1warmup complete requests, not complete3rep cell. Inflight request outcome unknown. Priorhostreboot confirmed by bootidentity; cause not inferred. No restart or mutations performed."
+}

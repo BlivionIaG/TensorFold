@@ -1,0 +1,42 @@
+{
+  "captured_utc": "2026-10-20T20:21:16Z",
+  "scope": "Metadata/source fingerprinting only; no tensor payload/model load",
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "checkpoint_config_sha256": "2d4bdc543efd8ccd68fccbf1231b1d1216ab2a0482229ea5638d448127973b27",
+  "header_inventory_sha256": "594b3f8dde9b73d9cef59b8011ead771298a94ffacada7bd3e970389c09b37cf",
+  "header_inventory_helper_sha256": "828bb9cda382afb82a29b8b7a7574deb031d2c098911f04bda0bb9db5748eac2",
+  "vllm_commit": null,
+  "vllm_commit_status": "Installed source snapshot is not a Git checkout; commit unavailable, exact source-file hashes below",
+  "source_files": [
+    {
+      "path": "vllm/model_executor/models/nemotron_h.py",
+      "sha256": "18da83dc2daaef3ecdc35530e4ec18e6f93356bfe425d1acebd6a2b488866c35",
+      "bytes": 33539
+    },
+    {
+      "path": "vllm/model_executor/layers/linear.py",
+      "sha256": "92305597e426368ef4882cd2652db7274918a7cbe860f23cab470a48c085ed38",
+      "bytes": 71605
+    },
+    {
+      "path": "vllm/model_executor/layers/quantization/__init__.py",
+      "sha256": "9fc50c6aa259e1d24d55b0204cf49370024c5430d24fcfd2294a941cb9734fa5",
+      "bytes": 7098
+    },
+    {
+      "path": "vllm/config/model.py",
+      "sha256": "e33d28deab39c42b1c209116296dcb6e98c6da8b4e42ee0dbca0e8bf098c534c",
+      "bytes": 109951
+    },
+    {
+      "path": "vllm/model_executor/layers/mamba/ops/ssu_dispatch.py",
+      "sha256": "932fbef84bc5aac6a7ef94e66cf02fa7d2e71a0d166a1dd910312181f858548c",
+      "bytes": 17983
+    },
+    {
+      "path": "vllm/model_executor/layers/mamba/ops/causal_conv1d.py",
+      "sha256": "968f981c33cf265e76740ba34a058eae3aafdce1c028ab15e76608b3f563b0b9",
+      "bytes": 54850
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "tag": "v1.1.1",
+  "commit": "b10231b94f8adf3d4132acebdc0a1ac87e53a838",
+  "source_git_blob": "0d9fcfacdc9c1dff8da8ac316f81909200f19384",
+  "source_sha256": "b6235bacd573ebe134638e22fa0dbe5f530fc9876daaaf843a8230c9aaebed83",
+  "registry_line": "const registry = .{ qwen35.native, qwen35.native_moe, flashnext.native };",
+  "conclusion": "Previous-release HIP registry does not admit Nemotron; no same-backend Nemotron served-speed comparison exists. Static capability proof, not an executed release-server refusal or timing."
+}

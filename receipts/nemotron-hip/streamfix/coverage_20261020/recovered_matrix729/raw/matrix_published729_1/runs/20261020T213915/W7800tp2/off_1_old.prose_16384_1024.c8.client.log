@@ -1,0 +1,4 @@
+<REMOTE_HOME>/vllm-rdna-0.31.0-final/vllm/__init__.py:7: RuntimeWarning: Failed to read commit hash:
+No module named 'vllm._version'
+  from .version import __version__, __version_tuple__  # isort:skip
+<REMOTE_HOME>/hcx/streamfix/optimization/matrix_published729_1/runs/20261020T213915/W7800tp2/off_1_old.prose_16384_1024.c8.json
