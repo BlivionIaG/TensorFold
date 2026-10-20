@@ -102,6 +102,19 @@ within run variation of eager; the former 10% regression is removed, but a speed
 chunk request OOMed and used fallback, so it is not counted. Prefill graphs remain opt-in
 (`TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1`).
 
+## Prefill graph replay follow-up (2026-10-20)
+
+A TP=2, two-lane HTTP run at 16,040 prompt tokens used BF16 paging, MTP, snapshots and the default
+`TF_FLASHNEXT_EXL3_GRAPH_PREFILL_AFTER=2`. Both ranks reported 72 prefill graph replays, 216 eager layer executions,
+96 captures and about 314 ms cumulative capture time. Warm/rewind reused 16,033 tokens and branch reused 16,023;
+all response hashes matched the cold baselines. The earlier 12k run's zero replays are explained by the threshold:
+the available same-shape chunks only reached capture, with no later same-shape chunk to replay.
+
+The DPLAN run and two graph runs measured cold prefill at 27.85/16.47 s, 27.92/16.39 s and 28.00/16.51 s across
+the two concurrent lanes. This is within run/lane variation and is not a demonstrated graph speedup. Keep the graph
+ownership/paging keys unchanged. Next profile attention-layer key churn from paging-window origins and the eager
+expert/pool portion; change topology only with a parity-preserving A/B that demonstrates a speed gain.
+
 ## Switches
 
 | Variable | Effect | Default |
