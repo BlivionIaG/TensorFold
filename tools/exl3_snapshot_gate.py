@@ -5,6 +5,7 @@ import argparse
 import concurrent.futures
 import json
 import threading
+import time
 import urllib.request
 from pathlib import Path
 
@@ -39,6 +40,7 @@ def main(argv=None):
         barrier = threading.Barrier(2)
 
         def ask(ids):
+            started = time.perf_counter()
             body = {"messages": ids, "max_tokens": args.decode, "temperature": 0, "ignore_eos": True, "draft": args.drafts}
             request = urllib.request.Request(args.url.rstrip("/") + "/v1/chat/completions", json.dumps(body).encode(), {"Content-Type": "application/json"})
             barrier.wait(timeout=10)
@@ -51,7 +53,14 @@ def main(argv=None):
             digest = runtime.get("token_sha256") or runtime["token_sha"]
             if len(digest) < 12:
                 raise AssertionError("missing output token digest")
-            return {"sha": digest, "cached_tokens": usage["prompt_tokens_details"]["cached_tokens"], "prompt_tokens": usage["prompt_tokens"]}
+            return {
+                "sha": digest,
+                "cached_tokens": usage["prompt_tokens_details"]["cached_tokens"],
+                "prompt_tokens": usage["prompt_tokens"],
+                "elapsed_seconds": time.perf_counter() - started,
+                "prefill_seconds": runtime.get("prefill_seconds"),
+                "tokens_per_second": runtime.get("tokens_per_second"),
+            }
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             return list(pool.map(ask, request_prompts))

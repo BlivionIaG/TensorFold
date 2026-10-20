@@ -109,6 +109,25 @@ the serving outputs and bench hash, but the paired 128-token gate showed no obse
 reported precision. This is one A/B pair, not a repeatability proof; the optimization remains opt-in and is not
 claimed as a graph speedup.
 
+## Combined TP=2 paging/cache gate (2026-10-20)
+
+The rebuilt server now reports prefill graph replay/capture counters alongside decode coverage. On par1-cs13, a
+two-request 12,040-token TP=2 run used BF16 KV paging, MTP, prompt snapshots and prefill/decode graph mode. Each rank
+reported 72 prefill graph replays and 216 captures across cold prefill, plus decode graph replays. Warm and rewind
+restored 12,033 prompt tokens; divergent branches reused 12,023. All responses matched cold-cache token hashes.
+
+Two alternating DPLAN-versus-graph repetitions at 4,139 tokens preserved exact output hashes and warm/branch/rewind
+cache hits in both modes. Request-level timings were within run/lane variation; the paired result does not establish
+a speedup. The matched 12k DPLAN run also preserved exact hashes, while its per-lane prefill times varied under
+concurrent scheduling. Treat these as correctness and instrumentation evidence, not a performance claim.
+
+This gate shows the prefill graphs do replay for repeated deep-chunk shapes, but also incur hundreds of milliseconds
+of cumulative capture/instantiation work across ranks. The expert pass, pool transfers and ring scheduling remain
+eager; these are the high-value prefill boundaries to profile next. Decode graph coverage is high on stable rounds,
+but host preparation, MTP verification and result readback still limit gains. Keep graphs opt-in until an alternating,
+repeated TP=2 A/B demonstrates a repeatable improvement for each phase. 200k × 2 remains deferred until graph speed
+and cache reuse are optimized.
+
 ## Not proven / open
 
 - Prefill graph capture/replay is now validated with TP=2 deep prefill at chunk sizes 1024, 2048 and 4096, including
@@ -122,8 +141,8 @@ claimed as a graph speedup.
   remains unproven.
 - The greedy verify-tail experiment has no demonstrated benefit and stays default-off pending a repeated profile or
   a measured GPU/host critical-path reduction.
-- 200k contexts, int8 KV and 2+ concurrent streams in the server under graphs were not run (the engine test covers
-  two streams in one round, bit-equal).
+- 200k contexts and int8 KV are out of scope for this gate. Two concurrent BF16-paged server streams under graphs
+  now pass at 12k tokens; the 200k × 2 capacity target remains deferred.
 
 ## Making tp=2 decode faster (branch exl3-c-fast, base exl3-c-main 7988c6fa)
 
