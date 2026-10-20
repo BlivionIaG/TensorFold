@@ -111,9 +111,14 @@ all response hashes matched the cold baselines. The earlier 12k run's zero repla
 the available same-shape chunks only reached capture, with no later same-shape chunk to replay.
 
 The DPLAN run and two graph runs measured cold prefill at 27.85/16.47 s, 27.92/16.39 s and 28.00/16.51 s across
-the two concurrent lanes. This is within run/lane variation and is not a demonstrated graph speedup. Keep the graph
-ownership/paging keys unchanged. Next profile attention-layer key churn from paging-window origins and the eager
-expert/pool portion; change topology only with a parity-preserving A/B that demonstrates a speed gain.
+the two concurrent lanes. This is within run/lane variation and is not a demonstrated graph speedup. A follow-up
+keeps the complete exact replay key, but normalizes only the position and paging-window-origin hash for capture
+sightings and driver-checked executable-update candidates; sequence/scratch/event ownership remains strict. The
+updated gate retained exact output/cache hashes and reported 72 replays, 192 eager layer executions, 120 captures and
+24 successful `Exec.update` calls per rank. Capture time was 325 ms; DPLAN/graph cold prefill measured 16.44/27.80 s
+and 16.51/27.99 s. This exercises executable reuse across page-window changes, but shows no speedup; incompatible
+topology still uses the instantiate fallback. Next profile the expert/pool host boundary and dense graph replay
+versus eager time before making more topology changes.
 
 ## Switches
 

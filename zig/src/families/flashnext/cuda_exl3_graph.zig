@@ -772,7 +772,29 @@ fn prefillEnabled() bool {
 fn pshape(k: PKey) PKey {
     var s = k;
     s.pos0 = 0;
+    s.paging[5] = 0;
     return s;
+}
+
+test "prefill graph update candidates tolerate dynamic position and page-window origins only" {
+    const base: PKey = .{ .layer = 7, .rows = 4096, .sub = 256, .pos0 = 4096, .deep = 1, .base = 2, .base_cap = 4096, .seq = .{ 3, 4, 5, 4096, 6 }, .paging = .{ 7, 8, 9, 10, 11, 12 }, .wait_count = 0, .wait_key = 0, .scores = 13, .tiles = true };
+    var moved = base;
+    moved.pos0 = 8192;
+    moved.paging[5] = 14;
+    try std.testing.expect(!std.meta.eql(base, moved));
+    try std.testing.expect(std.meta.eql(pshape(base), pshape(moved)));
+
+    moved.seq[0] += 1;
+    try std.testing.expect(!std.meta.eql(pshape(base), pshape(moved)));
+    moved = base;
+    moved.paging[0] += 1;
+    try std.testing.expect(!std.meta.eql(pshape(base), pshape(moved)));
+    moved = base;
+    moved.rows += 1;
+    try std.testing.expect(!std.meta.eql(pshape(base), pshape(moved)));
+    moved = base;
+    moved.wait_key += 1;
+    try std.testing.expect(!std.meta.eql(pshape(base), pshape(moved)));
 }
 
 fn psighting(k: PKey) u32 {

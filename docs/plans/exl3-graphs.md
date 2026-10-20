@@ -125,18 +125,22 @@ a speedup. The matched 12k DPLAN run also preserved exact hashes, while its per-
 concurrent scheduling. Treat these as correctness and instrumentation evidence, not a performance claim.
 
 Follow-up at 16,040 prompt tokens (TP=2, two concurrent lanes, BF16 paging, MTP, default prefill capture threshold
-2) confirmed the threshold behavior and exercised actual prefill replay. Both graph runs reported, per rank, 72
-prefill replays, 216 eager layer executions, 96 captures, and 314 ms cumulative prefill capture time. The two
-lanes' cold/warm/branch/rewind hashes matched between DPLAN and graph mode; warm reused 16,033 tokens and branch
-reused 16,023. This resolves the earlier 12k zero-replay observation: each lane did not revisit a captured same-shape
-chunk, so the default second-sighting threshold captured but had no later chunk to replay. It was expected warm-up,
-not a failed replay lookup.
+2) confirmed the threshold behavior and exercised actual prefill replay. With the original candidate matcher, both
+ranks reported 72 prefill graph replays, 216 eager layer executions, 96 captures, and 314 ms cumulative prefill
+capture time. The two lanes' cold/warm/branch/rewind hashes matched between DPLAN and graph mode; warm reused 16,033
+tokens and branch reused 16,023. This resolves the earlier 12k zero-replay observation: each lane did not revisit a
+captured same-shape chunk, so the default second-sighting threshold captured but had no later chunk to replay. It was
+expected warm-up, not a failed replay lookup.
 
 The repeated graph runs' cold prefill times were 27.92/16.39 s and 28.00/16.51 s for the two lanes; the DPLAN run
 was 27.85/16.47 s. This is no demonstrated graph-specific speedup (differences are below or comparable to run/lane
-variation). Keep graph keys and the threshold unchanged: sequence and paging ownership fields are correctness guards.
-Next, profile graph replay versus eager time by layer class, especially attention layers whose paging-window origin
-changes, before attempting topology reuse or moving expert/pool work into graphs.
+variation). A follow-up matcher keeps the full exact replay key but normalizes only the paging-window-origin hash for
+capture sightings and driver-checked update candidates; sequence/scratch/event ownership remains strict. The updated
+gate reported 72 replays, 192 eager executions, 120 captures and 24 successful updates per rank, with exact cache
+hashes. Capture time was 325 ms; DPLAN/graph cold-prefill times were 16.44/27.80 s and 16.51/27.99 s. The change
+reduces eager fallback and reuses executable objects through `Exec.update`, but does not demonstrate a speedup;
+incompatible graph topology still falls back to instantiation. Next, profile the expert/pool host boundary and dense
+graph replay versus eager time before further topology changes.
 
 The decode profile with the normal threshold showed about 50 ms of host preparation over 96 steps, versus roughly
 0.45–0.49 s cumulative graph capture/instantiation per rank. A capture-after=1 run raised decode capture time to
