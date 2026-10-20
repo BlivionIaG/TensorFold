@@ -1,187 +1,147 @@
 {
   "validated": true,
-  "fresh_independent_graphql": true,
-  "observed_at_utc": "2026-10-20T22:09:29.556548+00:00",
-  "manifest_sha256": "2591c3bd4b79bfa1d427fc3b18e654610dda0e7c1164d552690522252b2469af",
-  "response_sha256": "dbb211ec779099e4c67916f696c97a2ef25c03318e842466208a1fbcd3997e46",
+  "captured_utc": "2026-10-20T22:26:05.352019+00:00",
+  "render_manifest_sha256": "12e1cd0f8fb091343d9cb7560fe2f33bed2913db2c6a147b0f0eae42c2b5645b",
+  "live_response_sha256": "b823a3e289d5241e0be9332d694b6411aeb3fda7450eb15a8c6719943af5019c",
   "prs": [
     {
       "pr": 1082,
-      "body_sha256": "0febf99e444d1dc87d421ead6b7f9dec568cc634d329c363461436786c06c66a",
       "head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
-      "branch": "nemhip-draft/00-hip-contract",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "3f1e137dc4f886b3f6d19464b5c4e4ea2dee621a41e564ca868fd160d28403f4",
+      "open_draft_base_main": true
     },
     {
       "pr": 1083,
-      "body_sha256": "5da9cea8544379fe23f755d919f74338d2a72ae96eccbe4d27faa837f8e4e7c7",
       "head": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
-      "branch": "nemhip-draft/00a-stream-nonfinite",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "851cd72a01210012589e8c83a594605bbaf6eeb65295c1c3907d62e88c7351d3",
+      "open_draft_base_main": true
     },
     {
       "pr": 1084,
-      "body_sha256": "41fd0fcebc9be6cadbcbc2a6236de304dd02ac97849084d3286e3886d4b685ea",
       "head": "5b12f74a27326797a540d094387e7ffa472b55ed",
-      "branch": "nemhip-draft/01-qwen35-prefix-stop",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "36d91412aba2dae1990de38adf03870c422f974ad6ed70524beffc09c0b0ecd6",
+      "open_draft_base_main": true
     },
     {
       "pr": 1085,
-      "body_sha256": "04f75db555780cc1379ddc86ba6fb10855d09109883a6c5986b949e9b8f14bd2",
       "head": "6af43c9db14516a85fbe22351eb0d3e485bd41bb",
-      "branch": "nemhip-draft/02-hip-serve",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "865bc40d6680cb34567c71ffd0de1349bd54db21e409a56fdfcffa44fe8a353d",
+      "open_draft_base_main": true
     },
     {
       "pr": 1086,
-      "body_sha256": "0ce0d54f827fb24b9b5b05c961f1186bfc29d1b7fba21f03556ae3a0da97d8b8",
       "head": "754786d613dde5539d3a0c534007a1a9733cfaf8",
-      "branch": "nemhip-draft/02a-kv8-refusal",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "7c9b2406f07473d95ca6dde8839672e38b47738152bb55d258f1dc34b9d08942",
+      "open_draft_base_main": true
     },
     {
       "pr": 1087,
-      "body_sha256": "0ec26cd94d812bc504f624e0e6ee2252069174d38b48358f8a536d8cf98e2212",
       "head": "7bf5f195fb06c0651a1a5d74277f24cc70da591c",
-      "branch": "nemhip-draft/03-slide-refusal",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "80f7c84c421d7c9c1c4fd2d6d508abc94e448efb994df03a5c13106f23da8223",
+      "open_draft_base_main": true
     },
     {
       "pr": 1088,
-      "body_sha256": "86dcf1552f5c421ce5c8fd8aeaa1ef920fda237bf1749eb27e1ad2c3e356b1a2",
       "head": "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2",
-      "branch": "nemhip-draft/04-mamba-kernels",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "f07a873a878a1d1d8eb20d9fc3d2396003ab7b9e8e7a8c5a324d209b67659017",
+      "open_draft_base_main": true
     },
     {
       "pr": 1089,
-      "body_sha256": "ba918a55ab11b58ddf883907c24cafd0588ca34029da736b7708a620a1df4d6f",
       "head": "9b56916fa71d40f9dcd924956c09a3c5f7e18019",
-      "branch": "nemhip-draft/05-moe-tile",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "80ff5a4b86b55988715b47f5322cb1b0dd7aa26f67f5a67ea55759569171c1c2",
+      "open_draft_base_main": true
     },
     {
       "pr": 1090,
-      "body_sha256": "52f1172291290569cd9d4ed8e75042673112f7b74314555c62749fdd37f399d9",
       "head": "6e73bf059c5646e683d680ab78ed5326aa9fba87",
-      "branch": "nemhip-draft/06-nemotron-moe",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "205e5f395de52aaafce8eed429d0cf3bd49c645bc3cd19f12a4919df4f87ff0f",
+      "open_draft_base_main": true
     },
     {
       "pr": 1091,
-      "body_sha256": "119adf6b4f412d3a9a8db0c72f38896c6eb584a419c3d9ee2fd8056f54aa3e80",
       "head": "9c206c22bf386348f2f1eb473a31ef8370163b5e",
-      "branch": "nemhip-draft/07-plan-walk",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "592501f94994cde13f6930f32b35776e1564945706cdc72dd05738b3ef0f839c",
+      "open_draft_base_main": true
     },
     {
       "pr": 1092,
-      "body_sha256": "4856e34d919bc540290d0cc63b520dab055ed2fe5fa957bd60decfb2d28bacb9",
       "head": "74b506e50265ccef559ce66d8d1cd55db55655ae",
-      "branch": "nemhip-draft/08-nemotron-engine",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "59d374aa6cf6953951cb57d093a2902d70a653581fd1e95d700f74bfcac0996c",
+      "open_draft_base_main": true
     },
     {
       "pr": 1093,
-      "body_sha256": "4237d2aaf0bdc2efaa344a48ad77717d41df704074fa945ed63796dc2225274b",
       "head": "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e",
-      "branch": "nemhip-draft/09-nemotron-tp",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "fcb6d4d0d4cecaa4f74714eddcb04dc658f397c985ae8416a1bf366810cc3617",
+      "open_draft_base_main": true
     },
     {
       "pr": 1094,
-      "body_sha256": "aa64dbd909b7e1c147d5e7394505419e859e50e75fc3c0b4d741867bbccc0091",
       "head": "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6",
-      "branch": "nemhip-draft/10-nemotron-rounds",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "365d7bbef88148f7d1cc442e0191187e6d6cba24ba7adf63b325c1a0b449e34e",
+      "open_draft_base_main": true
     },
     {
       "pr": 1095,
-      "body_sha256": "993bba5e4826889013cd4adbaed1b530c61f3da733a0a7356a3ec1319920228b",
       "head": "42529bfab171c2f30d7ce3641b78ca3b0ff821fc",
-      "branch": "nemhip-draft/11-prefill-chunk",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "cd38337bd4d8e9fc2f42c374eb0b054114c2a1d1496c6fdfb235eae28d6953e6",
+      "open_draft_base_main": true
     },
     {
       "pr": 1096,
-      "body_sha256": "bbe6a5e1cbf200e4ff4a08c681ac9e13268ce96c2f1c5c1a3c6694449931f79d",
       "head": "d6134300b3fed9baa29842e20d28ce738fd77574",
-      "branch": "nemhip-draft/12-add-rms",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "c28554dc094bfbc48beb4b34d42d29ec19c81cd564d3fb09b1250cadaecb0100",
+      "open_draft_base_main": true
     },
     {
       "pr": 1097,
-      "body_sha256": "5ade29c2064b8e78858c7eb7929e073f7fd774d59edfe2bbb9656d5da3355df2",
       "head": "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257",
-      "branch": "nemhip-draft/13-mamba-window",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "62c46aff7483b79869f34d82a0fcc7f178bc8fa79c8bb766d28811a3ed36873f",
+      "open_draft_base_main": true
     },
     {
       "pr": 1098,
-      "body_sha256": "dce853e48d40f2f6363ffd1fd675e39b1d64f8d7cddbe7079016ab3404b8f06c",
       "head": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
-      "branch": "nemhip-draft/14-relu2-epilogue",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "361ed95e1f4324137615e793771e01d84f2ff95a5101797a1f13d923081f3a9b",
+      "open_draft_base_main": true
     },
     {
       "pr": 1099,
-      "body_sha256": "858a3982aa379b60a6d4e4cc987e4acf87fcf4528f268846505f9971dcb1177f",
       "head": "8a1c6ae90a9212c481607eb6633697543e6cb3ff",
-      "branch": "nemhip-draft/15-plan-act",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "a097dd2ba9a25c80a66e647aa0b2d6a8752f59e075408433b29007e543c8dbec",
+      "open_draft_base_main": true
     },
     {
       "pr": 1100,
-      "body_sha256": "7d9f89921d373cc82b4a300fd371a1add6b0d4cd0c9673da9c9a52cb8b78c888",
       "head": "3f991646915e24bb1c7c638ec118e27880d5a031",
-      "branch": "nemhip-draft/16-argmax-parts",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "53766ba70f25864aad22c056cef07affdbff71e5185f03561d90f5793da42687",
+      "open_draft_base_main": true
     },
     {
       "pr": 1101,
-      "body_sha256": "129b2fde82175164d664c3833726e2c30755dca4ee5625ccb9a555a9a3e73dcf",
       "head": "e22da9dab3e8d70d5dbe150be39ed3794d6bffda",
-      "branch": "nemhip-draft/17-nemotron-fused",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "0b9f15b084a2902c00018c1591e83126f1cc757ed4eaaaefcdde379cadd3e72d",
+      "open_draft_base_main": true
     },
     {
       "pr": 1102,
-      "body_sha256": "dac8cc9aff0f41de6e3eaa6c39e552902f7c23faab7430d79b64afc987b6cf85",
       "head": "52840409d2e30ea7e55d9d79c10375cb2ffce6c5",
-      "branch": "nemhip-draft/18-plan-attend",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "3e743c648b45377876df4fcba4ba181d791995a97c45b0646d6cde38b40175e6",
+      "open_draft_base_main": true
     },
     {
       "pr": 1103,
-      "body_sha256": "3cd02aaada4e1ec391b829a5557fc29baaf2518a6c93f14d51182941db09a487",
       "head": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
-      "branch": "nemhip-draft/19-moe-pair",
-      "base": "main",
-      "open_draft": true
+      "body_sha256": "f278d82f1e705ee4d37bd8ec68547358f536f78c0fd14bdd4835393bcea8321d",
+      "open_draft_base_main": true
     }
   ],
-  "issue1081_body_sha256": "8fd0bda895c5f7d7589f4be3ebd5df8825e0c815a21d55bbb784fa1b6da54393",
-  "writes_performed": false
+  "issue": {
+    "number": 1081,
+    "body_sha256": "b9fa5a23f53e3ba683147851f67b053e4dccded2ee59f46616b1105c0eadc359",
+    "state": "OPEN"
+  },
+  "no_mutations": true,
+  "attempts": "First query argument passed JSON wrapper as query and failed parse; corrected --input retainedJSON, read-only actualrequest succeeded."
 }
