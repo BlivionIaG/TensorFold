@@ -413,6 +413,7 @@ test "exl3: greedy verification host contracts" {
     _ = @import("cuda_mtp_ops.zig");
     _ = @import("cuda_mtp_draft.zig");
     _ = @import("cuda_mtp_verify_cache.zig");
+    _ = @import("cuda_exl3_dispatch_test.zig");
 }
 
 test "embed grid is one program per row and per group of 32" {
