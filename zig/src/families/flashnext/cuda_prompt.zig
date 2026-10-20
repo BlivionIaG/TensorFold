@@ -136,6 +136,7 @@ pub const Engine = struct {
     ngram: ple.Ngram,
     /// The pass's scratch, grown to the widest chunk run.
     batch_s: ?batch.Scratch = null,
+    scratch_format: @import("cuda_batch_state.zig").ScratchFormat = .classic,
     /// Block scores for the sparse rows of an attention block, grown to the longest sequence's need.
     scores: ?cuda.DeviceBuffer = null,
     /// Rows a batched chunk takes at most (chunkRows).
@@ -164,6 +165,7 @@ pub const Engine = struct {
         e.driver = driver;
         e.stream = stream;
         e.n_layers = 0;
+        e.scratch_format = .classic;
         e.collective = null;
         e.image_factory = null;
         e.page_config = kvpage.configFromEnv();
@@ -413,13 +415,14 @@ pub const Engine = struct {
     /// Scratch for chunks of `rows` rows, reallocated only to grow.
     pub fn reserve(e: *Engine, rows: usize) !*batch.Scratch {
         if (e.batch_s) |*bs| {
+            if (bs.format != e.scratch_format) return error.ScratchFormatChanged;
             if (bs.cap >= rows) return bs;
             try e.complete();
             e.round_graph.clear();
             bs.free(e.gpa);
             e.batch_s = null;
         }
-        e.batch_s = try batch.Scratch.alloc(e.gpa, e.driver, e.stream.*, rows);
+        e.batch_s = try batch.Scratch.allocForFormat(e.gpa, e.driver, e.stream.*, rows, e.scratch_format);
         return &e.batch_s.?;
     }
 

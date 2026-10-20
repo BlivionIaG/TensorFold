@@ -354,6 +354,12 @@ pub fn setup(e: anytype, kv8_flag: bool, exl3: bool) !void {
     if (f.int8 or f.ikc_host) try enable(e, f.int8, f.rot, f.ikc_host);
     if (heads != kv_heads) std.log.info("flashnext: attention heads split across the ranks: {d} query heads and {d} KV head a rank", .{ wt.q_heads / 2, heads });
     if (!exl3) return;
+    if (e.batch_s != null) return error.ScratchAlreadyReserved;
+    const decoder_exl3 = e.n_layers != 0 and for (e.layers[0..e.n_layers]) |layer| {
+        if (layer.exl3 == null) break false;
+    } else true;
+    const draft_exl3 = @import("cuda_exl3_load.zig").hasExperts(&e.store, "language_model.mtp.layers.0.mlp");
+    e.scratch_format = if (decoder_exl3 and draft_exl3) .exl3 else .classic;
     if (std.c.getenv("TF_FLASHNEXT_CHUNK") == null) e.chunk = exl3_chunk;
     @import("cuda_batch_state.zig").head_local_rows = if (e.head_q.n == wt.vocab) 0 else head_local_serve_rows;
 }
@@ -375,7 +381,7 @@ pub fn logStream(e: anytype, window: usize, stream_bytes: usize) !void {
         @as(f64, @floatFromInt(stream_bytes -| b.device())) / gib,
         @as(f64, @floatFromInt(b.host)) / gib,
         e.chunk,
-        @as(f64, @floatFromInt(@import("cuda_batch_state.zig").Scratch.bytes(e.chunk))) / gib,
+        @as(f64, @floatFromInt(@import("cuda_batch_state.zig").Scratch.bytesForFormat(e.chunk, e.scratch_format))) / gib,
     });
 }
 
