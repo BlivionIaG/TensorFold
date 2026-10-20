@@ -1,0 +1,38 @@
+{
+  "tree": "~/nh/sfopt",
+  "native_manifest": "~/hcx/streamfix/optimization/decode_recovery/native_builds.json",
+  "native_manifest_sha256": "6a305669eb42c359c39835d7fa66a277ed0c139dede2330d590a6e58ae8c2c9d",
+  "native_sha256": {
+    "gfx1100": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+    "gfx1030": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49"
+  },
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "model": "~/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+  "capture_identity": "~/hcx/streamfix/optimization/followup729/capture_identity.py",
+  "runtime_library_dir": "~/.local/rocm-rdna/lib",
+  "allocation": "~/hcx/streamfix/coverage_20261020/cold_http729/allocation.json",
+  "output_root": "~/hcx/streamfix/coverage_20261020/cold_http729/runs",
+  "cold_sizes": [
+    2048,
+    8192,
+    32768,
+    65536,
+    131072,
+    262080
+  ],
+  "rigs": {
+    "W7800tp2": {
+      "arch": "gfx1100",
+      "devices": "0,1",
+      "world": 2,
+      "port_start": 19500
+    },
+    "V620tp1": {
+      "arch": "gfx1030",
+      "devices": "2",
+      "world": 1,
+      "port_start": 21500
+    }
+  },
+  "capture_identity_sha256": "b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005"
+}

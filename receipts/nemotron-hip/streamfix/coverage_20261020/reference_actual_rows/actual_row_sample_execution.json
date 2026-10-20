@@ -1,0 +1,14 @@
+{
+  "scope": "Executionreceipt reconstructedfrom actualorchestrator toolreturn retainedinsession, not a secondrun",
+  "actual_ssh_exit_status": 0,
+  "command_shape": "ssh -o ConnectTimeout=10 <authorized-host> <existing-vllm-venv-python> -c <exact actual_row_sample.py text>; actual_row_sample_input.json JSON onstdin",
+  "remote_python": "existing vLLM venv Python; fullprivatepath retained onlyin session, not publicreceipt",
+  "input_sha256": "571f6a1ed3c235f60862f9da6521f25c8cf5a7ce3e16d1d867c9c8d025f11de9",
+  "script_sha256": "e8e3474988ff015297f0d7494984a19b439029e6003e49952f4c7505a2812e04",
+  "stdout_file": "actual_row_sample_result.json",
+  "stdout_sha256": "272babc4d3dbc558b7196a488d63f6a7f6645c2b4bb4808ac7cc2191b0c4fee3",
+  "stderr_file": "actual_row_sample.stderr.log",
+  "stderr_sha256": "6de7259d2ae6ccdbafd1ac66e52407711030f1878a91506852b496bb34bf94a2",
+  "actual_output_summary": "exit0; samples18; tensorpayloadbytes33480; totalheader+payload123251",
+  "limits": "No newexecutiontimestamp invented; receiptmadeafter actualtoolcompletion. NoGPU/model/fullconversion."
+}

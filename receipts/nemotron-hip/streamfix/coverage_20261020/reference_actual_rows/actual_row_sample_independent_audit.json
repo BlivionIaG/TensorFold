@@ -1,0 +1,36 @@
+{
+  "independently_audited_retained_artifacts": true,
+  "helper_sha256": "e8e3474988ff015297f0d7494984a19b439029e6003e49952f4c7505a2812e04",
+  "input_sha256": "571f6a1ed3c235f60862f9da6521f25c8cf5a7ce3e16d1d867c9c8d025f11de9",
+  "result_sha256": "272babc4d3dbc558b7196a488d63f6a7f6645c2b4bb4808ac7cc2191b0c4fee3",
+  "manifest_sha256": "327ad93ff61ae19c61322fc5f025de62903b7f2a22dd5a43127ca2ee3875307a",
+  "execution_receipt_sha256": "eb591770399b636c8fefb3bee289ff804b26607900a9c3172d03c8e024e951fb",
+  "actual_execution_receipt_scope": "After-the-fact reconstruction from actual orchestrator exit0, explicitly labelled; not a fresh independent rerun or invented timestamp",
+  "samples": 18,
+  "categories": {
+    "embedding": 3,
+    "lm_head": 3,
+    "mamba": 3,
+    "shared_mlp": 3,
+    "routed_3d": 3,
+    "mtp": 3
+  },
+  "values": 59520,
+  "piece_reads": 54,
+  "tensor_payload_bytes": 33480,
+  "total_header_plus_payload_bytes": 123251,
+  "input_header_config_revision_bindings_checked": true,
+  "all_recorded_piece_offsets_within_actual_file_size": true,
+  "piece_sha_scope": "Exact64hex capturebindings retained; payload bytes not republished or independently reread/rehashed in this audit",
+  "formula_source_review": "Little-endian low-nibble-first unsigned4bit q; BF16 scale/bias promoted exactly toFP32; vector separateFP32multiply thenadd; independent scalar struct-pack FP32rounding at product andsum; bitwiseuint32 comparison covers all59520 reconstructed sample values",
+  "rounding_source_review": "For finite sample FP32 inputs, unsigned0x7fff+LSB bias before high16bit truncation implements BF16 ties-to-even; FP16 numpycast compared separately; resultreports finite rounding errors andzero FP16nonfinite. No stock inference/native equivalence inferred",
+  "bounded_read_source_review": "Seek onlyheaders and3rows for each of6selected affine tensors; U32/BF16rowwidths, group64lengths, tensorendbounds, total<8MiBguard. No torch/model/GPU API calls or wholeweight loading in helper source",
+  "scope_caveats": [
+    "Helper docstring says7tensors but actualselectors/results contain6categories; preserve frozen measured helper and clarify documentation.",
+    "stderr records a vLLM startup warning. Helper does not explicitly importTorch/model/GPU, but absence of all implicit environment imports is not established; do not claim runtime importednoTorch.",
+    "This samples first/middle/last rows of6deterministically selected tensors, not all417 tensors or a full-conversion validation.",
+    "Source/body and hashes attest recorded calculations; this audit didnot reread checkpoint payload or independently regenerate reconstructedhashes."
+  ],
+  "no_new_gpu_weight_reads_or_conversion": true,
+  "no_git_or_github_mutations": true
+}

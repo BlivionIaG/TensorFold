@@ -1,0 +1,36 @@
+{
+  "config_sha256": "2d4bdc543efd8ccd68fccbf1231b1d1216ab2a0482229ea5638d448127973b27",
+  "revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "shards": [
+    {
+      "file": "model-00001-of-00004.safetensors",
+      "header_bytes": 24986,
+      "header_sha256": "6ae0e90dd25284cdfcc6f77cea39a89ba45359f9a6260e97f99619723fbb2e73",
+      "file_bytes": 5118631458
+    },
+    {
+      "file": "model-00002-of-00004.safetensors",
+      "header_bytes": 26299,
+      "header_sha256": "0f66832b81f1791ae4ece2f46a344e170866b925c03d4f492bb6b88ad7f60905",
+      "file_bytes": 5291568451
+    },
+    {
+      "file": "model-00003-of-00004.safetensors",
+      "header_bytes": 26263,
+      "header_sha256": "cecf10fe24060b637274971eac4f6eac6b5c02967be5c66438fcfc488aba3fb4",
+      "file_bytes": 5291568415
+    },
+    {
+      "file": "model-00004-of-00004.safetensors",
+      "header_bytes": 8407,
+      "header_sha256": "f5bea01d79680815792cbaaad320aaffd411b4800177fcaffb0e445e8acc4db9",
+      "file_bytes": 2073657055
+    },
+    {
+      "file": "mtp-4bit.safetensors",
+      "header_bytes": 3776,
+      "header_sha256": "a38e78366e7eb39ab3a1c97da06ea441693874072241236ac07840e193a46650",
+      "file_bytes": 751638984
+    }
+  ]
+}

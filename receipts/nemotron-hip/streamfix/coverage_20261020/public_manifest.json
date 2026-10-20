@@ -1246,6 +1246,390 @@
       "public_sha256": "5b43336fa150bba74eea07683fa0ee5f9e739ec75af38d98f58521c83634f187",
       "bytes": 3811,
       "curated_submanifest": "reference_compatibility/manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/README.md",
+      "public_sha256": "3aa9065aed946e27ab708c5d9084a9460bdaca414cebecc2a4bd0911437fc474",
+      "bytes": 2796,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/public_manifest.json",
+      "public_sha256": "1cb8a55cd006388449d7e4d6f5beef14b7c6b71c84969d708ba35cfe872af9e0",
+      "bytes": 19245,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_131072_0.json",
+      "public_sha256": "fa4df2bd4b745b0d06f9206fb60da7f9e7c197662cd153421eab53e903e253c8",
+      "bytes": 1618795,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_131072_1.json",
+      "public_sha256": "f1ffc6a668b0554f51150fb9815c61a97298d0821ed3c39718d4f750a568cd95",
+      "bytes": 1618793,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_131072_104.identity.json",
+      "public_sha256": "64f0b01a3e5e87b6aea85b95950c825ad46adb04dc7f0d52d90711c723303f7e",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_131072_104.r0.log",
+      "public_sha256": "1fa7d99f9cddb78cc6b4a178811bc5a8f9001c670deb0fdb4ac7ceb0d3edcc9f",
+      "bytes": 2235,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_131072_2.json",
+      "public_sha256": "a17854d5cea687c638313cfd5daaa9b2d0bd7b3080b864184faaaaa8f4a01b87",
+      "bytes": 1618794,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_2048_0.json",
+      "public_sha256": "caae528830900c4cfffd36e41d57c059cb43a41dff6b2d5eba4323175be382d2",
+      "bytes": 30977,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_2048_1.json",
+      "public_sha256": "78757a9b9d23e2ce6b8642c8cd3461922f5e174ac01202524604f8da9a44339b",
+      "bytes": 30975,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_2048_100.identity.json",
+      "public_sha256": "c8e7b62a7aa61ee557a06e325cd6c56d886dc23470d59198b2f02fe7826a8ef1",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_2048_100.r0.log",
+      "public_sha256": "a0acb5601159efb57faa308d8c0a361a67c7883c38c5b55c1b18c616c90fbf4e",
+      "bytes": 2225,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_2048_2.json",
+      "public_sha256": "2d9a7e8cf20e2f9a51a3a27ebd0e940034570230a8d08347a13197546dec8a6c",
+      "bytes": 30975,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_32768_0.json",
+      "public_sha256": "550c46b659073c4c3db5ec798454d44a846ff21f7423dca2ecef8960563e39c7",
+      "bytes": 408693,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_32768_1.json",
+      "public_sha256": "8c7118a45991eeb8a23969e20caaf329d6ecc2310e7035576dc075124a5f7c03",
+      "bytes": 408683,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_32768_102.identity.json",
+      "public_sha256": "cc1afb0c9c6a2c978671280c0fed0eae959cb338b49a74b8e3596998cd5b990e",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_32768_102.r0.log",
+      "public_sha256": "56c7a7e22ccc8c4a177a3b7216e8028273ad370696b2468f593379209a83b554",
+      "bytes": 2226,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_32768_2.json",
+      "public_sha256": "8cf50ca089aed97360362d2905aca47076ad706c9d80a91a52a40baa542457c1",
+      "bytes": 408693,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_65536_0.json",
+      "public_sha256": "5e2d5d835552c10af014521545e289983d88c17f25ef6624b0648fdf1c040386",
+      "bytes": 810040,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_65536_1.json",
+      "public_sha256": "85321f447cee1c159021ed04fc4f41a7a20431fb048ea489d0a6f59574aebdfc",
+      "bytes": 810032,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_65536_103.identity.json",
+      "public_sha256": "930c78f5c19e5a0020d687d7d963eef8c889a77656932399a223a158a635bd6c",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_65536_103.r0.log",
+      "public_sha256": "099c84f2c59470ecda344e09d2a1269f4ef7d571615d9fbdc38ac5fb463655e3",
+      "bytes": 2227,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_65536_2.json",
+      "public_sha256": "3c4fe89cea5408044b7b81a88f09964ce26953f6cbf5545a9bcc86e9896e3d8d",
+      "bytes": 810059,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_8192_0.json",
+      "public_sha256": "f567f85ce240786db4c8f2c30dd6c084b5939c1a7c2f56831ae8628e23a84575",
+      "bytes": 107641,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_8192_1.json",
+      "public_sha256": "6aacefe23fc30071fc6f0f3b230da0767ea06ea7a6f893c7edde688ddf3e275f",
+      "bytes": 107638,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_8192_101.identity.json",
+      "public_sha256": "786591214697fe42ea952634193ac5ecab6d37ff98d91d4ddaa19d2a9b57518b",
+      "bytes": 2910,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_8192_101.r0.log",
+      "public_sha256": "5d46767115b137023d45d58f8341cc9d832cbf9ba0015c60a822501c2a6ce572",
+      "bytes": 2223,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_cold_8192_2.json",
+      "public_sha256": "d4010d341e95c0b0f638a17493bad1bca5c94c3319897e4947a2d85ebc2a5ba2",
+      "bytes": 107630,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_plain_131072.json",
+      "public_sha256": "d856926a0944986d5b127987837f3011280ef6fba31ed2470da5422c51b70959",
+      "bytes": 1619206,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_plain_2048.json",
+      "public_sha256": "14806042188cc3d38bd3d79f6247d5573fb2dfc072b23ff07c5fdf87ead4c65b",
+      "bytes": 35015,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_plain_32768.json",
+      "public_sha256": "11d797efd3f03057ee6cd84109980d008c55014053565fb147e83347487ff335",
+      "bytes": 411527,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_plain_65536.json",
+      "public_sha256": "8932b40998d5941b4f82110c29a1a4b651af643475f97930c9741ff8a9e20c08",
+      "bytes": 812507,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/V620tp1_plain_8192.json",
+      "public_sha256": "23c29743169b5a791603581b9661a7fa10c40ca9f4d962cdbd06ed215a9a57b7",
+      "bytes": 110484,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/allocation.raw.json",
+      "public_sha256": "39bf02762d7f7b4178b64bc3d11307800a6ee9fe1c77eaa928b149a140e830e0",
+      "bytes": 744,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/config.raw.json",
+      "public_sha256": "a2eb40221952d6b59766a355c2becdedbee7a0f9b1ee795f3384e5eb407b63bb",
+      "bytes": 1266,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/native_builds.raw.json",
+      "public_sha256": "fc02f51002aefea4e479faa941eded93b29ad5a2600a2625958994155a174b84",
+      "bytes": 1821,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/raw/summary_pending_snapshot.json",
+      "public_sha256": "3f41899a2dc361a6d4659b32e83cb4833f7db86a223f8aa6e56f9e64e05464c2",
+      "bytes": 35895,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/capture_identity.py",
+      "public_sha256": "b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005",
+      "bytes": 1439,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/clients/bench_evidence.py",
+      "public_sha256": "54c28474f0804dbd120e3fb5859be0d1667ef21ca502880d0bed098ec9bb42ff",
+      "bytes": 2969,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/config.json",
+      "public_sha256": "a2eb40221952d6b59766a355c2becdedbee7a0f9b1ee795f3384e5eb407b63bb",
+      "bytes": 1266,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/cold_131072.json",
+      "public_sha256": "b5e535a7604a223156e586061241c35c975d3ea027852507efda6b87573e7371",
+      "bytes": 822929,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/cold_2048.json",
+      "public_sha256": "bb9b596da0e3ad4fe989c8760eec2117eb6feb0c116c0d78cce0323d3e9ff707",
+      "bytes": 12995,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/cold_262080.json",
+      "public_sha256": "238b6c1adeedf5fcc80375c1c67508f80366107bd448fba96786be4486cfc686",
+      "bytes": 1644742,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/cold_32768.json",
+      "public_sha256": "be5e31c3a936b2e3c22fd1c54ce46b2f0727e8ec7a7e261b4befce0792d3fbef",
+      "bytes": 205181,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/cold_65536.json",
+      "public_sha256": "9dc155b38d10a9fa4aa29c7a62aca68f2ee054dc788d6613701c6baaca74f128",
+      "bytes": 409542,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/cold_8192.json",
+      "public_sha256": "491b9aeeda2c9862a68d8654e9782cfb8ba5d804b57bd79d14cc20dd7a02ce30",
+      "bytes": 51571,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/document.txt",
+      "public_sha256": "ffc5579ab66539fe31edceb122313ff6b7d11da67e7a7635d2c6a8f578b6e6cf",
+      "bytes": 95206,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/plain_131072.json",
+      "public_sha256": "4aacc089370e80920ceb5ea9c8b4a8c0ff76708b57629d0416ab707f4f9d25d0",
+      "bytes": 822945,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/plain_2048.json",
+      "public_sha256": "c38adb27df11fc5274590be6566cd9d908491f5a06484e32ef411600b38d555c",
+      "bytes": 13011,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/plain_262080.json",
+      "public_sha256": "db080561b13eb77de0bb3361724e66ef60240e6e5cd9f2c3fdb965ea39135401",
+      "bytes": 1644758,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/plain_32768.json",
+      "public_sha256": "23d93bb6fa92374198940c09d1308190d0c04dc704948abadf39ea6627befee8",
+      "bytes": 205197,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/plain_65536.json",
+      "public_sha256": "d1a2070970998fd96643eb0a86a084b56cfb176968518e91032da076ce2ccb06",
+      "bytes": 409558,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/fixtures/plain_8192.json",
+      "public_sha256": "967ef8adabc5a797a976b03788761973410db1e1190a2867dbbad9569e8f599f",
+      "bytes": 51587,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/payload_sha256.original.json",
+      "public_sha256": "d1d0125b0e63ffd4e927fdda80fbaf3f4cd78915e264253bcdd6cd043f6e6807",
+      "bytes": 1544,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/recipe/run.py",
+      "public_sha256": "ae17e67bf8f0364635eceae11a63521dae9a6753f45e0051f39b1c434816ab9a",
+      "bytes": 18496,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "cold_http729_checkpoint/scope.json",
+      "public_sha256": "eab5ff5c446748279a2d7c5a41cd9f7ee909b560b2723428c1f760f3653b23a2",
+      "bytes": 1416,
+      "curated_submanifest": "cold_http729_checkpoint/public_manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/README.md",
+      "public_sha256": "3ff8f6d890a46f0d6f70af46f33d6956f57cd18c450d2963c5b157f5f340ec54",
+      "bytes": 2148,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/actual_row_sample.py",
+      "public_sha256": "e8e3474988ff015297f0d7494984a19b439029e6003e49952f4c7505a2812e04",
+      "bytes": 4549,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/actual_row_sample.stderr.log",
+      "public_sha256": "782fbb7fc61a2daa428b5f0add3fa2692126d2d8a216770e5fd6fe6e8b5d8a98",
+      "bytes": 201,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/actual_row_sample_execution.json",
+      "public_sha256": "eb591770399b636c8fefb3bee289ff804b26607900a9c3172d03c8e024e951fb",
+      "bytes": 1091,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/actual_row_sample_independent_audit.json",
+      "public_sha256": "036da37a0472b209be67d344b44b943ef94ab8f191a572f56c84f26aca0ebd4e",
+      "bytes": 2754,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/actual_row_sample_input.json",
+      "public_sha256": "571f6a1ed3c235f60862f9da6521f25c8cf5a7ce3e16d1d867c9c8d025f11de9",
+      "bytes": 1221,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/actual_row_sample_manifest.json",
+      "public_sha256": "327ad93ff61ae19c61322fc5f025de62903b7f2a22dd5a43127ca2ee3875307a",
+      "bytes": 510,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/actual_row_sample_result.json",
+      "public_sha256": "272babc4d3dbc558b7196a488d63f6a7f6645c2b4bb4808ac7cc2191b0c4fee3",
+      "bytes": 29223,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
+    },
+    {
+      "path": "reference_actual_rows/manifest.json",
+      "public_sha256": "1263cb92fb12cead4e724a94f0e85c80db6c42432010402ba24eaad67ae44b21",
+      "bytes": 2305,
+      "curated_submanifest": "reference_actual_rows/manifest.json"
     }
   ]
 }
