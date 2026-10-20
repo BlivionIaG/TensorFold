@@ -111,22 +111,26 @@ claimed as a graph speedup.
 
 ## Combined TP=2 paging/cache gate (2026-10-20)
 
-The rebuilt server now reports prefill graph replay/capture counters alongside decode coverage. On par1-cs13, a
-two-request 12,040-token TP=2 run used BF16 KV paging, MTP, prompt snapshots and prefill/decode graph mode. Each rank
-reported 72 prefill graph replays and 216 captures across cold prefill, plus decode graph replays. Warm and rewind
-restored 12,033 prompt tokens; divergent branches reused 12,023. All responses matched cold-cache token hashes.
+The rebuilt server now reports prefill graph replay/capture counters, decode coverage, decode preparation time and
+cumulative graph capture time. On par1-cs13, a two-request 12,040-token TP=2 run used BF16 KV paging, MTP, prompt
+snapshots and prefill/decode graph mode. With capture-after=1, each rank reported 72 prefill graph replays and 216
+captures across cold prefill. With the normal capture-after=2 threshold, parity remained exact, but prefill reported
+0 replays, 192 eager layer executions and 96 captures; cumulative prefill capture time fell from about 0.5 s to
+about 0.3 s per rank. Warm and rewind restored 12,033 prompt tokens; divergent branches reused 12,023. All responses
+matched cold-cache token hashes.
 
 Two alternating DPLAN-versus-graph repetitions at 4,139 tokens preserved exact output hashes and warm/branch/rewind
 cache hits in both modes. Request-level timings were within run/lane variation; the paired result does not establish
 a speedup. The matched 12k DPLAN run also preserved exact hashes, while its per-lane prefill times varied under
 concurrent scheduling. Treat these as correctness and instrumentation evidence, not a performance claim.
 
-This gate shows the prefill graphs do replay for repeated deep-chunk shapes, but also incur hundreds of milliseconds
-of cumulative capture/instantiation work across ranks. The expert pass, pool transfers and ring scheduling remain
-eager; these are the high-value prefill boundaries to profile next. Decode graph coverage is high on stable rounds,
-but host preparation, MTP verification and result readback still limit gains. Keep graphs opt-in until an alternating,
-repeated TP=2 A/B demonstrates a repeatable improvement for each phase. 200k × 2 remains deferred until graph speed
-and cache reuse are optimized.
+The decode profile with the normal threshold showed about 50 ms of host preparation over 96 steps, versus roughly
+0.45–0.49 s cumulative graph capture/instantiation per rank. A capture-after=1 run raised decode capture time to
+roughly 0.68–0.69 s per rank without a repeatable end-to-end gain. Thus delaying capture reduces one-time overhead,
+but neither threshold has demonstrated faster output. The expert pass, pool transfers and ring scheduling remain
+eager; these are the high-value prefill boundaries to profile next. MTP verification and result readback also remain
+outside the graph. Keep graphs opt-in until an alternating, repeated TP=2 A/B demonstrates a repeatable improvement
+for each phase. 200k × 2 remains deferred until graph speed and cache reuse are optimized.
 
 ## Not proven / open
 

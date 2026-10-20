@@ -352,7 +352,7 @@ fn note(key: Key, o: Outcome) void {
     };
     const rs = @import("cuda_exl3_recycle.zig").stats;
     const cs = @import("cuda_exl3_chain.zig").stats;
-    std.log.info("flashnext exl3 graph coverage after {d} steps (replay/eager/instantiated/updated):{s}; recycled seqs {d}/{d} drafts {d}/{d} (reused/kept); draft chains {d}: {d} replays, {d} captures ({d} updates), {d} eager; prefill graphs: {d}/{d}/{d}/{d}, capture {d} ms", .{ steps_seen, w.buffered(), rs.seq_reused, rs.seq_kept, rs.draft_reused, rs.draft_kept, cs.chains, cs.replays, cs.captures, cs.updates, cs.eager, prefill_stats.replays, prefill_stats.eager, prefill_stats.captures, prefill_stats.updates, prefill_stats.capture_ns / std.time.ns_per_ms });
+    std.log.info("flashnext exl3 graph coverage after {d} steps (replay/eager/instantiated/updated):{s}; recycled seqs {d}/{d} drafts {d}/{d} (reused/kept); draft chains {d}: {d} replays, {d} captures ({d} updates), {d} eager; decode prepare {d} ms/{d}, capture {d} ms; prefill graphs {d}/{d}/{d}/{d}, capture {d} ms", .{ steps_seen, w.buffered(), rs.seq_reused, rs.seq_kept, rs.draft_reused, rs.draft_kept, cs.chains, cs.replays, cs.captures, cs.updates, cs.eager, stats.prepare_ns / std.time.ns_per_ms, stats.prepares, stats.capture_ns / std.time.ns_per_ms, prefill_stats.replays, prefill_stats.eager, prefill_stats.captures, prefill_stats.updates, prefill_stats.capture_ns / std.time.ns_per_ms });
 }
 
 /// TF_FLASHNEXT_EXL3_GRAPH_DEBUG=1: which key fields changed since the last step of the same kind and rows.

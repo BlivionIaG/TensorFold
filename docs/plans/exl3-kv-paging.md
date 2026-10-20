@@ -32,9 +32,11 @@ slots and mapping tables. The TP2 two-GPU graph test passes with two paged BF16 
 each rank replayed prefill graphs 72 times and decode graphs 5 times after restore. A real TP2 HTTP chat-history gate
 with BF16 paging, graphs, MTP drafting and two concurrent requests passed warm, branch and rewind reuse at 12,040
 prompt tokens: warm/rewind reused 12,033 tokens, branch reused 12,023, and all response hashes matched the cold
-baseline. With graph instrumentation enabled, each rank observed 72 prefill graph replays and 216 captures over the
-two-lane cold prefill; decode replay was also observed. Paired DPLAN-vs-graph gates preserved exact hashes, but the
-timings do not show a repeatable graph speedup. This proves ordinary-length cache reuse, not 200k capacity.
+baseline. With capture-after=1, each rank observed 72 prefill graph replays and 216 captures. With the default
+capture-after=2, each rank observed 0 prefill replays, 192 eager layer executions and 96 captures, with lower
+one-time capture cost. Decode logs expose host preparation and capture time; capture-after=2 reduced cumulative
+capture time versus capture-after=1. Paired DPLAN-vs-graph gates preserved exact hashes, but timings show no
+repeatable graph speedup. This proves ordinary-length cache reuse, not 200k capacity.
 Live-rank overflow/failure injection remains open. The user explicitly defers 200k × 2 until graphs and cache reuse
 are optimized. Int8 KV is out of scope; BF16 is the required primary format.
 
