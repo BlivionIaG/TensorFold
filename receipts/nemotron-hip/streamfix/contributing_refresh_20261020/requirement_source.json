@@ -1,0 +1,11 @@
+{
+  "repository": "ashhart/TensorFold",
+  "upstream_main": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+  "contributing_git_blob": "6b49d406511598488b0a7b69cd1a8e6311049542",
+  "contributing_sha256": "4f44e0eb42ff3e88c738e07c271468a08654ccf342b7c999e61c5c8949416373",
+  "audited_date": "2026-10-20",
+  "primary_url": "https://github.com/ashhart/TensorFold/blob/d1018b318fb51981c4a18f12e40269a4d3ee9713/CONTRIBUTING.md",
+  "all_22_open_draft": true,
+  "source_heads_changed": false,
+  "complete_contributing_qualification": false
+}

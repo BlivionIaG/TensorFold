@@ -11,3 +11,7 @@ ci_pre_inline captures all22 historical draft CI results at their exact old head
 Original heads.json and older package directories retain historical1596156e/cc18314d identities and the measured31–51% decode regression. ab_complete includes all32 historical holds and drift cautions; both rigs also ran concurrently on one host. historical_draft_bodies preserves all22 published old bodies exactly. No historical measurement is relabelled.
 
 Unrun intermediate exact heads, upstream HIP/model runtime integration, Windows CI and broader context/lifecycle/memory/comparator requirements remain open. Draft publication does not waive landing requirements. Every claim must retain its actual source and measurement scope.
+
+## Contribution evidence refresh
+
+See [the 2026-10-20 source/CI/requirement audit](contributing_refresh_20261020/README.md) and byte-exact pre-refresh draft bodies. This documentation refresh keeps the source heads and all existing proof artifacts unchanged; qualification gaps remain explicit.

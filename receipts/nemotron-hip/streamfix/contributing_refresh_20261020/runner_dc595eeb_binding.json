@@ -1,0 +1,13 @@
+{
+  "source_commit": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+  "original_recorded_abbreviation": "dc595eeb1",
+  "abbreviation_resolves_to_full_source": true,
+  "raw_excerpt_file": "runner_dc595eeb_excerpt.txt",
+  "excerpt_sha256": "7b1d26ddfa99be13857eb57922edf36bb87540156276ec4943330a4e38dc9280",
+  "original_log_sha256": "858c7d94f96406bc16e364446be0c1812ffa05ca6a593eed802675b2fa2f455c",
+  "original_lines": [
+    1,
+    9
+  ],
+  "scope": "Original own-head runner receipt; c126 only reports this in archived body; raw excerpt to be published in new audit archive, not claimed already in c126"
+}

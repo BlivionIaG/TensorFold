@@ -1,0 +1,263 @@
+﻿2026-10-20T01:35:17.4165480Z Current runner version: '2.337.0'
+2026-10-20T01:35:17.4183770Z ##[group]Runner Image Provisioner
+2026-10-20T01:35:17.4184730Z Hosted Compute Agent
+2026-10-20T01:35:17.4185270Z Version: 20260828.587
+2026-10-20T01:35:17.4185790Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-10-20T01:35:17.4186430Z Build Date: 2026-08-28T16:44:25Z
+2026-10-20T01:35:17.4187030Z Worker ID: {52fa047d-c47b-4eee-b861-83bb4cdf14b8}
+2026-10-20T01:35:17.4187590Z Azure Region: westus
+2026-10-20T01:35:17.4188940Z ##[endgroup]
+2026-10-20T01:35:17.4193410Z ##[group]Operating System
+2026-10-20T01:35:17.4193870Z macOS
+2026-10-20T01:35:17.4194280Z 14.8.9
+2026-10-20T01:35:17.4194810Z 23J631
+2026-10-20T01:35:17.4195230Z ##[endgroup]
+2026-10-20T01:35:17.4195750Z ##[group]Runner Image
+2026-10-20T01:35:17.4196250Z Image: macos-14-arm64
+2026-10-20T01:35:17.4196760Z Version: 20260831.0302.1
+2026-10-20T01:35:17.4197800Z Included Software: https://github.com/actions/runner-images/blob/macos-14-arm64/20260831.0302/images/macos/macos-14-arm64-Readme.md
+2026-10-20T01:35:17.4199150Z Image Release: https://github.com/actions/runner-images/releases/tag/macos-14-arm64%2F20260831.0302
+2026-10-20T01:35:17.4199900Z ##[endgroup]
+2026-10-20T01:35:17.4200820Z ##[group]GITHUB_TOKEN Permissions
+2026-10-20T01:35:17.4202510Z Contents: read
+2026-10-20T01:35:17.4203020Z Metadata: read
+2026-10-20T01:35:17.4203470Z ##[endgroup]
+2026-10-20T01:35:17.4205200Z Secret source: None
+2026-10-20T01:35:17.4206430Z Cache mode: write
+2026-10-20T01:35:17.4206920Z Prepare workflow directory
+2026-10-20T01:35:17.4712690Z Prepare all required actions
+2026-10-20T01:35:17.4807530Z Getting action download info
+2026-10-20T01:35:17.7999870Z Download action repository 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-20T01:35:18.1975880Z Download action repository 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020' (SHA:49933ea5288caeca8642d1e84afbd3f7d6820020)
+2026-10-20T01:35:18.5224050Z Complete job name: desktop
+2026-10-20T01:35:18.5892640Z ##[group]Run actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+2026-10-20T01:35:18.5893600Z with:
+2026-10-20T01:35:18.5893950Z   persist-credentials: false
+2026-10-20T01:35:18.5894330Z   fetch-depth: 2
+2026-10-20T01:35:18.5894670Z   repository: ashhart/TensorFold
+2026-10-20T01:35:18.5897760Z   token: ***
+2026-10-20T01:35:18.5898070Z   ssh-strict: true
+2026-10-20T01:35:18.5898400Z   ssh-user: git
+2026-10-20T01:35:18.5898710Z   clean: true
+2026-10-20T01:35:18.5899040Z   sparse-checkout-cone-mode: true
+2026-10-20T01:35:18.5899420Z   fetch-tags: false
+2026-10-20T01:35:18.5899750Z   show-progress: true
+2026-10-20T01:35:18.5900080Z   lfs: false
+2026-10-20T01:35:18.5900390Z   submodules: false
+2026-10-20T01:35:18.5900740Z   set-safe-directory: true
+2026-10-20T01:35:18.5901120Z   allow-unsafe-pr-checkout: false
+2026-10-20T01:35:18.5901700Z env:
+2026-10-20T01:35:18.5902010Z   CI: true
+2026-10-20T01:35:18.5902330Z   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+2026-10-20T01:35:18.5902790Z   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+2026-10-20T01:35:18.5903190Z   HF_HUB_OFFLINE: 1
+2026-10-20T01:35:18.5903520Z   TRANSFORMERS_OFFLINE: 1
+2026-10-20T01:35:18.5903870Z ##[endgroup]
+2026-10-20T01:35:19.0574050Z Syncing repository: ashhart/TensorFold
+2026-10-20T01:35:19.0575630Z ##[group]Getting Git version info
+2026-10-20T01:35:19.0576290Z Working directory is '<CHECKOUT>'
+2026-10-20T01:35:19.0581300Z [command]/opt/homebrew/bin/git version
+2026-10-20T01:35:19.0991680Z git version 2.55.0
+2026-10-20T01:35:19.1065780Z ##[endgroup]
+2026-10-20T01:35:19.1079560Z Copying '<CI_HOME>/.gitconfig' to '<CI_TEMP>/2fd2f836-8049-405b-ac1c-d5f735bacca3/.gitconfig'
+2026-10-20T01:35:19.1086140Z Temporarily overriding HOME='<CI_TEMP>/2fd2f836-8049-405b-ac1c-d5f735bacca3' before making global git config changes
+2026-10-20T01:35:19.1093360Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-20T01:35:19.1097430Z [command]/opt/homebrew/bin/git config --global --add safe.directory <CHECKOUT>
+2026-10-20T01:35:19.1184720Z Deleting the contents of '<CHECKOUT>'
+2026-10-20T01:35:19.1187540Z ##[group]Initializing the repository
+2026-10-20T01:35:19.1188450Z [command]/opt/homebrew/bin/git init <CHECKOUT>
+2026-10-20T01:35:19.1548610Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-20T01:35:19.1561930Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-20T01:35:19.1605930Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-20T01:35:19.1606900Z hint: call:
+2026-10-20T01:35:19.1607420Z hint:
+2026-10-20T01:35:19.1608070Z hint: 	git config --global init.defaultBranch <name>
+2026-10-20T01:35:19.1608730Z hint:
+2026-10-20T01:35:19.1611540Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-20T01:35:19.1614410Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-20T01:35:19.1636830Z hint:
+2026-10-20T01:35:19.1638470Z hint: 	git branch -m <name>
+2026-10-20T01:35:19.1639140Z hint:
+2026-10-20T01:35:19.1644540Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-20T01:35:19.1645860Z Initialized empty Git repository in <CHECKOUT>/.git/
+2026-10-20T01:35:19.1647880Z [command]/opt/homebrew/bin/git remote add origin https://github.com/ashhart/TensorFold
+2026-10-20T01:35:19.1649620Z ##[endgroup]
+2026-10-20T01:35:19.1650360Z ##[group]Disabling automatic garbage collection
+2026-10-20T01:35:19.1651060Z [command]/opt/homebrew/bin/git config --local gc.auto 0
+2026-10-20T01:35:19.1684500Z ##[endgroup]
+2026-10-20T01:35:19.1685370Z ##[group]Setting up auth
+2026-10-20T01:35:19.1690000Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-20T01:35:19.1739530Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-20T01:35:19.2586830Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-20T01:35:19.2591620Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-20T01:35:19.3289110Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-20T01:35:19.3343410Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-20T01:35:19.4278320Z [command]/opt/homebrew/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-20T01:35:19.4336630Z ##[endgroup]
+2026-10-20T01:35:19.4339140Z ##[group]Fetching the repository
+2026-10-20T01:35:19.4345190Z [command]/opt/homebrew/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=2 origin +c4830246726c3113b02436733b7d9c6095d0fe79:refs/remotes/pull/1098/merge
+2026-10-20T01:35:21.8698460Z From https://github.com/ashhart/TensorFold
+2026-10-20T01:35:21.8700610Z  * [new ref]         c4830246726c3113b02436733b7d9c6095d0fe79 -> pull/1098/merge
+2026-10-20T01:35:21.8704550Z ##[endgroup]
+2026-10-20T01:35:21.8706030Z ##[group]Determining the checkout info
+2026-10-20T01:35:21.8707660Z ##[endgroup]
+2026-10-20T01:35:21.8712570Z [command]/opt/homebrew/bin/git sparse-checkout disable
+2026-10-20T01:35:21.8806100Z [command]/opt/homebrew/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-20T01:35:21.8907400Z ##[group]Checking out the ref
+2026-10-20T01:35:21.8913270Z [command]/opt/homebrew/bin/git checkout --progress --force refs/remotes/pull/1098/merge
+2026-10-20T01:35:22.9887890Z Updating files:  99% (6573/6613)
+2026-10-20T01:35:22.9891060Z Updating files: 100% (6613/6613)
+2026-10-20T01:35:22.9892100Z Updating files: 100% (6613/6613), done.
+2026-10-20T01:35:22.9984790Z HEAD is now at c483024 Merge f8cd5a4d72805fabe7350746ce9ba91274b54d29 into d1018b318fb51981c4a18f12e40269a4d3ee9713
+2026-10-20T01:35:23.0016370Z ##[endgroup]
+2026-10-20T01:35:23.0130020Z [command]/opt/homebrew/bin/git log -1 --format=%H
+2026-10-20T01:35:23.0219990Z c4830246726c3113b02436733b7d9c6095d0fe79
+2026-10-20T01:35:23.0243560Z ##[group]Removing auth
+2026-10-20T01:35:23.0248840Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-20T01:35:23.0352090Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-20T01:35:23.1610140Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-20T01:35:23.1661900Z http.https://github.com/.extraheader
+2026-10-20T01:35:23.1682760Z [command]/opt/homebrew/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-20T01:35:23.1685040Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-20T01:35:23.2449260Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-20T01:35:23.2514270Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-20T01:35:23.3825950Z ##[endgroup]
+2026-10-20T01:35:23.4212590Z ##[group]Run actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+2026-10-20T01:35:23.4212980Z with:
+2026-10-20T01:35:23.4213150Z   node-version: 22.23.2
+2026-10-20T01:35:23.4213360Z   cache: npm
+2026-10-20T01:35:23.4213860Z   cache-dependency-path: app/package-lock.json
+app/mobile/package-lock.json
+
+2026-10-20T01:35:23.4214200Z   always-auth: false
+2026-10-20T01:35:23.4214380Z   check-latest: false
+2026-10-20T01:35:23.4216710Z   token: ***
+2026-10-20T01:35:23.4216860Z env:
+2026-10-20T01:35:23.4216990Z   CI: true
+2026-10-20T01:35:23.4217250Z   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+2026-10-20T01:35:23.4217480Z   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+2026-10-20T01:35:23.4217790Z   HF_HUB_OFFLINE: 1
+2026-10-20T01:35:23.4217980Z   TRANSFORMERS_OFFLINE: 1
+2026-10-20T01:35:23.4218160Z ##[endgroup]
+2026-10-20T01:35:23.6032720Z (node:1953) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-20T01:35:23.6034520Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-20T01:35:23.6035560Z Found in cache @ <CI_HOME>/hostedtoolcache/node/22.23.2/arm64
+2026-10-20T01:35:23.6036800Z ##[group]Environment details
+2026-10-20T01:35:24.4535780Z node: v22.23.2
+2026-10-20T01:35:24.4540790Z npm: 10.9.8
+2026-10-20T01:35:24.4558050Z yarn: 1.22.22
+2026-10-20T01:35:24.4579580Z ##[endgroup]
+2026-10-20T01:35:24.4579990Z [command]<CI_HOME>/hostedtoolcache/node/22.23.2/arm64/bin/npm config get cache
+2026-10-20T01:35:24.7209650Z <CI_HOME>/.npm
+2026-10-20T01:35:24.9606500Z Cache hit for: node-cache-macOS-arm64-npm-79b6b8f3ebd30b1953a9019c522c4aa940f46c085e8f2321295186ab230805ea
+2026-10-20T01:35:24.9752740Z (node:1953) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-20T01:35:26.1566290Z Received 41943040 of 385261300 (10.9%), 39.8 MBs/sec
+2026-10-20T01:35:27.2140910Z Received 134217728 of 385261300 (34.8%), 62.1 MBs/sec
+2026-10-20T01:35:28.2212990Z Received 209715200 of 385261300 (54.4%), 65.3 MBs/sec
+2026-10-20T01:35:29.2270330Z Received 306184192 of 385261300 (79.5%), 71.8 MBs/sec
+2026-10-20T01:35:30.1226450Z Received 385261300 of 385261300 (100.0%), 73.9 MBs/sec
+2026-10-20T01:35:30.1229180Z Cache Size: ~367 MB (385261300 B)
+2026-10-20T01:35:30.1372830Z [command]/opt/homebrew/bin/gtar -xf <CI_TEMP>/974e62bc-cc1e-4623-a372-77d616d22224/cache.tzst -P -C <CHECKOUT> --delay-directory-restore --use-compress-program unzstd
+2026-10-20T01:35:31.6757550Z Cache restored successfully
+2026-10-20T01:35:31.6848710Z Cache restored from key: node-cache-macOS-arm64-npm-79b6b8f3ebd30b1953a9019c522c4aa940f46c085e8f2321295186ab230805ea
+2026-10-20T01:35:31.7149770Z ##[group]Run npm install --global --ignore-scripts npm@10.9.8
+2026-10-20T01:35:31.7181990Z [36;1mnpm install --global --ignore-scripts npm@10.9.8[0m
+2026-10-20T01:35:31.7290800Z shell: /bin/bash -e {0}
+2026-10-20T01:35:31.7291210Z env:
+2026-10-20T01:35:31.7291820Z   CI: true
+2026-10-20T01:35:31.7292940Z   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+2026-10-20T01:35:31.7293430Z   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+2026-10-20T01:35:31.7293700Z   HF_HUB_OFFLINE: 1
+2026-10-20T01:35:31.7293980Z   TRANSFORMERS_OFFLINE: 1
+2026-10-20T01:35:31.7294210Z ##[endgroup]
+2026-10-20T01:35:34.5807480Z 
+2026-10-20T01:35:34.5923850Z changed 13 packages in 3s
+2026-10-20T01:35:34.5948800Z 
+2026-10-20T01:35:34.5950020Z 24 packages are looking for funding
+2026-10-20T01:35:34.5951290Z   run `npm fund` for details
+2026-10-20T01:35:34.7181100Z ##[group]Run npm ci --ignore-scripts
+2026-10-20T01:35:34.7181410Z [36;1mnpm ci --ignore-scripts[0m
+2026-10-20T01:35:34.7263880Z shell: /bin/bash -e {0}
+2026-10-20T01:35:34.7264440Z env:
+2026-10-20T01:35:34.7264810Z   CI: true
+2026-10-20T01:35:34.7265140Z   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+2026-10-20T01:35:34.7265440Z   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+2026-10-20T01:35:34.7265980Z   HF_HUB_OFFLINE: 1
+2026-10-20T01:35:34.7266170Z   TRANSFORMERS_OFFLINE: 1
+2026-10-20T01:35:34.7266720Z ##[endgroup]
+2026-10-20T01:35:38.9299410Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-20T01:35:38.9834730Z npm warn deprecated rimraf@2.6.3: Rimraf versions prior to v4 are no longer supported
+2026-10-20T01:35:39.1244330Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting <REDACTED_EMAIL>
+2026-10-20T01:35:39.4927040Z npm warn deprecated boolean@3.2.0: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+2026-10-20T01:35:43.4030720Z 
+2026-10-20T01:35:43.4134890Z added 568 packages, and audited 573 packages in 8s
+2026-10-20T01:35:43.4234200Z 
+2026-10-20T01:35:43.4335580Z found 0 vulnerabilities
+2026-10-20T01:35:43.4818460Z ##[group]Run npm --prefix mobile ci --ignore-scripts
+2026-10-20T01:35:43.4818980Z [36;1mnpm --prefix mobile ci --ignore-scripts[0m
+2026-10-20T01:35:43.4890250Z shell: /bin/bash -e {0}
+2026-10-20T01:35:43.4890540Z env:
+2026-10-20T01:35:43.4890920Z   CI: true
+2026-10-20T01:35:43.4891260Z   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+2026-10-20T01:35:43.4891560Z   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+2026-10-20T01:35:43.4891880Z   HF_HUB_OFFLINE: 1
+2026-10-20T01:35:43.4892170Z   TRANSFORMERS_OFFLINE: 1
+2026-10-20T01:35:43.4892420Z ##[endgroup]
+2026-10-20T01:35:48.0955990Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-20T01:35:48.2884340Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-20T01:35:48.4218390Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update.
+2026-10-20T01:35:48.4269640Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update.
+2026-10-20T01:35:48.4273410Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update.
+2026-10-20T01:35:48.4277970Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update.
+2026-10-20T01:35:53.1218850Z npm warn deprecated eslint@9.39.5: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-20T01:35:58.1952490Z 
+2026-10-20T01:35:58.1998150Z added 912 packages, and audited 917 packages in 14s
+2026-10-20T01:35:58.2043540Z 
+2026-10-20T01:35:58.2044860Z 171 packages are looking for funding
+2026-10-20T01:35:58.2050030Z   run `npm fund` for details
+2026-10-20T01:35:58.2077710Z 
+2026-10-20T01:35:58.2078780Z found 0 vulnerabilities
+2026-10-20T01:35:58.2356330Z ##[group]Run npm test
+2026-10-20T01:35:58.2356740Z [36;1mnpm test[0m
+2026-10-20T01:35:58.2454240Z shell: /bin/bash -e {0}
+2026-10-20T01:35:58.2454520Z env:
+2026-10-20T01:35:58.2454780Z   CI: true
+2026-10-20T01:35:58.2455070Z   ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+2026-10-20T01:35:58.2455380Z   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+2026-10-20T01:35:58.2455690Z   HF_HUB_OFFLINE: 1
+2026-10-20T01:35:58.2455900Z   TRANSFORMERS_OFFLINE: 1
+2026-10-20T01:35:58.2456320Z ##[endgroup]
+2026-10-20T01:35:58.4863220Z 
+2026-10-20T01:35:58.4863950Z > tensorfold-studio@1.0.0-beta.8 test
+2026-10-20T01:35:58.4864510Z > npm run test:agent
+2026-10-20T01:35:58.4864710Z 
+2026-10-20T01:35:58.6290880Z 
+2026-10-20T01:35:58.6392130Z > tensorfold-studio@1.0.0-beta.8 test:agent
+2026-10-20T01:35:58.6495080Z > node scripts/check-package-manager.mjs && node scripts/check-private-leaks.mjs && node scripts/check-test-agent-coverage.mjs && node scripts/run-tests.mjs
+2026-10-20T01:35:58.6557420Z 
+2026-10-20T01:35:58.7058300Z package manager check passed (npm@10.9.8)
+2026-10-20T01:35:59.6125330Z private leak scan passed
+2026-10-20T01:35:59.7080970Z Runner covers 821 test files across electron & src & scripts & experiments/.
+2026-10-20T01:42:47.9840840Z ..............................................................................................................................F......................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+2026-10-20T01:42:47.9843460Z 820/821 passed, 1 failed
+2026-10-20T01:42:47.9843620Z 
+2026-10-20T01:42:47.9843840Z   FAIL electron/agent/engine/pull.test.ts
+2026-10-20T01:42:47.9844410Z     Error: Timed out waiting for measured write rate and remaining time.
+2026-10-20T01:42:47.9845220Z         at waitFor (<CHECKOUT>/app/electron/agent/engine/test-fixtures/harness.ts:61:38)
+2026-10-20T01:42:47.9847840Z         at async main (<CHECKOUT>/app/electron/agent/engine/pull.test.ts:65:7)
+2026-10-20T01:42:48.0328440Z ##[error]Process completed with exit code 1.
+2026-10-20T01:42:48.0575870Z Post job cleanup.
+2026-10-20T01:42:48.4128820Z [command]/opt/homebrew/bin/git version
+2026-10-20T01:42:48.4255240Z git version 2.55.0
+2026-10-20T01:42:48.4279100Z Copying '<CI_HOME>/.gitconfig' to '<CI_TEMP>/1f6ffb11-17cc-4f33-bfd0-148b5e97ed95/.gitconfig'
+2026-10-20T01:42:48.4281510Z Temporarily overriding HOME='<CI_TEMP>/1f6ffb11-17cc-4f33-bfd0-148b5e97ed95' before making global git config changes
+2026-10-20T01:42:48.4282500Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-20T01:42:48.4283720Z [command]/opt/homebrew/bin/git config --global --add safe.directory <CHECKOUT>
+2026-10-20T01:42:48.4338020Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-20T01:42:48.4445360Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-20T01:42:48.5915970Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-20T01:42:48.6004530Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-20T01:42:48.7102120Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-20T01:42:48.7406380Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-20T01:42:48.8302190Z Cleaning up orphan processes
+2026-10-20T01:42:50.2276200Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@11d5960a326750d5838078e36cf38b85af677262, actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

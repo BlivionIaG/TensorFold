@@ -1,0 +1,9 @@
+== c00
+09:18:37 tree c00 dc595eeb1
+09:20:55 build gfx1100 exit 0
+09:22:59 build gfx1030 exit 0
+09:31:28 hip-kernel-test gfx1100 exit 0: Build Summary: 14/14 steps succeeded; 75/75 tests passed
+09:31:55 contract gfx1100 exit 0: SUMMARY gfx1100 5 kernels: 5 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 62 ms, limits 20 ms
+09:40:10 hip-kernel-test gfx1030 exit 0: Build Summary: 14/14 steps succeeded; 75/75 tests passed
+09:40:37 contract gfx1030 exit 0: SUMMARY gfx1030 5 kernels: 5 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 45 ms, limits 16 ms
+09:41:54 limits exit 0: PASS kernel-contract-limits: every registered launch fits gfx1030, gfx1100, gfx1151 and gfx1201, every record current, every control red
