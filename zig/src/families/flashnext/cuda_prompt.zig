@@ -141,11 +141,11 @@ pub const Engine = struct {
     round_graph: round_graph.Cache = .{},
     image_factory: ?*@import("cuda_images.zig").Vision = null,
     collective: ?*@import("cuda_collective.zig").Collective = null,
+    page_config: ?kvpage.Config = null,
     /// Each layer's Living Weights pocket, from a taught folder's shards or the learner: every pass adds it.
     pockets: pocket.Pockets = .{},
     /// During a round of taught and untaught streams: its rows' pocket scales (0 on an untaught row); 0: none.
     taught_rows: u64 = 0,
-    page_config: ?kvpage.Config = null,
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, driver: *cuda.Driver, stream: *cuda.Stream, model_dir: []const u8) !*Engine {
         return initRank(gpa, io, driver, stream, model_dir, 1, 0);
@@ -497,12 +497,12 @@ pub const Seq = struct {
     fed: usize,
     logits: []u8,
     cap: usize,
-    /// The model as shipped: no learned neuron acts on its rows (a lesson writer's and its judge's reads).
-    untaught: bool = false,
     /// int8 K/V scales beside the codes in kc/vc, and the indexer keys' mapped host buffer (cuda_exl3_kv.newSeq).
     kv8: ?@import("cuda_exl3_kv.zig").SeqKv8 = null,
     ikc_host: ?cuda.HostBuffer = null,
     paged: ?*kvpage.Paged = null,
+    /// The model as shipped: no learned neuron acts on its rows (a lesson writer's and its judge's reads).
+    untaught: bool = false,
 
     /// The caches a batched pass reads and leaves; `scores` the engine's block scores (Engine.reserveScores).
     pub fn view(s: *Seq, scores: u64) batch.SeqState {
