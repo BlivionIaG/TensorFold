@@ -1,0 +1,3 @@
+window (rank 0 of 2): 4 rows at once and one at a time: the same bits; first differing row null, largest difference 0e0
+snapshots: the snapshotted window equals the plain one; rows after a rollback equal the single steps
+info: round graphs: 1 captured (12.9 ms each), 4 of 8 rounds replayed

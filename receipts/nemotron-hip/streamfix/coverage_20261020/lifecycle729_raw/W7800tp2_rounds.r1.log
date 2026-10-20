@@ -1,0 +1,2 @@
+rounds (rank 1 of 2): 4 streams, 10 rows in one round and each stream alone a row at a time: the same bits (0 rows differ)
+info: round graphs: 1 captured (9.4 ms each), 8 of 10 rounds replayed
