@@ -566,6 +566,55 @@ fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, 
     check.pass("rank {d}/{d}: deep prefill of {d} rows with layer graphs and the decode after it bit-identical to eager", .{ rank, world, n });
 }
 
+/// One warmed TP2 deep-prefill forward inside a CUDA-profiler API range for Nsight Systems.
+/// The profiler window excludes graph warm-up and host setup; no per-layer synchronization is added.
+fn prefillProfMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, n: usize, which: []const u8) !void {
+    var stage: []const u8 = "engine initialization";
+    errdefer std.debug.print("prefill-prof rank={d} failed during {s}\n", .{ rank, stage });
+    const a = gpu.gpa;
+    const g = try Eng.init(gpu, rank, world, port, dir);
+    defer g.deinit();
+    defer graph.force = null;
+    try check.expect(g.seq.paged != null, "prefill profiler requires BF16 KV paging", .{});
+    const ids = try a.alloc(u32, n);
+    defer a.free(ids);
+    var prng = std.Random.DefaultPrng.init(0x9e3779b9);
+    for (ids) |*x| x.* = 200 + prng.random().uintLessThan(u32, 60000);
+    const use_graphs = std.mem.eql(u8, which, "graph");
+    if (!use_graphs and !std.mem.eql(u8, which, "eager")) return error.BadMode;
+    graph.force = if (use_graphs) .graph else .off;
+    try dplan.toHost();
+    stage = "graph warm-up";
+    // Warm paging and, for graph mode, capture each layer shape before the measured forward.
+    for (0..if (use_graphs) @as(usize, 2) else 1) |_| {
+        try g.reset();
+        _ = try g.swap(3);
+        try g.forward(ids, .{ .logits = .last });
+        try g.stream.synchronize();
+    }
+    const before = graph.prefill_stats;
+    const f_before = X.prefill.stats;
+    stage = "profile setup";
+    try g.reset();
+    _ = try g.swap(3);
+    try g.stream.synchronize();
+    var prof = try Profiler.open();
+    _ = prof.start();
+    stage = "measured forward";
+    const t0 = check.now(gpu.io);
+    try g.forward(ids, .{ .logits = .last });
+    const t1 = check.now(gpu.io);
+    _ = prof.stop();
+    try g.stream.synchronize();
+    const after = graph.prefill_stats;
+    const f_after = X.prefill.stats;
+    if (use_graphs and after.replays == before.replays) return error.NoPrefillGraphReplay;
+    const hash = std.hash.Wyhash.hash(0, g.seq.logits);
+    stage = "rank hash check";
+    if (world == 2) try check.expect(try g.swap(hash) == hash, "rank {d}: profiled prefill logits differ across ranks", .{rank});
+    std.debug.print("RESULT prefill-prof rank={d}/{d} mode={s} rows={d}: {d:.1} ms wall, graphs replayed {d}, eager {d}, captured {d}, updated {d}; expert copies {d} (prefetch {d}), passes {d}, pick wait {d:.1} ms, plan {d:.1} ms; logits {x}; Nsight range excludes warm-up\n", .{ rank, world, which, n, ms(t0, t1), after.replays - before.replays, after.eager - before.eager, after.captures - before.captures, after.updates - before.updates, f_after.copies - f_before.copies, f_after.prefetched - f_before.prefetched, f_after.passes - f_before.passes, @as(f64, @floatFromInt(f_after.host_wait_ns - f_before.host_wait_ns)) / 1e6, @as(f64, @floatFromInt(f_after.plan_ns - f_before.plan_ns)) / 1e6, hash });
+}
+
 fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize) !void {
     const snaps = flash.snapshot;
     const allocator = gpu.gpa;
@@ -768,12 +817,13 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     const dir = rest[3];
     const mode = rest[4];
     if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
-    const steps = if (rest.len > 6) try std.fmt.parseInt(usize, rest[6], 10) else 48;
+    const steps = if (rest.len > 6 and !std.mem.eql(u8, mode, "prefill-prof")) try std.fmt.parseInt(usize, rest[6], 10) else 48;
     const which: []const u8 = if (rest.len > 7) rest[7] else "dplan,graph";
     if (std.mem.eql(u8, mode, "snapshot")) return snapshotMode(gpu, rank, world, port, dir, steps);
     if (std.mem.eql(u8, mode, "fork")) return forkMode(gpu, rank, world, port, dir, rest[5], steps, which);
     if (std.mem.eql(u8, mode, "prof")) return profMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps, which);
     if (std.mem.eql(u8, mode, "prefill")) return prefillMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps);
+    if (std.mem.eql(u8, mode, "prefill-prof")) return prefillProfMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), if (rest.len > 6) rest[6] else "graph");
     if (std.mem.eql(u8, mode, "eq")) return eqMode(gpu, rank, world, port, dir, rest[5], steps, which);
     return error.UnknownMode;
 }

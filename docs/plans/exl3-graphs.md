@@ -215,3 +215,36 @@ What remains is kernel time: ~6 ms of 1-3-row EXL3 projections (decode-bound at 
 lanes (already 290-390 GB/s of 448), ~3 ms of experts, ~2 ms of collectives, ~1.5 ms of rank-0 wait. Faster
 projection kernels with a different split or fewer HC bytes change the fp32 order (numerics) and would have to be
 default-off with logit diffs; the MTP head runs on rank 0 alone (rank 1 idle ~28% with drafts on).
+
+## TP=2 BF16-paged prefill profile (2026-10-20)
+
+Added `flashnext-exl3-graph ... prefill-prof N eager|graph` as a bounded Nsight Systems harness. It requires
+`TF_FLASHNEXT_KVPAGE=1`, warms the same 8,192-token input twice, measures one forward with 4,096-row chunks, then
+checks the final logits hash across both ranks. The eager and graph runs both produced hash `ffcf463b229c2aa6`;
+graph mode replayed 96 dense-layer graphs. The paired non-Nsight run measured 5,597.1 ms eager and 5,639.5 ms
+graph (one pair; not a speedup claim). In the Nsight-captured pair, rank 0 measured 5,693.6 ms eager and 5,696.4 ms
+graph, with the same hash. Differences are below what this single pair can establish.
+
+The traces show that graphs are doing real work but are not currently shortening the prefill critical path:
+
+- Eager submitted 20,559 `cuLaunchKernel` calls; graph mode submitted 2,103 plus 96 `cuGraphLaunch` calls. Dense graph
+  replay therefore removes much of the host launch stream, but not the expert boundary.
+- Each rank moved about 28.8 GB host-to-device in roughly 48,000 copy operations in either mode; measured copy-engine
+  time summed to 2.79 s eager / 2.77 s graph. These are trace totals across operations, not additive wall-time slices.
+- The measured forward scheduled about 14.4k expert copies on rank 0 (14.0k counted as prefetch), 570 expert passes,
+  and about 35 ms of CPU planning. Rank 1's copy/pass counts were similarly stable.
+- `host_wait_ns` is the sum of intervals from enqueueing the picks D2H through stream synchronization; it includes
+  preceding dense kernels and reduction dependencies, not just the D2H or removable CPU stall. It was about 5.19 s
+  eager and 5.28 s graph in the untraced pair. Nsight also reports about 4.86/4.95 s total across 201
+  `cuStreamSynchronize` API calls; do not interpret either sum as a pure synchronization penalty.
+- All-reduce and the largest EXL3 prompt kernels had nearly equal aggregate time in eager and graph traces. The
+  roughly 2.8 s of H2D work overlaps other GPU work, so the operation totals cannot be summed into a critical path.
+
+The evidence says not to keep tuning capture thresholds or dense graph launch mechanics as the next prefill lever.
+The next design target is the expert boundary: preserve exact GPU routing while supplying expert work and transfers
+without a per-layer host decision on the critical path. The implementation should begin with a bounded two-layer
+pipeline: GPU-built stable member lists, fixed-address double-buffered staging, and the existing expert arithmetic
+and TP=2 reduction order. Before committing to full-layer streaming, measure each rank's largest layer-bank size and
+available memory after BF16 KV paging, pools, scratch, and snapshots. Keep a selective-transfer fallback for cases
+where streaming unused experts costs more than the host cut. Gate skewed routing, empty experts, ownership masks,
+page-window rebases, cache branch/rewind, snapshots, and eager-versus-graph logit parity before optimizing timings.

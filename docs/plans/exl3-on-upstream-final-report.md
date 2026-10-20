@@ -30,6 +30,24 @@ warm, branch and rewind cache phases each reuse 4,122/4,139 prompt tokens with e
 cache. The 200k × 2 gate remains explicitly deferred. Live-rank overflow/failure injection and repeatable graph
 speedup remain open; no graph performance win is claimed. BF16 is required; int8 KV is out of scope.
 
+## 2026-10-20 prefill graph profile addendum
+
+The new `prefill-prof` gate ran TP=2 on both GPUs with BF16 KV paging enabled, 8,192 rows, 4,096-row chunks, two
+warm-ups, and one measured forward per mode. Both eager and graph runs returned the same cross-rank logits hash
+(`ffcf463b229c2aa6`); graph mode replayed 96 dense-layer graphs. One matched untraced pair measured 5,597.1 ms
+eager and 5,639.5 ms graph. In the matched Nsight pair, rank 0 measured 5,693.6 ms eager and 5,696.4 ms graph.
+Neither pair establishes a speedup.
+
+Nsight shows the graph replacing eager kernel submissions (20,559 `cuLaunchKernel` calls versus 2,103 plus 96
+`cuGraphLaunch` calls) while expert-copy volume and kernel/collective totals remain nearly unchanged. Each rank
+transferred about 28.8 GB H2D in approximately 48k operations; rank 0 scheduled 14,426 expert copies (13,993 counted
+as prefetch) and 570 passes, with about 35 ms CPU planning. The measured picks-D2H-to-synchronize interval is about
+5.2 s cumulatively, but includes the preceding dense kernels and NCCL dependencies; it is not pure CPU stall time.
+The next prefill performance work is therefore a proper expert-routing/transfer pipeline, not another capture-threshold
+change. The design investigation should first establish staging-arena memory fit after BF16 paging, pools, scratch,
+and snapshots; then prototype GPU-built stable member lists and fixed-buffer double-buffered transfers while keeping
+existing expert arithmetic and reduction order.
+
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),
