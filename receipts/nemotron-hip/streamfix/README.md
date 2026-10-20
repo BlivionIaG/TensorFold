@@ -15,3 +15,5 @@ Unrun intermediate exact heads, upstream HIP/model runtime integration, Windows 
 ## Contribution evidence refresh
 
 See [the 2026-10-20 source/CI/requirement audit](contributing_refresh_20261020/README.md) and byte-exact pre-refresh draft bodies. This documentation refresh keeps the source heads and all existing proof artifacts unchanged; qualification gaps remain explicit.
+
+Current-source [retained-logit margin derivation and actual window/rollback/mixed-stream gates](coverage_20261020/README.md) supplement the original source-bound proofs. These scoped checks do not claim full contribution qualification.

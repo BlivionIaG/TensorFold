@@ -1,0 +1,200 @@
+{
+  "read_only": true,
+  "published_sources_only_for_qualification": true,
+  "unchanged_host_source_bridge": {
+    "from": "82e68433d0d8647e3ca5a0d48f82f5ffc01397ed",
+    "to": "729833615595df66c9f9a438ce9a85061843f010",
+    "checked_paths": [
+      "zig/src/families/nemotron",
+      "zig/src/server",
+      "zig/src/hip",
+      "zig/src/core/lane_host.zig",
+      "zig/src/core/lane_stream.zig"
+    ],
+    "changed_paths": [],
+    "scope": "Sourcecomparison only; no newruntime/peak/performance claim; productionkernels/resources differ and mustretainactualmeasurementssource"
+  },
+  "verified_existing_arrays": [
+    {
+      "tokens": 2048,
+      "path": "<LOCAL_TEMP_PATH>",
+      "sha256": "6cd03c840e970559a354e5ddd8dfcf46248212cf6803d1056d9e931b702cddcb",
+      "actual_count_verified": true
+    },
+    {
+      "tokens": 8192,
+      "path": "<LOCAL_TEMP_PATH>",
+      "sha256": "921f521cd5803e29161e56c98b818c03dddf8dcbd1de6f076d57f9013825ade1",
+      "actual_count_verified": true
+    },
+    {
+      "tokens": 32768,
+      "path": "<LOCAL_TEMP_PATH>",
+      "sha256": "ef34ff41a3cb4510d50cf72636c5f145cc3842423fb6e158a89d52b736bb389f",
+      "actual_count_verified": true
+    },
+    {
+      "tokens": 65536,
+      "path": "<LOCAL_TEMP_PATH>",
+      "sha256": "2737dee209b232f542b0e327e5a15d4fc346cdc87479aa05170170eae65a3750",
+      "actual_count_verified": true
+    },
+    {
+      "tokens": 131072,
+      "path": "<LOCAL_TEMP_PATH>",
+      "sha256": "8dd239f59d732fbe847f062bd203a46f00ec5ff05a5c376749cc28f03a53af5d",
+      "actual_count_verified": true
+    },
+    {
+      "tokens": 262080,
+      "path": "<LOCAL_TEMP_PATH>",
+      "sha256": "a525bfedba4dc9edf4d3ecd00eed34c9cd6d0798d214e827d624ee378661f960",
+      "actual_count_verified": true
+    }
+  ],
+  "usable_omitted_evidence": [
+    {
+      "id": "historical_cold_and_context",
+      "prs": [
+        1092,
+        1093,
+        1094,
+        1095,
+        1101,
+        1103
+      ],
+      "usable_now": "Restore explicit historical coverage instead of implying no evidence exists: cold2k/8k/32k/64k/128k/262080 tokens, freshKV/cache0, drafts/plain16-token replies and source-labelled timings. Arrays and exact bodies can be reused unchanged for current-source missing runs.",
+      "sources": [
+        "fc555ad4f1c4e92306c457e5a3a67180034e788f",
+        "44c37c5f52b91806de323e72f22fb95a683e007c",
+        "b86e111b24d192e2bfdcdfb426c217c3b7be713a",
+        "82e68433d0d8647e3ca5a0d48f82f5ffc01397ed"
+      ],
+      "paths": [
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>"
+      ],
+      "url": "https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/README.md",
+      "remaining_gap": "Not a current729 cold/context timing or new exact-head run. Shared-host/per-GPU-set isolation,16-token output and TTFT timing scope retained."
+    },
+    {
+      "id": "historical_concurrency",
+      "prs": [
+        1092,
+        1093,
+        1094,
+        1101,
+        1103
+      ],
+      "usable_now": "Historical C1/C4/C8 greedy code/prose with --alone --serial; concurrent==alone30/30 and78/78 and alone==draftfalse4/4 and6/6 reported across recorded rigs. Restore source-specific counts/link; reuse existing public prompt definitions.",
+      "sources": [
+        "82e68433d0d8647e3ca5a0d48f82f5ffc01397ed"
+      ],
+      "paths": [
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>"
+      ],
+      "url": "https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/family",
+      "remaining_gap": "Current729 fullC1/C8 matrix and lifecycle cells not thereby complete; private4bf/a27 interrupted data are separately source-bound, never pooled."
+    },
+    {
+      "id": "historical_memory",
+      "prs": [
+        1092,
+        1093,
+        1094,
+        1103
+      ],
+      "usable_now": "Existing --context262144/parallel1/cache0 peakVmHWM, sampledVmRSS and perGPUVRAM with start/stop boundaries on503GiBRAM host; e.gV620TP1 peak17.72GiBVmHWM/21.92GiBVRAM andreturn0.02GiB. Restore these as historical measurements; do not rerun old source.",
+      "sources": [
+        "82e68433d0d8647e3ca5a0d48f82f5ffc01397ed"
+      ],
+      "paths": [
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>"
+      ],
+      "url": "https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/family",
+      "remaining_gap": "VmHWM/RSS is not macOSphysicalfootprint or completepinned/device allocation accounting; 503GiBhost is notsmall-RAM proof; new729peakmeasurementstillunrun."
+    },
+    {
+      "id": "historical_teacher_margin",
+      "prs": [
+        1092,
+        1093,
+        1094,
+        1095,
+        1103
+      ],
+      "usable_now": "480pooledteacherforcedrows prompt/decode againstHFCPUfp32 dequantizedMLX reference, perrowtop-tokenIDs/margins, maxabsoluteerror andCSVrows alreadyexist. Surface actualmismatches rather than genericabsence: V620TP1 decode479/480,prompt480/480; W7800TP2 decode477/480,prompt476/480.",
+      "sources": [
+        "82e68433d0d8647e3ca5a0d48f82f5ffc01397ed",
+        "earlierW7800TP1 source retained in fidelityrecords"
+      ],
+      "paths": [
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>"
+      ],
+      "url": "https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/fidelity",
+      "remaining_gap": "Reference isFP32model, notindependentFP64eachprojection; mismatchmargin/tiepolicyacceptance remainsunproven. Firsthash-match retained729outputs/inputs tooldrows/ref; ifsamearrays, rescoreoffline beforeanynewmodelrun."
+    },
+    {
+      "id": "current729_nem_raw_outputs",
+      "prs": [
+        1092,
+        1093,
+        1094,
+        1095,
+        1098,
+        1101,
+        1103
+      ],
+      "usable_now": "Already-retained16Nemrawarrays baseline8649/current729, source/tool/input/runtime/rankidentity plus4byteequalpairsperrig. Use forofflinefidelity/source/inputhash alignment rather than repeatdecode/teacherinference.",
+      "sources": [
+        "729833615595df66c9f9a438ce9a85061843f010",
+        "8649e9858b38e9ef3dcd8d579879c6512a363050"
+      ],
+      "paths": [
+        "<LOCAL_TEMP_PATH>",
+        "<LOCAL_TEMP_PATH>"
+      ],
+      "url": "https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/followup729",
+      "remaining_gap": "ByteequalityitselfdoesnotprovideHFtop-margin/FP64projectionreports; Qwenoutputarrayswereintentionallydeleted, so nocandidatearrayreuseclaimthere."
+    }
+  ],
+  "genuine_or_unresolved_gaps": [
+    {
+      "id": "published_source_expanded_matrix",
+      "status": "genuine_gap",
+      "action": "Complete16k/1024+1k/512 C1/C8 onagreedpublishedsource/candidate withretainedrawSSE/runtime/wholebatchmetricdenominators; reusetokenarrays/client/pilotAPIbridge. No neednewfixturegeneration.",
+      "do_not_duplicate": "Privatea27/4bf completedcellsremainpartial/historical; noclaimfullmatrixorcurrent729runs."
+    },
+    {
+      "id": "resume_cancel_reset_partial_seams",
+      "status": "requires_inventory_not_assume_absent",
+      "action": "Auditexistinghost/device testsandhistoricalreuse logs perexactsource; credit unchanged-hostsource bridge forcodecoverage, thenrunonlymissing nativeintegration/lifecycle cases. Coldcache0holds do nottestresume."
+    },
+    {
+      "id": "previous_release_standard_server",
+      "status": "scope_or_comparator_gap",
+      "action": "Oldreceipt saysfamilyabsentv1.1.0/1.0.12 andstandardservernotcompared. Verifyactualreleasecapability/compatiblecheckpoint beforetargetedcomparison; do notturnoldunsupportedclaimintocurrentuniversalwaiver."
+    },
+    {
+      "id": "precision_projection_error_mapping",
+      "status": "genuine_mapping_gap",
+      "action": "ExistingstrictFP64fixtures+finitebytes areusable, but mapallchangedprojectionclasses/promptdecode/worstpercolumn+aggregate/no-worsecurrentreference; teacherFP32fidelitydoesnotreplaceit."
+    },
+    {
+      "id": "current_user_performance_acceptance",
+      "status": "requester_accepts_recorded_results_including4.53percent",
+      "action": "Stop treatingbaselinebetter/3percent recoveryasuserrequirement. Preserveall8actualserialdeltas; upstreamacceptance/remainingCONTRIBUTING isseparate; no recoverytestsolelytohitrevokedthreshold."
+    }
+  ],
+  "private_experiments_not_relabelled": [
+    "4bf29888c4494b5396758c68dc69ff05f46e9784",
+    "a27dd1ec261ce3c19f9a3c467ad12a0653824a16"
+  ]
+}

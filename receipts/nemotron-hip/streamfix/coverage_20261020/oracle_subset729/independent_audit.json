@@ -1,0 +1,34 @@
+{
+  "pass": true,
+  "source": "729833615595df66c9f9a438ce9a85061843f010",
+  "result_sha256": "073ed3c88061f5bfea0ae7b852ec23c971eb0ffe45b876e534c03d082c964ae8",
+  "four_native_arrays_and_history_hashes_independently_verified": true,
+  "CSV_native_tops_positions_margins_and_rounded_values_verified": true,
+  "groups": [
+    {
+      "rig": "v620tp1",
+      "case": "decode",
+      "agree": 223,
+      "rows": 224
+    },
+    {
+      "rig": "v620tp1",
+      "case": "story_full",
+      "agree": 32,
+      "rows": 32
+    },
+    {
+      "rig": "w7800tp2",
+      "case": "decode",
+      "agree": 221,
+      "rows": 224
+    },
+    {
+      "rig": "w7800tp2",
+      "case": "story_full",
+      "agree": 31,
+      "rows": 32
+    }
+  ],
+  "scope": "Exact native-array+input-history SHA bridge to historical rounded HF/FP32 oracle scores only;507/512 is not universal fidelity or a tie-policy waiver; no raw reference arrays/new reference runtime/FP64/top2 reference IDs inferred"
+}

@@ -39,8 +39,8 @@
   "files": [
     {
       "path": "README.md",
-      "sha256": "6256aec62b41e7d85b3e17af1c8811b0a2a74d780898073d2469f6fb6982763a",
-      "bytes": 2923
+      "sha256": "6e9678775bc6399dcbda09740a019fb1c94084c3b6d24a189e2cee512eb30514",
+      "bytes": 3160
     },
     {
       "path": "ab_complete/README.md",
@@ -1351,6 +1351,246 @@
       "path": "contributing_refresh_20261020/template_issue_content_audit.json",
       "sha256": "89f2632539477a8ad054cdb695bb0d4df92649ece85451ffa3ad57d556dc7422",
       "bytes": 719
+    },
+    {
+      "path": "coverage_20261020/README.md",
+      "sha256": "29c3124166450da03933d15262861c7185b52c522a65f03d10b83567d63c4654",
+      "bytes": 5853
+    },
+    {
+      "path": "coverage_20261020/fp64_conditional_source_review.json",
+      "sha256": "ccc6ff052d52f721c31cb5157eb9897544e43e785fbf59572c8a6d25e78beed7",
+      "bytes": 40460
+    },
+    {
+      "path": "coverage_20261020/historical_evidence_gap_map.json",
+      "sha256": "481d4f89762d9ee7f0098aad22af0d1e6d8402a1ef15f1587be261a9465f0f50",
+      "bytes": 8661
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_independent_audit.json",
+      "sha256": "6c97654d5c592eeac547736682efad67d23cede172e3c1f046df96a2b06ca1e6",
+      "bytes": 1513
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/V620tp1_rounds.identity.json",
+      "sha256": "f7d661edafa38617153746efc0fb221426a754476fbe6077f590901a33517da5",
+      "bytes": 2893
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/V620tp1_rounds.r0.log",
+      "sha256": "fadd6c3f9a0a68d11058b238cc4de88a3bac428d399fa6e1c5c38a6bb7c7b515",
+      "bytes": 193
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/V620tp1_window.identity.json",
+      "sha256": "c003412804cc6d6b3930f1a7d71122c2eded969de3d133a258b517f032e8dbc8",
+      "bytes": 2893
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/V620tp1_window.r0.log",
+      "sha256": "31d0985e09125c9cb9c5b38626c503f4991581c6dc234131c821792eac243162",
+      "bytes": 290
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/W7800tp2_rounds.identity.json",
+      "sha256": "a0e597806567b16bd53e4ed66ba05819bf06806cb34dbc59f2125632d5d43522",
+      "bytes": 3931
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/W7800tp2_rounds.r0.log",
+      "sha256": "38949ac645e324043701011cf5135c39ec508bae2cc40d079a458345f49cd83b",
+      "bytes": 193
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/W7800tp2_rounds.r1.log",
+      "sha256": "119a9dd81653b670813adfccb0894a957ec09e4897c69eb2ce6dfb6d467b4406",
+      "bytes": 193
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/W7800tp2_window.identity.json",
+      "sha256": "67263b600d5aeee1489efc8208175528d3ec1b7e820a100cca8275fe74d6d384",
+      "bytes": 3931
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/W7800tp2_window.r0.log",
+      "sha256": "a7a80031a38e16ddfc65207ecef5aafa8789503c95a6aae63d8b36b71390f6e2",
+      "bytes": 291
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/W7800tp2_window.r1.log",
+      "sha256": "4b45e2dee25c432da142a3e7cd7baf29bbd4a9d7cd5b6f21c5147ce4b4a53785",
+      "bytes": 291
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/harness.py",
+      "sha256": "48ea0d0743bf7532ecc27fd86bc2bfef757b54083c86efa82c1a8c089b21cdaa",
+      "bytes": 7670
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/model_tools_built.raw.json",
+      "sha256": "73ddc33a38a20879b5036fcfe63b7c9194f3caf1059cd72ebeac8b9534d5656a",
+      "bytes": 2262
+    },
+    {
+      "path": "coverage_20261020/lifecycle729_raw/summary.json",
+      "sha256": "962f4a3ca1f3b1425f683f4a2ad8eaf9d490874dfe65ba0523d5cd076af6253f",
+      "bytes": 8205
+    },
+    {
+      "path": "coverage_20261020/oracle_subset729/derive.py",
+      "sha256": "9b47edeaffb8a902d7d9805085f0fd4f28dd2507ec3dfcbff5a85f0df32e2717",
+      "bytes": 4159
+    },
+    {
+      "path": "coverage_20261020/oracle_subset729/independent_audit.json",
+      "sha256": "0d9bc3ee72b1de25d224df9dee4b815c40656d2f4aa10b0c56c9f40134b588d7",
+      "bytes": 971
+    },
+    {
+      "path": "coverage_20261020/oracle_subset729/result.json",
+      "sha256": "073ed3c88061f5bfea0ae7b852ec23c971eb0ffe45b876e534c03d082c964ae8",
+      "bytes": 386578
+    },
+    {
+      "path": "coverage_20261020/public_manifest.json",
+      "sha256": "3f79b21950502249f3c1ecd685608d41994452c35809769782a42c7c4141d24b",
+      "bytes": 14300
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/derive.py",
+      "sha256": "f733a31ce9b8b069d5781c44232d92bb834373b4b35a8b063ebf6bc91b242cf4",
+      "bytes": 8238
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/independent_audit.json",
+      "sha256": "3a78782869ffddac3cafd03b7e87a0116379c795af97b1c0defb1f161a093862",
+      "bytes": 617
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/result.json",
+      "sha256": "9a71797cc5967fd019d235bcf1ec50289fa4995618a0f957c2fdfea0ebcf5afe",
+      "bytes": 35362
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/v620tp1_chat_full_r0_columns.npz",
+      "sha256": "4a3168c3062ae6a4dd3e6d353a35600305daddc4d996c22c2bc146de19df50d5",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/v620tp1_chat_full_r0_rows.json",
+      "sha256": "a57569e620d269a5fda46365d4bcd9986ac01767c7d79a1d572ac8408c87f570",
+      "bytes": 23877
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/v620tp1_code_full_r0_columns.npz",
+      "sha256": "92c205af182d9ff1867770ff4aba04acd77df29011191fe08aebc82eaeb0ae3c",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/v620tp1_code_full_r0_rows.json",
+      "sha256": "717b89b81a2dfd9899888fa6731b20c1dd9b529989aa7c85321b6092517e2acc",
+      "bytes": 19005
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/v620tp1_decode_r0_columns.npz",
+      "sha256": "6de78ac4ad9fd4e2e173b05a2f3268b78f0ca99918935b1fac44db37c761ba23",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/v620tp1_decode_r0_rows.json",
+      "sha256": "6a19c3fa1696bf1e23d8d1afd921aea62fa92ceefeb4afb9dca91eec41e23946",
+      "bytes": 90279
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/v620tp1_story_full_r0_columns.npz",
+      "sha256": "92c205af182d9ff1867770ff4aba04acd77df29011191fe08aebc82eaeb0ae3c",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/v620tp1_story_full_r0_rows.json",
+      "sha256": "1352975f5e01349e3dd1ff54e8f875bbeb6e6d35adc7424efb86c6432a3a4fbe",
+      "bytes": 19025
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_chat_full_r0_columns.npz",
+      "sha256": "4a3168c3062ae6a4dd3e6d353a35600305daddc4d996c22c2bc146de19df50d5",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_chat_full_r0_rows.json",
+      "sha256": "6aa381aed49e38d25996b3c723715c304057b839682f30c69ff60b924d44273c",
+      "bytes": 22883
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_chat_full_r1_columns.npz",
+      "sha256": "4a3168c3062ae6a4dd3e6d353a35600305daddc4d996c22c2bc146de19df50d5",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_chat_full_r1_rows.json",
+      "sha256": "6aa381aed49e38d25996b3c723715c304057b839682f30c69ff60b924d44273c",
+      "bytes": 22883
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_code_full_r0_columns.npz",
+      "sha256": "92c205af182d9ff1867770ff4aba04acd77df29011191fe08aebc82eaeb0ae3c",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_code_full_r0_rows.json",
+      "sha256": "a90fea4ac0008a80f6791511ed42a9d1990359465a13a0cc14c751551ae51c2c",
+      "bytes": 18175
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_code_full_r1_columns.npz",
+      "sha256": "92c205af182d9ff1867770ff4aba04acd77df29011191fe08aebc82eaeb0ae3c",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_code_full_r1_rows.json",
+      "sha256": "a90fea4ac0008a80f6791511ed42a9d1990359465a13a0cc14c751551ae51c2c",
+      "bytes": 18175
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_decode_r0_columns.npz",
+      "sha256": "6de78ac4ad9fd4e2e173b05a2f3268b78f0ca99918935b1fac44db37c761ba23",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_decode_r0_rows.json",
+      "sha256": "6fb162add266222c7a2002d0e4c9145a989021288ed4393391b34ff86221ce8c",
+      "bytes": 86651
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_decode_r1_columns.npz",
+      "sha256": "6de78ac4ad9fd4e2e173b05a2f3268b78f0ca99918935b1fac44db37c761ba23",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_decode_r1_rows.json",
+      "sha256": "6fb162add266222c7a2002d0e4c9145a989021288ed4393391b34ff86221ce8c",
+      "bytes": 86651
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_story_full_r0_columns.npz",
+      "sha256": "92c205af182d9ff1867770ff4aba04acd77df29011191fe08aebc82eaeb0ae3c",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_story_full_r0_rows.json",
+      "sha256": "98b5d9929a539bb0e2ac313417a07037c81c6796d644ad64e462a40d4b482d34",
+      "bytes": 18229
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_story_full_r1_columns.npz",
+      "sha256": "92c205af182d9ff1867770ff4aba04acd77df29011191fe08aebc82eaeb0ae3c",
+      "bytes": 3956
+    },
+    {
+      "path": "coverage_20261020/teacherforced729/w7800tp2_story_full_r1_rows.json",
+      "sha256": "98b5d9929a539bb0e2ac313417a07037c81c6796d644ad64e462a40d4b482d34",
+      "bytes": 18229
     },
     {
       "path": "critical_contracts/CRITICAL_CONTRACTS_ALL_PASS.json",
@@ -5211,6 +5451,11 @@
   "contribution_refresh": {
     "path": "contributing_refresh_20261020",
     "upstream_main": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+    "source_heads_unchanged": true,
+    "complete_qualification": false
+  },
+  "coverage_refresh": {
+    "path": "coverage_20261020",
     "source_heads_unchanged": true,
     "complete_qualification": false
   }

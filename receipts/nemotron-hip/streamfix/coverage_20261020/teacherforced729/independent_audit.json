@@ -1,0 +1,14 @@
+{
+  "independent_local_audit": true,
+  "derivation_result_sha256": "e689374e90fa38354ff36499a07550b69b4d7e766b328d807ab049bebde2f285",
+  "raw_arrays_rehashed": 24,
+  "comparisons": 12,
+  "compared_rows_including_supplementary_tp_rank": 1131,
+  "primary_rank_rows": 754,
+  "supplementary_rank_rows": 377,
+  "exact_top1_ties_including_supplementary": 7,
+  "top1_top2_margins_recomputed": true,
+  "column_vectors_rehashed_and_all_zero": true,
+  "scope": "Retained8649vs729same-historylogits only; no independentFP64/HForacle ornewinference; TP rank1 rows supplementary not independent unique examples",
+  "pass": true
+}

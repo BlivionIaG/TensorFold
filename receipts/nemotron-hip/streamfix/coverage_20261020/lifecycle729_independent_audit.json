@@ -1,0 +1,45 @@
+{
+  "independently_validated": true,
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "raw_summary_sha256": "b1b81c2f9d034f11deaaab30b5ad149f88503dcc8cc9bdaa8835fdcfb1083d03",
+  "runs": [
+    {
+      "rig": "W7800tp2",
+      "mode": "window",
+      "ranks": 2,
+      "log_results_pass": true,
+      "source_binary_input_runtime_hashes_match": true
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "rounds",
+      "ranks": 2,
+      "log_results_pass": true,
+      "source_binary_input_runtime_hashes_match": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "window",
+      "ranks": 1,
+      "log_results_pass": true,
+      "source_binary_input_runtime_hashes_match": true
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "rounds",
+      "ranks": 1,
+      "log_results_pass": true,
+      "source_binary_input_runtime_hashes_match": true
+    }
+  ],
+  "all_rank_exit_statuses_zero": 6,
+  "input_59_ids_rehashed": true,
+  "existing_GPU_lock_captured": true,
+  "default_admission_environment": true,
+  "scope": "Checkpoint engine window-vs-row, per-row Mamba snapshots/rollback, page interchange, four mixed-position/width streams vs solo; numeric f32 equality, not signed-zero bitwise guarantee. Does not execute HTTP cancellation/reset/cache-resume, MTP proposal or partial acceptance.",
+  "remaining_lifecycle_gaps": [
+    "HTTP cancel/disconnect then reused lane equals clean request",
+    "prompt cache resume/full-fresh comparison",
+    "MTP draft partial acceptance/reset path"
+  ]
+}

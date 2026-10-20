@@ -1,0 +1,249 @@
+{
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "manifest_sha256": "42b3711a5d8cc4cb386a3f018750c4308975d93a9b23c19c68db4f62785aedba",
+  "harness_sha256": "48ea0d0743bf7532ecc27fd86bc2bfef757b54083c86efa82c1a8c089b21cdaa",
+  "input": {
+    "path": "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+    "sha256": "77672030c4c244f1a2f5e2c74ec08b411919faee4648e25451dd4be313084e9b",
+    "tokens": 59
+  },
+  "gpu_mapping": [
+    {
+      "HIP": 0,
+      "pci": "0000:c7:00.0"
+    },
+    {
+      "HIP": 1,
+      "pci": "0000:83:00.0"
+    },
+    {
+      "HIP": 2,
+      "pci": "0000:47:00.0"
+    }
+  ],
+  "boot_id": "d100f920-0655-4319-bddd-a430b7d2d282",
+  "memory_admission_environment": {
+    "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+    "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+  },
+  "existing_lock": {
+    "path": "<REMOTE_HOME>/opt/gpu.lock",
+    "held": true,
+    "method": "fcntl.flock EX NB, descriptor retained entire run"
+  },
+  "runs": [
+    {
+      "rig": "W7800tp2",
+      "mode": "window",
+      "binary_sha256": "051cf00eb90d0204ebca1e96a86670d860569e8abe3e122adc1bdec46d7bd984",
+      "devices": "0,1",
+      "page_shift": true,
+      "ranks": [
+        {
+          "rank": 1,
+          "pid": 98838,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "window",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/runs/20261020T213504/W7800tp2_window.unused",
+            "--steps",
+            "4",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "30600"
+          ],
+          "log": "W7800tp2_window.r1.log",
+          "exit_status": 0,
+          "log_sha256": "4b45e2dee25c432da142a3e7cd7baf29bbd4a9d7cd5b6f21c5147ce4b4a53785"
+        },
+        {
+          "rank": 0,
+          "pid": 98839,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "window",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/runs/20261020T213504/W7800tp2_window.unused",
+            "--steps",
+            "4",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "30600"
+          ],
+          "log": "W7800tp2_window.r0.log",
+          "exit_status": 0,
+          "log_sha256": "a7a80031a38e16ddfc65207ecef5aafa8789503c95a6aae63d8b36b71390f6e2"
+        }
+      ],
+      "started_utc": "2026-10-20T19:35:04Z",
+      "runtime_identity": {
+        "path": "W7800tp2_window.identity.json",
+        "sha256": "6352db3b273520bcbe505d22edab7e9609d79e767a880857e004e8b622b55e24",
+        "actual_executable_hashes_verified": true
+      },
+      "pass": true,
+      "cleanup_all_owned_ranks_reaped": true,
+      "remaining_owned_process_groups": [],
+      "ended_utc": "2026-10-20T19:35:16Z"
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "rounds",
+      "binary_sha256": "051cf00eb90d0204ebca1e96a86670d860569e8abe3e122adc1bdec46d7bd984",
+      "devices": "0,1",
+      "page_shift": false,
+      "ranks": [
+        {
+          "rank": 1,
+          "pid": 99052,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "rounds",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/runs/20261020T213504/W7800tp2_rounds.unused",
+            "--steps",
+            "4",
+            "--streams",
+            "4",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "30601"
+          ],
+          "log": "W7800tp2_rounds.r1.log",
+          "exit_status": 0,
+          "log_sha256": "119a9dd81653b670813adfccb0894a957ec09e4897c69eb2ce6dfb6d467b4406"
+        },
+        {
+          "rank": 0,
+          "pid": 99053,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "rounds",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/runs/20261020T213504/W7800tp2_rounds.unused",
+            "--steps",
+            "4",
+            "--streams",
+            "4",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "30601"
+          ],
+          "log": "W7800tp2_rounds.r0.log",
+          "exit_status": 0,
+          "log_sha256": "38949ac645e324043701011cf5135c39ec508bae2cc40d079a458345f49cd83b"
+        }
+      ],
+      "started_utc": "2026-10-20T19:35:16Z",
+      "runtime_identity": {
+        "path": "W7800tp2_rounds.identity.json",
+        "sha256": "4d344d8b99c79146a13fe15f988471f46b4ec82b3c6ea76738f9d64efc093c73",
+        "actual_executable_hashes_verified": true
+      },
+      "pass": true,
+      "cleanup_all_owned_ranks_reaped": true,
+      "remaining_owned_process_groups": [],
+      "ended_utc": "2026-10-20T19:35:22Z"
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "window",
+      "binary_sha256": "27b960ef15195716d25d8a8a30368e545c78431367c0977d58c9c81aafc9f7e9",
+      "devices": "2",
+      "page_shift": true,
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 99111,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1030/bin/tf-nemotron-hip-test",
+            "window",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/runs/20261020T213504/V620tp1_window.unused",
+            "--steps",
+            "4"
+          ],
+          "log": "V620tp1_window.r0.log",
+          "exit_status": 0,
+          "log_sha256": "31d0985e09125c9cb9c5b38626c503f4991581c6dc234131c821792eac243162"
+        }
+      ],
+      "started_utc": "2026-10-20T19:35:22Z",
+      "runtime_identity": {
+        "path": "V620tp1_window.identity.json",
+        "sha256": "f60533fe7b487d40427f320d953b447448742292a2be53c322b1273312fe3090",
+        "actual_executable_hashes_verified": true
+      },
+      "pass": true,
+      "cleanup_all_owned_ranks_reaped": true,
+      "remaining_owned_process_groups": [],
+      "ended_utc": "2026-10-20T19:35:26Z"
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "rounds",
+      "binary_sha256": "27b960ef15195716d25d8a8a30368e545c78431367c0977d58c9c81aafc9f7e9",
+      "devices": "2",
+      "page_shift": false,
+      "ranks": [
+        {
+          "rank": 0,
+          "pid": 99133,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1030/bin/tf-nemotron-hip-test",
+            "rounds",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/runs/20261020T213504/V620tp1_rounds.unused",
+            "--steps",
+            "4",
+            "--streams",
+            "4"
+          ],
+          "log": "V620tp1_rounds.r0.log",
+          "exit_status": 0,
+          "log_sha256": "fadd6c3f9a0a68d11058b238cc4de88a3bac428d399fa6e1c5c38a6bb7c7b515"
+        }
+      ],
+      "started_utc": "2026-10-20T19:35:26Z",
+      "runtime_identity": {
+        "path": "V620tp1_rounds.identity.json",
+        "sha256": "14c63658a35b43b422d89bc6c27599885280b5cec339c7a3d4dd42cb835b8baf",
+        "actual_executable_hashes_verified": true
+      },
+      "pass": true,
+      "cleanup_all_owned_ranks_reaped": true,
+      "remaining_owned_process_groups": [],
+      "ended_utc": "2026-10-20T19:35:30Z"
+    }
+  ],
+  "complete": true,
+  "pass": true
+}
