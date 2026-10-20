@@ -1,0 +1,2 @@
+7de2aa5af5d83c1008b33b68aa426cd7c338492471ba6b253d4e9594a76a5d2c  zig/kernels/hip/quant/mlx_decoder.hpp
+649fd8a56675f84a43417e66e1ad3fbeca5ece2dd5c7d6ec7fb9273aa4805fe8  zig/kernels/hip/tiles/stream.hpp

@@ -1,0 +1,27 @@
+[tensorfold] HIP rank 0 of 2: policy matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 8 snapshots 
+info: lane costs ms by window rows 1:6.39 2:6.89 3:7.68 4:8.15; shared rows 2:7.13 4:8.49 8:12.76 12:16.50 16:20.17; head step 0.552
+[tensorfold] HIP gfx1100 device 0, rank 0 of 2: Nemotron-H model 9.28 GiB, MTP head loaded; 4 streams at once, 0.39 GiB each at a 65536-token window, of 32.15 GiB left after the model and 2.0 GiB of scratch; prompt cache 30.61 GiB (124610 pages, 8 snapshots); prompts in 2048-row chunks; windows of 4 rows
+[tensorfold] serving m at http://127.0.0.1:36508/v1 (sampling: temperature 1.0, top_p 0.95; drafts: on; context: 65536; loaded in 6.2s)
+[tensorfold] thinking on (the chat template's default): replies reason in reasoning_content before the answer in content, and max_tokens counts both. --no-thinking turns it off; a request can send chat_template_kwargs {"enable_thinking": false}
+[tensorfold] 127.0.0.1 "GET /health HTTP/1.1" 200 -
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-35404d60ecbc4e611dcdc44fd21d529b prompt=15 cached=0 thinking=False effort=none tokens=256 sha=0808cf694e6f finish=length rounds=92 accepted=163/217
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-93560be3c7aed97e62d84d6e29a17b5d prompt=15 cached=0 thinking=False effort=none tokens=256 sha=0808cf694e6f finish=length rounds=89 accepted=166/238
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-ab6d4edc22516a7ebeae7204d642ffc3 prompt=15 cached=0 thinking=False effort=none tokens=256 sha=0808cf694e6f finish=length rounds=90 accepted=165/234
+[tensorfold] 127.0.0.1 "POST /v1/completions HTTP/1.1" 200 -
+[tensorfold] done cmpl-0c334c8ed73678b154aa6b6c82a488cb prompt=15 cached=0 thinking=False effort=none tokens=256 sha=0808cf694e6f finish=length rounds=90 accepted=165/234
+[tensorfold] 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" 200 -
+[tensorfold] done chatcmpl-9abcbef461a49c9aa6bb7c51d3029ebf prompt=35 cached=0 thinking=False effort=none tokens=256 sha=25c162db90ad finish=length rounds=103 accepted=152/289
+[tensorfold] 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" 200 -
+[tensorfold] done chatcmpl-7e06c55f79267ff412d2de59f6cc79be prompt=35 cached=0 thinking=False effort=none tokens=256 sha=25c162db90ad finish=length rounds=103 accepted=152/278
+[tensorfold] 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" 200 -
+[tensorfold] done chatcmpl-4b35a91062d67047af2fdc6bc830bcc8 prompt=35 cached=0 thinking=False effort=none tokens=256 sha=25c162db90ad finish=length rounds=122 accepted=133/232
+[tensorfold] 127.0.0.1 "POST /v1/chat/completions HTTP/1.1" 200 -
+[tensorfold] done chatcmpl-2d674a0329363074e32145c9c5cb567c prompt=35 cached=0 thinking=False effort=none tokens=256 sha=25c162db90ad finish=length rounds=100 accepted=155/287
+info: backend verify: 789 calls, 10213 us each
+info: backend keep: 381 calls, 30 us each
+info: backend draft: 797 calls, 1486 us each
+info: draft head: 1029 chained steps, 1824 drafts
+info: round graphs: 13 captured (10.7 ms each), 809 of 837 rounds replayed

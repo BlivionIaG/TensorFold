@@ -1,0 +1,7 @@
+<REMOTE_HOME>/hcx/streamfix/optimization/ownheads_inline729.bundle is okay
+The bundle contains these 2 refs:
+9f7d265d802cf394b4f60a142aa9d5214cdbfdbf refs/tags/validation-inline729-foundation
+f8cd5a4d72805fabe7350746ce9ba91274b54d29 refs/tags/validation-inline729-relu2
+The bundle requires this ref:
+dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5 
+The bundle uses this hash algorithm: sha1

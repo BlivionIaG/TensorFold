@@ -1,0 +1,17 @@
+{
+  "harness": {
+    "run.py": "3334e2a27696fb75358ab72a92a9e2dce19e78b713783ce7fbeb3403dd9c5c9a",
+    "ab_validate.py": "d19481929ff9f1e913b34b8f299b3ce212958dc896480ff26de0590b0a3c1dfd",
+    "capture_identity.py": "b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005",
+    "summarize.py": "d2ff1c5f31f2dd28a1f609003abe4a55f69d71f55282f40c9767ff1c6a1a4fc1"
+  },
+  "clients": {
+    "bench_openai.py": "7496ddfe6e474c1c50ef8fe6a33770e63069531f999d98acff0b8f28613e61eb",
+    "bench_evidence.py": "119c396f24f3c13e181429bc69acff39f34254efd4789c5673a3dcbc54738d93"
+  },
+  "python": {
+    "path": "<USER_HOME>/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+    "sha256": "4ae14dda295474da4b2a60c1d559dfa61449dac23151df7139dc79c19a9b9f76"
+  },
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8"
+}

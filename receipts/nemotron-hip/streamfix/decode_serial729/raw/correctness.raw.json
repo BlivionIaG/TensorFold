@@ -1,0 +1,371 @@
+{
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "baseline_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "state": "complete",
+  "stages": [
+    {
+      "name": "build_finite_gfx1100",
+      "command": [
+        "python3",
+        "<USER_HOME>/hcx/streamfix/inline_validation/build.py",
+        "<USER_HOME>/nh/sfopt",
+        "gfx1100",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1100",
+        "--hipcc",
+        "/opt/rocm/core-7.14/bin/hipcc"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 34.39,
+      "log": "build_finite_gfx1100.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build_finite_gfx1030",
+      "command": [
+        "python3",
+        "<USER_HOME>/hcx/streamfix/inline_validation/build.py",
+        "<USER_HOME>/nh/sfopt",
+        "gfx1030",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1030",
+        "--hipcc",
+        "/opt/rocm/core-7.14/bin/hipcc"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 17.405,
+      "log": "build_finite_gfx1030.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build_contract_gfx1100",
+      "command": [
+        "<USER_HOME>/hcx/zb.sh",
+        "sfopt",
+        "inline_validate_build_gfx1100.log",
+        "tf-hip-kernel-contract",
+        "-Dhip-arch=gfx1100",
+        "-Doptimize=ReleaseFast",
+        "--prefix",
+        "<USER_HOME>/nh/sfopt/out-validate-gfx1100"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 36.152,
+      "log": "build_contract_gfx1100.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "build_contract_gfx1030",
+      "command": [
+        "<USER_HOME>/hcx/zb.sh",
+        "sfopt",
+        "inline_validate_build_gfx1030.log",
+        "tf-hip-kernel-contract",
+        "-Dhip-arch=gfx1030",
+        "-Doptimize=ReleaseFast",
+        "--prefix",
+        "<USER_HOME>/nh/sfopt/out-validate-gfx1030"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 36.446,
+      "log": "build_contract_gfx1030.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "limits",
+      "command": [
+        "<USER_HOME>/hcx/zb.sh",
+        "sfopt",
+        "inline_validate_limits.log",
+        "hip-kernel-contract-limits",
+        "-Dhip-arch=gfx1100",
+        "-Doptimize=ReleaseFast"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 193.698,
+      "log": "limits.log",
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "finite_old_gfx1030",
+      "command": [
+        "<USER_HOME>/hcx/streamfix/finite_o3/builds/old_gfx1030",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/dumps/old_gfx1030"
+      ],
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "exit_status": 0,
+      "seconds": 0.465,
+      "log": "gpu_attempt3/finite_old_gfx1030.log",
+      "log_sha256": "7906f1a6ce2973a7d1b66f5dcc7b944537b19fd0e2589a796aad8b5535fc4a6f",
+      "validation_candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "62cee3544110aecd55cad62500380bdc9f402d3406200b420fb1517ced8ffa7f",
+      "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+      "devices": "2"
+    },
+    {
+      "name": "finite_old_gfx1100",
+      "command": [
+        "<USER_HOME>/hcx/streamfix/finite_o3/builds/old_gfx1100",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/dumps/old_gfx1100"
+      ],
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "exit_status": 0,
+      "seconds": 0.665,
+      "log": "gpu_attempt3/finite_old_gfx1100.log",
+      "log_sha256": "7906f1a6ce2973a7d1b66f5dcc7b944537b19fd0e2589a796aad8b5535fc4a6f",
+      "validation_candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "fae878d1cd90a2e7acb73cb327c0c5aa164035a1e2cb9902290dc5158e44df41",
+      "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+      "devices": "0"
+    },
+    {
+      "name": "finite_new_gfx1030",
+      "command": [
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1030",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/dumps/new_gfx1030"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 0.465,
+      "log": "gpu_attempt3/finite_new_gfx1030.log",
+      "log_sha256": "7906f1a6ce2973a7d1b66f5dcc7b944537b19fd0e2589a796aad8b5535fc4a6f",
+      "validation_candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "5163db6f1813f78799e299a67f51b565f81caf7db81885269dc834dc4d3c71fd",
+      "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+      "devices": "2"
+    },
+    {
+      "name": "compare_gfx1030",
+      "command": [
+        "python3",
+        "<USER_HOME>/hcx/streamfix/inline_validation/compare.py",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/dumps/old_gfx1030",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/dumps/new_gfx1030",
+        "<USER_HOME>/hcx/streamfix/finite_o3/builds/old_gfx1030.json",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1030.json",
+        "--output",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/comparison_gfx1030.json",
+        "--expected-candidate",
+        "729833615595df66c9f9a438ce9a85061843f010"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 0.114,
+      "log": "gpu_attempt3/compare_gfx1030.log",
+      "log_sha256": "26e21e8656cda7724ec7dc943296ab305b081b4af35cad2e7d00a27144e80fdc"
+    },
+    {
+      "name": "finite_new_gfx1100",
+      "command": [
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1100",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/dumps/new_gfx1100"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 0.716,
+      "log": "gpu_attempt3/finite_new_gfx1100.log",
+      "log_sha256": "7906f1a6ce2973a7d1b66f5dcc7b944537b19fd0e2589a796aad8b5535fc4a6f",
+      "validation_candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "a03f7e145660eb5fcad1817367b0d3cde2ba0ba9561af2ec86bb8b66baa076b3",
+      "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+      "devices": "0"
+    },
+    {
+      "name": "compare_gfx1100",
+      "command": [
+        "python3",
+        "<USER_HOME>/hcx/streamfix/inline_validation/compare.py",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/dumps/old_gfx1100",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/dumps/new_gfx1100",
+        "<USER_HOME>/hcx/streamfix/finite_o3/builds/old_gfx1100.json",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1100.json",
+        "--output",
+        "<USER_HOME>/hcx/streamfix/optimization/correctness729833/gpu_attempt3/comparison_gfx1100.json",
+        "--expected-candidate",
+        "729833615595df66c9f9a438ce9a85061843f010"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 0.114,
+      "log": "gpu_attempt3/compare_gfx1100.log",
+      "log_sha256": "8614e605eeb4fe04fdbf8458d56d8e01ece518f3c983bef10b592603d7c9613e"
+    },
+    {
+      "name": "contracts_gfx1100",
+      "command": [
+        "<USER_HOME>/nh/sfopt/out-validate-gfx1100/bin/tf-hip-kernel-contract"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 139.092,
+      "log": "gpu_attempt3/contracts_gfx1100.log",
+      "log_sha256": "b7b20da40b8d997f36c3299a7bb699179672101e17532838f3ad421a56704822",
+      "binary_sha256": "577551dfa98b0cd7e627083920fac4bb4d246766d949bc2058d4a0e402f2c483",
+      "devices": "0",
+      "summary": "SUMMARY gfx1100 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 133464 ms, limits 4989 ms",
+      "controls": "all original five plants red; no other FAIL"
+    },
+    {
+      "name": "contracts_gfx1030",
+      "command": [
+        "<USER_HOME>/nh/sfopt/out-validate-gfx1030/bin/tf-hip-kernel-contract"
+      ],
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "exit_status": 0,
+      "seconds": 141.929,
+      "log": "gpu_attempt3/contracts_gfx1030.log",
+      "log_sha256": "a1b7c0369b15b7d24417d0dc5923a9a40cae9d78d44f7c31efe4580b20ac23d7",
+      "binary_sha256": "caabe78b868d9317601663b603dc87d6a6f4ba163498971baab2c5a259f309a3",
+      "devices": "2",
+      "summary": "SUMMARY gfx1030 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 137076 ms, limits 4250 ms",
+      "controls": "all original five plants red; no other FAIL"
+    }
+  ],
+  "resources_binding_sha256": "a07e0e86a4b0d9a9e8cef6f45e96cd048e1f9dfb035a7b5a06c8f2434358e7c9",
+  "allocation_sha256": "e1ea0a3e8e1535fc6e6142cffae9f714aee076c054aa8b43c9dc7c6769a7253f",
+  "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+  "four_chip_limits_sha256": "a5ea4ed5dab4f105f5f68fe210babe6665ced89faecf427a7b2cf8730168789d",
+  "resumed_after_infrastructure_parser_failure": true,
+  "archived_infrastructure_attempts": [
+    {
+      "result": "attempt1/result.json",
+      "sha256": "50e4f32051ac25f97b2654271ddfd40aa833fc7d10caceaae3ae9ac9a45cad4c",
+      "reason": "compiler log parser matched host aux-triple; no GPU stages"
+    },
+    {
+      "result": "attempt2/result.json",
+      "sha256": "080e8934fd9b64af9f50c2bd65394789c52accd01b4fbe7610034aaf64b56b9e",
+      "reason": "comparator rejected new source before byte checks; successful finite GPU stages preserved in archive",
+      "stages": [
+        {
+          "name": "finite_old_gfx1030",
+          "command": [
+            "<USER_HOME>/hcx/streamfix/finite_o3/builds/old_gfx1030",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/dumps/old_gfx1030"
+          ],
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "exit_status": 0,
+          "seconds": 0.415,
+          "log": "finite_old_gfx1030.log",
+          "log_sha256": "7906f1a6ce2973a7d1b66f5dcc7b944537b19fd0e2589a796aad8b5535fc4a6f",
+          "validation_candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "binary_sha256": "62cee3544110aecd55cad62500380bdc9f402d3406200b420fb1517ced8ffa7f",
+          "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+          "devices": "2"
+        },
+        {
+          "name": "finite_old_gfx1100",
+          "command": [
+            "<USER_HOME>/hcx/streamfix/finite_o3/builds/old_gfx1100",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/dumps/old_gfx1100"
+          ],
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "exit_status": 0,
+          "seconds": 0.616,
+          "log": "finite_old_gfx1100.log",
+          "log_sha256": "7906f1a6ce2973a7d1b66f5dcc7b944537b19fd0e2589a796aad8b5535fc4a6f",
+          "validation_candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "binary_sha256": "fae878d1cd90a2e7acb73cb327c0c5aa164035a1e2cb9902290dc5158e44df41",
+          "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+          "devices": "0"
+        },
+        {
+          "name": "finite_new_gfx1030",
+          "command": [
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1030",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/dumps/new_gfx1030"
+          ],
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "exit_status": 0,
+          "seconds": 0.415,
+          "log": "finite_new_gfx1030.log",
+          "log_sha256": "7906f1a6ce2973a7d1b66f5dcc7b944537b19fd0e2589a796aad8b5535fc4a6f",
+          "validation_candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "binary_sha256": "5163db6f1813f78799e299a67f51b565f81caf7db81885269dc834dc4d3c71fd",
+          "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+          "devices": "2"
+        },
+        {
+          "name": "compare_gfx1030",
+          "command": [
+            "python3",
+            "<USER_HOME>/hcx/streamfix/inline_validation/compare.py",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/dumps/old_gfx1030",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/dumps/new_gfx1030",
+            "<USER_HOME>/hcx/streamfix/finite_o3/builds/old_gfx1030.json",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1030.json",
+            "--output",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/comparison_gfx1030.json"
+          ],
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "exit_status": 1,
+          "seconds": 0.114,
+          "log": "compare_gfx1030.log",
+          "log_sha256": "55f969f1fc5213004eca7921c834b96a56f21b399e5d4d3001e5fe2b82057f81"
+        },
+        {
+          "name": "finite_new_gfx1100",
+          "command": [
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1100",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/dumps/new_gfx1100"
+          ],
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "exit_status": 0,
+          "seconds": 0.716,
+          "log": "finite_new_gfx1100.log",
+          "log_sha256": "7906f1a6ce2973a7d1b66f5dcc7b944537b19fd0e2589a796aad8b5535fc4a6f",
+          "validation_candidate_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "binary_sha256": "a03f7e145660eb5fcad1817367b0d3cde2ba0ba9561af2ec86bb8b66baa076b3",
+          "harness_sha256": "725bb8efa17532c15b3bc20df9f21491953f53377f8aab1ce909b892bfef2606",
+          "devices": "0"
+        },
+        {
+          "name": "compare_gfx1100",
+          "command": [
+            "python3",
+            "<USER_HOME>/hcx/streamfix/inline_validation/compare.py",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/dumps/old_gfx1100",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/dumps/new_gfx1100",
+            "<USER_HOME>/hcx/streamfix/finite_o3/builds/old_gfx1100.json",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/builds/new_gfx1100.json",
+            "--output",
+            "<USER_HOME>/hcx/streamfix/optimization/correctness729833/comparison_gfx1100.json"
+          ],
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "exit_status": 1,
+          "seconds": 0.114,
+          "log": "compare_gfx1100.log",
+          "log_sha256": "55f969f1fc5213004eca7921c834b96a56f21b399e5d4d3001e5fe2b82057f81"
+        }
+      ]
+    }
+  ],
+  "architectures": [
+    {
+      "arch": "gfx1100",
+      "devices": "0",
+      "finite_fixtures": 1080,
+      "finite_nan_controls": 60,
+      "byte_mismatches": 0,
+      "comparison_path": "gpu_attempt3/comparison_gfx1100.json",
+      "comparison_sha256": "5dfd97292c848560d40a048344a212faeaed722f5c52a94bde26f6a99d13d2a7",
+      "summary": "SUMMARY gfx1100 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 133464 ms, limits 4989 ms",
+      "contract_binary_sha256": "577551dfa98b0cd7e627083920fac4bb4d246766d949bc2058d4a0e402f2c483"
+    },
+    {
+      "arch": "gfx1030",
+      "devices": "2",
+      "finite_fixtures": 540,
+      "finite_nan_controls": 24,
+      "byte_mismatches": 0,
+      "comparison_path": "gpu_attempt3/comparison_gfx1030.json",
+      "comparison_sha256": "478539b455c604dafe1ffadf852af03e7666591a655b553860071e3b46572b0c",
+      "summary": "SUMMARY gfx1030 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 137076 ms, limits 4250 ms",
+      "contract_binary_sha256": "caabe78b868d9317601663b603dc87d6a6f4ba163498971baab2c5a259f309a3"
+    }
+  ],
+  "pass": true
+}

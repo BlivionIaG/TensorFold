@@ -1,0 +1,1187 @@
+zig-windows	UNKNOWN STEP	﻿2026-10-19T23:38:09.5703196Z Current runner version: '2.337.0'
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5731605Z ##[group]Runner Image Provisioner
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5732726Z Hosted Compute Agent
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5733677Z Version: 20261002.596
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5734667Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5735822Z Build Date: 2026-10-02T22:28:27Z
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5737254Z Worker ID: {5b8dd8b6-86b0-492b-baa0-cb8057087eb2}
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5738454Z Region: westus2
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5739253Z Cloud: Azure
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5740011Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5741615Z ##[group]Operating System
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5742267Z Microsoft Windows Server 2025
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5742923Z 10.0.26100
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5743409Z Datacenter
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5743940Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5744482Z ##[group]Runner Image
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5745069Z Image: windows-2025-vs2026
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5745843Z Version: 20261007.264.1
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5747749Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20261007.264/images/windows/Windows2025-VS2026-Readme.md
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5751129Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20261007.264
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5752945Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5754907Z ##[group]GITHUB_TOKEN Permissions
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5758609Z Contents: read
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5759601Z Metadata: read
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5760525Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5763840Z Secret source: None
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5765299Z Cache mode: write
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.5766611Z Prepare workflow directory
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.6156050Z Prepare all required actions
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.6205633Z Getting action download info
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:09.9826521Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:10.1210892Z Download action repository 'mlugg/setup-zig@v2' (SHA:d1434d08867e3ee9daa34448df10607b98908d29)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.5377112Z Complete job name: zig-windows
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7037193Z ##[group]Run actions/checkout@v4
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7038779Z with:
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7039063Z   repository: ashhart/TensorFold
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7041977Z   token: ***
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7042228Z   ssh-strict: true
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7042481Z   ssh-user: git
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7042728Z   persist-credentials: true
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7043002Z   clean: true
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7043251Z   sparse-checkout-cone-mode: true
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7043543Z   fetch-depth: 1
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7043790Z   fetch-tags: false
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7044045Z   show-progress: true
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7044311Z   lfs: false
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7044558Z   submodules: false
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7044806Z   set-safe-directory: true
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7045103Z   allow-unsafe-pr-checkout: false
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.7045651Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.8587454Z Syncing repository: ashhart/TensorFold
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.8588977Z ##[group]Getting Git version info
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.8589477Z Working directory is 'D:\a\TensorFold\TensorFold'
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:15.9561661Z [command]"C:\Program Files\Git\bin\git.exe" version
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.2855572Z git version 2.56.0.windows.2
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.2921076Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.2943045Z Temporarily overriding HOME='D:\a\_temp\30cbe797-d00f-4303-a610-5f68414d80f7' before making global git config changes
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.2944233Z Adding repository directory to the temporary git global config as a safe directory
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.2954152Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\TensorFold\TensorFold
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.3679379Z Deleting the contents of 'D:\a\TensorFold\TensorFold'
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.3685167Z ##[group]Initializing the repository
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.3695324Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\TensorFold\TensorFold
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.4714972Z Initialized empty Git repository in D:/a/TensorFold/TensorFold/.git/
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.4768664Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/ashhart/TensorFold
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.5562114Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.5562658Z ##[group]Disabling automatic garbage collection
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.5572993Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.6002332Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.6002832Z ##[group]Setting up auth
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.6016513Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:16.6446566Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:18.1716429Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:18.2135613Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:18.8503108Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:18.8932434Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:19.5000909Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:19.5444062Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:19.5444506Z ##[group]Fetching the repository
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:19.5458343Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +9a5a4f7dbaaaf12e1592cb13f0882251e44ee63a:refs/remotes/pull/1099/merge
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.4235995Z From https://github.com/ashhart/TensorFold
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.4237194Z  * [new ref]         9a5a4f7dbaaaf12e1592cb13f0882251e44ee63a -> pull/1099/merge
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.4282132Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.4282861Z ##[group]Determining the checkout info
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.4286019Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.4296223Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.4875580Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.5301405Z ##[group]Checking out the ref
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:22.5309696Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/remotes/pull/1099/merge
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.6077108Z Updating files:  53% (3533/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.6256957Z Updating files:  54% (3572/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.6442575Z Updating files:  55% (3638/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.6645949Z Updating files:  56% (3704/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.6851972Z Updating files:  57% (3770/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.7001655Z Updating files:  58% (3837/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.7181673Z Updating files:  59% (3903/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.7446113Z Updating files:  60% (3969/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.7614741Z Updating files:  61% (4035/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.7786517Z Updating files:  62% (4101/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.7967721Z Updating files:  63% (4167/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.8287240Z Updating files:  64% (4233/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.8486280Z Updating files:  65% (4300/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.8678296Z Updating files:  66% (4366/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.8867191Z Updating files:  67% (4432/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.9166881Z Updating files:  68% (4498/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.9369468Z Updating files:  69% (4564/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.9567893Z Updating files:  70% (4630/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.9814059Z Updating files:  71% (4696/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:23.9994881Z Updating files:  72% (4763/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.0180625Z Updating files:  73% (4829/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.2795221Z Updating files:  74% (4895/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.2977124Z Updating files:  75% (4961/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.3148348Z Updating files:  76% (5027/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.3336554Z Updating files:  77% (5093/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.3513065Z Updating files:  78% (5159/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.3682618Z Updating files:  79% (5226/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.3850364Z Updating files:  80% (5292/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.4022040Z Updating files:  81% (5358/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.4198168Z Updating files:  82% (5424/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.4394385Z Updating files:  83% (5490/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.4615660Z Updating files:  84% (5556/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.4803990Z Updating files:  85% (5622/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.4986779Z Updating files:  86% (5689/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.5159147Z Updating files:  87% (5755/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.5346018Z Updating files:  88% (5821/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.5525735Z Updating files:  89% (5887/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.5776529Z Updating files:  90% (5953/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.5986343Z Updating files:  91% (6019/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.6172744Z Updating files:  92% (6085/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.6335944Z Updating files:  93% (6152/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.6477891Z Updating files:  94% (6218/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.6604361Z Updating files:  95% (6284/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.6744336Z Updating files:  96% (6350/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.6878867Z Updating files:  97% (6416/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7014275Z Updating files:  98% (6482/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7179448Z Updating files:  99% (6548/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7179802Z Updating files: 100% (6614/6614)
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7180056Z Updating files: 100% (6614/6614), done.
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7346650Z Note: switching to 'refs/remotes/pull/1099/merge'.
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7346929Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7347164Z You are in 'detached HEAD' state. You can look around, make experimental
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7348685Z changes and commit them, and you can discard any commits you make in this
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7349449Z state without impacting any branches by switching back to a branch.
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7350198Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7350515Z If you want to create a new branch to retain commits you create, you may
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7351277Z do so (now or later) by using -c with the switch command. Example:
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7351645Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7351763Z   git switch -c <new-branch-name>
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7351942Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7352032Z Or undo this operation with:
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7352186Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7352260Z   git switch -
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7352371Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7352578Z Turn off this advice by setting config variable advice.detachedHead to false
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7352881Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7353230Z HEAD is now at 9a5a4f7 Merge b25f13001942ee1cfa68a1c44be81d81d4fb42ea into d1018b318fb51981c4a18f12e40269a4d3ee9713
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.7516257Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.8093331Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.8474580Z 9a5a4f7dbaaaf12e1592cb13f0882251e44ee63a
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.8976466Z ##[group]Run mlugg/setup-zig@v2
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.8976847Z with:
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.8977065Z   version: 0.17.0
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.8977307Z   use-cache: true
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.8977549Z   cache-size-limit: 2048
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:24.8977804Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:25.2639884Z Using tool-cache: false
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:25.2646024Z Fetching zig-x86_64-windows-0.17.0.zip
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:25.6704422Z Cache miss. Fetching Zig 0.17.0
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:26.2607051Z Available mirrors: https://pkg.hexops.org/zig, https://zigmirror.hryx.net/zig, https://zig.linus.dev/zig, https://zig.squirl.dev, https://zig.mirror.mschae23.de/zig, https://ziglang.freetls.fastly.net, https://zig.tilok.dev, https://zig-mirror.tsimnet.eu/zig, https://zig.karearl.com/zig, https://pkg.earth/zig, https://fs.liujiacai.net/zigbuilds, https://zigmirror.com, https://zig.chainsafe.dev, https://zig.savalione.com, https://zig.bcr.ist, https://zig.vortan.dev/zig, https://pkg.alexrp.com/zig
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:26.2610876Z Attempting mirror: https://pkg.earth/zig
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:32.6116443Z [command]"C:\Program Files\Git\usr\bin\tar.exe" --posix -cf cache.tzst --exclude cache.tzst -P -C D:/a/TensorFold/TensorFold --files-from manifest.txt --force-local --use-compress-program "zstd -T0"
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:34.2788316Z Sent 11010048 of 94448830 (11.7%), 10.4 MBs/sec
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:35.2787134Z Sent 84082688 of 94448830 (89.0%), 40.0 MBs/sec
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:36.2225097Z Sent 94448830 of 94448830 (100.0%), 30.5 MBs/sec
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:36.5054318Z Fetch took 11241 ms
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:36.5054860Z Extracting tarball zig-x86_64-windows-0.17.0.zip
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:36.6099730Z [command]"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Unrestricted -Command "$ErrorActionPreference = 'Stop' ; try { Add-Type -AssemblyName System.IO.Compression.ZipFile } catch { } ; try { [System.IO.Compression.ZipFile]::ExtractToDirectory('D:\a\_temp\zig-x86_64-windows-0.17.0.zip', 'D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77', $true) } catch { if (($_.Exception.GetType().FullName -eq 'System.Management.Automation.MethodException') -or ($_.Exception.GetType().FullName -eq 'System.Management.Automation.RuntimeException') ){ Expand-Archive -LiteralPath 'D:\a\_temp\zig-x86_64-windows-0.17.0.zip' -DestinationPath 'D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77' -Force } else { throw $_ } } ;"
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.3647172Z Extract took 6859 ms
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.4491974Z [command]D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\zig.exe version
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.5629854Z 0.17.0
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.5684154Z Resolved Zig version 0.17.0
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.5697094Z Attempting restore of Zig cache with prefix 'setup-zig-cache-v2-zig_windows-zig-x86_64-windows-0.17.0--'
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.8864447Z Cache miss: leaving Zig cache directory at D:\a\TensorFold\TensorFold\.zig-cache unpopulated
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.9205749Z ##[group]Run zig build test
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.9206324Z ^[[36;1mzig build test^[[0m
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.9917246Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.9917824Z env:
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.9918189Z   ZIG_GLOBAL_CACHE_DIR: D:\a\TensorFold\TensorFold\.zig-cache
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.9918751Z   ZIG_LOCAL_CACHE_DIR: D:\a\TensorFold\TensorFold\.zig-cache
+zig-windows	UNKNOWN STEP	2026-10-19T23:38:43.9919190Z ##[endgroup]
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6714706Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6715591Z +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6716441Z    +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6717335Z zig\src\core\digest_key.zig:34:42: error: expected type 'u128', found 'i64'
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6719080Z         return .{ .device = 0, .inode = s.inode, .size = s.size, .mtime = s.mtime.toNanoseconds(), .ctime = s.ctime.toNanoseconds() };
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6720234Z                                         ~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6721556Z zig\src\core\digest_key.zig:34:42: note: unsigned 128-bit int cannot represent all possible signed 64-bit values
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6722529Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6723229Z     finishWithStats: zig\src\core\checkpoint_identity.zig:279:51
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6724886Z     test.whole and split consumers share cached file digests and still check manifests: zig\src\core\checkpoint_identity_test.zig:136:93
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6726710Z     1 reference(s) hidden; use '-freference-trace=3' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6727557Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6732633Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\core\\checkpoint_identity.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:06.6737679Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:12.0138163Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:12.0145729Z +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:12.0157425Z [default] (warn): lm_head is 8-bit in groups of 64: CUDA reads Nemotron MLX checkpoints at 4-bit in groups of 64 only; mixed and 6- or 8-bit (oQ) checkpoints serve on Macs
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:12.0169771Z [default] (warn): backbone.embeddings is 8-bit in groups of 64: the Intel GPU engine reads Nemotron MLX checkpoints at 4-bit in groups of 64 only; mixed and 6- or 8-bit (oQ) checkpoints serve on Macs
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:12.0178792Z failed command: ".\\.zig-cache\\o\\d45c8c45495f651bd2207c98fc37e981\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:12.0193703Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5471736Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5472539Z +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5473166Z    +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5474790Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5476675Z     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5477582Z                                 ^~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5478802Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5479993Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5480666Z     capture: zig\src\families\nemotron\hip\engine.zig:314:28
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5481602Z     round: zig\src\families\nemotron\hip\engine.zig:307:25
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5483141Z     2 reference(s) hidden; use '-freference-trace=4' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5487150Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5497415Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep hip --dep lanes --dep core --dep engine_api --dep hip_serve --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\nemotron\\hip.zig" -Odebug --dep core --dep hip_kernels --dep cuda_memory --dep sys --dep checkpoint_config --dep save_guard "-Mhip=zig\\src\\hip\\root.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" --dep gpu_memory --dep tokenizer --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mengine_api=zig\\src\\core\\engine_api.zig" -Odebug --dep hip --dep lanes --dep engine_api --dep sys --dep checkpoint_config --dep save_guard "-Mhip_serve=zig\\src\\hip_serve\\serve.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" "-Mhip_kernels=.zig-cache\\o\\943b4b5a4ce7d8ea1e4170c9068eeb34\\kernels.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mcuda_memory=zig\\src\\native\\cuda_memory.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:36.5508396Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:39.0087730Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:39.0088178Z +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:39.0088788Z [default] (warn): a round could not be recorded: OutOfDeviceMemory
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:39.0091611Z failed command: ".\\.zig-cache\\o\\8686a200989a935dc69660610b8b3c52\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:42:39.0092531Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6442578Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6443042Z +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6443471Z    +- compile test debug native 16 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6444789Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:4535:23: error: root source file struct 'os.windows.ws2_32' has no member named 'pollfd'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6446197Z     .windows => ws2_32.pollfd,
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6446690Z                 ~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6448111Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\os\windows\ws2_32.zig:1:1: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6449701Z const std = @import("../../std.zig");
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6450269Z ^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6451017Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6451613Z     waitReadable: zig\src\fabric\tp\sock.zig:128:21
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6452322Z     accept: zig\src\fabric\tp\sock.zig:51:25
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6453164Z     3 reference(s) hidden; use '-freference-trace=5' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6454769Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:5003:23: error: root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6456187Z     .windows => ws2_32.addrinfo,
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6456765Z                 ~~~~~~^~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6457806Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\os\windows\ws2_32.zig:1:1: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6458996Z const std = @import("../../std.zig");
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6459517Z ^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6460831Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11069:45: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6463749Z pub extern "c" fn open(path: [*:0]const u8, oflag: O, ...) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6464543Z                                             ^~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6465580Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11069:45: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6467443Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6469452Z     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6470220Z                                 ^~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6471695Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6473726Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6475392Z     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6476202Z                                 ^~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6477299Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6478706Z zig\src\fabric\tp\bootstrap.zig:23:38: error: expected type '*anyopaque', found 'comptime_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6479652Z     fds: [max_ranks]sock.Fd = @splat(-1),
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6480378Z                                      ^~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6481471Z zig\src\fabric\tp\bootstrap.zig:106:96: error: incompatible types: '*anyopaque' and 'comptime_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6482781Z         for ([_]*[max_ranks]sock.Fd{ &b.fds, &b.plan_fds }) |table| for (table) |*fd| if (fd.* >= 0) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6484132Z                                                                                           ~~~~~^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6484985Z zig\src\fabric\tp\bootstrap.zig:106:93: note: type '*anyopaque' here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6485995Z         for ([_]*[max_ranks]sock.Fd{ &b.fds, &b.plan_fds }) |table| for (table) |*fd| if (fd.* >= 0) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6486625Z                                                                                           ~~^~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6487115Z zig\src\fabric\tp\bootstrap.zig:106:99: note: type 'comptime_int' here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6487687Z         for ([_]*[max_ranks]sock.Fd{ &b.fds, &b.plan_fds }) |table| for (table) |*fd| if (fd.* >= 0) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6488217Z                                                                                                   ^
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6488904Z zig\src\fabric\tp\bootstrap.zig:315:68: error: expected type '*anyopaque', found 'comptime_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6490106Z     try std.testing.expectError(error.Protocol, Bootstrap.acceptOn(-1, max_ranks + 1, 0));
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6490927Z                                                                    ^~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6492058Z zig\src\fabric\tp\bootstrap.zig:56:28: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6493080Z     pub fn acceptOn(l: sock.Fd, world: u32, timeout_ns: u64) Error!Bootstrap {
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6493855Z                        ~~~~^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6494614Z zig\src\fabric\tp\fate.zig:46:27: error: expected type '*anyopaque', found 'comptime_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6495463Z     wake: [2]sock.Fd = .{ -1, -1 },
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6496040Z                           ^~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6496805Z zig\src\fabric\tp\fate.zig:283:47: error: expected type '*anyopaque', found 'comptime_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6497708Z     var f = Fate.init(.{ .world = 1 }, @splat(-1));
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6498332Z                                               ^~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6499236Z zig\src\fabric\tp\fate_test.zig:35:48: error: expected type '*anyopaque', found 'comptime_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6500447Z     var fds0: [fate.max_ranks]sock.Fd = @splat(-1);
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6501059Z                                                ^~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6501515Z zig\src\fabric\tp\sock.zig:17:36: error: expected integer or vector, found 'void'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6502189Z     var ts: c.timespec = .{ .sec = @intCast(ns / std.time.ns_per_s), .nsec = @intCast(ns % std.time.ns_per_s) };
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6502730Z                                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6503189Z zig\src\fabric\tp\sock.zig:38:17: error: expected type '*anyopaque', found 'c_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6503733Z     _ = c.fcntl(fd, posix.F.SETFD, @as(c_int, posix.FD_CLOEXEC));
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6504193Z                 ^~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6505215Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11148:29: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6505987Z pub extern "c" fn fcntl(fd: fd_t, cmd: c_int, ...) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6506710Z                             ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6507470Z zig\src\fabric\tp\sock.zig:54:25: error: expected type '*anyopaque', found 'c_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6508417Z             _ = c.fcntl(conn, posix.F.SETFD, @as(c_int, posix.FD_CLOEXEC));
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6509129Z                         ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6510301Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11148:29: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6511910Z pub extern "c" fn fcntl(fd: fd_t, cmd: c_int, ...) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6512582Z                             ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6513427Z zig\src\fabric\tp\sock.zig:116:72: error: struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6514706Z         const n = c.send(fd, bytes[at..].ptr, bytes.len - at, posix.MSG.NOSIGNAL | posix.MSG.DONTWAIT);
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6515865Z                                                               ~~~~~~~~~^~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6517104Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\os\windows\ws2_32.zig:144:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6518293Z pub const MSG = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6518771Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6519680Z zig\src\fabric\tp\sock.zig:138:74: error: struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6520351Z         const n = c.send(fd, bytes[off..].ptr, bytes.len - off, posix.MSG.NOSIGNAL);
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6521229Z                                                                 ~~~~~~~~~^~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6522269Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\os\windows\ws2_32.zig:144:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6523027Z pub const MSG = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6523492Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6524015Z error: 16 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6529433Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep cuda --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\fabric\\tp\\portable_test.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:43:56.6535740Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0185421Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0186068Z +- compile exe tensorfold-native safe native 2 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0187534Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0189037Z     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0189756Z                                 ^~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0191512Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0192542Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0193072Z     capture: zig\src\families\nemotron\hip\engine.zig:314:28
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0193879Z     round: zig\src\families\nemotron\hip\engine.zig:307:25
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0194731Z     12 reference(s) hidden; use '-freference-trace=14' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0195663Z zig\src\server\speech.zig:279:27: error: expected type '*anyopaque', found 'isize'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0196736Z     _ = std.c.setsockopt(c.fd, std.posix.IPPROTO.TCP, std.posix.TCP.NODELAY, &one, @sizeOf(c_int));
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0197623Z                          ~^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0198602Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11161:38: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0200054Z pub extern "c" fn setsockopt(sockfd: fd_t, level: i32, optname: u32, optval: ?*const anyopaque, optlen: socklen_t) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0200771Z                                      ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0201136Z error: 2 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0214155Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" build-exe -Osafe --dep engine_api --dep tokenizer --dep template --dep native_engines --dep checkpoint_cli --dep build_options --dep living --dep json --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\server\\main.zig" -Odebug --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mengine_api=zig\\src\\core\\engine_api.zig" --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Osafe --dep sys --dep checkpoint_config --dep save_guard "-Mtemplate=zig\\src\\core\\template\\template.zig" -Odebug --dep hip --dep engine_api --dep lanes --dep qwen3_5 --dep flashnext --dep nemotron --dep sys --dep checkpoint_config --dep save_guard "-Mnative_engines=zig\\src\\native\\hip.zig" -Osafe --dep native_engines --dep exlr8 --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mcheckpoint_cli=zig\\src\\cli\\cli.zig" "-Mbuild_options=.zig-cache\\o\\ca6d62a0fa78b1deb9f9e0a9dc776005\\options.zig" -Osafe --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -Osafe --dep sys --dep checkpoint_config --dep save_guard "-Mjson=zig\\src\\server\\json.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep core --dep hip_kernels --dep cuda_memory --dep sys --dep checkpoint_config --dep save_guard "-Mhip=zig\\src\\hip\\root.zig" -Odebug --dep hip --dep core --dep lanes --dep engine_api --dep hip_serve --dep sys --dep checkpoint_config --dep save_guard "-Mqwen3_5=zig\\src\\families\\qwen3_5\\hip.zig" -Odebug --dep hip --dep lanes --dep core --dep engine_api --dep hip_serve --dep sys --dep checkpoint_config --dep save_guard "-Mflashnext=zig\\src\\families\\flashnext\\hip.zig" -Odebug --dep hip --dep lanes --dep core --dep engine_api --dep hip_serve --dep sys --dep checkpoint_config --dep save_guard "-Mnemotron=zig\\src\\families\\nemotron\\hip.zig" -Osafe --dep core "-Mexlr8=.zig-cache\\o\\5c576d3285657ce8d2438945e38b4605\\exlr8_alias.zig" --dep gpu_memory --dep tokenizer --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" "-Mhip_kernels=.zig-cache\\o\\943b4b5a4ce7d8ea1e4170c9068eeb34\\kernels.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mcuda_memory=zig\\src\\native\\cuda_memory.zig" -Odebug --dep hip --dep lanes --dep engine_api --dep sys --dep checkpoint_config --dep save_guard "-Mhip_serve=zig\\src\\hip_serve\\serve.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" -lc -fno-emit-bin --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name tensorfold-native --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:03.0226986Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4566638Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4567483Z +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4568174Z    +- compile test debug native
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4568810Z       +- options
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4569569Z          +- compile exe digest-writer debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4570543Z zig\src\core\digest_key.zig:34:42: error: expected type 'u128', found 'i64'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4572603Z         return .{ .device = 0, .inode = s.inode, .size = s.size, .mtime = s.mtime.toNanoseconds(), .ctime = s.ctime.toNanoseconds() };
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4573795Z                                         ~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4574883Z zig\src\core\digest_key.zig:34:42: note: unsigned 128-bit int cannot represent all possible signed 64-bit values
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4611991Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4618160Z     get__func_25: zig\src\core\digest_cache.zig:25:34
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4620650Z     main: zig\src\core\digest_cache_probe.zig:29:50
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4622961Z     4 reference(s) hidden; use '-freference-trace=6' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4624006Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4626508Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" build-exe -Odebug "-Mroot=zig\\src\\core\\digest_cache_probe.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name digest-writer --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:04.4629731Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2196301Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2196768Z +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2197775Z [default] (warn): lane host: stopping at a round boundary: 2 running and 1 queued request(s) end (server restarting: retry shortly)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2199324Z [default] (warn): lane host: stopping at a round boundary: 1 running and 1 queued request(s) end (server restarting: retry shortly)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2200921Z [default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2201915Z [default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2202799Z [default] (warn): 4 prompts together: SamplingRefused; each goes alone
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2203721Z [default] (warn): lane host: a round failed (the planner refused): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2204767Z [default] (warn): lane host: a round failed (PlannerFull): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2205954Z [default] (warn): lane host: stopping at a round boundary: 1 running and 1 queued request(s) end (drain deadline)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2207212Z [default] (warn): lane host: stopping at a round boundary: 0 running and 1 queued request(s) end (NoContext)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2208329Z [default] (warn): lane host: a round failed (OutOfMemory): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2209365Z [default] (warn): lane host: a round failed (AdmittedFailed): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2210698Z [default] (warn): lane host: a round failed (FinalsFailed): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2212045Z failed command: ".\\.zig-cache\\o\\db63e78a6a670da72e271f2c9309f48b\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:05.2212967Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:18.9846600Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.0188072Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.0313955Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.0563612Z       +- compile test debug native 5 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.0711349Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:22:26: error: unsupported platform
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.0863852Z             const open = @compileError("unsupported platform");
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.1226730Z                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.1386165Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.1977588Z     open: D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:36:45
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.2770761Z     open: zig\src\core\picture\webp.zig:69:29
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.3204930Z     9 reference(s) hidden; use '-freference-trace=11' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.3923165Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:51:26: error: no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_1304'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.4084612Z         return self.inner.close();
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.4579963Z                ~~~~~~~~~~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.4944820Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.5129843Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.5460208Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.5583855Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_1304'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.5747036Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.5796201Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.5871526Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6028655Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6031375Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6036422Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_1304'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6040911Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6042544Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6053868Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6078233Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6142179Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6177805Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_1304'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6266558Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6478473Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6584632Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6630444Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6754825Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6789708Z error: 5 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.6996682Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep cuda --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\lfm2\\lfm2.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.7053781Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.7147505Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.7245051Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.7281543Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.7717056Z       +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.8562040Z zig\src\core\digest_key.zig:34:42: error: expected type 'u128', found 'i64'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.8843565Z         return .{ .device = 0, .inode = s.inode, .size = s.size, .mtime = s.mtime.toNanoseconds(), .ctime = s.ctime.toNanoseconds() };
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.8974803Z                                         ~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.9432843Z zig\src\core\digest_key.zig:34:42: note: unsigned 128-bit int cannot represent all possible signed 64-bit values
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:19.9912836Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:20.0285512Z     checkpoint: zig\src\families\qwen3_5\cuda_cost_identity.zig:38:51
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:20.0426851Z     identity__func_867: zig\src\families\qwen3_5\cuda_cost_adapter.zig:26:48
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:20.0510195Z     2 reference(s) hidden; use '-freference-trace=4' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:20.0609700Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:20.1421983Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test --dep native --dep engine_api --dep qwen35 --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\qwen35_cost_open_host.zig" -Odebug --dep cuda --dep engine_api --dep lanes --dep nemotron --dep drama3 --dep lfm2 --dep core --dep flashnext --dep glm_cuda --dep qwen35 --dep kolibri1 --dep sys --dep checkpoint_config --dep save_guard "-Mnative=zig\\src\\native\\cuda.zig" -Odebug --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mengine_api=zig\\src\\core\\engine_api.zig" -Odebug --dep living --dep nemotron --dep cuda --dep core --dep lanes --dep qwen_vision --dep sys --dep checkpoint_config --dep save_guard "-Mqwen35=zig\\src\\families\\qwen3_5\\cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep living --dep cuda --dep core --dep lanes --dep heat --dep nemotron_draft_ids --dep radio --dep sys --dep checkpoint_config --dep save_guard "-Mnemotron=zig\\src\\families\\nemotron\\cuda.zig" -Odebug --dep cuda --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mdrama3=zig\\src\\families\\drama3\\drama3.zig" -Odebug --dep cuda --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mlfm2=zig\\src\\families\\lfm2\\lfm2.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep cuda --dep core --dep lanes --dep qwen_vision --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mflashnext=zig\\src\\families\\flashnext\\cuda_launch.zig" -Odebug --dep cuda --dep core --dep canon --dep lanes --dep heat --dep sys --dep checkpoint_config --dep save_guard "-Mglm_cuda=zig\\src\\families\\glm\\cuda.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mkolibri1=zig\\src\\families\\kolibri1\\cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mqwen_vision=zig\\src\\vision\\qwen_cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mheat=zig\\src\\core\\heat.zig" "-Mnemotron_draft_ids=.zig-cache\\o\\35d145f51e60b075055152e8783c9ad9\\draft_ids.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mradio=zig\\src\\families\\radio\\radio.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mcanon=zig\\src\\cluster\\canon.zig" -lc --test-filter "window cost open:" --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:20.1494850Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7673278Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7674390Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7675057Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7676020Z RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7677384Z RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7678679Z RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7679743Z FAIL CPU reference comparison within its float64 tolerance
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7680802Z RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7681886Z FAIL CPU reference comparison within its float64 tolerance
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7683055Z FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7685037Z FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7686438Z FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7687886Z FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7689285Z FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7690663Z FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7692064Z FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7693415Z FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7694776Z FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7697502Z FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7699038Z FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7700460Z FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7702132Z FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7703545Z FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7705630Z FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7707096Z FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7708489Z FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7709866Z FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7711296Z FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7712679Z FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7714248Z failed command: ".\\.zig-cache\\o\\1b09e7883f09ef53504fff01a77a4eb7\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:43.7715871Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:46.2315117Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:46.2315846Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:46.2316407Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:46.2317734Z [default] (warn): qwen3_5: a failed restore's stream did not drain: its kept state's host copy stays
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:46.2319715Z [default] (warn): qwen3_5: a kept state's host copy goes to the copy-source quarantine: a restore's copies did not drain
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:46.2320942Z [default] (warn): qwen3_5: a failed restore's stream did not drain: its kept state's host copy stays
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:46.2321822Z failed command: ".\\.zig-cache\\o\\a02b86605db6c3bf9a1cc97f241bacfc\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:46.2322347Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1268373Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1446693Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1506751Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1546332Z       +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1572571Z zig\qwen35_cost_files_test.zig:13:70: error: no field or member function named 'toMode' in 'Io.File.Permissions__enum_23'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1589747Z         private = private and options.replace and options.permissions.toMode() == 0o600;
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1602311Z                                                   ~~~~~~~~~~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1605688Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\Io\File.zig:332:76: note: enum declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1619939Z pub const Permissions = std.Options.FilePermissions orelse if (is_windows) enum(std.os.windows.DWORD) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1623766Z                                                                            ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1624564Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1625240Z     failure: zig\qwen35_cost_files_test.zig:38:39
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1626888Z     test.window cost cache: safe publication preserves the old file and cleans a failed rename: zig\qwen35_cost_cache_host.zig:203:54
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1628237Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1645339Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test --dep qwen35 --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\qwen35_cost_cache_host.zig" -Odebug --dep living --dep nemotron --dep cuda --dep core --dep lanes --dep qwen_vision --dep sys --dep checkpoint_config --dep save_guard "-Mqwen35=zig\\src\\families\\qwen3_5\\cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -Odebug --dep living --dep cuda --dep core --dep lanes --dep heat --dep nemotron_draft_ids --dep radio --dep sys --dep checkpoint_config --dep save_guard "-Mnemotron=zig\\src\\families\\nemotron\\cuda.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mqwen_vision=zig\\src\\vision\\qwen_cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mheat=zig\\src\\core\\heat.zig" "-Mnemotron_draft_ids=.zig-cache\\o\\35d145f51e60b075055152e8783c9ad9\\draft_ids.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mradio=zig\\src\\families\\radio\\radio.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -lc --test-filter "window cost cache:" --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:48.1659664Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7315258Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7316339Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7317080Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7318353Z [default] (warn): lane host: stopping at a round boundary: 2 running and 1 queued request(s) end (server restarting: retry shortly)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7320451Z [default] (warn): lane host: stopping at a round boundary: 1 running and 1 queued request(s) end (server restarting: retry shortly)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7321910Z [default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7323108Z [default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7324229Z [default] (warn): 4 prompts together: SamplingRefused; each goes alone
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7326196Z [default] (warn): lane host: a round failed (the planner refused): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7328062Z [default] (warn): lane host: a round failed (PlannerFull): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7329490Z [default] (warn): lane host: stopping at a round boundary: 1 running and 1 queued request(s) end (drain deadline)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7330962Z [default] (warn): lane host: stopping at a round boundary: 0 running and 1 queued request(s) end (NoContext)
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7332301Z [default] (warn): lane host: a round failed (OutOfMemory): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7333930Z [default] (warn): lane host: a round failed (AdmittedFailed): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7335165Z [default] (warn): lane host: a round failed (FinalsFailed): every admitted stream fails
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7336638Z failed command: ".\\.zig-cache\\o\\8080dab280e9c59be76f543aaacbab86\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:49.7337735Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0977302Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0977918Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0978667Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0979379Z       +- compile test debug native 3 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0981913Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0983748Z     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0984704Z                                 ^~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0985899Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0987121Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0988062Z     test.h3 library: timing uses the host monotonic clock: zig\src\families\h3\cuda_lib.zig:122:31
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0989628Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:22:26: error: unsupported platform
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0990957Z             const open = @compileError("unsupported platform");
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0991757Z                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0992938Z zig\src\families\h3\cuda_runtime_fake.zig:104:20: error: expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0994549Z     m.driver.lib = try std.DynLib.open(if (@import("builtin").os.tag == .macos) "/usr/lib/libSystem.B.dylib" else "libc.so.6");
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0995929Z                    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0997441Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:14:20: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0998688Z pub const DynLib = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.0999280Z                    ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.1000006Z zig\src\platform\sys.zig:42:19: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.1001179Z const WinDynLib = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.1002255Z                   ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.1002870Z error: 3 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.1010422Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -cflags -std=c11 -- "zig\\tests\\cuda\\h3_abi_test.c" -Odebug --dep cuda --dep fatbin_h3 --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\h3\\cuda_lib.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" "-Mfatbin_h3=.zig-cache\\o\\65645e0db91ff4ed46b455880d96a7be\\h3-compile-only.fatbin" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:54.1018610Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4379629Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4380214Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4380800Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4381400Z       +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4382607Z zig\src\families\nemotron\cuda_pages_safety_test.zig:170:27: error: expected type '*anyopaque', found 'c_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4383785Z         _ = std.c.waitpid(pid, &status, 0);
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4384474Z                           ^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4385786Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11090:32: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4387833Z pub extern "c" fn waitpid(pid: pid_t, status: ?*c_int, options: c_int) pid_t;
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4388703Z                                ^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4389258Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4389827Z     test_2: zig\src\families\nemotron\cuda.zig:68:17
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4390524Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4403366Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep living --dep cuda --dep core --dep lanes --dep heat --dep nemotron_draft_ids --dep radio --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\nemotron\\cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mheat=zig\\src\\core\\heat.zig" "-Mnemotron_draft_ids=.zig-cache\\o\\35d145f51e60b075055152e8783c9ad9\\draft_ids.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mradio=zig\\src\\families\\radio\\radio.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:44:59.4415112Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1664513Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1672794Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1687196Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1688442Z RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1690800Z RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1695884Z RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1701726Z FAIL CPU reference comparison within its float64 tolerance
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1710124Z RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1711463Z FAIL CPU reference comparison within its float64 tolerance
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1719642Z FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1726539Z FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1734720Z FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1740149Z FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1745279Z FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1748330Z FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1754593Z FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1757865Z FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1762127Z FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1769769Z FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1777052Z FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1783135Z FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1785592Z FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1792229Z FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1794949Z FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1803739Z FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1808621Z FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1813158Z FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1815533Z FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1819173Z FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1822976Z failed command: ".\\.zig-cache\\o\\a74e121d2842ee377d8bf21fa8ce6546\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:05.1824505Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2524657Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2525538Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2526565Z    +- compile obj drama_cuda_native_host debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2530650Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:51:26: error: no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_22'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2532527Z         return self.inner.close();
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2533268Z                ~~~~~~~~~~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2534572Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2535982Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2536613Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2537664Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2538486Z     close: zig\src\families\drama3\cuda\blas.zig:72:20
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2539455Z     unload: zig\src\families\drama3\cuda\kernels.zig:103:21
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2540445Z     8 reference(s) hidden; use '-freference-trace=10' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2541504Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2553669Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" build-obj --dep drama3 --dep core --dep engine_api --dep cuda --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\native\\drama_compile.zig" -Odebug --dep cuda --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mdrama3=zig\\src\\families\\drama3\\drama3.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mengine_api=zig\\src\\core\\engine_api.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -lc -fno-emit-bin --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name drama_cuda_native_host --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:06.2566349Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0042405Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0043056Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0043926Z    +- run exe qwen-cost-key-process
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0044842Z       +- compile exe qwen-cost-key-process debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0046291Z zig\qwen35_cost_process.zig:68:85: error: root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0048448Z     const noise = if (@import("builtin").os.tag == .windows) std.os.windows.kernel32.GetCurrentProcessId() else @as(u32, @intCast(std.c.getpid()));
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0050063Z                                                              ~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0051403Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\os\windows\kernel32.zig:1:1: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0052820Z const std = @import("../../std.zig");
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0053472Z ^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0054028Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0054673Z     main: zig\qwen35_cost_process.zig:102:76
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0056493Z     callMain [inlined]: D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\start.zig:827:30
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0058231Z     main: D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\start.zig:749:28
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0059560Z     2 reference(s) hidden; use '-freference-trace=5' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0060494Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0076044Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" build-exe --dep qwen35 --dep lanes --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\qwen35_cost_process.zig" -Odebug --dep living --dep nemotron --dep cuda --dep core --dep lanes --dep qwen_vision --dep sys --dep checkpoint_config --dep save_guard "-Mqwen35=zig\\src\\families\\qwen3_5\\cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -Odebug --dep living --dep cuda --dep core --dep lanes --dep heat --dep nemotron_draft_ids --dep radio --dep sys --dep checkpoint_config --dep save_guard "-Mnemotron=zig\\src\\families\\nemotron\\cuda.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mqwen_vision=zig\\src\\vision\\qwen_cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mheat=zig\\src\\core\\heat.zig" "-Mnemotron_draft_ids=.zig-cache\\o\\35d145f51e60b075055152e8783c9ad9\\draft_ids.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mradio=zig\\src\\families\\radio\\radio.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name qwen-cost-key-process --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:08.0091358Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.7542101Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.7602876Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.7603531Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.7634251Z       +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.7651276Z zig\src\core\digest_key.zig:34:42: error: expected type 'u128', found 'i64'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.7772683Z         return .{ .device = 0, .inode = s.inode, .size = s.size, .mtime = s.mtime.toNanoseconds(), .ctime = s.ctime.toNanoseconds() };
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.7849394Z                                         ~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.7976376Z zig\src\core\digest_key.zig:34:42: note: unsigned 128-bit int cannot represent all possible signed 64-bit values
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.8014551Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.8316812Z     checkpoint: zig\src\families\qwen3_5\cuda_cost_identity.zig:38:51
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.8371621Z     test.cost identity: stable reads reuse a drafter, while a changed payload at the same path invalidates it: zig\src\families\qwen3_5\cuda_cost_identity.zig:59:33
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.8455420Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.8766762Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\qwen3_5\\cuda_cost_identity.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -lc --test-filter "cost identity:" --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.8825767Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.9157539Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.9190459Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.9218530Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.9479995Z       +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.9486492Z zig\src\core\digest_key.zig:34:42: error: expected type 'u128', found 'i64'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.9488227Z         return .{ .device = 0, .inode = s.inode, .size = s.size, .mtime = s.mtime.toNanoseconds(), .ctime = s.ctime.toNanoseconds() };
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.9490683Z                                         ~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:14.9851917Z zig\src\core\digest_key.zig:34:42: note: unsigned 128-bit int cannot represent all possible signed 64-bit values
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:15.0041719Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:15.0217647Z     finishWithStats: zig\src\core\checkpoint_identity.zig:279:51
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:15.0219330Z     finish: zig\src\core\checkpoint_identity.zig:262:38
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:15.0220899Z     6 reference(s) hidden; use '-freference-trace=8' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:15.0222407Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:15.0267566Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep cuda --dep core --dep canon --dep lanes --dep heat --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\glm\\cuda.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mcanon=zig\\src\\cluster\\canon.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mheat=zig\\src\\core\\heat.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:15.0343073Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0351218Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0351828Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0353457Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0357698Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0359581Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0366189Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0368153Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0371554Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0375211Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0376643Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0380104Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0382276Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0383282Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0384537Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0390221Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0392214Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0393344Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0394399Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0397717Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0399941Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0408212Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0409942Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0414062Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0415156Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0420314Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0430137Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0432027Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0439151Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0444811Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0445778Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0451146Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0452223Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0453296Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0454728Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0456882Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0460066Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0461232Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0466134Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0467226Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0468404Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0469560Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0473787Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0476369Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0480865Z failed command: ".\\.zig-cache\\o\\4d2e49a28afbaa164a27c13acd9d920d\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:19.0482052Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5320177Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5320675Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5321172Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5321591Z       +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5322134Z error: lld-link: undefined symbol: geteuid
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5323011Z     note: referenced by D:\a\TensorFold\TensorFold\zig\src\families\nemotron\pocket_shards_test.zig:188
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5325018Z     note:               .zig-cache\o\3de0192251e8c18c65f9fa4ad786e4bc\test_zcu.obj:(families.nemotron.pocket_shards_test.test.a write that fails at the second shard leaves the first written; writing the old pocket again restores it)
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5327144Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5332365Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\living_shards_test.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:23.5337058Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2267520Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2268004Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2268451Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2268913Z       +- compile test debug native 13 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2269796Z zig\src\server\benchmark.zig:168:10: error: type 'void' does not support field access
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2270564Z     quiet.lflag.ECHO = false;
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2271043Z     ~~~~~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2271988Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2272580Z     login: zig\src\server\benchmark.zig:184:29
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2273399Z     command: zig\src\server\benchmark.zig:128:31
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2274278Z     4 reference(s) hidden; use '-freference-trace=6' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2275438Z zig\src\server\benchmark.zig:378:70: error: enum 'Io.File.Permissions__enum_23' has no member named 'fromMode'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2276712Z         _ = std.Io.Dir.cwd().createDirPathStatus(ctx.io, bench_dir, .fromMode(0o700)) catch {};
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2277667Z                                                                     ~^~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2278774Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\Io\File.zig:332:76: note: enum declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2280169Z pub const Permissions = std.Options.FilePermissions orelse if (is_windows) enum(std.os.windows.DWORD) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2281174Z                                                                            ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2282069Z zig\src\server\benchmark_fake.zig:30:36: error: expected integer or vector, found '*anyopaque'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2283378Z         const fd: posix.socket_t = @intCast(rc);
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2283981Z                                    ^~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2284890Z zig\src\server\benchmark_fake.zig:199:53: error: type 'void' does not support struct initialization syntax
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2286011Z         const master = posix_openpt(@bitCast(posix.O{ .ACCMODE = .RDWR, .NOCTTY = true }));
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2286834Z                                              ~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2287697Z zig\src\server\benchmark_stop.zig:9:45: error: enum 'c.SIG__enum_9' has no member named 'HUP'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2288539Z const watched = [3]posix.SIG{ .INT, .TERM, .HUP };
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2289082Z                                            ~^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2290077Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:2774:17: note: enum declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2291056Z     .windows => enum(u32) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2291769Z                 ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2292521Z zig\src\server\benchmark_stop.zig:27:49: error: type 'void' does not support struct initialization syntax
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2294197Z     const act: posix.Sigaction = .{ .handler = .{ .handler = onSignal }, .mask = posix.sigemptyset(), .flags = 0 };
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2295173Z                                                ~^~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2296451Z zig\src\server\benchmark_upload.zig:81:23: error: no field or member function named 'toMode' in 'Io.File.Permissions__enum_23'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2297736Z     if (st.permissions.toMode() & 0o077 != 0) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2298312Z         ~~~~~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2299271Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\Io\File.zig:332:76: note: enum declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2300801Z pub const Permissions = std.Options.FilePermissions orelse if (is_windows) enum(std.os.windows.DWORD) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2302198Z                                                                            ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2303240Z zig\src\server\benchmark_upload.zig:122:43: error: enum 'Io.File.Permissions__enum_23' has no member named 'fromMode'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2304396Z     _ = cwd.createDirPathStatus(io, dir, .fromMode(0o700)) catch return null;
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2305238Z                                          ~^~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2306333Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\Io\File.zig:332:76: note: enum declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2307884Z pub const Permissions = std.Options.FilePermissions orelse if (is_windows) enum(std.os.windows.DWORD) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2308950Z                                                                            ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2309884Z zig\src\server\listener.zig:163:57: error: expected type '*anyopaque', found 'isize'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2311279Z         try std.testing.expect(std.c.getsockopt(accepted.fd, posix.IPPROTO.TCP, posix.TCP.NODELAY, &value, &size) == 0);
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2312762Z                                                 ~~~~~~~~^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2314216Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11160:38: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2315878Z pub extern "c" fn getsockopt(sockfd: fd_t, level: i32, optname: u32, noalias optval: ?*anyopaque, noalias optlen: *socklen_t) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2316945Z                                      ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2317629Z zig\src\server\slide_save_stream_test.zig:62:14: error: type 'void' not a function
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2318729Z     if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds) != 0) return error.SocketPair;
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2319636Z         ~~~~~^~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2320263Z zig\src\server\slide_stream_test.zig:34:14: error: type 'void' not a function
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2321733Z     if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &fds) != 0) return error.SocketPair;
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2322780Z         ~~~~~^~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2323472Z zig\src\server\speech.zig:279:27: error: expected type '*anyopaque', found 'isize'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2324705Z     _ = std.c.setsockopt(c.fd, std.posix.IPPROTO.TCP, std.posix.TCP.NODELAY, &one, @sizeOf(c_int));
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2325485Z                          ~^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2326357Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11161:38: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2327776Z pub extern "c" fn setsockopt(sockfd: fd_t, level: i32, optname: u32, optval: ?*const anyopaque, optlen: socklen_t) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2328704Z                                      ^~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2329386Z zig\src\server\speech_stream_test.zig:118:18: error: type 'void' not a function
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2331160Z         if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &pair) != 0) return error.SocketPair;
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2332391Z             ~~~~~^~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2332937Z error: 13 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2343334Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep engine_api --dep tokenizer --dep template --dep living --dep json --dep lanes --dep qwen27_mask_fake --dep qwen27_masks --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\server\\root.zig" -Odebug --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mengine_api=zig\\src\\core\\engine_api.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtemplate=zig\\src\\core\\template\\template.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mjson=zig\\src\\server\\json.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" --dep lanes --dep qwen27_masks --dep qwen_draw --dep sys --dep checkpoint_config --dep save_guard "-Mqwen27_mask_fake=zig\\src\\native\\qwen27_mask_fake.zig" --dep sys --dep checkpoint_config --dep save_guard "-Mqwen27_masks=zig\\src\\native\\qwen27_masks.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mqwen_draw=zig\\src\\families\\qwen3_5\\draw.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:35.2367607Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9927414Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9928013Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9928529Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9929190Z       +- compile test debug native 7 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9930972Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:22:26: error: unsupported platform
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9932629Z             const open = @compileError("unsupported platform");
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9933824Z                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9934393Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9935926Z     open: D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:36:45
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9937213Z     open: zig\src\core\picture\webp.zig:69:29
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9938293Z     8 reference(s) hidden; use '-freference-trace=10' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9940320Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:51:26: error: no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_1736'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9942786Z         return self.inner.close();
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9943325Z                ~~~~~~~~~~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9944678Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9945813Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9946295Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9948385Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_1736'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9950893Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9951772Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9953181Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9954483Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9954974Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9956707Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_1736'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9958536Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9959160Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9960144Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9961185Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9961736Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9963086Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_1736'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9964881Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9965368Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9966742Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9968122Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9968482Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9970772Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\process\Environ.zig:632:23: error: no field or member function named 'view' in 'process.Environ.GlobalBlock'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9972532Z     for (environ.block.view().slice) |entry| {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9973177Z          ~~~~~~~~~~~~~^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9974526Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\process\Environ.zig:35:25: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9975564Z pub const GlobalBlock = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9976424Z                         ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9977003Z zig\src\core\digest_key.zig:34:42: error: expected type 'u128', found 'i64'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9978508Z         return .{ .device = 0, .inode = s.inode, .size = s.size, .mtime = s.mtime.toNanoseconds(), .ctime = s.ctime.toNanoseconds() };
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9979485Z                                         ~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9980636Z zig\src\core\digest_key.zig:34:42: note: unsigned 128-bit int cannot represent all possible signed 64-bit values
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9982440Z error: 7 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9988595Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\core\\root.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:36.9996389Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8201499Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8201865Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8202184Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8202552Z       +- compile test debug native 7 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8203884Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8205224Z     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8205791Z                                 ^~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8206738Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8207643Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8208038Z     vote: zig\src\cuda\graph_cache_ranks_test.zig:47:29
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8208554Z     all: zig\src\cuda\graph_cache_ranks_test.zig:71:28
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8209162Z     3 reference(s) hidden; use '-freference-trace=5' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8210343Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:22:26: error: unsupported platform
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8211352Z             const open = @compileError("unsupported platform");
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8212214Z                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8213315Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\json\Stringify.zig:496:40: error: cannot load opaque type 'anyopaque'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8215020Z                     return self.write(v.*);
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8215498Z                                       ~^~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8217280Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\json\static.zig:221:33: error: error union with payload of opaque type 'anyopaque' not allowed
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8218980Z ) ParseError(@TypeOf(source.*))!T {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8219374Z                                 ^
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8220722Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\json\static.zig:463:41: note: generic function instantiated here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8222401Z                     r.* = try innerParse(ptrInfo.child, allocator, source, options);
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8223152Z                               ~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8224826Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\mem\Allocator.zig:189:65: error: no align available for uninstantiable type 'anyopaque'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8226508Z ) Error!*align(if (alignment) |a| a.toByteUnits() else @alignOf(T)) T {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8227531Z                                                                 ^
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8229224Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\mem\Allocator.zig:171:39: note: generic function instantiated here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8230739Z     return a.createAdvancedWithRetAddr(T, null, @returnAddress());
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8231418Z            ~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8232552Z zig\src\cuda\copy_source_close_test.zig:87:13: error: expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8234468Z     d.lib = try std.DynLib.open(if (builtin.os.tag == .windows) "kernel32.dll" else if (builtin.os.tag == .macos) "/usr/lib/libSystem.B.dylib" else "libc.so.6");
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8235914Z             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8237577Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:14:20: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8238647Z pub const DynLib = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8239028Z                    ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8239522Z zig\src\platform\sys.zig:42:19: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8240076Z const WinDynLib = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8240450Z                   ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8241240Z zig\src\cuda\copy_source_race_test.zig:100:13: error: expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8242792Z     d.lib = try std.DynLib.open(if (builtin.os.tag == .windows) "kernel32.dll" else if (builtin.os.tag == .macos) "/usr/lib/libSystem.B.dylib" else "libc.so.6");
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8244589Z             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8246068Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:14:20: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8247117Z pub const DynLib = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8247509Z                    ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8247977Z zig\src\platform\sys.zig:42:19: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8248532Z const WinDynLib = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8248901Z                   ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8249268Z error: 7 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8256023Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\cuda\\root.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:45:43.8262071Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8961003Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8961579Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8964411Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8965646Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8971022Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8978043Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8981919Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8984317Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8987397Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.8989522Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9003624Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9022852Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9024046Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9032374Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9046965Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9063802Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9066447Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9077000Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9083320Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9103126Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9121842Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9127941Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9136925Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9138935Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9161901Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9184370Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9186385Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9229045Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9236353Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9253088Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9262135Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9264909Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9266551Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9271777Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9273238Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9275654Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9281011Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9282952Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9299234Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9310129Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9311563Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9316485Z RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9322917Z FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9325904Z failed command: ".\\.zig-cache\\o\\1c61fd066c46e4a0c95448663f5625f7\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:01.9350361Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5103213Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5103723Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5104443Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5105434Z       +- compile test debug native 12 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5111887Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5113465Z     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5114173Z                                 ^~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5115283Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5116358Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5172853Z     deadline: zig\src\families\flashnext\cuda_rank_wire.zig:52:15
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5173721Z     init: zig\src\families\flashnext\cuda_rank_engine.zig:67:36
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5174450Z     5 reference(s) hidden; use '-freference-trace=7' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5175641Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:22:26: error: unsupported platform
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5176762Z             const open = @compileError("unsupported platform");
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5177336Z                          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5178766Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:51:26: error: no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_989'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5180259Z         return self.inner.close();
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5180667Z                ~~~~~~~~~~^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5181609Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5182597Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5182936Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5184580Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_989'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5186051Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5186491Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5187421Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5188730Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5189066Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5190356Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_989'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5191776Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5192216Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5193125Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5194108Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5194436Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5195723Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:55:26: error: no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_989'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5197128Z         return self.inner.lookup(T, name);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5197555Z                ~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5198447Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:21:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5199421Z         else => struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5199742Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5200517Z zig\src\families\flashnext\cuda_rank_wire.zig:137:78: error: struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5201636Z             const rc = std.c.send(l.fd, bytes.ptr + at, bytes.len - at, p.MSG.NOSIGNAL);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5202620Z                                                                         ~~~~~^~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5203709Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\os\windows\ws2_32.zig:144:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5204707Z pub const MSG = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5205053Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5205837Z zig\src\families\flashnext\cuda_rank_wire.zig:183:65: error: struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5206896Z         const rc = std.c.recv(l.fd, &byte, 1, p.MSG.PEEK | p.MSG.DONTWAIT);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5207530Z                                                            ~~~~~^~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5208857Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\os\windows\ws2_32.zig:144:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5209855Z pub const MSG = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5210205Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5210915Z zig\src\native\cuda_load_gpu.zig:159:24: error: expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5212187Z         g.driver.lib = try std.DynLib.open(if (@import("builtin").os.tag == .macos) "/usr/lib/libSystem.B.dylib" else "libc.so.6");
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5213330Z                        ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5296215Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\dynamic_library.zig:14:20: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5418138Z pub const DynLib = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5421293Z                    ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5424595Z zig\src\platform\sys.zig:42:19: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5448958Z const WinDynLib = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5458713Z                   ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5461533Z zig\src\native\dense_trainer_close_test.zig:208:23: error: expected type '*anyopaque', found 'c_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5463201Z     _ = std.c.waitpid(pid, &status, 0);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5463887Z                       ^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5465003Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11090:32: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5466756Z pub extern "c" fn waitpid(pid: pid_t, status: ?*c_int, options: c_int) pid_t;
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5467643Z                                ^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5468561Z zig\src\native\nemotron_trainer_test.zig:210:23: error: expected type '*anyopaque', found 'c_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5469581Z     _ = std.c.waitpid(pid, &status, 0);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5470200Z                       ^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5471291Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11090:32: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5473028Z pub extern "c" fn waitpid(pid: pid_t, status: ?*c_int, options: c_int) pid_t;
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5473871Z                                ^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5474834Z zig\src\native\trainer_close_test.zig:205:23: error: expected type '*anyopaque', found 'c_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5475828Z     _ = std.c.waitpid(pid, &status, 0);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5476451Z                       ^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5477549Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11090:32: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5479244Z pub extern "c" fn waitpid(pid: pid_t, status: ?*c_int, options: c_int) pid_t;
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5480170Z                                ^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5480869Z error: 12 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5502373Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep cuda --dep engine_api --dep lanes --dep nemotron --dep drama3 --dep lfm2 --dep core --dep flashnext --dep glm_cuda --dep qwen35 --dep kolibri1 --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\native\\cuda.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mengine_api=zig\\src\\core\\engine_api.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" -Odebug --dep living --dep cuda --dep core --dep lanes --dep heat --dep nemotron_draft_ids --dep radio --dep sys --dep checkpoint_config --dep save_guard "-Mnemotron=zig\\src\\families\\nemotron\\cuda.zig" -Odebug --dep cuda --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mdrama3=zig\\src\\families\\drama3\\drama3.zig" -Odebug --dep cuda --dep core --dep sys --dep checkpoint_config --dep save_guard "-Mlfm2=zig\\src\\families\\lfm2\\lfm2.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep cuda --dep core --dep lanes --dep qwen_vision --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mflashnext=zig\\src\\families\\flashnext\\cuda_launch.zig" -Odebug --dep cuda --dep core --dep canon --dep lanes --dep heat --dep sys --dep checkpoint_config --dep save_guard "-Mglm_cuda=zig\\src\\families\\glm\\cuda.zig" -Odebug --dep living --dep nemotron --dep cuda --dep core --dep lanes --dep qwen_vision --dep sys --dep checkpoint_config --dep save_guard "-Mqwen35=zig\\src\\families\\qwen3_5\\cuda.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mkolibri1=zig\\src\\families\\kolibri1\\cuda.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mheat=zig\\src\\core\\heat.zig" "-Mnemotron_draft_ids=.zig-cache\\o\\35d145f51e60b075055152e8783c9ad9\\draft_ids.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mradio=zig\\src\\families\\radio\\radio.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mqwen_vision=zig\\src\\vision\\qwen_cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mcanon=zig\\src\\cluster\\canon.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:05.5523718Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5622158Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5622547Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5622921Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5623357Z       +- compile test debug native 5 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5624779Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: error: parameter of type 'void' not allowed in function with calling convention 'x86_64_win'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5626205Z     extern "c" fn clock_gettime(clk_id: clockid_t, tp: *timespec) c_int;
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5626821Z                                 ^~~~~~~~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5627753Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11986:33: note: 'void' is a zero bit type
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5629182Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5629649Z     deadline: zig\src\families\flashnext\cuda_rank_wire.zig:52:15
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5630383Z     command: zig\src\families\flashnext\cuda_rank_engine.zig:147:36
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5631174Z     7 reference(s) hidden; use '-freference-trace=9' to see all references
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5632192Z zig\src\families\flashnext\cuda_lanes_restore_test.zig:65:14: error: type 'void' not a function
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5633412Z     if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &pair) != 0) return error.SocketPair;
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5634196Z         ~~~~~^~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5634725Z zig\src\families\flashnext\cuda_ple.zig:391:95: error: type 'void' has no members
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5635659Z                 std.posix.madvise(o.file.map.memory.ptr, o.file.map.memory.len, std.posix.MADV.RANDOM) catch {};
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5636861Z                                                                                 ~~~~~~~~~~~~~~^~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5637651Z zig\src\families\flashnext\cuda_rank_media_test.zig:85:14: error: type 'void' not a function
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5638682Z     if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, pair) != 0) return error.SocketPair;
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5639432Z         ~~~~~^~~~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5640163Z zig\src\families\flashnext\cuda_rank_wire.zig:137:78: error: struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5641170Z             const rc = std.c.send(l.fd, bytes.ptr + at, bytes.len - at, p.MSG.NOSIGNAL);
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5641830Z                                                                         ~~~~~^~~~~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5642854Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\os\windows\ws2_32.zig:144:17: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5643795Z pub const MSG = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5644131Z                 ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5644476Z error: 5 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5654407Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep cuda --dep core --dep lanes --dep qwen_vision --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\flashnext\\cuda_launch.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mqwen_vision=zig\\src\\vision\\qwen_cuda.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:07.5665025Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.2877734Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.2954447Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.2966066Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3013565Z       +- compile test debug native 2 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3022108Z error: lld-link: undefined symbol: mmap
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3027081Z     note: referenced by D:\a\TensorFold\TensorFold\zig\src\families\h3\checkpoint.zig:65
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3034571Z     note:               .zig-cache\o\3002cb3f274f02c829a2e773b5b55ba1\test_zcu.obj:(checkpoint.Checkpoint.openWith__func_862)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3060218Z error: lld-link: undefined symbol: munmap
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3072177Z     note: referenced by D:\a\TensorFold\TensorFold\zig\src\families\h3\checkpoint.zig:67
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3075121Z     note:               .zig-cache\o\3002cb3f274f02c829a2e773b5b55ba1\test_zcu.obj:(checkpoint.Checkpoint.openWith__func_862)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3084114Z     note: referenced by D:\a\TensorFold\TensorFold\zig\src\families\h3\checkpoint.zig:67
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3095127Z     note:               .zig-cache\o\3002cb3f274f02c829a2e773b5b55ba1\test_zcu.obj:(checkpoint.Checkpoint.openWith__func_862)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3131387Z error: 2 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3143006Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\h3\\checkpoint.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:18.3192702Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.2757566Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.2813061Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.2894555Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.3198033Z       +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.3296880Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\process\Environ.zig:632:23: error: no field or member function named 'view' in 'process.Environ.GlobalBlock'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.3382291Z     for (environ.block.view().slice) |entry| {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.3618971Z          ~~~~~~~~~~~~~^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.3624214Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\process\Environ.zig:35:25: note: struct declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.4048124Z pub const GlobalBlock = struct {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.4136556Z                         ^~~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.4210931Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.4517393Z     test.the pinned checkpoint (TF_KOLIBRI_DIR): 116,303 tensors, none left over: zig\src\families\kolibri1\names.zig:205:41
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.4799901Z     test_0: zig\src\families\kolibri1\cuda.zig:17:17
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.5127620Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.5528080Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\families\\kolibri1\\cuda.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:23.5601617Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9738025Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9742184Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9746654Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9753096Z [default] (warn): Drama readback drain failed: retaining its buffers and engine owner
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9756338Z [default] (warn): Drama readback drain failed: retaining its buffers and engine owner
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9760704Z [default] (warn): drama3: config hidden_size = 4096, the kernels need 2048
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9766773Z codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9773566Z codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9777310Z codec requested 4, actual sizes { 4, 4, 4, 4, 1 }
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9784071Z codec requested 16, actual sizes { 16, 1 }
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9791329Z codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9796321Z Drama replay passed: eager/graphs, poison/reset, codec chunks and interleaved state
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9826733Z [default] (warn): codec.pth pickle names os.system, outside the tensor state-dict allow-list
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9832259Z failed command: ".\\.zig-cache\\o\\a2769a3c94c08e93a97265ad0a5eba4c\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:24.9840971Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6146440Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6188097Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6198756Z    +- run test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6206284Z       +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6226308Z zig\src\vision\qwen_cuda_test.zig:273:27: error: expected type '*anyopaque', found 'c_int'
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6284577Z         if (std.c.waitpid(pid, &status, 1) == pid) {
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6285570Z                           ^~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6286752Z D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib\std\c.zig:11090:32: note: parameter type declared here
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6288215Z pub extern "c" fn waitpid(pid: pid_t, status: ?*c_int, options: c_int) pid_t;
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6289121Z                                ^~~~~
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6289687Z referenced by:
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6290251Z     test_0: zig\src\vision\qwen_cuda.zig:586:17
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6290935Z error: 1 compilation errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6300537Z failed command: "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\zig.exe" test -Odebug --dep cuda --dep core --dep lanes --dep sys --dep checkpoint_config --dep save_guard "-Mroot=zig\\src\\vision\\qwen_cuda.zig" -Odebug --dep gpu_memory --dep kernel_options --dep stagger --dep sys --dep checkpoint_config --dep save_guard "-Mcuda=zig\\src\\cuda\\root.zig" -Odebug --dep gpu_memory --dep tokenizer --dep living --dep sys --dep checkpoint_config --dep save_guard "-Mcore=zig\\src\\core\\root.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mlanes=zig\\src\\core\\lanes\\lanes.zig" --dep sys --dep checkpoint_config --dep save_guard "-Msys=zig\\src\\platform\\sys.zig" --dep checkpoint_config --dep save_guard "-Mcheckpoint_config=zig\\src\\core\\checkpoint_config.zig" --dep save_guard "-Msave_guard=zig\\src\\core\\save_guard.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mgpu_memory=zig\\src\\gpu_memory.zig" "-Mkernel_options=.zig-cache\\o\\163d285497c58d762b93d74b6b1f42b0\\options.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mstagger=zig\\src\\core\\stagger.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mtokenizer=zig\\src\\core\\tokenizer\\tokenizer.zig" -Odebug --dep sys --dep checkpoint_config --dep save_guard "-Mliving=zig\\src\\living\\living.zig" -lc --cache-dir .zig-cache --global-cache-dir .zig-cache --build-root . --name test --zig-lib-dir "D:\\a\\_temp\\afa22c53-3ed1-4604-b710-b5322b8d9c77\\zig-x86_64-windows-0.17.0\\lib\\" --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:25.6311974Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3550924Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3551274Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3551607Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3552668Z [default] (warn): cublasLt64_13.dll is required for CUDA vision towers (--vision) and CUDA cuBLASLt projections; install the NVIDIA CUDA 13 cuBLAS runtime; add its directory to PATH; a driver-only host does not include it
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3553980Z [default] (warn): libnccl.so.2 is required for CUDA ranks (including the GLM pair); install the NVIDIA NCCL 2 runtime compatible with CUDA 13; add its directory to PATH
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3555269Z [default] (warn): libibverbs.so.1 is required for RoCE/RDMA gathers; install rdma-core's libibverbs runtime and the provider for the network adapter
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3556316Z [default] (warn): libmcdma-rpc.so is required for MCDMA mailbox and Metal speed-up communication; build and install MCDMA's RPC helper and set MCDMA_RPC_LIBRARY to its file
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3557429Z [default] (warn): libmcdma-rpc.so is required for MCDMA mailbox and Metal speed-up communication; build and install MCDMA's RPC helper and set MCDMA_RPC_LIBRARY to its file
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3558514Z [default] (warn): libmcdma-rpc.so is required for MCDMA mailbox and Metal speed-up communication; build and install MCDMA's RPC helper and set MCDMA_RPC_LIBRARY to its file
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3559507Z failed command: ".\\.zig-cache\\o\\0aec66ea708e99979db42b1b8e4a96bf\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:27.3560014Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.6659942Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.6669023Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.6815778Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.6831452Z FAIL kernel-contract: unknown image name: unknown_image
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.7144267Z FAIL kernel-contract: unknown image name: glm_glu
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.7470943Z FAIL kernel-contract: unknown image name: 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.7717828Z FAIL kernel-contract: unknown image name: contract_control
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.7941743Z FAIL kernel-contract: unknown image name: GLM_GLUE
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.7960514Z failed command: ".\\.zig-cache\\o\\317996da0f93e5577767b04e6bbb3091\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:32.8109376Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1065001Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1066064Z +- test-cuda-host
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1067054Z    +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1068445Z [default] (warn): slide pocket: a deleted fact's 2 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1070347Z [default] (warn): slide pocket: a delete failed (UploadFailed), and its put-back did not reach the device (PutBackNotOnDevice)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1077450Z [default] (warn): slide pocket: a deleted fact's 2 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1091783Z [default] (warn): slide pocket: a delete failed (UploadFailed), and its put-back did not reach the device (PutBackNotOnDevice)
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1095338Z [default] (warn): slide pocket: a deleted fact's 2 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1097244Z [default] (warn): slide pocket: a deleted fact's 1 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1099087Z [default] (warn): slide pocket: a deleted fact's 1 layers are put back in memory, but not all on the device (UploadFailed): replies are refused until they are
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1101235Z failed command: ".\\.zig-cache\\o\\0a4b682a84b5b4a20fe0550dff090c59\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:46:50.1102242Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:47:58.8833438Z discovery verbs: retained through TLS, atexit and destructor; child exit 0
+zig-windows	UNKNOWN STEP	2026-10-19T23:47:58.9047999Z discovery grammar: retained through TLS, atexit and destructor; child exit 0
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:27.5377853Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:27.5378820Z +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:27.5386009Z [default] (warn): XPU: a command list did not drain at close; its memory and context stay until the process ends
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:27.5388305Z failed command: ".\\.zig-cache\\o\\e1299887365f22339347ce2a862b37b7\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:27.5469737Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:38.8478351Z test
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:38.8478655Z +- run test w
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:38.8479189Z [default] (warn): glm: restoring 1500 tokens failed (PoolMoveNotDrained); pool relocation aborted
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:38.8480105Z failed command: ".\\.zig-cache\\o\\0b97f630cb5261db3bbc0e873a3cff5c\\test.exe" "--cache-dir=.\\.zig-cache" --seed=0x92415b8b --listen=-
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:38.8480661Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2573550Z Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2574126Z test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2574421Z +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2574769Z |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2575107Z +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2575462Z |  +- compile test debug native transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2575835Z |     +- options transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2576521Z |        +- compile exe digest-writer debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2576913Z +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2577224Z |  +- compile test debug native 16 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2577557Z +- test-cuda-host transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2577940Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2578524Z |  |  +- compile test debug native 3 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2578879Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2579158Z |  |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2579506Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2579785Z |  |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2580147Z |  +- run exe qwen-cost-key-process transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2580590Z |  |  +- compile exe qwen-cost-key-process debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2581010Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2581310Z |  |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2581692Z |  +- compile obj drama_cuda_native_host debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2582088Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2582417Z |  |  +- compile test debug native 2 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2582738Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2583054Z |  |  +- compile test debug native 13 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2583388Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2583689Z |  |  +- compile test debug native 7 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2584036Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2584351Z |  |  +- compile test debug native 7 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2584672Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2584977Z |  |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2585331Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2585631Z |  |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2585953Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2586253Z |  |  +- compile test debug native 5 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2586588Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2586879Z |  |  +- compile test debug native 5 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2587182Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2587478Z |  |  +- compile test debug native 12 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2587992Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2588298Z |  |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2588599Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2588893Z |  |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2589228Z |  +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2589521Z |     +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2589828Z +- run test transitive failure
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2590556Z |  +- compile test debug native 1 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2590945Z +- compile exe tensorfold-native safe native 2 errors
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2591215Z 
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2609551Z error: the following build command exited with code 1:
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.2612557Z .zig-cache\o\c9625fcda6d19f823d4bebaafc3421c9\maker.exe build --zig-lib=D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\lib --zig=D:\a\_temp\afa22c53-3ed1-4604-b710-b5322b8d9c77\zig-x86_64-windows-0.17.0\zig.exe --global-cache=.zig-cache --seed=0x92415b8b test
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.3766262Z ##[error]Process completed with exit code 1.
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.4039601Z Post job cleanup.
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:45.7579932Z Checking size of cache directory at D:\a\TensorFold\TensorFold\.zig-cache
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:46.1571742Z Cache directory is 1171946283 bytes, below limit of 2147483648 bytes; keeping intact
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:46.1577885Z Saving Zig cache with key 'setup-zig-cache-v2-zig_windows-zig-x86_64-windows-0.17.0--39341956198-1'
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:46.2745433Z [command]"C:\Program Files\Git\usr\bin\tar.exe" --posix -cf cache.tzst --exclude cache.tzst -P -C D:/a/TensorFold/TensorFold --files-from manifest.txt --force-local --use-compress-program "zstd -T0"
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:52.1934313Z Sent 0 of 309422730 (0.0%), 0.0 MBs/sec
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:53.2107023Z Sent 40987274 of 309422730 (13.2%), 19.4 MBs/sec
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:53.9870478Z Sent 309422730 of 309422730 (100.0%), 105.6 MBs/sec
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:54.2886176Z Post job cleanup.
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:54.4914538Z [command]"C:\Program Files\Git\bin\git.exe" version
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:54.5322075Z git version 2.56.0.windows.2
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:54.5403060Z Temporarily overriding HOME='D:\a\_temp\b1d091ee-dccb-4aea-9751-a2a7ca206d93' before making global git config changes
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:54.5404341Z Adding repository directory to the temporary git global config as a safe directory
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:54.5416242Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\TensorFold\TensorFold
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:54.5886238Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:54.6375720Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:55.2443576Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:55.2893277Z http.https://github.com/.extraheader
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:55.2950022Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:55.3377073Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:55.9244007Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:55.9643557Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:56.5625235Z Cleaning up orphan processes
+zig-windows	UNKNOWN STEP	2026-10-19T23:48:56.5899195Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, mlugg/setup-zig@v2. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

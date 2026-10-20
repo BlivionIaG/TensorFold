@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "source_only": true,
+  "head": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
+  "commits_checked": 30,
+  "fmt_all_pass": true,
+  "diff_all_pass": true,
+  "lean_new_all_zero": true,
+  "over600_files": [],
+  "private_added_paths": [],
+  "public_noreply_identity_all_pass": true,
+  "authors_and_author_dates_preserved": true,
+  "runtime_claim": false,
+  "full_static_report_sha256": "807874dbe42d2e84483cc0686143eb9f4eb8bcd4ecf641030e931a924964bc68"
+}

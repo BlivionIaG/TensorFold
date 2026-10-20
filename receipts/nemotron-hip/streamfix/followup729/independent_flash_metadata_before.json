@@ -1,0 +1,54 @@
+{
+  "Qwen3.8-Flash-Next-MLX-3bit-MTP": {
+    "config.json": {
+      "bytes": 5361,
+      "sha256": "00474736c56faf472bbe7dd66afaae4b8f98e456ee91437fcd32921d07f349db"
+    },
+    "generation_config.json": {
+      "bytes": 202,
+      "sha256": "e70c136c1b78ddc1fb0905bac8e733a4dc448d4f852a5dd75143fffc70be550e"
+    },
+    "model.safetensors.index.json": {
+      "bytes": 420812,
+      "sha256": "061bb7bc489269b6b234b66dadbc7ce815db413337636ca66635ff1c1326809f"
+    },
+    "preprocessor_config.json": {
+      "bytes": 390,
+      "sha256": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516"
+    },
+    "tokenizer_config.json": {
+      "bytes": 17928,
+      "sha256": "b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27"
+    },
+    "vocab.json": {
+      "bytes": 6722759,
+      "sha256": "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003"
+    }
+  },
+  "Qwen3.8-Flash-Next-MLX-4bit-MTP": {
+    "config.json": {
+      "bytes": 5361,
+      "sha256": "4efd5f41c47e8de9f55c678df4a237cbbc78e4d517dad42a906889f7d94f79a2"
+    },
+    "generation_config.json": {
+      "bytes": 202,
+      "sha256": "e70c136c1b78ddc1fb0905bac8e733a4dc448d4f852a5dd75143fffc70be550e"
+    },
+    "model.safetensors.index.json": {
+      "bytes": 420813,
+      "sha256": "8848503860c7da8619fdc8d5e65201868f8f1d21d69d2e21166c95522379ff77"
+    },
+    "preprocessor_config.json": {
+      "bytes": 390,
+      "sha256": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516"
+    },
+    "tokenizer_config.json": {
+      "bytes": 17928,
+      "sha256": "b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27"
+    },
+    "vocab.json": {
+      "bytes": 6722759,
+      "sha256": "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003"
+    }
+  }
+}

@@ -1,0 +1,581 @@
+{
+  "scope": "decode-only",
+  "expected_holds": 16,
+  "cold_prefill_run": false,
+  "measured_sources": {
+    "old": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+    "new": "729833615595df66c9f9a438ce9a85061843f010"
+  },
+  "conditions": {
+    "off": [
+      {
+        "rig": "W7800tp2",
+        "mode": "off",
+        "order": [
+          "old",
+          "new",
+          "new",
+          "old"
+        ],
+        "prompts": {
+          "fibonacci-raw": {
+            "hold_order": [
+              151.87495501484025,
+              148.1907200585808,
+              148.09444946691247,
+              149.1845501409847
+            ],
+            "old_mean": 150.52975257791246,
+            "new_mean": 148.14258476274665,
+            "delta_percent": -1.585844508666312
+          },
+          "gpu-chat-no-think": {
+            "hold_order": [
+              151.51722657123221,
+              147.83396457893687,
+              146.67088791278715,
+              148.85747040525797
+            ],
+            "old_mean": 150.1873484882451,
+            "new_mean": 147.252426245862,
+            "delta_percent": -1.9541740845187117
+          }
+        },
+        "complete_reply_and_token_sha_equal": true,
+        "holds": [
+          {
+            "rig": "W7800tp2",
+            "mode": "off",
+            "hold_index": 1,
+            "tree": "old",
+            "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+            "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+            "port": 36501,
+            "ranks": [
+              {
+                "rank": 1,
+                "pid": 1671167,
+                "argv": [
+                  "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--tp",
+                  "2",
+                  "--rank",
+                  "1",
+                  "--master",
+                  "127.0.0.1",
+                  "--master-port",
+                  "37501",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_1_old.r1.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": -15,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              },
+              {
+                "rank": 0,
+                "pid": 1671175,
+                "argv": [
+                  "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--tp",
+                  "2",
+                  "--rank",
+                  "0",
+                  "--master",
+                  "127.0.0.1",
+                  "--master-port",
+                  "37501",
+                  "--name",
+                  "m",
+                  "--port",
+                  "36501",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_1_old.r0.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": 0,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              }
+            ],
+            "teardown": true,
+            "runtime_identity": {
+              "file": "off_1_old.identity.json",
+              "raw_sha256": "d27d020686be5d77ade7e5c92d5708616928a266a75a31abb57682db4c76b9cc"
+            },
+            "client_exit_status": 0,
+            "benchmark": {
+              "file": "off_1_old.json",
+              "raw_sha256": "eab6ca99554391c291e14fc0ba3fefb071d5fac70949d7a889e024567b86e434"
+            }
+          },
+          {
+            "rig": "W7800tp2",
+            "mode": "off",
+            "hold_index": 2,
+            "tree": "new",
+            "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+            "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+            "port": 36502,
+            "ranks": [
+              {
+                "rank": 1,
+                "pid": 1672398,
+                "argv": [
+                  "<USER_HOME>/nh/sfopt/out-recovery-gfx1100/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--tp",
+                  "2",
+                  "--rank",
+                  "1",
+                  "--master",
+                  "127.0.0.1",
+                  "--master-port",
+                  "37502",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_2_new.r1.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": -15,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              },
+              {
+                "rank": 0,
+                "pid": 1672402,
+                "argv": [
+                  "<USER_HOME>/nh/sfopt/out-recovery-gfx1100/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--tp",
+                  "2",
+                  "--rank",
+                  "0",
+                  "--master",
+                  "127.0.0.1",
+                  "--master-port",
+                  "37502",
+                  "--name",
+                  "m",
+                  "--port",
+                  "36502",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_2_new.r0.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": 0,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              }
+            ],
+            "teardown": true,
+            "runtime_identity": {
+              "file": "off_2_new.identity.json",
+              "raw_sha256": "3c01386b698dd925198d500a0671d462a630e0022af278be28b57fc438143cf8"
+            },
+            "client_exit_status": 0,
+            "benchmark": {
+              "file": "off_2_new.json",
+              "raw_sha256": "ea0ee4374b92663cb541f1c443f3c2313a0eaab088fead92c890be3789c9ea2e"
+            }
+          },
+          {
+            "rig": "W7800tp2",
+            "mode": "off",
+            "hold_index": 3,
+            "tree": "new",
+            "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+            "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+            "port": 36503,
+            "ranks": [
+              {
+                "rank": 1,
+                "pid": 1673306,
+                "argv": [
+                  "<USER_HOME>/nh/sfopt/out-recovery-gfx1100/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--tp",
+                  "2",
+                  "--rank",
+                  "1",
+                  "--master",
+                  "127.0.0.1",
+                  "--master-port",
+                  "37503",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_3_new.r1.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": -15,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              },
+              {
+                "rank": 0,
+                "pid": 1673315,
+                "argv": [
+                  "<USER_HOME>/nh/sfopt/out-recovery-gfx1100/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--tp",
+                  "2",
+                  "--rank",
+                  "0",
+                  "--master",
+                  "127.0.0.1",
+                  "--master-port",
+                  "37503",
+                  "--name",
+                  "m",
+                  "--port",
+                  "36503",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_3_new.r0.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": 0,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              }
+            ],
+            "teardown": true,
+            "runtime_identity": {
+              "file": "off_3_new.identity.json",
+              "raw_sha256": "448dc16de3e753553d0675015be1a4c59633cd80405c728bbc41a9968d839d62"
+            },
+            "client_exit_status": 0,
+            "benchmark": {
+              "file": "off_3_new.json",
+              "raw_sha256": "632e553298144aaeceabf72889cecdb80000262f7de518a143055c510966ec2e"
+            }
+          },
+          {
+            "rig": "W7800tp2",
+            "mode": "off",
+            "hold_index": 4,
+            "tree": "old",
+            "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+            "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+            "port": 36504,
+            "ranks": [
+              {
+                "rank": 1,
+                "pid": 1674516,
+                "argv": [
+                  "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--tp",
+                  "2",
+                  "--rank",
+                  "1",
+                  "--master",
+                  "127.0.0.1",
+                  "--master-port",
+                  "37504",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_4_old.r1.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": -15,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              },
+              {
+                "rank": 0,
+                "pid": 1674559,
+                "argv": [
+                  "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--tp",
+                  "2",
+                  "--rank",
+                  "0",
+                  "--master",
+                  "127.0.0.1",
+                  "--master-port",
+                  "37504",
+                  "--name",
+                  "m",
+                  "--port",
+                  "36504",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_4_old.r0.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": 0,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              }
+            ],
+            "teardown": true,
+            "runtime_identity": {
+              "file": "off_4_old.identity.json",
+              "raw_sha256": "5da2d797f3a6a4fea6305a8ebb7efc368db07216b8a80ffc8565b79698c19a38"
+            },
+            "client_exit_status": 0,
+            "benchmark": {
+              "file": "off_4_old.json",
+              "raw_sha256": "1843c3bf0de31ecf5025582aa710c70ddd7df6fbca3e0dae8e3c303513fad85b"
+            }
+          }
+        ]
+      },
+      {
+        "rig": "V620tp1",
+        "mode": "off",
+        "order": [
+          "old",
+          "new",
+          "new",
+          "old"
+        ],
+        "prompts": {
+          "fibonacci-raw": {
+            "hold_order": [
+              133.74498957218444,
+              131.85298611124264,
+              131.7293660594842,
+              133.28614244222658
+            ],
+            "old_mean": 133.5155660072055,
+            "new_mean": 131.79117608536342,
+            "delta_percent": -1.2915272528965072
+          },
+          "gpu-chat-no-think": {
+            "hold_order": [
+              133.51350004571162,
+              131.6443433596341,
+              131.5677465269808,
+              132.9899765086187
+            ],
+            "old_mean": 133.25173827716515,
+            "new_mean": 131.60604494330744,
+            "delta_percent": -1.2350257903837925
+          }
+        },
+        "complete_reply_and_token_sha_equal": true,
+        "holds": [
+          {
+            "rig": "V620tp1",
+            "mode": "off",
+            "hold_index": 1,
+            "tree": "old",
+            "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+            "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+            "port": 38501,
+            "ranks": [
+              {
+                "rank": 0,
+                "pid": 1671166,
+                "argv": [
+                  "<USER_HOME>/nh/d46/out-gfx1030/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--name",
+                  "m",
+                  "--port",
+                  "38501",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_1_old.r0.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": 0,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              }
+            ],
+            "teardown": true,
+            "runtime_identity": {
+              "file": "off_1_old.identity.json",
+              "raw_sha256": "2550ddf936341216ceace77b52ef13f4a9bfe3b5184ca6a5418f592fbb688555"
+            },
+            "client_exit_status": 0,
+            "benchmark": {
+              "file": "off_1_old.json",
+              "raw_sha256": "713eaf444c0bf01b64dec25b78485cd8efa3e03a550625600598035684c47229"
+            }
+          },
+          {
+            "rig": "V620tp1",
+            "mode": "off",
+            "hold_index": 2,
+            "tree": "new",
+            "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+            "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+            "port": 38502,
+            "ranks": [
+              {
+                "rank": 0,
+                "pid": 1672292,
+                "argv": [
+                  "<USER_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--name",
+                  "m",
+                  "--port",
+                  "38502",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_2_new.r0.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": 0,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              }
+            ],
+            "teardown": true,
+            "runtime_identity": {
+              "file": "off_2_new.identity.json",
+              "raw_sha256": "5700008542821db94a429010d4e7d0a29fae1bec31a2b4c8472dd547ec741bb4"
+            },
+            "client_exit_status": 0,
+            "benchmark": {
+              "file": "off_2_new.json",
+              "raw_sha256": "c8753f5593f11721ba837655535ded78e2c3a93539c771da4f8fc0c234dc5cd2"
+            }
+          },
+          {
+            "rig": "V620tp1",
+            "mode": "off",
+            "hold_index": 3,
+            "tree": "new",
+            "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+            "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+            "port": 38503,
+            "ranks": [
+              {
+                "rank": 0,
+                "pid": 1672946,
+                "argv": [
+                  "<USER_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--name",
+                  "m",
+                  "--port",
+                  "38503",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_3_new.r0.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": 0,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              }
+            ],
+            "teardown": true,
+            "runtime_identity": {
+              "file": "off_3_new.identity.json",
+              "raw_sha256": "abbfbe0d44f48ebd8104508fcb0bd862a7b9b812f2392359cad4a0792cd54da0"
+            },
+            "client_exit_status": 0,
+            "benchmark": {
+              "file": "off_3_new.json",
+              "raw_sha256": "7ecdd8d27cc272b8a0e4446a678af5910cafa1723bd9740bb6db41c300555f56"
+            }
+          },
+          {
+            "rig": "V620tp1",
+            "mode": "off",
+            "hold_index": 4,
+            "tree": "old",
+            "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+            "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+            "port": 38504,
+            "ranks": [
+              {
+                "rank": 0,
+                "pid": 1674253,
+                "argv": [
+                  "<USER_HOME>/nh/d46/out-gfx1030/native-hip/bin/tensorfold-native",
+                  "serve",
+                  "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+                  "--name",
+                  "m",
+                  "--port",
+                  "38504",
+                  "--context",
+                  "65536",
+                  "--parallel",
+                  "4",
+                  "--no-drafts"
+                ],
+                "log": "off_4_old.r0.log",
+                "alive_before_intentional_teardown": true,
+                "actual_exit_status": 0,
+                "exit_reason": "intentional native-server teardown",
+                "process_group_gone": true
+              }
+            ],
+            "teardown": true,
+            "runtime_identity": {
+              "file": "off_4_old.identity.json",
+              "raw_sha256": "b58278208c37ae6abaafed1cfc3cf8e68a5006efe4312b316842615eccc87fe4"
+            },
+            "client_exit_status": 0,
+            "benchmark": {
+              "file": "off_4_old.json",
+              "raw_sha256": "baad6c50a5d6849e1e90ec6153833e7973a1a88f77188878685bbf4fc875ee11"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "complete": false,
+  "publication_qualified": false
+}

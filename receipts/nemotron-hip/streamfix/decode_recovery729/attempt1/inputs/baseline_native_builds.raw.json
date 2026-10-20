@@ -1,0 +1,54 @@
+{
+  "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "tree": "d46",
+  "architectures": {
+    "gfx1100": {
+      "command": [
+        "<USER_HOME>/hcx/zb.sh",
+        "d46",
+        "sf_model_build_d46_gfx1100.log",
+        "native-hip",
+        "tf-nemotron-hip-test",
+        "-Dhip-arch=gfx1100",
+        "-Doptimize=ReleaseFast",
+        "--prefix",
+        "<USER_HOME>/nh/d46/out-gfx1100"
+      ],
+      "exit_status": 0,
+      "binaries": {
+        "tensorfold-native": {
+          "path": "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+          "sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256"
+        },
+        "tf-nemotron-hip-test": {
+          "path": "<USER_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+          "sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9"
+        }
+      }
+    },
+    "gfx1030": {
+      "command": [
+        "<USER_HOME>/hcx/zb.sh",
+        "d46",
+        "sf_model_build_d46_gfx1030.log",
+        "native-hip",
+        "tf-nemotron-hip-test",
+        "-Dhip-arch=gfx1030",
+        "-Doptimize=ReleaseFast",
+        "--prefix",
+        "<USER_HOME>/nh/d46/out-gfx1030"
+      ],
+      "exit_status": 0,
+      "binaries": {
+        "tensorfold-native": {
+          "path": "<USER_HOME>/nh/d46/out-gfx1030/native-hip/bin/tensorfold-native",
+          "sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225"
+        },
+        "tf-nemotron-hip-test": {
+          "path": "<USER_HOME>/nh/d46/out-gfx1030/bin/tf-nemotron-hip-test",
+          "sha256": "93008bc7989370393147d134c4c6979109b68607293d28ff883f0f6e254a26e9"
+        }
+      }
+    }
+  }
+}

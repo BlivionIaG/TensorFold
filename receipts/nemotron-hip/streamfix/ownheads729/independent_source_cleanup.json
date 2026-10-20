@@ -1,0 +1,59 @@
+{
+  "validated": true,
+  "result_sha256": "add2494bcb26040a6454bd4ecc5c880217876d9f796cbf30399defac02cc28f8",
+  "heads": [
+    {
+      "source_commit": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
+      "tree": "059cbba8b302125b59e425290d3b1de3566a8e24",
+      "binaries": [
+        {
+          "arch": "gfx1030",
+          "sha256": "638f3f33b95f69d827806828b36defb7dc79b5a928b7a2d94d3e8a260335d103",
+          "summary": "SUMMARY gfx1030 23 kernels: 23 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 17490 ms, limits 2019 ms"
+        },
+        {
+          "arch": "gfx1100",
+          "sha256": "cd3f0fa69d05a420af634b5c2606286ee0b0ed33b4406782dc3c2a9377b44deb",
+          "summary": "SUMMARY gfx1100 23 kernels: 23 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 17676 ms, limits 2472 ms"
+        }
+      ],
+      "headers": {
+        "zig/kernels/hip/quant/mlx_decoder.hpp": {
+          "sha256": "7de2aa5af5d83c1008b33b68aa426cd7c338492471ba6b253d4e9594a76a5d2c",
+          "git_blob": "6f94a58974b2c21f8460bab22b1c6cd90f27cddf"
+        },
+        "zig/kernels/hip/tiles/stream.hpp": {
+          "sha256": "649fd8a56675f84a43417e66e1ad3fbeca5ece2dd5c7d6ec7fb9273aa4805fe8",
+          "git_blob": "e17d21ed26b33c11a70cd8074c8b21f71a63c5a7"
+        }
+      }
+    },
+    {
+      "source_commit": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
+      "tree": "f8e73921861d2dd348af110263f89403e2d5cea6",
+      "binaries": [
+        {
+          "arch": "gfx1100",
+          "sha256": "bb77612bfba0166250b0ca79a2c8b30032ff0891c2093247a5eef673331db25d",
+          "summary": "SUMMARY gfx1100 43 kernels: 43 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 72607 ms, limits 3342 ms"
+        },
+        {
+          "arch": "gfx1030",
+          "sha256": "722891eb1a1a95b54f88f5243c3e912eb0ac9181b7879d3c84250e1d9abb0949",
+          "summary": "SUMMARY gfx1030 43 kernels: 43 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 74903 ms, limits 2764 ms"
+        }
+      ],
+      "headers": {
+        "zig/kernels/hip/quant/mlx_decoder.hpp": {
+          "sha256": "7de2aa5af5d83c1008b33b68aa426cd7c338492471ba6b253d4e9594a76a5d2c",
+          "git_blob": "6f94a58974b2c21f8460bab22b1c6cd90f27cddf"
+        },
+        "zig/kernels/hip/tiles/stream.hpp": {
+          "sha256": "649fd8a56675f84a43417e66e1ad3fbeca5ece2dd5c7d6ec7fb9273aa4805fe8",
+          "git_blob": "e17d21ed26b33c11a70cd8074c8b21f71a63c5a7"
+        }
+      }
+    }
+  ],
+  "cleanup": "No ownhead runner, ownhead GPU contract, or ownhead build wrapper process remains"
+}

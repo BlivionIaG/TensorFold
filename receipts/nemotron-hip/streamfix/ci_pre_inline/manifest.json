@@ -1,0 +1,155 @@
+{
+  "scope": "Pre-inline published-head/actual-merge-ref CI snapshot only; new inline CI pending",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "38ca4878b4335bcf6ed0b656e7f21f78d7b21addc590d99bb1239ff08e5caba6",
+      "bytes": 8933
+    },
+    {
+      "path": "base76_runs.json",
+      "sha256": "15e6dc2ab70c024847deaa1bd71107cc8221aed1fc5dbf54475eb52378d3419b",
+      "bytes": 25226
+    },
+    {
+      "path": "ci_report.json",
+      "sha256": "a9035c8e6027a9e8f4a731ead15413e92835c857e78ae21039eded7514c1e8e7",
+      "bytes": 128723
+    },
+    {
+      "path": "current_ci.json",
+      "sha256": "6cc0326c060842e768847ebb631d50c2a5e82aa3c4b7f1ce283abb6f02ab8be4",
+      "bytes": 44751
+    },
+    {
+      "path": "error_groups.json",
+      "sha256": "b195e3f347f61ae93339ff26f9a61630b5b9fdefde62855b385046c590877b3d",
+      "bytes": 2272
+    },
+    {
+      "path": "log_fetch.json",
+      "sha256": "e44c59a8c5b2046ebd9dbce93828e99d591493b752c717ba1e8ecbe69f2618e4",
+      "bytes": 8402
+    },
+    {
+      "path": "pr1082_zig-windows_118365122558.log",
+      "sha256": "196da54e9cd82db43ae51276e7f58802321d077d9aedbdecd03827ed44425100",
+      "bytes": 176063
+    },
+    {
+      "path": "pr1083_zig-windows_118365132377.log",
+      "sha256": "f020882623efb05a3fa28194b58980d4823256c55b75734050c89b6ebbd18321",
+      "bytes": 176398
+    },
+    {
+      "path": "pr1084_zig-windows_118365149130.log",
+      "sha256": "5cef89d621f0d16686d0a743e564cb7276bcf3498eff8982fe82c26f5b65aa19",
+      "bytes": 174749
+    },
+    {
+      "path": "pr1085_zig-windows_118365166858.log",
+      "sha256": "c3e6a0630a12dc5a8542ce153988a61c1f609e575d608fcde2cef393e82f03da",
+      "bytes": 175807
+    },
+    {
+      "path": "pr1086_zig-windows_118365182190.log",
+      "sha256": "3ac1ee5750e5e8f52eb85a4702d65cb9aa7cb603a96a9e49cbf43f8e62033dce",
+      "bytes": 171737
+    },
+    {
+      "path": "pr1087_zig-windows_118365200817.log",
+      "sha256": "7d268e9621111354d11e6af872af512a2924eb350f89f6d63f6fbc1088349f1a",
+      "bytes": 179537
+    },
+    {
+      "path": "pr1088_zig-windows_118365214907.log",
+      "sha256": "8c95b925b7138fa11ec2fd886e25bc19591d898095e84c46c58c926cdf228578",
+      "bytes": 174955
+    },
+    {
+      "path": "pr1089_zig-windows_118365224264.log",
+      "sha256": "51a653bd96c81e2a8f37e4c13c77a29e38a4daec2fe03e0aca0fe6e1300c4af4",
+      "bytes": 176528
+    },
+    {
+      "path": "pr1090_zig-windows_118365238610.log",
+      "sha256": "d0b2bf9df1b9677e2765eddb203574116b808dde3ece071e9e7af18a5b432b04",
+      "bytes": 173714
+    },
+    {
+      "path": "pr1091_zig-windows_118365261669.log",
+      "sha256": "ee17617f8bd54d3d24e4804997b8adc1a8d29fb11bff66d691a0a0151b40bbc2",
+      "bytes": 171644
+    },
+    {
+      "path": "pr1092_zig-windows_118365274888.log",
+      "sha256": "d142e48664bcea22d2c4d69e32fed64ab39c639d738768d2546fa2fc5c7b512b",
+      "bytes": 176843
+    },
+    {
+      "path": "pr1093_zig-windows_118365291298.log",
+      "sha256": "86e1bc7fb926eeb71ec82c9b62884565e5f07d433ffe5f596b1e7099bd7583ba",
+      "bytes": 180867
+    },
+    {
+      "path": "pr1094_zig-windows_118365311230.log",
+      "sha256": "795b0d45a51fca0fd59304aeda0631e15798d1703c52caea9c43a28e5c8fa3a3",
+      "bytes": 179233
+    },
+    {
+      "path": "pr1095_zig-windows_118365321969.log",
+      "sha256": "1e6a474bd0fe26a80903f4903e0e5cbb5b144f3f4d8c5c6a3be08c53cd58d781",
+      "bytes": 184332
+    },
+    {
+      "path": "pr1096_zig-windows_118365341976.log",
+      "sha256": "de05b287b64e33a01da9c8085332dfef83871a90608bbc73160d09d112bfbe59",
+      "bytes": 182703
+    },
+    {
+      "path": "pr1097_zig-windows_118365357021.log",
+      "sha256": "5e088c2f72d614207e9168873b3fc52e321b7f11fb787042287bcf117c729576",
+      "bytes": 180434
+    },
+    {
+      "path": "pr1098_zig-windows_118365379982.log",
+      "sha256": "0cdd81da16469c708ae793f22a4dc24201afb6cad11fc28ad54d0dca50c6094f",
+      "bytes": 183131
+    },
+    {
+      "path": "pr1099_zig-windows_118365397296.log",
+      "sha256": "32714dc49673ad06b2f40a42fb457ea131db836f9dfb0a285664dd294fa38fb2",
+      "bytes": 180285
+    },
+    {
+      "path": "pr1100_zig-windows_118365413487.log",
+      "sha256": "69b0d765b04a7ba33b7d59402b2b9d0db24f05d943689eae90d16cc91becaa8a",
+      "bytes": 180720
+    },
+    {
+      "path": "pr1101_zig-windows_118365430457.log",
+      "sha256": "5f4c3486427eaa13a221d6b311b767bf19bfe68092244a9f4d82f657b2660709",
+      "bytes": 183159
+    },
+    {
+      "path": "pr1102_zig-windows_118365447951.log",
+      "sha256": "d2117a62c3c11d872ace3d1d87b824c257098375829830d32440764d1b152611",
+      "bytes": 180577
+    },
+    {
+      "path": "pr1103_zig-windows_118365460768.log",
+      "sha256": "f4f8dd4019472c5bc2f69de32ba79b4bdd2d4b969ec1daf904cda06f51398162",
+      "bytes": 179125
+    },
+    {
+      "path": "query.json",
+      "sha256": "2e14d3835373d3f1b5b18b74df0640bd72af9719cd734b8e32145ae09875f222",
+      "bytes": 8612
+    },
+    {
+      "path": "upstream_d101_runs.json",
+      "sha256": "2ff76d6e600f3dcbca3fede9989411666315f230c8e2e405b83164877a158821",
+      "bytes": 12435
+    }
+  ]
+}

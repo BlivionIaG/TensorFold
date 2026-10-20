@@ -1,0 +1,2 @@
+decode (rank 0 of 1): the last 224 of 251 ids a row at a time, 131072 logits, finite true, f16 rows
+info: round graphs: 2 captured (1.6 ms each), 220 of 224 rounds replayed

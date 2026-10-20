@@ -1,0 +1,181 @@
+{
+  "captured_live_audit_sha256": "92c3f9e0347d2256d65b02d6514beb72cb0b3ff395ca46c31574ff8b374546fc",
+  "exact_published_bodies": [
+    {
+      "pr": 1082,
+      "path": "pr1082.md",
+      "source_commit": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "body_sha256": "709eebea96eb57ed6e788e2698c040910b34c0e9a4b3e34c44aff1f6527a6058",
+      "bytes": 20093,
+      "characters": 20002
+    },
+    {
+      "pr": 1083,
+      "path": "pr1083.md",
+      "source_commit": "e0e1c8e97fa14478e60af840942fe28526267bf6",
+      "body_sha256": "7b6624e34b00ffcc0d02c9babb8296dff32d0219221c1105073cfa6efb247073",
+      "bytes": 13116,
+      "characters": 13029
+    },
+    {
+      "pr": 1084,
+      "path": "pr1084.md",
+      "source_commit": "d48e06d1fc69eb78097e1cedee7bc9cebb0d9290",
+      "body_sha256": "c5b350648a49f7ed51694310f673b62bb1c876f9848b832b8827c1449fe0f6f6",
+      "bytes": 21609,
+      "characters": 21509
+    },
+    {
+      "pr": 1085,
+      "path": "pr1085.md",
+      "source_commit": "729c4d773d4cf85e8d97f20be2e029517103b539",
+      "body_sha256": "d56661e739148bcd7d814f1c34b869ad25be77aacde531b202a4062af6ff979b",
+      "bytes": 23424,
+      "characters": 23324
+    },
+    {
+      "pr": 1086,
+      "path": "pr1086.md",
+      "source_commit": "27b6f3258f0cc992248f900cc19a78c5fe161ca7",
+      "body_sha256": "39bac2b964f57d745fb3d4c388fdbf7a14931de1bbf835619b0eda1a46dc5135",
+      "bytes": 19292,
+      "characters": 19197
+    },
+    {
+      "pr": 1087,
+      "path": "pr1087.md",
+      "source_commit": "1ce5639abee1c0e33cbf433661aa4658c2cc5c6e",
+      "body_sha256": "43daa1c8cd0581fd6d1588bbfe6d17c6dd185ac11cb6e7675f33144c19385d3d",
+      "bytes": 22230,
+      "characters": 22130
+    },
+    {
+      "pr": 1088,
+      "path": "pr1088.md",
+      "source_commit": "62ab5832ffb219106be0c7902bc398ab78b3c1e1",
+      "body_sha256": "c771332d682ab4312137508467083e976fdb6c5ab94edb9b2db787d41fb4e3c2",
+      "bytes": 26023,
+      "characters": 25919
+    },
+    {
+      "pr": 1089,
+      "path": "pr1089.md",
+      "source_commit": "3eec493f2e2e41063403adf7996e982f4f1e813b",
+      "body_sha256": "69a95809f1bfe75500990307db98b49211011e060ffea80c1d5ea949a809e688",
+      "bytes": 23459,
+      "characters": 23357
+    },
+    {
+      "pr": 1090,
+      "path": "pr1090.md",
+      "source_commit": "ad92984a407f7b3fc6f17a4e2d220792607a44cf",
+      "body_sha256": "53e62eab10edfc4153ba012a8e598bd7c8325876822274a701faae5f97d6157d",
+      "bytes": 26793,
+      "characters": 26686
+    },
+    {
+      "pr": 1091,
+      "path": "pr1091.md",
+      "source_commit": "99eef0db22f21688360da0779d65dfb7dc12ff58",
+      "body_sha256": "7633694666247072dce27e92f503f0bd5b11e85eeb7d509f78e562e80d3ef8b9",
+      "bytes": 26767,
+      "characters": 26663
+    },
+    {
+      "pr": 1092,
+      "path": "pr1092.md",
+      "source_commit": "6d921a0fde1dba1e14c6d739d3f7f2e64d1ae696",
+      "body_sha256": "7c32f5a9d1a5059f7775ac8186d5176c9ac15dc03d918705d861f1a3759b9817",
+      "bytes": 26985,
+      "characters": 26884
+    },
+    {
+      "pr": 1093,
+      "path": "pr1093.md",
+      "source_commit": "20e50ad33a2ac7bb4f3dbdb53d35b55f5d7001ce",
+      "body_sha256": "004448a574dd39ea00c90b54d23a2a67bdeceef46831104bf44756beb7619514",
+      "bytes": 26537,
+      "characters": 26431
+    },
+    {
+      "pr": 1094,
+      "path": "pr1094.md",
+      "source_commit": "4af5b2de0ad530a4853e20b557d12df15c5541c3",
+      "body_sha256": "ff3d5f719ae620031b23e580dddd1bdf2c0e5a29ad93d0aa5f4bbd9ff241c248",
+      "bytes": 43357,
+      "characters": 43169
+    },
+    {
+      "pr": 1095,
+      "path": "pr1095.md",
+      "source_commit": "96380eeacbefeb0d6c36015143f31bac0d564ca8",
+      "body_sha256": "12fa1bae3a58e1bb297697cdbd00b71df2943984ac4ab4f7e1954f5ce4ecc556",
+      "bytes": 36520,
+      "characters": 36328
+    },
+    {
+      "pr": 1096,
+      "path": "pr1096.md",
+      "source_commit": "bb4e4823ca8ca7dd8d2e422374ac9668e03f5d0f",
+      "body_sha256": "811d2cff5b000ea46685f7d112c4ccb7138a67d0ccb40deb6d1d201f845e67f3",
+      "bytes": 26399,
+      "characters": 26290
+    },
+    {
+      "pr": 1097,
+      "path": "pr1097.md",
+      "source_commit": "a272142d7db38285fd46cb39c835c8db18c1bda4",
+      "body_sha256": "b556ecd1b6f4e2c7923b75081b32c15b73826d6c7976d7c3cf42c68dc1605319",
+      "bytes": 26911,
+      "characters": 26800
+    },
+    {
+      "pr": 1098,
+      "path": "pr1098.md",
+      "source_commit": "ca40e2dfbf75714b0b0c9f05ca54496c5ecb8546",
+      "body_sha256": "67c70c65b50cb01c3ac6907a6c29c67d00667f96e74d3fd1d7b8556163b01312",
+      "bytes": 28120,
+      "characters": 28002
+    },
+    {
+      "pr": 1099,
+      "path": "pr1099.md",
+      "source_commit": "b25f13001942ee1cfa68a1c44be81d81d4fb42ea",
+      "body_sha256": "b828814a549096d147ac7bce57fb2cf221ba890604858d996f9d7fe5d2cc83e4",
+      "bytes": 25823,
+      "characters": 25717
+    },
+    {
+      "pr": 1100,
+      "path": "pr1100.md",
+      "source_commit": "8f1b1cb9d57d88fe84d22ff0de696f03c7975f91",
+      "body_sha256": "4252ac03376e66372418f4a886b3b5dacc713ed29e759391d25c2faeab0bf9f2",
+      "bytes": 26939,
+      "characters": 26822
+    },
+    {
+      "pr": 1101,
+      "path": "pr1101.md",
+      "source_commit": "6edf466e0dae8141636e081185ef0da365b10f9d",
+      "body_sha256": "2b5710e8413bc252dba1ea8952ca78dd4c57aebfde3d3107a67c33b47b1acb64",
+      "bytes": 33867,
+      "characters": 33698
+    },
+    {
+      "pr": 1102,
+      "path": "pr1102.md",
+      "source_commit": "a56d4f10ba6a3297edd0bf35b9ac071f7790430e",
+      "body_sha256": "4679f79c57c32f1b6eacb43fd12183f77b66f85c2a1144c56c748201d7b5bf66",
+      "bytes": 26800,
+      "characters": 26683
+    },
+    {
+      "pr": 1103,
+      "path": "pr1103.md",
+      "source_commit": "1596156e21769324b675ef5e0caae0452f361660",
+      "body_sha256": "be40bf5437fa4bd3b868728a03ca3ba1cc15949f61050c3233aef94235fa715a",
+      "bytes": 64700,
+      "characters": 64354
+    }
+  ]
+}

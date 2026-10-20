@@ -1,0 +1,12 @@
+{
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "parent_allocated": true,
+  "exclusive_gpu_reservation": true,
+  "recovery_ab_finished": true,
+  "purpose": "followup_models",
+  "devices": {
+    "gfx1100": "0,1",
+    "gfx1030": "2,3,4,5"
+  },
+  "ownhead_proofs_result_sha256": "add2494bcb26040a6454bd4ecc5c880217876d9f796cbf30399defac02cc28f8"
+}

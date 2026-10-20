@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "<REMOTE_HOME>/hcx/streamfix/inline_validation/validate.py", line 79, in <module>
+    jobs=[pool.submit(validate_arch,a,devices[a]) for a in ('gfx1100','gfx1030')];R['architectures']=[j.result() for j in jobs]
+                                                                                                      ~~~~~~~~^^
+  File "/usr/lib64/python3.14/concurrent/futures/_base.py", line 454, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/concurrent/futures/_base.py", line 396, in __get_result
+    raise self._exception
+  File "/usr/lib64/python3.14/concurrent/futures/thread.py", line 86, in run
+    result = ctx.run(self.task)
+  File "/usr/lib64/python3.14/concurrent/futures/thread.py", line 73, in run
+    return fn(*args, **kwargs)
+  File "<REMOTE_HOME>/hcx/streamfix/inline_validation/validate.py", line 38, in validate_arch
+    assert len(device_lines)==1 and all(flag in device_lines[0].split() for flag in ('-O3','-ffp-contract=off','-std=c++20',arch))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

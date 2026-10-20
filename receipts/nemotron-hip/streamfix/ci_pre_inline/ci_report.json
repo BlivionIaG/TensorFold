@@ -1,0 +1,2878 @@
+{
+  "observed_at_utc": "2026-10-20T00:52:47Z",
+  "all22_rollups_failure": true,
+  "each_failed_context": "zig-windows",
+  "all22_other_contexts_pass": [
+    "desktop",
+    "mobile",
+    "zig",
+    "fmt"
+  ],
+  "all22_windows_jobs_share_normalized_28_error_message_set": true,
+  "single_root_cause_established": false,
+  "source_comparison": {
+    "file": "zig/src/core/digest_key.zig",
+    "base_commit": "76aafcf274e60a5e31a59ce145b2f71f7b366e9d",
+    "base_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+    "observed_upstream_commit": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+    "observed_upstream_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+    "attribution": "Error occurs in an unchanged file. This does not establish that baseline Windows CI fails; new imports/instantiations and the PR merge tree may affect compilation.",
+    "baseline_windows_reproduction_established": false
+  },
+  "baseline_history": [
+    {
+      "source_commit": "76aafcf274e60a5e31a59ce145b2f71f7b366e9d",
+      "returned_workflow_count": 2,
+      "runs": [
+        {
+          "id": 39120054109,
+          "name": "App and mobile checks",
+          "event": "push",
+          "conclusion": "success",
+          "url": "https://github.com/ashhart/TensorFold/actions/runs/39120054109"
+        },
+        {
+          "id": 39120040132,
+          "name": "App and mobile checks",
+          "event": "push",
+          "conclusion": "success",
+          "url": "https://github.com/ashhart/TensorFold/actions/runs/39120040132"
+        }
+      ],
+      "windows_workflow_evidence_found": false
+    },
+    {
+      "source_commit": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "returned_workflow_count": 1,
+      "runs": [
+        {
+          "id": 39244437989,
+          "name": "App and mobile checks",
+          "event": "push",
+          "conclusion": "success",
+          "url": "https://github.com/ashhart/TensorFold/actions/runs/39244437989"
+        }
+      ],
+      "windows_workflow_evidence_found": false
+    }
+  ],
+  "scope": "Published pre-inline PR heads and their GitHub PR merge refs only; future inline heads require new CI/check readback. Windows qualification is pending.",
+  "prs": [
+    {
+      "pr": 1082,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1082",
+      "pr_head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "github_tested_pr_merge_commit": "b108acec2b07dea31afe07ca9fa552082ad34c45",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341871838/job/118365121829",
+          "databaseId": 118365121829,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341871838,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341871838"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341871791/job/118365122332",
+          "databaseId": 118365122332,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341871791,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341871791"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341871773/job/118365121410",
+          "databaseId": 118365121410,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341871773,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341871773"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341871791/job/118365122558",
+          "databaseId": 118365122558,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341871791,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341871791"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341871838/job/118365122157",
+          "databaseId": 118365122157,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341871838,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341871838"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1082,
+        "head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341871791/job/118365122558",
+        "run_id": "39341871791",
+        "job_id": "118365122558",
+        "log": "pr1082_zig-windows_118365122558.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "196da54e9cd82db43ae51276e7f58802321d077d9aedbdecd03827ed44425100",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1423/1438 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1083,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1083",
+      "pr_head": "e0e1c8e97fa14478e60af840942fe28526267bf6",
+      "github_tested_pr_merge_commit": "4e0821527ce41022347dd9c6494c6044894e7269",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341875244/job/118365133231",
+          "databaseId": 118365133231,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341875244,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341875244"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341875206/job/118365132448",
+          "databaseId": 118365132448,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341875206,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341875206"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341875200/job/118365132415",
+          "databaseId": 118365132415,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341875200,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341875200"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341875206/job/118365132377",
+          "databaseId": 118365132377,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341875206,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341875206"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341875244/job/118365133622",
+          "databaseId": 118365133622,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341875244,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341875244"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1083,
+        "head": "e0e1c8e97fa14478e60af840942fe28526267bf6",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341875206/job/118365132377",
+        "run_id": "39341875206",
+        "job_id": "118365132377",
+        "log": "pr1083_zig-windows_118365132377.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "f020882623efb05a3fa28194b58980d4823256c55b75734050c89b6ebbd18321",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1423/1438 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1084,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1084",
+      "pr_head": "d48e06d1fc69eb78097e1cedee7bc9cebb0d9290",
+      "github_tested_pr_merge_commit": "08affc263511d83ce7f1c2eefbc589e6686e8423",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341880784/job/118365150053",
+          "databaseId": 118365150053,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341880784,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341880784"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341880590/job/118365148610",
+          "databaseId": 118365148610,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341880590,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341880590"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341880611/job/118365148930",
+          "databaseId": 118365148930,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341880611,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341880611"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341880590/job/118365149130",
+          "databaseId": 118365149130,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341880590,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341880590"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341880784/job/118365150368",
+          "databaseId": 118365150368,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341880784,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341880784"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1084,
+        "head": "d48e06d1fc69eb78097e1cedee7bc9cebb0d9290",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341880590/job/118365149130",
+        "run_id": "39341880590",
+        "job_id": "118365149130",
+        "log": "pr1084_zig-windows_118365149130.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "5cef89d621f0d16686d0a743e564cb7276bcf3498eff8982fe82c26f5b65aa19",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1424/1439 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1085,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1085",
+      "pr_head": "729c4d773d4cf85e8d97f20be2e029517103b539",
+      "github_tested_pr_merge_commit": "0ebee96ad4eb4d3ca532e786ad2a183d1c6e226a",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341886183/job/118365167602",
+          "databaseId": 118365167602,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341886183,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341886183"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341886088/job/118365166591",
+          "databaseId": 118365166591,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341886088,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341886088"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341886125/job/118365166966",
+          "databaseId": 118365166966,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341886125,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341886125"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341886088/job/118365166858",
+          "databaseId": 118365166858,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341886088,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341886088"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341886183/job/118365168029",
+          "databaseId": 118365168029,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341886183,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341886183"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1085,
+        "head": "729c4d773d4cf85e8d97f20be2e029517103b539",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341886088/job/118365166858",
+        "run_id": "39341886088",
+        "job_id": "118365166858",
+        "log": "pr1085_zig-windows_118365166858.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "c3e6a0630a12dc5a8542ce153988a61c1f609e575d608fcde2cef393e82f03da",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1430/1445 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1086,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1086",
+      "pr_head": "27b6f3258f0cc992248f900cc19a78c5fe161ca7",
+      "github_tested_pr_merge_commit": "249ca7cd343237479696a166fbc5ef24ced23a0b",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341890519/job/118365181227",
+          "databaseId": 118365181227,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341890519,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341890519"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341890631/job/118365181534",
+          "databaseId": 118365181534,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341890631,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341890631"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341890610/job/118365181701",
+          "databaseId": 118365181701,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341890610,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341890610"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341890631/job/118365182190",
+          "databaseId": 118365182190,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341890631,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341890631"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341890519/job/118365181697",
+          "databaseId": 118365181697,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341890519,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341890519"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1086,
+        "head": "27b6f3258f0cc992248f900cc19a78c5fe161ca7",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341890631/job/118365182190",
+        "run_id": "39341890631",
+        "job_id": "118365182190",
+        "log": "pr1086_zig-windows_118365182190.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "3ac1ee5750e5e8f52eb85a4702d65cb9aa7cb603a96a9e49cbf43f8e62033dce",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1431/1446 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1087,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1087",
+      "pr_head": "1ce5639abee1c0e33cbf433661aa4658c2cc5c6e",
+      "github_tested_pr_merge_commit": "7451a2bb11af98c2b176e8fb53daf6ed81ecdf2c",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341896213/job/118365200582",
+          "databaseId": 118365200582,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341896213,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341896213"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341896310/job/118365200495",
+          "databaseId": 118365200495,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341896310,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341896310"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341896275/job/118365199782",
+          "databaseId": 118365199782,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341896275,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341896275"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341896310/job/118365200817",
+          "databaseId": 118365200817,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341896310,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341896310"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341896213/job/118365200787",
+          "databaseId": 118365200787,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341896213,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341896213"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1087,
+        "head": "1ce5639abee1c0e33cbf433661aa4658c2cc5c6e",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341896310/job/118365200817",
+        "run_id": "39341896310",
+        "job_id": "118365200817",
+        "log": "pr1087_zig-windows_118365200817.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "7d268e9621111354d11e6af872af512a2924eb350f89f6d63f6fbc1088349f1a",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1432/1447 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1088,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1088",
+      "pr_head": "62ab5832ffb219106be0c7902bc398ab78b3c1e1",
+      "github_tested_pr_merge_commit": "dd80c1c4dfd50c729d2c8fa1c746dc6fcc0133f4",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341900333/job/118365214131",
+          "databaseId": 118365214131,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341900333,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341900333"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341900417/job/118365214672",
+          "databaseId": 118365214672,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341900417,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341900417"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341900378/job/118365214062",
+          "databaseId": 118365214062,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341900378,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341900378"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341900417/job/118365214907",
+          "databaseId": 118365214907,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341900417,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341900417"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341900333/job/118365214423",
+          "databaseId": 118365214423,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341900333,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341900333"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1088,
+        "head": "62ab5832ffb219106be0c7902bc398ab78b3c1e1",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341900417/job/118365214907",
+        "run_id": "39341900417",
+        "job_id": "118365214907",
+        "log": "pr1088_zig-windows_118365214907.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "8c95b925b7138fa11ec2fd886e25bc19591d898095e84c46c58c926cdf228578",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1432/1447 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1089,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1089",
+      "pr_head": "3eec493f2e2e41063403adf7996e982f4f1e813b",
+      "github_tested_pr_merge_commit": "c58096b73eecdacb61140a3da8ec0b0583d07668",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341903209/job/118365224218",
+          "databaseId": 118365224218,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341903209,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341903209"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341903361/job/118365224483",
+          "databaseId": 118365224483,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341903361,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341903361"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341903290/job/118365224069",
+          "databaseId": 118365224069,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341903290,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341903290"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341903361/job/118365224264",
+          "databaseId": 118365224264,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341903361,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341903361"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341903209/job/118365223765",
+          "databaseId": 118365223765,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341903209,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341903209"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1089,
+        "head": "3eec493f2e2e41063403adf7996e982f4f1e813b",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341903361/job/118365224264",
+        "run_id": "39341903361",
+        "job_id": "118365224264",
+        "log": "pr1089_zig-windows_118365224264.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "51a653bd96c81e2a8f37e4c13c77a29e38a4daec2fe03e0aca0fe6e1300c4af4",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1447/1462 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1090,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1090",
+      "pr_head": "ad92984a407f7b3fc6f17a4e2d220792607a44cf",
+      "github_tested_pr_merge_commit": "98c533aa6b4e1ced16a5ed058ffafe79985f3597",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341907615/job/118365242455",
+          "databaseId": 118365242455,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341907615,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341907615"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341907704/job/118365239053",
+          "databaseId": 118365239053,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341907704,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341907704"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341907584/job/118365238465",
+          "databaseId": 118365238465,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341907584,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341907584"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341907704/job/118365238610",
+          "databaseId": 118365238610,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341907704,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341907704"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341907615/job/118365242166",
+          "databaseId": 118365242166,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341907615,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341907615"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1090,
+        "head": "ad92984a407f7b3fc6f17a4e2d220792607a44cf",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341907704/job/118365238610",
+        "run_id": "39341907704",
+        "job_id": "118365238610",
+        "log": "pr1090_zig-windows_118365238610.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "d0b2bf9df1b9677e2765eddb203574116b808dde3ece071e9e7af18a5b432b04",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1448/1463 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1091,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1091",
+      "pr_head": "99eef0db22f21688360da0779d65dfb7dc12ff58",
+      "github_tested_pr_merge_commit": "5c1b2c0b2ba8a0fc320310c1aa0cf25233d1b843",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341914034/job/118365261045",
+          "databaseId": 118365261045,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341914034,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341914034"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341914071/job/118365261260",
+          "databaseId": 118365261260,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341914071,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341914071"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341914048/job/118365260794",
+          "databaseId": 118365260794,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341914048,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341914048"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341914071/job/118365261669",
+          "databaseId": 118365261669,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341914071,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341914071"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341914034/job/118365261459",
+          "databaseId": 118365261459,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341914034,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341914034"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1091,
+        "head": "99eef0db22f21688360da0779d65dfb7dc12ff58",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341914071/job/118365261669",
+        "run_id": "39341914071",
+        "job_id": "118365261669",
+        "log": "pr1091_zig-windows_118365261669.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "ee17617f8bd54d3d24e4804997b8adc1a8d29fb11bff66d691a0a0151b40bbc2",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1450/1465 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1092,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1092",
+      "pr_head": "6d921a0fde1dba1e14c6d739d3f7f2e64d1ae696",
+      "github_tested_pr_merge_commit": "cd75931c681cb673c44156987da18b5daf15a89a",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341917675/job/118365274218",
+          "databaseId": 118365274218,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341917675,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341917675"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341917745/job/118365275269",
+          "databaseId": 118365275269,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341917745,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341917745"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341917871/job/118365275218",
+          "databaseId": 118365275218,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341917871,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341917871"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341917745/job/118365274888",
+          "databaseId": 118365274888,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341917745,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341917745"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341917675/job/118365274626",
+          "databaseId": 118365274626,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341917675,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341917675"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1092,
+        "head": "6d921a0fde1dba1e14c6d739d3f7f2e64d1ae696",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341917745/job/118365274888",
+        "run_id": "39341917745",
+        "job_id": "118365274888",
+        "log": "pr1092_zig-windows_118365274888.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "d142e48664bcea22d2c4d69e32fed64ab39c639d738768d2546fa2fc5c7b512b",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 169/215 steps succeeded (22 failed); 1478/1494 tests passed (16 skipped)"
+      ]
+    },
+    {
+      "pr": 1093,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1093",
+      "pr_head": "20e50ad33a2ac7bb4f3dbdb53d35b55f5d7001ce",
+      "github_tested_pr_merge_commit": "a96faec631585e04de5617293434c3539525363b",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341922649/job/118365291492",
+          "databaseId": 118365291492,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341922649,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341922649"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341922653/job/118365291009",
+          "databaseId": 118365291009,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341922653,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341922653"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341922684/job/118365291332",
+          "databaseId": 118365291332,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341922684,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341922684"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341922653/job/118365291298",
+          "databaseId": 118365291298,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341922653,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341922653"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341922649/job/118365291091",
+          "databaseId": 118365291091,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341922649,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341922649"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1093,
+        "head": "20e50ad33a2ac7bb4f3dbdb53d35b55f5d7001ce",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341922653/job/118365291298",
+        "run_id": "39341922653",
+        "job_id": "118365291298",
+        "log": "pr1093_zig-windows_118365291298.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "86e1bc7fb926eeb71ec82c9b62884565e5f07d433ffe5f596b1e7099bd7583ba",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 169/215 steps succeeded (22 failed); 1479/1495 tests passed (16 skipped)"
+      ]
+    },
+    {
+      "pr": 1094,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1094",
+      "pr_head": "4af5b2de0ad530a4853e20b557d12df15c5541c3",
+      "github_tested_pr_merge_commit": "1bad30240d1f650fe00ab3b331997586ebc091e4",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341928480/job/118365311393",
+          "databaseId": 118365311393,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341928480,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341928480"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341928507/job/118365311049",
+          "databaseId": 118365311049,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341928507,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341928507"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341928605/job/118365311379",
+          "databaseId": 118365311379,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341928605,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341928605"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341928507/job/118365311230",
+          "databaseId": 118365311230,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341928507,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341928507"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341928480/job/118365311522",
+          "databaseId": 118365311522,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341928480,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341928480"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1094,
+        "head": "4af5b2de0ad530a4853e20b557d12df15c5541c3",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341928507/job/118365311230",
+        "run_id": "39341928507",
+        "job_id": "118365311230",
+        "log": "pr1094_zig-windows_118365311230.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "795b0d45a51fca0fd59304aeda0631e15798d1703c52caea9c43a28e5c8fa3a3",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1095,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1095",
+      "pr_head": "96380eeacbefeb0d6c36015143f31bac0d564ca8",
+      "github_tested_pr_merge_commit": "985a088d7eb04e5a7f8d597f1dc34e9da6f84788",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341931602/job/118365321708",
+          "databaseId": 118365321708,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341931602,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341931602"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341931647/job/118365322046",
+          "databaseId": 118365322046,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341931647,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341931647"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341931621/job/118365321556",
+          "databaseId": 118365321556,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341931621,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341931621"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341931647/job/118365321969",
+          "databaseId": 118365321969,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341931647,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341931647"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341931602/job/118365321407",
+          "databaseId": 118365321407,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341931602,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341931602"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1095,
+        "head": "96380eeacbefeb0d6c36015143f31bac0d564ca8",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341931647/job/118365321969",
+        "run_id": "39341931647",
+        "job_id": "118365321969",
+        "log": "pr1095_zig-windows_118365321969.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "1e6a474bd0fe26a80903f4903e0e5cbb5b144f3f4d8c5c6a3be08c53cd58d781",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1096,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1096",
+      "pr_head": "bb4e4823ca8ca7dd8d2e422374ac9668e03f5d0f",
+      "github_tested_pr_merge_commit": "6dddec04778d6be7f98b5815f4ed632aca38443f",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341938064/job/118365345001",
+          "databaseId": 118365345001,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341938064,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341938064"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341937918/job/118365342233",
+          "databaseId": 118365342233,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341937918,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341937918"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341938026/job/118365342116",
+          "databaseId": 118365342116,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341938026,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341938026"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341937918/job/118365341976",
+          "databaseId": 118365341976,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341937918,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341937918"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341938064/job/118365344549",
+          "databaseId": 118365344549,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341938064,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341938064"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1096,
+        "head": "bb4e4823ca8ca7dd8d2e422374ac9668e03f5d0f",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341937918/job/118365341976",
+        "run_id": "39341937918",
+        "job_id": "118365341976",
+        "log": "pr1096_zig-windows_118365341976.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "de05b287b64e33a01da9c8085332dfef83871a90608bbc73160d09d112bfbe59",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1097,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1097",
+      "pr_head": "a272142d7db38285fd46cb39c835c8db18c1bda4",
+      "github_tested_pr_merge_commit": "9e950b1a26d4a1df95c6888e76c9016156e1e683",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341942421/job/118365355934",
+          "databaseId": 118365355934,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341942421,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341942421"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341942748/job/118365357296",
+          "databaseId": 118365357296,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341942748,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341942748"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341942606/job/118365356216",
+          "databaseId": 118365356216,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341942606,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341942606"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341942748/job/118365357021",
+          "databaseId": 118365357021,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341942748,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341942748"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341942421/job/118365356325",
+          "databaseId": 118365356325,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341942421,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341942421"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1097,
+        "head": "a272142d7db38285fd46cb39c835c8db18c1bda4",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341942748/job/118365357021",
+        "run_id": "39341942748",
+        "job_id": "118365357021",
+        "log": "pr1097_zig-windows_118365357021.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "5e088c2f72d614207e9168873b3fc52e321b7f11fb787042287bcf117c729576",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1098,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1098",
+      "pr_head": "ca40e2dfbf75714b0b0c9f05ca54496c5ecb8546",
+      "github_tested_pr_merge_commit": "fcac4d14fd4b3b6ca7eac9a517682c687d7be11e",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341950051/job/118365379401",
+          "databaseId": 118365379401,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341950051,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341950051"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341950177/job/118365379634",
+          "databaseId": 118365379634,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341950177,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341950177"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341950147/job/118365379071",
+          "databaseId": 118365379071,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341950147,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341950147"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341950177/job/118365379982",
+          "databaseId": 118365379982,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341950177,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341950177"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341950051/job/118365379649",
+          "databaseId": 118365379649,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341950051,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341950051"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1098,
+        "head": "ca40e2dfbf75714b0b0c9f05ca54496c5ecb8546",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341950177/job/118365379982",
+        "run_id": "39341950177",
+        "job_id": "118365379982",
+        "log": "pr1098_zig-windows_118365379982.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "0cdd81da16469c708ae793f22a4dc24201afb6cad11fc28ad54d0dca50c6094f",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1099,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1099",
+      "pr_head": "b25f13001942ee1cfa68a1c44be81d81d4fb42ea",
+      "github_tested_pr_merge_commit": "9a5a4f7dbaaaf12e1592cb13f0882251e44ee63a",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341956245/job/118365397552",
+          "databaseId": 118365397552,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341956245,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341956245"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341956198/job/118365397512",
+          "databaseId": 118365397512,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341956198,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341956198"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341956256/job/118365397389",
+          "databaseId": 118365397389,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341956256,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341956256"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341956198/job/118365397296",
+          "databaseId": 118365397296,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341956198,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341956198"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341956245/job/118365397806",
+          "databaseId": 118365397806,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341956245,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341956245"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1099,
+        "head": "b25f13001942ee1cfa68a1c44be81d81d4fb42ea",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341956198/job/118365397296",
+        "run_id": "39341956198",
+        "job_id": "118365397296",
+        "log": "pr1099_zig-windows_118365397296.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "32714dc49673ad06b2f40a42fb457ea131db836f9dfb0a285664dd294fa38fb2",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1100,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1100",
+      "pr_head": "8f1b1cb9d57d88fe84d22ff0de696f03c7975f91",
+      "github_tested_pr_merge_commit": "2015953a1e8ffef49aca304f4617711583387237",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341961129/job/118365412967",
+          "databaseId": 118365412967,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341961129,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341961129"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341961220/job/118365413260",
+          "databaseId": 118365413260,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341961220,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341961220"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341961056/job/118365412936",
+          "databaseId": 118365412936,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341961056,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341961056"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341961220/job/118365413487",
+          "databaseId": 118365413487,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341961220,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341961220"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341961129/job/118365413185",
+          "databaseId": 118365413185,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341961129,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341961129"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1100,
+        "head": "8f1b1cb9d57d88fe84d22ff0de696f03c7975f91",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341961220/job/118365413487",
+        "run_id": "39341961220",
+        "job_id": "118365413487",
+        "log": "pr1100_zig-windows_118365413487.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "69b0d765b04a7ba33b7d59402b2b9d0db24f05d943689eae90d16cc91becaa8a",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1101,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1101",
+      "pr_head": "6edf466e0dae8141636e081185ef0da365b10f9d",
+      "github_tested_pr_merge_commit": "58496b93ecc4c24c463e147911be72b65af4c42c",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341966674/job/118365431007",
+          "databaseId": 118365431007,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341966674,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341966674"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341966454/job/118365430231",
+          "databaseId": 118365430231,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341966454,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341966454"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341966496/job/118365430346",
+          "databaseId": 118365430346,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341966496,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341966496"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341966454/job/118365430457",
+          "databaseId": 118365430457,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341966454,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341966454"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341966674/job/118365431399",
+          "databaseId": 118365431399,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341966674,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341966674"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1101,
+        "head": "6edf466e0dae8141636e081185ef0da365b10f9d",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341966454/job/118365430457",
+        "run_id": "39341966454",
+        "job_id": "118365430457",
+        "log": "pr1101_zig-windows_118365430457.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "5f4c3486427eaa13a221d6b311b767bf19bfe68092244a9f4d82f657b2660709",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1102,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1102",
+      "pr_head": "a56d4f10ba6a3297edd0bf35b9ac071f7790430e",
+      "github_tested_pr_merge_commit": "da18dd4f2ad0b654d776f68de52dab4b1b860b03",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341972221/job/118365448661",
+          "databaseId": 118365448661,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341972221,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341972221"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341972176/job/118365447836",
+          "databaseId": 118365447836,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341972176,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341972176"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341972234/job/118365448331",
+          "databaseId": 118365448331,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341972234,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341972234"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341972176/job/118365447951",
+          "databaseId": 118365447951,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341972176,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341972176"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341972221/job/118365448404",
+          "databaseId": 118365448404,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341972221,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341972221"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1102,
+        "head": "a56d4f10ba6a3297edd0bf35b9ac071f7790430e",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341972176/job/118365447951",
+        "run_id": "39341972176",
+        "job_id": "118365447951",
+        "log": "pr1102_zig-windows_118365447951.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "d2117a62c3c11d872ace3d1d87b824c257098375829830d32440764d1b152611",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    },
+    {
+      "pr": 1103,
+      "pr_url": "https://github.com/ashhart/TensorFold/pull/1103",
+      "pr_head": "1596156e21769324b675ef5e0caae0452f361660",
+      "github_tested_pr_merge_commit": "a2f62d3d3d99084dee004503b7ef22f4682cd63e",
+      "github_tested_merge_base": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "rollup": "FAILURE",
+      "contexts": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341976408/job/118365460739",
+          "databaseId": 118365460739,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341976408,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341976408"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341976391/job/118365460586",
+          "databaseId": 118365460586,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341976391,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341976391"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341976495/job/118365460919",
+          "databaseId": 118365460919,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341976495,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341976495"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341976391/job/118365460768",
+          "databaseId": 118365460768,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341976391,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341976391"
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39341976408/job/118365460999",
+          "databaseId": 118365460999,
+          "checkSuite": {
+            "workflowRun": {
+              "databaseId": 39341976408,
+              "url": "https://github.com/ashhart/TensorFold/actions/runs/39341976408"
+            }
+          }
+        }
+      ],
+      "failed_job": {
+        "pr": 1103,
+        "head": "1596156e21769324b675ef5e0caae0452f361660",
+        "context": "zig-windows",
+        "url": "https://github.com/ashhart/TensorFold/actions/runs/39341976391/job/118365460768",
+        "run_id": "39341976391",
+        "job_id": "118365460768",
+        "log": "pr1103_zig-windows_118365460768.log",
+        "fetch_exit": 0,
+        "fetch_error": ""
+      },
+      "raw_log_sha256": "f4f8dd4019472c5bc2f69de32ba79b4bdd2d4b969ec1daf904cda06f51398162",
+      "digest_key_primary_error": "zig\\src\\core\\digest_key.zig:34:42: error: expected type 'u128', found 'i64'",
+      "distinct_normalized_compiler_messages": [
+        "cannot load opaque type 'anyopaque'",
+        "enum 'Io.File.Permissions__enum_N' has no member named 'fromMode'",
+        "enum 'c.SIG__enum_N' has no member named 'HUP'",
+        "error union with payload of opaque type 'anyopaque' not allowed",
+        "expected integer or vector, found '*anyopaque'",
+        "expected integer or vector, found 'void'",
+        "expected type '*anyopaque', found 'c_int'",
+        "expected type '*anyopaque', found 'comptime_int'",
+        "expected type '*anyopaque', found 'isize'",
+        "expected type 'sys.WinDynLib', found 'dynamic_library.DynLib'",
+        "expected type 'u128', found 'i64'",
+        "incompatible types: '*anyopaque' and 'comptime_int'",
+        "no align available for uninstantiable type 'anyopaque'",
+        "no field or member function named 'close' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'lookup' in 'dynamic_library.DynLib.InnerType__struct_N'",
+        "no field or member function named 'toMode' in 'Io.File.Permissions__enum_N'",
+        "no field or member function named 'view' in 'process.Environ.GlobalBlock'",
+        "parameter of type 'void' not allowed in function with calling convention 'x86_64_win'",
+        "root source file struct 'os.windows.kernel32' has no member named 'GetCurrentProcessId'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'addrinfo'",
+        "root source file struct 'os.windows.ws2_32' has no member named 'pollfd'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'DONTWAIT'",
+        "struct 'os.windows.ws2_32.MSG' has no member named 'NOSIGNAL'",
+        "type 'void' does not support field access",
+        "type 'void' does not support struct initialization syntax",
+        "type 'void' has no members",
+        "type 'void' not a function",
+        "unsupported platform"
+      ],
+      "digest_key_blob": "966f1fd2234e139d17b90f66e480226f595e2d47",
+      "digest_key_identical_to_base_and_upstream": true,
+      "exact_build_summary_lines": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ]
+    }
+  ]
+}

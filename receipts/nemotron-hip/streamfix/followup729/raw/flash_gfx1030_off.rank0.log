@@ -1,0 +1,25 @@
+loaded in 22.6 s, 21.58 GiB on the device
+prompt 5 tokens in 0.049 s (102.0 tok/s); 31 tokens in 0.662 s (46.81 tok/s)
+logits hash 349d29968cc98589
+ids { 11751, 11, 321, 279, 6511, 314, 9564, 369, 19241, 13, 15767, 411, 11, 413, 567, 13881, 279, 89798, 314, 9338, 321, 9564, 11, 1092, 1000, 381, 279, 6511, 314, 9338, 30, 271 }
+---
+The capital of France is Paris, and the capital of Germany is Berlin. Given this, if we swap the capitals of France and Germany, what would be the capital of France?
+
+
+---
+prompt 5 tokens in 0.038 s (130.0 tok/s); 31 tokens in 0.654 s (47.38 tok/s)
+logits hash 349d29968cc98589
+ids { 11751, 11, 321, 279, 6511, 314, 9564, 369, 19241, 13, 15767, 411, 11, 413, 567, 13881, 279, 89798, 314, 9338, 321, 9564, 11, 1092, 1000, 381, 279, 6511, 314, 9338, 30, 271 }
+---
+The capital of France is Paris, and the capital of Germany is Berlin. Given this, if we swap the capitals of France and Germany, what would be the capital of France?
+
+
+---
+prompt 5 tokens in 0.038 s (130.0 tok/s); 31 tokens in 0.655 s (47.32 tok/s)
+logits hash 349d29968cc98589
+ids { 11751, 11, 321, 279, 6511, 314, 9564, 369, 19241, 13, 15767, 411, 11, 413, 567, 13881, 279, 89798, 314, 9338, 321, 9564, 11, 1092, 1000, 381, 279, 6511, 314, 9338, 30, 271 }
+---
+The capital of France is Paris, and the capital of Germany is Berlin. Given this, if we swap the capitals of France and Germany, what would be the capital of France?
+
+
+---

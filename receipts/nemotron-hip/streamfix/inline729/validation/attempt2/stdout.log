@@ -1,0 +1,20 @@
+Traceback (most recent call last):
+  File "<REMOTE_HOME>/hcx/streamfix/inline_validation/validate.py", line 90, in <module>
+    jobs=[pool.submit(validate_arch,a,devices[a]) for a in ('gfx1100','gfx1030')];R['architectures']=[j.result() for j in jobs]
+                                                                                                      ~~~~~~~~^^
+  File "/usr/lib64/python3.14/concurrent/futures/_base.py", line 454, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/concurrent/futures/_base.py", line 396, in __get_result
+    raise self._exception
+  File "/usr/lib64/python3.14/concurrent/futures/thread.py", line 86, in run
+    result = ctx.run(self.task)
+  File "/usr/lib64/python3.14/concurrent/futures/thread.py", line 73, in run
+    return fn(*args, **kwargs)
+  File "<REMOTE_HOME>/hcx/streamfix/inline_validation/validate.py", line 43, in validate_arch
+    run('compare_'+arch,['python3',S/'compare.py',D/'dumps'/('old_'+arch),D/'dumps'/('new_'+arch),H/'hcx/streamfix/finite_o3/builds'/('old_'+arch+'.json'),D/'builds'/('new_'+arch+'.json'),'--output',comparison])
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<REMOTE_HOME>/hcx/streamfix/inline_validation/validate.py", line 29, in run
+    identity();assert code==0,(name,code);return row,log
+                      ^^^^^^^
+AssertionError: ('compare_gfx1100', 1)

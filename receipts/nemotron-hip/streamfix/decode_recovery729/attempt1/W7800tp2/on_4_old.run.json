@@ -1,0 +1,77 @@
+{
+  "rig": "W7800tp2",
+  "mode": "on",
+  "hold_index": 4,
+  "tree": "old",
+  "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+  "port": 36508,
+  "ranks": [
+    {
+      "rank": 1,
+      "pid": 1678126,
+      "argv": [
+        "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+        "serve",
+        "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--tp",
+        "2",
+        "--rank",
+        "1",
+        "--master",
+        "127.0.0.1",
+        "--master-port",
+        "37508",
+        "--context",
+        "65536",
+        "--parallel",
+        "4"
+      ],
+      "log": "on_4_old.r1.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": -15,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    },
+    {
+      "rank": 0,
+      "pid": 1678130,
+      "argv": [
+        "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+        "serve",
+        "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--tp",
+        "2",
+        "--rank",
+        "0",
+        "--master",
+        "127.0.0.1",
+        "--master-port",
+        "37508",
+        "--name",
+        "m",
+        "--port",
+        "36508",
+        "--context",
+        "65536",
+        "--parallel",
+        "4"
+      ],
+      "log": "on_4_old.r0.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": 0,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    }
+  ],
+  "teardown": true,
+  "runtime_identity": {
+    "file": "on_4_old.identity.json",
+    "raw_sha256": "02da302c7adae84b9a4dbe9f226c93f8b0b1fbba9cf2f48913484ab17956f23f"
+  },
+  "client_exit_status": 0,
+  "benchmark": {
+    "file": "on_4_old.json",
+    "raw_sha256": "ded6a9ab62556918dc587530a7c207622ad263a1e9f017e181a5db22fb9f2ea8"
+  }
+}

@@ -1,0 +1,569 @@
+{
+  "schema_version": 1,
+  "original_run": "20261020T021719",
+  "full16_complete": false,
+  "completed_holds": 13,
+  "off_holds": 8,
+  "partial_on_holds": 5,
+  "failure": "Address already in use before V620 ON hold2; no numerical benchmark failure asserted",
+  "failure_log_sha256": "1e22dd32b9bd00755adafc512f1325c4098ac0bb7e7f0c3add410b7a671e48e5",
+  "all_completed_hold_groups_gone": true,
+  "cleanup_observation": "Independent process listing: originaldriver absent and NO_RECOVERY_PROCESSES",
+  "holds": [
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "hold_index": 1,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "V620tp1/off_1_old.run.json",
+          "bytes": 1219,
+          "sha256": "46f52d4042f99c8402842821e59a2f28fd46c140d22f8da5c8bba523ecd97e0b"
+        },
+        {
+          "path": "V620tp1/off_1_old.json",
+          "bytes": 2360,
+          "sha256": "713eaf444c0bf01b64dec25b78485cd8efa3e03a550625600598035684c47229"
+        },
+        {
+          "path": "V620tp1/off_1_old.identity.json",
+          "bytes": 2904,
+          "sha256": "2550ddf936341216ceace77b52ef13f4a9bfe3b5184ca6a5418f592fbb688555"
+        },
+        {
+          "path": "V620tp1/off_1_old.r0.log",
+          "bytes": 3126,
+          "sha256": "5af220f80e0ce45cfc1ad2bc4e4c91e8f70ee2c1c5fd6d72956247ba9ae5c2c7"
+        },
+        {
+          "path": "V620tp1/off_1_old.client.log",
+          "bytes": 575,
+          "sha256": "783875e063f561b39d1a7c3e469b37e4137c2b95e1dcd313b1785fb0f640784a"
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "hold_index": 2,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "V620tp1/off_2_new.run.json",
+          "bytes": 1230,
+          "sha256": "5eb879bffd1348a679eec00038144260ba7245f404768e1ecd4fddb45c4c7e12"
+        },
+        {
+          "path": "V620tp1/off_2_new.json",
+          "bytes": 2360,
+          "sha256": "c8753f5593f11721ba837655535ded78e2c3a93539c771da4f8fc0c234dc5cd2"
+        },
+        {
+          "path": "V620tp1/off_2_new.identity.json",
+          "bytes": 2915,
+          "sha256": "5700008542821db94a429010d4e7d0a29fae1bec31a2b4c8472dd547ec741bb4"
+        },
+        {
+          "path": "V620tp1/off_2_new.r0.log",
+          "bytes": 3126,
+          "sha256": "f5678c78febbccb2b71d60388809fa596bdfb2db8a17f64e74204e26007678b0"
+        },
+        {
+          "path": "V620tp1/off_2_new.client.log",
+          "bytes": 575,
+          "sha256": "e43a3cbdc87b6101210c2b38f7bf1aea604d3005e40650aaebbb928e0c4d8f1b"
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "hold_index": 3,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "V620tp1/off_3_new.run.json",
+          "bytes": 1230,
+          "sha256": "09c2897452f138fb32a206e6277cb6fe0bbc82a5b2593a7d9f088f2dbf9439e2"
+        },
+        {
+          "path": "V620tp1/off_3_new.json",
+          "bytes": 2358,
+          "sha256": "7ecdd8d27cc272b8a0e4446a678af5910cafa1723bd9740bb6db41c300555f56"
+        },
+        {
+          "path": "V620tp1/off_3_new.identity.json",
+          "bytes": 2915,
+          "sha256": "abbfbe0d44f48ebd8104508fcb0bd862a7b9b812f2392359cad4a0792cd54da0"
+        },
+        {
+          "path": "V620tp1/off_3_new.r0.log",
+          "bytes": 3126,
+          "sha256": "96b279ce0b5d03c7ed0d965e31e437b97fc4ea230e4f50ee471b68bd11879a4e"
+        },
+        {
+          "path": "V620tp1/off_3_new.client.log",
+          "bytes": 573,
+          "sha256": "a17624ff2d2de942ece8265a7d582370e49dd919f86362e103aa6ec47957ee57"
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "hold_index": 4,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "V620tp1/off_4_old.run.json",
+          "bytes": 1219,
+          "sha256": "13644158a7b31bb38c7d085bc744d779be190bae3556911995716a5d9f9f053a"
+        },
+        {
+          "path": "V620tp1/off_4_old.json",
+          "bytes": 2359,
+          "sha256": "baad6c50a5d6849e1e90ec6153833e7973a1a88f77188878685bbf4fc875ee11"
+        },
+        {
+          "path": "V620tp1/off_4_old.identity.json",
+          "bytes": 2904,
+          "sha256": "b58278208c37ae6abaafed1cfc3cf8e68a5006efe4312b316842615eccc87fe4"
+        },
+        {
+          "path": "V620tp1/off_4_old.r0.log",
+          "bytes": 3126,
+          "sha256": "f176060d404d91b31a63f7372a7432412712c8846ef4605f02fe7253b00dbe7f"
+        },
+        {
+          "path": "V620tp1/off_4_old.client.log",
+          "bytes": 574,
+          "sha256": "0397d82745654d140ba91519eeb4bf867ab9cb911fedf932443f6b9f352ea4e1"
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "on",
+      "hold_index": 1,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "V620tp1/on_1_old.run.json",
+          "bytes": 1192,
+          "sha256": "d89c0f7ca4eac29268b97faa82ca91776ad65819ac06d6cebb1407c7584f57bd"
+        },
+        {
+          "path": "V620tp1/on_1_old.json",
+          "bytes": 2360,
+          "sha256": "dca8c8ecaa38f474bde67af4cfaf923625f7c0e813bbdca78f2726c057302fbe"
+        },
+        {
+          "path": "V620tp1/on_1_old.identity.json",
+          "bytes": 2904,
+          "sha256": "aba7e06635c1ddea6a2bace217b69654f99f5a511d772221dfb3bd5a9d23abfe"
+        },
+        {
+          "path": "V620tp1/on_1_old.r0.log",
+          "bytes": 3248,
+          "sha256": "2f7284066d8ebb9b36366af26888c29054243cc7edc2db14609bc8784c130109"
+        },
+        {
+          "path": "V620tp1/on_1_old.client.log",
+          "bytes": 575,
+          "sha256": "0b47b8ee04bb306f89d777a19d75d4528144e5c580f05b4ac7a294d4ae07e8fe"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "hold_index": 1,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        -15,
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "W7800tp2/off_1_old.run.json",
+          "bytes": 2064,
+          "sha256": "6f1c61a5c2f8dc2782c8a9167e0a8c1b52efb86badcba9641ca78c7f9475caab"
+        },
+        {
+          "path": "W7800tp2/off_1_old.json",
+          "bytes": 2363,
+          "sha256": "eab6ca99554391c291e14fc0ba3fefb071d5fac70949d7a889e024567b86e434"
+        },
+        {
+          "path": "W7800tp2/off_1_old.identity.json",
+          "bytes": 3959,
+          "sha256": "d27d020686be5d77ade7e5c92d5708616928a266a75a31abb57682db4c76b9cc"
+        },
+        {
+          "path": "W7800tp2/off_1_old.r1.log",
+          "bytes": 473,
+          "sha256": "86dd31a1c8865747842a7086596185531e0b68c7da2e89203d582fbc42e926d7"
+        },
+        {
+          "path": "W7800tp2/off_1_old.r0.log",
+          "bytes": 3069,
+          "sha256": "0ab0de07878cee0df8e8c95dac083f7ba8a99cdc15b8e67dfc9543b3423de013"
+        },
+        {
+          "path": "W7800tp2/off_1_old.client.log",
+          "bytes": 576,
+          "sha256": "162aac6e4d2cd32f12a2cc21f46b22e4c69472ad9489ae276a5229a1810cb414"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "hold_index": 2,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        -15,
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "W7800tp2/off_2_new.run.json",
+          "bytes": 2086,
+          "sha256": "a945299b15799a658d05b03f190e1ad452baf76f40ab928ab6dac165e01c0b63"
+        },
+        {
+          "path": "W7800tp2/off_2_new.json",
+          "bytes": 2364,
+          "sha256": "ea0ee4374b92663cb541f1c443f3c2313a0eaab088fead92c890be3789c9ea2e"
+        },
+        {
+          "path": "W7800tp2/off_2_new.identity.json",
+          "bytes": 3981,
+          "sha256": "3c01386b698dd925198d500a0671d462a630e0022af278be28b57fc438143cf8"
+        },
+        {
+          "path": "W7800tp2/off_2_new.r1.log",
+          "bytes": 473,
+          "sha256": "86dd31a1c8865747842a7086596185531e0b68c7da2e89203d582fbc42e926d7"
+        },
+        {
+          "path": "W7800tp2/off_2_new.r0.log",
+          "bytes": 3069,
+          "sha256": "cadc5f69d9f0c99d5a249e3aa805332b02751370a530dc5fdc408f73cc9b3076"
+        },
+        {
+          "path": "W7800tp2/off_2_new.client.log",
+          "bytes": 577,
+          "sha256": "425f2847caf4f868972c552df864f9e6680151b70cfba7436663ee0e14fe41d9"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "hold_index": 3,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        -15,
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "W7800tp2/off_3_new.run.json",
+          "bytes": 2086,
+          "sha256": "0d9bf3a32ad19c025f91e127d99bc7d2177564ed29871208c4494e1195562a2e"
+        },
+        {
+          "path": "W7800tp2/off_3_new.json",
+          "bytes": 2363,
+          "sha256": "632e553298144aaeceabf72889cecdb80000262f7de518a143055c510966ec2e"
+        },
+        {
+          "path": "W7800tp2/off_3_new.identity.json",
+          "bytes": 3981,
+          "sha256": "448dc16de3e753553d0675015be1a4c59633cd80405c728bbc41a9968d839d62"
+        },
+        {
+          "path": "W7800tp2/off_3_new.r1.log",
+          "bytes": 473,
+          "sha256": "86dd31a1c8865747842a7086596185531e0b68c7da2e89203d582fbc42e926d7"
+        },
+        {
+          "path": "W7800tp2/off_3_new.r0.log",
+          "bytes": 3069,
+          "sha256": "a5c71cd3752d16d214bb1a60eaa7b58465fbe509e7e123c65ee05a9ed4d9fa58"
+        },
+        {
+          "path": "W7800tp2/off_3_new.client.log",
+          "bytes": 576,
+          "sha256": "58de2f6fc6c34640a3c3301547a0b5dd365c85c04cbf2057eaf0984b9c3d1318"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "hold_index": 4,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        -15,
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "W7800tp2/off_4_old.run.json",
+          "bytes": 2064,
+          "sha256": "e0b79f6ec2392e8d5e02db6944dd5c0ecb5aa850cb778c776cb20e6f0eca06a7"
+        },
+        {
+          "path": "W7800tp2/off_4_old.json",
+          "bytes": 2362,
+          "sha256": "1843c3bf0de31ecf5025582aa710c70ddd7df6fbca3e0dae8e3c303513fad85b"
+        },
+        {
+          "path": "W7800tp2/off_4_old.identity.json",
+          "bytes": 3959,
+          "sha256": "5da2d797f3a6a4fea6305a8ebb7efc368db07216b8a80ffc8565b79698c19a38"
+        },
+        {
+          "path": "W7800tp2/off_4_old.r1.log",
+          "bytes": 473,
+          "sha256": "86dd31a1c8865747842a7086596185531e0b68c7da2e89203d582fbc42e926d7"
+        },
+        {
+          "path": "W7800tp2/off_4_old.r0.log",
+          "bytes": 3069,
+          "sha256": "37d87d77ff5c5cda7f59341949813afdb027bfa4ec558805b9d0168e2d691b1f"
+        },
+        {
+          "path": "W7800tp2/off_4_old.client.log",
+          "bytes": 575,
+          "sha256": "169aefa1f3259e9ce53ca9c599f4322103a9ec7c4fa1ed56cfae7a4f4fe32fef"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "on",
+      "hold_index": 1,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        -15,
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "W7800tp2/on_1_old.run.json",
+          "bytes": 2013,
+          "sha256": "ebee922b377f731848e4ce21618a7cb6d4888ef012b943a9e22f76d72475fedc"
+        },
+        {
+          "path": "W7800tp2/on_1_old.json",
+          "bytes": 2362,
+          "sha256": "1aa23629ee21c9656c5ae87792d378591a8dd89ba16a2d0bba4c0a8b2d33514f"
+        },
+        {
+          "path": "W7800tp2/on_1_old.identity.json",
+          "bytes": 3959,
+          "sha256": "6241f3abab99624145720ad6ec0adb391214b236b7a8d4b8880e4e09ed59844b"
+        },
+        {
+          "path": "W7800tp2/on_1_old.r1.log",
+          "bytes": 473,
+          "sha256": "86dd31a1c8865747842a7086596185531e0b68c7da2e89203d582fbc42e926d7"
+        },
+        {
+          "path": "W7800tp2/on_1_old.r0.log",
+          "bytes": 3186,
+          "sha256": "e3958be4cc85945feb100bf151c186d93efaf69cb60fcb66b2f24709f8eb4654"
+        },
+        {
+          "path": "W7800tp2/on_1_old.client.log",
+          "bytes": 575,
+          "sha256": "8b822a6283c4adc22fc184ea3630f05dde7786e1d855dd543d740d289a90bd94"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "on",
+      "hold_index": 2,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        -15,
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "W7800tp2/on_2_new.run.json",
+          "bytes": 2035,
+          "sha256": "a5da9dc3f99f4bd7bad43a4e28ba0969be3fc0de532f3bd8ed8a73f9c6cf7a35"
+        },
+        {
+          "path": "W7800tp2/on_2_new.json",
+          "bytes": 2362,
+          "sha256": "0c0477ae8700316339787ecaa14a9d5c0ad26322f32d21e29170deb4fdae8012"
+        },
+        {
+          "path": "W7800tp2/on_2_new.identity.json",
+          "bytes": 3981,
+          "sha256": "34d99ae99820d265ca730a0f5411b291a3c660a83c5df9a60d924d62433a4530"
+        },
+        {
+          "path": "W7800tp2/on_2_new.r1.log",
+          "bytes": 473,
+          "sha256": "86dd31a1c8865747842a7086596185531e0b68c7da2e89203d582fbc42e926d7"
+        },
+        {
+          "path": "W7800tp2/on_2_new.r0.log",
+          "bytes": 3186,
+          "sha256": "d23416045edb3650557b6c5b1fbcea1c4a4b22c825dd18f668ad2d2f935cf31d"
+        },
+        {
+          "path": "W7800tp2/on_2_new.client.log",
+          "bytes": 575,
+          "sha256": "8ec5a806c0eca1ac9d8e7cd48610dfd5d766fe1170bd5a08ecf5f6c96b8fb73a"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "on",
+      "hold_index": 3,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        -15,
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "W7800tp2/on_3_new.run.json",
+          "bytes": 2035,
+          "sha256": "3a2af39ade449477336b1fc4316799a77d61a66dc419b93772ef5bf3f28fa475"
+        },
+        {
+          "path": "W7800tp2/on_3_new.json",
+          "bytes": 2363,
+          "sha256": "4b222fad91f6d95ff058c1af396f63cf88aae99a3896cb11fc67fd7c6a320b77"
+        },
+        {
+          "path": "W7800tp2/on_3_new.identity.json",
+          "bytes": 3981,
+          "sha256": "0ae4da636ae77c079fb59f89c2d08a10df3ef08afc9256b2879fff6042e8b88c"
+        },
+        {
+          "path": "W7800tp2/on_3_new.r1.log",
+          "bytes": 473,
+          "sha256": "86dd31a1c8865747842a7086596185531e0b68c7da2e89203d582fbc42e926d7"
+        },
+        {
+          "path": "W7800tp2/on_3_new.r0.log",
+          "bytes": 3186,
+          "sha256": "209a6f417415609170f601f166d3f3e14372c00403fdc371c506411e37d6e0c4"
+        },
+        {
+          "path": "W7800tp2/on_3_new.client.log",
+          "bytes": 576,
+          "sha256": "3f276814ed1d00a8e807c27af81aaa3734e8ce44fbd929b58a2a31ed0d074c20"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "on",
+      "hold_index": 4,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "client_exit_status": 0,
+      "native_actual_exit_statuses": [
+        -15,
+        0
+      ],
+      "process_groups_gone": true,
+      "files": [
+        {
+          "path": "W7800tp2/on_4_old.run.json",
+          "bytes": 2013,
+          "sha256": "30ff48e6c2f5431b53f1b0f91b65d33b82a0b4dd4465c44fdddf4986f9dab42a"
+        },
+        {
+          "path": "W7800tp2/on_4_old.json",
+          "bytes": 2363,
+          "sha256": "ded6a9ab62556918dc587530a7c207622ad263a1e9f017e181a5db22fb9f2ea8"
+        },
+        {
+          "path": "W7800tp2/on_4_old.identity.json",
+          "bytes": 3959,
+          "sha256": "02da302c7adae84b9a4dbe9f226c93f8b0b1fbba9cf2f48913484ab17956f23f"
+        },
+        {
+          "path": "W7800tp2/on_4_old.r1.log",
+          "bytes": 473,
+          "sha256": "86dd31a1c8865747842a7086596185531e0b68c7da2e89203d582fbc42e926d7"
+        },
+        {
+          "path": "W7800tp2/on_4_old.r0.log",
+          "bytes": 3186,
+          "sha256": "e07fb36169ce80e0bbd590643cf3ff927e98a77fb484c32a32135e1207ba88d4"
+        },
+        {
+          "path": "W7800tp2/on_4_old.client.log",
+          "bytes": 576,
+          "sha256": "03765bc5ed7b7e3d70cbae5a8392cb58dde567dc539240aa149f4ff4d677fe8e"
+        }
+      ]
+    }
+  ]
+}

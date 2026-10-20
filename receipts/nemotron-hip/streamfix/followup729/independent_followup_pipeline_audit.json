@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "independently_validated_followup_pipeline": true,
+  "actual_source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "baseline_source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "pipeline_result_sha256": "9a18960f0030f0f93648237cd58faeddee6b238226b9519bced3a14fbd9e61b9",
+  "pipeline_all5_actual_exit_logs_verified": true,
+  "frozen_recipe_and_pipeline_sha_verified": true,
+  "nemotron_outputs_rehashed": 16,
+  "nemotron_old_new_pairs_cmp_equal": 8,
+  "nemotron": [
+    {
+      "rig": "w7800tp2",
+      "world": 2,
+      "summary_sha256": "4fefdca940c3acaffde7a477cde3abd1c689b8669a7423d286e5c83b9ef48ba8",
+      "actual_outputs_rehashed": 8,
+      "actual_old_new_pairs_cmp_equal": 4,
+      "actual_rank_exit_count": 16,
+      "runs": [
+        {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "name": "decode",
+          "bytes_rehashed": 117440512,
+          "output_sha256": "08e152477e73fe3ca386540aa25606345df1822d3859bcf155386ee496e8ca13",
+          "actual_rank_exit_statuses": [
+            0,
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "1": "616d1c861ad1be67312600b19400fdb387236b80c5571a71711f6de63a919eca",
+            "0": "51151a5bbbd89a6be04e037d48d127b2f63a8be926d5604a3473e7349a1748ac"
+          },
+          "runtime_identity_sha256": "85cb20080c4c017a3112c104cd6ec5c728da0ca446a3e7700c5d94de0f493f4f"
+        },
+        {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "name": "chat_full",
+          "bytes_rehashed": 30932992,
+          "output_sha256": "649178c5a811121df6375b16663178e40b358bf4a95da491a2cb735c23808034",
+          "actual_rank_exit_statuses": [
+            0,
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "1": "0400d70b65045d3c3dc1ed6854c45d9f2764b70aed3933fdbbfa6e519ac59608",
+            "0": "d8646a998a0443cb47f9090ffb8a31425a49d96917b3fc2f8a9cbf5ccd518cd8"
+          },
+          "runtime_identity_sha256": "0daf47d694c904ab611f7e85a607d4bd89553f6940827cba4f9bfe77b3b44eda"
+        },
+        {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "name": "code_full",
+          "bytes_rehashed": 24641536,
+          "output_sha256": "fa5580dadfca03afff4d9b8fbc97a9d71df519c3b1963d667e625e576057dd32",
+          "actual_rank_exit_statuses": [
+            0,
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "1": "4bfc73821e994d3bcdc53d7546d98b7fdf52d48b7eabfd5a14bc969e3cd5663c",
+            "0": "abe557fa96de40be0ba8fe4643de2d76c3c3a3a455289941f5ea1df75e2785fc"
+          },
+          "runtime_identity_sha256": "c33b2da9486859bea173fa2407181b37d3300c9e7f19ec1b82f0b38e51ff30d6"
+        },
+        {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "name": "story_full",
+          "bytes_rehashed": 24641536,
+          "output_sha256": "37ad32c153ef2858c43cf1c9548bfe6aa2f049bf05fd7faf4f7ec28254f1752b",
+          "actual_rank_exit_statuses": [
+            0,
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "1": "d1fe7b270d5abaa3e9e403edb75aefa663aaf43256ac029a24dc1b6b8c08c0cb",
+            "0": "dbbd3462ddb05618c8e4b5b14cec304f8b624a22d1534a97971d4471e7f30d12"
+          },
+          "runtime_identity_sha256": "523b5f94f7661f0e9aea2176142376373b93ed5e9d4a8f843648542c8d782f17"
+        },
+        {
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "name": "decode",
+          "bytes_rehashed": 117440512,
+          "output_sha256": "08e152477e73fe3ca386540aa25606345df1822d3859bcf155386ee496e8ca13",
+          "actual_rank_exit_statuses": [
+            0,
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "1": "ffc104abb4cf8c854b0027652ccbb805028dde5c65372b6f11cfecb70ae75dae",
+            "0": "51151a5bbbd89a6be04e037d48d127b2f63a8be926d5604a3473e7349a1748ac"
+          },
+          "runtime_identity_sha256": "07218aea801996821ee311d0beac0977dd0b4f3b528877c3ac0e0af86f0345ad"
+        },
+        {
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "name": "chat_full",
+          "bytes_rehashed": 30932992,
+          "output_sha256": "649178c5a811121df6375b16663178e40b358bf4a95da491a2cb735c23808034",
+          "actual_rank_exit_statuses": [
+            0,
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "1": "0400d70b65045d3c3dc1ed6854c45d9f2764b70aed3933fdbbfa6e519ac59608",
+            "0": "d8646a998a0443cb47f9090ffb8a31425a49d96917b3fc2f8a9cbf5ccd518cd8"
+          },
+          "runtime_identity_sha256": "06b3b2d09f592fea1a2fba81dd7d232c43d425679dce595bc245cddc7720f7d1"
+        },
+        {
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "name": "code_full",
+          "bytes_rehashed": 24641536,
+          "output_sha256": "fa5580dadfca03afff4d9b8fbc97a9d71df519c3b1963d667e625e576057dd32",
+          "actual_rank_exit_statuses": [
+            0,
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "1": "4bfc73821e994d3bcdc53d7546d98b7fdf52d48b7eabfd5a14bc969e3cd5663c",
+            "0": "abe557fa96de40be0ba8fe4643de2d76c3c3a3a455289941f5ea1df75e2785fc"
+          },
+          "runtime_identity_sha256": "bf81e8458e78d8b61872f4e592ea66be98a36ad60706adbd50dc04fb46178272"
+        },
+        {
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "name": "story_full",
+          "bytes_rehashed": 24641536,
+          "output_sha256": "37ad32c153ef2858c43cf1c9548bfe6aa2f049bf05fd7faf4f7ec28254f1752b",
+          "actual_rank_exit_statuses": [
+            0,
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "1": "d1fe7b270d5abaa3e9e403edb75aefa663aaf43256ac029a24dc1b6b8c08c0cb",
+            "0": "dbbd3462ddb05618c8e4b5b14cec304f8b624a22d1534a97971d4471e7f30d12"
+          },
+          "runtime_identity_sha256": "0b41c7072aac80e604cb383cc429b98187f1071e7e2a924d4303d54def926959"
+        }
+      ]
+    },
+    {
+      "rig": "v620tp1",
+      "world": 1,
+      "summary_sha256": "5d2e3a1b2377fd0dccc959bc5a18a92cab581e40ba3059cedd6bb582eafff3a7",
+      "actual_outputs_rehashed": 8,
+      "actual_old_new_pairs_cmp_equal": 4,
+      "actual_rank_exit_count": 8,
+      "runs": [
+        {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "name": "decode",
+          "bytes_rehashed": 117440512,
+          "output_sha256": "f8f07c8e68296e96a21bb80abb65d46762acdc485b4941375a99deb10a1bb411",
+          "actual_rank_exit_statuses": [
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "0": "174e988da05704ef4f4f3e0d9500cc0fa810ee6dde909d58607cc7bbf96a4175"
+          },
+          "runtime_identity_sha256": "1de597618106237060180a85f841b04c13e7547d5462f87ef89983d889495b39"
+        },
+        {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "name": "chat_full",
+          "bytes_rehashed": 30932992,
+          "output_sha256": "b171033e305019256ad7d744258d8a7340c81e1cf44761ac11bf68ad2957fd1f",
+          "actual_rank_exit_statuses": [
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "0": "9b3894f17c7d9d3e69114419f949891cdc87a2c1d5f719288b5c313d15bffa38"
+          },
+          "runtime_identity_sha256": "8923a9f2b2e1d0f5d050c752df89e7c4691b7e25e4ca92ca62fddeec1b56ac6d"
+        },
+        {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "name": "code_full",
+          "bytes_rehashed": 24641536,
+          "output_sha256": "d33e867303b2e3e62c9c6f9cbe164bb8809d0da817d9bbed8199b7fa5a871f0e",
+          "actual_rank_exit_statuses": [
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "0": "44f1f444c588ac7d8a30848f5b200344b9dec3a68e088daff66971e2ecd5d3f6"
+          },
+          "runtime_identity_sha256": "dccf18da45524e925efd7bb54ef9b6f14999c7c7b463e338ae1d81c8ce761a06"
+        },
+        {
+          "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+          "name": "story_full",
+          "bytes_rehashed": 24641536,
+          "output_sha256": "0f5195506bf0f528ae6057160dd1af4d278b4c93384f476fb082612aeb6c4de8",
+          "actual_rank_exit_statuses": [
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "0": "36f4ab0ac5df221bcad48590a4aa8aa1b7c9686b87bf2f02bcace5f193d5c2ed"
+          },
+          "runtime_identity_sha256": "bcafdef95b0c2ec2c2cebec0837d93b613daf9a5971f7691e0a40f3fefbd54c1"
+        },
+        {
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "name": "decode",
+          "bytes_rehashed": 117440512,
+          "output_sha256": "f8f07c8e68296e96a21bb80abb65d46762acdc485b4941375a99deb10a1bb411",
+          "actual_rank_exit_statuses": [
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "0": "bc8465aa65fc1deb040a4e31e39324cfd00f07ff819b0bbb28d7414f97cdeac5"
+          },
+          "runtime_identity_sha256": "3adad19d185973f7948dc58faf4129dea44c2e468c8857347858f03abc97197c"
+        },
+        {
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "name": "chat_full",
+          "bytes_rehashed": 30932992,
+          "output_sha256": "b171033e305019256ad7d744258d8a7340c81e1cf44761ac11bf68ad2957fd1f",
+          "actual_rank_exit_statuses": [
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "0": "9b3894f17c7d9d3e69114419f949891cdc87a2c1d5f719288b5c313d15bffa38"
+          },
+          "runtime_identity_sha256": "7b2c9d06f46f74669ea1984a842fca531b52994fba67d874c375ff19cca6857f"
+        },
+        {
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "name": "code_full",
+          "bytes_rehashed": 24641536,
+          "output_sha256": "d33e867303b2e3e62c9c6f9cbe164bb8809d0da817d9bbed8199b7fa5a871f0e",
+          "actual_rank_exit_statuses": [
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "0": "44f1f444c588ac7d8a30848f5b200344b9dec3a68e088daff66971e2ecd5d3f6"
+          },
+          "runtime_identity_sha256": "3d10415dfdfab9e3028aac429f166270cbe7b598c3db0dd4142d94a186fdc997"
+        },
+        {
+          "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+          "name": "story_full",
+          "bytes_rehashed": 24641536,
+          "output_sha256": "0f5195506bf0f528ae6057160dd1af4d278b4c93384f476fb082612aeb6c4de8",
+          "actual_rank_exit_statuses": [
+            0
+          ],
+          "actual_rank_log_sha256": {
+            "0": "36f4ab0ac5df221bcad48590a4aa8aa1b7c9686b87bf2f02bcace5f193d5c2ed"
+          },
+          "runtime_identity_sha256": "224422d2927e224ea7b6fe9407337caca3d7bde0f4b6c3afdd0d804b80067346"
+        }
+      ]
+    }
+  ],
+  "audit_remote_mutations": false,
+  "informational_manifest_docs": {
+    "plan.json": "original local SHA verified; not deployed or executed",
+    "README.md": "original local SHA verified; not deployed or executed"
+  }
+}

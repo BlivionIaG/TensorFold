@@ -1,0 +1,70 @@
+{
+  "rig": "V620tp1",
+  "mode": "off",
+  "hold_index": 4,
+  "tree": "old",
+  "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+  "port": 23504,
+  "ranks": [
+    {
+      "rank": 0,
+      "pid": 1747445,
+      "argv": [
+        "<USER_HOME>/nh/d46/out-gfx1030/native-hip/bin/tensorfold-native",
+        "serve",
+        "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--name",
+        "m",
+        "--port",
+        "23504",
+        "--context",
+        "65536",
+        "--parallel",
+        "4",
+        "--no-drafts"
+      ],
+      "log": "off_4_old.r0.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": 0,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    }
+  ],
+  "host_preflight": {
+    "single_logical_model_instance_per_host": true,
+    "host_idleness_scope": "observed known-process preflight; no physical-host lease or GPU6-9 authority claimed",
+    "tp2_rank_processes_are_one_logical_model": true,
+    "known_other_model_or_build_processes": [],
+    "processes_inspected": 70,
+    "shared_build_lock_held": true,
+    "existing_gpu_lock_found_in_reviewed_scripts": false,
+    "existing_gpu_lock_qualification": "PENDING; only existing CPU build lock identified in requested script scan",
+    "native_admission_guard": "unchanged frozen native binary and limits; no admission override flags",
+    "host_loadavg_1_5_15": [
+      1.73974609375,
+      1.853515625,
+      2.7421875
+    ],
+    "host_ram_kib": {
+      "MemTotal": 527988132,
+      "MemAvailable": 502671428
+    },
+    "host_ram_class": "physical host RAM from /proc/meminfo; DIMM/ECC class not inferred",
+    "cpu_model": "AMD EPYC 7K62 48-Core Processor",
+    "logical_cpus": 96,
+    "context_tokens": 65536,
+    "parallel_streams": 4,
+    "at_utc": "2026-10-20T01:26:11Z"
+  },
+  "teardown": true,
+  "runtime_identity": {
+    "file": "off_4_old.identity.json",
+    "raw_sha256": "81b117b36503c8b95f7972603b929f91cce58f628f36f0ba0dc7b329110cb5c0"
+  },
+  "client_exit_status": 0,
+  "benchmark": {
+    "file": "off_4_old.json",
+    "raw_sha256": "fbc890d47885d6cc0e17c66acf6077f8ea814216c26056efeb80eddef02f60cf"
+  }
+}

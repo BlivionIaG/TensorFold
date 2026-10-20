@@ -1,0 +1,424 @@
+Build Summary: 220/220 steps succeeded
+install success
++- install generated to lib/nemotron_fastmath.metallib success
+|  +- run xcrun (nemotron_fastmath.metallib) success 26ms
+|     +- run xcrun (nemotron_expert_up.air) success 113ms
+|     +- run xcrun (nemotron_expert_down.air) success 40ms
++- install generated to lib/tensorfold.metallib success
+|  +- run xcrun (tensorfold.metallib) cached
+|     +- run xcrun (runtime_tests.air) cached
+|     +- run xcrun (nemotron_expert_up.air) cached
+|     +- run xcrun (nemotron_expert_down.air) cached
++- install generated to lib/drama3.metallib success
+|  +- run xcrun (drama3.metallib) cached
+|     +- run xcrun (d3_dense.air) cached
+|     +- run xcrun (d3_gdn.air) cached
+|     +- run xcrun (d3_attn.air) cached
+|     +- run xcrun (d3_moe.air) cached
+|     +- run xcrun (d3_sample.air) cached
+|     +- run xcrun (d3_codec.air) cached
++- install drama3-generate success
+|  +- compile exe drama3-generate fast native success 14s MaxRSS:687M
+|     +- WriteFile drama3.metallib cached
+|        +- run xcrun (drama3.metallib) (+6 more reused dependencies)
++- install tf-metal-tests success
+|  +- compile exe tf-metal-tests fast native success 6s MaxRSS:421M
+|     +- WriteFile tensorfold.metallib cached
+|        +- run xcrun (tensorfold.metallib) (+3 more reused dependencies)
++- install tf-dispatch-bench success
+|  +- compile exe tf-dispatch-bench fast native success 6s MaxRSS:394M
+|     +- WriteFile tensorfold.metallib (+1 more reused dependencies)
++- install tf-kernel-exact success
+|  +- compile exe tf-kernel-exact fast native success 6s MaxRSS:402M
+|     +- WriteFile tensorfold.metallib (+1 more reused dependencies)
++- install generated to lib/kimi.metallib success
+|  +- run xcrun (kimi.metallib) success 32ms
+|     +- run xcrun (kimi_dense.air) success 62ms
+|     +- run xcrun (kimi_dense_mma.air) success 96ms
+|     +- run xcrun (kimi_norms.air) success 103ms
+|     +- run xcrun (kimi_experts.air) success 66ms
+|     +- run xcrun (kimi_kda.air) success 44ms
+|     +- run xcrun (kimi_mla.air) success 48ms
+|     +- run xcrun (kimi_synth.air) success 49ms
++- install tf-k3-check success
+|  +- compile exe tf-k3-check fast native success 8s MaxRSS:503M
+|     +- WriteFile kimi.metallib success
+|        +- run xcrun (kimi.metallib) (+7 more reused dependencies)
++- install tf-k3-bench success
+|  +- compile exe tf-k3-bench fast native success 7s MaxRSS:433M
+|     +- WriteFile kimi.metallib (+1 more reused dependencies)
++- install tf-k3-tokenizer success
+|  +- compile exe tf-k3-tokenizer fast native success 7s MaxRSS:381M
++- install generated to lib/nemotron_packed.metallib success
+|  +- run xcrun (nemotron_packed.metallib) cached
+|     +- run xcrun (coop_down_1_0.air) cached
+|     +- run xcrun (coop_down_2_0.air) cached
+|     +- run xcrun (coop_down_2_1.air) cached
+|     +- run xcrun (coop_draft_1_0.air) cached
+|     +- run xcrun (coop_draft_2_0.air) cached
+|     +- run xcrun (coop_draft_2_1.air) cached
+|     +- run xcrun (coop_eh_1_0.air) cached
+|     +- run xcrun (coop_eh_1_0_sk.air) cached
+|     +- run xcrun (coop_eh_2_0.air) cached
+|     +- run xcrun (coop_eh_2_0_sk.air) cached
+|     +- run xcrun (coop_eh_2_1.air) cached
+|     +- run xcrun (coop_eh_2_1_sk.air) cached
+|     +- run xcrun (coop_head_1_0.air) cached
+|     +- run xcrun (coop_head_2_0.air) cached
+|     +- run xcrun (coop_head_2_1.air) cached
+|     +- run xcrun (coop_in_1_0.air) cached
+|     +- run xcrun (coop_in_1_0_sk.air) cached
+|     +- run xcrun (coop_in_2_0.air) cached
+|     +- run xcrun (coop_in_2_0_sk.air) cached
+|     +- run xcrun (coop_in_2_1.air) cached
+|     +- run xcrun (coop_in_2_1_sk.air) cached
+|     +- run xcrun (coop_out_1_0.air) cached
+|     +- run xcrun (coop_out_1_0_sk.air) cached
+|     +- run xcrun (coop_out_2_0.air) cached
+|     +- run xcrun (coop_out_2_0_sk.air) cached
+|     +- run xcrun (coop_out_2_1.air) cached
+|     +- run xcrun (coop_out_2_1_sk.air) cached
+|     +- run xcrun (coop_qkv_1_0.air) cached
+|     +- run xcrun (coop_qkv_2_0.air) cached
+|     +- run xcrun (coop_qkv_2_1.air) cached
+|     +- run xcrun (coop_up_1_0.air) cached
+|     +- run xcrun (coop_up_2_0.air) cached
+|     +- run xcrun (coop_up_2_1.air) cached
+|     +- run xcrun (up_relu2_1_0.air) cached
+|     +- run xcrun (up_relu2_2_0.air) cached
+|     +- run xcrun (up_relu2_2_1.air) cached
++- install tf-qwen35-check success
+|  +- compile exe tf-qwen35-check fast native success 8s MaxRSS:491M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt cached
+|     +- WriteFile xsum.metal cached
+|     +- WriteFile nemotron_packed.metallib cached
+|     |  +- run xcrun (nemotron_packed.metallib) (+36 more reused dependencies)
+|     +- WriteFile drama3_core.zig cached
+|     +- WriteFile drama3.metallib cached
+|        +- run xcrun (drama3.metallib) cached
+|           +- run xcrun (d3_dense.air) cached
+|           +- run xcrun (d3_gdn.air) cached
+|           +- run xcrun (d3_attn.air) cached
+|           +- run xcrun (d3_moe.air) cached
+|           +- run xcrun (d3_sample.air) cached
+|           +- run xcrun (d3_codec.air) cached
++- install tf-qwen35-forward success
+|  +- compile exe tf-qwen35-forward fast native success 7s MaxRSS:492M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-qwen35-exact success
+|  +- compile exe tf-qwen35-exact fast native success 7s MaxRSS:491M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-lfm2-forward success
+|  +- compile exe tf-lfm2-forward fast native success 7s MaxRSS:518M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-lfm2-bench success
+|  +- compile exe tf-lfm2-bench fast native success 9s MaxRSS:574M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-lfm2-exact success
+|  +- compile exe tf-lfm2-exact fast native success 7s MaxRSS:529M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-lfm2-fp64 success
+|  +- compile exe tf-lfm2-fp64 fast native success 15s MaxRSS:521M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tensorfold success
+|  +- compile exe tensorfold fast native success 44s MaxRSS:1G
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-nemotron-fixtures success
+|  +- compile exe tf-nemotron-fixtures fast native success 11s MaxRSS:623M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-nemotron-bench success
+|  +- compile exe tf-nemotron-bench fast native success 10s MaxRSS:617M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-nemotron-wide success
+|  +- compile exe tf-nemotron-wide fast native success 19s MaxRSS:919M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-nemotron-prefill-check success
+|  +- compile exe tf-nemotron-prefill-check fast native success 12s MaxRSS:690M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-nemotron-dense success
+|  +- compile exe tf-nemotron-dense fast native success 9s MaxRSS:513M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-nemotron-experts success
+|  +- compile exe tf-nemotron-experts fast native success 6s MaxRSS:483M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-nemotron-sample-check success
+|  +- compile exe tf-nemotron-sample-check fast native success 5s MaxRSS:443M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-train-check success
+|  +- compile exe tf-train-check fast native success 14s MaxRSS:758M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-train-pack success
+|  +- compile exe tf-train-pack fast native success 15s MaxRSS:802M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-pocket-fit-check success
+|  +- compile exe tf-pocket-fit-check fast native success 6s MaxRSS:432M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-flashnext-run success
+|  +- compile exe tf-flashnext-run fast native success 21s MaxRSS:937M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-flashnext-pack success
+|  +- compile exe tf-flashnext-pack fast native success 9s MaxRSS:584M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-flashnext-think success
+|  +- compile exe tf-flashnext-think fast native success 6s MaxRSS:438M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-grid-sync-bench success
+|  +- compile exe tf-grid-sync-bench fast native success 5s MaxRSS:418M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-weight-read-check success
+|  +- compile exe tf-weight-read-check fast native success 7s MaxRSS:461M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-glm-run success
+|  +- compile exe tf-glm-run fast native success 15s MaxRSS:778M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-glm-vision success
+|  +- compile exe tf-glm-vision fast native success 8s MaxRSS:532M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-glm-video success
+|  +- compile exe tf-glm-video fast native success 6s MaxRSS:465M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-qwen-vision success
+|  +- compile exe tf-qwen-vision fast native success 9s MaxRSS:533M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-qwen-image success
+|  +- compile exe tf-qwen-image fast native success 8s MaxRSS:499M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-glm-attn-probe success
+|  +- compile exe tf-glm-attn-probe fast native success 5s MaxRSS:428M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-moe-bench success
+|  +- compile exe tf-moe-bench fast native success 6s MaxRSS:457M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-mm-bench success
+|  +- compile exe tf-mm-bench fast native success 6s MaxRSS:445M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-gemma4-kernels success
+|  +- compile exe tf-gemma4-kernels fast native success 8s MaxRSS:513M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-gemma4-glue success
+|  +- compile exe tf-gemma4-glue fast native success 7s MaxRSS:511M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-gemma4-run success
+|  +- compile exe tf-gemma4-run fast native success 9s MaxRSS:555M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-gemma4-lanes success
+|  +- compile exe tf-gemma4-lanes fast native success 13s MaxRSS:784M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-gemma4-vision success
+|  +- compile exe tf-gemma4-vision fast native success 9s MaxRSS:566M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-gemma4-bench success
+|  +- compile exe tf-gemma4-bench fast native success 9s MaxRSS:554M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-qwen36-row-seam success
+|  +- compile exe tf-qwen36-row-seam fast native success 5s MaxRSS:424M
+|     +- WriteFile exlr8_alias.zig cached
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
+|     +- WriteFile drama3_core.zig (reused)
+|     +- WriteFile drama3.metallib (+1 more reused dependencies)
++- install tf-affine-ref success
+|  +- compile exe tf-affine-ref fast native success 6s MaxRSS:439M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
++- install tf-glm-rows-check success
+|  +- compile exe tf-glm-rows-check fast native success 8s MaxRSS:507M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
++- install tf-flashnext-reuse success
+|  +- compile exe tf-flashnext-reuse fast native success 20s MaxRSS:950M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- WriteFile xsum.metal (reused)
+|     +- WriteFile nemotron_packed.metallib (+1 more reused dependencies)
++- install tf-cluster success
+|  +- compile exe tf-cluster fast native success 11s MaxRSS:548M
++- install tf-k3-validate success
+|  +- compile exe tf-k3-validate fast native success 9s MaxRSS:494M
++- install tf-k3-cluster success
+   +- compile exe tf-k3-cluster fast native success 6s MaxRSS:421M
+      +- WriteFile kimi.metallib (+1 more reused dependencies)
+

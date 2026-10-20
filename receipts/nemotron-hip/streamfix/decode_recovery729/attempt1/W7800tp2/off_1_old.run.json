@@ -1,0 +1,79 @@
+{
+  "rig": "W7800tp2",
+  "mode": "off",
+  "hold_index": 1,
+  "tree": "old",
+  "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+  "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+  "port": 36501,
+  "ranks": [
+    {
+      "rank": 1,
+      "pid": 1671167,
+      "argv": [
+        "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+        "serve",
+        "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--tp",
+        "2",
+        "--rank",
+        "1",
+        "--master",
+        "127.0.0.1",
+        "--master-port",
+        "37501",
+        "--context",
+        "65536",
+        "--parallel",
+        "4",
+        "--no-drafts"
+      ],
+      "log": "off_1_old.r1.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": -15,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    },
+    {
+      "rank": 0,
+      "pid": 1671175,
+      "argv": [
+        "<USER_HOME>/nh/d46/out-gfx1100/native-hip/bin/tensorfold-native",
+        "serve",
+        "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--tp",
+        "2",
+        "--rank",
+        "0",
+        "--master",
+        "127.0.0.1",
+        "--master-port",
+        "37501",
+        "--name",
+        "m",
+        "--port",
+        "36501",
+        "--context",
+        "65536",
+        "--parallel",
+        "4",
+        "--no-drafts"
+      ],
+      "log": "off_1_old.r0.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": 0,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    }
+  ],
+  "teardown": true,
+  "runtime_identity": {
+    "file": "off_1_old.identity.json",
+    "raw_sha256": "d27d020686be5d77ade7e5c92d5708616928a266a75a31abb57682db4c76b9cc"
+  },
+  "client_exit_status": 0,
+  "benchmark": {
+    "file": "off_1_old.json",
+    "raw_sha256": "eab6ca99554391c291e14fc0ba3fefb071d5fac70949d7a889e024567b86e434"
+  }
+}

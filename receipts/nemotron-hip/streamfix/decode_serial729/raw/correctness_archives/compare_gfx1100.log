@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "<USER_HOME>/hcx/streamfix/inline_validation/compare.py", line 9, in <module>
+    assert builds[1]['source_commit']=='cc18314dce85b0968496b35333bdd8618b2f9227','unexpected final candidate'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: unexpected final candidate

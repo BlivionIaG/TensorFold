@@ -1,0 +1,242 @@
+{
+  "schema_version": 1,
+  "validated_completed_checkpoints": [
+    "off"
+  ],
+  "full16_decode_complete": false,
+  "cold_prefill_qualified": false,
+  "overall_publication_qualified": false,
+  "hold_count": 8,
+  "state_sha256": "1a105b23a3a8460ad615e7952f36a93e68ae3f060479c318870df28a86c63ce1",
+  "measured_sources": {
+    "old": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+    "new": "729833615595df66c9f9a438ce9a85061843f010"
+  },
+  "settings": {
+    "context": 65536,
+    "parallel": 4,
+    "completion_tokens": 256,
+    "repeats": 3
+  },
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "checkpoint_binding_scope": "Downloaded per-file checkpoint cache metadata, not rehash of all weight bytes",
+  "measured_input_sha256": {
+    "harness": {
+      "run.py": "4cd1c6a125dbf8e0e15cac22e29091cfba13779a75a6486547c8acefae21c922",
+      "ab_validate.py": "d19481929ff9f1e913b34b8f299b3ce212958dc896480ff26de0590b0a3c1dfd",
+      "capture_identity.py": "b84a0c7267cec7bf1776bf29279d5aa0ac65b97773591df284677e7cc2304005",
+      "summarize.py": "3a29831693a8e00e78191c28bb6d4a560cdd73456e2d1fb6b5e09bd53e4e76ea"
+    },
+    "clients": {
+      "bench_openai.py": "7496ddfe6e474c1c50ef8fe6a33770e63069531f999d98acff0b8f28613e61eb",
+      "bench_evidence.py": "119c396f24f3c13e181429bc69acff39f34254efd4789c5673a3dcbc54738d93"
+    },
+    "python": "4ae14dda295474da4b2a60c1d559dfa61449dac23151df7139dc79c19a9b9f76"
+  },
+  "all_harness_client_input_sha_verified": true,
+  "draft_plain_complete_hash_equality_verified": false,
+  "results": [
+    {
+      "mode": "off",
+      "rig": "W7800tp2",
+      "prompt": "fibonacci-raw",
+      "hold_order": [
+        151.87495501484025,
+        148.1907200585808,
+        148.09444946691247,
+        149.1845501409847
+      ],
+      "old_tps": 150.52975257791246,
+      "new_tps": 148.14258476274665,
+      "throughput_delta_percent": -1.585844508666312,
+      "denominator": "old_mean_tps",
+      "all12_complete_256_token_replies_equal": true,
+      "token_sha": "0808cf694e6f",
+      "output_sha256": "0ceddb99c66ce515f43609d56d9a162745a593c4cecd38196f6eaa68f9f103b5"
+    },
+    {
+      "mode": "off",
+      "rig": "W7800tp2",
+      "prompt": "gpu-chat-no-think",
+      "hold_order": [
+        151.51722657123221,
+        147.83396457893687,
+        146.67088791278715,
+        148.85747040525797
+      ],
+      "old_tps": 150.1873484882451,
+      "new_tps": 147.252426245862,
+      "throughput_delta_percent": -1.9541740845187117,
+      "denominator": "old_mean_tps",
+      "all12_complete_256_token_replies_equal": true,
+      "token_sha": "25c162db90ad",
+      "output_sha256": "0219f14825c4b8f46b3bbd84d89f3a4999348ba1f640557803f9ad395220976a"
+    },
+    {
+      "mode": "off",
+      "rig": "V620tp1",
+      "prompt": "fibonacci-raw",
+      "hold_order": [
+        133.74498957218444,
+        131.85298611124264,
+        131.7293660594842,
+        133.28614244222658
+      ],
+      "old_tps": 133.5155660072055,
+      "new_tps": 131.79117608536342,
+      "throughput_delta_percent": -1.2915272528965072,
+      "denominator": "old_mean_tps",
+      "all12_complete_256_token_replies_equal": true,
+      "token_sha": "5bb240972d6b",
+      "output_sha256": "9a2b1628de729bbd3fc5c37bb47991c6aa32c76a02df73d58b3bc41876f0d40e"
+    },
+    {
+      "mode": "off",
+      "rig": "V620tp1",
+      "prompt": "gpu-chat-no-think",
+      "hold_order": [
+        133.51350004571162,
+        131.6443433596341,
+        131.5677465269808,
+        132.9899765086187
+      ],
+      "old_tps": 133.25173827716515,
+      "new_tps": 131.60604494330744,
+      "throughput_delta_percent": -1.2350257903837925,
+      "denominator": "old_mean_tps",
+      "all12_complete_256_token_replies_equal": true,
+      "token_sha": "9f806c1e0e42",
+      "output_sha256": "9c7b623e3a50b5a2627dab87fc398e3dc3e1529e495d0225e44c0e1151754f89"
+    }
+  ],
+  "holds": [
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "index": 1,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "client_exit": 0,
+      "native_actual_teardown_exits": [
+        -15,
+        0
+      ],
+      "benchmark_sha256": "eab6ca99554391c291e14fc0ba3fefb071d5fac70949d7a889e024567b86e434",
+      "runtime_identity_sha256": "d27d020686be5d77ade7e5c92d5708616928a266a75a31abb57682db4c76b9cc"
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "index": 2,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+      "client_exit": 0,
+      "native_actual_teardown_exits": [
+        -15,
+        0
+      ],
+      "benchmark_sha256": "ea0ee4374b92663cb541f1c443f3c2313a0eaab088fead92c890be3789c9ea2e",
+      "runtime_identity_sha256": "3c01386b698dd925198d500a0671d462a630e0022af278be28b57fc438143cf8"
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "index": 3,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+      "client_exit": 0,
+      "native_actual_teardown_exits": [
+        -15,
+        0
+      ],
+      "benchmark_sha256": "632e553298144aaeceabf72889cecdb80000262f7de518a143055c510966ec2e",
+      "runtime_identity_sha256": "448dc16de3e753553d0675015be1a4c59633cd80405c728bbc41a9968d839d62"
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "index": 4,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "client_exit": 0,
+      "native_actual_teardown_exits": [
+        -15,
+        0
+      ],
+      "benchmark_sha256": "1843c3bf0de31ecf5025582aa710c70ddd7df6fbca3e0dae8e3c303513fad85b",
+      "runtime_identity_sha256": "5da2d797f3a6a4fea6305a8ebb7efc368db07216b8a80ffc8565b79698c19a38"
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "index": 1,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "client_exit": 0,
+      "native_actual_teardown_exits": [
+        0
+      ],
+      "benchmark_sha256": "713eaf444c0bf01b64dec25b78485cd8efa3e03a550625600598035684c47229",
+      "runtime_identity_sha256": "2550ddf936341216ceace77b52ef13f4a9bfe3b5184ca6a5418f592fbb688555"
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "index": 2,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "client_exit": 0,
+      "native_actual_teardown_exits": [
+        0
+      ],
+      "benchmark_sha256": "c8753f5593f11721ba837655535ded78e2c3a93539c771da4f8fc0c234dc5cd2",
+      "runtime_identity_sha256": "5700008542821db94a429010d4e7d0a29fae1bec31a2b4c8472dd547ec741bb4"
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "index": 3,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+      "client_exit": 0,
+      "native_actual_teardown_exits": [
+        0
+      ],
+      "benchmark_sha256": "7ecdd8d27cc272b8a0e4446a678af5910cafa1723bd9740bb6db41c300555f56",
+      "runtime_identity_sha256": "abbfbe0d44f48ebd8104508fcb0bd862a7b9b812f2392359cad4a0792cd54da0"
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "index": 4,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "client_exit": 0,
+      "native_actual_teardown_exits": [
+        0
+      ],
+      "benchmark_sha256": "baad6c50a5d6849e1e90ec6153833e7973a1a88f77188878685bbf4fc875ee11",
+      "runtime_identity_sha256": "b58278208c37ae6abaafed1cfc3cf8e68a5006efe4312b316842615eccc87fe4"
+    }
+  ],
+  "runtime_libraries": {
+    "W7800tp2": {
+      "libamdhip64.so.7.14.60850-0000000": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+      "libhsa-runtime64.so.1.21.0": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+      "librccl.so.1.0": "47044220951dccc5081a65417485da0669e8e6e8ebe7e431413706136183140a"
+    },
+    "V620tp1": {
+      "libamdhip64.so.7.14.60850-0000000": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d",
+      "libhsa-runtime64.so.1.21.0": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa"
+    }
+  },
+  "audit_remote_mutations": false
+}

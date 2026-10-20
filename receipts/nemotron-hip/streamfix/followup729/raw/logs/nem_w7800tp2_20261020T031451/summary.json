@@ -1,0 +1,561 @@
+{
+  "rig": "w7800tp2",
+  "architectures": "gfx1100",
+  "devices": "0,1",
+  "checkpoint_revision": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "runs": [
+    {
+      "tree": "d46",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9",
+      "kind": "decode",
+      "name": "decode",
+      "input_sha256": "4a9fa11fc45a3f60a596d4054a1da7bb0cd11dd303fad81b4a98c2efbde3c6d2",
+      "ranks": [
+        {
+          "rank": 1,
+          "argv": [
+            "<REMOTE_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+            "decode",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-acc/chat_long.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_decode.bin",
+            "--steps",
+            "224",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "d46_decode.r1.log",
+          "exit_status": 0
+        },
+        {
+          "rank": 0,
+          "argv": [
+            "<REMOTE_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+            "decode",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-acc/chat_long.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_decode.bin",
+            "--steps",
+            "224",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "d46_decode.r0.log",
+          "exit_status": 0
+        }
+      ],
+      "runtime_identity": {
+        "file": "d46_decode.identity.json",
+        "sha256": "85cb20080c4c017a3112c104cd6ec5c728da0ca446a3e7700c5d94de0f493f4f"
+      },
+      "finite": true,
+      "output": {
+        "path": "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_decode.bin",
+        "bytes": 117440512,
+        "sha256": "08e152477e73fe3ca386540aa25606345df1822d3859bcf155386ee496e8ca13"
+      }
+    },
+    {
+      "tree": "d46",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9",
+      "kind": "teacher",
+      "name": "chat_full",
+      "input_sha256": "77672030c4c244f1a2f5e2c74ec08b411919faee4648e25451dd4be313084e9b",
+      "ranks": [
+        {
+          "rank": 1,
+          "argv": [
+            "<REMOTE_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_chat_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "d46_chat_full.r1.log",
+          "exit_status": 0
+        },
+        {
+          "rank": 0,
+          "argv": [
+            "<REMOTE_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_chat_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "d46_chat_full.r0.log",
+          "exit_status": 0
+        }
+      ],
+      "runtime_identity": {
+        "file": "d46_chat_full.identity.json",
+        "sha256": "0daf47d694c904ab611f7e85a607d4bd89553f6940827cba4f9bfe77b3b44eda"
+      },
+      "finite": true,
+      "output": {
+        "path": "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_chat_full.bin",
+        "bytes": 30932992,
+        "sha256": "649178c5a811121df6375b16663178e40b358bf4a95da491a2cb735c23808034"
+      }
+    },
+    {
+      "tree": "d46",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9",
+      "kind": "teacher",
+      "name": "code_full",
+      "input_sha256": "d28c73de397a229498fcfdf973f9beda444e57bc82b421d01632f2327e872109",
+      "ranks": [
+        {
+          "rank": 1,
+          "argv": [
+            "<REMOTE_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/code_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_code_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "d46_code_full.r1.log",
+          "exit_status": 0
+        },
+        {
+          "rank": 0,
+          "argv": [
+            "<REMOTE_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/code_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_code_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "d46_code_full.r0.log",
+          "exit_status": 0
+        }
+      ],
+      "runtime_identity": {
+        "file": "d46_code_full.identity.json",
+        "sha256": "c33b2da9486859bea173fa2407181b37d3300c9e7f19ec1b82f0b38e51ff30d6"
+      },
+      "finite": true,
+      "output": {
+        "path": "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_code_full.bin",
+        "bytes": 24641536,
+        "sha256": "fa5580dadfca03afff4d9b8fbc97a9d71df519c3b1963d667e625e576057dd32"
+      }
+    },
+    {
+      "tree": "d46",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a9fd44350dd9a8be21eff3bd27c9de44044c004f46a653047f0a53ca7a25a9a9",
+      "kind": "teacher",
+      "name": "story_full",
+      "input_sha256": "c3f54b797d0ca4cc8b8ae26e1cadd951e0f0061eaf48f8023b26d4ffbe388e5c",
+      "ranks": [
+        {
+          "rank": 1,
+          "argv": [
+            "<REMOTE_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/story_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_story_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "d46_story_full.r1.log",
+          "exit_status": 0
+        },
+        {
+          "rank": 0,
+          "argv": [
+            "<REMOTE_HOME>/nh/d46/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/story_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_story_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "d46_story_full.r0.log",
+          "exit_status": 0
+        }
+      ],
+      "runtime_identity": {
+        "file": "d46_story_full.identity.json",
+        "sha256": "523b5f94f7661f0e9aea2176142376373b93ed5e9d4a8f843648542c8d782f17"
+      },
+      "finite": true,
+      "output": {
+        "path": "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/d46_story_full.bin",
+        "bytes": 24641536,
+        "sha256": "37ad32c153ef2858c43cf1c9548bfe6aa2f049bf05fd7faf4f7ec28254f1752b"
+      }
+    },
+    {
+      "tree": "sfopt",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "051cf00eb90d0204ebca1e96a86670d860569e8abe3e122adc1bdec46d7bd984",
+      "kind": "decode",
+      "name": "decode",
+      "input_sha256": "4a9fa11fc45a3f60a596d4054a1da7bb0cd11dd303fad81b4a98c2efbde3c6d2",
+      "ranks": [
+        {
+          "rank": 1,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "decode",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-acc/chat_long.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_decode.bin",
+            "--steps",
+            "224",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "sfopt_decode.r1.log",
+          "exit_status": 0
+        },
+        {
+          "rank": 0,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "decode",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-acc/chat_long.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_decode.bin",
+            "--steps",
+            "224",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "sfopt_decode.r0.log",
+          "exit_status": 0
+        }
+      ],
+      "runtime_identity": {
+        "file": "sfopt_decode.identity.json",
+        "sha256": "07218aea801996821ee311d0beac0977dd0b4f3b528877c3ac0e0af86f0345ad"
+      },
+      "finite": true,
+      "output": {
+        "path": "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_decode.bin",
+        "bytes": 117440512,
+        "sha256": "08e152477e73fe3ca386540aa25606345df1822d3859bcf155386ee496e8ca13"
+      }
+    },
+    {
+      "tree": "sfopt",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "051cf00eb90d0204ebca1e96a86670d860569e8abe3e122adc1bdec46d7bd984",
+      "kind": "teacher",
+      "name": "chat_full",
+      "input_sha256": "77672030c4c244f1a2f5e2c74ec08b411919faee4648e25451dd4be313084e9b",
+      "ranks": [
+        {
+          "rank": 1,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_chat_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "sfopt_chat_full.r1.log",
+          "exit_status": 0
+        },
+        {
+          "rank": 0,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/chat_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_chat_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "sfopt_chat_full.r0.log",
+          "exit_status": 0
+        }
+      ],
+      "runtime_identity": {
+        "file": "sfopt_chat_full.identity.json",
+        "sha256": "06b3b2d09f592fea1a2fba81dd7d232c43d425679dce595bc245cddc7720f7d1"
+      },
+      "finite": true,
+      "output": {
+        "path": "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_chat_full.bin",
+        "bytes": 30932992,
+        "sha256": "649178c5a811121df6375b16663178e40b358bf4a95da491a2cb735c23808034"
+      }
+    },
+    {
+      "tree": "sfopt",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "051cf00eb90d0204ebca1e96a86670d860569e8abe3e122adc1bdec46d7bd984",
+      "kind": "teacher",
+      "name": "code_full",
+      "input_sha256": "d28c73de397a229498fcfdf973f9beda444e57bc82b421d01632f2327e872109",
+      "ranks": [
+        {
+          "rank": 1,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/code_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_code_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "sfopt_code_full.r1.log",
+          "exit_status": 0
+        },
+        {
+          "rank": 0,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/code_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_code_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "sfopt_code_full.r0.log",
+          "exit_status": 0
+        }
+      ],
+      "runtime_identity": {
+        "file": "sfopt_code_full.identity.json",
+        "sha256": "bf81e8458e78d8b61872f4e592ea66be98a36ad60706adbd50dc04fb46178272"
+      },
+      "finite": true,
+      "output": {
+        "path": "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_code_full.bin",
+        "bytes": 24641536,
+        "sha256": "fa5580dadfca03afff4d9b8fbc97a9d71df519c3b1963d667e625e576057dd32"
+      }
+    },
+    {
+      "tree": "sfopt",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "051cf00eb90d0204ebca1e96a86670d860569e8abe3e122adc1bdec46d7bd984",
+      "kind": "teacher",
+      "name": "story_full",
+      "input_sha256": "c3f54b797d0ca4cc8b8ae26e1cadd951e0f0061eaf48f8023b26d4ffbe388e5c",
+      "ranks": [
+        {
+          "rank": 1,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/story_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_story_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "1",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "sfopt_story_full.r1.log",
+          "exit_status": 0
+        },
+        {
+          "rank": 0,
+          "argv": [
+            "<REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-nemotron-hip-test",
+            "teacher",
+            "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+            "<REMOTE_HOME>/nem-work/ids/story_full.ids.bin",
+            "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_story_full.bin",
+            "--tp",
+            "2",
+            "--rank",
+            "0",
+            "--master",
+            "127.0.0.1",
+            "--port",
+            "27500"
+          ],
+          "log": "sfopt_story_full.r0.log",
+          "exit_status": 0
+        }
+      ],
+      "runtime_identity": {
+        "file": "sfopt_story_full.identity.json",
+        "sha256": "0b41c7072aac80e604cb383cc429b98187f1071e7e2a924d4303d54def926959"
+      },
+      "finite": true,
+      "output": {
+        "path": "<REMOTE_HOME>/hcx/streamfix/optimization/followup729/logs/nem_w7800tp2_20261020T031451/sfopt_story_full.bin",
+        "bytes": 24641536,
+        "sha256": "37ad32c153ef2858c43cf1c9548bfe6aa2f049bf05fd7faf4f7ec28254f1752b"
+      }
+    }
+  ],
+  "comparisons": [
+    {
+      "name": "decode",
+      "bytes": 117440512,
+      "sha256": "08e152477e73fe3ca386540aa25606345df1822d3859bcf155386ee496e8ca13",
+      "identical": true
+    },
+    {
+      "name": "chat_full",
+      "bytes": 30932992,
+      "sha256": "649178c5a811121df6375b16663178e40b358bf4a95da491a2cb735c23808034",
+      "identical": true
+    },
+    {
+      "name": "code_full",
+      "bytes": 24641536,
+      "sha256": "fa5580dadfca03afff4d9b8fbc97a9d71df519c3b1963d667e625e576057dd32",
+      "identical": true
+    },
+    {
+      "name": "story_full",
+      "bytes": 24641536,
+      "sha256": "37ad32c153ef2858c43cf1c9548bfe6aa2f049bf05fd7faf4f7ec28254f1752b",
+      "identical": true
+    }
+  ],
+  "done": true,
+  "harness_sha256": "856e4e434c9c88ae66aac484b945db953f462131025d0215a8a614b47b8f4b19",
+  "gate_validator_sha256": "7518b8cdfdfdd0f98eec4b9d0bef429a07b53315baec5e02a323ec79ed60b32c",
+  "qualification_contract_gate": {
+    "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+    "model_summary_sha256": "22cbf79c280b346a1df152de3b52e31c2f405932df59fff60e238734e98824aa",
+    "allocation_sha256": "8cd92b374b48a44cc7ea2c3773713187e5882d9b219c12c6f57d6c4a9e097e77"
+  },
+  "libraries": {
+    "<REMOTE_HOME>/.local/rocm-rdna/lib/librccl.so.1.0": {
+      "realpath": "<REMOTE_HOME>/.local/rocm-rdna/lib/librccl.so.1.0",
+      "sha256": "47044220951dccc5081a65417485da0669e8e6e8ebe7e431413706136183140a"
+    },
+    "<REMOTE_HOME>/.local/rocm-rdna/lib/librccl.so.1": {
+      "realpath": "<REMOTE_HOME>/.local/rocm-rdna/lib/librccl.so.1.0",
+      "sha256": "47044220951dccc5081a65417485da0669e8e6e8ebe7e431413706136183140a"
+    },
+    "<REMOTE_HOME>/.local/rocm-rdna/lib/librccl.so": {
+      "realpath": "<REMOTE_HOME>/.local/rocm-rdna/lib/librccl.so.1.0",
+      "sha256": "47044220951dccc5081a65417485da0669e8e6e8ebe7e431413706136183140a"
+    }
+  },
+  "model_metadata": {
+    ".cache/huggingface/download/model-00001-of-00004.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n7cc60a26a46712e471d74c64dc4460558b15194a879a99426c5647ef1d588ca6\n1792069418.7133656\n",
+    ".cache/huggingface/download/README.md.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n398d8760ff48afe83be5c4fcf992f81a684223f7\n1792069355.9111753\n",
+    ".cache/huggingface/download/model-00003-of-00004.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\nfcc12aa6d00fa75447fc01ba7efe288e5bae025ae44aaad0afde265ac3abb7f1\n1792069416.790278\n",
+    ".cache/huggingface/download/config.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\nf3b94f4d971ab6f331c616a456bcb362c320ac94\n1792069355.9827874\n",
+    ".cache/huggingface/download/generation_config.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\na41201df53f9d0769947989353b5d02e70491c56\n1792069356.0095394\n",
+    ".cache/huggingface/download/chat_template.jinja.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\nd85b0c772f8fe585063847c5f6bf5ec48eb210be\n1792069356.027189\n",
+    ".cache/huggingface/download/LICENSE.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n4d76cc87c9edb280753e3bee3b499ae461113835\n1792069356.0575962\n",
+    ".cache/huggingface/download/.gitattributes.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n52373fe24473b1aa44333d318f578ae6bf04b49b\n1792069356.06313\n",
+    ".cache/huggingface/download/model.safetensors.index.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n21843de40b11f8b1d45760afc0ff0a36ff27aac2\n1792069356.3321784\n",
+    ".cache/huggingface/download/tokenizer_config.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n3231c597ea1b4b28e5a533222996ddc2dc27f53a\n1792069356.403445\n",
+    ".cache/huggingface/download/tokenizer.json.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n623c34567aebb18582765289fbe23d901c62704d6518d71866e0e58db892b5b7\n1792069356.6195898\n",
+    ".cache/huggingface/download/model-00004-of-00004.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n6fcd77b940874080dce8c63843c93957d96565284b7810063e592b6febd63089\n1792069394.0222912\n",
+    ".cache/huggingface/download/mtp-4bit.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\n4953d2323861b48db04d01e86559eb8b944f750ca1c1088409e2a65c6350f5f7\n1792069415.2523382\n",
+    ".cache/huggingface/download/model-00002-of-00004.safetensors.metadata": "d9d758fb83953437f7263256b0d96157e2a348b8\ned6020dad4cdeac47bb24d31ce8d212a607476358845b8620f1767b2fae30b3a\n1792069434.7565498\n"
+  },
+  "config_metadata_sha256": "16213f573ea60b434379aab00f44d897836ea0897d250a613c240da08ddbc37e"
+}

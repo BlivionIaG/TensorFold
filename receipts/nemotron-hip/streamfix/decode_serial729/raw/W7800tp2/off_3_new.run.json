@@ -1,0 +1,105 @@
+{
+  "rig": "W7800tp2",
+  "mode": "off",
+  "hold_index": 3,
+  "tree": "new",
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+  "port": 21503,
+  "ranks": [
+    {
+      "rank": 1,
+      "pid": 1745407,
+      "argv": [
+        "<USER_HOME>/nh/sfopt/out-recovery-gfx1100/native-hip/bin/tensorfold-native",
+        "serve",
+        "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--tp",
+        "2",
+        "--rank",
+        "1",
+        "--master",
+        "127.0.0.1",
+        "--master-port",
+        "22503",
+        "--context",
+        "65536",
+        "--parallel",
+        "4",
+        "--no-drafts"
+      ],
+      "log": "off_3_new.r1.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": -15,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    },
+    {
+      "rank": 0,
+      "pid": 1745411,
+      "argv": [
+        "<USER_HOME>/nh/sfopt/out-recovery-gfx1100/native-hip/bin/tensorfold-native",
+        "serve",
+        "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--tp",
+        "2",
+        "--rank",
+        "0",
+        "--master",
+        "127.0.0.1",
+        "--master-port",
+        "22503",
+        "--name",
+        "m",
+        "--port",
+        "21503",
+        "--context",
+        "65536",
+        "--parallel",
+        "4",
+        "--no-drafts"
+      ],
+      "log": "off_3_new.r0.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": 0,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    }
+  ],
+  "host_preflight": {
+    "single_logical_model_instance_per_host": true,
+    "host_idleness_scope": "observed known-process preflight; no physical-host lease or GPU6-9 authority claimed",
+    "tp2_rank_processes_are_one_logical_model": true,
+    "known_other_model_or_build_processes": [],
+    "processes_inspected": 70,
+    "shared_build_lock_held": true,
+    "existing_gpu_lock_found_in_reviewed_scripts": false,
+    "existing_gpu_lock_qualification": "PENDING; only existing CPU build lock identified in requested script scan",
+    "native_admission_guard": "unchanged frozen native binary and limits; no admission override flags",
+    "host_loadavg_1_5_15": [
+      2.95556640625,
+      1.89208984375,
+      2.9248046875
+    ],
+    "host_ram_kib": {
+      "MemTotal": 527988132,
+      "MemAvailable": 500994880
+    },
+    "host_ram_class": "physical host RAM from /proc/meminfo; DIMM/ECC class not inferred",
+    "cpu_model": "AMD EPYC 7K62 48-Core Processor",
+    "logical_cpus": 96,
+    "context_tokens": 65536,
+    "parallel_streams": 4,
+    "at_utc": "2026-10-20T01:23:27Z"
+  },
+  "teardown": true,
+  "runtime_identity": {
+    "file": "off_3_new.identity.json",
+    "raw_sha256": "1384de154b1850b0183a93d29e4cf7e1e2276f4569e7b0ccf6c09dd7c3421c65"
+  },
+  "client_exit_status": 0,
+  "benchmark": {
+    "file": "off_3_new.json",
+    "raw_sha256": "1c689f50430654b4d9e427604989cb3e09425d8c6f100c2b648d92fd6f9f70e7"
+  }
+}

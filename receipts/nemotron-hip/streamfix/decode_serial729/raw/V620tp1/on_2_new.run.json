@@ -1,0 +1,69 @@
+{
+  "rig": "V620tp1",
+  "mode": "on",
+  "hold_index": 2,
+  "tree": "new",
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "binary_sha256": "ec661b4569807ba529f567f728bb44edca4e5fe6a8bda564de9bc809efa1ae49",
+  "port": 23506,
+  "ranks": [
+    {
+      "rank": 0,
+      "pid": 1750436,
+      "argv": [
+        "<USER_HOME>/nh/sfopt/out-recovery-gfx1030/native-hip/bin/tensorfold-native",
+        "serve",
+        "<USER_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--name",
+        "m",
+        "--port",
+        "23506",
+        "--context",
+        "65536",
+        "--parallel",
+        "4"
+      ],
+      "log": "on_2_new.r0.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": 0,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    }
+  ],
+  "host_preflight": {
+    "single_logical_model_instance_per_host": true,
+    "host_idleness_scope": "observed known-process preflight; no physical-host lease or GPU6-9 authority claimed",
+    "tp2_rank_processes_are_one_logical_model": true,
+    "known_other_model_or_build_processes": [],
+    "processes_inspected": 71,
+    "shared_build_lock_held": true,
+    "existing_gpu_lock_found_in_reviewed_scripts": false,
+    "existing_gpu_lock_qualification": "PENDING; only existing CPU build lock identified in requested script scan",
+    "native_admission_guard": "unchanged frozen native binary and limits; no admission override flags",
+    "host_loadavg_1_5_15": [
+      1.65966796875,
+      2.0556640625,
+      2.68408203125
+    ],
+    "host_ram_kib": {
+      "MemTotal": 527988132,
+      "MemAvailable": 502126700
+    },
+    "host_ram_class": "physical host RAM from /proc/meminfo; DIMM/ECC class not inferred",
+    "cpu_model": "AMD EPYC 7K62 48-Core Processor",
+    "logical_cpus": 96,
+    "context_tokens": 65536,
+    "parallel_streams": 4,
+    "at_utc": "2026-10-20T01:29:11Z"
+  },
+  "teardown": true,
+  "runtime_identity": {
+    "file": "on_2_new.identity.json",
+    "raw_sha256": "ae2e989478826f76cf4b6cb7e95ceaa5e8478294bba6e1762804587de7ddcb69"
+  },
+  "client_exit_status": 0,
+  "benchmark": {
+    "file": "on_2_new.json",
+    "raw_sha256": "717bf017729f34d29542a5a7231ec2a0e7630b24b1d5f1d0640b9c3c63f08eca"
+  }
+}

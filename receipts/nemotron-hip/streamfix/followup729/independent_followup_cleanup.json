@@ -1,0 +1,5 @@
+{
+  "followup_or_model_processes": [],
+  "all_gone": true,
+  "scope": "Observed proc command inventory; old stopped coordinator excluded, no GPU lease assertion"
+}

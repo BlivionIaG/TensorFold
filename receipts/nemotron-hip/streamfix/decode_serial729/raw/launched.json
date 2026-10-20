@@ -1,0 +1,13 @@
+{
+  "coordinator_pid": 1744329,
+  "observer_pid": 1744330,
+  "launcher_pid": 1744328,
+  "allocation_sha256": "72462386e769e06933880d45b462075fdb656f5c8a6461b681fbebbdc795bc35",
+  "observer_sha256": "f01d52080c69e6d3f6f71408abc0a65c6ef81af3c349fc4566f7db4be2248e2c",
+  "launcher_sha256": "d528a4bbdcfae9bd0e65affbec5bf02728a1728990e2abb4612f3bad9394e300",
+  "memory_admission_environment": {
+    "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+    "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+  },
+  "started_utc": "2026-10-20T01:22:16Z"
+}

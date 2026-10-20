@@ -1,0 +1,45 @@
+{
+  "scope": "source identity and static checks only",
+  "files": [
+    {
+      "path": "static_all_commits.json",
+      "raw_sha256": "807874dbe42d2e84483cc0686143eb9f4eb8bcd4ecf641030e931a924964bc68",
+      "public_sha256": "807874dbe42d2e84483cc0686143eb9f4eb8bcd4ecf641030e931a924964bc68"
+    },
+    {
+      "path": "heads.json",
+      "raw_sha256": "ca2d4f30a6b3570292049d9090de29c10fc2f4b3d6b607067a197ef52af4aee1",
+      "public_sha256": "ca2d4f30a6b3570292049d9090de29c10fc2f4b3d6b607067a197ef52af4aee1"
+    },
+    {
+      "path": "body_ranges.json",
+      "raw_sha256": "d4fcfd2ec8d81582d7bde3741837cd7c89cbc7f669e67dc14d92ddba699f6ea2",
+      "public_sha256": "d4fcfd2ec8d81582d7bde3741837cd7c89cbc7f669e67dc14d92ddba699f6ea2"
+    },
+    {
+      "path": "commit_map.json",
+      "raw_sha256": "fd24b6365660f908828e34ba874979fd83b5d70b4227cb9497c98a2052561124",
+      "public_sha256": "fd24b6365660f908828e34ba874979fd83b5d70b4227cb9497c98a2052561124"
+    },
+    {
+      "path": "source_bridge.json",
+      "raw_sha256": "3495f76dd71d08bb51a7f27c6576c5c70f340115d3ca1ead4fe49761b9cf50a5",
+      "public_sha256": "3495f76dd71d08bb51a7f27c6576c5c70f340115d3ca1ead4fe49761b9cf50a5"
+    },
+    {
+      "path": "ownership_audit.json",
+      "raw_sha256": "97f78679f14c1df5fc53c7f5f307887a61f6ba85de33462aadba489069b61c2e",
+      "public_sha256": "97f78679f14c1df5fc53c7f5f307887a61f6ba85de33462aadba489069b61c2e"
+    },
+    {
+      "path": "static_summary.json",
+      "raw_sha256": "ef2c5004c9c9f124d480379985714c6317677d34bd232580d70ffbf06c4a4dfb",
+      "public_sha256": "ef2c5004c9c9f124d480379985714c6317677d34bd232580d70ffbf06c4a4dfb"
+    },
+    {
+      "path": "README.md",
+      "public_sha256": "d103e8245acdd823f5d047cb728e7a8f6dd865f6e06a176fc0b52e48ad44b4fd",
+      "source_generated": true
+    }
+  ]
+}

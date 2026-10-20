@@ -1,0 +1,552 @@
+{
+  "head": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
+  "commits": [
+    {
+      "head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "fmt_exit": 0,
+      "lean_summary": "2633 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [
+        {
+          "path": "docs/recipes/SKILL.md",
+          "columns": 220,
+          "comment": false
+        },
+        {
+          "path": "docs/recipes/SKILL.md",
+          "columns": 193,
+          "comment": false
+        },
+        {
+          "path": "docs/recipes/SKILL.md",
+          "columns": 158,
+          "comment": false
+        },
+        {
+          "path": "docs/recipes/SKILL.md",
+          "columns": 191,
+          "comment": false
+        }
+      ],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
+      "fmt_exit": 0,
+      "lean_summary": "2637 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [
+        {
+          "path": "zig/kernels/hip/quant/mlx_decoder.hpp",
+          "columns": 121,
+          "comment": false
+        },
+        {
+          "path": "zig/tests/hip/contract_stream.zig",
+          "columns": 169,
+          "comment": false
+        },
+        {
+          "path": "zig/tests/hip/contract_stream.zig",
+          "columns": 144,
+          "comment": false
+        }
+      ],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "5b12f74a27326797a540d094387e7ffa472b55ed",
+      "fmt_exit": 0,
+      "lean_summary": "2637 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "926e0a3969b90141d78acc084c01529d70010ed4",
+      "fmt_exit": 0,
+      "lean_summary": "2642 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "6af43c9db14516a85fbe22351eb0d3e485bd41bb",
+      "fmt_exit": 0,
+      "lean_summary": "2643 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "754786d613dde5539d3a0c534007a1a9733cfaf8",
+      "fmt_exit": 0,
+      "lean_summary": "2643 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "7bf5f195fb06c0651a1a5d74277f24cc70da591c",
+      "fmt_exit": 0,
+      "lean_summary": "2643 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2",
+      "fmt_exit": 0,
+      "lean_summary": "2650 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "9b56916fa71d40f9dcd924956c09a3c5f7e18019",
+      "fmt_exit": 0,
+      "lean_summary": "2650 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "6e73bf059c5646e683d680ab78ed5326aa9fba87",
+      "fmt_exit": 0,
+      "lean_summary": "2656 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "9c206c22bf386348f2f1eb473a31ef8370163b5e",
+      "fmt_exit": 0,
+      "lean_summary": "2658 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "4a7c64c6aab76f0aa845b86523d8eae78ce3f310",
+      "fmt_exit": 0,
+      "lean_summary": "2671 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "74b506e50265ccef559ce66d8d1cd55db55655ae",
+      "fmt_exit": 0,
+      "lean_summary": "2676 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e",
+      "fmt_exit": 0,
+      "lean_summary": "2678 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "da5936be79ff9c29513be08a6076f224f5c81596",
+      "fmt_exit": 0,
+      "lean_summary": "2679 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "b3da64459813339c3473d1a82ad5572c2444040f",
+      "fmt_exit": 0,
+      "lean_summary": "2681 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6",
+      "fmt_exit": 0,
+      "lean_summary": "2681 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "42529bfab171c2f30d7ce3641b78ca3b0ff821fc",
+      "fmt_exit": 0,
+      "lean_summary": "2681 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "d6134300b3fed9baa29842e20d28ce738fd77574",
+      "fmt_exit": 0,
+      "lean_summary": "2683 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257",
+      "fmt_exit": 0,
+      "lean_summary": "2685 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
+      "fmt_exit": 0,
+      "lean_summary": "2687 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "8a1c6ae90a9212c481607eb6633697543e6cb3ff",
+      "fmt_exit": 0,
+      "lean_summary": "2688 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "3f991646915e24bb1c7c638ec118e27880d5a031",
+      "fmt_exit": 0,
+      "lean_summary": "2690 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "64b2e8a17d42df6de779cf9620e461505ea9c041",
+      "fmt_exit": 0,
+      "lean_summary": "2690 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "3a7560c51042077dc33c388ca02b6eb53c7902f1",
+      "fmt_exit": 0,
+      "lean_summary": "2690 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "9d27ea9ac8ea014e4f32f3539d037757c2468014",
+      "fmt_exit": 0,
+      "lean_summary": "2690 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "674730c5ea9596da2aa21bab803fce6c6088d3be",
+      "fmt_exit": 0,
+      "lean_summary": "2690 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "e22da9dab3e8d70d5dbe150be39ed3794d6bffda",
+      "fmt_exit": 0,
+      "lean_summary": "2690 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "52840409d2e30ea7e55d9d79c10375cb2ffce6c5",
+      "fmt_exit": 0,
+      "lean_summary": "2690 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    },
+    {
+      "head": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
+      "fmt_exit": 0,
+      "lean_summary": "2693 files, 503 problems",
+      "lean_new_exit": 0,
+      "lean_new": "lean: 503 problems, 503 on the base, 0 new",
+      "diff_check_exit": 0,
+      "source_over600": [],
+      "new_lines_over120": [],
+      "private_added_paths": [],
+      "identity_lines": [
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>",
+        "BlivionIaG <15323295+BlivionIaG@users.noreply.github.com>"
+      ],
+      "noreply": true,
+      "tool_attribution": false
+    }
+  ]
+}

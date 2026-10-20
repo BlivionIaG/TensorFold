@@ -1,0 +1,131 @@
+{
+  "validated": true,
+  "scope": "decode-only recovery A/B; no cold-prefill run or qualification",
+  "measured_sources": {
+    "old": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+    "new": "729833615595df66c9f9a438ce9a85061843f010"
+  },
+  "actual_validated_holds": 16,
+  "expected_holds": 16,
+  "selected_modes": [
+    "off",
+    "on"
+  ],
+  "complete_selected_decode_modes": false,
+  "complete_decode_only": false,
+  "publication_qualified": false,
+  "conditions": [
+    {
+      "mode": "off",
+      "rig": "W7800tp2",
+      "prompts": {
+        "fibonacci-raw": {
+          "hold_order": [
+            151.05717586636825,
+            147.41446193968787,
+            147.13703933887183,
+            148.93716450747635
+          ],
+          "old_mean": 149.9971701869223,
+          "new_mean": 147.27575063927986,
+          "delta_percent": -1.8143139262234542
+        },
+        "gpu-chat-no-think": {
+          "hold_order": [
+            150.5899576849616,
+            147.17611270499094,
+            146.46991429401777,
+            148.3984881425789
+          ],
+          "old_mean": 149.49422291377027,
+          "new_mean": 146.82301349950436,
+          "delta_percent": -1.7868311980234197
+        }
+      }
+    },
+    {
+      "mode": "off",
+      "rig": "V620tp1",
+      "prompts": {
+        "fibonacci-raw": {
+          "hold_order": [
+            134.25111714125956,
+            131.85917294478068,
+            131.61610773000635,
+            133.73712806349062
+          ],
+          "old_mean": 133.99412260237509,
+          "new_mean": 131.73764033739351,
+          "delta_percent": -1.684015851708387
+        },
+        "gpu-chat-no-think": {
+          "hold_order": [
+            133.95732539714143,
+            131.62760441555363,
+            131.4090092103826,
+            133.4588273378334
+          ],
+          "old_mean": 133.70807636748742,
+          "new_mean": 131.51830681296812,
+          "delta_percent": -1.637724222806758
+        }
+      }
+    },
+    {
+      "mode": "on",
+      "rig": "W7800tp2",
+      "prompts": {
+        "fibonacci-raw": {
+          "hold_order": [
+            256.22157788083734,
+            254.0104097359394,
+            249.23928699715577,
+            251.10328827117073
+          ],
+          "old_mean": 253.66243307600405,
+          "new_mean": 251.62484836654758,
+          "delta_percent": -0.8032662482764796
+        },
+        "gpu-chat-no-think": {
+          "hold_order": [
+            217.3074833120167,
+            205.44333872319245,
+            204.8459651648128,
+            212.4345775842416
+          ],
+          "old_mean": 214.87103044812915,
+          "new_mean": 205.14465194400265,
+          "delta_percent": -4.526612304991251
+        }
+      }
+    },
+    {
+      "mode": "on",
+      "rig": "V620tp1",
+      "prompts": {
+        "fibonacci-raw": {
+          "hold_order": [
+            180.88476625248467,
+            176.89790305353313,
+            176.6292637755347,
+            179.59109828248305
+          ],
+          "old_mean": 180.23793226748387,
+          "new_mean": 176.7635834145339,
+          "delta_percent": -1.9276457564958216
+        },
+        "gpu-chat-no-think": {
+          "hold_order": [
+            156.7655757559952,
+            153.2975099655097,
+            153.13615476497858,
+            155.89028507626386
+          ],
+          "old_mean": 156.32793041612953,
+          "new_mean": 153.21683236524416,
+          "delta_percent": -1.9901101758361017
+        }
+      }
+    }
+  ]
+}

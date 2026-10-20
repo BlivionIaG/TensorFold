@@ -1,0 +1,228 @@
+01000000-01c31000 r--p 00000000 fc:00 6883466753                         <REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-flashnext-hip-test
+01c31000-01d11000 r-xp 00c30000 fc:00 6883466753                         <REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-flashnext-hip-test
+01d11000-01d16000 r--p 00d0f000 fc:00 6883466753                         <REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-flashnext-hip-test
+01d16000-01d1b000 rw-p 00d13000 fc:00 6883466753                         <REMOTE_HOME>/nh/sfopt/out-gfx1100/bin/tf-flashnext-hip-test
+0f4be000-14f5b000 rw-p 00000000 00:00 0                                  [heap]
+7fcc27000000-7fcc27200000 rw-s cd9667000 00:07 1075                      /dev/dri/renderD128
+7fd0d4000000-7fd0d4021000 rw-p 00000000 00:00 0 
+7fd0d4021000-7fd0d8000000 ---p 00000000 00:00 0 
+7fe73c000000-7fe73c021000 rw-p 00000000 00:00 0 
+7fe73c021000-7fe740000000 ---p 00000000 00:00 0 
+7fe740000000-7fe740021000 rw-p 00000000 00:00 0 
+7fe740021000-7fe744000000 ---p 00000000 00:00 0 
+7fe748000000-7fe748021000 rw-p 00000000 00:00 0 
+7fe748021000-7fe74c000000 ---p 00000000 00:00 0 
+7fe74ce00000-7fe74d000000 rw-s 1319e6000 00:07 1075                      /dev/dri/renderD128
+7fe74ddff000-7fe74e600000 rw-p 00000000 00:00 0 
+7fe74f1fe000-7fe74f9ff000 rw-p 00000000 00:00 0 
+7fe768000000-7fe768021000 rw-p 00000000 00:00 0 
+7fe768021000-7fe76c000000 ---p 00000000 00:00 0 
+7fe778a66000-7fe783000000 rw-p 00000000 00:00 0 
+7fe783000000-7fe7830cd000 r--p 00000000 fc:00 3607120189                 /opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0
+7fe7830cd000-7fe7a2608000 r--p 00000000 00:00 0 
+7fe7a2608000-7fe7a2647000 r--p 000cd000 fc:00 3607120189                 /opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0
+7fe7a2647000-7fe7a2821000 r-xp 0010b000 fc:00 3607120189                 /opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0
+7fe7a2821000-7fe7a289b000 r--p 002e4000 fc:00 3607120189                 /opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0
+7fe7a289b000-7fe7a28c4000 rw-p 0035d000 fc:00 3607120189                 /opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0
+7fe7a28c4000-7fe7a2a08000 rw-p 00000000 00:00 0 
+7fe7a2a08000-7fe7a2a09000 r--p 00386000 fc:00 3607120189                 /opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0
+7fe7a2a09000-7fe7a2a0a000 r--p 003e7000 fc:00 3607120189                 /opt/rocm-7.2.0/core-7.14/lib/librccl.so.1.0
+7fefa3a65000-7fefa3ab8000 r-xp 00000000 fc:00 17669466                   /usr/lib64/libnl-route-3.so.200.26.0
+7fefa3ab8000-7fefa3af4000 r--p 00053000 fc:00 17669466                   /usr/lib64/libnl-route-3.so.200.26.0
+7fefa3af4000-7fefa3af8000 r--p 0008e000 fc:00 17669466                   /usr/lib64/libnl-route-3.so.200.26.0
+7fefa3af8000-7fefa3afd000 rw-p 00092000 fc:00 17669466                   /usr/lib64/libnl-route-3.so.200.26.0
+7fefa3afd000-7fefa3b00000 rw-p 00000000 00:00 0 
+7ff1a4000000-7ff1a4021000 rw-p 00000000 00:00 0 
+7ff1a4021000-7ff1a8000000 ---p 00000000 00:00 0 
+7ff1a800a000-7ff1a8069000 r-xp 00000000 fc:00 17736087                   /usr/lib64/libmlx5.so.1.25.58.0
+7ff1a8069000-7ff1a807b000 r--p 0005f000 fc:00 17736087                   /usr/lib64/libmlx5.so.1.25.58.0
+7ff1a807b000-7ff1a807d000 r--p 00071000 fc:00 17736087                   /usr/lib64/libmlx5.so.1.25.58.0
+7ff1a807d000-7ff1a807e000 rw-p 00073000 fc:00 17736087                   /usr/lib64/libmlx5.so.1.25.58.0
+7ff1a807e000-7ff1a8080000 rw-p 00000000 00:00 0 
+7ff1abe00000-7ff1abfff000 rw-s 100457000 00:07 1075                      /dev/dri/renderD128
+7ff1ac000000-7ff1ac021000 rw-p 00000000 00:00 0 
+7ff1ac021000-7ff1b0000000 ---p 00000000 00:00 0 
+7ff1b003e000-7ff1b004f000 r-xp 00000000 fc:00 17669458                   /usr/lib64/libnl-3.so.200.26.0
+7ff1b004f000-7ff1b005d000 r--p 00011000 fc:00 17669458                   /usr/lib64/libnl-3.so.200.26.0
+7ff1b005d000-7ff1b005f000 r--p 0001f000 fc:00 17669458                   /usr/lib64/libnl-3.so.200.26.0
+7ff1b005f000-7ff1b0060000 rw-p 00021000 fc:00 17669458                   /usr/lib64/libnl-3.so.200.26.0
+7ff1b0060000-7ff1b0074000 r-xp 00000000 fc:00 17736081                   /usr/lib64/libibverbs.so.1.14.58.0
+7ff1b0074000-7ff1b007e000 r--p 00014000 fc:00 17736081                   /usr/lib64/libibverbs.so.1.14.58.0
+7ff1b007e000-7ff1b007f000 r--p 0001e000 fc:00 17736081                   /usr/lib64/libibverbs.so.1.14.58.0
+7ff1b007f000-7ff1b0080000 rw-p 0001f000 fc:00 17736081                   /usr/lib64/libibverbs.so.1.14.58.0
+7ff1b0b00000-7ff1b0cff000 rw-s 10b70c000 00:07 1075                      /dev/dri/renderD128
+7ff1b0d52000-7ff1b1553000 rw-p 00000000 00:00 0 
+7ff1b1553000-7ff1b2800000 rw-p 00000000 00:00 0 
+7ff1b2800000-7ff1b28af000 r--p 00000000 fc:00 3607109506                 /opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0
+7ff1b28af000-7ff1b2d02000 r-xp 000ae000 fc:00 3607109506                 /opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0
+7ff1b2d02000-7ff1b2d0a000 r--p 00500000 fc:00 3607109506                 /opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0
+7ff1b2d0a000-7ff1b2d0d000 rw-p 00507000 fc:00 3607109506                 /opt/rocm-7.2.0/core-7.14/lib/libamd_smi.so.26.5.0
+7ff1b2d0d000-7ff1b2d10000 rw-p 00000000 00:00 0 
+7ff1b2dfd000-7ff1b4600000 rw-p 00000000 00:00 0 
+7ff1b4600000-7ff1b4800000 rw-s 100047000 00:07 1075                      /dev/dri/renderD128
+7ff1b4857000-7ff1b4892000 r--p 00000000 fc:00 3607102205                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so
+7ff1b4892000-7ff1b4915000 r-xp 0003a000 fc:00 3607102205                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so
+7ff1b4915000-7ff1b491a000 r--p 000bc000 fc:00 3607102205                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so
+7ff1b491a000-7ff1b491c000 rw-p 000c0000 fc:00 3607102205                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-amd-aqlprofile64.so
+7ff1b491c000-7ff1b499e000 rw-p 00000000 00:00 0 
+7ff1b49ca000-7ff1b49d3000 r--p 00000000 fc:00 3830844148                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200
+7ff1b49d3000-7ff1b49e2000 r-xp 00009000 fc:00 3830844148                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200
+7ff1b49e2000-7ff1b49eb000 r--p 00018000 fc:00 3830844148                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200
+7ff1b49eb000-7ff1b49ed000 r--p 00020000 fc:00 3830844148                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200
+7ff1b49ed000-7ff1b49ee000 rw-p 00022000 fc:00 3830844148                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_3.so.200
+7ff1b49f8000-7ff1b49fa000 rw-s c83a400000000000 00:07 1067               /dev/kfd
+7ff1b4a00000-7ff1b507b000 r--p 00000000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7ff1b507b000-7ff1b91e6000 r-xp 0067b000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7ff1b91e6000-7ff1bb90d000 r--p 047e6000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7ff1bb90d000-7ff1bba27000 r--p 06f0d000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7ff1bba27000-7ff1bba2c000 rw-p 07027000 fc:00 1442857346                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libLLVM.so.23.0git
+7ff1bba2c000-7ff1bbad7000 rw-p 00000000 00:00 0 
+7ff1bbad9000-7ff1bbadb000 r--p 00000000 fc:00 3830844144                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0
+7ff1bbadb000-7ff1bbadd000 r-xp 00002000 fc:00 3830844144                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0
+7ff1bbadd000-7ff1bbade000 r--p 00004000 fc:00 3830844144                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0
+7ff1bbade000-7ff1bbadf000 r--p 00005000 fc:00 3830844144                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0
+7ff1bbadf000-7ff1bbae0000 rw-p 00006000 fc:00 3830844144                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_mnl.so.0
+7ff1bbae0000-7ff1bbae3000 r--p 00000000 fc:00 3830844149                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200
+7ff1bbae3000-7ff1bbae5000 r-xp 00003000 fc:00 3830844149                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200
+7ff1bbae5000-7ff1bbae6000 r--p 00005000 fc:00 3830844149                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200
+7ff1bbae6000-7ff1bbae7000 r--p 00006000 fc:00 3830844149                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200
+7ff1bbae7000-7ff1bbae8000 rw-p 00007000 fc:00 3830844149                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_nl_genl_3.so.200
+7ff1bbae8000-7ff1bbc00000 rw-p 00000000 00:00 0 
+7ff1bbc00000-7ff1bc4f4000 r--p 00000000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7ff1bc4f4000-7ff1bf754000 r-xp 008f4000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7ff1bf754000-7ff1c01be000 r--p 03b54000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7ff1c01be000-7ff1c03cb000 r--p 045be000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7ff1c03cb000-7ff1c03da000 rw-p 047cb000 fc:00 1443435945                 /opt/rocm-7.2.0/core-7.14/lib/llvm/lib/libclang-cpp.so.23.0git
+7ff1c03da000-7ff1c03ec000 rw-p 00000000 00:00 0 
+7ff1c03f0000-7ff1c03f8000 rw-s 100447000 00:07 1075                      /dev/dri/renderD128
+7ff1c03fb000-7ff1c03fc000 r--p 00000000 fc:00 3607104813                 /opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401
+7ff1c03fc000-7ff1c03fd000 r-xp 00001000 fc:00 3607104813                 /opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401
+7ff1c03fd000-7ff1c03fe000 r--p 00002000 fc:00 3607104813                 /opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401
+7ff1c03fe000-7ff1c03ff000 r--p 00002000 fc:00 3607104813                 /opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401
+7ff1c03ff000-7ff1c0400000 rw-p 00003000 fc:00 3607104813                 /opt/rocm-7.2.0/core-7.14/lib/librocm-core.so.1.0.71401
+7ff1c0400000-7ff1c0542000 r-xp 00000000 fc:00 17790487                   /usr/lib64/libstdc++.so.6.0.34
+7ff1c0542000-7ff1c0662000 r--p 00142000 fc:00 17790487                   /usr/lib64/libstdc++.so.6.0.34
+7ff1c0662000-7ff1c0673000 r--p 00261000 fc:00 17790487                   /usr/lib64/libstdc++.so.6.0.34
+7ff1c0673000-7ff1c0674000 rw-p 00272000 fc:00 17790487                   /usr/lib64/libstdc++.so.6.0.34
+7ff1c0674000-7ff1c0678000 rw-p 00000000 00:00 0 
+7ff1c0679000-7ff1c0800000 rw-p 00000000 00:00 0 
+7ff1c0800000-7ff1c089f000 r--p 00000000 fc:00 3607114976                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0
+7ff1c089f000-7ff1c09df000 r-xp 0009e000 fc:00 3607114976                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0
+7ff1c09df000-7ff1c09e9000 r--p 001dd000 fc:00 3607114976                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0
+7ff1c09e9000-7ff1c0c1d000 rw-p 001e6000 fc:00 3607114976                 /opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0
+7ff1c0c1d000-7ff1c0c20000 rw-p 00000000 00:00 0 
+7ff1c0c20000-7ff1c0c21000 r--p 00000000 fc:00 3612602939                 /opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0
+7ff1c0c21000-7ff1c0c22000 r-xp 00000000 fc:00 3612602939                 /opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0
+7ff1c0c22000-7ff1c0c23000 r--p 00000000 fc:00 3612602939                 /opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0
+7ff1c0c23000-7ff1c0c24000 rw-p 00000000 fc:00 3612602939                 /opt/rocm-7.2.0/core-7.14/lib/libroctx64.so.4.1.0
+7ff1c0c2a000-7ff1c0d18000 rw-p 00000000 00:00 0 
+7ff1c0d18000-7ff1c0d1a000 r--p 00000000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7ff1c0d1a000-7ff1c0d2d000 r-xp 00002000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7ff1c0d2d000-7ff1c0d2f000 r--p 00015000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7ff1c0d2f000-7ff1c0d30000 r--p 00016000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7ff1c0d30000-7ff1c0d31000 rw-p 00017000 fc:00 3830844129                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_bz2.so
+7ff1c0d31000-7ff1c0d35000 r--p 00000000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7ff1c0d35000-7ff1c0dee000 r-xp 00004000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7ff1c0dee000-7ff1c0dfe000 r--p 000bd000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7ff1c0dfe000-7ff1c0dff000 r--p 000cc000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7ff1c0dff000-7ff1c0e00000 rw-p 000cd000 fc:00 3825260745                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_zstd.so.1.5.7
+7ff1c0e00000-7ff1c0ec1000 r--p 00000000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7ff1c0ec1000-7ff1c1495000 r-xp 000c1000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7ff1c1495000-7ff1c19f4000 r--p 00695000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7ff1c19f4000-7ff1c1a34000 r--p 00bf3000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7ff1c1a34000-7ff1c1a3b000 rw-p 00c33000 fc:00 3607109524                 /opt/rocm-7.2.0/core-7.14/lib/libamd_comgr.so.3.3.0
+7ff1c1a3b000-7ff1c1a43000 rw-p 00000000 00:00 0 
+7ff1c1a50000-7ff1c1a54000 r--p 00000000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7ff1c1a54000-7ff1c1a72000 r-xp 00004000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7ff1c1a72000-7ff1c1a7f000 r--p 00022000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7ff1c1a7f000-7ff1c1a80000 r--p 0002e000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7ff1c1a80000-7ff1c1a81000 rw-p 0002f000 fc:00 3830844142                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_liblzma.so.5.8.1
+7ff1c1a81000-7ff1c1a85000 r--p 00000000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7ff1c1a85000-7ff1c1a8b000 r-xp 00004000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7ff1c1a8b000-7ff1c1a8e000 r--p 0000a000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7ff1c1a8e000-7ff1c1a8f000 r--p 0000c000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7ff1c1a8f000-7ff1c1a90000 rw-p 0000d000 fc:00 3830844154                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_numa.so.1
+7ff1c1a90000-7ff1c1a97000 r--p 00000000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7ff1c1a97000-7ff1c1a9c000 r-xp 00007000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7ff1c1a9c000-7ff1c1aa0000 r--p 0000c000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7ff1c1aa0000-7ff1c1aa4000 r--p 0000f000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7ff1c1aa4000-7ff1c1aa5000 rw-p 00013000 fc:00 3830844132                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm_amdgpu.so.1
+7ff1c1aa5000-7ff1c1aa9000 r--p 00000000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7ff1c1aa9000-7ff1c1aba000 r-xp 00004000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7ff1c1aba000-7ff1c1abf000 r--p 00015000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7ff1c1abf000-7ff1c1ac0000 r--p 00019000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7ff1c1ac0000-7ff1c1ac1000 rw-p 0001a000 fc:00 3830844134                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_elf.so.1
+7ff1c1ac1000-7ff1c1ac4000 r--p 00000000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7ff1c1ac4000-7ff1c1ad7000 r-xp 00003000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7ff1c1ad7000-7ff1c1add000 r--p 00016000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7ff1c1add000-7ff1c1ade000 r--p 0001c000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7ff1c1ade000-7ff1c1adf000 rw-p 0001d000 fc:00 3825260743                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_z.so.1.3.2
+7ff1c1adf000-7ff1c1b02000 r-xp 00000000 fc:00 17790322                   /usr/lib64/libgcc_s-15-20260722.so.1
+7ff1c1b02000-7ff1c1b09000 r--p 00023000 fc:00 17790322                   /usr/lib64/libgcc_s-15-20260722.so.1
+7ff1c1b09000-7ff1c1b0a000 r--p 0002a000 fc:00 17790322                   /usr/lib64/libgcc_s-15-20260722.so.1
+7ff1c1b0a000-7ff1c1b0b000 rw-p 00000000 00:00 0 
+7ff1c1b0b000-7ff1c1b8d000 r-xp 00000000 fc:00 17635942                   /usr/lib64/libm.so.6
+7ff1c1b8d000-7ff1c1bfe000 r--p 00082000 fc:00 17635942                   /usr/lib64/libm.so.6
+7ff1c1bfe000-7ff1c1bff000 r--p 000f2000 fc:00 17635942                   /usr/lib64/libm.so.6
+7ff1c1bff000-7ff1c1c00000 rw-p 000f3000 fc:00 17635942                   /usr/lib64/libm.so.6
+7ff1c1c00000-7ff1c1daf000 r--p 00000000 fc:00 3607109528                 /opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000
+7ff1c1daf000-7ff1c22de000 r-xp 001ae000 fc:00 3607109528                 /opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000
+7ff1c22de000-7ff1c22e8000 r--p 006dc000 fc:00 3607109528                 /opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000
+7ff1c22e8000-7ff1c3788000 rw-p 006e5000 fc:00 3607109528                 /opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000
+7ff1c3788000-7ff1c3792000 rw-p 00000000 00:00 0 
+7ff1c3797000-7ff1c379c000 r--p 00000000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7ff1c379c000-7ff1c37a6000 r-xp 00005000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7ff1c37a6000-7ff1c37aa000 r--p 0000f000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7ff1c37aa000-7ff1c37ab000 r--p 00013000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7ff1c37ab000-7ff1c37ac000 rw-p 00014000 fc:00 3830844131                 /opt/rocm-7.2.0/core-7.14/lib/rocm_sysdeps/lib/librocm_sysdeps_drm.so.2
+7ff1c37ac000-7ff1c37c6000 r--p 00000000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7ff1c37c6000-7ff1c384b000 r-xp 0001a000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7ff1c384b000-7ff1c3869000 r--p 0009f000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7ff1c3869000-7ff1c386b000 r--p 000bc000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7ff1c386b000-7ff1c386d000 rw-p 000be000 fc:00 3607105065                 /opt/rocm-7.2.0/core-7.14/lib/librocprofiler-register.so.0.6.0
+7ff1c386d000-7ff1c3886000 rw-p 00000000 00:00 0 
+7ff1c3886000-7ff1c3890000 r--p 00000000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7ff1c3890000-7ff1c38bd000 r-xp 0000a000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7ff1c38bd000-7ff1c38c8000 r--p 00037000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7ff1c38c8000-7ff1c38c9000 r--p 00041000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7ff1c38c9000-7ff1c38ca000 rw-p 00042000 fc:00 3607114979                 /opt/rocm-7.2.0/core-7.14/lib/librocm_kpack.so.0.1.0
+7ff1c38cc000-7ff1c38cd000 rw-s 1c79000000000000 00:07 1067               /dev/kfd
+7ff1c38ce000-7ff1c38cf000 rw-s 10e9800000000000 00:07 1067               /dev/kfd
+7ff1c38d0000-7ff1c38d1000 rw-s 126b000000000000 00:07 1067               /dev/kfd
+7ff1c38d2000-7ff1c38d3000 rw-s 371a000000000000 00:07 1067               /dev/kfd
+7ff1c38d4000-7ff1c38d5000 rw-s 2075400000000000 00:07 1067               /dev/kfd
+7ff1c38d6000-7ff1c38d7000 rw-s 2ce5c00000000000 00:07 1067               /dev/kfd
+7ff1c38d8000-7ff1c38d9000 rw-s 2e67400000000000 00:07 1067               /dev/kfd
+7ff1c38da000-7ff1c38db000 rw-s b16400000000000 00:07 1067                /dev/kfd
+7ff1c38dc000-7ff1c38df000 rw-p 00000000 00:00 0 
+7ff1c38df000-7ff1c3a4d000 r-xp 00000000 fc:00 17607748                   /usr/lib64/libc.so.6
+7ff1c3a4d000-7ff1c3ac3000 r--p 0016e000 fc:00 17607748                   /usr/lib64/libc.so.6
+7ff1c3ac3000-7ff1c3ac7000 r--p 001e3000 fc:00 17607748                   /usr/lib64/libc.so.6
+7ff1c3ac7000-7ff1c3ac9000 rw-p 001e7000 fc:00 17607748                   /usr/lib64/libc.so.6
+7ff1c3ac9000-7ff1c3ad3000 rw-p 00000000 00:00 0 
+7ff1c3ad4000-7ff1c3ad5000 rw-s 4f6800000000000 00:07 1067                /dev/kfd
+7ff1c3ad5000-7ff1c3ad6000 rw-p 00000000 00:00 0 
+7ff1c3ad6000-7ff1c3ad7000 rw-s 83a400000000000 00:07 1067                /dev/kfd
+7ff1c3ad7000-7ff1c3ad8000 rw-p 00000000 00:00 0 
+7ff1c3ad8000-7ff1c3ad9000 r-xp 00000000 fc:00 17635954                   /usr/lib64/libpthread.so.0
+7ff1c3ad9000-7ff1c3ada000 r--p 00001000 fc:00 17635954                   /usr/lib64/libpthread.so.0
+7ff1c3ada000-7ff1c3adb000 r--p 00001000 fc:00 17635954                   /usr/lib64/libpthread.so.0
+7ff1c3adb000-7ff1c3adc000 rw-p 00000000 00:00 0 
+7ff1c3adc000-7ff1c3add000 r-xp 00000000 fc:00 17635956                   /usr/lib64/librt.so.1
+7ff1c3add000-7ff1c3ade000 r--p 00001000 fc:00 17635956                   /usr/lib64/librt.so.1
+7ff1c3ade000-7ff1c3adf000 r--p 00001000 fc:00 17635956                   /usr/lib64/librt.so.1
+7ff1c3adf000-7ff1c3ae0000 rw-p 00000000 00:00 0 
+7ff1c3ae0000-7ff1c3ae1000 r-xp 00000000 fc:00 17635930                   /usr/lib64/libdl.so.2
+7ff1c3ae1000-7ff1c3ae2000 r--p 00001000 fc:00 17635930                   /usr/lib64/libdl.so.2
+7ff1c3ae2000-7ff1c3ae3000 r--p 00001000 fc:00 17635930                   /usr/lib64/libdl.so.2
+7ff1c3ae3000-7ff1c3ae4000 rw-p 00000000 00:00 0 
+7ff1c3ae5000-7ff1c3ae9000 r--p 00000000 00:00 0                          [vvar]
+7ff1c3ae9000-7ff1c3aeb000 r--p 00000000 00:00 0                          [vvar_vclock]
+7ff1c3aeb000-7ff1c3aed000 r-xp 00000000 00:00 0                          [vdso]
+7ff1c3aed000-7ff1c3b17000 r-xp 00000000 fc:00 17607519                   /usr/lib64/ld-linux-x86-64.so.2
+7ff1c3b17000-7ff1c3b23000 r--p 0002a000 fc:00 17607519                   /usr/lib64/ld-linux-x86-64.so.2
+7ff1c3b23000-7ff1c3b25000 r--p 00035000 fc:00 17607519                   /usr/lib64/ld-linux-x86-64.so.2
+7ff1c3b25000-7ff1c3b26000 rw-p 00037000 fc:00 17607519                   /usr/lib64/ld-linux-x86-64.so.2
+7ff1c3b26000-7ff1c3b27000 rw-p 00000000 00:00 0 
+7ffc2ac76000-7ffc2aca8000 rw-p 00000000 00:00 0                          [stack]
+ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0                  [vsyscall]

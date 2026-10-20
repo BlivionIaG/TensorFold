@@ -1,0 +1,5 @@
+<USER_HOME>/vllm-rdna-0.31.0-final/vllm/__init__.py:7: RuntimeWarning: Failed to read commit hash:
+No module named 'vllm._version'
+  from .version import __version__, __version_tuple__  # isort:skip
+{"label": "", "prompt": "fibonacci-raw", "temperature": 0.0, "decode_tps_median": 133.73712806349062, "decode_tps_all": [133.74, 133.74, 133.73], "ttft_s_median": 0.04139404599845875}
+{"label": "", "prompt": "gpu-chat-no-think", "temperature": 0.0, "decode_tps_median": 133.4588273378334, "decode_tps_all": [133.48, 133.46, 133.44], "ttft_s_median": 0.08228727499954402}
