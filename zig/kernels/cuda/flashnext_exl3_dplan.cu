@@ -252,3 +252,27 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dcopy(const long long*
         for (; i < words; i += stride) d[i] = s[i];
     }
 }
+
+// The draft chain on the device (cuda_exl3_chain.zig): fn_row_best's record [best, log-sum-exp, column bits, -] of a
+// draft row picks the draft vocabulary's id at that column as the next chained step's input token.
+extern "C" __global__ void fn_exl3_draft_token(const float* __restrict__ best, const unsigned* __restrict__ ids,
+                                               int* __restrict__ token) {
+    if (threadIdx.x == 0 && blockIdx.x == 0) token[0] = static_cast<int>(ids[__float_as_int(best[2])]);
+}
+
+// The chain's step decision on the device: the next token as fn_exl3_draft_token, then upstream's stop rule
+// (Ops.draft: a pick below `confidence` ends the chain) folded into `alive`, which also drives the conditional
+// node around the next head step (cudaGraphSetConditional) and is kept per step for the host.
+extern "C" __global__ void fn_exl3_draft_next(const float* __restrict__ best, const unsigned* __restrict__ ids,
+                                              int* __restrict__ token, int* __restrict__ alive,
+                                              int* __restrict__ alive_out, cudaGraphConditionalHandle handle,
+                                              double confidence) {
+    if (threadIdx.x != 0 || blockIdx.x != 0) return;
+    token[0] = static_cast<int>(ids[__float_as_int(best[2])]);
+    const double prob = exp(static_cast<double>(best[0]) - static_cast<double>(best[1]));
+    const int low = confidence > 0.0 && prob < confidence;
+    const int a = alive[0] && !low;
+    alive[0] = a;
+    alive_out[0] = a;
+    cudaGraphSetConditional(handle, static_cast<unsigned>(a));
+}

@@ -166,6 +166,7 @@ pub fn Namespace(comptime Tri: type) type {
             fn ops(self: *Cuda) Ops {
                 return .{ .e = self.engine, .tri = self.tri(), .h = self.head.?, .main = if (self.ranks != null) .{
                     .ptr = self,
+                    .rank = self.ranks.?.rank,
                     .forward = mainForward,
                     .verify = mainVerify,
                     .rollback = mainRollback,
@@ -177,9 +178,9 @@ pub fn Namespace(comptime Tri: type) type {
                 return self.ranks.?.forward(Tri, self.tri(), q, ids, hooks);
             }
 
-            fn mainVerify(ptr: *anyopaque, q: *prompt.Seq, d: *mtp.Draft, ids: []const u32) anyerror!void {
+            fn mainVerify(ptr: *anyopaque, q: *prompt.Seq, d: *mtp.Draft, ids: []const u32, tail: ?prompt.batch.Hooks.OutputTail) anyerror!void {
                 const self = of(ptr);
-                return self.ranks.?.verify(Tri, self.tri(), q, d, ids);
+                return self.ranks.?.verifyWithTail(Tri, self.tri(), q, d, ids, tail);
             }
 
             fn mainRollback(ptr: *anyopaque, q: *prompt.Seq, d: *mtp.Draft, keep: usize) anyerror!void {
@@ -261,7 +262,7 @@ pub fn Namespace(comptime Tri: type) type {
                     s.proposer = null;
                 }
                 // a window's rows past the reply's last token (its drafts) still need cache slots
-                const cap = @min(ids.len + s.max_new + (if (drafting) mtp.max_rows else 0), prompt.max_tokens);
+                const cap = if (self.engine.page_config != null) @min(prompt.max_tokens, self.context + mtp.max_rows) else @import("cuda_exl3_recycle.zig").roundCap(@min(ids.len + s.max_new + (if (drafting) mtp.max_rows else 0), prompt.max_tokens), @min(prompt.max_tokens, self.context + mtp.max_rows));
                 gop.value_ptr.* = .{ .seq = (if (self.ranks) |r| r.create(cap) else self.engine.newSeq(cap)) catch |err| {
                     self.lanes.removeByPtr(gop.key_ptr);
                     return err;
@@ -289,7 +290,7 @@ pub fn Namespace(comptime Tri: type) type {
                     l.filled = kept.at;
                     s.cached = @intCast(kept.at);
                 } else |err| switch (err) {
-                    error.SequenceTooShort, error.NoHeadState => {
+                    error.SequenceTooShort, error.NoHeadState, error.KvPageSnapshotLayout => {
                         std.log.warn("flashnext: kept state at {d} not restored ({t})", .{ kept.at, err });
                         s.reuse_failed = true;
                     },
@@ -430,7 +431,7 @@ pub fn Namespace(comptime Tri: type) type {
                     var row_ids: [mtp.max_rows]u32 = undefined;
                     row_ids[0] = w.pending;
                     @memcpy(row_ids[1..rows], w.tokens);
-                    try self.ops().verify(&l.seq, d, row_ids[0..rows]);
+                    try self.ops().verifySampled(&l.seq, d, row_ids[0..rows], w.stream.sampling);
                     try self.ops().draws(d, w.stream.sampling, o.sampled[0..rows]);
                 } else {
                     if (rows != 1) return error.CannotRewind;
@@ -524,6 +525,8 @@ pub fn Namespace(comptime Tri: type) type {
         // -- the prompt cache's copies ------------------------------------------------------------------------
 
         fn snapBytes(ptr: *anyopaque, at: u32) u64 {
+            const self = of(ptr);
+            if (self.engine.page_config) |cfg| return snap.pagedBytes(@min(self.context + mtp.max_rows, prompt.max_tokens), cfg.forChunk(self.engine.chunk), at, self.head != null) catch std.math.maxInt(u64);
             return snap.bytesKv(at, of(ptr).head != null, @import("cuda_exl3_kv.zig").of(of(ptr).engine).rows());
         }
 
@@ -546,6 +549,7 @@ pub fn Namespace(comptime Tri: type) type {
                 return err;
             };
             if (self.ranks) |r| return r.restore(&l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved)));
+            self.engine.round_graph.clear();
             snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved))) catch |err| {
                 std.log.warn("flashnext: a kept state was not restored ({t})", .{err});
                 return err;

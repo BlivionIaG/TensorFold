@@ -376,10 +376,18 @@ pub fn forLayers(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const an
         n += 1;
     }
     if (n == 0) return null;
+    // the MTP layer's pool last (its own lifetime counts; the draft chain plans it on the device)
+    if (mtp_pool) |mp| if (mp.opt.lines == pools[0].opt.lines and n < pools.len) {
+        pools[n] = mp;
+        n += 1;
+    };
     global = try DevPlan.init(gpa, d, pools[0..n]);
     global_owner = owner;
     return global;
 }
+
+/// The draft head's (MTP layer's) pool, registered by cuda_exl3_pass.attach.
+pub var mtp_pool: ?*pool_.Pool = null;
 
 /// The engine's planner if made (any owner).
 pub fn current() ?*DevPlan {

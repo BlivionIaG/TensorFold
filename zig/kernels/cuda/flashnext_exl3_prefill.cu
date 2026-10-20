@@ -290,3 +290,38 @@ extern "C" __global__ void __launch_bounds__(256, 2) tf_exl3pf_down(const half* 
         default: __trap();
     }
 }
+
+// Expert parallel (cuda_exl3_tp.zig): a rank's deep chunk computed only its own pairs (picks in [LO, HI)); row r's
+// combined branch over those slots in slot order (fp32 fmaf from 0), into sum [rows, D] for the ranks' all-reduce.
+// Another rank's slot is skipped by a select (its y is never read). Block (row), 256 threads over D.
+extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_tp_combine(const float* __restrict__ y, const float* __restrict__ wts,
+        const int* __restrict__ pick, float* __restrict__ sum, int slots, int D, int lo, int hi) {
+    __shared__ float w_sh[32];
+    __shared__ int own_sh[32];
+    const int r = blockIdx.x;
+    if ((int)threadIdx.x < slots) {
+        const int p = pick[r * slots + threadIdx.x];
+        own_sh[threadIdx.x] = p >= lo && p < hi;
+        w_sh[threadIdx.x] = wts[r * slots + threadIdx.x];
+    }
+    __syncthreads();
+    const float* yr = y + (size_t)r * slots * D;
+    for (int d = threadIdx.x; d < D; d += blockDim.x) {
+        float acc = 0.0f;
+        for (int k = 0; k < slots; ++k)
+            if (own_sh[k]) acc = fmaf(yr[(size_t)k * D + d], w_sh[k], acc);
+        sum[(size_t)r * D + d] = acc;
+    }
+}
+
+// The ranks' summed branch back where the write-back reads it: y[r, 0, :] = sum[r], weights {1, 0, ..., 0}. The other
+// slots' y keep finite values (zeroed when the deep buffers are made, then only expert outputs and sums), so the
+// write-back's fma(y_k, 0, acc) adds exactly 0 for them. Block (row), 256 threads over D.
+extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_tp_place(const float* __restrict__ sum, float* __restrict__ y,
+        float* __restrict__ wts, int slots, int D) {
+    const int r = blockIdx.x;
+    float* out = y + (size_t)r * slots * D;
+    const float* in = sum + (size_t)r * D;
+    for (int d = threadIdx.x; d < D; d += blockDim.x) out[d] = in[d];
+    if ((int)threadIdx.x < slots) wts[r * slots + threadIdx.x] = threadIdx.x == 0 ? 1.0f : 0.0f;
+}

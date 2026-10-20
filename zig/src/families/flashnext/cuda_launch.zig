@@ -25,6 +25,7 @@ pub const exl3_ple = @import("cuda_exl3_ple.zig");
 pub const exl3_mtp = @import("cuda_exl3_mtp.zig");
 pub const mix = @import("cuda_mix.zig");
 pub const prompt = @import("cuda_prompt.zig");
+pub const snapshot = @import("cuda_snap.zig");
 /// The row-by-row reference path, for flashnext-prompt
 pub const row_path = @import("cuda_rows.zig");
 /// The MTP head's drafts: its forward, the chain, the verify window's rows and their rollback
@@ -392,6 +393,12 @@ test {
     _ = @import("cuda_draft_affine.zig");
     _ = @import("cuda_exl3_mtp.zig");
     _ = @import("cuda_head.zig");
+}
+
+test "exl3: greedy verification host contracts" {
+    _ = @import("cuda_mtp_ops.zig");
+    _ = @import("cuda_mtp_draft.zig");
+    _ = @import("cuda_mtp_verify_cache.zig");
 }
 
 test "embed grid is one program per row and per group of 32" {
