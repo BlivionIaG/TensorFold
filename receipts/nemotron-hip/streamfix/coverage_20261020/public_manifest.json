@@ -332,151 +332,151 @@
     },
     {
       "path": "publication/bodies/issue1081.md",
-      "public_sha256": "4aec97f3f525ea127f64ca0577ae5554607a7e1717e31b1ba7277b743b65a4f7",
-      "bytes": 35545,
+      "public_sha256": "2b419f4fb46c301092806ce28ab33e7ec10cc33d92bac8a0df288bcadb2c79af",
+      "bytes": 37155,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1082.md",
-      "public_sha256": "d53265b5c9e518cefb2f7cddc1e1ca481ff129b71ddb97d1a929ab8806fe321b",
-      "bytes": 18730,
+      "public_sha256": "a5dc2388f97987ed88a1e5e930f63e99196707c16a56a90bbd51bf464772ad9f",
+      "bytes": 20334,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1083.md",
-      "public_sha256": "c811513e08a47c760dfe00e9d06ad4491263a6b558d28cedc202d7cedca83e90",
-      "bytes": 20033,
+      "public_sha256": "1edfe398407bc839001a66eafe5e6e2a487c3d27d46b3520fdffb107fce75ae5",
+      "bytes": 21637,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1084.md",
-      "public_sha256": "fb428be46892072d60dc9ec04162cbaf76fbd966c472ea3108619d382735fb3f",
-      "bytes": 18419,
+      "public_sha256": "fe021d4d6389ae4b800be185e30f1f616e5092c044e14c1e584251acbf85d5c4",
+      "bytes": 20023,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1085.md",
-      "public_sha256": "b0b01f233867a9deb0384a26d79a93bf0e1dcd0c4d31b61f5bc65ada6b143d13",
-      "bytes": 18475,
+      "public_sha256": "3af88225036643893d30f7c9fe49a9918b9ec6e77d7feefb39c8ec9bc20fa2a3",
+      "bytes": 20079,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1086.md",
-      "public_sha256": "3dc12b611429e62f56de056656ba55861f9f07da432206a05cd4bd32016df7ef",
-      "bytes": 17448,
+      "public_sha256": "2d899f852ac223d0b4447ee06c87387451ed41611015ee0e1ec87543f76d1d8e",
+      "bytes": 19052,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1087.md",
-      "public_sha256": "77c4b591feecac1112ca876e15fc124ff12d6c220bebf67156613747e8309bb6",
-      "bytes": 17472,
+      "public_sha256": "f404f0052431fb9e0e23f869cfb8414053c524ac9af52c468605ee5a4c5fa906",
+      "bytes": 19076,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1088.md",
-      "public_sha256": "40b9b66f33df931d7b0b618d63f36a30fe77fea601c420e54076a5f4960b8ff8",
-      "bytes": 19532,
+      "public_sha256": "7af4b42e2d58d00e183028ce34eed76828510233bfd4e17c443ca5a9ceaeb89a",
+      "bytes": 21136,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1089.md",
-      "public_sha256": "35893e2af334fc3da1c84b8fa2e26201b4d0dbeb490cde45e6bea3e4e242a3fb",
-      "bytes": 17457,
+      "public_sha256": "534b1d7d03de707f91f3cf5013886ffcccd9b59f12117356e3d14d1f96bff334",
+      "bytes": 19061,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1090.md",
-      "public_sha256": "4d774736f5b28159d16dc46da489871c664cc3c532c31985ee011a54fd41f7d1",
-      "bytes": 19529,
+      "public_sha256": "aa8f74a086259eb6ff7104cc6921aac7a60e6f0b9df30d1081f6d30a08ba66a0",
+      "bytes": 21133,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1091.md",
-      "public_sha256": "169795d2dfea297a900d418257e1b9ab819b6395e280c4dafa1eab551fa0d5a9",
-      "bytes": 19517,
+      "public_sha256": "e1d583392b64a6a7b6ccd61410c2bb0127f64c8d521779b6e1fe3ad7d8fdc0fb",
+      "bytes": 21121,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1092.md",
-      "public_sha256": "5e281a8dc77f56c7f8b08181fbe0e18f55f366a512819862e9f5f88fab2a0d62",
-      "bytes": 28128,
+      "public_sha256": "67da5db97f31a69a9be4505dd149d9f674457ee8e1d2f16dd8b6d4cdf8b0d1ef",
+      "bytes": 29732,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1093.md",
-      "public_sha256": "7326e62d8c8af66477db5b184dfb7182cd87d22e6df65ea9a07359a2798a0cea",
-      "bytes": 28045,
+      "public_sha256": "dae59c59f0a01fef9f30f93bb221d02a0e7ca77a8c8e0ae18b25930d5f9969c6",
+      "bytes": 29649,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1094.md",
-      "public_sha256": "4be307871829e12437ae71c93663a628505101479e93c84ef34013bce8c9597e",
-      "bytes": 28061,
+      "public_sha256": "9e86155bf80239355b354a38b87dff2e335a2f62aabe2e1a0d9fd30d5abdd6f2",
+      "bytes": 29665,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1095.md",
-      "public_sha256": "15d49bdaa41c83a042919703d9a8dff75956495f0e7b50f613d2733f712bc7c8",
-      "bytes": 27554,
+      "public_sha256": "c36729f1e0b3d98976414200db0abc1a73723e6162e22b04b25ec00062e7a640",
+      "bytes": 29158,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1096.md",
-      "public_sha256": "4466f3282377f9b103aa5c55ad64cf604b93ee6394cc56d0148e0032b24da197",
-      "bytes": 20292,
+      "public_sha256": "bbec7c8ae59ea299df70552667231e5fe0212e9af05dc2152d7d992758f10c09",
+      "bytes": 21919,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1097.md",
-      "public_sha256": "56eb9543393f1e283e7645d168881681343ed4f4ef1558006ccca2aed13e8da5",
-      "bytes": 19558,
+      "public_sha256": "227793495da87aae37b5d1807f4bc956507babd39b5f89a1adea30ecaff69a8f",
+      "bytes": 21162,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1098.md",
-      "public_sha256": "2235867252f55456298fbcfa593df01d3e32a483d7e6af2fb04d5454a2751530",
-      "bytes": 20892,
+      "public_sha256": "9bb43ae156ae9049aa3d3988a90cb723be9ea2ba71491dc2d24231e920b5d1b5",
+      "bytes": 22519,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1099.md",
-      "public_sha256": "fb2a7480dde11a4215a7328261e97bea37688be9d8ed3daa18d15903d37757c4",
-      "bytes": 19520,
+      "public_sha256": "796242f2fe670afd37c1a5b29ec11ca89388fab882da79a5819cc27de35f19f4",
+      "bytes": 21124,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1100.md",
-      "public_sha256": "c3bd50104248100877c6145625d89300e77a0ba78867a80c3518096dd2229636",
-      "bytes": 19505,
+      "public_sha256": "3fa76c88307c7bf492f1e91399e5e4cfd63f3550110804e18e438a9162a8f2ec",
+      "bytes": 21109,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1101.md",
-      "public_sha256": "9ccab0d781a521c25b019c859b9af247daec55b207387bdcfe4b13b2ecfc48c5",
-      "bytes": 26686,
+      "public_sha256": "fb1f9c4e0f8f54e8acd5c14380655702cc6483e0170ef8df2f1e49caddb9b34b",
+      "bytes": 28290,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1102.md",
-      "public_sha256": "4d6280cc37d06d526febebd6a10257eab0f29de6b379c663ebb04897a5e0d84e",
-      "bytes": 19528,
+      "public_sha256": "cb1de0be2c4d0e65d2b433a1f6702b25bb95193fb059038ba57ace0cb52e729a",
+      "bytes": 21132,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1103.md",
-      "public_sha256": "b81d6cb4bd97978b481f8473fc7454156d0742613ba528603d9e6b5780f0a83b",
-      "bytes": 28951,
+      "public_sha256": "a8850c8cec40a261ae1e0078edf4a2677b439d7cc5dabefef359d77d5d8ed8a9",
+      "bytes": 30555,
       "generated_or_published_body": true
     },
     {
       "path": "publication/independent_live_audit.json",
-      "public_sha256": "41f2c3fb37e64b7cc093f1d6a33a01861b8aeaa3cf453058b1d234db39d5009e",
-      "bytes": 7309,
+      "public_sha256": "ef410cdaad31af19b145debfa54d5271a7dd6abe2258a96b4d96e0e335319cd5",
+      "bytes": 6440,
       "generated_or_published_body": true
     },
     {
       "path": "publication/publication_manifest.json",
-      "public_sha256": "62d9faf46ac7f840a8e1b451da7647511bad5b0d3e3785d8d83fcc23877f46b9",
+      "public_sha256": "ca2c6b5ef6f3596eb3ab80ae656e76942a3fe0e679195b2ac073353e2ffd4e66",
       "bytes": 9211,
       "generated_or_published_body": true
     },
