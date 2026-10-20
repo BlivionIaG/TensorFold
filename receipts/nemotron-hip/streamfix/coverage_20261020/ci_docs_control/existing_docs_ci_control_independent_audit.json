@@ -1,0 +1,23 @@
+{
+  "validated": true,
+  "scope": "Independent local rehash/tree/merge/raw-diagnostic audit; no CI trigger or runtime execution",
+  "control_pr": 1128,
+  "actual_tested_merge": "fe94c2d9bbf625470bf07d53bfff0284171d4753",
+  "main_source": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+  "unchanged_root_entries": 22,
+  "only_root_entry_changed": [
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "raw_compiler_diagnostics": 80,
+  "unique_normalized_diagnostics": 52,
+  "matching_draft_archives": 22,
+  "input_audit_sha256": "cc16187eed0fa93d54604a0ca9b5d7921d3ace707bb817a7010af1e54aab04c5",
+  "claim": "An actual Windows CI docs-only merge with every compile/build/workflow/tool source tree entry identical to main d101 exhibits exactly the same52 compiler diagnostics as all22 draft archives. These are baseline-equivalent compile failures, not evidence introduced by these drafts.",
+  "limits": [
+    "Notactualmainbranchworkflowrun:existingpullrequestmergewithdocsnoticeonlychange, equivalenceexplicitlyproven",
+    "ExactCIcompilerbinarySHAunavailable; sameversion/actionidentities+runnerimagecaptured, no bitidenticalenvironmentclaim",
+    "Doesnotclassifytest.exe runtimefailurecauses, PRdesktop/Linuxfailures, GPU/modelqualification, or makecurrentCIgreen",
+    "No maintainerdisposition/waiver/READYaction inferred"
+  ],
+  "normalization": "Strip timestamp, normalize path separators/Zig library install root and generated numeric type suffix only."
+}

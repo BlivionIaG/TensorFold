@@ -1,0 +1,20 @@
+{
+  "sha": "fe94c2d9bbf625470bf07d53bfff0284171d4753",
+  "tree": {
+    "sha": "d231d8148f524c31c4f396d642d1a8b56939412d",
+    "url": "https://api.github.com/repos/ashhart/TensorFold/git/trees/d231d8148f524c31c4f396d642d1a8b56939412d"
+  },
+  "parents": [
+    {
+      "sha": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "url": "https://api.github.com/repos/ashhart/TensorFold/git/commits/d1018b318fb51981c4a18f12e40269a4d3ee9713",
+      "html_url": "https://github.com/ashhart/TensorFold/commit/d1018b318fb51981c4a18f12e40269a4d3ee9713"
+    },
+    {
+      "sha": "13f79fbeaf197429dae17f0cb8734563100643dc",
+      "url": "https://api.github.com/repos/ashhart/TensorFold/git/commits/13f79fbeaf197429dae17f0cb8734563100643dc",
+      "html_url": "https://github.com/ashhart/TensorFold/commit/13f79fbeaf197429dae17f0cb8734563100643dc"
+    }
+  ],
+  "message": "Merge 13f79fbeaf197429dae17f0cb8734563100643dc into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+}

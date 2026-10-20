@@ -1,0 +1,1 @@
+{"query": "query { repository(owner:\"ashhart\",name:\"TensorFold\") { pullRequests(first:50,orderBy:{field:UPDATED_AT,direction:DESC},states:[OPEN,CLOSED,MERGED]) { nodes { number title state headRefOid baseRefOid mergeCommit{oid} url files(first:100){totalCount nodes{path}} commits(last:1){nodes{commit{oid statusCheckRollup{state}}}} } } } }"}

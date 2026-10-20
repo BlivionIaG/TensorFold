@@ -2134,6 +2134,134 @@
       "public_sha256": "ae17e67bf8f0364635eceae11a63521dae9a6753f45e0051f39b1c434816ab9a",
       "bytes": 18496,
       "curated_submanifest": "cold_http729_final/public_manifest.json"
+    },
+    {
+      "path": "ci_docs_control/README.md",
+      "original_sha256": "b75ffc4acc4937383d4b999c1b34c67b0836e0dfd471320547f2b326573ae138",
+      "public_sha256": "b75ffc4acc4937383d4b999c1b34c67b0836e0dfd471320547f2b326573ae138",
+      "bytes": 2215,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_gitcommit_d1018b318fb51981c4a18f12e40269a4d3ee9713.json",
+      "original_sha256": "5b59f9c1a00ff9590b6b80cfc8e1f1eb5bc9ca90fd66c18a755d6c774a04d0a4",
+      "public_sha256": "5b59f9c1a00ff9590b6b80cfc8e1f1eb5bc9ca90fd66c18a755d6c774a04d0a4",
+      "bytes": 1020,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_gitcommit_fe94c2d9bbf625470bf07d53bfff0284171d4753.json",
+      "original_sha256": "392e03f1f25d1ca260a2c0687fd1fe619b63c2f93c0bc044a1329db94100f213",
+      "public_sha256": "392e03f1f25d1ca260a2c0687fd1fe619b63c2f93c0bc044a1329db94100f213",
+      "bytes": 954,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_pr1110_checks.json",
+      "original_sha256": "15583000105400b9585578809356f9585e6b848858656126070ea117dc6f90ad",
+      "public_sha256": "15583000105400b9585578809356f9585e6b848858656126070ea117dc6f90ad",
+      "bytes": 15277,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_pr1128_checks.json",
+      "original_sha256": "ff5f7b7df267b095645179317da4ef0d1a849c661a886cd21c7689f2b82e408a",
+      "public_sha256": "ff5f7b7df267b095645179317da4ef0d1a849c661a886cd21c7689f2b82e408a",
+      "bytes": 15277,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_pr1128_normalized_errors.json",
+      "original_sha256": "1bf04c323873e95c27590efd7ba81b8dc043991e571c4d7c07055452ff9c2786",
+      "public_sha256": "1bf04c323873e95c27590efd7ba81b8dc043991e571c4d7c07055452ff9c2786",
+      "bytes": 5720,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_pr1128_run.json",
+      "original_sha256": "c7a5a22bfc9891926db1ff6f26e5ccfca3380561c83018853619f7c59e17fe7d",
+      "public_sha256": "c7a5a22bfc9891926db1ff6f26e5ccfca3380561c83018853619f7c59e17fe7d",
+      "bytes": 12493,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_pr1128_windows.log",
+      "original_sha256": "b2bec6f4c174543474fd093288b4dd3c044f9d884de3f332873b2aacc0d2a5e6",
+      "public_sha256": "b2bec6f4c174543474fd093288b4dd3c044f9d884de3f332873b2aacc0d2a5e6",
+      "bytes": 146647,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_search_50prs.json",
+      "original_sha256": "f917115a48fb9596de86047bbafe00abae6be61784082cc0c37eea6515ced4c0",
+      "public_sha256": "f917115a48fb9596de86047bbafe00abae6be61784082cc0c37eea6515ced4c0",
+      "bytes": 133792,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_search_query.json",
+      "original_sha256": "9e47eed15da7c4ebae4c6631ce468069e1d8dafe8ac5a2291027e9bb543456e7",
+      "public_sha256": "9e47eed15da7c4ebae4c6631ce468069e1d8dafe8ac5a2291027e9bb543456e7",
+      "bytes": 347,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_tree_977a948fc8cc3e2a873150a6b587f3b3c8a11e2c.json",
+      "original_sha256": "4428652746dc3eeb061242f5b69508270cbb85c095afaa4eec3b769e9dada88a",
+      "public_sha256": "4428652746dc3eeb061242f5b69508270cbb85c095afaa4eec3b769e9dada88a",
+      "bytes": 5144,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/control_tree_d231d8148f524c31c4f396d642d1a8b56939412d.json",
+      "original_sha256": "1d3a0044bb0a0b20d5fbe215c7bf8e9e204e859642c51cd94c30e92106203191",
+      "public_sha256": "1d3a0044bb0a0b20d5fbe215c7bf8e9e204e859642c51cd94c30e92106203191",
+      "bytes": 5144,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/existing_docs_ci_control_audit.json",
+      "original_sha256": "cc16187eed0fa93d54604a0ca9b5d7921d3ace707bb817a7010af1e54aab04c5",
+      "public_sha256": "cc16187eed0fa93d54604a0ca9b5d7921d3ace707bb817a7010af1e54aab04c5",
+      "bytes": 9671,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/existing_docs_ci_control_independent_audit.json",
+      "original_sha256": "95a38aadc0837f9f830f5d7740a46cdf1334b723086c38e3a54e4414021a1921",
+      "public_sha256": "95a38aadc0837f9f830f5d7740a46cdf1334b723086c38e3a54e4414021a1921",
+      "bytes": 1446,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/no-gpu.d101.yml",
+      "original_sha256": "bafe48f4195eccccb78302503c234e1ae6806646546958c2d44b5aa91a558434",
+      "public_sha256": "bafe48f4195eccccb78302503c234e1ae6806646546958c2d44b5aa91a558434",
+      "bytes": 2419,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "ci_docs_control/public_manifest.json",
+      "original_sha256": "73b40e6c7e20652f1c4741849f53612a136c3040ad3d799c7569f438405a1c6e",
+      "public_sha256": "73b40e6c7e20652f1c4741849f53612a136c3040ad3d799c7569f438405a1c6e",
+      "bytes": 5115,
+      "redacted": false,
+      "scope": "Public curated CI-control file; internal manifest maps original/public hashes."
     }
   ]
 }

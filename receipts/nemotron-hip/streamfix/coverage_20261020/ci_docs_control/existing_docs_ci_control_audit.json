@@ -1,0 +1,215 @@
+{
+  "validated_existing_control": true,
+  "scope": "Existingread-onlydocsPRWindowsworkflow; noCItrigger/sourcechange/PEexecutionbyus",
+  "bounded_search_prs": 50,
+  "candidate_pr": 1128,
+  "candidate_url": "https://github.com/ashhart/TensorFold/pull/1128",
+  "actual_job_url": "https://github.com/ashhart/TensorFold/actions/runs/39487050150/job/118850059735",
+  "actual_job_id": 118850059735,
+  "actual_workflow_run": 39487050150,
+  "actual_tested_merge": "fe94c2d9bbf625470bf07d53bfff0284171d4753",
+  "actual_merge_parents": [
+    "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+    "13f79fbeaf197429dae17f0cb8734563100643dc"
+  ],
+  "main_source": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+  "full_root_comparison": {
+    "control_tree": "d231d8148f524c31c4f396d642d1a8b56939412d",
+    "main_tree": "977a948fc8cc3e2a873150a6b587f3b3c8a11e2c",
+    "only_changed_root_entry": "THIRD_PARTY_NOTICES.md",
+    "identical_all_other_entries": {
+      ".github": {
+        "mode": "040000",
+        "type": "tree",
+        "sha": "1f736013d6afe7f030cbad4fa5b0262e2571530b"
+      },
+      ".gitignore": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "75ba703b9a57f3bee429e70fc3e5bebbeb6578f8"
+      },
+      ".zig-version": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "c5523bd09b187d88eb8caeb979852a301d6c2728"
+      },
+      "CHANGELOG.md": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "6164762914d7c7fc0555523aa2daad7346a77b18"
+      },
+      "CONTRIBUTING.md": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "6b49d406511598488b0a7b69cd1a8e6311049542"
+      },
+      "LICENSE": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "d645695673349e3947e8e5ae42332d0ac3164cd7"
+      },
+      "LICENSES": {
+        "mode": "040000",
+        "type": "tree",
+        "sha": "2920856359bd7d667dd3e351313c789300a6ce77"
+      },
+      "NOTICE": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "50e45b9ac90ea00ca45ab7afbdf3590b696e53d1"
+      },
+      "README.md": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "7efca45fa311f89eb7c36968cef3a562db779302"
+      },
+      "RELEASE-NOTES-1.0.0.md": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "a78661f7c4b05db8e885a9471be4e8bb5133c761"
+      },
+      "RUNBOOK.md": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "32d956527408e0a5cd06012e7b1d1556bb59dad9"
+      },
+      "SECURITY.md": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "6076fcdfb96e42c9aafbed9a1baf48f7c7abeb67"
+      },
+      "ZIG-PREVIEW.md": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "81851dc6f7e3d14630bd5ba9707344308bac45db"
+      },
+      "app": {
+        "mode": "040000",
+        "type": "tree",
+        "sha": "f2909da2ed69931a5acb654e371391c5d96f8b95"
+      },
+      "assets": {
+        "mode": "040000",
+        "type": "tree",
+        "sha": "dca8b757223b5ddc2411c3d49846731fc11e804b"
+      },
+      "build.zig": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "7160cb793490bf04eca38acdb0041ed5aa30ed0b"
+      },
+      "build.zig.zon": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "187350c97ef63bba60c123b00bd2e0fcb0d08296"
+      },
+      "docs": {
+        "mode": "040000",
+        "type": "tree",
+        "sha": "eb36eabd6b1a06bbea6e39c347b63c1af349c140"
+      },
+      "packaging": {
+        "mode": "040000",
+        "type": "tree",
+        "sha": "a0e9873e95629a80eed106caf5acca9bbb0359ce"
+      },
+      "setup.py": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "10c4e3ecf9b75e931af9d53a170526c5ee225562"
+      },
+      "tools": {
+        "mode": "040000",
+        "type": "tree",
+        "sha": "d5329f94c1de159d86a02f1f38f6a2066bd9e0af"
+      },
+      "zig": {
+        "mode": "040000",
+        "type": "tree",
+        "sha": "0d2677cf194bc89fb5c0b5750d99868885a0cafc"
+      }
+    },
+    "changed_entry": {
+      "control": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "018947342d5408e99ddd904f63205449c6258e26"
+      },
+      "main": {
+        "mode": "100644",
+        "type": "blob",
+        "sha": "2cf05eb330dd1a13d014f6bc08af9985efa015ed"
+      }
+    }
+  },
+  "changed_file_reference_scan": {
+    "existing_references": [
+      "d1018b318fb51981c4a18f12e40269a4d3ee9713:tools/release/package.sh:39:cp \"$third_party\" \"$stage/THIRD_PARTY_NOTICES.md\"",
+      "d1018b318fb51981c4a18f12e40269a4d3ee9713:tools/release/smoke.sh:16:[ -f \"$root/LICENSES/MIT.txt\" ] && [ -f \"$root/THIRD_PARTY_NOTICES.md\" ]",
+      "d1018b318fb51981c4a18f12e40269a4d3ee9713:tools/release/test_package.py:51:            str(root / \"THIRD_PARTY_NOTICES.md\"), str(output),",
+      "d1018b318fb51981c4a18f12e40269a4d3ee9713:tools/release/test_package.py:82:for file in [\"LICENSES/MIT.txt\", \"LICENSES/Apache-2.0.txt\", \"LICENSES/MiaAI-Lab-MIT.txt\", \"THIRD_PARTY_NOTICES.md\"]:",
+      "d1018b318fb51981c4a18f12e40269a4d3ee9713:zig/build/dist.zig:86:        pack.addFileArg(b.path(\"THIRD_PARTY_NOTICES.md\"));"
+    ],
+    "scope": "Releasepackaging/dist only; no changedZig source/workflow/tool/version/buildinput. zigbuildtest failscompilebeforeanyoptionalreleasepackaging."
+  },
+  "actual_command": "zig build test",
+  "actual_zig_version": "0.17.0",
+  "tool_binary_sha_available": false,
+  "runner_image": "windows-2025-vs2026",
+  "runner_log_preamble": [
+    "\ufeff2026-10-20T19:51:49.5205626Z Current runner version: '2.337.0'",
+    "2026-10-20T19:51:49.5225947Z ##[group]Runner Image Provisioner",
+    "2026-10-20T19:51:49.5226617Z Hosted Compute Agent",
+    "2026-10-20T19:51:49.5227100Z Version: 20261002.596",
+    "2026-10-20T19:51:49.5227643Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0",
+    "2026-10-20T19:51:49.5228190Z Build Date: 2026-10-02T22:28:27Z",
+    "2026-10-20T19:51:49.5228716Z Worker ID: {fc29ec49-7a62-4af2-8c9e-f927224eea8a}",
+    "2026-10-20T19:51:49.5229281Z Region: westus3",
+    "2026-10-20T19:51:49.5229742Z Cloud: Azure",
+    "2026-10-20T19:51:49.5230161Z ##[endgroup]",
+    "2026-10-20T19:51:49.5231267Z ##[group]Operating System",
+    "2026-10-20T19:51:49.5231745Z Microsoft Windows Server 2025",
+    "2026-10-20T19:51:49.5232200Z 10.0.26100",
+    "2026-10-20T19:51:49.5232616Z Datacenter",
+    "2026-10-20T19:51:49.5233027Z ##[endgroup]",
+    "2026-10-20T19:51:49.5233452Z ##[group]Runner Image",
+    "2026-10-20T19:51:49.5233896Z Image: windows-2025-vs2026",
+    "2026-10-20T19:51:49.5234339Z Version: 20261007.264.1",
+    "2026-10-20T19:51:49.5235545Z Included Software: https://github.com/actions/runner-images/blob/win25-vs2026/20261007.264/images/windows/Windows2025-VS2026-Readme.md",
+    "2026-10-20T19:51:49.5236805Z Image Release: https://github.com/actions/runner-images/releases/tag/win25-vs2026%2F20261007.264",
+    "2026-10-20T19:51:49.5237544Z ##[endgroup]",
+    "2026-10-20T19:51:49.5238400Z ##[group]GITHUB_TOKEN Permissions",
+    "2026-10-20T19:51:49.5240118Z Contents: read",
+    "2026-10-20T19:51:49.5240750Z Metadata: read",
+    "2026-10-20T19:51:49.5241222Z ##[endgroup]",
+    "2026-10-20T19:51:49.5242865Z Secret source: None",
+    "2026-10-20T19:51:49.5243620Z Cache mode: write",
+    "2026-10-20T19:51:49.5244154Z Prepare workflow directory",
+    "2026-10-20T19:51:49.5531823Z Prepare all required actions",
+    "2026-10-20T19:51:49.5582310Z Getting action download info"
+  ],
+  "raw_compiler_error_lines": 80,
+  "unique_normalized_compiler_diagnostics": 52,
+  "overlap_with_each_of_all22_draft_archives": 52,
+  "extra_or_missing_diagnostics": [],
+  "conclusion": "All52 compilerdiagnostics independentlyoccur inactualWindowsCI ontestedmergewithentireZig/build/workflowinputsidenticaltod101main; docsnoticechangecannotintroducethesecompiletypeerrors. This isCI-equivalent baselinecompilerfailureevidence, strongerthanunchangedfileorforcedcomponentroots.",
+  "limits": [
+    "Notactualmainbranchworkflowrun:existingpullrequestmergewithdocsnoticeonlychange, equivalenceexplicitlyproven",
+    "ExactCIcompilerbinarySHAunavailable; sameversion/actionidentities+runnerimagecaptured, no bitidenticalenvironmentclaim",
+    "Doesnotclassifytest.exe runtimefailurecauses, PRdesktop/Linuxfailures, GPU/modelqualification, or makecurrentCIgreen",
+    "No maintainerdisposition/waiver/READYaction inferred"
+  ],
+  "artifact_sha256": {
+    "control_pr1110_checks.json": "15583000105400b9585578809356f9585e6b848858656126070ea117dc6f90ad",
+    "control_pr1128_normalized_errors.json": "1bf04c323873e95c27590efd7ba81b8dc043991e571c4d7c07055452ff9c2786",
+    "control_tree_d231d8148f524c31c4f396d642d1a8b56939412d.json": "1d3a0044bb0a0b20d5fbe215c7bf8e9e204e859642c51cd94c30e92106203191",
+    "control_search_query.json": "9e47eed15da7c4ebae4c6631ce468069e1d8dafe8ac5a2291027e9bb543456e7",
+    "control_pr1128_checks.json": "ff5f7b7df267b095645179317da4ef0d1a849c661a886cd21c7689f2b82e408a",
+    "control_search_50prs.json": "f917115a48fb9596de86047bbafe00abae6be61784082cc0c37eea6515ced4c0",
+    "control_pr1128_run.json": "e2e4c840389238046c0a559fb5629737935118fbe33df2cb4cd44b5e19d49fd5",
+    "control_gitcommit_fe94c2d9bbf625470bf07d53bfff0284171d4753.json": "24be1f4f0eba57424f34fd7eac88916e04bc7c90f8a8fcbdf91fdfdf2d7f24b5",
+    "control_pr1128_windows.log": "b2bec6f4c174543474fd093288b4dd3c044f9d884de3f332873b2aacc0d2a5e6",
+    "control_gitcommit_d1018b318fb51981c4a18f12e40269a4d3ee9713.json": "1e72d19e9a9ba65ac483977df262b05186a8f22b5886fa36311b20c9639e7ea9",
+    "control_tree_977a948fc8cc3e2a873150a6b587f3b3c8a11e2c.json": "4428652746dc3eeb061242f5b69508270cbb85c095afaa4eec3b769e9dada88a"
+  }
+}

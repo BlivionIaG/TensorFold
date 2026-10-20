@@ -1,0 +1,15 @@
+{
+  "sha": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+  "tree": {
+    "sha": "977a948fc8cc3e2a873150a6b587f3b3c8a11e2c",
+    "url": "https://api.github.com/repos/ashhart/TensorFold/git/trees/977a948fc8cc3e2a873150a6b587f3b3c8a11e2c"
+  },
+  "parents": [
+    {
+      "sha": "47ea1bb910356484ff1e9189025b41ed82c5e413",
+      "url": "https://api.github.com/repos/ashhart/TensorFold/git/commits/47ea1bb910356484ff1e9189025b41ed82c5e413",
+      "html_url": "https://github.com/ashhart/TensorFold/commit/47ea1bb910356484ff1e9189025b41ed82c5e413"
+    }
+  ],
+  "message": "app tests: keep the test certificate's serial a minimal DER integer\n\nThe cluster-node test certificate cleared only the sign bit of its random 16-byte serial, so about one serial in 256 began with a zero byte that DER forbids, and OpenSSL refused the certificate with illegal padding. bounds.test.ts failed that way on CI at 47ea1bb91. The first byte is now always 0x40 to 0x7f: 0 of 20,000 generated certificates refused, against 9 of 4,000 before."
+}
