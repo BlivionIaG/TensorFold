@@ -471,8 +471,9 @@ pub const Ngram = struct {
             for (0..history.len - 1) |i| hist[i] = hist[i + 1];
             hist[history.len - 1] = token;
         }
-        const n_threads = @min(ple_pool.max_parts, items / 4);
-        if (n_threads <= 1 or g.pool == null) {
+        const max_threads = 128;
+        const n_threads = if (g.format == .exl3 and items <= 1024) 1 else @min(max_threads, items / 4); // EXL3 rows decode in about a microsecond: a decode step's few rows cost less than one thread spawn
+        if (n_threads <= 1) {
             try g.fill(ids, out, 0, items);
         } else {
             const split: Split = .{ .g = g, .ids = ids, .out = out, .per = (items + n_threads - 1) / n_threads };
