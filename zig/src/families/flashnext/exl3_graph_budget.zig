@@ -55,6 +55,14 @@ pub fn Budget(comptime capacity: usize) type {
             return total;
         }
 
+        pub fn localCharged(self: *const Self) u64 {
+            var total: u64 = 0;
+            for (self.entries) |maybe| if (maybe) |entry| {
+                if (entry.cohort == 0) total += entry.charge.peak() catch unreachable;
+            };
+            return total;
+        }
+
         pub fn plan(self: *const Self, charge: Charge) !Plan {
             const needed = try charge.peak();
             if (charge.exec == 0 or needed > self.limit) return error.GraphBudgetExceeded;

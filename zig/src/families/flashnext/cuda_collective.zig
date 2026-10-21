@@ -19,6 +19,35 @@ pub const GraphChoice = enum { eager, capture, replay };
 pub const GraphVote = struct { state: GraphState, cohort: u64 = 0 };
 pub const GraphDecision = struct { choice: GraphChoice, cohort: u64 };
 
+pub fn selectGraphVictim(local: u64, peer: u64) u64 {
+    if (local == 0) return peer;
+    if (peer == 0) return local;
+    return @min(local, peer);
+}
+
+test "exl3: selective retirement agrees stable union victims for asymmetric cohort sets" {
+    var left = [_]u64{ 3, 7, 11 };
+    var right = [_]u64{ 5, 7, 11 };
+    for ([_]u64{ 3, 5 }) |expected| {
+        var local: u64 = 0;
+        var peer: u64 = 0;
+        for (left) |cohort| local = selectGraphVictim(local, cohort);
+        for (right) |cohort| peer = selectGraphVictim(peer, cohort);
+        const victim = selectGraphVictim(local, peer);
+        try std.testing.expectEqual(expected, victim);
+        try std.testing.expectEqual(victim, selectGraphVictim(peer, local));
+        for (&left) |*cohort| if (cohort.* == victim) {
+            cohort.* = 0;
+        };
+        for (&right) |*cohort| if (cohort.* == victim) {
+            cohort.* = 0;
+        };
+    }
+    try std.testing.expectEqual(@as(u64, 7), left[1]);
+    try std.testing.expectEqual(@as(u64, 11), right[2]);
+    try std.testing.expectEqual(@as(u64, 0), selectGraphVictim(0, 0));
+}
+
 fn chooseGraph(local: GraphVote, peer: GraphVote, step: u64) !GraphDecision {
     if (local.state == .timed_out or peer.state == .timed_out) return error.GraphInstantiationTimeout;
     if (local.state == .failed or peer.state == .failed) return error.GraphInstantiationFailed;
@@ -136,6 +165,18 @@ pub const Collective = struct {
         errdefer c.failGraph();
         c.graph_step = try std.math.add(u64, c.graph_step, 1);
         return graphExchange(c.link, c.graph_step, signature, vote, wire.deadline(c.graphTimeoutMs()));
+    }
+
+    pub fn graphVictim(c: *Collective, signature: u64, candidate: u64) !u64 {
+        if (c.failed or c.comm == null) return error.RankDisconnected;
+        errdefer c.failGraph();
+        c.graph_step = try std.math.add(u64, c.graph_step, 1);
+        const until = wire.deadline(c.graphTimeoutMs());
+        try c.link.sendHeader(.{ .kind = .ready, .sequence = c.graph_step, .object = candidate, .arg = signature, .flags = 0x47560000 }, until);
+        const peer = try c.link.receiveHeader(until);
+        if (peer.kind != .ready or peer.sequence != c.graph_step or peer.arg != signature or peer.bytes != 0 or peer.flags != 0x47560000)
+            return error.GraphRendezvousMismatch;
+        return selectGraphVictim(candidate, peer.object);
     }
 
     /// Disjoint BF16 vocabulary columns are concatenated without an arithmetic reduction.

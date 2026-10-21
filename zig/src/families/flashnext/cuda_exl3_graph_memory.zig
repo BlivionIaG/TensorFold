@@ -3,21 +3,31 @@ const policy = @import("exl3_graph_budget.zig");
 
 pub const Charge = policy.Charge;
 pub const Class = policy.Class;
-pub const Policy = struct { reservation_bytes: u64, headroom_bytes: u64, auxiliary_bytes: u64 = 0, charge: Charge };
+pub const Policy = struct { reservation_bytes: u64, headroom_bytes: u64, auxiliary_bytes: u64 = 0, charge: Charge, prefill_charge: ?Charge = null, chain_charge: ?Charge = null };
 const mib: u64 = 1024 * 1024;
 
 pub fn defaultPolicy() Policy {
-    return .{ .reservation_bytes = 512 * mib, .headroom_bytes = 128 * mib, .auxiliary_bytes = 64 * mib, .charge = .{ .exec = 16 * mib, .template = 16 * mib, .transient = 32 * mib } };
+    return workloadPolicy(8, 48) catch unreachable;
+}
+
+pub fn workloadPolicy(streams: u64, layers: u64) !Policy {
+    if (streams == 0 or layers == 0) return error.InvalidGraphPolicy;
+    const decode = try std.math.mul(u64, try std.math.mul(u64, streams, 2), 32 * mib);
+    const prefill = try std.math.mul(u64, layers, mib);
+    const chain = try std.math.mul(u64, try std.math.mul(u64, streams, 2), mib);
+    const auxiliary = try std.math.add(u64, prefill, chain);
+    const retained = try std.math.add(u64, decode, auxiliary);
+    return .{ .reservation_bytes = try std.math.add(u64, retained, 192 * mib), .headroom_bytes = 128 * mib, .auxiliary_bytes = try std.math.add(u64, auxiliary, 32 * mib), .charge = .{ .exec = 16 * mib, .template = 16 * mib, .transient = 32 * mib }, .prefill_charge = .{ .exec = mib, .template = 0, .transient = 32 * mib }, .chain_charge = .{ .exec = mib, .template = 0, .transient = 32 * mib } };
 }
 
 pub fn policyFromEnv() !Policy {
-    var settings = defaultPolicy();
+    const stream_text = std.mem.span(std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS") orelse "1");
+    var settings = try workloadPolicy(try std.fmt.parseInt(u64, stream_text, 10), 48);
     settings.reservation_bytes = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_RESERVATION_MIB", settings.reservation_bytes);
     settings.headroom_bytes = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_HEADROOM_MIB", settings.headroom_bytes);
     settings.charge.exec = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_EXEC_MIB", settings.charge.exec);
     settings.charge.template = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_TEMPLATE_MIB", settings.charge.template);
     settings.charge.transient = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_TRANSIENT_MIB", settings.charge.transient);
-    settings.auxiliary_bytes = try settings.charge.peak();
     return settings;
 }
 
@@ -57,6 +67,8 @@ fn configureLocked(settings: Policy) !void {
     var next = try Ledger.init(settings.reservation_bytes, settings.headroom_bytes);
     if (settings.auxiliary_bytes > next.limit or try settings.charge.peak() > next.limit - settings.auxiliary_bytes) return error.InvalidGraphPolicy;
     _ = try next.plan(settings.charge);
+    if (settings.prefill_charge) |charge| _ = try next.plan(charge);
+    if (settings.chain_charge) |charge| _ = try next.plan(charge);
     if (ledger) |*current| next.generation = current.generation;
     ledger = next;
     configured = settings;
@@ -68,8 +80,9 @@ pub fn startupReservation() !u64 {
     if (configured == null) {
         try configureLocked(try policyFromEnv());
         const settings = configured.?;
-        std.log.info("EXL3 graph budget auxiliary logical allowance: {d} MiB (heuristic, excluded from TP admission)", .{settings.auxiliary_bytes / mib});
+        std.log.info("EXL3 graph budget auxiliary logical allowance: {d} MiB (heuristic, only the unmaterialized remainder is protected from TP admission)", .{settings.auxiliary_bytes / mib});
         std.log.info("EXL3 graph budget heuristic allowances (not measured exec bytes): reservation {d} MiB, headroom {d} MiB, exec/template/transient {d}/{d}/{d} MiB", .{ settings.reservation_bytes / mib, settings.headroom_bytes / mib, settings.charge.exec / mib, settings.charge.template / mib, settings.charge.transient / mib });
+        std.log.info("EXL3 workload heuristic follows TF_FLASHNEXT_EXL3_STREAMS: two decode variants per stream, 48 prefill layer execs and two MTP chain variants per stream; local exec allowances are heuristic, not measured GPU sizes; local templates are released after instantiation", .{});
     }
     return configured.?.reservation_bytes;
 }
@@ -97,14 +110,20 @@ pub fn admitWithQuery(class: Class, cohort: u64, context: anytype, comptime quer
 fn admitLocked(class: Class, cohort: u64, available: u64) !Ticket {
     const settings = configured orelse return error.GraphBudgetUnconfigured;
     const current = &ledger.?;
-    const peak = try settings.charge.peak();
+    const charge = switch (class) {
+        .decode => settings.charge,
+        .prefill => settings.prefill_charge orelse settings.charge,
+        .chain => settings.chain_charge orelse settings.charge,
+    };
+    const peak = try charge.peak();
     if (class == .decode and cohort != 0) {
-        const allowance = current.limit - settings.auxiliary_bytes;
+        const unmaterialized = settings.auxiliary_bytes -| current.localCharged();
+        const allowance = current.limit - unmaterialized;
         if (peak > allowance or current.charged() > allowance - peak) return error.GraphBudgetBusy;
     }
     const needed = try std.math.add(u64, try std.math.add(u64, current.pending(), peak), settings.headroom_bytes);
     if (available < needed) return error.GraphMemoryHeadroom;
-    return current.reserve(class, cohort, settings.charge, 0);
+    return current.reserve(class, cohort, charge, 0);
 }
 
 pub fn installed(ticket: Ticket) !void {
@@ -151,7 +170,7 @@ test "exl3: runtime policy defaults are bounded heuristics and MiB overrides par
     const settings = defaultPolicy();
     const bounded = try Ledger.init(settings.reservation_bytes, settings.headroom_bytes);
     _ = try bounded.plan(settings.charge);
-    try std.testing.expectEqual(@as(u64, 512 * mib), settings.reservation_bytes);
+    try std.testing.expectEqual(@as(u64, 768 * mib), settings.reservation_bytes);
     try std.testing.expectEqual(@as(u64, 128 * mib), settings.headroom_bytes);
     try std.testing.expectEqual(@as(u64, 7 * mib), try parseMib("7"));
     try std.testing.expectError(error.InvalidGraphPolicy, parseMib(""));
@@ -235,7 +254,7 @@ test "exl3: default TP cohorts leave a complete local admission peak" {
         tickets[count] = ticket;
         try installed(ticket);
     }
-    try std.testing.expectEqual(@as(usize, 9), count);
+    try std.testing.expectEqual(@as(usize, 16), count);
     for ([_]Class{ .prefill, .chain }) |class| {
         const local = try admit(class, 0, 1024 * mib);
         try release(local);
@@ -265,7 +284,45 @@ test "exl3: bounded prefill admission retains reusable keys across 48 layer scan
         try installed(ticket);
         captures += 1;
     };
-    try std.testing.expectEqual(@as(usize, 11), captures);
-    try std.testing.expectEqual(@as(usize, 22), replays);
-    try std.testing.expectEqual(@as(usize, 111), misses);
+    try std.testing.expectEqual(@as(usize, 48), captures);
+    try std.testing.expectEqual(@as(usize, 96), replays);
+    try std.testing.expectEqual(@as(usize, 0), misses);
+}
+
+test "exl3: workload heuristic scales with concurrency and shape with checked arithmetic" {
+    try std.testing.expectEqual(@as(u64, 768 * mib), (try workloadPolicy(8, 48)).reservation_bytes);
+    try std.testing.expectEqual(@as(u64, 504 * mib), (try workloadPolicy(4, 48)).reservation_bytes);
+    try std.testing.expectEqual(@as(u64, 792 * mib), (try workloadPolicy(8, 72)).reservation_bytes);
+    try std.testing.expectError(error.InvalidGraphPolicy, workloadPolicy(0, 48));
+    try std.testing.expectError(error.InvalidGraphPolicy, workloadPolicy(8, 0));
+    try std.testing.expectError(error.Overflow, workloadPolicy(std.math.maxInt(u64), 48));
+    try std.testing.expectError(error.Overflow, workloadPolicy(8, std.math.maxInt(u64)));
+    var invalid = defaultPolicy();
+    invalid.prefill_charge = .{ .exec = std.math.maxInt(u64), .template = 0, .transient = 1 };
+    try std.testing.expectError(error.Overflow, configure(invalid));
+}
+
+test "exl3: saturated TP cache retains all local workload variants without double protection" {
+    try configure(defaultPolicy());
+    var tickets: [80]?Ticket = @splat(null);
+    defer for (tickets) |maybe| if (maybe) |ticket| release(ticket) catch unreachable;
+    for (0..16) |index| {
+        const ticket = try admit(.decode, index + 1, 1024 * mib);
+        tickets[index] = ticket;
+        try installed(ticket);
+    }
+    for (16..80) |index| {
+        const ticket = try admit(if (index < 64) .prefill else .chain, 0, 1024 * mib);
+        tickets[index] = ticket;
+        try installed(ticket);
+    }
+    try std.testing.expectEqual(@as(u64, 576 * mib), charged());
+    try std.testing.expectError(error.GraphBudgetBusy, admit(.decode, 99, 1024 * mib));
+    try release(tickets[0].?);
+    tickets[0] = null;
+    tickets[0] = try admit(.decode, 99, 1024 * mib);
+    try installed(tickets[0].?);
+    try std.testing.expectEqual(@as(u64, 576 * mib), charged());
+    const local = try admit(.chain, 0, 1024 * mib);
+    try release(local);
 }
