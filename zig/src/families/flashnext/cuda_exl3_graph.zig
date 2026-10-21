@@ -22,6 +22,107 @@ const dplan = @import("cuda_exl3_dplan.zig");
 const wt = @import("cuda_prompt_wt.zig");
 const collective = @import("cuda_collective.zig");
 const wire = @import("cuda_rank_wire.zig");
+pub const memory = @import("cuda_exl3_graph_memory.zig");
+
+fn freeMemory(stream: cuda.Stream) !u64 {
+    var free: usize = 0;
+    var total: usize = 0;
+    try stream.d.check(stream.d.api.cuMemGetInfo_v2(&free, &total), "cuMemGetInfo");
+    return free;
+}
+
+pub fn uploadResident(exec: *cuda.graph.Exec, stream: cuda.Stream) !void {
+    try exec.upload(stream);
+    try stream.synchronize();
+}
+
+pub fn reserveMemory(stream: cuda.Stream, class: memory.Class, cohort: u64) !memory.Ticket {
+    _ = try memory.startupReservation();
+    while (true) {
+        return memory.admitWithQuery(class, cohort, stream, freeMemory) catch |err| switch (err) {
+            error.GraphBudgetBusy, error.GraphMemoryHeadroom, error.GraphEvictionRequired => {
+                if (cohort != 0) return err;
+                try stream.d.check(stream.d.api.cuCtxSynchronize(), "cuCtxSynchronize(graph retirement)");
+                if (!evictOne()) return err;
+                continue;
+            },
+            else => return err,
+        };
+    }
+}
+
+fn retirementBarrier(c: *collective.Collective, signature: u64, cohort: u64) !void {
+    const decision = try c.graphAgree(signature, .{ .state = .ready, .cohort = cohort });
+    if (decision.choice != .replay) return error.GraphCohortMismatch;
+}
+
+fn retireThrough(cohort: u64) void {
+    for (&entries) |*maybe| if (maybe.*) |*entry| {
+        if (entry.cohort <= cohort) {
+            drop(entry);
+            maybe.* = null;
+        }
+    };
+    clearPrefill();
+    while (@import("cuda_exl3_chain.zig").evictOne()) {}
+}
+
+fn reserveTogether(c: *collective.Collective, stream: cuda.Stream, signature: u64, cohort: u64) !memory.Ticket {
+    _ = try memory.startupReservation();
+    var swept = false;
+    while (true) {
+        var ticket: ?memory.Ticket = memory.admitWithQuery(.decode, cohort, stream, freeMemory) catch |err| switch (err) {
+            error.GraphBudgetBusy, error.GraphMemoryHeadroom, error.GraphEvictionRequired => null,
+            else => return err,
+        };
+        errdefer if (ticket) |held| memory.release(held) catch unreachable;
+        var free_slot = false;
+        for (entries) |entry| free_slot = free_slot or entry == null;
+        const agreement = try c.graphAgree(signature ^ 0x61646d6974, .{ .state = if (ticket != null and free_slot) .ready else .eager, .cohort = cohort });
+        if (agreement.choice == .replay) return ticket.?;
+        if (ticket) |held| {
+            try memory.release(held);
+            ticket = null;
+        }
+        if (swept) return error.GraphBudgetExceeded;
+        try stream.d.check(stream.d.api.cuCtxSynchronize(), "cuCtxSynchronize(TP graph retirement)");
+        try retirementBarrier(c, signature ^ 0x71756965736365, cohort);
+        retireThrough(cohort);
+        try retirementBarrier(c, signature ^ 0x72657469726564, cohort);
+        swept = true;
+    }
+}
+
+fn evictOne() bool {
+    var oldest: u64 = std.math.maxInt(u64);
+    var decode: ?usize = null;
+    var prefill: ?usize = null;
+    for (entries, 0..) |maybe, index| if (maybe) |entry| {
+        if (entry.cohort == 0 and entry.used < oldest) {
+            oldest = entry.used;
+            decode = index;
+        }
+    };
+    for (pentries, 0..) |maybe, index| if (maybe) |entry| {
+        if (entry.used < oldest) {
+            oldest = entry.used;
+            decode = null;
+            prefill = index;
+        }
+    };
+    if (decode) |index| {
+        drop(&entries[index].?);
+        entries[index] = null;
+        return true;
+    }
+    if (prefill) |index| {
+        const entry = &pentries[index].?;
+        dropPrefill(entry);
+        pentries[index] = null;
+        return true;
+    }
+    return @import("cuda_exl3_chain.zig").evictOne();
+}
 
 const dims = wt.dims;
 const vocab = wt.vocab;
@@ -31,12 +132,6 @@ const att_rows = @import("cuda_batch_state.zig").att_rows;
 pub fn enabled() bool {
     if (force) |f| return f == .graph;
     const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH") orelse return false;
-    return std.mem.eql(u8, std.mem.span(v), "1");
-}
-
-/// TF_FLASHNEXT_EXL3_GRAPH_STRICT=1: a failed capture is an error, not a fallback (tests).
-fn strict() bool {
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_STRICT") orelse return false;
     return std.mem.eql(u8, std.mem.span(v), "1");
 }
 
@@ -88,7 +183,7 @@ pub fn pinnedCopy(s: cuda.Stream, dst: u64, bytes: []const u8) !void {
 
 /// `template`: the graph an update took this exec's parameters from, kept while the exec uses them (a tp graph's
 /// NCCL resources are tied to the graph they were captured in).
-const Entry = struct { key: Key, exec: ?cuda.graph.Exec = null, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null, cohort: u64 = 0 };
+const Entry = struct { key: Key, exec: ?cuda.graph.Exec = null, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null, cohort: u64 = 0, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null };
 
 /// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs
 /// eagerly meanwhile, and replays from the next sighting after the instantiation landed).
@@ -168,8 +263,15 @@ fn settle(x: *Entry) bool {
     x.pending = null;
     defer std.heap.c_allocator.destroy(pd);
     if (pd.exec) |e| {
-        x.exec = e;
+        var exec = e;
+        if (x.stream) |stream| uploadResident(&exec, stream) catch {
+            exec.deinit();
+            pd.graph.deinit();
+            return false;
+        };
+        x.exec = exec;
         if (pd.keep_template) x.template = pd.graph else pd.graph.deinit();
+        if (x.admission) |ticket| memory.installed(ticket) catch unreachable;
         return true;
     }
     pd.graph.deinit();
@@ -177,6 +279,11 @@ fn settle(x: *Entry) bool {
 }
 
 fn drop(x: *Entry) void {
+    if (x.stream) |stream| stream.synchronize() catch @panic("graph retirement synchronization failed");
+    defer if (x.admission) |ticket| {
+        memory.release(ticket) catch unreachable;
+        x.admission = null;
+    };
     if (x.pending) |pd| {
         pd.thread.join();
         if (pd.exec) |*e| e.deinit();
@@ -244,7 +351,7 @@ pub fn releaseSeq(seq: anytype) void {
         key.* = null;
     };
     for (&pentries) |*entry| if (entry.*) |*x| if (x.key.seq[2] == tail) {
-        x.exec.deinit();
+        dropPrefill(x);
         entry.* = null;
     };
     for (&pseen) |*entry| if (entry.*) |x| if (x.key.seq[2] == tail) {
@@ -381,8 +488,10 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
             if (e.pending == null) {
                 // the instantiation failed: forget the key, run eagerly
                 for (&entries) |*en| if (en.*) |*x| if (x == e) {
+                    drop(x);
                     en.* = null;
                 };
+                return error.CudaFailed;
             }
             stats.eager_dplan += 1;
             note(key, .eager);
@@ -400,6 +509,10 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         return pass.chunk(ids, pos0, null);
     }
     const t0 = std.Io.Clock.awake.now(pass.io).toNanoseconds();
+    try pass.stream.synchronize();
+    const admission = try reserveMemory(pass.stream, .decode, 0);
+    var admitted = true;
+    defer if (admitted) memory.release(admission) catch unreachable;
     try cuda.graph.beginCapture(pass.stream, .thread_local);
     pass.prepared = true;
     capturing = true;
@@ -427,6 +540,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
                 // every earlier launch finished (each step ends on the host), so the old parameters are free to go
                 const r = try x.exec.?.update(graph);
                 if (r == .success) {
+                    try uploadResident(&x.exec.?, pass.stream);
                     x.key = key;
                     x.used = clock;
                     if (x.template) |*old| old.deinit();
@@ -445,6 +559,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         if (asyncInstantiate()) if (ctxApi()) |api| {
             var ctx: ?*anyopaque = null;
             if (api.get(&ctx) == 0) {
+                const sl = slot();
                 const pd = try std.heap.c_allocator.create(Pending);
                 pd.* = .{ .graph = graph, .ctx = ctx, .keep_template = tp, .started_ns = wire.now() };
                 kept = true;
@@ -453,8 +568,8 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
                     std.heap.c_allocator.destroy(pd);
                     return err;
                 };
-                const sl = slot();
-                sl.* = .{ .key = key, .used = clock, .pending = pd };
+                sl.* = .{ .key = key, .used = clock, .pending = pd, .admission = admission, .stream = pass.stream };
+                admitted = false;
                 note(key, .instantiated);
                 stats.captures += 1;
                 // this step runs eagerly while the graph instantiates
@@ -463,11 +578,13 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
                 return pass.chunk(ids, pos0, null);
             }
         };
+        const sl = slot();
         var exec = try graph.instantiate();
         errdefer exec.deinit();
-        try exec.upload(pass.stream);
-        const sl = slot();
-        sl.* = .{ .key = key, .exec = exec, .used = clock };
+        try uploadResident(&exec, pass.stream);
+        try memory.installed(admission);
+        sl.* = .{ .key = key, .exec = exec, .used = clock, .admission = admission, .stream = pass.stream };
+        admitted = false;
         note(key, .instantiated);
         break :blk &sl.*.?;
     };
@@ -519,6 +636,11 @@ fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const 
         .capture => {},
     }
     const started = std.Io.Clock.awake.now(pass.io).toNanoseconds();
+    try pass.stream.synchronize();
+    const admission = try reserveTogether(c, pass.stream, signature, decision.cohort);
+    entry = find(key);
+    var admitted = true;
+    defer if (admitted) memory.release(admission) catch unreachable;
     try cuda.graph.beginCapture(pass.stream, .thread_local);
     pass.prepared = true;
     capturing = true;
@@ -535,42 +657,75 @@ fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const 
     var kept = false;
     defer if (!kept) graph.deinit();
     var updated = false;
-    if (tpUpdate()) {
-        var free_slot = false;
-        for (entries) |e| free_slot = free_slot or e == null;
-        for (&entries) |*candidate| if (candidate.*) |*x| if (x.exec != null and x.pending == null and sameShape(x.key, key) and
-            (if (entry) |current| x == current else (!free_slot or clock - x.used > stale_after)))
+    var candidate: ?*Entry = null;
+    if (tpUpdate()) for (&entries) |*maybe| if (maybe.*) |*current| {
+        if (current.cohort != 0 and current.exec != null and current.pending == null and sameShape(current.key, key) and
+            (std.meta.eql(current.key, key) or clock - current.used > stale_after))
         {
-            if (try x.exec.?.update(graph) == .success) {
-                if (x.template) |*old| old.deinit();
-                x.template = graph;
-                kept = true;
-                x.key = key;
-                x.used = clock;
-                x.cohort = decision.cohort;
-                entry = x;
-                updated = true;
-                break;
+            if (candidate == null or current.used < candidate.?.used) candidate = current;
+        }
+    };
+    const update_agreement = try c.graphAgree(signature ^ 0x757064617465, if (candidate) |current|
+        .{ .state = .ready, .cohort = current.cohort }
+    else
+        .{ .state = .capture });
+    if (update_agreement.choice == .replay) {
+        const current = candidate.?;
+        const result = try current.exec.?.update(graph);
+        if (result == .success) {
+            if (current.template) |*old| old.deinit();
+            current.template = graph;
+            kept = true;
+            updated = true;
+        }
+        const result_agreement = try c.graphAgree(signature ^ 0x75706461746564, .{ .state = if (updated) .ready else .capture, .cohort = decision.cohort });
+        if (result_agreement.choice == .replay) {
+            if (current.admission) |old| try memory.release(old);
+            current.admission = admission;
+            admitted = false;
+            try uploadResident(&current.exec.?, pass.stream);
+            try memory.installed(admission);
+            current.key = key;
+            current.used = clock;
+            current.cohort = decision.cohort;
+            current.stream = pass.stream;
+            entry = current;
+        } else {
+            if (updated) {
+                current.template = null;
+                kept = false;
             }
-        };
+            drop(current);
+            for (&entries) |*slot_entry| if (slot_entry.*) |*cached| if (cached == current) {
+                slot_entry.* = null;
+            };
+            entry = find(key);
+            updated = false;
+            try retirementBarrier(c, signature ^ 0x72656275696c64, decision.cohort);
+        }
     }
     if (!updated) {
         const target = if (entry) |old| blk: {
             drop(old);
-            for (&entries) |*candidate| if (candidate.*) |*x| if (x == old) {
-                candidate.* = null;
-                break :blk candidate;
+            for (&entries) |*slot_entry| if (slot_entry.*) |*x| if (x == old) {
+                slot_entry.* = null;
+                break :blk slot_entry;
             };
             unreachable;
-        } else slot();
+        } else blk: {
+            for (&entries) |*slot_entry| if (slot_entry.* == null) break :blk slot_entry;
+            return error.GraphBudgetBusy;
+        };
         if (try startInstantiate(graph, true)) |pending| {
-            target.* = .{ .key = key, .used = clock, .pending = pending, .cohort = decision.cohort };
+            target.* = .{ .key = key, .used = clock, .pending = pending, .cohort = decision.cohort, .admission = admission, .stream = pass.stream };
         } else {
             var exec = try graph.instantiate();
             errdefer exec.deinit();
-            try exec.upload(pass.stream);
-            target.* = .{ .key = key, .exec = exec, .used = clock, .template = graph, .cohort = decision.cohort };
+            try uploadResident(&exec, pass.stream);
+            try memory.installed(admission);
+            target.* = .{ .key = key, .exec = exec, .used = clock, .template = graph, .cohort = decision.cohort, .admission = admission, .stream = pass.stream };
         }
+        admitted = false;
         kept = true;
         entry = &target.*.?;
     }
@@ -636,7 +791,8 @@ pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u6
     try dp.toDevice(p.stream);
     dplan.active = dp;
     defer dplan.active = null;
-    if (!enabled() or broken) {
+    if (enabled() and broken) return error.GraphCaptureFailed;
+    if (!enabled()) {
         stats.eager_dplan += 1;
         try p.chunk(ids, 0, null);
         return true;
@@ -652,8 +808,6 @@ pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u6
         if (q.paged) |pg| key.paging[i] = pg.graphKey();
         Key.seams(q.fed + 1, &key.chunks[i], &key.score_tiles[i]);
     }
-    var hist: [max_lanes][2]i64 = undefined;
-    for (seqs, 0..) |q, i| hist[i] = q.history;
     const tp0 = std.Io.Clock.awake.now(p.io).toNanoseconds();
     try prepareRound(p, ids);
     stats.prepare_ns += @intCast(std.Io.Clock.awake.now(p.io).toNanoseconds() - tp0);
@@ -663,12 +817,8 @@ pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u6
             c.failGraph();
             return err;
         }
-        if (strict()) return err;
-        std.log.warn("flashnext exl3 graph: a decode round could not be captured ({t}); rounds run eagerly on the device plan", .{err});
         broken = true;
-        for (seqs, 0..) |q, i| q.history = hist[i];
-        p.prepared = false;
-        try p.chunk(ids, 0, null);
+        return err;
     };
     return true;
 }
@@ -684,7 +834,8 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
     dplan.active = dp;
     defer dplan.active = null;
     const n = ids.len;
-    if (!enabled() or broken) {
+    if (enabled() and broken) return error.GraphCaptureFailed;
+    if (!enabled()) {
         stats.eager_dplan += 1;
         try p.chunk(ids, seq.fed, null);
     } else {
@@ -697,7 +848,6 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
         if (seq.paged) |pg| key.paging[0] = pg.graphKey();
         Key.seams(seq.fed + n, &key.chunks[0], &key.score_tiles[0]);
         if (hooks.keep) |kp| key.keep = std.hash.Wyhash.hash(1, std.mem.asBytes(kp)); // its contents (the buffers the graph writes), not where the Draft struct sits
-        const hist = seq.history;
         const tp0 = std.Io.Clock.awake.now(p.io).toNanoseconds();
         try prepareWindow(p, ids, seq.fed);
         stats.prepare_ns += @intCast(std.Io.Clock.awake.now(p.io).toNanoseconds() - tp0);
@@ -707,12 +857,8 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
                 c.failGraph();
                 return err;
             }
-            if (strict()) return err;
-            std.log.warn("flashnext exl3 graph: a window could not be captured ({t}); windows run eagerly on the device plan", .{err});
             broken = true;
-            seq.history = hist;
-            p.prepared = false;
-            try p.chunk(ids, seq.fed, null);
+            return err;
         };
     }
     if (hooks.output_tail) |tail| try tail.enqueue(tail.ptr, p.stream);
@@ -752,14 +898,29 @@ const PKey = struct {
     tiles: bool,
 };
 
-const PEntry = struct { key: PKey, exec: cuda.graph.Exec, used: u64 };
+const PEntry = struct { key: PKey, exec: cuda.graph.Exec, used: u64, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null };
+
+fn dropPrefill(entry: *PEntry) void {
+    if (entry.stream) |stream| stream.synchronize() catch @panic("prefill retirement synchronization failed");
+    entry.exec.deinit();
+    if (entry.admission) |ticket| memory.release(ticket) catch unreachable;
+}
 const pcache_n = 112;
 var pentries: [pcache_n]?PEntry = @splat(null);
 var pseen: [128]?struct { key: PKey, n: u32 } = @splat(null);
 var pseen_at: usize = 0;
 var pcur: ?PKey = null;
+var pcur_admission: ?memory.Ticket = null;
 
-pub var prefill_stats: struct { captures: u64 = 0, updates: u64 = 0, replays: u64 = 0, eager: u64 = 0, capture_ns: u64 = 0 } = .{};
+pub var prefill_stats: struct { captures: u64 = 0, updates: u64 = 0, replays: u64 = 0, eager: u64 = 0, admission_misses: u64 = 0, capture_ns: u64 = 0 } = .{};
+
+fn prefillAdmissionMiss() Prefill {
+    prefill_stats.eager += 1;
+    prefill_stats.admission_misses += 1;
+    const misses = prefill_stats.admission_misses;
+    if (misses == 1 or misses % 256 == 0) std.log.info("flashnext exl3 prefill graph budget admission declines: {d}; retained cache preserved, layer runs eagerly", .{misses});
+    return .eager;
+}
 
 /// TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1 captures prefill layers under TF_FLASHNEXT_EXL3_GRAPH=1 (default off pending
 /// measurements). TP=2 graphs capture each incoming sub-block reduction as an external event wait.
@@ -817,7 +978,7 @@ fn prefillAfter() u32 {
 
 pub fn clearPrefill() void {
     for (&pentries) |*e| if (e.*) |*x| {
-        x.exec.deinit();
+        dropPrefill(x);
         e.* = null;
     };
     pseen = @splat(null);
@@ -827,6 +988,7 @@ pub fn clearPrefill() void {
 /// recorded; then `prefillEnd`), or `.eager` (run them; `prefillEnd` is a no-op).
 /// External event waits for expert-parallel sub-blocks are captured in order with the dense work.
 pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool, waits: []const cuda.Event) !Prefill {
+    if (enabled() and broken) return error.GraphCaptureFailed;
     if (!prefillEnabled()) return .eager;
     const q = p.seq;
     if (!linear) if (q.paged) |pg| {
@@ -867,9 +1029,20 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         prefill_stats.eager += 1;
         return .eager;
     }
+    var free_slot = false;
+    for (pentries) |entry| free_slot = free_slot or entry == null;
+    if (!free_slot) return prefillAdmissionMiss();
+    _ = try memory.startupReservation();
+    const admission = memory.admitWithQuery(.prefill, 0, p.stream, freeMemory) catch |err| switch (err) {
+        error.GraphBudgetBusy, error.GraphBudgetExceeded, error.GraphMemoryHeadroom, error.GraphEvictionRequired => return prefillAdmissionMiss(),
+        else => return err,
+    };
+    errdefer memory.release(admission) catch unreachable;
+    try p.stream.synchronize();
     try cuda.graph.beginCapture(p.stream, .thread_local);
     capturing = true;
     pcur = key;
+    pcur_admission = admission;
     return .capturing;
 }
 
@@ -884,20 +1057,22 @@ pub fn prefillEnd(p: anytype, how: Prefill) !void {
     capturing = false;
     const key = pcur.?;
     pcur = null;
+    const admission = pcur_admission.?;
+    pcur_admission = null;
+    var admitted = true;
+    defer if (admitted) memory.release(admission) catch unreachable;
     var graph = try cuda.graph.endCapture(p.stream);
     defer graph.deinit();
     const at: *PEntry = blk: {
         for (&pentries) |*e| if (e.*) |*x| if (std.meta.eql(pshape(x.key), pshape(key))) {
             if ((try x.exec.update(graph)) == .success) {
+                try uploadResident(&x.exec, p.stream);
                 x.key = key;
                 x.used = clock;
                 prefill_stats.updates += 1;
                 break :blk x;
             }
         };
-        var exec = try graph.instantiate();
-        errdefer exec.deinit();
-        try exec.upload(p.stream);
         var best: usize = 0;
         var best_used: u64 = std.math.maxInt(u64);
         for (&pentries, 0..) |*e, i| {
@@ -910,8 +1085,16 @@ pub fn prefillEnd(p: anytype, how: Prefill) !void {
                 best = i;
             }
         }
-        if (pentries[best]) |*old| old.exec.deinit();
-        pentries[best] = .{ .key = key, .exec = exec, .used = clock };
+        if (pentries[best]) |*old| {
+            dropPrefill(old);
+            pentries[best] = null;
+        }
+        var exec = try graph.instantiate();
+        errdefer exec.deinit();
+        try uploadResident(&exec, p.stream);
+        try memory.installed(admission);
+        pentries[best] = .{ .key = key, .exec = exec, .used = clock, .admission = admission, .stream = p.stream };
+        admitted = false;
         break :blk &pentries[best].?;
     };
     prefill_stats.captures += 1;
@@ -925,6 +1108,10 @@ pub fn prefillAbort(p: anytype, how: Prefill) void {
     if (how != .capturing) return;
     capturing = false;
     pcur = null;
+    defer if (pcur_admission) |ticket| {
+        memory.release(ticket) catch unreachable;
+        pcur_admission = null;
+    };
     if (cuda.graph.endCapture(p.stream)) |g| {
         var d = g;
         d.deinit();
@@ -937,6 +1124,7 @@ const GraphTestDriver = struct {
     var exec_drops: usize = 0;
     var graph_drops: usize = 0;
     var launches: usize = 0;
+    var exec_updates: usize = 0;
 
     fn dropExec(_: cuda.abi.GraphExec) callconv(.c) c_int {
         exec_drops += 1;
@@ -958,6 +1146,10 @@ const GraphTestDriver = struct {
         return 0;
     }
 
+    fn noContext(_: *?*anyopaque) callconv(.c) c_int {
+        return 1;
+    }
+
     fn setContext(_: ?*anyopaque) callconv(.c) c_int {
         return 0;
     }
@@ -968,7 +1160,47 @@ const GraphTestDriver = struct {
         d.api.cuGraphDestroy = dropGraph;
         d.api.cuGraphLaunch = launch;
         d.api.cuGraphInstantiateWithFlags = instantiate;
+        d.api.cuMemGetInfo_v2 = memoryInfo;
+        d.api.cuCtxSynchronize = synchronize;
+        d.api.cuStreamSynchronize = synchronizeStream;
+        d.api.cuStreamBeginCapture_v2 = beginCapture;
+        d.api.cuStreamEndCapture = endCapture;
+        d.api.cuGraphUpload = upload;
+        d.api.cuGraphExecUpdate_v2 = update;
         return d;
+    }
+
+    fn memoryInfo(free: *usize, total: *usize) callconv(.c) c_int {
+        free.* = 100;
+        total.* = 100;
+        return 0;
+    }
+
+    fn synchronize() callconv(.c) c_int {
+        return 0;
+    }
+
+    fn synchronizeStream(_: cuda.abi.Stream) callconv(.c) c_int {
+        return 0;
+    }
+
+    fn beginCapture(_: cuda.abi.Stream, _: cuda.abi.CaptureMode) callconv(.c) c_int {
+        return 0;
+    }
+
+    fn endCapture(_: cuda.abi.Stream, out: *cuda.abi.Graph) callconv(.c) c_int {
+        out.* = @ptrFromInt(2);
+        return 0;
+    }
+
+    fn upload(_: cuda.abi.GraphExec, _: cuda.abi.Stream) callconv(.c) c_int {
+        return 0;
+    }
+
+    fn update(_: cuda.abi.GraphExec, _: cuda.abi.Graph, info: *cuda.abi.ExecUpdateResultInfo) callconv(.c) c_int {
+        exec_updates += 1;
+        info.result = .success;
+        return 0;
     }
 
     fn launch(_: cuda.abi.GraphExec, _: cuda.abi.Stream) callconv(.c) c_int {
@@ -1146,4 +1378,126 @@ test "exl3: TP decode dispatch stays eager while its peer instantiates and repla
     try run(key, &pass, &.{1}, 0);
     try std.testing.expectEqual(@as(usize, 1), pass.chunks);
     try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.launches);
+}
+
+test "exl3: TP pressure on either rank retires cohorts before retrying admission" {
+    clear();
+    defer clear();
+    for ([_]bool{ true, false }) |local_pressure| {
+        try memory.configure(.{ .reservation_bytes = 100, .headroom_bytes = 20, .charge = .{ .exec = 20, .template = 10, .transient = 10 } });
+        var driver = GraphTestDriver.driver();
+        GraphTestDriver.exec_drops = 0;
+        if (local_pressure) for (0..2) |index| {
+            const ticket = try memory.admit(.decode, index + 7, 100);
+            try memory.installed(ticket);
+            entries[index] = .{ .key = .{ .kind = 1, .rows = index + 1, .scratch = 1, .scores = 2, .output = 3 }, .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = index + 1, .cohort = index + 7, .admission = ticket };
+        };
+        var pair: [2]std.posix.socket_t = undefined;
+        if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &pair) != 0) return error.SocketPair;
+        defer for (pair) |fd| {
+            _ = std.c.close(fd);
+        };
+        const nonblock: c_int = @bitCast(@as(u32, @bitCast(std.c.O{ .NONBLOCK = true })));
+        for (pair) |fd| {
+            const flags = std.c.fcntl(fd, std.c.F.GETFL);
+            if (flags < 0 or std.c.fcntl(fd, std.c.F.SETFL, flags | nonblock) < 0) return error.Nonblocking;
+        }
+        const Peer = struct {
+            fn run(link: wire.Link, pressure: bool) void {
+                var control = GraphTestDriver.control(link);
+                const first = control.graphAgree(42 ^ 0x61646d6974, .{ .state = if (pressure) .ready else .eager, .cohort = 11 }) catch @panic("pressure agreement failed");
+                std.debug.assert(first.choice == .eager);
+                retirementBarrier(&control, 42 ^ 0x71756965736365, 11) catch @panic("quiescence agreement failed");
+                retirementBarrier(&control, 42 ^ 0x72657469726564, 11) catch @panic("retirement agreement failed");
+                const admitted = control.graphAgree(42 ^ 0x61646d6974, .{ .state = .ready, .cohort = 11 }) catch @panic("retry agreement failed");
+                std.debug.assert(admitted.choice == .replay);
+            }
+        };
+        const peer = try std.Thread.spawn(.{}, Peer.run, .{ wire.Link{ .fd = pair[1] }, local_pressure });
+        defer peer.join();
+        var control = GraphTestDriver.control(.{ .fd = pair[0] });
+        const ticket = try reserveTogether(&control, cuda.Stream.borrowed(&driver, null), 42, 11);
+        try std.testing.expectEqual(@as(u64, 40), memory.charged());
+        try std.testing.expectEqual(@as(usize, if (local_pressure) 2 else 0), GraphTestDriver.exec_drops);
+        for (entries) |entry| try std.testing.expect(entry == null);
+        try memory.release(ticket);
+    }
+}
+
+test "exl3: TP updates agree the old cohort and transfer template and admission together" {
+    try testTPUpdate(true);
+}
+
+test "exl3: asymmetric TP update rejection retires both execs before re-instantiating" {
+    try testTPUpdate(false);
+}
+
+fn testTPUpdate(peer_accept: bool) !void {
+    if (!tpUpdate()) return error.SkipZigTest;
+    clear();
+    defer clear();
+    const previous_api = ctx_api;
+    defer ctx_api = previous_api;
+    ctx_api = .{ .get = GraphTestDriver.noContext, .set = GraphTestDriver.setContext };
+    try memory.configure(.{ .reservation_bytes = 120, .headroom_bytes = 20, .charge = .{ .exec = 20, .template = 10, .transient = 10 } });
+    var driver = GraphTestDriver.driver();
+    GraphTestDriver.exec_updates = 0;
+    GraphTestDriver.exec_drops = 0;
+    GraphTestDriver.graph_drops = 0;
+    const old_ticket = try memory.admit(.decode, 7, 100);
+    try memory.installed(old_ticket);
+    const key: Key = .{ .kind = 1, .rows = 1, .scratch = 2, .scores = 2, .output = 3 };
+    var old_key = key;
+    old_key.scratch = 1;
+    entries[0] = .{ .key = old_key, .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .template = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = 1, .cohort = 7, .admission = old_ticket };
+    seen[0] = .{ .key = key, .n = std.math.maxInt(u32) - 1, .used = 1 };
+    const previous_clock = clock;
+    defer clock = previous_clock;
+    clock = 1024;
+    var pair: [2]std.posix.socket_t = undefined;
+    if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &pair) != 0) return error.SocketPair;
+    defer for (pair) |fd| {
+        _ = std.c.close(fd);
+    };
+    const nonblock: c_int = @bitCast(@as(u32, @bitCast(std.c.O{ .NONBLOCK = true })));
+    for (pair) |fd| {
+        const flags = std.c.fcntl(fd, std.c.F.GETFL);
+        if (flags < 0 or std.c.fcntl(fd, std.c.F.SETFL, flags | nonblock) < 0) return error.Nonblocking;
+    }
+    const Peer = struct {
+        fn run(link: wire.Link, signature: u64, accept: bool) void {
+            var control = GraphTestDriver.control(link);
+            control.graph_step = 10;
+            const capture = control.graphAgree(signature, .{ .state = .capture }) catch @panic("capture agreement failed");
+            std.debug.assert(capture.choice == .capture and capture.cohort == 11);
+            retirementBarrier(&control, signature ^ 0x61646d6974, 11) catch @panic("admission failed");
+            retirementBarrier(&control, signature ^ 0x757064617465, 7) catch @panic("old cohort agreement failed");
+            const result = control.graphAgree(signature ^ 0x75706461746564, .{ .state = if (accept) .ready else .capture, .cohort = 11 }) catch @panic("update result agreement failed");
+            std.debug.assert(result.choice == if (accept) collective.GraphChoice.replay else collective.GraphChoice.capture);
+            if (!accept) retirementBarrier(&control, signature ^ 0x72656275696c64, 11) catch @panic("rebuild retirement agreement failed");
+            retirementBarrier(&control, signature ^ 0x696e7374616c6c, 11) catch @panic("installation agreement failed");
+        }
+    };
+    const peer = try std.Thread.spawn(.{}, Peer.run, .{ wire.Link{ .fd = pair[1] }, graphSignature(key, 0), peer_accept });
+    defer peer.join();
+    var control = GraphTestDriver.control(.{ .fd = pair[0] });
+    control.graph_step = 10;
+    const Pass = struct {
+        io: std.Io = std.testing.io,
+        stream: cuda.Stream,
+        prepared: bool = false,
+        chunks: usize = 0,
+        fn chunk(pass: *@This(), _: []const u32, _: usize, _: ?[]u8) !void {
+            pass.chunks += 1;
+        }
+    };
+    var pass: Pass = .{ .stream = cuda.Stream.borrowed(&driver, null) };
+    try runTogether(&control, key, &pass, &.{1}, 0);
+    try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.exec_updates);
+    try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.graph_drops);
+    try std.testing.expectEqual(@as(usize, if (peer_accept) 0 else 1), GraphTestDriver.exec_drops);
+    try std.testing.expectEqual(@as(u64, 30), memory.charged());
+    try std.testing.expectEqual(@as(u64, 11), find(key).?.cohort);
+    try std.testing.expectError(error.StaleGraphTicket, memory.release(old_ticket));
+    try std.testing.expectEqual(@as(usize, 1), pass.chunks);
 }

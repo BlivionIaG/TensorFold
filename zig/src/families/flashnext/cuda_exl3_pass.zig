@@ -7,6 +7,7 @@ const wt = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_exl3_load.zig");
 const pool_ = @import("cuda_exl3_pool.zig");
 const dplan = @import("cuda_exl3_dplan.zig");
+const memory = @import("exl3_startup_memory.zig");
 
 const dims = wt.dims;
 const slots = wt.slots;
@@ -163,6 +164,8 @@ pub fn offloadedLayers(layers: []const @import("cuda_prompt_load.zig").Layer, mt
 }
 
 pub const Budget = struct {
+    graph_reservation: u64 = 0,
+    planner_rows: ?u64 = null,
     /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB,
     /// else the larger of 1 GiB and a 32nd of the card, native/cuda_memory.zig reserveBytes) plus `margin`.
     reserve: ?u64 = null,
@@ -179,15 +182,29 @@ pub const Budget = struct {
 
 /// TF_FLASHNEXT_EXL3_LINES (lines a layer), TF_FLASHNEXT_EXL3_RESERVE_MB and TF_FLASHNEXT_EXL3_STREAMS (streams the
 /// pools leave cache room for; 1 by default) over `stream_bytes`.
-pub fn budgetFromEnv(stream_bytes: u64) Budget {
+pub fn budgetFromEnv(stream_bytes: u64) !Budget {
     var b: Budget = .{ .other = stream_bytes };
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_LINES")) |v| b.lines = std.fmt.parseInt(usize, std.mem.span(v), 10) catch null;
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_RESERVE_MB")) |v| b.reserve = if (std.fmt.parseInt(u64, std.mem.span(v), 10)) |mb| mb << 20 else |_| null;
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS")) |v| b.other = stream_bytes * (std.fmt.parseInt(u64, std.mem.span(v), 10) catch 1);
+    if (dplan.enabled()) {
+        b.planner_rows = if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_ROWS")) |v| @max(1, try std.fmt.parseInt(u64, std.mem.span(v), 10)) else 16;
+    }
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_LINES")) |v| b.lines = try std.fmt.parseInt(usize, std.mem.span(v), 10);
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_RESERVE_MB")) |v| b.reserve = try memory.mebibytes(std.mem.span(v));
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS")) |v| {
+        const streams = try std.fmt.parseInt(u64, std.mem.span(v), 10);
+        if (streams == 0) return error.InvalidStreamCount;
+        b.other = try std.math.mul(u64, stream_bytes, streams);
+    }
     return b;
 }
 
-pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0 };
+pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, free_after: u64 = 0, scratch_bytes: u64 = 0, graph_reservation: u64 = 0, after_pool_bytes: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0 };
+
+pub fn freeBytes(d: *const cuda.Driver) !u64 {
+    var free: usize = 0;
+    var total: usize = 0;
+    try d.check(d.api.cuMemGetInfo_v2(&free, &total), "cuMemGetInfo");
+    return free;
+}
 
 /// The sizing hook (cuda_lanes_load.zig, once everything else of the family is allocated): reserves every EXL3
 /// scratch of `rows`-row passes, then gives each offloaded layer the same number of lines from what is free after
@@ -197,6 +214,8 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     var all: [wt.layers_n + 1]*load.Experts = undefined;
     const n = offloadedLayers(layers, mtp, &all);
     var out: Attached = .{};
+    const scratch_before = try freeBytes(d);
+    out.graph_reservation = b.graph_reservation;
     // every distinct Ops (the engine's store and the MTP head's) reserves its scratch now
     var seen: [4]*load.Ops = undefined;
     var n_seen: usize = 0;
@@ -217,16 +236,26 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     var total: usize = 0;
     try d.check(d.api.cuMemGetInfo_v2(&free, &total), "cuMemGetInfo");
     out.free_before = free;
-    const reserve = b.reserve orelse serverReserve(total) + b.margin;
+    out.scratch_bytes = scratch_before -| free;
+    const reserve_floor = b.reserve orelse serverReserve(total);
+    const reserve = b.reserve orelse try std.math.add(u64, reserve_floor, b.margin);
     // beside its lines a layer holds the shared expert's region, its six tables and its masked picks (sized for the
     // fewest lines, the most passes); counted as fixed bytes before the lines share what is left
     var fixed: u64 = 0;
     for (all[0..n]) |x| {
-        for (x.shared) |t| fixed += (t.len + 255) / 256 * 256;
-        fixed += cuda.exl3_pool.Tables.init(wt.experts_n + 1).bytes + pool_.passesFor(pool_.min_lines) * b.max_rows * slots * 4 + (64 << 10);
+        for (x.shared) |t| fixed = try std.math.add(u64, fixed, try std.math.mul(u64, (try std.math.add(u64, t.len, 255)) / 256, 256));
+        const picks_bytes = try std.math.mul(u64, try std.math.mul(u64, pool_.passesFor(pool_.min_lines), b.max_rows), slots * 4);
+        fixed = try std.math.add(u64, fixed, try std.math.add(u64, cuda.exl3_pool.Tables.init(wt.experts_n + 1).bytes + (64 << 10), picks_bytes));
     }
-    const lines = b.lines orelse try pool_.linesFor(free, reserve, b.other + fixed, out.line_bytes, n, pool_.min_lines);
+    const future = try std.math.add(u64, b.other, b.graph_reservation);
+    const pool_room = try memory.available(free, reserve, future);
+    const planner_fixed = if (b.planner_rows) |planner_rows| try memory.plannerBytes(n, 0, planner_rows) else 0;
+    const line_cost = try std.math.add(u64, out.line_bytes, if (b.planner_rows != null) 8 else 0);
+    const all_fixed = try std.math.add(u64, fixed, planner_fixed);
+    const lines = b.lines orelse try pool_.linesFor(free, reserve, try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines);
     if (lines < pool_.min_lines) return error.PoolTooSmall;
+    if (try memory.poolBytes(lines, line_cost, n, all_fixed) > pool_room) return error.InsufficientStartupMemory;
+    out.after_pool_bytes = if (b.planner_rows) |planner_rows| try memory.plannerBytes(n, lines, planner_rows) else 0;
     out.lines = lines;
     _ = gpa;
     // the first decoder layer's pool owns the lifetime use table the other decoder layers share
@@ -241,6 +270,11 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
         out.device_bytes += x.pool.?.deviceBytes();
         out.layers += 1;
     }
+    out.free_after = try freeBytes(d);
+    _ = memory.available(out.free_after, reserve_floor, try std.math.add(u64, future, out.after_pool_bytes)) catch |err| {
+        std.log.err("EXL3 pool reservation shortfall: free_before={d} free_after={d} pool_bytes={d} floor={d} allocator_margin={d} future={d} planner={d}", .{ free, out.free_after, out.device_bytes, reserve_floor, b.margin, future, out.after_pool_bytes });
+        return err;
+    };
     std.log.info("flashnext exl3: {d} offloaded expert layers, {d} lines a layer of {d:.2} MiB ({d:.2} GiB on the device, {d:.2} GiB free before); pinned host bank {d:.2} GiB copied in {d:.1} s", .{ out.layers, out.lines, @as(f64, @floatFromInt(out.line_bytes)) / (1 << 20), @as(f64, @floatFromInt(out.device_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.free_before)) / (1 << 30), @as(f64, @floatFromInt(out.bank_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.bank_ns)) / 1e9 });
     return out;
 }
