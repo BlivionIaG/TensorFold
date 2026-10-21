@@ -823,7 +823,7 @@ const Eng = struct {
         if (deep_rows > 0) try xpre.reserve(gpu.gpa, gpu.d, g.e, deep_rows);
         var free3: usize = 0;
         try gpu.d.check(gpu.d.api.cuMemGetInfo_v2(&free3, &total), "cuMemGetInfo");
-        var b = xpass.budgetFromEnv(0);
+        var b = try xpass.budgetFromEnv(0);
         if (lines) |n| b.lines = n;
         g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, b);
         var free4: usize = 0;

@@ -300,7 +300,7 @@ const Eng = struct {
         g.seq = try g.e.newSeq(cap_default);
         g.out = try cuda.DeviceBuffer.alloc(gpu.d, out_rows * vocab * 2);
         X.prefill.reserveFor(g.e, cap_default, world);
-        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, xpass.budgetFromEnv(0));
+        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, try xpass.budgetFromEnv(0));
         std.debug.print("RESULT rank {d}/{d} load: {d:.1} s; {d} lines a layer x {d} layers ({d:.2} GiB of pool)\n", .{ rank, world, ms(t0, check.now(gpu.io)) / 1e3, g.attached.lines, g.attached.layers, gib(g.attached.device_bytes) });
         return g;
     }
