@@ -224,8 +224,6 @@ pub const Session = struct {
         try tokenIds(ids);
         const header = try session.command(.{ .kind = .verify, .object = seq.rank_id, .bytes = @intCast(ids.len * 4) }, std.mem.sliceAsBytes(ids));
         errdefer session.poison();
-        const telemetry_scope = session.engine.telemetry.enter(.verify);
-        defer telemetry_scope.restore();
         const ops: mtp.Ops(Tri) = .{ .e = session.engine, .tri = tri, .h = undefined };
         try ops.verifyWithTail(seq, draft_state, ids, tail);
         try session.ack(header);
@@ -371,8 +369,6 @@ pub const Session = struct {
                 const n = payload.len / 4;
                 for (ids[0..n], 0..) |*id, i| id.* = std.mem.readInt(u32, payload[i * 4 ..][0..4], .little);
                 try tokenIds(ids[0..n]);
-                const telemetry_scope = s.engine.telemetry.enter(.verify);
-                defer telemetry_scope.restore();
                 const ops: mtp.Ops(Tri) = .{ .e = s.engine, .tri = tri, .h = undefined };
                 try ops.verify(q, try s.window(q), ids[0..n]);
             },
