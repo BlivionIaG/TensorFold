@@ -1,0 +1,42 @@
+{
+  "scope": "ExistingretainedCPUevidenceinventory, no inference/reruns; source729/tree60a8except explicitlyhistorical",
+  "coverage": [
+    {
+      "claim": "Enginepartialstate/window/rollback",
+      "artifact": "receipt-workspace/hcx/streamfix/coverage_20261020/lifecycle729_raw/summary.json",
+      "credit": "Bothrigs4windowrows snapshots/plain equality, intentionalrestoreafterk-2 andlast2replayvsfreshsingle-step equality. Fourenginegates/sixranks exit0 withrawlogSHAverified.",
+      "not_claimed": "HTTPforcedMTPaccept/resetAPI/allacceptpositions"
+    },
+    {
+      "claim": "Concurrentengine",
+      "artifact": "receipt-workspace/hcx/streamfix/coverage_20261020/lifecycle729_raw/summary.json",
+      "credit": "Bothrigs4streams10rows sharedroundvsfreshindividualsingle-step bitsequal0rowsdiffer;8/10graphreplays.",
+      "not_claimed": "Arbitrarymixedhistorycancellation/fairness"
+    },
+    {
+      "claim": "HTTPresume/cancel/cold",
+      "artifact": "receipt-workspace/hcx/streamfix/coverage_20261020/cold_http729_public_final/raw/summary.json",
+      "credit": "VTP1sixcontexts2048..262080/3coldplusplain16tokens, cachedfrozenresumevsfresh andfirstoutputdisconnect/drain/latercachedvsfresh;10nativeexit0/PGgone.",
+      "not_claimed": "ForcedpartialMTPacceptance/resetAPI; WHTTPscope"
+    },
+    {
+      "claim": "ConcurrentHTTP/currentperformance",
+      "artifact": "receipt-workspace/hcx/streamfix/coverage_20261020/line81_complete_public/audits/independent_alternation_reduction.json",
+      "credit": "Bothrigs/C1C8/OFFON/twoshapes48cells864/648 retainedrequest/fingerprintchecks andO/N/Odrift.",
+      "not_claimed": "PureGPU-prefill/trueITLdistribution/confidence"
+    },
+    {
+      "claim": "Memory",
+      "artifact": "receipt-workspace/hcx/streamfix/coverage_20261020/line81_complete_public/controls/matrix729_line81/w_off_ono/runs/20261021T003229/W7800tp2/off_1_old.run.json",
+      "credit": "Ownedperrankserverready/afterclientRSS/PSS/VmHWM snapshots anddeviceallocwhereprovided; percontextfreshservercold snapshots. Historical82e684familyV17.72VmHWM/21.92VRAM\u2192.02poststop retainedhistoricalonly.",
+      "not_claimed": "ContinuouslysampledphysicalPSSpeak/pinnedhostpeak/incrementalcontextVmHWM; oldvaluesnot729"
+    }
+  ],
+  "remaining_gaps": [
+    "Five independentreference findings: HFtop2IDs/unroundedwinnerandrunneruplogits/margins/runtimeversions unavailable; actualnativecolumns recoveredseparately",
+    "ForcedpartialMTP/resetactualAPItrace beyondvalidenginek-2rollback/disconnectcoverage isunproved",
+    "Unrunphysicalrig/lifecycleonlywhereapplicable, notuniversalrunner/kernelgate",
+    "Separatepinnedallocationpeak wherebackendnotreported andcontinuousphysicalPSSpeak remainunproved"
+  ],
+  "external_comparison": "Omitteduserdirection; notmaintainerwaiver andnotrunnergate"
+}

@@ -1,0 +1,17 @@
+{
+  "validated": true,
+  "render_manifest_sha256": "7b32a53fabc814c076b3696f44533c2e19ca3aeecab03a4df4dc2c69f6b549fd",
+  "prs": 21,
+  "issue": 1081,
+  "prior_blockers_resolved": [
+    "historical CI explicitly old head",
+    "historical60a8 whole-tree equivalence not currenta44",
+    "actuala44 literal summaries matched raw logs",
+    "first1082 Ready current; old alldraft snapshot historical"
+  ],
+  "source_mapping_scope": "Previously audited30 private graph/source closure; unchanged mapping",
+  "body_hashes_verified": true,
+  "issue_current_body_guard": "a7c8d51da865f231b08fa929b3447b4617ff01d2ac3ce75bdba24bb4ca72def6",
+  "no_additional_blocking_factual_wording_found": true,
+  "remaining_ready_actions": "Individual applicable gates; other21 remain draft; no readiness waiver"
+}

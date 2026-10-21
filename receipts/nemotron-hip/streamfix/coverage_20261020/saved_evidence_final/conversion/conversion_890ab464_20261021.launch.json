@@ -1,0 +1,7 @@
+{
+  "pid": 24623,
+  "launched_at_utc": "2026-10-21T06:12:26.812750+00:00",
+  "launcher_sha256": "928c50e84d66f4e4b8103d3c1a6759dd810cd730c4023eecd143309b779e20c7",
+  "boot_id": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "scope": "CPUconversiononly; noGPU/stockload"
+}

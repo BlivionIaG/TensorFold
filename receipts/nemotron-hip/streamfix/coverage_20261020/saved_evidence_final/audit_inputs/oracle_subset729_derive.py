@@ -1,0 +1,20 @@
+from pathlib import Path
+import json,csv,hashlib,sys,numpy as np
+B=Path('<LOCAL_SCRATCHPAD>')
+H=B/'hcx/streamfix'; F=B/'nemhip/rcpwt/receipts/nemotron-hip/fidelity'; O=H/'coverage_20261020/oracle_subset729'; O.mkdir(exist_ok=True)
+def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+r=json.loads((H/'coverage_20261020/teacherforced729/result.json').read_text()); old=json.loads((F/'fidelity.json').read_text()); groups=[]
+for rig,hrig in [('v620tp1','v620-tp1'),('w7800tp2','w7800-tp2')]:
+ for case,kind,seq,start in [('decode','decode','chat_long',0),('story_full','prompt','story_full',15)]:
+  a=next(x for x in r['arrays'] if x['rig']==rig and x['case']==case and x['rank']==0 and x['source_commit']==r['candidate_source']); p=H/'optimization/followup729_raw'/a['file']; assert sha(p)==a['sha256']==old['summary'][hrig+' '+kind]['logits_sha256'][seq]
+  inp=F/'sequences'/f'{seq}.ids.bin'; assert sha(inp)==a['input_sha256']
+  csvp=F/f'rows_{hrig}_{kind}.csv'; rows=[x for x in csv.DictReader(csvp.open()) if x['seq']==seq]; m=np.fromfile(p,dtype='<f4').reshape(a['shape']); assert np.isfinite(m).all(); assert len(rows)==(224 if case=='decode' else 32)
+  details=[]
+  for i,x in enumerate(rows):
+   idx=i+start; v=m[idx].astype(np.float64); top=int(v.argmax()); vv=v.copy(); vv[top]=-np.inf; second=int(vv.argmax()); margin=float(v[top]-v[second]); assert top==int(x['native_top']); assert abs(margin-float(x['native_top1_minus_top2']))<=0.000050001
+   assert int(x['row'])==i and int(x['position'])==i+(27 if case=='decode' else 15)
+   assert (x['agree']=='True')==(top==int(x['ref_top']))
+   details.append({'current_array_row':idx,'historical_csv':x,'current_top1':top,'current_top2':second,'current_top1_minus_top2':margin})
+  groups.append({'rig':rig,'case':case,'historical_path':kind,'historical_sequence':seq,'current_array':a,'current_array_sha256_verified':sha(p),'input_history_sha256_verified':sha(inp),'historical_csv_sha256':sha(csvp),'rows':len(rows),'agree':sum(x['agree']=='True' for x in rows),'recorded_max_abs_err':max(float(x['max_abs_err']) for x in rows),'mean_of_recorded_row_mean_abs_err':sum(float(x['mean_abs_err']) for x in rows)/len(rows),'minimum_recorded_ref_top1_minus_top2':min(float(x['ref_top1_minus_top2']) for x in rows),'mismatches':[x for x in details if x['historical_csv']['agree']!='True'],'details':details})
+report={'schema_version':1,'candidate_source':r['candidate_source'],'review_top':r['review_top'],'historical_native_source':'82e68433d0d8647e3ca5a0d48f82f5ffc01397ed','scope':'CPU-only transfer of recorded historical HF/FP32 scores to exact SHA-identical current native arrays and SHA-identical token histories; no new reference inference. Primary rank0 only.','oracle':'Historical CPU fp32 HF NemotronHForCausalLM; exact affine dequantization of MLX4bit checkpoint, with dt clamp and expert-forward adaptations documented in nem_ref.py. Not FP64.','limitations':['Reference arrays are not retained in this package: errors and reference margins are historical rounded CSV values, not newly recomputed.','Original Torch/Transformers runtime versions are not recorded in these retained oracle files; current native loaded-library identities do not supply them.','Reference top2 token IDs are absent; reference top1/top2 margin is retained, not both contender IDs.','No tie waiver or mismatch exemption; unmatched chat/code teacher rows and code_long are excluded.','Exact array SHA implies complete vocabulary bytes match; CSV native margin comparison only checks published decimal rounding.'], 'provenance':{n:sha(F/n) for n in ['fidelity.json','nem_ref.py','score2.py','ref_long.sh']},'derivation_result_sha256':sha(H/'coverage_20261020/teacherforced729/result.json'),'groups':groups,'total_rows':sum(g['rows'] for g in groups),'total_agree':sum(g['agree'] for g in groups),'tool':{'script_sha256':sha(Path(__file__)),'python':sys.version,'numpy':np.__version__}}
+(O/'result.json').write_text(json.dumps(report,indent=2)+'\n'); print([(g['rig'],g['case'],g['agree'],g['rows'],g['recorded_max_abs_err'],g['mean_of_recorded_row_mean_abs_err']) for g in groups]); print('sha',sha(O/'result.json'))

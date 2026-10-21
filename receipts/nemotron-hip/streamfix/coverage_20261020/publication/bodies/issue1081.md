@@ -1,12 +1,37 @@
-## Current status — 21 October 2026
+## Current mapped source update and ordered readiness
 
-**[#1082 is ready for review](https://github.com/ashhart/TensorFold/pull/1082)**, independently verified at 06:45:15 UTC (08:45 Paris), head `826a0635634dee3793a68e473064d17d5c139945`. [Own-head HIP resource/live receipts](https://github.com/BlivionIaG/TensorFold/tree/4ac57db47b8621f017e899a7785d0f60f872fad4/receipts/nemotron-hip/streamfix/coverage_20261020/hip_control_first826): five kernels passing on each GPU architecture, zero failures/known findings/limit problems, all planted controls red/current. [Complete host suite](https://github.com/BlivionIaG/TensorFold/tree/bc6f6e7ab1b25c75ff6ca2e1917f3d7224710557/receipts/nemotron-hip/streamfix/coverage_20261020/hip_control_fullcpu826): 170/170 steps, 2472 tests passed and nine skipped; golden306/319 equal,13 known,zero unexpected. Linux/desktop/mobile/fmt CI pass. Current Windows failure has exactly the52 compiler diagnostics independently established on the main-equivalent control, with no additional diagnostic or runtime-test failure; see the PR's current CI links and assessment. No merge or maintainer release-gate result is claimed.
+The contract-control guard amendment maps all 22 source heads below. Only the same two validation files differ old-to-new; production inputs/usage declarations are unchanged. New actual hardware qualification covers the first infrastructure head (5 kernels per architecture) and stack top (49 per architecture), each zero failures/known findings/limit problems, five red numeric controls, and two metadata controls red/current individually on four chips. [Complete actual source-bound qualification](https://github.com/BlivionIaG/TensorFold/tree/eb640c5c60d37ee099238324e7151a45b57889cd/receipts/nemotron-hip/streamfix/coverage_20261020/hip_control_qualification). [Full Linux first826 CPU suite](https://github.com/BlivionIaG/TensorFold/tree/bc6f6e7ab1b25c75ff6ca2e1917f3d7224710557/receipts/nemotron-hip/streamfix/coverage_20261020/hip_control_fullcpu826) passed 170/170 steps, 2472 tests and nine skips; golden 306/319 equal, 13 known and zero unexpected. No new full-host run at the top or intermediate heads is claimed. Intermediate heads have no invented new live/model/performance runs. Prior receipts remain historical with their actual measured sources; no whole-tree/native-binary equivalence is claimed.
 
-The other21 PRs remain drafts. Their correction is validated at the full stack top (49/49 kernels on both GPU architectures, zero failures/known findings/limit problems); their source updates and individual assessments follow in dependency order. The chain is an ordered landing/rebase dependency, not a reason to repeat native benchmarks. Existing native benchmarks are complete and reused. External vLLM/llama.cpp performance comparisons are omitted at the requester's direction because converted FP16/native packed weights and engine performance are outside this contribution's requested scope. No external server was launched; no external benchmark job is planned. This scope choice is not an upstream waiver of any genuinely applicable requirement.
+[PR1082](https://github.com/ashhart/TensorFold/pull/1082) is **READY**, verified at 2026-10-21T06:45:15Z on head `826a0635634dee3793a68e473064d17d5c139945`. The remaining 21 PRs stay draft for their own applicable requirements. The first infrastructure PR is evaluated independently; there is no blanket chain-wide readiness block on it. Land/rebase in dependency order, updating each successor's base after its predecessor lands and rechecking its incremental scope and applicable proof. No merge authority or upstream waiver is implied.
 
-### Historical package snapshot and source-bound evidence
+- #1082: `dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5` → `826a0635634dee3793a68e473064d17d5c139945` — first infrastructure; READY verified 2026-10-21T06:45:15Z.
+- #1083: `9f7d265d802cf394b4f60a142aa9d5214cdbfdbf` → `096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8` — draft; depends on #1082.
+- #1084: `5b12f74a27326797a540d094387e7ffa472b55ed` → `1d1bcdd35a482271448e0ff8a19eb9013be1e503` — draft; depends on #1083.
+- #1085: `6af43c9db14516a85fbe22351eb0d3e485bd41bb` → `63025caf8555fe474d6d066c966c8f1e9b9a7352` — draft; depends on #1084.
+- #1086: `754786d613dde5539d3a0c534007a1a9733cfaf8` → `9c655701055674cb795feec0f59f5adce6bc74dc` — draft; depends on #1085.
+- #1087: `7bf5f195fb06c0651a1a5d74277f24cc70da591c` → `e4fed24d0d5a0e9a518fb2965fd876afa61f700f` — draft; depends on #1086.
+- #1088: `cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2` → `1f19dbac8ea123c20c39afdd3e62afbbf9b12797` — draft; depends on #1087.
+- #1089: `9b56916fa71d40f9dcd924956c09a3c5f7e18019` → `f3f6c3f2a925b68ff18788063cb8234ea7924f11` — draft; depends on #1088.
+- #1090: `6e73bf059c5646e683d680ab78ed5326aa9fba87` → `017b0953f3517cdda3821c9fbbc1abfb0965227b` — draft; depends on #1089.
+- #1091: `9c206c22bf386348f2f1eb473a31ef8370163b5e` → `76a1f34f05f14f7de9a321b2810f9f77d41fe7ad` — draft; depends on #1090.
+- #1092: `74b506e50265ccef559ce66d8d1cd55db55655ae` → `89bc8409933617057a8ad9c5e379b4603604d557` — draft; depends on #1091.
+- #1093: `736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e` → `71163c15ee202bea0d41e8b64f26f8c4c059a042` — draft; depends on #1092.
+- #1094: `519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6` → `56916dd0db0df19eb1c4ab370c97f11bdfa7b96f` — draft; depends on #1093.
+- #1095: `42529bfab171c2f30d7ce3641b78ca3b0ff821fc` → `4322276b240fb4a16c62767e24ab08dcd3c5e4f1` — draft; depends on #1094.
+- #1096: `d6134300b3fed9baa29842e20d28ce738fd77574` → `29409f2d7c58326351da64599b051ccd8f98b867` — draft; depends on #1095.
+- #1097: `fd5b50111c0e0dd394fbac022ce8e6ff1db3d257` → `dfcbfb1d4ec601803f116d454b3cdead6a6818fd` — draft; depends on #1096.
+- #1098: `f8cd5a4d72805fabe7350746ce9ba91274b54d29` → `51d68203c4c2e3450345e31087f8dad711c6d479` — draft; depends on #1097.
+- #1099: `8a1c6ae90a9212c481607eb6633697543e6cb3ff` → `edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b` — draft; depends on #1098.
+- #1100: `3f991646915e24bb1c7c638ec118e27880d5a031` → `8859ff69a3d2023ae19607189b2981987a86fcef` — draft; depends on #1099.
+- #1101: `e22da9dab3e8d70d5dbe150be39ed3794d6bffda` → `56511fa7d7d7ce69adeb3666dafe962b4dc405c4` — draft; depends on #1100.
+- #1102: `52840409d2e30ea7e55d9d79c10375cb2ffce6c5` → `75db6d0150ef92028f375aa94c35dc3a9e5b8e15` — draft; depends on #1101.
+- #1103: `60a8da5243ef313fcab23bdb0d85c790a5cda935` → `a44e7af98183721e58f2fb4d7e96ae874dfecd83` — draft; depends on #1102.
 
-The following snapshot predates the corrected first head and ready transition. Its original measurements and source identifiers remain historical; the current status above takes precedence.
+External vLLM/llama.cpp server/performance comparison is **omitted by requester instruction**: converted FP16 versus native packed weights and engine-performance comparison are outside the requested scope. No external server was launched; no external performance job is pending or planned. Completed native benchmark receipts are reused under their actual measured sources. This requester scope choice is not an upstream waiver: any applicable CONTRIBUTING or maintainer requirement remains subject to its actual wording.
+
+### Historical published snapshot: evidence and individual gaps
+
+**The preserved text below predates PR1082 becoming ready. Any all-22-draft or exact-head CI status in this historical snapshot refers to its original old heads and date, not the current mapped heads/status above.**
 
 **Draft review package; qualification is incomplete.** This issue tracks all 22 upstream drafts, their exact sources, available evidence and remaining gates. It is a proposal for the Nemotron HIP family/backend/arithmetic gate, not a record of maintainer acceptance.
 
@@ -158,7 +183,7 @@ All30 completed requests and the separate intentional incomplete prefix are reta
 
 Existing baseline CI evidence: [an independent main push run](https://github.com/ashhart/TensorFold/actions/runs/39182366686/job/117837632862) at `d46d17a784758b8a8b66badde1f728f36bdc9541` already failed `electron/agent/engine/pull.test.ts` with “Timed out waiting for measured write rate and remaining time.” The test blob is identical at that main run and main d101. This is the same observed symptom as PR1096/1098 desktop failures, not proof that every contributing cause is identical or that current CI is green. All52 Windows compiler diagnostics now have main-equivalent CI-control evidence below; Windows runtime-failure causes, PR1085/1092 desktop symptoms and PR1098 Linux fuzz timing remain separately unclassified.
 
-Historical32-cell benchmark status: that descriptive O/N dataset was complete and audited, while its additional line81 controls were pending. The now-completed O/N/O campaign, drift and temporal gaps are reported below; full CONTRIBUTING qualification is not inferred. The recovered interrupted measurement remains source-labelled historical partial data. All remain drafts at this update; readiness is assessed per PR against its affected requirements, source-base/dependency scope, maintainer gates and CI disposition. Family reference findings remain unwaived where applicable. Current performance is accepted by the requester, not an upstream waiver.
+Historical32-cell benchmark status: that descriptive O/N dataset was complete and audited, while its additional line81 controls were pending. The now-completed O/N/O campaign, drift and temporal gaps are reported below; full CONTRIBUTING qualification is not inferred. The recovered interrupted measurement remains source-labelled historical partial data. At that historical update all 22 remained drafts; readiness is assessed per PR against its affected requirements, source-base/dependency scope, maintainer gates and CI disposition. Family reference findings remain unwaived where applicable. Current performance is accepted by the requester, not an upstream waiver.
 
 
 ## Windows compiler baseline: existing main-equivalent CI control

@@ -1,0 +1,83 @@
+{
+  "exit_status": 0,
+  "finished_utc": "2026-10-21T06:28:06.443415+00:00",
+  "elapsed_seconds": 939.5692014670001,
+  "boot_end": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "source_after": {
+    "model-00001-of-00004.safetensors": {
+      "size": 5118631458,
+      "mtime_ns": 1792069418703294561,
+      "inode": 507290547,
+      "header_sha256": "6ae0e90dd25284cdfcc6f77cea39a89ba45359f9a6260e97f99619723fbb2e73"
+    },
+    "model-00002-of-00004.safetensors": {
+      "size": 5291568451,
+      "mtime_ns": 1792069434709871324,
+      "inode": 507290546,
+      "header_sha256": "0f66832b81f1791ae4ece2f46a344e170866b925c03d4f492bb6b88ad7f60905"
+    },
+    "model-00003-of-00004.safetensors": {
+      "size": 5291568415,
+      "mtime_ns": 1792069416770345671,
+      "inode": 507290555,
+      "header_sha256": "cecf10fe24060b637274971eac4f6eac6b5c02967be5c66438fcfc488aba3fb4"
+    },
+    "model-00004-of-00004.safetensors": {
+      "size": 2073657055,
+      "mtime_ns": 1792069393858951483,
+      "inode": 507521922,
+      "header_sha256": "f5bea01d79680815792cbaaad320aaffd411b4800177fcaffb0e445e8acc4db9"
+    },
+    "mtp-4bit.safetensors": {
+      "size": 751638984,
+      "mtime_ns": 1792069415098389880,
+      "inode": 507521923,
+      "header_sha256": "a38e78366e7eb39ab3a1c97da06ea441693874072241236ac07840e193a46650"
+    },
+    "config.json": {
+      "sha256": "2d4bdc543efd8ccd68fccbf1231b1d1216ab2a0482229ea5638d448127973b27",
+      "stat": [
+        33188,
+        507290551,
+        64512,
+        1,
+        1001,
+        1001,
+        2932,
+        1792563124,
+        1792069355,
+        1792069355
+      ]
+    },
+    ".cache/huggingface/download/config.json.metadata": {
+      "sha256": "16213f573ea60b434379aab00f44d897836ea0897d250a613c240da08ddbc37e",
+      "stat": [
+        33188,
+        507521921,
+        64512,
+        1,
+        1001,
+        1001,
+        101,
+        1792535182,
+        1792069355,
+        1792069355
+      ]
+    }
+  },
+  "original_metadata_unchanged": true,
+  "source_scope": "Config/revision+fiveheaders/stat identities, not fulloriginalpayloadrehash",
+  "runtime": {
+    "python": "3.12.14",
+    "executable": "/home/receipt-user/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+    "executable_sha256": "4ae14dda295474da4b2a60c1d559dfa61449dac23151df7139dc79c19a9b9f76",
+    "numpy": "2.3.5",
+    "numpy_file": "/home/receipt-user/Apps/vllm/venv-7.14.0_0.31.0-final/lib/python3.12/site-packages/numpy/__init__.py",
+    "forbidden_modules_loaded": [],
+    "isolated": 1,
+    "no_site": 1
+  },
+  "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "conversion_manifest_sha256": "60aa6796fa5bbe6add3f1aaf84a85048cb813202c44d4e83254bb60e71af3f3e"
+}

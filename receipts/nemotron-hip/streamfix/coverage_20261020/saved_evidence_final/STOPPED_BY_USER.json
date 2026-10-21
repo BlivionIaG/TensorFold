@@ -1,0 +1,11 @@
+{
+  "status": "STOPPED_BY_USER",
+  "recorded_utc": "2026-10-21T06:40:06.381169+00:00",
+  "scope": "User explicitly stopped vLLM/llama.cpp performance benchmark/controller/server work; supersedes prior conditional allocation",
+  "owned_stock_server_launched": false,
+  "stock_controller_uploaded": false,
+  "stock_controller_executed": false,
+  "completed_work_preserved": "CPU-only conversion62shards/6513tensors and bounded row/fullSHA metadata proofs; no inference equivalence",
+  "external_comparison": "Omitted at requester direction; no maintainer waiver inferred and not a runner-infrastructure blocker",
+  "no_more_gpu_model_engine_work": true
+}

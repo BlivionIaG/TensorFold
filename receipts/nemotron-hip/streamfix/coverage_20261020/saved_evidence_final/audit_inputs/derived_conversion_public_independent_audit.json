@@ -1,0 +1,17 @@
+{
+  "validated": true,
+  "scope": "Independent local metadata/hash/privacy and bounded-row audit; no repeated full weight read or external engine execution",
+  "manifest_sha256": "53d6c466de976e88368e0e8fb96e19d7ba8189c3ae63b831c619eb9d77e5c920",
+  "files": 14,
+  "conversion_manifest_binding": true,
+  "recorded_full_shard_verification": 62,
+  "tensors": 6513,
+  "privacy_scan": true,
+  "inference_or_stock_compatibility_claim": false,
+  "independent_row_audit": "derived_row_independent_audit/manifest.json",
+  "limitations": [
+    "Original checkpoint identity is five source headers/config/revision/stat and conversion read-order hashes, not an independent full original payload rehash.",
+    "Full derived shard hashes were measured by retained verification helper; this review verifies their metadata bindings without rereading weights.",
+    "Selected independent scalar rows were checked separately; no inference equivalence or external-engine performance."
+  ]
+}

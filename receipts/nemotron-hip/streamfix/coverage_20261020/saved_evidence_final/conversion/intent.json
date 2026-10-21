@@ -1,0 +1,94 @@
+{
+  "started_utc": "2026-10-21T06:12:26.870943+00:00",
+  "boot": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "converter_sha256": "890ab464a8aa1efc8953c5eac335d8a50a6178fae537013598ae81bd0e7ac31b",
+  "plan_sha256": "43e5475f147fe952565a9f90c539f1cb8d4eb6ee311d883ddb020af59947e3d1",
+  "command": [
+    "/home/receipt-user/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+    "-I",
+    "-S",
+    "-c",
+    "import sys,runpy,json,hashlib,platform\nfrom pathlib import Path\nsys.path.insert(0,sys.argv[1]);script=Path(sys.argv[2]);runtime=Path(sys.argv[3]);sys.argv=[str(script)]+sys.argv[4:]\ntry:runpy.run_path(str(script),run_name='__main__')\nfinally:\n import numpy\n forbidden=sorted(k for k in sys.modules if k=='torch' or k.startswith('torch.') or k=='vllm' or k.startswith('vllm.') or k=='transformers' or k.startswith('transformers.'))\n runtime.write_text(json.dumps({'python':platform.python_version(),'executable':sys.executable,'executable_sha256':hashlib.sha256(Path(sys.executable).resolve().read_bytes()).hexdigest(),'numpy':numpy.__version__,'numpy_file':numpy.__file__,'forbidden_modules_loaded':forbidden,'isolated':sys.flags.isolated,'no_site':sys.flags.no_site},indent=2)+'\\n')\n assert not forbidden\n",
+    "/home/receipt-user/Apps/vllm/venv-7.14.0_0.31.0-final/lib/python3.12/site-packages",
+    "/home/receipt-user/hcx/streamfix/coverage_20261020/derived_hf_header_plan_890ab464_attempt1/convert.py",
+    "/home/receipt-user/hcx/streamfix/coverage_20261020/conversion_actual_890ab464_20261021/process_runtime.json",
+    "/home/receipt-user/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+    "--plan",
+    "/home/receipt-user/hcx/streamfix/coverage_20261020/derived_hf_header_plan_890ab464_attempt1/plan.json",
+    "--approved-plan-sha",
+    "43e5475f147fe952565a9f90c539f1cb8d4eb6ee311d883ddb020af59947e3d1",
+    "--output",
+    "/home/receipt-user/models/Nemotron-derived-fp16-890ab464-20261021",
+    "--execute"
+  ],
+  "disk_available": 196999135232,
+  "MemAvailable": 375782973440,
+  "loadavg": "10.24 8.61 4.99 11/2911 24624\n",
+  "memory_environment": {
+    "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+    "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+  },
+  "source_before": {
+    "model-00001-of-00004.safetensors": {
+      "size": 5118631458,
+      "mtime_ns": 1792069418703294561,
+      "inode": 507290547,
+      "header_sha256": "6ae0e90dd25284cdfcc6f77cea39a89ba45359f9a6260e97f99619723fbb2e73"
+    },
+    "model-00002-of-00004.safetensors": {
+      "size": 5291568451,
+      "mtime_ns": 1792069434709871324,
+      "inode": 507290546,
+      "header_sha256": "0f66832b81f1791ae4ece2f46a344e170866b925c03d4f492bb6b88ad7f60905"
+    },
+    "model-00003-of-00004.safetensors": {
+      "size": 5291568415,
+      "mtime_ns": 1792069416770345671,
+      "inode": 507290555,
+      "header_sha256": "cecf10fe24060b637274971eac4f6eac6b5c02967be5c66438fcfc488aba3fb4"
+    },
+    "model-00004-of-00004.safetensors": {
+      "size": 2073657055,
+      "mtime_ns": 1792069393858951483,
+      "inode": 507521922,
+      "header_sha256": "f5bea01d79680815792cbaaad320aaffd411b4800177fcaffb0e445e8acc4db9"
+    },
+    "mtp-4bit.safetensors": {
+      "size": 751638984,
+      "mtime_ns": 1792069415098389880,
+      "inode": 507521923,
+      "header_sha256": "a38e78366e7eb39ab3a1c97da06ea441693874072241236ac07840e193a46650"
+    },
+    "config.json": {
+      "sha256": "2d4bdc543efd8ccd68fccbf1231b1d1216ab2a0482229ea5638d448127973b27",
+      "stat": [
+        33188,
+        507290551,
+        64512,
+        1,
+        1001,
+        1001,
+        2932,
+        1792563124,
+        1792069355,
+        1792069355
+      ]
+    },
+    ".cache/huggingface/download/config.json.metadata": {
+      "sha256": "16213f573ea60b434379aab00f44d897836ea0897d250a613c240da08ddbc37e",
+      "stat": [
+        33188,
+        507521921,
+        64512,
+        1,
+        1001,
+        1001,
+        101,
+        1792535182,
+        1792069355,
+        1792069355
+      ]
+    }
+  },
+  "scope": "CPU-onlyconversion; no stockloader/model/GPU; no inferenceequivalence"
+}

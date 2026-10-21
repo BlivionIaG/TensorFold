@@ -1,7 +1,7 @@
 {
   "repository": "ashhart/TensorFold",
-  "evidence_commit": "606ddd61b274eccc38aa37b99dbc1850d5165b8f",
-  "previous_publication_manifest": "https://github.com/BlivionIaG/TensorFold/blob/c6949c1fb0ef0b174eab275ed2608fcbbebf2760/receipts/nemotron-hip/streamfix/coverage_20261020/publication/publication_manifest.json",
+  "evidence_commit": "eb640c5c60d37ee099238324e7151a45b57889cd",
+  "previous_publication_manifest": "https://github.com/BlivionIaG/TensorFold/blob/ffb44d9ce92e311ded0de899bddd15546909b3a1/receipts/nemotron-hip/streamfix/coverage_20261020/publication/publication_manifest.json",
   "all22_still_draft": false,
   "source_heads_unchanged": false,
   "complete_qualification": false,
@@ -18,202 +18,247 @@
     },
     {
       "pr": 1083,
-      "head": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
+      "head": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8",
       "branch": "nemhip-draft/00a-stream-nonfinite",
       "base": "main",
-      "expected_previous_body_sha256": "851cd72a01210012589e8c83a594605bbaf6eeb65295c1c3907d62e88c7351d3",
-      "body_sha256": "db8a6034f0d27ad5097ba4a98338fa7e9929d2d10347ad49ff8e3dc6b91bf59c",
-      "file": "bodies/pr1083.md"
+      "expected_previous_body_sha256": "db8a6034f0d27ad5097ba4a98338fa7e9929d2d10347ad49ff8e3dc6b91bf59c",
+      "body_sha256": "d86e32c96e38c80ab6eca08d00fb9bd118c3109eb2c17668ca81e7e3932804e6",
+      "file": "bodies/pr1083.md",
+      "draft": true
     },
     {
       "pr": 1084,
-      "head": "5b12f74a27326797a540d094387e7ffa472b55ed",
+      "head": "1d1bcdd35a482271448e0ff8a19eb9013be1e503",
       "branch": "nemhip-draft/01-qwen35-prefix-stop",
       "base": "main",
-      "expected_previous_body_sha256": "36d91412aba2dae1990de38adf03870c422f974ad6ed70524beffc09c0b0ecd6",
-      "body_sha256": "1dfca0ca1243b85a0920735af9d4d4e84cae4e4c093379be2ea9860056ea13bc",
-      "file": "bodies/pr1084.md"
+      "expected_previous_body_sha256": "1dfca0ca1243b85a0920735af9d4d4e84cae4e4c093379be2ea9860056ea13bc",
+      "body_sha256": "c96dfb6be58beb5aa1ac25fdec9194eea750ed355fa646bf461dcacc58a96b40",
+      "file": "bodies/pr1084.md",
+      "draft": true
     },
     {
       "pr": 1085,
-      "head": "6af43c9db14516a85fbe22351eb0d3e485bd41bb",
+      "head": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
       "branch": "nemhip-draft/02-hip-serve",
       "base": "main",
-      "expected_previous_body_sha256": "865bc40d6680cb34567c71ffd0de1349bd54db21e409a56fdfcffa44fe8a353d",
-      "body_sha256": "a6da2413b5b48a4488d97194273d707e46539fe7533727f7e0a1da18a2446602",
-      "file": "bodies/pr1085.md"
+      "expected_previous_body_sha256": "a6da2413b5b48a4488d97194273d707e46539fe7533727f7e0a1da18a2446602",
+      "body_sha256": "9d6b6f3779de37e722b40c27c124c036115bccd4c48127ddc7993955d32a3d7b",
+      "file": "bodies/pr1085.md",
+      "draft": true
     },
     {
       "pr": 1086,
-      "head": "754786d613dde5539d3a0c534007a1a9733cfaf8",
+      "head": "9c655701055674cb795feec0f59f5adce6bc74dc",
       "branch": "nemhip-draft/02a-kv8-refusal",
       "base": "main",
-      "expected_previous_body_sha256": "7c9b2406f07473d95ca6dde8839672e38b47738152bb55d258f1dc34b9d08942",
-      "body_sha256": "e98c3be6cc6fa3f2c0fb948061a5dbf355cd63ed31834f5d1a43fc269c6e346d",
-      "file": "bodies/pr1086.md"
+      "expected_previous_body_sha256": "e98c3be6cc6fa3f2c0fb948061a5dbf355cd63ed31834f5d1a43fc269c6e346d",
+      "body_sha256": "f9cbffd283cae85aaaaae14297f85c7b20874fd94d921f08a8d974e29d2580ee",
+      "file": "bodies/pr1086.md",
+      "draft": true
     },
     {
       "pr": 1087,
-      "head": "7bf5f195fb06c0651a1a5d74277f24cc70da591c",
+      "head": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f",
       "branch": "nemhip-draft/03-slide-refusal",
       "base": "main",
-      "expected_previous_body_sha256": "80f7c84c421d7c9c1c4fd2d6d508abc94e448efb994df03a5c13106f23da8223",
-      "body_sha256": "75a85c2635f1d7e2a80c2869755beb6919a850df9150b28fa91fc3a25823a8c0",
-      "file": "bodies/pr1087.md"
+      "expected_previous_body_sha256": "75a85c2635f1d7e2a80c2869755beb6919a850df9150b28fa91fc3a25823a8c0",
+      "body_sha256": "b963653964218b2d7277b18afba0fada7cfcafdee820663df5d338f51972dc77",
+      "file": "bodies/pr1087.md",
+      "draft": true
     },
     {
       "pr": 1088,
-      "head": "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2",
+      "head": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797",
       "branch": "nemhip-draft/04-mamba-kernels",
       "base": "main",
-      "expected_previous_body_sha256": "f07a873a878a1d1d8eb20d9fc3d2396003ab7b9e8e7a8c5a324d209b67659017",
-      "body_sha256": "58f22c45477aa0367867902b0366f98b43aa728ad6ca10af936e41caf53eba38",
-      "file": "bodies/pr1088.md"
+      "expected_previous_body_sha256": "58f22c45477aa0367867902b0366f98b43aa728ad6ca10af936e41caf53eba38",
+      "body_sha256": "7ddbccf1d951ea5f96528e6f8aa6abfb3a55b011087b1135eedc563caf8b1d5e",
+      "file": "bodies/pr1088.md",
+      "draft": true
     },
     {
       "pr": 1089,
-      "head": "9b56916fa71d40f9dcd924956c09a3c5f7e18019",
+      "head": "f3f6c3f2a925b68ff18788063cb8234ea7924f11",
       "branch": "nemhip-draft/05-moe-tile",
       "base": "main",
-      "expected_previous_body_sha256": "80ff5a4b86b55988715b47f5322cb1b0dd7aa26f67f5a67ea55759569171c1c2",
-      "body_sha256": "f7cc704bc85e6a17c8f8029b64035d312d3e44f0e93066c77d7311663d2d094d",
-      "file": "bodies/pr1089.md"
+      "expected_previous_body_sha256": "f7cc704bc85e6a17c8f8029b64035d312d3e44f0e93066c77d7311663d2d094d",
+      "body_sha256": "a29f0e2249296a98f2a3c38d828597d499c095383a847a614eadbbc1479b12a8",
+      "file": "bodies/pr1089.md",
+      "draft": true
     },
     {
       "pr": 1090,
-      "head": "6e73bf059c5646e683d680ab78ed5326aa9fba87",
+      "head": "017b0953f3517cdda3821c9fbbc1abfb0965227b",
       "branch": "nemhip-draft/06-nemotron-moe",
       "base": "main",
-      "expected_previous_body_sha256": "205e5f395de52aaafce8eed429d0cf3bd49c645bc3cd19f12a4919df4f87ff0f",
-      "body_sha256": "1466edd60356bc6653fe0c9acd678c00dacb6bbe46efeb0dc75b9dbd0562c000",
-      "file": "bodies/pr1090.md"
+      "expected_previous_body_sha256": "1466edd60356bc6653fe0c9acd678c00dacb6bbe46efeb0dc75b9dbd0562c000",
+      "body_sha256": "69166c3b912b1e9b2f11885916771a9553e2c91c4dfd4373cafa83f641dec502",
+      "file": "bodies/pr1090.md",
+      "draft": true
     },
     {
       "pr": 1091,
-      "head": "9c206c22bf386348f2f1eb473a31ef8370163b5e",
+      "head": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad",
       "branch": "nemhip-draft/07-plan-walk",
       "base": "main",
-      "expected_previous_body_sha256": "592501f94994cde13f6930f32b35776e1564945706cdc72dd05738b3ef0f839c",
-      "body_sha256": "0323eb485078dfc8b3da0f4d3a22b8af0b7285715fc9b2dae6798d03994ea22b",
-      "file": "bodies/pr1091.md"
+      "expected_previous_body_sha256": "0323eb485078dfc8b3da0f4d3a22b8af0b7285715fc9b2dae6798d03994ea22b",
+      "body_sha256": "7d339ad43c9b24dcf3741de13d7d5667b723b788ea1dab15665d9d39939bda53",
+      "file": "bodies/pr1091.md",
+      "draft": true
     },
     {
       "pr": 1092,
-      "head": "74b506e50265ccef559ce66d8d1cd55db55655ae",
+      "head": "89bc8409933617057a8ad9c5e379b4603604d557",
       "branch": "nemhip-draft/08-nemotron-engine",
       "base": "main",
-      "expected_previous_body_sha256": "59d374aa6cf6953951cb57d093a2902d70a653581fd1e95d700f74bfcac0996c",
-      "body_sha256": "bacbb1aae47d6977afbec6af40fd2f790f379d6f8af0fd09abb30fb25cb2a8ee",
-      "file": "bodies/pr1092.md"
+      "expected_previous_body_sha256": "bacbb1aae47d6977afbec6af40fd2f790f379d6f8af0fd09abb30fb25cb2a8ee",
+      "body_sha256": "718af2a2dd9cd0649c28b7b161c98c76d6874e5d3ccc04dafeaa8c92b0f451a5",
+      "file": "bodies/pr1092.md",
+      "draft": true
     },
     {
       "pr": 1093,
-      "head": "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e",
+      "head": "71163c15ee202bea0d41e8b64f26f8c4c059a042",
       "branch": "nemhip-draft/09-nemotron-tp",
       "base": "main",
-      "expected_previous_body_sha256": "fcb6d4d0d4cecaa4f74714eddcb04dc658f397c985ae8416a1bf366810cc3617",
-      "body_sha256": "2a1469254459e31225fe3beb0f343f89fe11f10f5a5f9abedd3939ccf7ef6759",
-      "file": "bodies/pr1093.md"
+      "expected_previous_body_sha256": "2a1469254459e31225fe3beb0f343f89fe11f10f5a5f9abedd3939ccf7ef6759",
+      "body_sha256": "214423b98dc715e1030e74ee8dff6ea7502a796ba2c093dd25fb5ff75e428ee0",
+      "file": "bodies/pr1093.md",
+      "draft": true
     },
     {
       "pr": 1094,
-      "head": "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6",
+      "head": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f",
       "branch": "nemhip-draft/10-nemotron-rounds",
       "base": "main",
-      "expected_previous_body_sha256": "365d7bbef88148f7d1cc442e0191187e6d6cba24ba7adf63b325c1a0b449e34e",
-      "body_sha256": "1f369db1e1dfe75a8a869981fea29758a314e2b1772ec8811549457923a1af2a",
-      "file": "bodies/pr1094.md"
+      "expected_previous_body_sha256": "1f369db1e1dfe75a8a869981fea29758a314e2b1772ec8811549457923a1af2a",
+      "body_sha256": "043b6d614c8c520c373812bfd754fcd84ad1887788142f40bffeff299f5ece02",
+      "file": "bodies/pr1094.md",
+      "draft": true
     },
     {
       "pr": 1095,
-      "head": "42529bfab171c2f30d7ce3641b78ca3b0ff821fc",
+      "head": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1",
       "branch": "nemhip-draft/11-prefill-chunk",
       "base": "main",
-      "expected_previous_body_sha256": "cd38337bd4d8e9fc2f42c374eb0b054114c2a1d1496c6fdfb235eae28d6953e6",
-      "body_sha256": "f0f377c4345b948e7fa26aa265f1047b1199c84380a6c4c984f9f585e628631d",
-      "file": "bodies/pr1095.md"
+      "expected_previous_body_sha256": "f0f377c4345b948e7fa26aa265f1047b1199c84380a6c4c984f9f585e628631d",
+      "body_sha256": "1b8014d02802dba1851b9b372743db1cc1bb6417829ac428c07537b56a47acde",
+      "file": "bodies/pr1095.md",
+      "draft": true
     },
     {
       "pr": 1096,
-      "head": "d6134300b3fed9baa29842e20d28ce738fd77574",
+      "head": "29409f2d7c58326351da64599b051ccd8f98b867",
       "branch": "nemhip-draft/12-add-rms",
       "base": "main",
-      "expected_previous_body_sha256": "c28554dc094bfbc48beb4b34d42d29ec19c81cd564d3fb09b1250cadaecb0100",
-      "body_sha256": "fd280fcc2bbb078920abd0548d4738b0e56ff12df9fb5f8a46feb182338baef1",
-      "file": "bodies/pr1096.md"
+      "expected_previous_body_sha256": "fd280fcc2bbb078920abd0548d4738b0e56ff12df9fb5f8a46feb182338baef1",
+      "body_sha256": "914ad2913787fa273ab4d741e74c8a61233a7d4bc8f04fed21ae677e7abf52f7",
+      "file": "bodies/pr1096.md",
+      "draft": true
     },
     {
       "pr": 1097,
-      "head": "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257",
+      "head": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd",
       "branch": "nemhip-draft/13-mamba-window",
       "base": "main",
-      "expected_previous_body_sha256": "62c46aff7483b79869f34d82a0fcc7f178bc8fa79c8bb766d28811a3ed36873f",
-      "body_sha256": "9abc09f5f8eaa4115322e1e9a3b369b3caac9371509ee49ba0d40628b609f4c7",
-      "file": "bodies/pr1097.md"
+      "expected_previous_body_sha256": "9abc09f5f8eaa4115322e1e9a3b369b3caac9371509ee49ba0d40628b609f4c7",
+      "body_sha256": "5d9fb0c481e01f002e1e4f74bd83ad1e6faadb640475454f0493328856695a61",
+      "file": "bodies/pr1097.md",
+      "draft": true
     },
     {
       "pr": 1098,
-      "head": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
+      "head": "51d68203c4c2e3450345e31087f8dad711c6d479",
       "branch": "nemhip-draft/14-relu2-epilogue",
       "base": "main",
-      "expected_previous_body_sha256": "361ed95e1f4324137615e793771e01d84f2ff95a5101797a1f13d923081f3a9b",
-      "body_sha256": "99fca360bb4abe8b127e41a7bff1db5f03543eb3b798a3c24fe1af9a9d29c8bd",
-      "file": "bodies/pr1098.md"
+      "expected_previous_body_sha256": "99fca360bb4abe8b127e41a7bff1db5f03543eb3b798a3c24fe1af9a9d29c8bd",
+      "body_sha256": "96333c42ef560bcd6dff9f0dcecade26321968ff68dcabd9e6a134971113ecad",
+      "file": "bodies/pr1098.md",
+      "draft": true
     },
     {
       "pr": 1099,
-      "head": "8a1c6ae90a9212c481607eb6633697543e6cb3ff",
+      "head": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b",
       "branch": "nemhip-draft/15-plan-act",
       "base": "main",
-      "expected_previous_body_sha256": "a097dd2ba9a25c80a66e647aa0b2d6a8752f59e075408433b29007e543c8dbec",
-      "body_sha256": "50c7d25fae9993a7f8bcda37a2ff7e4207f3f90490835eae1c58983cdec04634",
-      "file": "bodies/pr1099.md"
+      "expected_previous_body_sha256": "50c7d25fae9993a7f8bcda37a2ff7e4207f3f90490835eae1c58983cdec04634",
+      "body_sha256": "f781438130334dc95ed46d3a9c6999b7142ae15f874c320585dabb10a06de0a7",
+      "file": "bodies/pr1099.md",
+      "draft": true
     },
     {
       "pr": 1100,
-      "head": "3f991646915e24bb1c7c638ec118e27880d5a031",
+      "head": "8859ff69a3d2023ae19607189b2981987a86fcef",
       "branch": "nemhip-draft/16-argmax-parts",
       "base": "main",
-      "expected_previous_body_sha256": "53766ba70f25864aad22c056cef07affdbff71e5185f03561d90f5793da42687",
-      "body_sha256": "b64c25884084f67f6e02aa4e2283ca3f59ca6520b5f24755a34c403a7ab7e138",
-      "file": "bodies/pr1100.md"
+      "expected_previous_body_sha256": "b64c25884084f67f6e02aa4e2283ca3f59ca6520b5f24755a34c403a7ab7e138",
+      "body_sha256": "3c6b8002daa9a0e44aa097edada16be1037895254ccc6e581d02613ab7e05a05",
+      "file": "bodies/pr1100.md",
+      "draft": true
     },
     {
       "pr": 1101,
-      "head": "e22da9dab3e8d70d5dbe150be39ed3794d6bffda",
+      "head": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4",
       "branch": "nemhip-draft/17-nemotron-fused",
       "base": "main",
-      "expected_previous_body_sha256": "0b9f15b084a2902c00018c1591e83126f1cc757ed4eaaaefcdde379cadd3e72d",
-      "body_sha256": "680b85fa78f5ff3426bbb7e4321c4350e81687b5eb4c72e43579257ec32b325c",
-      "file": "bodies/pr1101.md"
+      "expected_previous_body_sha256": "680b85fa78f5ff3426bbb7e4321c4350e81687b5eb4c72e43579257ec32b325c",
+      "body_sha256": "4f9460afbc82c6637de94cffa18bad64bf9f7f113e7c1cbcabb35ca0bd972c6b",
+      "file": "bodies/pr1101.md",
+      "draft": true
     },
     {
       "pr": 1102,
-      "head": "52840409d2e30ea7e55d9d79c10375cb2ffce6c5",
+      "head": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15",
       "branch": "nemhip-draft/18-plan-attend",
       "base": "main",
-      "expected_previous_body_sha256": "3e743c648b45377876df4fcba4ba181d791995a97c45b0646d6cde38b40175e6",
-      "body_sha256": "e1fe32e503561d864e02193ca2cd305ea2dad2dbaabbf9ca862d1225f02bd815",
-      "file": "bodies/pr1102.md"
+      "expected_previous_body_sha256": "e1fe32e503561d864e02193ca2cd305ea2dad2dbaabbf9ca862d1225f02bd815",
+      "body_sha256": "9f17d830ddb39ec9f6c85caced3326e812b56cd8facbde6b1a0e20db6d3c572e",
+      "file": "bodies/pr1102.md",
+      "draft": true
     },
     {
       "pr": 1103,
-      "head": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
+      "head": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
       "branch": "nemhip-draft/19-moe-pair",
       "base": "main",
-      "expected_previous_body_sha256": "f278d82f1e705ee4d37bd8ec68547358f536f78c0fd14bdd4835393bcea8321d",
-      "body_sha256": "7255aa64f0749e0fc9abbff01d52a8e6df698a9a03ebd52db88135eb0bb9b9d2",
-      "file": "bodies/pr1103.md"
+      "expected_previous_body_sha256": "7255aa64f0749e0fc9abbff01d52a8e6df698a9a03ebd52db88135eb0bb9b9d2",
+      "body_sha256": "fe9dc83981f13ce1958e4d8bf6d5bc25d947293409311f80ad9a7a5f43365af0",
+      "file": "bodies/pr1103.md",
+      "draft": true
     }
   ],
   "issue": {
-    "expected_previous_body_sha256": "b9fa5a23f53e3ba683147851f67b053e4dccded2ee59f46616b1105c0eadc359",
-    "body_sha256": "a7c8d51da865f231b08fa929b3447b4617ff01d2ac3ce75bdba24bb4ca72def6",
+    "expected_previous_body_sha256": "a7c8d51da865f231b08fa929b3447b4617ff01d2ac3ce75bdba24bb4ca72def6",
+    "body_sha256": "b65ef84ad70529c3a30bdf989424864ac2cd00eddebc2e5929fdbc58c88c2913",
     "file": "bodies/issue1081.md"
   },
   "ready_prs": [
     1082
   ],
   "complete_stack_qualified": false,
-  "first_pr_evidence_commit": "bc6f6e7ab1b25c75ff6ca2e1917f3d7224710557"
+  "first_pr_evidence_commit": "bc6f6e7ab1b25c75ff6ca2e1917f3d7224710557",
+  "draft_prs": [
+    1083,
+    1084,
+    1085,
+    1086,
+    1087,
+    1088,
+    1089,
+    1090,
+    1091,
+    1092,
+    1093,
+    1094,
+    1095,
+    1096,
+    1097,
+    1098,
+    1099,
+    1100,
+    1101,
+    1102,
+    1103
+  ],
+  "source_heads_unchanged_during_body_publication": true
 }
