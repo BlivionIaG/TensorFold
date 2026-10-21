@@ -23,6 +23,8 @@ const wt = @import("cuda_prompt_wt.zig");
 const collective = @import("cuda_collective.zig");
 const wire = @import("cuda_rank_wire.zig");
 const profile_module = @import("exl3_graph_profile.zig");
+const state_binding = @import("exl3_state_binding.zig");
+const state_driver = @import("cuda_exl3_state_binding.zig");
 pub var profile: profile_module.Profile(64, 1024) = .{};
 fn profileEnabled() bool {
     const value = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_PROFILE") orelse return false;
@@ -196,6 +198,7 @@ pub const Key = struct {
     output: u64,
     streams: u64 = 0,
     keep: u64 = 0,
+    keep_nonstate: u64 = 0,
     /// The device planner's state (a new planner is new memory).
     plan: u64 = 0,
 
@@ -222,7 +225,344 @@ pub fn pinnedCopy(s: cuda.Stream, dst: u64, bytes: []const u8) !void {
 
 /// `template`: the graph an update took this exec's parameters from, kept while the exec uses them (a tp graph's
 /// NCCL resources are tied to the graph they were captured in).
-const Entry = struct { key: Key, exec: ?cuda.graph.Exec = null, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null, cohort: u64 = 0, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null };
+const Entry = struct { key: Key, exec: ?cuda.graph.Exec = null, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null, cohort: u64 = 0, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null, binding: ?state_binding.Binding = null, poisoned: bool = false };
+
+fn stateRebindEnabled() bool {
+    const value = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_STATE_REBIND") orelse return false;
+    return std.mem.eql(u8, std.mem.span(value), "1");
+}
+
+fn stateRequest(key: Key, pass: anytype) ?state_binding.Request {
+    if (!stateRebindEnabled()) return null;
+    return windowStateRequest(key, pass);
+}
+
+fn windowStateRequest(key: Key, pass: anytype) ?state_binding.Request {
+    const Pass = @typeInfo(@TypeOf(pass)).pointer.child;
+    if (comptime !@hasField(Pass, "lanes")) return null;
+    if (key.kind != 2 or key.rows != 2 or pass.lanes.len != 0) return null;
+    const gdn = @import("cuda_gdn.zig");
+    var request: state_binding.Request = .{
+        .width = key.rows,
+        .chain = @intFromPtr(pass.k.chain.handle),
+        .chain_to = @intFromPtr(pass.k.chain_to.handle),
+        .geometry = .{ .grid = .{ gdn.nv, gdn.dv / 16, 1 }, .block = .{ 128, 1, 1 } },
+        .nonstate = .{ .gq = pass.s.gq, .gk = pass.s.gk, .gv = pass.s.gv, .ggb = pass.s.ggb, .rows = @intCast(key.rows), .ys = pass.s.ys },
+    };
+    for (pass.m.layers, 0..) |layer, index| {
+        if (!layer.linear) continue;
+        const linear = wt.linearIndex(index);
+        if (request.count == state_binding.max_layers or linear >= pass.seq.state.len) return null;
+        request.layers[request.count] = .{
+            .layer = index,
+            .state_in = pass.seq.state[linear].ptr,
+            .state_out = if (pass.hooks.keep) |keep| keep.layers[index].state_out else 0,
+        };
+        if (request.layers[request.count].state_out == 0) return null;
+        request.count += 1;
+    }
+    request.validate() catch return null;
+    return request;
+}
+
+fn capturedBinding(key: Key, pass: anytype, graph: cuda.graph.Graph) ?state_binding.Binding {
+    const request = stateRequest(key, pass) orelse return null;
+    if (state_driver.nodeType(graph.d) == null) return null;
+    return state_binding.Binding.init(@intFromPtr(graph.handle), request) catch null;
+}
+
+fn rebindCandidate(key: Key, request: state_binding.Request, tp: bool) ?*Entry {
+    var candidate: ?*Entry = null;
+    for (&entries) |*maybe| if (maybe.*) |*entry| {
+        if (entry.poisoned or entry.pending != null or entry.exec == null or entry.template == null or (tp and entry.cohort == 0)) continue;
+        const binding = entry.binding orelse continue;
+        if (binding.poisoned or !std.meta.eql(state_binding.normalized(entry.key), state_binding.normalized(key)) or !binding.request.compatible(request)) continue;
+        if (candidate == null or entry.cohort < candidate.?.cohort or (entry.cohort == candidate.?.cohort and entry.used > candidate.?.used)) candidate = entry;
+    };
+    return candidate;
+}
+
+fn prepareBinding(entry: *Entry) !?state_driver.Backend {
+    const backend = state_driver.Backend.init(entry.template.?, entry.exec.?) orelse return null;
+    entry.binding.?.load(backend) catch |err| switch (err) {
+        error.UnsupportedBinding => {
+            entry.binding.?.invalidate();
+            entry.binding = null;
+            return null;
+        },
+        else => return err,
+    };
+    return backend;
+}
+
+fn tryRebind(key: Key, pass: anytype) !bool {
+    const request = stateRequest(key, pass) orelse return false;
+    const entry = rebindCandidate(key, request, false) orelse {
+        stats.rebind_declined += 1;
+        return false;
+    };
+    const prepared = prepareBinding(entry) catch |err| {
+        stats.rebind_failures += 1;
+        return err;
+    };
+    const backend = prepared orelse {
+        stats.rebind_declined += 1;
+        return false;
+    };
+    stats.rebind_attempts += 1;
+    entry.binding.?.apply(backend, request) catch |err| {
+        entry.poisoned = true;
+        stats.rebind_failures += 1;
+        return err;
+    };
+    entry.key = key;
+    entry.used = clock;
+    stats.rebinds += 1;
+    stats.replays += 1;
+    note(key, .replay);
+    try entry.exec.?.launchOn(pass.stream);
+    return true;
+}
+
+fn tryRebindTogether(c: *collective.Collective, signature: u64, key: Key, pass: anytype) !bool {
+    if (!stateRebindEnabled() or key.kind != 2 or key.rows != 2) return false;
+    const request = stateRequest(key, pass);
+    const candidate = if (request) |target| rebindCandidate(key, target, true) else null;
+    var backend: ?state_driver.Backend = null;
+    var failed = false;
+    if (candidate) |entry| backend = prepareBinding(entry) catch blk: {
+        stats.rebind_failures += 1;
+        failed = true;
+        break :blk null;
+    };
+    const selected = try c.graphAgree(signature ^ 0x737461746573656c, .{
+        .state = if (failed) .failed else if (backend != null) .ready else .capture,
+        .cohort = if (candidate) |entry| entry.cohort else 0,
+    });
+    if (selected.choice != .replay) {
+        stats.rebind_declined += 1;
+        return false;
+    }
+    const entry = candidate.?;
+    stats.rebind_attempts += 1;
+    entry.binding.?.applyTogether(backend.?, request.?, c, signature ^ 0x7374617465646f6e, selected.cohort) catch |err| {
+        entry.poisoned = true;
+        stats.rebind_failures += 1;
+        return err;
+    };
+    entry.key = key;
+    entry.used = clock;
+    stats.rebinds += 1;
+    stats.replays += 1;
+    note(key, .replay);
+    try entry.exec.?.launchOn(pass.stream);
+    return true;
+}
+
+test "exl3: state binding normalized identity preserves all nonstate key guards" {
+    const original: Key = .{ .kind = 2, .rows = 2, .scratch = 11, .scratch_cap = 16, .scores = 12, .output = 13, .keep = 14, .keep_nonstate = 15, .streams = 16, .plan = 17 };
+    var flipped = original;
+    flipped.seq[0][4] = 100;
+    flipped.keep = 101;
+    try std.testing.expect(!std.meta.eql(original, flipped));
+    try std.testing.expectEqualDeep(state_binding.normalized(original), state_binding.normalized(flipped));
+    inline for (@typeInfo(Key).@"struct".field_names) |field| {
+        if (comptime !std.mem.eql(u8, field, "seq") and !std.mem.eql(u8, field, "paging") and
+            !std.mem.eql(u8, field, "chunks") and !std.mem.eql(u8, field, "score_tiles") and !std.mem.eql(u8, field, "keep"))
+        {
+            var changed = original;
+            @field(changed, field) += 1;
+            try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
+        }
+    }
+    for (0..max_lanes) |lane| {
+        for (0..5) |component| {
+            if (lane == 0 and component == 4) continue;
+            var changed = original;
+            changed.seq[lane][component] += 1;
+            try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
+        }
+        for (0..6) |component| {
+            var changed = original;
+            changed.paging[lane][component] += 1;
+            try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
+        }
+        var changed = original;
+        changed.chunks[lane] += 1;
+        try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
+        changed = original;
+        changed.score_tiles[lane] += 1;
+        try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
+    }
+}
+
+test "exl3: state binding candidate excludes pending poisoned retired and incompatible generations" {
+    entries = @splat(null);
+    defer entries = @splat(null);
+    var request: state_binding.Request = .{
+        .width = 2,
+        .chain = 1,
+        .chain_to = 2,
+        .geometry = .{ .grid = .{ 16, 8, 1 }, .block = .{ 128, 1, 1 } },
+        .nonstate = .{ .gq = 1, .gk = 2, .gv = 3, .ggb = 4, .rows = 2, .ys = 5 },
+        .count = 1,
+    };
+    request.layers[0] = .{ .layer = 0, .state_in = 100, .state_out = 200 };
+    const key: Key = .{ .kind = 2, .rows = 2, .scratch = 1, .scores = 2, .output = 3, .keep = 4, .keep_nonstate = 5 };
+    entries[0] = .{
+        .key = key,
+        .used = 1,
+        .cohort = 7,
+        .exec = .{ .d = undefined, .handle = @ptrFromInt(1) },
+        .template = .{ .d = undefined, .handle = @ptrFromInt(2) },
+        .binding = try state_binding.Binding.init(2, request),
+    };
+    var target = request;
+    std.mem.swap(u64, &target.layers[0].state_in, &target.layers[0].state_out);
+    var flipped = key;
+    flipped.seq[0][4] = 200;
+    flipped.keep = 9;
+    try std.testing.expect(find(flipped) == null);
+    try std.testing.expect(rebindCandidate(flipped, target, true) == &entries[0].?);
+    entries[0].?.pending = @ptrFromInt(@alignOf(Pending));
+    try std.testing.expect(rebindCandidate(flipped, target, true) == null);
+    entries[0].?.pending = null;
+    entries[0].?.poisoned = true;
+    try std.testing.expect(rebindCandidate(flipped, target, true) == null);
+    entries[0].?.poisoned = false;
+    target.layers[0].state_in = 300;
+    try std.testing.expect(rebindCandidate(flipped, target, true) == null);
+    target = request;
+    flipped.output += 1;
+    try std.testing.expect(rebindCandidate(flipped, target, true) == null);
+    entries[0].?.binding.?.invalidate();
+    try std.testing.expect(rebindCandidate(key, request, true) == null);
+}
+
+test "exl3: state binding helper contracts" {
+    _ = @import("exl3_state_binding_test.zig");
+    _ = state_driver;
+}
+
+test "exl3: state binding transaction uses real graphAgree before publication" {
+    const Fake = struct {
+        calls: usize = 0,
+        fail: bool = false,
+
+        pub fn set(self: *@This(), _: usize, _: usize, _: state_binding.Geometry, _: state_binding.Parameters) !void {
+            self.calls += 1;
+            if (self.fail and self.calls == 2) return error.SetterFailed;
+        }
+    };
+    var request: state_binding.Request = .{
+        .width = 2,
+        .chain = 10,
+        .chain_to = 11,
+        .geometry = .{ .grid = .{ 16, 8, 1 }, .block = .{ 128, 1, 1 } },
+        .nonstate = .{ .gq = 1, .gk = 2, .gv = 3, .ggb = 4, .rows = 2, .ys = 5 },
+        .count = 2,
+    };
+    request.layers[0] = .{ .layer = 0, .state_in = 100, .state_out = 200 };
+    request.layers[1] = .{ .layer = 2, .state_in = 300, .state_out = 400 };
+    var target = request;
+    for (target.layers[0..target.count]) |*mapping| std.mem.swap(u64, &mapping.state_in, &mapping.state_out);
+    for (0..6) |scenario| {
+        var pair: [2]std.posix.socket_t = undefined;
+        if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &pair) != 0) return error.SocketPair;
+        defer for (pair) |descriptor| {
+            _ = std.c.close(descriptor);
+        };
+        const nonblock: c_int = @bitCast(@as(u32, @bitCast(std.c.O{ .NONBLOCK = true })));
+        for (pair) |descriptor| {
+            const flags = std.c.fcntl(descriptor, std.c.F.GETFL);
+            if (flags < 0 or std.c.fcntl(descriptor, std.c.F.SETFL, flags | nonblock) < 0) return error.Nonblocking;
+        }
+        const Peer = struct {
+            fn run(link: wire.Link, current: usize) void {
+                var control = GraphTestDriver.control(link);
+                const selected = control.graphAgree(51, .{
+                    .state = if (current == 2) .pending else if (current == 3) .capture else .ready,
+                    .cohort = if (current == 1) 8 else 7,
+                }) catch @panic("binding selection failed");
+                if (selected.choice != .replay) return;
+                const result = control.graphAgree(52, .{ .state = if (current == 5) .failed else .ready, .cohort = 7 });
+                if (current == 4 or current == 5) {
+                    if (result) |_| @panic("binding failure accepted") else |err| std.debug.assert(err == error.GraphInstantiationFailed);
+                } else {
+                    std.debug.assert((result catch @panic("binding commit failed")).choice == .replay);
+                }
+            }
+        };
+        const peer = try std.Thread.spawn(.{}, Peer.run, .{ wire.Link{ .fd = pair[1] }, scenario });
+        defer peer.join();
+        var control = GraphTestDriver.control(.{ .fd = pair[0] });
+        var state = try state_binding.Binding.init(42, request);
+        for (request.layers[0..request.count], 0..) |mapping, index| {
+            state.nodes[index] = index;
+            state.parameters[index] = .{ .nonstate = request.nonstate, .state_in = mapping.state_in, .state_out = mapping.state_out };
+        }
+        state.loaded = true;
+        var fake: Fake = .{ .fail = scenario == 4 };
+        const selected = try control.graphAgree(51, .{ .state = .ready, .cohort = 7 });
+        var published = false;
+        if (selected.choice == .replay) {
+            if (scenario == 4 or scenario == 5) {
+                try std.testing.expectError(error.GraphInstantiationFailed, state.applyTogether(&fake, target, &control, 52, selected.cohort));
+                try std.testing.expect(state.poisoned);
+            } else {
+                try state.applyTogether(&fake, target, &control, 52, selected.cohort);
+                published = true;
+            }
+        }
+        try std.testing.expectEqual(scenario == 0, published);
+        try std.testing.expectEqual(@as(usize, if (scenario == 0 or scenario >= 4) 2 else 0), fake.calls);
+    }
+}
+
+test "exl3: state binding current pass maps physical layers and declines in-place width1" {
+    const batch = @import("cuda_batch.zig");
+    var pass: batch.Pass(struct {}) = undefined;
+    var kernels: batch.Kernels = undefined;
+    kernels.chain = .{ .d = undefined, .handle = @ptrFromInt(10) };
+    kernels.chain_to = .{ .d = undefined, .handle = @ptrFromInt(11) };
+    var scratch: batch.Scratch = undefined;
+    scratch.gq = 1;
+    scratch.gk = 2;
+    scratch.gv = 3;
+    scratch.ggb = 4;
+    scratch.ys = 5;
+    var states: [wt.linear_n]cuda.DeviceBuffer = undefined;
+    for (&states, 0..) |*state, index| state.ptr = 1000 + index;
+    var layers: [wt.layers_n]@import("cuda_prompt_load.zig").Layer = undefined;
+    var keep: @import("cuda_batch_state.zig").Keep = .{};
+    for (&layers, 0..) |*layer, index| {
+        layer.linear = wt.linearLayer(index);
+        if (layer.linear) keep.layers[index].state_out = 2000 + wt.linearIndex(index);
+    }
+    pass.lanes = &.{};
+    pass.k = &kernels;
+    pass.s = &scratch;
+    pass.seq.state = &states;
+    pass.m.layers = &layers;
+    pass.hooks.keep = &keep;
+    var key: Key = .{ .kind = 2, .rows = 2, .scratch = 1, .scores = 2, .output = 3 };
+    const request = windowStateRequest(key, &pass).?;
+    try std.testing.expectEqual(wt.linear_n, request.count);
+    for (request.layers[0..request.count], 0..) |mapping, index| {
+        try std.testing.expectEqual(index, wt.linearIndex(mapping.layer));
+        try std.testing.expectEqual(1000 + index, mapping.state_in);
+        try std.testing.expectEqual(2000 + index, mapping.state_out);
+    }
+    key.rows = 1;
+    try std.testing.expect(windowStateRequest(key, &pass) == null);
+    key.rows = 3;
+    try std.testing.expect(windowStateRequest(key, &pass) == null);
+    key.rows = 2;
+    keep.layers[0].state_out = 0;
+    try std.testing.expect(windowStateRequest(key, &pass) == null);
+    pass.hooks.keep = null;
+    try std.testing.expect(windowStateRequest(key, &pass) == null);
+}
 
 /// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs
 /// eagerly meanwhile, and replays from the next sighting after the instantiation landed).
@@ -296,6 +636,7 @@ pub fn takePending(pd: *Pending) !?cuda.graph.Exec {
 
 /// A pending entry whose instantiation finished becomes a usable graph (or is dropped if it failed); true if usable.
 fn settle(x: *Entry) bool {
+    if (x.poisoned) return false;
     const pd = x.pending orelse return x.exec != null;
     if (!pd.done.load(.acquire)) return false;
     pd.thread.join();
@@ -318,6 +659,7 @@ fn settle(x: *Entry) bool {
 }
 
 fn drop(x: *Entry) void {
+    if (x.binding) |*binding| binding.invalidate();
     if (x.stream) |stream| stream.synchronize() catch @panic("graph retirement synchronization failed");
     defer if (x.admission) |ticket| {
         memory.release(ticket) catch unreachable;
@@ -337,6 +679,10 @@ fn drop(x: *Entry) void {
 pub const Stats = struct {
     captures: u64 = 0,
     replays: u64 = 0,
+    rebind_attempts: u64 = 0,
+    rebinds: u64 = 0,
+    rebind_failures: u64 = 0,
+    rebind_declined: u64 = 0,
     /// Steps on the device plan launched one by one (TF_FLASHNEXT_EXL3_DPLAN=1 without graphs).
     eager_dplan: u64 = 0,
     /// Steps that left for the host cut (too many rows, media, no pools).
@@ -491,6 +837,7 @@ fn note(key: Key, o: Outcome) void {
     const every: u64 = if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_LOG")) |v| std.fmt.parseInt(u64, std.mem.span(v), 10) catch 256 else 256;
     if (every == 0 or steps_seen % every != 0) return;
     if (profileEnabled()) logProfile();
+    std.log.info("EXL3 state rebind attempts/succeeded/failed/declined {d}/{d}/{d}/{d}", .{ stats.rebind_attempts, stats.rebinds, stats.rebind_failures, stats.rebind_declined });
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
     for (0..2) |k| for (1..17) |r| {
@@ -562,6 +909,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         note(key, .replay);
         return e.exec.?.launchOn(pass.stream);
     }
+    if (try tryRebind(key, pass)) return;
     if (sighting(key) < after()) {
         stats.eager_dplan += 1;
         note(key, .eager);
@@ -595,11 +943,13 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         // stream's) or the cache is full: two live variants of one shape (a window's state ping-pong) keep two graphs
         var free_slot = false;
         for (&entries) |*e| free_slot = free_slot or e.* == null;
-        if (!tp or tpUpdate()) {
-            for (&entries) |*e| if (e.*) |*x| if (x.exec != null and x.pending == null and sameShape(x.key, key) and (!free_slot or clock - x.used > stale_after)) {
+        if ((!tp or tpUpdate()) and capturedBinding(key, pass, graph) == null) {
+            for (&entries) |*e| if (e.*) |*x| if (!x.poisoned and x.exec != null and x.pending == null and sameShape(x.key, key) and (!free_slot or clock - x.used > stale_after)) {
                 // every earlier launch finished (each step ends on the host), so the old parameters are free to go
                 const r = try x.exec.?.update(graph);
                 if (r == .success) {
+                    if (x.binding) |*binding| binding.invalidate();
+                    x.binding = null;
                     try uploadResident(&x.exec.?, pass.stream);
                     x.key = key;
                     x.used = clock;
@@ -621,14 +971,15 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
             if (api.get(&ctx) == 0) {
                 const sl = slot();
                 const pd = try std.heap.c_allocator.create(Pending);
-                pd.* = .{ .graph = graph, .ctx = ctx, .keep_template = tp, .started_ns = wire.now() };
+                const binding = capturedBinding(key, pass, graph);
+                pd.* = .{ .graph = graph, .ctx = ctx, .keep_template = tp or binding != null, .started_ns = wire.now() };
                 kept = true;
                 pd.thread = std.Thread.spawn(.{}, Pending.main, .{pd}) catch |err| {
                     kept = false;
                     std.heap.c_allocator.destroy(pd);
                     return err;
                 };
-                sl.* = .{ .key = key, .used = clock, .pending = pd, .admission = admission, .stream = pass.stream };
+                sl.* = .{ .key = key, .used = clock, .pending = pd, .admission = admission, .stream = pass.stream, .binding = binding };
                 admitted = false;
                 note(key, .instantiated);
                 stats.captures += 1;
@@ -644,6 +995,11 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         try uploadResident(&exec, pass.stream);
         try memory.installed(admission);
         sl.* = .{ .key = key, .exec = exec, .used = clock, .admission = admission, .stream = pass.stream };
+        sl.*.?.binding = capturedBinding(key, pass, graph);
+        if (sl.*.?.binding != null) {
+            sl.*.?.template = graph;
+            kept = true;
+        }
         admitted = false;
         note(key, .instantiated);
         break :blk &sl.*.?;
@@ -658,6 +1014,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
 fn graphSignature(key: Key, pos0: usize) u64 {
     var hash = std.hash.Wyhash.init(0);
     std.hash.autoHash(&hash, .{ key.kind, key.rows, key.chunks, key.score_tiles, key.scratch_cap, key.keep != 0, key.streams != 0, pos0 });
+    std.hash.autoHash(&hash, stateRebindEnabled());
     for (key.seq, key.paging) |seq, paging| std.hash.autoHash(&hash, .{ seq[3], paging[4], paging[5] });
     return hash.final();
 }
@@ -678,7 +1035,9 @@ fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const 
     var entry = find(key);
     if (entry) |x| x.used = clock;
     const vote = if (entry != null) graphVote(entry, c.graphTimeoutMs()) else collective.GraphVote{
-        .state = if (sighting(key) < after()) .eager else .capture,
+        .state = if (stateRequest(key, pass)) |request|
+            if (rebindCandidate(key, request, true) != null) .capture else if (sighting(key) < after()) .eager else .capture
+        else if (sighting(key) < after()) .eager else .capture,
     };
     const decision = try c.graphAgree(signature, vote);
     switch (decision.choice) {
@@ -695,6 +1054,7 @@ fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const 
         },
         .capture => {},
     }
+    if (try tryRebindTogether(c, signature, key, pass)) return;
     const started = std.Io.Clock.awake.now(pass.io).toNanoseconds();
     try pass.stream.synchronize();
     const admission = try reserveTogether(c, pass.stream, signature, decision.cohort);
@@ -718,8 +1078,8 @@ fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const 
     defer if (!kept) graph.deinit();
     var updated = false;
     var candidate: ?*Entry = null;
-    if (tpUpdate()) for (&entries) |*maybe| if (maybe.*) |*current| {
-        if (current.cohort != 0 and current.exec != null and current.pending == null and sameShape(current.key, key) and
+    if (tpUpdate() and capturedBinding(key, pass, graph) == null) for (&entries) |*maybe| if (maybe.*) |*current| {
+        if (!current.poisoned and current.cohort != 0 and current.exec != null and current.pending == null and sameShape(current.key, key) and
             (std.meta.eql(current.key, key) or clock - current.used > stale_after))
         {
             if (candidate == null or current.used < candidate.?.used) candidate = current;
@@ -733,6 +1093,8 @@ fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const 
         const current = candidate.?;
         const result = try current.exec.?.update(graph);
         if (result == .success) {
+            if (current.binding) |*binding| binding.invalidate();
+            current.binding = null;
             if (current.template) |*old| old.deinit();
             current.template = graph;
             kept = true;
@@ -777,13 +1139,13 @@ fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const 
             return error.GraphBudgetBusy;
         };
         if (try startInstantiate(graph, true)) |pending| {
-            target.* = .{ .key = key, .used = clock, .pending = pending, .cohort = decision.cohort, .admission = admission, .stream = pass.stream };
+            target.* = .{ .key = key, .used = clock, .pending = pending, .cohort = decision.cohort, .admission = admission, .stream = pass.stream, .binding = capturedBinding(key, pass, graph) };
         } else {
             var exec = try graph.instantiate();
             errdefer exec.deinit();
             try uploadResident(&exec, pass.stream);
             try memory.installed(admission);
-            target.* = .{ .key = key, .exec = exec, .used = clock, .template = graph, .cohort = decision.cohort, .admission = admission, .stream = pass.stream };
+            target.* = .{ .key = key, .exec = exec, .used = clock, .template = graph, .cohort = decision.cohort, .admission = admission, .stream = pass.stream, .binding = capturedBinding(key, pass, graph) };
         }
         admitted = false;
         kept = true;
@@ -907,7 +1269,10 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
         key.seq[0] = Key.seqOf(seq);
         if (seq.paged) |pg| key.paging[0] = pg.graphKey();
         Key.seams(seq.fed + n, &key.chunks[0], &key.score_tiles[0]);
-        if (hooks.keep) |kp| key.keep = std.hash.Wyhash.hash(1, std.mem.asBytes(kp)); // its contents (the buffers the graph writes), not where the Draft struct sits
+        if (hooks.keep) |kp| {
+            key.keep = std.hash.Wyhash.hash(1, std.mem.asBytes(kp));
+            if (stateRebindEnabled()) key.keep_nonstate = state_binding.keepHash(kp.*);
+        }
         const tp0 = std.Io.Clock.awake.now(p.io).toNanoseconds();
         try prepareWindow(p, ids, seq.fed);
         stats.prepare_ns += @intCast(std.Io.Clock.awake.now(p.io).toNanoseconds() - tp0);
@@ -1576,6 +1941,16 @@ fn testTPUpdate(peer_accept: bool) !void {
     var old_key = key;
     old_key.scratch = 1;
     entries[0] = .{ .key = old_key, .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .template = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = 1, .cohort = 7, .admission = old_ticket };
+    var old_binding_request: state_binding.Request = .{
+        .width = 2,
+        .chain = 10,
+        .chain_to = 11,
+        .geometry = .{ .grid = .{ 16, 8, 1 }, .block = .{ 128, 1, 1 } },
+        .nonstate = .{ .gq = 1, .gk = 2, .gv = 3, .ggb = 4, .rows = 2, .ys = 5 },
+        .count = 1,
+    };
+    old_binding_request.layers[0] = .{ .layer = 0, .state_in = 100, .state_out = 200 };
+    entries[0].?.binding = try state_binding.Binding.init(1, old_binding_request);
     seen[0] = .{ .key = key, .n = std.math.maxInt(u32) - 1, .used = 1 };
     const previous_clock = clock;
     defer clock = previous_clock;
@@ -1624,6 +1999,7 @@ fn testTPUpdate(peer_accept: bool) !void {
     try std.testing.expectEqual(@as(usize, if (peer_accept) 0 else 1), GraphTestDriver.exec_drops);
     try std.testing.expectEqual(@as(u64, 30), memory.charged());
     try std.testing.expectEqual(@as(u64, 11), find(key).?.cohort);
+    try std.testing.expect(find(key).?.binding == null);
     try std.testing.expectError(error.StaleGraphTicket, memory.release(old_ticket));
     try std.testing.expectEqual(@as(usize, 1), pass.chunks);
 }
