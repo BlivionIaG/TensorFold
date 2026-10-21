@@ -29,7 +29,30 @@ const snap_ring = 64;
 
 const SlotState = enum(u8) { free, pending };
 
-pub const Stats = struct { copies: u64 = 0, wasted: u64 = 0, ring_full: u64 = 0, release_waits: u64 = 0, compute_waits: u64 = 0, reseeded: u64 = 0 };
+pub const Stats = struct {
+    copies: u64 = 0,
+    dma_requested_bytes: u64 = 0,
+    hit_picks: u64 = 0,
+    miss_picks: u64 = 0,
+    hit_expert_requests: u64 = 0,
+    miss_expert_requests: u64 = 0,
+    wasted: u64 = 0,
+    ring_full: u64 = 0,
+    release_waits: u64 = 0,
+    compute_waits: u64 = 0,
+    reseeded: u64 = 0,
+
+    pub fn observeDemand(stats: *Stats, present: bool, picks: u32) void {
+        if (picks == 0) return;
+        if (present) {
+            stats.hit_picks += picks;
+            stats.hit_expert_requests += 1;
+        } else {
+            stats.miss_picks += picks;
+            stats.miss_expert_requests += 1;
+        }
+    }
+};
 
 pub const Ring = struct {
     gpa: std.mem.Allocator,
@@ -67,6 +90,7 @@ pub const Ring = struct {
     own_lo: usize = 0,
     own_hi: usize = routed_n,
     stats: Stats = .{},
+    telemetry_id: u64 = 0,
 
     /// A ring over `pools` (one per decoder layer, every line the same layout); error.Invalid otherwise.
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, pools: []const *pool_.Pool) !*Ring {
@@ -82,6 +106,7 @@ pub const Ring = struct {
         const r = try gpa.create(Ring);
         errdefer gpa.destroy(r);
         r.* = .{ .gpa = gpa, .d = d, .pools = undefined, .off = undefined, .room_of = undefined, .addr = undefined, .state = undefined, .owner = undefined, .epoch_of = undefined, .copy = undefined, .cev = undefined, .rev = undefined, .tlay = cuda.exl3_pool.Tables.init(te), .shadow = undefined, .snaps = undefined };
+        r.telemetry_id = try @import("exl3_telemetry.zig").identity();
         @memcpy(&r.pools, pools);
         r.addr = try gpa.alloc(u64, n);
         errdefer gpa.free(r.addr);
@@ -343,6 +368,7 @@ pub const Ring = struct {
         r.open_layer = layer;
         r.open_n += 1;
         r.stats.copies += 1;
+        r.stats.dma_requested_bytes += src[0].len + src[1].len + src[2].len;
         return true;
     }
 

@@ -333,6 +333,9 @@ pub fn Namespace(comptime Tri: type) type {
                     break;
                 };
                 const last = stop == ids.len;
+                const previous_telemetry_phase = self.engine.telemetry.forward_phase;
+                self.engine.telemetry.forward_phase = .prefill;
+                defer self.engine.telemetry.forward_phase = previous_telemetry_phase;
                 if (l.draft) |*d| {
                     try self.ops().prefillChunk(&l.seq, d, ids, at, stop);
                 } else if (self.ranks) |r| {

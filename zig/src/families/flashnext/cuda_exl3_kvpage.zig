@@ -12,6 +12,7 @@ const std = @import("std");
 const cuda = @import("cuda");
 const wt = @import("cuda_prompt_wt.zig");
 const parts = @import("cuda_batch_state.zig");
+const telemetry = @import("exl3_telemetry.zig");
 pub const shared_contract = @import("exl3_shared_kv.zig");
 pub const shared_device = @import("cuda_exl3_shared_kv.zig");
 
@@ -320,6 +321,8 @@ pub const Paged = struct {
     rebases: [attn_n]u64 = @splat(0),
     written: [attn_n]u64 = @splat(0),
     graph_prepared: bool = false,
+    telemetry_id: u64 = 0,
+    telemetry_revision: u64 = 0,
     shared_arena: ?*shared_device.Arena = null,
     shared_sequence: shared_contract.Sequence = undefined,
 
@@ -342,6 +345,7 @@ pub const Paged = struct {
         const pg = try gpa.create(Paged);
         errdefer gpa.destroy(pg);
         pg.* = .{ .gpa = gpa, .d = d, .k = undefined, .cfg = cfg, .cap = cap, .wr = layout.wr, .nblocks = layout.nblocks, .host = undefined, .host_dev = 0, .status_host = undefined, .dev = undefined, .tabs = undefined, .work = undefined };
+        pg.telemetry_id = try telemetry.identity();
         pg.shared_arena = shared;
         if (shared) |arena| pg.shared_sequence = try arena.register(cap) else pg.k = try Kern.load(d);
         errdefer if (shared) |arena| arena.release(pg.shared_sequence, .{ .d = d, .handle = null }) catch unreachable else pg.k.module.unload();
@@ -450,6 +454,7 @@ pub const Paged = struct {
 
     /// An empty cache with a fresh device clock and every window at 0.
     fn resetTables(pg: *Paged, stream: ?cuda.Stream) !void {
+        pg.advanceTelemetry();
         if (pg.cfg.shared_lanes != 0) {
             const arena = pg.shared_arena.?;
             try arena.clear(try arena.leaseFor(pg.shared_sequence), pg.shared_sequence, stream orelse .{ .d = pg.d, .handle = null });
@@ -551,10 +556,15 @@ pub const Paged = struct {
     }
 
     pub fn publishSnapshot(pg: *Paged, image: Snapshot) void {
+        pg.advanceTelemetry();
         pg.win0 = image.win0;
         pg.rebases = image.rebases;
         pg.written = image.written;
         pg.graph_prepared = false;
+    }
+
+    fn advanceTelemetry(pg: *Paged) void {
+        if (pg.telemetry_revision == std.math.maxInt(u64)) pg.telemetry_id = 0 else pg.telemetry_revision += 1;
     }
 
     pub fn flushLayer(pg: *Paged, stream: cuda.Stream, ai: usize, fed: usize) !void {
@@ -575,7 +585,14 @@ pub const Paged = struct {
     pub fn stats(pg: *const Paged, ai: usize) !Stats {
         var c: [ctl_n]i32 = undefined;
         try pg.d.check(pg.d.api.cuMemcpyDtoH_v2(&c, pg.tab(ai).ctl, ctl_n * 4), "cuMemcpyDtoH");
-        return .{ .misses = @intCast(c[3]), .needed = @intCast(c[4]), .calls = @intCast(c[5]), .overflow = c[2] != 0, .rebases = pg.rebases[ai], .written_rows = pg.written[ai], .epoch = @bitCast(c[6]) };
+        return .{ .misses = @as(u32, @bitCast(c[3])), .needed = @as(u32, @bitCast(c[4])), .calls = @as(u32, @bitCast(c[5])), .overflow = c[2] != 0, .rebases = pg.rebases[ai], .written_rows = pg.written[ai], .epoch = @bitCast(c[6]) };
+    }
+
+    pub fn sampleClockAfterConsumers(pg: *const Paged) !u32 {
+        const address = if (pg.shared_arena) |arena| arena.tables.ptr + arena.layout.clock else pg.tab(0).ctl;
+        var clock: u32 = undefined;
+        try pg.d.check(pg.d.api.cuMemcpyDtoH_v2(&clock, address, @sizeOf(u32)), "cuMemcpyDtoH(KV telemetry clock)");
+        return clock;
     }
 
     pub fn total(pg: *const Paged) !Stats {

@@ -115,6 +115,7 @@ pub fn pooledBytes(cap: usize) usize {
 }
 
 const round_graph = @import("cuda_round_graph.zig");
+const cache_telemetry = @import("cuda_prompt_telemetry.zig");
 
 /// One loaded checkpoint: the embedding table, every layer, the mixer and head, and the batched pass's scratch.
 pub const Engine = struct {
@@ -145,10 +146,13 @@ pub const Engine = struct {
     collective: ?*@import("cuda_collective.zig").Collective = null,
     page_config: ?kvpage.Config = null,
     shared_arena: ?*kvpage.shared_device.Arena = null,
+    telemetry: cache_telemetry.State = .{},
     /// Each layer's Living Weights pocket, from a taught folder's shards or the learner: every pass adds it.
     pockets: pocket.Pockets = .{},
     /// During a round of taught and untaught streams: its rows' pocket scales (0 on an untaught row); 0: none.
     taught_rows: u64 = 0,
+
+    const measured = cache_telemetry.Operations(Engine, Seq, batch.Hooks, .{ .forward = forwardUnmeasured, .round = roundUnmeasured });
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, driver: *cuda.Driver, stream: *cuda.Stream, model_dir: []const u8) !*Engine {
         return initRank(gpa, io, driver, stream, model_dir, 1, 0);
@@ -169,6 +173,7 @@ pub const Engine = struct {
         e.image_factory = null;
         e.page_config = kvpage.configFromEnv();
         e.shared_arena = null;
+        e.telemetry = cache_telemetry.State.fromEnv(rank, world);
         e.round_graph = .{};
         errdefer for (e.layers[0..e.n_layers]) |*l| l.free(gpa);
         e.model_dir = try gpa.dupe(u8, model_dir);
@@ -352,10 +357,7 @@ pub const Engine = struct {
         return e.forward(Tri, tri, seq, ids, .{});
     }
 
-    fn complete(e: *Engine) !void {
-        if (e.collective) |c| return c.finish(e.stream.*);
-        try e.stream.synchronize();
-    }
+    const complete = measured.complete;
 
     pub fn reserveSharedKv(e: *Engine, cap: usize) !usize {
         return shared_kv.reserve(e, cap);
@@ -406,7 +408,9 @@ pub const Engine = struct {
     }
 
     /// The batched pass over `ids` from `seq.fed` in chunks of at most `chunk` rows; a window's hooks take one chunk.
-    pub fn forward(e: *Engine, comptime Tri: type, tri: Tri, seq: *Seq, ids: []const u32, hooks: batch.Hooks) !void {
+    pub const forward = measured.forward;
+
+    fn forwardUnmeasured(e: *Engine, comptime Tri: type, tri: Tri, seq: *Seq, ids: []const u32, hooks: batch.Hooks) !void {
         if (seq.invalidated) return error.SnapshotDestinationInvalid;
         if (ids.len == 0 or seq.fed > seq.cap or ids.len > seq.cap - seq.fed) return error.UnexpectedTensor;
         const shared_sequences = [_]*Seq{seq};
@@ -452,7 +456,9 @@ pub const Engine = struct {
     }
 
     /// One decode round: each of `seqs` takes its token of `ids` in one batched pass; scores as if alone.
-    pub fn round(e: *Engine, comptime Tri: type, tri: Tri, seqs: []const *Seq, ids: []const u32, out: u64) !void {
+    pub const round = measured.round;
+
+    fn roundUnmeasured(e: *Engine, comptime Tri: type, tri: Tri, seqs: []const *Seq, ids: []const u32, out: u64) !void {
         if (seqs.len == 0 or seqs.len != ids.len) return error.UnexpectedTensor;
         var cap: usize = 0;
         for (seqs) |q| {

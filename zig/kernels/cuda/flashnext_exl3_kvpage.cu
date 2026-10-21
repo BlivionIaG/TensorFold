@@ -93,9 +93,10 @@ __device__ __forceinline__ void kvp_plan_body(const int* __restrict__ ids, const
     if (threadIdx.x == 0) {
         if (n_miss > s_avail) ctl[2] = 1;
         ctl[1] = n_miss > s_avail ? 0 : n_miss;
-        ctl[3] += ctl[1];
-        ctl[4] += n_need;
-        ctl[5] += 1;
+        unsigned* counters = reinterpret_cast<unsigned*>(ctl);
+        counters[3] += ctl[1];
+        counters[4] += n_need;
+        counters[5] += 1;
     }
     if (n_miss > s_avail) return;
     n_miss = min(n_miss, s_avail);
