@@ -1,0 +1,237 @@
+{
+  "scope": "Actual source-bound first826 and topa44 hardware contract qualification",
+  "files": [
+    {
+      "path": "EXECUTION_INTENT",
+      "original_sha256": "bd9e11126c3db9b0b193e579816220d6b83e06656208b0844b9e10cb1c0884cc",
+      "public_sha256": "bd9e11126c3db9b0b193e579816220d6b83e06656208b0844b9e10cb1c0884cc",
+      "original_bytes": 6,
+      "public_bytes": 6,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "QUALIFICATION_ALL_PASS",
+      "original_sha256": "e7095c48f90c7cd10bc7b9d380220d425f3b3d2da81504f266915ab37f0e0b37",
+      "public_sha256": "e7095c48f90c7cd10bc7b9d380220d425f3b3d2da81504f266915ab37f0e0b37",
+      "original_bytes": 65,
+      "public_bytes": 65,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "bundle_verify.log",
+      "original_sha256": "28bade166146147717628760aa4d701aab5a50542e2a322c5630268988970794",
+      "public_sha256": "e862fe1fa682cb3705a1468be80baf3a59d2ea401efe074ae947c108950ae83c",
+      "original_bytes": 348,
+      "public_bytes": 338,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "driver.launched.json",
+      "original_sha256": "f6822ebd14e638c12dfdbc4f65ae02418fede3bc7d3dc2794284e20bdd7c6040",
+      "public_sha256": "3814c71c75e65d6038e65098477e699eeff2a2200008a86990b9bfd104d5ac09",
+      "original_bytes": 303,
+      "public_bytes": 293,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "driver.stdout",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "fetch.log",
+      "original_sha256": "aef1ecfbcc08dd711f25b14aaee2db7a73f903dab3f9f25cce0c8dde431d8a93",
+      "public_sha256": "0b9d6c9676601db34e446cb0367dab0dbb34aa607e55da44d763feebd3a3f5d9",
+      "original_bytes": 231,
+      "public_bytes": 221,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_gfx1030_build.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_gfx1030_live.log",
+      "original_sha256": "129f027b8313f8a7548fb0dcc606d58253ae03af981bedfbfd41ed7300bdd976",
+      "public_sha256": "129f027b8313f8a7548fb0dcc606d58253ae03af981bedfbfd41ed7300bdd976",
+      "original_bytes": 5219,
+      "public_bytes": 5219,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_gfx1100_build.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_gfx1100_live.log",
+      "original_sha256": "3df1ea8e1bd1ad17f8345d1b5f6bee366e0ff5602624885b50346c88bb2e3b50",
+      "public_sha256": "3df1ea8e1bd1ad17f8345d1b5f6bee366e0ff5602624885b50346c88bb2e3b50",
+      "original_bytes": 5219,
+      "public_bytes": 5219,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_limits.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "gpu_cleanup.json",
+      "original_sha256": "a659554abbc1c7168a4395e891e72741cebf17edac2e19339ca715b3c7deb3c0",
+      "public_sha256": "a659554abbc1c7168a4395e891e72741cebf17edac2e19339ca715b3c7deb3c0",
+      "original_bytes": 510,
+      "public_bytes": 510,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "qualification_download_manifest.json",
+      "original_sha256": "b27b0061f9d3cf8e9cc4ecb4df17c8be883554759b413c84a4df3810ba9055e2",
+      "public_sha256": "b27b0061f9d3cf8e9cc4ecb4df17c8be883554759b413c84a4df3810ba9055e2",
+      "original_bytes": 3829,
+      "public_bytes": 3829,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "result.json",
+      "original_sha256": "5eb4061f528667a671e90bb96f6596a4aede7309cc7a1d3e6c12c72f0b7692a5",
+      "public_sha256": "56355d5038d46069b5f2664aec00dcfce23a7c3ad11dc1594311c5eb90fcf057",
+      "original_bytes": 34028,
+      "public_bytes": 33388,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "run.py",
+      "original_sha256": "2c8b4cd8dd44ad219dee1b9ef120c42039c713afeba8d1d51c34937486c92289",
+      "public_sha256": "2c8b4cd8dd44ad219dee1b9ef120c42039c713afeba8d1d51c34937486c92289",
+      "original_bytes": 11438,
+      "public_bytes": 11438,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "source_creation.json",
+      "original_sha256": "76decba35b1a05eb6fe5113bf554dd605067e1355aac68fa236a8fa3cf47ff36",
+      "public_sha256": "2c3cb95fce7217932fed9764522813ee7f3e454249ce69759a08660b0e390cf1",
+      "original_bytes": 918,
+      "public_bytes": 898,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "top_gfx1030_build.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "top_gfx1030_live.log",
+      "original_sha256": "bbbfe5231e64762ffba2d75603c13ed96994e500575676a162d460279373e8b5",
+      "public_sha256": "bbbfe5231e64762ffba2d75603c13ed96994e500575676a162d460279373e8b5",
+      "original_bytes": 48730,
+      "public_bytes": 48730,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "top_gfx1100_build.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "top_gfx1100_live.log",
+      "original_sha256": "fc7cdeda386488b80657470dc67da8870baed4a8798ca24441b6f80756358049",
+      "public_sha256": "fc7cdeda386488b80657470dc67da8870baed4a8798ca24441b6f80756358049",
+      "original_bytes": 49002,
+      "public_bytes": 49002,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "top_limits.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_first_gfx1030_build.log",
+      "original_sha256": "8565b06b3fc9d7786810e3e1893ff1ecc07dc5919918f606fcc50dc6646c4d92",
+      "public_sha256": "ca8e59ba7d45fd049780a0e9b9ec1883b62a55e2af1db2562a032dbbc1f9226c",
+      "original_bytes": 2795,
+      "public_bytes": 2715,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_first_gfx1100_build.log",
+      "original_sha256": "494c8fbe3fea69bd1b788bbf4ca08d88053b5c76e61eb00a0f5c882bb9488761",
+      "public_sha256": "e1c862c6b43fc0de24a9ce2c689fd2755cd2c8c2e234bf885a1916490c1986e8",
+      "original_bytes": 2795,
+      "public_bytes": 2715,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_first_limits.log",
+      "original_sha256": "7864844a00862787c4f8ca02a044866289edc2fcda83f33e599d170b0235a18c",
+      "public_sha256": "142be4cf7ebb83d3706d8bdce678c724f9b1a162125219f0c8f50438177268bc",
+      "original_bytes": 46111,
+      "public_bytes": 45561,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_top_gfx1030_build.log",
+      "original_sha256": "72e9be426ce629475e2427dcec08d517bd2d5c70761ef3b16493b6add615d66d",
+      "public_sha256": "be8303626b448fe483fa88099a6fe85f8c2631ab8d9aa243a6e847447f656c29",
+      "original_bytes": 2862,
+      "public_bytes": 2782,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_top_gfx1100_build.log",
+      "original_sha256": "20b51628b4f1cf8e8dd90264678a284d273a51eb19f299698dbd12b1a4b96293",
+      "public_sha256": "6c20c21b9bc33a5f1c23084104f9c2c34394a9f0222f550d960bafa06715af3f",
+      "original_bytes": 2862,
+      "public_bytes": 2782,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_top_limits.log",
+      "original_sha256": "7c37a6f38ee7ff60ed3ae1335df0925af06b24c227cdb5ec3929770721f80332",
+      "public_sha256": "a7d23ebdf08b6c791fcb4c87f4ba0ae554fcd17336776537df19c7038d70698c",
+      "original_bytes": 177084,
+      "public_bytes": 176494,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "zb.sh.retained",
+      "original_sha256": "9464ba58dcf80191bb926aa8e3a10744a51dd5530ea062ad666951fad62218ab",
+      "public_sha256": "9464ba58dcf80191bb926aa8e3a10744a51dd5530ea062ad666951fad62218ab",
+      "original_bytes": 761,
+      "public_bytes": 761,
+      "normalization": "Private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "README.md",
+      "original_sha256": null,
+      "public_sha256": "bc82a30c6b3d39a5c0f9fe71e4bb95c556b442fb39cd8a8230df41567b101648",
+      "public_bytes": 1675,
+      "generated": true
+    }
+  ],
+  "manifest_excludes_itself": true
+}

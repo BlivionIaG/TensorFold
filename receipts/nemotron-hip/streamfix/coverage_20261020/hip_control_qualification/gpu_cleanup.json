@@ -1,0 +1,11 @@
+{
+  "source_first": "826a0635634dee3793a68e473064d17d5c139945",
+  "source_top": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
+  "result_sha256": "5eb4061f528667a671e90bb96f6596a4aede7309cc7a1d3e6c12c72f0b7692a5",
+  "boot_id": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "all_ten_owned_groups_gone": true,
+  "qualification_controller_absent_or_reaped": true,
+  "canonical_gpu_lock_released_verified": true,
+  "full_cpu_wrapper_42162_separately_active": true,
+  "checked_at_utc": "2026-10-21T06:28:44.615919+00:00"
+}

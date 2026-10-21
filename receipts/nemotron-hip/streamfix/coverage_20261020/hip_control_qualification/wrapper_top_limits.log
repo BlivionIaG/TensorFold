@@ -1,0 +1,887 @@
+info(verbose): <HOME>/.local/zig-0.17.0/zig build-exe --cache-dir .zig-cache --global-cache-dir <HOME>/.cache/zig --build-root . --zig-lib-dir <HOME>/.local/zig-0.17.0/lib --name configurer -fsingle-threaded --dep @build --dep @dependencies -Mroot=<HOME>/.local/zig-0.17.0/lib/compiler/configurer.zig -M@dependencies=.zig-cache/o/ce72526ee7fc0580e3a089da327c554a/dependencies.zig -M@build=build.zig --listen=-
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/2f197b6938a94673ffed167f58f61342/group4.hsaco ./zig/kernels/hip/attention/prefill.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/7b68f18620ccf8471233e59f8c9389d1/group9.hsaco ./zig/kernels/hip/flashnext/flashnext.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/3c146198cce34fd11820b994de5ee9e1/group4.hsaco ./zig/kernels/hip/attention/prefill.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/128630e59d9802e9cc6cff0b807f072f/group6.hsaco ./zig/kernels/hip/decode/plan.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/b31b813279dd5cd9e668f2cc5ae77852/group10.hsaco ./zig/kernels/hip/recurrence/mamba.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/bed624d64b7669278dec5d9511aed885/group4.hsaco ./zig/kernels/hip/attention/prefill.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/4032ad45d8be28f6692f5561dc14e5ea/group1.hsaco ./zig/kernels/hip/ops/act.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/124b2bd4d12dca13a8d9482ab7fb3e7e/group4.hsaco ./zig/kernels/hip/attention/prefill.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/1c84360867067fc7cd0cfd124c9bbbf1/group5.hsaco ./zig/kernels/hip/decode/decode.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/4affb810e0fa555754c01c6aa7023ae0/group2.hsaco ./zig/kernels/hip/attention/attention.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/7a0f148d7401a3ff79b86467ac3cc19b/group1.hsaco ./zig/kernels/hip/ops/act.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/38bd4f843546abca578430e45db5bd59/group7.hsaco ./zig/kernels/hip/tiles/dot2_tiles.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/d88a250a895b662842e8e2b4dca2ee44/group7.hsaco ./zig/kernels/hip/tiles/dot2_tiles.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/1f4d5bd5d91279388528a0d8f11368bf/group8.hsaco ./zig/kernels/hip/tiles/dot2.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/6fd0eb731b1ad75acb169f31fc8cb416/group10.hsaco ./zig/kernels/hip/recurrence/mamba.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/66d425d7fff89203be71b418b39d6d81/group10.hsaco ./zig/kernels/hip/recurrence/mamba.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/3b21c4044dd97a93ad928a4fd058ade4/group0.hsaco ./zig/kernels/hip/ops/ops.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/eefae342aa870a53ae492125a13d087b/group3.hsaco ./zig/kernels/hip/recurrence/gated_delta.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/0a4cd90d7cdf6262d760172c1b7c26fc/group2.hsaco ./zig/kernels/hip/attention/attention.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/c89752c15c7a7780b4fc36da2455efcb/group6.hsaco ./zig/kernels/hip/decode/plan.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/8c59be3305f9438cb2be21e1e7aec614/group9.hsaco ./zig/kernels/hip/flashnext/flashnext.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/102e4ca4cfb651ed791d0379629b4350/group1.hsaco ./zig/kernels/hip/ops/act.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/8770bcef2f819a78fbfd359fd5e24435/group6.hsaco ./zig/kernels/hip/decode/plan.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/27982520615435cc77b79c33c1f4a432/group3.hsaco ./zig/kernels/hip/recurrence/gated_delta.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/ac26dd849b5e9c33061ef6676f0664a8/group3.hsaco ./zig/kernels/hip/recurrence/gated_delta.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/494407506fc2ba31649238840a8e8859/group10.hsaco ./zig/kernels/hip/recurrence/mamba.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/cdfa067d2b9c421910ef226538dcd77b/group8.hsaco ./zig/kernels/hip/tiles/dot2.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/7a6b54e1c8a358cfe0ecf1febf158c99/group2.hsaco ./zig/kernels/hip/attention/attention.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/df57b0bb1c58e937254f4014c5626dd6/group0.hsaco ./zig/kernels/hip/ops/ops.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/ca0437beedbeededab3414b981558b5e/group0.hsaco ./zig/kernels/hip/ops/ops.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/99223511364020f5f231637477cc13ce/contract_controls.hsaco ./zig/kernels/hip/contract_controls.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/1d4f484a573826f0daa5665fb7c7ec9e/group5.hsaco ./zig/kernels/hip/decode/decode.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/b4f3c15964439191de130b812cbbf12c/group3.hsaco ./zig/kernels/hip/recurrence/gated_delta.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/fd684fe877c837758ddad642b5dc2c92/group5.hsaco ./zig/kernels/hip/decode/decode.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/dac1930a1866ae15805aa9f2dd32d935/group9.hsaco ./zig/kernels/hip/flashnext/flashnext.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/ba7d9203f5b03fa52d4fada070cc6d94/group7.hsaco ./zig/kernels/hip/tiles/dot2_tiles.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1201 -I./zig/kernels/hip -o ./.zig-cache/o/e30741a08ddc012cddcbebd80bd3ebc1/contract_controls.hsaco ./zig/kernels/hip/contract_controls.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/50f3d3934567fc1f41dfc81cf53bee97/group7.hsaco ./zig/kernels/hip/tiles/dot2_tiles.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/3de85f4d74bfbad9bc1180166a686e7d/contract_controls.hsaco ./zig/kernels/hip/contract_controls.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/b78b23ab05ee13f34601c6cc5e271c0c/group8.hsaco ./zig/kernels/hip/tiles/dot2.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/f76145c1708607bfbd22f0f7927ef1bc/group8.hsaco ./zig/kernels/hip/tiles/dot2.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/d18b249a80758eee7d165b26a58a35f1/group9.hsaco ./zig/kernels/hip/flashnext/flashnext.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/97948852da79dc505b13b65d8828f463/group5.hsaco ./zig/kernels/hip/decode/decode.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/c67578579a48161d1e24d38d9ab203da/group1.hsaco ./zig/kernels/hip/ops/act.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/519fbf81c017c3f165e935b5b1af2f2f/group0.hsaco ./zig/kernels/hip/ops/ops.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1151 -I./zig/kernels/hip -o ./.zig-cache/o/fa89098ec10ce15343a87e505a2c7923/group6.hsaco ./zig/kernels/hip/decode/plan.hip
+info(verbose): <HOME>/.local/zig-0.17.0/zig build-exe -Odebug --dep hip --dep core --dep hip_controls --dep sys --dep checkpoint_config -Mroot=zig/tests/hip/contract_main.zig -Odebug --dep core --dep hip_kernels --dep cuda_memory --dep sys --dep checkpoint_config -Mhip=zig/src/hip/root.zig --dep tokenizer --dep sys --dep checkpoint_config -Mcore=zig/src/core/root.zig -Mhip_controls=.zig-cache/o/cf3a6595da6ceb047e962e00c2aefe8a/controls.zig --dep checkpoint_config -Msys=zig/src/platform/sys.zig -Mcheckpoint_config=zig/src/core/checkpoint_config.zig -Mhip_kernels=.zig-cache/o/943b4b5a4ce7d8ea1e4170c9068eeb34/kernels.zig -Odebug --dep sys --dep checkpoint_config -Mcuda_memory=zig/src/native/cuda_memory.zig --dep sys --dep checkpoint_config -Mtokenizer=zig/src/core/tokenizer/tokenizer.zig -lc --cache-dir .zig-cache --global-cache-dir <HOME>/.cache/zig --build-root . --name tf-hip-kernel-contract --zig-lib-dir <HOME>/.local/zig-0.17.0/lib/ --listen=-
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=1 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=1 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1100 -I./zig/kernels/hip -o ./.zig-cache/o/2740df2c05905771f21a76c85d6888de/group2.hsaco ./zig/kernels/hip/attention/attention.hip
+info(verbose): /opt/rocm/core-7.14/bin/hipcc --genco -D__HIP_PLATFORM_AMD__=1 -DUSE_ROCM=1 -DHIPBLAS_V2 -fPIC -DCUDA_HAS_FP16=1 -DHIP_ENABLE_WARP_SYNC_BUILTINS=1 -std=c++20 -fno-gpu-rdc -mno-wavefrontsize64 -ffp-contract=off -DTF_WAVE=32 -DTF_DOT2_F16=1 -DTF_DOT2_BF16=0 -DTF_SDOT4=1 -DTF_SDOT8=1 -DTF_MATRIX=0 --rocm-path=/opt/rocm/core-7.14 --rocm-device-lib-path=/opt/rocm/core-7.14/lib/llvm/amdgcn/bitcode --offload-arch=gfx1030 -I./zig/kernels/hip -o ./.zig-cache/o/d47b9394a7321b950728e1456e05aa9a/contract_controls.hsaco ./zig/kernels/hip/contract_controls.hip
+info(verbose): install -d <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030
+info(verbose): ./.zig-cache/o/ab07f6c7ab35ee4f745a8e094d34add3/tf-hip-kernel-contract limits ./.zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/contract_controls.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/contract_controls.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group0.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group0.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group1.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group1.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group2.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group2.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group3.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group3.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group4.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group4.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group5.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group5.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group6.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group6.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group7.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group7.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group8.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group8.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group9.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group9.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1030/group10.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1030/group10.hsaco
+info(verbose): install -d <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/contract_controls.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/contract_controls.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group0.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group0.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group1.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group1.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group2.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group2.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group3.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group3.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group4.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group4.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group5.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group5.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group6.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group6.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group7.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group7.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group8.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group8.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group9.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group9.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1100/group10.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1100/group10.hsaco
+info(verbose): install -d <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/contract_controls.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/contract_controls.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group0.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group0.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group1.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group1.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group2.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group2.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group3.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group3.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group4.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group4.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group5.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group5.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group6.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group6.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group7.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group7.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group8.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group8.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group9.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group9.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1151/group10.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1151/group10.hsaco
+info(verbose): install -d <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/contract_controls.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/contract_controls.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group0.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group0.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group1.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group1.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group2.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group2.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group3.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group3.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group4.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group4.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group5.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group5.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group6.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group6.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group7.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group7.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group8.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group8.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group9.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group9.hsaco
+info(verbose): install -C .zig-cache/o/607bbdfaef7fb1a148f5c428c32830c1/gfx1201/group10.hsaco <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top/hsaco/gfx1201/group10.hsaco
+PASS limits gfx1030 RMS norm tf_rms_rows: 58 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 RMS norm tf_rms_rows: 43 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 RMS norm tf_rms_rows: 42 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 RMS norm tf_rms_rows: 42 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD RMS norm tf_rms_rows: .usage = .{ .{ .vgprs = 58, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 43, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 42, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 42, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 RMS norm rms_kernel<__half>: 11 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 RMS norm rms_kernel<__half>: 11 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 RMS norm rms_kernel<__half>: 10 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 RMS norm rms_kernel<__half>: 10 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD RMS norm rms_kernel<__half>: .usage = .{ .{ .vgprs = 11, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 11, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 RMS norm rms_kernel<hip_bfloat16>: 11 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 RMS norm rms_kernel<hip_bfloat16>: 11 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 RMS norm rms_kernel<hip_bfloat16>: 10 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 RMS norm rms_kernel<hip_bfloat16>: 10 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD RMS norm rms_kernel<hip_bfloat16>: .usage = .{ .{ .vgprs = 11, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 11, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 mamba tf_mamba_conv: 27 VGPRs, 26 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 mamba tf_mamba_conv: 26 VGPRs, 26 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 mamba tf_mamba_conv: 26 VGPRs, 26 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 mamba tf_mamba_conv: 26 VGPRs, 26 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD mamba tf_mamba_conv: .usage = .{ .{ .vgprs = 27, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 26, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 26, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 26, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 mamba tf_mamba_dt: 16 VGPRs, 25 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 mamba tf_mamba_dt: 16 VGPRs, 25 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 mamba tf_mamba_dt: 16 VGPRs, 25 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 mamba tf_mamba_dt: 16 VGPRs, 27 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD mamba tf_mamba_dt: .usage = .{ .{ .vgprs = 16, .sgprs = 25, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 16, .sgprs = 25, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 16, .sgprs = 25, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 16, .sgprs = 27, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 mamba tf_mamba_scan: 127 VGPRs, 41 SGPRs, 20544 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 mamba tf_mamba_scan: 126 VGPRs, 41 SGPRs, 20544 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 mamba tf_mamba_scan: 125 VGPRs, 42 SGPRs, 20544 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 mamba tf_mamba_scan: 121 VGPRs, 42 SGPRs, 20544 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD mamba tf_mamba_scan: .usage = .{ .{ .vgprs = 127, .sgprs = 41, .lds = 20544, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 126, .sgprs = 41, .lds = 20544, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 125, .sgprs = 42, .lds = 20544, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 121, .sgprs = 42, .lds = 20544, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 mamba tf_mamba_gnorm: 23 VGPRs, 23 SGPRs, 16 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 mamba tf_mamba_gnorm: 23 VGPRs, 24 SGPRs, 16 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 mamba tf_mamba_gnorm: 23 VGPRs, 23 SGPRs, 16 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 mamba tf_mamba_gnorm: 23 VGPRs, 24 SGPRs, 16 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD mamba tf_mamba_gnorm: .usage = .{ .{ .vgprs = 23, .sgprs = 23, .lds = 16, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 23, .sgprs = 24, .lds = 16, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 23, .sgprs = 23, .lds = 16, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 23, .sgprs = 24, .lds = 16, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 nemotron tf_nemo_select: 27 VGPRs, 26 SGPRs, 8320 LDS bytes, 0 scratch bytes, bound 32, wave32 (record current)
+PASS limits gfx1100 nemotron tf_nemo_select: 27 VGPRs, 26 SGPRs, 8320 LDS bytes, 0 scratch bytes, bound 32, wave32 (record current)
+PASS limits gfx1151 nemotron tf_nemo_select: 27 VGPRs, 26 SGPRs, 8320 LDS bytes, 0 scratch bytes, bound 32, wave32 (record current)
+PASS limits gfx1201 nemotron tf_nemo_select: 27 VGPRs, 26 SGPRs, 8320 LDS bytes, 0 scratch bytes, bound 32, wave32 (record current)
+RECORD nemotron tf_nemo_select: .usage = .{ .{ .vgprs = 27, .sgprs = 26, .lds = 8320, .private = 0, .bound = 32, .wave = 32 }, .{ .vgprs = 27, .sgprs = 26, .lds = 8320, .private = 0, .bound = 32, .wave = 32 }, .{ .vgprs = 27, .sgprs = 26, .lds = 8320, .private = 0, .bound = 32, .wave = 32 }, .{ .vgprs = 27, .sgprs = 26, .lds = 8320, .private = 0, .bound = 32, .wave = 32 }, }
+PASS limits gfx1030 nemotron tf_nemo_select_rank: 27 VGPRs, 30 SGPRs, 8320 LDS bytes, 0 scratch bytes, bound 512, wave32 (record current)
+PASS limits gfx1100 nemotron tf_nemo_select_rank: 27 VGPRs, 30 SGPRs, 8320 LDS bytes, 0 scratch bytes, bound 512, wave32 (record current)
+PASS limits gfx1151 nemotron tf_nemo_select_rank: 27 VGPRs, 30 SGPRs, 8320 LDS bytes, 0 scratch bytes, bound 512, wave32 (record current)
+PASS limits gfx1201 nemotron tf_nemo_select_rank: 27 VGPRs, 29 SGPRs, 8320 LDS bytes, 0 scratch bytes, bound 512, wave32 (record current)
+RECORD nemotron tf_nemo_select_rank: .usage = .{ .{ .vgprs = 27, .sgprs = 30, .lds = 8320, .private = 0, .bound = 512, .wave = 32 }, .{ .vgprs = 27, .sgprs = 30, .lds = 8320, .private = 0, .bound = 512, .wave = 32 }, .{ .vgprs = 27, .sgprs = 30, .lds = 8320, .private = 0, .bound = 512, .wave = 32 }, .{ .vgprs = 27, .sgprs = 29, .lds = 8320, .private = 0, .bound = 512, .wave = 32 }, }
+PASS limits gfx1030 nemotron tf_nemo_relu2: 8 VGPRs, 9 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 nemotron tf_nemo_relu2: 8 VGPRs, 18 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 nemotron tf_nemo_relu2: 8 VGPRs, 10 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 nemotron tf_nemo_relu2: 8 VGPRs, 10 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD nemotron tf_nemo_relu2: .usage = .{ .{ .vgprs = 8, .sgprs = 9, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 8, .sgprs = 18, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 8, .sgprs = 10, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 8, .sgprs = 10, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 nemotron tf_nemo_localize: 4 VGPRs, 10 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 nemotron tf_nemo_localize: 4 VGPRs, 18 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 nemotron tf_nemo_localize: 4 VGPRs, 10 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 nemotron tf_nemo_localize: 4 VGPRs, 9 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD nemotron tf_nemo_localize: .usage = .{ .{ .vgprs = 4, .sgprs = 10, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 4, .sgprs = 18, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 4, .sgprs = 10, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 4, .sgprs = 9, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 nemotron tf_nemo_combine: 9 VGPRs, 20 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 nemotron tf_nemo_combine: 10 VGPRs, 20 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 nemotron tf_nemo_combine: 9 VGPRs, 20 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 nemotron tf_nemo_combine: 9 VGPRs, 20 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD nemotron tf_nemo_combine: .usage = .{ .{ .vgprs = 9, .sgprs = 20, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 10, .sgprs = 20, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 9, .sgprs = 20, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 9, .sgprs = 20, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_score_f16: 17 VGPRs, 34 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_score_f16: 17 VGPRs, 33 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_score_f16: 17 VGPRs, 34 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_score_f16: 17 VGPRs, 29 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD planned walk tf_plan_score_f16: .usage = .{ .{ .vgprs = 17, .sgprs = 34, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 33, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 34, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 29, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_score_bf16: 17 VGPRs, 34 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_score_bf16: 17 VGPRs, 33 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_score_bf16: 17 VGPRs, 34 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_score_bf16: 17 VGPRs, 29 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD planned walk tf_plan_score_bf16: .usage = .{ .{ .vgprs = 17, .sgprs = 34, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 33, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 34, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 29, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_softmax_stats: 9 VGPRs, 16 SGPRs, 1024 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 planned walk tf_softmax_stats: 9 VGPRs, 18 SGPRs, 1024 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 planned walk tf_softmax_stats: 9 VGPRs, 16 SGPRs, 1024 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 planned walk tf_softmax_stats: 9 VGPRs, 18 SGPRs, 1024 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD planned walk tf_softmax_stats: .usage = .{ .{ .vgprs = 9, .sgprs = 16, .lds = 1024, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 9, .sgprs = 18, .lds = 1024, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 9, .sgprs = 16, .lds = 1024, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 9, .sgprs = 18, .lds = 1024, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_apply_f16: 57 VGPRs, 44 SGPRs, 8192 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_apply_f16: 57 VGPRs, 44 SGPRs, 8192 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_apply_f16: 57 VGPRs, 44 SGPRs, 8192 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_apply_f16: 57 VGPRs, 44 SGPRs, 8192 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD planned walk tf_plan_apply_f16: .usage = .{ .{ .vgprs = 57, .sgprs = 44, .lds = 8192, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 57, .sgprs = 44, .lds = 8192, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 57, .sgprs = 44, .lds = 8192, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 57, .sgprs = 44, .lds = 8192, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_apply_bf16: 57 VGPRs, 44 SGPRs, 8192 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_apply_bf16: 57 VGPRs, 44 SGPRs, 8192 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_apply_bf16: 57 VGPRs, 44 SGPRs, 8192 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_apply_bf16: 57 VGPRs, 44 SGPRs, 8192 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD planned walk tf_plan_apply_bf16: .usage = .{ .{ .vgprs = 57, .sgprs = 44, .lds = 8192, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 57, .sgprs = 44, .lds = 8192, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 57, .sgprs = 44, .lds = 8192, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 57, .sgprs = 44, .lds = 8192, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_sum_partials: 5 VGPRs, 14 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 planned walk tf_sum_partials: 5 VGPRs, 18 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 planned walk tf_sum_partials: 5 VGPRs, 14 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 planned walk tf_sum_partials: 5 VGPRs, 16 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD planned walk tf_sum_partials: .usage = .{ .{ .vgprs = 5, .sgprs = 14, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 5, .sgprs = 18, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 5, .sgprs = 14, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 5, .sgprs = 16, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 add rms tf_add_rms_f16: 43 VGPRs, 40 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 add rms tf_add_rms_f16: 45 VGPRs, 40 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 add rms tf_add_rms_f16: 45 VGPRs, 40 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 add rms tf_add_rms_f16: 44 VGPRs, 40 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD add rms tf_add_rms_f16: .usage = .{ .{ .vgprs = 43, .sgprs = 40, .lds = 32772, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 45, .sgprs = 40, .lds = 32772, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 45, .sgprs = 40, .lds = 32772, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 44, .sgprs = 40, .lds = 32772, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 add rms tf_add_rms_bf16: 44 VGPRs, 40 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 add rms tf_add_rms_bf16: 45 VGPRs, 40 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 add rms tf_add_rms_bf16: 45 VGPRs, 40 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 add rms tf_add_rms_bf16: 44 VGPRs, 40 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD add rms tf_add_rms_bf16: .usage = .{ .{ .vgprs = 44, .sgprs = 40, .lds = 32772, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 45, .sgprs = 40, .lds = 32772, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 45, .sgprs = 40, .lds = 32772, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 44, .sgprs = 40, .lds = 32772, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 mamba tf_mamba_conv_window: 32 VGPRs, 42 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 mamba tf_mamba_conv_window: 38 VGPRs, 42 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 mamba tf_mamba_conv_window: 37 VGPRs, 42 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 mamba tf_mamba_conv_window: 37 VGPRs, 44 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD mamba tf_mamba_conv_window: .usage = .{ .{ .vgprs = 32, .sgprs = 42, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 38, .sgprs = 42, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 37, .sgprs = 42, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 37, .sgprs = 44, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 mamba tf_mamba_scan_snap: 137 VGPRs, 50 SGPRs, 20544 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 mamba tf_mamba_scan_snap: 136 VGPRs, 50 SGPRs, 20544 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 mamba tf_mamba_scan_snap: 135 VGPRs, 51 SGPRs, 20544 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 mamba tf_mamba_scan_snap: 131 VGPRs, 52 SGPRs, 20544 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD mamba tf_mamba_scan_snap: .usage = .{ .{ .vgprs = 137, .sgprs = 50, .lds = 20544, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 136, .sgprs = 50, .lds = 20544, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 135, .sgprs = 51, .lds = 20544, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 131, .sgprs = 52, .lds = 20544, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 stream tile 4-bit 1x2: 63 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 stream tile 4-bit 1x2: 65 VGPRs, 54 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 stream tile 4-bit 1x2: 65 VGPRs, 54 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 stream tile 4-bit 1x2: 65 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 stream tile 4-bit 1x2: .usage = .{ .{ .vgprs = 63, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 65, .sgprs = 54, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 65, .sgprs = 54, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 65, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 stream tile 4-bit 1x4: 101 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 stream tile 4-bit 1x4: 102 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 stream tile 4-bit 1x4: 102 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 stream tile 4-bit 1x4: 102 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 stream tile 4-bit 1x4: .usage = .{ .{ .vgprs = 101, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 stream tile 4-bit 1x8: 181 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 stream tile 4-bit 1x8: 178 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 stream tile 4-bit 1x8: 178 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 stream tile 4-bit 1x8: 178 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 stream tile 4-bit 1x8: .usage = .{ .{ .vgprs = 181, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 stream tile 4-bit 2x2: 75 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 stream tile 4-bit 2x2: 68 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 stream tile 4-bit 2x2: 68 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 stream tile 4-bit 2x2: 68 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 stream tile 4-bit 2x2: .usage = .{ .{ .vgprs = 75, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 stream tile 4-bit 2x4: 93 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 stream tile 4-bit 2x4: 102 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 stream tile 4-bit 2x4: 102 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 stream tile 4-bit 2x4: 102 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 stream tile 4-bit 2x4: .usage = .{ .{ .vgprs = 93, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 stream tile 4-bit 2x8: 157 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 stream tile 4-bit 2x8: 158 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 stream tile 4-bit 2x8: 158 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 stream tile 4-bit 2x8: 158 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 stream tile 4-bit 2x8: .usage = .{ .{ .vgprs = 157, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 stream tile 4-bit 4x2: 113 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 stream tile 4-bit 4x2: 114 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 stream tile 4-bit 4x2: 114 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 stream tile 4-bit 4x2: 114 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 stream tile 4-bit 4x2: .usage = .{ .{ .vgprs = 113, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 stream tile 4-bit 4x4: 147 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 stream tile 4-bit 4x4: 150 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 stream tile 4-bit 4x4: 150 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 stream tile 4-bit 4x4: 150 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 stream tile 4-bit 4x4: .usage = .{ .{ .vgprs = 147, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_kv_write_act: 20 VGPRs, 26 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_kv_write_act: 20 VGPRs, 26 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_kv_write_act: 20 VGPRs, 26 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_kv_write_act: 20 VGPRs, 28 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD planned walk tf_plan_kv_write_act: .usage = .{ .{ .vgprs = 20, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 20, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 20, .sgprs = 26, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 20, .sgprs = 28, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_score_act_f16: 17 VGPRs, 32 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_score_act_f16: 17 VGPRs, 32 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_score_act_f16: 17 VGPRs, 32 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_score_act_f16: 17 VGPRs, 28 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD planned walk tf_plan_score_act_f16: .usage = .{ .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 28, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_score_act_bf16: 17 VGPRs, 32 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_score_act_bf16: 17 VGPRs, 32 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_score_act_bf16: 17 VGPRs, 32 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_score_act_bf16: 17 VGPRs, 28 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD planned walk tf_plan_score_act_bf16: .usage = .{ .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 32, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 17, .sgprs = 28, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_sum_partials_act: 7 VGPRs, 16 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 planned walk tf_sum_partials_act: 6 VGPRs, 18 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 planned walk tf_sum_partials_act: 6 VGPRs, 16 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 planned walk tf_sum_partials_act: 6 VGPRs, 18 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD planned walk tf_sum_partials_act: .usage = .{ .{ .vgprs = 7, .sgprs = 16, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 18, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 16, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 18, .lds = 0, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 argmax tf_argmax_part: 8 VGPRs, 17 SGPRs, 2048 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 argmax tf_argmax_part: 8 VGPRs, 18 SGPRs, 2048 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 argmax tf_argmax_part: 8 VGPRs, 17 SGPRs, 2048 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 argmax tf_argmax_part: 8 VGPRs, 16 SGPRs, 2048 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD argmax tf_argmax_part: .usage = .{ .{ .vgprs = 8, .sgprs = 17, .lds = 2048, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 8, .sgprs = 18, .lds = 2048, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 8, .sgprs = 17, .lds = 2048, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 8, .sgprs = 16, .lds = 2048, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 argmax tf_argmax_join: 10 VGPRs, 21 SGPRs, 2048 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 argmax tf_argmax_join: 10 VGPRs, 21 SGPRs, 2048 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 argmax tf_argmax_join: 10 VGPRs, 21 SGPRs, 2048 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 argmax tf_argmax_join: 10 VGPRs, 20 SGPRs, 2048 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD argmax tf_argmax_join: .usage = .{ .{ .vgprs = 10, .sgprs = 21, .lds = 2048, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 21, .lds = 2048, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 21, .lds = 2048, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 20, .lds = 2048, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_attend_f16: 38 VGPRs, 32 SGPRs, 50688 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_attend_f16: 38 VGPRs, 32 SGPRs, 50688 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_attend_f16: 38 VGPRs, 32 SGPRs, 50688 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_attend_f16: 38 VGPRs, 32 SGPRs, 50688 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD planned walk tf_plan_attend_f16: .usage = .{ .{ .vgprs = 38, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 38, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 38, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 38, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 planned walk tf_plan_attend_bf16: 36 VGPRs, 32 SGPRs, 50688 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1100 planned walk tf_plan_attend_bf16: 37 VGPRs, 32 SGPRs, 50688 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1151 planned walk tf_plan_attend_bf16: 36 VGPRs, 32 SGPRs, 50688 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+PASS limits gfx1201 planned walk tf_plan_attend_bf16: 36 VGPRs, 32 SGPRs, 50688 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current)
+RECORD planned walk tf_plan_attend_bf16: .usage = .{ .{ .vgprs = 36, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 37, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 36, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 36, .sgprs = 32, .lds = 50688, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS limits gfx1030 relu2 pair tile 4-bit 1x2: 101 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 pair tile 4-bit 1x2: 117 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 pair tile 4-bit 1x2: 117 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 pair tile 4-bit 1x2: 117 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 pair tile 4-bit 1x2: .usage = .{ .{ .vgprs = 101, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 pair tile 4-bit 1x4: 180 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 pair tile 4-bit 1x4: 172 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 pair tile 4-bit 1x4: 172 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 pair tile 4-bit 1x4: 172 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 pair tile 4-bit 1x4: .usage = .{ .{ .vgprs = 180, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 172, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 172, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 172, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 pair tile 4-bit 1x8: 181 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 pair tile 4-bit 1x8: 178 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 pair tile 4-bit 1x8: 178 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 pair tile 4-bit 1x8: 178 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 pair tile 4-bit 1x8: .usage = .{ .{ .vgprs = 181, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 pair tile 4-bit 2x2: 123 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 pair tile 4-bit 2x2: 152 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 pair tile 4-bit 2x2: 152 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 pair tile 4-bit 2x2: 152 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 pair tile 4-bit 2x2: .usage = .{ .{ .vgprs = 123, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 152, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 152, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 152, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 pair tile 4-bit 2x4: 177 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 pair tile 4-bit 2x4: 236 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 pair tile 4-bit 2x4: 236 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 pair tile 4-bit 2x4: 236 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 pair tile 4-bit 2x4: .usage = .{ .{ .vgprs = 177, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 236, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 236, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 236, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 pair tile 4-bit 2x8: 157 VGPRs, 73 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 pair tile 4-bit 2x8: 159 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 pair tile 4-bit 2x8: 159 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 pair tile 4-bit 2x8: 159 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 pair tile 4-bit 2x8: .usage = .{ .{ .vgprs = 157, .sgprs = 73, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 159, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 159, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 159, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 pair tile 4-bit 4x2: 194 VGPRs, 75 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 pair tile 4-bit 4x2: 185 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 pair tile 4-bit 4x2: 185 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 pair tile 4-bit 4x2: 185 VGPRs, 75 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 pair tile 4-bit 4x2: .usage = .{ .{ .vgprs = 194, .sgprs = 75, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 185, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 185, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 185, .sgprs = 75, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 relu2 pair tile 4-bit 4x4: 148 VGPRs, 77 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 relu2 pair tile 4-bit 4x4: 150 VGPRs, 78 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 relu2 pair tile 4-bit 4x4: 150 VGPRs, 78 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 relu2 pair tile 4-bit 4x4: 150 VGPRs, 80 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD relu2 pair tile 4-bit 4x4: .usage = .{ .{ .vgprs = 148, .sgprs = 77, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 78, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 78, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 80, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 2-bit 1x2: 53 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 2-bit 1x2: 55 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 2-bit 1x2: 55 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 2-bit 1x2: 55 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 2-bit 1x2: .usage = .{ .{ .vgprs = 53, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 55, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 55, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 55, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 2-bit 1x4: 93 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 2-bit 1x4: 94 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 2-bit 1x4: 94 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 2-bit 1x4: 94 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 2-bit 1x4: .usage = .{ .{ .vgprs = 93, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 94, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 94, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 94, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 2-bit 1x8: 153 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 2-bit 1x8: 150 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 2-bit 1x8: 150 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 2-bit 1x8: 150 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 2-bit 1x8: .usage = .{ .{ .vgprs = 153, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 2-bit 2x2: 62 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 2-bit 2x2: 64 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 2-bit 2x2: 64 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 2-bit 2x2: 64 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 2-bit 2x2: .usage = .{ .{ .vgprs = 62, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 64, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 64, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 64, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 2-bit 2x4: 97 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 2-bit 2x4: 98 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 2-bit 2x4: 98 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 2-bit 2x4: 98 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 2-bit 2x4: .usage = .{ .{ .vgprs = 97, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 98, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 98, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 98, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 2-bit 2x8: 141 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 2-bit 2x8: 142 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 2-bit 2x8: 142 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 2-bit 2x8: 142 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 2-bit 2x8: .usage = .{ .{ .vgprs = 141, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 2-bit 4x2: 113 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 2-bit 4x2: 111 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 2-bit 4x2: 111 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 2-bit 4x2: 111 VGPRs, 73 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 2-bit 4x2: .usage = .{ .{ .vgprs = 113, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 73, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 2-bit 4x4: 141 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 2-bit 4x4: 142 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 2-bit 4x4: 142 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 2-bit 4x4: 142 VGPRs, 75 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 2-bit 4x4: .usage = .{ .{ .vgprs = 141, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 75, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 3-bit 1x2: 128 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 3-bit 1x2: 113 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 3-bit 1x2: 113 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 3-bit 1x2: 113 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 3-bit 1x2: .usage = .{ .{ .vgprs = 128, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 113, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 113, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 113, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 3-bit 1x4: 92 VGPRs, 52 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 3-bit 1x4: 93 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 3-bit 1x4: 93 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 3-bit 1x4: 93 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 3-bit 1x4: .usage = .{ .{ .vgprs = 92, .sgprs = 52, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 93, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 93, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 93, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 3-bit 1x8: 170 VGPRs, 55 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 3-bit 1x8: 161 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 3-bit 1x8: 161 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 3-bit 1x8: 161 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 3-bit 1x8: .usage = .{ .{ .vgprs = 170, .sgprs = 55, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 161, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 161, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 161, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 3-bit 2x2: 102 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 3-bit 2x2: 122 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 3-bit 2x2: 122 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 3-bit 2x2: 122 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 3-bit 2x2: .usage = .{ .{ .vgprs = 102, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 122, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 122, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 122, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 3-bit 2x4: 96 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 3-bit 2x4: 90 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 3-bit 2x4: 90 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 3-bit 2x4: 90 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 3-bit 2x4: .usage = .{ .{ .vgprs = 96, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 90, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 90, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 90, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 3-bit 2x8: 137 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 3-bit 2x8: 138 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 3-bit 2x8: 138 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 3-bit 2x8: 138 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 3-bit 2x8: .usage = .{ .{ .vgprs = 137, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 138, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 138, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 138, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 3-bit 4x2: 89 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 3-bit 4x2: 107 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 3-bit 4x2: 107 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 3-bit 4x2: 107 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 3-bit 4x2: .usage = .{ .{ .vgprs = 89, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 3-bit 4x4: 131 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 3-bit 4x4: 134 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 3-bit 4x4: 134 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 3-bit 4x4: 134 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 3-bit 4x4: .usage = .{ .{ .vgprs = 131, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 4-bit 1x2: 63 VGPRs, 55 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 4-bit 1x2: 65 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 4-bit 1x2: 65 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 4-bit 1x2: 65 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 4-bit 1x2: .usage = .{ .{ .vgprs = 63, .sgprs = 55, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 65, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 65, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 65, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 4-bit 1x4: 101 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 4-bit 1x4: 102 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 4-bit 1x4: 102 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 4-bit 1x4: 102 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 4-bit 1x4: .usage = .{ .{ .vgprs = 101, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 4-bit 1x8: 181 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 4-bit 1x8: 178 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 4-bit 1x8: 178 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 4-bit 1x8: 178 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 4-bit 1x8: .usage = .{ .{ .vgprs = 181, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 178, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 4-bit 2x2: 75 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 4-bit 2x2: 68 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 4-bit 2x2: 68 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 4-bit 2x2: 68 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 4-bit 2x2: .usage = .{ .{ .vgprs = 75, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 4-bit 2x4: 93 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 4-bit 2x4: 102 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 4-bit 2x4: 102 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 4-bit 2x4: 102 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 4-bit 2x4: .usage = .{ .{ .vgprs = 93, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 4-bit 2x8: 157 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 4-bit 2x8: 158 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 4-bit 2x8: 158 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 4-bit 2x8: 158 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 4-bit 2x8: .usage = .{ .{ .vgprs = 157, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 4-bit 4x2: 113 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 4-bit 4x2: 114 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 4-bit 4x2: 114 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 4-bit 4x2: 114 VGPRs, 73 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 4-bit 4x2: .usage = .{ .{ .vgprs = 113, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 73, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 4-bit 4x4: 147 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 4-bit 4x4: 150 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 4-bit 4x4: 150 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 4-bit 4x4: 150 VGPRs, 75 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 4-bit 4x4: .usage = .{ .{ .vgprs = 147, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 150, .sgprs = 75, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 5-bit 1x2: 130 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 5-bit 1x2: 117 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 5-bit 1x2: 117 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 5-bit 1x2: 117 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 5-bit 1x2: .usage = .{ .{ .vgprs = 130, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 5-bit 1x4: 108 VGPRs, 52 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 5-bit 1x4: 109 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 5-bit 1x4: 109 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 5-bit 1x4: 109 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 5-bit 1x4: .usage = .{ .{ .vgprs = 108, .sgprs = 52, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 109, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 109, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 109, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 5-bit 1x8: 201 VGPRs, 55 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 5-bit 1x8: 193 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 5-bit 1x8: 193 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 5-bit 1x8: 193 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 5-bit 1x8: .usage = .{ .{ .vgprs = 201, .sgprs = 55, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 193, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 193, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 193, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 5-bit 2x2: 90 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 5-bit 2x2: 101 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 5-bit 2x2: 101 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 5-bit 2x2: 101 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 5-bit 2x2: .usage = .{ .{ .vgprs = 90, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 101, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 101, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 101, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 5-bit 2x4: 88 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 5-bit 2x4: 98 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 5-bit 2x4: 98 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 5-bit 2x4: 98 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 5-bit 2x4: .usage = .{ .{ .vgprs = 88, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 98, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 98, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 98, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 5-bit 2x8: 153 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 5-bit 2x8: 162 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 5-bit 2x8: 162 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 5-bit 2x8: 162 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 5-bit 2x8: .usage = .{ .{ .vgprs = 153, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 5-bit 4x2: 92 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 5-bit 4x2: 107 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 5-bit 4x2: 107 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 5-bit 4x2: 107 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 5-bit 4x2: .usage = .{ .{ .vgprs = 92, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 5-bit 4x4: 153 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 5-bit 4x4: 142 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 5-bit 4x4: 142 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 5-bit 4x4: 142 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 5-bit 4x4: .usage = .{ .{ .vgprs = 153, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 142, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 6-bit 1x2: 79 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 6-bit 1x2: 69 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 6-bit 1x2: 69 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 6-bit 1x2: 69 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 6-bit 1x2: .usage = .{ .{ .vgprs = 79, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 69, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 69, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 69, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 6-bit 1x4: 116 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 6-bit 1x4: 117 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 6-bit 1x4: 117 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 6-bit 1x4: 117 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 6-bit 1x4: .usage = .{ .{ .vgprs = 116, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 117, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 6-bit 1x8: 220 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 6-bit 1x8: 209 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 6-bit 1x8: 209 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 6-bit 1x8: 209 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 6-bit 1x8: .usage = .{ .{ .vgprs = 220, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 209, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 209, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 209, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 6-bit 2x2: 71 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 6-bit 2x2: 72 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 6-bit 2x2: 72 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 6-bit 2x2: 72 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 6-bit 2x2: .usage = .{ .{ .vgprs = 71, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 72, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 72, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 72, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 6-bit 2x4: 101 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 6-bit 2x4: 102 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 6-bit 2x4: 102 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 6-bit 2x4: 102 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 6-bit 2x4: .usage = .{ .{ .vgprs = 101, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 102, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 6-bit 2x8: 173 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 6-bit 2x8: 162 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 6-bit 2x8: 162 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 6-bit 2x8: 162 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 6-bit 2x8: .usage = .{ .{ .vgprs = 173, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 6-bit 4x2: 106 VGPRs, 73 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 6-bit 4x2: 112 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 6-bit 4x2: 112 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 6-bit 4x2: 112 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 6-bit 4x2: .usage = .{ .{ .vgprs = 106, .sgprs = 73, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 6-bit 4x4: 162 VGPRs, 75 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 6-bit 4x4: 170 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 6-bit 4x4: 170 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 6-bit 4x4: 170 VGPRs, 78 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 6-bit 4x4: .usage = .{ .{ .vgprs = 162, .sgprs = 75, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 170, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 170, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 170, .sgprs = 78, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 8-bit 1x2: 78 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 8-bit 1x2: 77 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 8-bit 1x2: 77 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 8-bit 1x2: 77 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 8-bit 1x2: .usage = .{ .{ .vgprs = 78, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 77, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 77, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 77, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 8-bit 1x4: 133 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 8-bit 1x4: 134 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 8-bit 1x4: 134 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 8-bit 1x4: 134 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 8-bit 1x4: .usage = .{ .{ .vgprs = 133, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 8-bit 1x8: 226 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 8-bit 1x8: 256 VGPRs, 62 SGPRs, 0 LDS bytes, 124 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 8-bit 1x8: 256 VGPRs, 62 SGPRs, 0 LDS bytes, 124 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 8-bit 1x8: 256 VGPRs, 64 SGPRs, 0 LDS bytes, 124 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 8-bit 1x8: .usage = .{ .{ .vgprs = 226, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 256, .sgprs = 62, .lds = 0, .private = 124, .bound = 128, .wave = 32 }, .{ .vgprs = 256, .sgprs = 62, .lds = 0, .private = 124, .bound = 128, .wave = 32 }, .{ .vgprs = 256, .sgprs = 64, .lds = 0, .private = 124, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 8-bit 2x2: 83 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 8-bit 2x2: 75 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 8-bit 2x2: 75 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 8-bit 2x2: 75 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 8-bit 2x2: .usage = .{ .{ .vgprs = 83, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 75, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 75, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 75, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 8-bit 2x4: 113 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 8-bit 2x4: 114 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 8-bit 2x4: 114 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 8-bit 2x4: 114 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 8-bit 2x4: .usage = .{ .{ .vgprs = 113, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 114, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 8-bit 2x8: 189 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 8-bit 2x8: 190 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 8-bit 2x8: 190 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 8-bit 2x8: 190 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 8-bit 2x8: .usage = .{ .{ .vgprs = 189, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 190, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 190, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 190, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 8-bit 4x2: 128 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 8-bit 4x2: 125 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 8-bit 4x2: 125 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 8-bit 4x2: 125 VGPRs, 73 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 8-bit 4x2: .usage = .{ .{ .vgprs = 128, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 125, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 125, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 125, .sgprs = 73, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 plain stream tile 8-bit 4x4: 163 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 plain stream tile 8-bit 4x4: 164 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 plain stream tile 8-bit 4x4: 164 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 plain stream tile 8-bit 4x4: 164 VGPRs, 75 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD plain stream tile 8-bit 4x4: .usage = .{ .{ .vgprs = 163, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 164, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 164, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 164, .sgprs = 75, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 2-bit 1x2: 52 VGPRs, 55 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 2-bit 1x2: 54 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 2-bit 1x2: 54 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 2-bit 1x2: 54 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 2-bit 1x2: .usage = .{ .{ .vgprs = 52, .sgprs = 55, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 54, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 54, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 54, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 2-bit 1x4: 96 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 2-bit 1x4: 88 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 2-bit 1x4: 88 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 2-bit 1x4: 88 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 2-bit 1x4: .usage = .{ .{ .vgprs = 96, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 88, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 88, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 88, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 2-bit 1x8: 157 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 2-bit 1x8: 154 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 2-bit 1x8: 154 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 2-bit 1x8: 154 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 2-bit 1x8: .usage = .{ .{ .vgprs = 157, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 154, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 154, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 154, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 2-bit 2x2: 62 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 2-bit 2x2: 64 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 2-bit 2x2: 64 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 2-bit 2x2: 64 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 2-bit 2x2: .usage = .{ .{ .vgprs = 62, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 64, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 64, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 64, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 2-bit 2x4: 96 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 2-bit 2x4: 92 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 2-bit 2x4: 92 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 2-bit 2x4: 92 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 2-bit 2x4: .usage = .{ .{ .vgprs = 96, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 92, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 92, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 92, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 2-bit 2x8: 137 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 2-bit 2x8: 138 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 2-bit 2x8: 138 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 2-bit 2x8: 138 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 2-bit 2x8: .usage = .{ .{ .vgprs = 137, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 138, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 138, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 138, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 2-bit 4x2: 112 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 2-bit 4x2: 111 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 2-bit 4x2: 111 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 2-bit 4x2: 111 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 2-bit 4x2: .usage = .{ .{ .vgprs = 112, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 2-bit 4x4: 137 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 2-bit 4x4: 140 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 2-bit 4x4: 140 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 2-bit 4x4: 140 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 2-bit 4x4: .usage = .{ .{ .vgprs = 137, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 140, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 140, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 140, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 3-bit 1x2: 127 VGPRs, 49 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 3-bit 1x2: 112 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 3-bit 1x2: 112 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 3-bit 1x2: 112 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 3-bit 1x2: .usage = .{ .{ .vgprs = 127, .sgprs = 49, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 3-bit 1x4: 90 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 3-bit 1x4: 91 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 3-bit 1x4: 91 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 3-bit 1x4: 91 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 3-bit 1x4: .usage = .{ .{ .vgprs = 90, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 91, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 91, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 91, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 3-bit 1x8: 174 VGPRs, 52 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 3-bit 1x8: 165 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 3-bit 1x8: 165 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 3-bit 1x8: 165 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 3-bit 1x8: .usage = .{ .{ .vgprs = 174, .sgprs = 52, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 165, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 165, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 165, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 3-bit 2x2: 102 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 3-bit 2x2: 122 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 3-bit 2x2: 122 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 3-bit 2x2: 122 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 3-bit 2x2: .usage = .{ .{ .vgprs = 102, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 122, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 122, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 122, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 3-bit 2x4: 94 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 3-bit 2x4: 88 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 3-bit 2x4: 88 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 3-bit 2x4: 88 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 3-bit 2x4: .usage = .{ .{ .vgprs = 94, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 88, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 88, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 88, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 3-bit 2x8: 133 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 3-bit 2x8: 134 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 3-bit 2x8: 134 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 3-bit 2x8: 134 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 3-bit 2x8: .usage = .{ .{ .vgprs = 133, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 134, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 3-bit 4x2: 89 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 3-bit 4x2: 107 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 3-bit 4x2: 107 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 3-bit 4x2: 107 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 3-bit 4x2: .usage = .{ .{ .vgprs = 89, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 3-bit 4x4: 110 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 3-bit 4x4: 132 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 3-bit 4x4: 132 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 3-bit 4x4: 132 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 3-bit 4x4: .usage = .{ .{ .vgprs = 110, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 132, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 132, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 132, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 4-bit 1x2: 58 VGPRs, 55 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 4-bit 1x2: 60 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 4-bit 1x2: 60 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 4-bit 1x2: 60 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 4-bit 1x2: .usage = .{ .{ .vgprs = 58, .sgprs = 55, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 60, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 60, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 60, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 4-bit 1x4: 99 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 4-bit 1x4: 100 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 4-bit 1x4: 100 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 4-bit 1x4: 100 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 4-bit 1x4: .usage = .{ .{ .vgprs = 99, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 4-bit 1x8: 185 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 4-bit 1x8: 182 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 4-bit 1x8: 182 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 4-bit 1x8: 182 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 4-bit 1x8: .usage = .{ .{ .vgprs = 185, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 182, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 182, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 182, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 4-bit 2x2: 91 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 4-bit 2x2: 68 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 4-bit 2x2: 68 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 4-bit 2x2: 68 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 4-bit 2x2: .usage = .{ .{ .vgprs = 91, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 4-bit 2x4: 91 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 4-bit 2x4: 100 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 4-bit 2x4: 100 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 4-bit 2x4: 100 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 4-bit 2x4: .usage = .{ .{ .vgprs = 91, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 4-bit 2x8: 153 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 4-bit 2x8: 154 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 4-bit 2x8: 154 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 4-bit 2x8: 154 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 4-bit 2x8: .usage = .{ .{ .vgprs = 153, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 154, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 154, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 154, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 4-bit 4x2: 112 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 4-bit 4x2: 113 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 4-bit 4x2: 113 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 4-bit 4x2: 113 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 4-bit 4x2: .usage = .{ .{ .vgprs = 112, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 113, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 113, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 113, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 4-bit 4x4: 145 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 4-bit 4x4: 148 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 4-bit 4x4: 148 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 4-bit 4x4: 148 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 4-bit 4x4: .usage = .{ .{ .vgprs = 145, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 148, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 148, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 148, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 5-bit 1x2: 129 VGPRs, 49 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 5-bit 1x2: 116 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 5-bit 1x2: 116 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 5-bit 1x2: 116 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 5-bit 1x2: .usage = .{ .{ .vgprs = 129, .sgprs = 49, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 116, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 116, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 116, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 5-bit 1x4: 106 VGPRs, 50 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 5-bit 1x4: 107 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 5-bit 1x4: 107 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 5-bit 1x4: 107 VGPRs, 51 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 5-bit 1x4: .usage = .{ .{ .vgprs = 106, .sgprs = 50, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 51, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 5-bit 1x8: 206 VGPRs, 52 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 5-bit 1x8: 197 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 5-bit 1x8: 197 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 5-bit 1x8: 197 VGPRs, 53 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 5-bit 1x8: .usage = .{ .{ .vgprs = 206, .sgprs = 52, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 197, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 197, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 197, .sgprs = 53, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 5-bit 2x2: 90 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 5-bit 2x2: 101 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 5-bit 2x2: 101 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 5-bit 2x2: 101 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 5-bit 2x2: .usage = .{ .{ .vgprs = 90, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 101, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 101, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 101, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 5-bit 2x4: 86 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 5-bit 2x4: 96 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 5-bit 2x4: 96 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 5-bit 2x4: 96 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 5-bit 2x4: .usage = .{ .{ .vgprs = 86, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 96, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 96, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 96, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 5-bit 2x8: 149 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 5-bit 2x8: 158 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 5-bit 2x8: 158 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 5-bit 2x8: 158 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 5-bit 2x8: .usage = .{ .{ .vgprs = 149, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 158, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 5-bit 4x2: 92 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 5-bit 4x2: 107 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 5-bit 4x2: 107 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 5-bit 4x2: 107 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 5-bit 4x2: .usage = .{ .{ .vgprs = 92, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 107, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 5-bit 4x4: 151 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 5-bit 4x4: 140 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 5-bit 4x4: 140 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 5-bit 4x4: 140 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 5-bit 4x4: .usage = .{ .{ .vgprs = 151, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 140, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 140, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 140, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 6-bit 1x2: 78 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 6-bit 1x2: 68 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 6-bit 1x2: 68 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 6-bit 1x2: 68 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 6-bit 1x2: .usage = .{ .{ .vgprs = 78, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 68, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 6-bit 1x4: 114 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 6-bit 1x4: 115 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 6-bit 1x4: 115 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 6-bit 1x4: 115 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 6-bit 1x4: .usage = .{ .{ .vgprs = 114, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 115, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 115, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 115, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 6-bit 1x8: 224 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 6-bit 1x8: 213 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 6-bit 1x8: 213 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 6-bit 1x8: 213 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 6-bit 1x8: .usage = .{ .{ .vgprs = 224, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 213, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 213, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 213, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 6-bit 2x2: 71 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 6-bit 2x2: 72 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 6-bit 2x2: 72 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 6-bit 2x2: 72 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 6-bit 2x2: .usage = .{ .{ .vgprs = 71, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 72, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 72, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 72, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 6-bit 2x4: 99 VGPRs, 67 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 6-bit 2x4: 100 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 6-bit 2x4: 100 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 6-bit 2x4: 100 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 6-bit 2x4: .usage = .{ .{ .vgprs = 99, .sgprs = 67, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 100, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 6-bit 2x8: 157 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 6-bit 2x8: 170 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 6-bit 2x8: 170 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 6-bit 2x8: 170 VGPRs, 73 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 6-bit 2x8: .usage = .{ .{ .vgprs = 157, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 170, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 170, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 170, .sgprs = 73, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 6-bit 4x2: 105 VGPRs, 73 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 6-bit 4x2: 111 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 6-bit 4x2: 111 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 6-bit 4x2: 111 VGPRs, 77 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 6-bit 4x2: .usage = .{ .{ .vgprs = 105, .sgprs = 73, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 111, .sgprs = 77, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 6-bit 4x4: 150 VGPRs, 75 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 6-bit 4x4: 164 VGPRs, 78 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 6-bit 4x4: 164 VGPRs, 78 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 6-bit 4x4: 164 VGPRs, 79 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 6-bit 4x4: .usage = .{ .{ .vgprs = 150, .sgprs = 75, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 164, .sgprs = 78, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 164, .sgprs = 78, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 164, .sgprs = 79, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 8-bit 1x2: 77 VGPRs, 55 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 8-bit 1x2: 76 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 8-bit 1x2: 76 VGPRs, 56 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 8-bit 1x2: 76 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 8-bit 1x2: .usage = .{ .{ .vgprs = 77, .sgprs = 55, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 76, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 76, .sgprs = 56, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 76, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 8-bit 1x4: 131 VGPRs, 57 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 8-bit 1x4: 132 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 8-bit 1x4: 132 VGPRs, 58 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 8-bit 1x4: 132 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 8-bit 1x4: .usage = .{ .{ .vgprs = 131, .sgprs = 57, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 132, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 132, .sgprs = 58, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 132, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 8-bit 1x8: 230 VGPRs, 59 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 8-bit 1x8: 231 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 8-bit 1x8: 231 VGPRs, 60 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 8-bit 1x8: 231 VGPRs, 62 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 8-bit 1x8: .usage = .{ .{ .vgprs = 230, .sgprs = 59, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 231, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 231, .sgprs = 60, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 231, .sgprs = 62, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 8-bit 2x2: 90 VGPRs, 61 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 8-bit 2x2: 75 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 8-bit 2x2: 75 VGPRs, 64 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 8-bit 2x2: 75 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 8-bit 2x2: .usage = .{ .{ .vgprs = 90, .sgprs = 61, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 75, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 75, .sgprs = 64, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 75, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 8-bit 2x4: 111 VGPRs, 63 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 8-bit 2x4: 112 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 8-bit 2x4: 112 VGPRs, 66 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 8-bit 2x4: 112 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 8-bit 2x4: .usage = .{ .{ .vgprs = 111, .sgprs = 63, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 66, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 112, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 8-bit 2x8: 207 VGPRs, 65 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 8-bit 2x8: 186 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 8-bit 2x8: 186 VGPRs, 68 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 8-bit 2x8: 186 VGPRs, 70 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 8-bit 2x8: .usage = .{ .{ .vgprs = 207, .sgprs = 65, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 186, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 186, .sgprs = 68, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 186, .sgprs = 70, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 8-bit 4x2: 128 VGPRs, 69 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 8-bit 4x2: 124 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 8-bit 4x2: 124 VGPRs, 72 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 8-bit 4x2: 124 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 8-bit 4x2: .usage = .{ .{ .vgprs = 128, .sgprs = 69, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 124, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 124, .sgprs = 72, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 124, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+PASS limits gfx1030 swiglu stream tile 8-bit 4x4: 161 VGPRs, 71 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1100 swiglu stream tile 8-bit 4x4: 162 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1151 swiglu stream tile 8-bit 4x4: 162 VGPRs, 74 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+PASS limits gfx1201 swiglu stream tile 8-bit 4x4: 162 VGPRs, 76 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 128, wave32 (record current)
+RECORD swiglu stream tile 8-bit 4x4: .usage = .{ .{ .vgprs = 161, .sgprs = 71, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 74, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, .{ .vgprs = 162, .sgprs = 76, .lds = 0, .private = 0, .bound = 128, .wave = 32 }, }
+RED  limits gfx1030 control: past its bounds: 4 VGPRs, 10 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current): control: past its bounds on gfx1030: launched at 512 threads past its bound 256
+RED  limits gfx1100 control: past its bounds: 4 VGPRs, 18 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current): control: past its bounds on gfx1100: launched at 512 threads past its bound 256
+RED  limits gfx1151 control: past its bounds: 4 VGPRs, 10 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current): control: past its bounds on gfx1151: launched at 512 threads past its bound 256
+RED  limits gfx1201 control: past its bounds: 4 VGPRs, 7 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current): control: past its bounds on gfx1201: launched at 512 threads past its bound 256
+RECORD control: past its bounds: .usage = .{ .{ .vgprs = 4, .sgprs = 10, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 4, .sgprs = 18, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 4, .sgprs = 10, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 4, .sgprs = 7, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, }
+RED  limits gfx1030 control: 72 KiB of LDS: 6 VGPRs, 9 SGPRs, 40960 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current): control: 72 KiB of LDS on gfx1030: 73728 LDS bytes, the most a workgroup takes is 65536
+RED  limits gfx1100 control: 72 KiB of LDS: 6 VGPRs, 8 SGPRs, 40960 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current): control: 72 KiB of LDS on gfx1100: 73728 LDS bytes, the most a workgroup takes is 65536
+RED  limits gfx1151 control: 72 KiB of LDS: 6 VGPRs, 8 SGPRs, 40960 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current): control: 72 KiB of LDS on gfx1151: 73728 LDS bytes, the most a workgroup takes is 65536
+RED  limits gfx1201 control: 72 KiB of LDS: 6 VGPRs, 8 SGPRs, 40960 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current): control: 72 KiB of LDS on gfx1201: 73728 LDS bytes, the most a workgroup takes is 65536
+RECORD control: 72 KiB of LDS: .usage = .{ .{ .vgprs = 6, .sgprs = 9, .lds = 40960, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 8, .lds = 40960, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 8, .lds = 40960, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 8, .lds = 40960, .private = 0, .bound = 1024, .wave = 32 }, }
+PASS kernel-contract-limits: every registered launch fits gfx1030, gfx1100, gfx1151 and gfx1201, every record current, every control red
+Build Summary: 60/60 steps succeeded
+hip-kernel-contract-objects success
++- install generated/ success
+   +- WriteFile gfx1030 success
+      +- WriteFile group0.hsaco success
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group0.hsaco) success 5s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group1.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group2.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group3.hsaco) success 2s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group4.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group5.hsaco) success 6s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group6.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group7.hsaco) success 3m
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group8.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group9.hsaco) success 5s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group10.hsaco) success 4s
+      +- run /opt/rocm/core-7.14/bin/hipcc (contract_controls.hsaco) success 3s
+      +- WriteFile group0.hsaco success
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group0.hsaco) success 5s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group1.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group2.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group3.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group4.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group5.hsaco) success 6s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group6.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group7.hsaco) success 3m
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group8.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group9.hsaco) success 5s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group10.hsaco) success 3s
+      +- run /opt/rocm/core-7.14/bin/hipcc (contract_controls.hsaco) success 2s
+      +- WriteFile group0.hsaco success
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group0.hsaco) success 5s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group1.hsaco) success 2s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group2.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group3.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group4.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group5.hsaco) success 5s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group6.hsaco) success 5s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group7.hsaco) success 3m
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group8.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group9.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group10.hsaco) success 3s
+      +- run /opt/rocm/core-7.14/bin/hipcc (contract_controls.hsaco) success 2s
+      +- WriteFile group0.hsaco success
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group0.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group1.hsaco) success 2s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group2.hsaco) success 2s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group3.hsaco) success 3s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group4.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group5.hsaco) success 6s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group6.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group7.hsaco) success 3m
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group8.hsaco) success 4s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group9.hsaco) success 5s
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (group10.hsaco) success 3s
+      +- run /opt/rocm/core-7.14/bin/hipcc (contract_controls.hsaco) success 2s
+hip-kernel-contract-limits success
++- run exe tf-hip-kernel-contract success 6s
+   +- compile exe tf-hip-kernel-contract debug native success 9s MaxRSS:238M
+   |  +- WriteFile controls.hsaco success
+   |  +- WriteFile kernels.zig success
+   +- WriteFile gfx1030 (+8 more reused dependencies)
+

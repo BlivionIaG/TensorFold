@@ -1,0 +1,19 @@
+{
+  "bundle_sha256": "f9f9ddb9516f374f2037a5a4e8403d9e022d2bbe5080abd80e5f657166870be0",
+  "creation_only_ref": "refs/validation/hip-control-fix-a44-attempt1",
+  "source_worktrees": [
+    {
+      "directory": "<HOME>/nh/hcffirst826",
+      "head": "826a0635634dee3793a68e473064d17d5c139945",
+      "tree": "bbb17bdf4db45f1084bb6e35442d4b5dde32039e",
+      "creation_log": "HEAD is now at 826a0635 feat(hip): the kernel contract runs on HIP\nPreparing worktree (detached HEAD 826a0635)\n"
+    },
+    {
+      "directory": "<HOME>/nh/hcftopa44",
+      "head": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
+      "tree": "51a4fadc948801c456b03995186f612a17e5a7dc",
+      "creation_log": "HEAD is now at a44e7af9 perf(hip): one row's routed fc1 and shared up in one launch, both with the relu^2 epilogue\nPreparing worktree (detached HEAD a44e7af9)\n"
+    }
+  ],
+  "original_sfopt_head_unchanged": true
+}

@@ -1,0 +1,21 @@
+info(verbose): <HOME>/.local/zig-0.17.0/zig build-exe --cache-dir .zig-cache --global-cache-dir <HOME>/.cache/zig --build-root . --zig-lib-dir <HOME>/.local/zig-0.17.0/lib --name configurer -fsingle-threaded --dep @build --dep @dependencies -Mroot=<HOME>/.local/zig-0.17.0/lib/compiler/configurer.zig -M@dependencies=.zig-cache/o/ce72526ee7fc0580e3a089da327c554a/dependencies.zig -M@build=build.zig --listen=-
+info(verbose): <HOME>/.local/zig-0.17.0/zig build-exe -Ofast --dep hip --dep core --dep hip_controls --dep sys --dep checkpoint_config -Mroot=zig/tests/hip/contract_main.zig -cflags -D__HIP_PLATFORM_AMD__ -- zig/src/hip/device_arch.c -Ofast -I /opt/rocm/core-7.14/include --dep core --dep hip_kernels --dep cuda_memory --dep sys --dep checkpoint_config -Mhip=zig/src/hip/root.zig --dep tokenizer --dep sys --dep checkpoint_config -Mcore=zig/src/core/root.zig -Mhip_controls=.zig-cache/o/eb43d010f3c17708c293f57261e05111/controls.zig --dep checkpoint_config -Msys=zig/src/platform/sys.zig -Mcheckpoint_config=zig/src/core/checkpoint_config.zig -Mhip_kernels=.zig-cache/o/402eef0a74cb5ed837f076267ad2fc19/kernels.zig -Ofast --dep sys --dep checkpoint_config -Mcuda_memory=zig/src/native/cuda_memory.zig --dep sys --dep checkpoint_config -Mtokenizer=zig/src/core/tokenizer/tokenizer.zig -lc --cache-dir .zig-cache --global-cache-dir <HOME>/.cache/zig --build-root . --name tf-hip-kernel-contract --zig-lib-dir <HOME>/.local/zig-0.17.0/lib/ --listen=-
+info(verbose): install -C .zig-cache/o/9a6a98f1d596344b9f5febf90ca8eb46/tf-hip-kernel-contract <HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_first_gfx1030/bin/tf-hip-kernel-contract
+Build Summary: 16/16 steps succeeded
+tf-hip-kernel-contract success
++- install tf-hip-kernel-contract success
+   +- compile exe tf-hip-kernel-contract fast native success 28s MaxRSS:781M
+      +- WriteFile controls.hsaco success
+      |  +- run /opt/rocm/core-7.14/bin/hipcc (contract_controls.hsaco) cached
+      +- WriteFile group0.hsaco success
+         +- run /opt/rocm/core-7.14/bin/hipcc (group0.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group1.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group2.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group3.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group4.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group5.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group6.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group7.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group8.hsaco) cached
+         +- run /opt/rocm/core-7.14/bin/hipcc (group9.hsaco) cached
+
