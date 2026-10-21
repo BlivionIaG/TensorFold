@@ -823,6 +823,7 @@ fn note(key: Key, o: Outcome) void {
     const rs = @import("cuda_exl3_recycle.zig").stats;
     const cs = @import("cuda_exl3_chain.zig").stats;
     std.log.info("flashnext exl3 graph coverage after {d} steps (replay/eager/instantiated/updated):{s}; recycled seqs {d}/{d} drafts {d}/{d} (reused/kept); draft chains {d}: {d} replays, {d} captures ({d} updates), {d} eager; decode prepare {d} ms/{d}, capture {d} ms; prefill graphs {d}/{d}/{d}/{d}, capture {d} ms", .{ steps_seen, w.buffered(), rs.seq_reused, rs.seq_kept, rs.draft_reused, rs.draft_kept, cs.chains, cs.replays, cs.captures, cs.updates, cs.eager, stats.prepare_ns / std.time.ns_per_ms, stats.prepares, stats.capture_ns / std.time.ns_per_ms, prefill_stats.replays, prefill_stats.eager, prefill_stats.captures, prefill_stats.updates, prefill_stats.capture_ns / std.time.ns_per_ms });
+    std.log.info("EXL3 prefill origin rebinds {d}", .{prefill_stats.rebinds});
 }
 
 fn logProfile() void {
@@ -1293,6 +1294,7 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
 // the chunk's position, so each chunk re-captures it and updates the cached graph in place when the topology holds.
 
 pub const Prefill = enum { eager, replayed, capturing };
+const prefill_binding = @import("cuda_exl3_prefill_binding.zig");
 
 const PKey = struct {
     layer: usize,
@@ -1309,13 +1311,23 @@ const PKey = struct {
     wait_key: u64,
     scores: u64,
     tiles: bool,
+    positions: u64 = 0,
+    stream: u64 = 0,
 };
 
-const PEntry = struct { key: PKey, exec: cuda.graph.Exec, used: u64, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null };
+const PEntry = struct { key: PKey, exec: cuda.graph.Exec, used: u64, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null, binding: ?*prefill_binding.Binding = null, binding_admission: ?memory.Ticket = null };
+
+fn setPrefillBinding(entry: *PEntry, binding: ?*prefill_binding.Binding, admission: ?memory.Ticket) void {
+    if (entry.binding) |old| old.deinit(std.heap.c_allocator);
+    if (entry.binding_admission) |ticket| memory.release(ticket) catch unreachable;
+    entry.binding = binding;
+    entry.binding_admission = admission;
+}
 
 fn dropPrefill(entry: *PEntry) void {
     if (entry.stream) |stream| stream.synchronize() catch @panic("prefill retirement synchronization failed");
     entry.exec.deinit();
+    setPrefillBinding(entry, null, null);
     if (entry.admission) |ticket| memory.release(ticket) catch unreachable;
 }
 const pcache_n = 112;
@@ -1324,8 +1336,10 @@ var pseen: [128]?struct { key: PKey, n: u32 } = @splat(null);
 var pseen_at: usize = 0;
 var pcur: ?PKey = null;
 var pcur_admission: ?memory.Ticket = null;
+var pcur_binding_admission: ?memory.Ticket = null;
+var pcur_binding_request: ?prefill_binding.Request = null;
 
-pub var prefill_stats: struct { captures: u64 = 0, updates: u64 = 0, replays: u64 = 0, eager: u64 = 0, admission_misses: u64 = 0, capture_ns: u64 = 0 } = .{};
+pub var prefill_stats: struct { captures: u64 = 0, updates: u64 = 0, replays: u64 = 0, rebinds: u64 = 0, eager: u64 = 0, admission_misses: u64 = 0, capture_ns: u64 = 0 } = .{};
 
 fn prefillAdmissionMiss() Prefill {
     prefill_stats.eager += 1;
@@ -1348,6 +1362,68 @@ fn pshape(k: PKey) PKey {
     s.pos0 = 0;
     s.paging[5] = 0;
     return s;
+}
+
+fn prefillOriginCandidate(key: PKey, request: prefill_binding.Request) ?*PEntry {
+    for (&pentries) |*maybe| if (maybe.*) |*entry| {
+        const binding = entry.binding orelse continue;
+        if (!binding.poisoned and std.meta.eql(pshape(entry.key), pshape(key)) and binding.request.compatible(request)) return entry;
+    };
+    return null;
+}
+
+test "exl3: prefill origin candidates preserve paging generation, incarnation and allocation keys" {
+    const key: PKey = .{ .layer = 7, .rows = 512, .sub = 256, .pos0 = 4096, .deep = 1, .base = 2, .base_cap = 4096, .seq = .{ 3, 4, 5, 4096, 6 }, .paging = .{ 7, 8, 9, 10, 11, 12 }, .wait_count = 0, .wait_key = 0, .scores = 13, .tiles = true, .positions = 14, .stream = 15 };
+    const request: prefill_binding.Request = .{ .functions = .{ .prep = 1, .scores = 2, .chunks = 3, .ahead = 4, .plan = 5, .remap = 6 }, .rows = 512, .sub = 256, .pos0 = 4096, .positions = 14, .cap = 32768, .origin = 1024, .page_rows = 256, .shared = true, .keys = 16, .values = 17 };
+    var binding: prefill_binding.Binding = .{ .graph = undefined, .request = request, .records = &.{} };
+    var driver: cuda.Driver = undefined;
+    pentries = @splat(null);
+    defer pentries = @splat(null);
+    pentries[0] = .{ .key = key, .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = 1, .binding = &binding };
+    var moved = key;
+    moved.pos0 = 8192;
+    moved.paging[5] += 1;
+    var target = request;
+    target.pos0 = 8192;
+    target.origin = 4096;
+    try std.testing.expect(prefillOriginCandidate(moved, target) != null);
+    for (0..5) |index| {
+        var changed = moved;
+        changed.paging[index] += 1;
+        try std.testing.expect(prefillOriginCandidate(changed, target) == null);
+        changed = moved;
+        changed.seq[index] += 1;
+        try std.testing.expect(prefillOriginCandidate(changed, target) == null);
+    }
+    inline for (.{ "deep", "base", "base_cap", "scores", "positions", "stream", "wait_key", "wait_count", "rows", "sub", "layer" }) |field| {
+        var changed = moved;
+        @field(changed, field) += 1;
+        try std.testing.expect(prefillOriginCandidate(changed, target) == null);
+    }
+    binding.poisoned = true;
+    try std.testing.expect(prefillOriginCandidate(moved, target) == null);
+}
+
+test "exl3: prefill retained templates release both graph budget tickets on retirement" {
+    clearPrefill();
+    try memory.configure(.{ .reservation_bytes = 100, .headroom_bytes = 0, .charge = .{ .exec = 10, .template = 10, .transient = 10 }, .prefill_charge = .{ .exec = 5, .template = 0, .transient = 10 } });
+    const exec_ticket = try memory.admit(.prefill, 0, 100);
+    try memory.installed(exec_ticket);
+    const template_ticket = try memory.admit(.prefill, 0, 100);
+    try memory.installed(template_ticket);
+    try std.testing.expectEqual(@as(u64, 10), memory.charged());
+    var driver = GraphTestDriver.driver();
+    GraphTestDriver.exec_drops = 0;
+    GraphTestDriver.graph_drops = 0;
+    const binding = try std.heap.c_allocator.create(prefill_binding.Binding);
+    binding.* = .{ .graph = .{ .d = &driver, .handle = @ptrFromInt(1) }, .request = undefined, .records = try std.heap.c_allocator.alloc(prefill_binding.Record, 0) };
+    pentries[0] = .{ .key = std.mem.zeroes(PKey), .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = 1, .admission = exec_ticket, .binding = binding, .binding_admission = template_ticket, .stream = .{ .d = &driver, .handle = @ptrFromInt(1) } };
+    clearPrefill();
+    try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.exec_drops);
+    try std.testing.expectEqual(@as(usize, 1), GraphTestDriver.graph_drops);
+    try std.testing.expectEqual(@as(u64, 0), memory.charged());
+    try std.testing.expectError(error.StaleGraphTicket, memory.release(exec_ticket));
+    try std.testing.expectError(error.StaleGraphTicket, memory.release(template_ticket));
 }
 
 test "prefill graph update candidates tolerate dynamic position and page-window origins only" {
@@ -1400,7 +1476,7 @@ pub fn clearPrefill() void {
 /// Before a layer's sub-blocks: `.replayed` (the graph ran; skip the sub-blocks), `.capturing` (run them: they are
 /// recorded; then `prefillEnd`), or `.eager` (run them; `prefillEnd` is a no-op).
 /// External event waits for expert-parallel sub-blocks are captured in order with the dense work.
-pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool, waits: []const cuda.Event) !Prefill {
+pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool, waits: []const cuda.Event, positions: u64) !Prefill {
     if (enabled() and broken) return error.GraphCaptureFailed;
     if (p.seq.paged) |pg| try pg.validateSharedLeaseOn(p.stream);
     if (!prefillEnabled()) return .eager;
@@ -1431,12 +1507,26 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         .wait_key = wait_key,
         .scores = q.scores,
         .tiles = tiles,
+        .positions = positions,
+        .stream = @intFromPtr(p.stream.handle),
     };
     clock += 1;
     for (&pentries) |*e| if (e.*) |*x| if (std.meta.eql(x.key, key)) {
+        if (x.binding) |binding| if (binding.poisoned) continue;
         x.used = clock;
         prefill_stats.replays += 1;
         try x.exec.launchOn(p.stream);
+        return .replayed;
+    };
+    const request = prefill_binding.requestFor(p, linear, layer, rows, sub, pos0, positions);
+    if (request) |target| if (prefillOriginCandidate(key, target)) |entry| {
+        try p.stream.synchronize();
+        try entry.binding.?.apply(prefill_binding.Backend{ .exec = entry.exec }, target);
+        entry.key = key;
+        entry.used = clock;
+        prefill_stats.rebinds += 1;
+        prefill_stats.replays += 1;
+        try entry.exec.launchOn(p.stream);
         return .replayed;
     };
     if (psighting(key) < prefillAfter()) {
@@ -1452,11 +1542,15 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         else => return err,
     };
     errdefer memory.release(admission) catch unreachable;
+    const binding_admission: ?memory.Ticket = if (request != null) memory.admitWithQuery(.prefill, 0, p.stream, freeMemory) catch null else null;
+    errdefer if (binding_admission) |ticket| memory.release(ticket) catch unreachable;
     try p.stream.synchronize();
     try cuda.graph.beginCapture(p.stream, .thread_local);
     capturing = true;
     pcur = key;
     pcur_admission = admission;
+    pcur_binding_request = request;
+    pcur_binding_admission = binding_admission;
     return .capturing;
 }
 
@@ -1473,22 +1567,43 @@ pub fn prefillEnd(p: anytype, how: Prefill) !void {
     pcur = null;
     const admission = pcur_admission.?;
     pcur_admission = null;
+    const request = pcur_binding_request;
+    pcur_binding_request = null;
+    const binding_admission = pcur_binding_admission;
+    pcur_binding_admission = null;
+    var binding_admitted = true;
+    defer if (binding_admitted) if (binding_admission) |ticket| memory.release(ticket) catch unreachable;
     var admitted = true;
     defer if (admitted) memory.release(admission) catch unreachable;
     var graph = try cuda.graph.endCapture(p.stream);
-    defer graph.deinit();
+    const binding: ?*prefill_binding.Binding = if (binding_admission != null and request != null) prefill_binding.Binding.create(std.heap.c_allocator, graph, request.?) catch null else null;
+    var kept = false;
+    defer if (!kept) {
+        if (binding) |owned| owned.deinit(std.heap.c_allocator) else graph.deinit();
+    };
+    if (binding != null) try memory.installed(binding_admission.?);
     const at: *PEntry = blk: {
-        for (&pentries) |*e| if (e.*) |*x| if (std.meta.eql(pshape(x.key), pshape(key))) {
+        for (&pentries) |*e| if (e.*) |*x| if (binding == null and std.meta.eql(pshape(x.key), pshape(key))) {
             if ((try x.exec.update(graph)) == .success) {
                 try uploadResident(&x.exec, p.stream);
                 x.key = key;
                 x.used = clock;
+                setPrefillBinding(x, binding, if (binding != null) binding_admission else null);
+                kept = binding != null;
+                binding_admitted = binding == null;
                 prefill_stats.updates += 1;
                 break :blk x;
             }
         };
         var best: usize = 0;
         var best_used: u64 = std.math.maxInt(u64);
+        var same_shape: ?usize = null;
+        for (pentries, 0..) |entry, index| if (entry) |cached| {
+            if (std.meta.eql(pshape(cached.key), pshape(key))) {
+                same_shape = index;
+                break;
+            }
+        };
         for (&pentries, 0..) |*e, i| {
             if (e.* == null) {
                 best = i;
@@ -1499,6 +1614,7 @@ pub fn prefillEnd(p: anytype, how: Prefill) !void {
                 best = i;
             }
         }
+        if (same_shape) |index| best = index;
         if (pentries[best]) |*old| {
             dropPrefill(old);
             pentries[best] = null;
@@ -1508,6 +1624,9 @@ pub fn prefillEnd(p: anytype, how: Prefill) !void {
         try uploadResident(&exec, p.stream);
         try memory.installed(admission);
         pentries[best] = .{ .key = key, .exec = exec, .used = clock, .admission = admission, .stream = p.stream };
+        setPrefillBinding(&pentries[best].?, binding, if (binding != null) binding_admission else null);
+        kept = binding != null;
+        binding_admitted = binding == null;
         admitted = false;
         break :blk &pentries[best].?;
     };
@@ -1522,6 +1641,11 @@ pub fn prefillAbort(p: anytype, how: Prefill) void {
     if (how != .capturing) return;
     capturing = false;
     pcur = null;
+    pcur_binding_request = null;
+    defer if (pcur_binding_admission) |ticket| {
+        memory.release(ticket) catch unreachable;
+        pcur_binding_admission = null;
+    };
     defer if (pcur_admission) |ticket| {
         memory.release(ticket) catch unreachable;
         pcur_admission = null;
