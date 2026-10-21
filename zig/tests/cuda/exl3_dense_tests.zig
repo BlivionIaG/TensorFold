@@ -18,6 +18,14 @@ pub fn run(r: *Rig, state: *Run, dir: []const u8) !void {
     const ql: qlinear.Linear = .{ .exl3 = &dense };
     {
         var ok = true;
+        counterResetReuse(r, &dense.lin) catch |e| {
+            state.fail(e, "exl3.linear.counter-reset-reuse");
+            ok = false;
+        };
+        if (ok) check.pass("exl3.linear.counter-reset-reuse", .{});
+    }
+    {
+        var ok = true;
         qlinearCheck(r, &ql, &dense.lin) catch |e| {
             state.fail(e, "exl3.qlinear");
             ok = false;
@@ -48,6 +56,59 @@ pub fn run(r: *Rig, state: *Run, dir: []const u8) !void {
         state.fail(e, "exl3.load.redsnow");
         break :blk false;
     }) check.pass("exl3.load.redsnow", .{});
+}
+
+fn counterResetReuse(r: *Rig, lin: *const exl3.Linear) !void {
+    for ([_][2]usize{ .{ 512, 512 }, .{ 2560, 2560 }, .{ 4096, 8192 }, .{ 2560, 512 }, .{ 1280, 128 }, .{ 1024, 8064 } }) |shape| {
+        const k = shape[0];
+        const n = shape[1];
+        const trellis, const suh, const svh = try tensors(r, k, n, .{ .halves = 8 });
+        const w = try weight(r, trellis, suh, svh, k, n, 8, .mul1);
+        const x = try r.bfs(128 * k, 1.0);
+        const dx = try r.dev(std.mem.sliceAsBytes(x));
+        const counter_bytes = exl3.Linear.counterBytes(w);
+        const guarded = try r.zeros(counter_bytes + 32);
+        const clean = try exl3_tests.zeroed(r, counter_bytes);
+        const xh = try r.zeros(128 * k * 2);
+        const z_bytes = exl3.Linear.zBytes(w, 128);
+        const z = if (z_bytes > 0) try r.zeros(z_bytes) else 0;
+        const expected_counters = try r.a.alloc(u8, counter_bytes + 32);
+        @memset(expected_counters, 0xff);
+        if (z_bytes > 0) @memset(expected_counters[16..][0..counter_bytes], 0);
+        for ([_]usize{ 1, 17, 128, 3, 127, 16 }) |m| {
+            for ([_]exl3.DType{ .bf16, .f32 }) |dtype| {
+                const bytes = m * n * @as(usize, if (dtype == .f32) 4 else 2);
+                const want = try r.zeros(bytes);
+                const got = try r.zeros(bytes + 32);
+                try lin.matmul(r.s, w, dx, .bf16, m, want, dtype, xh, z, clean);
+                try cuda.graph.beginCapture(r.s, .thread_local);
+                lin.matmul(r.s, w, dx, .bf16, m, got + 16, dtype, xh, z, guarded + 16) catch |err| {
+                    var discarded = cuda.graph.endCapture(r.s) catch return err;
+                    discarded.deinit();
+                    return err;
+                };
+                var captured = try cuda.graph.endCapture(r.s);
+                defer captured.deinit();
+                try check.expect(try captured.nodeCount() == 2, "exl3.linear.counter-reset-reuse: expected rotation and GEMM only", .{});
+                var exec = try captured.instantiate();
+                defer exec.deinit();
+                for (0..3) |repeat| {
+                    try r.s.d.check(r.s.d.api.cuMemsetD8Async(guarded, 0xff, counter_bytes + 32, r.s.handle), "cuMemsetD8Async");
+                    try r.s.d.check(r.s.d.api.cuMemsetD8Async(got, 0xff, bytes + 32, r.s.handle), "cuMemsetD8Async");
+                    try r.s.d.check(r.s.d.api.cuMemsetD8Async(xh, 0xff, 128 * k * 2, r.s.handle), "cuMemsetD8Async");
+                    if (z_bytes > 0) try r.s.d.check(r.s.d.api.cuMemsetD8Async(z, 0xff, z_bytes, r.s.handle), "cuMemsetD8Async");
+                    if (repeat == 0) {
+                        try lin.matmul(r.s, w, dx, .bf16, m, got + 16, dtype, xh, z, guarded + 16);
+                    } else try exec.launchOn(r.s);
+                    try check.sameBytes("exl3.linear.counter-reset-reuse.output", try r.back(got + 16, bytes), try r.back(want, bytes));
+                    try check.sameBytes("exl3.linear.counter-reset-reuse.counters", try r.back(guarded, counter_bytes + 32), expected_counters);
+                    const canary: [16]u8 = @splat(0xff);
+                    try check.sameBytes("exl3.linear.counter-reset-reuse.prefix", try r.back(got, 16), &canary);
+                    try check.sameBytes("exl3.linear.counter-reset-reuse.suffix", try r.back(got + 16 + bytes, 16), &canary);
+                }
+            }
+        }
+    }
 }
 
 /// Through qlinear.Linear's decode and prompt dispatch, 1, 17 and 300 rows byte-equal the direct block loop.
