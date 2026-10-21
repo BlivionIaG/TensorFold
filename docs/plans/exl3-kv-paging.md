@@ -6,9 +6,25 @@ The default remains a private pager per sequence. `TF_FLASHNEXT_KVPAGE=1` with
 `TF_FLASHNEXT_KVPAGE_SHARED=1` opts into a fixed rank-owned allocation. Set
 `TF_FLASHNEXT_KVPAGE_SHARED_LANES` to the admitted lane count (default 8, maximum
 32). The existing window, rows and slots settings retain their meanings; slots
-now form one pool across every lane and attention layer. This mode has host
-coverage only until the shared CUDA, TP2 graph and serving gates are run. It has
-no established hardware parity or performance result.
+now form one pool across every lane and attention layer. Ordinary-context TP2
+hardware gates pass within the scope below; a repeatable performance improvement
+and 200k-context capacity remain unqualified.
+
+Runtime source `ccb32fc3` passes 153 EXL3 host tests and real CUDA sm_120 builds.
+Matched private/shared GPU fixtures force sparse paging with 1,024 slots and
+compare 54 per-step logit hashes and six logical-state records per rank. They
+also check exact restored state, owned-entry payload/ages, recycled and
+asymmetric TP generations, and a foreign request's windows/history/continuation.
+Each restored graph phase replays 201 prefill and seven decode graphs per rank.
+Two concurrent 16,424-token HTTP histories with MTP and graphs pass cold, warm,
+branch and rewind against the private-pager reference, reusing 16,407–16,417
+tokens. This is not an independent golden-model check or a 200k-capacity gate.
+
+A separate same-binary eight-lane allocation diagnostic on source `0de41d37`
+measures 920 MiB lower sampled physical GPU peaks per rank. It uses 1,024 input
+and 128 output tokens per request; do not relabel it as the later source or
+long-context performance evidence. Full settings, hashes and limitations are in
+the [qualification receipt](https://github.com/ashhart/TensorFold/pull/1113#issuecomment-6325790752).
 
 The slot count is global in shared mode, not per sequence: eight lanes with
 16,384 slots share 16,384 entries rather than reserving eight private pools.
