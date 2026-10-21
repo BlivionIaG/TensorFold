@@ -126,6 +126,72 @@ test "exl3: verification tail enqueues the existing top-1 kernel then only its r
     try std.testing.expect(window.verify_cache.ready == null);
 }
 
+test "exl3: common verification scopes TP1 and TP2 validation and delegation without joins" {
+    const Tri = @import("cuda_launch.zig").Tri;
+    const Fake = @import("cuda_exl3_shared_kv_test.zig").Fake;
+    const Phase = @import("exl3_telemetry.zig").Phase;
+    const Delegate = struct {
+        engine: *prompt.Engine,
+        calls: usize = 0,
+        fail: bool = false,
+
+        fn verify(ptr: *anyopaque, _: *prompt.Seq, _: *Draft, _: []const u32, _: ?batch.Hooks.OutputTail) !void {
+            const delegate: *@This() = @ptrCast(@alignCast(ptr));
+            delegate.calls += 1;
+            try std.testing.expectEqual(Phase.verify, delegate.engine.telemetry.forward_phase);
+            if (delegate.fail) return error.VerificationFailed;
+        }
+
+        fn forward(_: *anyopaque, _: *prompt.Seq, _: []const u32, _: batch.Hooks) !void {
+            return error.UnexpectedDelegation;
+        }
+
+        fn rollback(_: *anyopaque, _: *prompt.Seq, _: *Draft, _: usize) !void {
+            return error.UnexpectedDelegation;
+        }
+    };
+    var driver = Fake.driver();
+    var stream: cuda.Stream = .{ .d = &driver, .handle = null };
+    var engine: prompt.Engine = undefined;
+    engine.stream = &stream;
+    engine.round_graph = .{};
+    var sequence: prompt.Seq = undefined;
+    sequence.cap = max_rows;
+    var window: Draft = undefined;
+    window.verify_cache = .{};
+    var delegate: Delegate = .{ .engine = &engine };
+    var ops: Ops(Tri) = .{ .e = &engine, .tri = .{ .s = stream }, .h = undefined };
+    const too_wide: [max_rows + 1]u32 = @splat(1);
+    const syncs = Fake.sync_calls;
+    for ([_]usize{ 1, 2 }) |world| {
+        for ([_]bool{ false, true }) |enabled| {
+            for ([_]Phase{ .unknown, .prefill, .decode, .verify }) |previous| {
+                engine.telemetry = .{ .enabled = enabled, .rank = .{ .rank = 0, .world = world }, .forward_phase = previous };
+                sequence.fed = 0;
+                ops.main = null;
+                try std.testing.expectError(error.WindowTooWide, ops.verifyWithTail(&sequence, &window, &.{}, null));
+                try std.testing.expectEqual(previous, engine.telemetry.forward_phase);
+                try std.testing.expectError(error.WindowTooWide, ops.verifyWithTail(&sequence, &window, &too_wide, null));
+                try std.testing.expectEqual(previous, engine.telemetry.forward_phase);
+                sequence.fed = sequence.cap;
+                try std.testing.expectError(error.PromptTooLong, ops.verifyWithTail(&sequence, &window, &.{1}, null));
+                try std.testing.expectEqual(previous, engine.telemetry.forward_phase);
+                ops.main = .{ .ptr = &delegate, .rank = 0, .forward = Delegate.forward, .verify = Delegate.verify, .rollback = Delegate.rollback };
+                const calls = delegate.calls;
+                delegate.fail = false;
+                try ops.verifyWithTail(&sequence, &window, &.{1}, null);
+                try std.testing.expectEqual(previous, engine.telemetry.forward_phase);
+                delegate.fail = true;
+                try std.testing.expectError(error.VerificationFailed, ops.verifyWithTail(&sequence, &window, &.{1}, null));
+                try std.testing.expectEqual(previous, engine.telemetry.forward_phase);
+                try std.testing.expectEqual(calls + 2, delegate.calls);
+                try std.testing.expectEqual(enabled, engine.telemetry.enabled);
+                try std.testing.expectEqual(syncs, Fake.sync_calls);
+            }
+        }
+    }
+}
+
 fn copyAsync(stream: cuda.Stream, dst: u64, src: u64, n: usize) !void {
     if (n == 0) return;
     const d = stream.d;
@@ -359,6 +425,8 @@ pub fn Ops(comptime Tri: type) type {
         };
 
         pub fn verifyWithTail(o: Self, seq: *prompt.Seq, d: *Draft, ids: []const u32, tail: ?batch.Hooks.OutputTail) !void {
+            const telemetry_scope = o.e.telemetry.enter(.verify);
+            defer telemetry_scope.restore();
             d.verify_cache.invalidate();
             if (o.main) |m| return m.verify(m.ptr, seq, d, ids, tail);
             o.e.round_graph.clear();
