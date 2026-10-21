@@ -1,0 +1,39 @@
+{
+  "source_head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+  "proposal_patch_sha256": "4c23cc1765921c25844a7db7e6b0750c7e5b1d5b8ff5efcb9735072881e5f1b8",
+  "zig_version": "0.17.0",
+  "zig_sha256": "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523",
+  "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+  "cpu_only": true,
+  "started_at_utc": "2026-10-20T22:28:21Z",
+  "stages": [
+    {
+      "target": "test-cuda-host",
+      "command": [
+        "<ZIG>",
+        "build",
+        "test-cuda-host",
+        "-Dcpu=apple_m1",
+        "--summary",
+        "all",
+        "--cache-dir",
+        "<PROOF_ROOT>/full_cpu_host/cache",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/full_cpu_host/global"
+      ],
+      "started_at_utc": "2026-10-20T22:28:21Z",
+      "pid": 9684,
+      "exit_status": 1,
+      "elapsed_seconds": 0.05570483207702637,
+      "log_sha256": "014287bf04a5bde09d39f0a1f7eabacb043a9290bfed187de68f271c25229f5c"
+    }
+  ],
+  "environment_observed": {
+    "SDKROOT": null,
+    "DEVELOPER_DIR": null,
+    "HIP_VISIBLE_DEVICES": null,
+    "ROCR_VISIBLE_DEVICES": null,
+    "CUDA_VISIBLE_DEVICES": null
+  },
+  "patch_unchanged": true
+}

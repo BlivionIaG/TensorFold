@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "review_source": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+  "incremental_files": 13,
+  "production_kernel_changes": false,
+  "finding": {
+    "severity": "P2",
+    "path": "zig/tests/hip/contract_limits.zig",
+    "lines": [
+      43,
+      45,
+      124,
+      142
+    ],
+    "kind": "aggregatecontrolcheckdoesnotenforceeachchipred",
+    "counterexample_violations": {
+      "gfx1030": 0,
+      "gfx1100": 1,
+      "gfx1151": 1,
+      "gfx1201": 1
+    },
+    "shipped_aggregate_accepts": true,
+    "proposed_perchip_rejects": true
+  },
+  "actual_cpu_command": [
+    "zig0.17.0",
+    "test",
+    "control_counterexample.zig"
+  ],
+  "actual_exit_status": 0,
+  "tests_passed": 5,
+  "gpu_jobs": 0,
+  "product_source_edits": false,
+  "first_pr_ready": false,
+  "files": {
+    "counterexample.log": "485ef9de48a48c52a48547860bf6191fa6978c3fb31e678f18bac71224f456ae",
+    "control_counterexample.zig": "9b77ff5c451cc553f7a06a5fbbdc93574fc380829d5061049acb7c12b72aec84",
+    "hip_records.zig": "068d0400a3c15b1abbcc696958bfae7d8b9f4400ce10e501798565893cb7c946",
+    "FINDING.md": "ee503600acfbe9460e679832c069dda543a018a765b6d628f9eca2bbe4cf95da",
+    "limits.zig": "cf3b164d4e3356a52907ed0dd016d18ec96ecbb02e890f8d1a1bb8047780d7b3"
+  }
+}

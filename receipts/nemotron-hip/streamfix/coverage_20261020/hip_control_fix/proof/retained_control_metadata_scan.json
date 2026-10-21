@@ -1,0 +1,33 @@
+{
+  "scope": "Bounded LOCAL currentpublished729 andownheadsource-qualified resource logs; not a newcompile/wholearchive assertion",
+  "logs": [
+    {
+      "file": "<RECEIPT_ROOT>/public-stage/inline729/resources/inline_limits_qualified.log",
+      "sha256": "a5ea4ed5dab4f105f5f68fe210babe6665ced89faecf427a7b2cf8730168789d",
+      "control_record_lines": 8,
+      "stale_lines": [],
+      "current_lines": 8
+    },
+    {
+      "file": "<RECEIPT_ROOT>/public-stage/inline729/validation/four_chip_limits.log",
+      "sha256": "a5ea4ed5dab4f105f5f68fe210babe6665ced89faecf427a7b2cf8730168789d",
+      "control_record_lines": 8,
+      "stale_lines": [],
+      "current_lines": 8
+    },
+    {
+      "file": "<RECEIPT_ROOT>/public-stage/ownheads729/raw/foundation_fourchip_limits.raw.log",
+      "sha256": "55a70315de2b34aa6360aa6f7e315188ff61d2207c23b27c6a3010c61e035f05",
+      "control_record_lines": 8,
+      "stale_lines": [],
+      "current_lines": 8
+    },
+    {
+      "file": "<RECEIPT_ROOT>/public-stage/ownheads729/raw/relu2_fourchip_limits.raw.log",
+      "sha256": "c52e04522d6210860c09f68cabf2ee94a483954dc9bc5f998c78aaa7d606be21",
+      "control_record_lines": 8,
+      "stale_lines": [],
+      "current_lines": 8
+    }
+  ]
+}

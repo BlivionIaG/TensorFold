@@ -1,0 +1,11 @@
+1/5 control_counterexample.test.one chip loses bound plant: aggregate passes but per-chip gate rejects...gfx1030: 0 planted limit violations
+gfx1100: 1 planted limit violations
+gfx1151: 1 planted limit violations
+gfx1201: 1 planted limit violations
+COUNTEREXAMPLE: shipped aggregate accepts; one gfx1030 plant green; per-chip requirement rejects
+OK
+2/5 hip_records.test.every registered HIP launch fits every RDNA chip we serve, and each planted control breaks one...OK
+3/5 limits.test.a launch inside every family passes; each planted excess is named...OK
+4/5 limits.test.CUDA: registers by warp, launch bounds, shared bytes and clusters per SM...OK
+5/5 limits.test.HIP: bounds, wave size, VGPRs a SIMD and LDS per chip...OK
+All 5 tests passed.

@@ -1,0 +1,22 @@
+1/2 probe.test.table enforces every control chip...PASS limits: 3 registered HIP launches against gfx1030/1100/1151/1201, 0 problems
+RED  limits control: past its bounds: red on every chip
+RED  limits control: 72 KiB of LDS: red on every chip
+OK
+2/2 probe.test.objects enforces control chip, usage and metadata...PASS limits gfx1030 RMS norm tf_rms_rows: 58 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 RMS norm tf_rms_rows: 43 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 RMS norm tf_rms_rows: 42 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 RMS norm tf_rms_rows: 42 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD RMS norm tf_rms_rows: .usage = .{ .{ .vgprs = 58, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 43, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 42, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 42, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, }
+FAIL (UnknownImage)
+<LOCAL_HOME>/Projects/Infra/../../../..<PROOF_ROOT>/probes/after/normal/contract_limits.zig:31:73: 0x10075f51f in file (root)
+    const group = std.meta.stringToEnum(hip.kernels.Group, name) orelse return error.UnknownImage;
+                                                                        ^
+<LOCAL_HOME>/Projects/Infra/../../../..<PROOF_ROOT>/probes/after/normal/contract_limits.zig:111:26: 0x1007605f3 in objects (root)
+            const path = try file(a, dir, t.name, rec.launch.image);
+                         ^
+<LOCAL_HOME>/Projects/Infra/../../../..<PROOF_ROOT>/probes/after/normal/probe.zig:4:70: 0x1007612cf in test.objects enforces control chip, usage and metadata (root)
+test "objects enforces control chip, usage and metadata" { const n = try gate.objects(std.testing.allocator, std.testing.io, "<PROOF_ROOT>/fixtures/normal"); try std.testing.expect(n == 0); }
+                                                                     ^
+1 passed; 0 skipped; 1 failed.
+error: the following test command failed with exit code 1:
+<PROOF_ROOT>/cache_probes/o/e5515108349b85239a49f681e9f8ee1e/root --seed=0x8ca33739

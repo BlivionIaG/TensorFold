@@ -1,0 +1,366 @@
+test-cuda-host
++- run test w
+RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+FAIL CPU reference comparison within its float64 tolerance
+RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+FAIL CPU reference comparison within its float64 tolerance
+FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/88f30c487a1dfeb64417940bed18f19a/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+REFUSE TF_GLM_PREFILL_REDUCE=split: rank 0 cannot exchange with rank 2; split sends every rank's rows to every other, and a fabric where some ranks reach only their neighbours (a ring of four without a switch) needs TF_GLM_PREFILL_REDUCE=ring or gather
+REFUSE TF_GLM_PREFILL_REDUCE=split: rank 1 cannot exchange with rank 3; split sends every rank's rows to every other, and a fabric where some ranks reach only their neighbours (a ring of four without a switch) needs TF_GLM_PREFILL_REDUCE=ring or gather
+REFUSE TF_GLM_PREFILL_REDUCE=split: rank 2 cannot exchange with rank 0; split sends every rank's rows to every other, and a fabric where some ranks reach only their neighbours (a ring of four without a switch) needs TF_GLM_PREFILL_REDUCE=ring or gather
+REFUSE TF_GLM_PREFILL_REDUCE=split: rank 3 cannot exchange with rank 1; split sends every rank's rows to every other, and a fabric where some ranks reach only their neighbours (a ring of four without a switch) needs TF_GLM_PREFILL_REDUCE=ring or gather
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/9608e4591e02fff1ec7b52b8576ffd07/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/8b58a07695e8c930327541b6670672f4/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+tf_h3_forward: BadH3Dimensions
+tf_h3_forward_host: BadH3Dimensions
+tf_h3_forward: BadH3Dimensions
+tf_h3_forward_host: BadH3Dimensions
+tf_h3_forward: BadH3Dimensions
+tf_h3_forward_host: BadH3Dimensions
+tf_h3_forward: BadH3Rotary
+tf_h3_forward_host: BadH3Rotary
+tf_h3_forward: BadH3Rotary
+tf_h3_forward_host: BadH3Rotary
+tf_h3_forward: BadH3Keep
+tf_h3_forward_host: BadH3Keep
+tf_h3_forward: BadH3Keep
+tf_h3_forward_host: BadH3Keep
+tf_h3_forward: BadH3Blocks
+tf_h3_forward_host: BadH3Blocks
+tf_h3_forward: BadH3Scalar
+tf_h3_forward_host: BadH3Scalar
+tf_h3_forward: BadH3Scalar
+tf_h3_forward_host: BadH3Scalar
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward_host: BadH3Address
+tf_h3_forward_host: BadH3Scalar
+H3 model retained at close: NotReady
+H3 geometry retained: NotReady
+tensor blocks.0.norm1.weight: MissingTensor
+tensor blocks.1.attn.qkv_proj.weight: MissingTensor
+tensor blocks.1.norm1.weight: MissingTensor
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/71437bd5cbe06f0795c0d60448bcfd87/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): lm_head is 8-bit in groups of 64: CUDA reads Nemotron MLX checkpoints at 4-bit in groups of 64 only; mixed and 6- or 8-bit (oQ) checkpoints serve on Macs
+[default] (warn): backbone.embeddings is 8-bit in groups of 64: the Intel GPU engine reads Nemotron MLX checkpoints at 4-bit in groups of 64 only; mixed and 6- or 8-bit (oQ) checkpoints serve on Macs
+fake target: proposed=68 verified=68 accepted=68
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/0cafe0c368f7fe920542af1c0868b18c/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+RESULT valid stale prefix: largest difference 0.000 of its tolerance (element 0)
+FAIL no-op projection: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/49838e61c1b989d6b42982a4cdfb7d43/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): lane host: stopping at a round boundary: 2 running and 1 queued request(s) end (server restarting: retry shortly)
+[default] (warn): lane host: stopping at a round boundary: 1 running and 1 queued request(s) end (server restarting: retry shortly)
+[default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+[default] (warn): lane host: a round failed (GpuFailed): every admitted stream fails
+[default] (warn): lane host: a round failed (the planner refused): every admitted stream fails
+[default] (warn): lane host: a round failed (PlannerFull): every admitted stream fails
+[default] (warn): lane host: stopping at a round boundary: 1 running and 1 queued request(s) end (drain deadline)
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/792e836112c27e84b66bbf97c8150e96/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): /opt/homebrew/opt/jpeg-turbo/lib/libturbojpeg.0.dylib is not libjpeg-turbo 3.1.4.1; JPEG images are refused until it is
+libjpeg-turbo 3.1.4.1 not found: LFM2's JPEG cases skipped
+libjpeg-turbo 3.1.4.1 not found: LFM2's JPEG cases skipped
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/6dbc47540035776d0cf04dc7c290fe91/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): qwen3_5: a failed restore's stream did not drain: its kept state's host copy stays
+[default] (warn): qwen3_5: a kept state's host copy goes to the copy-source quarantine: a restore's copies did not drain
+[default] (warn): qwen3_5: a failed restore's stream did not drain: its kept state's host copy stays
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/045318bc2f60de1c848a26ac5b82057c/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+RESULT CPU reference comparison: largest difference 1.000 of its tolerance (element 1)
+RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+FAIL CPU reference comparison within its float64 tolerance
+RESULT CPU reference comparison: largest difference 2.000 of its tolerance (element 0)
+FAIL CPU reference comparison within its float64 tolerance
+FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 2 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 1 (got -nan, reference 0e0, tolerance 1e0)
+FAIL CPU reference comparison: non-finite error at element 0 (got inf, reference 0e0, tolerance 1e0)
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/51a3d75abe855cddd870327da898283e/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+[default] (err): rank 0: another rank's process ended (its line closed); this rank stops instead of waiting on it
+[default] (err): rank 0: rank 1 stopped (peer OOM); this rank stops too
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/0a847cc9c400cc5077551989eb522bac/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): Drama readback drain failed: retaining its buffers and engine owner
+[default] (warn): Drama readback drain failed: retaining its buffers and engine owner
+codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+codec requested 4, actual sizes { 4, 4, 4, 4, 1 }
+codec requested 16, actual sizes { 16, 1 }
+codec requested 1, actual sizes { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }
+Drama replay passed: eager/graphs, poison/reset, codec chunks and interleaved state
+[default] (warn): drama3: config hidden_size = 4096, the kernels need 2048
+[default] (warn): codec.pth pickle names os.system, outside the tensor state-dict allow-list
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/6eb6d185637369f4c5d8c1b2c65f6c8c/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+test-cuda-host
++- run test w
+[default] (warn): /opt/homebrew/opt/jpeg-turbo/lib/libturbojpeg.0.dylib is not libjpeg-turbo 3.1.4.1; JPEG images are refused until it is
+libjpeg-turbo 3.1.4.1 not found: JPEG pixel cases skipped
+libjpeg-turbo 3.1.4.1 not found: JPEG pixel cases skipped
+libjpeg-turbo 3.1.4.1 not found: JPEG pixel cases skipped
+[default] (warn): model.layers.0.mlp.up_proj.weight: another spelling of module layers.0.mlp.up_proj declares a different width
+[default] (warn): layers.0.mlp.up_proj: another spelling of module layers.0.mlp.up_proj declares a different width
+[default] (warn): model.layers.0.mlp.up_proj: another spelling of module layers.0.mlp.up_proj declares a different width
+failed command: <PROOF_ROOT>/full_cpu_host_retry2/cache/o/4044a10eed12b5e495358ef4b8e57dbb/test --cache-dir=<PROOF_ROOT>/full_cpu_host_retry2/cache --seed=0x99f4b4b --listen=-
+
+Build Summary: 80/80 steps succeeded; 1737/1741 tests passed (4 skipped)
+test-cuda-host success
++- run test 1 pass (1 total) 5ms MaxRSS:2M
+|  +- compile test debug native success 1s MaxRSS:270M
++- run test 30 pass (30 total) 145ms MaxRSS:4M
+|  +- compile test debug native success 2s MaxRSS:366M
+|     +- WriteFile h3-compile-only.fatbin success
+|     +- options cached
++- run test 3 pass (3 total) 346ms MaxRSS:70M
+|  +- compile test debug native success 1s MaxRSS:280M
++- run test 10 pass (10 total) 1s MaxRSS:15M
+|  +- compile test debug native success 2s MaxRSS:405M
+|     +- WriteFile draft_ids.txt success
+|     +- options (reused)
++- compile obj exl3_host_compile debug native success 190ms MaxRSS:112M
+|  +- options (reused)
++- run test 6 pass (6 total) 8ms MaxRSS:2M
+|  +- compile test debug native success 1s MaxRSS:303M
+|     +- options (reused)
++- run test 6 pass (6 total) 52ms MaxRSS:5M
+|  +- compile test debug native success 1s MaxRSS:287M
+|     +- options (reused)
++- run test 8 pass (8 total) 15ms MaxRSS:2M
+|  +- compile test debug native success 1s MaxRSS:278M
++- run test 3 pass (3 total) 83ms MaxRSS:5M
+|  +- compile test debug native success 1s MaxRSS:270M
++- run test 8 pass (8 total) 39ms MaxRSS:3M
+|  +- compile test debug native success 1s MaxRSS:285M
++- run test 4 pass (4 total) 15ms MaxRSS:2M
+|  +- compile test debug native success 1s MaxRSS:279M
+|     +- options (reused)
++- run test 1 pass (1 total) 32ms MaxRSS:4M
+|  +- compile test debug native success 1s MaxRSS:284M
+|     +- options (reused)
++- run test 4 pass (4 total) 2ms MaxRSS:1M
+|  +- compile test fast native success 5s MaxRSS:369M
+|     +- options (reused)
++- run test 1 pass (1 total) 7ms MaxRSS:3M
+|  +- compile test fast native success 6s MaxRSS:379M
+|     +- options (reused)
++- compile obj bolt_host_compile debug aarch64-linux-gnu success 456ms MaxRSS:164M
+|  +- options success
+|  +- WriteFile draft_ids.txt (reused)
++- run test 26 pass (26 total) 382ms MaxRSS:6M
+|  +- compile test debug native success 1s MaxRSS:373M
+|     +- options (reused)
++- compile obj drama_cuda_native_host debug native success 325ms MaxRSS:125M
+|  +- options (reused)
++- run test 5 pass (5 total) 5ms MaxRSS:2M
+|  +- compile test debug native success 1s MaxRSS:270M
++- run test 428 pass (428 total) 44s MaxRSS:96M
+|  +- compile test debug native success 11s MaxRSS:1G
++- run test 5 pass (5 total) 7ms MaxRSS:2M
+|  +- compile test debug native success 1s MaxRSS:283M
++- run test 130 pass (130 total) 42ms MaxRSS:4M
+|  +- compile test debug native success 2s MaxRSS:369M
+|     +- options (reused)
++- run test 284 pass, 2 skip (286 total) 4s MaxRSS:132M
+|  +- compile test debug native success 4s MaxRSS:600M
++- run test 163 pass (163 total) 5s MaxRSS:64M
+|  +- compile test debug native success 3s MaxRSS:484M
++- run test 74 pass, 1 skip (75 total) 188ms MaxRSS:9M
+|  +- compile test debug native success 3s MaxRSS:504M
+|     +- WriteFile draft_ids.txt (reused)
+|     +- options (reused)
++- run test 33 pass (33 total) 5s MaxRSS:23M
+|  +- compile test debug native success 1s MaxRSS:346M
+|     +- options (reused)
++- run test 12 pass (12 total) 15ms MaxRSS:3M
+|  +- compile test debug native success 1s MaxRSS:325M
+|     +- options (reused)
++- run test 83 pass (83 total) 216ms MaxRSS:73M
+|  +- compile test debug native success 2s MaxRSS:439M
+|     +- options (reused)
++- run test 13 pass (13 total) 4s MaxRSS:14M
+|  +- compile test debug native success 2s MaxRSS:386M
+|     +- options (reused)
++- run test 29 pass (29 total) 3s MaxRSS:1G
+|  +- compile test debug native success 1s MaxRSS:339M
+|     +- options (reused)
++- run test 5 pass (5 total) 19ms MaxRSS:3M
+|  +- compile test debug native success 1s MaxRSS:280M
++- run test 20 pass (20 total) 119ms MaxRSS:5M
+|  +- compile test debug native success 2s MaxRSS:339M
++- run test 204 pass (204 total) 4s MaxRSS:41M
+|  +- compile test debug native success 3s MaxRSS:539M
++- run test 52 pass, 1 skip (53 total) 60ms MaxRSS:24M
+|  +- compile test debug native success 4s MaxRSS:647M
+|     +- options (reused)
+|     +- WriteFile draft_ids.txt (reused)
++- run test 3 pass (3 total) 9ms MaxRSS:2M
+|  +- compile test debug native success 1s MaxRSS:267M
++- run test 52 pass (52 total) 47ms MaxRSS:53M
+|  +- compile test debug native success 2s MaxRSS:392M
+|     +- options (reused)
++- run test 5 pass (5 total) 9ms MaxRSS:2M
+|  +- compile test debug native success 1s MaxRSS:269M
++- run test 25 pass (25 total) 25s MaxRSS:236M
+|  +- compile test debug native success 1s MaxRSS:331M
++- run test 1 pass (1 total) 5ms MaxRSS:2M
+   +- compile test debug native success 1s MaxRSS:299M
+      +- options success
+      +- options (reused)
+      +- WriteFile draft_ids.txt (reused)
+      +- WriteFile exlr8_alias.zig success
+

@@ -1,0 +1,300 @@
+{
+  "proposal_only": true,
+  "base_head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+  "worktree": "<SOURCE_TREE>",
+  "committed": false,
+  "remote_or_PR_branch_changed": false,
+  "production_closure_unchanged": true,
+  "changed_files": [
+    {
+      "path": "zig/src/core/contract/hip_records.zig",
+      "base_sha256": "068d0400a3c15b1abbcc696958bfae7d8b9f4400ce10e501798565893cb7c946",
+      "proposal_sha256": "bad0dd9fa7f561c44840b11830adc4b3658a3b7c0bed8f8945b1351fa2f25b71",
+      "lines": 144
+    },
+    {
+      "path": "zig/tests/hip/contract_limits.zig",
+      "base_sha256": "ca78e173fd3bd30e4a0a86be764b838ff899a670c2f5783e09815063cf89ffa7",
+      "proposal_sha256": "88595deb2587dd85c6dc46d9b74ec86a0039890953e0903cfeefafab87c466da",
+      "lines": 148
+    }
+  ],
+  "patch_sha256": "4c23cc1765921c25844a7db7e6b0750c7e5b1d5b8ff5efcb9735072881e5f1b8",
+  "before_actual_regression_exit_status": 1,
+  "before_actual_regression_log_sha256": "62b07194fd443d613dd5ca7079b25e58e763bde9a2548d38831ec6fce7840e0c",
+  "fixed_actual_records_unit_test_exit_status": 0,
+  "fixed_actual_records_unit_tests": 5,
+  "fixture_probes": [
+    {
+      "phase": "before",
+      "case": "normal",
+      "command": [
+        "<ZIG>",
+        "test",
+        "--dep",
+        "core",
+        "--dep",
+        "hip",
+        "--dep",
+        "hip_controls",
+        "-Mroot=<PROOF_ROOT>/probes/before/normal/probe.zig",
+        "-Mcore=<PROOF_ROOT>/probes/before/normal/core.zig",
+        "-Mhip=<PROOF_ROOT>/probes/before/normal/hip.zig",
+        "-Mhip_controls=<PROOF_ROOT>/probes/before/normal/controls.zig",
+        "--cache-dir",
+        "<PROOF_ROOT>/cache_probes",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/global"
+      ],
+      "actual_exit_status": 0,
+      "expected_exit_status": 0,
+      "log": "before_normal.log",
+      "log_sha256": "675e7d92b3bed4e1252f9ca97602ad57db8413760403259fd7353038386fae46",
+      "elapsed_seconds": 1.154237985610962
+    },
+    {
+      "phase": "before",
+      "case": "partial_green",
+      "command": [
+        "<ZIG>",
+        "test",
+        "--dep",
+        "core",
+        "--dep",
+        "hip",
+        "--dep",
+        "hip_controls",
+        "-Mroot=<PROOF_ROOT>/probes/before/partial_green/probe.zig",
+        "-Mcore=<PROOF_ROOT>/probes/before/partial_green/core.zig",
+        "-Mhip=<PROOF_ROOT>/probes/before/partial_green/hip.zig",
+        "-Mhip_controls=<PROOF_ROOT>/probes/before/partial_green/controls.zig",
+        "--cache-dir",
+        "<PROOF_ROOT>/cache_probes",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/global"
+      ],
+      "actual_exit_status": 1,
+      "expected_exit_status": 1,
+      "log": "before_partial_green.log",
+      "log_sha256": "607d6e17c5f5e133806caebc2dd79dc0e20f22f74393dbb1759f8c1c8512c02f",
+      "elapsed_seconds": 1.2309131622314453
+    },
+    {
+      "phase": "before",
+      "case": "missing_usage",
+      "command": [
+        "<ZIG>",
+        "test",
+        "--dep",
+        "core",
+        "--dep",
+        "hip",
+        "--dep",
+        "hip_controls",
+        "-Mroot=<PROOF_ROOT>/probes/before/missing_usage/probe.zig",
+        "-Mcore=<PROOF_ROOT>/probes/before/missing_usage/core.zig",
+        "-Mhip=<PROOF_ROOT>/probes/before/missing_usage/hip.zig",
+        "-Mhip_controls=<PROOF_ROOT>/probes/before/missing_usage/controls.zig",
+        "--cache-dir",
+        "<PROOF_ROOT>/cache_probes",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/global"
+      ],
+      "actual_exit_status": 1,
+      "expected_exit_status": 1,
+      "log": "before_missing_usage.log",
+      "log_sha256": "e9dcc2e1afebc818969971a702377ddf93b181db0d0c4998c45634a1039a8689",
+      "elapsed_seconds": 1.221146821975708
+    },
+    {
+      "phase": "before",
+      "case": "stale_control",
+      "command": [
+        "<ZIG>",
+        "test",
+        "--dep",
+        "core",
+        "--dep",
+        "hip",
+        "--dep",
+        "hip_controls",
+        "-Mroot=<PROOF_ROOT>/probes/before/stale_control/probe.zig",
+        "-Mcore=<PROOF_ROOT>/probes/before/stale_control/core.zig",
+        "-Mhip=<PROOF_ROOT>/probes/before/stale_control/hip.zig",
+        "-Mhip_controls=<PROOF_ROOT>/probes/before/stale_control/controls.zig",
+        "--cache-dir",
+        "<PROOF_ROOT>/cache_probes",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/global"
+      ],
+      "actual_exit_status": 1,
+      "expected_exit_status": 1,
+      "log": "before_stale_control.log",
+      "log_sha256": "d4c6c91a22cfe9409e457a86251d585fda4c16fc73aadcc5fbe46756cd04e0a0",
+      "elapsed_seconds": 1.2270910739898682
+    },
+    {
+      "phase": "after",
+      "case": "normal",
+      "command": [
+        "<ZIG>",
+        "test",
+        "--dep",
+        "core",
+        "--dep",
+        "hip",
+        "--dep",
+        "hip_controls",
+        "-Mroot=<PROOF_ROOT>/probes/after/normal/probe.zig",
+        "-Mcore=<PROOF_ROOT>/probes/after/normal/core.zig",
+        "-Mhip=<PROOF_ROOT>/probes/after/normal/hip.zig",
+        "-Mhip_controls=<PROOF_ROOT>/probes/after/normal/controls.zig",
+        "--cache-dir",
+        "<PROOF_ROOT>/cache_probes",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/global"
+      ],
+      "actual_exit_status": 0,
+      "expected_exit_status": 0,
+      "log": "after_normal.log",
+      "log_sha256": "675e7d92b3bed4e1252f9ca97602ad57db8413760403259fd7353038386fae46",
+      "elapsed_seconds": 1.1499619483947754
+    },
+    {
+      "phase": "after",
+      "case": "partial_green",
+      "command": [
+        "<ZIG>",
+        "test",
+        "--dep",
+        "core",
+        "--dep",
+        "hip",
+        "--dep",
+        "hip_controls",
+        "-Mroot=<PROOF_ROOT>/probes/after/partial_green/probe.zig",
+        "-Mcore=<PROOF_ROOT>/probes/after/partial_green/core.zig",
+        "-Mhip=<PROOF_ROOT>/probes/after/partial_green/hip.zig",
+        "-Mhip_controls=<PROOF_ROOT>/probes/after/partial_green/controls.zig",
+        "--cache-dir",
+        "<PROOF_ROOT>/cache_probes",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/global"
+      ],
+      "actual_exit_status": 0,
+      "expected_exit_status": 0,
+      "log": "after_partial_green.log",
+      "log_sha256": "b53115f2ab712e7ffb7625e50aeb048358139fbf723bbe01735906a33177a0f6",
+      "elapsed_seconds": 1.158599853515625
+    },
+    {
+      "phase": "after",
+      "case": "missing_usage",
+      "command": [
+        "<ZIG>",
+        "test",
+        "--dep",
+        "core",
+        "--dep",
+        "hip",
+        "--dep",
+        "hip_controls",
+        "-Mroot=<PROOF_ROOT>/probes/after/missing_usage/probe.zig",
+        "-Mcore=<PROOF_ROOT>/probes/after/missing_usage/core.zig",
+        "-Mhip=<PROOF_ROOT>/probes/after/missing_usage/hip.zig",
+        "-Mhip_controls=<PROOF_ROOT>/probes/after/missing_usage/controls.zig",
+        "--cache-dir",
+        "<PROOF_ROOT>/cache_probes",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/global"
+      ],
+      "actual_exit_status": 0,
+      "expected_exit_status": 0,
+      "log": "after_missing_usage.log",
+      "log_sha256": "7c64dcef6c7cccb252931364be0a04f7458fb5edefc563f2d44e96bb0f236c10",
+      "elapsed_seconds": 1.1590290069580078
+    },
+    {
+      "phase": "after",
+      "case": "stale_control",
+      "command": [
+        "<ZIG>",
+        "test",
+        "--dep",
+        "core",
+        "--dep",
+        "hip",
+        "--dep",
+        "hip_controls",
+        "-Mroot=<PROOF_ROOT>/probes/after/stale_control/probe.zig",
+        "-Mcore=<PROOF_ROOT>/probes/after/stale_control/core.zig",
+        "-Mhip=<PROOF_ROOT>/probes/after/stale_control/hip.zig",
+        "-Mhip_controls=<PROOF_ROOT>/probes/after/stale_control/controls.zig",
+        "--cache-dir",
+        "<PROOF_ROOT>/cache_probes",
+        "--global-cache-dir",
+        "<PROOF_ROOT>/global"
+      ],
+      "actual_exit_status": 0,
+      "expected_exit_status": 0,
+      "log": "after_stale_control.log",
+      "log_sha256": "f4cb5d1d33baa0a9fe36af5826f63c45a6bb90fcd04fac39b6367a4b166363d0",
+      "elapsed_seconds": 1.1681280136108398
+    }
+  ],
+  "actual_object_probe_scope": "Actual unedited function bodies copied byte-identically perphase; actual hsaco ELF/metadata parser and limits.hip; synthetic ELF fixturemetadata, not realcompiled GPUobjects. Stub binds onlytable records andHIPgroupname enum; no HIP driver calls.",
+  "infrastructure_attempts_preserved": [
+    "probe_compile_first.log: initialfixture omitted act group; UnknownImage, fixedtestfixture only",
+    "setup/run_probes script syntax failure before execution; toolhistory retained"
+  ],
+  "before_after_summary": "Normal objects/table pass both. Onechipfit, onechipmissingusage andstalecontrol independentlyfail oldtests andpass fixedtests. Partialfit record matchesfixture so failureisnotmetadata-stalenessconfound.",
+  "retained_actual_control_metadata_scan": {
+    "scope": "Bounded LOCAL currentpublished729 andownheadsource-qualified resource logs; not a newcompile/wholearchive assertion",
+    "logs": [
+      {
+        "file": "<RECEIPT_ROOT>/public-stage/inline729/resources/inline_limits_qualified.log",
+        "sha256": "a5ea4ed5dab4f105f5f68fe210babe6665ced89faecf427a7b2cf8730168789d",
+        "control_record_lines": 8,
+        "stale_lines": [],
+        "current_lines": 8
+      },
+      {
+        "file": "<RECEIPT_ROOT>/public-stage/inline729/validation/four_chip_limits.log",
+        "sha256": "a5ea4ed5dab4f105f5f68fe210babe6665ced89faecf427a7b2cf8730168789d",
+        "control_record_lines": 8,
+        "stale_lines": [],
+        "current_lines": 8
+      },
+      {
+        "file": "<RECEIPT_ROOT>/public-stage/ownheads729/raw/foundation_fourchip_limits.raw.log",
+        "sha256": "55a70315de2b34aa6360aa6f7e315188ff61d2207c23b27c6a3010c61e035f05",
+        "control_record_lines": 8,
+        "stale_lines": [],
+        "current_lines": 8
+      },
+      {
+        "file": "<RECEIPT_ROOT>/public-stage/ownheads729/raw/relu2_fourchip_limits.raw.log",
+        "sha256": "c52e04522d6210860c09f68cabf2ee94a483954dc9bc5f998c78aaa7d606be21",
+        "control_record_lines": 8,
+        "stale_lines": [],
+        "current_lines": 8
+      }
+    ]
+  },
+  "compiled_record_values_changed": false,
+  "full_HIP_stub_compile_exit_status": 0,
+  "full_HIP_stub_command_sha256": "2768e7a3f19d0528983ea83bfa6f413a500a8c6dc621bdf7dd6bbc39789873b1",
+  "full_HIP_stub_log_sha256": "f891dbdfc0402cd4ba60fab1be3245dfec559c5d7afc7e21b87e795a73d05e5f",
+  "static": {
+    "fmt_exit_status": 0,
+    "diff_check_exit_status": 0,
+    "lean_summary": "2633 files,503 inherited problems",
+    "changed_modules_new_lean_findings": []
+  },
+  "pending": [
+    "Independent root/benchmark code+proof review",
+    "Actual source-bound amendedhead fourchipmetadata/live GPUchecks aftertimedjobs and rootallocation",
+    "Managedstackpropagation/fullproductionclosurebridge before anyauthorizedremoteheadupdate"
+  ],
+  "no_gpu_execution": true
+}

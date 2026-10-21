@@ -1,0 +1,2 @@
+info: to access the help menu: zig build -h
+error: unrecognized argument: --global-cache-dir

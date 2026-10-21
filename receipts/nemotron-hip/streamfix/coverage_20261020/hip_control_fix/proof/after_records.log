@@ -1,0 +1,6 @@
+1/5 hip_records.test.every registered HIP launch fits every RDNA chip we serve, and each planted control breaks one...OK
+2/5 hip_records.test.a control cannot fit or lack compiled usage on any one chip...OK
+3/5 limits.test.a launch inside every family passes; each planted excess is named...OK
+4/5 limits.test.CUDA: registers by warp, launch bounds, shared bytes and clusters per SM...OK
+5/5 limits.test.HIP: bounds, wave size, VGPRs a SIMD and LDS per chip...OK
+All 5 tests passed.

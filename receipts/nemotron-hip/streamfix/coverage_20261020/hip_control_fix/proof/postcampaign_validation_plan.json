@@ -1,0 +1,18 @@
+{
+  "execution": false,
+  "source_head": "PENDING_ROOT_AMENDED_FIRST_PR_HEAD",
+  "root_allocation_required_after_timed_controls_cleanup": true,
+  "first_PR": {
+    "CPU": "Current frozen two-file proposal test-cuda-host + test-golden, actual exit/count/log receipts; host stub and real ELF fixture regression proofs already retained. If amended tree exactly matches proposal, bind by full-tree/content bridge, never relabel measured HEAD.",
+    "four_chip_resources": "On amended first-PR tree, execute zig build hip-kernel-contract-limits with exact pinned hipcc/ROCm flags and actual existing shared build lock. All launch/control metadata must match records; every one of two controls must be RED and current on each of four chips. Reject any stale/MISSED/FAIL/missing usage. Preserve full raw RECORD/exit/object/compiler hashes. Cache reuse must be recorded as cached, not fresh compilation.",
+    "live_gfx1100": "After separate GPU allocation and no timed jobs, run HIP_VISIBLE_DEVICES=0 zig build hip-kernel-contract -Dhip-arch=gfx1100 with exact pinned runtime/library environment; expected ownhead five kernels/five red controls/zero known/fail/limits. Capture actual runner/code-object SHA and full literal SUMMARY/live control status/current metadata.",
+    "live_gfx1030": "Same source-bound live gate on HIP_VISIBLE_DEVICES=2 -Dhip-arch=gfx1030. Require actual platform PCI/mapping source/native identity and owned cleanup; no use of other GPUs."
+  },
+  "propagated_stack": {
+    "before_public_head_update": "For every private old→new commit pair, prove only the exact two contract-validation files differ, all production/build/kernel/record declaration values unchanged, authors/messages preserved and new parent mapping correct; every source file<=600 and zero new lean. No public force push before root review.",
+    "shared_top": "At actual new review top, execute source-bound four-chip resource and full registered HIP contract live gates on both allocated architectures after campaign cleanup. Preserve new summaries as actualnew-run evidence. Existing finite-byte/model/Nemotron/performance results remain measured at original729; only a precise production/input/runtime closure bridge may relate them to new validation-only top.",
+    "intermediate_receipts": "Existing ownhead gates1-4/metadata/raw outputs keep original source identities. A separately labelled offline replay can test the stronger perchip/currentness guards against complete retained chip-level records, provided all input values and original object SHA/source/compiler are retained. Never call that a new GPU run or invent missing intermediate record data; actual missing affected evidence remains pending for root assessment."
+  },
+  "unchanged_production_scope": "No new arithmetic, kernels, server, model loader, scheduling, memory admission or CLI changes; no requirement invented to rerun model/performance solely because contract guards strengthen. Any closure mismatch requires reevaluation instead of assuming this bridge.",
+  "status": "Plan only; no remote build/GPU command executed by this agent."
+}

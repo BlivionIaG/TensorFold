@@ -1,0 +1,107 @@
+diff --git a/zig/src/core/contract/hip_records.zig b/zig/src/core/contract/hip_records.zig
+index 92476f772..7b5d2e32e 100644
+--- a/zig/src/core/contract/hip_records.zig
++++ b/zig/src/core/contract/hip_records.zig
+@@ -98,10 +98,28 @@ pub fn check(a: std.mem.Allocator, list: []const Record, quiet: bool) !usize {
+     return n;
+ }
+ 
++/// A planted control needs compiled usage and a real limit violation on every chip; returns missed chips.
++pub fn controlProblems(a: std.mem.Allocator, r: Record, quiet: bool) !usize {
++    var out: std.ArrayList(u8) = .empty;
++    defer out.deinit(a);
++    var n: usize = 0;
++    for (limits.rdna, r.usage) |chip, usage| {
++        if (usage.vgprs == 0) {
++            n += 1;
++            try out.print(a, "{s} on {s}: no compiled usage for control\n", .{ r.launch.name, chip.name });
++        } else if (try limits.hip(r.launch, usage, chip, &out, a) == 0) {
++            n += 1;
++            try out.print(a, "{s} on {s}: planted control fits\n", .{ r.launch.name, chip.name });
++        }
++    }
++    if (!quiet and n != 0) std.debug.print("{s}", .{out.items});
++    return n;
++}
++
+ test "every registered HIP launch fits every RDNA chip we serve, and each planted control breaks one" {
+     const a = std.testing.allocator;
+     try std.testing.expectEqual(@as(usize, 0), try check(a, &records, false));
+-    for (controls) |r| try std.testing.expect(try check(a, &.{r}, true) > 0);
++    for (controls) |r| try std.testing.expectEqual(@as(usize, 0), try controlProblems(a, r, true));
+     for (controls) |r| {
+         var good = r;
+         for (&good.usage) |*u| u.* = .{ .vgprs = 16 };
+@@ -110,3 +128,17 @@ test "every registered HIP launch fits every RDNA chip we serve, and each plante
+         try std.testing.expectEqual(@as(usize, 0), try check(a, &.{good}, true)); // red only for what it plants
+     }
+ }
++
++test "a control cannot fit or lack compiled usage on any one chip" {
++    const a = std.testing.allocator;
++    for (controls) |r| {
++        for (limits.rdna, 0..) |_, i| {
++            var fits = r;
++            fits.usage[i] = .{ .vgprs = 16, .bound = fits.launch.threads };
++            try std.testing.expectEqual(@as(usize, 1), try controlProblems(a, fits, true));
++            var missing = r;
++            missing.usage[i].vgprs = 0;
++            try std.testing.expectEqual(@as(usize, 1), try controlProblems(a, missing, true));
++        }
++    }
++}
+diff --git a/zig/tests/hip/contract_limits.zig b/zig/tests/hip/contract_limits.zig
+index 4f0a758de..e9b247a9d 100644
+--- a/zig/tests/hip/contract_limits.zig
++++ b/zig/tests/hip/contract_limits.zig
+@@ -40,9 +40,10 @@ pub fn table(a: std.mem.Allocator) !usize {
+     const say = "{s} limits: {d} registered HIP launches against {s}, {d} problems\n";
+     std.debug.print(say, .{ word, records.records.len, chips, n });
+     for (records.controls) |r| {
+-        const red = try records.check(a, &.{r}, true) > 0;
+-        if (!red) n += 1;
+-        const what = if (red) "red on every chip" else "fits";
++        const missed = try records.controlProblems(a, r, false);
++        n += missed;
++        const red = missed == 0;
++        const what = if (red) "red on every chip" else "not red on every chip";
+         std.debug.print("{s} limits {s}: {s}\n", .{ if (red) "RED " else "MISSED", r.launch.name, what });
+     }
+     return n;
+@@ -87,9 +88,9 @@ pub fn live(a: std.mem.Allocator, r: *const hip.Runtime, ctx: hip.Context, arch:
+         const current = std.meta.eql(meta, rec.usage[at]) and regs == meta.vgprs and lds == meta.lds;
+         const control = isControl(rec);
+         if (!control and !(fits and current)) n += 1;
+-        if (control and fits) n += 1;
++        if (control and (!current or fits or meta.vgprs == 0)) n += 1;
+         const red = if (fits) "MISSED" else "RED ";
+-        const word = if (control) red else if (fits and current) "PASS" else "FAIL";
++        const word = if (control) (if (!current or meta.vgprs == 0) "FAIL" else red) else if (fits and current) "PASS" else "FAIL";
+         const want = rec.usage[at];
+         const what = .{ rec.launch.threads, most, regs, lds, rec.launch.dynamic, want.vgprs, want.lds };
+         std.debug.print("{s} limits live {s}: {d} threads launched, the runtime allows {d}; " ++
+@@ -121,11 +122,13 @@ pub fn objects(a: std.mem.Allocator, io: std.Io, dir: []const u8) !usize {
+             const k = hsaco.find(listed, rec.launch.symbol) orelse return error.SymbolNotInImage;
+             var out: std.ArrayList(u8) = .empty;
+             defer out.deinit(a);
+-            red += try limits.hip(rec.launch, k.usage, t, &out, a);
++            const problems = try limits.hip(rec.launch, k.usage, t, &out, a);
++            if (control and (k.usage.vgprs == 0 or problems == 0)) n += 1;
++            if (!control) red += problems;
+             const current = std.meta.eql(k.usage, rec.usage[i]);
+-            if (!control and !current) n += 1;
++            if (!current) n += 1;
+             const u = k.usage;
+-            const word = if (out.items.len > 0) (if (control) "RED " else "FAIL") else "PASS";
++            const word = if (!current) "FAIL" else if (control) (if (k.usage.vgprs != 0 and problems != 0) "RED " else "MISSED") else if (problems != 0) "FAIL" else "PASS";
+             const what = .{ u.vgprs, u.sgprs, u.lds, u.private, u.bound, u.wave, if (current) "current" else "stale" };
+             const say = "{s} limits {s} {s}: {d} VGPRs, {d} SGPRs, {d} LDS bytes, {d} scratch bytes, bound {d}, " ++
+                 "wave{d} (record {s}){s}";
+@@ -139,7 +142,6 @@ pub fn objects(a: std.mem.Allocator, io: std.Io, dir: []const u8) !usize {
+             });
+         }
+         std.debug.print("RECORD {s}: .usage = .{{ {s}}}\n", .{ rec.launch.name, line.items });
+-        if (control and red == 0) n += 1;
+         if (!control) n += red;
+     }
+     return n;

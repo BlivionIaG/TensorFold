@@ -1,0 +1,318 @@
+{
+  "independent_audit_pass": true,
+  "scope": "PRIVATEobjects only; no refs/worktrees/push changed by this audit. Treeidentity is asserted onlyforproduction subtrees, notfulltrees orbinarybytes.",
+  "source_result_sha256": "0ecb1661534551335a9ab028245e98483c679cca53c2bc4241b2de58e54a19cd",
+  "reviewed_patch_sha256": "4c23cc1765921c25844a7db7e6b0750c7e5b1d5b8ff5efcb9735072881e5f1b8",
+  "new_first": "826a0635634dee3793a68e473064d17d5c139945",
+  "new_top": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
+  "first_tree_matches_reviewed_proposal": true,
+  "all30": [
+    {
+      "old": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "new": "826a0635634dee3793a68e473064d17d5c139945",
+      "new_tree": "bbb17bdf4db45f1084bb6e35442d4b5dde32039e",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "9f7d265d802cf394b4f60a142aa9d5214cdbfdbf",
+      "new": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8",
+      "new_tree": "417e92ba821979548ee47de50a0da6b11c61e3bb",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "5b12f74a27326797a540d094387e7ffa472b55ed",
+      "new": "1d1bcdd35a482271448e0ff8a19eb9013be1e503",
+      "new_tree": "2624322427da94371da327259932d27f37eecf8a",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "926e0a3969b90141d78acc084c01529d70010ed4",
+      "new": "8bc31fe00670b4c39c7620a87233500ae3cb664b",
+      "new_tree": "662aefb6761c3334a14e2296722a83bd378e4a58",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "6af43c9db14516a85fbe22351eb0d3e485bd41bb",
+      "new": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
+      "new_tree": "bb548599d27a0d788712e9edabdc8cf688c50253",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "754786d613dde5539d3a0c534007a1a9733cfaf8",
+      "new": "9c655701055674cb795feec0f59f5adce6bc74dc",
+      "new_tree": "b107453bd8b662204113690207cca83291144140",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "7bf5f195fb06c0651a1a5d74277f24cc70da591c",
+      "new": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f",
+      "new_tree": "0838d50d46c2188bef821ab7b1ba0039f8eeceaa",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2",
+      "new": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797",
+      "new_tree": "c895cc0cdbe71b8c6a09c6a8c27ca9603c5f696b",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "9b56916fa71d40f9dcd924956c09a3c5f7e18019",
+      "new": "f3f6c3f2a925b68ff18788063cb8234ea7924f11",
+      "new_tree": "e5d3ac7f31232ea053c3f4359281d0a6813bf3e8",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "6e73bf059c5646e683d680ab78ed5326aa9fba87",
+      "new": "017b0953f3517cdda3821c9fbbc1abfb0965227b",
+      "new_tree": "251d31d01f7e149b4425e08237d538ee25b07538",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "9c206c22bf386348f2f1eb473a31ef8370163b5e",
+      "new": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad",
+      "new_tree": "b2661794e2951c104dab02bd1eca8a79539dad31",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "4a7c64c6aab76f0aa845b86523d8eae78ce3f310",
+      "new": "db4635b4dbc8cfdda155cee43714b4c5f4dbe443",
+      "new_tree": "deeeb1b94677408d94d55b1c9f2334406469450b",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "74b506e50265ccef559ce66d8d1cd55db55655ae",
+      "new": "89bc8409933617057a8ad9c5e379b4603604d557",
+      "new_tree": "332db5747e6211b4c95ea88d5194e276fb0c05ce",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e",
+      "new": "71163c15ee202bea0d41e8b64f26f8c4c059a042",
+      "new_tree": "bcc55ef953dbae9853032d704cff188d52ecd3a6",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "da5936be79ff9c29513be08a6076f224f5c81596",
+      "new": "2ee8aea3de00ecaf1529f0b2b0de1b18c22eb900",
+      "new_tree": "c42445a20d3d1d34444dcc4915c5e1e2b234b594",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "b3da64459813339c3473d1a82ad5572c2444040f",
+      "new": "a9ebc7c4fd246fde1ffdfb946e7000ca046bb661",
+      "new_tree": "64c15822dcc627e56992d4a8565e69f369d88d6a",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6",
+      "new": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f",
+      "new_tree": "200a2eeab146109f20e18d98126fc8a8293a0b9e",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "42529bfab171c2f30d7ce3641b78ca3b0ff821fc",
+      "new": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1",
+      "new_tree": "019850e39b09e0b66bcebf6199f180221ea24dca",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "d6134300b3fed9baa29842e20d28ce738fd77574",
+      "new": "29409f2d7c58326351da64599b051ccd8f98b867",
+      "new_tree": "6aee0c7cd73686f310e36864f8f2c11685c77bd5",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "fd5b50111c0e0dd394fbac022ce8e6ff1db3d257",
+      "new": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd",
+      "new_tree": "a31c6b022103df79221435b0a6534790e5fce285",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "f8cd5a4d72805fabe7350746ce9ba91274b54d29",
+      "new": "51d68203c4c2e3450345e31087f8dad711c6d479",
+      "new_tree": "ab7ef93384bd6467cb6034221400365daab9631f",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "8a1c6ae90a9212c481607eb6633697543e6cb3ff",
+      "new": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b",
+      "new_tree": "0a04923b356a18758ad702ccee6ca72fddca3b77",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "3f991646915e24bb1c7c638ec118e27880d5a031",
+      "new": "8859ff69a3d2023ae19607189b2981987a86fcef",
+      "new_tree": "a2b8c3c881c72efa9deed0c467521d1bacab0edc",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "64b2e8a17d42df6de779cf9620e461505ea9c041",
+      "new": "68db3bcae73b62f09de17da09906b93e78182e6b",
+      "new_tree": "cc8161ac2825418e22d527126ea8cde743f12e90",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "3a7560c51042077dc33c388ca02b6eb53c7902f1",
+      "new": "13ff26f02e98d82ddd87c84334627fbf1dd97150",
+      "new_tree": "c761bc16d31f1d538d74b05140371b40c25ce975",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "9d27ea9ac8ea014e4f32f3539d037757c2468014",
+      "new": "06fc3417e3415ee3386117a8c3a633271cefceae",
+      "new_tree": "061eb9f2af51316d2ed567282acb77c55a7403c2",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "674730c5ea9596da2aa21bab803fce6c6088d3be",
+      "new": "3d7b471a8a2fcaa3b4bbb2ba3d18add2f14fbd27",
+      "new_tree": "3ef10513550e252d9954d12a65afdafc81f0584f",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "e22da9dab3e8d70d5dbe150be39ed3794d6bffda",
+      "new": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4",
+      "new_tree": "8259aa52bf20964ffe180e9509d2cecc88c786b7",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "52840409d2e30ea7e55d9d79c10375cb2ffce6c5",
+      "new": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15",
+      "new_tree": "c265f46138a353e94057418ce604317aceee448f",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    },
+    {
+      "old": "60a8da5243ef313fcab23bdb0d85c790a5cda935",
+      "new": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
+      "new_tree": "51a4fadc948801c456b03995186f612a17e5a7dc",
+      "author_and_message_preserved": true,
+      "linear_parent_mapping_verified": true,
+      "only_two_validation_files_changed": true,
+      "compiled_usage_values_and_import_prefix_unchanged": true,
+      "HIP_kernel_server_family_subtrees_identical": true
+    }
+  ],
+  "new_full_tree_differs": true,
+  "production_HIP_server_family_closure_unchanged": true,
+  "no_runtime_source_relabel": true,
+  "other21_dependency_gate_unwaived": true,
+  "runtime_qualification_pending": true,
+  "all22_published_head_cuts_and_branch_maps_verified": true,
+  "published_registry_render_sha256": "12e1cd0f8fb091343d9cb7560fe2f33bed2913db2c6a147b0f0eae42c2b5645b"
+}

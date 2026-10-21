@@ -1,0 +1,78 @@
+{
+  "source_head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+  "proposal_patch_sha256": "4c23cc1765921c25844a7db7e6b0750c7e5b1d5b8ff5efcb9735072881e5f1b8",
+  "zig_version": "0.17.0",
+  "zig_sha256": "1c5f706db0ed6d55451940f31dc05a6177d05696bc1fa5d853696d04c718b523",
+  "macos_sdk": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+  "cpu_only": true,
+  "started_at_utc": "2026-10-20T22:29:06Z",
+  "stages": [
+    {
+      "target": "test-cuda-host",
+      "command": [
+        "<ZIG>",
+        "build",
+        "test-cuda-host",
+        "-Dcpu=apple_m1",
+        "--summary",
+        "all",
+        "--cache-dir",
+        "<PROOF_ROOT>/full_cpu_host_retry2/cache"
+      ],
+      "started_at_utc": "2026-10-20T22:29:06Z",
+      "pid": 9926,
+      "exit_status": 0,
+      "elapsed_seconds": 94.89946603775024,
+      "log_sha256": "78852d80bb201f02fa3760bbf6c5b5e11776e8cd10116fa8104c55ed9d761696",
+      "build_summary": "Build Summary: 80/80 steps succeeded; 1737/1741 tests passed (4 skipped)"
+    },
+    {
+      "target": "test-golden",
+      "command": [
+        "<ZIG>",
+        "build",
+        "test-golden",
+        "-Dcpu=apple_m1",
+        "--summary",
+        "all",
+        "--cache-dir",
+        "<PROOF_ROOT>/full_cpu_host_retry2/cache"
+      ],
+      "started_at_utc": "2026-10-20T22:30:41Z",
+      "pid": 11551,
+      "exit_status": 0,
+      "elapsed_seconds": 78.0650429725647,
+      "log_sha256": "8f9c95752fb1ef5be237f290d70df5c142cc039b49ad6493b2d1cc0b32a38a70",
+      "build_summary": "Build Summary: 4/4 steps succeeded",
+      "golden_summary": "306/319 equal to the frozen Python answers, 0 unexpected differences",
+      "known_differences": 13,
+      "unexpected_differences": 0
+    }
+  ],
+  "environment_observed": {
+    "SDKROOT": null,
+    "DEVELOPER_DIR": null,
+    "ZIG_GLOBAL_CACHE_DIR": "<PROOF_ROOT>/full_cpu_host_retry2/global",
+    "HIP_VISIBLE_DEVICES": null,
+    "ROCR_VISIBLE_DEVICES": null,
+    "CUDA_VISIBLE_DEVICES": null
+  },
+  "prior_infrastructure_attempt": "../full_cpu_host/result.json",
+  "patch_unchanged": true,
+  "complete": true,
+  "finished_at_utc": "2026-10-20T22:31:59Z",
+  "owned_cpu_cleanup": {
+    "owned_stage_pids": [
+      {
+        "pid": 9926,
+        "alive": false
+      },
+      {
+        "pid": 11551,
+        "alive": false
+      }
+    ],
+    "owned_cache_executables_remaining": [],
+    "no_processes_stopped": true
+  }
+}

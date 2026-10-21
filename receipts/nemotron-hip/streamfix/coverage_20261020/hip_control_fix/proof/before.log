@@ -1,0 +1,14 @@
+1/5 regression.test.a control must fail when any chip fits...FAIL (TestUnexpectedResult)
+<LOCAL_HOME>/.local/zig-0.17.0/lib/std/testing.zig:584:14: 0x1027ec55b in expect (test)
+    if (!ok) return error.TestUnexpectedResult;
+             ^
+<LOCAL_HOME>/Projects/Infra/../../../..<PROOF_ROOT>/before/regression.zig:7:5: 0x1027ec72b in test.a control must fail when any chip fits (test)
+    try std.testing.expect(!accepted);
+    ^
+2/5 hip_records.test.every registered HIP launch fits every RDNA chip we serve, and each planted control breaks one...OK
+3/5 limits.test.a launch inside every family passes; each planted excess is named...OK
+4/5 limits.test.CUDA: registers by warp, launch bounds, shared bytes and clusters per SM...OK
+5/5 limits.test.HIP: bounds, wave size, VGPRs a SIMD and LDS per chip...OK
+4 passed; 0 skipped; 1 failed.
+error: the following test command failed with exit code 1:
+<PROOF_ROOT>/cache_before/o/2bc1b3b6587abd86b45cae3911366f1f/test --seed=0x4a686aef

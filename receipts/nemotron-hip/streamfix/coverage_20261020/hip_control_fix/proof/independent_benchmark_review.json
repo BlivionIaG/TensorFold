@@ -1,0 +1,13 @@
+{
+  "independent_review_pass": true,
+  "base_head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+  "patch_sha256": "4c23cc1765921c25844a7db7e6b0750c7e5b1d5b8ff5efcb9735072881e5f1b8",
+  "result_sha256": "d4c95a29c77273e239a8b3d8458d2bff4ce43c75711628132afdc674e38f48cb",
+  "all_changed_blob_and_probe_log_hashes_verified": true,
+  "actual_table_objects_function_sources_verified": true,
+  "source_findings": "Perchip red/missingusage/currentness corrected; normal limit logic unchanged; no productionkernel/buildmath changes. Tests use realhsaco parser and syntheticELFfixtures, notrealcompilerorGPUevidence.",
+  "scope": "Only2infrafiles; actualfreshhost/live/fourchipproof and propagatedsourcebridge remainpending.",
+  "before_expected_regression_exit1_preserved": true,
+  "after_eight_probe_exit0_preserved": true,
+  "no_new_GPU_execution": true
+}

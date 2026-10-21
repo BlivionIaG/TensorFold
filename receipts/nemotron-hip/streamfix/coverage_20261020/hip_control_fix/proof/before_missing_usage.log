@@ -1,0 +1,45 @@
+1/2 probe.test.table enforces every control chip...PASS limits: 3 registered HIP launches against gfx1030/1100/1151/1201, 0 problems
+RED  limits control: past its bounds: red on every chip
+RED  limits control: 72 KiB of LDS: red on every chip
+FAIL (TestUnexpectedResult)
+<LOCAL_HOME>/.local/zig-0.17.0/lib/std/testing.zig:584:14: 0x1045bd14b in expect (root)
+    if (!ok) return error.TestUnexpectedResult;
+             ^
+<LOCAL_HOME>/Projects/Infra/../../../..<PROOF_ROOT>/probes/before/missing_usage/probe.zig:3:93: 0x1045cbf4f in test.table enforces every control chip (root)
+test "table enforces every control chip" { const n = try gate.table(std.testing.allocator); try std.testing.expect(n > 0); }
+                                                                                            ^
+2/2 probe.test.objects enforces control chip, usage and metadata...PASS limits gfx1030 RMS norm tf_rms_rows: 58 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 RMS norm tf_rms_rows: 43 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 RMS norm tf_rms_rows: 42 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 RMS norm tf_rms_rows: 42 VGPRs, 45 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD RMS norm tf_rms_rows: .usage = .{ .{ .vgprs = 58, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 43, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 42, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 42, .sgprs = 45, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 RMS norm rms_kernel<__half>: 11 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 RMS norm rms_kernel<__half>: 11 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 RMS norm rms_kernel<__half>: 10 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 RMS norm rms_kernel<__half>: 10 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD RMS norm rms_kernel<__half>: .usage = .{ .{ .vgprs = 11, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 11, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, }
+PASS limits gfx1030 RMS norm rms_kernel<hip_bfloat16>: 11 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1100 RMS norm rms_kernel<hip_bfloat16>: 11 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1151 RMS norm rms_kernel<hip_bfloat16>: 10 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+PASS limits gfx1201 RMS norm rms_kernel<hip_bfloat16>: 10 VGPRs, 18 SGPRs, 32772 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current)
+RECORD RMS norm rms_kernel<hip_bfloat16>: .usage = .{ .{ .vgprs = 11, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 11, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 10, .sgprs = 18, .lds = 32772, .private = 0, .bound = 256, .wave = 32 }, }
+RED  limits gfx1030 control: past its bounds: 0 VGPRs, 10 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current): control: past its bounds on gfx1030: launched at 512 threads past its bound 256
+RED  limits gfx1100 control: past its bounds: 4 VGPRs, 18 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current): control: past its bounds on gfx1100: launched at 512 threads past its bound 256
+RED  limits gfx1151 control: past its bounds: 4 VGPRs, 10 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current): control: past its bounds on gfx1151: launched at 512 threads past its bound 256
+RED  limits gfx1201 control: past its bounds: 4 VGPRs, 7 SGPRs, 0 LDS bytes, 0 scratch bytes, bound 256, wave32 (record current): control: past its bounds on gfx1201: launched at 512 threads past its bound 256
+RECORD control: past its bounds: .usage = .{ .{ .vgprs = 0, .sgprs = 10, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 4, .sgprs = 18, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 4, .sgprs = 10, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, .{ .vgprs = 4, .sgprs = 7, .lds = 0, .private = 0, .bound = 256, .wave = 32 }, }
+RED  limits gfx1030 control: 72 KiB of LDS: 6 VGPRs, 9 SGPRs, 40960 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current): control: 72 KiB of LDS on gfx1030: 73728 LDS bytes, the most a workgroup takes is 65536
+RED  limits gfx1100 control: 72 KiB of LDS: 6 VGPRs, 8 SGPRs, 40960 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current): control: 72 KiB of LDS on gfx1100: 73728 LDS bytes, the most a workgroup takes is 65536
+RED  limits gfx1151 control: 72 KiB of LDS: 6 VGPRs, 8 SGPRs, 40960 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current): control: 72 KiB of LDS on gfx1151: 73728 LDS bytes, the most a workgroup takes is 65536
+RED  limits gfx1201 control: 72 KiB of LDS: 6 VGPRs, 8 SGPRs, 40960 LDS bytes, 0 scratch bytes, bound 1024, wave32 (record current): control: 72 KiB of LDS on gfx1201: 73728 LDS bytes, the most a workgroup takes is 65536
+RECORD control: 72 KiB of LDS: .usage = .{ .{ .vgprs = 6, .sgprs = 9, .lds = 40960, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 8, .lds = 40960, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 8, .lds = 40960, .private = 0, .bound = 1024, .wave = 32 }, .{ .vgprs = 6, .sgprs = 8, .lds = 40960, .private = 0, .bound = 1024, .wave = 32 }, }
+FAIL (TestUnexpectedResult)
+<LOCAL_HOME>/.local/zig-0.17.0/lib/std/testing.zig:584:14: 0x1045bd14b in expect (root)
+    if (!ok) return error.TestUnexpectedResult;
+             ^
+<LOCAL_HOME>/Projects/Infra/../../../..<PROOF_ROOT>/probes/before/missing_usage/probe.zig:4:193: 0x1045bd2a3 in test.objects enforces control chip, usage and metadata (root)
+test "objects enforces control chip, usage and metadata" { const n = try gate.objects(std.testing.allocator, std.testing.io, "<PROOF_ROOT>/fixtures/missing_usage"); try std.testing.expect(n > 0); }
+                                                                                                                                                                                                ^
+0 passed; 0 skipped; 2 failed.
+error: the following test command failed with exit code 1:
+<PROOF_ROOT>/cache_probes/o/ac0f6af0f516c485c840e887e697f0d9/root --seed=0x6ceb842a
