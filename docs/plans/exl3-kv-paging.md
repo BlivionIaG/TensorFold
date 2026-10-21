@@ -65,6 +65,50 @@ canonical history remain untouched. If residency is full, ordinary eviction can
 remove a foreign cached block while preserving its canonical history. Snapshot
 admission includes the checked maximum owned-entry payload and metadata.
 
+## Graph replay and separate cache diagnostics
+
+`TF_FLASHNEXT_EXL3_GRAPH_STATE_REBIND=1` now permits exact-pair GDN state
+rebinding for verification widths 2–16, not just width 2. In-place width 1 and
+multi-lane layouts remain outside this rebinding optimization. Allocation,
+generation, paging, nonstate-parameter and TP agreement checks remain strict;
+partial update failures poison the affected binding. This does not make every
+operation graphed or eliminate prefill-origin and request-allocation churn.
+
+Runtime `713e379b` retains all four prompt/token/text hashes against `ccb32fc3`
+in two TP2 waves of two 16,384-input / 256-output requests with shared BF16 KV,
+MTP and graphs. Source `b3a7b565` adds a real GPU fixture for widths 3, 4 and 16:
+each width on each rank passes exact eager/graph state and logits, one capture
+and three actual rebind replays. These are replay correctness/reuse gates, not
+evidence of a repeatable throughput improvement.
+
+`TF_FLASHNEXT_CACHE_TELEMETRY=1` enables diagnostic reports on both TP ranks.
+It is off by default; enabled sampling waits at completed model-call boundaries
+and therefore must not be used to establish normal-path performance or overlap.
+`EXL3-CACHE v=1` records distinguish rank, phase, model rows and operation count.
+Explicit phase metadata crosses the TP control path; common MTP verification
+enters and restores its own phase. Unclassified work remains `unknown`.
+
+Expert reports separate host-planner picks, executed device-planner picks,
+mandatory/prefetch pool copies, mapped in-place reads, and expert-major ring
+demand/copies. KV reports count unique requested and missing blocks before the
+active window, sparse calls, rebases and written rows. Their denominators differ:
+routed picks are not distinct experts, and KV block requests are not token positions. Requested
+or logical payload bytes are not measured PCIe traffic. Automatic decoder
+hooks exclude standalone MTP-head work and transfers outside model calls, such
+as snapshot restoration. Intervals crossing unaccounted resets, restores,
+recycled owners or ambiguous wraps are rejected rather than reported as zero misses;
+shared paging uses completed-boundary arena clocks, not stale per-layer epochs.
+
+On runtime `975c1df9`, the diagnostics-enabled TP2 shared-BF16 cache-reuse gate
+passes all eight cold/warm/branch/rewind response-token hashes against the
+cache-disabled reference. Separate expert and KV counters pass validation on
+both ranks, including matching phase denominators and actual block misses.
+A fresh diagnostics-disabled c8 run passes two waves of 1,024-input / 128-output
+requests with identical full prompt/token/text hashes and concurrent graph
+replay. These are bounded diagnostics, not a repeatable speedup or 200k result;
+settings, binary hashes and measured counters are in the
+[replay/cache qualification](https://github.com/ashhart/TensorFold/pull/1113#issuecomment-6327563987).
+
 ## Snapshot and cache reuse validation (2026-10-20)
 
 Version 1 snapshots preserve canonical BF16 RAM rows after flushing every dirty window, the full compact device
