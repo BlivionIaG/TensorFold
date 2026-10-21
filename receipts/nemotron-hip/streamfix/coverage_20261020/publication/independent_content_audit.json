@@ -1,0 +1,10 @@
+{
+  "validated": true,
+  "scope": "Only identical saved-evidence footer appended to21currentPR bodies andissue; first1082excluded",
+  "manifest_sha256": "31ed788bfb61f02d34230afaadb0c06a8cbdbb0f758401ffa132cfed0ceed141",
+  "exact_prior_body_sha_guards": true,
+  "identical_footer_sha256": "7cbbb470c9ce2825fa026c9f4e03822a756c532f948883de13d297846d39055b",
+  "facts_bound_to": "saved_evidence_final_public_independent_audit.json SHA31e9b3cca67ef5d7503b57157dd8b826e7529a5f0c61e1157f067ccbac10e4b6",
+  "privacy": true,
+  "no_new_model_engine_benchmark_or_waiver": true
+}
