@@ -3673,6 +3673,96 @@
       "bytes": 40460
     },
     {
+      "path": "coverage_20261020/hip_control_first826/README.md",
+      "sha256": "9e8ba40b4fc549b649b23b2e5d2e297c2c0f550da56baf08dab78c4ddad34b68",
+      "bytes": 1479
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/bundle_verify.log",
+      "sha256": "e862fe1fa682cb3705a1468be80baf3a59d2ea401efe074ae947c108950ae83c",
+      "bytes": 338
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/collection.json",
+      "sha256": "2bdbfef353ebd6082f2ad6ed39f17a6629b151acc31822a4f739fb6dd3c962b8",
+      "bytes": 14384
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/driver.launched.json",
+      "sha256": "3814c71c75e65d6038e65098477e699eeff2a2200008a86990b9bfd104d5ac09",
+      "bytes": 293
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/fetch.log",
+      "sha256": "0b9d6c9676601db34e446cb0367dab0dbb34aa607e55da44d763feebd3a3f5d9",
+      "bytes": 221
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/first_gfx1030_build.outer.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/first_gfx1030_live.log",
+      "sha256": "129f027b8313f8a7548fb0dcc606d58253ae03af981bedfbfd41ed7300bdd976",
+      "bytes": 5219
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/first_gfx1100_build.outer.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/first_gfx1100_live.log",
+      "sha256": "3df1ea8e1bd1ad17f8345d1b5f6bee366e0ff5602624885b50346c88bb2e3b50",
+      "bytes": 5219
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/first_limits.outer.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/public_manifest.json",
+      "sha256": "208d0cba605880539ae03598992fabcc34ccd32a6c565cd96b2213adc952cf99",
+      "bytes": 6591
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/result.snapshot.json",
+      "sha256": "2879a654427b3d0adc5e7145093f49c7b45f302167cc176d1ed05e271acd5198",
+      "bytes": 28427
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/run.py",
+      "sha256": "2c8b4cd8dd44ad219dee1b9ef120c42039c713afeba8d1d51c34937486c92289",
+      "bytes": 11438
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/source_creation.json",
+      "sha256": "2c3cb95fce7217932fed9764522813ee7f3e454249ce69759a08660b0e390cf1",
+      "bytes": 898
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/wrapper_first_gfx1030_build.log",
+      "sha256": "ca8e59ba7d45fd049780a0e9b9ec1883b62a55e2af1db2562a032dbbc1f9226c",
+      "bytes": 2715
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/wrapper_first_gfx1100_build.log",
+      "sha256": "e1c862c6b43fc0de24a9ce2c689fd2755cd2c8c2e234bf885a1916490c1986e8",
+      "bytes": 2715
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/wrapper_first_limits.log",
+      "sha256": "142be4cf7ebb83d3706d8bdce678c724f9b1a162125219f0c8f50438177268bc",
+      "bytes": 45561
+    },
+    {
+      "path": "coverage_20261020/hip_control_first826/zb.sh.retained",
+      "sha256": "9464ba58dcf80191bb926aa8e3a10744a51dd5530ea062ad666951fad62218ab",
+      "bytes": 761
+    },
+    {
       "path": "coverage_20261020/hip_control_fix/README.md",
       "sha256": "f50781ad5f1fb95a3d93683bb2049749e8f5fc3ae4b955c025e04eb674822736",
       "bytes": 5056
@@ -7754,8 +7844,8 @@
     },
     {
       "path": "coverage_20261020/public_manifest.json",
-      "sha256": "6f42cab8c8881b671a16121e63556b20828a92fa854deb60fbc8db96547b254a",
-      "bytes": 618364
+      "sha256": "01932ac731eb259da30575596a40ec0af1f01bc249e821f6b460879722dd4a16",
+      "bytes": 626202
     },
     {
       "path": "coverage_20261020/publication/bodies/issue1081.md",

@@ -1,0 +1,42 @@
+PASS nonfinite hip RMS norm tf_rms_rows (fp32): 260 non-finite and 1788 finite outputs match the float64 classes
+PASS repeat hip RMS norm tf_rms_rows (fp32): five runs byte-identical (32768 bytes), inputs and guards untouched, no overlap
+PASS shapes hip RMS norm tf_rms_rows (fp32): 12 shapes within the float64 bound (worst 0.218 of the bound), 0 edges refused by the kernel
+PASS sums hip RMS norm tf_rms_rows (fp32): exact sums at k 1024, where fp16 sums would miss by 1864135x and bf16 by 1891x
+PASS nonfinite hip RMS norm tf_rms_rows (fp16): 260 non-finite and 1788 finite outputs match the float64 classes
+PASS repeat hip RMS norm tf_rms_rows (fp16): five runs byte-identical (16384 bytes), inputs and guards untouched, no overlap
+PASS shapes hip RMS norm tf_rms_rows (fp16): 12 shapes within the float64 bound (worst 0.992 of the bound), 0 edges refused by the kernel
+PASS sums hip RMS norm tf_rms_rows (fp16): within its bound at k 1024; fp16 sums would miss 2046x, bf16 0.8x (a 16-bit output follows the sum of squares as ss^-1/2: a bf16 sum's error is a few output ulps (the fp32-out form proves fp32 sums))
+PASS nonfinite hip RMS norm tf_rms_rows (bf16): 260 non-finite and 1788 finite outputs match the float64 classes
+PASS repeat hip RMS norm tf_rms_rows (bf16): five runs byte-identical (16384 bytes), inputs and guards untouched, no overlap
+PASS shapes hip RMS norm tf_rms_rows (bf16): 12 shapes within the float64 bound (worst 0.995 of the bound), 0 edges refused by the kernel
+PASS sums hip RMS norm tf_rms_rows (bf16): within its bound at k 1024; fp16 sums would miss 256x, bf16 0.1x (a 16-bit output follows the sum of squares as ss^-1/2: a bf16 sum's error is a few output ulps (the fp32-out form proves fp32 sums))
+PASS nonfinite hip RMS norm rms_kernel<__half>: 2052 non-finite and 14332 finite outputs match the float64 classes
+PASS repeat hip RMS norm rms_kernel<__half>: five runs byte-identical (69632 bytes), inputs and guards untouched, no overlap
+PASS shapes hip RMS norm rms_kernel<__half>: 9 shapes within the float64 bound (worst 0.995 of the bound), 0 edges refused by the kernel
+PASS sums hip RMS norm rms_kernel<__half>: within its bound at k 8192; fp16 sums would miss 2046x, bf16 1.6x (a 16-bit output follows the sum of squares as ss^-1/2: a bf16 sum's error is a few output ulps (the fp32-out form proves fp32 sums))
+PASS nonfinite hip RMS norm rms_kernel<hip_bfloat16>: 2052 non-finite and 14332 finite outputs match the float64 classes
+PASS repeat hip RMS norm rms_kernel<hip_bfloat16>: five runs byte-identical (69632 bytes), inputs and guards untouched, no overlap
+PASS shapes hip RMS norm rms_kernel<hip_bfloat16>: 9 shapes within the float64 bound (worst 0.994 of the bound), 0 edges refused by the kernel
+PASS sums hip RMS norm rms_kernel<hip_bfloat16>: within its bound at k 8192; fp16 sums would miss 256x, bf16 0.1x (a 16-bit output follows the sum of squares as ss^-1/2: a bf16 sum's error is a few output ulps (the fp32-out form proves fp32 sums))
+FAIL nonfinite control: fmax row max: 1 of 8 outputs differ in class; first at 0: finite where float64 gives nan
+CONTROL control: fmax row max: red at nonfinite, as planted
+FAIL repeat control: atomic-add row sum: 4 of 4 repeats differ from the first run's bytes, first at byte 0
+CONTROL control: atomic-add row sum: red at repeat, as planted
+FAIL repeat control: row sum writing its input: 4 of 4 repeats differ from the first run's bytes, first at byte 0
+CONTROL control: row sum writing its input: red at repeat, as planted
+FAIL shapes control: row sum losing a tail input: at 8x1x1 output 0 is 0.000000e0 where float64 gives 8.398438e-1: 2396744.29 of its bound
+CONTROL control: row sum losing a tail input: red at shapes, as planted
+FAIL sums control: dot summed in half: 53477376.0x over its exact-sum bound at k 4096: not fp32 sums (fp16 would miss 53477376x, bf16 16777216x)
+CONTROL control: dot summed in half: red at sums, as planted
+PASS limits: 3 registered HIP launches against gfx1030/1100/1151/1201, 0 problems
+RED  limits control: past its bounds: red on every chip
+RED  limits control: 72 KiB of LDS: red on every chip
+PASS limits live gfx1030 threads a workgroup: the device says 1024, the table 1024
+PASS limits live gfx1030 LDS bytes a workgroup: the device says 65536, the table 65536
+PASS limits live gfx1030 wave size: the device says 32, the table 32
+PASS limits live RMS norm tf_rms_rows: 256 threads launched, the runtime allows 256; 58 VGPRs, 0 + 0 LDS bytes (recorded 58, 0)
+PASS limits live RMS norm rms_kernel<__half>: 256 threads launched, the runtime allows 256; 11 VGPRs, 32772 + 0 LDS bytes (recorded 11, 32772)
+PASS limits live RMS norm rms_kernel<hip_bfloat16>: 256 threads launched, the runtime allows 256; 11 VGPRs, 32772 + 0 LDS bytes (recorded 11, 32772)
+RED  limits live control: past its bounds: 512 threads launched, the runtime allows 256; 4 VGPRs, 0 + 0 LDS bytes (recorded 4, 0)
+RED  limits live control: 72 KiB of LDS: 256 threads launched, the runtime allows 1024; 6 VGPRs, 40960 + 32768 LDS bytes (recorded 6, 40960)
+SUMMARY gfx1030 5 kernels: 5 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 64 ms, limits 18 ms

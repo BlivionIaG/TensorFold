@@ -11150,6 +11150,150 @@
       "bytes": 9403,
       "redacted": false,
       "scope": "Public curated validation-runner CPU proof; new-head GPU checks separately pending; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/README.md",
+      "original_sha256": "9e8ba40b4fc549b649b23b2e5d2e297c2c0f550da56baf08dab78c4ddad34b68",
+      "public_sha256": "9e8ba40b4fc549b649b23b2e5d2e297c2c0f550da56baf08dab78c4ddad34b68",
+      "bytes": 1479,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/bundle_verify.log",
+      "original_sha256": "e862fe1fa682cb3705a1468be80baf3a59d2ea401efe074ae947c108950ae83c",
+      "public_sha256": "e862fe1fa682cb3705a1468be80baf3a59d2ea401efe074ae947c108950ae83c",
+      "bytes": 338,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/collection.json",
+      "original_sha256": "2bdbfef353ebd6082f2ad6ed39f17a6629b151acc31822a4f739fb6dd3c962b8",
+      "public_sha256": "2bdbfef353ebd6082f2ad6ed39f17a6629b151acc31822a4f739fb6dd3c962b8",
+      "bytes": 14384,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/driver.launched.json",
+      "original_sha256": "3814c71c75e65d6038e65098477e699eeff2a2200008a86990b9bfd104d5ac09",
+      "public_sha256": "3814c71c75e65d6038e65098477e699eeff2a2200008a86990b9bfd104d5ac09",
+      "bytes": 293,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/fetch.log",
+      "original_sha256": "0b9d6c9676601db34e446cb0367dab0dbb34aa607e55da44d763feebd3a3f5d9",
+      "public_sha256": "0b9d6c9676601db34e446cb0367dab0dbb34aa607e55da44d763feebd3a3f5d9",
+      "bytes": 221,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/first_gfx1030_build.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/first_gfx1030_live.log",
+      "original_sha256": "129f027b8313f8a7548fb0dcc606d58253ae03af981bedfbfd41ed7300bdd976",
+      "public_sha256": "129f027b8313f8a7548fb0dcc606d58253ae03af981bedfbfd41ed7300bdd976",
+      "bytes": 5219,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/first_gfx1100_build.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/first_gfx1100_live.log",
+      "original_sha256": "3df1ea8e1bd1ad17f8345d1b5f6bee366e0ff5602624885b50346c88bb2e3b50",
+      "public_sha256": "3df1ea8e1bd1ad17f8345d1b5f6bee366e0ff5602624885b50346c88bb2e3b50",
+      "bytes": 5219,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/first_limits.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/public_manifest.json",
+      "original_sha256": "208d0cba605880539ae03598992fabcc34ccd32a6c565cd96b2213adc952cf99",
+      "public_sha256": "208d0cba605880539ae03598992fabcc34ccd32a6c565cd96b2213adc952cf99",
+      "bytes": 6591,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/result.snapshot.json",
+      "original_sha256": "2879a654427b3d0adc5e7145093f49c7b45f302167cc176d1ed05e271acd5198",
+      "public_sha256": "2879a654427b3d0adc5e7145093f49c7b45f302167cc176d1ed05e271acd5198",
+      "bytes": 28427,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/run.py",
+      "original_sha256": "2c8b4cd8dd44ad219dee1b9ef120c42039c713afeba8d1d51c34937486c92289",
+      "public_sha256": "2c8b4cd8dd44ad219dee1b9ef120c42039c713afeba8d1d51c34937486c92289",
+      "bytes": 11438,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/source_creation.json",
+      "original_sha256": "2c3cb95fce7217932fed9764522813ee7f3e454249ce69759a08660b0e390cf1",
+      "public_sha256": "2c3cb95fce7217932fed9764522813ee7f3e454249ce69759a08660b0e390cf1",
+      "bytes": 898,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/wrapper_first_gfx1030_build.log",
+      "original_sha256": "ca8e59ba7d45fd049780a0e9b9ec1883b62a55e2af1db2562a032dbbc1f9226c",
+      "public_sha256": "ca8e59ba7d45fd049780a0e9b9ec1883b62a55e2af1db2562a032dbbc1f9226c",
+      "bytes": 2715,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/wrapper_first_gfx1100_build.log",
+      "original_sha256": "e1c862c6b43fc0de24a9ce2c689fd2755cd2c8c2e234bf885a1916490c1986e8",
+      "public_sha256": "e1c862c6b43fc0de24a9ce2c689fd2755cd2c8c2e234bf885a1916490c1986e8",
+      "bytes": 2715,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/wrapper_first_limits.log",
+      "original_sha256": "142be4cf7ebb83d3706d8bdce678c724f9b1a162125219f0c8f50438177268bc",
+      "public_sha256": "142be4cf7ebb83d3706d8bdce678c724f9b1a162125219f0c8f50438177268bc",
+      "bytes": 45561,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_first826/zb.sh.retained",
+      "original_sha256": "9464ba58dcf80191bb926aa8e3a10744a51dd5530ea062ad666951fad62218ab",
+      "public_sha256": "9464ba58dcf80191bb926aa8e3a10744a51dd5530ea062ad666951fad62218ab",
+      "bytes": 761,
+      "redacted": false,
+      "scope": "Public curated first826 own-head HIP resource and live qualification; internal manifest maps original/public hashes."
     }
   ]
 }

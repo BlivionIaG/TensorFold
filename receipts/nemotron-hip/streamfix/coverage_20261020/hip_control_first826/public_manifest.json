@@ -1,0 +1,141 @@
+{
+  "scope": "Actual first826 own-head qualification only",
+  "files": [
+    {
+      "path": "bundle_verify.log",
+      "original_sha256": "28bade166146147717628760aa4d701aab5a50542e2a322c5630268988970794",
+      "public_sha256": "e862fe1fa682cb3705a1468be80baf3a59d2ea401efe074ae947c108950ae83c",
+      "original_bytes": 348,
+      "public_bytes": 338,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "collection.json",
+      "original_sha256": "641a0f798d48257c1eaec00b3f66b6f707925e22feb11a49cd1fec2788802343",
+      "public_sha256": "2bdbfef353ebd6082f2ad6ed39f17a6629b151acc31822a4f739fb6dd3c962b8",
+      "original_bytes": 14584,
+      "public_bytes": 14384,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "driver.launched.json",
+      "original_sha256": "f6822ebd14e638c12dfdbc4f65ae02418fede3bc7d3dc2794284e20bdd7c6040",
+      "public_sha256": "3814c71c75e65d6038e65098477e699eeff2a2200008a86990b9bfd104d5ac09",
+      "original_bytes": 303,
+      "public_bytes": 293,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "fetch.log",
+      "original_sha256": "aef1ecfbcc08dd711f25b14aaee2db7a73f903dab3f9f25cce0c8dde431d8a93",
+      "public_sha256": "0b9d6c9676601db34e446cb0367dab0dbb34aa607e55da44d763feebd3a3f5d9",
+      "original_bytes": 231,
+      "public_bytes": 221,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_gfx1030_build.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_gfx1030_live.log",
+      "original_sha256": "129f027b8313f8a7548fb0dcc606d58253ae03af981bedfbfd41ed7300bdd976",
+      "public_sha256": "129f027b8313f8a7548fb0dcc606d58253ae03af981bedfbfd41ed7300bdd976",
+      "original_bytes": 5219,
+      "public_bytes": 5219,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_gfx1100_build.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_gfx1100_live.log",
+      "original_sha256": "3df1ea8e1bd1ad17f8345d1b5f6bee366e0ff5602624885b50346c88bb2e3b50",
+      "public_sha256": "3df1ea8e1bd1ad17f8345d1b5f6bee366e0ff5602624885b50346c88bb2e3b50",
+      "original_bytes": 5219,
+      "public_bytes": 5219,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "first_limits.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "original_bytes": 0,
+      "public_bytes": 0,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "result.snapshot.json",
+      "original_sha256": "557ed467d8f2ad3d4d96b89ac05955f05696a904b2149c6fd622253a46274b59",
+      "public_sha256": "2879a654427b3d0adc5e7145093f49c7b45f302167cc176d1ed05e271acd5198",
+      "original_bytes": 28957,
+      "public_bytes": 28427,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "run.py",
+      "original_sha256": "2c8b4cd8dd44ad219dee1b9ef120c42039c713afeba8d1d51c34937486c92289",
+      "public_sha256": "2c8b4cd8dd44ad219dee1b9ef120c42039c713afeba8d1d51c34937486c92289",
+      "original_bytes": 11438,
+      "public_bytes": 11438,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "source_creation.json",
+      "original_sha256": "76decba35b1a05eb6fe5113bf554dd605067e1355aac68fa236a8fa3cf47ff36",
+      "public_sha256": "2c3cb95fce7217932fed9764522813ee7f3e454249ce69759a08660b0e390cf1",
+      "original_bytes": 918,
+      "public_bytes": 898,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_first_gfx1030_build.log",
+      "original_sha256": "8565b06b3fc9d7786810e3e1893ff1ecc07dc5919918f606fcc50dc6646c4d92",
+      "public_sha256": "ca8e59ba7d45fd049780a0e9b9ec1883b62a55e2af1db2562a032dbbc1f9226c",
+      "original_bytes": 2795,
+      "public_bytes": 2715,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_first_gfx1100_build.log",
+      "original_sha256": "494c8fbe3fea69bd1b788bbf4ca08d88053b5c76e61eb00a0f5c882bb9488761",
+      "public_sha256": "e1c862c6b43fc0de24a9ce2c689fd2755cd2c8c2e234bf885a1916490c1986e8",
+      "original_bytes": 2795,
+      "public_bytes": 2715,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "wrapper_first_limits.log",
+      "original_sha256": "7864844a00862787c4f8ca02a044866289edc2fcda83f33e599d170b0235a18c",
+      "public_sha256": "142be4cf7ebb83d3706d8bdce678c724f9b1a162125219f0c8f50438177268bc",
+      "original_bytes": 46111,
+      "public_bytes": 45561,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "zb.sh.retained",
+      "original_sha256": "9464ba58dcf80191bb926aa8e3a10744a51dd5530ea062ad666951fad62218ab",
+      "public_sha256": "9464ba58dcf80191bb926aa8e3a10744a51dd5530ea062ad666951fad62218ab",
+      "original_bytes": 761,
+      "public_bytes": 761,
+      "normalization": "Exact private home/temp path substitution only; numerical text unchanged."
+    },
+    {
+      "path": "README.md",
+      "original_sha256": null,
+      "public_sha256": "9e8ba40b4fc549b649b23b2e5d2e297c2c0f550da56baf08dab78c4ddad34b68",
+      "public_bytes": 1479,
+      "generated": true
+    }
+  ],
+  "manifest_excludes_itself": true
+}

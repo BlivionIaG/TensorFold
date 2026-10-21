@@ -1,0 +1,9 @@
+#!/bin/bash
+# zb.sh TREE LOG ARGS...: zig build ARGS in ~/nh/TREE under the host build lock, once no other build runs; log in ~/hcx/logs/LOG
+tree=$1; log=$2; shift 2
+mkdir -p $HOME/hcx/logs; cd $HOME/nh/$tree || exit 1
+exec 9> $HOME/w1012/build.lock; flock 9
+busy() { pgrep -f "hipcc|clang|ninja|zig build|cmake" | grep -vx -e $$ -e $PPID | grep -q .; }; n=0; while busy && [ $n -lt 360 ]; do sleep 10; n=$((n+1)); done
+echo "$(date +%T) start $tree $(git -c gc.auto=0 -c maintenance.auto=false rev-parse --short HEAD) [$*]" >> $HOME/hcx/logs/zb.out
+timeout -s KILL 5400 $HOME/.local/zig-0.17.0/zig build "$@" -Dhipcc=/opt/rocm/core-7.14/bin/hipcc > $HOME/hcx/logs/$log 2>&1 < /dev/null
+x=$?; echo "$(date +%T)   exit $x $log" >> $HOME/hcx/logs/zb.out; exit $x

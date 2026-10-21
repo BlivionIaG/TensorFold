@@ -1,0 +1,424 @@
+{
+  "source_specs": [
+    [
+      "first",
+      "hcffirst826",
+      "826a0635634dee3793a68e473064d17d5c139945",
+      "bbb17bdf4db45f1084bb6e35442d4b5dde32039e",
+      5
+    ],
+    [
+      "top",
+      "hcftopa44",
+      "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
+      "51a4fadc948801c456b03995186f612a17e5a7dc",
+      49
+    ]
+  ],
+  "boot_id": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "stages": [
+    {
+      "name": "first_limits",
+      "argv": [
+        "<HOME>/hcx/zb.sh",
+        "hcffirst826",
+        "hip_control_fix_826_a44_attempt1/first_limits.log",
+        "hip-kernel-contract-limits",
+        "hip-kernel-contract-objects",
+        "-p",
+        "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_first",
+        "--summary",
+        "all",
+        "--verbose"
+      ],
+      "cwd": null,
+      "started_at": "2026-10-21T06:17:17.137611+00:00",
+      "log": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/first_limits.outer.log",
+      "pid": 28999,
+      "exit_status": 0,
+      "owned_process_group_gone": true,
+      "finished_at": "2026-10-21T06:18:57.168202+00:00",
+      "elapsed_seconds": 100.03059227499989,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "loaded_libraries": {},
+      "observed_identity": {},
+      "wrapper_log": "<HOME>/hcx/logs/hip_control_fix_826_a44_attempt1/first_limits.log",
+      "wrapper_log_sha256": "7864844a00862787c4f8ca02a044866289edc2fcda83f33e599d170b0235a18c"
+    },
+    {
+      "name": "first_gfx1100_build",
+      "argv": [
+        "<HOME>/hcx/zb.sh",
+        "hcffirst826",
+        "hip_control_fix_826_a44_attempt1/first_gfx1100_build.log",
+        "tf-hip-kernel-contract",
+        "-Dhip-arch=gfx1100",
+        "-p",
+        "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_first_gfx1100",
+        "--summary",
+        "all",
+        "--verbose"
+      ],
+      "cwd": null,
+      "started_at": "2026-10-21T06:18:57.240061+00:00",
+      "log": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/first_gfx1100_build.outer.log",
+      "pid": 32345,
+      "exit_status": 0,
+      "owned_process_group_gone": true,
+      "finished_at": "2026-10-21T06:19:29.249461+00:00",
+      "elapsed_seconds": 32.0094111599999,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "loaded_libraries": {},
+      "observed_identity": {},
+      "wrapper_log": "<HOME>/hcx/logs/hip_control_fix_826_a44_attempt1/first_gfx1100_build.log",
+      "wrapper_log_sha256": "494c8fbe3fea69bd1b788bbf4ca08d88053b5c76e61eb00a0f5c882bb9488761"
+    },
+    {
+      "name": "first_gfx1030_build",
+      "argv": [
+        "<HOME>/hcx/zb.sh",
+        "hcffirst826",
+        "hip_control_fix_826_a44_attempt1/first_gfx1030_build.log",
+        "tf-hip-kernel-contract",
+        "-Dhip-arch=gfx1030",
+        "-p",
+        "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_first_gfx1030",
+        "--summary",
+        "all",
+        "--verbose"
+      ],
+      "cwd": null,
+      "started_at": "2026-10-21T06:19:29.275443+00:00",
+      "log": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/first_gfx1030_build.outer.log",
+      "pid": 33025,
+      "exit_status": 0,
+      "owned_process_group_gone": true,
+      "finished_at": "2026-10-21T06:19:59.283279+00:00",
+      "elapsed_seconds": 30.007839461999993,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "loaded_libraries": {},
+      "observed_identity": {},
+      "wrapper_log": "<HOME>/hcx/logs/hip_control_fix_826_a44_attempt1/first_gfx1030_build.log",
+      "wrapper_log_sha256": "8565b06b3fc9d7786810e3e1893ff1ecc07dc5919918f606fcc50dc6646c4d92"
+    },
+    {
+      "name": "first_gfx1030_live",
+      "argv": [
+        "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_first_gfx1030/bin/tf-hip-kernel-contract"
+      ],
+      "cwd": null,
+      "started_at": "2026-10-21T06:19:59.355208+00:00",
+      "log": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/first_gfx1030_live.log",
+      "pid": 33683,
+      "exit_status": 0,
+      "owned_process_group_gone": true,
+      "finished_at": "2026-10-21T06:19:59.874101+00:00",
+      "elapsed_seconds": 0.5188958439998714,
+      "log_sha256": "129f027b8313f8a7548fb0dcc606d58253ae03af981bedfbfd41ed7300bdd976",
+      "loaded_libraries": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d"
+      },
+      "observed_identity": {
+        "executable_sha256": "5e6f16960d7cf7f2c3a0ed64791dd8e96ad8c873a4b8e19c116a1a5a9c51bf9b",
+        "executable_path": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_first_gfx1030/bin/tf-hip-kernel-contract",
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "2",
+          "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+          "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null,
+          "LD_LIBRARY_PATH": "<HOME>/.local/rocm-rdna/lib"
+        }
+      },
+      "source_commit": "826a0635634dee3793a68e473064d17d5c139945",
+      "binary_sha256": "5e6f16960d7cf7f2c3a0ed64791dd8e96ad8c873a4b8e19c116a1a5a9c51bf9b",
+      "device": 2,
+      "summary": "SUMMARY gfx1030 5 kernels: 5 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 64 ms, limits 18 ms"
+    },
+    {
+      "name": "first_gfx1100_live",
+      "argv": [
+        "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_first_gfx1100/bin/tf-hip-kernel-contract"
+      ],
+      "cwd": null,
+      "started_at": "2026-10-21T06:19:59.354489+00:00",
+      "log": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/first_gfx1100_live.log",
+      "pid": 33682,
+      "exit_status": 0,
+      "owned_process_group_gone": true,
+      "finished_at": "2026-10-21T06:19:59.878221+00:00",
+      "elapsed_seconds": 0.5237364269999034,
+      "log_sha256": "3df1ea8e1bd1ad17f8345d1b5f6bee366e0ff5602624885b50346c88bb2e3b50",
+      "loaded_libraries": {
+        "/opt/rocm-7.2.0/core-7.14/lib/libhsa-runtime64.so.1.21.0": "0ba78719bcc2f6052af4946d85cfabca26d5778366458e22bcded76023addbaa",
+        "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d"
+      },
+      "observed_identity": {
+        "executable_sha256": "2a3cce8bbc40788b14d44cea8acacb5fc417fedd49631592bc7b535033e6d73d",
+        "executable_path": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_first_gfx1100/bin/tf-hip-kernel-contract",
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0",
+          "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+          "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null,
+          "LD_LIBRARY_PATH": "<HOME>/.local/rocm-rdna/lib"
+        }
+      },
+      "source_commit": "826a0635634dee3793a68e473064d17d5c139945",
+      "binary_sha256": "2a3cce8bbc40788b14d44cea8acacb5fc417fedd49631592bc7b535033e6d73d",
+      "device": 0,
+      "summary": "SUMMARY gfx1100 5 kernels: 5 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 87 ms, limits 15 ms"
+    },
+    {
+      "name": "top_limits",
+      "argv": [
+        "<HOME>/hcx/zb.sh",
+        "hcftopa44",
+        "hip_control_fix_826_a44_attempt1/top_limits.log",
+        "hip-kernel-contract-limits",
+        "hip-kernel-contract-objects",
+        "-p",
+        "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/resources_top",
+        "--summary",
+        "all",
+        "--verbose"
+      ],
+      "cwd": null,
+      "started_at": "2026-10-21T06:19:59.972996+00:00",
+      "log": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/top_limits.outer.log",
+      "pid": 33741,
+      "exit_status": 0,
+      "owned_process_group_gone": true,
+      "finished_at": "2026-10-21T06:24:07.034205+00:00",
+      "elapsed_seconds": 247.06121577399995,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "loaded_libraries": {},
+      "observed_identity": {},
+      "wrapper_log": "<HOME>/hcx/logs/hip_control_fix_826_a44_attempt1/top_limits.log",
+      "wrapper_log_sha256": "7c37a6f38ee7ff60ed3ae1335df0925af06b24c227cdb5ec3929770721f80332"
+    },
+    {
+      "name": "top_gfx1100_build",
+      "argv": [
+        "<HOME>/hcx/zb.sh",
+        "hcftopa44",
+        "hip_control_fix_826_a44_attempt1/top_gfx1100_build.log",
+        "tf-hip-kernel-contract",
+        "-Dhip-arch=gfx1100",
+        "-p",
+        "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_top_gfx1100",
+        "--summary",
+        "all",
+        "--verbose"
+      ],
+      "cwd": null,
+      "started_at": "2026-10-21T06:24:07.149969+00:00",
+      "log": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/top_gfx1100_build.outer.log",
+      "pid": 39528,
+      "exit_status": 0,
+      "owned_process_group_gone": true,
+      "finished_at": "2026-10-21T06:24:49.163938+00:00",
+      "elapsed_seconds": 42.01397477599994,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "loaded_libraries": {},
+      "observed_identity": {},
+      "wrapper_log": "<HOME>/hcx/logs/hip_control_fix_826_a44_attempt1/top_gfx1100_build.log",
+      "wrapper_log_sha256": "20b51628b4f1cf8e8dd90264678a284d273a51eb19f299698dbd12b1a4b96293"
+    },
+    {
+      "name": "top_gfx1030_build",
+      "argv": [
+        "<HOME>/hcx/zb.sh",
+        "hcftopa44",
+        "hip_control_fix_826_a44_attempt1/top_gfx1030_build.log",
+        "tf-hip-kernel-contract",
+        "-Dhip-arch=gfx1030",
+        "-p",
+        "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/build_top_gfx1030",
+        "--summary",
+        "all",
+        "--verbose"
+      ],
+      "cwd": null,
+      "started_at": "2026-10-21T06:24:49.189131+00:00",
+      "log": "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/top_gfx1030_build.outer.log",
+      "pid": 39828,
+      "exit_status": 0,
+      "owned_process_group_gone": true,
+      "finished_at": "2026-10-21T06:25:31.197337+00:00",
+      "elapsed_seconds": 42.008214498999905,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "loaded_libraries": {},
+      "observed_identity": {},
+      "wrapper_log": "<HOME>/hcx/logs/hip_control_fix_826_a44_attempt1/top_gfx1030_build.log",
+      "wrapper_log_sha256": "72e9be426ce629475e2427dcec08d517bd2d5c70761ef3b16493b6add615d66d"
+    }
+  ],
+  "complete": false,
+  "validated": false,
+  "tools": {
+    "<HOME>/hcx/zb.sh": "9464ba58dcf80191bb926aa8e3a10744a51dd5530ea062ad666951fad62218ab",
+    "<HOME>/.local/zig-0.17.0/zig": "7c61539af19fa4082c94848f1c2b57b89e76dc6cfd5bd4c57764c3caf8f82272",
+    "/opt/rocm/core-7.14/bin/hipcc": "d92839ed940e685fd15b8c60744d9f30efa65102e49e0babd655045219be371d",
+    "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": "00ca863da1cce26bd91d14bf268903a0ee3107595b531fa27fc06c88c6402e0d"
+  },
+  "resolved_tools": {
+    "<HOME>/hcx/zb.sh": "<HOME>/hcx/zb.sh",
+    "<HOME>/.local/zig-0.17.0/zig": "<HOME>/.local/zig-0.17.0/zig",
+    "/opt/rocm/core-7.14/bin/hipcc": "/opt/rocm-7.2.0/core-7.14/bin/hipcc",
+    "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000": "/opt/rocm-7.2.0/core-7.14/lib/libamdhip64.so.7.14.60850-0000000"
+  },
+  "clang": {
+    "path": "/opt/rocm-7.2.0/core-7.14/lib/llvm/bin/clang-23",
+    "sha256": "285156b3fa956dfc0c6b22f87d35ac27aab5a093190a85a0e0a71123654b9657",
+    "version": "AMD clang version 23.0.0git (https://github.com/ROCm/llvm-project.git f30ae3e6b680ad23dcf522e668c6d4c5c90838d0+PATCHED:440716f8b87be9d8e20ed910e10e5b6d14d57cf6)\nTarget: x86_64-unknown-linux-gnu\nThread model: posix\nInstalledDir: /opt/rocm-7.2.0/core-7.14/lib/llvm/bin"
+  },
+  "tool_versions": {
+    "zig": "0.17.0",
+    "hipcc": "HIP version: 7.14.60850-0000000\nAMD clang version 23.0.0git (https://github.com/ROCm/llvm-project.git f30ae3e6b680ad23dcf522e668c6d4c5c90838d0+PATCHED:440716f8b87be9d8e20ed910e10e5b6d14d57cf6)\nTarget: x86_64-unknown-linux-gnu\nThread model: posix\nInstalledDir: /opt/rocm-7.2.0/core-7.14/lib/llvm/bin"
+  },
+  "process_observations": [
+    {
+      "pid": 26453,
+      "command": "<HOME>/Apps/vllm/venv-7.14.0_0.31.0/bin/python -m vllm.entrypoints.openai.api_server --model <HOME>/.cache/huggingface/hub/models--wtdcode--Qwen3.8-Flash-Next-AWQ-W4A16/snapshots/0939125b929543a783ce700c90e36dd1a575c00c --served-model-name flash-next --host 127.0.0.1 --port 18179 --attention-backend RDNA_ATTN --tensor-parallel-size 4 --dtype float16 --block-size 1024 --max-model-len 262144 --max-num-seqs 8 --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --prefill-schedule-interval 1 --kv-cache-memory-bytes 4026531840 --compilation-config {\"mode\":3,\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"cudagraph_capture_sizes\":[3,6,12,24],\"compile_ranges_endpoints\":[]} --speculative-config {\"method\":\"dflash\",\"model\":\"<HOME>/w4a8_runs/dflash2/model\",\"num_speculative_tokens\":2,\"attention_backend\":\"RDNA_ATTN\"} --enable-expert-parallel --enable-prefix-caching --mamba-cache-mode align --language-model-only --skip-mm-profiling --monokernel ",
+      "masks": {
+        "HIP_VISIBLE_DEVICES": "6,7,8,9"
+      },
+      "at": "2026-10-21T06:17:16.585104+00:00"
+    },
+    {
+      "pid": 26453,
+      "command": "<HOME>/Apps/vllm/venv-7.14.0_0.31.0/bin/python -m vllm.entrypoints.openai.api_server --model <HOME>/.cache/huggingface/hub/models--wtdcode--Qwen3.8-Flash-Next-AWQ-W4A16/snapshots/0939125b929543a783ce700c90e36dd1a575c00c --served-model-name flash-next --host 127.0.0.1 --port 18179 --attention-backend RDNA_ATTN --tensor-parallel-size 4 --dtype float16 --block-size 1024 --max-model-len 262144 --max-num-seqs 8 --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --prefill-schedule-interval 1 --kv-cache-memory-bytes 4026531840 --compilation-config {\"mode\":3,\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"cudagraph_capture_sizes\":[3,6,12,24],\"compile_ranges_endpoints\":[]} --speculative-config {\"method\":\"dflash\",\"model\":\"<HOME>/w4a8_runs/dflash2/model\",\"num_speculative_tokens\":2,\"attention_backend\":\"RDNA_ATTN\"} --enable-expert-parallel --enable-prefix-caching --mamba-cache-mode align --language-model-only --skip-mm-profiling --monokernel ",
+      "masks": {
+        "HIP_VISIBLE_DEVICES": "6,7,8,9"
+      },
+      "at": "2026-10-21T06:17:16.946053+00:00"
+    },
+    {
+      "pid": 26453,
+      "command": "<HOME>/Apps/vllm/venv-7.14.0_0.31.0/bin/python -m vllm.entrypoints.openai.api_server --model <HOME>/.cache/huggingface/hub/models--wtdcode--Qwen3.8-Flash-Next-AWQ-W4A16/snapshots/0939125b929543a783ce700c90e36dd1a575c00c --served-model-name flash-next --host 127.0.0.1 --port 18179 --attention-backend RDNA_ATTN --tensor-parallel-size 4 --dtype float16 --block-size 1024 --max-model-len 262144 --max-num-seqs 8 --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --prefill-schedule-interval 1 --kv-cache-memory-bytes 4026531840 --compilation-config {\"mode\":3,\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"cudagraph_capture_sizes\":[3,6,12,24],\"compile_ranges_endpoints\":[]} --speculative-config {\"method\":\"dflash\",\"model\":\"<HOME>/w4a8_runs/dflash2/model\",\"num_speculative_tokens\":2,\"attention_backend\":\"RDNA_ATTN\"} --enable-expert-parallel --enable-prefix-caching --mamba-cache-mode align --language-model-only --skip-mm-profiling --monokernel ",
+      "masks": {
+        "HIP_VISIBLE_DEVICES": "6,7,8,9"
+      },
+      "at": "2026-10-21T06:17:17.126376+00:00"
+    },
+    {
+      "pid": 26453,
+      "command": "<HOME>/Apps/vllm/venv-7.14.0_0.31.0/bin/python -m vllm.entrypoints.openai.api_server --model <HOME>/.cache/huggingface/hub/models--wtdcode--Qwen3.8-Flash-Next-AWQ-W4A16/snapshots/0939125b929543a783ce700c90e36dd1a575c00c --served-model-name flash-next --host 127.0.0.1 --port 18179 --attention-backend RDNA_ATTN --tensor-parallel-size 4 --dtype float16 --block-size 1024 --max-model-len 262144 --max-num-seqs 8 --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --prefill-schedule-interval 1 --kv-cache-memory-bytes 4026531840 --compilation-config {\"mode\":3,\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"cudagraph_capture_sizes\":[3,6,12,24],\"compile_ranges_endpoints\":[]} --speculative-config {\"method\":\"dflash\",\"model\":\"<HOME>/w4a8_runs/dflash2/model\",\"num_speculative_tokens\":2,\"attention_backend\":\"RDNA_ATTN\"} --enable-expert-parallel --enable-prefix-caching --mamba-cache-mode align --language-model-only --skip-mm-profiling --monokernel ",
+      "masks": {
+        "HIP_VISIBLE_DEVICES": "6,7,8,9"
+      },
+      "at": "2026-10-21T06:19:59.336489+00:00"
+    },
+    {
+      "pid": 26453,
+      "command": "<HOME>/Apps/vllm/venv-7.14.0_0.31.0/bin/python -m vllm.entrypoints.openai.api_server --model <HOME>/.cache/huggingface/hub/models--wtdcode--Qwen3.8-Flash-Next-AWQ-W4A16/snapshots/0939125b929543a783ce700c90e36dd1a575c00c --served-model-name flash-next --host 127.0.0.1 --port 18179 --attention-backend RDNA_ATTN --tensor-parallel-size 4 --dtype float16 --block-size 1024 --max-model-len 262144 --max-num-seqs 8 --max-num-batched-tokens 2048 --long-prefill-token-threshold 0 --prefill-schedule-interval 1 --kv-cache-memory-bytes 4026531840 --compilation-config {\"mode\":3,\"cudagraph_mode\":\"FULL_AND_PIECEWISE\",\"cudagraph_capture_sizes\":[3,6,12,24],\"compile_ranges_endpoints\":[]} --speculative-config {\"method\":\"dflash\",\"model\":\"<HOME>/w4a8_runs/dflash2/model\",\"num_speculative_tokens\":2,\"attention_backend\":\"RDNA_ATTN\"} --enable-expert-parallel --enable-prefix-caching --mamba-cache-mode align --language-model-only --skip-mm-profiling --monokernel ",
+      "masks": {
+        "HIP_VISIBLE_DEVICES": "6,7,8,9"
+      },
+      "at": "2026-10-21T06:19:59.957407+00:00"
+    }
+  ],
+  "pci": {
+    "0": "0000:c7:00.0",
+    "1": "0000:83:00.0",
+    "2": "0000:47:00.0"
+  },
+  "started_at": "2026-10-21T06:17:17.089761+00:00",
+  "objects": {
+    "first": {
+      "hsaco/gfx1030/contract_controls.hsaco": "0587ea958c0a6f9407d568494e8a14eb42b9ba4263cabb34e1facdd1049f416d",
+      "hsaco/gfx1030/group0.hsaco": "8ee95fc3a9fb41514a6b1e426b81e47795650c7f0a47a1218a6255ba46cfd705",
+      "hsaco/gfx1030/group1.hsaco": "08c9c823bf6e8f2eb34cd006507a99626a2403d5ac667ae16f210b777d7d718f",
+      "hsaco/gfx1030/group2.hsaco": "cc50b525693d73aee4ee2100d47846583d5d69b36d7bf51ac03bb8dda8d7aba9",
+      "hsaco/gfx1030/group3.hsaco": "c88a79836505f9bff06028d33c83b076861902fc4a6fb4f93a53eb84d943b643",
+      "hsaco/gfx1030/group4.hsaco": "532f70ae8c139a85405748a3faf68fa63fa5689fc08a33225ce02725595e0fc9",
+      "hsaco/gfx1030/group5.hsaco": "bc9fa7e5d60ed571ca7671042c1469c1d7201a70706d94706f4bf135421ff2f1",
+      "hsaco/gfx1030/group6.hsaco": "ed6139cacb3de712a005cf7882f924d3875a5c6004b3881642be64da425e7768",
+      "hsaco/gfx1030/group7.hsaco": "bf55d02f469a3634884283441fbe9c5544f420c173f638c3b6b7045115e89540",
+      "hsaco/gfx1030/group8.hsaco": "b9af4ee1d6efacb69b7bb3e27e0258d579faf72570ec0c424607838fb833c879",
+      "hsaco/gfx1030/group9.hsaco": "c9e40153c47b543c00cc0e55619b9d7ed92595b8840e5ac1b3f8494eee3f9a35",
+      "hsaco/gfx1100/contract_controls.hsaco": "1e85b3974200b14e62b8a0151548a5851c71011f53505c2b6b21dee8b1ac8033",
+      "hsaco/gfx1100/group0.hsaco": "3efa92f84a81b62fe7f20556362974b5980205a22ff72a0d24cc84f315b70b1e",
+      "hsaco/gfx1100/group1.hsaco": "c05989baba54cd2d3b304237875f5ed28efa7848fcd75af805d97edc10e45577",
+      "hsaco/gfx1100/group2.hsaco": "66bf24a36bddad841d3834177e67de0ba048fc8ba2f74454c55d8893a84d999a",
+      "hsaco/gfx1100/group3.hsaco": "abd7aec4d8ce7c8bda642b1d561d941fb2daf57d29465cba343f0c7e6918b634",
+      "hsaco/gfx1100/group4.hsaco": "7286d4f593dab3c140fbc6825debc6f3632f9b55b18eb8e27810534c52c9a9a7",
+      "hsaco/gfx1100/group5.hsaco": "2c890f47eef169b41153a12e7481dd1444755cb66d636a2cd817f93ba3bb47d6",
+      "hsaco/gfx1100/group6.hsaco": "5ec5c2afa391cda0032b5b3f2128bd7825deac56a25c75ba01d204aacf687794",
+      "hsaco/gfx1100/group7.hsaco": "9cad0422404fffe76199191321518d5813c3fbede64a6d4f68adf3519d8edff2",
+      "hsaco/gfx1100/group8.hsaco": "d6ce2b7a09d23111735ad4e05b1a6547f405ac9729d2c590998bb2e0bb0e7097",
+      "hsaco/gfx1100/group9.hsaco": "c5d0a46fefe73cbc330bb65a615e0806f69cf93d52282267da11ccc561bdbf4c",
+      "hsaco/gfx1151/contract_controls.hsaco": "cff3dcda231c7526c52e390ee7f6916a1b03c558d373b9895f5056afa3a38b6e",
+      "hsaco/gfx1151/group0.hsaco": "1ff1a17774a8b6c3a5520dfa0133c577739d9ac817e1dbe57b46b1262edc61f7",
+      "hsaco/gfx1151/group1.hsaco": "d527aab51b800bd8608d579830e6f9b6b5182074eb23b04ad6a5144549368429",
+      "hsaco/gfx1151/group2.hsaco": "3da71aabe5d9aa3903165452b09f7cc79ceea28346b3d070beb01b2187bb884a",
+      "hsaco/gfx1151/group3.hsaco": "601549e276ef79d69f3df1e1b09c13eb341e6230f690378c1ccb5a9401dd3d51",
+      "hsaco/gfx1151/group4.hsaco": "745e0101fcd6fa82422378e7eb976bb1ae9236208faf364f9425f23385e0c2ab",
+      "hsaco/gfx1151/group5.hsaco": "8d37862b012dd9fbb09120eec13790f5e93c3a58fefb8d4fb0b3bde0adb19b5a",
+      "hsaco/gfx1151/group6.hsaco": "4db048f36df98f23b3259000dff905c2aa2f453d09005bfcb5dac42e25251b1f",
+      "hsaco/gfx1151/group7.hsaco": "8e19aad9b0bb410758174c41a8d6c8ab18e22d5808ee9cfb5711f3feb9a15f74",
+      "hsaco/gfx1151/group8.hsaco": "0f541f1f9d3cafad55ac1d395151ba9a4e9e052486b938f4e10bf5b4676e258a",
+      "hsaco/gfx1151/group9.hsaco": "340fc8474904dc45b0d3679cb568cbe831c2b6a9489dcdc0a0a2354669f3296c",
+      "hsaco/gfx1201/contract_controls.hsaco": "08efcb04b4796ffc1850539c3093d4e208f1eef070c8419ce50eec7800ab977d",
+      "hsaco/gfx1201/group0.hsaco": "e9edaab9ac7f036c8d5c85022ff1e36ad975ebb0e4eb9cdd20f09f69389159a7",
+      "hsaco/gfx1201/group1.hsaco": "bda4578268bc07abfdee2fce8b6ebcb3a62cbdc060eac49958240c0ae3e47812",
+      "hsaco/gfx1201/group2.hsaco": "198579f309fb3c95217e15377e49947df658ce4957217d3d711116b71dec8425",
+      "hsaco/gfx1201/group3.hsaco": "ea8cf488a212e02baeda518e71c635ad8a4181bd6a1542a20dbf6e036b056dba",
+      "hsaco/gfx1201/group4.hsaco": "0d8a6a2fb4baf121d9f70fc3408a6eab736dd221eb263be5eb3646cbd6c4b2f9",
+      "hsaco/gfx1201/group5.hsaco": "3d752666965920f5b08e8872d94fa5bcfe6a1b47fc6b46091c6ed81a7fa67d3c",
+      "hsaco/gfx1201/group6.hsaco": "4d6cbc239d5e345c570ced6b63ca31f94c30189bc962deaabfef8ece6d1ef046",
+      "hsaco/gfx1201/group7.hsaco": "145d4f15950eeac63bb292da9c36748d56d8347146ab0c11d2517d690a136a6b",
+      "hsaco/gfx1201/group8.hsaco": "d1f72efcbea86e991848c8fa13dc0c8822f9da26ecba3c7c67f49332af6240a2",
+      "hsaco/gfx1201/group9.hsaco": "48d009479d8a987a412325f1bffa05389ca26afc340dfa8f4c280e12c1d4de4a"
+    },
+    "top": {
+      "hsaco/gfx1030/contract_controls.hsaco": "95d6a4af2c19f12a2d9bf4925ec0023733ddf1e51306ad87e02236e110e300c5",
+      "hsaco/gfx1030/group0.hsaco": "33a21c7106bc894a90c8b607ca0bf26ab9d47fd112c98bb427108bf350d4f43a",
+      "hsaco/gfx1030/group1.hsaco": "ef78c6381e781d08eba5f344ef39b79cb76a6c7ad92690491248378cea0f5e94",
+      "hsaco/gfx1030/group2.hsaco": "b428175aa61908d303d8280b1b89b94b2b3d216825859c4a0dbf875485ccc4f6",
+      "hsaco/gfx1030/group3.hsaco": "71aef93799f22a689b3ce2693b115f13f9067cd53750c453d9c32a7ad06c6dd0",
+      "hsaco/gfx1030/group4.hsaco": "191200bf75822e422f2a2f59b4955d4a70f219baa1218c46076dad47481c2104",
+      "hsaco/gfx1030/group5.hsaco": "b50dcf1bed50c5c8dfeebd160fc77ef1c255c7545878f534fe91bd1a28c7044b",
+      "hsaco/gfx1030/group6.hsaco": "3c21e6ebafc69897160e350183c8ce6a52c028e071e80268bb0bd5707bfba2d9",
+      "hsaco/gfx1030/group7.hsaco": "f8c0512342c868ccb83ccc9783f19260a6976bd7cb86026795ebda7e40813f25",
+      "hsaco/gfx1030/group8.hsaco": "f42a9042c8dfcf2ccfbf66e371ee2670c2c8b84f1766bc7d730b4342bb57dc4d",
+      "hsaco/gfx1030/group9.hsaco": "4d9f6263fe0e8fb6ce94f77952bb0efbe64376563d2048316f7a08d5e7eaceac",
+      "hsaco/gfx1030/group10.hsaco": "733d6c5c5aeac017c841b003c7ba1191c50a9e1c729ab54fab435756d1185745",
+      "hsaco/gfx1100/contract_controls.hsaco": "44162edf24e4dcb8aaa62ea01906024cdf511d5f214d786855ed1959dfad6c8a",
+      "hsaco/gfx1100/group0.hsaco": "f9a55405f44e97176fb87dee5918b0f84217e95ccb3deaabbb3020a5b792800e",
+      "hsaco/gfx1100/group1.hsaco": "c34adaed54275362e902ff64d3ad583b8b8a8ee30881a5bcfaa26330f66485e6",
+      "hsaco/gfx1100/group2.hsaco": "5ab245f08dba2d5426c21bcea9f6e2f8235fcfebadd2f4bf146f7862533d40cf",
+      "hsaco/gfx1100/group3.hsaco": "a811e7a9c57a3ac50356c8ae90796361cc1f1aeef1d209d6de0235b09dee78a7",
+      "hsaco/gfx1100/group4.hsaco": "5eb919d9fcffd1940ceaa78584fefad0da01f9b5baa7178b81d9b2e01afda9b2",
+      "hsaco/gfx1100/group5.hsaco": "1c76f3db2fd470db950d07337a77fa87e9394e50dd1f2a88b6a6c8d2e898a780",
+      "hsaco/gfx1100/group6.hsaco": "0a90fd9a92ed482809afc41d6c561c898bfd6262fabaa83fbb1a04814723fdb4",
+      "hsaco/gfx1100/group7.hsaco": "b9a34a54bb7c605a237f586e2ab4e32520ca653bba0610c9bcf46811582067c6",
+      "hsaco/gfx1100/group8.hsaco": "ea4b3e0be044af2c4dfc37a9df57fe4de5f9fd75b8e68e7cd56b3fa065b79092",
+      "hsaco/gfx1100/group9.hsaco": "277a39ed1182e776709904454f41b4003b4a929be09a32507ee48e54e971b05b",
+      "hsaco/gfx1100/group10.hsaco": "95dbe9193ea47375a7ae8b03365924a479af2e0a5162c8df7d9e4491b420a626",
+      "hsaco/gfx1151/contract_controls.hsaco": "e21f1a1dc8a0cc7e69d99b99c53bf5656fe8153baf1c4b28649b9d1d7ccf2777",
+      "hsaco/gfx1151/group0.hsaco": "7acaf80aa2c19faba244b1b1d20b2bb9a9fc16687f98afd955d01f16a0cf2669",
+      "hsaco/gfx1151/group1.hsaco": "54777fcc80d717a900b135114116b42c89b4c7267d91c33a950d1bff284b9e1c",
+      "hsaco/gfx1151/group2.hsaco": "5a11f7c21edf0b72d4f25cd8a1d2d1115547f11bc61021b2d7ccf6745ebfa1e0",
+      "hsaco/gfx1151/group3.hsaco": "68b0e0b6918d698b104af179e8dd2bf2d3cabfbffcd8c0f960ec27abc1b5b2c9",
+      "hsaco/gfx1151/group4.hsaco": "708f7e83fba5e84439af969d82946ec193d69db58f19996d4bb2334ba869e336",
+      "hsaco/gfx1151/group5.hsaco": "00145a2ba90dbbe7666e9819cde1b9c889844a80610e2f2b3e20b2c90cd81e55",
+      "hsaco/gfx1151/group6.hsaco": "c729314d16c75e74312ffb846dd3f92870a13a3f9175891f2be8e620f605e566",
+      "hsaco/gfx1151/group7.hsaco": "658a3a79edbb1de9614965c2ff0310a519ad9d337062466ea9b7843dbd098f00",
+      "hsaco/gfx1151/group8.hsaco": "3fc79ea5b5998fd6cdfc4b29d1cdfabe377f118ebf8e92e12b3d588a20000814",
+      "hsaco/gfx1151/group9.hsaco": "d067206e5ffed6d65265a57d49fff274c4ea770c0346c64a6fba98c4e3500533",
+      "hsaco/gfx1151/group10.hsaco": "68b173ab49957004ba729ea66999402786b11a89f877c6712c83e36649547875",
+      "hsaco/gfx1201/contract_controls.hsaco": "9cec3fcaa44966943b4b5aadb7cea01b1fdee7232e26df3d56e2654eed1303a5",
+      "hsaco/gfx1201/group0.hsaco": "9c454154014f5ddc08591ce6c01e01e15e411566e4c06a11bf8b6faa7dd0cba8",
+      "hsaco/gfx1201/group1.hsaco": "7ce65d04dcb0b74e48efffd1cb60ffa1481e6b9b9089f7f5290414d55582aa49",
+      "hsaco/gfx1201/group2.hsaco": "cf9d899abe1b6d8cad69246d7b9794528510b565be70a1fc821e6fb68a75f3b2",
+      "hsaco/gfx1201/group3.hsaco": "688c8209f1c6e87991485dc3d313296cc22ac40907fc510754190e72687b836c",
+      "hsaco/gfx1201/group4.hsaco": "f1cd03b90be4f3f9a00946bc089016f2dc0d831d3a2c39192526abc127cd5fdf",
+      "hsaco/gfx1201/group5.hsaco": "0017ae52af7addb5a0454d02136848d9ac7b096914bcc18d6180c1a84723f72b",
+      "hsaco/gfx1201/group6.hsaco": "873580c561781ff33c48d357af30cb9473a70b5931674acd12a275b34d534d98",
+      "hsaco/gfx1201/group7.hsaco": "acf4dab17b757e51466cf42d71feae11cf3fe38ff6221f4a20e12e2b1db7f4de",
+      "hsaco/gfx1201/group8.hsaco": "b1bdca902533fc8f373a9eb16b6a1df8800ba5be5cec42d5f896050be8cc703b",
+      "hsaco/gfx1201/group9.hsaco": "797dfd2ad97c2b4a6bb0b960a2d87b5a63e3bac315d96957ddd05dd6b4bf9c69",
+      "hsaco/gfx1201/group10.hsaco": "29f607407021219bf432b28170e14f3d11c1971c194854157ea6956ca1a3d563"
+    }
+  }
+}

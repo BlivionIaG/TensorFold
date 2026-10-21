@@ -1,0 +1,9 @@
+{
+  "pid": 28935,
+  "argv": [
+    "python3",
+    "<HOME>/hcx/streamfix/coverage_20261020/hip_control_fix_qualification_826_a44_attempt1/run.py"
+  ],
+  "driver_sha256": "2c8b4cd8dd44ad219dee1b9ef120c42039c713afeba8d1d51c34937486c92289",
+  "launched_at_utc": "2026-10-21T06:17:15.986315+00:00"
+}
