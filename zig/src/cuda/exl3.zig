@@ -373,31 +373,31 @@ test "dense reference blocks fuse counter reset into rotation on every invocatio
             return abi.success;
         }
     };
-    var d = @import("exl3_mock.zig").init();
-    d.func_name = null;
-    d.api.cuLaunchKernel = Fake.launch;
-    d.api.cuMemsetD8Async = Fake.clear;
-    const rot: Function = .{ .d = &d, .handle = @ptrFromInt(1) };
-    const product: Function = .{ .d = &d, .handle = @ptrFromInt(2) };
-    var de: Dense = .{
-        .d = &d,
-        .lin = .{ .mod = undefined, .rot_in = rot, .fns = @splat(product) },
-        .xh = .{ .d = &d, .ptr = 0x1000, .len = 128 * 4096 * 2 },
-        .z = .{ .d = &d, .ptr = 0x2000, .len = 8 * 128 * 8192 * 4 },
-        .counters = .{ .d = &d, .ptr = 0x3000, .len = 8 * 8192 / 128 * 4 },
+    var test_driver = @import("exl3_mock.zig").init();
+    test_driver.func_name = null;
+    test_driver.api.cuLaunchKernel = Fake.launch;
+    test_driver.api.cuMemsetD8Async = Fake.clear;
+    const rotation: Function = .{ .d = &test_driver, .handle = @ptrFromInt(1) };
+    const product: Function = .{ .d = &test_driver, .handle = @ptrFromInt(2) };
+    var dense: Dense = .{
+        .d = &test_driver,
+        .lin = .{ .mod = undefined, .rot_in = rotation, .fns = @splat(product) },
+        .xh = .{ .d = &test_driver, .ptr = 0x1000, .len = 128 * 4096 * 2 },
+        .z = .{ .d = &test_driver, .ptr = 0x2000, .len = 8 * 128 * 8192 * 4 },
+        .counters = .{ .d = &test_driver, .ptr = 0x3000, .len = 8 * 8192 / 128 * 4 },
     };
-    Fake.expected_counters = de.counters.?.ptr;
+    Fake.expected_counters = dense.counters.?.ptr;
     for ([_][2]u32{ .{ 2560, 2560 }, .{ 512, 512 }, .{ 4096, 8192 }, .{ 2560, 512 } }) |shape| {
-        const st = strides(shape[0], shape[1], 8, false);
-        const w: Weight = .{ .trellis = 7, .suh = 8, .svh = 9, .k = shape[0], .n = shape[1], .halves = 8, .codebook = .mul1, .stride_k = st.k, .stride_nb = st.nb };
-        Fake.expected_count = if (plan(w.k, w.n, 192, 8).sk > 1) @intCast(Linear.counterBytes(w) / 4) else 0;
-        for ([_]usize{ 1, 17, 128, 129, 300, 3 }) |rows| {
+        const layout_strides = strides(shape[0], shape[1], 8, false);
+        const weight: Weight = .{ .trellis = 7, .suh = 8, .svh = 9, .k = shape[0], .n = shape[1], .halves = 8, .codebook = .mul1, .stride_k = layout_strides.k, .stride_nb = layout_strides.nb };
+        Fake.expected_count = if (plan(weight.k, weight.n, 192, 8).sk > 1) @intCast(Linear.counterBytes(weight) / 4) else 0;
+        for ([_]usize{ 1, 17, 128, 129, 300, 3 }) |row_count| {
             const before = Fake.products;
-            try de.decode(.{ .d = &d, .handle = null }, w, 10, .bf16, rows, 11, .bf16);
-            try std.testing.expectEqual((rows + 127) / 128, Fake.products - before);
-            try std.testing.expectEqual(@as(i32, @intCast((rows - 1) % 128 + 1)), Fake.last_rows);
-            try de.prompt(.{ .d = &d, .handle = null }, w, 10, .bf16, rows, 11, .f32);
-            try std.testing.expectEqual(2 * ((rows + 127) / 128), Fake.products - before);
+            try dense.decode(.{ .d = &test_driver, .handle = null }, weight, 10, .bf16, row_count, 11, .bf16);
+            try std.testing.expectEqual((row_count + 127) / 128, Fake.products - before);
+            try std.testing.expectEqual(@as(i32, @intCast((row_count - 1) % 128 + 1)), Fake.last_rows);
+            try dense.prompt(.{ .d = &test_driver, .handle = null }, weight, 10, .bf16, row_count, 11, .f32);
+            try std.testing.expectEqual(2 * ((row_count + 127) / 128), Fake.products - before);
             try std.testing.expectEqual(Fake.rotations, Fake.products);
             try std.testing.expectEqual(@as(usize, 0), Fake.clears);
         }
