@@ -279,9 +279,9 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
         var ngram = try flash.ple.Ngram.init(gpu.gpa, gpu.io, dir);
         defer ngram.deinit();
         var first: [2]pl.Layer = undefined;
-        first[0] = try pl.loadLayerRank(gpu.gpa, d, &r.stream, &r.store, r.pack_fn, 0, 1, 0);
+        first[0] = try pl.loadLayerRank(gpu.gpa, d, &r.stream, &r.store, r.pack_fn, 0, 1, 0, null);
         defer first[0].free(gpu.gpa);
-        first[1] = try pl.loadLayerRank(gpu.gpa, d, &r.stream, &r.store, r.pack_fn, 1, 1, 0);
+        first[1] = try pl.loadLayerRank(gpu.gpa, d, &r.stream, &r.store, r.pack_fn, 1, 1, 0, null);
         defer first[1].free(gpu.gpa);
         r.store.release();
         var hbuf = try cuda.DeviceBuffer.alloc(gpu.d, chunk * wide * 2);
@@ -309,7 +309,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
     var run_ns: i96 = 0;
     for (2..wt.layers_n) |l| {
         var t0 = check.now(gpu.io);
-        var lw = try pl.loadLayerRank(gpu.gpa, d, &r.stream, &r.store, r.pack_fn, l, 1, 0);
+        var lw = try pl.loadLayerRank(gpu.gpa, d, &r.stream, &r.store, r.pack_fn, l, 1, 0, null);
         defer lw.free(gpu.gpa);
         r.store.release();
         load_ns += check.now(gpu.io) - t0;

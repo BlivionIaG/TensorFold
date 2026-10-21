@@ -1053,7 +1053,7 @@ fn layerMode(gpu: Gpu, dir: []const u8, which: []const usize) !void {
     var failed: usize = 0;
     for (which) |l| {
         const t0 = check.now(gpu.io);
-        var lw = try pl.loadLayerRank(gpu.gpa, @constCast(gpu.d), &rig.stream, &rig.store, rig.pack_fn, l, 1, 0);
+        var lw = try pl.loadLayerRank(gpu.gpa, @constCast(gpu.d), &rig.stream, &rig.store, rig.pack_fn, l, 1, 0, null);
         defer lw.free(gpu.gpa);
         std.debug.print("== layer {d} ({s}): the family's loader (cuda_prompt_load.loadLayerRank) in {d:.0} ms, every expert resident\n", .{ l, if (wt.linearLayer(l)) "GDN" else "attention", @as(f64, @floatFromInt(check.now(gpu.io) - t0)) / 1e6 });
         try check.expect(lw.exl3 != null, "layer {d}: experts did not load as EXL3", .{l});

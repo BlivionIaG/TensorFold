@@ -179,7 +179,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
     var loaded: usize = 0;
     defer for (layers[0..loaded]) |*lw| lw.free(gpu.gpa);
     for (0..n_layers) |l| {
-        layers[l] = try pl.loadLayerRank(gpu.gpa, d, &r.stream, &r.store, r.pack_fn, l, 1, 0);
+        layers[l] = try pl.loadLayerRank(gpu.gpa, d, &r.stream, &r.store, r.pack_fn, l, 1, 0, null);
         loaded += 1;
         if (l % 16 == 15) r.store.release();
     }
