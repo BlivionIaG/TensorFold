@@ -246,7 +246,7 @@ pub const Engine = struct {
     pub fn deinit(e: *Engine) void {
         @import("cuda_exl3_prefill.zig").releaseFor(e);
         @import("cuda_exl3_graph.zig").releaseFor(e);
-        @import("cuda_exl3_recycle.zig").drain(e.gpa);
+        @import("cuda_exl3_recycle.zig").drain(e);
         if (e.page_config) |cfg| if (cfg.shared_lanes != 0) {
             if (e.shared_arena) |arena| arena.destroy() catch @panic("shared KV arena still owns live lanes");
         };
@@ -324,8 +324,8 @@ pub const Engine = struct {
             const arena = e.shared_arena orelse return error.SharedKvArenaRequired;
             if (cap != arena.layout.options.cap) return error.SharedKvCommonCap;
         };
-        if (e.page_config == null) if (try @import("cuda_exl3_recycle.zig").takeSeq(e, cap)) |kept| return kept;
-        if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_exl3_kv.zig").newSeq(e, Seq, cap); // K10 placement
+        if (try @import("cuda_exl3_recycle.zig").takeSeq(e, cap)) |kept| return kept;
+        if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_prompt_lifecycle.zig").newPlacedSeq(e, cap);
         const logits = try e.gpa.alloc(u8, vocab * 2);
         errdefer e.gpa.free(logits);
         const conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
@@ -359,6 +359,7 @@ pub const Engine = struct {
             .logits = &.{},
             .cap = cap,
             .paged = paged,
+            .recycle_owner = e,
         };
         paged = null; // seq owns the pages from here
         // One rollback owns every published array, and drains before releasing any destination.
@@ -571,6 +572,7 @@ test "exl3: Engine graph-hit lease covers every owner without paging callbacks o
 
 /// One stream's caches. `fed` tokens have already gone through the model.
 pub const Seq = struct {
+    recycle_owner: ?*Engine = null,
     invalidated: bool = false,
     media: ?@import("cuda_media.zig").State = null,
     rank_id: u64 = 0,
@@ -600,27 +602,7 @@ pub const Seq = struct {
     }
 
     pub fn deinit(s: *Seq, gpa: std.mem.Allocator) void {
-        if (s.invalidated) cuda.completion.drain(s.tail.d, .{ .d = s.tail.d, .handle = null }, "invalid snapshot destination did not drain");
-        if (@import("cuda_exl3_recycle.zig").giveSeq(s)) return; // graphs: kept for the next stream (stable addresses)
-        @import("cuda_exl3_graph.zig").releaseSeq(s);
-        if (s.media) |*m| m.deinit();
-        @import("cuda_exl3_kv.zig").deinitSeq(gpa, &s.kv8, &s.ikc_host);
-        freeBufs(s.conv);
-        freeBufs(s.state);
-        freeBufs(s.kc);
-        freeBufs(s.vc);
-        freeBufs(s.ikc);
-        freeBufs(s.pooled);
-        gpa.free(s.conv);
-        gpa.free(s.state);
-        gpa.free(s.kc);
-        gpa.free(s.vc);
-        gpa.free(s.ikc);
-        gpa.free(s.pooled);
-        if (s.paged) |*p| p.deinit(gpa);
-        if (s.tail.ptr != 0) s.tail.free();
-        if (s.paged) |pg| pg.destroy();
-        gpa.free(s.logits);
+        @import("cuda_prompt_lifecycle.zig").deinit(s, gpa);
     }
 };
 
