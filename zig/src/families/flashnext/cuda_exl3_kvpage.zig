@@ -12,6 +12,13 @@ const std = @import("std");
 const cuda = @import("cuda");
 const wt = @import("cuda_prompt_wt.zig");
 const parts = @import("cuda_batch_state.zig");
+pub const shared_contract = @import("exl3_shared_kv.zig");
+pub const shared_device = @import("cuda_exl3_shared_kv.zig");
+
+test "exl3: shared KV host ownership contracts" {
+    _ = shared_contract;
+    _ = shared_device;
+}
 
 const head_dim = wt.head_dim;
 const kv_heads = wt.kv_heads;
@@ -154,6 +161,7 @@ pub const Config = struct {
     slots: usize = 49152,
     /// The most rows one attention call writes (the engine's chunk / a deep prefill's sub-block).
     rows: usize = 1536,
+    shared_lanes: usize = 0,
 
     pub fn forChunk(cfg: Config, chunk: usize) Config {
         var out = cfg;
@@ -163,6 +171,7 @@ pub const Config = struct {
 
     pub fn validate(cfg: Config) !void {
         if (cfg.window < wt.dense_keys or cfg.slots == 0 or cfg.rows == 0) return error.KvPageConfig;
+        if (cfg.shared_lanes > shared_device.max_lanes) return error.KvPageConfig;
     }
 };
 
@@ -185,7 +194,22 @@ pub fn configFromEnv() ?Config {
     if (std.mem.eql(u8, std.mem.span(std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL") orelse "1"), "1")) {
         rows = @max(rows, envUsize("TF_FLASHNEXT_EXL3_PREFILL_ROWS", 4096));
     }
-    return .{ .window = envUsize("TF_FLASHNEXT_KVPAGE_WINDOW", d.window), .slots = envUsize("TF_FLASHNEXT_KVPAGE_SLOTS", d.slots), .rows = rows };
+    const shared = std.mem.eql(u8, std.mem.span(std.c.getenv("TF_FLASHNEXT_KVPAGE_SHARED") orelse "0"), "1");
+    const shared_lanes = if (shared) envUsize("TF_FLASHNEXT_KVPAGE_SHARED_LANES", 8) else 0;
+    return .{ .window = envUsize("TF_FLASHNEXT_KVPAGE_WINDOW", d.window), .slots = envUsize("TF_FLASHNEXT_KVPAGE_SLOTS", d.slots), .rows = rows, .shared_lanes = if (shared and shared_lanes == 0) std.math.maxInt(usize) else shared_lanes };
+}
+
+pub fn configIdentity(cfg: ?Config) u64 {
+    const paging = cfg orelse return 0;
+    const shape = [_]u64{ paging.window, paging.rows, paging.slots, paging.shared_lanes, row_bytes, attn_n };
+    return std.hash.Wyhash.hash(0, std.mem.asBytes(&shape));
+}
+
+pub fn admissionRoom(local: u64, stream_bytes: usize, cfg: ?Config) !u64 {
+    const paging = cfg orelse return local;
+    try paging.validate();
+    if (paging.shared_lanes == 0) return local;
+    return @min(local, try std.math.mul(u64, stream_bytes, paging.shared_lanes));
 }
 
 const Kern = struct {
@@ -225,12 +249,13 @@ pub const SnapshotLayout = struct {
         try cfg.validate();
         if (cap == 0 or at > cap) return error.KvPageRows;
         _ = try std.math.mul(usize, cap, attn_n * 2 * row_bytes);
+        if (cfg.shared_lanes != 0) _ = try shared_device.Layout.init(.{ .cap = cap, .lanes = cfg.shared_lanes, .window = cfg.window, .rows = cfg.rows, .slots = cfg.slots });
         const wr = try std.math.add(usize, try std.math.add(usize, cfg.window, cfg.rows), ratio);
         const nblocks = try std.math.add(usize, (try std.math.add(usize, cap, ratio - 1)) / ratio, 1);
         const canonical = try std.math.mul(usize, at, attn_n * 2 * row_bytes);
-        const rows = try std.math.add(usize, try std.math.mul(usize, attn_n, wr), try std.math.mul(usize, ratio, cfg.slots));
+        const rows = try std.math.add(usize, try std.math.mul(usize, attn_n, wr), if (cfg.shared_lanes == 0) try std.math.mul(usize, ratio, cfg.slots) else 0);
         const device = try std.math.mul(usize, rows, 2 * row_bytes);
-        const words = try std.math.add(usize, try std.math.mul(usize, attn_n, try std.math.add(usize, try std.math.mul(usize, 2, nblocks), ctl_n)), try std.math.mul(usize, 2, cfg.slots));
+        const words = if (cfg.shared_lanes == 0) try std.math.add(usize, try std.math.mul(usize, attn_n, try std.math.add(usize, try std.math.mul(usize, 2, nblocks), ctl_n)), try std.math.mul(usize, 2, cfg.slots)) else try std.math.mul(usize, attn_n, try std.math.add(usize, nblocks, ctl_n));
         const tables = try std.math.mul(usize, words, 4);
         return .{ .cap = cap, .cfg = cfg, .at = at, .wr = wr, .nblocks = nblocks, .canonical = canonical, .device = device, .tables = tables, .total = try std.math.add(usize, canonical, try std.math.add(usize, device, tables)) };
     }
@@ -295,54 +320,79 @@ pub const Paged = struct {
     rebases: [attn_n]u64 = @splat(0),
     written: [attn_n]u64 = @splat(0),
     graph_prepared: bool = false,
+    shared_arena: ?*shared_device.Arena = null,
+    shared_sequence: shared_contract.Sequence = undefined,
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, cfg: Config) !*Paged {
-        try cfg.validate();
+        return initStore(gpa, d, cap, cfg, null);
+    }
+
+    pub fn initShared(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, cfg: Config, arena: *shared_device.Arena) !*Paged {
+        return initStore(gpa, d, cap, cfg, arena);
+    }
+
+    fn initStore(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, cfg: Config, shared: ?*shared_device.Arena) !*Paged {
+        const layout = try SnapshotLayout.init(cap, cfg, 0);
+        if ((cfg.shared_lanes != 0) != (shared != null)) return error.SharedKvArenaRequired;
+        if (shared) |arena| {
+            const options = arena.layout.options;
+            if (cap != options.cap) return error.SharedKvCommonCap;
+            if (d != arena.driver or cfg.shared_lanes != options.lanes or cfg.window != options.window or cfg.rows != options.rows or cfg.slots != options.slots) return error.SharedKvGeometry;
+        }
         const pg = try gpa.create(Paged);
         errdefer gpa.destroy(pg);
-        const nblocks = cdiv(cap, ratio) + 1;
-        pg.* = .{ .gpa = gpa, .d = d, .k = undefined, .cfg = cfg, .cap = cap, .wr = cfg.window + cfg.rows + ratio, .nblocks = nblocks, .host = undefined, .host_dev = 0, .status_host = undefined, .dev = undefined, .tabs = undefined, .work = undefined };
-        pg.k = try Kern.load(d);
-        errdefer pg.k.module.unload();
+        pg.* = .{ .gpa = gpa, .d = d, .k = undefined, .cfg = cfg, .cap = cap, .wr = layout.wr, .nblocks = layout.nblocks, .host = undefined, .host_dev = 0, .status_host = undefined, .dev = undefined, .tabs = undefined, .work = undefined };
+        pg.shared_arena = shared;
+        if (shared) |arena| pg.shared_sequence = try arena.register(cap) else pg.k = try Kern.load(d);
+        errdefer if (shared) |arena| arena.release(pg.shared_sequence, .{ .d = d, .handle = null }) catch unreachable else pg.k.module.unload();
         pg.host = try cuda.HostBuffer.allocMapped(d, attn_n * 2 * cap * row_bytes);
         errdefer pg.host.free();
         pg.host_dev = try pg.host.device();
         pg.status_host = try cuda.HostBuffer.alloc(d, attn_n * ctl_n * 4);
         errdefer pg.status_host.free();
-        pg.dev = try cuda.DeviceBuffer.alloc(d, pg.devBytes());
+        pg.dev = if (shared) |arena| arena.device else try cuda.DeviceBuffer.alloc(d, layout.device);
+        if (shared != null) pg.dev.borrowed = true;
         errdefer pg.dev.free();
-        pg.tabs = try cuda.DeviceBuffer.alloc(d, pg.tabWords() * 4);
+        pg.tabs = if (shared) |arena| arena.tables else try cuda.DeviceBuffer.alloc(d, layout.tables);
+        if (shared != null) pg.tabs.borrowed = true;
         errdefer pg.tabs.free();
-        pg.work = try cuda.DeviceBuffer.alloc(d, work_n * 4 * 4);
+        pg.work = if (shared) |arena| arena.work else try cuda.DeviceBuffer.alloc(d, work_n * 4 * 4);
+        if (shared != null) pg.work.borrowed = true;
         errdefer pg.work.free();
-        try pg.dev.fill8(0, null);
-        try pg.tabs.fill8(0, null);
-        try pg.resetTables(null);
+        if (shared == null) {
+            try pg.dev.fill8(0, null);
+            try pg.tabs.fill8(0, null);
+            try pg.resetTables(null);
+        }
         return pg;
     }
 
     pub fn destroy(pg: *Paged) void {
+        if (pg.cfg.shared_lanes != 0) pg.shared_arena.?.release(pg.shared_sequence, .{ .d = pg.d, .handle = null }) catch @panic("shared KV lane retirement failed");
         pg.work.free();
         pg.tabs.free();
         pg.dev.free();
         pg.status_host.free();
         pg.host.free();
-        pg.k.module.unload();
+        if (pg.cfg.shared_lanes == 0) pg.k.module.unload();
         pg.gpa.destroy(pg);
     }
 
     /// Device bytes of the K/V side (windows and slots).
     pub fn devBytes(pg: *const Paged) usize {
+        if (pg.cfg.shared_lanes != 0) return 0;
         return 2 * pg.rowsDev() * row_bytes;
     }
 
     /// Device bytes in all: K/V side, tables and the call's work lists (deviceBytesFor, a host test checks).
     pub fn deviceBytes(pg: *const Paged) usize {
+        if (pg.cfg.shared_lanes != 0) return 0;
         return pg.devBytes() + pg.tabWords() * 4 + work_n * 4 * 4;
     }
 
     /// Rows of the K (or V) buffer: the 12 windows, then the slots.
     fn rowsDev(pg: *const Paged) usize {
+        if (pg.cfg.shared_lanes != 0) return pg.shared_arena.?.layout.side_rows;
         return attn_n * pg.wr + ratio * pg.cfg.slots;
     }
 
@@ -352,15 +402,18 @@ pub const Paged = struct {
 
     /// Layer `ai`'s window base in the K buffer (its kernels index from here).
     fn devK(pg: *const Paged, ai: usize) u64 {
+        if (pg.cfg.shared_lanes != 0) return pg.dev.ptr + (pg.shared_arena.?.layout.windowOffset(pg.shared_sequence.lane, ai) catch unreachable) * row_bytes;
         return pg.dev.ptr + ai * pg.wr * row_bytes;
     }
 
     fn devV(pg: *const Paged, ai: usize) u64 {
+        if (pg.cfg.shared_lanes != 0) return pg.devK(ai) + pg.rowsDev() * row_bytes;
         return pg.dev.ptr + (pg.rowsDev() + ai * pg.wr) * row_bytes;
     }
 
     /// Rows from layer `ai`'s window base to the first slot.
     fn slotBase(pg: *const Paged, ai: usize) usize {
+        if (pg.cfg.shared_lanes != 0) return pg.shared_arena.?.layout.slotBase(pg.shared_sequence.lane, ai) catch unreachable;
         return (attn_n - ai) * pg.wr;
     }
 
@@ -375,6 +428,12 @@ pub const Paged = struct {
     const Tab = struct { blk2slot: u64, mark: u64, ctl: u64, slot2blk: u64, stamp: u64, blk2slot_all: u64 };
 
     fn tab(pg: *const Paged, ai: usize) Tab {
+        if (pg.cfg.shared_lanes != 0) {
+            const arena = pg.shared_arena.?;
+            const layout = arena.layout;
+            const key = @as(usize, pg.shared_sequence.lane) * layout.lane_words + ai * layout.blocks;
+            return .{ .blk2slot = arena.tables.ptr + key * 4, .mark = arena.tables.ptr + layout.marks + key * 4, .ctl = arena.tables.ptr + layout.controls + (@as(usize, pg.shared_sequence.lane) * attn_n + ai) * ctl_n * 4, .slot2blk = arena.tables.ptr + layout.owners, .stamp = arena.tables.ptr + layout.stamps, .blk2slot_all = arena.tables.ptr };
+        }
         const base = pg.tabs.ptr;
         const nb = pg.nblocks * 4;
         const all = base;
@@ -391,6 +450,12 @@ pub const Paged = struct {
 
     /// An empty cache with a fresh device clock and every window at 0.
     fn resetTables(pg: *Paged, stream: ?cuda.Stream) !void {
+        if (pg.cfg.shared_lanes != 0) {
+            const arena = pg.shared_arena.?;
+            try arena.clear(try arena.leaseFor(pg.shared_sequence), pg.shared_sequence, stream orelse .{ .d = pg.d, .handle = null });
+            pg.win0 = @splat(0);
+            return;
+        }
         const t = pg.tab(0);
         try pg.memset32(t.blk2slot_all, 0xFFFF_FFFF, attn_n * pg.nblocks, stream);
         try pg.memset32(t.slot2blk, 0xFFFF_FFFF, pg.cfg.slots, stream);
@@ -436,16 +501,25 @@ pub const Paged = struct {
     }
 
     pub fn snapshot(pg: *const Paged, at: usize) !Snapshot {
+        try pg.validateSharedGeometry();
         const image: Snapshot = .{ .layout = try SnapshotLayout.init(pg.cap, pg.cfg, at), .win0 = pg.win0, .rebases = pg.rebases, .written = pg.written };
         try image.validate();
-        if (pg.wr != image.layout.wr or pg.nblocks != image.layout.nblocks or pg.dev.len != image.layout.device or pg.tabs.len != image.layout.tables or pg.host.bytes.len != attn_n * 2 * pg.cap * row_bytes) return error.KvPageSnapshotLayout;
+        if (pg.wr != image.layout.wr or pg.nblocks != image.layout.nblocks or (pg.cfg.shared_lanes == 0 and (pg.dev.len != image.layout.device or pg.tabs.len != image.layout.tables)) or pg.host.bytes.len != attn_n * 2 * pg.cap * row_bytes) return error.KvPageSnapshotLayout;
         return image;
     }
 
     pub fn validateSnapshot(pg: *const Paged, image: Snapshot) !void {
+        try pg.validateSharedGeometry();
         try image.validate();
         const expected = try SnapshotLayout.init(pg.cap, pg.cfg, image.layout.at);
-        if (!std.meta.eql(expected, image.layout) or pg.wr != expected.wr or pg.nblocks != expected.nblocks or pg.dev.len != expected.device or pg.tabs.len != expected.tables or pg.host.bytes.len != attn_n * 2 * pg.cap * row_bytes) return error.KvPageSnapshotLayout;
+        if (!std.meta.eql(expected, image.layout) or pg.wr != expected.wr or pg.nblocks != expected.nblocks or (pg.cfg.shared_lanes == 0 and (pg.dev.len != expected.device or pg.tabs.len != expected.tables)) or pg.host.bytes.len != attn_n * 2 * pg.cap * row_bytes) return error.KvPageSnapshotLayout;
+    }
+
+    fn validateSharedGeometry(pg: *const Paged) !void {
+        if (pg.cfg.shared_lanes == 0) return;
+        const arena = pg.shared_arena orelse return error.KvPageSnapshotLayout;
+        const expected = try shared_device.Layout.init(.{ .cap = pg.cap, .lanes = pg.cfg.shared_lanes, .window = pg.cfg.window, .rows = pg.cfg.rows, .slots = pg.cfg.slots });
+        if (!std.meta.eql(expected, arena.layout) or pg.dev.ptr != arena.device.ptr or pg.dev.len != arena.device.len or pg.tabs.ptr != arena.tables.ptr or pg.tabs.len != arena.tables.len or pg.work.ptr != arena.work.ptr or pg.work.len != arena.work.len) return error.KvPageSnapshotLayout;
     }
 
     pub fn moveSnapshot(pg: *Paged, stream: cuda.Stream, base: u64, image: Snapshot, saving: bool) !void {
@@ -455,6 +529,20 @@ pub const Paged = struct {
             if (saving) try pg.copy(stream, base + offset, address, prefix) else try pg.copy(stream, address, base + offset, prefix);
             offset += prefix;
         };
+        if (pg.cfg.shared_lanes != 0) {
+            for (0..attn_n) |ai| for ([_]u64{ pg.devK(ai), pg.devV(ai) }) |address| {
+                const size = pg.wr * row_bytes;
+                if (saving) try pg.copy(stream, base + offset, address, size) else try pg.copy(stream, address, base + offset, size);
+                offset += size;
+            };
+            const tables = pg.tab(0);
+            for ([_][2]u64{ .{ tables.mark, attn_n * pg.nblocks * 4 }, .{ tables.ctl, attn_n * ctl_n * 4 } }) |section| {
+                if (saving) try pg.copy(stream, base + offset, section[0], @intCast(section[1])) else try pg.copy(stream, section[0], base + offset, @intCast(section[1]));
+                offset += @intCast(section[1]);
+            }
+            std.debug.assert(offset == image.layout.total);
+            return;
+        }
         for ([_]cuda.DeviceBuffer{ pg.dev, pg.tabs }) |buffer| {
             if (saving) try pg.copy(stream, base + offset, buffer.ptr, buffer.len) else try pg.copy(stream, buffer.ptr, base + offset, buffer.len);
             offset += buffer.len;
@@ -511,6 +599,10 @@ pub const Paged = struct {
     pub fn page(pg: *Paged, stream: cuda.Stream, ai: usize, qids: u64, qnk: u64, qspr: u64, m: usize) !void {
         if (ai >= attn_n) return error.KvPageRows;
         if (try pagingRows(pg.cfg, pg.win0[ai], m) != m) return error.KvPageCapacity;
+        if (pg.cfg.shared_lanes != 0) {
+            const arena = pg.shared_arena.?;
+            return arena.pageFor(try arena.leaseFor(pg.shared_sequence), pg.shared_sequence, stream, ai, pg.win0[ai], m, qids, qnk, qspr, pg.hostK(ai), pg.hostV(ai));
+        }
         const t = pg.tab(ai);
         const w0 = pg.win0[ai];
         const need = pg.work.ptr;
@@ -546,6 +638,10 @@ pub const Paged = struct {
     }
 
     pub fn prepareLayer(pg: *Paged, stream: cuda.Stream, ai: usize, pos0: usize, n: usize) !void {
+        if (pg.cfg.shared_lanes != 0) {
+            const arena = pg.shared_arena.?;
+            try arena.bindStream(try arena.leaseFor(pg.shared_sequence), stream);
+        }
         try pg.validateRange(ai, pos0, n);
         if (pos0 == 0 and ai == 0) try pg.resetTables(stream);
         const w0 = try windowPlan(pg.cfg, pg.wr, pg.win0[ai], pos0, n);
@@ -559,10 +655,30 @@ pub const Paged = struct {
     }
 
     pub fn graphKey(pg: *const Paged) [6]u64 {
-        var shape: [5 + attn_n]usize = undefined;
+        var shape: [9 + attn_n]usize = undefined;
         shape[0..5].* = .{ pg.cap, pg.wr, pg.cfg.window, pg.cfg.rows, pg.cfg.slots };
-        for (pg.win0, 0..) |origin, ai| shape[5 + ai] = pagingRows(pg.cfg, origin, att_rows) catch 0;
+        shape[5..8].* = if (pg.cfg.shared_lanes == 0) .{ 0, 0, 0 } else .{ pg.cfg.shared_lanes, pg.shared_sequence.lane, @intCast(pg.shared_sequence.generation) };
+        shape[8] = if (pg.cfg.shared_lanes == 0) 0 else @intCast(pg.shared_arena.?.id);
+        for (pg.win0, 0..) |origin, ai| shape[9 + ai] = pagingRows(pg.cfg, origin, att_rows) catch 0;
         return .{ pg.dev.ptr, pg.tabs.ptr, pg.work.ptr, pg.host_dev, std.hash.Wyhash.hash(0, std.mem.asBytes(&shape)), std.hash.Wyhash.hash(0, std.mem.asBytes(&pg.win0)) };
+    }
+
+    pub fn logicalGraphKey(pg: *const Paged) [2]u64 {
+        var shape: [6 + attn_n]usize = undefined;
+        shape[0..6].* = .{ pg.cap, pg.wr, pg.cfg.window, pg.cfg.rows, pg.cfg.slots, pg.cfg.shared_lanes };
+        for (pg.win0, 0..) |origin, layer| shape[6 + layer] = pagingRows(pg.cfg, origin, att_rows) catch 0;
+        return .{ std.hash.Wyhash.hash(0, std.mem.asBytes(&shape)), std.hash.Wyhash.hash(0, std.mem.asBytes(&pg.win0)) };
+    }
+
+    pub fn validateSharedLease(pg: *const Paged) !void {
+        if (pg.cfg.shared_lanes != 0) _ = try pg.shared_arena.?.leaseFor(pg.shared_sequence);
+    }
+
+    pub fn validateSharedLeaseOn(pg: *const Paged, stream: cuda.Stream) !void {
+        if (pg.cfg.shared_lanes != 0) {
+            const arena = pg.shared_arena.?;
+            try arena.bindStream(try arena.leaseFor(pg.shared_sequence), stream);
+        }
     }
 
     /// Test support: the window's start of layer `ai` set by hand (the rows before it then come from host memory).
@@ -589,6 +705,7 @@ pub const Paged = struct {
     /// attnRows over the paged cache: prep writes the rows into the window (its base offset by -win0 rows), and
     /// each 256-row block's key lists go through kvp_plan / kvp_fetch / kvp_remap before upstream's chunks and merge.
     pub fn attnRows(pg: *Paged, p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype) !void {
+        try pg.validateSharedLeaseOn(p.stream);
         const s = p.s;
         const pos0 = p.pos0;
         if (pg.graph_prepared) {
@@ -661,10 +778,25 @@ pub fn windowPlan(cfg: Config, wr: usize, w0: usize, pos0: usize, n: usize) !usi
 }
 
 /// Device bytes of a paged sequence's K/V side for `cap` tokens under `cfg` (windows, slots, tables, work lists).
-pub fn deviceBytesFor(cap: usize, cfg: Config) usize {
-    const wr = cfg.window + cfg.rows + ratio;
-    const nblocks = cdiv(cap, ratio) + 1;
-    return 2 * (attn_n * wr + ratio * cfg.slots) * row_bytes + (attn_n * (2 * nblocks + ctl_n) + 2 * cfg.slots) * 4 + work_n * 4 * 4;
+pub fn deviceBytesFor(cap: usize, cfg: Config) !usize {
+    const layout = try SnapshotLayout.init(cap, cfg, 0);
+    if (cfg.shared_lanes != 0) {
+        _ = try sharedBytesFor(cap, cfg);
+        return 0;
+    }
+    return std.math.add(usize, try std.math.add(usize, layout.device, layout.tables), work_n * 4 * 4);
+}
+
+pub fn sharedBytesFor(cap: usize, cfg: Config) !usize {
+    try cfg.validate();
+    if (cfg.shared_lanes == 0) return 0;
+    return (try shared_device.Layout.init(.{ .cap = cap, .lanes = cfg.shared_lanes, .window = cfg.window, .rows = cfg.rows, .slots = cfg.slots })).common_bytes;
+}
+
+pub fn ownedSnapshotBytes(cfg: Config) !usize {
+    if (cfg.shared_lanes == 0) return 0;
+    try cfg.validate();
+    return std.math.mul(usize, cfg.slots, 2 * ratio * row_bytes + @sizeOf(shared_contract.OwnedEntry));
 }
 
 /// A new sequence's paged store when the environment (or a test) turns paging on, else null.
@@ -683,7 +815,20 @@ test "exl3: kvpage tables and device bytes" {
     try std.testing.expect(dev * 8 < full);
     try std.testing.expectEqual(@as(usize, 1024), row_bytes);
     // 200k: the default shape's device side is about half a GiB (upstream's K/V: 4.58 GiB)
-    try std.testing.expect(deviceBytesFor(200_016, cfg) < 5 << 27);
+    try std.testing.expect(try deviceBytesFor(200_016, cfg) < 5 << 27);
+}
+
+test "exl3: kvpage allocation and admission reject invalid checked sizes before CUDA access" {
+    const cfg: Config = .{};
+    const layout = try SnapshotLayout.init(200_016, cfg, 0);
+    try std.testing.expectEqual(layout.device + layout.tables + work_n * 4 * 4, try deviceBytesFor(200_016, cfg));
+    try std.testing.expectError(error.Overflow, deviceBytesFor(std.math.maxInt(usize), cfg));
+    try std.testing.expectError(error.KvPageRows, deviceBytesFor(0, cfg));
+    var driver: cuda.Driver = undefined;
+    try std.testing.expectError(error.Overflow, Paged.init(std.testing.allocator, &driver, std.math.maxInt(usize), cfg));
+    var oversized = cfg;
+    oversized.rows = std.math.maxInt(usize);
+    try std.testing.expectError(error.Overflow, Paged.init(std.testing.allocator, &driver, 32, oversized));
 }
 
 test "exl3: kvpage window boundaries and conservative capacity" {

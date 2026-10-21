@@ -425,6 +425,7 @@ pub const SeqLayout = struct {
 
 pub fn sequenceLayout(placement: EngineKv, cap: usize, chunk: usize, paging: ?kvpage.Config) !SeqLayout {
     if (cap == 0) return error.UnexpectedTensor;
+    const page_bytes = if (paging) |requested| try kvpage.deviceBytesFor(cap, requested.forChunk(chunk)) else 0;
     var layout: SeqLayout = .{ .cache_rows = cap, .row = placement.rows(), .paging = null, .bytes = seqBytes(cap, placement.policy()) };
     if (paging) |requested| {
         if (placement.k8 != null or placement.heads != kv_heads) return error.KvPagePlacement;
@@ -432,8 +433,8 @@ pub fn sequenceLayout(placement: EngineKv, cap: usize, chunk: usize, paging: ?kv
         try cfg.validate();
         layout.cache_rows = 1;
         layout.paging = cfg;
-        layout.bytes.host += layout.bytes.kv;
-        layout.bytes.kv = kvpage.deviceBytesFor(cap, cfg) + wt.attn_n * 2 * layout.row.kv;
+        layout.bytes.host = try std.math.add(u64, layout.bytes.host, layout.bytes.kv);
+        layout.bytes.kv = try std.math.add(u64, page_bytes, wt.attn_n * 2 * layout.row.kv);
     }
     return layout;
 }
@@ -484,7 +485,7 @@ pub fn newSeq(e: anytype, comptime Seq: type, cap: usize) !Seq {
     const attn = wt.attn_n;
     const kv = of(e);
     const layout = try sequenceLayout(kv, cap, e.chunk, e.page_config);
-    const paged = if (layout.paging) |cfg| try kvpage.Paged.init(gpa, d, cap, cfg) else null;
+    const paged = if (layout.paging) |cfg| if (cfg.shared_lanes != 0) try kvpage.Paged.initShared(gpa, d, cap, cfg, e.shared_arena orelse return error.SharedKvArenaRequired) else try kvpage.Paged.init(gpa, d, cap, cfg) else null;
     errdefer if (paged) |pg| pg.destroy();
     const logits = try gpa.alloc(u8, wt.vocab * 2);
     errdefer gpa.free(logits);
@@ -645,7 +646,7 @@ test "exl3: bf16 paging and host indexer placement share allocation and budget g
         try std.testing.expectEqual(@as(usize, 4096), paged.paging.?.rows);
         try std.testing.expectEqual(snapRows(false, kv_heads), paged.row);
         const placeholders = wt.attn_n * 2 * paged.row.kv;
-        try std.testing.expectEqual(kvpage.deviceBytesFor(cap, cfg.forChunk(4096)) + placeholders, paged.bytes.kv);
+        try std.testing.expectEqual(try kvpage.deviceBytesFor(cap, cfg.forChunk(4096)) + placeholders, paged.bytes.kv);
         try std.testing.expectEqual(resident.bytes.host + resident.bytes.kv, paged.bytes.host);
         try std.testing.expectEqual(resident.bytes.device() - resident.bytes.kv + paged.bytes.kv, paged.bytes.device());
         try std.testing.expectEqual(resident.bytes.ikc, paged.bytes.ikc);

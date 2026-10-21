@@ -189,6 +189,7 @@ pub const Key = struct {
     /// Per lane (a window: lane 0): the sequence's buffers, its attention chunks and score tiles at the step's end.
     seq: [max_lanes][5]u64 = @splat(@splat(0)),
     paging: [max_lanes][6]u64 = @splat(@splat(0)),
+    paging_logical: ?[max_lanes][2]u64 = null,
     chunks: [max_lanes]u32 = @splat(0),
     score_tiles: [max_lanes]u32 = @splat(0),
     /// The pass's scratch (its first buffer and its row capacity, which sets every other buffer's offset).
@@ -368,6 +369,7 @@ test "exl3: state binding normalized identity preserves all nonstate key guards"
     try std.testing.expectEqualDeep(state_binding.normalized(original), state_binding.normalized(flipped));
     inline for (@typeInfo(Key).@"struct".field_names) |field| {
         if (comptime !std.mem.eql(u8, field, "seq") and !std.mem.eql(u8, field, "paging") and
+            !std.mem.eql(u8, field, "paging_logical") and
             !std.mem.eql(u8, field, "chunks") and !std.mem.eql(u8, field, "score_tiles") and !std.mem.eql(u8, field, "keep"))
         {
             var changed = original;
@@ -392,6 +394,12 @@ test "exl3: state binding normalized identity preserves all nonstate key guards"
         try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
         changed = original;
         changed.score_tiles[lane] += 1;
+        try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
+        changed = original;
+        changed.paging_logical = @splat(@splat(0));
+        changed.paging_logical.?[lane][0] = 1;
+        try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
+        changed.paging_logical.?[lane][1] = 1;
         try std.testing.expect(!std.meta.eql(state_binding.normalized(original), state_binding.normalized(changed)));
     }
 }
@@ -1015,7 +1023,10 @@ fn graphSignature(key: Key, pos0: usize) u64 {
     var hash = std.hash.Wyhash.init(0);
     std.hash.autoHash(&hash, .{ key.kind, key.rows, key.chunks, key.score_tiles, key.scratch_cap, key.keep != 0, key.streams != 0, pos0 });
     std.hash.autoHash(&hash, stateRebindEnabled());
-    for (key.seq, key.paging) |seq, paging| std.hash.autoHash(&hash, .{ seq[3], paging[4], paging[5] });
+    for (key.seq, key.paging, 0..) |seq, paging, index| {
+        const identity: [2]u64 = if (key.paging_logical) |logical| logical[index] else .{ paging[4], paging[5] };
+        std.hash.autoHash(&hash, .{ seq[3], identity[0], identity[1] });
+    }
     return hash.final();
 }
 
@@ -1209,6 +1220,7 @@ fn planner(e: anytype, rows: usize) !?*dplan.DevPlan {
 pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u64, out: u64) !bool {
     for (seqs) |q| if (q.media != null) return false;
     if (seqs.len > max_lanes) return false;
+    for (seqs) |q| if (q.paged) |pg| try pg.validateSharedLeaseOn(p.stream);
     const dp = (try planner(e, ids.len)) orelse return false;
     try dp.toDevice(p.stream);
     dplan.active = dp;
@@ -1227,7 +1239,11 @@ pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u6
     var key: Key = .{ .kind = 1, .rows = ids.len, .scratch = p.s.ids, .scratch_cap = p.s.cap, .scores = scores, .output = out, .plan = dp.state.ptr };
     for (seqs, 0..) |q, i| {
         key.seq[i] = Key.seqOf(q);
-        if (q.paged) |pg| key.paging[i] = pg.graphKey();
+        if (q.paged) |pg| {
+            key.paging[i] = pg.graphKey();
+            if (key.paging_logical == null) key.paging_logical = @splat(@splat(0));
+            key.paging_logical.?[i] = pg.logicalGraphKey();
+        }
         Key.seams(q.fed + 1, &key.chunks[i], &key.score_tiles[i]);
     }
     const tp0 = std.Io.Clock.awake.now(p.io).toNanoseconds();
@@ -1251,6 +1267,7 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
     const hooks = p.hooks;
     if (hooks.logits != .all or hooks.logits_out == 0 or seq.media != null or ids.len == 0 or ids.len > att_rows) return false;
     if (seq.fed + ids.len > seq.cap or ids.len > p.s.cap) return false;
+    if (seq.paged) |pg| try pg.validateSharedLeaseOn(p.stream);
     const dp = (try planner(e, ids.len)) orelse return false;
     try dp.toDevice(p.stream);
     dplan.active = dp;
@@ -1267,7 +1284,11 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
         if (seq.paged) |pg| try pg.prepareGraph(p.stream, seq.fed, n);
         var key: Key = .{ .kind = 2, .rows = n, .scratch = p.s.ids, .scratch_cap = p.s.cap, .scores = p.seq.scores, .output = hooks.logits_out, .streams = hooks.streams, .plan = dp.state.ptr };
         key.seq[0] = Key.seqOf(seq);
-        if (seq.paged) |pg| key.paging[0] = pg.graphKey();
+        if (seq.paged) |pg| {
+            key.paging[0] = pg.graphKey();
+            key.paging_logical = @splat(@splat(0));
+            key.paging_logical.?[0] = pg.logicalGraphKey();
+        }
         Key.seams(seq.fed + n, &key.chunks[0], &key.score_tiles[0]);
         if (hooks.keep) |kp| {
             key.keep = std.hash.Wyhash.hash(1, std.mem.asBytes(kp));
@@ -1414,6 +1435,7 @@ pub fn clearPrefill() void {
 /// External event waits for expert-parallel sub-blocks are captured in order with the dense work.
 pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool, waits: []const cuda.Event) !Prefill {
     if (enabled() and broken) return error.GraphCaptureFailed;
+    if (p.seq.paged) |pg| try pg.validateSharedLeaseOn(p.stream);
     if (!prefillEnabled()) return .eager;
     const q = p.seq;
     if (!linear) if (q.paged) |pg| {
@@ -1754,6 +1776,27 @@ test "exl3: rendezvous signatures compare topology and paging origins without de
     try std.testing.expect(signature != graphSignature(key, 4097));
     key.paging[0][5] += 1;
     try std.testing.expect(signature != graphSignature(key, 4096));
+}
+
+test "exl3: shared paging rendezvous ignores physical ownership but local graph keys retain it" {
+    var first: Key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 };
+    first.seq[0] = .{ 1, 2, 3, 4096, 4 };
+    first.paging[0] = .{ 10, 20, 30, 40, 50, 60 };
+    first.paging_logical = @splat(@splat(0));
+    first.paging_logical.?[0] = .{ 100, 200 };
+    var second = first;
+    second.paging[0] = .{ 1000, 2000, 3000, 4000, 5000, 60 };
+    try std.testing.expect(!std.meta.eql(first, second));
+    try std.testing.expect(!std.meta.eql(state_binding.normalized(first), state_binding.normalized(second)));
+    try std.testing.expectEqual(graphSignature(first, 4096), graphSignature(second, 4096));
+    second.paging_logical.?[0][0] += 1;
+    try std.testing.expect(graphSignature(first, 4096) != graphSignature(second, 4096));
+    second = first;
+    second.paging_logical.?[0][1] += 1;
+    try std.testing.expect(graphSignature(first, 4096) != graphSignature(second, 4096));
+    second = first;
+    second.seq[0][3] += 1;
+    try std.testing.expect(graphSignature(first, 4096) != graphSignature(second, 4096));
 }
 
 test "exl3: TP decode dispatch stays eager while its peer instantiates and replays only after agreement" {

@@ -126,7 +126,7 @@ pub fn Namespace(comptime Tri: type) type {
 
         pub fn rankRoom(ptr: *anyopaque, local: u64) !u64 {
             const own = of(ptr);
-            const protected = @import("exl3_startup_memory.zig").laneRoom(local, own.graph_reservation);
+            const protected = try @import("cuda_exl3_kvpage.zig").admissionRoom(@import("exl3_startup_memory.zig").laneRoom(local, own.graph_reservation), own.stream_bytes, own.engine.page_config);
             if (own.ranks) |r| return @import("cuda_exl3_kv.zig").rankRoom(r, protected, own.stream_bytes);
             return protected;
         }

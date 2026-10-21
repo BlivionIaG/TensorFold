@@ -73,6 +73,9 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     }
     errdefer if (own.head) |h| h.deinit();
     const window = @min(o.context + mtp.max_rows, prompt.max_tokens);
+    const common_kv = try own.engine.reserveSharedKv(window);
+    persistent_bytes = try std.math.add(u64, persistent_bytes, common_kv);
+    if (common_kv != 0) std.log.info("flashnext rank {d}: shared BF16 KV common allocation {d} bytes, charged once before lane and expert-pool admission", .{ o.rank, common_kv });
     // and an attention block's block scores at the window (64 MiB at 262,144 tokens)
     _ = try own.engine.reserveScores(window, @min(o.context, own.engine.chunk));
     own.logits = try cuda.DeviceBuffer.alloc(driver, round_streams * prompt.vocabulary * 2);
