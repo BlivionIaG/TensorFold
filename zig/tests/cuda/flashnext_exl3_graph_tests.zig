@@ -1021,6 +1021,7 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
     const steps = if (rest.len > 6 and !std.mem.eql(u8, mode, "prefill-prof")) try std.fmt.parseInt(usize, rest[6], 10) else 48;
     const which: []const u8 = if (rest.len > 7) rest[7] else "dplan,graph";
+    if (std.mem.eql(u8, mode, "prefill-origin")) return @import("exl3_prefill_origin_tests.zig").run(gpu, rank, world, port, dir, rest[5], .{ .init = Eng.initPaged, .deinit = Eng.deinit, .reset = Eng.reset, .forward = Eng.forward, .swap = Eng.swap });
     if (std.mem.eql(u8, mode, "rebind")) {
         const engine = try Eng.init(gpu, rank, world, port, dir);
         defer engine.deinit();

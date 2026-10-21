@@ -582,7 +582,7 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
             try upload(st, dp.dptr(dp.lay.ple_emb), std.mem.sliceAsBytes(emb));
             try upload(st, dp.dptr(dp.lay.ple_xs), std.mem.sliceAsBytes(xs));
         }
-        const pg = try @import("cuda_exl3_graph.zig").prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles_on, dp.red_ev[0..dp.red_n]);
+        const pg = try @import("cuda_exl3_graph.zig").prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles_on, dp.red_ev[0..dp.red_n], dp.dptr(dp.lay.pos));
         errdefer @import("cuda_exl3_graph.zig").prefillAbort(p, pg);
         if (pg != .replayed) for (0..n_sub) |b| {
             const m = @min(sub, n - b * sub);
