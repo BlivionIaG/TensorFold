@@ -20,6 +20,7 @@ const std = @import("std");
 const cuda = @import("cuda");
 const pool_ = @import("cuda_exl3_pool.zig");
 const offload = pool_.offload;
+const telemetry = @import("exl3_telemetry.zig");
 
 const experts_n: usize = 512;
 const misc_words: usize = 8;
@@ -233,15 +234,16 @@ pub const DevPlan = struct {
             }
             @memcpy(&p.counts[p.opt.layer], counts);
             const was = dp.seen[i];
+            telemetry.Device.record(&p.telemetry_device, &p.telemetry_valid, misc.*, was, dp.max_rows * 10);
             p.now = misc.now;
-            p.stats.rounds += misc.rounds - was.rounds;
-            p.stats.passes += misc.rounds - was.rounds;
-            p.stats.hit_slots += misc.hit_slots - was.hit_slots;
-            p.stats.miss_slots += misc.miss_slots - was.miss_slots;
-            p.stats.misses += misc.copies - was.copies;
-            p.stats.evictions += misc.evictions - was.evictions;
+            p.stats.rounds += misc.rounds -% was.rounds;
+            p.stats.passes += misc.rounds -% was.rounds;
+            p.stats.hit_slots += misc.hit_slots -% was.hit_slots;
+            p.stats.miss_slots += misc.miss_slots -% was.miss_slots;
+            p.stats.misses += misc.copies -% was.copies;
+            p.stats.evictions += misc.evictions -% was.evictions;
             overflow += misc.overflow;
-            dp.inplace += misc.inplace - was.inplace;
+            dp.inplace += misc.inplace -% was.inplace;
             dp.seen[i] = misc.*;
             // the device's rounds finished (synchronized above): no line waits for a reader, nothing is in flight
             @memset(p.lines.line_epoch, 0);
@@ -269,6 +271,21 @@ pub const DevPlan = struct {
             inline for (.{ "rounds", "hit_slots", "miss_slots", "copies", "evictions", "overflow", "inplace" }) |f| @field(t, f) += @field(misc, f) - @field(dp.seen[i], f);
         }
         return t;
+    }
+
+    pub fn samplePoolAfterConsumers(dp: *const DevPlan, pool: *const pool_.Pool) !telemetry.Device {
+        if (!pool.telemetry_valid) return error.TelemetryCounterRegression;
+        var total = pool.telemetry_device;
+        if (dp.owner != .device) return total;
+        for (dp.pools, 0..) |candidate, index| {
+            if (candidate != pool) continue;
+            var observed: Misc = undefined;
+            const offset = (index * dp.words + 2 * dp.lines + 2 * experts_n) * 4;
+            try dp.state.download(offset, std.mem.asBytes(&observed));
+            try telemetry.add(telemetry.Device, &total, try telemetry.Device.pendingBounded(observed, dp.seen[index], dp.max_rows * 10));
+            return total;
+        }
+        return total;
     }
 
     /// The in-place experts of the last plan ([512] int32) and their count after it.

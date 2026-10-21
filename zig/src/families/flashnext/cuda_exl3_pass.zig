@@ -310,7 +310,7 @@ pub fn poolStats(layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*c
     return t;
 }
 
-fn offloadedPools(layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, out: []*load.Experts) usize {
+pub fn offloadedPools(layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, out: []*load.Experts) usize {
     var n: usize = 0;
     for (layers) |*l| if (l.exl3) |x| if (x.pool != null) {
         out[n] = x;

@@ -14,6 +14,7 @@ pub const graph = @import("cuda_exl3_graph.zig");
 pub const fork = @import("cuda_exl3_fork.zig");
 pub const chain = @import("cuda_exl3_chain.zig");
 pub const recycle = @import("cuda_exl3_recycle.zig");
+pub const telemetry = @import("cuda_exl3_telemetry.zig");
 /// The upstream modules an EXL3 check drives (tf-cuda-test flashnext-exl3): the store, loaders and the batched pass.
 pub const prompt_wt = @import("cuda_prompt_wt.zig");
 pub const prompt_load = @import("cuda_prompt_load.zig");
@@ -37,4 +38,5 @@ test {
     _ = fork;
     _ = chain;
     _ = recycle;
+    _ = telemetry;
 }

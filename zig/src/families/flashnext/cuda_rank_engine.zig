@@ -7,6 +7,7 @@ const wire = @import("cuda_rank_wire.zig");
 const Collective = @import("cuda_collective.zig").Collective;
 const wt = @import("cuda_prompt_wt.zig");
 const mtp = @import("cuda_mtp.zig");
+const telemetry = @import("cuda_prompt_telemetry.zig");
 
 pub const Identity = extern struct {
     config: [32]u8,
@@ -189,7 +190,7 @@ pub const Session = struct {
     pub fn forward(s: *Session, comptime Tri: type, tri: Tri, q: *prompt.Seq, ids: []const u32, hooks: prompt.batch.Hooks) !void {
         if (ids.len == 0 or ids.len > wire.max_payload / 4 or q.fed + ids.len > q.cap or hooks.keep != null or hooks.logits == .all) return error.UnsupportedRankOperation;
         try tokenIds(ids);
-        const h = try s.command(.{ .kind = .forward, .object = q.rank_id, .bytes = @intCast(ids.len * 4), .flags = @backingInt(hooks.logits) }, std.mem.sliceAsBytes(ids));
+        const h = try s.command(.{ .kind = .forward, .object = q.rank_id, .arg = telemetry.forwardArg(s.engine.telemetry, q.fed), .bytes = @intCast(ids.len * 4), .flags = @backingInt(hooks.logits) }, std.mem.sliceAsBytes(ids));
         errdefer s.poison();
         try s.engine.forward(Tri, tri, q, ids, hooks);
         try s.ack(h);
@@ -223,6 +224,8 @@ pub const Session = struct {
         try tokenIds(ids);
         const header = try session.command(.{ .kind = .verify, .object = seq.rank_id, .bytes = @intCast(ids.len * 4) }, std.mem.sliceAsBytes(ids));
         errdefer session.poison();
+        const telemetry_scope = session.engine.telemetry.enter(.verify);
+        defer telemetry_scope.restore();
         const ops: mtp.Ops(Tri) = .{ .e = session.engine, .tri = tri, .h = undefined };
         try ops.verifyWithTail(seq, draft_state, ids, tail);
         try session.ack(header);
@@ -345,6 +348,8 @@ pub const Session = struct {
                 defer s.gpa.free(ids);
                 for (ids, 0..) |*v, i| v.* = std.mem.readInt(u32, payload[i * 4 ..][0..4], .little);
                 try tokenIds(ids);
+                const telemetry_scope = s.engine.telemetry.enter(try telemetry.phaseFromArg(h.arg));
+                defer telemetry_scope.restore();
                 try s.engine.forward(Tri, tri, q, ids, .{ .logits = @fromBackingInt(@intCast(h.flags)) });
             },
             .round => {
@@ -366,6 +371,8 @@ pub const Session = struct {
                 const n = payload.len / 4;
                 for (ids[0..n], 0..) |*id, i| id.* = std.mem.readInt(u32, payload[i * 4 ..][0..4], .little);
                 try tokenIds(ids[0..n]);
+                const telemetry_scope = s.engine.telemetry.enter(.verify);
+                defer telemetry_scope.restore();
                 const ops: mtp.Ops(Tri) = .{ .e = s.engine, .tri = tri, .h = undefined };
                 try ops.verify(q, try s.window(q), ids[0..n]);
             },
@@ -473,7 +480,10 @@ pub fn shape(h: wire.Header) !void {
     switch (h.kind) {
         .create => if (h.object == 0 or h.arg == 0 or h.arg > prompt.max_tokens or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
         .media => if (h.object == 0 or h.arg == 0 or h.arg > prompt.max_tokens or h.flags != 0 or h.bytes == 0 or h.bytes % 12 != 0 or h.bytes / 12 > 64) return error.BadRankFrame,
-        .forward => if (h.object == 0 or h.arg != 0 or h.bytes == 0 or h.bytes % 4 != 0 or (h.flags != @backingInt(prompt.batch.Logits.last) and h.flags != @backingInt(prompt.batch.Logits.none))) return error.BadRankFrame,
+        .forward => {
+            _ = try telemetry.phaseFromArg(h.arg);
+            if (h.object == 0 or h.bytes == 0 or h.bytes % 4 != 0 or (h.flags != @backingInt(prompt.batch.Logits.last) and h.flags != @backingInt(prompt.batch.Logits.none))) return error.BadRankFrame;
+        },
         .verify => if (h.object == 0 or h.arg != 0 or h.flags != 0 or h.bytes == 0 or h.bytes % 4 != 0 or h.bytes / 4 > mtp.max_rows) return error.BadRankFrame,
         .keep => if (h.object == 0 or h.arg == 0 or h.arg > mtp.max_rows or h.bytes != 0 or h.flags != 0) return error.BadRankFrame,
         .round => if (h.object != 0 or h.arg != 0 or h.flags != 0 or h.bytes == 0 or h.bytes % 12 != 0 or h.bytes / 12 > 32) return error.BadRankFrame,

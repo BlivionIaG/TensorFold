@@ -16,6 +16,7 @@ const cuda = @import("cuda");
 const round_ = @import("exl3_round.zig");
 const exl3e = cuda.exl3_experts;
 const Lines = cuda.exl3_pool.Lines;
+const telemetry = @import("exl3_telemetry.zig");
 
 pub const offload = @import("exl3_offload.zig");
 pub const round = round_;
@@ -105,6 +106,9 @@ pub const Pool = struct {
     prev: []u16, // the previous round's routed experts (double buffering)
     prev_n: usize = 0,
     stats: Stats = .{},
+    telemetry_id: u64 = 0,
+    telemetry_valid: bool = true,
+    telemetry_device: telemetry.Device = .{},
 
     /// `counts`: the family's lifetime use table shared by every layer's pool (null: the pool owns one).
     pub fn init(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, src: Source, scales: Scales, opt: Options, counts: ?*[shape.layers][shape.experts]u32) !Pool {
@@ -170,7 +174,9 @@ pub const Pool = struct {
         var picks_ev = try cuda.Event.init(d, false);
         errdefer picks_ev.deinit();
         const prev = try gpa.alloc(u16, shape.experts);
+        errdefer gpa.free(prev);
         return .{
+            .telemetry_id = try telemetry.identity(),
             .prev = prev,
             .gpa = gpa,
             .io = io,

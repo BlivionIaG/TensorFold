@@ -267,6 +267,15 @@ const Deep = struct {
 
 var deep: ?*Deep = null;
 
+pub const RingTelemetry = struct { owner: u64, copies: u64, dma_requested_bytes: u64, unused_copies: u64, hit_picks: u64, miss_picks: u64, hit_expert_requests: u64, miss_expert_requests: u64 };
+
+pub fn ringTelemetry(owner: *const anyopaque) ?RingTelemetry {
+    const buffers = deep orelse return null;
+    if (buffers.owner != owner) return null;
+    const ring = buffers.ring orelse return null;
+    return .{ .owner = ring.telemetry_id, .copies = ring.stats.copies, .dma_requested_bytes = ring.stats.dma_requested_bytes, .unused_copies = ring.stats.wasted, .hit_picks = ring.stats.hit_picks, .miss_picks = ring.stats.miss_picks, .hit_expert_requests = ring.stats.hit_expert_requests, .miss_expert_requests = ring.stats.miss_expert_requests };
+}
+
 /// Frees the deep chunk's buffers (the engine's deinit, or a test).
 pub fn release() void {
     if (deep) |dp| {
@@ -1125,7 +1134,9 @@ fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), l
         if (dp.cnt[id] == 0) continue;
         used += 1;
         r.counts[layer][id] +|= dp.cnt[id];
-        if (r.isLoaded(layer, id)) {
+        const present = r.isLoaded(layer, id);
+        r.stats.observeDemand(present, dp.cnt[id]);
+        if (present) {
             held[n_held] = @intCast(id);
             n_held += 1;
         } else {
