@@ -22,6 +22,12 @@ const dplan = @import("cuda_exl3_dplan.zig");
 const wt = @import("cuda_prompt_wt.zig");
 const collective = @import("cuda_collective.zig");
 const wire = @import("cuda_rank_wire.zig");
+const profile_module = @import("exl3_graph_profile.zig");
+pub var profile: profile_module.Profile(64, 1024) = .{};
+fn profileEnabled() bool {
+    const value = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_PROFILE") orelse return false;
+    return std.mem.eql(u8, std.mem.span(value), "1");
+}
 pub const memory = @import("cuda_exl3_graph_memory.zig");
 
 fn freeMemory(stream: cuda.Stream) !u64 {
@@ -83,6 +89,7 @@ test "exl3: TP eviction proposes the least recently used cohort and ignores loca
 fn retireCohort(cohort: u64) void {
     for (&entries) |*maybe| if (maybe.*) |*entry| {
         if (entry.cohort == cohort) {
+            if (profileEnabled()) profile.evict(profile_module.Sample.fromKey(entry.key));
             drop(entry);
             maybe.* = null;
         }
@@ -142,6 +149,7 @@ fn evictOne() bool {
         }
     };
     if (decode) |index| {
+        if (profileEnabled()) profile.evict(profile_module.Sample.fromKey(entries[index].?.key));
         drop(&entries[index].?);
         entries[index] = null;
         return true;
@@ -411,6 +419,7 @@ fn slot() *?Entry {
             best = i;
         }
     }
+    if (profileEnabled()) profile.evict(profile_module.Sample.fromKey(entries[best].?.key));
     drop(&entries[best].?);
     entries[best] = null;
     return &entries[best];
@@ -481,6 +490,7 @@ fn note(key: Key, o: Outcome) void {
     steps_seen += 1;
     const every: u64 = if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_LOG")) |v| std.fmt.parseInt(u64, std.mem.span(v), 10) catch 256 else 256;
     if (every == 0 or steps_seen % every != 0) return;
+    if (profileEnabled()) logProfile();
     var buf: [1024]u8 = undefined;
     var w: std.Io.Writer = .fixed(&buf);
     for (0..2) |k| for (1..17) |r| {
@@ -491,6 +501,18 @@ fn note(key: Key, o: Outcome) void {
     const rs = @import("cuda_exl3_recycle.zig").stats;
     const cs = @import("cuda_exl3_chain.zig").stats;
     std.log.info("flashnext exl3 graph coverage after {d} steps (replay/eager/instantiated/updated):{s}; recycled seqs {d}/{d} drafts {d}/{d} (reused/kept); draft chains {d}: {d} replays, {d} captures ({d} updates), {d} eager; decode prepare {d} ms/{d}, capture {d} ms; prefill graphs {d}/{d}/{d}/{d}, capture {d} ms", .{ steps_seen, w.buffered(), rs.seq_reused, rs.seq_kept, rs.draft_reused, rs.draft_kept, cs.chains, cs.replays, cs.captures, cs.updates, cs.eager, stats.prepare_ns / std.time.ns_per_ms, stats.prepares, stats.capture_ns / std.time.ns_per_ms, prefill_stats.replays, prefill_stats.eager, prefill_stats.captures, prefill_stats.updates, prefill_stats.capture_ns / std.time.ns_per_ms });
+}
+
+fn logProfile() void {
+    std.log.info("EXL3 graph profile: misses mean absent keys, not missed replays; present-unready means pending or no exec at entry, before settlement; readiness is not replay proof; use runtime replay counters; fingerprint estimates, not allocation sizes; lane/key overflow {d}/{d}; changes overlap and compare within width except width transitions", .{ profile.lane_overflow, profile.key_overflow });
+    for (profile.counters, 0..) |kind, kind_index| for (kind, 0..) |counts, width| {
+        if (counts.accesses == 0) continue;
+        std.log.info("EXL3 graph profile {s}{d}: accesses/key-presence-misses/present-unready/new/returning-key-misses/evicted/post-eviction-key-misses {d}/{d}/{d}/{d}/{d}/{d}/{d}; width/state/keep/seam/paging/allocation changes {d}/{d}/{d}/{d}/{d}/{d}; orientation overflow {d}", .{ if (kind_index == 0) "round" else "win", width, counts.accesses, counts.misses, counts.present_unready, counts.first_keys, counts.returning_misses, counts.pressure_evictions, counts.post_eviction_misses, counts.width_changes, counts.state_changes, counts.keep_changes, counts.seam_changes, counts.paging_changes, counts.allocation_changes, counts.orientation_overflow });
+    };
+    for (profile.lanes, 0..) |maybe, index| if (maybe) |lane| {
+        std.log.info("EXL3 graph profile lane {d}: width mask {x}; accesses/key-presence-misses/present-unready/new/returning-key-misses/evicted {d}/{d}/{d}/{d}/{d}/{d}; orientation A/B/other accesses {d}/{d}/{d}", .{ index, lane.width_mask, lane.counters.accesses, lane.counters.misses, lane.counters.present_unready, lane.counters.first_keys, lane.counters.returning_misses, lane.counters.pressure_evictions, lane.orientation_accesses[0], lane.orientation_accesses[1], lane.orientation_accesses[2] });
+        std.log.info("EXL3 graph profile lane {d}: new fingerprints by width 0..16 {any}", .{ index, lane.new_keys_by_width });
+    };
 }
 
 /// TF_FLASHNEXT_EXL3_GRAPH_DEBUG=1: which key fields changed since the last step of the same kind and rows.
@@ -510,6 +532,13 @@ fn debugKey(key: Key) void {
 }
 
 fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
+    if (profileEnabled()) {
+        const presence: profile_module.Presence = if (find(key)) |entry|
+            if (entry.pending != null or entry.exec == null) .present_unready else .present_ready
+        else
+            .absent;
+        profile.observeEntry(profile_module.Sample.fromKey(key), presence);
+    }
     debugKey(key);
     clock += 1;
     if (pass.m.collective) |c| return runTogether(c, key, pass, ids, pos0);
