@@ -1,0 +1,56 @@
+{
+  "validated": true,
+  "observed_at_utc": "2026-10-21T06:41:42.237292+00:00",
+  "body_sha256": "fd31e55d25f43be19154e39f343aa9c244977056c64f5f1148c760bace1d8a7d",
+  "head": "826a0635634dee3793a68e473064d17d5c139945",
+  "branch": "nemhip-draft/00-hip-contract",
+  "base": "main",
+  "open": true,
+  "draft": true,
+  "checks": [
+    {
+      "link": "https://github.com/ashhart/TensorFold/actions/runs/39555796710/job/119075148655",
+      "name": "desktop",
+      "state": "SUCCESS"
+    },
+    {
+      "link": "https://github.com/ashhart/TensorFold/actions/runs/39555796466/job/119075147881",
+      "name": "zig-windows",
+      "state": "FAILURE"
+    },
+    {
+      "link": "https://github.com/ashhart/TensorFold/actions/runs/39555796466/job/119075147523",
+      "name": "zig",
+      "state": "SUCCESS"
+    },
+    {
+      "link": "https://github.com/ashhart/TensorFold/actions/runs/39555796372/job/119075147116",
+      "name": "fmt",
+      "state": "SUCCESS"
+    },
+    {
+      "link": "https://github.com/ashhart/TensorFold/actions/runs/39555796710/job/119075148272",
+      "name": "mobile",
+      "state": "SUCCESS"
+    }
+  ],
+  "applicable_requirements_supplied": [
+    "complete direct Linux test target and golden",
+    "own five-kernel live gates both architectures",
+    "four-chip metadata/control audit",
+    "CPU failing-before and fixed parser/registry probes",
+    "zero added lean findings/privacy/public authorship"
+  ],
+  "remaining_implementation_or_numerical_blockers": [],
+  "ready_eligibility": "All applicable infrastructure contributor checks supplied. Fresh CI: Linux/desktop/mobile/fmt success; Windows failure has exactly the previously classified 52 compiler diagnostic set, no new/runtime failure. No additional applicable implementation/numerical blocker found. Maintainer landing gates remain; no readiness action taken.",
+  "scope": "No universal new-family benchmarks or maintainer preapproval imposed on this existing HIP infrastructure change.",
+  "windows_current_actual": {
+    "job_url": "https://github.com/ashhart/TensorFold/actions/runs/39555796466/job/119075147881",
+    "log_sha256": "3e18549b01074c9f1b3908db5f96f6e3fdc01cbbd082611b830b86ab19eef94a",
+    "normalized_diagnostics": 52,
+    "identical_to_previously_classified_set": true,
+    "build_summary": "167/213 steps succeeded (22 failed);1423/1438 tests passed (15 skipped)",
+    "scope": "Compiler-only known diagnostic set; no new diagnostic or runtime test failure. Baseline causality relies on existing independently reproduced control evidence, not this equality alone."
+  },
+  "ready_eligible": true
+}

@@ -1,0 +1,28 @@
+{
+  "files": [
+    {
+      "path": "README.md",
+      "public_sha256": "4489212fc415910173bacb8a48f2eab337918305ce2fb400a41cb9a99f4a237d",
+      "bytes": 634
+    },
+    {
+      "path": "audit.json",
+      "public_sha256": "0cddc80a3c42c0e0ee045b096e5ebe44df5cf396c19556a657a83897e019d65c",
+      "bytes": 2604
+    },
+    {
+      "path": "checks.json",
+      "public_sha256": "e5978869da237d02e86b85ccfd7587b229373bf46767bc6a1d58df97ff1a3aa7",
+      "bytes": 627
+    },
+    {
+      "path": "windows.log",
+      "public_sha256": "c3d154faa79f25e0052ddde20e63f31e18b5e7e625b94fcbb49cea382950af40",
+      "bytes": 144826,
+      "original_sha256": "3e18549b01074c9f1b3908db5f96f6e3fdc01cbbd082611b830b86ab19eef94a",
+      "normalization": "randomized Windows runner temporary path only"
+    }
+  ],
+  "source_commit": "826a0635634dee3793a68e473064d17d5c139945",
+  "scope": "CI classification only; no new execution"
+}

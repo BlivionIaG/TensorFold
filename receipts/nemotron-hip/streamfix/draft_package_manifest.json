@@ -3668,6 +3668,31 @@
       "bytes": 11543
     },
     {
+      "path": "coverage_20261020/first826_ci/README.md",
+      "sha256": "4489212fc415910173bacb8a48f2eab337918305ce2fb400a41cb9a99f4a237d",
+      "bytes": 634
+    },
+    {
+      "path": "coverage_20261020/first826_ci/audit.json",
+      "sha256": "0cddc80a3c42c0e0ee045b096e5ebe44df5cf396c19556a657a83897e019d65c",
+      "bytes": 2604
+    },
+    {
+      "path": "coverage_20261020/first826_ci/checks.json",
+      "sha256": "e5978869da237d02e86b85ccfd7587b229373bf46767bc6a1d58df97ff1a3aa7",
+      "bytes": 627
+    },
+    {
+      "path": "coverage_20261020/first826_ci/public_manifest.json",
+      "sha256": "3549437640457d586d3fa0e0d7258ca97e3d693efabc1b3311bd2e0b2e9f314d",
+      "bytes": 912
+    },
+    {
+      "path": "coverage_20261020/first826_ci/windows.log",
+      "sha256": "c3d154faa79f25e0052ddde20e63f31e18b5e7e625b94fcbb49cea382950af40",
+      "bytes": 144826
+    },
+    {
       "path": "coverage_20261020/fp64_conditional_source_review.json",
       "sha256": "ccc6ff052d52f721c31cb5157eb9897544e43e785fbf59572c8a6d25e78beed7",
       "bytes": 40460
@@ -8024,18 +8049,18 @@
     },
     {
       "path": "coverage_20261020/public_manifest.json",
-      "sha256": "de297559f0d2367ec1b477c0838603ee797e353a67bf75fec0160c28fba85281",
-      "bytes": 641952
+      "sha256": "a0d0214c6a4b63601988b99e6db94334c82d61f1ad50df3d482dbc74800da29e",
+      "bytes": 644786
     },
     {
       "path": "coverage_20261020/publication/bodies/issue1081.md",
-      "sha256": "15ce9e10ca6e2a875459be0d40a7c28839fb5841c774ae0fc41900a6dbd0c4ec",
-      "bytes": 47718
+      "sha256": "a7c8d51da865f231b08fa929b3447b4617ff01d2ac3ce75bdba24bb4ca72def6",
+      "bytes": 49864
     },
     {
       "path": "coverage_20261020/publication/bodies/pr1082.md",
-      "sha256": "6e1801320dfd8d06340d072e548a5d0853317575a1bf7caa0a294f54918383e7",
-      "bytes": 27453
+      "sha256": "5283371b689a827bedfacc667ab90f29a3a400b1d3f6b333b13227e638265f3f",
+      "bytes": 7074
     },
     {
       "path": "coverage_20261020/publication/bodies/pr1083.md",
@@ -8143,14 +8168,24 @@
       "bytes": 40368
     },
     {
+      "path": "coverage_20261020/publication/first826_independent_ready_audit.json",
+      "sha256": "3698a356f5e3a25866c155fbba3cef3677c5976d2c7eccb6756ff9450c81c470",
+      "bytes": 472
+    },
+    {
+      "path": "coverage_20261020/publication/first826_ready_transition.json",
+      "sha256": "f03e3b7334fefd07827125656e6091ddd56c18acdbe7f04196826e7e0d5efa5b",
+      "bytes": 630
+    },
+    {
       "path": "coverage_20261020/publication/independent_live_audit.json",
-      "sha256": "71d6f90a2184a8b95fd2b99d4a4bec1e0d26bbb1137ab32066e2a8f6b2e94f30",
-      "bytes": 7194
+      "sha256": "beebea4ff9e8b64dd720f4a971a01f456630ecb3b555bc17426da1abe5e2a65f",
+      "bytes": 6939
     },
     {
       "path": "coverage_20261020/publication/publication_manifest.json",
-      "sha256": "9e04aba41fc3daa4c98e6857008401e838c163883a24b05df22b444aca50aed5",
-      "bytes": 9211
+      "sha256": "d19a8991d404e2c54d2021a90303b157e7ac790ec59387b8ba9e586d6650b521",
+      "bytes": 9377
     },
     {
       "path": "coverage_20261020/recovered_matrix729/README.md",

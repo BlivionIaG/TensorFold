@@ -332,14 +332,14 @@
     },
     {
       "path": "publication/bodies/issue1081.md",
-      "public_sha256": "15ce9e10ca6e2a875459be0d40a7c28839fb5841c774ae0fc41900a6dbd0c4ec",
-      "bytes": 47718,
+      "public_sha256": "a7c8d51da865f231b08fa929b3447b4617ff01d2ac3ce75bdba24bb4ca72def6",
+      "bytes": 49864,
       "generated_or_published_body": true
     },
     {
       "path": "publication/bodies/pr1082.md",
-      "public_sha256": "6e1801320dfd8d06340d072e548a5d0853317575a1bf7caa0a294f54918383e7",
-      "bytes": 27453,
+      "public_sha256": "5283371b689a827bedfacc667ab90f29a3a400b1d3f6b333b13227e638265f3f",
+      "bytes": 7074,
       "generated_or_published_body": true
     },
     {
@@ -470,14 +470,14 @@
     },
     {
       "path": "publication/independent_live_audit.json",
-      "public_sha256": "71d6f90a2184a8b95fd2b99d4a4bec1e0d26bbb1137ab32066e2a8f6b2e94f30",
-      "bytes": 7194,
+      "public_sha256": "beebea4ff9e8b64dd720f4a971a01f456630ecb3b555bc17426da1abe5e2a65f",
+      "bytes": 6939,
       "generated_or_published_body": true
     },
     {
       "path": "publication/publication_manifest.json",
-      "public_sha256": "9e04aba41fc3daa4c98e6857008401e838c163883a24b05df22b444aca50aed5",
-      "bytes": 9211,
+      "public_sha256": "d19a8991d404e2c54d2021a90303b157e7ac790ec59387b8ba9e586d6650b521",
+      "bytes": 9377,
       "generated_or_published_body": true
     },
     {
@@ -11582,6 +11582,62 @@
       "bytes": 35449,
       "redacted": false,
       "scope": "Public curated first826 complete Linux host test qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "first826_ci/README.md",
+      "original_sha256": "4489212fc415910173bacb8a48f2eab337918305ce2fb400a41cb9a99f4a237d",
+      "public_sha256": "4489212fc415910173bacb8a48f2eab337918305ce2fb400a41cb9a99f4a237d",
+      "bytes": 634,
+      "redacted": false,
+      "scope": "Public curated current first826 CI classification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "first826_ci/audit.json",
+      "original_sha256": "0cddc80a3c42c0e0ee045b096e5ebe44df5cf396c19556a657a83897e019d65c",
+      "public_sha256": "0cddc80a3c42c0e0ee045b096e5ebe44df5cf396c19556a657a83897e019d65c",
+      "bytes": 2604,
+      "redacted": false,
+      "scope": "Public curated current first826 CI classification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "first826_ci/checks.json",
+      "original_sha256": "e5978869da237d02e86b85ccfd7587b229373bf46767bc6a1d58df97ff1a3aa7",
+      "public_sha256": "e5978869da237d02e86b85ccfd7587b229373bf46767bc6a1d58df97ff1a3aa7",
+      "bytes": 627,
+      "redacted": false,
+      "scope": "Public curated current first826 CI classification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "first826_ci/public_manifest.json",
+      "original_sha256": "3549437640457d586d3fa0e0d7258ca97e3d693efabc1b3311bd2e0b2e9f314d",
+      "public_sha256": "3549437640457d586d3fa0e0d7258ca97e3d693efabc1b3311bd2e0b2e9f314d",
+      "bytes": 912,
+      "redacted": false,
+      "scope": "Public curated current first826 CI classification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "first826_ci/windows.log",
+      "original_sha256": "c3d154faa79f25e0052ddde20e63f31e18b5e7e625b94fcbb49cea382950af40",
+      "public_sha256": "c3d154faa79f25e0052ddde20e63f31e18b5e7e625b94fcbb49cea382950af40",
+      "bytes": 144826,
+      "redacted": false,
+      "scope": "Public curated current first826 CI classification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "publication/first826_independent_ready_audit.json",
+      "original_sha256": "3698a356f5e3a25866c155fbba3cef3677c5976d2c7eccb6756ff9450c81c470",
+      "public_sha256": "3698a356f5e3a25866c155fbba3cef3677c5976d2c7eccb6756ff9450c81c470",
+      "bytes": 472,
+      "redacted": false,
+      "scope": "Actual first PR ready transition/current publication; earlier snapshot immutable link retained"
+    },
+    {
+      "path": "publication/first826_ready_transition.json",
+      "original_sha256": "f03e3b7334fefd07827125656e6091ddd56c18acdbe7f04196826e7e0d5efa5b",
+      "public_sha256": "f03e3b7334fefd07827125656e6091ddd56c18acdbe7f04196826e7e0d5efa5b",
+      "bytes": 630,
+      "redacted": false,
+      "scope": "Actual first PR ready transition/current publication; earlier snapshot immutable link retained"
     }
   ]
 }

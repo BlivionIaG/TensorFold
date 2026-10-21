@@ -1,0 +1,12 @@
+{
+  "validated": true,
+  "observed_at_utc": "2026-10-21T06:45:53.154400+00:00",
+  "pr": 1082,
+  "open": true,
+  "draft": false,
+  "head": "826a0635634dee3793a68e473064d17d5c139945",
+  "body_sha256": "5283371b689a827bedfacc667ab90f29a3a400b1d3f6b333b13227e638265f3f",
+  "base": "main",
+  "readiness_requirements_audit": "independent_final_readiness_audit.json",
+  "scope": "Authorized root Ready transition verified; no merge/CI-green/maintainer release approval claim."
+}

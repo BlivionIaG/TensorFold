@@ -1,19 +1,20 @@
 {
   "repository": "ashhart/TensorFold",
   "evidence_commit": "606ddd61b274eccc38aa37b99dbc1850d5165b8f",
-  "previous_publication_manifest": "https://github.com/BlivionIaG/TensorFold/blob/cca9cc6c0f28faad7837683ec2156b61f3af0f16/receipts/nemotron-hip/streamfix/coverage_20261020/publication/publication_manifest.json",
-  "all22_still_draft": true,
-  "source_heads_unchanged": true,
+  "previous_publication_manifest": "https://github.com/BlivionIaG/TensorFold/blob/c6949c1fb0ef0b174eab275ed2608fcbbebf2760/receipts/nemotron-hip/streamfix/coverage_20261020/publication/publication_manifest.json",
+  "all22_still_draft": false,
+  "source_heads_unchanged": false,
   "complete_qualification": false,
   "prs": [
     {
       "pr": 1082,
-      "head": "dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5",
+      "head": "826a0635634dee3793a68e473064d17d5c139945",
       "branch": "nemhip-draft/00-hip-contract",
       "base": "main",
       "expected_previous_body_sha256": "3f1e137dc4f886b3f6d19464b5c4e4ea2dee621a41e564ca868fd160d28403f4",
-      "body_sha256": "6e1801320dfd8d06340d072e548a5d0853317575a1bf7caa0a294f54918383e7",
-      "file": "bodies/pr1082.md"
+      "body_sha256": "5283371b689a827bedfacc667ab90f29a3a400b1d3f6b333b13227e638265f3f",
+      "file": "bodies/pr1082.md",
+      "draft": false
     },
     {
       "pr": 1083,
@@ -207,7 +208,12 @@
   ],
   "issue": {
     "expected_previous_body_sha256": "b9fa5a23f53e3ba683147851f67b053e4dccded2ee59f46616b1105c0eadc359",
-    "body_sha256": "15ce9e10ca6e2a875459be0d40a7c28839fb5841c774ae0fc41900a6dbd0c4ec",
+    "body_sha256": "a7c8d51da865f231b08fa929b3447b4617ff01d2ac3ce75bdba24bb4ca72def6",
     "file": "bodies/issue1081.md"
-  }
+  },
+  "ready_prs": [
+    1082
+  ],
+  "complete_stack_qualified": false,
+  "first_pr_evidence_commit": "bc6f6e7ab1b25c75ff6ca2e1917f3d7224710557"
 }
