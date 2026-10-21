@@ -1,0 +1,19 @@
+{
+  "pid": 42162,
+  "argv": [
+    "<HOME>/hcx/zb.sh",
+    "hcffirst826",
+    "hip_control_fix_826_a44_attempt1/first_full_cpu.log",
+    "test",
+    "test-golden",
+    "test-kernel-contract",
+    "fuzz-cortheon",
+    "--summary",
+    "all"
+  ],
+  "source_commit": "826a0635634dee3793a68e473064d17d5c139945",
+  "source_tree": "bbb17bdf4db45f1084bb6e35442d4b5dde32039e",
+  "boot_id": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "started_at_utc": "2026-10-21T06:28:01.883830+00:00",
+  "scope": "Linux full CPU tests plus golden/contract/fuzz; no opt-in GPU run target"
+}

@@ -11534,6 +11534,54 @@
       "bytes": 761,
       "redacted": false,
       "scope": "Public curated corrected first and top HIP contract qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_fullcpu826/README.md",
+      "original_sha256": "36aa80251a91cbbeed1182842c11d643735bd28f980653e5b7054f1b38599f24",
+      "public_sha256": "36aa80251a91cbbeed1182842c11d643735bd28f980653e5b7054f1b38599f24",
+      "bytes": 997,
+      "redacted": false,
+      "scope": "Public curated first826 complete Linux host test qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_fullcpu826/first_full_cpu.launched.json",
+      "original_sha256": "97b2feea9d0d71cba881ae2e36bddcd91df8e3c0ba6be8ec681059aad62fd84c",
+      "public_sha256": "97b2feea9d0d71cba881ae2e36bddcd91df8e3c0ba6be8ec681059aad62fd84c",
+      "bytes": 564,
+      "redacted": false,
+      "scope": "Public curated first826 complete Linux host test qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_fullcpu826/first_full_cpu.outer.log",
+      "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "public_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "redacted": false,
+      "scope": "Public curated first826 complete Linux host test qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_fullcpu826/first_full_cpu.result.json",
+      "original_sha256": "ba750e02cb294541f9c71e425489c01d97e7cd036590a9fe43d7e5056091c46e",
+      "public_sha256": "ba750e02cb294541f9c71e425489c01d97e7cd036590a9fe43d7e5056091c46e",
+      "bytes": 1572,
+      "redacted": false,
+      "scope": "Public curated first826 complete Linux host test qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_fullcpu826/public_manifest.json",
+      "original_sha256": "3603ce40ca4e2ec56a490f81763d10d6d2ac9a7f3167e66c1717e79935592590",
+      "public_sha256": "3603ce40ca4e2ec56a490f81763d10d6d2ac9a7f3167e66c1717e79935592590",
+      "bytes": 1455,
+      "redacted": false,
+      "scope": "Public curated first826 complete Linux host test qualification; internal manifest maps original/public hashes."
+    },
+    {
+      "path": "hip_control_fullcpu826/wrapper_first_full_cpu.log",
+      "original_sha256": "5d983e4e3ce305ac54825cd46861207109d70eecae9d61f1cd6a4e8d3836b872",
+      "public_sha256": "5d983e4e3ce305ac54825cd46861207109d70eecae9d61f1cd6a4e8d3836b872",
+      "bytes": 35449,
+      "redacted": false,
+      "scope": "Public curated first826 complete Linux host test qualification; internal manifest maps original/public hashes."
     }
   ]
 }

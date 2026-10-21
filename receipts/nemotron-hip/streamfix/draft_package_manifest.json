@@ -4668,6 +4668,36 @@
       "bytes": 9403
     },
     {
+      "path": "coverage_20261020/hip_control_fullcpu826/README.md",
+      "sha256": "36aa80251a91cbbeed1182842c11d643735bd28f980653e5b7054f1b38599f24",
+      "bytes": 997
+    },
+    {
+      "path": "coverage_20261020/hip_control_fullcpu826/first_full_cpu.launched.json",
+      "sha256": "97b2feea9d0d71cba881ae2e36bddcd91df8e3c0ba6be8ec681059aad62fd84c",
+      "bytes": 564
+    },
+    {
+      "path": "coverage_20261020/hip_control_fullcpu826/first_full_cpu.outer.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "coverage_20261020/hip_control_fullcpu826/first_full_cpu.result.json",
+      "sha256": "ba750e02cb294541f9c71e425489c01d97e7cd036590a9fe43d7e5056091c46e",
+      "bytes": 1572
+    },
+    {
+      "path": "coverage_20261020/hip_control_fullcpu826/public_manifest.json",
+      "sha256": "3603ce40ca4e2ec56a490f81763d10d6d2ac9a7f3167e66c1717e79935592590",
+      "bytes": 1455
+    },
+    {
+      "path": "coverage_20261020/hip_control_fullcpu826/wrapper_first_full_cpu.log",
+      "sha256": "5d983e4e3ce305ac54825cd46861207109d70eecae9d61f1cd6a4e8d3836b872",
+      "bytes": 35449
+    },
+    {
       "path": "coverage_20261020/hip_control_qualification/EXECUTION_INTENT",
       "sha256": "bd9e11126c3db9b0b193e579816220d6b83e06656208b0844b9e10cb1c0884cc",
       "bytes": 6
@@ -7994,8 +8024,8 @@
     },
     {
       "path": "coverage_20261020/public_manifest.json",
-      "sha256": "2c1d33cd85a08a165bd8560a010d28f531ea47bbe345725a24279c62d3392e18",
-      "bytes": 639351
+      "sha256": "de297559f0d2367ec1b477c0838603ee797e353a67bf75fec0160c28fba85281",
+      "bytes": 641952
     },
     {
       "path": "coverage_20261020/publication/bodies/issue1081.md",

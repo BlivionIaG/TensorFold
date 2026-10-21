@@ -1,0 +1,31 @@
+{
+  "source_commit": "826a0635634dee3793a68e473064d17d5c139945",
+  "source_tree": "bbb17bdf4db45f1084bb6e35442d4b5dde32039e",
+  "boot_id": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "wrapper_actual_exit_status": 0,
+  "wrapper_exit_line": "08:29:19   exit 0 hip_control_fix_826_a44_attempt1/first_full_cpu.log",
+  "log_sha256": "5d983e4e3ce305ac54825cd46861207109d70eecae9d61f1cd6a4e8d3836b872",
+  "summary_lines": [
+    "        chat   16 equal    0 differ   0 known",
+    "    thinking   16 equal    0 differ   0 known",
+    "       stops   13 equal    0 differ   0 known",
+    "       usage   10 equal    0 differ   0 known",
+    "       tools   48 equal    0 differ   4 known",
+    "      errors   37 equal    0 differ   2 known",
+    " completions   15 equal    0 differ   0 known",
+    "   responses   29 equal    0 differ   0 known",
+    "   anthropic   26 equal    0 differ   3 known",
+    "      tokens   19 equal    0 differ   0 known",
+    "      status   11 equal    0 differ   0 known",
+    "     framing   42 equal    0 differ   0 known",
+    "      cancel    1 equal    0 differ   1 known",
+    "   lifecycle    2 equal    0 differ   0 known",
+    "metrics-open    2 equal    0 differ   2 known",
+    "        keys   19 equal    0 differ   1 known",
+    "306/319 equal to the frozen Python answers, 0 unexpected differences",
+    "Build Summary: 170/170 steps succeeded; 2472/2481 tests passed (9 skipped)"
+  ],
+  "owned_cpu_group_gone": true,
+  "canonical_gpu_and_build_locks_released_verified": true,
+  "checked_at_utc": "2026-10-21T06:30:59.775800+00:00"
+}
