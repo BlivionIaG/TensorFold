@@ -284,23 +284,55 @@ const Eng = struct {
     attached: xpass.Attached,
 
     fn init(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8) !*Eng {
+        return initPaged(gpu, rank, world, port, dir, null);
+    }
+
+    fn initPaged(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, paging: ?X.kvpage.Config) !*Eng {
         const g = try gpu.gpa.create(Eng);
         errdefer gpu.gpa.destroy(g);
         g.gpu = gpu;
         g.rank = rank;
         g.world = world;
         g.ranks = if (world == 2) try Ranks.open(gpu, rank, port) else null;
+        errdefer if (g.ranks) |ranks| ranks.close(gpu.gpa);
         g.stream = try cuda.Stream.init(gpu.d, true);
+        errdefer g.stream.deinit();
         g.glue = try flash.Glue.load(gpu.d);
+        errdefer g.glue.deinit();
         const t0 = check.now(gpu.io);
         g.e = try prompt.Engine.initRank(gpu.gpa, gpu.io, @constCast(gpu.d), &g.stream, dir, world, rank);
+        errdefer g.e.deinit();
         if (g.ranks) |r| g.e.collective = &r.collective;
+        if (paging) |cfg| {
+            g.e.page_config = cfg;
+            try X.kv.setup(g.e, false, true);
+        }
         _ = try g.e.reserve(@min(cap_default, g.e.chunk));
         _ = try g.e.reserveScores(cap_default, @min(cap_default, g.e.chunk));
+        const common_before = cuda.usage(false).device;
+        const common_bytes = try g.e.reserveSharedKv(cap_default);
+        const common_resident = try std.math.sub(u64, cuda.usage(false).device, common_before);
+        if (paging) |cfg| if (cfg.shared_lanes != 0 and rank == 1) {
+            const arena = g.e.shared_arena orelse return error.SharedKvArenaRequired;
+            const retired = try arena.register(cap_default);
+            try arena.release(retired, g.stream);
+        };
         g.seq = try g.e.newSeq(cap_default);
+        errdefer g.seq.deinit(gpu.gpa);
         g.out = try cuda.DeviceBuffer.alloc(gpu.d, out_rows * vocab * 2);
+        errdefer g.out.free();
         X.prefill.reserveFor(g.e, cap_default, world);
-        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, try xpass.budgetFromEnv(0));
+        var budget = try xpass.budgetFromEnv(0);
+        if (paging) |_| {
+            const layout = try X.kv.sequenceLayout(X.kv.of(g.e), cap_default, g.e.chunk, g.e.page_config);
+            budget.other = try std.math.add(u64, budget.other, try std.math.mul(u64, layout.bytes.device(), 2));
+            if (g.e.page_config.?.shared_lanes != 0) {
+                const arena = g.e.shared_arena orelse return error.SharedKvArenaRequired;
+                try check.expect(common_bytes == arena.layout.common_bytes and common_bytes == common_resident and common_bytes != 0, "rank {d}: shared common bytes charged once before expert pools", .{rank});
+                std.debug.print("SHARED rank {d}/{d}: lanes {d}, cap {d}, window {d}+rows {d}, physical window rows {d}, slots {d}x4, K/V side rows {d}, device {d}, tables {d}, work {d}, common {d} bytes resident before pools; future two lane caches {d} bytes\n", .{ rank, world, arena.layout.options.lanes, cap_default, arena.layout.options.window, arena.layout.options.rows, arena.layout.window_rows, arena.layout.options.slots, arena.layout.side_rows, arena.layout.device_bytes, arena.layout.table_bytes, arena.layout.work_bytes, common_bytes, budget.other });
+            } else try check.expect(common_bytes == 0 and g.e.shared_arena == null, "rank {d}: private control has no shared allocation", .{rank});
+        }
+        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, budget);
         std.debug.print("RESULT rank {d}/{d} load: {d:.1} s; {d} lines a layer x {d} layers ({d:.2} GiB of pool)\n", .{ rank, world, ms(t0, check.now(gpu.io)) / 1e3, g.attached.lines, g.attached.layers, gib(g.attached.device_bytes) });
         return g;
     }
@@ -615,26 +647,151 @@ fn prefillProfMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const 
     std.debug.print("RESULT prefill-prof rank={d}/{d} mode={s} rows={d}: {d:.1} ms wall, graphs replayed {d}, eager {d}, captured {d}, updated {d}; expert copies {d} (prefetch {d}), passes {d}, pick wait {d:.1} ms, plan {d:.1} ms; logits {x}; Nsight range excludes warm-up\n", .{ rank, world, which, n, ms(t0, t1), after.replays - before.replays, after.eager - before.eager, after.captures - before.captures, after.updates - before.updates, f_after.copies - f_before.copies, f_after.prefetched - f_before.prefetched, f_after.passes - f_before.passes, @as(f64, @floatFromInt(f_after.host_wait_ns - f_before.host_wait_ns)) / 1e6, @as(f64, @floatFromInt(f_after.plan_ns - f_before.plan_ns)) / 1e6, hash });
 }
 
-fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize) !void {
+fn expectSnapshotState(rank: usize, previous: *const flash.snapshot.Snap, saved: *const flash.snapshot.Snap) !void {
+    const canonical = saved.paged.?.layout.canonical;
+    const state_offset = saved.paged.?.layout.total;
+    try check.expect(previous.at == saved.at and std.meta.eql(previous.history, saved.history), "rank {d}: exact snapshot position and history", .{rank});
+    try check.expect(std.mem.eql(u8, previous.host.?.bytes[0..canonical], saved.host.?.bytes[0..canonical]), "rank {d}: exact canonical BF16 history", .{rank});
+    try check.expect(std.mem.eql(u8, previous.host.?.bytes[state_offset..previous.buf.len], saved.host.?.bytes[state_offset..saved.buf.len]), "rank {d}: exact recurrent/index/PLE state and logits", .{rank});
+}
+
+fn expectOwnedRestore(engine: *Eng, sequence: *prompt.Seq, wanted: *const flash.snapshot.Snap) !void {
+    const saved = try flash.snapshot.save(engine.gpu.gpa, engine.gpu.d, engine.stream, sequence, null);
+    defer flash.snapshot.drop(engine.gpu.gpa, engine.stream, saved);
+    try expectSnapshotState(engine.rank, wanted, saved);
+    try check.expect(std.meta.eql(wanted.paged, saved.paged) and std.mem.eql(u8, wanted.host.?.bytes[0..wanted.buf.len], saved.host.?.bytes[0..saved.buf.len]), "rank {d}: exact destination windows, marks, controls and snapshot metadata", .{engine.rank});
+    const previous = wanted.owned_blocks orelse return error.SharedKvSnapshotRequired;
+    const current = saved.owned_blocks orelse return error.SharedKvSnapshotRequired;
+    try check.expect(previous.entries.len > 0 and previous.entries.len == current.entries.len, "rank {d}: restore retains every owned resident entry, not a cold cache", .{engine.rank});
+    try check.expect(std.meta.eql(current.source, sequence.paged.?.shared_sequence), "rank {d}: restored slots belong to destination generation", .{engine.rank});
+    const block_bytes = try previous.geometry.blockBytes();
+    for (previous.entries, 0..) |entry, old_index| {
+        const new_index = for (current.entries, 0..) |candidate, index| {
+            if (std.meta.eql(entry.key, candidate.key)) break index;
+        } else return error.SharedKvSnapshotMissingEntry;
+        try check.expect(previous.clock - entry.stamp == current.clock - current.entries[new_index].stamp, "rank {d}: owned entry retains relative LRU age", .{engine.rank});
+        try check.expect(std.mem.eql(u8, previous.payload[old_index * block_bytes ..][0..block_bytes], current.payload[new_index * block_bytes ..][0..block_bytes]), "rank {d}: owned entry remaps exact K/V payload", .{engine.rank});
+    }
+}
+
+const SharedSnapshotProbe = struct {
+    sequence: prompt.Seq,
+    saved: *flash.snapshot.Snap,
+    continued: ?*flash.snapshot.Snap = null,
+    key: [6]u64,
+    buffers: [3]u64,
+
+    fn init(engine: *Eng, ids: []const u32) !*SharedSnapshotProbe {
+        const probe = try engine.gpu.gpa.create(SharedSnapshotProbe);
+        errdefer engine.gpu.gpa.destroy(probe);
+        probe.* = .{ .sequence = try engine.e.newSeq(cap_default), .saved = undefined, .key = undefined, .buffers = undefined };
+        errdefer probe.sequence.deinit(engine.gpu.gpa);
+        try engine.e.forward(flash.Tri, engine.tri(), &probe.sequence, ids, .{ .logits = .last });
+        probe.saved = try flash.snapshot.save(engine.gpu.gpa, engine.gpu.d, engine.stream, &probe.sequence, null);
+        errdefer flash.snapshot.drop(engine.gpu.gpa, engine.stream, probe.saved);
+        const arena = engine.e.shared_arena orelse return error.SharedKvArenaRequired;
+        try check.expect(probe.saved.version == 2 and probe.saved.owned_blocks.?.entries.len > 0, "rank {d}: foreign probe holds shared resident blocks", .{engine.rank});
+        probe.key = probe.sequence.paged.?.graphKey();
+        probe.buffers = .{ arena.device.ptr, arena.tables.ptr, arena.work.ptr };
+        return probe;
+    }
+
+    fn deinit(probe: *SharedSnapshotProbe, engine: *Eng) void {
+        if (probe.continued) |saved| flash.snapshot.drop(engine.gpu.gpa, engine.stream, saved);
+        flash.snapshot.drop(engine.gpu.gpa, engine.stream, probe.saved);
+        probe.sequence.deinit(engine.gpu.gpa);
+        engine.gpu.gpa.destroy(probe);
+    }
+
+    fn unchanged(probe: *SharedSnapshotProbe, engine: *Eng) !void {
+        const arena = engine.e.shared_arena.?;
+        try check.expect(std.meta.eql(probe.buffers, [3]u64{ arena.device.ptr, arena.tables.ptr, arena.work.ptr }), "rank {d}: arena addresses survive restore and sequence churn", .{engine.rank});
+        try check.expect(std.meta.eql(probe.key, probe.sequence.paged.?.graphKey()), "rank {d}: foreign graph bindings remain legal after restore", .{engine.rank});
+        const saved = try flash.snapshot.save(engine.gpu.gpa, engine.gpu.d, engine.stream, &probe.sequence, null);
+        defer flash.snapshot.drop(engine.gpu.gpa, engine.stream, saved);
+        try check.expect(std.meta.eql(probe.saved.paged, saved.paged), "rank {d}: foreign window origins and counters unchanged", .{engine.rank});
+        try check.expect(probe.saved.at == saved.at and std.meta.eql(probe.saved.history, saved.history), "rank {d}: foreign logical position unchanged", .{engine.rank});
+        try check.expect(std.mem.eql(u8, probe.saved.host.?.bytes[0..probe.saved.buf.len], saved.host.?.bytes[0..saved.buf.len]), "rank {d}: restore preserves foreign canonical history, full windows, marks, controls, ordinary state and logits", .{engine.rank});
+    }
+
+    fn continueAndRestore(probe: *SharedSnapshotProbe, engine: *Eng) !void {
+        try engine.e.forward(flash.Tri, engine.tri(), &probe.sequence, &.{ 417, 819, 1237 }, .{ .logits = .last });
+        const saved = try flash.snapshot.save(engine.gpu.gpa, engine.gpu.d, engine.stream, &probe.sequence, null);
+        if (probe.continued) |previous| {
+            defer flash.snapshot.drop(engine.gpu.gpa, engine.stream, saved);
+            try expectSnapshotState(engine.rank, previous, saved);
+        } else probe.continued = saved;
+        try flash.snapshot.restore(engine.stream, &probe.sequence, null, probe.saved);
+        try expectOwnedRestore(engine, &probe.sequence, probe.saved);
+        try probe.unchanged(engine);
+    }
+};
+
+const SnapshotStorage = enum { legacy, private, shared };
+
+fn snapshotStorageMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize, storage: SnapshotStorage) !void {
+    if (world != 2) return error.SharedSnapshotRequiresTp2;
+    if (steps < 8 or steps > 64) return error.SharedSnapshotDecodeSteps;
+    if (X.kvpage.force_off) return error.SharedKvPagingDisabled;
+    var paging = X.kvpage.configFromEnv() orelse X.kvpage.Config{ .shared_lanes = 8 };
+    if (storage == .shared) {
+        if (paging.shared_lanes < 3) return error.SharedSnapshotNeedsThreeLanes;
+    } else paging.shared_lanes = 0;
+    paging.slots = 1024;
+    paging.window = 4096;
+    paging.rows = 4096;
+    if ((X.prefill.options orelse X.prefill.optionsFromEnv()).serve_rows > paging.rows) return error.SharedSnapshotPrefillRows;
+    try paging.validate();
+    const previous = X.kvpage.force;
+    X.kvpage.force = paging;
+    defer X.kvpage.force = previous;
+    return snapshotMode(gpu, rank, world, port, dir, steps, storage);
+}
+
+fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize, storage: SnapshotStorage) !void {
     const snaps = flash.snapshot;
     const allocator = gpu.gpa;
-    const g = try Eng.init(gpu, rank, world, port, dir);
+    const shared = storage == .shared;
+    const paired = storage != .legacy;
+    const g = if (paired) try Eng.initPaged(gpu, rank, world, port, dir, X.kvpage.force.?) else try Eng.init(gpu, rank, world, port, dir);
     defer g.deinit();
     defer graph.force = null;
     try check.expect(g.seq.paged != null, "snapshot test requires BF16 paging", .{});
+    if (paired) try check.expect(g.seq.kv8 == null and g.seq.paged.?.cfg.slots == 1024 and g.seq.paged.?.cfg.rows == 4096, "rank {d}: paired fixture keeps fixed BF16 paging geometry", .{rank});
+    if (shared) try check.expect(g.seq.paged.?.shared_arena == g.e.shared_arena and g.seq.paged.?.cfg.shared_lanes == X.kvpage.force.?.shared_lanes and g.seq.paged.?.cfg.slots == 1024 and g.seq.paged.?.cfg.rows == 4096, "rank {d}: shared snapshot fixture cannot silently use private or different paging geometry", .{rank});
+    if (shared) {
+        const owner = g.seq.paged.?.shared_sequence;
+        const peer_generation = try g.swap(owner.generation);
+        try check.expect(owner.generation != peer_generation, "rank {d}: shared TP2 fixture requires legal cross-rank generation asymmetry", .{rank});
+        const logical = g.seq.paged.?.logicalGraphKey();
+        const logical_hash = std.hash.Wyhash.hash(0, std.mem.asBytes(&logical));
+        try check.expect(try g.swap(logical_hash) == logical_hash, "rank {d}: asymmetric physical generations retain identical logical TP geometry", .{rank});
+        std.debug.print("SHARED rank {d}/{d}: primary lane {d} generation {d}, peer generation {d}; logical TP key {x}\n", .{ rank, world, owner.lane, owner.generation, peer_generation, logical_hash });
+    }
+    if (storage == .private) try check.expect(g.seq.paged.?.cfg.shared_lanes == 0 and g.seq.paged.?.shared_arena == null, "rank {d}: private oracle uses independent per-sequence slots", .{rank});
     var second = try g.e.newSeq(cap_default);
-    defer second.deinit(allocator);
-    const ids = try allocator.alloc(u32, 16384);
+    var second_live = true;
+    defer if (second_live) second.deinit(allocator);
+    const ids = try allocator.alloc(u32, if (paired) 24576 else 16384);
     defer allocator.free(ids);
     var random = std.Random.DefaultPrng.init(0x736e6170);
     for (ids) |*token| token.* = 200 + random.random().uintLessThan(u32, 60000);
+    if (paired) std.debug.print("SNAPSHOT-ORACLE store={s} rank={d}/{d} seed=736e6170 ids={x:0>16} first=8707 second=4096+8709 continuation=8192 decode={d}; compare matching rank/run/lane hashes between snapshot-private and snapshot-shared, not a golden\n", .{ @tagName(storage), rank, world, std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(ids)), steps });
     graph.force = .graph;
-    try g.forward(ids[0..3075], .{ .logits = .last });
-    try g.e.forward(flash.Tri, g.tri(), &second, ids[4096..6917], .{ .logits = .last });
-    const first_saved = try snaps.save(allocator, gpu.d, g.stream, &g.seq, null);
-    defer snaps.drop(allocator, g.stream, first_saved);
+    const first_end: usize = if (paired) 8707 else 3075;
+    const second_end: usize = if (paired) 12805 else 6917;
+    try g.forward(ids[0..first_end], .{ .logits = .last });
+    var first_saved: *snaps.Snap = undefined;
+    if (paired) first_saved = try snaps.save(allocator, gpu.d, g.stream, &g.seq, null);
+    defer if (paired) snaps.drop(allocator, g.stream, first_saved);
+    try g.e.forward(flash.Tri, g.tri(), &second, ids[4096..second_end], .{ .logits = .last });
+    if (!paired) first_saved = try snaps.save(allocator, gpu.d, g.stream, &g.seq, null);
+    defer if (!paired) snaps.drop(allocator, g.stream, first_saved);
     const second_saved = try snaps.save(allocator, gpu.d, g.stream, &second, null);
     defer snaps.drop(allocator, g.stream, second_saved);
+    const source_key = second.paged.?.graphKey();
+    const probe: ?*SharedSnapshotProbe = if (shared) try SharedSnapshotProbe.init(g, ids[14336..23045]) else null;
+    defer if (probe) |foreign| foreign.deinit(g);
     const expected = try allocator.alloc(u8, (steps + 1) * 2 * vocab * 2);
     defer allocator.free(expected);
     var reference: [2]?*snaps.Snap = .{ null, null };
@@ -643,12 +800,36 @@ fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8,
         graph.force = mode;
         try dplan.toHost();
         g.e.round_graph.clear();
+        if (shared) {
+            const previous = second.paged.?.shared_sequence;
+            const window = second.paged.?.devRows(0, false);
+            second_live = false;
+            second.deinit(allocator);
+            second = try g.e.newSeq(cap_default);
+            second_live = true;
+            const current = second.paged.?.shared_sequence;
+            try check.expect(previous.arena == current.arena and previous.lane == current.lane and current.generation > previous.generation and current.generation > second_saved.owned_blocks.?.source.generation, "rank {d}: saved source restores into recycled lane with a new generation", .{rank});
+            try check.expect(window == second.paged.?.devRows(0, false), "rank {d}: recycled lane retains its fixed window address", .{rank});
+            try probe.?.unchanged(g);
+            std.debug.print("SHARED rank {d}/{d}: recycled lane {d}, source generation {d}, destination generation {d}, stable window {x}\n", .{ rank, world, current.lane, second_saved.owned_blocks.?.source.generation, current.generation, window });
+        }
         try snaps.restore(g.stream, &g.seq, null, first_saved);
+        if (shared) {
+            try expectOwnedRestore(g, &g.seq, first_saved);
+            try probe.?.unchanged(g);
+        }
         try snaps.restore(g.stream, &second, null, second_saved);
+        if (shared) {
+            try expectOwnedRestore(g, &second, second_saved);
+            try check.expect(source_key[4] != second.paged.?.graphKey()[4], "rank {d}: identical restored geometry at same window address has a different strict graph generation key", .{rank});
+            try probe.?.unchanged(g);
+        }
         const before = graph.stats;
         const prefill_before = graph.prefill_stats;
-        try g.forward(ids[3075..11267], .{ .logits = .last });
-        try g.e.forward(flash.Tri, g.tri(), &second, ids[6917..15109], .{ .logits = .last });
+        const deep_before = X.prefill.stats;
+        try g.forward(ids[first_end..][0..8192], .{ .logits = .last });
+        try g.e.forward(flash.Tri, g.tri(), &second, ids[second_end..][0..8192], .{ .logits = .last });
+        if (paired) try check.expect(X.prefill.stats.chunks > deep_before.chunks and X.prefill.stats.rows >= deep_before.rows + 16384, "rank {d}: both paired lanes actually execute deep prefill", .{rank});
         var tokens = [_]u32{ prompt.argmax(g.seq.logits), prompt.argmax(second.logits) };
         const sequences = [_]*prompt.Seq{ &g.seq, &second };
         for (0..steps + 1) |step| {
@@ -660,9 +841,20 @@ fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8,
                 const wanted = expected[(step * 2 + lane) * vocab * 2 ..][0 .. vocab * 2];
                 if (run_index == 0) @memcpy(wanted, sequence.logits) else try check.expect(std.mem.eql(u8, wanted, sequence.logits), "rank {d} snapshot {s} lane {d} step {d} BF16 logits", .{ rank, @tagName(mode), lane, step });
             }
+            if (paired) {
+                for (sequences, 0..) |sequence, lane| std.debug.print("SNAPSHOT-ORACLE store={s} rank={d}/{d} mode={s} run={d} lane={d} step={d} logits={x:0>16}\n", .{ @tagName(storage), rank, world, @tagName(mode), run_index, lane, step, std.hash.Wyhash.hash(0, sequence.logits) });
+                const digest = std.hash.Wyhash.hash(0, g.seq.logits) ^ std.hash.Wyhash.hash(1, second.logits);
+                try check.expect(try g.swap(digest) == digest, "rank {d}: paired TP2 logits agree at step {d}", .{ rank, step });
+            }
         }
         for (sequences, 0..) |sequence, lane| {
             const saved = try snaps.save(allocator, gpu.d, g.stream, sequence, null);
+            if (paired) {
+                const canonical_hash = std.hash.Wyhash.hash(0, saved.host.?.bytes[0..saved.paged.?.layout.canonical]);
+                const state_hash = std.hash.Wyhash.hash(1, saved.host.?.bytes[saved.paged.?.layout.total..saved.buf.len]);
+                const history_hash = std.hash.Wyhash.hash(2, std.mem.asBytes(&saved.history)) ^ std.hash.Wyhash.hash(3, std.mem.asBytes(&saved.at));
+                std.debug.print("SNAPSHOT-ORACLE store={s} rank={d}/{d} mode={s} run={d} lane={d} at={d} canonical={x:0>16} state-logits={x:0>16} history={x:0>16} full={x:0>16}\n", .{ @tagName(storage), rank, world, @tagName(mode), run_index, lane, saved.at, canonical_hash, state_hash, history_hash, canonical_hash ^ state_hash ^ history_hash });
+            }
             if (run_index == 0) {
                 reference[lane] = saved;
             } else {
@@ -678,9 +870,19 @@ fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8,
             try check.expect(graph.prefill_stats.replays > prefill_before.replays, "rank {d} prefill graph replay after restore", .{rank});
             try check.expect(graph.stats.replays > before.replays, "rank {d} concurrent decode graph replay after restore", .{rank});
         }
+        if (probe) |foreign| {
+            for (sequences) |sequence| {
+                const paged = sequence.paged.?;
+                const status = try paged.total();
+                try check.expect(!status.overflow and status.misses > 0 and status.rebases > 0, "rank {d}: shared paging actually fetches blocks and rebases without overflow", .{rank});
+                for (paged.win0) |origin| try check.expect(origin > 0 and try X.kvpage.pagingRows(paged.cfg, origin, 256) < 256, "rank {d}: slots1024 forces paging subdivision", .{rank});
+            }
+            try foreign.unchanged(g);
+            try foreign.continueAndRestore(g);
+        }
         std.debug.print("SNAPSHOT rank {d}/{d} {s}: two paged lanes, {d} decode steps, exact state and logits; prefill replays {d}, decode replays {d}\n", .{ rank, world, @tagName(mode), steps, graph.prefill_stats.replays - prefill_before.replays, graph.stats.replays - before.replays });
     }
-    check.pass("rank {d}/{d}: concurrent paged snapshots preserve BF16 continuation and graph prefill/decode", .{ rank, world });
+    if (shared) check.pass("rank {d}/{d}: shared slots1024 TP2 snapshot remapping, recycled generation, foreign windows/history/continuation, exact eager/graph state/logits and actual prefill/decode replays", .{ rank, world }) else check.pass("rank {d}/{d}: concurrent paged snapshots preserve BF16 continuation and graph prefill/decode", .{ rank, world });
 }
 
 /// cuProfilerStart/Stop from libcuda (nsys --capture-range=cudaProfilerApi), looked up at run time.
@@ -819,7 +1021,9 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
     const steps = if (rest.len > 6 and !std.mem.eql(u8, mode, "prefill-prof")) try std.fmt.parseInt(usize, rest[6], 10) else 48;
     const which: []const u8 = if (rest.len > 7) rest[7] else "dplan,graph";
-    if (std.mem.eql(u8, mode, "snapshot")) return snapshotMode(gpu, rank, world, port, dir, steps);
+    if (std.mem.eql(u8, mode, "snapshot")) return snapshotMode(gpu, rank, world, port, dir, steps, .legacy);
+    if (std.mem.eql(u8, mode, "snapshot-shared")) return snapshotStorageMode(gpu, rank, world, port, dir, steps, .shared);
+    if (std.mem.eql(u8, mode, "snapshot-private")) return snapshotStorageMode(gpu, rank, world, port, dir, steps, .private);
     if (std.mem.eql(u8, mode, "fork")) return forkMode(gpu, rank, world, port, dir, rest[5], steps, which);
     if (std.mem.eql(u8, mode, "prof")) return profMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps, which);
     if (std.mem.eql(u8, mode, "prefill")) return prefillMode(gpu, rank, world, port, dir, try std.fmt.parseInt(usize, rest[5], 10), steps);
