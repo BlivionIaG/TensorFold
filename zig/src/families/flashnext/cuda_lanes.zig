@@ -133,8 +133,10 @@ pub fn Namespace(comptime Tri: type) type {
         }
 
         pub fn rankRoom(ptr: *anyopaque, local: u64) !u64 {
-            if (of(ptr).ranks) |r| return @import("cuda_exl3_kv.zig").rankRoom(r, local, of(ptr).stream_bytes);
-            return local;
+            const own = of(ptr);
+            const protected = @import("exl3_startup_memory.zig").laneRoom(local, own.graph_reservation);
+            if (own.ranks) |r| return @import("cuda_exl3_kv.zig").rankRoom(r, protected, own.stream_bytes);
+            return protected;
         }
 
         /// A request or load this engine refuses, in words; null: none of its own.
@@ -175,6 +177,7 @@ pub fn Namespace(comptime Tri: type) type {
             next: u64 = 0,
             /// This rank's Loaded.stream_bytes (rankRoom agrees the ranks' rooms in streams, not bytes).
             stream_bytes: usize = 0,
+            graph_reservation: u64 = 0,
             /// --slide: the pocket's layout, from config.json at load.
             lay: living.Layout = undefined,
 

@@ -63,7 +63,7 @@ const Key = struct {
     confidence: u64,
 };
 
-const Entry = struct { key: Key, exec: cuda.graph.Exec = undefined, used: u64, pending: ?*graph.Pending = null };
+const Entry = struct { key: Key, exec: cuda.graph.Exec = undefined, used: u64, pending: ?*graph.Pending = null, admission: ?graph.memory.Ticket = null, stream: ?cuda.Stream = null };
 
 const State = struct {
     head: usize,
@@ -289,7 +289,8 @@ fn chainBody(comptime Tri: type, o: anytype, p: *batch.Pass(Tri), ps: *batch.Pas
 /// Ops.draft's hook (cuda_mtp_ops.zig): the chain for greedy drafts as one graph; false leaves it to upstream.
 pub fn draft(comptime Tri: type, o: anytype, d: *mtp.Draft, next: []const u32, rows: u64, position: u64, count: usize, sm: ?mtp.Sampling, confidence: f64, out: *mtp.Chain) !bool {
     _ = position;
-    if (!graph.enabled() or broken or count < 2 or d.media != null) return false;
+    if (graph.enabled() and broken) return error.GraphCaptureFailed;
+    if (!graph.enabled() or count < 2 or d.media != null) return false;
     if (sm) |s| if (s.temperature > 0) return false;
     const e = o.e;
     const dp = (try dplan.forLayers(e.gpa, e.driver, e, e.layers[0..e.n_layers])) orelse return false;
@@ -339,7 +340,7 @@ pub fn draft(comptime Tri: type, o: anytype, d: *mtp.Draft, next: []const u32, r
     ps.stream = st.side;
     ps.tri = tri_side;
     const launched = run(Tri, key, o, &p, &ps, d, st, picks, heads, len0, confidence) catch |err| {
-        std.log.warn("flashnext exl3 chain: the draft chain could not be captured ({t}); chains run eagerly", .{err});
+        std.log.err("flashnext exl3 chain: the draft chain failed ({t})", .{err});
         broken = true;
         return err;
     };
@@ -407,17 +408,30 @@ fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch
     for (&entries) |*en| if (en.*) |*x| if (std.meta.eql(x.key, key)) {
         x.used = clock;
         if (x.pending) |pd| {
-            const got = graph.takePending(pd) catch {
+            const got = graph.takePending(pd) catch |err| {
+                if (x.admission) |ticket| graph.memory.release(ticket) catch unreachable;
                 en.* = null;
-                return false;
+                return err;
             };
-            x.exec = got orelse return false;
+            var exec = got orelse return false;
             x.pending = null;
+            graph.uploadResident(&exec, p.stream) catch |err| {
+                exec.deinit();
+                if (x.admission) |ticket| graph.memory.release(ticket) catch unreachable;
+                en.* = null;
+                return err;
+            };
+            x.exec = exec;
+            if (x.admission) |ticket| try graph.memory.installed(ticket);
         }
         stats.replays += 1;
         try x.exec.launchOn(p.stream);
         return true;
     };
+    try p.stream.synchronize();
+    const admission = try graph.reserveMemory(p.stream, .chain, 0);
+    var admitted = true;
+    defer if (admitted) graph.memory.release(admission) catch unreachable;
     try cuda.graph.beginCapture(p.stream, .thread_local);
     graph.capturing = true;
     p.prepared = true;
@@ -450,6 +464,7 @@ fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch
     }
     for (&entries) |*en| if (en.*) |*x| if (x.pending == null and sameShape(x.key, key) and clock - x.used > 64) {
         if ((try x.exec.update(g)) == .success) {
+            try graph.uploadResident(&x.exec, p.stream);
             x.key = key;
             x.used = clock;
             stats.updates += 1;
@@ -461,18 +476,31 @@ fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch
     entries[oldest] = null;
     if (try graph.startInstantiate(g, false)) |pd| {
         owned = false;
-        entries[oldest] = .{ .key = key, .used = clock, .pending = pd };
+        entries[oldest] = .{ .key = key, .used = clock, .pending = pd, .admission = admission, .stream = p.stream };
+        admitted = false;
         return false;
     }
-    var exec = try g.instantiate();
-    errdefer exec.deinit();
-    try exec.upload(p.stream);
-    entries[oldest] = .{ .key = key, .exec = exec, .used = clock };
-    try exec.launchOn(p.stream);
+    try installSync(&entries[oldest], g, .{ .key = key, .used = clock, .admission = admission, .stream = p.stream });
+    admitted = false;
+    try entries[oldest].?.exec.launchOn(p.stream);
     return true;
 }
 
+fn installSync(target: *?Entry, template: cuda.graph.Graph, entry: Entry) !void {
+    var exec = try template.instantiate();
+    errdefer exec.deinit();
+    try graph.uploadResident(&exec, entry.stream.?);
+    try graph.memory.installed(entry.admission.?);
+    target.* = entry;
+    target.*.?.exec = exec;
+}
+
 fn dropEntry(x: *Entry) void {
+    if (x.stream) |stream| stream.synchronize() catch @panic("chain retirement synchronization failed");
+    defer if (x.admission) |ticket| {
+        graph.memory.release(ticket) catch unreachable;
+        x.admission = null;
+    };
     if (x.pending) |pd| {
         while (true) {
             const got = graph.takePending(pd) catch break;
@@ -486,4 +514,73 @@ fn dropEntry(x: *Entry) void {
         return;
     }
     x.exec.deinit();
+}
+
+pub fn evictOne() bool {
+    var oldest: ?usize = null;
+    for (entries, 0..) |maybe, index| if (maybe) |entry| {
+        if (oldest == null or entry.used < entries[oldest.?].?.used) oldest = index;
+    };
+    const index = oldest orelse return false;
+    dropEntry(&entries[index].?);
+    entries[index] = null;
+    return true;
+}
+
+test "exl3: synchronous chain launch failure retains ownership until retirement" {
+    const Mock = struct {
+        var drops: usize = 0;
+
+        fn instantiate(out: *cuda.abi.GraphExec, _: cuda.abi.Graph, _: u64) callconv(.c) c_int {
+            out.* = @ptrFromInt(1);
+            return 0;
+        }
+
+        fn upload(_: cuda.abi.GraphExec, _: cuda.abi.Stream) callconv(.c) c_int {
+            return 0;
+        }
+
+        fn synchronize(_: cuda.abi.Stream) callconv(.c) c_int {
+            return 0;
+        }
+
+        fn launch(_: cuda.abi.GraphExec, _: cuda.abi.Stream) callconv(.c) c_int {
+            return cuda.abi.error_not_ready;
+        }
+
+        fn destroy(_: cuda.abi.GraphExec) callconv(.c) c_int {
+            drops += 1;
+            return 0;
+        }
+
+        fn installAndLaunch(target: *?Entry, template: cuda.graph.Graph, entry: Entry) !void {
+            try installSync(target, template, entry);
+            try target.*.?.exec.launchOn(entry.stream.?);
+        }
+    };
+    Mock.drops = 0;
+    var driver: cuda.Driver = undefined;
+    driver.api.cuGraphInstantiateWithFlags = Mock.instantiate;
+    driver.api.cuGraphUpload = Mock.upload;
+    driver.api.cuStreamSynchronize = Mock.synchronize;
+    driver.api.cuGraphLaunch = Mock.launch;
+    driver.api.cuGraphExecDestroy = Mock.destroy;
+    const stream: cuda.Stream = .{ .d = &driver, .handle = @ptrFromInt(1) };
+    try graph.memory.configure(.{ .reservation_bytes = 100, .headroom_bytes = 20, .charge = .{ .exec = 20, .template = 10, .transient = 10 } });
+    const ticket = try graph.memory.admit(.chain, 0, 100);
+    var ticket_owned = true;
+    defer if (ticket_owned) graph.memory.release(ticket) catch unreachable;
+    var entry: ?Entry = null;
+    defer if (entry) |*cached| dropEntry(cached);
+    const result = Mock.installAndLaunch(&entry, .{ .d = &driver, .handle = @ptrFromInt(1) }, .{ .key = undefined, .used = 1, .admission = ticket, .stream = stream });
+    if (entry != null) ticket_owned = false;
+    try std.testing.expectError(error.NotReady, result);
+    try std.testing.expect(entry != null);
+    try std.testing.expectEqual(@as(usize, 0), Mock.drops);
+    try std.testing.expectEqual(@as(u64, 30), graph.memory.charged());
+    dropEntry(&entry.?);
+    entry = null;
+    try std.testing.expectEqual(@as(usize, 1), Mock.drops);
+    try std.testing.expectEqual(@as(u64, 0), graph.memory.charged());
+    try std.testing.expectError(error.StaleGraphTicket, graph.memory.release(ticket));
 }
