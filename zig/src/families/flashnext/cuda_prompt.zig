@@ -7,6 +7,7 @@ const ple = @import("cuda_ple.zig");
 const weights = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_prompt_load.zig");
 const kvpage = @import("cuda_exl3_kvpage.zig");
+const shared_kv = @import("cuda_prompt_shared_kv.zig");
 pub const batch = @import("cuda_batch.zig");
 const fb = @import("cuda_fn_back.zig");
 const pocket = @import("cuda_pocket.zig");
@@ -392,59 +393,23 @@ pub const Engine = struct {
     }
 
     pub fn reserveSharedKv(e: *Engine, cap: usize) !usize {
-        const cfg = (e.page_config orelse return 0).forChunk(e.chunk);
-        const bytes = try kvpage.sharedBytesFor(cap, cfg);
-        if (cfg.shared_lanes == 0) return 0;
-        const placement = @import("cuda_exl3_kv.zig").of(e);
-        if (placement.k8 != null or placement.heads != kv_heads) return error.KvPagePlacement;
-        const options: kvpage.shared_device.Options = .{ .cap = cap, .lanes = cfg.shared_lanes, .window = cfg.window, .rows = cfg.rows, .slots = cfg.slots };
-        if (e.shared_arena) |arena| {
-            if (!std.meta.eql(arena.layout.options, options)) return error.SharedKvGeometry;
-            return bytes;
-        }
-        e.shared_arena = try kvpage.shared_device.Arena.init(e.gpa, e.driver, options);
-        return bytes;
+        return shared_kv.reserve(e, cap);
     }
 
     fn beginShared(e: *Engine, seqs: []const *Seq) !?kvpage.shared_device.Lease {
-        const cfg = e.page_config orelse return null;
-        if (cfg.shared_lanes == 0) return null;
-        const arena = e.shared_arena orelse return error.SharedKvArenaRequired;
-        if (seqs.len > kvpage.shared_device.max_lanes) return error.SharedKvLeaseOwners;
-        var owners: [kvpage.shared_device.max_lanes]kvpage.shared_contract.Sequence = undefined;
-        for (seqs, 0..) |sequence, index| {
-            const pg = sequence.paged orelse return error.SharedKvSequence;
-            if (pg.cfg.shared_lanes == 0 or pg.shared_arena != arena) return error.SharedKvSequence;
-            owners[index] = pg.shared_sequence;
-        }
-        const lease = try arena.acquireMany(owners[0..seqs.len]);
-        try arena.submittedOn(lease, e.stream.*);
-        return lease;
+        return shared_kv.begin(e, seqs);
     }
 
     fn endShared(e: *Engine, lease: ?kvpage.shared_device.Lease) void {
-        if (lease) |held| if (e.shared_arena.?.active != null) e.shared_arena.?.completeAfterConsumers(held) catch unreachable;
+        shared_kv.end(e, lease);
     }
 
     fn failShared(e: *Engine, lease: ?kvpage.shared_device.Lease, seqs: []const *Seq) void {
-        if (lease) |held| {
-            const arena = e.shared_arena.?;
-            if (!arena.active.?.failed) arena.fail(held) catch unreachable;
-            for (seqs) |sequence| sequence.invalidated = true;
-            cuda.completion.drain(e.driver, e.stream.*, "shared KV consumers did not drain");
-            arena.drainFailed(held) catch @panic("shared KV failure still owns consumers");
-        }
+        shared_kv.fail(e, lease, seqs);
     }
 
     fn finishPaged(e: *Engine, seqs: []const *Seq) !void {
-        var any = false;
-        for (seqs) |q| if (q.paged) |pg| {
-            try pg.stageStatus(e.stream.*);
-            any = true;
-        };
-        if (!any) return;
-        try e.complete();
-        for (seqs) |q| if (q.paged) |pg| try pg.checkStatus();
+        return shared_kv.finish(e, seqs, complete);
     }
 
     /// Block scores for a `cap`-token sequence's chunks of up to `rows` rows, reallocated only to grow.
@@ -590,65 +555,12 @@ pub const Engine = struct {
 };
 
 test "exl3: Engine graph-hit lease covers every owner without paging callbacks or extra completion waits" {
-    const fixture = @import("cuda_exl3_shared_kv_test.zig");
-    var driver = fixture.Fake.driver();
-    var stream: cuda.Stream = .{ .d = &driver, .handle = null };
-    const arena = try kvpage.shared_device.Arena.initStorage(std.testing.allocator, &driver, .{ .cap = 8192, .lanes = 2, .window = 2052, .rows = 1, .slots = 3 });
-    defer arena.destroy() catch unreachable;
-    fixture.Fake.install(arena);
-    const first = try arena.register(8192);
-    defer arena.release(first, stream) catch unreachable;
-    const second = try arena.register(8192);
-    defer arena.release(second, stream) catch unreachable;
-    const cfg: kvpage.Config = .{ .window = 2052, .rows = 1, .slots = 3, .shared_lanes = 2 };
-    var status_first: [attn_n * 8 * 4]u8 align(16) = undefined;
-    var status_second: [attn_n * 8 * 4]u8 align(16) = undefined;
-    var pager_first: kvpage.Paged = undefined;
-    var pager_second: kvpage.Paged = undefined;
-    for ([_]*kvpage.Paged{ &pager_first, &pager_second }, [_]kvpage.shared_contract.Sequence{ first, second }, [_][]align(16) u8{ &status_first, &status_second }) |pg, handle, status| {
-        pg.d = &driver;
-        pg.cfg = cfg;
-        pg.shared_arena = arena;
-        pg.shared_sequence = handle;
-        pg.status_host = .{ .d = &driver, .bytes = status };
-    }
-    var sequence_first: Seq = undefined;
-    var sequence_second: Seq = undefined;
-    sequence_first.paged = &pager_first;
-    sequence_second.paged = &pager_second;
-    sequence_first.invalidated = false;
-    sequence_second.invalidated = false;
-    const seqs = [_]*Seq{ &sequence_first, &sequence_second };
-    var engine: Engine = undefined;
-    engine.page_config = cfg;
-    engine.shared_arena = arena;
-    engine.driver = &driver;
-    engine.stream = &stream;
-    engine.collective = null;
-    const lease = try engine.beginShared(&seqs);
-    try pager_first.validateSharedLease();
-    try pager_second.validateSharedLease();
-    const graph: cuda.graph.Exec = .{ .d = &driver, .handle = @ptrFromInt(1) };
-    const before = fixture.Fake.sync_calls;
-    try graph.launchOn(stream);
-    try std.testing.expect(fixture.Fake.graph_pending);
-    try std.testing.expectError(error.SharedKvBusy, arena.acquire(first));
-    try engine.finishPaged(&seqs);
-    try std.testing.expect(!fixture.Fake.graph_pending);
-    try std.testing.expectEqual(before + 1, fixture.Fake.sync_calls);
-    engine.endShared(lease);
-    try std.testing.expectEqual(before + 1, fixture.Fake.sync_calls);
-    try std.testing.expectEqual(@as(usize, 1), fixture.Fake.graph_calls);
-    try std.testing.expectError(error.SharedKvLease, pager_first.validateSharedLease());
-    const failing = try engine.beginShared(&seqs);
-    fixture.Fake.fail_graph = true;
-    try std.testing.expectError(error.NotReady, graph.launchOn(stream));
-    engine.failShared(failing, &seqs);
-    try std.testing.expect(sequence_first.invalidated and sequence_second.invalidated);
-    try std.testing.expect(!fixture.Fake.graph_pending);
-    try std.testing.expect(arena.active == null);
-    try std.testing.expectError(error.SharedKvSequenceFailed, arena.acquire(first));
-    try std.testing.expectError(error.SharedKvSequenceFailed, arena.acquire(second));
+    try @import("cuda_prompt_test.zig").graphLease(Engine, Seq, .{
+        .begin = Engine.beginShared,
+        .finish = Engine.finishPaged,
+        .end = Engine.endShared,
+        .fail = Engine.failShared,
+    });
 }
 
 /// One stream's caches. `fed` tokens have already gone through the model.
@@ -711,54 +623,15 @@ fn freeBufs(bs: []cuda.DeviceBuffer) void {
 }
 
 test "linear layers skip every fourth index and attention starts at 3" {
-    try std.testing.expect(linearLayer(0));
-    try std.testing.expect(!linearLayer(3));
-    try std.testing.expect(!linearLayer(47));
-    try std.testing.expectEqual(@as(usize, 0), linearIndex(0));
-    try std.testing.expectEqual(@as(usize, 2), linearIndex(2));
-    try std.testing.expectEqual(@as(usize, 35), linearIndex(46));
-    try std.testing.expectEqual(@as(usize, 0), attnIndex(3));
-    try std.testing.expectEqual(@as(usize, 11), attnIndex(47));
+    try @import("cuda_prompt_test.zig").layerIndices();
 }
 
 test "a sequence's device bytes grow by the twelve attention layers' keys, values, indexer keys and pooled blocks" {
-    const per_token = attn_n * (2 * kv_heads * head_dim * 2 + index_dim * 2);
-    try std.testing.expectEqual(per_token, seqBytes(6) - seqBytes(5));
-    try std.testing.expectEqual(per_token + attn_n * index_dim * 2, seqBytes(5) - seqBytes(4));
-    try std.testing.expect(seqBytes(max_tokens) > max_tokens * per_token);
+    try @import("cuda_prompt_test.zig").sequenceBytes(seqBytes);
 }
 
 test "a failed fill frees the buffer it was filling and every one before it" {
-    const Fake = struct {
-        live: *usize,
-        pub fn free(b: *@This()) void {
-            b.live.* -= 1;
-        }
-    };
-    const Src = struct {
-        live: *usize,
-        fills: *usize,
-        fail_at: usize,
-        fn make(s: @This()) !Fake {
-            s.live.* += 1;
-            return .{ .live = s.live };
-        }
-        fn fill(s: @This(), _: *Fake) !void {
-            s.fills.* += 1;
-            if (s.fills.* == s.fail_at) return error.FillFailed;
-        }
-    };
-    for ([_]usize{ 1, 2, 4 }) |fail_at| {
-        var live: usize = 0;
-        var fills: usize = 0;
-        try std.testing.expectError(error.FillFailed, made(Fake, std.testing.allocator, 4, Src{ .live = &live, .fills = &fills, .fail_at = fail_at }));
-        try std.testing.expectEqual(@as(usize, 0), live);
-    }
-    var live: usize = 0;
-    var fills: usize = 0;
-    const all = try made(Fake, std.testing.allocator, 3, Src{ .live = &live, .fills = &fills, .fail_at = 0 });
-    defer std.testing.allocator.free(all);
-    try std.testing.expectEqual(@as(usize, 3), live);
+    try @import("cuda_prompt_test.zig").failedFill(made);
 }
 
 /// TF_FLASHNEXT_CHUNK's rows a pass: unset, the default; otherwise 1 to batch.max_chunk, anything else refused.
