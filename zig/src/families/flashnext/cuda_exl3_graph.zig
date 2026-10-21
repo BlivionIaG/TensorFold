@@ -106,9 +106,16 @@ fn reserveTogether(c: *collective.Collective, stream: cuda.Stream, signature: u6
             try memory.release(held);
             ticket = null;
         }
-        if (retired >= entries.len * 2) return error.GraphBudgetExceeded;
         const victim = try c.graphVictim(signature ^ 0x76696374696d, oldestCohort());
-        if (victim == 0) return error.GraphBudgetExceeded;
+        if (victim == 0) {
+            try stream.d.check(stream.d.api.cuCtxSynchronize(), "cuCtxSynchronize(TP local graph retirement)");
+            try retirementBarrier(c, signature ^ 0x6c6f63616c7175, cohort);
+            const reclaimed = evictOne();
+            const any_reclaimed = try c.graphVictim(signature ^ 0x6c6f63616c646f, @intFromBool(reclaimed));
+            if (any_reclaimed == 0) return error.GraphBudgetExceeded;
+            continue;
+        }
+        if (retired >= entries.len * 2) return error.GraphBudgetExceeded;
         try stream.d.check(stream.d.api.cuCtxSynchronize(), "cuCtxSynchronize(TP graph retirement)");
         try retirementBarrier(c, signature ^ 0x71756965736365, victim);
         retireCohort(victim);
@@ -1408,9 +1415,12 @@ test "exl3: TP pressure on either rank retires cohorts before retrying admission
     clear();
     defer clear();
     for ([_]bool{ true, false }) |local_pressure| {
-        try memory.configure(.{ .reservation_bytes = 100, .headroom_bytes = 20, .charge = .{ .exec = 20, .template = 10, .transient = 10 } });
+        try memory.configure(.{ .reservation_bytes = 100, .headroom_bytes = 20, .charge = .{ .exec = 20, .template = 10, .transient = 10 }, .prefill_charge = .{ .exec = 1, .template = 0, .transient = 0 } });
         var driver = GraphTestDriver.driver();
         GraphTestDriver.exec_drops = 0;
+        const local = try memory.admit(.prefill, 0, 100);
+        try memory.installed(local);
+        pentries[0] = .{ .key = std.mem.zeroes(PKey), .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = 0, .admission = local };
         if (local_pressure) for (0..2) |index| {
             const ticket = try memory.admit(.decode, index + 7, 100);
             try memory.installed(ticket);
@@ -1443,12 +1453,72 @@ test "exl3: TP pressure on either rank retires cohorts before retrying admission
         defer peer.join();
         var control = GraphTestDriver.control(.{ .fd = pair[0] });
         const ticket = try reserveTogether(&control, cuda.Stream.borrowed(&driver, null), 42, 11);
-        try std.testing.expectEqual(@as(u64, if (local_pressure) 70 else 40), memory.charged());
+        try std.testing.expectEqual(@as(u64, if (local_pressure) 71 else 41), memory.charged());
         try std.testing.expectEqual(@as(usize, if (local_pressure) 1 else 0), GraphTestDriver.exec_drops);
+        try std.testing.expect(pentries[0] != null);
         if (local_pressure) try std.testing.expectEqual(@as(u64, 8), entries[1].?.cohort);
         try memory.release(ticket);
         clear();
     }
+}
+
+test "exl3: exhausted TP victims reclaim locals incrementally with asymmetric peer caches" {
+    clear();
+    defer clear();
+    for ([_]bool{ false, true }) |local_cached| for ([_]bool{ false, true }) |peer_cached| {
+        try memory.configure(.{ .reservation_bytes = 100, .headroom_bytes = 20, .charge = .{ .exec = 20, .template = 10, .transient = 10 } });
+        var driver = GraphTestDriver.driver();
+        GraphTestDriver.exec_drops = 0;
+        if (local_cached) {
+            const prefill = try memory.admit(.prefill, 0, 100);
+            try memory.installed(prefill);
+            pentries[0] = .{ .key = std.mem.zeroes(PKey), .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = 1, .admission = prefill };
+            const local = try memory.admit(.decode, 0, 100);
+            try memory.installed(local);
+            entries[0] = .{ .key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 }, .exec = .{ .d = &driver, .handle = @ptrFromInt(1) }, .used = 2, .admission = local };
+        }
+        var pair: [2]std.posix.socket_t = undefined;
+        if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &pair) != 0) return error.SocketPair;
+        defer for (pair) |fd| {
+            _ = std.c.close(fd);
+        };
+        const nonblock: c_int = @bitCast(@as(u32, @bitCast(std.c.O{ .NONBLOCK = true })));
+        for (pair) |fd| {
+            const flags = std.c.fcntl(fd, std.c.F.GETFL);
+            if (flags < 0 or std.c.fcntl(fd, std.c.F.SETFL, flags | nonblock) < 0) return error.Nonblocking;
+        }
+        const Peer = struct {
+            fn run(link: wire.Link, local_cached_peer: bool, cached: bool) void {
+                var control = GraphTestDriver.control(link);
+                const first = control.graphAgree(42 ^ 0x61646d6974, .{ .state = .eager, .cohort = 11 }) catch @panic("pressure agreement failed");
+                std.debug.assert(first.choice == .eager);
+                const victim = control.graphVictim(42 ^ 0x76696374696d, 0) catch @panic("victim agreement failed");
+                std.debug.assert(victim == 0);
+                retirementBarrier(&control, 42 ^ 0x6c6f63616c7175, 11) catch @panic("local quiescence failed");
+                const reclaimed = control.graphVictim(42 ^ 0x6c6f63616c646f, @intFromBool(cached)) catch @panic("local destruction acknowledgment failed");
+                std.debug.assert(reclaimed == @as(u64, @intFromBool(local_cached_peer or cached)));
+                if (reclaimed == 0) return;
+                const admitted = control.graphAgree(42 ^ 0x61646d6974, .{ .state = .ready, .cohort = 11 }) catch @panic("retry agreement failed");
+                std.debug.assert(admitted.choice == .replay);
+            }
+        };
+        const peer = try std.Thread.spawn(.{}, Peer.run, .{ wire.Link{ .fd = pair[1] }, local_cached, peer_cached });
+        defer peer.join();
+        var control = GraphTestDriver.control(.{ .fd = pair[0] });
+        const result = reserveTogether(&control, cuda.Stream.borrowed(&driver, null), 42, 11);
+        if (local_cached or peer_cached) {
+            const ticket = try result;
+            try std.testing.expectEqual(@as(u64, if (local_cached) 70 else 40), memory.charged());
+            try memory.release(ticket);
+        } else {
+            try std.testing.expectError(error.GraphBudgetExceeded, result);
+            try std.testing.expectEqual(@as(u64, 0), memory.charged());
+        }
+        try std.testing.expectEqual(@as(usize, @intFromBool(local_cached)), GraphTestDriver.exec_drops);
+        try std.testing.expect(pentries[0] == null);
+        try std.testing.expectEqual(local_cached, entries[0] != null);
+        clear();
+    };
 }
 
 test "exl3: TP updates agree the old cohort and transfer template and admission together" {
