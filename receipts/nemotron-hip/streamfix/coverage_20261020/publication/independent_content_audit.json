@@ -1,10 +1,144 @@
 {
-  "validated": true,
-  "scope": "Only identical saved-evidence footer appended to21currentPR bodies andissue; first1082excluded",
-  "manifest_sha256": "31ed788bfb61f02d34230afaadb0c06a8cbdbb0f758401ffa132cfed0ceed141",
-  "exact_prior_body_sha_guards": true,
-  "identical_footer_sha256": "7cbbb470c9ce2825fa026c9f4e03822a756c532f948883de13d297846d39055b",
-  "facts_bound_to": "saved_evidence_final_public_independent_audit.json SHA31e9b3cca67ef5d7503b57157dd8b826e7529a5f0c61e1157f067ccbac10e4b6",
-  "privacy": true,
-  "no_new_model_engine_benchmark_or_waiver": true
+  "approved": true,
+  "manifest_sha256": "27b0ca8eaa0b277b12c31042868dfd326a7541f0904092f393d4ee9b8965c271",
+  "files_audited": [
+    {
+      "path": "bodies/pr1083.md",
+      "sha256": "54fcde4ea006b0ff3fe4b429aea6e5dbcc2c1d5b45ac7e6660a416747929e60f",
+      "pr": 1083,
+      "head": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8"
+    },
+    {
+      "path": "bodies/pr1084.md",
+      "sha256": "c2489e48ea38a7c35547a56bf4ad45ee9c6e1435e086b3f79a3b070169e260f2",
+      "pr": 1084,
+      "head": "1d1bcdd35a482271448e0ff8a19eb9013be1e503"
+    },
+    {
+      "path": "bodies/pr1085.md",
+      "sha256": "a24cc6e159a666b8a8a42221e4d5b6627f9433f227f230d8204e0eede026d22b",
+      "pr": 1085,
+      "head": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+    },
+    {
+      "path": "bodies/pr1086.md",
+      "sha256": "7dc44ecb717246a2ec5e6a55856041b9e3d0d91c25faadd225b5b66677cf5713",
+      "pr": 1086,
+      "head": "9c655701055674cb795feec0f59f5adce6bc74dc"
+    },
+    {
+      "path": "bodies/pr1087.md",
+      "sha256": "4f0c6cd82ec8fd8fafc582ae6b83998d928ca3c0eb44c80c0e142c7bb3f6dd98",
+      "pr": 1087,
+      "head": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f"
+    },
+    {
+      "path": "bodies/pr1088.md",
+      "sha256": "834f5a42d2e77deb565a7dd55380c0a9342ce08e4177908d09e30b81eaf87078",
+      "pr": 1088,
+      "head": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797"
+    },
+    {
+      "path": "bodies/pr1089.md",
+      "sha256": "1d021f42a7ea76f60384e5779d5f989738df753a63076424369bce708c4ab2d4",
+      "pr": 1089,
+      "head": "f3f6c3f2a925b68ff18788063cb8234ea7924f11"
+    },
+    {
+      "path": "bodies/pr1090.md",
+      "sha256": "da1dcae1c5077962f201a2f7b24952e270fec6e1df3ba43e1824fc89283596e2",
+      "pr": 1090,
+      "head": "017b0953f3517cdda3821c9fbbc1abfb0965227b"
+    },
+    {
+      "path": "bodies/pr1091.md",
+      "sha256": "ac0ce976aaa7fc14ff882c15ed15f11610332f43db5ec676eb2431867d515330",
+      "pr": 1091,
+      "head": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad"
+    },
+    {
+      "path": "bodies/pr1092.md",
+      "sha256": "25c480526ea98b5b4ca0e0ddf7de42c3a985288bf3fac47e161c7ca7b72350db",
+      "pr": 1092,
+      "head": "89bc8409933617057a8ad9c5e379b4603604d557"
+    },
+    {
+      "path": "bodies/pr1093.md",
+      "sha256": "a8f554e6ac8d302ee13dca7f4c9ee2c95da7d4cd25df02ff2aa1b4881a8f7b47",
+      "pr": 1093,
+      "head": "71163c15ee202bea0d41e8b64f26f8c4c059a042"
+    },
+    {
+      "path": "bodies/pr1094.md",
+      "sha256": "91712085a55e8faf5344b06d1a8cc90ce41ac5903aca2c07c7ba45bd99164224",
+      "pr": 1094,
+      "head": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f"
+    },
+    {
+      "path": "bodies/pr1095.md",
+      "sha256": "caf61521ade892d1081d3605fd5fb26fe6022af2bad0f3698f1c7f2c9fd13960",
+      "pr": 1095,
+      "head": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1"
+    },
+    {
+      "path": "bodies/pr1096.md",
+      "sha256": "728967878418b829c958d9bab537d4a50fbc4161da3e126e4040323e51215cef",
+      "pr": 1096,
+      "head": "29409f2d7c58326351da64599b051ccd8f98b867"
+    },
+    {
+      "path": "bodies/pr1097.md",
+      "sha256": "ff8de588dff36c6e0b6bab3d66fdfc606881082e71ad9406dc180ffaba54b981",
+      "pr": 1097,
+      "head": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd"
+    },
+    {
+      "path": "bodies/pr1098.md",
+      "sha256": "721cb669f09c6a47647e7aaf45d1ad53ab14e2a33948ed2c57d93034a3edf152",
+      "pr": 1098,
+      "head": "51d68203c4c2e3450345e31087f8dad711c6d479"
+    },
+    {
+      "path": "bodies/pr1099.md",
+      "sha256": "7008994874c3e1c49e580c21047829f424530de1c951c081f6f72706346ef33a",
+      "pr": 1099,
+      "head": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b"
+    },
+    {
+      "path": "bodies/pr1100.md",
+      "sha256": "46651cd0a12f1ae4254f2670c8ec1de354263ea95e9c0bd8af36b39c7f7cac35",
+      "pr": 1100,
+      "head": "8859ff69a3d2023ae19607189b2981987a86fcef"
+    },
+    {
+      "path": "bodies/pr1101.md",
+      "sha256": "74fc32790b647b3558123ec46dc449f61806e4b495772f724bf039984cca47ec",
+      "pr": 1101,
+      "head": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4"
+    },
+    {
+      "path": "bodies/pr1102.md",
+      "sha256": "627943e430d22ec07f791c3c6d6dd66157caa9ffaa211e911837dc6ac274ff27",
+      "pr": 1102,
+      "head": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15"
+    },
+    {
+      "path": "bodies/pr1103.md",
+      "sha256": "f4bc5b7e703205018cdcb358df0742861bf82b0869e30041f5dafc5c0ba8002a",
+      "pr": 1103,
+      "head": "a44e7af98183721e58f2fb4d7e96ae874dfecd83"
+    },
+    {
+      "path": "bodies/issue1081.md",
+      "sha256": "0a0376244de80cd63a9426309375b793bccd388e2d4929c5940e47c1e777ec09",
+      "issue": 1081
+    }
+  ],
+  "first1082_excluded": true,
+  "publication_precondition": "Issueall22Ready statement andPRReadywording may bepublishedonlyinrootguardedoperationthatverifiesactual21Readytransitions; do notclaimcurrentallReadybeforeactualtransition.",
+  "facts": "Five numericcontrols2runtimearches;2metadata\u00d74chips; kernelzeroKnownnotmodel;5fidelityfindingsunwaived; roundedHF+exactnative margins; sourceidentity+originalrecordedproofscopes; no newtest/engine/waiver.",
+  "current_ci_audit_sha256": "71d8c3faa69fe8f8bdeb6203bacfe10cf3cfbfb80b29af6d84fd9544a4ac07e1",
+  "ci_independent_audit_sha256": "f7768a46745e475842321ac9a9f9db9c8c1098aa83eff7867855b09e90987e27",
+  "review_vs_landing": "Revieweligibleperapplicabledecision; nofullContrib/mergeapproval/gateagreementinferred.",
+  "unmodified_checks_reused": "344e/cdaa priorfilechecks, sameevidence/source/metrics; final27b0hashes+polishedfacts reread."
 }

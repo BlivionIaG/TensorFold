@@ -1,0 +1,8 @@
+{
+  "approved": true,
+  "at_utc": "2026-10-21T11:34:25.533360+00:00",
+  "manifest_sha256": "27b0ca8eaa0b277b12c31042868dfd326a7541f0904092f393d4ee9b8965c271",
+  "independent_content_audit_sha256": "122efe73ab6198d838f9d587bc4f0368cf1413d020dbe827e1109f90cf866834",
+  "execution_script_sha256": "4109aaade6f59bd3a5b979f0f69e935cd2e9b54bd502659a516324578e44ae93",
+  "scope": "Ordered Ready-for-review transitions only, no merge/source modification. Completed source-bound technical evidence, exact current CI accounting, all unwaived findings/limitations and maintainer landing/dependency decisions disclosed. No full CONTRIBUTING/landing approval asserted."
+}

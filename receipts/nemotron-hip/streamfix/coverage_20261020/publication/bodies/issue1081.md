@@ -1,259 +1,199 @@
-## Current mapped source update and ordered readiness
-
-The contract-control guard amendment maps all 22 source heads below. Only the same two validation files differ old-to-new; production inputs/usage declarations are unchanged. New actual hardware qualification covers the first infrastructure head (5 kernels per architecture) and stack top (49 per architecture), each zero failures/known findings/limit problems, five red numeric controls, and two metadata controls red/current individually on four chips. [Complete actual source-bound qualification](https://github.com/BlivionIaG/TensorFold/tree/eb640c5c60d37ee099238324e7151a45b57889cd/receipts/nemotron-hip/streamfix/coverage_20261020/hip_control_qualification). [Full Linux first826 CPU suite](https://github.com/BlivionIaG/TensorFold/tree/bc6f6e7ab1b25c75ff6ca2e1917f3d7224710557/receipts/nemotron-hip/streamfix/coverage_20261020/hip_control_fullcpu826) passed 170/170 steps, 2472 tests and nine skips; golden 306/319 equal, 13 known and zero unexpected. No new full-host run at the top or intermediate heads is claimed. Intermediate heads have no invented new live/model/performance runs. Prior receipts remain historical with their actual measured sources; no whole-tree/native-binary equivalence is claimed.
+# HIP/Nemotron review tracker
 
-[PR1082](https://github.com/ashhart/TensorFold/pull/1082) is **READY**, verified at 2026-10-21T06:45:15Z on head `826a0635634dee3793a68e473064d17d5c139945`. The remaining 21 PRs stay draft for their own applicable requirements. The first infrastructure PR is evaluated independently; there is no blanket chain-wide readiness block on it. Land/rebase in dependency order, updating each successor's base after its predecessor lands and rechecking its incremental scope and applicable proof. No merge authority or upstream waiver is implied.
+## Review status
 
-- #1082: `dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5` → `826a0635634dee3793a68e473064d17d5c139945` — first infrastructure; READY verified 2026-10-21T06:45:15Z.
-- #1083: `9f7d265d802cf394b4f60a142aa9d5214cdbfdbf` → `096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8` — draft; depends on #1082.
-- #1084: `5b12f74a27326797a540d094387e7ffa472b55ed` → `1d1bcdd35a482271448e0ff8a19eb9013be1e503` — draft; depends on #1083.
-- #1085: `6af43c9db14516a85fbe22351eb0d3e485bd41bb` → `63025caf8555fe474d6d066c966c8f1e9b9a7352` — draft; depends on #1084.
-- #1086: `754786d613dde5539d3a0c534007a1a9733cfaf8` → `9c655701055674cb795feec0f59f5adce6bc74dc` — draft; depends on #1085.
-- #1087: `7bf5f195fb06c0651a1a5d74277f24cc70da591c` → `e4fed24d0d5a0e9a518fb2965fd876afa61f700f` — draft; depends on #1086.
-- #1088: `cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2` → `1f19dbac8ea123c20c39afdd3e62afbbf9b12797` — draft; depends on #1087.
-- #1089: `9b56916fa71d40f9dcd924956c09a3c5f7e18019` → `f3f6c3f2a925b68ff18788063cb8234ea7924f11` — draft; depends on #1088.
-- #1090: `6e73bf059c5646e683d680ab78ed5326aa9fba87` → `017b0953f3517cdda3821c9fbbc1abfb0965227b` — draft; depends on #1089.
-- #1091: `9c206c22bf386348f2f1eb473a31ef8370163b5e` → `76a1f34f05f14f7de9a321b2810f9f77d41fe7ad` — draft; depends on #1090.
-- #1092: `74b506e50265ccef559ce66d8d1cd55db55655ae` → `89bc8409933617057a8ad9c5e379b4603604d557` — draft; depends on #1091.
-- #1093: `736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e` → `71163c15ee202bea0d41e8b64f26f8c4c059a042` — draft; depends on #1092.
-- #1094: `519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6` → `56916dd0db0df19eb1c4ab370c97f11bdfa7b96f` — draft; depends on #1093.
-- #1095: `42529bfab171c2f30d7ce3641b78ca3b0ff821fc` → `4322276b240fb4a16c62767e24ab08dcd3c5e4f1` — draft; depends on #1094.
-- #1096: `d6134300b3fed9baa29842e20d28ce738fd77574` → `29409f2d7c58326351da64599b051ccd8f98b867` — draft; depends on #1095.
-- #1097: `fd5b50111c0e0dd394fbac022ce8e6ff1db3d257` → `dfcbfb1d4ec601803f116d454b3cdead6a6818fd` — draft; depends on #1096.
-- #1098: `f8cd5a4d72805fabe7350746ce9ba91274b54d29` → `51d68203c4c2e3450345e31087f8dad711c6d479` — draft; depends on #1097.
-- #1099: `8a1c6ae90a9212c481607eb6633697543e6cb3ff` → `edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b` — draft; depends on #1098.
-- #1100: `3f991646915e24bb1c7c638ec118e27880d5a031` → `8859ff69a3d2023ae19607189b2981987a86fcef` — draft; depends on #1099.
-- #1101: `e22da9dab3e8d70d5dbe150be39ed3794d6bffda` → `56511fa7d7d7ce69adeb3666dafe962b4dc405c4` — draft; depends on #1100.
-- #1102: `52840409d2e30ea7e55d9d79c10375cb2ffce6c5` → `75db6d0150ef92028f375aa94c35dc3a9e5b8e15` — draft; depends on #1101.
-- #1103: `60a8da5243ef313fcab23bdb0d85c790a5cda935` → `a44e7af98183721e58f2fb4d7e96ae874dfecd83` — draft; depends on #1102.
+All 22 PRs are Ready for review. PR1082 was already Ready; the remaining 21 transitions are verified separately before this tracker is published. The linked implementation, evidence and limitations are available for review. Landing decisions remain open; no merge or full CONTRIBUTING acceptance is claimed.
 
-External vLLM/llama.cpp server/performance comparison is **omitted by requester instruction**: converted FP16 versus native packed weights and engine-performance comparison are outside the requested scope. No external server was launched; no external performance job is pending or planned. Completed native benchmark receipts are reused under their actual measured sources. This requester scope choice is not an upstream waiver: any applicable CONTRIBUTING or maintainer requirement remains subject to its actual wording.
+## Current source chain
 
-### Historical published snapshot: evidence and individual gaps
+- [#1082](https://github.com/ashhart/TensorFold/pull/1082) — HIP kernel-contract runner infrastructure. Head `826a0635634dee3793a68e473064d17d5c139945`; Ready for review, unchanged by this body update.
 
-**The preserved text below predates PR1082 becoming ready. Any all-22-draft or exact-head CI status in this historical snapshot refers to its original old heads and date, not the current mapped heads/status above.**
+All branches still target main. Dependencies below describe incremental review scope; they do not waive the one-change rule or replace the eventual ordered landing/base arrangement.
 
-**Draft review package; qualification is incomplete.** This issue tracks all 22 upstream drafts, their exact sources, available evidence and remaining gates. It is a proposal for the Nemotron HIP family/backend/arithmetic gate, not a record of maintainer acceptance.
+- [#1083](https://github.com/ashhart/TensorFold/pull/1083) — fix(hip): preserve the MLX stream nonfinite classes. Head `096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8`; depends on #1082 at `826a0635634dee3793a68e473064d17d5c139945`. [Incremental 11-file diff](https://github.com/BlivionIaG/TensorFold/compare/826a0635634dee3793a68e473064d17d5c139945...096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8). Ready for review; landing/dependency decisions remain open.
 
-[CONTRIBUTING at the audited upstream main](https://github.com/ashhart/TensorFold/blob/d1018b318fb51981c4a18f12e40269a4d3ee9713/CONTRIBUTING.md) is the requirement source. The [verified contribution audit and CI receipts](https://github.com/BlivionIaG/TensorFold/tree/a758bf7da35574a0b40cca642560ec73b22457b0/receipts/nemotron-hip/streamfix/contributing_refresh_20261020) preserve the requirement text, all pre-refresh PR bodies, the prior tracker, current heads/checks, source audit and failed-job logs. All existing [source-bound raw evidence](https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix) remains available unchanged.
+- [#1084](https://github.com/ashhart/TensorFold/pull/1084) — fix(qwen3_5): no prompt cache step goes to the other ranks once the group stopped. Head `1d1bcdd35a482271448e0ff8a19eb9013be1e503`; depends on #1083 at `096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8`. [Incremental 1-file diff](https://github.com/BlivionIaG/TensorFold/compare/096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8...1d1bcdd35a482271448e0ff8a19eb9013be1e503). Ready for review; landing/dependency decisions remain open.
 
-## Scope and review order
+- [#1085](https://github.com/ashhart/TensorFold/pull/1085) — refactor(hip): shared HIP serving pieces and lane cost timing in hip_serve; Qwen3.5 on them. Head `63025caf8555fe474d6d066c966c8f1e9b9a7352`; depends on #1084 at `1d1bcdd35a482271448e0ff8a19eb9013be1e503`. [Incremental 16-file diff](https://github.com/BlivionIaG/TensorFold/compare/1d1bcdd35a482271448e0ff8a19eb9013be1e503...63025caf8555fe474d6d066c966c8f1e9b9a7352). Ready for review; landing/dependency decisions remain open.
 
-The slices separate contract infrastructure, nonfinite arithmetic correction, HIP serving/lifecycle changes, Nemotron operators/family integration and optional performance changes. They retain the existing HIP runtime and lane core. The [maintainer's exact shared-code requirements](https://github.com/ashhart/TensorFold/pull/490#issuecomment-6096494868) require each shared-code change to have its own PR and exactness test. The [earlier HIP order](https://github.com/ashhart/TensorFold/issues/491#issuecomment-6096495227) does not constitute approval of this new family or its gate.
+- [#1086](https://github.com/ashhart/TensorFold/pull/1086) — fix(hip): refuse --kv-cache fp8 by name until HIP has fp8 caches. Head `9c655701055674cb795feec0f59f5adce6bc74dc`; depends on #1085 at `63025caf8555fe474d6d066c966c8f1e9b9a7352`. [Incremental 1-file diff](https://github.com/BlivionIaG/TensorFold/compare/63025caf8555fe474d6d066c966c8f1e9b9a7352...9c655701055674cb795feec0f59f5adce6bc74dc). Ready for review; landing/dependency decisions remain open.
 
-PR #1082 has no stack predecessor. The other 21 PRs currently target upstream `main` and their GitHub diffs include predecessors. Their incremental compare links identify the proposed logical slices; those links do **not** waive the one-change-per-PR requirement or make the later proposals independently mergeable. The base/merge-order arrangement needs maintainer resolution before landing. Published source heads are unchanged in this documentation refresh.
+- [#1087](https://github.com/ashhart/TensorFold/pull/1087) — feat(hip): a HIP family can refuse --slide and --mtp-confidence by name before it loads. Head `e4fed24d0d5a0e9a518fb2965fd876afa61f700f`; depends on #1086 at `9c655701055674cb795feec0f59f5adce6bc74dc`. [Incremental 1-file diff](https://github.com/BlivionIaG/TensorFold/compare/9c655701055674cb795feec0f59f5adce6bc74dc...e4fed24d0d5a0e9a518fb2965fd876afa61f700f). Ready for review; landing/dependency decisions remain open.
 
-## All proposals and current status
+- [#1088](https://github.com/ashhart/TensorFold/pull/1088) — feat(hip): Nemotron Mamba-2 mixer kernels, launches, ops and tests. Head `1f19dbac8ea123c20c39afdd3e62afbbf9b12797`; depends on #1087 at `e4fed24d0d5a0e9a518fb2965fd876afa61f700f`. [Incremental 14-file diff](https://github.com/BlivionIaG/TensorFold/compare/e4fed24d0d5a0e9a518fb2965fd876afa61f700f...1f19dbac8ea123c20c39afdd3e62afbbf9b12797). Ready for review; landing/dependency decisions remain open.
 
-Every row is OPEN/DRAFT at the audit snapshot. The body of each PR provides its actual purpose, incremental range, commands, evidence and applicable gaps. Counts under “direct proof” identify only source-matched own-head kernel receipts; shared final-source proof is described separately below.
+- [#1089](https://github.com/ashhart/TensorFold/pull/1089) — refactor(hip): the routed MoE's tile choice is public, its rule tested. Head `f3f6c3f2a925b68ff18788063cb8234ea7924f11`; depends on #1088 at `1f19dbac8ea123c20c39afdd3e62afbbf9b12797`. [Incremental 1-file diff](https://github.com/BlivionIaG/TensorFold/compare/1f19dbac8ea123c20c39afdd3e62afbbf9b12797...f3f6c3f2a925b68ff18788063cb8234ea7924f11). Ready for review; landing/dependency decisions remain open.
 
-| PR | Proposed change | Depends on | Current head | Direct kernel proof / CI blockers |
-|---|---|---|---|---|
-| [#1082](https://github.com/ashhart/TensorFold/pull/1082) | feat(hip): the kernel contract runs on HIP | none | [`dc595eeb`](https://github.com/BlivionIaG/TensorFold/commit/dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5) | runner 5/5 both HIP; Windows failure |
-| [#1083](https://github.com/ashhart/TensorFold/pull/1083) | fix(hip): preserve the MLX stream nonfinite classes | #1082 | [`9f7d265d`](https://github.com/BlivionIaG/TensorFold/commit/9f7d265d802cf394b4f60a142aa9d5214cdbfdbf) | 23/23 both HIP; Windows failure |
-| [#1084](https://github.com/ashhart/TensorFold/pull/1084) | fix(qwen3_5): no prompt cache step goes to the other ranks once the group stopped | #1083 | [`5b12f74a`](https://github.com/BlivionIaG/TensorFold/commit/5b12f74a27326797a540d094387e7ffa472b55ed) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1085](https://github.com/ashhart/TensorFold/pull/1085) | refactor(hip): shared HIP serving pieces and lane cost timing in hip_serve; Qwen3.5 on them | #1084 | [`6af43c9d`](https://github.com/BlivionIaG/TensorFold/commit/6af43c9db14516a85fbe22351eb0d3e485bd41bb) | own-head GPU checkpoint pending where applicable; Windows failure; desktop failure |
-| [#1086](https://github.com/ashhart/TensorFold/pull/1086) | fix(hip): refuse --kv-cache fp8 by name until HIP has fp8 caches | #1085 | [`754786d6`](https://github.com/BlivionIaG/TensorFold/commit/754786d613dde5539d3a0c534007a1a9733cfaf8) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1087](https://github.com/ashhart/TensorFold/pull/1087) | feat(hip): a HIP family can refuse --slide and --mtp-confidence by name before it loads | #1086 | [`7bf5f195`](https://github.com/BlivionIaG/TensorFold/commit/7bf5f195fb06c0651a1a5d74277f24cc70da591c) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1088](https://github.com/ashhart/TensorFold/pull/1088) | feat(hip): Nemotron Mamba-2 mixer kernels, launches, ops and tests | #1087 | [`cf2ad661`](https://github.com/BlivionIaG/TensorFold/commit/cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1089](https://github.com/ashhart/TensorFold/pull/1089) | refactor(hip): the routed MoE's tile choice is public, its rule tested | #1088 | [`9b56916f`](https://github.com/BlivionIaG/TensorFold/commit/9b56916fa71d40f9dcd924956c09a3c5f7e18019) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1090](https://github.com/ashhart/TensorFold/pull/1090) | feat(hip): Nemotron-H MoE layer on the shared expert plan and products, its pick ranked on 512 threads | #1089 | [`6e73bf05`](https://github.com/BlivionIaG/TensorFold/commit/6e73bf059c5646e683d680ab78ed5326aa9fba87) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1091](https://github.com/ashhart/TensorFold/pull/1091) | perf(hip): the planned values walk splits a KV head's query heads while its grid is small | #1090 | [`9c206c22`](https://github.com/BlivionIaG/TensorFold/commit/9c206c22bf386348f2f1eb473a31ef8370163b5e) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1092](https://github.com/ashhart/TensorFold/pull/1092) | feat(nemotron): Nemotron-H on the native HIP engine, one GPU: admission, loader, forward and lane backend | #1091 | [`74b506e5`](https://github.com/BlivionIaG/TensorFold/commit/74b506e50265ccef559ce66d8d1cd55db55655ae) | own-head GPU checkpoint pending where applicable; Windows failure; desktop failure |
-| [#1093](https://github.com/ashhart/TensorFold/pull/1093) | feat(nemotron): tensor parallelism on HIP: followers run rank 0's steps, the cache and drafts agreed across ranks | #1092 | [`736e0ac1`](https://github.com/BlivionIaG/TensorFold/commit/736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1094](https://github.com/ashhart/TensorFold/pull/1094) | feat(nemotron): lane rounds, lane costs and graph replay for the Nemotron HIP engine, and the decode-path test | #1093 | [`519c395d`](https://github.com/BlivionIaG/TensorFold/commit/519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1095](https://github.com/ashhart/TensorFold/pull/1095) | perf(nemotron): HIP prompts in 2048-row chunks, so the routed experts get enough rows a tile | #1094 | [`42529bfa`](https://github.com/BlivionIaG/TensorFold/commit/42529bfab171c2f30d7ce3641b78ca3b0ff821fc) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1096](https://github.com/ashhart/TensorFold/pull/1096) | perf(hip): the residual add and the RMS norm in one launch, the Nemotron MoE sum among its inputs | #1095 | [`d6134300`](https://github.com/BlivionIaG/TensorFold/commit/d6134300b3fed9baa29842e20d28ce738fd77574) | own-head GPU checkpoint pending where applicable; Windows failure; desktop failure |
-| [#1097](https://github.com/ashhart/TensorFold/pull/1097) | perf(hip): a Mamba-2 window in three launches, each row's state kept in its snapshot slot | #1096 | [`fd5b5011`](https://github.com/BlivionIaG/TensorFold/commit/fd5b50111c0e0dd394fbac022ce8e6ff1db3d257) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1098](https://github.com/ashhart/TensorFold/pull/1098) | perf(hip): Nemotron's relu^2 as the stream tile's epilogue for one-row MoE layers | #1097 | [`f8cd5a4d`](https://github.com/BlivionIaG/TensorFold/commit/f8cd5a4d72805fabe7350746ce9ba91274b54d29) | 43/43 both HIP; Windows failure; desktop failure; Linux failure |
-| [#1099](https://github.com/ashhart/TensorFold/pull/1099) | perf(hip): the planned decode walk reads q and writes its rows in the activation type | #1098 | [`8a1c6ae9`](https://github.com/BlivionIaG/TensorFold/commit/8a1c6ae90a9212c481607eb6633697543e6cb3ff) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1100](https://github.com/ashhart/TensorFold/pull/1100) | perf(hip): the argmax of a wide logits row in parts across the card | #1099 | [`3f991646`](https://github.com/BlivionIaG/TensorFold/commit/3f991646915e24bb1c7c638ec118e27880d5a031) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1101](https://github.com/ashhart/TensorFold/pull/1101) | perf(nemotron): fewer launches a HIP decode token: q, k and v grouped, the residual and next norm merged, Mamba windows in three launches | #1100 | [`e22da9da`](https://github.com/BlivionIaG/TensorFold/commit/e22da9dab3e8d70d5dbe150be39ed3794d6bffda) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1102](https://github.com/ashhart/TensorFold/pull/1102) | perf(hip): the planned decode walk in one launch a query head for spans up to 4096 keys | #1101 | [`52840409`](https://github.com/BlivionIaG/TensorFold/commit/52840409d2e30ea7e55d9d79c10375cb2ffce6c5) | own-head GPU checkpoint pending where applicable; Windows failure |
-| [#1103](https://github.com/ashhart/TensorFold/pull/1103) | perf(hip): one row's routed fc1 and shared up in one launch, both with the relu^2 epilogue | #1102 | [`60a8da52`](https://github.com/BlivionIaG/TensorFold/commit/60a8da5243ef313fcab23bdb0d85c790a5cda935) | 49/49 via identical full-tree bridge; Windows failure |
+- [#1090](https://github.com/ashhart/TensorFold/pull/1090) — feat(hip): Nemotron-H MoE layer on the shared expert plan and products, its pick ranked on 512 threads. Head `017b0953f3517cdda3821c9fbbc1abfb0965227b`; depends on #1089 at `f3f6c3f2a925b68ff18788063cb8234ea7924f11`. [Incremental 14-file diff](https://github.com/BlivionIaG/TensorFold/compare/f3f6c3f2a925b68ff18788063cb8234ea7924f11...017b0953f3517cdda3821c9fbbc1abfb0965227b). Ready for review; landing/dependency decisions remain open.
 
-## Available proof and exact source boundaries
+- [#1091](https://github.com/ashhart/TensorFold/pull/1091) — perf(hip): the planned values walk splits a KV head's query heads while its grid is small. Head `76a1f34f05f14f7de9a321b2810f9f77d41fe7ad`; depends on #1090 at `017b0953f3517cdda3821c9fbbc1abfb0965227b`. [Incremental 7-file diff](https://github.com/BlivionIaG/TensorFold/compare/017b0953f3517cdda3821c9fbbc1abfb0965227b...76a1f34f05f14f7de9a321b2810f9f77d41fe7ad). Ready for review; landing/dependency decisions remain open.
 
-Measured `729833615595df66c9f9a438ce9a85061843f010` and review top `60a8da5243ef313fcab23bdb0d85c790a5cda935` have the identical complete Git tree `5d329c8928ed410c7b507e5a6d587fed15683c3f`. This supplies equivalent full-tree evidence, not a claim of separate execution at every intermediate head. The [source bridge and strict receipts](https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/inline729) retain actual source/compiler/binary/runtime/request identities and failed infrastructure attempts separately from the successful active stages.
+- [#1092](https://github.com/ashhart/TensorFold/pull/1092) — feat(nemotron): Nemotron-H on the native HIP engine, one GPU: admission, loader, forward and lane backend. Head `89bc8409933617057a8ad9c5e379b4603604d557`; depends on #1091 at `76a1f34f05f14f7de9a321b2810f9f77d41fe7ad`. [Incremental 23-file diff](https://github.com/BlivionIaG/TensorFold/compare/76a1f34f05f14f7de9a321b2810f9f77d41fe7ad...89bc8409933617057a8ad9c5e379b4603604d557). Ready for review; landing/dependency decisions remain open.
 
-```text
-SUMMARY gfx1100 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 133464 ms, limits 4989 ms
-SUMMARY gfx1030 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 5 controls: 5 red as planted, 0 missed; 0 limit problems; gates 137076 ms, limits 4250 ms
-```
+- [#1093](https://github.com/ashhart/TensorFold/pull/1093) — feat(nemotron): tensor parallelism on HIP: followers run rank 0's steps, the cache and drafts agreed across ranks. Head `71163c15ee202bea0d41e8b64f26f8c4c059a042`; depends on #1092 at `89bc8409933617057a8ad9c5e379b4603604d557`. [Incremental 11-file diff](https://github.com/BlivionIaG/TensorFold/compare/89bc8409933617057a8ad9c5e379b4603604d557...71163c15ee202bea0d41e8b64f26f8c4c059a042). Ready for review; landing/dependency decisions remain open.
 
-The same measured source has zero finite-byte differences over 1080 gfx1100 / 540 gfx1030 fixtures, including 60/24 finite-input NaN-output controls; payloads and signed zero are compared. Four-chip resource compilation covers gfx1030/gfx1100/gfx1151/gfx1201; only the first two have the stated runtime receipts. [Own-head foundation/relu² receipts](https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/ownheads729) and the newly archived original runner receipt in the contribution audit retain their distinct heads and counts.
+- [#1094](https://github.com/ashhart/TensorFold/pull/1094) — feat(nemotron): lane rounds, lane costs and graph replay for the Nemotron HIP engine, and the decode-path test. Head `56916dd0db0df19eb1c4ab370c97f11bdfa7b96f`; depends on #1093 at `71163c15ee202bea0d41e8b64f26f8c4c059a042`. [Incremental 16-file diff](https://github.com/BlivionIaG/TensorFold/compare/71163c15ee202bea0d41e8b64f26f8c4c059a042...56916dd0db0df19eb1c4ab370c97f11bdfa7b96f). Ready for review; landing/dependency decisions remain open.
 
-At shared measured `729833`: Mac full gate 312/312 steps, 4423/4439 tests with 16 skipped; plain 220/220. Linux full gate 172/172 steps, 2530/2540 tests with 10 skipped; plain 17/17. HIP kernel suites pass 103/103 per architecture. [Qwen, Flash Next and Nemotron followups](https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/followup729) retain exact commands, references, outputs or output-retention limitations, binary hashes, runtime libraries and rank exits. Six Qwen candidate arrays were compared to references and removed, so retained candidate arrays are not claimed. Flash on/off cases match their expected hashes; Nemotron has four finite byte-equal baseline/candidate decode/teacher pairs per rig. These checks do not fill every lifecycle/fidelity requirement below.
+- [#1095](https://github.com/ashhart/TensorFold/pull/1095) — perf(nemotron): HIP prompts in 2048-row chunks, so the routed experts get enough rows a tile. Head `4322276b240fb4a16c62767e24ab08dcd3c5e4f1`; depends on #1094 at `56916dd0db0df19eb1c4ab370c97f11bdfa7b96f`. [Incremental 2-file diff](https://github.com/BlivionIaG/TensorFold/compare/56916dd0db0df19eb1c4ab370c97f11bdfa7b96f...4322276b240fb4a16c62767e24ab08dcd3c5e4f1). Ready for review; landing/dependency decisions remain open.
 
-[All 30 review commits' static evidence](https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/inline_stack_review) and the independent current-head source audit cover all 22 heads: fmt/diff pass, zero new lean findings over 503 inherited, source files at most 600 lines, added comments/docstrings within the applicable single-line/120-column rule, public noreply identity and no tool co-author trailers. A nonzero lean-checker exit is not reported as clean-zero.
+- [#1096](https://github.com/ashhart/TensorFold/pull/1096) — perf(hip): the residual add and the RMS norm in one launch, the Nemotron MoE sum among its inputs. Head `29409f2d7c58326351da64599b051ccd8f98b867`; depends on #1095 at `4322276b240fb4a16c62767e24ab08dcd3c5e4f1`. [Incremental 12-file diff](https://github.com/BlivionIaG/TensorFold/compare/4322276b240fb4a16c62767e24ab08dcd3c5e4f1...29409f2d7c58326351da64599b051ccd8f98b867). Ready for review; landing/dependency decisions remain open.
 
-## Performance: measured regression remains open
+- [#1097](https://github.com/ashhart/TensorFold/pull/1097) — perf(hip): a Mamba-2 window in three launches, each row's state kept in its snapshot slot. Head `dfcbfb1d4ec601803f116d454b3cdead6a6818fd`; depends on #1096 at `29409f2d7c58326351da64599b051ccd8f98b867`. [Incremental 10-file diff](https://github.com/BlivionIaG/TensorFold/compare/29409f2d7c58326351da64599b051ccd8f98b867...dfcbfb1d4ec601803f116d454b3cdead6a6818fd). Ready for review; landing/dependency decisions remain open.
 
-The [separate serial 16-hold decode comparison](https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/decode_serial729) measures baseline `8649e985` versus `729833`, original public code/prose prompts, 256 output tokens, temperature0, three repetitions, old/new/new/old per rig/mode. Complete output fingerprints match. Throughput deltas (code / prose):
+- [#1098](https://github.com/ashhart/TensorFold/pull/1098) — perf(hip): Nemotron's relu^2 as the stream tile's epilogue for one-row MoE layers. Head `51d68203c4c2e3450345e31087f8dad711c6d479`; depends on #1097 at `dfcbfb1d4ec601803f116d454b3cdead6a6818fd`. [Incremental 13-file diff](https://github.com/BlivionIaG/TensorFold/compare/dfcbfb1d4ec601803f116d454b3cdead6a6818fd...51d68203c4c2e3450345e31087f8dad711c6d479). Ready for review; landing/dependency decisions remain open.
 
-- W7800 TP2 drafts OFF: −1.81431% / −1.78683%.
-- V620 TP1 drafts OFF: −1.68402% / −1.63772%.
-- W7800 TP2 drafts ON: −0.80327% / −4.52661%.
-- V620 TP1 drafts ON: −1.92765% / −1.99011%.
+- [#1099](https://github.com/ashhart/TensorFold/pull/1099) — perf(hip): the planned decode walk reads q and writes its rows in the activation type. Head `edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b`; depends on #1098 at `51d68203c4c2e3450345e31087f8dad711c6d479`. [Incremental 9-file diff](https://github.com/BlivionIaG/TensorFold/compare/51d68203c4c2e3450345e31087f8dad711c6d479...edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b). Ready for review; landing/dependency decisions remain open.
 
-**The requester accepts the recorded performance, including the4.52661% decrease; no baseline/3% recovery gate is imposed by that acceptance. Upstream review and remaining applicable qualification are separate.** Full-precision values, baseline drift, request logs and whole-hold work counters, identities, actual exits and cleanup are retained. Own-group serial scheduling is observed, not an exclusive-host lease; existing AMD GPU-lock qualification remains open. Earlier [concurrent-rig experiments](https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/decode_recovery729) are separately labelled with shared-host limitations. The historical 8649→cc183 regression and cold8k/32k results remain historical; they are not relabelled as `729833` or a later proposal. No private successor experiment qualifies these published heads.
+- [#1100](https://github.com/ashhart/TensorFold/pull/1100) — perf(hip): the argmax of a wide logits row in parts across the card. Head `8859ff69a3d2023ae19607189b2981987a86fcef`; depends on #1099 at `edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b`. [Incremental 9-file diff](https://github.com/BlivionIaG/TensorFold/compare/edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b...8859ff69a3d2023ae19607189b2981987a86fcef). Ready for review; landing/dependency decisions remain open.
 
-The additional requested 16k-input/1k-output and 1k-input/512-output C=1/C=8 matrix is not a completed current-published-source qualification. Its eventual receipts must distinguish prefill/decode, server/client TTFT, per-request mean delivery ITL/TPOT and aggregate wall-throughput; multi-token stream chunk gaps cannot be called true per-token ITL percentiles.
+- [#1101](https://github.com/ashhart/TensorFold/pull/1101) — perf(nemotron): fewer launches a HIP decode token: q, k and v grouped, the residual and next norm merged, Mamba windows in three launches. Head `56511fa7d7d7ce69adeb3666dafe962b4dc405c4`; depends on #1100 at `8859ff69a3d2023ae19607189b2981987a86fcef`. [Incremental 6-file diff](https://github.com/BlivionIaG/TensorFold/compare/8859ff69a3d2023ae19607189b2981987a86fcef...56511fa7d7d7ce69adeb3666dafe962b4dc405c4). Ready for review; landing/dependency decisions remain open.
 
-## Current CI and integration
+- [#1102](https://github.com/ashhart/TensorFold/pull/1102) — perf(hip): the planned decode walk in one launch a query head for spans up to 4096 keys. Head `75db6d0150ef92028f375aa94c35dc3a9e5b8e15`; depends on #1101 at `56511fa7d7d7ce69adeb3666dafe962b4dc405c4`. [Incremental 8-file diff](https://github.com/BlivionIaG/TensorFold/compare/56511fa7d7d7ce69adeb3666dafe962b4dc405c4...75db6d0150ef92028f375aa94c35dc3a9e5b8e15). Ready for review; landing/dependency decisions remain open.
 
-Current head-bound checks: **22/22 Windows failures; desktop failures on #1085/#1092/#1096/#1098; Linux zig failure on #1098.** All fmt/mobile checks pass; remaining desktop/Linux checks pass. Successful jobs are actual integrated host/build evidence, not GPU/model integration qualification.
+- [#1103](https://github.com/ashhart/TensorFold/pull/1103) — perf(hip): one row's routed fc1 and shared up in one launch, both with the relu^2 epilogue. Head `a44e7af98183721e58f2fb4d7e96ae874dfecd83`; depends on #1102 at `75db6d0150ef92028f375aa94c35dc3a9e5b8e15`. [Incremental 13-file diff](https://github.com/BlivionIaG/TensorFold/compare/75db6d0150ef92028f375aa94c35dc3a9e5b8e15...a44e7af98183721e58f2fb4d7e96ae874dfecd83). Ready for review; landing/dependency decisions remain open.
 
-The failed Windows logs share 52 normalized location/message errors (80 raw error lines), including inode-type and Windows standard-library/fabric-bootstrap diagnostics. Those are compiler diagnostics, not 52 failing tests. Desktop failures report settings-primary-consumer, guest-VM/output-limit and measured-write-rate test errors/timeouts; #1098's Linux job reports one Cortheon linear-time fuzz assertion. For that original snapshot, causes, inheritance and flakiness were not established; the later compile-only baseline evidence below now confirms one common upstream compiler diagnostic, with other failures still unclassified. The audited upstream main has successful desktop/mobile records, but no exact Windows/Linux baseline record was found in that snapshot. [Raw failed jobs, tested-source metadata, diagnostic comparison and hashes](https://github.com/BlivionIaG/TensorFold/tree/a758bf7da35574a0b40cca642560ec73b22457b0/receipts/nemotron-hip/streamfix/contributing_refresh_20261020) preserve the evidence; PR check links remain the live authority after this snapshot.
+## Completed data / current checks
 
-## Already-completed coverage to credit
+[Immutable current 22-head CI audit](https://github.com/BlivionIaG/TensorFold/tree/9413cadef9fc387ff22c93ff60e6daa89682e603/receipts/nemotron-hip/streamfix/coverage_20261020/current_ci_all22) binds all 110 completed checks (87 success/23 failure), tested merges, job URLs and baseline comparisons.
 
-The [immutable historical family receipts](https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip) already contain exact cold2k/8k/32k/64k/128k/262080 arrays/bodies and cache0 timing/equality, C1/C4/C8 solo/concurrent results, memory/load/cleanup measurements on503GiB host RAM, and480-row-per-rig-and-prompt/decode-path FP32 model-reference fidelity with all top-token mismatches/margins. Sources remain fc555ad4/44c37c5f/b86e111b/82e68433, never729 or a private successor. V620TP1 historical fidelity is479/480 decode,480/480 prompt; W7800TP2 is477/480,476/480. These real mismatches are not waived by a tie policy. Source-only unchanged host code can support structural coverage inventory, not relabel performance, memory or oracle results.
+Native requested measurements are complete:48 O/N/O cells864requests648 measured, all 16shape/C1/C8/mode/rig cases,1warmup+3 measured batches. Actual baseline drift and long intervening gaps remain reported; arithmetic bookend means are descriptive, not confidence/drift models or automatic thresholds. Canonical AMD gpu.lock was held. No duplicate native benchmark is pending. Measured source 729/tree 60a8 retains its source label; newfirst PR at 826/top PR at a44 only amend validation input/guard files and have actual5/49-kernel live gates,0 failures, 0 known findings and 0 limit problems,5 numeric controls red+bothmetadata controlsred/current on4chips. First826 fullLinux170steps2472pass9 skip; golden306/319equal13known0 unexpected. No intermediate own-head or new model/performance execution is invented.
 
-Use existing arrays, request/client recipes and retained729 Nem outputs before generating fixtures or rerunning inference. Current-source expanded-matrix, uncovered lifecycle/seam/platform/integration, precision mapping and appropriate comparator/memory gaps remain specific tasks. They are not blanket blockers for an unrelated CLI/refactor/kernel-only PR; its own affected behavior determines applicability. Private4bf/a27 partials remain separate and unpooled.
+Latest completed source-bound CI: all 22Linux/fmt/mobileSUCCESS,21desktopSUCCESS;1085desktop reports the guest-VM EPERM assertion (820/821passed); its tested-merge whole app/workflow inputs equal main and historical PR1092 has the same inputs/symptom. This is baseline-equivalent app evidence, not a proven syscall cause or HIP bug. All22Windows failures match the 52provedbaseline compiler diagnostics; generic run-test-w stderr output is not a runtime-test failure. Current checks remain linked from each PR. Baseline accounting is not a source repair or blanket CI waiver.
 
-## Remaining qualification work
+## Actual benchmark values
 
-- [x] Open the proposal before the 22 drafts; identify source heads, dependency order, public inputs and available raw receipts.
-- [x] Preserve the actual successful, failed, skipped and historical evidence with its measured source; audit current source hygiene and CI states.
-- [ ] Agree the family/backend/arithmetic gate and resolve the 21 cumulative-main diffs into an acceptable review/landing arrangement.
-- [ ] Resolve CI failures and qualify the actual intended upstream integration, including affected GPU/model/platform checks. Do not substitute successful host CI or a conflict-free merge for GPU proof.
-- [ ] Complete remaining applicable own-head kernel checkpoints; keep each backend's actual SUMMARY with its source. Full-tree equivalence is disclosed where available.
-- [ ] Complete source/checkpoint/runtime-matched drafted/plain, resumed/fresh, concurrent/solo, prompt-chunk/recurrent/KV/logit-seam, cancellation/reset/partial-acceptance checks. Explicitly document unsupported and skipped cases.
-- [ ] For changed reduction arithmetic, supply independent FP64 references for every affected projection class, prompt/decode on identical rows, worst-per-column and aggregate errors with native error no worse than the current reference implementation; retain teacher-forced top-token differences, margins and the applicable bounded tie policy.
-- [ ] Supply current-source cold2k/8k/32k/64k token arrays, bodies, timings and cached counts with supported prefix retention off/fresh KV; separately record admitted 64k/128k/native-window contexts and refused/unsupported cells. Current V620TP1 six-context coverage is now supplied below; remaining unmeasured-rig/memory cases are conditional and explicitly unmeasured, not a blanket claim that completed V cases are missing.
-- [ ] Compare before/after on the same machine/checkpoint/prompts/settings against the previous release and applicable standard server; finish the user-requested concurrency matrix without treating the superseded baseline/3% recovery target as a user requirement.
-- [ ] Supply peak physical process footprint and reported device/pinned allocations with hardware RAM class/context, existing GPU lock/admission and load/cleanup boundaries. Shared-host observations are not exclusive-host qualification; no limits were raised.
-- [ ] Run or credit the actual documented native/host targets with exact Zig0.17.0 and recorded flags at the source/platform being qualified. The example version string is not an invented extra build requirement. Carry Arch device-library and Ubuntu rocWMMA notes.
-- [ ] Preserve public identity, authorship, Apache-2.0/third-party notices and model licences; inspect the complete outgoing tree/history/artifacts before each publication. No model weights are included in this evidence refresh.
+Completion E2E throughput mean of3 measured batches, tokens/s: OLDfirst → candidate → OLDlast; full precision comparisons retained, display6decimals.
 
-[Exact pre-refresh tracker](https://github.com/BlivionIaG/TensorFold/tree/a758bf7da35574a0b40cca642560ec73b22457b0/receipts/nemotron-hip/streamfix/contributing_refresh_20261020/historical_bodies/issue1081.md) and all 22 pre-refresh bodies retain every older number and source claim. The archived text is history, not current qualification. The current draft descriptions and this checklist supersede stale status wording without deleting its data.
+- W7800tp2 off code_1024_512 C1: 132.733206 → 129.174842 → 131.410698; baseline drift-0.996366%; candidate/bookend-2.193585%.
 
+- W7800tp2 off code_1024_512 C8: 331.323856 → 327.217216 → 329.772364; baseline drift-0.468271%; candidate/bookend-1.007688%.
 
-Completed coverage, with remaining limits
+- W7800tp2 off prose_16384_1024 C1: 82.185503 → 80.979738 → 82.006843; baseline drift-0.217386%; candidate/bookend-1.359911%.
 
+- W7800tp2 off prose_16384_1024 C8: 135.336859 → 134.654501 → 135.420669; baseline drift+0.061926%; candidate/bookend-0.534990%.
 
-### Completed source-scoped coverage
+- V620tp1 off code_1024_512 C1: 115.286461 → 113.378325 → 114.250402; baseline drift-0.898683%; candidate/bookend-1.211227%.
 
-Completed source-scoped coverage update: the [per-PR conditional reduction/source map](https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/fp64_conditional_source_review.json) identifies no new reduction-order trigger in the mapped incremental changes. This is a source assessment, not a waiver of applicable new-kernel correctness. Existing measured729 full GPU suites passed103/103 on each architecture; their imported prefill tests compare complete generated-fixture outputs across pickable tiles and sample16×16 outputs against independent float64 references. The strict49 fixture suite also supplies independent bounds for applicable new operations. Replacement-fixture worst0 means byte equality, not zero FP64 error. Full per-column absolute/aggregate FP64 error exports are not retained. These are shared729 results (complete-tree equivalent to published top60a8), not executions at every intermediate PR head; the linked map distinguishes applicability.
+- V620tp1 off code_1024_512 C8: 202.387526 → 199.404021 → 201.817382; baseline drift-0.281709%; candidate/bookend-1.335181%.
 
-Current model-array audit ([derivation](https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/teacherforced729/result.json)): all24 retained native arrays were rehashed:12 old8649/current729 pairs,1131 rows including377 supplementary TP-rank rows (754 primary rows), vocabulary131072. All float bits, top1/top2 IDs, values and margins are unchanged and finite; per-column max/mean/RMSE deltas are zero. Seven exact top1 ties include duplicated rank observations; equality needs no tie waiver. This is native-before/after equality, not a new independent oracle.
+- V620tp1 off prose_16384_1024 C1: 57.101946 → 56.865976 → 56.959989; baseline drift-0.248601%; candidate/bookend-0.289302%.
 
-The [exact-input/array historical-reference bridge](https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/oracle_subset729/result.json) maps four current729 arrays and token histories to the already-scored HF/FP32 subset: V decode223/224, V story32/32, W decode221/224, W story31/32 =507/512. **Five reference top1 differences remain unwaived**, with historical rounded errors/margins retained. Raw HF arrays, reference top2 IDs and original reference-runtime versions are unavailable; no new reference inference, independent FP64 whole-model oracle or approved tie policy is claimed.
+- V620tp1 off prose_16384_1024 C8: 75.426964 → 75.050107 → 75.436788; baseline drift+0.013024%; candidate/bookend-0.506111%.
 
-Current729 [engine lifecycle receipts](https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/lifecycle729_raw/summary.json) and [independent audit](https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/lifecycle729_independent_audit.json) cover four gates: window/row and mixed rounds on W7800TP2 and V620TP1, all six rank exits0. They exercise per-row Mamba snapshots/rollback, page interchange and four mixed-position/width streams versus solo. Equality is numeric f32 value equality, not a signed-zero/payload bit guarantee. HTTP cancellation/reuse, prompt-cache resume/full-fresh, and forced partial-MTP acceptance/reset remain separate unrun coverage; this engine test does not claim them.
+- W7800tp2 on code_1024_512 C1: 222.653829 → 209.928699 → 222.373145; baseline drift-0.126063%; candidate/bookend-5.655741%.
 
-The requested current729 benchmark matrix, new cold-context/HTTP receipts, cumulative source-base/merge-order resolution, current CI qualification and the five reference findings remain distinct open items. The requester accepts current measured performance; upstream criteria are not waived.
+- W7800tp2 on code_1024_512 C8: 402.256466 → 383.122464 → 399.409236; baseline drift-0.707815%; candidate/bookend-4.418397%.
 
-## Windows baseline clarification and benchmark status
+- W7800tp2 on prose_16384_1024 C1: 108.276848 → 106.810361 → 108.918744; baseline drift+0.592829%; candidate/bookend-1.645922%.
 
-[Two actual Windows-target baseline compiles](https://github.com/BlivionIaG/TensorFold/tree/f8f4dfa2293e1fde7cada4045d5e072ab0daf58e/receipts/nemotron-hip/streamfix/coverage_20261020/windows_baseline) reproduce `digest_key.zig:34:42: expected type u128, found i64` on untouched upstream main `d1018b318fb51981c4a18f12e40269a4d3ee9713` and PR1082 head `dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5`. The two compile logs are byte-identical; the offending file's Git blob is identical across all22 draft heads. This establishes one common Windows compiler blocker independently of the HIP delta. These are Zig0.17.0 Windowsgnu-target compile-only checks on macOS; no Windows PE binary ran. The existing main-equivalent CI control below now accounts for all52 compiler diagnostics. The generic Windows stderr-rendering blocks do not establish runtime-test failures; desktop failures and the Linux fuzz failure retain their separate, source-bound classifications. No CI rerun or fix is claimed.
+- W7800tp2 on prose_16384_1024 C8: 138.221485 → 136.518783 → 138.851070; baseline drift+0.455490%; candidate/bookend-1.456293%.
 
-Historical interrupted-run receipt: [Requested benchmark transport checkpoint](https://github.com/BlivionIaG/TensorFold/tree/f8f4dfa2293e1fde7cada4045d5e072ab0daf58e/receipts/nemotron-hip/streamfix/coverage_20261020/matrix_transport_checkpoint) records the dated pre-recovery observation:10/64 complete cells before SSH loss, then unknown outcome and no local raw. [Subsequent recovered receipts](https://github.com/BlivionIaG/TensorFold/tree/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/recovered_matrix729) now retain90 raw files locally. Ten complete cells contain180 requests (135 measured); one incomplete cell retains three further requests (two measured), for183 retained requests total. All complete-cell metrics and output equality checks pass. These are W7800TP2 OFF partials only: no complete old/new/new/old quartet, V620 or ON result, pooled cross-run result or final matrix qualification. A new host boot (`9064ffa5…`) was confirmed and prior owned job PIDs were absent; no graceful coordinator completion or intentional teardown receipt exists. Reboot does not establish a kernel/numerical cause. No heavy matrix restart or completion is claimed; incomplete cold/HTTP/reference coverage remains separate. This is supplemental stack status, not a universal family benchmark requirement for infrastructure-only slices.
+- V620tp1 on code_1024_512 C1: 177.593603 → 171.544560 → 177.108265; baseline drift-0.273286%; candidate/bookend-3.273946%.
 
+- V620tp1 on code_1024_512 C8: 274.025765 → 270.110048 → 273.776880; baseline drift-0.090826%; candidate/bookend-1.384175%.
 
+- V620tp1 on prose_16384_1024 C1: 68.501116 → 67.768862 → 68.469700; baseline drift-0.045863%; candidate/bookend-1.046275%.
 
-## Reference-server compatibility: evidence and remaining work
+- V620tp1 on prose_16384_1024 C8: 79.704922 → 79.229267 → 79.684522; baseline drift-0.025594%; candidate/bookend-0.584048%.
 
-The [previous-release capability proof](https://github.com/BlivionIaG/TensorFold/blob/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/reference_compatibility/previous_release_scope.json) pins v1.1.1 to `b10231b94f8adf3d4132acebdc0a1ac87e53a838`: its HIP registry lists Qwen35 and FlashNext, with no Nemotron entry. This is static source evidence for a same-release HIP support limitation, **not an executed release-server refusal or a speed comparison**. It does not waive an applicable comparison requirement.
+Every request,3batch values, per-hold means/medians, TTFT/server prefill/decode/deliverymean TPOT/chunk gaps and aggregate denominators are retained. Serverprefill elapsed is not pure GPU compute; mean TPOT/chunk gaps are not a true per-token ITL distribution. Requester accepts measured performance, including recorded regressions; no upstream acceptance waiver follows. Historical32 selected pairs and originalinterruptedattempts remain immutable and are not pooled into this48cell selection.
 
-The [installed-vLLM source/metadata audit](https://github.com/BlivionIaG/TensorFold/blob/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/reference_compatibility/vllm_mlx_loader_source_audit.json) distinguishes configuration from weight support. The exact MLX affine4/group64 checkpoint configuration parses with resolved quantization `None`; header metadata has packed U32 weights and separate BF16 scales/biases. The inspected unquantized loader expects dense floating weights and its registry has no MLX affine method. **No weight-load failure or ROCm Mamba failure was executed.** Mamba Triton/RDNA source paths exist, so runtime compatibility remains untested. A separately labelled same-checkpoint dequantized HF derivative is a potential reference: conversion precision/rounding, loader/layout checks, actual memory admission and allocated execution must first be established. No GPTQ/AWQ relabelling or standard-server performance result is claimed. Historical FP32 scoring is not this missing server benchmark.
-
-These compatibility findings are applicable to family/model reference comparisons, not a universal new gate for every kernel/CLI/infrastructure slice. All22 keep their source-specific conditional requirement map, actual supplied103/sampled-FP64 and engine coverage, remaining affected-platform/integration/CI/source-base gaps, and the five unwaived reference findings. The current matrix remains incomplete despite independently audited recovered partial cells; cold/HTTP receipts and reference-server execution are not supplied by these CPU/static checks. Requester performance acceptance is not an upstream waiver.
-
-
-[Actual CPU header inventory](https://github.com/BlivionIaG/TensorFold/blob/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/reference_compatibility/header_inventory.json) covers five files, including `mtp-4bit.safetensors`, and417 derived tensor rows. The theoretical all-BF16 transformation is65,826,532,480 bytes (61.3057GiB), including MTP; a descriptive name split is58.8185GiB backbone+lm_head and2.4872GiB MTP/layers, not an approved tensor-omission policy. Observed free filesystem space was185.8126GiB at capture, not reserved capacity. These are header-only arithmetic estimates, not allocated model memory, converted files or runtime admission. The [metadata/source binding](https://github.com/BlivionIaG/TensorFold/blob/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/reference_compatibility/source_metadata_binding.json) pins the exact checkpoint revision/config, inventory/helper hashes and six installed-vLLM source-file hashes; that source snapshot is not a Git checkout and its commit is unknown. Bounded actual checkpoint-row dequantization/rounding checks are now supplied below; full conversion and model/runtime loading remain unexecuted.
-
-
-## Completed current-source checkpoint coverage
-
-The [current729 V620TP1 cold checkpoint](https://github.com/BlivionIaG/TensorFold/tree/0beefc3abdff231804f86ab7369768634745366a/receipts/nemotron-hip/streamfix/coverage_20261020/cold_http729_checkpoint) now completes five contexts:2,048,8,192,32,768,65,536 and131,072 exact input IDs. Each context uses a fresh native server, cache0 and fresh KV, with three cold requests and one `draft:false` request, all16 output tokens: all three complete outputs equal plain, all four cached-token counts are0, exact input/output lengths and full hashes are retained. All five native exits are0 and owned process groups are gone. These are V620TP1 measurements at729 (complete-tree equivalent to review top60a8), not intermediate-own-head runs or W7800TP2 context/memory measurements. This is the prior five-context checkpoint; the final six-context and HTTP results below supersede its pending status, without claiming full memory/platform qualification. Requester acceptance of recorded performance does not waive upstream review criteria.
-
-The [actual bounded CPU affine-row validation](https://github.com/BlivionIaG/TensorFold/blob/0beefc3abdff231804f86ab7369768634745366a/receipts/nemotron-hip/streamfix/coverage_20261020/reference_actual_rows/actual_row_sample_result.json) additionally samples18 first/middle/last flattened rows across embedding, lm_head, Mamba, shared MLP, routed3D and MTP:59,520 values, only33,480 tensor-payload bytes read. Exact checkpoint revision/config and five header fingerprints were checked. Independent vector and scalar separate-FP32 multiply/add dequantization are bit-equal on these samples; BF16/FP16 rounding statistics label potential derived storage precision only. The helper makes no explicit Torch/model/GPU calls; implicit environment-startup imports were not traced. No full conversion, full-weight scan, standard-server model load, inference equality or server-performance result is claimed. The five historical-reference top1 differences remain unwaived.
-
-Latest status: all six current V620TP1 cold contexts and exercised HTTP resume/disconnect-reuse paths are complete; forced partial-MTP/reset, W7800 current context/memory and valid standard-server execution remain separately unqualified. The interrupted run remains183 retained requests without a quartet; completed source-bound continuation pairs are now independently audited and reported below, without relabelling the interrupted run complete. Current CI/source-base/affected-platform gaps and five reference findings remain explicit.
-
-
-## Completed V620 cold contexts and HTTP state reuse
-
-[Final current729 V620TP1 receipts](https://github.com/BlivionIaG/TensorFold/tree/c962f63f9a5edcb5f702af581102afa99a485a65/receipts/nemotron-hip/streamfix/coverage_20261020/cold_http729_final) complete all six exact input contexts:2,048,8,192,32,768,65,536,131,072 and262,080 IDs. Each has three fresh-KV/cache0 cold requests and one `draft:false` request, all16 output tokens; the three outputs equal plain, exact counts/finish-length and full fingerprints are retained. HTTP resume reused16,384 cached tokens and matched the identical frozen full request on a fresh cache-off process. First-output cancellation/disconnect drained running/waiting requests; its later frozen request reused16,448 cached tokens and matched fresh cache-off. This proves that exercised disconnect/drain/reuse path, **not forced partial-MTP acceptance or an explicit reset API**.
-
-All30 completed requests and the separate intentional incomplete prefix are retained. All10 one-rank native servers exited0 without forced timeout kill; owned process groups were recorded gone. Final57 raw files were independently hash-checked. Request/text/reasoning fingerprints were recomputed; server output-token fingerprints are reported evidence, as raw output-ID arrays were not retained for independent token-hash recomputation. Source729 is complete-tree equivalent to review top60a8; these are current V620 results, not intermediate-own-head or W7800TP2 results. Memory observations retain their limits (resident high-water/PSS samples and reported allocator fields, no complete pinned/physical-memory accounting). This is correctness/lifecycle coverage, not a before/after throughput or independent reference-oracle result.
-
-
-Existing baseline CI evidence: [an independent main push run](https://github.com/ashhart/TensorFold/actions/runs/39182366686/job/117837632862) at `d46d17a784758b8a8b66badde1f728f36bdc9541` already failed `electron/agent/engine/pull.test.ts` with “Timed out waiting for measured write rate and remaining time.” The test blob is identical at that main run and main d101. This is the same observed symptom as PR1096/1098 desktop failures, not proof that every contributing cause is identical or that current CI is green. All52 Windows compiler diagnostics now have main-equivalent CI-control evidence below; Windows runtime-failure causes, PR1085/1092 desktop symptoms and PR1098 Linux fuzz timing remain separately unclassified.
-
-Historical32-cell benchmark status: that descriptive O/N dataset was complete and audited, while its additional line81 controls were pending. The now-completed O/N/O campaign, drift and temporal gaps are reported below; full CONTRIBUTING qualification is not inferred. The recovered interrupted measurement remains source-labelled historical partial data. At that historical update all 22 remained drafts; readiness is assessed per PR against its affected requirements, source-base/dependency scope, maintainer gates and CI disposition. Family reference findings remain unwaived where applicable. Current performance is accepted by the requester, not an upstream waiver.
-
-
-## Windows compiler baseline: existing main-equivalent CI control
-
-[Retained source/tree/job evidence](https://github.com/BlivionIaG/TensorFold/tree/19ef422352a55adcca49b894dc6d52d2b6ab3678/receipts/nemotron-hip/streamfix/coverage_20261020/ci_docs_control) now accounts for all52 normalized Windows compiler diagnostics (80 raw error lines) in these draft archives. Existing documentation-only PR1128 ran `zig build test` with Zig0.17.0 on Windows against merge `fe94c2d9bbf625470bf07d53bfff0284171d4753`, whose parents are main d101 and the notice-only head. Git object comparison shows every root entry—including complete Zig, build, tool, workflow and version inputs—identical to main except `THIRD_PARTY_NOTICES.md`. Its [actual Windows job](https://github.com/ashhart/TensorFold/actions/runs/39487050150/job/118850059735) fails with exactly the same52 compiler location/message pairs, zero extra or missing. This is existing CI with main-equivalent compile inputs, not a new run or a claim based solely on an unchanged file. It establishes baseline compiler-failure evidence; **current CI remains failed**. [Retained Windows rendering classification](https://github.com/BlivionIaG/TensorFold/tree/a4faa87a0887f1c1ee43739cfb885f9d8eea38b0/receipts/nemotron-hip/streamfix/coverage_20261020/windows_runtime_classification) shows that the generic `run test w`/`failed command: test.exe` blocks are Zig0.17 stderr-only diagnostic rendering, not evidence of failed runtime tests: its renderer prints retained commands even for successful steps with stderr. Across all22 archived draft logs and the documentation control, the final failure tree lists compiler errors and their dependent steps; no explicit test-process abnormal exit, failed-test, leak or error-log result is present. The overall Windows build still exits1. Desktop/Linux failures, affected platform/model gates and maintainer disposition remain separate. No CI-green, source fix, readiness waiver or ready-state change is claimed.
-
-
-## Available expanded-matrix measurements: descriptive pairs
-
-[All retained request/metric/source receipts](https://github.com/BlivionIaG/TensorFold/tree/df70b95290cda79e4550468544a27b6ce70908f9/receipts/nemotron-hip/streamfix/coverage_20261020/continuation_all4) now cover both requested exact shapes (1024 input/512 output code;16384 input/1024 output prose), C1/C8, drafts OFF/ON, W7800TP2 and V620TP1. Baseline8649 and current729 use the frozen native/client/checkpoint/settings with one warmup plus three measured batches per cell. The explicit selected set contains32 complete cells,576 requests including432 measured, and16 OLD→NEW comparisons. Every selected complete request has exact counts/finish-length/cache0 and matching full output fingerprints for its fixture. Full raw replies/SSE, actual server/runtime/identity/default-admission/cleanup evidence and per-request metric arrays are retained. Output-token hashes are server-reported; raw output-ID arrays were not retained for independent token-hash recomputation.
-
-[Full-precision reduction](https://github.com/BlivionIaG/TensorFold/blob/df70b95290cda79e4550468544a27b6ce70908f9/receipts/nemotron-hip/streamfix/coverage_20261020/continuation_all4/audits/final_V_ON/selected_all4_reduction.json) includes client TTFT, server prefill elapsed and decode rates, delivery mean TPOT/chunk gaps, per-request values, three batch values, hold means/medians and aggregate rates with explicit denominators. Server prefill elapsed is not pure GPU compute; mean TPOT/chunk gaps are not true per-token ITL percentiles. Completion end-to-end throughput below is total completion tokens divided by each batch's first-send→last-complete wall time, averaged across its three measured batches; it includes prefill/wall overhead and is distinct from server decode TPS.
-
-- V620tp1 OFF code_1024_512 C1: 115.286461 → 113.378325 completion tokens/s (-1.655126%).
-- V620tp1 OFF code_1024_512 C8: 202.387526 → 199.404021 completion tokens/s (-1.474155%).
-- V620tp1 OFF prose_16384_1024 C1: 57.101946 → 56.865976 completion tokens/s (-0.413243%).
-- V620tp1 OFF prose_16384_1024 C8: 75.426964 → 75.050107 completion tokens/s (-0.499631%).
-- V620tp1 ON code_1024_512 C1: 177.593603 → 171.544560 completion tokens/s (-3.406115%).
-- V620tp1 ON code_1024_512 C8: 274.025765 → 270.110048 completion tokens/s (-1.428960%).
-- V620tp1 ON prose_16384_1024 C1: 68.501116 → 67.768862 completion tokens/s (-1.068967%).
-- V620tp1 ON prose_16384_1024 C8: 79.704922 → 79.229267 completion tokens/s (-0.596771%).
-- W7800tp2 OFF code_1024_512 C1: 136.649191 → 130.547407 completion tokens/s (-4.465291%).
-- W7800tp2 OFF code_1024_512 C8: 343.338807 → 329.254852 completion tokens/s (-4.102057%).
-- W7800tp2 OFF prose_16384_1024 C1: 83.503510 → 81.075689 completion tokens/s (-2.907448%).
-- W7800tp2 OFF prose_16384_1024 C8: 137.557037 → 135.421677 completion tokens/s (-1.552345%).
-- W7800tp2 ON code_1024_512 C1: 222.653829 → 209.928699 completion tokens/s (-5.715208%).
-- W7800tp2 ON code_1024_512 C8: 402.256466 → 383.122464 completion tokens/s (-4.756667%).
-- W7800tp2 ON prose_16384_1024 C1: 108.276848 → 106.810361 completion tokens/s (-1.354386%).
-- W7800tp2 ON prose_16384_1024 C8: 138.221485 → 136.518783 completion tokens/s (-1.231864%).
-
-These are descriptive O/N pairs, **not ABBA, confidence bounds or full CONTRIBUTING qualification**. W OFF selects the two completed historical pre-reboot holds; the orphan candidate/partial requests remain preserved and excluded. The three subsequent pairs are independently boot-bound, not one uninterrupted32-cell run. The W ON rank1 statuses remain−15: alive before explicitly intentional teardown, no forced kill and PG gone, with rank0exit0; all raw statuses and the strict supervisor stop are retained. This narrowly classified TP2 worker teardown is not all-ranks-zero, a hidden numerical failure or permission to accept other signals. V620 native ranks exited0.
-
-At the prior32-cell update, the serial line81 campaign of closing OLD controls for same-boot pairs and fresh W OFF O/N/O was running with results pending. Its completed observations are reported below. Historical serial256-token C1 ABBA retains its original scope and does not drift-control these new shapes/C8 cells. Baseline drift and temporal gaps must be reported before interpreting small effects; requester performance acceptance is not an upstream waiver. All regressions remain visible, including W ON code beyond5%. Readiness remains per PR against affected requirements; no ready/merge action is implied.
-
-### Runner validation finding under correction
-
-Independent source review identified a gate5 per-chip validation defect in the runner: [the aggregate check](https://github.com/BlivionIaG/TensorFold/blob/dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5/zig/tests/hip/contract_limits.zig#L43) can accept a control that fits one chip when other chips still report violations. A CPU counterexample using the exact shipped registry/limit functions confirms this gap. An isolated fix is pending; no source head or historical measurement receipt has changed, and this finding is not a newly observed GPU measurement failure. This draft remains unready pending the corrected runner and its affected validation.
-
-### Completed alternating baseline controls
-
-[Actual O/N/O receipts](https://github.com/BlivionIaG/TensorFold/tree/606ddd61b274eccc38aa37b99dbc1850d5165b8f/receipts/nemotron-hip/streamfix/coverage_20261020/line81_complete) complete the line81 control campaign:48 cells,864 requests including warmups and648 measured requests, across both requested shapes, C1/C8, drafts OFF/ON and W7800TP2/V620TP1. Each hold retains one warmup and three measured batches. All selected controls finished on boot9064 before the later reboot; raw recovery preserves actual cleanup and exits. Current measured source remains729833615595df66c9f9a438ce9a85061843f010 versus8649e9858b38e9ef3dcd8d579879c6512a363050; the published60a8 tree equivalence remains the source bridge, not new intermediate-head execution.
-
-The earlier32-cell O/N pairs above remain historical data. Their pre-reboot W OFF opening pair is excluded from this control selection and replaced by fresh O/N/O; V OFF/W ON/V ON retain their actual same-boot opening pairs plus closing OLD controls. Intervening serial work and measured timing gaps remain explicit. The original64-cell ABBA campaign is not claimed complete.
-
-Mean of three measured batch completion-throughput values, tokens/s, shown as OLD first → candidate → OLD last; baseline drift and candidate/bookend-mean change use unrounded values:
-
-- W7800tp2 drafts OFF code_1024_512 C1: 132.733206 → 129.174842 → 131.410698; baseline drift -0.996366%; candidate vs bookend mean -2.193585%.
-- W7800tp2 drafts OFF code_1024_512 C8: 331.323856 → 327.217216 → 329.772364; baseline drift -0.468271%; candidate vs bookend mean -1.007688%.
-- W7800tp2 drafts OFF prose_16384_1024 C1: 82.185503 → 80.979738 → 82.006843; baseline drift -0.217386%; candidate vs bookend mean -1.359911%.
-- W7800tp2 drafts OFF prose_16384_1024 C8: 135.336859 → 134.654501 → 135.420669; baseline drift +0.061926%; candidate vs bookend mean -0.534990%.
-- V620tp1 drafts OFF code_1024_512 C1: 115.286461 → 113.378325 → 114.250402; baseline drift -0.898683%; candidate vs bookend mean -1.211227%.
-- V620tp1 drafts OFF code_1024_512 C8: 202.387526 → 199.404021 → 201.817382; baseline drift -0.281709%; candidate vs bookend mean -1.335181%.
-- V620tp1 drafts OFF prose_16384_1024 C1: 57.101946 → 56.865976 → 56.959989; baseline drift -0.248601%; candidate vs bookend mean -0.289302%.
-- V620tp1 drafts OFF prose_16384_1024 C8: 75.426964 → 75.050107 → 75.436788; baseline drift +0.013024%; candidate vs bookend mean -0.506111%.
-- W7800tp2 drafts ON code_1024_512 C1: 222.653829 → 209.928699 → 222.373145; baseline drift -0.126063%; candidate vs bookend mean -5.655741%.
-- W7800tp2 drafts ON code_1024_512 C8: 402.256466 → 383.122464 → 399.409236; baseline drift -0.707815%; candidate vs bookend mean -4.418397%.
-- W7800tp2 drafts ON prose_16384_1024 C1: 108.276848 → 106.810361 → 108.918744; baseline drift +0.592829%; candidate vs bookend mean -1.645922%.
-- W7800tp2 drafts ON prose_16384_1024 C8: 138.221485 → 136.518783 → 138.851070; baseline drift +0.455490%; candidate vs bookend mean -1.456293%.
-- V620tp1 drafts ON code_1024_512 C1: 177.593603 → 171.544560 → 177.108265; baseline drift -0.273286%; candidate vs bookend mean -3.273946%.
-- V620tp1 drafts ON code_1024_512 C8: 274.025765 → 270.110048 → 273.776880; baseline drift -0.090826%; candidate vs bookend mean -1.384175%.
-- V620tp1 drafts ON prose_16384_1024 C1: 68.501116 → 67.768862 → 68.469700; baseline drift -0.045863%; candidate vs bookend mean -1.046275%.
-- V620tp1 drafts ON prose_16384_1024 C8: 79.704922 → 79.229267 → 79.684522; baseline drift -0.025594%; candidate vs bookend mean -0.584048%.
-
-Full retained reduction separately compares the candidate against each baseline and their arithmetic mean, and retains every request and all three batch values for TTFT, server prefill/decode, delivery mean TPOT and chunk gaps. Active-batch token/wall throughput and elapsed-span throughput including interbatch gaps use distinct explicit denominators. Server prefill is elapsed service work, not pure GPU compute; chunk gaps/mean TPOT are not a true per-token ITL distribution. The bookend mean is descriptive, not a drift model, confidence interval or automatic acceptance threshold. Requester acceptance of measured performance does not waive upstream requirements. This update does not establish full CONTRIBUTING qualification or change draft status.
-
-
-## Recovered existing fidelity and state evidence
-
-[Source-bound saved-data audit and retained conversion metadata](https://github.com/BlivionIaG/TensorFold/tree/8265f09ad44742c126b3e8690ef3138adab055e7/receipts/nemotron-hip/streamfix/coverage_20261020/saved_evidence_final) recover additional detail without new model execution. Two of the five historical reference differences have exact native maximum ties between token IDs83666 and117316; the reference picks117316. The other three native winners are unique. All five findings remain unwaived; the original reference's unrounded top-two logits/margins and complete runtime identity remain unavailable. The saved native row hashes, histories, winner/runner-up values and provenance are retained rather than reconstructed from rounded summaries.
-
-The coverage audit credits the existing k−2 snapshot/restore versus last-two single-step checks on both rigs, four-stream/ten-row bit equality, six-context V620 cold runs, resume/fresh and disconnect/drain/reuse checks, and the completed C1/C8 matrix. It distinguishes those actual results from an unproved forced-partial-MTP/reset API trace and from continuous PSS/pinned-allocation peaks that were not captured. Reported memory snapshots and peak-RSS data retain their own scope. These are family-specific coverage disclosures, not new blanket requirements on unrelated kernel/CLI slices.
-
-The completed CPU conversion is retained as metadata/provenance only, with its FP16 precision scope explicit. It is not an inference-equivalence or external-engine performance result. No vLLM or llama.cpp server/performance comparison was launched, and none is planned under the requester's scope. Existing native benchmarks are reused.
+## Fidelity, state and memory
+
+Five HF/FP32 differences remain unwaived and reported with historical rounded reference margins/exact native margins:2 exact native max ties[83666,117316] with reference117316 and3 unique native winners. Historical rounded HF margins and exact native margins are retained; unrounded HF values, reference runner-up IDs and original runtime versions are unavailable. No tie waiver is claimed. 1131 retainednative teacher rows (754 primary+377 supplementary duplicate-rank rows) remain old/current finitebit/top2/margin unchanged. Executed sampled FP64 fixtures and actual conditional reduction source map are credited.
+
+Bothrig enginek−2restore/last2replay and4streams10 rows equality, V6206coldcontexts through262080/resume-fresh/cancel-drain-reuse equality, and full C1/C8matrix cover their actual state-validity scope. Rollback/replay and cancellation/reuse checks passed. VmHWM records peak RSS; PSS is sampled; full pinned-allocation peaks were not reported. Family measurements are distinguished from infrastructure and kernel-only scopes.
+
+## Explicit user scope and landing decisions
+
+No vLLM/llama.cpp server/controller/model inference was launched. The requester omitted external-engine performance work; no such job is pending and no inference equivalence is inferred from CPU-only derivedFP16 conversion/row checks. Applicable upstream comparator wording remains unwaived before landing; it is not a runner-infrastructure gate.
+
+The21cumulative-main diffs cannot be made one-change-compliant by prose or incrementalcompare links alone. Predecessor landing/base alignment or actual accepted stack arrangement must resolve this before landing. Newfamily/arithmetic gate discussion and5 findings remain disclosed where applicable; issue1081 existing is not proof of agreement. This tracker requests review; the landing decisions above remain open.
+
+## Immutable complete history and primary evidence
+
+[Exact prior tracker with every historical number/link](https://github.com/BlivionIaG/TensorFold/blob/9d1744b5dd2e254a69343454f888099dc3400dc8/receipts/nemotron-hip/streamfix/coverage_20261020/publication/bodies/issue1081.md). Each PR also links its byte-identical priorbody archive; stale present-tense checklists are superseded by these current statements.
+
+- https://github.com/BlivionIaG/TensorFold/blob/0beefc3abdff231804f86ab7369768634745366a/receipts/nemotron-hip/streamfix/coverage_20261020/reference_actual_rows/actual_row_sample_result.json
+- https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/fp64_conditional_source_review.json
+- https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/lifecycle729_independent_audit.json
+- https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/lifecycle729_raw/summary.json
+- https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/oracle_subset729/result.json
+- https://github.com/BlivionIaG/TensorFold/blob/514e2c8a4131bd84ce09f1a964c9fa703ef07c79/receipts/nemotron-hip/streamfix/coverage_20261020/teacherforced729/result.json
+- https://github.com/BlivionIaG/TensorFold/blob/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/reference_compatibility/header_inventory.json
+- https://github.com/BlivionIaG/TensorFold/blob/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/reference_compatibility/previous_release_scope.json
+- https://github.com/BlivionIaG/TensorFold/blob/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/reference_compatibility/source_metadata_binding.json
+- https://github.com/BlivionIaG/TensorFold/blob/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/reference_compatibility/vllm_mlx_loader_source_audit.json
+- https://github.com/BlivionIaG/TensorFold/blob/dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5/zig/tests/hip/contract_limits.zig#L43
+- https://github.com/BlivionIaG/TensorFold/blob/df70b95290cda79e4550468544a27b6ce70908f9/receipts/nemotron-hip/streamfix/coverage_20261020/continuation_all4/audits/final_V_ON/selected_all4_reduction.json
+- https://github.com/BlivionIaG/TensorFold/commit/3f991646915e24bb1c7c638ec118e27880d5a031
+- https://github.com/BlivionIaG/TensorFold/commit/42529bfab171c2f30d7ce3641b78ca3b0ff821fc
+- https://github.com/BlivionIaG/TensorFold/commit/519c395da4a913afb2d124ab3f8a8c2c4a2ca1c6
+- https://github.com/BlivionIaG/TensorFold/commit/52840409d2e30ea7e55d9d79c10375cb2ffce6c5
+- https://github.com/BlivionIaG/TensorFold/commit/5b12f74a27326797a540d094387e7ffa472b55ed
+- https://github.com/BlivionIaG/TensorFold/commit/60a8da5243ef313fcab23bdb0d85c790a5cda935
+- https://github.com/BlivionIaG/TensorFold/commit/6af43c9db14516a85fbe22351eb0d3e485bd41bb
+- https://github.com/BlivionIaG/TensorFold/commit/6e73bf059c5646e683d680ab78ed5326aa9fba87
+- https://github.com/BlivionIaG/TensorFold/commit/736e0ac1ed64ce2c1b06edd6300c1119c17e2b4e
+- https://github.com/BlivionIaG/TensorFold/commit/74b506e50265ccef559ce66d8d1cd55db55655ae
+- https://github.com/BlivionIaG/TensorFold/commit/754786d613dde5539d3a0c534007a1a9733cfaf8
+- https://github.com/BlivionIaG/TensorFold/commit/7bf5f195fb06c0651a1a5d74277f24cc70da591c
+- https://github.com/BlivionIaG/TensorFold/commit/8a1c6ae90a9212c481607eb6633697543e6cb3ff
+- https://github.com/BlivionIaG/TensorFold/commit/9b56916fa71d40f9dcd924956c09a3c5f7e18019
+- https://github.com/BlivionIaG/TensorFold/commit/9c206c22bf386348f2f1eb473a31ef8370163b5e
+- https://github.com/BlivionIaG/TensorFold/commit/9f7d265d802cf394b4f60a142aa9d5214cdbfdbf
+- https://github.com/BlivionIaG/TensorFold/commit/cf2ad661a2b1cc2fd00e9899aa2501ab2a1a58e2
+- https://github.com/BlivionIaG/TensorFold/commit/d6134300b3fed9baa29842e20d28ce738fd77574
+- https://github.com/BlivionIaG/TensorFold/commit/dc595eeb198c66d3327d7f0ce4a3eb6c9a807ec5
+- https://github.com/BlivionIaG/TensorFold/commit/e22da9dab3e8d70d5dbe150be39ed3794d6bffda
+- https://github.com/BlivionIaG/TensorFold/commit/f8cd5a4d72805fabe7350746ce9ba91274b54d29
+- https://github.com/BlivionIaG/TensorFold/commit/fd5b50111c0e0dd394fbac022ce8e6ff1db3d257
+- https://github.com/BlivionIaG/TensorFold/tree/0beefc3abdff231804f86ab7369768634745366a/receipts/nemotron-hip/streamfix/coverage_20261020/cold_http729_checkpoint
+- https://github.com/BlivionIaG/TensorFold/tree/19ef422352a55adcca49b894dc6d52d2b6ab3678/receipts/nemotron-hip/streamfix/coverage_20261020/ci_docs_control
+- https://github.com/BlivionIaG/TensorFold/tree/606ddd61b274eccc38aa37b99dbc1850d5165b8f/receipts/nemotron-hip/streamfix/coverage_20261020/line81_complete
+- https://github.com/BlivionIaG/TensorFold/tree/8265f09ad44742c126b3e8690ef3138adab055e7/receipts/nemotron-hip/streamfix/coverage_20261020/saved_evidence_final
+- https://github.com/BlivionIaG/TensorFold/tree/a4faa87a0887f1c1ee43739cfb885f9d8eea38b0/receipts/nemotron-hip/streamfix/coverage_20261020/windows_runtime_classification
+- https://github.com/BlivionIaG/TensorFold/tree/a758bf7da35574a0b40cca642560ec73b22457b0/receipts/nemotron-hip/streamfix/contributing_refresh_20261020
+- https://github.com/BlivionIaG/TensorFold/tree/a758bf7da35574a0b40cca642560ec73b22457b0/receipts/nemotron-hip/streamfix/contributing_refresh_20261020/historical_bodies/issue1081.md
+- https://github.com/BlivionIaG/TensorFold/tree/b5d4b36ef5e757d6c25879db4c10306678876b45/receipts/nemotron-hip/streamfix/coverage_20261020/recovered_matrix729
+- https://github.com/BlivionIaG/TensorFold/tree/bc6f6e7ab1b25c75ff6ca2e1917f3d7224710557/receipts/nemotron-hip/streamfix/coverage_20261020/hip_control_fullcpu826
+- https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip
+- https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix
+- https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/decode_recovery729
+- https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/decode_serial729
+- https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/followup729
+- https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/inline729
+- https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/inline_stack_review
+- https://github.com/BlivionIaG/TensorFold/tree/c12660143d6de8bb9eaf9491ffde8d3b209229fa/receipts/nemotron-hip/streamfix/ownheads729
+- https://github.com/BlivionIaG/TensorFold/tree/c962f63f9a5edcb5f702af581102afa99a485a65/receipts/nemotron-hip/streamfix/coverage_20261020/cold_http729_final
+- https://github.com/BlivionIaG/TensorFold/tree/df70b95290cda79e4550468544a27b6ce70908f9/receipts/nemotron-hip/streamfix/coverage_20261020/continuation_all4
+- https://github.com/BlivionIaG/TensorFold/tree/eb640c5c60d37ee099238324e7151a45b57889cd/receipts/nemotron-hip/streamfix/coverage_20261020/hip_control_qualification
+- https://github.com/BlivionIaG/TensorFold/tree/f8f4dfa2293e1fde7cada4045d5e072ab0daf58e/receipts/nemotron-hip/streamfix/coverage_20261020/matrix_transport_checkpoint
+- https://github.com/BlivionIaG/TensorFold/tree/f8f4dfa2293e1fde7cada4045d5e072ab0daf58e/receipts/nemotron-hip/streamfix/coverage_20261020/windows_baseline
+- https://github.com/ashhart/TensorFold/actions/runs/39182366686/job/117837632862
+- https://github.com/ashhart/TensorFold/actions/runs/39487050150/job/118850059735
+- https://github.com/ashhart/TensorFold/blob/d1018b318fb51981c4a18f12e40269a4d3ee9713/CONTRIBUTING.md
+- https://github.com/ashhart/TensorFold/issues/491#issuecomment-6096495227
+- https://github.com/ashhart/TensorFold/pull/1082
+- https://github.com/ashhart/TensorFold/pull/1083
+- https://github.com/ashhart/TensorFold/pull/1084
+- https://github.com/ashhart/TensorFold/pull/1085
+- https://github.com/ashhart/TensorFold/pull/1086
+- https://github.com/ashhart/TensorFold/pull/1087
+- https://github.com/ashhart/TensorFold/pull/1088
+- https://github.com/ashhart/TensorFold/pull/1089
+- https://github.com/ashhart/TensorFold/pull/1090
+- https://github.com/ashhart/TensorFold/pull/1091
+- https://github.com/ashhart/TensorFold/pull/1092
+- https://github.com/ashhart/TensorFold/pull/1093
+- https://github.com/ashhart/TensorFold/pull/1094
+- https://github.com/ashhart/TensorFold/pull/1095
+- https://github.com/ashhart/TensorFold/pull/1096
+- https://github.com/ashhart/TensorFold/pull/1097
+- https://github.com/ashhart/TensorFold/pull/1098
+- https://github.com/ashhart/TensorFold/pull/1099
+- https://github.com/ashhart/TensorFold/pull/1100
+- https://github.com/ashhart/TensorFold/pull/1101
+- https://github.com/ashhart/TensorFold/pull/1102
+- https://github.com/ashhart/TensorFold/pull/1103
+- https://github.com/ashhart/TensorFold/pull/490#issuecomment-6096494868
