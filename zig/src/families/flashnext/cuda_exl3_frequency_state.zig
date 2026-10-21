@@ -69,15 +69,28 @@ fn open(gpa: std.mem.Allocator, io: std.Io, root: []const u8, identity: codec.Id
     errdefer gpa.free(path);
     const lock_path = try std.fmt.allocPrint(gpa, "{s}.lock", .{path});
     defer gpa.free(lock_path);
-    const lock = try std.Io.Dir.cwd().createFile(io, lock_path, .{
-        .truncate = false,
-        .lock = .exclusive,
-        .lock_nonblocking = true,
-        .permissions = .fromMode(0o600),
-    });
+    const lock = try openLock(io, lock_path);
     errdefer lock.close(io);
     try lock.setPermissions(io, .fromMode(0o600));
     return .{ .gpa = gpa, .io = io, .path = path, .identity = identity, .lock = lock };
+}
+
+fn openLock(io: std.Io, path: []const u8) !std.Io.File {
+    const file: std.Io.File = if (comptime @import("builtin").os.tag == .windows) return error.UnsupportedPlatform else .{
+        .handle = try std.posix.openat(std.Io.Dir.cwd().handle, path, .{
+            .ACCMODE = .RDWR,
+            .CREAT = true,
+            .NONBLOCK = true,
+            .CLOEXEC = true,
+            .NOCTTY = true,
+            .NOFOLLOW = true,
+        }, 0o600),
+        .flags = .{ .nonblocking = true },
+    };
+    errdefer file.close(io);
+    if ((try file.stat(io)).kind != .file) return error.ProfileLockNotRegular;
+    if (!try file.tryLock(io, .exclusive)) return error.WouldBlock;
+    return file;
 }
 
 fn restore(state: *State, own: anytype) !bool {
@@ -417,4 +430,32 @@ test "exl3: placement fingerprint reads routed and metadata bytes, ignores pool 
     try std.testing.expect(!std.mem.eql(u8, &original, &with_mtp));
     mock.pools[48].src.routed = &.{.{ "changed mtp", "up", "down" }};
     try std.testing.expect(!std.mem.eql(u8, &with_mtp, &(try fingerprint(allocator, io, root, &mock.engine.layers, drafting.head))));
+}
+
+test "exl3: placement lock rejects nonregular storage without waiting for FIFO readers" {
+    const allocator = std.testing.allocator;
+    const io = std.testing.io;
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const path = try temporary.dir.realPathFileAlloc(io, ".", allocator);
+    defer allocator.free(path);
+    try std.testing.expectError(error.ProfileLockNotRegular, openLock(io, "/dev/null"));
+    const fifo = try std.fs.path.join(allocator, &.{ path, "profile.lock" });
+    defer allocator.free(fifo);
+    const terminated = try allocator.dupeSentinel(u8, fifo, 0);
+    defer allocator.free(terminated);
+    switch (@import("builtin").os.tag) {
+        .linux => {
+            const result = std.os.linux.mknodat(temporary.dir.handle, "profile.lock", std.posix.S.IFIFO | 0o600, 0);
+            if (std.posix.errno(result) != .SUCCESS) return error.FifoCreateFailed;
+        },
+        .macos => {
+            const Native = struct {
+                extern "c" fn mkfifo(pathname: [*:0]const u8, mode: std.posix.mode_t) c_int;
+            };
+            if (Native.mkfifo(terminated, 0o600) != 0) return error.FifoCreateFailed;
+        },
+        else => return error.SkipZigTest,
+    }
+    try std.testing.expectError(error.ProfileLockNotRegular, openLock(io, fifo));
 }
