@@ -155,10 +155,10 @@ test "exl3: state binding adapter setters retain exact schema7 and schema8 types
     const exec: cuda.graph.Exec = .{ .d = &driver, .handle = @ptrFromInt(43) };
     const backend = Backend.initWithNodeType(graph, exec, Fake.nodeType).?;
     const geometry: binding.Geometry = .{ .grid = .{ 16, 8, 1 }, .block = .{ 128, 1, 1 } };
-    for ([_]c_int{ 1, 2 }) |width| for ([_]bool{ false, true }) |output| for ([_]bool{ false, true }) |flipped| {
+    for (1..binding.max_width + 1) |width| for ([_]bool{ false, true }) |output| for ([_]bool{ false, true }) |flipped| {
         Fake.output = output;
         const parameters: binding.Parameters = .{
-            .nonstate = .{ .gq = 0x100000001, .gk = 0x200000002, .gv = 0x300000003, .ggb = 0x400000004, .rows = width, .ys = 0x500000005 },
+            .nonstate = .{ .gq = 0x100000001, .gk = 0x200000002, .gv = 0x300000003, .ggb = 0x400000004, .rows = @intCast(width), .ys = 0x500000005 },
             .state_in = if (flipped) 2000 else 1000,
             .state_out = if (!output) 0 else if (flipped) 1000 else 2000,
         };

@@ -1,6 +1,12 @@
 const std = @import("std");
 
 pub const max_layers = 48;
+pub const max_width = 16;
+
+pub fn supportsWindow(width: usize) bool {
+    return width >= 2 and width <= max_width;
+}
+
 pub const Mapping = struct { layer: usize, state_in: u64, state_out: u64 };
 pub const Geometry = struct {
     grid: [3]u32,
@@ -18,7 +24,7 @@ pub const Request = struct {
     count: usize = 0,
 
     pub fn validate(self: Request) !void {
-        if (self.width < 1 or self.width > 2 or self.nonstate.rows != self.width or
+        if (self.width < 1 or self.width > max_width or self.nonstate.rows != self.width or
             self.chain == 0 or self.chain_to == 0 or self.chain == self.chain_to or
             self.count == 0 or self.count > max_layers) return error.UnsupportedBinding;
         for (self.layers[0..self.count], 0..) |mapping, index| {

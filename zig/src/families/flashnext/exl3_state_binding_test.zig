@@ -88,8 +88,8 @@ const Fake = struct {
     }
 };
 
-test "exl3: state binding both widths and orientations preserve typed nonstate values" {
-    for ([_]usize{ 1, 2 }) |width| {
+test "exl3: state binding bounded widths and orientations preserve typed nonstate values" {
+    for (1..binding.max_width + 1) |width| {
         const request = requestFor(width, true);
         var fake = Fake.init(request);
         var state = try binding.Binding.init(fake.template, request);
@@ -113,7 +113,7 @@ test "exl3: state binding both widths and orientations preserve typed nonstate v
 }
 
 test "exl3: state binding schema7 reads c_int rows and u64 ys without a state output" {
-    for ([_]usize{ 1, 2 }) |width| {
+    for (1..binding.max_width + 1) |width| {
         const request = requestFor(width, false);
         var fake = Fake.init(request);
         var state = try binding.Binding.init(fake.template, request);
@@ -228,6 +228,44 @@ test "exl3: state binding peer failure disagreement and disconnect poison succes
     var peer: Peer = .{};
     try state.applyTogether(&fake, flip(request), &peer, 3, 7);
     try std.testing.expect(!state.poisoned);
+}
+
+test "exl3: state binding extended windows reject incompatible shapes and poison partial rank updates" {
+    for (2..binding.max_width + 1) |width| {
+        const request = requestFor(width, true);
+        var fake = Fake.init(request);
+        var state = try binding.Binding.init(fake.template, request);
+        try state.load(&fake);
+        var changed = flip(request);
+        changed.width = if (width == binding.max_width) 2 else width + 1;
+        changed.nonstate.rows = @intCast(changed.width);
+        try std.testing.expectError(error.UnsupportedBinding, state.apply(&fake, changed));
+        changed = flip(request);
+        changed.nonstate.rows += 1;
+        try std.testing.expectError(error.UnsupportedBinding, state.apply(&fake, changed));
+        changed = flip(request);
+        changed.layers[1].state_in += 5000;
+        try std.testing.expectError(error.UnsupportedBinding, state.apply(&fake, changed));
+        changed = flip(request);
+        changed.layers[1].layer += 1;
+        try std.testing.expectError(error.UnsupportedBinding, state.apply(&fake, changed));
+        changed = flip(request);
+        changed.nonstate.ys += 1;
+        try std.testing.expectError(error.UnsupportedBinding, state.apply(&fake, changed));
+        try std.testing.expectEqual(@as(usize, 0), fake.calls);
+        fake.fail_at = 1;
+        var peer: Peer = .{};
+        try std.testing.expectError(error.StateRebindFailed, state.applyTogether(&fake, flip(request), &peer, 3, 7));
+        try std.testing.expect(state.poisoned);
+        try std.testing.expect(peer.observed.?.state == .failed);
+        try std.testing.expectEqual(@as(usize, 2), fake.calls);
+        try std.testing.expectError(error.StateBindingPoisoned, state.apply(&fake, request));
+    }
+    for ([_]usize{ 0, binding.max_width + 1, std.math.maxInt(usize) }) |width| {
+        var request = requestFor(2, true);
+        request.width = width;
+        try std.testing.expectError(error.UnsupportedBinding, binding.Binding.init(42, request));
+    }
 }
 
 test "exl3: state binding template replacement requires new metadata" {
