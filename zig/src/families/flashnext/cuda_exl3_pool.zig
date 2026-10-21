@@ -28,6 +28,10 @@ pub const shared_id = offload.shared_id;
 /// The fewest lines a layer may have: one row's ten routed picks always fit one pass.
 pub const min_lines: usize = 10;
 
+test {
+    _ = @import("exl3_frequency_seed.zig");
+}
+
 /// The layer's experts in host memory: routed [512] gate/up/down trellis bytes (stored layout), the shared expert's.
 pub const Source = struct {
     routed: []const [3][]const u8,
@@ -335,6 +339,10 @@ pub const Pool = struct {
             for (r.prefetch()) |c| try p.loadCopy(c);
             p.stats.prefetches += r.n_prefetch;
         }
+    }
+
+    pub fn warmProfile(p: *Pool) !usize {
+        return @import("exl3_frequency_seed.zig").warm(p);
     }
 
     pub fn deviceBytes(p: *const Pool) usize {
