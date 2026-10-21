@@ -52,8 +52,12 @@ request graphs retire: retaining addresses does not authorize replay under an
 old generation. Incompatible retained allocations are evicted before new
 allocation, and disabling recycling purges that engine's retained sequences.
 These request-boundary operations include context completion; they do not add
-waits to each normal token. The new lifecycle has host/mock and compile coverage;
-its dedicated device and served-cache qualification remains pending.
+waits to each normal token. On runtime `4afc6169`, both sm_120 cards pass the real
+private/shared lifecycle fixture with device and mapped-host indexers, stable
+allocation addresses, complete reset, fresh owners, snapshot restoration and
+foreign-lane preservation. The host c8 regression also remains within its
+original combined device/pinned allocation limit across incompatible capacities.
+This does not establish a c8 hardware memory saving or cross-request graph reuse.
 
 `Engine.forward` and `Engine.round` acquire a rank-wide batch lease containing all
 participating sequence generations. Pager calls validate membership, and the
@@ -79,8 +83,19 @@ templates and rebinds origin-dependent pointers, planner/remap scalars and
 score/chunk grids without recapturing compatible chunks. Paging identity,
 allocation, stream and event keys remain strict. Dense/sparse and paging-split
 topology changes still recapture, retained templates have separate budget
-tickets, and a partially failed setter poisons replay. The new private/shared
-TP2 device fixture is implemented but has not yet qualified this path on hardware.
+tickets, and a partially failed setter poisons replay. Runtime `4afc6169` passes
+the private and shared TP2 device fixtures: 24 steps of 256 rows per storage
+mode, exact eager/rebound logits and recurrent/conv/PLE/indexer/canonical BF16
+state, 241 rebinds per rank in each mode, and zero-rebind recapture at the
+dense/sparse and paging-split transitions. Scratch is poisoned between runs.
+
+The same runtime's native binary passes two 16,424-token HTTP histories with
+32-token MTP output through cold/warm/branch/rewind prefix reuse. All eight
+response hashes match the separate `ca2b13c8` cold reference; warm/branch/rewind
+reuse covers 16,407–16,417 tokens. Both ranks sample 144 prefill-origin rebinds
+and six sequence-buffer reuses. That correctness run overlapped debug-runner
+compilation, so its timing is not performance evidence. Independent golden
+fidelity, repeatable graph speedup and 200k-context capacity remain open.
 
 Reference EXL3 projections also reset split-K counters inside their existing
 input rotation, removing one separate memset node per 128-row reference block.
