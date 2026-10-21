@@ -241,7 +241,7 @@ fn stateRequest(key: Key, pass: anytype) ?state_binding.Request {
 fn windowStateRequest(key: Key, pass: anytype) ?state_binding.Request {
     const Pass = @typeInfo(@TypeOf(pass)).pointer.child;
     if (comptime !@hasField(Pass, "lanes")) return null;
-    if (key.kind != 2 or key.rows != 2 or pass.lanes.len != 0) return null;
+    if (key.kind != 2 or !state_binding.supportsWindow(key.rows) or pass.lanes.len != 0) return null;
     const gdn = @import("cuda_gdn.zig");
     var request: state_binding.Request = .{
         .width = key.rows,
@@ -326,7 +326,7 @@ fn tryRebind(key: Key, pass: anytype) !bool {
 }
 
 fn tryRebindTogether(c: *collective.Collective, signature: u64, key: Key, pass: anytype) !bool {
-    if (!stateRebindEnabled() or key.kind != 2 or key.rows != 2) return false;
+    if (!stateRebindEnabled() or key.kind != 2 or !state_binding.supportsWindow(key.rows)) return false;
     const request = stateRequest(key, pass);
     const candidate = if (request) |target| rebindCandidate(key, target, true) else null;
     var backend: ?state_driver.Backend = null;
@@ -416,35 +416,39 @@ test "exl3: state binding candidate excludes pending poisoned retired and incomp
         .count = 1,
     };
     request.layers[0] = .{ .layer = 0, .state_in = 100, .state_out = 200 };
-    const key: Key = .{ .kind = 2, .rows = 2, .scratch = 1, .scores = 2, .output = 3, .keep = 4, .keep_nonstate = 5 };
-    entries[0] = .{
-        .key = key,
-        .used = 1,
-        .cohort = 7,
-        .exec = .{ .d = undefined, .handle = @ptrFromInt(1) },
-        .template = .{ .d = undefined, .handle = @ptrFromInt(2) },
-        .binding = try state_binding.Binding.init(2, request),
-    };
-    var target = request;
-    std.mem.swap(u64, &target.layers[0].state_in, &target.layers[0].state_out);
-    var flipped = key;
-    flipped.seq[0][4] = 200;
-    flipped.keep = 9;
-    try std.testing.expect(find(flipped) == null);
-    try std.testing.expect(rebindCandidate(flipped, target, true) == &entries[0].?);
-    entries[0].?.pending = @ptrFromInt(@alignOf(Pending));
-    try std.testing.expect(rebindCandidate(flipped, target, true) == null);
-    entries[0].?.pending = null;
-    entries[0].?.poisoned = true;
-    try std.testing.expect(rebindCandidate(flipped, target, true) == null);
-    entries[0].?.poisoned = false;
-    target.layers[0].state_in = 300;
-    try std.testing.expect(rebindCandidate(flipped, target, true) == null);
-    target = request;
-    flipped.output += 1;
-    try std.testing.expect(rebindCandidate(flipped, target, true) == null);
-    entries[0].?.binding.?.invalidate();
-    try std.testing.expect(rebindCandidate(key, request, true) == null);
+    for (2..state_binding.max_width + 1) |width| {
+        request.width = width;
+        request.nonstate.rows = @intCast(width);
+        const key: Key = .{ .kind = 2, .rows = width, .scratch = 1, .scores = 2, .output = 3, .keep = 4, .keep_nonstate = 5 };
+        entries[0] = .{
+            .key = key,
+            .used = 1,
+            .cohort = 7,
+            .exec = .{ .d = undefined, .handle = @ptrFromInt(1) },
+            .template = .{ .d = undefined, .handle = @ptrFromInt(2) },
+            .binding = try state_binding.Binding.init(2, request),
+        };
+        var target = request;
+        std.mem.swap(u64, &target.layers[0].state_in, &target.layers[0].state_out);
+        var flipped = key;
+        flipped.seq[0][4] = 200;
+        flipped.keep = 9;
+        try std.testing.expect(find(flipped) == null);
+        try std.testing.expect(rebindCandidate(flipped, target, true) == &entries[0].?);
+        entries[0].?.pending = @ptrFromInt(@alignOf(Pending));
+        try std.testing.expect(rebindCandidate(flipped, target, true) == null);
+        entries[0].?.pending = null;
+        entries[0].?.poisoned = true;
+        try std.testing.expect(rebindCandidate(flipped, target, true) == null);
+        entries[0].?.poisoned = false;
+        target.layers[0].state_in = 300;
+        try std.testing.expect(rebindCandidate(flipped, target, true) == null);
+        target = request;
+        flipped.output += 1;
+        try std.testing.expect(rebindCandidate(flipped, target, true) == null);
+        entries[0].?.binding.?.invalidate();
+        try std.testing.expect(rebindCandidate(key, request, true) == null);
+    }
 }
 
 test "exl3: state binding helper contracts" {
@@ -474,7 +478,11 @@ test "exl3: state binding transaction uses real graphAgree before publication" {
     request.layers[1] = .{ .layer = 2, .state_in = 300, .state_out = 400 };
     var target = request;
     for (target.layers[0..target.count]) |*mapping| std.mem.swap(u64, &mapping.state_in, &mapping.state_out);
-    for (0..6) |scenario| {
+    for (2..state_binding.max_width + 1) |width| for (0..6) |scenario| {
+        request.width = width;
+        request.nonstate.rows = @intCast(width);
+        target.width = width;
+        target.nonstate.rows = @intCast(width);
         var pair: [2]std.posix.socket_t = undefined;
         if (std.c.socketpair(std.posix.AF.UNIX, std.posix.SOCK.STREAM, 0, &pair) != 0) return error.SocketPair;
         defer for (pair) |descriptor| {
@@ -524,52 +532,11 @@ test "exl3: state binding transaction uses real graphAgree before publication" {
         }
         try std.testing.expectEqual(scenario == 0, published);
         try std.testing.expectEqual(@as(usize, if (scenario == 0 or scenario >= 4) 2 else 0), fake.calls);
-    }
+    };
 }
 
-test "exl3: state binding current pass maps physical layers and declines in-place width1" {
-    const batch = @import("cuda_batch.zig");
-    var pass: batch.Pass(struct {}) = undefined;
-    var kernels: batch.Kernels = undefined;
-    kernels.chain = .{ .d = undefined, .handle = @ptrFromInt(10) };
-    kernels.chain_to = .{ .d = undefined, .handle = @ptrFromInt(11) };
-    var scratch: batch.Scratch = undefined;
-    scratch.gq = 1;
-    scratch.gk = 2;
-    scratch.gv = 3;
-    scratch.ggb = 4;
-    scratch.ys = 5;
-    var states: [wt.linear_n]cuda.DeviceBuffer = undefined;
-    for (&states, 0..) |*state, index| state.ptr = 1000 + index;
-    var layers: [wt.layers_n]@import("cuda_prompt_load.zig").Layer = undefined;
-    var keep: @import("cuda_batch_state.zig").Keep = .{};
-    for (&layers, 0..) |*layer, index| {
-        layer.linear = wt.linearLayer(index);
-        if (layer.linear) keep.layers[index].state_out = 2000 + wt.linearIndex(index);
-    }
-    pass.lanes = &.{};
-    pass.k = &kernels;
-    pass.s = &scratch;
-    pass.seq.state = &states;
-    pass.m.layers = &layers;
-    pass.hooks.keep = &keep;
-    var key: Key = .{ .kind = 2, .rows = 2, .scratch = 1, .scores = 2, .output = 3 };
-    const request = windowStateRequest(key, &pass).?;
-    try std.testing.expectEqual(wt.linear_n, request.count);
-    for (request.layers[0..request.count], 0..) |mapping, index| {
-        try std.testing.expectEqual(index, wt.linearIndex(mapping.layer));
-        try std.testing.expectEqual(1000 + index, mapping.state_in);
-        try std.testing.expectEqual(2000 + index, mapping.state_out);
-    }
-    key.rows = 1;
-    try std.testing.expect(windowStateRequest(key, &pass) == null);
-    key.rows = 3;
-    try std.testing.expect(windowStateRequest(key, &pass) == null);
-    key.rows = 2;
-    keep.layers[0].state_out = 0;
-    try std.testing.expect(windowStateRequest(key, &pass) == null);
-    pass.hooks.keep = null;
-    try std.testing.expect(windowStateRequest(key, &pass) == null);
+test "exl3: state binding current pass supports exact window layouts through the MTP row bound" {
+    try @import("cuda_exl3_state_request_test.zig").currentPass(Key, windowStateRequest);
 }
 
 /// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs
