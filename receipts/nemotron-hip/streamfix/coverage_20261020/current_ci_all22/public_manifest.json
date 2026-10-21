@@ -1,0 +1,42 @@
+{
+  "files": [
+    {
+      "path": "README.md",
+      "public_sha256": "f2a46f36a3f8130cbf797f34883b0a6d08c0ef14fd92651fb156309cf2d9013f",
+      "bytes": 1280
+    },
+    {
+      "path": "audit.json",
+      "public_sha256": "7807a84cb086565853b6f1e9bbaf8afbce5ee1b4edd5a0a85959f316218a355c",
+      "bytes": 123491
+    },
+    {
+      "path": "desktop_current_excerpt.log",
+      "public_sha256": "bf5df9d02c175d32cffdc4f1c6e5337c4dd354a3b9073b9aad0e93b27c34e1e8",
+      "bytes": 2089
+    },
+    {
+      "path": "desktop_historical_excerpt.log",
+      "public_sha256": "98f2a0039fba95c79823f033660f51991a037a647fa60346c4dcc2eaaa675d6c",
+      "bytes": 2041
+    },
+    {
+      "path": "historical1092_root_tree.json",
+      "public_sha256": "7ec62ea0adb86e480c5b93e40a4d5e6e44fc832f1422f5d9367f1846e3de68f8",
+      "bytes": 5144
+    },
+    {
+      "path": "main_root_tree.json",
+      "public_sha256": "0c21d7fb6c4332bb448affcf24a3e608a72cd1d04c9dd9392fda9e09da7a339c",
+      "bytes": 5144
+    },
+    {
+      "path": "merge_root_tree.json",
+      "public_sha256": "e46eb39ad463ea2e17cedecc440c149dc96f8e404df219dc3a639371cd9ff04a",
+      "bytes": 5144
+    }
+  ],
+  "manifest_excludes_itself": true,
+  "original_raw_log_hashes": "audit.json failed_jobs and desktop historical recurrence",
+  "normalization": "Public excerpts only replace /Users/runner with <CI_HOME>; audit excludes private log-origin paths."
+}

@@ -1,0 +1,3575 @@
+{
+  "scope": "Read-only completed current upstream CI classification; no CI reruns/tests/source/Ready mutations",
+  "observed_at_utc": "2026-10-21T11:28:31.671119+00:00",
+  "summary": {
+    "all_current_heads_match": true,
+    "current_checks_completed": 110,
+    "success": 87,
+    "failures": 23,
+    "windows_same52_baseline": 22,
+    "non_windows_failure_prs": [
+      1085
+    ],
+    "no_attributable_new_HIP_source_bug_established": true
+  },
+  "heads_and_checks": [
+    {
+      "pr": 1082,
+      "head": "826a0635634dee3793a68e473064d17d5c139945",
+      "isDraft": false,
+      "potential_merge": {
+        "oid": "8175811a02ade755a4ee8287eeff061d3cc5dec9",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "826a0635634dee3793a68e473064d17d5c139945"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39555796710/job/119075148655",
+          "startedAt": "2026-10-21T06:30:18Z",
+          "completedAt": "2026-10-21T06:38:08Z",
+          "checkSuite": {
+            "databaseId": 107193245872,
+            "commit": {
+              "oid": "826a0635634dee3793a68e473064d17d5c139945"
+            },
+            "workflowRun": {
+              "databaseId": 39555796710
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39555796466/job/119075147523",
+          "startedAt": "2026-10-21T06:30:14Z",
+          "completedAt": "2026-10-21T06:39:26Z",
+          "checkSuite": {
+            "databaseId": 107193245287,
+            "commit": {
+              "oid": "826a0635634dee3793a68e473064d17d5c139945"
+            },
+            "workflowRun": {
+              "databaseId": 39555796466
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39555796372/job/119075147116",
+          "startedAt": "2026-10-21T06:30:14Z",
+          "completedAt": "2026-10-21T06:30:37Z",
+          "checkSuite": {
+            "databaseId": 107193244899,
+            "commit": {
+              "oid": "826a0635634dee3793a68e473064d17d5c139945"
+            },
+            "workflowRun": {
+              "databaseId": 39555796372
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39555796466/job/119075147881",
+          "startedAt": "2026-10-21T06:30:15Z",
+          "completedAt": "2026-10-21T06:41:00Z",
+          "checkSuite": {
+            "databaseId": 107193245287,
+            "commit": {
+              "oid": "826a0635634dee3793a68e473064d17d5c139945"
+            },
+            "workflowRun": {
+              "databaseId": 39555796466
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39555796710/job/119075148272",
+          "startedAt": "2026-10-21T06:30:14Z",
+          "completedAt": "2026-10-21T06:30:48Z",
+          "checkSuite": {
+            "databaseId": 107193245872,
+            "commit": {
+              "oid": "826a0635634dee3793a68e473064d17d5c139945"
+            },
+            "workflowRun": {
+              "databaseId": 39555796710
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1083,
+      "head": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "3feeaf26fbc879bbef529412e7db3c5bde70f4c5",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488719/job/119083825435",
+          "startedAt": "2026-10-21T07:05:25Z",
+          "completedAt": "2026-10-21T07:13:51Z",
+          "checkSuite": {
+            "databaseId": 107200466707,
+            "commit": {
+              "oid": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8"
+            },
+            "workflowRun": {
+              "databaseId": 39558488719
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488463/job/119083823655",
+          "startedAt": "2026-10-21T07:05:41Z",
+          "completedAt": "2026-10-21T07:14:16Z",
+          "checkSuite": {
+            "databaseId": 107200466184,
+            "commit": {
+              "oid": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8"
+            },
+            "workflowRun": {
+              "databaseId": 39558488463
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488422/job/119083823302",
+          "startedAt": "2026-10-21T07:05:50Z",
+          "completedAt": "2026-10-21T07:06:06Z",
+          "checkSuite": {
+            "databaseId": 107200466096,
+            "commit": {
+              "oid": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8"
+            },
+            "workflowRun": {
+              "databaseId": 39558488422
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488463/job/119083823506",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T07:05:48Z",
+          "checkSuite": {
+            "databaseId": 107200466184,
+            "commit": {
+              "oid": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8"
+            },
+            "workflowRun": {
+              "databaseId": 39558488463
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488719/job/119083825638",
+          "startedAt": "2026-10-21T06:56:30Z",
+          "completedAt": "2026-10-21T06:56:56Z",
+          "checkSuite": {
+            "databaseId": 107200466707,
+            "commit": {
+              "oid": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8"
+            },
+            "workflowRun": {
+              "databaseId": 39558488719
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1084,
+      "head": "1d1bcdd35a482271448e0ff8a19eb9013be1e503",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "96f18f94b8865742f93d3e6ded6695c37c64ee56",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "1d1bcdd35a482271448e0ff8a19eb9013be1e503"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489389/job/119083827037",
+          "startedAt": "2026-10-21T07:14:22Z",
+          "completedAt": "2026-10-21T07:21:36Z",
+          "checkSuite": {
+            "databaseId": 107200468503,
+            "commit": {
+              "oid": "1d1bcdd35a482271448e0ff8a19eb9013be1e503"
+            },
+            "workflowRun": {
+              "databaseId": 39558489389
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489383/job/119083827083",
+          "startedAt": "2026-10-21T07:03:00Z",
+          "completedAt": "2026-10-21T07:13:32Z",
+          "checkSuite": {
+            "databaseId": 107200468514,
+            "commit": {
+              "oid": "1d1bcdd35a482271448e0ff8a19eb9013be1e503"
+            },
+            "workflowRun": {
+              "databaseId": 39558489383
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489514/job/119083827019",
+          "startedAt": "2026-10-21T07:14:19Z",
+          "completedAt": "2026-10-21T07:14:35Z",
+          "checkSuite": {
+            "databaseId": 107200468824,
+            "commit": {
+              "oid": "1d1bcdd35a482271448e0ff8a19eb9013be1e503"
+            },
+            "workflowRun": {
+              "databaseId": 39558489514
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489383/job/119083826726",
+          "startedAt": "2026-10-21T07:06:47Z",
+          "completedAt": "2026-10-21T07:14:57Z",
+          "checkSuite": {
+            "databaseId": 107200468514,
+            "commit": {
+              "oid": "1d1bcdd35a482271448e0ff8a19eb9013be1e503"
+            },
+            "workflowRun": {
+              "databaseId": 39558489383
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489389/job/119083827212",
+          "startedAt": "2026-10-21T07:06:03Z",
+          "completedAt": "2026-10-21T07:06:36Z",
+          "checkSuite": {
+            "databaseId": 107200468503,
+            "commit": {
+              "oid": "1d1bcdd35a482271448e0ff8a19eb9013be1e503"
+            },
+            "workflowRun": {
+              "databaseId": 39558489389
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1085,
+      "head": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "1c76d81d571bdc726d818abb968357b67e79d596",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558491324/job/119083833005",
+          "startedAt": "2026-10-21T07:31:56Z",
+          "completedAt": "2026-10-21T07:41:00Z",
+          "checkSuite": {
+            "databaseId": 107200473674,
+            "commit": {
+              "oid": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+            },
+            "workflowRun": {
+              "databaseId": 39558491324
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558491310/job/119083832708",
+          "startedAt": "2026-10-21T07:07:00Z",
+          "completedAt": "2026-10-21T07:16:44Z",
+          "checkSuite": {
+            "databaseId": 107200473637,
+            "commit": {
+              "oid": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+            },
+            "workflowRun": {
+              "databaseId": 39558491310
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558491381/job/119083832864",
+          "startedAt": "2026-10-21T07:15:43Z",
+          "completedAt": "2026-10-21T07:15:56Z",
+          "checkSuite": {
+            "databaseId": 107200473844,
+            "commit": {
+              "oid": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+            },
+            "workflowRun": {
+              "databaseId": 39558491381
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558491310/job/119083833179",
+          "startedAt": "2026-10-21T07:12:53Z",
+          "completedAt": "2026-10-21T07:22:54Z",
+          "checkSuite": {
+            "databaseId": 107200473637,
+            "commit": {
+              "oid": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+            },
+            "workflowRun": {
+              "databaseId": 39558491310
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558491324/job/119083833275",
+          "startedAt": "2026-10-21T07:07:29Z",
+          "completedAt": "2026-10-21T07:07:54Z",
+          "checkSuite": {
+            "databaseId": 107200473674,
+            "commit": {
+              "oid": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+            },
+            "workflowRun": {
+              "databaseId": 39558491324
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1086,
+      "head": "9c655701055674cb795feec0f59f5adce6bc74dc",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "8dca20f3cbf05805586d5adf0739d8a86861d88b",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "9c655701055674cb795feec0f59f5adce6bc74dc"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488584/job/119083824615",
+          "startedAt": "2026-10-21T06:55:43Z",
+          "completedAt": "2026-10-21T07:04:17Z",
+          "checkSuite": {
+            "databaseId": 107200466421,
+            "commit": {
+              "oid": "9c655701055674cb795feec0f59f5adce6bc74dc"
+            },
+            "workflowRun": {
+              "databaseId": 39558488584
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488337/job/119083823079",
+          "startedAt": "2026-10-21T06:56:47Z",
+          "completedAt": "2026-10-21T07:05:29Z",
+          "checkSuite": {
+            "databaseId": 107200465840,
+            "commit": {
+              "oid": "9c655701055674cb795feec0f59f5adce6bc74dc"
+            },
+            "workflowRun": {
+              "databaseId": 39558488337
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488544/job/119083823945",
+          "startedAt": "2026-10-21T07:03:00Z",
+          "completedAt": "2026-10-21T07:03:14Z",
+          "checkSuite": {
+            "databaseId": 107200466336,
+            "commit": {
+              "oid": "9c655701055674cb795feec0f59f5adce6bc74dc"
+            },
+            "workflowRun": {
+              "databaseId": 39558488544
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488337/job/119083823437",
+          "startedAt": "2026-10-21T06:55:38Z",
+          "completedAt": "2026-10-21T07:06:17Z",
+          "checkSuite": {
+            "databaseId": 107200465840,
+            "commit": {
+              "oid": "9c655701055674cb795feec0f59f5adce6bc74dc"
+            },
+            "workflowRun": {
+              "databaseId": 39558488337
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488584/job/119083824242",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T06:56:16Z",
+          "checkSuite": {
+            "databaseId": 107200466421,
+            "commit": {
+              "oid": "9c655701055674cb795feec0f59f5adce6bc74dc"
+            },
+            "workflowRun": {
+              "databaseId": 39558488584
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1087,
+      "head": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "94a488b4db660ab7ab1dd5e55b82fda4cebbf00f",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488063/job/119083823599",
+          "startedAt": "2026-10-21T07:22:58Z",
+          "completedAt": "2026-10-21T07:31:44Z",
+          "checkSuite": {
+            "databaseId": 107200465217,
+            "commit": {
+              "oid": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f"
+            },
+            "workflowRun": {
+              "databaseId": 39558488063
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488147/job/119083822620",
+          "startedAt": "2026-10-21T06:56:59Z",
+          "completedAt": "2026-10-21T07:05:51Z",
+          "checkSuite": {
+            "databaseId": 107200465421,
+            "commit": {
+              "oid": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f"
+            },
+            "workflowRun": {
+              "databaseId": 39558488147
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488106/job/119083822403",
+          "startedAt": "2026-10-21T06:56:08Z",
+          "completedAt": "2026-10-21T06:56:28Z",
+          "checkSuite": {
+            "databaseId": 107200465320,
+            "commit": {
+              "oid": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f"
+            },
+            "workflowRun": {
+              "databaseId": 39558488106
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488147/job/119083822945",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T07:02:03Z",
+          "checkSuite": {
+            "databaseId": 107200465421,
+            "commit": {
+              "oid": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f"
+            },
+            "workflowRun": {
+              "databaseId": 39558488147
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488063/job/119083822622",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T06:56:06Z",
+          "checkSuite": {
+            "databaseId": 107200465217,
+            "commit": {
+              "oid": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f"
+            },
+            "workflowRun": {
+              "databaseId": 39558488063
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1088,
+      "head": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "ea223a51eaba20aaaf5a573d3c956f101d4cad03",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489949/job/119083828866",
+          "startedAt": "2026-10-21T07:15:34Z",
+          "completedAt": "2026-10-21T07:24:44Z",
+          "checkSuite": {
+            "databaseId": 107200469982,
+            "commit": {
+              "oid": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797"
+            },
+            "workflowRun": {
+              "databaseId": 39558489949
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489920/job/119083828549",
+          "startedAt": "2026-10-21T06:56:14Z",
+          "completedAt": "2026-10-21T07:02:57Z",
+          "checkSuite": {
+            "databaseId": 107200469962,
+            "commit": {
+              "oid": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797"
+            },
+            "workflowRun": {
+              "databaseId": 39558489920
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489899/job/119083828303",
+          "startedAt": "2026-10-21T07:05:54Z",
+          "completedAt": "2026-10-21T07:06:10Z",
+          "checkSuite": {
+            "databaseId": 107200469924,
+            "commit": {
+              "oid": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797"
+            },
+            "workflowRun": {
+              "databaseId": 39558489899
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489920/job/119083828222",
+          "startedAt": "2026-10-21T07:06:09Z",
+          "completedAt": "2026-10-21T07:17:22Z",
+          "checkSuite": {
+            "databaseId": 107200469962,
+            "commit": {
+              "oid": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797"
+            },
+            "workflowRun": {
+              "databaseId": 39558489920
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489949/job/119083828621",
+          "startedAt": "2026-10-21T07:12:14Z",
+          "completedAt": "2026-10-21T07:12:48Z",
+          "checkSuite": {
+            "databaseId": 107200469982,
+            "commit": {
+              "oid": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797"
+            },
+            "workflowRun": {
+              "databaseId": 39558489949
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1089,
+      "head": "f3f6c3f2a925b68ff18788063cb8234ea7924f11",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "b16c83067bf2bc9497f117e9beb1403529a489ca",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "f3f6c3f2a925b68ff18788063cb8234ea7924f11"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487580/job/119083821548",
+          "startedAt": "2026-10-21T07:04:48Z",
+          "completedAt": "2026-10-21T07:13:15Z",
+          "checkSuite": {
+            "databaseId": 107200464029,
+            "commit": {
+              "oid": "f3f6c3f2a925b68ff18788063cb8234ea7924f11"
+            },
+            "workflowRun": {
+              "databaseId": 39558487580
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487588/job/119083821273",
+          "startedAt": "2026-10-21T06:55:38Z",
+          "completedAt": "2026-10-21T07:05:28Z",
+          "checkSuite": {
+            "databaseId": 107200464050,
+            "commit": {
+              "oid": "f3f6c3f2a925b68ff18788063cb8234ea7924f11"
+            },
+            "workflowRun": {
+              "databaseId": 39558487588
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487577/job/119083821156",
+          "startedAt": "2026-10-21T07:05:32Z",
+          "completedAt": "2026-10-21T07:05:47Z",
+          "checkSuite": {
+            "databaseId": 107200464027,
+            "commit": {
+              "oid": "f3f6c3f2a925b68ff18788063cb8234ea7924f11"
+            },
+            "workflowRun": {
+              "databaseId": 39558487577
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487588/job/119083821595",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T07:06:00Z",
+          "checkSuite": {
+            "databaseId": 107200464050,
+            "commit": {
+              "oid": "f3f6c3f2a925b68ff18788063cb8234ea7924f11"
+            },
+            "workflowRun": {
+              "databaseId": 39558487588
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487580/job/119083821755",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T06:56:12Z",
+          "checkSuite": {
+            "databaseId": 107200464029,
+            "commit": {
+              "oid": "f3f6c3f2a925b68ff18788063cb8234ea7924f11"
+            },
+            "workflowRun": {
+              "databaseId": 39558487580
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1090,
+      "head": "017b0953f3517cdda3821c9fbbc1abfb0965227b",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "f111518c7a0dfdbb1a29b1c81812d709f01c1caa",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "017b0953f3517cdda3821c9fbbc1abfb0965227b"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489468/job/119083827302",
+          "startedAt": "2026-10-21T07:30:14Z",
+          "completedAt": "2026-10-21T07:39:19Z",
+          "checkSuite": {
+            "databaseId": 107200468722,
+            "commit": {
+              "oid": "017b0953f3517cdda3821c9fbbc1abfb0965227b"
+            },
+            "workflowRun": {
+              "databaseId": 39558489468
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489446/job/119083827067",
+          "startedAt": "2026-10-21T07:09:52Z",
+          "completedAt": "2026-10-21T07:16:45Z",
+          "checkSuite": {
+            "databaseId": 107200468689,
+            "commit": {
+              "oid": "017b0953f3517cdda3821c9fbbc1abfb0965227b"
+            },
+            "workflowRun": {
+              "databaseId": 39558489446
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489807/job/119083828063",
+          "startedAt": "2026-10-21T07:15:00Z",
+          "completedAt": "2026-10-21T07:15:14Z",
+          "checkSuite": {
+            "databaseId": 107200469592,
+            "commit": {
+              "oid": "017b0953f3517cdda3821c9fbbc1abfb0965227b"
+            },
+            "workflowRun": {
+              "databaseId": 39558489807
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489446/job/119083827240",
+          "startedAt": "2026-10-21T06:56:51Z",
+          "completedAt": "2026-10-21T07:07:27Z",
+          "checkSuite": {
+            "databaseId": 107200468689,
+            "commit": {
+              "oid": "017b0953f3517cdda3821c9fbbc1abfb0965227b"
+            },
+            "workflowRun": {
+              "databaseId": 39558489446
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489468/job/119083827024",
+          "startedAt": "2026-10-21T07:06:24Z",
+          "completedAt": "2026-10-21T07:06:57Z",
+          "checkSuite": {
+            "databaseId": 107200468722,
+            "commit": {
+              "oid": "017b0953f3517cdda3821c9fbbc1abfb0965227b"
+            },
+            "workflowRun": {
+              "databaseId": 39558489468
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1091,
+      "head": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "3d482dcc928ce3f761de40f6c6fd85865b484b62",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490480/job/119083830529",
+          "startedAt": "2026-10-21T07:15:49Z",
+          "completedAt": "2026-10-21T07:25:57Z",
+          "checkSuite": {
+            "databaseId": 107200471330,
+            "commit": {
+              "oid": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad"
+            },
+            "workflowRun": {
+              "databaseId": 39558490480
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490098/job/119083829118",
+          "startedAt": "2026-10-21T07:14:37Z",
+          "completedAt": "2026-10-21T07:24:39Z",
+          "checkSuite": {
+            "databaseId": 107200470388,
+            "commit": {
+              "oid": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad"
+            },
+            "workflowRun": {
+              "databaseId": 39558490098
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490257/job/119083830754",
+          "startedAt": "2026-10-21T07:15:27Z",
+          "completedAt": "2026-10-21T07:15:40Z",
+          "checkSuite": {
+            "databaseId": 107200470770,
+            "commit": {
+              "oid": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad"
+            },
+            "workflowRun": {
+              "databaseId": 39558490257
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490098/job/119083828989",
+          "startedAt": "2026-10-21T07:04:19Z",
+          "completedAt": "2026-10-21T07:14:20Z",
+          "checkSuite": {
+            "databaseId": 107200470388,
+            "commit": {
+              "oid": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad"
+            },
+            "workflowRun": {
+              "databaseId": 39558490098
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490480/job/119083830963",
+          "startedAt": "2026-10-21T07:09:10Z",
+          "completedAt": "2026-10-21T07:09:49Z",
+          "checkSuite": {
+            "databaseId": 107200471330,
+            "commit": {
+              "oid": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad"
+            },
+            "workflowRun": {
+              "databaseId": 39558490480
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1092,
+      "head": "89bc8409933617057a8ad9c5e379b4603604d557",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "3bff822614c763e0b1968b5cbf2ce40c263e169b",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "89bc8409933617057a8ad9c5e379b4603604d557"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487749/job/119083822195",
+          "startedAt": "2026-10-21T07:06:17Z",
+          "completedAt": "2026-10-21T07:15:26Z",
+          "checkSuite": {
+            "databaseId": 107200464443,
+            "commit": {
+              "oid": "89bc8409933617057a8ad9c5e379b4603604d557"
+            },
+            "workflowRun": {
+              "databaseId": 39558487749
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487930/job/119083822170",
+          "startedAt": "2026-10-21T06:56:18Z",
+          "completedAt": "2026-10-21T07:06:09Z",
+          "checkSuite": {
+            "databaseId": 107200464899,
+            "commit": {
+              "oid": "89bc8409933617057a8ad9c5e379b4603604d557"
+            },
+            "workflowRun": {
+              "databaseId": 39558487930
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487830/job/119083821670",
+          "startedAt": "2026-10-21T07:08:27Z",
+          "completedAt": "2026-10-21T07:08:39Z",
+          "checkSuite": {
+            "databaseId": 107200464654,
+            "commit": {
+              "oid": "89bc8409933617057a8ad9c5e379b4603604d557"
+            },
+            "workflowRun": {
+              "databaseId": 39558487830
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487930/job/119083822462",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T07:07:03Z",
+          "checkSuite": {
+            "databaseId": 107200464899,
+            "commit": {
+              "oid": "89bc8409933617057a8ad9c5e379b4603604d557"
+            },
+            "workflowRun": {
+              "databaseId": 39558487930
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487749/job/119083821912",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T06:56:12Z",
+          "checkSuite": {
+            "databaseId": 107200464443,
+            "commit": {
+              "oid": "89bc8409933617057a8ad9c5e379b4603604d557"
+            },
+            "workflowRun": {
+              "databaseId": 39558487749
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1093,
+      "head": "71163c15ee202bea0d41e8b64f26f8c4c059a042",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "e48c8d22b95ee8b546f7d046895fe82f9fd9b3fb",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "71163c15ee202bea0d41e8b64f26f8c4c059a042"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489822/job/119083828109",
+          "startedAt": "2026-10-21T07:24:51Z",
+          "completedAt": "2026-10-21T07:33:23Z",
+          "checkSuite": {
+            "databaseId": 107200469631,
+            "commit": {
+              "oid": "71163c15ee202bea0d41e8b64f26f8c4c059a042"
+            },
+            "workflowRun": {
+              "databaseId": 39558489822
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489803/job/119083827988",
+          "startedAt": "2026-10-21T07:11:56Z",
+          "completedAt": "2026-10-21T07:21:59Z",
+          "checkSuite": {
+            "databaseId": 107200469593,
+            "commit": {
+              "oid": "71163c15ee202bea0d41e8b64f26f8c4c059a042"
+            },
+            "workflowRun": {
+              "databaseId": 39558489803
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489820/job/119083828118",
+          "startedAt": "2026-10-21T07:12:08Z",
+          "completedAt": "2026-10-21T07:12:24Z",
+          "checkSuite": {
+            "databaseId": 107200469622,
+            "commit": {
+              "oid": "71163c15ee202bea0d41e8b64f26f8c4c059a042"
+            },
+            "workflowRun": {
+              "databaseId": 39558489820
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489803/job/119083828312",
+          "startedAt": "2026-10-21T07:08:21Z",
+          "completedAt": "2026-10-21T07:18:37Z",
+          "checkSuite": {
+            "databaseId": 107200469593,
+            "commit": {
+              "oid": "71163c15ee202bea0d41e8b64f26f8c4c059a042"
+            },
+            "workflowRun": {
+              "databaseId": 39558489803
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489822/job/119083828220",
+          "startedAt": "2026-10-21T07:08:42Z",
+          "completedAt": "2026-10-21T07:09:07Z",
+          "checkSuite": {
+            "databaseId": 107200469631,
+            "commit": {
+              "oid": "71163c15ee202bea0d41e8b64f26f8c4c059a042"
+            },
+            "workflowRun": {
+              "databaseId": 39558489822
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1094,
+      "head": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "a198e9735e013dcbd60b6cfce031596b6a691878",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490339/job/119083830126",
+          "startedAt": "2026-10-21T07:13:23Z",
+          "completedAt": "2026-10-21T07:22:50Z",
+          "checkSuite": {
+            "databaseId": 107200470969,
+            "commit": {
+              "oid": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f"
+            },
+            "workflowRun": {
+              "databaseId": 39558490339
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490135/job/119083829065",
+          "startedAt": "2026-10-21T07:16:50Z",
+          "completedAt": "2026-10-21T07:24:54Z",
+          "checkSuite": {
+            "databaseId": 107200470462,
+            "commit": {
+              "oid": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f"
+            },
+            "workflowRun": {
+              "databaseId": 39558490135
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490459/job/119083830285",
+          "startedAt": "2026-10-21T07:16:22Z",
+          "completedAt": "2026-10-21T07:16:47Z",
+          "checkSuite": {
+            "databaseId": 107200471273,
+            "commit": {
+              "oid": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f"
+            },
+            "workflowRun": {
+              "databaseId": 39558490459
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490135/job/119083829380",
+          "startedAt": "2026-10-21T07:13:51Z",
+          "completedAt": "2026-10-21T07:23:34Z",
+          "checkSuite": {
+            "databaseId": 107200470462,
+            "commit": {
+              "oid": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f"
+            },
+            "workflowRun": {
+              "databaseId": 39558490135
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490339/job/119083830557",
+          "startedAt": "2026-10-21T07:07:19Z",
+          "completedAt": "2026-10-21T07:07:50Z",
+          "checkSuite": {
+            "databaseId": 107200470969,
+            "commit": {
+              "oid": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f"
+            },
+            "workflowRun": {
+              "databaseId": 39558490339
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1095,
+      "head": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "51448bc543c404b08e7486abc1ae844c68d85f42",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490702/job/119083831355",
+          "startedAt": "2026-10-21T07:05:36Z",
+          "completedAt": "2026-10-21T07:15:40Z",
+          "checkSuite": {
+            "databaseId": 107200471975,
+            "commit": {
+              "oid": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1"
+            },
+            "workflowRun": {
+              "databaseId": 39558490702
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490686/job/119083832383",
+          "startedAt": "2026-10-21T07:17:30Z",
+          "completedAt": "2026-10-21T07:27:04Z",
+          "checkSuite": {
+            "databaseId": 107200471942,
+            "commit": {
+              "oid": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1"
+            },
+            "workflowRun": {
+              "databaseId": 39558490686
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490693/job/119083830477",
+          "startedAt": "2026-10-21T07:13:54Z",
+          "completedAt": "2026-10-21T07:14:15Z",
+          "checkSuite": {
+            "databaseId": 107200471955,
+            "commit": {
+              "oid": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1"
+            },
+            "workflowRun": {
+              "databaseId": 39558490693
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490686/job/119083832711",
+          "startedAt": "2026-10-21T07:02:06Z",
+          "completedAt": "2026-10-21T07:12:05Z",
+          "checkSuite": {
+            "databaseId": 107200471942,
+            "commit": {
+              "oid": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1"
+            },
+            "workflowRun": {
+              "databaseId": 39558490686
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490702/job/119083831034",
+          "startedAt": "2026-10-21T07:11:21Z",
+          "completedAt": "2026-10-21T07:11:53Z",
+          "checkSuite": {
+            "databaseId": 107200471975,
+            "commit": {
+              "oid": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1"
+            },
+            "workflowRun": {
+              "databaseId": 39558490702
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1096,
+      "head": "29409f2d7c58326351da64599b051ccd8f98b867",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "d50ee5fcba502f47fefd688b0ffcec01df3a78b1",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "29409f2d7c58326351da64599b051ccd8f98b867"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490607/job/119083830574",
+          "startedAt": "2026-10-21T07:33:30Z",
+          "completedAt": "2026-10-21T07:42:04Z",
+          "checkSuite": {
+            "databaseId": 107200471696,
+            "commit": {
+              "oid": "29409f2d7c58326351da64599b051ccd8f98b867"
+            },
+            "workflowRun": {
+              "databaseId": 39558490607
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558491025/job/119083832341",
+          "startedAt": "2026-10-21T07:13:35Z",
+          "completedAt": "2026-10-21T07:20:24Z",
+          "checkSuite": {
+            "databaseId": 107200472763,
+            "commit": {
+              "oid": "29409f2d7c58326351da64599b051ccd8f98b867"
+            },
+            "workflowRun": {
+              "databaseId": 39558491025
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490757/job/119083830956",
+          "startedAt": "2026-10-21T07:06:40Z",
+          "completedAt": "2026-10-21T07:07:17Z",
+          "checkSuite": {
+            "databaseId": 107200472171,
+            "commit": {
+              "oid": "29409f2d7c58326351da64599b051ccd8f98b867"
+            },
+            "workflowRun": {
+              "databaseId": 39558490757
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558491025/job/119083832260",
+          "startedAt": "2026-10-21T07:03:59Z",
+          "completedAt": "2026-10-21T07:11:18Z",
+          "checkSuite": {
+            "databaseId": 107200472763,
+            "commit": {
+              "oid": "29409f2d7c58326351da64599b051ccd8f98b867"
+            },
+            "workflowRun": {
+              "databaseId": 39558491025
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490607/job/119083830965",
+          "startedAt": "2026-10-21T07:07:53Z",
+          "completedAt": "2026-10-21T07:08:25Z",
+          "checkSuite": {
+            "databaseId": 107200471696,
+            "commit": {
+              "oid": "29409f2d7c58326351da64599b051ccd8f98b867"
+            },
+            "workflowRun": {
+              "databaseId": 39558490607
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1097,
+      "head": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "651b8e578c65c12ad9e7196d6e62ae95a0e1bf39",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488834/job/119083825217",
+          "startedAt": "2026-10-21T07:26:05Z",
+          "completedAt": "2026-10-21T07:34:50Z",
+          "checkSuite": {
+            "databaseId": 107200467053,
+            "commit": {
+              "oid": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd"
+            },
+            "workflowRun": {
+              "databaseId": 39558488834
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488858/job/119083825077",
+          "startedAt": "2026-10-21T07:14:23Z",
+          "completedAt": "2026-10-21T07:23:33Z",
+          "checkSuite": {
+            "databaseId": 107200467120,
+            "commit": {
+              "oid": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd"
+            },
+            "workflowRun": {
+              "databaseId": 39558488858
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489014/job/119083825924",
+          "startedAt": "2026-10-21T07:07:40Z",
+          "completedAt": "2026-10-21T07:07:59Z",
+          "checkSuite": {
+            "databaseId": 107200467519,
+            "commit": {
+              "oid": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd"
+            },
+            "workflowRun": {
+              "databaseId": 39558489014
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488858/job/119083824652",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T07:02:09Z",
+          "checkSuite": {
+            "databaseId": 107200467120,
+            "commit": {
+              "oid": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd"
+            },
+            "workflowRun": {
+              "databaseId": 39558488858
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488834/job/119083825625",
+          "startedAt": "2026-10-21T06:56:15Z",
+          "completedAt": "2026-10-21T06:56:47Z",
+          "checkSuite": {
+            "databaseId": 107200467053,
+            "commit": {
+              "oid": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd"
+            },
+            "workflowRun": {
+              "databaseId": 39558488834
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1098,
+      "head": "51d68203c4c2e3450345e31087f8dad711c6d479",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "12b5c39d8e29c8940b6a4bbcd6bdcd957365ae40",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "51d68203c4c2e3450345e31087f8dad711c6d479"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487995/job/119083822409",
+          "startedAt": "2026-10-21T06:55:46Z",
+          "completedAt": "2026-10-21T07:04:42Z",
+          "checkSuite": {
+            "databaseId": 107200465077,
+            "commit": {
+              "oid": "51d68203c4c2e3450345e31087f8dad711c6d479"
+            },
+            "workflowRun": {
+              "databaseId": 39558487995
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488054/job/119083822252",
+          "startedAt": "2026-10-21T07:02:12Z",
+          "completedAt": "2026-10-21T07:12:12Z",
+          "checkSuite": {
+            "databaseId": 107200465160,
+            "commit": {
+              "oid": "51d68203c4c2e3450345e31087f8dad711c6d479"
+            },
+            "workflowRun": {
+              "databaseId": 39558488054
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487935/job/119083821940",
+          "startedAt": "2026-10-21T07:06:30Z",
+          "completedAt": "2026-10-21T07:06:44Z",
+          "checkSuite": {
+            "databaseId": 107200464920,
+            "commit": {
+              "oid": "51d68203c4c2e3450345e31087f8dad711c6d479"
+            },
+            "workflowRun": {
+              "databaseId": 39558487935
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558488054/job/119083822604",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T07:06:22Z",
+          "checkSuite": {
+            "databaseId": 107200465160,
+            "commit": {
+              "oid": "51d68203c4c2e3450345e31087f8dad711c6d479"
+            },
+            "workflowRun": {
+              "databaseId": 39558488054
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558487995/job/119083822282",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T06:56:12Z",
+          "checkSuite": {
+            "databaseId": 107200465077,
+            "commit": {
+              "oid": "51d68203c4c2e3450345e31087f8dad711c6d479"
+            },
+            "workflowRun": {
+              "databaseId": 39558487995
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1099,
+      "head": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "d1af00b53d549c4b8850a3c607b42ee0be9d68b1",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490336/job/119083830241",
+          "startedAt": "2026-10-21T07:03:21Z",
+          "completedAt": "2026-10-21T07:11:13Z",
+          "checkSuite": {
+            "databaseId": 107200470957,
+            "commit": {
+              "oid": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b"
+            },
+            "workflowRun": {
+              "databaseId": 39558490336
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490048/job/119083828976",
+          "startedAt": "2026-10-21T07:06:40Z",
+          "completedAt": "2026-10-21T07:16:19Z",
+          "checkSuite": {
+            "databaseId": 107200470260,
+            "commit": {
+              "oid": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b"
+            },
+            "workflowRun": {
+              "databaseId": 39558490048
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490270/job/119083829633",
+          "startedAt": "2026-10-21T07:07:57Z",
+          "completedAt": "2026-10-21T07:08:11Z",
+          "checkSuite": {
+            "databaseId": 107200470803,
+            "commit": {
+              "oid": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b"
+            },
+            "workflowRun": {
+              "databaseId": 39558490270
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490048/job/119083828596",
+          "startedAt": "2026-10-21T07:13:02Z",
+          "completedAt": "2026-10-21T07:21:31Z",
+          "checkSuite": {
+            "databaseId": 107200470260,
+            "commit": {
+              "oid": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b"
+            },
+            "workflowRun": {
+              "databaseId": 39558490048
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490336/job/119083829652",
+          "startedAt": "2026-10-21T07:13:10Z",
+          "completedAt": "2026-10-21T07:13:48Z",
+          "checkSuite": {
+            "databaseId": 107200470957,
+            "commit": {
+              "oid": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b"
+            },
+            "workflowRun": {
+              "databaseId": 39558490336
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1100,
+      "head": "8859ff69a3d2023ae19607189b2981987a86fcef",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "37b5bc4adad63ff3f11c0778ede634eab086c78d",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "8859ff69a3d2023ae19607189b2981987a86fcef"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558486502/job/119083818444",
+          "startedAt": "2026-10-21T06:55:42Z",
+          "completedAt": "2026-10-21T07:05:17Z",
+          "checkSuite": {
+            "databaseId": 107200461179,
+            "commit": {
+              "oid": "8859ff69a3d2023ae19607189b2981987a86fcef"
+            },
+            "workflowRun": {
+              "databaseId": 39558486502
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558486608/job/119083818300",
+          "startedAt": "2026-10-21T06:55:37Z",
+          "completedAt": "2026-10-21T07:05:26Z",
+          "checkSuite": {
+            "databaseId": 107200461466,
+            "commit": {
+              "oid": "8859ff69a3d2023ae19607189b2981987a86fcef"
+            },
+            "workflowRun": {
+              "databaseId": 39558486608
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558486552/job/119083818199",
+          "startedAt": "2026-10-21T06:55:37Z",
+          "completedAt": "2026-10-21T06:55:53Z",
+          "checkSuite": {
+            "databaseId": 107200461311,
+            "commit": {
+              "oid": "8859ff69a3d2023ae19607189b2981987a86fcef"
+            },
+            "workflowRun": {
+              "databaseId": 39558486552
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558486608/job/119083818692",
+          "startedAt": "2026-10-21T06:55:39Z",
+          "completedAt": "2026-10-21T07:03:55Z",
+          "checkSuite": {
+            "databaseId": 107200461466,
+            "commit": {
+              "oid": "8859ff69a3d2023ae19607189b2981987a86fcef"
+            },
+            "workflowRun": {
+              "databaseId": 39558486608
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558486502/job/119083818122",
+          "startedAt": "2026-10-21T06:55:37Z",
+          "completedAt": "2026-10-21T06:56:06Z",
+          "checkSuite": {
+            "databaseId": 107200461179,
+            "commit": {
+              "oid": "8859ff69a3d2023ae19607189b2981987a86fcef"
+            },
+            "workflowRun": {
+              "databaseId": 39558486502
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1101,
+      "head": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "0187c9822e6b55bb405f9620c1a0a99c13eb4ea4",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558492255/job/119083836167",
+          "startedAt": "2026-10-21T07:34:58Z",
+          "completedAt": "2026-10-21T07:43:20Z",
+          "checkSuite": {
+            "databaseId": 107200476040,
+            "commit": {
+              "oid": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4"
+            },
+            "workflowRun": {
+              "databaseId": 39558492255
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558492102/job/119083834891",
+          "startedAt": "2026-10-21T07:16:47Z",
+          "completedAt": "2026-10-21T07:27:01Z",
+          "checkSuite": {
+            "databaseId": 107200475717,
+            "commit": {
+              "oid": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4"
+            },
+            "workflowRun": {
+              "databaseId": 39558492102
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558492283/job/119083835713",
+          "startedAt": "2026-10-21T07:16:48Z",
+          "completedAt": "2026-10-21T07:17:27Z",
+          "checkSuite": {
+            "databaseId": 107200476085,
+            "commit": {
+              "oid": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4"
+            },
+            "workflowRun": {
+              "databaseId": 39558492283
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558492102/job/119083835445",
+          "startedAt": "2026-10-21T06:55:56Z",
+          "completedAt": "2026-10-21T07:05:38Z",
+          "checkSuite": {
+            "databaseId": 107200475717,
+            "commit": {
+              "oid": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4"
+            },
+            "workflowRun": {
+              "databaseId": 39558492102
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558492255/job/119083836596",
+          "startedAt": "2026-10-21T07:07:06Z",
+          "completedAt": "2026-10-21T07:07:38Z",
+          "checkSuite": {
+            "databaseId": 107200476040,
+            "commit": {
+              "oid": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4"
+            },
+            "workflowRun": {
+              "databaseId": 39558492255
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1102,
+      "head": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "365b6105c6e2376bfaa69b40cfabc301c8013f17",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489954/job/119083828877",
+          "startedAt": "2026-10-21T07:11:49Z",
+          "completedAt": "2026-10-21T07:20:07Z",
+          "checkSuite": {
+            "databaseId": 107200470039,
+            "commit": {
+              "oid": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15"
+            },
+            "workflowRun": {
+              "databaseId": 39558489954
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490245/job/119083829415",
+          "startedAt": "2026-10-21T06:56:14Z",
+          "completedAt": "2026-10-21T07:02:57Z",
+          "checkSuite": {
+            "databaseId": 107200470727,
+            "commit": {
+              "oid": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15"
+            },
+            "workflowRun": {
+              "databaseId": 39558490245
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490013/job/119083828619",
+          "startedAt": "2026-10-21T07:06:20Z",
+          "completedAt": "2026-10-21T07:06:35Z",
+          "checkSuite": {
+            "databaseId": 107200470191,
+            "commit": {
+              "oid": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15"
+            },
+            "workflowRun": {
+              "databaseId": 39558490013
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558490245/job/119083829780",
+          "startedAt": "2026-10-21T07:05:30Z",
+          "completedAt": "2026-10-21T07:13:07Z",
+          "checkSuite": {
+            "databaseId": 107200470727,
+            "commit": {
+              "oid": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15"
+            },
+            "workflowRun": {
+              "databaseId": 39558490245
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489954/job/119083828526",
+          "startedAt": "2026-10-21T06:56:09Z",
+          "completedAt": "2026-10-21T06:56:44Z",
+          "checkSuite": {
+            "databaseId": 107200470039,
+            "commit": {
+              "oid": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15"
+            },
+            "workflowRun": {
+              "databaseId": 39558489954
+            }
+          }
+        }
+      ]
+    },
+    {
+      "pr": 1103,
+      "head": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
+      "isDraft": true,
+      "potential_merge": {
+        "oid": "f3dd03d7992022bd6c8d03a44139503749e3ebaa",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "a44e7af98183721e58f2fb4d7e96ae874dfecd83"
+            }
+          ]
+        }
+      },
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "name": "desktop",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489702/job/119083828606",
+          "startedAt": "2026-10-21T07:20:15Z",
+          "completedAt": "2026-10-21T07:29:03Z",
+          "checkSuite": {
+            "databaseId": 107200469298,
+            "commit": {
+              "oid": "a44e7af98183721e58f2fb4d7e96ae874dfecd83"
+            },
+            "workflowRun": {
+              "databaseId": 39558489702
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489783/job/119083828413",
+          "startedAt": "2026-10-21T07:11:37Z",
+          "completedAt": "2026-10-21T07:21:03Z",
+          "checkSuite": {
+            "databaseId": 107200469532,
+            "commit": {
+              "oid": "a44e7af98183721e58f2fb4d7e96ae874dfecd83"
+            },
+            "workflowRun": {
+              "databaseId": 39558489783
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "fmt",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489750/job/119083827927",
+          "startedAt": "2026-10-21T07:08:01Z",
+          "completedAt": "2026-10-21T07:08:17Z",
+          "checkSuite": {
+            "databaseId": 107200469442,
+            "commit": {
+              "oid": "a44e7af98183721e58f2fb4d7e96ae874dfecd83"
+            },
+            "workflowRun": {
+              "databaseId": 39558489750
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "zig-windows",
+          "status": "COMPLETED",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489783/job/119083828032",
+          "startedAt": "2026-10-21T07:15:59Z",
+          "completedAt": "2026-10-21T07:21:53Z",
+          "checkSuite": {
+            "databaseId": 107200469532,
+            "commit": {
+              "oid": "a44e7af98183721e58f2fb4d7e96ae874dfecd83"
+            },
+            "workflowRun": {
+              "databaseId": 39558489783
+            }
+          }
+        },
+        {
+          "__typename": "CheckRun",
+          "name": "mobile",
+          "status": "COMPLETED",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/ashhart/TensorFold/actions/runs/39558489702/job/119083828274",
+          "startedAt": "2026-10-21T07:05:51Z",
+          "completedAt": "2026-10-21T07:06:28Z",
+          "checkSuite": {
+            "databaseId": 107200469298,
+            "commit": {
+              "oid": "a44e7af98183721e58f2fb4d7e96ae874dfecd83"
+            },
+            "workflowRun": {
+              "databaseId": 39558489702
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "failed_jobs": [
+    {
+      "pr": 1082,
+      "head": "826a0635634dee3793a68e473064d17d5c139945",
+      "context": "zig-windows",
+      "job_id": "119075147881",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39555796466/job/119075147881",
+      "source_job_metadata_sha256": "0e3d11211a376dd4b6af2785cd2c3eab2d34ebef022420cacdeec1174a089c96",
+      "log_sha256": "c3d154faa79f25e0052ddde20e63f31e18b5e7e625b94fcbb49cea382950af40",
+      "log_is_previously_normalized_copy": true,
+      "check_suite_commit": "826a0635634dee3793a68e473064d17d5c139945",
+      "potential_merge_snapshot": {
+        "oid": "8175811a02ade755a4ee8287eeff061d3cc5dec9",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "826a0635634dee3793a68e473064d17d5c139945"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 8175811 Merge 826a0635634dee3793a68e473064d17d5c139945 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1423/1438 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:31:35Z",
+          "completed_at": "2026-10-21T06:40:47Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1083,
+      "head": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8",
+      "context": "zig-windows",
+      "job_id": "119083823506",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558488463/job/119083823506",
+      "source_job_metadata_sha256": "2cd7d034339837470152a77c0ae1fe68659e48746ef764197bfb93c68aff9bca",
+      "log_sha256": "d352243e1e38a91f3368675a5917387c078cd43b77404e08c6f5bc657bfe3554",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8",
+      "potential_merge_snapshot": {
+        "oid": "3feeaf26fbc879bbef529412e7db3c5bde70f4c5",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 3feeaf2 Merge 096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1423/1438 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:05Z",
+          "completed_at": "2026-10-21T07:05:36Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1084,
+      "head": "1d1bcdd35a482271448e0ff8a19eb9013be1e503",
+      "context": "zig-windows",
+      "job_id": "119083826726",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558489383/job/119083826726",
+      "source_job_metadata_sha256": "769e8fa5e68a7ce4fa77d105eb8ca124065c7ec5984477def850174272d89edd",
+      "log_sha256": "aca4c466df944458ecf174b548a5a36d7e66968cfa5382e09dec143ad1600f25",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "1d1bcdd35a482271448e0ff8a19eb9013be1e503",
+      "potential_merge_snapshot": {
+        "oid": "96f18f94b8865742f93d3e6ded6695c37c64ee56",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "1d1bcdd35a482271448e0ff8a19eb9013be1e503"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 96f18f9 Merge 1d1bcdd35a482271448e0ff8a19eb9013be1e503 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1424/1439 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:07:15Z",
+          "completed_at": "2026-10-21T07:14:47Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1085,
+      "head": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
+      "context": "desktop",
+      "job_id": "119083833005",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558491324/job/119083833005",
+      "source_job_metadata_sha256": "a9eda884becdeb91d26d61c5ab4649b71cdacb9f59f72252f97e3c2354b03414",
+      "log_sha256": "0ff12e74a05cd91b4499d47ac59c4bd4e84e26e4f5a0f7471089923ed5bace44",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
+      "potential_merge_snapshot": {
+        "oid": "1c76d81d571bdc726d818abb968357b67e79d596",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 1c76d81 Merge 63025caf8555fe474d6d066c966c8f1e9b9a7352 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [],
+      "failed_steps": [
+        {
+          "name": "Desktop security and runtime tests",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 7,
+          "started_at": "2026-10-21T07:32:47Z",
+          "completed_at": "2026-10-21T07:40:56Z"
+        }
+      ],
+      "classification": "Non-Windows failure: actual primary cause requires inspection"
+    },
+    {
+      "pr": 1085,
+      "head": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
+      "context": "zig-windows",
+      "job_id": "119083833179",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558491310/job/119083833179",
+      "source_job_metadata_sha256": "09124db21b3c80b7794b208e350e8081484cf260b9b7c2565645a426135eb7e8",
+      "log_sha256": "ccec5628e72c7bf08d5d4067160e09703b99319a9a89b38645a0c686b8f890e8",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
+      "potential_merge_snapshot": {
+        "oid": "1c76d81d571bdc726d818abb968357b67e79d596",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "63025caf8555fe474d6d066c966c8f1e9b9a7352"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 1c76d81 Merge 63025caf8555fe474d6d066c966c8f1e9b9a7352 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1430/1445 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:13:44Z",
+          "completed_at": "2026-10-21T07:22:41Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1086,
+      "head": "9c655701055674cb795feec0f59f5adce6bc74dc",
+      "context": "zig-windows",
+      "job_id": "119083823437",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558488337/job/119083823437",
+      "source_job_metadata_sha256": "60f13d99cf8740356a7e2a8250d8e276034d363f0f961ed8f50cd0906795d7fa",
+      "log_sha256": "49b9f867eff0337d9e31a0d727bcbab0fb0d31375b39a9409783a17d240dcbf2",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "9c655701055674cb795feec0f59f5adce6bc74dc",
+      "potential_merge_snapshot": {
+        "oid": "8dca20f3cbf05805586d5adf0739d8a86861d88b",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "9c655701055674cb795feec0f59f5adce6bc74dc"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 8dca20f Merge 9c655701055674cb795feec0f59f5adce6bc74dc into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1431/1446 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:12Z",
+          "completed_at": "2026-10-21T07:06:04Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1087,
+      "head": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f",
+      "context": "zig-windows",
+      "job_id": "119083822945",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558488147/job/119083822945",
+      "source_job_metadata_sha256": "8e7bce2d61427ce825a6616b17c0c025b23ccdd0aab75d1dd695c059c388c77f",
+      "log_sha256": "711000ec03d4ca50cb671b1c3cf78d299fb828ecc0ddebef3504b6bd47d1b0b1",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f",
+      "potential_merge_snapshot": {
+        "oid": "94a488b4db660ab7ab1dd5e55b82fda4cebbf00f",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 94a488b Merge e4fed24d0d5a0e9a518fb2965fd876afa61f700f into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1432/1447 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:03Z",
+          "completed_at": "2026-10-21T07:01:52Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1088,
+      "head": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797",
+      "context": "zig-windows",
+      "job_id": "119083828222",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558489920/job/119083828222",
+      "source_job_metadata_sha256": "934148292d4ddc11a6a8821fd05aa41092097b076ae832f89b82e4e757a448be",
+      "log_sha256": "eb5991c0b5b6045d87040da4f35d693d19df17b96da1c7ccc8226da0620f666e",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797",
+      "potential_merge_snapshot": {
+        "oid": "ea223a51eaba20aaaf5a573d3c956f101d4cad03",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at ea223a5 Merge 1f19dbac8ea123c20c39afdd3e62afbbf9b12797 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1432/1447 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:06:40Z",
+          "completed_at": "2026-10-21T07:17:07Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1089,
+      "head": "f3f6c3f2a925b68ff18788063cb8234ea7924f11",
+      "context": "zig-windows",
+      "job_id": "119083821595",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558487588/job/119083821595",
+      "source_job_metadata_sha256": "d79209f84004e554ec40cba6e8b68a41a5514e49a214a80d51809592c2e58edc",
+      "log_sha256": "87ed4604a737d08e05fe6787ad4c4aab494fcc16a388cd5905b810be07299aba",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "f3f6c3f2a925b68ff18788063cb8234ea7924f11",
+      "potential_merge_snapshot": {
+        "oid": "b16c83067bf2bc9497f117e9beb1403529a489ca",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "f3f6c3f2a925b68ff18788063cb8234ea7924f11"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at b16c830 Merge f3f6c3f2a925b68ff18788063cb8234ea7924f11 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1447/1462 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:11Z",
+          "completed_at": "2026-10-21T07:05:48Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1090,
+      "head": "017b0953f3517cdda3821c9fbbc1abfb0965227b",
+      "context": "zig-windows",
+      "job_id": "119083827240",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558489446/job/119083827240",
+      "source_job_metadata_sha256": "d11aa439967077d191ec892f3ea080f6f5362996cdc4efddc1562f41a0fc638f",
+      "log_sha256": "bc76a4f9f13e863a0710ad493b84fe3123c96e76efaf884cd55c6c4881fdbe0e",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "017b0953f3517cdda3821c9fbbc1abfb0965227b",
+      "potential_merge_snapshot": {
+        "oid": "f111518c7a0dfdbb1a29b1c81812d709f01c1caa",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "017b0953f3517cdda3821c9fbbc1abfb0965227b"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at f111518 Merge 017b0953f3517cdda3821c9fbbc1abfb0965227b into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1448/1463 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:57:36Z",
+          "completed_at": "2026-10-21T07:07:13Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1091,
+      "head": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad",
+      "context": "zig-windows",
+      "job_id": "119083828989",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558490098/job/119083828989",
+      "source_job_metadata_sha256": "2bd6e7493d21ebe3d35ed85752e761c622626e971bbaec1e0e3dd4a002440635",
+      "log_sha256": "3a62f1956427c61ffc639f177910ed7c439a3131d621ab0f04486d80e20cc1a1",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad",
+      "potential_merge_snapshot": {
+        "oid": "3d482dcc928ce3f761de40f6c6fd85865b484b62",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 3d482dc Merge 76a1f34f05f14f7de9a321b2810f9f77d41fe7ad into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/213 steps succeeded (22 failed); 1450/1465 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:04:51Z",
+          "completed_at": "2026-10-21T07:14:06Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1092,
+      "head": "89bc8409933617057a8ad9c5e379b4603604d557",
+      "context": "zig-windows",
+      "job_id": "119083822462",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558487930/job/119083822462",
+      "source_job_metadata_sha256": "dbdd3f203fd0cfced471ae96c87980d7d6d2a4f4900d7566bcfa407b918e7d4f",
+      "log_sha256": "f89ae650901e57e375fc11a2bc3a2cd356dbafde585616b30095e09fe3f51765",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "89bc8409933617057a8ad9c5e379b4603604d557",
+      "potential_merge_snapshot": {
+        "oid": "3bff822614c763e0b1968b5cbf2ce40c263e169b",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "89bc8409933617057a8ad9c5e379b4603604d557"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 3bff822 Merge 89bc8409933617057a8ad9c5e379b4603604d557 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 169/215 steps succeeded (22 failed); 1478/1494 tests passed (16 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:18Z",
+          "completed_at": "2026-10-21T07:06:30Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1093,
+      "head": "71163c15ee202bea0d41e8b64f26f8c4c059a042",
+      "context": "zig-windows",
+      "job_id": "119083828312",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558489803/job/119083828312",
+      "source_job_metadata_sha256": "ce78c0b07e6d4e519d5098a9c7b4c8fa6207fd3f2daeda037c5eb6874d8905c4",
+      "log_sha256": "1e925c470318521038a3a5e2b6b5021a1f0eae4bc3d2684d4510ec7fe714b209",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "71163c15ee202bea0d41e8b64f26f8c4c059a042",
+      "potential_merge_snapshot": {
+        "oid": "e48c8d22b95ee8b546f7d046895fe82f9fd9b3fb",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "71163c15ee202bea0d41e8b64f26f8c4c059a042"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at e48c8d2 Merge 71163c15ee202bea0d41e8b64f26f8c4c059a042 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 169/215 steps succeeded (22 failed); 1479/1495 tests passed (16 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:09:01Z",
+          "completed_at": "2026-10-21T07:18:21Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 80,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1094,
+      "head": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f",
+      "context": "zig-windows",
+      "job_id": "119083829380",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558490135/job/119083829380",
+      "source_job_metadata_sha256": "841f99e3f10ea67828115972a4d04b3bacde927fc6b5da8fa5bb6434ba9458b4",
+      "log_sha256": "d69c1d33705604a21698b3603858675b019554a6dc9ad2397ab433ee74c17ef8",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f",
+      "potential_merge_snapshot": {
+        "oid": "a198e9735e013dcbd60b6cfce031596b6a691878",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at a198e97 Merge 56916dd0db0df19eb1c4ab370c97f11bdfa7b96f into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:14:23Z",
+          "completed_at": "2026-10-21T07:23:20Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1095,
+      "head": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1",
+      "context": "zig-windows",
+      "job_id": "119083832711",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558490686/job/119083832711",
+      "source_job_metadata_sha256": "7de8b2437813ae2a6ee72b935cfc06559867be19a22da0d2152b7bc205438e50",
+      "log_sha256": "ea9930d529c3c8bcebc332551f8ca5fd006bde9252a75e1900e178ca717f89a3",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1",
+      "potential_merge_snapshot": {
+        "oid": "51448bc543c404b08e7486abc1ae844c68d85f42",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 51448bc Merge 4322276b240fb4a16c62767e24ab08dcd3c5e4f1 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:02:42Z",
+          "completed_at": "2026-10-21T07:11:49Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1096,
+      "head": "29409f2d7c58326351da64599b051ccd8f98b867",
+      "context": "zig-windows",
+      "job_id": "119083832260",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558491025/job/119083832260",
+      "source_job_metadata_sha256": "b3854063c954aef213dd8e8001104a96c077471fb5263f9fd81714c92dd84aa3",
+      "log_sha256": "1ca115c125d3f75b11359f85d6bdc396a79fbe6cd0944e44f1896440731d5f06",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "29409f2d7c58326351da64599b051ccd8f98b867",
+      "potential_merge_snapshot": {
+        "oid": "d50ee5fcba502f47fefd688b0ffcec01df3a78b1",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "29409f2d7c58326351da64599b051ccd8f98b867"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at d50ee5f Merge 29409f2d7c58326351da64599b051ccd8f98b867 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:04:27Z",
+          "completed_at": "2026-10-21T07:11:06Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1097,
+      "head": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd",
+      "context": "zig-windows",
+      "job_id": "119083824652",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558488858/job/119083824652",
+      "source_job_metadata_sha256": "0dcfb52e5c3e611102872e6972b3f20b4c771fb4fe3cad4d6816f56e94b2d652",
+      "log_sha256": "07ad10c79f6cfa92ed53397ffb331dd931cf80e731c7682ead295494b23c8784",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd",
+      "potential_merge_snapshot": {
+        "oid": "651b8e578c65c12ad9e7196d6e62ae95a0e1bf39",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 651b8e5 Merge dfcbfb1d4ec601803f116d454b3cdead6a6818fd into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:21Z",
+          "completed_at": "2026-10-21T07:02:00Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1098,
+      "head": "51d68203c4c2e3450345e31087f8dad711c6d479",
+      "context": "zig-windows",
+      "job_id": "119083822604",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558488054/job/119083822604",
+      "source_job_metadata_sha256": "61257bb5892ab5efa328e4ce549988b1d5fc86718d0eac5d3a24b8e88987a413",
+      "log_sha256": "fb2e7d278904731e7cea425debb20c1beda1821783d21f334c6bf00794818a3b",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "51d68203c4c2e3450345e31087f8dad711c6d479",
+      "potential_merge_snapshot": {
+        "oid": "12b5c39d8e29c8940b6a4bbcd6bdcd957365ae40",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "51d68203c4c2e3450345e31087f8dad711c6d479"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 12b5c39 Merge 51d68203c4c2e3450345e31087f8dad711c6d479 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:47Z",
+          "completed_at": "2026-10-21T07:06:09Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1099,
+      "head": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b",
+      "context": "zig-windows",
+      "job_id": "119083828596",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558490048/job/119083828596",
+      "source_job_metadata_sha256": "5d231c0cd2b6a30c8a4a4f28ebaa968826f644e12ff8372053e18a151336784d",
+      "log_sha256": "cf6423ea825c36291f3d4c3d11ebb31c9e7aa2f46286ba8937620bfc56073b13",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b",
+      "potential_merge_snapshot": {
+        "oid": "d1af00b53d549c4b8850a3c607b42ee0be9d68b1",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at d1af00b Merge edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:14:13Z",
+          "completed_at": "2026-10-21T07:21:21Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1100,
+      "head": "8859ff69a3d2023ae19607189b2981987a86fcef",
+      "context": "zig-windows",
+      "job_id": "119083818692",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558486608/job/119083818692",
+      "source_job_metadata_sha256": "42f028899afdcd1826e0b6927596b0169979ed9efe4cedd80b5c1c1bbd3e7f55",
+      "log_sha256": "b00d855ca4c7d66698a545ec6729d02200dc5763e19afa2aef3f64497059fab0",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "8859ff69a3d2023ae19607189b2981987a86fcef",
+      "potential_merge_snapshot": {
+        "oid": "37b5bc4adad63ff3f11c0778ede634eab086c78d",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "8859ff69a3d2023ae19607189b2981987a86fcef"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 37b5bc4 Merge 8859ff69a3d2023ae19607189b2981987a86fcef into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:14Z",
+          "completed_at": "2026-10-21T07:03:43Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1101,
+      "head": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4",
+      "context": "zig-windows",
+      "job_id": "119083835445",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558492102/job/119083835445",
+      "source_job_metadata_sha256": "bcf2537103169c22ca78667294743299b903e5920851e01744c37cd9d0ad6d93",
+      "log_sha256": "a14e1be51915d3c95e9e210769c7ab30c89e24368392441ffdcd5530f552e498",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4",
+      "potential_merge_snapshot": {
+        "oid": "0187c9822e6b55bb405f9620c1a0a99c13eb4ea4",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 0187c98 Merge 56511fa7d7d7ce69adeb3666dafe962b4dc405c4 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T06:56:29Z",
+          "completed_at": "2026-10-21T07:05:26Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1102,
+      "head": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15",
+      "context": "zig-windows",
+      "job_id": "119083829780",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558490245/job/119083829780",
+      "source_job_metadata_sha256": "4535b922ad0a07d80a2c50f9688c4ef37a677620264f0711ba12b59a1ad90e11",
+      "log_sha256": "18ac724b6cd0aadc4c42095e3e565ec14488f0937a51c72b0314f456b80c5819",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15",
+      "potential_merge_snapshot": {
+        "oid": "365b6105c6e2376bfaa69b40cfabc301c8013f17",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at 365b610 Merge 75db6d0150ef92028f375aa94c35dc3a9e5b8e15 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:05:57Z",
+          "completed_at": "2026-10-21T07:12:56Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    },
+    {
+      "pr": 1103,
+      "head": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
+      "context": "zig-windows",
+      "job_id": "119083828032",
+      "url": "https://github.com/ashhart/TensorFold/actions/runs/39558489783/job/119083828032",
+      "source_job_metadata_sha256": "eabe66bc6eb795a087862b280d6d191f2b68fa7d43c4b4dfadef9268fb689df9",
+      "log_sha256": "762705272ce838b3911b841e54a6610adf57edc9a91f96820bac2c4186b70fba",
+      "log_is_previously_normalized_copy": false,
+      "check_suite_commit": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
+      "potential_merge_snapshot": {
+        "oid": "f3dd03d7992022bd6c8d03a44139503749e3ebaa",
+        "parents": {
+          "nodes": [
+            {
+              "oid": "d1018b318fb51981c4a18f12e40269a4d3ee9713"
+            },
+            {
+              "oid": "a44e7af98183721e58f2fb4d7e96ae874dfecd83"
+            }
+          ]
+        }
+      },
+      "potential_merge_full_oid_in_log": true,
+      "actual_checkout_lines": [
+        "HEAD is now at f3dd03d Merge a44e7af98183721e58f2fb4d7e96ae874dfecd83 into d1018b318fb51981c4a18f12e40269a4d3ee9713"
+      ],
+      "build_summary": [
+        "Build Summary: 167/215 steps succeeded (23 failed); 1451/1466 tests passed (15 skipped)"
+      ],
+      "failed_steps": [
+        {
+          "name": "zig build test",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-10-21T07:16:25Z",
+          "completed_at": "2026-10-21T07:21:45Z"
+        }
+      ],
+      "raw_compiler_diagnostics": 82,
+      "unique_normalized_diagnostics": 52,
+      "same_proven52_baseline": true,
+      "extra": [],
+      "missing": [],
+      "explicit_runtime_failure_lines": [],
+      "classification": "Known baseline-equivalent compiler diagnostic set"
+    }
+  ],
+  "desktop_primary_cause": {
+    "pr": 1085,
+    "head": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
+    "job_id": 119083833005,
+    "url": "https://github.com/ashhart/TensorFold/actions/runs/39558491324/job/119083833005",
+    "actual_tested_merge": "1c76d81d571bdc726d818abb968357b67e79d596",
+    "actual_merge_full_oid_in_raw_log": true,
+    "main": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
+    "complete_main_identical_inputs": {
+      "app": {
+        "mode": "040000",
+        "type": "tree",
+        "tree": "f2909da2ed69931a5acb654e371391c5d96f8b95"
+      },
+      ".github": {
+        "mode": "040000",
+        "type": "tree",
+        "tree": "1f736013d6afe7f030cbad4fa5b0262e2571530b"
+      }
+    },
+    "current_result": "820/821 test files passed; guest.test.ts:55 requires truncated=true, but guest returned ok=false and permission-denied refusal without truncated field.",
+    "primary_failure": "AssertionError at app/electron/agent/bot-vm/guest.test.ts:55; actual yes bounded-output command result contains [Errno 1] Operation not permitted.",
+    "source_call_sites": "app/electron/agent/bot-vm/guest.ts:72 subprocess.Popen; :73 selector.register; :85/:89/:96 os.killpg. Actual exception wrapper erases traceback. Exact syscall cannot be assigned from this log.",
+    "historical_recurrence": {
+      "pr": 1092,
+      "actual_merge": "bb6cc590d6e2a818be0d12068d498d70f79d7e49",
+      "job": 118405285587,
+      "raw_log_sha256": "46521d5ddcb982ea9283cde83b017112e9fff9042335480d84cc2c7cd4fa3671",
+      "same_app_and_workflow_trees_as_main": true,
+      "same_literal_failure": true
+    },
+    "classification": "Pre-existing main-input/environment-sensitive guest-test failure; not introduced by changed HIP code. This is actual source-closure evidence, not a claim of CI success or a proven precise operating-system root cause.",
+    "fix_scope": "No HIP-stack amendment justified. If diagnosing upstream app behavior, separately retain the failing syscall/traceback or target the existing guest fixture on the same runner; do not weaken output-limit safety assertions or call it flaky without evidence."
+  },
+  "baseline_proof": "https://github.com/BlivionIaG/TensorFold/tree/19ef422352a55adcca49b894dc6d52d2b6ab3678/receipts/nemotron-hip/streamfix/coverage_20261020/ci_docs_control",
+  "limitations": [
+    "Matching Windows compiler diagnostics do not qualify unrun runtime paths.",
+    "Exact source identity does not turn a failed desktop job green; permission-denied syscall remains unknown.",
+    "Readiness still depends on actual per-PR applicable scope, dependency and requester conditions; no Ready change made."
+  ]
+}
