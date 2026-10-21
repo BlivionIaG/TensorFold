@@ -1,0 +1,15 @@
+# LOCAL line81 serial supervisor proposal
+
+Nothing uploaded or executed. Default config remains root_authorized:false; all future proof hashes are null. Order is Von closingold first, Voff closingold, Won closingold, then fresh Woff O/N/O. Sixholds/24cells/432requests(324measured), using unchanged sources, native binaries, fixtures, client math and model settings. Historical priorboot Woff pair is not a bracket for fresh Woff.
+
+Before any timing, hydrate actual activeVon finalstate SHA, independent collection-release SHA, and each openingpair state SHA from completed verified receipts. Root-authorized config may change only those hashes and permission/timestamp fields; rootlauncher compares every other config value to frozen template. ActiveVon must have actual complete O/N2holds/8cells/144requests, expected measured sources, same currentboot, coordinator/observer actual0, all ownedlauncher/coordinator/observer PIDs absent, allnativegroups gone, no forcedkill. Required independent release schema: source_commit,boot_id,run_directory,state_sha256,all_downloads_verified:true,owned_groups_gone:true,independent_audit_pass:true,independent_audit_sha256(64hex),released_at_utc(YYYY-MM-DDTHH:MM:SSZ). Its exact SHA is pinned before execution. This is a new continuation collection marker, not the earlier cold marker.
+
+One block receives a true allocation only immediately before its reviewed launcher runs. Later blocks retain false examples and no parent_allocation.json. After actual successful exit/cleanup, a separate ALLOCATION_RELEASED.json records the allocation hash and release time; immutable original allocation is not rewritten. Canonical GPU/build advisory locks are probed then held by the existing runner. Actual unmasked HIP0/1/2 PCI mapping is checked; no device6-9 is queried/assigned. Known direct model-mask overlap on0-2 blocks. Sharedhost caveats remain unchanged.
+
+Native teardown guard binds exact source+binary and expectedrankset. Rank0 and V620TP1 require0. Only W7800TP2 rank1 may be -15, and only when alive immediately before intentional teardown, exact intentional reason, no timeoutforcedkill, owned process group gone. Future old closing output fingerprints must equal their exact sameboot opening O/N pair. All current-run completed replies and counts retain original validation.
+
+Prepare exact config separately after root review, then future command (NOTexecuted):
+
+    python launch_supervisor.py --config AUTHORIZED_CONFIG.json --config-sha256 ACTUAL_CONFIG_SHA --payload-sha256 ACTUAL_SUPERVISOR_MANIFEST_SHA --execute
+
+Keep all false templates/staged payloads frozen. Root must stage all four payload directories at their exact configured creation-only destinations and verify hashes. No source reset/build/model conversion is part of this launcher. A failed block stops serial progression; no automatic retry or numerical weakening. An unrelated reboot stops the supervisor; no crossboot bracket is silently manufactured. Negative controls exercise actual extracted cleanup/release assertion code on local synthetic metadata only.

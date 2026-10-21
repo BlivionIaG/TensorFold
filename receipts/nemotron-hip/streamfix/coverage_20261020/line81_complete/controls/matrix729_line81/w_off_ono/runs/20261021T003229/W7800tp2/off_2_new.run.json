@@ -1,0 +1,2988 @@
+{
+  "rig": "W7800tp2",
+  "mode": "off",
+  "hold_index": 2,
+  "tree": "new",
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+  "port": 21502,
+  "ranks": [
+    {
+      "rank": 1,
+      "pid": 190051,
+      "argv": [
+        "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1100/native-hip/bin/tensorfold-native",
+        "serve",
+        "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--tp",
+        "2",
+        "--rank",
+        "1",
+        "--master",
+        "127.0.0.1",
+        "--master-port",
+        "22502",
+        "--dashboard",
+        "--context",
+        "65536",
+        "--parallel",
+        "8",
+        "--prompt-cache-gib",
+        "0",
+        "--checkpoint-slots",
+        "0",
+        "--snapshot-dir",
+        "none",
+        "--max-snapshots",
+        "0",
+        "--no-drafts"
+      ],
+      "log": "off_2_new.r1.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": -15,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    },
+    {
+      "rank": 0,
+      "pid": 190059,
+      "argv": [
+        "<REMOTE_HOME>/nh/sfopt/out-recovery-gfx1100/native-hip/bin/tensorfold-native",
+        "serve",
+        "<REMOTE_HOME>/models/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-MLX-4bit",
+        "--tp",
+        "2",
+        "--rank",
+        "0",
+        "--master",
+        "127.0.0.1",
+        "--master-port",
+        "22502",
+        "--name",
+        "m",
+        "--port",
+        "21502",
+        "--dashboard",
+        "--context",
+        "65536",
+        "--parallel",
+        "8",
+        "--prompt-cache-gib",
+        "0",
+        "--checkpoint-slots",
+        "0",
+        "--snapshot-dir",
+        "none",
+        "--max-snapshots",
+        "0",
+        "--no-drafts"
+      ],
+      "log": "off_2_new.r0.log",
+      "alive_before_intentional_teardown": true,
+      "actual_exit_status": 0,
+      "exit_reason": "intentional native-server teardown",
+      "process_group_gone": true
+    }
+  ],
+  "host_preflight": {
+    "single_logical_model_instance_per_host": false,
+    "one_owned_logical_group_scheduled": true,
+    "shared_host": true,
+    "shared_host_observation": {
+      "processes_inspected": 69,
+      "shared_host": true,
+      "known_assigned_gpu_conflicts": [],
+      "allowed_other_activity_observed": [],
+      "allowed_shared_jobs": [],
+      "allowed_shared_jobs_total": 0,
+      "shared_job_list_truncated": false,
+      "host_loadavg_1_5_15": [
+        7.34130859375,
+        10.99365234375,
+        9.52392578125
+      ],
+      "host_ram_kib": {
+        "MemTotal": 527988124,
+        "MemAvailable": 509898000
+      },
+      "at_utc": "2026-10-20T22:39:13Z"
+    },
+    "host_idleness_scope": "User allows shared CPU builds and other jobs; only positive direct-mask overlap with GPUs0-2 blocks, unknown mappings observed without blocking; no physical-host isolation or capacity guarantee",
+    "tp2_rank_processes_are_one_logical_model": true,
+    "allowed_other_activity_observed": [],
+    "conflicting_gpu_jobs": [],
+    "processes_inspected": 69,
+    "shared_build_lock_held": true,
+    "existing_gpu_lock_found_in_reviewed_scripts": true,
+    "existing_gpu_lock_qualification": "Existing canonical lock acquired and held by current coordinator under explicit root instruction",
+    "gpu_lock_held_proof": {
+      "path": "<REMOTE_HOME>/opt/gpu.lock",
+      "mode": "LOCK_EX|LOCK_NB",
+      "coordinator_pid": 183572,
+      "inode": 245218121,
+      "device": 64512,
+      "acquired": true,
+      "scope": "Existing canonical advisory lock held by coordinator; owned groups serial, shared disjoint activity allowed; no physical-host lease"
+    },
+    "native_admission_guard": "unchanged frozen native binary and limits; no admission override flags",
+    "host_loadavg_1_5_15": [
+      7.34130859375,
+      10.99365234375,
+      9.52392578125
+    ],
+    "host_ram_kib": {
+      "MemTotal": 527988124,
+      "MemAvailable": 509898000
+    },
+    "host_ram_class": "physical host RAM from /proc/meminfo; DIMM/ECC class not inferred",
+    "cpu_model": "AMD EPYC 7K62 48-Core Processor",
+    "logical_cpus": 96,
+    "context_tokens": 65536,
+    "parallel_streams": 8,
+    "at_utc": "2026-10-20T22:39:13Z"
+  },
+  "teardown": true,
+  "continuous_collision_guard": {
+    "interval_seconds": 2,
+    "checks": 199,
+    "scope": "Positive direct-mask GPU0-2 overlap scan; CPU/HTTP/shared and unknown mappings observed without blocking, own groups excluded; no physical-host isolation claim",
+    "shared_host_samples": [
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          6.83349609375,
+          10.82763671875,
+          9.47802734375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 509459836
+        },
+        "at_utc": "2026-10-20T22:39:14Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          6.83349609375,
+          10.82763671875,
+          9.47802734375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508110648
+        },
+        "at_utc": "2026-10-20T22:39:16Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          6.4462890625,
+          10.6806640625,
+          9.4375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507290152
+        },
+        "at_utc": "2026-10-20T22:39:18Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          6.4462890625,
+          10.6806640625,
+          9.4375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507786832
+        },
+        "at_utc": "2026-10-20T22:39:20Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          6.4462890625,
+          10.6806640625,
+          9.4375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507786076
+        },
+        "at_utc": "2026-10-20T22:39:20Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          6.009765625,
+          10.51953125,
+          9.39208984375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507086116
+        },
+        "at_utc": "2026-10-20T22:39:23Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          6.009765625,
+          10.51953125,
+          9.39208984375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506729800
+        },
+        "at_utc": "2026-10-20T22:39:25Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          6.009765625,
+          10.51953125,
+          9.39208984375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506692516
+        },
+        "at_utc": "2026-10-20T22:39:27Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.8486328125,
+          10.4111328125,
+          9.36279296875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506724296
+        },
+        "at_utc": "2026-10-20T22:39:30Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.8486328125,
+          10.4111328125,
+          9.36279296875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506721792
+        },
+        "at_utc": "2026-10-20T22:39:32Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.6201171875,
+          10.2880859375,
+          9.32861328125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506753856
+        },
+        "at_utc": "2026-10-20T22:39:34Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.6201171875,
+          10.2880859375,
+          9.32861328125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506763132
+        },
+        "at_utc": "2026-10-20T22:39:36Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.6201171875,
+          10.2880859375,
+          9.32861328125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506782672
+        },
+        "at_utc": "2026-10-20T22:39:38Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.41015625,
+          10.1669921875,
+          9.29443359375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506806656
+        },
+        "at_utc": "2026-10-20T22:39:40Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.41015625,
+          10.1669921875,
+          9.29443359375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506847236
+        },
+        "at_utc": "2026-10-20T22:39:42Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.216796875,
+          10.0478515625,
+          9.26025390625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506869152
+        },
+        "at_utc": "2026-10-20T22:39:44Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.216796875,
+          10.0478515625,
+          9.26025390625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507341624
+        },
+        "at_utc": "2026-10-20T22:39:45Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.216796875,
+          10.0478515625,
+          9.26025390625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507068824
+        },
+        "at_utc": "2026-10-20T22:39:47Z"
+      },
+      {
+        "processes_inspected": 261,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.27978515625,
+          9.98046875,
+          9.24267578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 506957712
+        },
+        "at_utc": "2026-10-20T22:39:49Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.27978515625,
+          9.98046875,
+          9.24267578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507063904
+        },
+        "at_utc": "2026-10-20T22:39:51Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.01708984375,
+          9.84765625,
+          9.20361328125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507101996
+        },
+        "at_utc": "2026-10-20T22:39:53Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.01708984375,
+          9.84765625,
+          9.20361328125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507148208
+        },
+        "at_utc": "2026-10-20T22:39:55Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          5.01708984375,
+          9.84765625,
+          9.20361328125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507200052
+        },
+        "at_utc": "2026-10-20T22:39:57Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.935546875,
+          9.75048828125,
+          9.17529296875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507245924
+        },
+        "at_utc": "2026-10-20T22:40:00Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.935546875,
+          9.75048828125,
+          9.17529296875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507285112
+        },
+        "at_utc": "2026-10-20T22:40:02Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.7001953125,
+          9.62158203125,
+          9.13671875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507293912
+        },
+        "at_utc": "2026-10-20T22:40:04Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.7001953125,
+          9.62158203125,
+          9.13671875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507343620
+        },
+        "at_utc": "2026-10-20T22:40:06Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.56396484375,
+          9.51123046875,
+          9.103515625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507377168
+        },
+        "at_utc": "2026-10-20T22:40:08Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.56396484375,
+          9.51123046875,
+          9.103515625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507388952
+        },
+        "at_utc": "2026-10-20T22:40:10Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.56396484375,
+          9.51123046875,
+          9.103515625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507407016
+        },
+        "at_utc": "2026-10-20T22:40:12Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.4384765625,
+          9.40283203125,
+          9.0703125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507411384
+        },
+        "at_utc": "2026-10-20T22:40:14Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.4384765625,
+          9.40283203125,
+          9.0703125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507426588
+        },
+        "at_utc": "2026-10-20T22:40:16Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.2431640625,
+          9.27978515625,
+          9.0322265625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507450748
+        },
+        "at_utc": "2026-10-20T22:40:18Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.2431640625,
+          9.27978515625,
+          9.0322265625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507465476
+        },
+        "at_utc": "2026-10-20T22:40:20Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.2431640625,
+          9.27978515625,
+          9.0322265625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507495588
+        },
+        "at_utc": "2026-10-20T22:40:22Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.0634765625,
+          9.15869140625,
+          8.994140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507505908
+        },
+        "at_utc": "2026-10-20T22:40:24Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          4.0634765625,
+          9.15869140625,
+          8.994140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507481444
+        },
+        "at_utc": "2026-10-20T22:40:26Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.81787109375,
+          9.02294921875,
+          8.951171875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507486108
+        },
+        "at_utc": "2026-10-20T22:40:28Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.81787109375,
+          9.02294921875,
+          8.951171875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507498272
+        },
+        "at_utc": "2026-10-20T22:40:30Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.81787109375,
+          9.02294921875,
+          8.951171875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507492720
+        },
+        "at_utc": "2026-10-20T22:40:33Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.671875,
+          8.90625,
+          8.91357421875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507500452
+        },
+        "at_utc": "2026-10-20T22:40:35Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.671875,
+          8.90625,
+          8.91357421875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507531548
+        },
+        "at_utc": "2026-10-20T22:40:37Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.53759765625,
+          8.79150390625,
+          8.8759765625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507534784
+        },
+        "at_utc": "2026-10-20T22:40:39Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.53759765625,
+          8.79150390625,
+          8.8759765625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507541200
+        },
+        "at_utc": "2026-10-20T22:40:41Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.4140625,
+          8.6787109375,
+          8.8388671875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507568764
+        },
+        "at_utc": "2026-10-20T22:40:43Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.4140625,
+          8.6787109375,
+          8.8388671875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508064024
+        },
+        "at_utc": "2026-10-20T22:40:43Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.4140625,
+          8.6787109375,
+          8.8388671875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507625808
+        },
+        "at_utc": "2026-10-20T22:40:46Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.4140625,
+          8.6787109375,
+          8.8388671875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507589368
+        },
+        "at_utc": "2026-10-20T22:40:48Z"
+      },
+      {
+        "processes_inspected": 261,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.30078125,
+          8.5673828125,
+          8.8017578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507553948
+        },
+        "at_utc": "2026-10-20T22:40:50Z"
+      },
+      {
+        "processes_inspected": 261,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.30078125,
+          8.5673828125,
+          8.8017578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507571116
+        },
+        "at_utc": "2026-10-20T22:40:52Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.2763671875,
+          8.474609375,
+          8.7705078125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507656564
+        },
+        "at_utc": "2026-10-20T22:40:54Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.2763671875,
+          8.474609375,
+          8.7705078125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507655120
+        },
+        "at_utc": "2026-10-20T22:40:56Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.25390625,
+          8.38330078125,
+          8.7392578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507677708
+        },
+        "at_utc": "2026-10-20T22:40:58Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.25390625,
+          8.38330078125,
+          8.7392578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507694252
+        },
+        "at_utc": "2026-10-20T22:41:00Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.25390625,
+          8.38330078125,
+          8.7392578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507701268
+        },
+        "at_utc": "2026-10-20T22:41:02Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.1533203125,
+          8.27685546875,
+          8.70263671875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507727232
+        },
+        "at_utc": "2026-10-20T22:41:04Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.1533203125,
+          8.27685546875,
+          8.70263671875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507730464
+        },
+        "at_utc": "2026-10-20T22:41:06Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.22119140625,
+          8.20556640625,
+          8.67724609375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507753304
+        },
+        "at_utc": "2026-10-20T22:41:08Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.22119140625,
+          8.20556640625,
+          8.67724609375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507758576
+        },
+        "at_utc": "2026-10-20T22:41:10Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.22119140625,
+          8.20556640625,
+          8.67724609375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507784460
+        },
+        "at_utc": "2026-10-20T22:41:12Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.203125,
+          8.119140625,
+          8.646484375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507806336
+        },
+        "at_utc": "2026-10-20T22:41:15Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.203125,
+          8.119140625,
+          8.646484375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507788700
+        },
+        "at_utc": "2026-10-20T22:41:17Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.1865234375,
+          8.03369140625,
+          8.61572265625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507823500
+        },
+        "at_utc": "2026-10-20T22:41:19Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.1865234375,
+          8.03369140625,
+          8.61572265625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507830284
+        },
+        "at_utc": "2026-10-20T22:41:21Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.1865234375,
+          8.03369140625,
+          8.61572265625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507834852
+        },
+        "at_utc": "2026-10-20T22:41:23Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.33203125,
+          7.98291015625,
+          8.59619140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507842092
+        },
+        "at_utc": "2026-10-20T22:41:25Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.33203125,
+          7.98291015625,
+          8.59619140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507823968
+        },
+        "at_utc": "2026-10-20T22:41:27Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.3857421875,
+          7.91650390625,
+          8.5712890625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507808904
+        },
+        "at_utc": "2026-10-20T22:41:29Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.3857421875,
+          7.91650390625,
+          8.5712890625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507813496
+        },
+        "at_utc": "2026-10-20T22:41:31Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.3544921875,
+          7.83447265625,
+          8.541015625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507816452
+        },
+        "at_utc": "2026-10-20T22:41:33Z"
+      },
+      {
+        "processes_inspected": 71,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.3544921875,
+          7.83447265625,
+          8.541015625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507845412
+        },
+        "at_utc": "2026-10-20T22:41:35Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.3544921875,
+          7.83447265625,
+          8.541015625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507868372
+        },
+        "at_utc": "2026-10-20T22:41:37Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.32568359375,
+          7.75390625,
+          8.51123046875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507859480
+        },
+        "at_utc": "2026-10-20T22:41:39Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.32568359375,
+          7.75390625,
+          8.51123046875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508359904
+        },
+        "at_utc": "2026-10-20T22:41:40Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.32568359375,
+          7.75390625,
+          8.51123046875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507897088
+        },
+        "at_utc": "2026-10-20T22:41:42Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.13916015625,
+          7.6416015625,
+          8.470703125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507878560
+        },
+        "at_utc": "2026-10-20T22:41:45Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.13916015625,
+          7.6416015625,
+          8.470703125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507894120
+        },
+        "at_utc": "2026-10-20T22:41:47Z"
+      },
+      {
+        "processes_inspected": 261,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.0478515625,
+          7.5478515625,
+          8.435546875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507844488
+        },
+        "at_utc": "2026-10-20T22:41:49Z"
+      },
+      {
+        "processes_inspected": 261,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.0478515625,
+          7.5478515625,
+          8.435546875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507830108
+        },
+        "at_utc": "2026-10-20T22:41:51Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.0439453125,
+          7.47216796875,
+          8.40625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507893744
+        },
+        "at_utc": "2026-10-20T22:41:53Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.0439453125,
+          7.47216796875,
+          8.40625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507908880
+        },
+        "at_utc": "2026-10-20T22:41:55Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          3.0439453125,
+          7.47216796875,
+          8.40625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507902764
+        },
+        "at_utc": "2026-10-20T22:41:57Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.9599609375,
+          7.380859375,
+          8.37158203125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507908368
+        },
+        "at_utc": "2026-10-20T22:41:59Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.9599609375,
+          7.380859375,
+          8.37158203125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507918208
+        },
+        "at_utc": "2026-10-20T22:42:01Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8828125,
+          7.29150390625,
+          8.3369140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507906960
+        },
+        "at_utc": "2026-10-20T22:42:03Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8828125,
+          7.29150390625,
+          8.3369140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507916480
+        },
+        "at_utc": "2026-10-20T22:42:05Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8828125,
+          7.29150390625,
+          8.3369140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507921916
+        },
+        "at_utc": "2026-10-20T22:42:07Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.81201171875,
+          7.20361328125,
+          8.302734375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507929896
+        },
+        "at_utc": "2026-10-20T22:42:09Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.81201171875,
+          7.20361328125,
+          8.302734375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507943728
+        },
+        "at_utc": "2026-10-20T22:42:11Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8271484375,
+          7.1337890625,
+          8.27392578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507938372
+        },
+        "at_utc": "2026-10-20T22:42:13Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8271484375,
+          7.1337890625,
+          8.27392578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507945248
+        },
+        "at_utc": "2026-10-20T22:42:16Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8271484375,
+          7.1337890625,
+          8.27392578125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507955480
+        },
+        "at_utc": "2026-10-20T22:42:18Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.84130859375,
+          7.06494140625,
+          8.2451171875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507970332
+        },
+        "at_utc": "2026-10-20T22:42:20Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.84130859375,
+          7.06494140625,
+          8.2451171875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507978400
+        },
+        "at_utc": "2026-10-20T22:42:22Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8544921875,
+          6.9970703125,
+          8.216796875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507969724
+        },
+        "at_utc": "2026-10-20T22:42:24Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8544921875,
+          6.9970703125,
+          8.216796875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507968852
+        },
+        "at_utc": "2026-10-20T22:42:26Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8662109375,
+          6.9306640625,
+          8.1884765625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507976476
+        },
+        "at_utc": "2026-10-20T22:42:28Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8662109375,
+          6.9306640625,
+          8.1884765625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507976928
+        },
+        "at_utc": "2026-10-20T22:42:30Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.8662109375,
+          6.9306640625,
+          8.1884765625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507990316
+        },
+        "at_utc": "2026-10-20T22:42:32Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.876953125,
+          6.865234375,
+          8.16015625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507995060
+        },
+        "at_utc": "2026-10-20T22:42:34Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.876953125,
+          6.865234375,
+          8.16015625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507997612
+        },
+        "at_utc": "2026-10-20T22:42:36Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.88720703125,
+          6.80078125,
+          8.13232421875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507999384
+        },
+        "at_utc": "2026-10-20T22:42:38Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.88720703125,
+          6.80078125,
+          8.13232421875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508001020
+        },
+        "at_utc": "2026-10-20T22:42:40Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.88720703125,
+          6.80078125,
+          8.13232421875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507963044
+        },
+        "at_utc": "2026-10-20T22:42:42Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.896484375,
+          6.7373046875,
+          8.1044921875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507968928
+        },
+        "at_utc": "2026-10-20T22:42:44Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.896484375,
+          6.7373046875,
+          8.1044921875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507913596
+        },
+        "at_utc": "2026-10-20T22:42:46Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.82421875,
+          6.658203125,
+          8.0712890625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507951632
+        },
+        "at_utc": "2026-10-20T22:42:49Z"
+      },
+      {
+        "processes_inspected": 261,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.82421875,
+          6.658203125,
+          8.0712890625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507872656
+        },
+        "at_utc": "2026-10-20T22:42:51Z"
+      },
+      {
+        "processes_inspected": 261,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.82421875,
+          6.658203125,
+          8.0712890625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507845552
+        },
+        "at_utc": "2026-10-20T22:42:53Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.7578125,
+          6.58056640625,
+          8.03857421875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507899096
+        },
+        "at_utc": "2026-10-20T22:42:55Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.7578125,
+          6.58056640625,
+          8.03857421875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507904596
+        },
+        "at_utc": "2026-10-20T22:42:57Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.77734375,
+          6.52099609375,
+          8.01123046875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507886692
+        },
+        "at_utc": "2026-10-20T22:42:59Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.77734375,
+          6.52099609375,
+          8.01123046875
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507905032
+        },
+        "at_utc": "2026-10-20T22:43:01Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.71484375,
+          6.44580078125,
+          7.978515625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507922256
+        },
+        "at_utc": "2026-10-20T22:43:03Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.71484375,
+          6.44580078125,
+          7.978515625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507911264
+        },
+        "at_utc": "2026-10-20T22:43:05Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.71484375,
+          6.44580078125,
+          7.978515625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507932040
+        },
+        "at_utc": "2026-10-20T22:43:07Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.6572265625,
+          6.37158203125,
+          7.9462890625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507933484
+        },
+        "at_utc": "2026-10-20T22:43:09Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.6572265625,
+          6.37158203125,
+          7.9462890625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507948480
+        },
+        "at_utc": "2026-10-20T22:43:11Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.6044921875,
+          6.298828125,
+          7.9140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507957468
+        },
+        "at_utc": "2026-10-20T22:43:13Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.6044921875,
+          6.298828125,
+          7.9140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 507991004
+        },
+        "at_utc": "2026-10-20T22:43:15Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.6044921875,
+          6.298828125,
+          7.9140625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508002152
+        },
+        "at_utc": "2026-10-20T22:43:17Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.63623046875,
+          6.24365234375,
+          7.88720703125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508012212
+        },
+        "at_utc": "2026-10-20T22:43:19Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.63623046875,
+          6.24365234375,
+          7.88720703125
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508024632
+        },
+        "at_utc": "2026-10-20T22:43:22Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.66552734375,
+          6.189453125,
+          7.86083984375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508030384
+        },
+        "at_utc": "2026-10-20T22:43:24Z"
+      },
+      {
+        "processes_inspected": 70,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.66552734375,
+          6.189453125,
+          7.86083984375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508022352
+        },
+        "at_utc": "2026-10-20T22:43:26Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.66552734375,
+          6.189453125,
+          7.86083984375
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508040576
+        },
+        "at_utc": "2026-10-20T22:43:28Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.6923828125,
+          6.13623046875,
+          7.83447265625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508053832
+        },
+        "at_utc": "2026-10-20T22:43:30Z"
+      },
+      {
+        "processes_inspected": 69,
+        "shared_host": true,
+        "known_assigned_gpu_conflicts": [],
+        "allowed_other_activity_observed": [],
+        "allowed_shared_jobs": [],
+        "allowed_shared_jobs_total": 0,
+        "shared_job_list_truncated": false,
+        "host_loadavg_1_5_15": [
+          2.6923828125,
+          6.13623046875,
+          7.83447265625
+        ],
+        "host_ram_kib": {
+          "MemTotal": 527988124,
+          "MemAvailable": 508041716
+        },
+        "at_utc": "2026-10-20T22:43:32Z"
+      }
+    ],
+    "sample_limit": 128,
+    "last_scan_utc": "2026-10-20T22:45:57Z"
+  },
+  "health_observed": {
+    "status": "ok",
+    "model": "m",
+    "model_ids": [
+      "m"
+    ],
+    "max_batch_size": 8,
+    "policy": "matrix=auto,attention=auto,kernels=auto,graphs=auto,prefill_step=1024,fill_rows=512; mtp drafts 3 under 0.3, 0 snapshots",
+    "warming": false,
+    "memory": {
+      "active": 15443038552,
+      "cache": 0,
+      "peak": 15443038552
+    },
+    "live": {
+      "connections": 0,
+      "waiting": 0,
+      "decode_tokens_per_second": 0.0,
+      "prefill_tokens_per_second": 0.0
+    },
+    "version": "1.0.12",
+    "backend": "hip"
+  },
+  "runtime_identity": {
+    "file": "off_2_new.identity.json",
+    "raw_sha256": "6c3d24a0bd7e2bc6b973b580613295d46840bd87201753726db66d4b97396af4"
+  },
+  "models_observed": {
+    "object": "list",
+    "data": [
+      {
+        "id": "m",
+        "object": "model",
+        "created": 1792535963,
+        "owned_by": "tensorfold",
+        "context_length": 65536,
+        "max_model_len": 65536,
+        "reasoning": {
+          "default_enabled": true
+        }
+      }
+    ]
+  },
+  "actual_capacity_observed": 8,
+  "cache_budget_requested_gib": 0,
+  "memory_snapshots": [
+    {
+      "phase": "server_ready",
+      "at_utc": "2026-10-20T22:39:23Z",
+      "processes": [
+        {
+          "rank": 1,
+          "pid": 190051,
+          "status_kib": {
+            "VmRSS": 961968,
+            "VmHWM": 9751844,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 961968,
+            "Pss": 828358,
+            "Private_Clean": 165392,
+            "Private_Dirty": 546380,
+            "Shared_Clean": 250188,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        },
+        {
+          "rank": 0,
+          "pid": 190059,
+          "status_kib": {
+            "VmRSS": 1147924,
+            "VmHWM": 11083204,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 1147924,
+            "Pss": 1014308,
+            "Private_Clean": 167196,
+            "Private_Dirty": 730524,
+            "Shared_Clean": 250196,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        }
+      ],
+      "scope": "Per-rank Linux VmHWM is kernel peak resident memory through this point; cumulative hold including startup/warmups. PSS is a snapshot, not exact peak. VmPin is Linux accounting, not complete ROCm pinned allocation. Raw /stats memory counters remain in client receipts; no pureGPU/pinned inference."
+    },
+    {
+      "phase": "after_code_1024_512_c1",
+      "at_utc": "2026-10-20T22:39:45Z",
+      "processes": [
+        {
+          "rank": 1,
+          "pid": 190051,
+          "status_kib": {
+            "VmRSS": 962008,
+            "VmHWM": 9751844,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 962008,
+            "Pss": 828398,
+            "Private_Clean": 165392,
+            "Private_Dirty": 546420,
+            "Shared_Clean": 250188,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        },
+        {
+          "rank": 0,
+          "pid": 190059,
+          "status_kib": {
+            "VmRSS": 1150100,
+            "VmHWM": 11083204,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 1150100,
+            "Pss": 1016484,
+            "Private_Clean": 167644,
+            "Private_Dirty": 732252,
+            "Shared_Clean": 250196,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        }
+      ],
+      "scope": "Per-rank Linux VmHWM is kernel peak resident memory through this point; cumulative hold including startup/warmups. PSS is a snapshot, not exact peak. VmPin is Linux accounting, not complete ROCm pinned allocation. Raw /stats memory counters remain in client receipts; no pureGPU/pinned inference."
+    },
+    {
+      "phase": "after_code_1024_512_c8",
+      "at_utc": "2026-10-20T22:40:43Z",
+      "processes": [
+        {
+          "rank": 1,
+          "pid": 190051,
+          "status_kib": {
+            "VmRSS": 962032,
+            "VmHWM": 9751844,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 962032,
+            "Pss": 828422,
+            "Private_Clean": 165392,
+            "Private_Dirty": 546444,
+            "Shared_Clean": 250188,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        },
+        {
+          "rank": 0,
+          "pid": 190059,
+          "status_kib": {
+            "VmRSS": 1151664,
+            "VmHWM": 11083204,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 1151664,
+            "Pss": 1018048,
+            "Private_Clean": 167644,
+            "Private_Dirty": 733816,
+            "Shared_Clean": 250196,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        }
+      ],
+      "scope": "Per-rank Linux VmHWM is kernel peak resident memory through this point; cumulative hold including startup/warmups. PSS is a snapshot, not exact peak. VmPin is Linux accounting, not complete ROCm pinned allocation. Raw /stats memory counters remain in client receipts; no pureGPU/pinned inference."
+    },
+    {
+      "phase": "after_prose_16384_1024_c1",
+      "at_utc": "2026-10-20T22:41:40Z",
+      "processes": [
+        {
+          "rank": 1,
+          "pid": 190051,
+          "status_kib": {
+            "VmRSS": 962104,
+            "VmHWM": 9751844,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 962104,
+            "Pss": 828494,
+            "Private_Clean": 165392,
+            "Private_Dirty": 546516,
+            "Shared_Clean": 250188,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        },
+        {
+          "rank": 0,
+          "pid": 190059,
+          "status_kib": {
+            "VmRSS": 1152148,
+            "VmHWM": 11083204,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 1152148,
+            "Pss": 1018532,
+            "Private_Clean": 167644,
+            "Private_Dirty": 734300,
+            "Shared_Clean": 250196,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        }
+      ],
+      "scope": "Per-rank Linux VmHWM is kernel peak resident memory through this point; cumulative hold including startup/warmups. PSS is a snapshot, not exact peak. VmPin is Linux accounting, not complete ROCm pinned allocation. Raw /stats memory counters remain in client receipts; no pureGPU/pinned inference."
+    },
+    {
+      "phase": "after_prose_16384_1024_c8",
+      "at_utc": "2026-10-20T22:45:57Z",
+      "processes": [
+        {
+          "rank": 1,
+          "pid": 190051,
+          "status_kib": {
+            "VmRSS": 962120,
+            "VmHWM": 9751844,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 962120,
+            "Pss": 828509,
+            "Private_Clean": 165392,
+            "Private_Dirty": 546532,
+            "Shared_Clean": 250188,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        },
+        {
+          "rank": 0,
+          "pid": 190059,
+          "status_kib": {
+            "VmRSS": 1153868,
+            "VmHWM": 11083204,
+            "VmPin": 0,
+            "VmLck": 0
+          },
+          "smaps_rollup_kib": {
+            "Rss": 1153868,
+            "Pss": 1020251,
+            "Private_Clean": 167644,
+            "Private_Dirty": 736020,
+            "Shared_Clean": 250196,
+            "Shared_Dirty": 8,
+            "Locked": 0
+          }
+        }
+      ],
+      "scope": "Per-rank Linux VmHWM is kernel peak resident memory through this point; cumulative hold including startup/warmups. PSS is a snapshot, not exact peak. VmPin is Linux accounting, not complete ROCm pinned allocation. Raw /stats memory counters remain in client receipts; no pureGPU/pinned inference."
+    }
+  ],
+  "benchmarks": [
+    {
+      "shape": "code_1024_512",
+      "concurrency": 1,
+      "file": "off_2_new.code_1024_512.c1.json",
+      "client_exit_status": 0,
+      "argv": [
+        "<REMOTE_HOME>/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/matrix_client.py",
+        "http://127.0.0.1:21502",
+        "--model",
+        "m",
+        "--fixture",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/fixtures/code_1024_512.ids.json",
+        "--prompt-tokens",
+        "1024",
+        "--tokens",
+        "512",
+        "--concurrency",
+        "1",
+        "--mode",
+        "off",
+        "--reps",
+        "3",
+        "--warmups",
+        "1",
+        "--output",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/runs/20261021T003229/W7800tp2/off_2_new.code_1024_512.c1.json",
+        "--execute"
+      ],
+      "raw_sha256": "4a810f2bcfe4f36c5501ff622f0de55f1e80a547bf96f96f6a2b5c5d7b80ae00"
+    },
+    {
+      "shape": "code_1024_512",
+      "concurrency": 8,
+      "file": "off_2_new.code_1024_512.c8.json",
+      "client_exit_status": 0,
+      "argv": [
+        "<REMOTE_HOME>/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/matrix_client.py",
+        "http://127.0.0.1:21502",
+        "--model",
+        "m",
+        "--fixture",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/fixtures/code_1024_512.ids.json",
+        "--prompt-tokens",
+        "1024",
+        "--tokens",
+        "512",
+        "--concurrency",
+        "8",
+        "--mode",
+        "off",
+        "--reps",
+        "3",
+        "--warmups",
+        "1",
+        "--output",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/runs/20261021T003229/W7800tp2/off_2_new.code_1024_512.c8.json",
+        "--execute",
+        "--reference-output",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/runs/20261021T003229/W7800tp2/off_2_new.code_1024_512.c1.json"
+      ],
+      "raw_sha256": "24f6fcd0ff72fe02b14890b7bd206def6632dce4e579f223d942cc7cdf37ae74"
+    },
+    {
+      "shape": "prose_16384_1024",
+      "concurrency": 1,
+      "file": "off_2_new.prose_16384_1024.c1.json",
+      "client_exit_status": 0,
+      "argv": [
+        "<REMOTE_HOME>/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/matrix_client.py",
+        "http://127.0.0.1:21502",
+        "--model",
+        "m",
+        "--fixture",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/fixtures/prose_16384_1024.ids.json",
+        "--prompt-tokens",
+        "16384",
+        "--tokens",
+        "1024",
+        "--concurrency",
+        "1",
+        "--mode",
+        "off",
+        "--reps",
+        "3",
+        "--warmups",
+        "1",
+        "--output",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/runs/20261021T003229/W7800tp2/off_2_new.prose_16384_1024.c1.json",
+        "--execute"
+      ],
+      "raw_sha256": "c56fb6f0d5fe1eabf86b0ef8154b6faa47ee9041dd756617ea24358605561a1e"
+    },
+    {
+      "shape": "prose_16384_1024",
+      "concurrency": 8,
+      "file": "off_2_new.prose_16384_1024.c8.json",
+      "client_exit_status": 0,
+      "argv": [
+        "<REMOTE_HOME>/Apps/vllm/venv-7.14.0_0.31.0-final/bin/python",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/matrix_client.py",
+        "http://127.0.0.1:21502",
+        "--model",
+        "m",
+        "--fixture",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/fixtures/prose_16384_1024.ids.json",
+        "--prompt-tokens",
+        "16384",
+        "--tokens",
+        "1024",
+        "--concurrency",
+        "8",
+        "--mode",
+        "off",
+        "--reps",
+        "3",
+        "--warmups",
+        "1",
+        "--output",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/runs/20261021T003229/W7800tp2/off_2_new.prose_16384_1024.c8.json",
+        "--execute",
+        "--reference-output",
+        "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/w_off_ono/runs/20261021T003229/W7800tp2/off_2_new.prose_16384_1024.c1.json"
+      ],
+      "raw_sha256": "324a7befc49f7768378711ab24be7cff82b507b8d5234fd0126436b39914fcdc"
+    }
+  ]
+}

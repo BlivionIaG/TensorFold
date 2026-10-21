@@ -1,0 +1,13 @@
+{
+  "remote_local_all_files_hash_equal": true,
+  "verified_files": 357,
+  "all4_complete_before_boot_change": true,
+  "original_completed_boot": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+  "current_boot": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "recorded_cleanup_guards_passed": true,
+  "new_boot_cannot_retain_original_native_processes": true,
+  "current_boot_does_not_relabel_original_measurements": true,
+  "summary_sha256": "84182724414566f9b3673b0483aaee1c44e31644cccbf89f7ef4e6517205c142",
+  "archive_sha256": "a088bb6e76978c389ad8cab8648f9c2b05c78b89eadd1c4db5065e7800ac944f",
+  "verified_at_utc": "2026-10-21T05:57:30.830860+00:00"
+}

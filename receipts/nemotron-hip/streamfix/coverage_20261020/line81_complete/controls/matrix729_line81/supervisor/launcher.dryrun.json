@@ -1,0 +1,1 @@
+{"execute": false, "required": "Exact reviewed payload SHA plus root-authorized config SHA with actual activeVon/release/openingpair pins", "order": ["v_on_close", "v_off_close", "w_on_close", "w_off_ono"]}

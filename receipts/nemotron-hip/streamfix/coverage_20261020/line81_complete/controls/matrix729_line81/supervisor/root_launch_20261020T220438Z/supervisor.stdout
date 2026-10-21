@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/supervisor/supervisor.py", line 102, in <module>
+    alloc=json.loads((P/'parent_allocation.example.json').read_text());assert not alloc['parent_allocated'];alloc.update(parent_allocated=True,prior_gpu_stage_cleanup_verified=True,active_von_cleanup_verified=True,harness_manifest_sha256=B['payload_sha256'],root_allocated_at_utc=now());alloc['opening_pair']=B.get('opening_pair');assert alloc['selected_block']==B['selected_block'];assert alloc['memory_admission_environment']=={k:None for k in KEYS};write(P/'parent_allocation.json',alloc)
+                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/usr/lib64/python3.14/pathlib/__init__.py", line 787, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '<REMOTE_HOME>/hcx/streamfix/optimization/matrix729_line81/v_on_close/parent_allocation.example.json'

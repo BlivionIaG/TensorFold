@@ -1,0 +1,102 @@
+{
+  "independent_audit_pass": true,
+  "actual_remote_local_hashes_verified": 357,
+  "archive_sha256": "a088bb6e76978c389ad8cab8648f9c2b05c78b89eadd1c4db5065e7800ac944f",
+  "summary_sha256": "84182724414566f9b3673b0483aaee1c44e31644cccbf89f7ef4e6517205c142",
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "measured_boot": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+  "recovery_boot": "ccd3c480-76df-44a2-a67f-ee1db46a46e5",
+  "complete_before_later_reboot": true,
+  "actual_recorded_supervisor_completion": "2026-10-20T22:52:47Z",
+  "recorded_cleanup_guards_passed": true,
+  "current_process_absence_scope": "New boot cannot retain original native processes; actual oldboot supervisor checked cleanup before each nextblock and completion. No newly observed graceful shutdown/reboot cause inferred.",
+  "actual_control_holds": 6,
+  "actual_control_cells": 24,
+  "selected_O_N_O_holds": 12,
+  "selected_cells": 48,
+  "selected_requests": 864,
+  "selected_measured_requests": 648,
+  "percase_comparisons": 16,
+  "actual_control_rank_env_samples": 10,
+  "observed_rank_env_samples": 10,
+  "all_rank_and_controller_exit_scope": "TP1/rank0zero; TP2worker intentional-15 onlyalive_before_intentionalteardown/exactreason/no forcedkill/groupgone",
+  "records": [
+    {
+      "block": "v_on_close",
+      "hold": 3,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rank_exit_statuses": [
+        0
+      ],
+      "identity_sha256": "a9e962fb1b9f3da8f9ba9ee5556a2b264fb44c54825e10be868e7aee6650d6f9"
+    },
+    {
+      "block": "v_off_close",
+      "hold": 3,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "73290b400a23f52e442a59bfbac1b0d6080dc67bfb53bd1a689ed84dad96e225",
+      "rank_exit_statuses": [
+        0
+      ],
+      "identity_sha256": "7f1aa39ead18a786dccb0095a9002a84f2b96e7ac4d17e6e41742c5bd6243bf0"
+    },
+    {
+      "block": "w_on_close",
+      "hold": 3,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rank_exit_statuses": [
+        -15,
+        0
+      ],
+      "identity_sha256": "5d59549580f90e4bfe28789344af0d5ec0e3c3a8d5695d5ca39d8f607b3e44bc"
+    },
+    {
+      "block": "w_off_ono",
+      "hold": 1,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rank_exit_statuses": [
+        -15,
+        0
+      ],
+      "identity_sha256": "7fe3b3948940776cc2f1f159a32664df1bf8d9ea20b1fbf12ff00983be8e53d1"
+    },
+    {
+      "block": "w_off_ono",
+      "hold": 2,
+      "side": "new",
+      "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+      "binary_sha256": "4387690303ac2a7d8050ecd4db766085d55605f2f235bc552fb8255f29ad52dd",
+      "rank_exit_statuses": [
+        -15,
+        0
+      ],
+      "identity_sha256": "6c3d24a0bd7e2bc6b973b580613295d46840bd87201753726db66d4b97396af4"
+    },
+    {
+      "block": "w_off_ono",
+      "hold": 3,
+      "side": "old",
+      "source_commit": "8649e9858b38e9ef3dcd8d579879c6512a363050",
+      "binary_sha256": "a71d528e226baceab0d1d6fd01de0dcaadb7940ce88469cba6d954ae15440256",
+      "rank_exit_statuses": [
+        -15,
+        0
+      ],
+      "identity_sha256": "f079d75d5f2c20eb3f8b039b28a18f38f9b5a346a0d1d15189d248366648ce7a"
+    }
+  ],
+  "selection_sha256": "92a8a3035ac7de8ae205faca64f1ac5973f6d0703a2e882791ffec862cfb115c",
+  "reducer_sha256": "607bd252fab12fd7677a2c58e933e1986585205c06ceebac62ee99d3e4c25432",
+  "reduction_sha256": "4c70ed53b595edb47489d8179fe1bb95383a44ed99446178f6512b477d2929c2",
+  "rates_sha256": "a921823a40305db1606fc025addcc33f6723b22dc0ee1ce0593a156aee4253ec",
+  "full_contributing_qualified": false,
+  "readiness_inferred": false,
+  "scope": "Source-bound sameboot O/N/O percase; longgaps/interveningwork explicitlyreported; no ABBA/confidence or automatic driftwaiver; server-tokenhash evidence and reconstructedtextfingerprints, not retained outputtokenIDarrays."
+}

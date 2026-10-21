@@ -1,0 +1,60 @@
+{
+  "execute": false,
+  "blocks": [
+    {
+      "name": "v_on_close",
+      "directory": "~/hcx/streamfix/optimization/matrix729_line81/v_on_close",
+      "payload_sha256": "a23d70d0073e5e1d6e486204e659f5febd86a1282d633998ed0b7f5741d52709",
+      "selected_block": {
+        "rig": "V620tp1",
+        "mode": "on"
+      },
+      "holds": 1,
+      "opening_pair": {
+        "state_path": "~/hcx/streamfix/optimization/matrix729_v_on_pair1/runs/20261020T234217/state.json",
+        "state_sha256": null
+      }
+    },
+    {
+      "name": "v_off_close",
+      "directory": "~/hcx/streamfix/optimization/matrix729_line81/v_off_close",
+      "payload_sha256": "3f4a4ec8bc88db3b8cf772026386b6d51c143bfe1203d1f438deff42dc46ed6a",
+      "selected_block": {
+        "rig": "V620tp1",
+        "mode": "off"
+      },
+      "holds": 1,
+      "opening_pair": {
+        "state_path": "~/hcx/streamfix/optimization/matrix729_v_off_pair1/runs/20261020T230018/state.json",
+        "state_sha256": null
+      }
+    },
+    {
+      "name": "w_on_close",
+      "directory": "~/hcx/streamfix/optimization/matrix729_line81/w_on_close",
+      "payload_sha256": "2e1cddd41151ad261803cf10ee0270d255536a6749d5bc4f13c2f25d01923d9c",
+      "selected_block": {
+        "rig": "W7800tp2",
+        "mode": "on"
+      },
+      "holds": 1,
+      "opening_pair": {
+        "state_path": "~/hcx/streamfix/optimization/matrix729_w_on_pair1/runs/20261020T232155/state.json",
+        "state_sha256": null
+      }
+    },
+    {
+      "name": "w_off_ono",
+      "directory": "~/hcx/streamfix/optimization/matrix729_line81/w_off_ono",
+      "payload_sha256": "4b66222dd9baed864e770b7101ecf1966489cc4e5f4900b0f7271c18a0b8692c",
+      "selected_block": {
+        "rig": "W7800tp2",
+        "mode": "off"
+      },
+      "holds": 3
+    }
+  ],
+  "active_von_state": "~/hcx/streamfix/optimization/matrix729_v_on_pair1/runs/20261020T234217/state.json",
+  "required_boot": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+  "no_launch": true
+}

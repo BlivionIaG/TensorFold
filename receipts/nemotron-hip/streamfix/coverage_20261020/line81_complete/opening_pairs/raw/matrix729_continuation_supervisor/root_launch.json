@@ -1,0 +1,9 @@
+{
+  "supervisor_pid": 51337,
+  "started_utc": "2026-10-20T20:47:27Z",
+  "payload_sha256": "9fef8f399968480ebbdfa7b89f5a434b7980029effbd169640e09fb057cdaaee",
+  "script_sha256": "5c95d71672d6e55335180b9906fcfe7701da027db6d248b1d034d07e5928eb6f",
+  "boot_id": "9064ffa5-1d25-4059-a521-5e5d69d03a36",
+  "cold_complete_at_launch": false,
+  "scope": "Conditional supervisor only; benchmark allocation requires actual PASS+cleanup+verified collection release"
+}

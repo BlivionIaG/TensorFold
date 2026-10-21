@@ -1,0 +1,24 @@
+{
+  "validated": true,
+  "supervisor_sha256": "af72a709dc62b098113d58e69f79dd466b36436b6159cae2e638a8ef5d9a1cd3",
+  "scope": "Actual ASTextracted cleanupfunction/releaseasserts tested on syntheticlocalrecords; no remote/model/GPU operations",
+  "negative_controls_rejected": [
+    "rank0signal",
+    "forcedkill",
+    "earlierdeath",
+    "wrongreason",
+    "groupalive",
+    "wrongsource",
+    "wrongbinary",
+    "wrongexit",
+    "missingrank",
+    "release_source_commit",
+    "release_boot_id",
+    "release_state_sha256",
+    "release_all_downloads_verified",
+    "release_owned_groups_gone",
+    "release_independent_audit_pass",
+    "release_independent_audit_sha256",
+    "release_released_at_utc"
+  ]
+}

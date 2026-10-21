@@ -1,0 +1,10 @@
+{
+  "negative_controls.json": "bcda617feab72f1633a2b06ea1870ce3f08dd5e3c1c78c27acd9dab54adee348",
+  "dryrun.json": "acd224b022836d29765bb4e54811eb88884d34cb84948cf8be21783addd01169",
+  "launch_supervisor.py": "f7caa25f4f31c4e0142848de09326d07d83f8edcadbe61767e9c3bfb41f6a55c",
+  "review.diff": "1b46716d10bd9397f3a211d33b7d8692a4aed7ea7e60ff13819f43d8a29b3016",
+  "supervisor.py": "af72a709dc62b098113d58e69f79dd466b36436b6159cae2e638a8ef5d9a1cd3",
+  "config.json": "aec4f7d93cb92fffad9b7adaadc1e812e8f788f6bbc6697fdc9193bd33d73186",
+  "launcher.dryrun.json": "89d4b052228d7cfa40bad9720a14626052ecad78074baac725fa4606ce3de7b6",
+  "README.md": "d92045e1dcb441974cea0f239ce51d6fbda95af6c5b684e69e8b7e6f873c0058"
+}

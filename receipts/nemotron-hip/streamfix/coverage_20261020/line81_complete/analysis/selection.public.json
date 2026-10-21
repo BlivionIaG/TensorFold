@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "protocol": "O/N/O controls",
+  "fixtures": {
+    "code_1024_512": {
+      "file": "opening_pairs/raw/matrix729_v_off_pair1/fixtures/code_1024_512.ids.json"
+    },
+    "prose_16384_1024": {
+      "file": "opening_pairs/raw/matrix729_v_off_pair1/fixtures/prose_16384_1024.ids.json"
+    }
+  },
+  "blocks": [
+    {
+      "rig": "W7800tp2",
+      "mode": "off",
+      "entries": [
+        {
+          "run_root": "controls/matrix729_line81/w_off_ono/runs/20261021T003229",
+          "state_sha256": "006ed77d7a0dfc3f455174d9acd1adae2e707778d65598a9d9a24e3ba9aad1f3",
+          "hold_indices": [
+            1,
+            2,
+            3
+          ],
+          "original_state_sha256": "d325e3ff02da98bacf6a6dafd9d8c3dfbac75e983f3c0a27d79027cb79631ee7"
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "off",
+      "entries": [
+        {
+          "run_root": "opening_pairs/raw/matrix729_v_off_pair1/runs/20261020T230018",
+          "state_sha256": "4e070385c37e8aa37f6481c844fea1b27724bce5cb96e2b819f2a656ee7c08a1",
+          "hold_indices": [
+            1,
+            2
+          ],
+          "original_state_sha256": "9a0742067ccd00030a8590793fefedad1b78f73e9844daacce5038a706382e4f"
+        },
+        {
+          "run_root": "controls/matrix729_line81/v_off_close/runs/20261021T001534",
+          "state_sha256": "0eec7a15025f0e83af852ae4cf53b905b7636d3b5cd18c8bbf041568239216fe",
+          "hold_indices": [
+            3
+          ],
+          "original_state_sha256": "38b0a0eb7e4e538f8c3e7ac0ee7660eaf47fa2c2bafc5d87795be2eb28f8c394"
+        }
+      ]
+    },
+    {
+      "rig": "W7800tp2",
+      "mode": "on",
+      "entries": [
+        {
+          "run_root": "opening_pairs/raw/matrix729_w_on_pair1/runs/20261020T232155",
+          "state_sha256": "cdbe5658a2b9d553123fba0410e811d667627e11c3b07338e0d3200d058f28a7",
+          "hold_indices": [
+            1,
+            2
+          ],
+          "original_state_sha256": "fa3e5d5a4b4bd3f312def26e46b69657bf39f0e7e37665f507ca7f1f7b6b3b6d"
+        },
+        {
+          "run_root": "controls/matrix729_line81/w_on_close/runs/20261021T002622",
+          "state_sha256": "38f48fa1c23867fe795c55c2076eb70c375e0ebc42fa5977c1e30c6d16fe01cc",
+          "hold_indices": [
+            3
+          ],
+          "original_state_sha256": "b1a40b96795c6adfa331e8d7e2ad3d0c86bffeaaff622f4fa5bcdc58e6fa147e"
+        }
+      ]
+    },
+    {
+      "rig": "V620tp1",
+      "mode": "on",
+      "entries": [
+        {
+          "run_root": "opening_pairs/raw/matrix729_v_on_pair1/runs/20261020T234217",
+          "state_sha256": "ee59223dc06e6cb7b053335857ade5d07976902641b216d2da62081fad8da7d3",
+          "hold_indices": [
+            1,
+            2
+          ],
+          "original_state_sha256": "90594fb168a66cf73de257c3c9252f3f67b57f2195db07bf0e1214834f368ae4"
+        },
+        {
+          "run_root": "controls/matrix729_line81/v_on_close/runs/20261021T000557",
+          "state_sha256": "71ac3250c0b6e0dc819777ea6b75679d952d44f38ffbde442aeb5121a11eda52",
+          "hold_indices": [
+            3
+          ],
+          "original_state_sha256": "174e760dc240546ecdd458d073368b347e5ca368dbe60767251c2a6852606866"
+        }
+      ]
+    }
+  ],
+  "public_binding_scope": "Onlystatepath/hash metadata remapped to privacy-normalizedcopies; all originalbindings preserved, HTTP/SSE/fixturebytes unchanged."
+}

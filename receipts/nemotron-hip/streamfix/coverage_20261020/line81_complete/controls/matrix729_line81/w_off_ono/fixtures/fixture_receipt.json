@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "cpu_only": true,
+  "weights_loaded": false,
+  "checkpoint_revision_from_metadata": "d9d758fb83953437f7263256b0d96157e2a348b8",
+  "revision_metadata_sha256": "16213f573ea60b434379aab00f44d897836ea0897d250a613c240da08ddbc37e",
+  "tokenizer_json_sha256": "623c34567aebb18582765289fbe23d901c62704d6518d71866e0e58db892b5b7",
+  "tokenizers_version": "0.22.2",
+  "python_version": "3.12.14",
+  "generator_sha256": "4db64cbd2a29fcb9a4ab57eff566a43223dcf960301ce5862bc2c07b2236d6de",
+  "fixtures": [
+    {
+      "name": "code_1024_512",
+      "family": "code",
+      "prompt_tokens": 1024,
+      "requested_output_tokens": 512,
+      "filler_utf8_sha256": "7aaed0eef15cc44723471c787ee6c7263632792b63f224f957159295ac2dd78c",
+      "instruction_utf8_sha256": "75b34efc967a21477c3072ef893ff2d8aa7818beee5b876e6cafe701cdd241ad",
+      "filler_ids_count": 82,
+      "instruction_ids_count": 52,
+      "ids_sha256": "fdecab4eb1392c27d160b5d0bfbd236274614fb80b1c01e4edc5828e0b15499e",
+      "request_body_sha256": "c66411ccf00aa27b06d144f95118a5d1175b69440381c08fd03a90e82883e584",
+      "decoded_utf8_sha256": "670d118fda7272a25f83c255a26fd05ff7e2577afd147b6fab94bec2050c7042",
+      "add_special_tokens": false,
+      "full_instruction_tail_preserved": true,
+      "construction": "Repeat encoded filler token-ID block; truncate only filler to N-tail_count; append complete separately encoded instruction tail. Raw-ID API; no canonical concatenated-string retokenization assumed.",
+      "retokenized_decoded_equals_ids": true,
+      "identical_array_for_all_concurrent_requests": true
+    },
+    {
+      "name": "prose_16384_1024",
+      "family": "prose",
+      "prompt_tokens": 16384,
+      "requested_output_tokens": 1024,
+      "filler_utf8_sha256": "58d1d800a0918b0fde80f1e06915d2e51c0b6c7ddf08e0224b30348035302a79",
+      "instruction_utf8_sha256": "01edbf19feedbe127dcf64c2319beb464450358d0d9ed741801de7f4352f31bd",
+      "filler_ids_count": 80,
+      "instruction_ids_count": 60,
+      "ids_sha256": "51e13c227097b4fa1e0a6cc854f2a77208bf2301c1aa478bb8e76b2f47f4defa",
+      "request_body_sha256": "3e4edaaaa58da424fd1059c80cb4c6c108b0cd8392e8844cdbbde07bdec2ed21",
+      "decoded_utf8_sha256": "ffc5579ab66539fe31edceb122313ff6b7d11da67e7a7635d2c6a8f578b6e6cf",
+      "add_special_tokens": false,
+      "full_instruction_tail_preserved": true,
+      "construction": "Repeat encoded filler token-ID block; truncate only filler to N-tail_count; append complete separately encoded instruction tail. Raw-ID API; no canonical concatenated-string retokenization assumed.",
+      "retokenized_decoded_equals_ids": true,
+      "identical_array_for_all_concurrent_requests": true
+    }
+  ]
+}

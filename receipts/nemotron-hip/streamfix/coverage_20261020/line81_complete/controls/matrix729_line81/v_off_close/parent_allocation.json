@@ -1,0 +1,49 @@
+{
+  "parent_allocated": true,
+  "exclusive_gpu_reservation": true,
+  "source_commit": "729833615595df66c9f9a438ce9a85061843f010",
+  "purpose": "matrix_published729_line81",
+  "phase": "off",
+  "devices": {
+    "W7800tp2": "0,1",
+    "V620tp1": "2"
+  },
+  "harness_manifest_sha256": "3f4a4ec8bc88db3b8cf772026386b6d51c143bfe1203d1f438deff42dc46ed6a",
+  "single_model_scheduling": true,
+  "exclusive_owned_gpu_reservation": true,
+  "memory_admission_environment": {
+    "TENSORFOLD_MEMORY_RESERVE_GIB": null,
+    "TENSORFOLD_HIP_MEMORY_LIMIT_GB": null
+  },
+  "memory_observer_sha256": "8a69ded9f346c6ca703cc61edd9c854ee86cf005a0524ec44d548379b65f5d3b",
+  "target": "Complete requested source-bound benchmarks; user accepts current measured performance; no recovery threshold",
+  "native_bindings_status": "Root requires actual remote rehash before launch; existing729 numerical/native proofs retained",
+  "one_owned_logical_group_scheduled": true,
+  "shared_host_cpu_builds_allowed": true,
+  "shared_host_models_allowed_only_confident_gpu6_to9": false,
+  "single_model_scheduling_scope": "OWN_GROUPS_ONLY",
+  "user_shared_host_override": true,
+  "physical_host_isolated": false,
+  "unknown_model_mapping_observed_not_blocking": true,
+  "performance_acceptance": "User accepts current observed performance including4.53%case; report allregressions, no <=3%threshold and no optimization gate",
+  "abort_only_positive_reserved_gpu0_to2_overlap": true,
+  "root_allocated_at_utc": "2026-10-20T22:15:34Z",
+  "prior_lifecycle_gate": {
+    "summary_sha256": "b1b81c2f9d034f11deaaab30b5ad149f88503dcc8cc9bdaa8835fdcfb1083d03",
+    "all4_pass": true,
+    "all_owned_process_groups_gone": true
+  },
+  "selected_block": {
+    "rig": "V620tp1",
+    "mode": "off"
+  },
+  "prior_gpu_stage_cleanup_verified": true,
+  "hold_order": [
+    "old"
+  ],
+  "active_von_cleanup_verified": true,
+  "opening_pair": {
+    "state_path": "~/hcx/streamfix/optimization/matrix729_v_off_pair1/runs/20261020T230018/state.json",
+    "state_sha256": "9a0742067ccd00030a8590793fefedad1b78f73e9844daacce5038a706382e4f"
+  }
+}

@@ -1,0 +1,658 @@
+[
+  {
+    "rig": "W7800tp2",
+    "mode": "off",
+    "shape": "code_1024_512",
+    "concurrency": 1,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      132.73320640064017,
+      129.174841986276,
+      131.41069772334058
+    ],
+    "old_first_to_old_last_change_percent": -0.9963661039783411,
+    "candidate_vs_old_first_percent": -2.680839641305477,
+    "candidate_vs_old_last_percent": -1.701425968966197,
+    "arithmetic_bookend_mean": 132.07195206199037,
+    "candidate_vs_bookend_mean_percent": -2.1935846563050476,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 8934.059794065,
+          "last_completed": 8949.655914081
+        },
+        {
+          "first_sent": 9338.309819813,
+          "last_completed": 9354.347481345
+        },
+        {
+          "first_sent": 9746.292023731,
+          "last_completed": 9762.073598253
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 388.65390573199875,
+      "candidate_to_closing_gap_seconds": 391.94454238600156,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "W7800tp2",
+    "mode": "off",
+    "shape": "code_1024_512",
+    "concurrency": 8,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      331.3238563716411,
+      327.2172159935307,
+      329.77236387633485
+    ],
+    "old_first_to_old_last_change_percent": -0.4682706860582919,
+    "candidate_vs_old_first_percent": -1.2394641373194792,
+    "candidate_vs_old_last_percent": -0.774821714218088,
+    "arithmetic_bookend_mean": 330.54811012398795,
+    "candidate_vs_bookend_mean_percent": -1.0076881483932376,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 8954.882258179,
+          "last_completed": 9005.680696327
+        },
+        {
+          "first_sent": 9360.059141609,
+          "last_completed": 9411.534448363
+        },
+        {
+          "first_sent": 9767.384022753,
+          "last_completed": 9818.487438865
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 354.37844528200003,
+      "candidate_to_closing_gap_seconds": 355.84957439000027,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "W7800tp2",
+    "mode": "off",
+    "shape": "prose_16384_1024",
+    "concurrency": 1,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      82.18550261843066,
+      80.97973794164753,
+      82.0068427222668
+    ],
+    "old_first_to_old_last_change_percent": -0.21738614533191036,
+    "candidate_vs_old_first_percent": -1.467125756206944,
+    "candidate_vs_old_last_percent": -1.2524622903698046,
+    "arithmetic_bookend_mean": 82.09617267034872,
+    "candidate_vs_bookend_mean_percent": -1.3599108123884873,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 9012.401050522,
+          "last_completed": 9062.667446628
+        },
+        {
+          "first_sent": 9418.583652792,
+          "last_completed": 9469.629585155
+        },
+        {
+          "first_sent": 9825.120398935,
+          "last_completed": 9875.534897794
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 355.91620616399996,
+      "candidate_to_closing_gap_seconds": 355.49081377999937,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "W7800tp2",
+    "mode": "off",
+    "shape": "prose_16384_1024",
+    "concurrency": 8,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      135.33685936255716,
+      134.65450130377056,
+      135.4206685046081
+    ],
+    "old_first_to_old_last_change_percent": 0.06192632402264309,
+    "candidate_vs_old_first_percent": -0.5041923257274816,
+    "candidate_vs_old_last_percent": -0.5657682902454941,
+    "arithmetic_bookend_mean": 135.37876393358263,
+    "candidate_vs_bookend_mean_percent": -0.5349898379685358,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 9068.266446738,
+          "last_completed": 9314.076546187
+        },
+        {
+          "first_sent": 9475.536302077,
+          "last_completed": 9722.620267674
+        },
+        {
+          "first_sent": 9881.4754034,
+          "last_completed": 10127.289335035
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 161.45975589000045,
+      "candidate_to_closing_gap_seconds": 158.8551357260003,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "V620tp1",
+    "mode": "off",
+    "shape": "code_1024_512",
+    "concurrency": 1,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      115.28646126439793,
+      113.37832530115705,
+      114.25040168190968
+    ],
+    "old_first_to_old_last_change_percent": -0.8986827864480573,
+    "candidate_vs_old_first_percent": -1.6551257990864654,
+    "candidate_vs_old_last_percent": -0.7633026824541256,
+    "arithmetic_bookend_mean": 114.76843147315381,
+    "candidate_vs_bookend_mean_percent": -1.2112269499143014,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 3397.603588236,
+          "last_completed": 3415.544234637
+        },
+        {
+          "first_sent": 4043.269579392,
+          "last_completed": 4061.554118233
+        },
+        {
+          "first_sent": 7913.755431898,
+          "last_completed": 7931.893464535
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 627.7253447550002,
+      "candidate_to_closing_gap_seconds": 3852.2013136650003,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "V620tp1",
+    "mode": "off",
+    "shape": "code_1024_512",
+    "concurrency": 8,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      202.38752609543533,
+      199.40402066738463,
+      201.81738208820335
+    ],
+    "old_first_to_old_last_change_percent": -0.2817090648971843,
+    "candidate_vs_old_first_percent": -1.4741547987714654,
+    "candidate_vs_old_last_percent": -1.1958144515837432,
+    "arithmetic_bookend_mean": 202.10245409181934,
+    "candidate_vs_bookend_mean_percent": -1.3351809291780037,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 3421.202372086,
+          "last_completed": 3503.559315299
+        },
+        {
+          "first_sent": 4067.126856158,
+          "last_completed": 4150.654107158
+        },
+        {
+          "first_sent": 7937.429848809,
+          "last_completed": 8019.983864966
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 563.567540859,
+      "candidate_to_closing_gap_seconds": 3786.7757416509994,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "V620tp1",
+    "mode": "off",
+    "shape": "prose_16384_1024",
+    "concurrency": 1,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      57.10194557653779,
+      56.86597571358356,
+      56.95998943832292
+    ],
+    "old_first_to_old_last_change_percent": -0.24860122852484734,
+    "candidate_vs_old_first_percent": -0.4132431225796651,
+    "candidate_vs_old_last_percent": -0.16505221589122598,
+    "arithmetic_bookend_mean": 57.030967507430354,
+    "candidate_vs_bookend_mean_percent": -0.28930211262030436,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 3510.142122481,
+          "last_completed": 3582.325162223
+        },
+        {
+          "first_sent": 4157.219219331,
+          "last_completed": 4229.682762144
+        },
+        {
+          "first_sent": 8026.914843551,
+          "last_completed": 8099.270038167
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 574.8940571080002,
+      "candidate_to_closing_gap_seconds": 3797.232081407,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "V620tp1",
+    "mode": "off",
+    "shape": "prose_16384_1024",
+    "concurrency": 8,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      75.4269639296644,
+      75.05010714786846,
+      75.43678773825492
+    ],
+    "old_first_to_old_last_change_percent": 0.01302426622882269,
+    "candidate_vs_old_first_percent": -0.4996313813550257,
+    "candidate_vs_old_last_percent": -0.5125888866425954,
+    "arithmetic_bookend_mean": 75.43187583395965,
+    "candidate_vs_bookend_mean_percent": -0.5061105558763268,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 3587.919690131,
+          "last_completed": 4026.06327064
+        },
+        {
+          "first_sent": 4235.436433969,
+          "last_completed": 4675.425700034
+        },
+        {
+          "first_sent": 8105.051895018,
+          "last_completed": 8543.113236479
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 209.3731633289999,
+      "candidate_to_closing_gap_seconds": 3429.626194984,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "W7800tp2",
+    "mode": "on",
+    "shape": "code_1024_512",
+    "concurrency": 1,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      222.65382869810392,
+      209.92869945572298,
+      222.37314474832914
+    ],
+    "old_first_to_old_last_change_percent": -0.12606293429400228,
+    "candidate_vs_old_first_percent": -5.715207915707987,
+    "candidate_vs_old_last_percent": -5.596199714983641,
+    "arithmetic_bookend_mean": 222.51348672321654,
+    "candidate_vs_bookend_mean_percent": -5.655741345308984,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 4700.266951136,
+          "last_completed": 4709.667703057
+        },
+        {
+          "first_sent": 5065.708134592,
+          "last_completed": 5075.64931213
+        },
+        {
+          "first_sent": 8567.153838975,
+          "last_completed": 8576.563049913
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 356.0404315349997,
+      "candidate_to_closing_gap_seconds": 3491.5045268450003,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "W7800tp2",
+    "mode": "on",
+    "shape": "code_1024_512",
+    "concurrency": 8,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      402.256466021673,
+      383.1224642206012,
+      399.40923629336623
+    ],
+    "old_first_to_old_last_change_percent": -0.7078145334656671,
+    "candidate_vs_old_first_percent": -4.756667304893214,
+    "candidate_vs_old_last_percent": -4.077715433902074,
+    "arithmetic_bookend_mean": 400.8328511575196,
+    "candidate_vs_bookend_mean_percent": -4.4183970664516625,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 4714.820083769,
+          "last_completed": 4755.848569695
+        },
+        {
+          "first_sent": 5080.958952434,
+          "last_completed": 5125.266565636
+        },
+        {
+          "first_sent": 8581.828786209,
+          "last_completed": 8624.050103507
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 325.11038273899976,
+      "candidate_to_closing_gap_seconds": 3456.5622205729996,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "W7800tp2",
+    "mode": "on",
+    "shape": "prose_16384_1024",
+    "concurrency": 1,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      108.27684779822059,
+      106.81036106447362,
+      108.91874424614629
+    ],
+    "old_first_to_old_last_change_percent": 0.5928289020030508,
+    "candidate_vs_old_first_percent": -1.3543862455987266,
+    "candidate_vs_old_last_percent": -1.9357395242346143,
+    "arithmetic_bookend_mean": 108.59779602218345,
+    "candidate_vs_bookend_mean_percent": -1.6459219460998042,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 4762.016368313,
+          "last_completed": 4800.248161688
+        },
+        {
+          "first_sent": 5131.522880547,
+          "last_completed": 5170.171696327
+        },
+        {
+          "first_sent": 8629.979635961,
+          "last_completed": 8668.082034294
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 331.2747188589992,
+      "candidate_to_closing_gap_seconds": 3459.807939634001,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "W7800tp2",
+    "mode": "on",
+    "shape": "prose_16384_1024",
+    "concurrency": 8,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      138.22148453459513,
+      136.51878316020813,
+      138.85107013051993
+    ],
+    "old_first_to_old_last_change_percent": 0.45549040226608994,
+    "candidate_vs_old_first_percent": -1.2318644819364843,
+    "candidate_vs_old_last_percent": -1.6797039937246794,
+    "arithmetic_bookend_mean": 138.53627733255752,
+    "candidate_vs_bookend_mean_percent": -1.456293045543855,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 4805.672340265,
+          "last_completed": 5044.058413835
+        },
+        {
+          "first_sent": 5176.103345499,
+          "last_completed": 5417.898333033
+        },
+        {
+          "first_sent": 8673.572636779,
+          "last_completed": 8911.608344143
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 132.04493166400061,
+      "candidate_to_closing_gap_seconds": 3255.674303745999,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "V620tp1",
+    "mode": "on",
+    "shape": "code_1024_512",
+    "concurrency": 1,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      177.59360302336285,
+      171.54456001960705,
+      177.10826544171954
+    ],
+    "old_first_to_old_last_change_percent": -0.2732855088138808,
+    "candidate_vs_old_first_percent": -3.406115367207252,
+    "candidate_vs_old_last_percent": -3.141414890059624,
+    "arithmetic_bookend_mean": 177.3509342325412,
+    "candidate_vs_bookend_mean_percent": -3.273946223097346,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 5916.486771437,
+          "last_completed": 5928.110463839
+        },
+        {
+          "first_sent": 6492.450747521,
+          "last_completed": 6504.478265197
+        },
+        {
+          "first_sent": 7336.84644898,
+          "last_completed": 7348.444914546
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 564.3402836820005,
+      "candidate_to_closing_gap_seconds": 832.368183783,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "V620tp1",
+    "mode": "on",
+    "shape": "code_1024_512",
+    "concurrency": 8,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      274.0257653847597,
+      270.1100480422026,
+      273.77687953099314
+    ],
+    "old_first_to_old_last_change_percent": -0.09082571247164273,
+    "candidate_vs_old_first_percent": -1.4289595495004082,
+    "candidate_vs_old_last_percent": -1.3393503114916716,
+    "arithmetic_bookend_mean": 273.9013224578764,
+    "candidate_vs_bookend_mean_percent": -1.3841752867976287,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 5933.602331005,
+          "last_completed": 5993.663620158
+        },
+        {
+          "first_sent": 6509.559142933,
+          "last_completed": 6570.537049444
+        },
+        {
+          "first_sent": 7353.886911888,
+          "last_completed": 7413.970637902
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 515.8955227749993,
+      "candidate_to_closing_gap_seconds": 783.3498624439999,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "V620tp1",
+    "mode": "on",
+    "shape": "prose_16384_1024",
+    "concurrency": 1,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      68.50111643978464,
+      67.76886197784314,
+      68.46969954249239
+    ],
+    "old_first_to_old_last_change_percent": -0.045863336139728705,
+    "candidate_vs_old_first_percent": -1.0689671935276812,
+    "candidate_vs_old_last_percent": -1.023573302252201,
+    "arithmetic_bookend_mean": 68.48540799113852,
+    "candidate_vs_bookend_mean_percent": -1.046275453871992,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 5999.529614676,
+          "last_completed": 6059.544730565
+        },
+        {
+          "first_sent": 6576.370417462,
+          "last_completed": 6637.056145264
+        },
+        {
+          "first_sent": 7419.844414486,
+          "last_completed": 7479.892949167
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 516.8256868970002,
+      "candidate_to_closing_gap_seconds": 782.7882692219991,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  },
+  {
+    "rig": "V620tp1",
+    "mode": "on",
+    "shape": "prose_16384_1024",
+    "concurrency": 8,
+    "hold_order": [
+      "old_first",
+      "candidate",
+      "old_last"
+    ],
+    "values": [
+      79.70492200846647,
+      79.22926654133347,
+      79.68452203239453
+    ],
+    "old_first_to_old_last_change_percent": -0.025594374296955547,
+    "candidate_vs_old_first_percent": -0.5967705069487073,
+    "candidate_vs_old_last_percent": -0.5713223590347649,
+    "arithmetic_bookend_mean": 79.6947220204305,
+    "candidate_vs_bookend_mean_percent": -0.584048061523712,
+    "scope": "Unrounded descriptive statistics; bookend mean is not a drift model/confidence interval or waiver",
+    "actual_timing_gaps": {
+      "holds": [
+        {
+          "first_sent": 6065.011520052,
+          "last_completed": 6477.559526906
+        },
+        {
+          "first_sent": 6642.346796638,
+          "last_completed": 7057.374476468
+        },
+        {
+          "first_sent": 7485.394923867,
+          "last_completed": 7898.096220404
+        }
+      ],
+      "opening_to_candidate_gap_seconds": 164.7872697319999,
+      "candidate_to_closing_gap_seconds": 428.02044739900066,
+      "scope": "Actual per-case first/last request times include warmups; intervening cells/work and long control gaps explicitly retained, no latency attribution"
+    }
+  }
+]

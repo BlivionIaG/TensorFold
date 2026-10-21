@@ -1,0 +1,3 @@
+# Descriptive pair block; unrun
+
+One selected rig/mode, OLD then NEW, two server holds. Both exact shapes C1/C8; one warmup plus three measured batches. Eight cells,144 requests includingwarmups,108 measured. Pairblockcompletion is not fullmatrixcompletion or ABBA/statisticalconfidence/fullCONTRIBUTING qualification. Each liveblock is fresh, no historicaldata loaded. Cross-block selection is separately audited; parentallocationfalse until rootgrants it. All originalmetrics/clients/settings/source/nativeguard semantics preserved. See parent PLAN.md/selection_manifest.json for reuse of the actual first8W-OFF cells and exclusion of orphanthirdhold.

@@ -1,0 +1,22 @@
+{
+  "original_failed_run": "20261021T000438",
+  "no_allocations_or_jobs_started": true,
+  "templates": [
+    {
+      "name": "v_on_close",
+      "sha256": "4081ec0cee0b8f1cae4aadbfa2e91d264d3d580895377f1e8bf60e9488129e2f"
+    },
+    {
+      "name": "v_off_close",
+      "sha256": "e3b55fdfea1a66b75743f0191090b9a84e38414555fd75454b9c5f02deb4e417"
+    },
+    {
+      "name": "w_on_close",
+      "sha256": "00158f2f7645970e8c51ad7a866173b4b536e2292f9e4721b02bc2a034cab3cd"
+    },
+    {
+      "name": "w_off_ono",
+      "sha256": "bf837fdf639516e5aff0e4c5a6ef0a8ae19ce3d304bfa554a613dc03206d9ab4"
+    }
+  ]
+}
