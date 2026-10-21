@@ -26,7 +26,7 @@ pub const max_file_bytes = header_bytes + decoder_bytes + mtp_bytes + Sha256.dig
 
 pub fn read(gpa: std.mem.Allocator, io: Io, path: []const u8, identity: Identity) !Counts {
     try validateIdentity(identity);
-    const file: Io.File = .{
+    const file: Io.File = if (comptime @import("builtin").os.tag == .windows) return error.UnsupportedPlatform else .{
         .handle = try std.posix.openat(Io.Dir.cwd().handle, path, .{
             .ACCMODE = .RDONLY,
             .NONBLOCK = true,

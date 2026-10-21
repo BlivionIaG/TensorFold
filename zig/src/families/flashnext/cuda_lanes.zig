@@ -164,6 +164,7 @@ pub fn Namespace(comptime Tri: type) type {
             vision: ?*@import("cuda_images.zig").Vision = null,
             ranks: ?*ranks.Session = null,
             head: ?*mtp.Head = null,
+            profile: ?@import("cuda_exl3_frequency_state.zig").State = null,
             depth: usize = mtp.default_depth,
             confidence: f64 = mtp.default_confidence,
             /// A captured Triton set (TENSORFOLD_CUDA_KERNELS) for comparison, else null: our own glue.
@@ -379,6 +380,7 @@ pub fn Namespace(comptime Tri: type) type {
 
         pub fn release(p: *anyopaque) void {
             const own: *Cuda = @ptrCast(@alignCast(p));
+            if (own.profile) |*profile| profile.save(own);
             var it = own.lanes.valueIterator();
             while (it.next()) |l| dropLane(own, l);
             own.lanes.deinit(own.gpa);
@@ -391,6 +393,7 @@ pub fn Namespace(comptime Tri: type) type {
             if (own.set) |*x| x.deinit();
             own.glue.deinit();
             own.stream.deinit();
+            if (own.profile) |*profile| profile.deinit();
             own.gpa.destroy(own);
         }
 

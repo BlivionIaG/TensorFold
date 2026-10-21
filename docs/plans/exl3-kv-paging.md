@@ -411,3 +411,28 @@ Remaining blockers:
 The next priority is graph profiling/optimization and deterministic TP2 overflow/failure cleanup. The 200k × 2
 capacity run is deferred until those are complete. For resident parity, use replicated attention
 (`TF_FLASHNEXT_ATTN_SPLIT=0`) so a different attention reduction order does not confound the cache comparison.
+
+## 8. Persistent expert-placement priors (2026-10-22)
+
+Set `TF_FLASHNEXT_EXL3_PROFILE_DIR` to a writable POSIX cache directory to opt in. Each model/TP-rank file stores
+decoder and optional MTP lifetime expert counts, not weights, KV, prompts, graph executables or VRAM addresses.
+The advisory identity hashes loaded routed trellis bytes and config/index contents; it is not a full-checkpoint
+checksum because router/dense weights are excluded. Pool capacity is deliberately excluded, so a profile can seed
+a differently sized cache. This does not redistribute experts between TP ranks or implement elastic VRAM budgeting.
+
+After pool attachment, valid priors decay once by two (nonzero minimum one). Only positive-count local routed
+experts warm the existing empty lines, hottest first; copies and pointer-table writes finish before residency is
+published. Warming does not invent routing observations. Actual host/device planners keep learning. The separate
+deep-prefill ring histogram is not persisted, and a subsequent prefill may discard startup residency: this is an
+advisory prior, not an established startup or throughput improvement.
+
+Graceful engine release drains and pulls the owning device planner before snapshotting decoder/MTP counts and
+before freeing graphs or expert pools. Saving replaces the snapshot rather than adding imported counts again.
+A nonblocking lifetime lock prevents competing writers. Private directories/files, a bounded versioned format,
+SHA-256 and synced atomic replacement protect the last good profile. Missing/corrupt/mismatched files and storage
+errors fall back cold or warn; GPU warm-copy failures fail startup. There is no per-token disk I/O or synchronization.
+An abrupt kill can lose updates since the previous save; power-loss durability of the directory rename is not promised.
+
+Focused host tests cover rank/model mismatch, corruption and injected IO failures, lock contention, decay,
+nonduplicating saves, planner ownership and copy-completion ordering. Native restart and hardware placement
+qualification are tracked separately; the profile does not relax any BF16 paging, graph or golden-fidelity gate.

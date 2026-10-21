@@ -41,4 +41,5 @@ test {
     _ = recycle;
     _ = telemetry;
     _ = frequency;
+    _ = @import("cuda_exl3_frequency_state.zig");
 }
