@@ -20,14 +20,17 @@
 #include <stdint.h>
 
 // One block of 1024 threads.
-extern "C" __global__ void __launch_bounds__(1024) kvp_plan(const int* __restrict__ ids, const int* __restrict__ nkr,
+template <bool Shared>
+__device__ __forceinline__ void kvp_plan_body(const int* __restrict__ ids, const int* __restrict__ nkr,
                                                             const int* __restrict__ spr, int m, int idw, int top,
                                                             int ratio, int win0, unsigned* clock, int* blk2slot,
                                                             int* blk2slot_all, int key_off,
                                                             int* __restrict__ slot2blk, unsigned* __restrict__ stamp,
                                                             unsigned* __restrict__ mark, int nslots, int* __restrict__ ctl,
                                                             int* __restrict__ need, int* __restrict__ miss,
-                                                            int* __restrict__ fetch) {
+                                                            int* __restrict__ fetch, unsigned long long* owner_generation,
+                                                            const unsigned long long* lane_generation,
+                                                            unsigned long long generation, int lane_stride, int all_blocks) {
     __shared__ int s_need, s_miss, s_avail;
     __shared__ int hist[256];
     __shared__ unsigned cut_s;
@@ -49,6 +52,10 @@ extern "C" __global__ void __launch_bounds__(1024) kvp_plan(const int* __restric
     }
     __syncthreads();
     if (epoch == 0 || ctl[2] != 0) return;
+    if (Shared && lane_generation[key_off / lane_stride] != generation) {
+        if (threadIdx.x == 0) ctl[2] = 1;
+        return;
+    }
     bool any = false;
     for (int r = 0; r < m; ++r) any |= spr[r] != 0;
     if (!any) {
@@ -68,10 +75,14 @@ extern "C" __global__ void __launch_bounds__(1024) kvp_plan(const int* __restric
     for (int i = threadIdx.x; i < n_need; i += blockDim.x) {
         const int b = need[i];
         const int s = blk2slot[b];
-        if (s >= 0)
+        bool hit = s >= 0 && s < nslots;
+        if (Shared && hit) hit = owner_generation[s] == generation && slot2blk[s] == key_off + b;
+        if (hit)
             stamp[s] = epoch;
-        else
+        else {
+            blk2slot[b] = -1;
             miss[atomicAdd(&s_miss, 1)] = b;
+        }
     }
     __syncthreads();
     int n_miss = s_miss;
@@ -134,12 +145,50 @@ extern "C" __global__ void __launch_bounds__(1024) kvp_plan(const int* __restric
         if (place >= n_miss) continue;
         const int b = miss[place];
         const int old = slot2blk[s];
-        if (old >= 0) blk2slot_all[old] = -1;
+        if (Shared) {
+            if (old >= 0 && old < all_blocks && owner_generation[s] == lane_generation[old / lane_stride] && blk2slot_all[old] == s) blk2slot_all[old] = -1;
+            owner_generation[s] = generation;
+        } else if (old >= 0) blk2slot_all[old] = -1;
         blk2slot[b] = s;
         slot2blk[s] = key_off + b;
         stamp[s] = epoch;
         fetch[2 * place] = b;
         fetch[2 * place + 1] = s;
+    }
+}
+
+extern "C" __global__ void __launch_bounds__(1024) kvp_plan(
+    const int* ids, const int* counts, const int* sparse, int rows, int id_width, int top_blocks,
+    int ratio, int window_origin, unsigned* clock, int* inverse, int* all_inverse, int key_offset,
+    int* owners, unsigned* stamps, unsigned* marks, int slots, int* controls, int* needed,
+    int* missing, int* fetched) {
+    kvp_plan_body<false>(ids, counts, sparse, rows, id_width, top_blocks, ratio, window_origin,
+        clock, inverse, all_inverse, key_offset, owners, stamps, marks, slots, controls, needed,
+        missing, fetched, nullptr, nullptr, 0, 1, 0);
+}
+
+extern "C" __global__ void __launch_bounds__(1024) kvp_shared_plan(
+    const int* ids, const int* counts, const int* sparse, int rows, int id_width, int top_blocks,
+    int ratio, int window_origin, unsigned* clock, int* inverse, int* all_inverse, int key_offset,
+    int* owners, unsigned* stamps, unsigned* marks, int slots, int* controls, int* needed,
+    int* missing, int* fetched, unsigned long long* owner_generation,
+    const unsigned long long* lane_generation, unsigned long long generation, int lane_stride,
+    int all_blocks) {
+    kvp_plan_body<true>(ids, counts, sparse, rows, id_width, top_blocks, ratio, window_origin,
+        clock, inverse, all_inverse, key_offset, owners, stamps, marks, slots, controls, needed,
+        missing, fetched, owner_generation, lane_generation, generation, lane_stride, all_blocks);
+}
+
+extern "C" __global__ void __launch_bounds__(256) kvp_shared_release(
+    int* all_inverse, int* owners, unsigned* stamps, unsigned long long* owner_generation,
+    int slots, int key_begin, int key_end, unsigned long long generation) {
+    for (int slot = blockIdx.x * blockDim.x + threadIdx.x; slot < slots; slot += gridDim.x * blockDim.x) {
+        const int previous = owners[slot];
+        if (previous < key_begin || previous >= key_end || owner_generation[slot] != generation) continue;
+        if (all_inverse[previous] == slot) all_inverse[previous] = -1;
+        owners[slot] = -1;
+        owner_generation[slot] = 0;
+        stamps[slot] = 0;
     }
 }
 

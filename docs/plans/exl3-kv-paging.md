@@ -1,5 +1,46 @@
 # Dynamic KV paging for long contexts (KVP)
 
+## Experimental rank-shared BF16 block arena
+
+The default remains a private pager per sequence. `TF_FLASHNEXT_KVPAGE=1` with
+`TF_FLASHNEXT_KVPAGE_SHARED=1` opts into a fixed rank-owned allocation. Set
+`TF_FLASHNEXT_KVPAGE_SHARED_LANES` to the admitted lane count (default 8, maximum
+32). The existing window, rows and slots settings retain their meanings; slots
+now form one pool across every lane and attention layer. This mode has host
+coverage only until the shared CUDA, TP2 graph and serving gates are run. It has
+no established hardware parity or performance result.
+
+Each K/V side is `[all lane/layer windows | shared block slots]`. A pager uses
+its own window base and a checked relative offset to the shared slots, retaining
+the upstream BF16 attention load path. Canonical RAM, window origins, logical
+history, indexer keys and recurrent state remain sequence-owned. Every sequence
+must use the engine's common admitted capacity (`context` plus MTP slack, bounded
+by the model window). A mismatched capacity or arena geometry is rejected.
+
+Startup allocates and charges all fixed windows, shared payload, global mapping
+tables and paging work once, before expert-pool admission. Per-sequence admission
+charges the remaining sequence buffers. The lane limit also caps startup room.
+Request teardown releases only its generation's tags; it does not free the arena
+or enable paged-sequence recycling. New requests retain the global addresses and
+receive a fresh lane generation. This does not recycle sequence-owned buffers.
+
+`Engine.forward` and `Engine.round` acquire a rank-wide batch lease containing all
+participating sequence generations. Pager calls validate membership, and the
+lease covers paging plus every attention consumer, including captured/replayed
+rounds. Normal release acknowledges the existing `finishPaged`/collective
+completion boundary and introduces no additional device-wide wait. A submitted
+failure poisons touched targets and retains the lease until draining completes.
+
+Private snapshots retain their exact version 1 contract. Shared snapshots use
+explicit version 2: canonical BF16 prefixes, complete owned windows, ordinary
+state, local marks/counters and only the sequence's resident blocks. Restore
+assigns destination slots and generations, invalidates evicted inverse maps, and
+preserves owned block ages against a monotonic shared clock. Global physical slot
+numbers and another lane's payload are not restored. Unrelated windows and
+canonical history remain untouched. If residency is full, ordinary eviction can
+remove a foreign cached block while preserving its canonical history. Snapshot
+admission includes the checked maximum owned-entry payload and metadata.
+
 ## Snapshot and cache reuse validation (2026-10-20)
 
 Version 1 snapshots preserve canonical BF16 RAM rows after flushing every dirty window, the full compact device

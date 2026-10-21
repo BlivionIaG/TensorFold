@@ -20,6 +20,7 @@ pub const Identity = extern struct {
     head_sharded: u64 = 0,
     image_tokens: u64 = 0,
     max_images: u64 = 0,
+    pager: u64 = 0,
 };
 
 fn fileHash(a: std.mem.Allocator, io: std.Io, path: []const u8) ![32]u8 {
@@ -41,7 +42,7 @@ pub fn identity(a: std.mem.Allocator, io: std.Io, dir: []const u8, context: usiz
     defer a.free(index);
     const program = try std.process.executablePathAlloc(io, a);
     defer a.free(program);
-    return .{ .config = try fileHash(a, io, config), .index = try fileHash(a, io, index), .program = try fileHash(a, io, program), .checkpoint = checkpoint, .context = context, .chunk = chunk, .decode_graph = @intFromBool(@import("cuda_round_graph.zig").enabled()), .head_sharded = @intFromBool(try @import("cuda_head.zig").enabled()) };
+    return .{ .config = try fileHash(a, io, config), .index = try fileHash(a, io, index), .program = try fileHash(a, io, program), .checkpoint = checkpoint, .context = context, .chunk = chunk, .decode_graph = @intFromBool(@import("cuda_round_graph.zig").enabled()), .head_sharded = @intFromBool(try @import("cuda_head.zig").enabled()), .pager = @import("cuda_exl3_kvpage.zig").configIdentity(@import("cuda_exl3_kvpage.zig").configFromEnv()) };
 }
 
 pub const Session = struct {
