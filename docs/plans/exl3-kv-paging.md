@@ -10,6 +10,14 @@ now form one pool across every lane and attention layer. This mode has host
 coverage only until the shared CUDA, TP2 graph and serving gates are run. It has
 no established hardware parity or performance result.
 
+The slot count is global in shared mode, not per sequence: eight lanes with
+16,384 slots share 16,384 entries rather than reserving eight private pools.
+This shares allocation capacity, not identical-prefix payloads. Reduced total
+residency can increase misses; memory savings are not a throughput claim. Fixed
+windows are prepaid for every configured lane, so low-concurrency operation can
+use more resident memory than private, lazily created pagers. Compare physical
+peaks with the same active concurrency, window geometry and expert pools.
+
 Each K/V side is `[all lane/layer windows | shared block slots]`. A pager uses
 its own window base and a checked relative offset to the shared slots, retaining
 the upstream BF16 attention load path. Canonical RAM, window origins, logical

@@ -458,7 +458,8 @@ pub const Arena = struct {
         if (active.count != 1) return error.SharedKvSnapshotLease;
         try arena.validateOwnedBlocks(image);
         try arena.downloadMetadata();
-        const next_clock = try std.math.add(u32, try std.math.add(u32, arena.word(arena.layout.clock).*, 1), std.math.cast(u32, try image.maxAge()) orelse return error.Overflow);
+        const clock_base = @max(arena.word(arena.layout.clock).*, @as(u32, @intCast(image.clock)));
+        const next_clock = try std.math.add(u32, try std.math.add(u32, clock_base, 1), std.math.cast(u32, try image.maxAge()) orelse return error.Overflow);
         const targets = try arena.allocator.alloc(u32, arena.layout.options.slots);
         defer arena.allocator.free(targets);
         const first_key = @as(usize, lease.sequence.lane) * arena.layout.lane_words;

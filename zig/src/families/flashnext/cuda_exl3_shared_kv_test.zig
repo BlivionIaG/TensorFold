@@ -381,6 +381,121 @@ test "exl3: shared CUDA constructor allocation and upload failures refund all de
     try std.testing.expectEqual(before, cuda.usage(false).device);
 }
 
+test "exl3: shared CUDA cross-arena native snapshots advance beyond copied mark epochs" {
+    const snapshots = @import("cuda_snap.zig");
+    const fixtures = @import("cuda_snap_test_fixture.zig");
+    fixtures.Fake.reset();
+    var driver = fixtures.Fake.driver();
+    const stream: cuda.Stream = .{ .d = &driver, .handle = null };
+    const geometry: shared.Options = .{ .cap = 64, .lanes = 2, .window = 2052, .rows = 256, .slots = 16 };
+    const source_arena = try shared.Arena.initStorage(std.testing.allocator, &driver, geometry);
+    defer source_arena.destroy() catch unreachable;
+    Fake.install(source_arena);
+    const source = try fixtures.sharedFixture(&driver, source_arena);
+    defer source.deinit();
+    seed(source_arena, source.pg.shared_sequence, 0, 0, 1, 100, 0xa1);
+    const source_tables: [*]u8 = @ptrFromInt(source_arena.tables.ptr);
+    const source_marks = source_tables[source_arena.layout.marks..][0 .. source_arena.layout.lane_words * 4];
+    std.mem.writeInt(u32, source_marks[0..4], 100, .little);
+    std.mem.writeInt(u32, source_marks[4..8], 2, .little);
+    const saved = try snapshots.save(std.testing.allocator, &driver, stream, &source.seq, null);
+    defer snapshots.drop(std.testing.allocator, stream, saved);
+    try std.testing.expectEqual(@as(u64, 100), saved.owned_blocks.?.clock);
+    try std.testing.expectEqual(@as(u64, 0), try saved.owned_blocks.?.maxAge());
+    for ([_]u32{ 0, 200 }) |current_clock| {
+        const destination_arena = try shared.Arena.initStorage(std.testing.allocator, &driver, geometry);
+        defer destination_arena.destroy() catch unreachable;
+        Fake.install(destination_arena);
+        const reserved = try destination_arena.register(geometry.cap);
+        defer destination_arena.release(reserved, stream) catch unreachable;
+        const destination = try fixtures.sharedFixture(&driver, destination_arena);
+        defer destination.deinit();
+        try std.testing.expect(source.pg.shared_sequence.arena != destination.pg.shared_sequence.arena);
+        try std.testing.expect(source.pg.shared_sequence.lane != destination.pg.shared_sequence.lane);
+        const tables: [*]u8 = @ptrFromInt(destination_arena.tables.ptr);
+        std.mem.writeInt(u32, tables[destination_arena.layout.clock..][0..4], current_clock, .little);
+        try snapshots.restore(stream, &destination.seq, null, saved);
+        const first_key = @as(usize, destination.pg.shared_sequence.lane) * destination_arena.layout.lane_words;
+        const copied_marks = tables[destination_arena.layout.marks + first_key * 4 ..][0..source_marks.len];
+        try std.testing.expectEqualSlices(u8, source_marks, copied_marks);
+        try std.testing.expectEqual(@as(u32, 0xffffffff), std.mem.readInt(u32, tables[(first_key + 1) * 4 ..][0..4], .little));
+        const restored_clock = std.mem.readInt(u32, tables[destination_arena.layout.clock..][0..4], .little);
+        try std.testing.expectEqual(@max(current_clock, @as(u32, 100)) + 1, restored_clock);
+        for (0..destination_arena.layout.lane_words) |index| {
+            const mark = std.mem.readInt(u32, copied_marks[index * 4 ..][0..4], .little);
+            try std.testing.expect(restored_clock > mark);
+            try std.testing.expect(restored_clock + 1 != mark);
+        }
+        const lease = try destination_arena.acquire(destination.pg.shared_sequence);
+        var restored = try destination_arena.saveOwnedBlocks(std.testing.allocator, lease);
+        defer restored.deinit(std.testing.allocator);
+        try destination_arena.cancel(lease);
+        try std.testing.expectEqual(@as(usize, 1), restored.entries.len);
+        try std.testing.expect(restored.entries[0].source_slot != saved.owned_blocks.?.entries[0].source_slot);
+        try std.testing.expectEqual(restored.clock, restored.entries[0].stamp);
+        try std.testing.expectEqualSlices(u8, saved.owned_blocks.?.payload, restored.payload);
+        try std.testing.expect(destination_arena.active == null);
+        try std.testing.expect(!destination.seq.invalidated);
+    }
+    try std.testing.expect(!fixtures.Fake.freed_pending);
+}
+
+test "exl3: shared CUDA restored clocks preserve ages and reject overflow before metadata mutation" {
+    var driver = Fake.driver();
+    const arena = try shared.Arena.initStorage(std.testing.allocator, &driver, options);
+    defer arena.destroy() catch unreachable;
+    Fake.install(arena);
+    const stream: cuda.Stream = .{ .d = &driver, .handle = null };
+    const source = try arena.register(options.cap);
+    seed(arena, source, 0, 0, 0, 1, 0xa1);
+    const saving = try arena.acquire(source);
+    var image = try arena.saveOwnedBlocks(std.testing.allocator, saving);
+    defer image.deinit(std.testing.allocator);
+    try arena.cancel(saving);
+    try arena.release(source, stream);
+    const destination = try arena.register(options.cap);
+    defer arena.release(destination, stream) catch unreachable;
+    const Boundary = struct { current: u32, source: u32, age: u32, expected: ?u32 };
+    const limit = std.math.maxInt(u32);
+    const boundaries = [_]Boundary{
+        .{ .current = 0, .source = 100, .age = 10, .expected = 111 },
+        .{ .current = 200, .source = 100, .age = 10, .expected = 211 },
+        .{ .current = 0, .source = limit, .age = 0, .expected = null },
+        .{ .current = limit, .source = 1, .age = 0, .expected = null },
+        .{ .current = 0, .source = limit - 1, .age = 1, .expected = null },
+        .{ .current = 0, .source = limit - 1, .age = 0, .expected = limit },
+    };
+    const tables: [*]u8 = @ptrFromInt(arena.tables.ptr);
+    for (boundaries) |boundary| {
+        image.clock = boundary.source;
+        image.entries[0].stamp = boundary.source - boundary.age;
+        const resetting = try arena.acquire(destination);
+        try arena.clear(resetting, destination, stream);
+        try arena.complete(resetting, stream);
+        std.mem.writeInt(u32, tables[arena.layout.clock..][0..4], boundary.current, .little);
+        const before = std.hash.Wyhash.hash(0, tables[0..arena.metadata.len]);
+        const copies_before = Fake.copy_calls;
+        const restoring = try arena.acquire(destination);
+        if (boundary.expected) |expected| {
+            try arena.restoreOwnedBlocks(restoring, &image);
+            try arena.complete(restoring, stream);
+            try std.testing.expectEqual(expected, std.mem.readInt(u32, tables[arena.layout.clock..][0..4], .little));
+            const checking = try arena.acquire(destination);
+            var restored = try arena.saveOwnedBlocks(std.testing.allocator, checking);
+            defer restored.deinit(std.testing.allocator);
+            try arena.cancel(checking);
+            try std.testing.expectEqual(@as(usize, 1), restored.entries.len);
+            try std.testing.expectEqual(@as(u64, boundary.age), restored.clock - restored.entries[0].stamp);
+        } else {
+            try std.testing.expectError(error.Overflow, arena.restoreOwnedBlocks(restoring, &image));
+            try std.testing.expect(!arena.active.?.submitted);
+            try std.testing.expectEqual(before, std.hash.Wyhash.hash(0, tables[0..arena.metadata.len]));
+            try std.testing.expectEqual(copies_before, Fake.copy_calls);
+            try arena.cancel(restoring);
+        }
+    }
+}
+
 test "exl3: shared CUDA repeated empty snapshots advance one epoch without absolute clock amplification" {
     var driver = Fake.driver();
     const arena = try shared.Arena.initStorage(std.testing.allocator, &driver, options);
