@@ -152,30 +152,28 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, mode, "window-graph")) return kernelReplay(gpu, 49152, true, true);
     if (std.mem.eql(u8, mode, "overflow-graph")) return overflowReplay(gpu);
     if (std.mem.eql(u8, mode, "snapshot")) return snapshotLifecycle(gpu);
+    if (std.mem.eql(u8, mode, "recycle")) return @import("exl3_recycle_tests.zig").run(gpu);
     return error.UnknownMode;
-}
-
-fn snapshotSequence(gpu: Gpu, stream: cuda.Stream) !prompt.Seq {
-    var engine: prompt.Engine = undefined;
-    engine.gpa = gpu.gpa;
-    engine.driver = @constCast(gpu.d);
-    var owned_stream = stream;
-    engine.stream = &owned_stream;
-    engine.chunk = 256;
-    engine.eos = 0;
-    engine.round_graph = .{};
-    engine.page_config = .{ .window = 2052, .slots = 16, .rows = 256 };
-    return engine.newSeq(8192);
 }
 
 fn snapshotLifecycle(gpu: Gpu) !void {
     const snaps = @import("flashnext").snapshot;
     var stream = try cuda.Stream.init(gpu.d, true);
     defer stream.deinit();
-    var destination = try snapshotSequence(gpu, stream);
+    var engine: prompt.Engine = undefined;
+    engine.gpa = gpu.gpa;
+    engine.driver = @constCast(gpu.d);
+    engine.stream = &stream;
+    engine.chunk = 256;
+    engine.eos = 0;
+    engine.round_graph = .{};
+    engine.page_config = .{ .window = 2052, .slots = 16, .rows = 256 };
+    engine.shared_arena = null;
+    defer flash.exl3.recycle.drain(&engine);
+    var destination = try engine.newSeq(8192);
     defer destination.deinit(gpu.gpa);
     for ([_]usize{ 0, 1, 3, 4, 2051, 2052, 4096, 4099, 6147 }) |at| {
-        var source: ?prompt.Seq = try snapshotSequence(gpu, stream);
+        var source: ?prompt.Seq = try engine.newSeq(8192);
         defer if (source) |*sequence| sequence.deinit(gpu.gpa);
         const pg = source.?.paged.?;
         source.?.fed = at;

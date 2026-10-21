@@ -30,7 +30,7 @@ pub fn roundCap(cap: usize, limit: usize) usize {
 var seqs: [pool_n]?prompt.Seq = @splat(null);
 var drafts: [pool_n]?Draft = @splat(null);
 var draining = false;
-pub var stats: struct { seq_reused: u64 = 0, seq_kept: u64 = 0, draft_reused: u64 = 0, draft_kept: u64 = 0 } = .{};
+pub var stats: struct { seq_reused: u64 = 0, seq_kept: u64 = 0, seq_evicted: u64 = 0, draft_reused: u64 = 0, draft_kept: u64 = 0 } = .{};
 
 fn zero(bufs: []cuda.DeviceBuffer, s: cuda.Stream) !void {
     for (bufs) |b| try b.fill8(0, s.handle);
@@ -38,31 +38,69 @@ fn zero(bufs: []cuda.DeviceBuffer, s: cuda.Stream) !void {
 
 /// Engine.newSeq's hook: a kept sequence of capacity `cap`, zeroed as newSeq zeroes a new one; null: allocate.
 pub fn takeSeq(e: *prompt.Engine, cap: usize) !?prompt.Seq {
-    if (!enabled()) return null;
-    for (&seqs) |*slot| if (slot.*) |*q| if (q.cap == cap) {
+    const reuse = enabled();
+    for (&seqs) |*slot| if (slot.*) |*sequence| {
+        if (sequence.recycle_owner == e and (!reuse or !matches(sequence, e, cap))) {
+            discardSeq(slot, e.gpa);
+            stats.seq_evicted += 1;
+        }
+    };
+    if (!reuse) return null;
+    for (&seqs) |*slot| if (slot.*) |*q| if (matches(q, e, cap)) {
         var s = q.*;
         slot.* = null;
+        errdefer {
+            s.tail.d.synchronize() catch @panic("recycled sequence reset did not drain");
+            s.invalidated = true;
+            s.deinit(e.gpa);
+        }
         const st = e.stream.*;
+        if (s.paged) |pg| try pg.resetForReuse(st);
         for ([_][]cuda.DeviceBuffer{ s.conv, s.state, s.kc, s.vc, s.ikc, s.pooled }) |bs| try zero(bs, st);
         try s.tail.fill8(0, st.handle);
+        @memset(s.logits, 0);
         s.history = .{ e.eos, e.eos };
         s.fed = 0;
         s.rank_id = 0;
         s.media = null;
+        s.untaught = false;
+        s.invalidated = false;
         stats.seq_reused += 1;
         return s;
     };
     return null;
 }
 
-fn canRetainSeq(s: *const prompt.Seq) bool {
-    return !s.invalidated and s.media == null and s.kv8 == null and s.ikc_host == null and s.paged == null;
+fn discardSeq(slot: *?prompt.Seq, allocator: std.mem.Allocator) void {
+    var sequence = slot.*.?;
+    slot.* = null;
+    sequence.recycle_owner = null;
+    sequence.deinit(allocator);
 }
 
-/// Seq.deinit's hook: true when the sequence was kept for reuse (a plain one: no media, int8 or paged KV).
+fn canRetainSeq(s: *const prompt.Seq) bool {
+    if (s.invalidated or s.media != null or s.kv8 != null or s.recycle_owner == null) return false;
+    const placement = @import("cuda_exl3_kv.zig").of(s.recycle_owner.?);
+    return placement.k8 == null and placement.heads == @import("cuda_prompt_wt.zig").kv_heads and (s.ikc_host == null or s.paged != null);
+}
+
+fn matches(sequence: *const prompt.Seq, engine: *prompt.Engine, cap: usize) bool {
+    if (sequence.recycle_owner != engine or sequence.tail.d != engine.driver or sequence.cap != cap) return false;
+    const placement = @import("cuda_exl3_kv.zig").of(engine);
+    if (placement.k8 != null or placement.heads != @import("cuda_prompt_wt.zig").kv_heads or placement.ikc_host != (sequence.ikc_host != null)) return false;
+    const cfg = if (engine.page_config) |config| config.forChunk(engine.chunk) else null;
+    if (sequence.paged) |pg| return cfg != null and std.meta.eql(pg.cfg, cfg.?) and pg.shared_arena == engine.shared_arena;
+    return cfg == null;
+}
+
+/// Seq.deinit's hook: true when the sequence's BF16 allocations were kept for reuse.
 pub fn giveSeq(s: *prompt.Seq) bool {
     if (draining or !enabled() or !canRetainSeq(s)) return false;
     for (&seqs) |*slot| if (slot.* == null) {
+        if (s.paged) |pg| {
+            @import("cuda_exl3_graph.zig").releaseSeq(s);
+            pg.retireForReuse() catch @panic("recycled shared KV owner did not retire");
+        } else s.tail.d.synchronize() catch @panic("recycled sequence consumers did not drain");
         slot.* = s.*;
         stats.seq_kept += 1;
         return true;
@@ -111,15 +149,18 @@ pub fn giveDraft(d: *Draft) bool {
 }
 
 /// Frees everything kept (the engine's deinit).
-pub fn drain(gpa: std.mem.Allocator) void {
+pub fn drain(engine: *prompt.Engine) void {
     draining = true;
     defer draining = false;
-    for (&seqs) |*slot| if (slot.*) |*q| {
-        q.deinit(gpa);
-        slot.* = null;
+    for (&seqs) |*slot| if (slot.*) |*sequence| if (sequence.recycle_owner == engine) {
+        discardSeq(slot, engine.gpa);
     };
     for (&drafts) |*slot| if (slot.*) |*d| {
         d.deinit();
         slot.* = null;
     };
+}
+
+test {
+    _ = @import("cuda_exl3_recycle_test.zig");
 }

@@ -325,6 +325,9 @@ pub const Paged = struct {
     telemetry_revision: u64 = 0,
     shared_arena: ?*shared_device.Arena = null,
     shared_sequence: shared_contract.Sequence = undefined,
+    shared_attached: bool = true,
+    incarnation: u64 = 0,
+    retired_for_reuse: bool = false,
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, cap: usize, cfg: Config) !*Paged {
         return initStore(gpa, d, cap, cfg, null);
@@ -346,6 +349,7 @@ pub const Paged = struct {
         errdefer gpa.destroy(pg);
         pg.* = .{ .gpa = gpa, .d = d, .k = undefined, .cfg = cfg, .cap = cap, .wr = layout.wr, .nblocks = layout.nblocks, .host = undefined, .host_dev = 0, .status_host = undefined, .dev = undefined, .tabs = undefined, .work = undefined };
         pg.telemetry_id = try telemetry.identity();
+        pg.incarnation = try shared_contract.identity();
         pg.shared_arena = shared;
         if (shared) |arena| pg.shared_sequence = try arena.register(cap) else pg.k = try Kern.load(d);
         errdefer if (shared) |arena| arena.release(pg.shared_sequence, .{ .d = d, .handle = null }) catch unreachable else pg.k.module.unload();
@@ -372,7 +376,7 @@ pub const Paged = struct {
     }
 
     pub fn destroy(pg: *Paged) void {
-        if (pg.cfg.shared_lanes != 0) pg.shared_arena.?.release(pg.shared_sequence, .{ .d = pg.d, .handle = null }) catch @panic("shared KV lane retirement failed");
+        if (pg.cfg.shared_lanes != 0 and pg.shared_attached) pg.shared_arena.?.release(pg.shared_sequence, .{ .d = pg.d, .handle = null }) catch @panic("shared KV lane retirement failed");
         pg.work.free();
         pg.tabs.free();
         pg.dev.free();
@@ -380,6 +384,44 @@ pub const Paged = struct {
         pg.host.free();
         if (pg.cfg.shared_lanes == 0) pg.k.module.unload();
         pg.gpa.destroy(pg);
+    }
+
+    pub fn retireForReuse(pg: *Paged) !void {
+        if (pg.retired_for_reuse) return error.KvPageRetired;
+        if (pg.shared_arena) |arena| if (arena.active != null) return error.SharedKvBusy;
+        try pg.d.synchronize();
+        if (pg.shared_arena) |arena| {
+            try arena.release(pg.shared_sequence, .{ .d = pg.d, .handle = null });
+            pg.shared_attached = false;
+        }
+        pg.graph_prepared = false;
+        pg.retired_for_reuse = true;
+    }
+
+    pub fn resetForReuse(pg: *Paged, stream: cuda.Stream) !void {
+        if (!pg.retired_for_reuse) return error.KvPageNotRetired;
+        if (stream.d != pg.d) return error.SharedKvDriver;
+        const identity = try telemetry.identity();
+        const incarnation = try shared_contract.identity();
+        if (pg.shared_arena) |arena| {
+            if (pg.shared_attached) return error.SharedKvSequenceLive;
+            pg.shared_sequence = try arena.register(pg.cap);
+            pg.shared_attached = true;
+        } else {
+            try pg.dev.fill8(0, stream.handle);
+            try pg.work.fill8(0, stream.handle);
+            try pg.resetTables(stream);
+        }
+        @memset(pg.host.bytes, 0);
+        @memset(pg.status_host.bytes, 0);
+        pg.win0 = @splat(0);
+        pg.rebases = @splat(0);
+        pg.written = @splat(0);
+        pg.graph_prepared = false;
+        pg.telemetry_id = identity;
+        pg.telemetry_revision = 0;
+        pg.incarnation = incarnation;
+        pg.retired_for_reuse = false;
     }
 
     /// Device bytes of the K/V side (windows and slots).
@@ -522,6 +564,7 @@ pub const Paged = struct {
 
     fn validateSharedGeometry(pg: *const Paged) !void {
         if (pg.cfg.shared_lanes == 0) return;
+        if (!pg.shared_attached) return error.SharedKvSequence;
         const arena = pg.shared_arena orelse return error.KvPageSnapshotLayout;
         const expected = try shared_device.Layout.init(.{ .cap = pg.cap, .lanes = pg.cfg.shared_lanes, .window = pg.cfg.window, .rows = pg.cfg.rows, .slots = pg.cfg.slots });
         if (!std.meta.eql(expected, arena.layout) or pg.dev.ptr != arena.device.ptr or pg.dev.len != arena.device.len or pg.tabs.ptr != arena.tables.ptr or pg.tabs.len != arena.tables.len or pg.work.ptr != arena.work.ptr or pg.work.len != arena.work.len) return error.KvPageSnapshotLayout;
@@ -674,7 +717,7 @@ pub const Paged = struct {
     pub fn graphKey(pg: *const Paged) [6]u64 {
         var shape: [9 + attn_n]usize = undefined;
         shape[0..5].* = .{ pg.cap, pg.wr, pg.cfg.window, pg.cfg.rows, pg.cfg.slots };
-        shape[5..8].* = if (pg.cfg.shared_lanes == 0) .{ 0, 0, 0 } else .{ pg.cfg.shared_lanes, pg.shared_sequence.lane, @intCast(pg.shared_sequence.generation) };
+        shape[5..8].* = if (pg.cfg.shared_lanes == 0) .{ 0, 0, @intCast(pg.incarnation) } else .{ pg.cfg.shared_lanes, pg.shared_sequence.lane, @intCast(pg.shared_sequence.generation) };
         shape[8] = if (pg.cfg.shared_lanes == 0) 0 else @intCast(pg.shared_arena.?.id);
         for (pg.win0, 0..) |origin, ai| shape[9 + ai] = pagingRows(pg.cfg, origin, att_rows) catch 0;
         return .{ pg.dev.ptr, pg.tabs.ptr, pg.work.ptr, pg.host_dev, std.hash.Wyhash.hash(0, std.mem.asBytes(&shape)), std.hash.Wyhash.hash(0, std.mem.asBytes(&pg.win0)) };
