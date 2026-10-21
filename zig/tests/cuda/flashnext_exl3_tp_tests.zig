@@ -150,7 +150,7 @@ fn layerMode(gpu: Gpu, rk: *Ranks, dir: []const u8, which: []const usize) !void 
         defer arena.deinit();
         const a = arena.allocator();
         var t0 = check.now(gpu.io);
-        var lw2 = try pl.loadLayerRank(gpu.gpa, @constCast(gpu.d), &rig.stream, &rig.store, rig.pack_fn, l, 2, rank);
+        var lw2 = try pl.loadLayerRank(gpu.gpa, @constCast(gpu.d), &rig.stream, &rig.store, rig.pack_fn, l, 2, rank, null);
         defer lw2.free(gpu.gpa);
         const x2 = lw2.exl3 orelse return error.UnexpectedTensor;
         try check.expect(x2.tp != null and x2.tp.?.rank == rank, "layer {d}: rank {d} experts carry no rank", .{ l, rank });
@@ -163,7 +163,7 @@ fn layerMode(gpu: Gpu, rk: *Ranks, dir: []const u8, which: []const usize) !void 
         var ref: [calls.len]Out = undefined;
         if (rank == 0) {
             t0 = check.now(gpu.io);
-            var lw1 = try pl.loadLayerRank(gpu.gpa, @constCast(gpu.d), &rig.stream, &rig.store, rig.pack_fn, l, 1, 0);
+            var lw1 = try pl.loadLayerRank(gpu.gpa, @constCast(gpu.d), &rig.stream, &rig.store, rig.pack_fn, l, 1, 0, null);
             defer lw1.free(gpu.gpa);
             rig.collective = null;
             ref = try sequence(gpu, a, &rig, &raw, &lw1, l);
