@@ -1,3 +1,57 @@
+# HIP/Nemotron review roadmap
+
+**All 22 PRs are Ready for review.** They form an ordered implementation chain; this is a review request, not approval to merge. Each PR’s short introduction links its incremental diff. Detailed source identities, raw results and historical data are collapsed below.
+
+### Contracts and shared serving
+
+- [#1082](https://github.com/ashhart/TensorFold/pull/1082): Run the kernel contract on HIP.
+- [#1083](https://github.com/ashhart/TensorFold/pull/1083): Preserve nonfinite values in MLX stream tiles.
+- [#1084](https://github.com/ashhart/TensorFold/pull/1084): Stop prompt-cache work when a Qwen rank group stops.
+- [#1085](https://github.com/ashhart/TensorFold/pull/1085): Share HIP serving support.
+- [#1086](https://github.com/ashhart/TensorFold/pull/1086): Reject unsupported fp8 KV caches early.
+- [#1087](https://github.com/ashhart/TensorFold/pull/1087): Report unsupported family options before loading.
+
+### Kernels and family integration
+
+- [#1088](https://github.com/ashhart/TensorFold/pull/1088): Add Nemotron Mamba-2 HIP kernels.
+- [#1089](https://github.com/ashhart/TensorFold/pull/1089): Expose and test the routed-MoE tile rule.
+- [#1090](https://github.com/ashhart/TensorFold/pull/1090): Add the Nemotron-H MoE layer on HIP.
+- [#1091](https://github.com/ashhart/TensorFold/pull/1091): Split planned attention work on small grids.
+- [#1092](https://github.com/ashhart/TensorFold/pull/1092): Add the one-GPU Nemotron HIP engine.
+- [#1093](https://github.com/ashhart/TensorFold/pull/1093): Add Nemotron HIP tensor parallelism.
+
+### Rounds, prefill and fusion
+
+- [#1094](https://github.com/ashhart/TensorFold/pull/1094): Add Nemotron lane rounds and graph replay.
+- [#1095](https://github.com/ashhart/TensorFold/pull/1095): Prefill Nemotron in 2048-row chunks.
+- [#1096](https://github.com/ashhart/TensorFold/pull/1096): Fuse residual addition and RMS normalization.
+- [#1097](https://github.com/ashhart/TensorFold/pull/1097): Run a Mamba-2 window in three launches.
+- [#1098](https://github.com/ashhart/TensorFold/pull/1098): Fuse ReLU² into one-row stream products.
+
+### Decode and final grouped products
+
+- [#1099](https://github.com/ashhart/TensorFold/pull/1099): Keep planned attention rows in activation precision.
+- [#1100](https://github.com/ashhart/TensorFold/pull/1100): Split wide-row argmax across the GPU.
+- [#1101](https://github.com/ashhart/TensorFold/pull/1101): Reduce Nemotron launches per decode token.
+- [#1102](https://github.com/ashhart/TensorFold/pull/1102): Use one planned decode launch per query head.
+- [#1103](https://github.com/ashhart/TensorFold/pull/1103): Launch routed fc1 and shared-up products together.
+
+### Evidence at a glance
+
+- **Kernel validation:** current first/top passed 5/5 and 49/49 on `gfx1100` and `gfx1030`. These zero-known counts concern kernel contracts, not whole-model fidelity. Numeric controls were red on both runtime architectures; both metadata controls were red/current on all 4 chips.
+- **Native measurements:** the [48-cell O/N/O matrix](https://github.com/BlivionIaG/TensorFold/tree/606ddd61b274eccc38aa37b99dbc1850d5165b8f/receipts/nemotron-hip/streamfix/coverage_20261020/line81_complete) covers 1024→512 and 16384→1024 tokens, C1/C8, drafts OFF/ON, W7800 TP2 and V620 TP1: 864 requests, 648 measured. Per-request/aggregate timings, rates, baseline drift and gaps are retained. Mean delivery TPOT and chunk gaps are not a true per-token ITL distribution.
+- **State and memory:** existing rollback/replay, shared-round, resume/fresh and cancellation/reuse checks passed. VmHWM records peak RSS; PSS is sampled; full pinned peaks were not reported.
+- **CI:** the [current 22-head audit](https://github.com/BlivionIaG/TensorFold/tree/9413cadef9fc387ff22c93ff60e6daa89682e603/receipts/nemotron-hip/streamfix/coverage_20261020/current_ci_all22) records Linux/fmt/mobile success throughout and desktop success on 21 PRs. PR1085 has the baseline-equivalent guest-VM permission error; all 22 Windows failures match the established 52 compiler diagnostics.
+
+### Landing decisions still open
+
+The cumulative main-based diffs need an agreed dependency/landing arrangement. Family gate discussion and five reported model-reference findings remain unwaived: two exact native ties and three unique winners. Reported margins and exact native rows are available; missing reference metadata is disclosed. Kernel success does not resolve those findings.
+
+The requester accepted the recorded native performance and omitted external vLLM/llama.cpp performance work. No stock server launched. CPU-derived FP16 conversion is storage/mapping evidence, not inference equivalence. These scope choices are not a maintainer waiver.
+
+<details>
+<summary>Detailed evidence and provenance</summary>
+
 # HIP/Nemotron review tracker
 
 ## Review status
@@ -197,3 +251,5 @@ The21cumulative-main diffs cannot be made one-change-compliant by prose or incre
 - https://github.com/ashhart/TensorFold/pull/1102
 - https://github.com/ashhart/TensorFold/pull/1103
 - https://github.com/ashhart/TensorFold/pull/490#issuecomment-6096494868
+
+</details>

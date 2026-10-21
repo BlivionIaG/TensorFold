@@ -1,189 +1,239 @@
 {
   "approved": true,
   "all22_ready": true,
-  "observed_at_utc": "2026-10-21T11:38:10.872797+00:00",
-  "manifest_sha256": "27b0ca8eaa0b277b12c31042868dfd326a7541f0904092f393d4ee9b8965c271",
-  "ready_progress_sha256": "ec59bfa34551170da45b6a23b2c8f1261e39f4b239e5c0aac813e97beb8b80fa",
+  "all23_readability_verified": true,
+  "observed_at_utc": "2026-10-21T12:46:20.876698+00:00",
+  "manifest_sha256": "fd36d0e6a58af327b02ed01497bffeb567893dbaa5fc77722a17a385dc3a30d2",
   "prs": [
+    {
+      "pr": 1082,
+      "head": "826a0635634dee3793a68e473064d17d5c139945",
+      "title": "feat(hip): run kernel contracts on HIP",
+      "body_sha256": "7ca21fab8f6ad382554f2eb10a12bb5bb5ec991cdbd20f51dbca8097ceab3835",
+      "ready": true,
+      "open": true,
+      "merged": false,
+      "old_body_exactly_preserved": true
+    },
     {
       "pr": 1083,
       "head": "096e0aeacf68d9250dd4dc33d0741b6ed54ee7c8",
-      "body_sha256": "54fcde4ea006b0ff3fe4b429aea6e5dbcc2c1d5b45ac7e6660a416747929e60f",
+      "title": "fix(hip): preserve nonfinite values in MLX stream tiles",
+      "body_sha256": "07cec36f228cef7ea5f0fdaf1b65ed0ab06c2ae11ba94a46536376f4a8702e0f",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1084,
       "head": "1d1bcdd35a482271448e0ff8a19eb9013be1e503",
-      "body_sha256": "c2489e48ea38a7c35547a56bf4ad45ee9c6e1435e086b3f79a3b070169e260f2",
+      "title": "fix(qwen3_5): stop cache work when the rank group stops",
+      "body_sha256": "20bfe7dcc898b7c1f0857cff36d780b79553170c62419f0c505320aa8d9dd847",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1085,
       "head": "63025caf8555fe474d6d066c966c8f1e9b9a7352",
-      "body_sha256": "a24cc6e159a666b8a8a42221e4d5b6627f9433f227f230d8204e0eede026d22b",
+      "title": "refactor(hip): share serving and lane-cost helpers",
+      "body_sha256": "1b5e4642f0c355dc6cad009d6f7f673fbc9fd0ded049057118e044aecfb39d04",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1086,
       "head": "9c655701055674cb795feec0f59f5adce6bc74dc",
-      "body_sha256": "7dc44ecb717246a2ec5e6a55856041b9e3d0d91c25faadd225b5b66677cf5713",
+      "title": "fix(hip): reject unsupported fp8 KV caches before loading",
+      "body_sha256": "f038f431013283b04d49957b580d0475b41ae3d6ebeb21b912a461137011edb8",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1087,
       "head": "e4fed24d0d5a0e9a518fb2965fd876afa61f700f",
-      "body_sha256": "4f0c6cd82ec8fd8fafc582ae6b83998d928ca3c0eb44c80c0e142c7bb3f6dd98",
+      "title": "feat(hip): report unsupported family options before loading",
+      "body_sha256": "e7b2daa66e3edd4931f68ffe6cf9636f494a8703526cb3ee99e202a8b9685176",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1088,
       "head": "1f19dbac8ea123c20c39afdd3e62afbbf9b12797",
-      "body_sha256": "834f5a42d2e77deb565a7dd55380c0a9342ce08e4177908d09e30b81eaf87078",
+      "title": "feat(hip): add Nemotron Mamba-2 mixer kernels",
+      "body_sha256": "a33907affcaee72c5a0ee161fa11acde2f6082d92621a8f5225ae393f97e4679",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1089,
       "head": "f3f6c3f2a925b68ff18788063cb8234ea7924f11",
-      "body_sha256": "1d021f42a7ea76f60384e5779d5f989738df753a63076424369bce708c4ab2d4",
+      "title": "refactor(hip): expose and test the routed MoE tile rule",
+      "body_sha256": "46832d1b95db6c4134f700a29e6747e60b3ea4156898c891e565b4a3dac5ae81",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1090,
       "head": "017b0953f3517cdda3821c9fbbc1abfb0965227b",
-      "body_sha256": "da1dcae1c5077962f201a2f7b24952e270fec6e1df3ba43e1824fc89283596e2",
+      "title": "feat(nemotron): add HIP MoE layer operations",
+      "body_sha256": "54ea3063277f2f96b36ea2c14f8eb97e61e9f01378c9117dbc7837732f8432df",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1091,
       "head": "76a1f34f05f14f7de9a321b2810f9f77d41fe7ad",
-      "body_sha256": "ac0ce976aaa7fc14ff882c15ed15f11610332f43db5ec676eb2431867d515330",
+      "title": "perf(hip): split planned attention work on small grids",
+      "body_sha256": "2660065b98d2392dda140daf0eb6e416c3eec56e3d056553269a9f7e1991e0f8",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1092,
       "head": "89bc8409933617057a8ad9c5e379b4603604d557",
-      "body_sha256": "25c480526ea98b5b4ca0e0ddf7de42c3a985288bf3fac47e161c7ca7b72350db",
+      "title": "feat(nemotron): add single-GPU HIP engine support",
+      "body_sha256": "f8418c60492ef2299b5b57a36a2a3950360079cff980d3acbd5a366b269ce499",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1093,
       "head": "71163c15ee202bea0d41e8b64f26f8c4c059a042",
-      "body_sha256": "a8f554e6ac8d302ee13dca7f4c9ee2c95da7d4cd25df02ff2aa1b4881a8f7b47",
+      "title": "feat(nemotron): add HIP tensor parallelism",
+      "body_sha256": "6e62278272b12155f5ce62ba9e98fe5b407604ed8a8d1c70e926be2e4e5c4965",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1094,
       "head": "56916dd0db0df19eb1c4ab370c97f11bdfa7b96f",
-      "body_sha256": "91712085a55e8faf5344b06d1a8cc90ce41ac5903aca2c07c7ba45bd99164224",
+      "title": "feat(nemotron): add lane rounds and HIP graph replay",
+      "body_sha256": "030c2c8d72c033cdef79045b7dd0402f01f863721a96f53d28f350addc9c5d62",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1095,
       "head": "4322276b240fb4a16c62767e24ab08dcd3c5e4f1",
-      "body_sha256": "caf61521ade892d1081d3605fd5fb26fe6022af2bad0f3698f1c7f2c9fd13960",
+      "title": "perf(nemotron): prefill HIP prompts in 2048-row chunks",
+      "body_sha256": "a0d66aa8d1b7437e88f32a8c6df1467db39fc1c4ced1c897ffd89bb09265c1fa",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1096,
       "head": "29409f2d7c58326351da64599b051ccd8f98b867",
-      "body_sha256": "728967878418b829c958d9bab537d4a50fbc4161da3e126e4040323e51215cef",
+      "title": "perf(hip): fuse residual addition and RMS normalization",
+      "body_sha256": "1f8031bb21e8a73dd3fb7e2554b67cfa61961970561695e67242b89a40e6893c",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1097,
       "head": "dfcbfb1d4ec601803f116d454b3cdead6a6818fd",
-      "body_sha256": "ff8de588dff36c6e0b6bab3d66fdfc606881082e71ad9406dc180ffaba54b981",
+      "title": "perf(hip): run Mamba-2 windows in three launches",
+      "body_sha256": "7397c570cdc5c8359a2d3b48036a540606a3c023bc0027cefd961683775db0f6",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1098,
       "head": "51d68203c4c2e3450345e31087f8dad711c6d479",
-      "body_sha256": "721cb669f09c6a47647e7aaf45d1ad53ab14e2a33948ed2c57d93034a3edf152",
+      "title": "perf(hip): fuse ReLU squared into stream products",
+      "body_sha256": "1b01267935f619633e93b162e4a35d0ed5d27f76ce184af5895a3bdafc971bcc",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1099,
       "head": "edc5ba65c29136897e8d8e6e7ce1ab4b1c8b823b",
-      "body_sha256": "7008994874c3e1c49e580c21047829f424530de1c951c081f6f72706346ef33a",
+      "title": "perf(hip): keep planned decode rows in activation precision",
+      "body_sha256": "9ae25d7e0b0684a86d4ccfa23c002409a49fdc75ebf7424c7056a4b7c2833c9d",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1100,
       "head": "8859ff69a3d2023ae19607189b2981987a86fcef",
-      "body_sha256": "46651cd0a12f1ae4254f2670c8ec1de354263ea95e9c0bd8af36b39c7f7cac35",
+      "title": "perf(hip): split wide-row argmax across the GPU",
+      "body_sha256": "e956ffa10f96bfc798cfc4e6f11561bb394b94338ce4ecf3b9e79cd93cb0b5d4",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1101,
       "head": "56511fa7d7d7ce69adeb3666dafe962b4dc405c4",
-      "body_sha256": "74fc32790b647b3558123ec46dc449f61806e4b495772f724bf039984cca47ec",
+      "title": "perf(nemotron): fuse HIP decode operators",
+      "body_sha256": "0b866853436679bf624c3d7c7ee6573f4a41a7f0b8a86217ea5b017de32c80fe",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1102,
       "head": "75db6d0150ef92028f375aa94c35dc3a9e5b8e15",
-      "body_sha256": "627943e430d22ec07f791c3c6d6dd66157caa9ffaa211e911837dc6ac274ff27",
+      "title": "perf(hip): use one planned decode launch per query head",
+      "body_sha256": "53ea1b8a9264cdc9e588161e028dc96fc5dfd19460e25aa987c45358eb006c1f",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     },
     {
       "pr": 1103,
       "head": "a44e7af98183721e58f2fb4d7e96ae874dfecd83",
-      "body_sha256": "f4bc5b7e703205018cdcb358df0742861bf82b0869e30041f5dafc5c0ba8002a",
+      "title": "perf(hip): group routed fc1 and shared-up stream products",
+      "body_sha256": "e9619417690c42092b22b4ab2cff5761bebe99450dc049f7be8f15ee9d41a4fc",
+      "ready": true,
       "open": true,
-      "draft": false,
-      "merged": false
-    },
-    {
-      "pr": 1082,
-      "head": "826a0635634dee3793a68e473064d17d5c139945",
-      "body_sha256": "5283371b689a827bedfacc667ab90f29a3a400b1d3f6b333b13227e638265f3f",
-      "open": true,
-      "draft": false,
-      "merged": false
+      "merged": false,
+      "old_body_exactly_preserved": true
     }
   ],
-  "issue1081_body_sha256": "0a0376244de80cd63a9426309375b793bccd388e2d4929c5940e47c1e777ec09",
+  "issue": {
+    "number": 1081,
+    "title": "HIP/Nemotron contribution stack: review map and validation",
+    "body_sha256": "22a8b7db0e7485d8811b90547208c11671440d2949692eb1d0c4c990e2c9d6d4",
+    "open": true,
+    "old_body_exactly_preserved": true
+  },
   "upstream_main": "d1018b318fb51981c4a18f12e40269a4d3ee9713",
-  "no_merge": true,
-  "scope": "Ready-for-review status only. Five model findings, CI failures, externalcomparison omission, dependencies andmaintainerlanding decisions remain disclosed/unwaived. No engine/test/benchmark rerun."
+  "no_source_or_ready_or_merge_change": true,
+  "scope": "Readability-onlyactualtitles/bodies; allpreviousdetails retained verbatim. Fivefindings/CI/dependencies/landinglimitsunwaived."
 }

@@ -1,0 +1,162 @@
+{
+  "source_live_sha256": "705e773760ba6be17f54ca3c9b6a734c9a7c3a48c22a9a5b97a420ef1684cd5d",
+  "prs": [
+    {
+      "pr": 1082,
+      "top_words": 141,
+      "old_body_sha256": "5283371b689a827bedfacc667ab90f29a3a400b1d3f6b333b13227e638265f3f",
+      "old_body_exact_preserved": true,
+      "main_title": "Run the kernel contract on HIP"
+    },
+    {
+      "pr": 1083,
+      "top_words": 126,
+      "old_body_sha256": "54fcde4ea006b0ff3fe4b429aea6e5dbcc2c1d5b45ac7e6660a416747929e60f",
+      "old_body_exact_preserved": true,
+      "main_title": "Preserve nonfinite values in MLX stream tiles"
+    },
+    {
+      "pr": 1084,
+      "top_words": 129,
+      "old_body_sha256": "c2489e48ea38a7c35547a56bf4ad45ee9c6e1435e086b3f79a3b070169e260f2",
+      "old_body_exact_preserved": true,
+      "main_title": "Stop prompt-cache work when a Qwen rank group stops"
+    },
+    {
+      "pr": 1085,
+      "top_words": 131,
+      "old_body_sha256": "a24cc6e159a666b8a8a42221e4d5b6627f9433f227f230d8204e0eede026d22b",
+      "old_body_exact_preserved": true,
+      "main_title": "Share HIP serving support"
+    },
+    {
+      "pr": 1086,
+      "top_words": 128,
+      "old_body_sha256": "7dc44ecb717246a2ec5e6a55856041b9e3d0d91c25faadd225b5b66677cf5713",
+      "old_body_exact_preserved": true,
+      "main_title": "Reject unsupported fp8 KV caches early"
+    },
+    {
+      "pr": 1087,
+      "top_words": 126,
+      "old_body_sha256": "4f0c6cd82ec8fd8fafc582ae6b83998d928ca3c0eb44c80c0e142c7bb3f6dd98",
+      "old_body_exact_preserved": true,
+      "main_title": "Report unsupported family options before loading"
+    },
+    {
+      "pr": 1088,
+      "top_words": 173,
+      "old_body_sha256": "834f5a42d2e77deb565a7dd55380c0a9342ce08e4177908d09e30b81eaf87078",
+      "old_body_exact_preserved": true,
+      "main_title": "Add Nemotron Mamba-2 HIP kernels"
+    },
+    {
+      "pr": 1089,
+      "top_words": 133,
+      "old_body_sha256": "1d021f42a7ea76f60384e5779d5f989738df753a63076424369bce708c4ab2d4",
+      "old_body_exact_preserved": true,
+      "main_title": "Expose and test the routed-MoE tile rule"
+    },
+    {
+      "pr": 1090,
+      "top_words": 175,
+      "old_body_sha256": "da1dcae1c5077962f201a2f7b24952e270fec6e1df3ba43e1824fc89283596e2",
+      "old_body_exact_preserved": true,
+      "main_title": "Add the Nemotron-H MoE layer on HIP"
+    },
+    {
+      "pr": 1091,
+      "top_words": 174,
+      "old_body_sha256": "ac0ce976aaa7fc14ff882c15ed15f11610332f43db5ec676eb2431867d515330",
+      "old_body_exact_preserved": true,
+      "main_title": "Split planned attention work on small grids"
+    },
+    {
+      "pr": 1092,
+      "top_words": 171,
+      "old_body_sha256": "25c480526ea98b5b4ca0e0ddf7de42c3a985288bf3fac47e161c7ca7b72350db",
+      "old_body_exact_preserved": true,
+      "main_title": "Add the one-GPU Nemotron HIP engine"
+    },
+    {
+      "pr": 1093,
+      "top_words": 174,
+      "old_body_sha256": "a8f554e6ac8d302ee13dca7f4c9ee2c95da7d4cd25df02ff2aa1b4881a8f7b47",
+      "old_body_exact_preserved": true,
+      "main_title": "Add Nemotron HIP tensor parallelism"
+    },
+    {
+      "pr": 1094,
+      "top_words": 176,
+      "old_body_sha256": "91712085a55e8faf5344b06d1a8cc90ce41ac5903aca2c07c7ba45bd99164224",
+      "old_body_exact_preserved": true,
+      "main_title": "Add Nemotron lane rounds and graph replay"
+    },
+    {
+      "pr": 1095,
+      "top_words": 173,
+      "old_body_sha256": "caf61521ade892d1081d3605fd5fb26fe6022af2bad0f3698f1c7f2c9fd13960",
+      "old_body_exact_preserved": true,
+      "main_title": "Prefill Nemotron in 2048-row chunks"
+    },
+    {
+      "pr": 1096,
+      "top_words": 176,
+      "old_body_sha256": "728967878418b829c958d9bab537d4a50fbc4161da3e126e4040323e51215cef",
+      "old_body_exact_preserved": true,
+      "main_title": "Fuse residual addition and RMS normalization"
+    },
+    {
+      "pr": 1097,
+      "top_words": 177,
+      "old_body_sha256": "ff8de588dff36c6e0b6bab3d66fdfc606881082e71ad9406dc180ffaba54b981",
+      "old_body_exact_preserved": true,
+      "main_title": "Run a Mamba-2 window in three launches"
+    },
+    {
+      "pr": 1098,
+      "top_words": 173,
+      "old_body_sha256": "721cb669f09c6a47647e7aaf45d1ad53ab14e2a33948ed2c57d93034a3edf152",
+      "old_body_exact_preserved": true,
+      "main_title": "Fuse ReLU\u00b2 into one-row stream products"
+    },
+    {
+      "pr": 1099,
+      "top_words": 172,
+      "old_body_sha256": "7008994874c3e1c49e580c21047829f424530de1c951c081f6f72706346ef33a",
+      "old_body_exact_preserved": true,
+      "main_title": "Keep planned attention rows in activation precision"
+    },
+    {
+      "pr": 1100,
+      "top_words": 172,
+      "old_body_sha256": "46651cd0a12f1ae4254f2670c8ec1de354263ea95e9c0bd8af36b39c7f7cac35",
+      "old_body_exact_preserved": true,
+      "main_title": "Split wide-row argmax across the GPU"
+    },
+    {
+      "pr": 1101,
+      "top_words": 173,
+      "old_body_sha256": "74fc32790b647b3558123ec46dc449f61806e4b495772f724bf039984cca47ec",
+      "old_body_exact_preserved": true,
+      "main_title": "Reduce Nemotron launches per decode token"
+    },
+    {
+      "pr": 1102,
+      "top_words": 172,
+      "old_body_sha256": "627943e430d22ec07f791c3c6d6dd66157caa9ffaa211e911837dc6ac274ff27",
+      "old_body_exact_preserved": true,
+      "main_title": "Use one planned decode launch per query head"
+    },
+    {
+      "pr": 1103,
+      "top_words": 186,
+      "old_body_sha256": "f4bc5b7e703205018cdcb358df0742861bf82b0869e30041f5dafc5c0ba8002a",
+      "old_body_exact_preserved": true,
+      "main_title": "Launch routed fc1 and shared-up products together"
+    }
+  ],
+  "issue_old_exact_preserved": true,
+  "issue_top_words": 484,
+  "final_explicit_surface_scope": "Visible measurements name both token shapes and actual GPU/TP configurations; original details unchanged"
+}

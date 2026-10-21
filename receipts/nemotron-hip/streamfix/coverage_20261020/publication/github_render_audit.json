@@ -1,0 +1,50 @@
+{
+  "manifest_sha256": "fd36d0e6a58af327b02ed01497bffeb567893dbaa5fc77722a17a385dc3a30d2",
+  "samples": [
+    {
+      "file": "bodies/pr1082.md",
+      "body_sha256": "7ca21fab8f6ad382554f2eb10a12bb5bb5ec991cdbd20f51dbca8097ceab3835",
+      "rendered_html_sha256": "f05781c53b917efb36218d19ac658f1e59e6c5534600b638162317570463908f",
+      "visible_words": 144,
+      "visible_links": 5,
+      "details_count": 1,
+      "details_closed_by_default": true,
+      "balanced_details": true,
+      "github_gfm_render_pass": true
+    },
+    {
+      "file": "bodies/pr1092.md",
+      "body_sha256": "f8418c60492ef2299b5b57a36a2a3950360079cff980d3acbd5a366b269ce499",
+      "rendered_html_sha256": "1d9e985e29daa39fe2f2a82a5ad8aa805a0ad74fdb2ce5e1e957c06d611701d3",
+      "visible_words": 175,
+      "visible_links": 8,
+      "details_count": 1,
+      "details_closed_by_default": true,
+      "balanced_details": true,
+      "github_gfm_render_pass": true
+    },
+    {
+      "file": "bodies/pr1103.md",
+      "body_sha256": "e9619417690c42092b22b4ab2cff5761bebe99450dc049f7be8f15ee9d41a4fc",
+      "rendered_html_sha256": "a86635ce017b783b5b1a8fcd1477d820c46d5a2f99104ef8f57193cab5e00133",
+      "visible_words": 190,
+      "visible_links": 8,
+      "details_count": 1,
+      "details_closed_by_default": true,
+      "balanced_details": true,
+      "github_gfm_render_pass": true
+    },
+    {
+      "file": "bodies/issue1081.md",
+      "body_sha256": "22a8b7db0e7485d8811b90547208c11671440d2949692eb1d0c4c990e2c9d6d4",
+      "rendered_html_sha256": "17c9481b4cb9d7b9e7280a2ce39586e08af8a03756db0ebbf8e908f5a9cb70ea",
+      "visible_words": 474,
+      "visible_links": 24,
+      "details_count": 1,
+      "details_closed_by_default": true,
+      "balanced_details": true,
+      "github_gfm_render_pass": true
+    }
+  ],
+  "passed": true
+}

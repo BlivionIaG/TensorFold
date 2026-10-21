@@ -1,0 +1,9 @@
+{
+  "approved": true,
+  "at_utc": "2026-10-21T12:44:08.921499+00:00",
+  "manifest_sha256": "fd36d0e6a58af327b02ed01497bffeb567893dbaa5fc77722a17a385dc3a30d2",
+  "independent_content_audit_sha256": "96d1ccaaf23223772cdcdbe46762cfe06982afa15ece8d54198d5f4ca08cd5cb",
+  "script_sha256": "a6dbd12a0a96af0ecf8cf13e6669d29b623ebe57e66f9e1a77819e10497d0136",
+  "github_render_audit_sha256": "f9aa54de5e6c0bff9476f163eb9606a72ed16bfd0715c176e78d1a4b9fb2085c",
+  "scope": "Readability metadata only: concise titles/summaries and exact original evidence in collapsed details; preserveall22Ready/head/base states, no source/test/measurement/mergechanges"
+}

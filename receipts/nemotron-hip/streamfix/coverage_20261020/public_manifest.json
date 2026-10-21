@@ -332,228 +332,228 @@
     },
     {
       "path": "publication/bodies/issue1081.md",
-      "public_sha256": "0a0376244de80cd63a9426309375b793bccd388e2d4929c5940e47c1e777ec09",
-      "bytes": 26799,
+      "public_sha256": "22a8b7db0e7485d8811b90547208c11671440d2949692eb1d0c4c990e2c9d6d4",
+      "bytes": 31596,
       "generated_or_published_body": true,
-      "original_sha256": "0a0376244de80cd63a9426309375b793bccd388e2d4929c5940e47c1e777ec09",
+      "original_sha256": "22a8b7db0e7485d8811b90547208c11671440d2949692eb1d0c4c990e2c9d6d4",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1082.md",
-      "public_sha256": "5283371b689a827bedfacc667ab90f29a3a400b1d3f6b333b13227e638265f3f",
-      "bytes": 7074,
+      "public_sha256": "7ca21fab8f6ad382554f2eb10a12bb5bb5ec991cdbd20f51dbca8097ceab3835",
+      "bytes": 8673,
       "generated_or_published_body": true,
-      "original_sha256": "5283371b689a827bedfacc667ab90f29a3a400b1d3f6b333b13227e638265f3f",
+      "original_sha256": "7ca21fab8f6ad382554f2eb10a12bb5bb5ec991cdbd20f51dbca8097ceab3835",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1083.md",
-      "public_sha256": "54fcde4ea006b0ff3fe4b429aea6e5dbcc2c1d5b45ac7e6660a416747929e60f",
-      "bytes": 13682,
+      "public_sha256": "07cec36f228cef7ea5f0fdaf1b65ed0ab06c2ae11ba94a46536376f4a8702e0f",
+      "bytes": 15323,
       "generated_or_published_body": true,
-      "original_sha256": "54fcde4ea006b0ff3fe4b429aea6e5dbcc2c1d5b45ac7e6660a416747929e60f",
+      "original_sha256": "07cec36f228cef7ea5f0fdaf1b65ed0ab06c2ae11ba94a46536376f4a8702e0f",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1084.md",
-      "public_sha256": "c2489e48ea38a7c35547a56bf4ad45ee9c6e1435e086b3f79a3b070169e260f2",
-      "bytes": 12538,
+      "public_sha256": "20bfe7dcc898b7c1f0857cff36d780b79553170c62419f0c505320aa8d9dd847",
+      "bytes": 14181,
       "generated_or_published_body": true,
-      "original_sha256": "c2489e48ea38a7c35547a56bf4ad45ee9c6e1435e086b3f79a3b070169e260f2",
+      "original_sha256": "20bfe7dcc898b7c1f0857cff36d780b79553170c62419f0c505320aa8d9dd847",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1085.md",
-      "public_sha256": "a24cc6e159a666b8a8a42221e4d5b6627f9433f227f230d8204e0eede026d22b",
-      "bytes": 12507,
+      "public_sha256": "1b5e4642f0c355dc6cad009d6f7f673fbc9fd0ded049057118e044aecfb39d04",
+      "bytes": 14170,
       "generated_or_published_body": true,
-      "original_sha256": "a24cc6e159a666b8a8a42221e4d5b6627f9433f227f230d8204e0eede026d22b",
+      "original_sha256": "1b5e4642f0c355dc6cad009d6f7f673fbc9fd0ded049057118e044aecfb39d04",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1086.md",
-      "public_sha256": "7dc44ecb717246a2ec5e6a55856041b9e3d0d91c25faadd225b5b66677cf5713",
-      "bytes": 12107,
+      "public_sha256": "f038f431013283b04d49957b580d0475b41ae3d6ebeb21b912a461137011edb8",
+      "bytes": 13741,
       "generated_or_published_body": true,
-      "original_sha256": "7dc44ecb717246a2ec5e6a55856041b9e3d0d91c25faadd225b5b66677cf5713",
+      "original_sha256": "f038f431013283b04d49957b580d0475b41ae3d6ebeb21b912a461137011edb8",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1087.md",
-      "public_sha256": "4f0c6cd82ec8fd8fafc582ae6b83998d928ca3c0eb44c80c0e142c7bb3f6dd98",
-      "bytes": 12145,
+      "public_sha256": "e7b2daa66e3edd4931f68ffe6cf9636f494a8703526cb3ee99e202a8b9685176",
+      "bytes": 13775,
       "generated_or_published_body": true,
-      "original_sha256": "4f0c6cd82ec8fd8fafc582ae6b83998d928ca3c0eb44c80c0e142c7bb3f6dd98",
+      "original_sha256": "e7b2daa66e3edd4931f68ffe6cf9636f494a8703526cb3ee99e202a8b9685176",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1088.md",
-      "public_sha256": "834f5a42d2e77deb565a7dd55380c0a9342ce08e4177908d09e30b81eaf87078",
-      "bytes": 14752,
+      "public_sha256": "a33907affcaee72c5a0ee161fa11acde2f6082d92621a8f5225ae393f97e4679",
+      "bytes": 17065,
       "generated_or_published_body": true,
-      "original_sha256": "834f5a42d2e77deb565a7dd55380c0a9342ce08e4177908d09e30b81eaf87078",
+      "original_sha256": "a33907affcaee72c5a0ee161fa11acde2f6082d92621a8f5225ae393f97e4679",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1089.md",
-      "public_sha256": "1d021f42a7ea76f60384e5779d5f989738df753a63076424369bce708c4ab2d4",
-      "bytes": 12140,
+      "public_sha256": "46832d1b95db6c4134f700a29e6747e60b3ea4156898c891e565b4a3dac5ae81",
+      "bytes": 13782,
       "generated_or_published_body": true,
-      "original_sha256": "1d021f42a7ea76f60384e5779d5f989738df753a63076424369bce708c4ab2d4",
+      "original_sha256": "46832d1b95db6c4134f700a29e6747e60b3ea4156898c891e565b4a3dac5ae81",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1090.md",
-      "public_sha256": "da1dcae1c5077962f201a2f7b24952e270fec6e1df3ba43e1824fc89283596e2",
-      "bytes": 14749,
+      "public_sha256": "54ea3063277f2f96b36ea2c14f8eb97e61e9f01378c9117dbc7837732f8432df",
+      "bytes": 17056,
       "generated_or_published_body": true,
-      "original_sha256": "da1dcae1c5077962f201a2f7b24952e270fec6e1df3ba43e1824fc89283596e2",
+      "original_sha256": "54ea3063277f2f96b36ea2c14f8eb97e61e9f01378c9117dbc7837732f8432df",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1091.md",
-      "public_sha256": "ac0ce976aaa7fc14ff882c15ed15f11610332f43db5ec676eb2431867d515330",
-      "bytes": 13193,
+      "public_sha256": "2660065b98d2392dda140daf0eb6e416c3eec56e3d056553269a9f7e1991e0f8",
+      "bytes": 15497,
       "generated_or_published_body": true,
-      "original_sha256": "ac0ce976aaa7fc14ff882c15ed15f11610332f43db5ec676eb2431867d515330",
+      "original_sha256": "2660065b98d2392dda140daf0eb6e416c3eec56e3d056553269a9f7e1991e0f8",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1092.md",
-      "public_sha256": "25c480526ea98b5b4ca0e0ddf7de42c3a985288bf3fac47e161c7ca7b72350db",
-      "bytes": 15969,
+      "public_sha256": "f8418c60492ef2299b5b57a36a2a3950360079cff980d3acbd5a366b269ce499",
+      "bytes": 18270,
       "generated_or_published_body": true,
-      "original_sha256": "25c480526ea98b5b4ca0e0ddf7de42c3a985288bf3fac47e161c7ca7b72350db",
+      "original_sha256": "f8418c60492ef2299b5b57a36a2a3950360079cff980d3acbd5a366b269ce499",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1093.md",
-      "public_sha256": "a8f554e6ac8d302ee13dca7f4c9ee2c95da7d4cd25df02ff2aa1b4881a8f7b47",
-      "bytes": 15957,
+      "public_sha256": "6e62278272b12155f5ce62ba9e98fe5b407604ed8a8d1c70e926be2e4e5c4965",
+      "bytes": 18277,
       "generated_or_published_body": true,
-      "original_sha256": "a8f554e6ac8d302ee13dca7f4c9ee2c95da7d4cd25df02ff2aa1b4881a8f7b47",
+      "original_sha256": "6e62278272b12155f5ce62ba9e98fe5b407604ed8a8d1c70e926be2e4e5c4965",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1094.md",
-      "public_sha256": "91712085a55e8faf5344b06d1a8cc90ce41ac5903aca2c07c7ba45bd99164224",
-      "bytes": 15856,
+      "public_sha256": "030c2c8d72c033cdef79045b7dd0402f01f863721a96f53d28f350addc9c5d62",
+      "bytes": 18168,
       "generated_or_published_body": true,
-      "original_sha256": "91712085a55e8faf5344b06d1a8cc90ce41ac5903aca2c07c7ba45bd99164224",
+      "original_sha256": "030c2c8d72c033cdef79045b7dd0402f01f863721a96f53d28f350addc9c5d62",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1095.md",
-      "public_sha256": "caf61521ade892d1081d3605fd5fb26fe6022af2bad0f3698f1c7f2c9fd13960",
-      "bytes": 15737,
+      "public_sha256": "a0d66aa8d1b7437e88f32a8c6df1467db39fc1c4ced1c897ffd89bb09265c1fa",
+      "bytes": 18050,
       "generated_or_published_body": true,
-      "original_sha256": "caf61521ade892d1081d3605fd5fb26fe6022af2bad0f3698f1c7f2c9fd13960",
+      "original_sha256": "a0d66aa8d1b7437e88f32a8c6df1467db39fc1c4ced1c897ffd89bb09265c1fa",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1096.md",
-      "public_sha256": "728967878418b829c958d9bab537d4a50fbc4161da3e126e4040323e51215cef",
-      "bytes": 14825,
+      "public_sha256": "1f8031bb21e8a73dd3fb7e2554b67cfa61961970561695e67242b89a40e6893c",
+      "bytes": 17144,
       "generated_or_published_body": true,
-      "original_sha256": "728967878418b829c958d9bab537d4a50fbc4161da3e126e4040323e51215cef",
+      "original_sha256": "1f8031bb21e8a73dd3fb7e2554b67cfa61961970561695e67242b89a40e6893c",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1097.md",
-      "public_sha256": "ff8de588dff36c6e0b6bab3d66fdfc606881082e71ad9406dc180ffaba54b981",
-      "bytes": 14777,
+      "public_sha256": "7397c570cdc5c8359a2d3b48036a540606a3c023bc0027cefd961683775db0f6",
+      "bytes": 17097,
       "generated_or_published_body": true,
-      "original_sha256": "ff8de588dff36c6e0b6bab3d66fdfc606881082e71ad9406dc180ffaba54b981",
+      "original_sha256": "7397c570cdc5c8359a2d3b48036a540606a3c023bc0027cefd961683775db0f6",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1098.md",
-      "public_sha256": "721cb669f09c6a47647e7aaf45d1ad53ab14e2a33948ed2c57d93034a3edf152",
-      "bytes": 15035,
+      "public_sha256": "1b01267935f619633e93b162e4a35d0ed5d27f76ce184af5895a3bdafc971bcc",
+      "bytes": 17343,
       "generated_or_published_body": true,
-      "original_sha256": "721cb669f09c6a47647e7aaf45d1ad53ab14e2a33948ed2c57d93034a3edf152",
+      "original_sha256": "1b01267935f619633e93b162e4a35d0ed5d27f76ce184af5895a3bdafc971bcc",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1099.md",
-      "public_sha256": "7008994874c3e1c49e580c21047829f424530de1c951c081f6f72706346ef33a",
-      "bytes": 13194,
+      "public_sha256": "9ae25d7e0b0684a86d4ccfa23c002409a49fdc75ebf7424c7056a4b7c2833c9d",
+      "bytes": 15493,
       "generated_or_published_body": true,
-      "original_sha256": "7008994874c3e1c49e580c21047829f424530de1c951c081f6f72706346ef33a",
+      "original_sha256": "9ae25d7e0b0684a86d4ccfa23c002409a49fdc75ebf7424c7056a4b7c2833c9d",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1100.md",
-      "public_sha256": "46651cd0a12f1ae4254f2670c8ec1de354263ea95e9c0bd8af36b39c7f7cac35",
-      "bytes": 13179,
+      "public_sha256": "e956ffa10f96bfc798cfc4e6f11561bb394b94338ce4ecf3b9e79cd93cb0b5d4",
+      "bytes": 15469,
       "generated_or_published_body": true,
-      "original_sha256": "46651cd0a12f1ae4254f2670c8ec1de354263ea95e9c0bd8af36b39c7f7cac35",
+      "original_sha256": "e956ffa10f96bfc798cfc4e6f11561bb394b94338ce4ecf3b9e79cd93cb0b5d4",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1101.md",
-      "public_sha256": "74fc32790b647b3558123ec46dc449f61806e4b495772f724bf039984cca47ec",
-      "bytes": 16229,
+      "public_sha256": "0b866853436679bf624c3d7c7ee6573f4a41a7f0b8a86217ea5b017de32c80fe",
+      "bytes": 18540,
       "generated_or_published_body": true,
-      "original_sha256": "74fc32790b647b3558123ec46dc449f61806e4b495772f724bf039984cca47ec",
+      "original_sha256": "0b866853436679bf624c3d7c7ee6573f4a41a7f0b8a86217ea5b017de32c80fe",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1102.md",
-      "public_sha256": "627943e430d22ec07f791c3c6d6dd66157caa9ffaa211e911837dc6ac274ff27",
-      "bytes": 13202,
+      "public_sha256": "53ea1b8a9264cdc9e588161e028dc96fc5dfd19460e25aa987c45358eb006c1f",
+      "bytes": 15488,
       "generated_or_published_body": true,
-      "original_sha256": "627943e430d22ec07f791c3c6d6dd66157caa9ffaa211e911837dc6ac274ff27",
+      "original_sha256": "53ea1b8a9264cdc9e588161e028dc96fc5dfd19460e25aa987c45358eb006c1f",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/bodies/pr1103.md",
-      "public_sha256": "f4bc5b7e703205018cdcb358df0742861bf82b0869e30041f5dafc5c0ba8002a",
-      "bytes": 16736,
+      "public_sha256": "e9619417690c42092b22b4ab2cff5761bebe99450dc049f7be8f15ee9d41a4fc",
+      "bytes": 19142,
       "generated_or_published_body": true,
-      "original_sha256": "f4bc5b7e703205018cdcb358df0742861bf82b0869e30041f5dafc5c0ba8002a",
+      "original_sha256": "e9619417690c42092b22b4ab2cff5761bebe99450dc049f7be8f15ee9d41a4fc",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/independent_live_audit.json",
-      "public_sha256": "33b901dff07f311353e8a9c03acc305e7608e14c5fd33ec8d6636f5cba342129",
-      "bytes": 6014,
+      "public_sha256": "5254f84c5c7aaaa0c341917fa92ee06b23b7de85e9df155d727ef01c238bd8ce",
+      "bytes": 8516,
       "generated_or_published_body": true,
-      "original_sha256": "33b901dff07f311353e8a9c03acc305e7608e14c5fd33ec8d6636f5cba342129",
+      "original_sha256": "5254f84c5c7aaaa0c341917fa92ee06b23b7de85e9df155d727ef01c238bd8ce",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/publication_manifest.json",
-      "public_sha256": "6fd35657b3f5c7c677a13461a950ef29a97834d09412b3fb3deb995d0782d660",
-      "bytes": 10340,
+      "public_sha256": "05b522ca39e9ebc226ed4b9fa56c754f16fc929d4279ec8ea2ef708e7a08c692",
+      "bytes": 14842,
       "generated_or_published_body": true,
-      "original_sha256": "6fd35657b3f5c7c677a13461a950ef29a97834d09412b3fb3deb995d0782d660",
+      "original_sha256": "05b522ca39e9ebc226ed4b9fa56c754f16fc929d4279ec8ea2ef708e7a08c692",
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "windows_baseline/summary.json",
@@ -11704,7 +11704,7 @@
       "public_sha256": "3698a356f5e3a25866c155fbba3cef3677c5976d2c7eccb6756ff9450c81c470",
       "bytes": 472,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/first826_ready_transition.json",
@@ -11712,7 +11712,7 @@
       "public_sha256": "f03e3b7334fefd07827125656e6091ddd56c18acdbe7f04196826e7e0d5efa5b",
       "bytes": 630,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/actual_source_push_result.json",
@@ -11720,7 +11720,7 @@
       "public_sha256": "958228a2b40fe35f7538a4c95841ba73aaf06eaba937c72a3dc9b253d7573620",
       "bytes": 209,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/independent_final_content_audit.json",
@@ -11728,7 +11728,7 @@
       "public_sha256": "b6f6fd7270a9c62c9287e2761a82f02ab8030ed1701b803a6d020d602fd3069b",
       "bytes": 790,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "saved_evidence_final/README.md",
@@ -11920,7 +11920,7 @@
       "public_sha256": "122efe73ab6198d838f9d587bc4f0368cf1413d020dbe827e1109f90cf866834",
       "bytes": 5516,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "current_ci_all22/README.md",
@@ -11992,7 +11992,7 @@
       "public_sha256": "480f4c3fc0aa472b17869297408e5298a173fdc81c10a96b301d0ff2844cba6d",
       "bytes": 4845,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/ready_progress.json",
@@ -12000,7 +12000,7 @@
       "public_sha256": "ec59bfa34551170da45b6a23b2c8f1261e39f4b239e5c0aac813e97beb8b80fa",
       "bytes": 6802,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/render_manifest.json",
@@ -12008,7 +12008,7 @@
       "public_sha256": "27b0ca8eaa0b277b12c31042868dfd326a7541f0904092f393d4ee9b8965c271",
       "bytes": 26333,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     },
     {
       "path": "publication/root_approved_execution.json",
@@ -12016,7 +12016,55 @@
       "public_sha256": "8b91049484a67c23e46fd9f4a10bc0e08cd0ed23a6c17e066d9f538051ef5b95",
       "bytes": 659,
       "redacted": false,
-      "scope": "Actualall22Ready/source/body/currentCI evidence and remaining landing limitations; prior publications linked immutably"
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
+    },
+    {
+      "path": "publication/github_render_audit.json",
+      "original_sha256": "f9aa54de5e6c0bff9476f163eb9606a72ed16bfd0715c176e78d1a4b9fb2085c",
+      "public_sha256": "f9aa54de5e6c0bff9476f163eb9606a72ed16bfd0715c176e78d1a4b9fb2085c",
+      "bytes": 1829,
+      "redacted": false,
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
+    },
+    {
+      "path": "publication/independent_readability_content_audit.json",
+      "original_sha256": "96d1ccaaf23223772cdcdbe46762cfe06982afa15ece8d54198d5f4ca08cd5cb",
+      "public_sha256": "96d1ccaaf23223772cdcdbe46762cfe06982afa15ece8d54198d5f4ca08cd5cb",
+      "bytes": 8540,
+      "redacted": false,
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
+    },
+    {
+      "path": "publication/readability_manifest.json",
+      "original_sha256": "fd36d0e6a58af327b02ed01497bffeb567893dbaa5fc77722a17a385dc3a30d2",
+      "public_sha256": "fd36d0e6a58af327b02ed01497bffeb567893dbaa5fc77722a17a385dc3a30d2",
+      "bytes": 14715,
+      "redacted": false,
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
+    },
+    {
+      "path": "publication/readability_preservation_audit.json",
+      "original_sha256": "e0722d38f89472c3f187c59e4e51d36d742f810932f4e3b2bc53c934d43ac4c7",
+      "public_sha256": "e0722d38f89472c3f187c59e4e51d36d742f810932f4e3b2bc53c934d43ac4c7",
+      "bytes": 5837,
+      "redacted": false,
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
+    },
+    {
+      "path": "publication/readability_publication_progress.json",
+      "original_sha256": "a114c2b404e35d94f9dd5c2cf26cc9ea3a1116f4c37c02d4c09b3b36dedb3fa2",
+      "public_sha256": "a114c2b404e35d94f9dd5c2cf26cc9ea3a1116f4c37c02d4c09b3b36dedb3fa2",
+      "bytes": 7419,
+      "redacted": false,
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
+    },
+    {
+      "path": "publication/root_approved_readability.json",
+      "original_sha256": "64a82654fc1a8ae0eb0b5ae2432e07d919a616a4e61794a013649d927e8a0265",
+      "public_sha256": "64a82654fc1a8ae0eb0b5ae2432e07d919a616a4e61794a013649d927e8a0265",
+      "bytes": 646,
+      "redacted": false,
+      "scope": "Current readable publication and preserved historical transition/source evidence; prior publications linked immutably"
     }
   ]
 }
