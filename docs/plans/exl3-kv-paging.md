@@ -44,9 +44,16 @@ by the model window). A mismatched capacity or arena geometry is rejected.
 Startup allocates and charges all fixed windows, shared payload, global mapping
 tables and paging work once, before expert-pool admission. Per-sequence admission
 charges the remaining sequence buffers. The lane limit also caps startup room.
-Request teardown releases only its generation's tags; it does not free the arena
-or enable paged-sequence recycling. New requests retain the global addresses and
-receive a fresh lane generation. This does not recycle sequence-owned buffers.
+Request teardown releases only its generation's tags; it does not free the arena.
+With graph recycling enabled, compatible BF16 sequence/pager allocations can now
+remain in a bounded four-entry pool. Reuse drains previous consumers, resets all
+request state and canonical storage, and reattaches a fresh paging owner. Old
+request graphs retire: retaining addresses does not authorize replay under an
+old generation. Incompatible retained allocations are evicted before new
+allocation, and disabling recycling purges that engine's retained sequences.
+These request-boundary operations include context completion; they do not add
+waits to each normal token. The new lifecycle has host/mock and compile coverage;
+its dedicated device and served-cache qualification remains pending.
 
 `Engine.forward` and `Engine.round` acquire a rank-wide batch lease containing all
 participating sequence generations. Pager calls validate membership, and the
@@ -66,6 +73,26 @@ remove a foreign cached block while preserving its canonical history. Snapshot
 admission includes the checked maximum owned-entry payload and metadata.
 
 ## Graph replay and separate cache diagnostics
+
+The follow-on native BF16 prefill path now retains validated attention graph
+templates and rebinds origin-dependent pointers, planner/remap scalars and
+score/chunk grids without recapturing compatible chunks. Paging identity,
+allocation, stream and event keys remain strict. Dense/sparse and paging-split
+topology changes still recapture, retained templates have separate budget
+tickets, and a partially failed setter poisons replay. The new private/shared
+TP2 device fixture is implemented but has not yet qualified this path on hardware.
+
+Reference EXL3 projections also reset split-K counters inside their existing
+input rotation, removing one separate memset node per 128-row reference block.
+This leaves projection arithmetic unchanged. Fresh NVCC 13.4.92 images for
+sm_80/86/89/120/121 retain the existing rotation resource records; this is compile
+resource evidence, not GPU arithmetic or throughput evidence. See the
+[incremental checkpoint](https://github.com/ashhart/TensorFold/pull/1113#issuecomment-6328093792)
+for the separately tested baseline and current qualification boundaries.
+The isolated `52ed4ac3` device build separately passes the poisoned-counter,
+canary, repeated eager/graph reset regression and existing EXL3 FP64 checks on
+sm_120. Pack-dependent Python oracles were skipped by that synthetic run; it is
+not a qualification of the later prefill/lifecycle changes or a speedup result.
 
 `TF_FLASHNEXT_EXL3_GRAPH_STATE_REBIND=1` now permits exact-pair GDN state
 rebinding for verification widths 2–16, not just width 2. In-place width 1 and
