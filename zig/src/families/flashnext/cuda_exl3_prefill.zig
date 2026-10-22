@@ -78,6 +78,7 @@ pub const Options = struct {
     /// After a ring prefill, refill every pool with its layer's hottest experts of the prefills (measured: decode hit
     /// +5%, ms/token unchanged, prefill +0.17 s; off by default, TF_FLASHNEXT_EXL3_PREFILL_RESEED=1).
     reseed: bool = false,
+    reduced_branch: bool = false,
 };
 
 pub fn optionsFromEnv() Options {
@@ -92,6 +93,7 @@ pub fn optionsFromEnv() Options {
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_KERNEL")) |v| o.slots_kernel = std.mem.eql(u8, std.mem.span(v), "slots");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TILES")) |v| o.tiles = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RESEED")) |v| o.reseed = std.mem.eql(u8, std.mem.span(v), "1");
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_REDUCED_BRANCH")) |v| o.reduced_branch = std.mem.eql(u8, std.mem.span(v), "1");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING")) |v| o.ring = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_PASS")) |v| o.ring_pass = @max(1, std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_pass);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD")) |v| o.ring_ahead = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_ahead;
@@ -244,6 +246,8 @@ const Deep = struct {
     red_ev: [max_sub]cuda.Event = undefined,
     red_go: cuda.Event = undefined,
     red_n: usize = 0,
+    reduced_branch: bool = false,
+    unit_weights: ?cuda.DeviceBuffer = null,
     /// The layer's pass plan: expert ids in pass order, the passes, member counts and starts.
     order: [table_n]u16 = undefined,
     passes: [table_n + 1]Pass = undefined,
@@ -290,6 +294,7 @@ pub fn release() void {
             dp.red_go.deinit();
             rs.deinit();
         }
+        if (dp.unit_weights) |*buffer| buffer.free();
         dp.kern.unload();
         dp.aux.deinit();
         dp.host.free();
@@ -454,6 +459,7 @@ pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq
     if (world == 2 and !tp_logged) std.log.info("flashnext exl3 prefill: expert-parallel deep chunks of up to {d} rows (rank {d}: its own experts, one all-reduce a layer)", .{ room, e.layers[0].exl3.?.tp.?.rank });
     tp_logged = world == 2 or tp_logged;
     const dp = deep.?;
+    try selectWriteback(dp, o.reduced_branch and world == 2);
     const scores = try e.reserveScores(seq.cap, s.cap);
     var p: batch.Pass(Tri) = .{
         .gpa = e.gpa,
@@ -505,11 +511,42 @@ fn view(base: *const batch.Scratch, dp: *const Deep, r0: usize) batch.Scratch {
     v.y = dp.dptr(l.y) + r0 * slots * dims * 4;
     v.wts = dp.dptr(l.wts) + r0 * slots * 4;
     v.picks = dp.dptr(l.picks) + r0 * slots * 4;
+    if (dp.world > 1) v.moe_f32 = dp.dptr(l.sum) + r0 * dims * 4;
     v.ple_emb = dp.dptr(l.ple_emb) + r0 * dims * 2;
     v.ple_xs = dp.dptr(l.ple_xs) + r0 * (dims / 32) * 4;
     v.ids = dp.dptr(l.ids) + r0 * 4;
     v.pos = dp.dptr(l.pos) + (r0 / att_rows) * 16;
     return v;
+}
+
+fn selectWriteback(dp: *Deep, reduced_branch: bool) !void {
+    if (reduced_branch and dp.unit_weights == null) {
+        const weights: []f32 = @alignCast(std.mem.bytesAsSlice(f32, dp.hbytes(dp.hl.ids, dp.rows * 4)));
+        @memset(weights, 1);
+        dp.unit_weights = try cuda.DeviceBuffer.fromHost(dp.dev.d, std.mem.sliceAsBytes(weights));
+    }
+    if (dp.reduced_branch != reduced_branch) @import("cuda_exl3_graph.zig").clearPrefill();
+    dp.reduced_branch = reduced_branch;
+}
+
+fn pendingWriteback(p: anytype, dp: *const Deep, layer: ?usize, r0: usize) void {
+    p.pending = layer;
+    p.pending_f32 = layer != null and dp.reduced_branch;
+    p.pending_f32_weights = if (p.pending_f32) dp.unit_weights.?.ptr + r0 * 4 else null;
+}
+
+fn compactLast(p: anytype, reduced_branch: bool, row: usize) !void {
+    if (row == 0) return;
+    const s = p.s;
+    try p.copy(s.h, s.h + row * wide * 2, wide * 2);
+    try p.copy(s.pss, s.pss + row * pss_n * 4, pss_n * 4);
+    try p.copy(s.inj, s.inj + row * streams * 2, streams * 2);
+    if (reduced_branch) {
+        try p.copy(s.moe_f32, s.moe_f32 + row * dims * 4, dims * 4);
+    } else {
+        try p.copy(s.y, s.y + row * slots * dims * 4, slots * dims * 4);
+        try p.copy(s.wts, s.wts + row * slots * 4, slots * 4);
+    }
 }
 
 const Gather = struct {
@@ -567,7 +604,7 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
     };
     p.rows = n;
     p.pos0 = pos0;
-    p.pending = null;
+    pendingWriteback(p, dp, null, 0);
     if (p.m.table_dense) {
         try p.tri.embedDense(dp.dptr(dp.lay.ids), p.m.table_w, dp.dptr(dp.lay.h), dims, streams, n);
     } else {
@@ -593,7 +630,7 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
             p.s = &views[b];
             p.rows = m;
             p.pos0 = pos0 + b * sub;
-            p.pending = if (layer > 0) layer - 1 else null;
+            pendingWriteback(p, dp, if (layer > 0) layer - 1 else null, b * sub);
             if (b < dp.red_n) switch (pg) {
                 .eager => try st.wait(dp.red_ev[b]),
                 .capturing => try st.waitExternal(dp.red_ev[b]),
@@ -618,7 +655,7 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
             const m = @min(sub, n - b * sub);
             p.s = &views[b];
             p.rows = m;
-            p.pending = wt.layers_n - 1;
+            pendingWriteback(p, dp, wt.layers_n - 1, b * sub);
             try p.writeback(0, m);
             try p.copy(streams_out + b * sub * wide * 2, views[b].h, m * wide * 2);
         }
@@ -634,14 +671,8 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
             try p.copy(s.pss, s.pss + r * pss_n * 4, pss_n * 4);
         }
     } else {
-        if (r > 0) {
-            try p.copy(s.h, s.h + r * wide * 2, wide * 2);
-            try p.copy(s.pss, s.pss + r * pss_n * 4, pss_n * 4);
-            try p.copy(s.inj, s.inj + r * streams * 2, streams * 2);
-            try p.copy(s.y, s.y + r * slots * dims * 4, slots * dims * 4);
-            try p.copy(s.wts, s.wts + r * slots * 4, slots * 4);
-        }
-        p.pending = wt.layers_n - 1;
+        try compactLast(p, dp.reduced_branch, r);
+        pendingWriteback(p, dp, wt.layers_n - 1, last_b * sub);
         try p.writeback(0, 1);
     }
     try p.readout(p.m.mixer, 0, 1);
@@ -779,7 +810,7 @@ fn rankSum(dp: *Deep, p: anytype, x: *const load.Experts, n: usize, sub: usize) 
     try pk.tpCombine(&dp.kern, st, y, wts, dp.dptr(dp.lay.picks), sum, n, slots, dims, r.lo, r.hi);
     if (!overlap() or dp.red == null) {
         try c.sum(st, sum, n * dims);
-        try pk.tpPlace(&dp.kern, st, sum, y, wts, n, slots, dims);
+        if (!dp.reduced_branch) try pk.tpPlace(&dp.kern, st, sum, y, wts, n, slots, dims);
     } else {
         const rs = dp.red.?;
         try dp.red_go.record(st);
@@ -789,7 +820,7 @@ fn rankSum(dp: *Deep, p: anytype, x: *const load.Experts, n: usize, sub: usize) 
             const r0 = b * sub;
             const m = @min(sub, n - r0);
             try c.sum(rs, sum + r0 * dims * 4, m * dims);
-            try pk.tpPlace(&dp.kern, rs, sum + r0 * dims * 4, y + r0 * slots * dims * 4, wts + r0 * slots * 4, m, slots, dims);
+            if (!dp.reduced_branch) try pk.tpPlace(&dp.kern, rs, sum + r0 * dims * 4, y + r0 * slots * dims * 4, wts + r0 * slots * 4, m, slots, dims);
             try dp.red_ev[b].record(rs);
         }
         dp.red_n = n_sub;
@@ -1281,6 +1312,11 @@ fn warmTiles(e: *prompt.Engine) !void {
     if (de.candidate_mod) |*old| old.unload();
     de.candidate_mod = mod;
     de.candidate_k = k;
+}
+
+test "exl3: reduced prefill writeback preserves slot rounding sub-blocks and tail selection" {
+    try @import("cuda_exl3_prefill_writeback_test.zig").run(Deep, Layout.of, view, pendingWriteback, compactLast, selectWriteback);
+    try std.testing.expect(!(Options{}).reduced_branch);
 }
 
 test "exl3: prefill passes keep each expert's pairs together, items relative to their pass" {
