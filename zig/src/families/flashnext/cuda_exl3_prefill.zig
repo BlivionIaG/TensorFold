@@ -267,13 +267,13 @@ const Deep = struct {
 
 var deep: ?*Deep = null;
 
-pub const RingTelemetry = struct { owner: u64, copies: u64, dma_requested_bytes: u64, unused_copies: u64, hit_picks: u64, miss_picks: u64, hit_expert_requests: u64, miss_expert_requests: u64 };
+pub const RingTelemetry = struct { owner: u64, copies: u64, dma_requested_bytes: u64, unused_copies: u64, hit_picks: u64, miss_picks: u64, hit_expert_requests: u64, miss_expert_requests: u64, attribution: ?@import("cuda_exl3_prefill_attribution.zig").Totals };
 
 pub fn ringTelemetry(owner: *const anyopaque) ?RingTelemetry {
     const buffers = deep orelse return null;
     if (buffers.owner != owner) return null;
     const ring = buffers.ring orelse return null;
-    return .{ .owner = ring.telemetry_id, .copies = ring.stats.copies, .dma_requested_bytes = ring.stats.dma_requested_bytes, .unused_copies = ring.stats.wasted, .hit_picks = ring.stats.hit_picks, .miss_picks = ring.stats.miss_picks, .hit_expert_requests = ring.stats.hit_expert_requests, .miss_expert_requests = ring.stats.miss_expert_requests };
+    return .{ .owner = ring.telemetry_id, .copies = ring.stats.copies, .dma_requested_bytes = ring.stats.dma_requested_bytes, .unused_copies = ring.stats.wasted, .hit_picks = ring.stats.hit_picks, .miss_picks = ring.stats.miss_picks, .hit_expert_requests = ring.stats.hit_expert_requests, .miss_expert_requests = ring.stats.miss_expert_requests, .attribution = if (ring.attribution) |state| state.totals else null };
 }
 
 /// Frees the deep chunk's buffers (the engine's deinit, or a test).
@@ -541,7 +541,7 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
     if (rg) |r| {
         try r.newChunk();
         // the first layers' experts start streaming now, under the embedding and layer 0's blocks
-        for (0..@min(o.ring_ahead + 1, wt.layers_n)) |l| _ = try r.prefetch(l, @min(routed_n_, dp.used[l]), keepFree(r, o));
+        for (0..@min(o.ring_ahead + 1, wt.layers_n)) |l| _ = try r.prefetch(l, @min(routed_n_, dp.used[l]), keepFree(r, o), .initial_prefetch);
     }
     const id32 = std.mem.bytesAsSlice(i32, dp.hbytes(hl.ids, n * 4));
     for (id32, ids) |*x, v| x.* = @intCast(v);
@@ -1086,7 +1086,7 @@ fn ringOf(dp: *Deep, e: *prompt.Engine) !?*ring_.Ring {
             return null;
         };
     }
-    dp.ring = ring_.Ring.init(dp.gpa, e.driver, &pools) catch |err| {
+    dp.ring = ring_.Ring.init(dp.gpa, e.driver, &pools, e.telemetry.enabled) catch |err| {
         std.log.warn("flashnext exl3 prefill: no line ring ({t}); each layer stages into its own lines", .{err});
         dp.ring_failed = true;
         return null;
@@ -1226,7 +1226,7 @@ fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), l
     for (1..o.ring_ahead + 1) |ahead| {
         const nl = layer + ahead;
         if (nl >= wt.layers_n) break;
-        _ = try r.prefetch(nl, @min(routed_n_, used + 16), keepFree(r, o));
+        _ = try r.prefetch(nl, @min(routed_n_, used + 16), keepFree(r, o), .cross_layer_prefetch);
     }
     stats.prefetched += r.stats.copies - c1;
     stats.copies += r.stats.copies - c1;
@@ -1238,7 +1238,7 @@ fn loadPass(dp: *Deep, r: *ring_.Ring, layer: usize, j: usize, best_effort: bool
     const ps = dp.passes[j];
     for (dp.order[ps.id_lo..ps.id_hi]) |id| {
         if (id == shared_id) continue;
-        if (try r.load(layer, id)) continue;
+        if (try r.load(layer, id, .demand)) continue;
         if (best_effort) return;
         return error.Exl3PrefillRingFull;
     }

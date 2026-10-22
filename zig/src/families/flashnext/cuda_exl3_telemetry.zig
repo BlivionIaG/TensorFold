@@ -92,6 +92,7 @@ pub fn sampleAfterConsumers(allocator: std.mem.Allocator, engine: *prompt.Engine
         totals.ring_miss_picks = observed.miss_picks;
         totals.ring_hit_expert_requests = observed.hit_expert_requests;
         totals.ring_miss_expert_requests = observed.miss_expert_requests;
+        if (observed.attribution) |by_source| @import("cuda_exl3_prefill_attribution.zig").publish(by_source, &totals);
     }
     return .{ .rank = rank, .scope = hash.final(), .ring_owner = if (ring) |observed| observed.owner else 0, .experts = totals, .kv = samples, .expert_pools = seen_count };
 }
