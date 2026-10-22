@@ -98,6 +98,34 @@ Rank 0 expert copies fell from 25,588 to 21,648 (-15.4%) and passes from 1,144 t
 small chunk-size gain, not a 2× result. Larger chunks consume more scratch/memory and 8,192 already OOMed on this
 configuration.
 
+## 2026-10-22 prompt chunk and decode-miss profile
+
+On fork head `06d58b2e`, increasing the EXL3 prompt chunk from 256 to 2,048 rows reduced the matched 8,192-row
+TP=2 graph + BF16-paged prefill from the prior ~5.48 s baseline to 5.206 s (about 5% lower wall time). Two current
+repeats measured 5,206.4/5,206.1 ms and 5,205.9/5,205.5 ms on ranks 0/1, with the same hash
+`ffcf463b229c2aa6`, 72 graph replays, and no eager layers. A 32,768-row run completed in 21,853.8/21,853.6 ms
+with matching hash `5894636da2406e08` and 360 graph replays. These results demonstrate the chunk-size setting works
+at both shapes; only the 8,192-row result has a matched prior-chunk timing. This is not a graph-on/off comparison.
+
+A separate 16,384-context, 64-step TP=2 decode profile with BF16 paging compared eager DPLAN and graph replay in the
+same harness. It passed output-hash parity (`fba5a0bab565af03`) on both ranks. Graph measured 24.30 ms/token versus
+24.26 ms/token eager (+0.16% latency, effectively no change); it reused an existing graph for all 64 steps with no
+captures or executable updates. The measured graph segment recorded 14,017 expert hits, 1,135 misses/copies across
+3,072 passes, and 4,575 KV-page misses (300,405 required page slots; 768 calls; no rebases or overflow). These
+counters identify expert and KV miss frequency, not their exposed stall time. Graph replay correctness is confirmed;
+a decode graph speedup is not.
+
+## Cumulative performance context
+
+The earliest recorded one-row kernel/decode-step optimization reduced a test-harness decode step from 2.4–3.0 s to
+0.41–0.45 s (roughly 5.3–7.3×); that work is already part of the pushed baseline and is not a new gain from the
+current chunk-size change. Historical prefill notes report 100–210 rows/s for the old batched pass, versus 1,225–
+1,555 rows/s in the later TP=2 deep-prefill runs (nominally 5.8–15.6×). The old and new numbers were not collected
+as a controlled same-binary ABBA experiment, so this range is directional, not a causal speedup claim. On the
+current pushed baseline, the newly measured chunk-size change gives about 5% lower 8k prefill wall time; current
+decode graph replay remains within 0.16% of eager. There is not yet a comparable, controlled end-to-end decode
+benchmark from project start that supports one cumulative decode-speedup number.
+
 The CPU AVX2 investigation is not ready for integration. A single-core, pinned feasibility harness executed a full
 synthetic 3-bit expert and matched the established F64 oracle bit-for-bit, but took a median 2.35 s/expert; most time
 was materializing rotated F64 weights. That is about 17,400× the 135 us estimated H2D payload floor, so this
