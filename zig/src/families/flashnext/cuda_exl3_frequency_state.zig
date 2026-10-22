@@ -60,7 +60,10 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, own: anytype, w
 fn open(gpa: std.mem.Allocator, io: std.Io, root: []const u8, identity: codec.Identity) !State {
     const private = try std.fs.path.join(gpa, &.{ root, namespace });
     defer gpa.free(private);
-    var directory = try std.Io.Dir.cwd().createDirPathOpen(io, private, .{ .permissions = .fromMode(0o700) });
+    var directory = try std.Io.Dir.cwd().createDirPathOpen(io, private, .{
+        .permissions = .fromMode(0o700),
+        .open_options = .{ .iterate = true },
+    });
     defer directory.close(io);
     try directory.setPermissions(io, .fromMode(0o700));
     const name = try std.fmt.allocPrint(gpa, "{s}-w{d}-r{d}.bin", .{ std.fmt.bytesToHex(&identity.model, .lower), identity.world, identity.rank });
@@ -275,6 +278,7 @@ const MockPlan = struct {
 const test_identity: codec.Identity = .{ .model = @splat(42), .world = 2, .rank = 0 };
 
 test "exl3: placement state lifetime lock conflicts, rank separation and private storage" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var temporary = std.testing.tmpDir(.{});
@@ -306,6 +310,7 @@ test "exl3: placement state lifetime lock conflicts, rank separation and private
 }
 
 test "exl3: placement state cold IO and MTP mismatch never import or warm; CUDA warm errors propagate" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var temporary = std.testing.tmpDir(.{});
@@ -336,6 +341,7 @@ test "exl3: placement state cold IO and MTP mismatch never import or warm; CUDA 
 }
 
 test "exl3: placement state decay and replacement snapshot do not add imported prior twice" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var temporary = std.testing.tmpDir(.{});
@@ -372,6 +378,7 @@ test "exl3: placement state decay and replacement snapshot do not add imported p
 }
 
 test "exl3: placement state pulls only owning planner before copying decoder and MTP counts" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var mock: Mock = undefined;
     mock.init();
     var own = mock.owner(true);
@@ -402,6 +409,7 @@ test "exl3: placement state pulls only owning planner before copying decoder and
 }
 
 test "exl3: placement fingerprint reads routed and metadata bytes, ignores pool size and distinguishes MTP" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var temporary = std.testing.tmpDir(.{});
@@ -433,6 +441,7 @@ test "exl3: placement fingerprint reads routed and metadata bytes, ignores pool 
 }
 
 test "exl3: placement lock rejects nonregular storage without waiting for FIFO readers" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     const allocator = std.testing.allocator;
     const io = std.testing.io;
     var temporary = std.testing.tmpDir(.{});
