@@ -91,22 +91,24 @@ and returned hash `662339a95f0de2d7`; expert-copy counts and planner time were u
 gain, not a 2× result. Snapshot/cache continuation under the opt-in mode and eager-vs-graph parity remain to be
 qualified before enabling it by default.
 
-A follow-up 16,384-row graph-on, BF16-paged screen increased deep chunks from 4,096 to 6,144 rows with reduced
-writeback disabled in both cases. The 4,096 baseline (two matched runs) averaged 11,207.6 ms; the 6,144 run took
-10,753.2 ms on rank 0 and 10,753.1 ms on rank 1 (about 4.1% lower wall time in this single screen). Rank 0 expert
-copies fell from 25,588 to 21,648 (-15.4%), passes from 1,144 to 845 (-26.1%), and graph replays from 168 to 120;
-both configurations returned hash `662339a95f0de2d7`. This supports testing chunk size as a way to amortize expert
-staging, but needs a repeated paired test and is not a 2× gain. Larger chunks consume more scratch/memory and 8,192
-already OOMed on this configuration.
+A four-run 4,096/6,144/6,144/4,096 ABBA comparison used 16,384 rows, TP=2, graphs, BF16 paging, overlap on, and
+reduced writeback off. Mean wall time was 11,210.7 ms at 4,096 rows and 10,757.7 ms at 6,144 rows (4.0% lower wall
+time, 4.2% higher rows/s). All eight rank-runs returned hash `662339a95f0de2d7`; replay counts were 168 versus 120.
+Rank 0 expert copies fell from 25,588 to 21,648 (-15.4%) and passes from 1,144 to 845 (-26.1%). This is a stable,
+small chunk-size gain, not a 2× result. Larger chunks consume more scratch/memory and 8,192 already OOMed on this
+configuration.
 
-The CPU AVX2 investigation is not ready for integration, but a bounded cold-decode experiment is justified. Existing
-measurements show substantial expert H2D traffic, but not how much is exposed on the critical path; the standalone
-EPYC DRAM triad (~41 GB/s on eight threads) does not establish spare bandwidth during BF16 paging/NCCL. A routed
-expert is about 1.758 MiB packed and 9.83 MFLOPs per decode row; the previous 13.7 GB/s pinned-copy measurement
-implies roughly 135 us just for the weight transfer. The CPU candidate must include packed EXL3 decode, activation
-round-trip, scheduling and synchronization, preserve CUDA numerics, and beat the current GPU miss route end-to-end.
-Start with sparse decode misses, not prefill (where an uploaded expert is reused across many rows); never skip or
-approximate a routed expert. If RAM bandwidth is already occupied by KV paging, CPU execution may make things worse.
+The CPU AVX2 investigation is not ready for integration. A single-core, pinned feasibility harness executed a full
+synthetic 3-bit expert and matched the established F64 oracle bit-for-bit, but took a median 2.35 s/expert; most time
+was materializing rotated F64 weights. That is about 17,400× the 135 us estimated H2D payload floor, so this
+materializing implementation is rejected. It is not a CUDA-parity result or an impossibility result for a fused
+packed AVX2 kernel. Existing measurements show substantial expert H2D traffic, but not how much is exposed on the
+critical path; the standalone EPYC DRAM triad (~41 GB/s on eight threads) does not establish spare bandwidth during
+BF16 paging/NCCL. A routed expert is about 1.758 MiB packed and 9.83 MFLOPs per decode row. Any further candidate
+must reproduce CUDA's FP32/MMA/activation rounding, include activation round-trip, scheduling and synchronization,
+and beat the current GPU miss route end-to-end. Start with sparse decode misses, not prefill (where an uploaded
+expert is reused across many rows); never skip or approximate a routed expert. If RAM bandwidth is already occupied
+by KV paging, CPU execution may make things worse.
 
 A 128-row dense-prompt kernel prototype was also tested directly on the RTX 5060 Ti. Its GPU fixture passed exact
 output, FP32/BF16, tail and memory-guard checks across all four traced projection shapes; the candidate used 128
