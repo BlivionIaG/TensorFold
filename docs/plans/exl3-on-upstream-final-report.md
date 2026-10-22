@@ -126,6 +126,21 @@ current pushed baseline, the newly measured chunk-size change gives about 5% low
 decode graph replay remains within 0.16% of eager. There is not yet a comparable, controlled end-to-end decode
 benchmark from project start that supports one cumulative decode-speedup number.
 
+Two follow-up optimization screens do not qualify for production integration. First, an experimental GPU-built
+worklist on an 8,192-row TP2 graph prefill compared host/GPU/GPU/host planning. Mean wall time was 5,159.7 ms for
+the host planner and 5,114.0 ms for the GPU worklist (0.89% lower latency); all four runs and both ranks matched
+hash `ffcf463b229c2aa6`, with 72 graph replays, 12,513 copies and 570 passes per sample. CPU planning fell from
+18.35 to 2.30 ms, but the path still downloads counts and synchronizes every layer; measured pick-wait intervals
+remained about 4.77–4.81 s and include GPU dependencies. KV paging was enabled but had zero page misses at this
+8k shape. The small end-to-end delta does not justify integrating the prototype as the requested staging pipeline.
+
+Second, an isolated SM120 asynchronous activation double-buffer kernel candidate was tested in TP2 graph prefill
+at 16,384 rows and 4,096-row deep chunks, with `prompt_chunk=2048`, BF16 paging enabled and greedy decode disabled.
+The baseline/candidate/candidate/baseline means were 10,711.4 ms and 10,677.4 ms (0.32% lower latency). All runs
+reported hash `4b9f5c87b87ad84a`, with 96 graph replays and 48 captures per rank. The candidate dispatched only for
+the 2,560×10,240 mul1 5-bit projection; other shapes fell back to the existing kernel. The delta is too small to
+integrate, and the isolated prototype remains outside the pushed branch.
+
 The CPU AVX2 investigation is not ready for integration. A single-core, pinned feasibility harness executed a full
 synthetic 3-bit expert and matched the established F64 oracle bit-for-bit, but took a median 2.35 s/expert; most time
 was materializing rotated F64 weights. That is about 17,400× the 135 us estimated H2D payload floor, so this
