@@ -91,6 +91,18 @@ pub const Experts = struct {
     ring_miss_picks: u64 = 0,
     ring_hit_expert_requests: u64 = 0,
     ring_miss_expert_requests: u64 = 0,
+    ring_demand_copies: u64 = 0,
+    ring_demand_requested_bytes: u64 = 0,
+    ring_demand_unused_copies: u64 = 0,
+    ring_demand_unused_requested_bytes: u64 = 0,
+    ring_initial_prefetch_copies: u64 = 0,
+    ring_initial_prefetch_requested_bytes: u64 = 0,
+    ring_initial_prefetch_unused_copies: u64 = 0,
+    ring_initial_prefetch_unused_requested_bytes: u64 = 0,
+    ring_cross_layer_prefetch_copies: u64 = 0,
+    ring_cross_layer_prefetch_requested_bytes: u64 = 0,
+    ring_cross_layer_prefetch_unused_copies: u64 = 0,
+    ring_cross_layer_prefetch_unused_requested_bytes: u64 = 0,
 };
 
 pub const Kv = struct {

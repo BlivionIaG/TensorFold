@@ -15,6 +15,7 @@ const std = @import("std");
 const cuda = @import("cuda");
 const pool_ = @import("cuda_exl3_pool.zig");
 const wt = @import("cuda_prompt_wt.zig");
+const attribution_ = @import("cuda_exl3_prefill_attribution.zig");
 
 const layers_n = wt.layers_n;
 const routed_n = wt.experts_n;
@@ -91,9 +92,10 @@ pub const Ring = struct {
     own_hi: usize = routed_n,
     stats: Stats = .{},
     telemetry_id: u64 = 0,
+    attribution: ?attribution_.State = null,
 
     /// A ring over `pools` (one per decoder layer, every line the same layout); error.Invalid otherwise.
-    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, pools: []const *pool_.Pool) !*Ring {
+    pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, pools: []const *pool_.Pool, telemetry: bool) !*Ring {
         if (pools.len != layers_n) return error.Invalid;
         // the tables' entries: 513 (routed and shared), or 512 on an expert-parallel rank without the shared expert
         const te = pools[0].lines.spec.experts;
@@ -120,6 +122,8 @@ pub const Ring = struct {
         errdefer gpa.free(r.owner);
         r.epoch_of = try gpa.alloc(u64, n);
         errdefer gpa.free(r.epoch_of);
+        r.attribution = try attribution_.State.init(gpa, n, telemetry);
+        errdefer if (r.attribution) |*state| state.deinit(gpa);
         var k: usize = 0;
         for (pools) |p| for (0..p.opt.lines) |i| {
             const lay = p.lines.layout;
@@ -159,6 +163,7 @@ pub const Ring = struct {
         for (&r.rev) |*e| e.deinit();
         for (&r.cev) |*e| e.deinit();
         r.copy.deinit();
+        if (r.attribution) |*state| state.deinit(r.gpa);
         r.gpa.free(r.epoch_of);
         r.gpa.free(r.room_of);
         r.gpa.free(r.off);
@@ -214,8 +219,11 @@ pub const Ring = struct {
     /// A new deep chunk: every layer's slots of the last one are stale (nothing reads them any more).
     pub fn newChunk(r: *Ring) !void {
         try r.closeBatch();
-        for (r.state, r.owner) |*st, *ow| {
-            if (st.* == .pending) r.stats.wasted += 1;
+        for (r.state, r.owner, 0..) |*st, *ow, index| {
+            if (st.* == .pending) {
+                r.stats.wasted += 1;
+                if (r.attribution) |*state| state.unused(index);
+            }
             st.* = .free;
             ow.* = 0;
         }
@@ -327,7 +335,7 @@ pub const Ring = struct {
     }
 
     /// Copies expert `id` of `layer` into the next free slot; false when the ring holds no free slot.
-    pub fn load(r: *Ring, layer: usize, id: usize) !bool {
+    pub fn load(r: *Ring, layer: usize, id: usize, source: attribution_.Source) !bool {
         if (r.slot[layer][id] >= 0) return true;
         if (r.pending_n == r.slots()) {
             r.stats.ring_full += 1;
@@ -370,6 +378,7 @@ pub const Ring = struct {
         r.open_n += 1;
         r.stats.copies += 1;
         r.stats.dma_requested_bytes += src[0].len + src[1].len + src[2].len;
+        if (r.attribution) |*state| state.copied(k, source, src[0].len + src[1].len + src[2].len);
         return true;
     }
 
@@ -418,13 +427,14 @@ pub const Ring = struct {
                 r.state[ku] = .free;
                 r.pending_n -= 1;
                 r.stats.wasted += 1;
+                if (r.attribution) |*state| state.unused(ku);
             }
         }
     }
 
     /// Tops `layer` up to `want` loaded experts with the ones not loaded, hottest (prefill counts, then the pool's lifetime
     /// counts) first, leaving `keep_free` slots; returns how many were queued.
-    pub fn prefetch(r: *Ring, layer: usize, want: usize, keep_free: usize) !usize {
+    pub fn prefetch(r: *Ring, layer: usize, want: usize, keep_free: usize, source: attribution_.Source) !usize {
         var order: [routed_n]u16 = undefined;
         var n: usize = 0;
         var have: usize = 0;
@@ -452,7 +462,7 @@ pub const Ring = struct {
         var queued: usize = 0;
         for (order[0..n]) |id| {
             if (have + queued == want or r.room() <= keep_free) break;
-            if (!try r.load(layer, id)) break;
+            if (!try r.load(layer, id, source)) break;
             queued += 1;
         }
         try r.closeBatch();
@@ -482,6 +492,10 @@ test "exl3: a ring slot takes an expert only if each projection fits its line's 
 }
 
 const ReleaseFixture = @import("cuda_exl3_prefill_ring_fixture.zig").Fixture;
+
+test "exl3: prefill attribution contracts" {
+    _ = @import("cuda_exl3_prefill_attribution_test.zig");
+}
 
 test "exl3: prefill ring queues one release fence for a pass's pending slot copies" {
     var driver: cuda.Driver = undefined;
