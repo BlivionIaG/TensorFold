@@ -336,6 +336,7 @@ pub const cuda_sets = [_]CudaSet{
     .{ .release = .{ .major = 13, .minor = 3 }, .usage = &.{
         .{ .name = "router tf_nemo_topk", .usage = .{ .{ .regs = 94, .static = 0, .bound = 32 }, .{ .regs = 95, .static = 0, .bound = 32 }, .{ .regs = 95, .static = 0, .bound = 32 }, .{ .regs = 96, .static = 0, .bound = 32 }, .{ .regs = 96, .static = 0, .bound = 32 } } },
     } },
+    .{ .release = .{ .major = 13, .minor = 4 }, .usage = &.{.{ .name = "exl3_candidate tf_exl3_prompt_2", .usage = .{ .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 77, .static = 32768, .bound = 256 }, .{ .regs = 77, .static = 32768, .bound = 256 } } }} },
 };
 pub fn newer(x: limits.Nvcc, y: limits.Nvcc) bool {
     return x.major > y.major or (x.major == y.major and x.minor > y.minor);
