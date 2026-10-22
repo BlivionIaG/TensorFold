@@ -105,10 +105,13 @@ materializing implementation is rejected. It is not a CUDA-parity result or an i
 packed AVX2 kernel. A TP2 decode-gate PCIe telemetry sample on PCIe 4.0 x8 links measured peak Rx at 3.4 GB/s on
 rank 0 and 2.5 GB/s on rank 1; during the active decode segment the averages were 1.8 and 0.85 GB/s respectively.
 These are well below nominal x8 link bandwidth, so the sample does not support PCIe saturation as the current decode
-bottleneck. Nsight Compute DRAM counters are still unavailable on this host (`ERR_NVGPUCTRPERM`), and the sample
-does not characterize long-context KV paging or prefill. A routed expert is about 1.758 MiB packed and 9.83 MFLOPs
-per decode row. Any further CPU candidate must reproduce CUDA's FP32/MMA/activation rounding, include activation
-round-trip, scheduling and synchronization, and beat the current GPU miss route end-to-end. Start with sparse decode
+bottleneck. Nsight Compute counters required admin access (`ERR_NVGPUCTRPERM` for the unprivileged run); collected
+on card 0 for the synthetic 2560x10240 dense linear, baseline and no-prefetch each read about 16.44 MB from DRAM.
+The reported elapsed DRAM-throughput metric was 56.69% of peak for baseline and 66.35% for the candidate. This
+does not show HBM saturation for that kernel, but it is not a whole-model or KV-paging profile. A routed expert is
+about 1.758 MiB packed and 9.83 MFLOPs per decode row. Any further CPU candidate must reproduce CUDA's
+FP32/MMA/activation rounding, include activation round-trip, scheduling and synchronization, and beat the current
+GPU miss route end-to-end. Start with sparse decode
 misses, not prefill (where an uploaded expert is reused across many rows); never skip or approximate a routed expert.
 If RAM bandwidth is already occupied by KV paging, CPU execution may make things worse.
 
