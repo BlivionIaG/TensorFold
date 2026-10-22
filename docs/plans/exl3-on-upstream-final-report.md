@@ -131,8 +131,12 @@ candidate keeps launch geometry, MMA, split/reduction and rounding unchanged. On
 byte-exact output checks at 1 and 4 rows. Seven ABBA trials measured graph replay at 63.5 us baseline versus
 58.0-58.2 us candidate for one row (-8.4 to -8.7%), and 63.7-63.8 versus 58.2-58.3 us for four rows
 (-8.5 to -8.7%). Rotating weights improved 9.2-9.4% and 9.6-9.8%, respectively; warm-weight latency improved
-about 28%. This is an isolated synthetic kernel result, not an end-to-end serving gain. The default-off runtime
-dispatch and full TP2 decode parity/performance gate are still pending.
+about 28%. The default-off runtime dispatch was then exercised through the TP2 serving gate with graphs enabled.
+Baseline and candidate preserved the same `2c5d814cfa80` output hash, and drafted/undrafted outputs matched on every
+prompt. Across the two 128-token samples, plain decode was 41.93/46.41 tok/s baseline and 42.05/46.81 candidate;
+drafted decode was 63.40/66.47 baseline and 63.02/66.39 candidate. This is within run variation and provides no
+reliable end-to-end improvement. Keep the candidate default-off and do not promote it into the PR absent a larger,
+repeatable serving win; the isolated kernel gain does not move the 2x objective materially.
 
 Per-rank mapped-copy kernels occupied 2.11/2.58 ms per round, grouped expert kernels 2.25/2.67 ms, while all-reduce
 kernel sums were 3.60 ms on rank 0 and 2.66 ms on rank 1. This suggests rank waiting/imbalance, but does not isolate
