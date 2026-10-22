@@ -126,6 +126,19 @@ current pushed baseline, the newly measured chunk-size change gives about 5% low
 decode graph replay remains within 0.16% of eager. There is not yet a comparable, controlled end-to-end decode
 benchmark from project start that supports one cumulative decode-speedup number.
 
+## 2026-10-22 persisted expert-placement A/B
+
+An orderly-shutdown TP=2 HTTP gate verified that both ranks save and restore their lifetime expert-placement profiles
+across process restarts. Rank 0 warmed 2,942 expert lines and rank 1 warmed 3,140. A short-prompt ABBA comparison
+then used the same 128-token input and 64-token greedy output, TP=2 on both RTX 5060 Ti cards, CUDA graphs enabled,
+BF16 KV paging enabled, and identical full output hashes (`c538c2913c77b8713a3f73bf289d20e253144aa010ae46452329fe19d5fdb74a`).
+The warm-profile runs averaged 1,767 ms TTFT and 27.72 ms/token decode; the two independent cold-profile runs averaged
+1,943 ms TTFT and 29.63 ms/token. This is 9.0% lower TTFT and 6.5% lower decode latency for this short-prompt,
+no-drafts workload. It is a measured cache-placement gain, not a 2x result and not evidence for long-context or
+drafted decode. Each restart also spent about 16.6 s per rank fingerprinting routed weights before serving; that
+startup cost is outside request latency and remains an optimization target. No production default or source change
+was made for this experiment; the existing opt-in persisted placement path was measured as implemented.
+
 Two follow-up optimization screens do not qualify for production integration. First, an experimental GPU-built
 worklist on an 8,192-row TP2 graph prefill compared host/GPU/GPU/host planning. Mean wall time was 5,159.7 ms for
 the host planner and 5,114.0 ms for the GPU worklist (0.89% lower latency); all four runs and both ranks matched
