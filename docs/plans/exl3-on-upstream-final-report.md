@@ -124,12 +124,12 @@ context paging misses.
 The largest active decode costs were approximately 5.7 ms/round in dense EXL3 projections and 4.3 ms in BF16 HC
 matrix products. The repeated `tf_exl3_linear_10_2_8` launch (K=2560, N=10240, 5-bit mul1, one row) used 80 CTAs,
 256 threads and 147 registers/thread, at roughly 69 us per call across 36 calls/round. A kernel-only no-prefetch
-candidate keeps launch geometry, MMA, split/reduction and rounding unchanged. On the RTX 5060 Ti it passed
-byte-exact output checks at 1 and 4 rows. Seven ABBA trials measured graph replay at 63.53 us baseline versus
-58.02 us candidate for one row (-8.7%), and 63.74 versus 58.32 us for four rows (-8.5%). Rotating weights
-improved 9.2% and 9.6%, respectively; warm-weight latency improved about 28%. This is an isolated synthetic
-kernel result, not an end-to-end serving gain. The default-off runtime dispatch and full TP2 decode
-parity/performance gate are still pending.
+candidate keeps launch geometry, MMA, split/reduction and rounding unchanged. On both RTX 5060 Ti cards it passed
+byte-exact output checks at 1 and 4 rows. Seven ABBA trials measured graph replay at 63.5 us baseline versus
+58.0-58.2 us candidate for one row (-8.4 to -8.7%), and 63.7-63.8 versus 58.2-58.3 us for four rows
+(-8.5 to -8.7%). Rotating weights improved 9.2-9.4% and 9.6-9.8%, respectively; warm-weight latency improved
+about 28%. This is an isolated synthetic kernel result, not an end-to-end serving gain. The default-off runtime
+dispatch and full TP2 decode parity/performance gate are still pending.
 
 Per-rank mapped-copy kernels occupied 2.11/2.58 ms per round, grouped expert kernels 2.25/2.67 ms, while all-reduce
 kernel sums were 3.60 ms on rank 0 and 2.66 ms on rank 1. This suggests rank waiting/imbalance, but does not isolate
