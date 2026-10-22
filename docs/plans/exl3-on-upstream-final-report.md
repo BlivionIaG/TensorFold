@@ -154,6 +154,13 @@ reported hash `4b9f5c87b87ad84a`, with 96 graph replays and 48 captures per rank
 the 2,560×10,240 mul1 5-bit projection; other shapes fell back to the existing kernel. The delta is too small to
 integrate, and the isolated prototype remains outside the pushed branch.
 
+Third, an experimental exact-order TP2 prefill collective-submission grouping was tested on the same 16,384-row,
+graph-enabled workload with BF16 paging and four exclusive ABBA samples (group size 1, 2, 2, 1). Both ranks
+preserved hash `662339a95f0de2d7`; each run replayed 168 graphs and retained identical expert-copy/pass counts.
+Group size 1 averaged 12,538.7 ms, while group size 2 averaged 13,391.1 ms (6.8% higher latency). The profiled
+pick-wait interval also rose from about 11.87 s to 12.71 s. Host tests and CUDA build passed, but GPU results do
+not support the change, so the prototype remains unintegrated and is not pushed.
+
 The CPU AVX2 investigation is not ready for integration. A single-core, pinned feasibility harness executed a full
 synthetic 3-bit expert and matched the established F64 oracle bit-for-bit, but took a median 2.35 s/expert; most time
 was materializing rotated F64 weights. That is about 17,400× the 135 us estimated H2D payload floor, so this
