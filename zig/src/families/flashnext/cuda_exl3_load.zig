@@ -445,7 +445,7 @@ pub const Experts = struct {
         const p = try x.gpa.create(pool_.Pool);
         errdefer x.gpa.destroy(p);
         const l = x.layer;
-        p.* = try pool_.Pool.init(x.gpa, io, d, .{ .routed = x.routed, .shared = if (x.shared[0].len == 0) null else x.shared }, .{ .suh_g = l.suh_g, .suh_u = l.suh_u, .svh_g = l.svh_g, .svh_u = l.svh_u, .suh_d = l.suh_d, .svh_d = l.svh_d }, .{
+        p.* = try pool_.Pool.init(x.gpa, io, d, .{ .routed = x.routed, .shared = if (x.shared[0].len == 0) null else x.shared, .pinned_bank = x.bank.?.bytes }, .{ .suh_g = l.suh_g, .suh_u = l.suh_u, .svh_g = l.svh_g, .svh_u = l.svh_u, .suh_d = l.suh_d, .svh_d = l.svh_d }, .{
             .layer = which,
             .lines = lines,
             .dims = wt.dims,

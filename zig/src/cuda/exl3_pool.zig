@@ -19,6 +19,7 @@ const std = @import("std");
 const abi = @import("abi.zig");
 const memory = @import("memory.zig");
 const stream_ = @import("stream.zig");
+pub const dma = @import("exl3_dma.zig");
 
 const Driver = @import("driver.zig").Driver;
 const Error = @import("driver.zig").Error;
@@ -96,6 +97,7 @@ pub const Lines = struct {
     mem: DeviceBuffer,
     tables: DeviceBuffer,
     shared: ?DeviceBuffer = null,
+    pinned_bank: ?[]const u8 = null,
     staging: ?HostBuffer,
     stage_ev: []Event,
     stage_busy: []bool,
@@ -266,10 +268,7 @@ pub const Lines = struct {
         const dst = l.mem.ptr + line * l.layout.line_bytes;
         var moved: usize = 0;
         if (direct or l.staging == null) {
-            for (src, l.layout.off) |s, o| {
-                try l.d.check(l.d.api.cuMemcpyHtoDAsync_v2(dst + o, s.ptr, s.len, l.copy.handle), "cuMemcpyHtoDAsync");
-                moved += s.len;
-            }
+            moved = try dma.directLines(l.copy, dst, l.layout.line_bytes, l.layout.off, src, l.pinned_bank);
         } else {
             const slot = l.stage_next;
             l.stage_next = (l.stage_next + 1) % l.spec.staging;
@@ -328,6 +327,10 @@ pub const Lines = struct {
         @memset(l.stage_busy, false);
     }
 };
+
+test {
+    _ = dma;
+}
 
 test "a line packs gate, up and down 256-aligned; the tables sit in one allocation" {
     // Flash Next layer 0: 3-bit experts, K=2560 N=640 -> 160 x 40 tiles of 48 words
