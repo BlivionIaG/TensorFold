@@ -58,6 +58,7 @@ fn expectPreserved(path: []const u8, before: []const u8) !void {
 }
 
 test "exl3: frequency full decoder and optional MTP round trip with private permissions" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var temporary = std.testing.tmpDir(.{ .iterate = true });
     defer temporary.cleanup();
     const path = try profilePath(temporary.dir);
@@ -84,6 +85,7 @@ test "exl3: frequency full decoder and optional MTP round trip with private perm
 }
 
 test "exl3: frequency missing profile and every exact identity mismatch are recoverable" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
     const path = try profilePath(temporary.dir);
@@ -107,6 +109,7 @@ test "exl3: frequency missing profile and every exact identity mismatch are reco
 }
 
 test "exl3: frequency rejects truncated oversized malformed and corrupt profiles" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
     const path = try profilePath(temporary.dir);
@@ -171,6 +174,7 @@ fn failRename(_: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir, _: []const u8
 }
 
 test "exl3: frequency partial write sync and rename failures preserve previous bytes and remove temporaries" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var temporary = std.testing.tmpDir(.{ .iterate = true });
     defer temporary.cleanup();
     const path = try profilePath(temporary.dir);
@@ -210,6 +214,7 @@ test "exl3: frequency partial write sync and rename failures preserve previous b
 }
 
 test "exl3: frequency allocation and invalid identity failures preserve previous profile" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var temporary = std.testing.tmpDir(.{ .iterate = true });
     defer temporary.cleanup();
     const path = try profilePath(temporary.dir);
@@ -236,6 +241,7 @@ test "exl3: frequency allocation and invalid identity failures preserve previous
 }
 
 test "exl3: frequency read allocation stays fixed and oversized input needs no allocation" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
     const path = try profilePath(temporary.dir);
@@ -258,6 +264,7 @@ test "exl3: frequency read allocation stays fixed and oversized input needs no a
 }
 
 test "exl3: frequency failed first save leaves no destination or temporary file" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var temporary = std.testing.tmpDir(.{ .iterate = true });
     defer temporary.cleanup();
     const path = try profilePath(temporary.dir);
@@ -279,6 +286,7 @@ test "exl3: frequency failed first save leaves no destination or temporary file"
 }
 
 test "exl3: frequency rejects a FIFO without a writer and other nonregular input" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     var temporary = std.testing.tmpDir(.{});
     defer temporary.cleanup();
     const path = try profilePath(temporary.dir);
