@@ -82,6 +82,15 @@ optimization, not a 2× result and not proof of eager-vs-graph speedup. It suppo
 overlapped; next compare collective grouping and remove the post-reduction placement/writeback work only behind
 exact rank and graph parity gates.
 
+An opt-in reduced-branch follow-up (commit `99265db1`, `TF_FLASHNEXT_EXL3_PREFILL_REDUCED_BRANCH=1`) skips the
+post-all-reduce `tpPlace` and feeds the contiguous FP32 sum directly to HC writeback with one unit-weight slot.
+The default remains off. The targeted `flashnext-hc` GPU regression passed the new exact hidden/FP32-sum,
+signed-zero, BF16-tie and short-tail checks. A separate graph-on, BF16-paged 16k TP2 ABBA run (flag 0, 1, 1, 0)
+measured 11,207.6 ms off and 11,033.4 ms on, about 1.6% higher rows/s. All four runs replayed 168 graphs per rank
+and returned hash `662339a95f0de2d7`; expert-copy counts and planner time were unchanged. This is a small measured
+gain, not a 2× result. Snapshot/cache continuation under the opt-in mode and eager-vs-graph parity remain to be
+qualified before enabling it by default.
+
 The CPU AVX2 investigation remains a no-go for integration today. The EPYC standalone DRAM triad (~41 GB/s on
 eight threads) and PCIe traffic do not establish exposed miss latency or spare bandwidth during BF16 paging/NCCL.
 The existing CPU EXL3 helper fully dequantizes into FP64 and is an oracle, not a serving kernel. A future bounded
