@@ -135,7 +135,12 @@ The baseline averaged 13,165.4 ms; current averaged 12,550.1 ms: **4.67% lower l
 All four rank-pairs replayed 168 graphs and produced the same cross-revision logits hash
 `662339a95f0de2d7`; expert copies and pass counts were unchanged. This is a measured prefill gain over the named
 baseline, not a serving or multi-context result, not attributable to one isolated commit, and far below 2×. It
-does not establish decode improvement; the matched decode ABBA is still running.
+does not establish decode improvement. The matched graph-decode ABBA completed: the steady phase measured
+22.50/22.47 ms per round on baseline and 22.45/22.50 ms on current (means 22.485 vs 22.475 ms); four-row windows
+measured 36.66/36.59 ms baseline and 36.65/36.64 ms current. Each run captured two graphs and replayed 252 times
+in the steady phase. The average round-time difference is 0.04%, noise-level rather than an improvement. This
+profile used a fixed 16-token prompt and 64 rounds; BF16 paging was enabled, but the short context caused no KV page
+misses. An earlier exploratory run selected eager mode by mistake and is excluded from this graph-on comparison.
 
 ## 2026-10-22 persisted expert-placement A/B
 
