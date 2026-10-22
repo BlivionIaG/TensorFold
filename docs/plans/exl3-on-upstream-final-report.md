@@ -197,7 +197,13 @@ HTTP ABBA (baseline/candidate/candidate/baseline), with graphs and BF16 K/V RAM 
 greedy tokens from the 16-id prompt. All runs had hash `2c5d814cfa80`, and drafted/undrafted outputs matched.
 Undrafted decode averaged 42.81 tok/s baseline versus 43.41 candidate (+1.4%); drafted decode averaged 56.33
 versus 56.28 tok/s (-0.1%). Prefill graphs were not exercised by this short-prompt gate. The end-to-end differences
-are within run variation, so the runtime dispatch stays out of the PR; the isolated candidate is not promoted.
+are within run variation. A follow-up used the same four-server ABBA design and 16-id prompt but generated 512
+tokens per measured request. With the same decode-graph/BF16-paging configuration, all output hashes were
+`b170e8433207` and drafted/undrafted outputs still matched. Undrafted decode averaged 43.08 tok/s baseline versus
+43.53 candidate (+1.0%); drafted decode averaged 56.85 versus 57.01 tok/s (+0.3%). Decode graphs replayed in every
+leg; prefill graphs did not run. The active BF16 page window was 4096 tokens, so this was not a test of KV page
+misses. The longer output does not change the conclusion: the end-to-end differences remain within run variation,
+so the runtime dispatch stays out of the PR; the isolated candidate is not promoted.
 
 The CPU AVX2 investigation is not ready for integration. A single-core, pinned feasibility harness executed a full
 synthetic 3-bit expert and matched the established F64 oracle bit-for-bit, but took a median 2.35 s/expert; most time
