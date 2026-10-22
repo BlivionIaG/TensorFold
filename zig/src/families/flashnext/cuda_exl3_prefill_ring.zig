@@ -73,7 +73,7 @@ pub const Ring = struct {
     batches: u64 = 0,
     rev: [release_ring]cuda.Event,
     epoch: u64 = 0,
-    done_epoch: u64 = 0,
+    copy_ordered_epoch: u64 = 0,
     tlay: cuda.exl3_pool.Tables,
     /// Pinned images of each layer's tables (pointers and widths) as the device holds them during the prefill.
     shadow: cuda.HostBuffer,
@@ -194,7 +194,7 @@ pub const Ring = struct {
         @memset(r.epoch_of, 0);
         r.next = 0;
         r.pending_n = 0;
-        r.done_epoch = r.epoch;
+        r.copy_ordered_epoch = r.epoch;
         r.open_layer = null;
         r.open_n = 0;
         for (&r.slot) |*row| @memset(row, -1);
@@ -300,19 +300,20 @@ pub const Ring = struct {
     /// The copy stream waits until the pass that last read slot `k` finished.
     fn afterReaders(r: *Ring, k: usize) !void {
         const e = r.epoch_of[k];
-        if (e == 0 or e <= r.done_epoch) return;
+        if (e == 0 or e <= r.copy_ordered_epoch) return;
         const ev = r.rev[e % release_ring];
         if (r.epoch - e >= release_ring) {
             // its event was recorded over by a newer pass: wait for that one on the host (no device cycle)
             try ev.synchronize();
-            r.done_epoch = @max(r.done_epoch, e);
+            r.copy_ordered_epoch = e;
             return;
         }
         if (try ev.done()) {
-            r.done_epoch = @max(r.done_epoch, e);
+            r.copy_ordered_epoch = e;
             return;
         }
         try r.copy.wait(ev);
+        r.copy_ordered_epoch = e;
         r.stats.release_waits += 1;
     }
 
@@ -478,4 +479,86 @@ test "exl3: a ring slot takes an expert only if each projection fits its line's 
     try std.testing.expect(fits(room, .{ big[0..256], big[0..300], big[0..10] }));
     try std.testing.expect(!fits(room, .{ big[0..300], big[0..10], big[0..10] }));
     try std.testing.expect(fits(room, .{ &.{}, &.{}, &.{} }));
+}
+
+const ReleaseFixture = @import("cuda_exl3_prefill_ring_fixture.zig").Fixture;
+
+test "exl3: prefill ring queues one release fence for a pass's pending slot copies" {
+    var driver: cuda.Driver = undefined;
+    const ring = try std.testing.allocator.create(Ring);
+    defer std.testing.allocator.destroy(ring);
+    var epochs: [32]u64 = @splat(7);
+    ReleaseFixture.init(&driver, ring, &epochs, 7);
+    for (epochs, 0..) |_, index| {
+        try ring.afterReaders(index);
+        try upload(ring.copy, 42, &.{1});
+    }
+    try std.testing.expectEqualSlices(ReleaseFixture.Call, &.{ .query, .wait }, ReleaseFixture.calls[0..2]);
+    try std.testing.expectEqual(@as(usize, 34), ReleaseFixture.count);
+    for (ReleaseFixture.calls[2..ReleaseFixture.count]) |call| try std.testing.expectEqual(ReleaseFixture.Call.copy, call);
+    try std.testing.expectEqual(@as(u64, 7), ring.copy_ordered_epoch);
+    try std.testing.expectEqual(@as(u64, 1), ring.stats.release_waits);
+}
+
+test "exl3: prefill ring queued fences cover older epochs but never a newer reader" {
+    var driver: cuda.Driver = undefined;
+    const ring = try std.testing.allocator.create(Ring);
+    defer std.testing.allocator.destroy(ring);
+    var epochs = [_]u64{ 4, 2, 4, 5, 0, 1, 6 };
+    ReleaseFixture.init(&driver, ring, &epochs, 6);
+    for (0..6) |index| try ring.afterReaders(index);
+    try std.testing.expectEqualSlices(ReleaseFixture.Call, &.{ .query, .wait, .query, .wait }, ReleaseFixture.calls[0..ReleaseFixture.count]);
+    try std.testing.expectEqual(ring.rev[5].handle, ReleaseFixture.last_event);
+    ReleaseFixture.query_result = cuda.abi.success;
+    try ring.afterReaders(6);
+    try ring.afterReaders(3);
+    try std.testing.expectEqual(@as(usize, 5), ReleaseFixture.count);
+    try std.testing.expectEqual(@as(u64, 6), ring.copy_ordered_epoch);
+    try std.testing.expectEqual(@as(u64, 2), ring.stats.release_waits);
+}
+
+test "exl3: prefill ring retains the host fallback at the release event wrap boundary" {
+    var driver: cuda.Driver = undefined;
+    const ring = try std.testing.allocator.create(Ring);
+    defer std.testing.allocator.destroy(ring);
+    var epochs = [_]u64{ 7, 7 };
+    for ([_]u64{ release_ring - 1, release_ring, release_ring + 1 }) |distance| {
+        ReleaseFixture.init(&driver, ring, &epochs, 7 + distance);
+        try ring.afterReaders(0);
+        try ring.afterReaders(1);
+        if (distance < release_ring) {
+            try std.testing.expectEqualSlices(ReleaseFixture.Call, &.{ .query, .wait }, ReleaseFixture.calls[0..ReleaseFixture.count]);
+            try std.testing.expectEqual(@as(u64, 1), ring.stats.release_waits);
+        } else {
+            try std.testing.expectEqualSlices(ReleaseFixture.Call, &.{.sync}, ReleaseFixture.calls[0..ReleaseFixture.count]);
+            try std.testing.expectEqual(@as(u64, 0), ring.stats.release_waits);
+        }
+        try std.testing.expectEqual(ring.rev[7].handle, ReleaseFixture.last_event);
+        try std.testing.expectEqual(@as(u64, 7), ring.copy_ordered_epoch);
+    }
+}
+
+test "exl3: prefill ring failed release dependencies cannot authorize subsequent copies" {
+    var driver: cuda.Driver = undefined;
+    const ring = try std.testing.allocator.create(Ring);
+    defer std.testing.allocator.destroy(ring);
+    var epochs = [_]u64{7};
+    ReleaseFixture.init(&driver, ring, &epochs, 7);
+    ReleaseFixture.wait_result = cuda.abi.error_not_ready;
+    try std.testing.expectError(error.NotReady, ring.afterReaders(0));
+    try std.testing.expectEqual(@as(u64, 0), ring.copy_ordered_epoch);
+    try std.testing.expectEqual(@as(u64, 0), ring.stats.release_waits);
+    ReleaseFixture.wait_result = cuda.abi.success;
+    try ring.afterReaders(0);
+    try std.testing.expectEqualSlices(ReleaseFixture.Call, &.{ .query, .wait, .query, .wait }, ReleaseFixture.calls[0..ReleaseFixture.count]);
+    try std.testing.expectEqual(@as(u64, 7), ring.copy_ordered_epoch);
+
+    ReleaseFixture.init(&driver, ring, &epochs, 7 + release_ring);
+    ReleaseFixture.sync_result = cuda.abi.error_not_ready;
+    try std.testing.expectError(error.NotReady, ring.afterReaders(0));
+    try std.testing.expectEqual(@as(u64, 0), ring.copy_ordered_epoch);
+    ReleaseFixture.sync_result = cuda.abi.success;
+    try ring.afterReaders(0);
+    try std.testing.expectEqualSlices(ReleaseFixture.Call, &.{ .sync, .sync }, ReleaseFixture.calls[0..ReleaseFixture.count]);
+    try std.testing.expectEqual(@as(u64, 7), ring.copy_ordered_epoch);
 }
