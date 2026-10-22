@@ -1297,6 +1297,26 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
 pub const Prefill = enum { eager, replayed, capturing };
 const prefill_binding = @import("cuda_exl3_prefill_binding.zig");
 
+const PBuffer = struct {
+    driver: *const cuda.Driver,
+    address: u64,
+    bytes: usize,
+
+    fn of(buffer: cuda.DeviceBuffer) PBuffer {
+        return .{ .driver = buffer.d, .address = buffer.ptr, .bytes = buffer.len };
+    }
+};
+
+const PGdn = struct {
+    conv: PBuffer,
+    state: PBuffer,
+
+    fn of(sequence: anytype, layer: usize) PGdn {
+        const index = wt.linearIndex(layer);
+        return .{ .conv = PBuffer.of(sequence.conv[index]), .state = PBuffer.of(sequence.state[index]) };
+    }
+};
+
 const PKey = struct {
     layer: usize,
     rows: usize,
@@ -1314,6 +1334,7 @@ const PKey = struct {
     tiles: bool,
     positions: u64 = 0,
     stream: u64 = 0,
+    gdn: ?PGdn = null,
 };
 
 const PEntry = struct { key: PKey, exec: cuda.graph.Exec, used: u64, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null, binding: ?*prefill_binding.Binding = null, binding_admission: ?memory.Ticket = null };
@@ -1371,6 +1392,45 @@ fn prefillOriginCandidate(key: PKey, request: prefill_binding.Request) ?*PEntry 
         if (!binding.poisoned and std.meta.eql(pshape(entry.key), pshape(key)) and binding.request.compatible(request)) return entry;
     };
     return null;
+}
+
+test "exl3: GDN prefill keys bind the actual layer buffers including driver and extent" {
+    var driver: cuda.Driver = undefined;
+    var other_driver: cuda.Driver = undefined;
+    var conv = [_]cuda.DeviceBuffer{
+        .{ .d = &driver, .ptr = 100, .len = 16 },
+        .{ .d = &driver, .ptr = 200, .len = 16 },
+        .{ .d = &driver, .ptr = 300, .len = 16 },
+    };
+    var state = conv;
+    for (&state) |*buffer| buffer.ptr += 1000;
+    const sequence = .{ .conv = &conv, .state = &state };
+    var key = std.mem.zeroes(PKey);
+    key.layer = 2;
+    key.seq = .{ conv[0].ptr, 0, 500, 4096, state[0].ptr };
+    key.gdn = PGdn.of(sequence, key.layer);
+    const original = key.gdn.?;
+    try std.testing.expectEqual(@as(u64, 300), original.conv.address);
+    try std.testing.expectEqual(@as(u64, 1300), original.state.address);
+    for ([_]bool{ false, true }) |recurrent| {
+        const buffer = if (recurrent) &state[2] else &conv[2];
+        const saved = buffer.*;
+        defer buffer.* = saved;
+        for (0..3) |field| {
+            buffer.* = saved;
+            switch (field) {
+                0 => buffer.ptr += 1,
+                1 => buffer.len += 1,
+                2 => buffer.d = &other_driver,
+                else => unreachable,
+            }
+            var changed = key;
+            changed.gdn = PGdn.of(sequence, key.layer);
+            try std.testing.expectEqual(key.seq, changed.seq);
+            try std.testing.expect(!std.meta.eql(pshape(key), pshape(changed)));
+        }
+    }
+    try std.testing.expectEqualDeep(original, PGdn.of(sequence, key.layer));
 }
 
 test "exl3: prefill origin candidates preserve paging generation, incarnation and allocation keys" {
@@ -1510,6 +1570,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         .tiles = tiles,
         .positions = positions,
         .stream = @intFromPtr(p.stream.handle),
+        .gdn = if (linear) PGdn.of(q, layer) else null,
     };
     clock += 1;
     for (&pentries) |*e| if (e.*) |*x| if (std.meta.eql(x.key, key)) {
