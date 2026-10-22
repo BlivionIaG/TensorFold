@@ -29,6 +29,7 @@ const pool_ = @import("cuda_exl3_pool.zig");
 const pk = @import("cuda_exl3_prefill_k.zig");
 const prompt = @import("cuda_prompt.zig");
 const ring_ = @import("cuda_exl3_prefill_ring.zig");
+const history_ = @import("cuda_exl3_prefill_history.zig");
 const tp_ = @import("cuda_exl3_tp.zig");
 
 const dims = wt.dims;
@@ -256,6 +257,8 @@ const Deep = struct {
     ring_failed: bool = false,
     /// Experts each layer used in the current chunk (the next layers' prefetch size).
     used: [wt.layers_n]usize = @splat(routed_guess),
+    history: [wt.layers_n]history_.Slot = @splat(.{}),
+    history_shape: ?history_.Shape = null,
 
     fn dptr(dp: *const Deep, off: usize) u64 {
         return dp.dev.ptr + off;
@@ -540,6 +543,7 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
     try st.synchronize();
     if (rg) |r| {
         try r.newChunk();
+        history_.prepare(&dp.history, &dp.history_shape, .{ .sub = sub, .lo = r.own_lo, .hi = r.own_hi });
         // the first layers' experts start streaming now, under the embedding and layer 0's blocks
         for (0..@min(o.ring_ahead + 1, wt.layers_n)) |l| _ = try r.prefetch(l, @min(routed_n_, dp.used[l]), keepFree(r, o), .initial_prefetch);
     }
@@ -1221,12 +1225,12 @@ fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), l
         stats.passes += 1;
     }
     stats.copies += r.stats.copies - copies0;
-    // the coming layers' hottest experts, as many as this layer used
+    dp.history[layer] = .{ .rows = n, .used = used };
     const c1 = r.stats.copies;
     for (1..o.ring_ahead + 1) |ahead| {
         const nl = layer + ahead;
         if (nl >= wt.layers_n) break;
-        _ = try r.prefetch(nl, @min(routed_n_, used + 16), keepFree(r, o), .cross_layer_prefetch);
+        _ = try r.prefetch(nl, history_.want(dp.history[nl], n, used, routed_n_), keepFree(r, o), .cross_layer_prefetch);
     }
     stats.prefetched += r.stats.copies - c1;
     stats.copies += r.stats.copies - c1;
@@ -1326,4 +1330,69 @@ test "exl3: expert-parallel prefill masks the other rank's picks and keeps the s
     // the sum buffer exists only at world 2
     try std.testing.expectEqual(deviceBytesAt(4096, 1), deviceBytes(4096));
     try std.testing.expect(deviceBytesAt(4096, 2) >= deviceBytes(4096) + 4096 * dims * 4);
+}
+
+test "exl3: prefetch history follows deep engine ownership reuse replacement and release" {
+    const Fixture = struct {
+        fn unload(_: cuda.abi.Module) callconv(.c) cuda.abi.Result {
+            return cuda.abi.success;
+        }
+        fn stream(_: cuda.abi.Stream) callconv(.c) cuda.abi.Result {
+            return cuda.abi.success;
+        }
+        fn freeHost(_: ?*anyopaque) callconv(.c) cuda.abi.Result {
+            return cuda.abi.success;
+        }
+        fn refuse(_: *cuda.abi.DevicePtr, _: usize) callconv(.c) cuda.abi.Result {
+            return cuda.abi.error_not_ready;
+        }
+        fn install(driver: *const cuda.Driver, owner: *const anyopaque) !*Deep {
+            const buffers = try std.testing.allocator.create(Deep);
+            buffers.* = .{
+                .gpa = std.testing.allocator,
+                .owner = owner,
+                .rows = 4096,
+                .lay = undefined,
+                .hl = undefined,
+                .dev = .{ .d = driver, .ptr = 0, .len = 0 },
+                .host = .{ .d = driver, .bytes = @constCast(&.{}) },
+                .kern = undefined,
+                .aux = .{ .d = driver, .handle = null },
+            };
+            buffers.kern.mod = .{ .d = driver, .handle = null };
+            deep = buffers;
+            return buffers;
+        }
+    };
+    try std.testing.expect(deep == null);
+    defer release();
+    var driver: cuda.Driver = undefined;
+    driver.api.cuModuleUnload = Fixture.unload;
+    driver.api.cuStreamSynchronize = Fixture.stream;
+    driver.api.cuStreamDestroy_v2 = Fixture.stream;
+    driver.api.cuMemFreeHost = Fixture.freeHost;
+    driver.api.cuMemAlloc_v2 = Fixture.refuse;
+    var owners: [2]u8 = .{ 0, 0 };
+    const first = try Fixture.install(&driver, &owners[0]);
+    first.history[3] = .{ .rows = 4096, .used = 80 };
+    first.history_shape = .{ .sub = 256, .lo = 0, .hi = 256 };
+    releaseFor(&owners[1]);
+    try std.testing.expect(deep.? == first);
+    try reserveAt(std.testing.allocator, &driver, &owners[0], 2048, 1);
+    try std.testing.expectEqual(@as(usize, 96), history_.want(deep.?.history[3], 4096, 400, routed_n_));
+    try std.testing.expectError(error.NotReady, reserveAt(std.testing.allocator, &driver, &owners[1], 4096, 1));
+    try std.testing.expect(deep == null);
+    const second = try Fixture.install(&driver, &owners[1]);
+    try std.testing.expectEqual(@as(usize, 416), history_.want(second.history[3], 4096, 400, routed_n_));
+    try std.testing.expect(second.history_shape == null);
+    second.history[3] = .{ .rows = 4096, .used = 80 };
+    try std.testing.expectError(error.NotReady, reserveAt(std.testing.allocator, &driver, &owners[1], 4096, 2));
+    try std.testing.expect(deep == null);
+    const third = try Fixture.install(&driver, &owners[1]);
+    try std.testing.expectEqual(@as(usize, 416), history_.want(third.history[3], 4096, 400, routed_n_));
+    third.history[3] = .{ .rows = 4096, .used = 80 };
+    releaseFor(&owners[1]);
+    try std.testing.expect(deep == null);
+    const fourth = try Fixture.install(&driver, &owners[1]);
+    try std.testing.expectEqual(@as(usize, 416), history_.want(fourth.history[3], 4096, 400, routed_n_));
 }
