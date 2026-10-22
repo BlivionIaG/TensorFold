@@ -9,6 +9,7 @@ const Fake = @import("cuda_exl3_shared_kv_test.zig").Fake;
 test "exl3: replay device sampling reads executed counters without pulling ownership or synchronizing" {
     var driver = Fake.driver();
     var resident: pool.Pool = undefined;
+    resident.lines.pinned_bank = null;
     resident.telemetry_device = .{ .plans = 5, .hit_picks = 20, .copies = 3 };
     resident.telemetry_valid = true;
     var pools = [_]*pool.Pool{&resident};
@@ -111,6 +112,7 @@ test "exl3: ring demand counts routed pick appearances separately from per-chunk
 
 test "exl3: aggregate telemetry finds attached pools deduplicates MTP aliases and separates committed device plans" {
     var resident: pool.Pool = undefined;
+    resident.lines.pinned_bank = null;
     resident.telemetry_id = 991;
     resident.telemetry_valid = true;
     resident.telemetry_device = .{ .plans = 5, .hit_picks = 20, .miss_picks = 10, .copies = 3, .inplace_experts = 1 };

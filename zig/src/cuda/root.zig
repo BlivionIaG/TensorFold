@@ -110,6 +110,7 @@ test {
     _ = exl3;
     _ = exl3_experts;
     _ = exl3_upload;
+    _ = exl3_pool;
     _ = @import("modelopt.zig");
     _ = @import("ck.zig");
     _ = @import("tp_watch.zig");

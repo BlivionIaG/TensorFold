@@ -367,7 +367,9 @@ pub const Ring = struct {
             for (0..3) |w| r.ptrEntry(ol, w, oid).* = 0;
         }
         const dst = r.addr[k];
-        for (src, r.off[k]) |s, o| try r.d.check(r.d.api.cuMemcpyHtoDAsync_v2(dst + o, s.ptr, s.len, r.copy.handle), "cuMemcpyHtoDAsync");
+        const offsets: [3]usize = .{ r.off[k][0], r.off[k][1], r.off[k][2] };
+        const capacity = try std.math.add(usize, offsets[2], r.room_of[k][2]);
+        _ = try cuda.exl3_pool.dma.directLines(r.copy, dst, capacity, offsets, src, p.src.pinned_bank);
         for (0..3) |w| r.ptrEntry(layer, w, id).* = dst + r.off[k][w];
         r.slot[layer][id] = @intCast(k);
         r.batch_of[layer][id] = r.batches;

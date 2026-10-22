@@ -36,6 +36,7 @@ test {
 pub const Source = struct {
     routed: []const [3][]const u8,
     shared: ?[3][]const u8 = null,
+    pinned_bank: ?[]const u8 = null,
 };
 
 /// Device addresses of the resident, stacked fp16 scales ([E, D] or [E, I], E = 513).
@@ -141,6 +142,7 @@ pub const Pool = struct {
         const table_e: usize = if (src.shared != null) shape.experts + 1 else shape.experts;
         var lines = try Lines.init(gpa, d, .{ .experts = table_e, .bytes = bytes, .lines = opt.lines, .staging = if (opt.direct) 0 else opt.staging });
         errdefer lines.deinit();
+        lines.pinned_bank = if (opt.direct) src.pinned_bank else null;
         if (src.shared) |sh| {
             var w: [3]i32 = undefined;
             for (0..3) |p| {
