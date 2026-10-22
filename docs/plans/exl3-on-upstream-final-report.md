@@ -142,6 +142,16 @@ in the steady phase. The average round-time difference is 0.04%, noise-level rat
 profile used a fixed 16-token prompt and 64 rounds; BF16 paging was enabled, but the short context caused no KV page
 misses. An earlier exploratory run selected eager mode by mistake and is excluded from this graph-on comparison.
 
+## 2026-10-22 16k paged graph/eager miss diagnostic
+
+A current-head diagnostic on `d467247b` used TP=2, BF16 paging, a 16,384-token repeated-QBench-ID fixture, 64
+decode steps, and an eager/graph/graph/eager sequence. This is a synthetic repeated-token stress profile, not a
+real-text or serving benchmark. Mean measured latency was 34.735 ms/token for eager and 34.650 ms/token for graph
+(0.25% lower, within noise). All four runs returned hash `4c2d8973e43477cd`; graph runs replayed an already captured
+graph 64 times with no captures or updates. Rank 0 recorded 3,616 expert misses/copies, 230,795 KV-page misses in
+768 page calls, and no rebases or overflow in every run. The controlled ordering confirms separate miss telemetry
+and graph/eager output parity under paging, but no graph speedup.
+
 ## 2026-10-22 persisted expert-placement A/B
 
 An orderly-shutdown TP=2 HTTP gate verified that both ranks save and restore their lifetime expert-placement profiles
