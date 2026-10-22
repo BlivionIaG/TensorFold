@@ -109,7 +109,7 @@ pub fn Pass(comptime Tri: type) type {
         prepared: bool = false,
         /// The pending write-back's branch sits in fp32 in moe_f32 (something added to it, or it is kept).
         pending_f32: bool = false,
-
+        pending_f32_weights: ?u64 = null,
         // ---- launches ----------------------------------------------------------------------------------------
 
         /// qmm.cu's lane tile over m rows: out bf16 [m, n] (sk 1) or the unreduced fp32 slices [sk, m, n] in part.
@@ -210,6 +210,11 @@ pub fn Pass(comptime Tri: type) type {
             if (self.pending_f32) {
                 // the fp32 branch rounded once, as MODE 2 rounds its sum (a slice of one)
                 self.pending_f32 = false;
+                if (self.pending_f32_weights) |weights| {
+                    self.pending_f32_weights = null;
+                    try self.tri.hcWriteback(h, h, pss, dummy, "*bf16", inj, s.moe_f32 + r0 * dims * 4, "*fp32", weights + r0 * 4, "*fp32", rs, n, dims, streams, 2, 0, 1, 1);
+                    return;
+                }
                 try self.tri.hcWriteback(h, h, pss, s.moe_f32 + r0 * dims * 4, "*fp32", inj, dummy, "*bf16", dummy, "*bf16", rs, n, dims, streams, 4, 1, 1, 1);
                 return;
             }
@@ -505,6 +510,7 @@ pub fn Pass(comptime Tri: type) type {
             self.pos0 = pos0;
             self.pending = null;
             self.pending_f32 = false;
+            self.pending_f32_weights = null;
             // the gather writes the scratch's pinned rows, so the last pass's uploads must have read them first
             if (!self.prepared) try s.ready();
             const emb = s.hostEmb(n);
