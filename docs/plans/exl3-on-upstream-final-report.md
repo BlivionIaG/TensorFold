@@ -102,13 +102,15 @@ The CPU AVX2 investigation is not ready for integration. A single-core, pinned f
 synthetic 3-bit expert and matched the established F64 oracle bit-for-bit, but took a median 2.35 s/expert; most time
 was materializing rotated F64 weights. That is about 17,400× the 135 us estimated H2D payload floor, so this
 materializing implementation is rejected. It is not a CUDA-parity result or an impossibility result for a fused
-packed AVX2 kernel. Existing measurements show substantial expert H2D traffic, but not how much is exposed on the
-critical path; the standalone EPYC DRAM triad (~41 GB/s on eight threads) does not establish spare bandwidth during
-BF16 paging/NCCL. A routed expert is about 1.758 MiB packed and 9.83 MFLOPs per decode row. Any further candidate
-must reproduce CUDA's FP32/MMA/activation rounding, include activation round-trip, scheduling and synchronization,
-and beat the current GPU miss route end-to-end. Start with sparse decode misses, not prefill (where an uploaded
-expert is reused across many rows); never skip or approximate a routed expert. If RAM bandwidth is already occupied
-by KV paging, CPU execution may make things worse.
+packed AVX2 kernel. A TP2 decode-gate PCIe telemetry sample on PCIe 4.0 x8 links measured peak Rx at 3.4 GB/s on
+rank 0 and 2.5 GB/s on rank 1; during the active decode segment the averages were 1.8 and 0.85 GB/s respectively.
+These are well below nominal x8 link bandwidth, so the sample does not support PCIe saturation as the current decode
+bottleneck. Nsight Compute DRAM counters are still unavailable on this host (`ERR_NVGPUCTRPERM`), and the sample
+does not characterize long-context KV paging or prefill. A routed expert is about 1.758 MiB packed and 9.83 MFLOPs
+per decode row. Any further CPU candidate must reproduce CUDA's FP32/MMA/activation rounding, include activation
+round-trip, scheduling and synchronization, and beat the current GPU miss route end-to-end. Start with sparse decode
+misses, not prefill (where an uploaded expert is reused across many rows); never skip or approximate a routed expert.
+If RAM bandwidth is already occupied by KV paging, CPU execution may make things worse.
 
 ## Decode critical-path profile and next kernel experiment
 
@@ -121,10 +123,13 @@ context paging misses.
 
 The largest active decode costs were approximately 5.7 ms/round in dense EXL3 projections and 4.3 ms in BF16 HC
 matrix products. The repeated `tf_exl3_linear_10_2_8` launch (K=2560, N=10240, 5-bit mul1, one row) used 80 CTAs,
-256 threads and 147 registers/thread, at roughly 69 us per call across 36 calls/round. A kernel-only experiment
-will keep launch geometry, MMA, split/reduction and rounding unchanged while disabling weight prefetch, then measure
-rotating-weight graph replay plus four-row exact parity. This tests whether prefetch register pressure helps or
-hurts; no result is claimed yet.
+256 threads and 147 registers/thread, at roughly 69 us per call across 36 calls/round. A kernel-only no-prefetch
+candidate keeps launch geometry, MMA, split/reduction and rounding unchanged. On the RTX 5060 Ti it passed
+byte-exact output checks at 1 and 4 rows. Seven ABBA trials measured graph replay at 63.53 us baseline versus
+58.02 us candidate for one row (-8.7%), and 63.74 versus 58.32 us for four rows (-8.5%). Rotating weights
+improved 9.2% and 9.6%, respectively; warm-weight latency improved about 28%. This is an isolated synthetic
+kernel result, not an end-to-end serving gain. The default-off runtime dispatch and full TP2 decode
+parity/performance gate are still pending.
 
 Per-rank mapped-copy kernels occupied 2.11/2.58 ms per round, grouped expert kernels 2.25/2.67 ms, while all-reduce
 kernel sums were 3.60 ms on rank 0 and 2.66 ms on rank 1. This suggests rank waiting/imbalance, but does not isolate
