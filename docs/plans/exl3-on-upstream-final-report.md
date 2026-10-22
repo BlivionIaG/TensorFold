@@ -63,6 +63,31 @@ change. The design investigation should first establish staging-arena memory fit
 and snapshots; then prototype GPU-built stable member lists and fixed-buffer double-buffered transfers while keeping
 existing expert arithmetic and reduction order.
 
+## 2026-10-22 TP2 prefill profile and reduction-overlap A/B
+
+At head `5a94359c`, Nsight Systems profiled a 16,384-row TP2 prefill with graphs, BF16 KV paging, 4,096-row deep
+chunks, two warm-ups and one measured forward. Both ranks replayed 168 dense-layer graphs, captured 24 shapes, and
+reported the same logits hash (`662339a95f0de2d7`). The measured test-harness wall time was about 11.3 s per rank;
+this is not a production HTTP benchmark. In the per-rank summed kernel durations, NCCL ring all-reduce accounts for
+24–27%, `tf_exl3_prompt_2` about 22%, GDN about 8%, and attention about 6%. The CUDA memory-operation report shows
+about 5.0–5.1 s of cumulative host-to-device memcpy durations per rank. Those intervals can overlap other GPU work;
+they are not isolated expert-miss stall time. The kernel-duration sums are likewise not additive wall time.
+
+A follow-up, non-Nsight ABBA test compared only `TF_FLASHNEXT_EXL3_PREFILL_OVERLAP` (1, 0, 0, 1) using the same
+binary and graph/paging configuration. Each run used 16,384 rows, 4,096-row chunks, two graph warm-ups, and the
+same output hash. Graph replay counts, expert-copy counts and planning time were unchanged. Overlap-on wall times
+were 11,215.0 and 11,212.1 ms; overlap-off times were 12,475.7 and 12,472.0 ms. The on-pair mean is 11,213.6 ms
+versus 12,473.9 ms off, a 10.1% wall-time reduction (11.2% higher rows/s). This is a repeatable targeted prefill
+optimization, not a 2× result and not proof of eager-vs-graph speedup. It supports keeping sub-block reductions
+overlapped; next compare collective grouping and remove the post-reduction placement/writeback work only behind
+exact rank and graph parity gates.
+
+The CPU AVX2 investigation remains a no-go for integration today. The EPYC standalone DRAM triad (~41 GB/s on
+eight threads) and PCIe traffic do not establish exposed miss latency or spare bandwidth during BF16 paging/NCCL.
+The existing CPU EXL3 helper fully dequantizes into FP64 and is an oracle, not a serving kernel. A future bounded
+CPU trial must compute real packed experts, preserve CUDA numerics, and beat the GPU miss path end-to-end on a
+graph/paging workload; no expert may be skipped or approximated.
+
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),
