@@ -132,7 +132,13 @@ enters and restores its own phase. Unclassified work remains `unknown`.
 
 Expert reports separate host-planner picks, executed device-planner picks,
 mandatory/prefetch pool copies, mapped in-place reads, and expert-major ring
-demand/copies. KV reports count unique requested and missing blocks before the
+demand/copies. Opt-in ring attribution separates demand, initial-chunk prefetch
+and cross-layer prefetch copies, requested bytes and unused residency. A held
+retry keeps the original copy's provenance; unused residency can be observed in
+a later interval than its copy. Disabled attribution allocates no slot records.
+Direct DMA coalesces adjacent projections only inside a proven common pinned
+bank; expert-copy and logical-byte counters retain their original meaning.
+KV reports count unique requested and missing blocks before the
 active window, sparse calls, rebases and written rows. Their denominators differ:
 routed picks are not distinct experts, and KV block requests are not token positions. Requested
 or logical payload bytes are not measured PCIe traffic. Automatic decoder
@@ -150,6 +156,9 @@ requests with identical full prompt/token/text hashes and concurrent graph
 replay. These are bounded diagnostics, not a repeatable speedup or 200k result;
 settings, binary hashes and measured counters are in the
 [replay/cache qualification](https://github.com/ashhart/TensorFold/pull/1113#issuecomment-6327563987).
+
+The serving prefill default is 4,096 rows. Benchmark harnesses may explicitly
+override it to 2,048; comparing those settings is not a new-code speedup.
 
 ## Snapshot and cache reuse validation (2026-10-20)
 
