@@ -341,8 +341,8 @@ pub const Pool = struct {
         }
     }
 
-    pub fn warmProfile(p: *Pool) !usize {
-        return @import("exl3_frequency_seed.zig").warm(p);
+    pub fn warmProfile(pool: *Pool) !usize {
+        return @import("exl3_frequency_seed.zig").warm(pool);
     }
 
     pub fn deviceBytes(p: *const Pool) usize {
