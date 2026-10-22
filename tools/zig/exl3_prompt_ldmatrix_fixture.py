@@ -329,9 +329,44 @@ class Case:
                 self.compare(CHUNK, f32, bank, bank % 2)
         random_hashes = dict(self.bank_hash)
         self.exact_check()
+        self.nonfinite_check()
         self.bank_hash = random_hashes
         self.restore()
-        emit(shape=[self.k, self.n], byte_guard_repeat_checks="PASS", banks_checked=self.bank_count, fp64_exact_fixture="PASS")
+        emit(shape=[self.k, self.n], byte_guard_repeat_checks="PASS", banks_checked=self.bank_count, fp64_exact_fixture="PASS", nonfinite_classes="PASS")
+
+    def nonfinite_check(self):
+        def transform(values):
+            values = list(values)
+            for step in (1, 2, 4, 8, 16, 32, 64):
+                for base in range(0, 128, 2 * step):
+                    for offset in range(step):
+                        lower, upper = base + offset, base + offset + step
+                        left, right = values[lower], values[upper]
+                        values[lower], values[upper] = left + right, left - right
+            return values
+        def category(value):
+            return "nan" if math.isnan(value) else "positive_inf" if value == math.inf else "negative_inf" if value == -math.inf else "finite"
+        tile_bytes = 32 * self.bits
+        self.banks[0].upload((bytes(tile_bytes) + bytes([255]) * tile_bytes) * (self.n // 32) * (self.k // 16))
+        self.suh.upload(half_bytes([1.0] * self.k))
+        self.svh.upload(half_bytes([1.0] * self.n))
+        source = array.array("H", [0]) * (self.rows * self.stride)
+        families = ((0x7FC0,), (0x7F80,), (0xFF80,), (0x7F80, 0xFF80))
+        expected = []
+        weights = exact_values()
+        for row, words in enumerate(families):
+            for column, word in enumerate(words):
+                source[row * self.stride + column] = word
+            values = [struct.unpack("<f", struct.pack("<I", source[row * self.stride + column] << 16))[0] for column in range(128)]
+            rotated = [value / 16 for value in transform(values)]
+            dots = [sum(value * weights[(column // 16) & 1] for value in rotated) for column in range(128)]
+            classes = [category(value / 8) for value in transform(dots)]
+            expected.extend(classes * (self.n // 128))
+        self.input.upload(source.tobytes())
+        for f32 in (True, False):
+            data = self.compare(len(families), f32, 0, 0)
+            actual = array.array("f", data) if f32 else [struct.unpack("<f", struct.pack("<I", word << 16))[0] for word in array.array("H", data)]
+            assert [category(value) for value in actual] == expected, "nonfinite FP64 classes differ"
 
     def exact_check(self):
         tile_bytes = 32 * self.bits
@@ -450,6 +485,7 @@ def main():
     parser.add_argument("--shape", action="append", help="K,N or K,N,BITS; default is all four traced classes")
     parser.add_argument("--rows", default="1,63,64,65,127,128,129,255,256,257")
     parser.add_argument("--check-reps", type=int, default=3)
+    parser.add_argument("--checks-only", action="store_true")
     parser.add_argument("--samples", type=int, default=7)
     parser.add_argument("--iterations", type=int, default=32)
     parser.add_argument("--warmup", type=int, default=5)
@@ -497,7 +533,8 @@ def main():
                      cache="uncontrolled_after_upload", byte_comparison_run=False, prompt_launches=1)
             else:
                 case.checks(options)
-                case.timing(options)
+                if not options.checks_only:
+                    case.timing(options)
             case.immutable()
             driver.synchronize()
             for pointer in reversed(driver.buffers[first_buffer:]):
