@@ -126,6 +126,17 @@ current pushed baseline, the newly measured chunk-size change gives about 5% low
 decode graph replay remains within 0.16% of eager. There is not yet a comparable, controlled end-to-end decode
 benchmark from project start that supports one cumulative decode-speedup number.
 
+## Matched 5a94359c TP2 prefill comparison (2026-10-22)
+
+An exclusive four-run ABBA comparison (baseline/current/current/baseline) tested the pushed `5a94359c` source and
+current `03d4dbf3` source on both RTX 5060 Ti cards. Each sample measured one 16,384-row deterministic prefill
+forward with TP=2, CUDA prefill graphs, BF16 KV paging, blocking NCCL, 4,096-row deep chunks and overlap enabled.
+The baseline averaged 13,165.4 ms; current averaged 12,550.1 ms: **4.67% lower latency / 4.90% higher rows/s**.
+All four rank-pairs replayed 168 graphs and produced the same cross-revision logits hash
+`662339a95f0de2d7`; expert copies and pass counts were unchanged. This is a measured prefill gain over the named
+baseline, not a serving or multi-context result, not attributable to one isolated commit, and far below 2×. It
+does not establish decode improvement; the matched decode ABBA is still running.
+
 ## 2026-10-22 persisted expert-placement A/B
 
 An orderly-shutdown TP=2 HTTP gate verified that both ranks save and restore their lifetime expert-placement profiles
