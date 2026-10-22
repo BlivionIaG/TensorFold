@@ -187,6 +187,18 @@ Group size 1 averaged 12,538.7 ms, while group size 2 averaged 13,391.1 ms (6.8%
 pick-wait interval also rose from about 11.87 s to 12.71 s. Host tests and CUDA build passed, but GPU results do
 not support the change, so the prototype remains unintegrated and is not pushed.
 
+Fourth, an exact-order 32-column-fragment EXL3 linear candidate for K=2560, N=10240, 5-bit mul1 was validated on
+both RTX 5060 Ti cards. Four ABBA trials per card, with 128 iterations per sample, covered M=1 and M=4, graph and
+eager replay, and resident and rotating weights. Exact output parity passed for F16/BF16/FP32 inputs and outputs,
+bias, and both supported trellis layouts. In graph replay, resident-weight latency fell from 44.82 to 26.74 us at
+M=1 (40.3%) and 45.35 to 27.46 us at M=4 (39.4%); rotating-weight latency fell from 61.23 to 42.89 us at M=1
+(30.0%) and 61.58 to 43.16 us at M=4 (29.9%). This isolated kernel gain did not translate to serving: a TP2
+HTTP ABBA (baseline/candidate/candidate/baseline), with graphs and BF16 K/V RAM paging enabled, generated 128
+greedy tokens from the 16-id prompt. All runs had hash `2c5d814cfa80`, and drafted/undrafted outputs matched.
+Undrafted decode averaged 42.81 tok/s baseline versus 43.41 candidate (+1.4%); drafted decode averaged 56.33
+versus 56.28 tok/s (-0.1%). Prefill graphs were not exercised by this short-prompt gate. The end-to-end differences
+are within run variation, so the runtime dispatch stays out of the PR; the isolated candidate is not promoted.
+
 The CPU AVX2 investigation is not ready for integration. A single-core, pinned feasibility harness executed a full
 synthetic 3-bit expert and matched the established F64 oracle bit-for-bit, but took a median 2.35 s/expert; most time
 was materializing rotated F64 weights. That is about 17,400× the 135 us estimated H2D payload floor, so this
