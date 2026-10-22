@@ -1191,6 +1191,10 @@ fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), l
         in_pass += 1;
     };
     close(dp, &lo, k, &members, &in_pass);
+    const staging0 = now(p.io);
+    const copies0 = r.stats.copies;
+    for (0..@min(2, dp.n_passes)) |j| try loadPass(dp, r, layer, j, false);
+    const staging_ns = now(p.io) - staging0;
     const members_h: []i32 = @alignCast(std.mem.bytesAsSlice(i32, dp.hbytes(hl.members, pairs * 4)));
     const items_h: []i32 = @alignCast(std.mem.bytesAsSlice(i32, dp.hbytes(hl.items, 3 * pk.maxItems(pairs, table_n) * 4)));
     const counts = build(dp, host_picks, members_h, items_h);
@@ -1198,12 +1202,10 @@ fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), l
     try upload(st, dp.dptr(dp.lay.items), std.mem.sliceAsBytes(items_h[0 .. 3 * counts.items]));
     const t2 = now(p.io);
     stats.host_wait_ns += @intCast(t1 - t0);
-    stats.plan_ns += @intCast(t2 - t1);
+    stats.plan_ns += @intCast(t2 - t1 - staging_ns);
     stats.members += counts.members;
-    const copies0 = r.stats.copies;
     const l = pool.tables();
     // the first two passes' copies, then each pass: the next pass's copies, the gate, the kernel, the release
-    for (0..@min(2, dp.n_passes)) |j| try loadPass(dp, r, layer, j, false);
     for (dp.passes[0..dp.n_passes], 0..) |ps, j| {
         if (j + 2 < dp.n_passes) try loadPass(dp, r, layer, j + 2, true);
         try loadPass(dp, r, layer, j, false);
