@@ -97,6 +97,14 @@ The existing CPU EXL3 helper fully dequantizes into FP64 and is an oracle, not a
 CPU trial must compute real packed experts, preserve CUDA numerics, and beat the GPU miss path end-to-end on a
 graph/paging workload; no expert may be skipped or approximated.
 
+A 128-row dense-prompt kernel prototype was also tested directly on the RTX 5060 Ti. Its GPU fixture passed exact
+output, FP32/BF16, tail and memory-guard checks across all four traced projection shapes; the candidate used 128
+registers and 34,816 bytes of shared memory with no local spill. However, paired timings (seven samples, 32 launches
+per window, eager and graph, warm and rotating weights) were slower than the existing 64-row tile on every shape:
+about 1.01× to 1.31× its latency. It is rejected and is not integrated or pushed. Reusing more decoded weights per
+CTA increased pressure enough to erase the expected benefit. A 64-row activation-pipeline alternative remains a
+prototype investigation; no dense-kernel speedup is claimed.
+
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),
