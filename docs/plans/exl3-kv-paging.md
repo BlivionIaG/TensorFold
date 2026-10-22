@@ -433,6 +433,19 @@ SHA-256 and synced atomic replacement protect the last good profile. Missing/cor
 errors fall back cold or warn; GPU warm-copy failures fail startup. There is no per-token disk I/O or synchronization.
 An abrupt kill can lose updates since the previous save; power-loss durability of the directory rename is not promised.
 
-Focused host tests cover rank/model mismatch, corruption and injected IO failures, lock contention, decay,
-nonduplicating saves, planner ownership and copy-completion ordering. Native restart and hardware placement
-qualification are tracked separately; the profile does not relax any BF16 paging, graph or golden-fidelity gate.
+Validation: 211 EXL3 host tests and native compilation pass; 15 focused persistence/lifecycle tests pass in Debug
+and ReleaseSafe on Linux. The source `53ef5037` CUDA fixture passes on both cards with real copied bytes/tables,
+device-learned counts, rank isolation and pool-size changes (10 to 23 lines).
+
+Native source `babc9762e2dbc999c9b68df252d619830203d693`, binary SHA-256
+`86a7b20b6bac2bc5b2b78f9c89654a21cd1c0bd2ad9e6806ee1dc70abe110907`, passes two fresh-process TP2 runs with
+MTP, graphs and shared BF16 paging: two waves of two concurrent 1,024-input/64-output requests per process,
+prefix retention disabled. Both ranks save, reload, warm and update their profiles; all response hashes match
+across restart. Startup warms 1,568 rank-0 and 2,304 rank-1 lines inside the fixed 32/48-line pools. Saved decoder
+totals after restart equal the decayed prior plus a fresh observation total on each rank, not a doubled prior.
+The harness signals the HTTP leader and lets its TP stop protocol release the follower; killing both processes
+directly is not graceful follower shutdown. Existing shutdown allocator warnings are not a clean-teardown claim.
+
+Routed-bank fingerprinting costs about 16.6 seconds per rank at startup in this gate. No profile throughput gain,
+deep-prefill histogram persistence, long-context capacity or independent model fidelity is established by this test.
+The profile does not relax any BF16 paging, graph or golden-fidelity gate.
