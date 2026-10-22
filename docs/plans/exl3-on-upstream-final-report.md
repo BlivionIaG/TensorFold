@@ -110,6 +110,29 @@ and beat the current GPU miss route end-to-end. Start with sparse decode misses,
 expert is reused across many rows); never skip or approximate a routed expert. If RAM bandwidth is already occupied
 by KV paging, CPU execution may make things worse.
 
+## Decode critical-path profile and next kernel experiment
+
+An Nsight Systems trace from the current tree (`a939413c`, with the inspected EXL3 linear, expert and TP2 collective
+sources unchanged from `5a94359c`) measured 64 warmed single-token rounds and 64 four-row verification windows.
+The short-context single-token phase averaged 23.10 ms/round, with about 22.01 ms between first and last GPU kernels;
+the verification windows averaged 38.73 ms. These test-harness intervals exclude MTP draft generation/acceptance.
+Although KV paging was configured, the trace contained no `kvp_*` fetch kernels, so it does not characterize long-
+context paging misses.
+
+The largest active decode costs were approximately 5.7 ms/round in dense EXL3 projections and 4.3 ms in BF16 HC
+matrix products. The repeated `tf_exl3_linear_10_2_8` launch (K=2560, N=10240, 5-bit mul1, one row) used 80 CTAs,
+256 threads and 147 registers/thread, at roughly 69 us per call across 36 calls/round. A kernel-only experiment
+will keep launch geometry, MMA, split/reduction and rounding unchanged while disabling weight prefetch, then measure
+rotating-weight graph replay plus four-row exact parity. This tests whether prefetch register pressure helps or
+hurts; no result is claimed yet.
+
+Per-rank mapped-copy kernels occupied 2.11/2.58 ms per round, grouped expert kernels 2.25/2.67 ms, while all-reduce
+kernel sums were 3.60 ms on rank 0 and 2.66 ms on rank 1. This suggests rank waiting/imbalance, but does not isolate
+NCCL transport. Recorded H2D DMA was only about 349 KB / 0.19 ms during the single-token phase because mapped
+expert loads occur inside kernels; those DMA counters do not establish PCIe saturation. Even halving both dense
+EXL3 and HC active time would indicate only roughly 1.3× before secondary effects. The 2× objective therefore
+requires a combined system-level improvement; no single bottleneck or current optimization proves it.
+
 A 128-row dense-prompt kernel prototype was also tested directly on the RTX 5060 Ti. Its GPU fixture passed exact
 output, FP32/BF16, tail and memory-guard checks across all four traced projection shapes; the candidate used 128
 registers and 34,816 bytes of shared memory with no local spill. However, paired timings (seven samples, 32 launches
@@ -284,8 +307,9 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 6. Margin study for the golden near-tie and for the head split (needs logprobs from the server).
 7. Spread the MTP head across both ranks (rank 1 idles about 28% with drafts on); split the replicated dense
    work to speed up prefill at tp=2.
-8. Optional later: exact same-layer CPU execution of low-weight pool misses (AVX2 on the EPYC 7452); design notes
-   and the KTransformers review are in the session record, nothing is built.
+8. The single-core materializing F64/AVX2 prototype is rejected (2.35 s/expert). A fused packed CPU expert path
+   remains unbuilt; only reopen it after the CUDA kernel experiments and only if a bounded CUDA-semantics-correct
+   cold-decode test beats the GPU miss route end-to-end without harming BF16 paging. Never omit routed experts.
 9. Split this branch into reviewable PRs after the TP=2 graph gates pass.
 
 ## Branch map
