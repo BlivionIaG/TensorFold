@@ -59,6 +59,23 @@ translate into measured end-to-end speed. The score-grid bucket implementation i
 from the source tree. This result rules out this bucketing approach as a meaningful performance step; it does not
 close the separate shared-snapshot/prefill-replay correctness gate.
 
+## 2026-10-23 MTP verify-best ABBA
+
+An exclusive TP=2 HTTP ABBA (`TF_FLASHNEXT_EXL3_VERIFY_BEST` unset/on/on/unset) tested the existing default-off
+path that moves each verify row's top-1 selection and asynchronous record copy into the verify tail, avoiding a
+second selection in `draws`. Both RTX 5060 Ti cards ran the same binary
+(`e3bf1015f9e0d1847d83f5b651bdabefa48c5ecfc0c45d665e7c5197da6827e3`), 8,192 real-text prompt IDs, 512-token
+outputs, TP=2, `--parallel 2`, CUDA graphs, shared BF16 KV paging, 38 expert lines, and no prompt cache. Each leg
+discarded warm-up requests and measured two plain and two drafted requests. Drafted requests actually proposed 522
+tokens and accepted 403 on every leg; undrafted requests proposed/accepted none. Every output had the same full token
+hash `600815b14b64d917c86eebf8279154089d014500a6d213246692cf86d918680f`.
+
+Mean prefill was 5.1738 s with the option off and 5.1771 s on (0.06% slower). Undrafted decode was 26.960 versus
+26.950 tok/s (-0.04%); drafted decode was 25.261 versus 25.259 tok/s (-0.01%). This is no measurable improvement;
+leave the option off by default. Graph logs show stable main-round replay, but reported zero MTP-chain graph captures
+in this workload despite the accepted drafts, so this run does not establish that the draft chain itself was graphed.
+Determine why chain capture is bypassed or undercounted before using drafted graph results as proof of graph speed.
+
 ## 2026-10-20 upstream-main integration and release checks
 
 The merge resolves the shared Flash Next hooks against current upstream `main`. On par1-cs13, Zig 0.17
