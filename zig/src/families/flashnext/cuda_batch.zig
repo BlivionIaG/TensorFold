@@ -434,10 +434,17 @@ pub fn Pass(comptime Tri: type) type {
 
         /// moeBlock, keeping its input, experts and weights.
         pub fn moeBlockKeep(self: *Self, lw: *const Layer, keep: LayerKeep) !void {
-            if (lw.exl3) |x| return exl3_pass.moe(self, lw, x);
             const s = self.s;
             const n = self.rows;
             const pairs = n * slots;
+            if (lw.exl3) |x| {
+                if (x.needsPool()) return error.Exl3PoolNotAttached;
+                if (keep.moe_x != 0) try self.copy(keep.moe_x, s.mixed, n * dims * 2);
+                try exl3_pass.moe(self, lw, x);
+                if (keep.moe_ids != 0) try self.copy(keep.moe_ids, s.picks, pairs * 4);
+                if (keep.moe_wts != 0) try self.copy(keep.moe_wts, s.wts, pairs * 4);
+                return;
+            }
             try self.copy(keep.moe_x, s.mixed, n * dims * 2);
             try self.tri.routerMany(s.mixed, lw.router.ptr, s.router_l, dims, n);
             try self.tri.topkMany(s.router_l, s.picks, s.wts, n);
