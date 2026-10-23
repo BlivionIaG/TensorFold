@@ -43,8 +43,12 @@ const syn_dims = 256;
 const syn_width = 64;
 
 fn synPool(gpu: Gpu, routed: [][3][]const u8, lines: usize, max_rows: usize) !fpool.Pool {
+    return synPoolAt(gpu, routed, lines, max_rows, 0);
+}
+
+fn synPoolAt(gpu: Gpu, routed: [][3][]const u8, lines: usize, max_rows: usize, layer: u8) !fpool.Pool {
     return fpool.Pool.init(gpu.gpa, gpu.io, gpu.d, .{ .routed = routed }, .{ .suh_g = 0, .suh_u = 0, .svh_g = 0, .svh_u = 0, .suh_d = 0, .svh_d = 0 }, .{
-        .layer = 0,
+        .layer = layer,
         .lines = lines,
         .dims = syn_dims,
         .width = syn_width,
@@ -81,9 +85,12 @@ fn planCase(gpu: Gpu, lines: usize, max_rows: usize, rounds: usize, seed: u64) !
     defer host.deinit();
     var dev = try synPool(gpu, routed, lines, max_rows);
     defer dev.deinit();
+    var auxiliary = try synPoolAt(gpu, routed, lines + 7, max_rows, 1);
+    defer auxiliary.deinit();
+    auxiliary.counts[1][511] = 1234;
     var s = try cuda.Stream.init(gpu.d, true);
     defer s.deinit();
-    var pools = [_]*fpool.Pool{&dev};
+    var pools = [_]*fpool.Pool{ &dev, &auxiliary };
     const dp = try dplan.DevPlan.init(a, gpu.d, &pools);
     defer dp.deinit();
     var picks_dev = try cuda.DeviceBuffer.alloc(gpu.d, max_rows * 11 * 4);
@@ -125,6 +132,7 @@ fn planCase(gpu: Gpu, lines: usize, max_rows: usize, rounds: usize, seed: u64) !
     try s.synchronize();
     try host.lines.drain();
     try dp.toHost();
+    try check.expect(auxiliary.counts[1][511] == 1234, "ragged planner state overwrote the adjacent pool histogram", .{});
     // residency, stamps, counts
     var same_lines: usize = 0;
     for (host.slots_tab, dev.slots_tab, host.stamp_tab, dev.stamp_tab) |hs, ds, ht, dt| same_lines += @intFromBool(hs == ds and ht == dt);

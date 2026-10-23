@@ -31,6 +31,20 @@ pub fn stateWords(lines: usize) usize {
     return 2 * lines + 2 * experts_n + misc_words;
 }
 
+pub fn stateOffsets(gpa: std.mem.Allocator, line_counts: []const usize) ![]usize {
+    const offsets = try gpa.alloc(usize, line_counts.len + 1);
+    errdefer gpa.free(offsets);
+    offsets[0] = 0;
+    for (line_counts, 0..) |lines, i| offsets[i + 1] = try std.math.add(usize, offsets[i], stateWords(lines));
+    return offsets;
+}
+
+test "exl3: device planner state offsets support unequal pool sizes" {
+    const offsets = try stateOffsets(std.testing.allocator, &.{ 10, 17, 12 });
+    defer std.testing.allocator.free(offsets);
+    try std.testing.expectEqualSlices(usize, &.{ 0, stateWords(10), stateWords(10) + stateWords(17), stateWords(10) + stateWords(17) + stateWords(12) }, offsets);
+}
+
 /// The planned copies a round can hold: a row's ten routed picks each.
 fn workCap(max_rows: usize) usize {
     return max_rows * 10;
@@ -49,8 +63,7 @@ pub const DevPlan = struct {
     copy_fn: cuda.Function,
     restore_fn: cuda.Function,
     pools: []*pool_.Pool,
-    lines: usize,
-    words: usize,
+    state_offsets: []usize,
     /// Rows a planned round may hold: rows * 10 distinct experts must fit the lines.
     max_rows: usize,
     state: cuda.DeviceBuffer,
@@ -83,18 +96,22 @@ pub const DevPlan = struct {
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, pools: []const *pool_.Pool) !*DevPlan {
         if (!cuda.kernels.available) return error.BuiltWithoutKernels;
         if (pools.len == 0) return error.Invalid;
-        const lines = pools[0].opt.lines;
-        for (pools) |p| if (p.opt.lines != lines or p.lines.spec.experts < experts_n) return error.Invalid;
+        for (pools) |p| if (p.lines.spec.experts < experts_n) return error.Invalid;
         var mod = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_dplan);
         errdefer mod.unload();
         const dp = try gpa.create(DevPlan);
         errdefer gpa.destroy(dp);
-        const words = stateWords(lines);
+        const line_counts = try gpa.alloc(usize, pools.len);
+        defer gpa.free(line_counts);
+        for (pools, 0..) |p, i| line_counts[i] = p.opt.lines;
+        const state_offsets = try stateOffsets(gpa, line_counts);
+        errdefer gpa.free(state_offsets);
         const own = try gpa.dupe(*pool_.Pool, pools);
         errdefer gpa.free(own);
-        var state = try cuda.DeviceBuffer.alloc(d, pools.len * words * 4);
+        const total_words = state_offsets[state_offsets.len - 1];
+        var state = try cuda.DeviceBuffer.alloc(d, total_words * 4);
         errdefer state.free();
-        var mirror = try cuda.HostBuffer.alloc(d, pools.len * words * 4);
+        var mirror = try cuda.HostBuffer.alloc(d, total_words * 4);
         errdefer mirror.free();
         var statics = try cuda.DeviceBuffer.alloc(d, pools.len * static_bytes);
         errdefer statics.free();
@@ -138,8 +155,7 @@ pub const DevPlan = struct {
             .copy_fn = try mod.function("fn_exl3_dcopy"),
             .restore_fn = try mod.function("fn_exl3_drestore"),
             .pools = own,
-            .lines = lines,
-            .words = words,
+            .state_offsets = state_offsets,
             .max_rows = max_rows,
             .state = state,
             .mirror = mirror,
@@ -168,21 +184,24 @@ pub const DevPlan = struct {
         dp.state.free();
         dp.mod.unload();
         dp.gpa.free(dp.seen);
+        dp.gpa.free(dp.state_offsets);
         dp.gpa.free(dp.pools);
         dp.gpa.destroy(dp);
     }
 
     fn mirrorOf(dp: *DevPlan, i: usize) []u32 {
-        const all = std.mem.bytesAsSlice(u32, dp.mirror.bytes[0 .. dp.pools.len * dp.words * 4]);
-        return @alignCast(all[i * dp.words ..][0..dp.words]);
+        const all = std.mem.bytesAsSlice(u32, dp.mirror.bytes);
+        const start = dp.state_offsets[i];
+        const words = stateWords(dp.pools[i].opt.lines);
+        return @alignCast(all[start..][0..words]);
     }
 
     /// The host's residency up to the device, on `s` (a no-op if the device owns it). Waits for every pool's copies.
     pub fn toDevice(dp: *DevPlan, s: cuda.Stream) !void {
         dp.stream = s;
         if (dp.owner == .device) return;
-        const lines = dp.lines;
         for (dp.pools, 0..) |p, i| {
+            const lines = p.opt.lines;
             // copies in flight land, prefetched lines count as resident (the device knows no in-flight state)
             try p.lines.drain();
             for (p.line_tab, p.slots_tab) |*state, id| if (state.* == .inflight) {
@@ -217,9 +236,9 @@ pub const DevPlan = struct {
         if (dp.stream) |s| try s.synchronize();
         try dp.side.synchronize();
         try dp.d.check(dp.d.api.cuMemcpyDtoH_v2(dp.mirror.bytes.ptr, dp.state.ptr, dp.state.len), "cuMemcpyDtoH");
-        const lines = dp.lines;
         var overflow: u64 = 0;
         for (dp.pools, 0..) |p, i| {
+            const lines = p.opt.lines;
             const m = dp.mirrorOf(i);
             const line_id: []const i32 = @ptrCast(m[0..lines]);
             const stamp = m[lines .. 2 * lines];
@@ -265,9 +284,10 @@ pub const DevPlan = struct {
         if (dp.owner == .host) return t;
         if (dp.stream) |s| try s.synchronize();
         try dp.d.check(dp.d.api.cuMemcpyDtoH_v2(dp.mirror.bytes.ptr, dp.state.ptr, dp.state.len), "cuMemcpyDtoH");
-        for (dp.pools, 0..) |_, i| {
+        for (dp.pools, 0..) |p, i| {
+            const lines = p.opt.lines;
             const m = dp.mirrorOf(i);
-            const misc: *const Misc = @ptrCast(m[2 * dp.lines + 2 * experts_n ..][0..misc_words]);
+            const misc: *const Misc = @ptrCast(m[2 * lines + 2 * experts_n ..][0..misc_words]);
             inline for (.{ "rounds", "hit_slots", "miss_slots", "copies", "evictions", "overflow", "inplace" }) |f| @field(t, f) += @field(misc, f) - @field(dp.seen[i], f);
         }
         return t;
@@ -280,7 +300,7 @@ pub const DevPlan = struct {
         for (dp.pools, 0..) |candidate, index| {
             if (candidate != pool) continue;
             var observed: Misc = undefined;
-            const offset = (index * dp.words + 2 * dp.lines + 2 * experts_n) * 4;
+            const offset = (dp.state_offsets[index] + 2 * pool.opt.lines + 2 * experts_n) * 4;
             try dp.state.download(offset, std.mem.asBytes(&observed));
             try telemetry.add(telemetry.Device, &total, try telemetry.Device.pendingBounded(observed, dp.seen[index], dp.max_rows * 10));
             return total;
@@ -322,7 +342,7 @@ pub const DevPlan = struct {
     pub fn plan(dp: *DevPlan, s: cuda.Stream, i: usize, picks: u64, rows: usize) !void {
         if (rows == 0 or rows > dp.max_rows) return error.PoolPasses;
         const p = dp.pools[i];
-        const st = dp.state.ptr + i * dp.words * 4;
+        const st = dp.state.ptr + dp.state_offsets[i] * 4;
         const sb = dp.statics.ptr + i * static_bytes;
         const work = dp.work.ptr;
         const work_n = dp.work.ptr + workCap(dp.max_rows) * 9 * 8;
@@ -330,7 +350,7 @@ pub const DevPlan = struct {
         a.add(picks);
         a.add(@as(c_int, @intCast(rows * 11)));
         a.add(st);
-        a.add(@as(c_int, @intCast(dp.lines)));
+        a.add(@as(c_int, @intCast(p.opt.lines)));
         for (0..3) |w| a.add(p.lines.table(w));
         for (0..3) |w| a.add(p.lines.widths(w));
         a.add(sb);
@@ -374,8 +394,7 @@ pub fn enabled() bool {
     return @import("cuda_exl3_graph.zig").enabled();
 }
 
-/// The device planner over `layers`' pools (the decoder layers only), made once for `owner`; null when a layer has no
-/// pool (resident experts) or the pools differ in lines.
+/// The device planner over `layers`' pools (the decoder layers only), made once for `owner`; null when a layer has no pool.
 pub fn forLayers(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const anyopaque, layers: []const @import("cuda_prompt_load.zig").Layer) !?*DevPlan {
     if (global) |g| {
         if (global_owner == owner) return g;
@@ -394,7 +413,7 @@ pub fn forLayers(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const an
     }
     if (n == 0) return null;
     // the MTP layer's pool last (its own lifetime counts; the draft chain plans it on the device)
-    if (mtp_pool) |mp| if (mp.opt.lines == pools[0].opt.lines and n < pools.len) {
+    if (mtp_pool) |mp| if (n < pools.len) {
         pools[n] = mp;
         n += 1;
     };

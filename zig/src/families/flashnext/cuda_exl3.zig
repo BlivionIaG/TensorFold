@@ -42,4 +42,5 @@ test {
     _ = telemetry;
     _ = frequency;
     _ = @import("cuda_exl3_frequency_state.zig");
+    _ = @import("exl3_line_allocation.zig");
 }

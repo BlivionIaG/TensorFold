@@ -515,12 +515,42 @@ Separate opt-in telemetry runs with the same prompt fixture measured combined de
 and are used only for miss counts, not throughput. Decode graphs replayed in the throughput runs; this short fixture
 did not establish long-context KV-page misses, prefill-graph benefit, or two simultaneous live requests.
 
-The next miss-reduction candidate is a fixed-total per-layer line budget informed by these measurements, not a larger
-rank-wide allocation. The current device planner explicitly rejects pools whose `opt.lines` differ and sizes its device
-state with one shared line count; the prefill ring also builds offsets from each pool's line count. A correct allocator
-therefore requires variable-sized planner-state offsets and graph-safe launch/state handling, then an end-to-end memory
-ledger that preserves BF16 KV, graph scratch and the minimum pool floor. No heterogeneous line-budget policy is currently
-implemented or measured.
+The fixed-total per-layer line-budget candidate is now implemented. `exl3_line_allocation.zig` distributes extra lines
+by historical expert demand per byte, keeps the ten-line floor, and retains the explicit uniform-lines override. The
+CUDA planner now uses per-pool state offsets for ragged pools; the startup ledger accounts for each pool's actual line
+count. Synthetic device-planner parity passed on both cards at 10, 47 and 63 lines, and the EXL3 host suite passes.
+
+A rank-specific profile-seeded map was measured against a cold map on the same binary, with graphs enabled, TP=2,
+32,768-token configured context, `--parallel 1`, BF16 KV, no prompt cache, and sequential requests. Both telemetry gates
+covered 230 decode samples and 11,040 device-planner passes per rank. Telemetry includes boundary synchronization, so
+these figures are miss/copy evidence only, not throughput measurements.
+
+The tested model was `Qwen3.8-Flash-Next-exl3-3.05bpw` on both NVIDIA RTX 5060 Ti cards (sm_120). The native binary
+SHA-256 was `6da1082ba830286548e06d6f80911794ec45e1926568bbae9437d12fbaeaf3dc`; its source tree was based on
+`b51318cbd` plus the uncommitted changes described here. The separate uninstrumented ABBA used four 128-token
+benchmark requests per run; this was serial, one-stream traffic, not a concurrent-request or 200k test.
+
+| Rank | Cold misses / picks | Profile misses / picks | Miss rate | Logical mapped-copy payload |
+|---|---:|---:|---:|---:|
+| 0 | 2,082 / 54,882 | 0 / 54,882 | 3.79% → 0.00% | 3.84 GB → 0 GB |
+| 1 | 2,390 / 55,518 | 573 / 55,518 | 4.30% → 1.03% | 4.41 GB → 1.06 GB |
+| Combined | 4,472 / 110,400 | 573 / 110,400 | 4.05% → 0.52% | 8.24 GB → 1.06 GB |
+
+The combined decode pick-miss rate and logical copy payload fell 87.2% on this fixture. Pool budgets stayed at 6.50 GiB
+per rank; profile-based allocation varied from 66–110 lines on rank 0 and 62–103 on rank 1, versus 78–79 and 77–78
+without a profile. The profile warmed 3,752 and 3,702 lines respectively. An uninstrumented cold/profile/profile/cold
+ABBA with four 128-token benchmark requests per run, same graph-on configuration and output hash `2c5d814cfa80`, did
+not show a decode speedup: the two undrafted measurements averaged 46.24 tok/s cold versus 45.84 tok/s profiled
+(about 0.9% lower, within run variation). Miss reduction is demonstrated; performance improvement is not. Keep the
+profile opt-in, and validate with `--parallel 2` and concurrent requests before changing defaults.
+
+A prototype that halved each layer's frequency counts every 64 device-planned decode rounds was then tested with the
+same stale profile. It did not solve the regression: in uninstrumented cold/stale/stale/cold ABBA order,
+stale versus cold averaged 34.86 versus 35.37 tok/s undrafted (-1.4%) and 46.70 versus 47.78 drafted (-2.3%). A
+separate synchronized telemetry pair showed aggregate decode/verify misses of 13.05% cold versus 14.30% stale; rank 0
+improved (14.88% to 13.78%) while rank 1 worsened (11.27% to 14.80%). Outputs kept hash `2c5d814cfa80` and draft parity,
+but the candidate was removed. Global count aging is rejected; future work must diagnose the rank-asymmetric placement
+and change allocation using per-rank/per-layer evidence rather than a uniform decay.
 
 A profile from an older workload was also tested and regressed this fixture: misses rose to 19.50% on rank 0 and
 17.13% on rank 1; its uninstrumented ABBA averaged 1.7% lower undrafted and 4.0% lower drafted throughput than cold
@@ -538,7 +568,7 @@ on one card and at tp=2. Integration touches existing upstream files and adds ne
 | Area | What exists | Main files |
 |---|---|---|
 | Weights | EXL3 dense, shared, routed experts, 5-bit lm_head, PLE n-gram table read from the pack | `cuda_exl3_load.zig`, `cuda_exl3_store.zig`, `cuda_exl3_ple.zig` |
-| Expert offload | Per-layer device line pool fed from a pinned host bank; LRU plus use count; misses copied on a side stream | `cuda_exl3_pool.zig`, `exl3_offload.zig`, `exl3_round.zig` |
+| Expert offload | Per-layer device line pools fed from pinned host banks; LRU plus use count; misses copied on a side stream; opt-in rank-specific profiles redistribute a fixed VRAM budget by layer/expert demand | `cuda_exl3_pool.zig`, `exl3_offload.zig`, `exl3_round.zig`, `cuda_exl3_frequency_state.zig`, `exl3_line_allocation.zig`, `cuda_exl3_dplan.zig` |
 | tp=2 | Expert parallel: rank 0 routed 0-255 (+MTP head), rank 1 routed 256-511 + shared expert; one fp32 all-reduce per layer; per-rank pools and half-banks; vocabulary-split lm_head | `cuda_exl3_tp.zig`, `flashnext_exl3_tp.cu` |
 | Prefill | Expert-major deep chunks (thousands of rows), one ring of lines across all layers, 64-member tile kernel for the mul1 3-bit experts, tp=2 version with overlapped per-sub-block reduction, expert-major MTP head | `cuda_exl3_prefill*.zig`, `flashnext_exl3_prefill.cu` |
 | MTP | Draft rows, drafts with the prompt cache at tp=2, rank 1 keeps no head cache in its windows | `cuda_exl3_mtp.zig`, `cuda_rank_engine.zig` hooks |

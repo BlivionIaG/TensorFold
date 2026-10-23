@@ -58,6 +58,20 @@ pub fn plannerBytes(layers: u64, lines: u64, rows: u64) !u64 {
     return std.math.add(u64, try std.math.mul(u64, layers, per_layer), work);
 }
 
+pub fn plannerBytesRagged(layers: u64, lines: []const usize, rows: u64) !u64 {
+    if (@as(u64, @intCast(lines.len)) != layers) return error.Invalid;
+    var total_lines: u64 = 0;
+    for (lines) |count| total_lines = try std.math.add(u64, total_lines, count);
+    return std.math.add(u64, try plannerBytes(layers, 0, rows), try std.math.mul(u64, total_lines, 8));
+}
+
+test "exl3: ragged planner ledger matches base state plus each pool's actual line count" {
+    const lines = [_]usize{ 10, 17, 12 };
+    const expected = try plannerBytes(3, 0, 16) + (10 + 17 + 12) * 8;
+    try std.testing.expectEqual(expected, try plannerBytesRagged(3, &lines, 16));
+    try std.testing.expectError(error.Invalid, plannerBytesRagged(2, &lines, 16));
+}
+
 test "BF16 c1 c8 and graph on off preserve the requested stream bytes" {
     const bf16_stream: u64 = 262144 * 256 * 2;
     for ([_]u64{ 1, 8 }) |streams| {

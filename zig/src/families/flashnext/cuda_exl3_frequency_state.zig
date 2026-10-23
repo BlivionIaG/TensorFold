@@ -10,6 +10,8 @@ pub const State = struct {
     path: []u8,
     identity: codec.Identity,
     lock: std.Io.File,
+    prior: ?codec.Counts = null,
+    prior_loaded: bool = false,
 
     pub fn deinit(state: *State) void {
         state.lock.close(state.io);
@@ -28,6 +30,10 @@ pub const State = struct {
         };
         std.log.info("EXL3 placement profile rank {d}: saved decoder/MTP lifetime placement snapshot to {s}", .{ state.identity.rank, state.path });
     }
+
+    pub fn restore(state: *State, own: anytype) !bool {
+        return restorePools(state, own);
+    }
 };
 
 pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, own: anytype, world: u32, rank: u32) !?State {
@@ -39,7 +45,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, own: anytype, w
     }
     const layers = own.engine.layers[0..own.engine.n_layers];
     if (!available(layers)) {
-        std.log.warn("EXL3 placement profile rank {d}: unavailable decoder pools; persistence disabled", .{rank});
+        std.log.warn("EXL3 placement profile rank {d}: unavailable routed banks; persistence disabled", .{rank});
         return null;
     }
     const before = std.Io.Clock.awake.now(io).toNanoseconds();
@@ -53,7 +59,19 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, own: anytype, w
         return null;
     };
     errdefer state.deinit();
-    _ = try restore(&state, own);
+    state.prior = codec.read(gpa, io, state.path, state.identity) catch |err| blk: {
+        std.log.info("EXL3 placement profile rank {d}: cold start ({s})", .{ rank, @errorName(err) });
+        break :blk null;
+    };
+    state.prior_loaded = true;
+    if (state.prior) |*counts| {
+        if (counts.mtp_present != mtpHasPool(own.head)) {
+            std.log.warn("EXL3 placement profile rank {d}: cold start (MTP schema mismatch)", .{rank});
+            state.prior = null;
+        } else {
+            decay(counts);
+        }
+    }
     return state;
 }
 
@@ -96,16 +114,18 @@ fn openLock(io: std.Io, path: []const u8) !std.Io.File {
     return file;
 }
 
-fn restore(state: *State, own: anytype) !bool {
-    var counts = codec.read(state.gpa, state.io, state.path, state.identity) catch |err| {
-        std.log.warn("EXL3 placement profile rank {d}: cold start ({s})", .{ state.identity.rank, @errorName(err) });
-        return false;
+fn restorePools(state: *State, own: anytype) !bool {
+    if (state.prior_loaded and state.prior == null) return false;
+    const counts = state.prior orelse blk: {
+        var disk = codec.read(state.gpa, state.io, state.path, state.identity) catch |err| {
+            std.log.warn("EXL3 placement profile rank {d}: cold start ({s})", .{ state.identity.rank, @errorName(err) });
+            return false;
+        };
+        if (disk.mtp_present != (mtpPool(own.head) != null)) return false;
+        decay(&disk);
+        break :blk disk;
     };
-    if (counts.mtp_present != (mtpPool(own.head) != null)) {
-        std.log.warn("EXL3 placement profile rank {d}: cold start (MTP schema mismatch)", .{state.identity.rank});
-        return false;
-    }
-    decay(&counts);
+    if (!poolsAvailable(own.engine.layers[0..own.engine.n_layers])) return error.ProfileUnavailable;
     const layers = own.engine.layers[0..own.engine.n_layers];
     for (layers, 0..) |layer, index| {
         const pool = layer.exl3.?.pool.?;
@@ -124,10 +144,38 @@ fn available(layers: anytype) bool {
     if (layers.len != 48) return false;
     for (layers) |layer| {
         const experts = layer.exl3 orelse return false;
+        if (experts.bank == null or experts.routed.len == 0) return false;
+    }
+    return true;
+}
+
+test "exl3: placement history is readable before device pools attach" {
+    var mock: Mock = undefined;
+    mock.init();
+    for (&mock.experts) |*experts| experts.pool = null;
+    try std.testing.expect(available(&mock.engine.layers));
+    mock.experts[17].bank = null;
+    try std.testing.expect(!available(&mock.engine.layers));
+}
+
+fn poolsAvailable(layers: anytype) bool {
+    if (layers.len != 48) return false;
+    for (layers) |layer| {
+        const experts = layer.exl3 orelse return false;
         const pool = experts.pool orelse return false;
         if (pool.opt.layer >= 48) return false;
     }
     return true;
+}
+
+fn mtpExperts(head: anytype) @TypeOf(head.?.layer.exl3) {
+    const present = head orelse return null;
+    return present.layer.exl3;
+}
+
+fn mtpHasPool(head: anytype) bool {
+    const experts = mtpExperts(head) orelse return false;
+    return experts.bank != null;
 }
 
 fn mtpPool(head: anytype) @TypeOf(head.?.layer.exl3.?.pool) {
@@ -149,7 +197,7 @@ fn decayRow(row: *[512]u32) void {
 
 fn snapshot(own: anytype, planner: anytype) !codec.Counts {
     const layers = own.engine.layers[0..own.engine.n_layers];
-    if (!available(layers)) return error.ProfileUnavailable;
+    if (!poolsAvailable(layers)) return error.ProfileUnavailable;
     try own.stream.synchronize();
     if (planner) |current| {
         if (current.indexOf(layers[0].exl3.?.pool.?) != null) {
@@ -198,11 +246,11 @@ fn fingerprint(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, layers: anyt
         hashBytes(&hash, bytes);
     }
     hashBytes(&hash, "decoder-routed-trellis");
-    for (layers) |layer| hashRouted(&hash, layer.exl3.?.pool.?.src.routed);
-    if (mtpPool(head)) |pool| {
+    for (layers) |layer| hashRouted(&hash, layer.exl3.?.routed);
+    if (mtpExperts(head)) |experts| if (experts.bank != null) {
         hashBytes(&hash, "mtp-routed-trellis");
-        hashRouted(&hash, pool.src.routed);
-    }
+        hashRouted(&hash, experts.routed);
+    };
     return hash.finalResult();
 }
 
@@ -226,7 +274,7 @@ const MockPool = struct {
     }
 };
 
-const MockExperts = struct { pool: ?*MockPool };
+const MockExperts = struct { pool: ?*MockPool, bank: ?u8 = 1, routed: []const [3][]const u8 = &.{.{ "gate", "up", "down" }} };
 const MockLayer = struct { exl3: ?*MockExperts };
 const Mock = struct {
     decoder: [48][512]u32 = @splat(@splat(0)),
@@ -322,19 +370,19 @@ test "exl3: placement state cold IO and MTP mismatch never import or warm; CUDA 
     var mock: Mock = undefined;
     mock.init();
     var own = mock.owner(true);
-    try std.testing.expect(!try restore(&state, &own));
+    try std.testing.expect(!try restorePools(&state, &own));
     try std.Io.Dir.cwd().writeFile(io, .{ .sub_path = state.path, .data = "corrupt" });
-    try std.testing.expect(!try restore(&state, &own));
+    try std.testing.expect(!try restorePools(&state, &own));
     var counts: codec.Counts = .{};
     counts.decoder[0][1] = 123;
     try codec.write(allocator, io, state.path, state.identity, &counts);
-    try std.testing.expect(!try restore(&state, &own));
+    try std.testing.expect(!try restorePools(&state, &own));
     try std.testing.expectEqual(@as(u32, 0), mock.decoder[0][1]);
     try std.testing.expectEqual(@as(usize, 0), mock.pools[0].warm_calls);
     counts.mtp_present = true;
     try codec.write(allocator, io, state.path, state.identity, &counts);
     mock.pools[0].fail_warm = true;
-    try std.testing.expectError(error.MockCudaWarmFailure, restore(&state, &own));
+    try std.testing.expectError(error.MockCudaWarmFailure, restorePools(&state, &own));
     try std.testing.expectEqual(@as(u32, 61), mock.decoder[0][1]);
     mock.engine.n_layers = 47;
     try std.testing.expect(!available(mock.engine.layers[0..mock.engine.n_layers]));
@@ -357,7 +405,7 @@ test "exl3: placement state decay and replacement snapshot do not add imported p
     var mock: Mock = undefined;
     mock.init();
     var own = mock.owner(true);
-    try std.testing.expect(try restore(&state, &own));
+    try std.testing.expect(try restorePools(&state, &own));
     try std.testing.expectEqualSlices(u32, &.{ 0, 1, 1, 1, 2147483647 }, mock.decoder[0][0..5]);
     try std.testing.expectEqual(@as(u32, 4), mock.mtp[0][1]);
     for (mock.pools) |pool| try std.testing.expectEqual(@as(usize, 1), pool.warm_calls);
@@ -369,7 +417,7 @@ test "exl3: placement state decay and replacement snapshot do not add imported p
     try std.testing.expectEqual(@as(u32, 9), disk.decoder[0][1]);
     mock.init();
     own = mock.owner(true);
-    try std.testing.expect(try restore(&state, &own));
+    try std.testing.expect(try restorePools(&state, &own));
     try std.testing.expectEqual(@as(u32, 4), mock.decoder[0][1]);
     try std.testing.expectEqual(@as(u32, 3), mock.mtp[0][1]);
     const missing = try std.fs.path.join(allocator, &.{ root, "missing", "profile" });
@@ -424,9 +472,9 @@ test "exl3: placement fingerprint reads routed and metadata bytes, ignores pool 
     const original = try fingerprint(allocator, io, root, &mock.engine.layers, own.head);
     mock.pools[0].opt.lines = 23;
     try std.testing.expectEqual(original, try fingerprint(allocator, io, root, &mock.engine.layers, own.head));
-    mock.pools[47].src.routed = &.{.{ "changed gate", "up", "down" }};
+    mock.experts[47].routed = &.{.{ "changed gate", "up", "down" }};
     try std.testing.expect(!std.mem.eql(u8, &original, &(try fingerprint(allocator, io, root, &mock.engine.layers, own.head))));
-    mock.pools[47].src.routed = &.{.{ "gate", "up", "down" }};
+    mock.experts[47].routed = &.{.{ "gate", "up", "down" }};
     try temporary.dir.writeFile(io, .{ .sub_path = "config.json", .data = "changed config" });
     try std.testing.expect(!std.mem.eql(u8, &original, &(try fingerprint(allocator, io, root, &mock.engine.layers, own.head))));
     try temporary.dir.writeFile(io, .{ .sub_path = "config.json", .data = "config" });
@@ -436,7 +484,7 @@ test "exl3: placement fingerprint reads routed and metadata bytes, ignores pool 
     const drafting = mock.owner(true);
     const with_mtp = try fingerprint(allocator, io, root, &mock.engine.layers, drafting.head);
     try std.testing.expect(!std.mem.eql(u8, &original, &with_mtp));
-    mock.pools[48].src.routed = &.{.{ "changed mtp", "up", "down" }};
+    mock.experts[48].routed = &.{.{ "changed mtp", "up", "down" }};
     try std.testing.expect(!std.mem.eql(u8, &with_mtp, &(try fingerprint(allocator, io, root, &mock.engine.layers, drafting.head))));
 }
 

@@ -7,6 +7,8 @@ const wt = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_exl3_load.zig");
 const pool_ = @import("cuda_exl3_pool.zig");
 const dplan = @import("cuda_exl3_dplan.zig");
+const allocation = @import("exl3_line_allocation.zig");
+const frequency = @import("cuda_exl3_frequency.zig");
 const memory = @import("exl3_startup_memory.zig");
 
 const dims = wt.dims;
@@ -176,6 +178,8 @@ pub const Budget = struct {
     other: u64 = 0,
     /// Lines a layer, or null: from free memory (cuda_exl3_round.linesFor).
     lines: ?usize = null,
+    /// Decayed per-layer history, read before pool admission; null: start with uniform cold priors.
+    profile_counts: ?*const frequency.Counts = null,
     /// Rows a planned round holds (the pass's block of routed rows).
     max_rows: usize = moe_rows,
 };
@@ -216,7 +220,7 @@ test "EXL3 pool reserves the requested number of concurrent stream caches" {
     try std.testing.expectError(error.InvalidStreamCount, streamReservation(100, 0));
 }
 
-pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, free_after: u64 = 0, scratch_bytes: u64 = 0, graph_reservation: u64 = 0, after_pool_bytes: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0 };
+pub const Attached = struct { layers: usize = 0, lines: usize = 0, min_lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, free_after: u64 = 0, scratch_bytes: u64 = 0, graph_reservation: u64 = 0, after_pool_bytes: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0 };
 
 pub fn freeBytes(d: *const cuda.Driver) !u64 {
     var free: usize = 0;
@@ -226,8 +230,9 @@ pub fn freeBytes(d: *const cuda.Driver) !u64 {
 }
 
 /// The sizing hook (cuda_lanes_load.zig, once everything else of the family is allocated): reserves every EXL3
-/// scratch of `rows`-row passes, then gives each offloaded layer the same number of lines from what is free after
-/// `b.reserve` and `b.other`, with one lifetime use table shared by the decoder layers (the MTP layer keeps its own).
+/// scratch of `rows`-row passes, then assigns per-layer line counts from the free bytes after `b.reserve` and
+/// `b.other`, weighted by the saved per-layer expert histogram when available. Decoder layers share one lifetime use
+/// table; the MTP layer keeps its own.
 /// A no-op for a checkpoint without offloaded experts.
 pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cuda.Stream, layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, rows: usize, b: Budget) !Attached {
     var all: [wt.layers_n + 1]*load.Experts = undefined;
@@ -269,20 +274,48 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     const future = try std.math.add(u64, b.other, b.graph_reservation);
     const pool_room = try memory.available(free, reserve, future);
     const planner_fixed = if (b.planner_rows) |planner_rows| try memory.plannerBytes(n, 0, planner_rows) else 0;
-    const line_cost = try std.math.add(u64, out.line_bytes, if (b.planner_rows != null) 8 else 0);
     const all_fixed = try std.math.add(u64, fixed, planner_fixed);
-    const lines = b.lines orelse try pool_.linesFor(free, reserve, try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines);
-    if (lines < pool_.min_lines) return error.PoolTooSmall;
-    if (try memory.poolBytes(lines, line_cost, n, all_fixed) > pool_room) return error.InsufficientStartupMemory;
-    out.after_pool_bytes = if (b.planner_rows) |planner_rows| try memory.plannerBytes(n, lines, planner_rows) else 0;
-    out.lines = lines;
-    _ = gpa;
+    var demands = try gpa.alloc(allocation.Demand, n);
+    defer gpa.free(demands);
+    const zero_counts: [frequency.experts]u32 = @splat(0);
+    var total_line_bytes: u64 = 0;
+    var decoder_index: usize = 0;
+    for (all[0..n], 0..) |x, i| {
+        const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
+        const profile = b.profile_counts;
+        const counts = if (profile) |p| (if (is_mtp) &p.mtp else &p.decoder[decoder_index]) else &zero_counts;
+        const expert_line_bytes: u64 = x.lineBytes();
+        total_line_bytes = try std.math.add(u64, total_line_bytes, expert_line_bytes);
+        demands[i] = .{ .counts = counts, .line_cost = try std.math.add(u64, expert_line_bytes, if (b.planner_rows != null) 8 else 0) };
+        if (!is_mtp) decoder_index += 1;
+    }
+    var line_counts: []usize = undefined;
+    if (b.lines) |fixed_lines| {
+        if (fixed_lines < pool_.min_lines) return error.PoolTooSmall;
+        line_counts = try gpa.alloc(usize, n);
+        @memset(line_counts, fixed_lines);
+    } else {
+        line_counts = try allocation.allocate(gpa, demands, pool_room -| all_fixed, pool_.min_lines);
+    }
+    defer gpa.free(line_counts);
+    var allocated_pool_bytes = all_fixed;
+    out.min_lines = std.math.maxInt(usize);
+    out.lines = 0;
+    for (line_counts, demands) |count, demand| {
+        if (count < pool_.min_lines) return error.PoolTooSmall;
+        allocated_pool_bytes = try std.math.add(u64, allocated_pool_bytes, try std.math.mul(u64, count, demand.line_cost));
+        out.min_lines = @min(out.min_lines, count);
+        out.lines = @max(out.lines, count);
+    }
+    if (allocated_pool_bytes > pool_room) return error.InsufficientStartupMemory;
+    out.after_pool_bytes = if (b.planner_rows) |planner_rows| try memory.plannerBytesRagged(n, line_counts, planner_rows) else 0;
+    out.line_bytes = @intCast(total_line_bytes / @as(u64, @intCast(n)));
     // the first decoder layer's pool owns the lifetime use table the other decoder layers share
     var counts: ?*[pool_.shape.layers][pool_.shape.experts]u32 = null;
     var decoder: u8 = 0;
     for (all[0..n]) |x| {
         const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
-        try x.attach(io, d, if (is_mtp) 0 else decoder, lines, b.max_rows, if (is_mtp) null else counts);
+        try x.attach(io, d, if (is_mtp) 0 else decoder, line_counts[out.layers], b.max_rows, if (is_mtp) null else counts);
         if (is_mtp) dplan.mtp_pool = x.pool.?; // the draft head's experts plan on the device too (cuda_exl3_chain.zig)
         if (!is_mtp and counts == null) counts = x.pool.?.counts;
         if (!is_mtp) decoder += 1;
@@ -294,7 +327,7 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
         std.log.err("EXL3 pool reservation shortfall: free_before={d} free_after={d} pool_bytes={d} floor={d} allocator_margin={d} future={d} planner={d}", .{ free, out.free_after, out.device_bytes, reserve_floor, b.margin, future, out.after_pool_bytes });
         return err;
     };
-    std.log.info("flashnext exl3: {d} offloaded expert layers, {d} lines a layer of {d:.2} MiB ({d:.2} GiB on the device, {d:.2} GiB free before); pinned host bank {d:.2} GiB copied in {d:.1} s", .{ out.layers, out.lines, @as(f64, @floatFromInt(out.line_bytes)) / (1 << 20), @as(f64, @floatFromInt(out.device_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.free_before)) / (1 << 30), @as(f64, @floatFromInt(out.bank_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.bank_ns)) / 1e9 });
+    std.log.info("flashnext exl3: {d} offloaded expert layers, pool lines {d}..{d} (avg line {d:.2} MiB, {d:.2} GiB on device, {d:.2} GiB free before); pinned host bank {d:.2} GiB copied in {d:.1} s", .{ out.layers, out.min_lines, out.lines, @as(f64, @floatFromInt(out.line_bytes)) / (1 << 20), @as(f64, @floatFromInt(out.device_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.free_before)) / (1 << 30), @as(f64, @floatFromInt(out.bank_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.bank_ns)) / 1e9 });
     return out;
 }
 
