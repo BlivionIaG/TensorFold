@@ -115,6 +115,23 @@ captures or executable updates. The measured graph segment recorded 14,017 exper
 counters identify expert and KV miss frequency, not their exposed stall time. Graph replay correctness is confirmed;
 a decode graph speedup is not.
 
+## 2026-10-23 TP2 prefill reduction-overlap and chunk ABBA
+
+On fork source head `85df2b43d`, an exclusive four-leg ABBA compared the existing overlapped per-sub-block NCCL
+reduction path (default) against `TF_FLASHNEXT_EXL3_PREFILL_OVERLAP=0`. Both RTX 5060 Ti cards ran the same 8,192-row
+TP2 prefill with BF16 KV paging and prefill graphs enabled. Each leg replayed 72 dense-layer graphs, had zero eager
+fallbacks, and returned cross-rank logits hash `ffcf463b229c2aa6`. Rank wall times were 5,056.2/5,056.1 ms and
+5,059.2/5,059.2 ms with overlap on, versus 5,886.9/5,886.6 ms and 5,884.8/5,884.6 ms with overlap off. The paired
+means are 5,057.7 ms and 5,885.7 ms: overlap reduced latency 14.1% (16.4% more rows/s). Expert copies, passes and
+planning time were unchanged. This confirms the existing overlap implementation is valuable; it is not a new code
+change, a graph-on/off comparison, or a 2x result.
+
+A second four-leg ABBA on the same source and workload tested `TF_FLASHNEXT_CHUNK=2048` against the default 1,024.
+All legs passed graph/paging and output-hash checks. The 1,024-row legs averaged 5,055.6 ms; 2,048-row legs
+averaged 5,300.7 ms (4.85% higher latency). Reject this larger chunk setting for this 8k workload. This is
+consistent with the earlier 256-to-2,048 improvement being workload/starting-point specific; it does not justify
+globally increasing the current default.
+
 ## Cumulative performance context
 
 The earliest recorded one-row kernel/decode-step optimization reduced a test-harness decode step from 2.4–3.0 s to
