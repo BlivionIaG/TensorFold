@@ -769,6 +769,25 @@ the pool had 11 lines per layer on rank 0 and 29 on rank 1 (floor 10).
 12. `zig build test-cuda-host` fails on clean upstream v1.1.0 on macOS as well; `test-flashnext-exl3-host`
    passes. Upstream PR #1046, which touches our hook points, could not be read.
 
+## 2026-10-23 prefill-ring retention experiment
+
+A candidate that kept expert-slot mappings across deep-prefill chunk boundaries passed the EXL3 host suite (241 tests)
+and built natively, but it is rejected: it did not improve the measured workload. A single 4,096-token repeated-ID
+TP=2 request ran with CUDA graphs, prefill graph capture, BF16 KV paging, `--parallel 2`, prompt cache disabled, and
+cache telemetry enabled. Candidate and preserved baseline returned the same output hash (`e0a0df69a0265468`).
+Prefill time was 2.811 s candidate versus 2.817 s baseline (one diagnostic run each; not a throughput claim).
+The cache counters were identical: rank 0 had 224,792 miss picks and 20.37 GB requested ring DMA; rank 1 had
+246,059 miss picks and 20.69 GB. Baseline binary SHA-256 was `6da1082b…`; candidate SHA-256 was
+`7aa654e9…`. Since retaining mappings produced no observable miss or timing change, the candidate code was discarded.
+This synthetic repeated-ID test is not a representative quality or concurrency workload.
+
+In a second one-run screen on the same 4,096-token prompt, reducing the prefetch history margin from 16 experts to 0
+did not help. Output hash remained `e0a0df69a0265468`; prefill increased from 2.817 s to 2.847 s. Rank 0 miss picks
+rose 224,792→284,588 and rank 1 246,059→307,222, while requested ring DMA fell only 1.8% per rank. Each rank
+scheduled 536 more demand copies. The zero-margin candidate passed the host suite and built natively, but was
+discarded. This is a diagnostic screen, not a repeated throughput benchmark; retain the existing +16 margin pending a
+better predictor that reduces misses without exposing more demand copies.
+
 ## Next steps
 
 1. Meet the graph acceptance gate: reduce decode host boundaries (first target is MTP verify's redundant best-
