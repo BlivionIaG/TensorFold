@@ -601,6 +601,23 @@ sensitivity: the measured short 128-token c=2 decode gain is not general. Keep p
 should optimize online decode residency separately from prefill warmth, with per-layer/per-expert miss and exposed
 copy-time attribution, then validate using held-out prompts and longer c=2 traffic.
 
+## 2026-10-23 c=2 expert-profile convergence screen
+
+A same-binary, uninstrumented cold/profile/cold check ran on both RTX 5060 Ti cards with TP=2, CUDA graphs enabled,
+shared BF16 KV paging enabled, `--parallel 2`, prompt cache off, and two simultaneous requests for the same short
+two-prompt fixture (`ids16` and `The capital of France is`). Each request generated 256 tokens at 32k configured
+context. Both cold controls measured 32.9 aggregate tok/s; the refreshed c=2 profile measured 34.2 aggregate tok/s
+(+3.9% versus the cold controls). Each leg's output matched its alone and serial controls. This is a small, workload-
+specific result, not a general decode-speed claim; the prompts are short and do not exercise long-context KV misses.
+
+Separate synchronized telemetry runs used the same fixture and configuration for miss diagnosis. Decode pick misses
+were 19.91% cold, 19.90% with the earlier profile, and 19.02% after the c=2 profile had been updated from repeated
+traffic. Decode device copies fell from 48,731 to 46,567, with estimated mapped-copy payload falling from 83.65 to
+79.94 GiB (−4.4%). Telemetry runs are not used for throughput. This suggests learned rank-local placement can reduce
+decode copies modestly on repeated c=2 traffic, but the held-out 512-token result above still shows no generalization.
+Keep profiles opt-in; next test longer, diverse concurrent prompts and compare miss/copy changes with uninstrumented
+throughput before changing policy or defaults.
+
 ## 2026-10-23 exclude synthetic prefetches from expert history
 
 Code review found that deep-prefill's synthetic `fakePicks` were passed to `Pool.plan`, which called `offload.observe`
