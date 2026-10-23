@@ -47,6 +47,50 @@ class UsageTests(unittest.TestCase):
                 self.assertEqual(Evidence().finish(counts, {}, True)["cache_state"], "unverified")
         self.assertEqual(Evidence().finish(usage(), {}, False)["cache_state"], "unverified")
 
+
+class PromptFixtureTests(unittest.TestCase):
+    def load_json(self, value):
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as f:
+            json.dump(value, f)
+            f.flush()
+            return bench_concurrent.load_prompt_items(f.name)
+
+    def test_custom_text_and_token_prompts_are_named_without_echoing_contents(self):
+        rows = self.load_json(["long prompt one", "long prompt two"])
+        self.assertEqual([row["name"] for row in rows], ["fixture-0", "fixture-1"])
+        self.assertEqual([row["prompt"] for row in rows], ["long prompt one", "long prompt two"])
+        self.assertEqual(self.load_json([10, 20])[0]["prompt"], [10, 20])
+        self.assertEqual(self.load_json([[10], [20, 30]])[1]["prompt"], [20, 30])
+
+    def test_custom_prompt_loader_rejects_empty_and_invalid_token_arrays(self):
+        for value in [[], [""], [True], [-1], [0x100000000], [[1], []], {"prompt": "x"}]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.load_json(value)
+
+    def test_custom_mixed_cli_uses_fixtures_without_printing_prompt_text(self):
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as prompt_file:
+            json.dump(["private prompt one", "private prompt two"], prompt_file)
+            prompt_file.flush()
+            argv = ["bench_concurrent.py", "http://127.0.0.1:8080", "fixture", "--levels", "2", "--tokens", "4",
+                    "--reps", "1", "--mixed", "--alone", "--prompt-file", prompt_file.name]
+            requests = []
+
+            def mock_urlopen(request, timeout):
+                requests.append(json.loads(request.data))
+                return response(usage())
+
+            output = io.StringIO()
+            with patch.object(sys, "argv", argv), patch.object(bench_concurrent.urllib.request, "urlopen", mock_urlopen), \
+                    contextlib.redirect_stdout(output):
+                bench_concurrent.main()
+
+        sent_prompts = [body["prompt"] for body in requests]
+        self.assertEqual(len(requests), 5)
+        self.assertIn("private prompt one", sent_prompts)
+        self.assertIn("private prompt two", sent_prompts)
+        self.assertNotIn("private prompt one", output.getvalue())
+        self.assertNotIn("private prompt two", output.getvalue())
+
     def test_missing_and_malformed_hashes_never_pass_exactness(self):
         row = Evidence().finish(usage(), {}, True)
         self.assertIsNone(token_equal(row, row))

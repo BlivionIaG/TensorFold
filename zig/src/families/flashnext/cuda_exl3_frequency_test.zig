@@ -6,7 +6,9 @@ const io = std.testing.io;
 const identity: profile.Identity = .{ .model = @splat(0xa7), .world = 2, .rank = 1 };
 const header_bytes = 64;
 const checksum_bytes = 32;
-const decoder_file_bytes = header_bytes + 48 * 512 * 4 + checksum_bytes;
+const decoder_bytes = 48 * 512 * 4;
+const decoder_file_bytes = header_bytes + decoder_bytes + decoder_bytes + checksum_bytes;
+const legacy_decoder_file_bytes = header_bytes + decoder_bytes + checksum_bytes;
 
 fn profilePath(directory: Io.Dir) ![]u8 {
     const root = try directory.realPathFileAlloc(io, ".", allocator);
@@ -19,6 +21,9 @@ fn sample(counts: *profile.Counts, mtp_present: bool) void {
     for (&counts.decoder, 0..) |*layer, layer_index| for (layer, 0..) |*count, expert_index| {
         count.* = @intCast((layer_index + 1) * 100_000 + expert_index);
     };
+    for (&counts.prefill, 0..) |*layer, layer_index| for (layer, 0..) |*count, expert_index| {
+        count.* = @intCast((layer_index + 1) * 200_000 + expert_index);
+    };
     for (&counts.mtp, 0..) |*count, expert_index| count.* = @intCast(7_000_000 + expert_index);
     counts.decoder[0][0] = 0;
     counts.decoder[47][511] = std.math.maxInt(u32);
@@ -28,6 +33,9 @@ fn sample(counts: *profile.Counts, mtp_present: bool) void {
 fn expectCounts(expected: *const profile.Counts, actual: *const profile.Counts) !void {
     try std.testing.expectEqual(expected.mtp_present, actual.mtp_present);
     for (&expected.decoder, &actual.decoder) |*expected_layer, *actual_layer| {
+        try std.testing.expectEqualSlices(u32, expected_layer, actual_layer);
+    }
+    for (&expected.prefill, &actual.prefill) |*expected_layer, *actual_layer| {
         try std.testing.expectEqualSlices(u32, expected_layer, actual_layer);
     }
     if (expected.mtp_present) {
@@ -76,12 +84,40 @@ test "exl3: frequency full decoder and optional MTP round trip with private perm
         defer allocator.free(bytes);
         try std.testing.expectEqualSlices(u8, "TFEXL3FQ", bytes[0..8]);
         try std.testing.expectEqualSlices(u8, &identity.model, bytes[16..48]);
-        try std.testing.expectEqualSlices(u8, &.{ 1, 0, 0, 0 }, bytes[8..12]);
+        try std.testing.expectEqualSlices(u8, &.{ 2, 0, 0, 0 }, bytes[8..12]);
         try std.testing.expectEqualSlices(u8, &.{ 0, 0, 0, 0 }, bytes[64..68]);
         try std.testing.expectEqualSlices(u8, &.{ 0xa1, 0x86, 0x01, 0x00 }, bytes[68..72]);
         try std.testing.expectEqualSlices(u8, &.{ 0xff, 0xff, 0xff, 0xff }, bytes[64 + 48 * 512 * 4 - 4 ..][0..4]);
+        try std.testing.expectEqualSlices(u8, &.{ 0x40, 0x0d, 0x03, 0x00 }, bytes[64 + decoder_bytes ..][0..4]);
         try expectOnlyProfile(temporary.dir);
     }
+}
+
+test "exl3: legacy frequency profile restores decode history and starts prefill history empty" {
+    if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
+    var temporary = std.testing.tmpDir(.{});
+    defer temporary.cleanup();
+    const path = try profilePath(temporary.dir);
+    defer allocator.free(path);
+    var expected: profile.Counts = .{};
+    sample(&expected, false);
+    try profile.write(allocator, io, path, identity, &expected);
+    const current = try bytesAt(path);
+    defer allocator.free(current);
+    const legacy = try allocator.alloc(u8, legacy_decoder_file_bytes);
+    defer allocator.free(legacy);
+    @memcpy(legacy[0..header_bytes], current[0..header_bytes]);
+    std.mem.writeInt(u32, legacy[8..12], 1, .little);
+    @memcpy(legacy[header_bytes .. header_bytes + decoder_bytes], current[header_bytes .. header_bytes + decoder_bytes]);
+    const body_end = header_bytes + decoder_bytes;
+    const checksum: *[checksum_bytes]u8 = @ptrCast(legacy[body_end..].ptr);
+    std.crypto.hash.sha2.Sha256.hash(legacy[0..body_end], checksum, .{});
+    try temporary.dir.writeFile(io, .{ .sub_path = "frequency.bin", .data = legacy });
+    const restored = try profile.read(allocator, io, path, identity);
+    for (&expected.decoder, &restored.decoder) |*expected_layer, *restored_layer| {
+        try std.testing.expectEqualSlices(u32, expected_layer, restored_layer);
+    }
+    for (restored.prefill) |layer| for (layer) |count| try std.testing.expectEqual(@as(u32, 0), count);
 }
 
 test "exl3: frequency missing profile and every exact identity mismatch are recoverable" {
@@ -128,14 +164,14 @@ test "exl3: frequency rejects truncated oversized malformed and corrupt profiles
     const Mutation = struct { offset: usize, value: u8, expected: anyerror };
     for ([_]Mutation{
         .{ .offset = 0, .value = 0, .expected = error.MalformedProfile },
-        .{ .offset = 8, .value = 2, .expected = error.UnsupportedVersion },
+        .{ .offset = 8, .value = 3, .expected = error.UnsupportedVersion },
         .{ .offset = 12, .value = 2, .expected = error.MalformedProfile },
         .{ .offset = 56, .value = 47, .expected = error.MalformedProfile },
         .{ .offset = 60, .value = 1, .expected = error.MalformedProfile },
         .{ .offset = 16, .value = 0, .expected = error.ChecksumMismatch },
         .{ .offset = 48, .value = 3, .expected = error.ChecksumMismatch },
         .{ .offset = 64, .value = 1, .expected = error.ChecksumMismatch },
-        .{ .offset = 64 + 48 * 512 * 4, .value = 1, .expected = error.ChecksumMismatch },
+        .{ .offset = 64 + decoder_bytes, .value = 1, .expected = error.ChecksumMismatch },
         .{ .offset = profile.max_file_bytes - 1, .value = original[profile.max_file_bytes - 1] ^ 1, .expected = error.ChecksumMismatch },
     }) |mutation| {
         @memcpy(changed, original);

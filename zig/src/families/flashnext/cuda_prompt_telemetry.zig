@@ -4,11 +4,14 @@ const counters = cache.counters;
 
 pub const State = struct {
     enabled: bool = false,
+    expert_layers: bool = false,
     rank: counters.Rank = .{ .rank = 0, .world = 1 },
     forward_phase: counters.Phase = .unknown,
 
     pub fn fromEnv(rank: usize, world: usize) State {
-        const state: State = .{ .enabled = enabledFromEnv(), .rank = .{ .rank = rank, .world = world } };
+        const enabled = enabledFromEnv();
+        const layers = std.c.getenv("TF_FLASHNEXT_EXPERT_LAYER_TELEMETRY");
+        const state: State = .{ .enabled = enabled, .expert_layers = enabled and if (layers) |value| std.mem.eql(u8, std.mem.span(value), "1") else false, .rank = .{ .rank = rank, .world = world } };
         if (state.enabled) std.log.warn("EXL3-CACHE-SAMPLING v=1 rank={d} world={d} optin_boundary_sync=1 bytes=logical_payload_not_pcie", .{ rank, world });
         return state;
     }
@@ -96,7 +99,11 @@ pub fn failed(engine: anytype, phase: counters.Phase, failure: anyerror) void {
 }
 
 pub fn begin(engine: anytype, sequences: anytype, phase: counters.Phase, comptime complete: anytype) !?counters.Snapshot {
-    return beginWithSampler(engine, sequences, phase, complete, cache.sampleAfterConsumers);
+    return beginWithSampler(engine, sequences, phase, complete, sampleAfterConsumers);
+}
+
+fn sampleAfterConsumers(allocator: std.mem.Allocator, engine: anytype, mtp: anytype, sequences: anytype, rank: counters.Rank, completion: cache.Completion) !counters.Snapshot {
+    return cache.sampleAfterConsumersWithLayers(allocator, engine, mtp, sequences, rank, completion, engine.telemetry.expert_layers);
 }
 
 pub fn beginWithSampler(engine: anytype, sequences: anytype, phase: counters.Phase, comptime complete: anytype, comptime sample: anytype) !?counters.Snapshot {
@@ -112,7 +119,7 @@ pub fn beginWithSampler(engine: anytype, sequences: anytype, phase: counters.Pha
 }
 
 pub fn finish(engine: anytype, sequences: anytype, before: counters.Snapshot, phase: counters.Phase, rows: usize, comptime complete: anytype) !void {
-    return finishWithSampler(engine, sequences, before, phase, rows, complete, cache.sampleAfterConsumers, publish);
+    return finishWithSampler(engine, sequences, before, phase, rows, complete, sampleAfterConsumers, publish);
 }
 
 pub fn finishWithSampler(engine: anytype, sequences: anytype, before: counters.Snapshot, phase: counters.Phase, rows: usize, comptime complete: anytype, comptime sample: anytype, comptime emit: anytype) !void {
@@ -168,6 +175,7 @@ test "exl3: serving telemetry disabled adds no completion or readback and opt in
         }
     };
     var engine: Fake = .{ .gpa = std.testing.allocator };
+    engine.telemetry.expert_layers = true;
     try std.testing.expect((try beginWithSampler(&engine, null, .decode, Fake.complete, Fake.sample)) == null);
     try std.testing.expectEqual(@as(u64, 0), engine.completions);
     try std.testing.expectEqual(@as(u64, 0), engine.reads);

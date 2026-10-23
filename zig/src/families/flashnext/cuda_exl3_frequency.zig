@@ -10,10 +10,12 @@ pub const Identity = struct {
 
 pub const decoder_layers = 48;
 pub const experts = 512;
-pub const format_version: u32 = 1;
+pub const format_version: u32 = 2;
+const legacy_format_version: u32 = 1;
 
 pub const Counts = struct {
     decoder: [decoder_layers][experts]u32 = @splat(@splat(0)),
+    prefill: [decoder_layers][experts]u32 = @splat(@splat(0)),
     mtp: [experts]u32 = @splat(0),
     mtp_present: bool = false,
 };
@@ -21,8 +23,9 @@ pub const Counts = struct {
 const magic = "TFEXL3FQ";
 const header_bytes = 64;
 const decoder_bytes = decoder_layers * experts * @sizeOf(u32);
+const prefill_bytes = decoder_bytes;
 const mtp_bytes = experts * @sizeOf(u32);
-pub const max_file_bytes = header_bytes + decoder_bytes + mtp_bytes + Sha256.digest_length;
+pub const max_file_bytes = header_bytes + decoder_bytes + prefill_bytes + mtp_bytes + Sha256.digest_length;
 
 pub fn read(gpa: std.mem.Allocator, io: Io, path: []const u8, identity: Identity) !Counts {
     try validateIdentity(identity);
@@ -52,7 +55,7 @@ pub fn write(gpa: std.mem.Allocator, io: Io, path: []const u8, identity: Identit
     const basename = std.fs.path.basename(path);
     if (path.len == 0 or std.mem.endsWith(u8, path, "/") or
         std.mem.eql(u8, basename, ".") or std.mem.eql(u8, basename, "..")) return error.InvalidPath;
-    const length = header_bytes + decoder_bytes + (if (counts.mtp_present) @as(usize, mtp_bytes) else 0) + Sha256.digest_length;
+    const length = header_bytes + decoder_bytes + prefill_bytes + (if (counts.mtp_present) @as(usize, mtp_bytes) else 0) + Sha256.digest_length;
     const bytes = try gpa.alloc(u8, length);
     defer gpa.free(bytes);
     encode(bytes, identity, counts);
@@ -85,6 +88,10 @@ fn encode(bytes: []u8, identity: Identity, counts: *const Counts) void {
         putWord(bytes, offset, count);
         offset += 4;
     };
+    for (&counts.prefill) |*layer| for (layer) |count| {
+        putWord(bytes, offset, count);
+        offset += 4;
+    };
     if (counts.mtp_present) for (&counts.mtp) |count| {
         putWord(bytes, offset, count);
         offset += 4;
@@ -97,10 +104,11 @@ fn encode(bytes: []u8, identity: Identity, counts: *const Counts) void {
 fn decode(bytes: []const u8, identity: Identity) !Counts {
     if (bytes.len < header_bytes + Sha256.digest_length) return error.TruncatedProfile;
     if (!std.mem.eql(u8, bytes[0..8], magic)) return error.MalformedProfile;
-    if (getWord(bytes, 8) != format_version) return error.UnsupportedVersion;
+    const version = getWord(bytes, 8);
+    if (version != legacy_format_version and version != format_version) return error.UnsupportedVersion;
     const flags = getWord(bytes, 12);
     if (flags > 1 or getWord(bytes, 56) != decoder_layers or getWord(bytes, 60) != experts) return error.MalformedProfile;
-    const payload_end = header_bytes + decoder_bytes + (if (flags == 1) @as(usize, mtp_bytes) else 0);
+    const payload_end = header_bytes + decoder_bytes + (if (version >= format_version) @as(usize, prefill_bytes) else 0) + (if (flags == 1) @as(usize, mtp_bytes) else 0);
     const expected_length = payload_end + Sha256.digest_length;
     if (bytes.len < expected_length) return error.TruncatedProfile;
     if (bytes.len != expected_length) return error.MalformedProfile;
@@ -112,6 +120,10 @@ fn decode(bytes: []const u8, identity: Identity) !Counts {
     var counts: Counts = .{ .mtp_present = flags == 1 };
     var offset: usize = header_bytes;
     for (&counts.decoder) |*layer| for (layer) |*count| {
+        count.* = getWord(bytes, offset);
+        offset += 4;
+    };
+    if (version >= format_version) for (&counts.prefill) |*layer| for (layer) |*count| {
         count.* = getWord(bytes, offset);
         offset += 4;
     };

@@ -100,7 +100,10 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     if (own.graph_reservation != 0) std.log.info("flashnext rank {d}: lane admission protects full graph reservation {d} bytes; already materialized graphs remain charged in free memory, so admission conservatively reserves those bytes twice", .{ o.rank, own.graph_reservation });
     own.profile = try @import("cuda_exl3_frequency_state.zig").load(gpa, io, dir, own, @intCast(o.tp), @intCast(o.rank));
     errdefer if (own.profile) |*profile| profile.deinit();
-    if (own.profile) |*profile| pool_budget.profile_counts = if (profile.prior) |*counts| counts else null;
+    if (own.profile) |*profile| {
+        pool_budget.profile_counts = if (profile.prior) |*counts| counts else null;
+        pool_budget.profile_prefill_counts = &profile.prefill;
+    }
     const attached = try exl3_pass.attach(gpa, io, driver, own.stream, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, pool_budget);
     if (own.profile) |*profile| _ = try profile.restore(own);
     const ledger: memory.Ledger = .{

@@ -1170,7 +1170,7 @@ fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), l
         used += 1;
         r.counts[layer][id] +|= dp.cnt[id];
         const present = r.isLoaded(layer, id);
-        r.stats.observeDemand(present, dp.cnt[id]);
+        r.stats.observeDemand(layer, present, dp.cnt[id]);
         if (present) {
             held[n_held] = @intCast(id);
             n_held += 1;

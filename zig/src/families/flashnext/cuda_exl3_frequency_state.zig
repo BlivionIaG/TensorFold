@@ -11,6 +11,7 @@ pub const State = struct {
     identity: codec.Identity,
     lock: std.Io.File,
     prior: ?codec.Counts = null,
+    prefill: [codec.decoder_layers][codec.experts]u32 = @splat(@splat(0)),
     prior_loaded: bool = false,
 
     pub fn deinit(state: *State) void {
@@ -20,10 +21,11 @@ pub const State = struct {
     }
 
     pub fn save(state: *State, own: anytype) void {
-        const counts = snapshot(own, @import("cuda_exl3_dplan.zig").current()) catch |err| {
+        var counts = snapshot(own, @import("cuda_exl3_dplan.zig").current()) catch |err| {
             std.log.err("EXL3 placement profile rank {d}: unsafe snapshot skipped ({s})", .{ state.identity.rank, @errorName(err) });
             return;
         };
+        counts.prefill = state.prefill;
         codec.write(state.gpa, state.io, state.path, state.identity, &counts) catch |err| {
             std.log.warn("EXL3 placement profile rank {d}: save failed ({s})", .{ state.identity.rank, @errorName(err) });
             return;
@@ -70,6 +72,7 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, own: anytype, w
             state.prior = null;
         } else {
             decay(counts);
+            state.prefill = counts.prefill;
         }
     }
     return state;
@@ -186,6 +189,7 @@ fn mtpPool(head: anytype) @TypeOf(head.?.layer.exl3.?.pool) {
 
 fn decay(counts: *codec.Counts) void {
     for (&counts.decoder) |*layer| decayRow(layer);
+    for (&counts.prefill) |*layer| decayRow(layer);
     decayRow(&counts.mtp);
 }
 

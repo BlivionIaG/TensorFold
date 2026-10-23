@@ -180,6 +180,8 @@ pub const Budget = struct {
     lines: ?usize = null,
     /// Decayed per-layer history, read before pool admission; null: start with uniform cold priors.
     profile_counts: ?*const frequency.Counts = null,
+    /// Decayed per-layer prefill history, kept separate so long prompts cannot distort decode eviction.
+    profile_prefill_counts: ?*[frequency.decoder_layers][frequency.experts]u32 = null,
     /// Rows a planned round holds (the pass's block of routed rows).
     max_rows: usize = moe_rows,
 };
@@ -316,6 +318,7 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     for (all[0..n]) |x| {
         const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
         try x.attach(io, d, if (is_mtp) 0 else decoder, line_counts[out.layers], b.max_rows, if (is_mtp) null else counts);
+        if (!is_mtp) x.pool.?.prefill_counts = b.profile_prefill_counts;
         if (is_mtp) dplan.mtp_pool = x.pool.?; // the draft head's experts plan on the device too (cuda_exl3_chain.zig)
         if (!is_mtp and counts == null) counts = x.pool.?.counts;
         if (!is_mtp) decoder += 1;

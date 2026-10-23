@@ -44,6 +44,33 @@ PROMPTS = [
 ]
 
 
+def load_prompt_items(path: str) -> list[dict]:
+    """Load one or more completion prompts from JSON without echoing prompt contents in reports."""
+    with open(path, encoding="utf-8") as f:
+        value = json.load(f)
+
+    if isinstance(value, str):
+        prompts = [value]
+    elif isinstance(value, list) and value and all(isinstance(item, str) for item in value):
+        prompts = value
+    elif isinstance(value, list) and value and all(type(item) is int for item in value):
+        prompts = [value]
+    elif isinstance(value, list) and value and all(
+            isinstance(item, list) and item and all(type(token) is int for token in item) for item in value):
+        prompts = value
+    else:
+        raise ValueError("prompt_file_schema")
+
+    for prompt in prompts:
+        if isinstance(prompt, str):
+            if not prompt:
+                raise ValueError("empty_prompt")
+        elif any(token < 0 or token > 0xffffffff for token in prompt):
+            raise ValueError("invalid_token_id")
+    return [{"name": f"fixture-{index}", "kind": "completion", "prompt": prompt}
+            for index, prompt in enumerate(prompts)]
+
+
 def stream(base: str, model: str, item: dict, tokens: int, temperature: float, seed: int | None,
            draft: bool = True, gate: threading.Barrier | None = None, *, api_key: str | None = None) -> dict:
     try:
@@ -175,6 +202,7 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=1234)
     p.add_argument("--temperatures", default="1.0,0")
     p.add_argument("--mixed", action="store_true", help="request i takes prompt i %% 2 (sampled only)")
+    p.add_argument("--prompt-file", help="JSON string(s) or unsigned token-ID array(s) for custom completion prompts")
     p.add_argument("--alone", action="store_true",
                    help="check each reply's full token_sha256 against its request alone")
     p.add_argument("--serial", action="store_true", help="check the alone runs against \"draft\": false")
@@ -185,17 +213,23 @@ def main() -> None:
     p.add_argument("--api-key-env", metavar="NAME", help="read the bearer API key from this environment variable")
     args = p.parse_args()
     api_key = read_api_key(p, args.api_key_env)
+    prompts = PROMPTS
+    if args.prompt_file:
+        try:
+            prompts = load_prompt_items(args.prompt_file)
+        except (OSError, ValueError):
+            p.error("prompt file must contain a nonempty JSON string, string array, token-ID array, or token-ID arrays")
     if args.no_seed:
         args.alone = args.serial = False
     levels = [int(x) for x in args.levels.split(",")]
     temps = [1.0] if args.mixed else [float(t) for t in args.temperatures.split(",")]
-    cells = [None] if args.mixed else PROMPTS
+    cells = [None] if args.mixed else prompts
     report: dict = {"label": args.label, "tokens": args.tokens, "mixed": args.mixed, "cells": []}
     for temp in temps:
         for item in cells:
             specs: list[tuple[dict, int | None]]
             if args.mixed or item is None:
-                specs = [(PROMPTS[i % 2], args.seed + i // 2) for i in range(max(levels))]
+                specs = [(prompts[i % len(prompts)], args.seed + i // len(prompts)) for i in range(max(levels))]
             else:
                 specs = [(item, args.seed + i if temp > 0 else args.seed) for i in range(max(levels))]
             if args.no_seed:
@@ -208,8 +242,9 @@ def main() -> None:
                     if key not in alone:
                         alone[key] = stream(args.base, args.model, spec[0], args.tokens, temp, spec[1], api_key=api_key)
             if args.serial:
+                prompt_by_name = {prompt["name"]: prompt for prompt in prompts}
                 for key, ref in alone.items():
-                    serial = stream(args.base, args.model, next(q for q in PROMPTS if q["name"] == key[0]),
+                    serial = stream(args.base, args.model, prompt_by_name[key[0]],
                                     args.tokens, temp, key[1], draft=False, api_key=api_key)
                     ref["serial_equal"] = token_equal(serial, ref)
                     ref["serial_run"] = serial

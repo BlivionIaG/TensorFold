@@ -148,6 +148,27 @@ pub const KvSample = struct {
     }
 };
 
+pub const RoutedPicks = struct {
+    host_hit_picks: u64 = 0,
+    host_miss_picks: u64 = 0,
+    device_hit_picks: u64 = 0,
+    device_miss_picks: u64 = 0,
+};
+
+pub const ExpertLayer = struct {
+    layer: usize,
+    owner: u64,
+    picks: RoutedPicks,
+
+    pub fn delta(before: ExpertLayer, after: ExpertLayer) !RoutedPicks {
+        if (before.owner == 0 or before.owner != after.owner or before.layer != after.layer) return error.TelemetryOwnerChanged;
+        const picks = try difference(RoutedPicks, before.picks, after.picks);
+        _ = try std.math.add(u64, picks.host_hit_picks, picks.device_hit_picks);
+        _ = try std.math.add(u64, picks.host_miss_picks, picks.device_miss_picks);
+        return picks;
+    }
+};
+
 pub const Snapshot = struct {
     rank: Rank,
     scope: u64,
@@ -155,9 +176,11 @@ pub const Snapshot = struct {
     experts: Experts = .{},
     kv: []KvSample,
     expert_pools: usize = 0,
+    expert_layers: []ExpertLayer = &.{},
 
     pub fn deinit(snapshot: *Snapshot, allocator: std.mem.Allocator) void {
         allocator.free(snapshot.kv);
+        allocator.free(snapshot.expert_layers);
         snapshot.* = undefined;
     }
 };
@@ -181,6 +204,8 @@ pub const Report = struct {
     kv: Kv,
     expert_pools: usize = 0,
     kv_layers: usize = 0,
+    expert_layers_before: []const ExpertLayer = &.{},
+    expert_layers_after: []const ExpertLayer = &.{},
 
     pub fn write(report: Report, writer: *std.Io.Writer) !void {
         try report.header(writer, "expert");
@@ -189,6 +214,12 @@ pub const Report = struct {
         try report.header(writer, "bf16-kv");
         inline for (@typeInfo(Kv).@"struct".field_names) |field| try writer.print(" {s}={d}", .{ field, @field(report.kv, field) });
         try writer.writeByte('\n');
+        for (report.expert_layers_before, report.expert_layers_after) |before, after| {
+            const picks = try before.delta(after);
+            try writer.print("EXL3-EXPERT-LAYER v=1 rank={d} world={d} phase={s} rows={d} steps={d} layer={d} hit_picks={d} miss_picks={d}", .{ report.rank.rank, report.rank.world, @tagName(report.interval.phase), report.interval.model_rows, report.interval.steps, after.layer, try std.math.add(u64, picks.host_hit_picks, picks.device_hit_picks), try std.math.add(u64, picks.host_miss_picks, picks.device_miss_picks) });
+            inline for (@typeInfo(RoutedPicks).@"struct".field_names) |field| try writer.print(" {s}={d}", .{ field, @field(picks, field) });
+            try writer.writeByte('\n');
+        }
     }
 
     fn header(report: Report, writer: *std.Io.Writer, cache: []const u8) !void {
@@ -209,11 +240,13 @@ pub const Report = struct {
         if (before.ring_owner != 0 and before.ring_owner != after.ring_owner) return error.TelemetryOwnerChanged;
         if (interval.model_rows == 0 or interval.steps == 0) return error.TelemetryDenominator;
         if (interval.allow_initial_kv_reset and interval.phase != .prefill) return error.TelemetryKvReset;
+        if (before.expert_layers.len != after.expert_layers.len) return error.TelemetryOwnerChanged;
+        for (before.expert_layers, after.expert_layers) |first, last| _ = try first.delta(last);
         const experts = try difference(Experts, before.experts, after.experts);
         if (experts.device_overflow_plans != 0) return error.TelemetryExpertOverflow;
         var kv: Kv = .{};
         for (before.kv, after.kv) |first, last| try add(Kv, &kv, try first.delta(last, interval.allow_initial_kv_reset));
-        return .{ .rank = after.rank, .interval = interval, .experts = experts, .kv = kv, .expert_pools = after.expert_pools, .kv_layers = after.kv.len };
+        return .{ .rank = after.rank, .interval = interval, .experts = experts, .kv = kv, .expert_pools = after.expert_pools, .kv_layers = after.kv.len, .expert_layers_before = before.expert_layers, .expert_layers_after = after.expert_layers };
     }
 };
 

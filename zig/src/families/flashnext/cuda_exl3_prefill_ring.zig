@@ -19,6 +19,7 @@ const attribution_ = @import("cuda_exl3_prefill_attribution.zig");
 
 const layers_n = wt.layers_n;
 const routed_n = wt.experts_n;
+const zero_counts: [routed_n]u32 = @splat(0);
 const table_n = routed_n + 1;
 const batch_ring = 1024;
 const release_ring = 4096;
@@ -29,6 +30,24 @@ const batch_copies = 16;
 const snap_ring = 64;
 
 const SlotState = enum(u8) { free, pending };
+
+fn mergePrefillCounts(lifetime: *[layers_n][routed_n]u32, prefill: *const [layers_n][routed_n]u32) void {
+    for (lifetime, prefill) |*lifetime_layer, prefill_layer| {
+        for (lifetime_layer, prefill_layer) |*lifetime_count, prefill_count| lifetime_count.* +|= prefill_count;
+    }
+}
+
+pub const LayerStats = struct {
+    hit_picks: u64 = 0,
+    miss_picks: u64 = 0,
+    hit_expert_requests: u64 = 0,
+    miss_expert_requests: u64 = 0,
+    demand_copies: u64 = 0,
+    prefetch_copies: u64 = 0,
+    dma_requested_bytes: u64 = 0,
+    unused_copies: u64 = 0,
+    unused_requested_bytes: u64 = 0,
+};
 
 pub const Stats = struct {
     copies: u64 = 0,
@@ -42,15 +61,21 @@ pub const Stats = struct {
     release_waits: u64 = 0,
     compute_waits: u64 = 0,
     reseeded: u64 = 0,
+    by_layer: [layers_n]LayerStats = @splat(.{}),
 
-    pub fn observeDemand(stats: *Stats, present: bool, picks: u32) void {
+    pub fn observeDemand(stats: *Stats, layer: usize, present: bool, picks: u32) void {
         if (picks == 0) return;
+        const layer_stats = &stats.by_layer[layer];
         if (present) {
             stats.hit_picks += picks;
             stats.hit_expert_requests += 1;
+            layer_stats.hit_picks += picks;
+            layer_stats.hit_expert_requests += 1;
         } else {
             stats.miss_picks += picks;
             stats.miss_expert_requests += 1;
+            layer_stats.miss_picks += picks;
+            layer_stats.miss_expert_requests += 1;
         }
     }
 };
@@ -221,8 +246,8 @@ pub const Ring = struct {
         try r.closeBatch();
         for (r.state, r.owner, 0..) |*st, *ow, index| {
             if (st.* == .pending) {
-                r.stats.wasted += 1;
-                if (r.attribution) |*state| state.unused(index);
+                const owner = ow.* - 1;
+                r.markUnused(owner >> 16, owner & 0xffff, index);
             }
             st.* = .free;
             ow.* = 0;
@@ -234,6 +259,15 @@ pub const Ring = struct {
                 r.ptrEntry(l, w, id).* = 0;
             };
         }
+    }
+
+    fn markUnused(r: *Ring, layer: usize, id: usize, slot_index: usize) void {
+        const source = r.pools[layer].src.routed[id];
+        const bytes = source[0].len + source[1].len + source[2].len;
+        r.stats.wasted += 1;
+        r.stats.by_layer[layer].unused_copies += 1;
+        r.stats.by_layer[layer].unused_requested_bytes += bytes;
+        if (r.attribution) |*state| state.unused(slot_index);
     }
 
     /// After a prefill: every pool empty (policy state, routed table entries), the device idle; then, with `reseed`,
@@ -255,8 +289,10 @@ pub const Ring = struct {
             @memset(p.lines.line_pending, false);
             @memset(p.lines.line_epoch, 0);
         }
-        if (!reseed) return;
-        for (r.pools, 0..) |p, l| {
+        if (r.attribution != null) for (r.stats.by_layer, 0..) |layer, index| {
+            std.log.warn("EXL3-PREFILL-LAYER v=1 layer={d} hit_picks={d} miss_picks={d} demand_copies={d} prefetch_copies={d} dma_requested_bytes={d} unused_copies={d} unused_requested_bytes={d}", .{ index, layer.hit_picks, layer.miss_picks, layer.demand_copies, layer.prefetch_copies, layer.dma_requested_bytes, layer.unused_copies, layer.unused_requested_bytes });
+        };
+        if (reseed) for (r.pools, 0..) |p, l| {
             var order: [routed_n]u16 = undefined;
             var n: usize = 0;
             for (0..routed_n) |id| {
@@ -279,13 +315,17 @@ pub const Ring = struct {
             const picks = fake[0 .. rows * p.opt.slots];
             @memset(picks, -1);
             for (order[0..take], 0..) |id, i| picks[i] = id;
-            const rd = try p.plan(picks, rows);
+            const rd = try p.planUnobserved(picks, rows);
             // the pool's copy stream does the copies; the ring's stream takes the gates and the release
             for (0..rd.n_passes) |j| {
                 try p.stage(rd, j, r.copy);
                 try p.release(rd, j, r.copy);
             }
             r.stats.reseeded += rd.misses_();
+        };
+        if (r.pools[0].prefill_counts) |history| {
+            mergePrefillCounts(history, &r.counts);
+            for (&r.counts) |*layer_counts| @memset(layer_counts, 0);
         }
     }
 
@@ -380,6 +420,13 @@ pub const Ring = struct {
         r.open_n += 1;
         r.stats.copies += 1;
         r.stats.dma_requested_bytes += src[0].len + src[1].len + src[2].len;
+        const layer_stats = &r.stats.by_layer[layer];
+        if (source == .demand) {
+            layer_stats.demand_copies += 1;
+        } else {
+            layer_stats.prefetch_copies += 1;
+        }
+        layer_stats.dma_requested_bytes += src[0].len + src[1].len + src[2].len;
         if (r.attribution) |*state| state.copied(k, source, src[0].len + src[1].len + src[2].len);
         return true;
     }
@@ -428,8 +475,7 @@ pub const Ring = struct {
             if (r.state[ku] == .pending) {
                 r.state[ku] = .free;
                 r.pending_n -= 1;
-                r.stats.wasted += 1;
-                if (r.attribution) |*state| state.unused(ku);
+                r.markUnused(layer, id, ku);
             }
         }
     }
@@ -453,14 +499,17 @@ pub const Ring = struct {
         const Ctx = struct {
             a: *const [routed_n]u32,
             b: *const [routed_n]u32,
+            c: *const [routed_n]u32,
             fn hotter(c: @This(), x: u16, y: u16) bool {
                 if (c.a[x] != c.a[y]) return c.a[x] > c.a[y];
                 if (c.b[x] != c.b[y]) return c.b[x] > c.b[y];
+                if (c.c[x] != c.c[y]) return c.c[x] > c.c[y];
                 return x < y;
             }
         };
         const p = r.pools[layer];
-        std.mem.sort(u16, order[0..n], Ctx{ .a = &r.counts[layer], .b = &p.counts[p.opt.layer] }, Ctx.hotter);
+        const prefill_prior = if (p.prefill_counts) |counts| &counts[layer] else &zero_counts;
+        std.mem.sort(u16, order[0..n], Ctx{ .a = &r.counts[layer], .b = prefill_prior, .c = &p.counts[p.opt.layer] }, Ctx.hotter);
         var queued: usize = 0;
         for (order[0..n]) |id| {
             if (have + queued == want or r.room() <= keep_free) break;
@@ -491,6 +540,36 @@ test "exl3: a ring slot takes an expert only if each projection fits its line's 
     try std.testing.expect(fits(room, .{ big[0..256], big[0..300], big[0..10] }));
     try std.testing.expect(!fits(room, .{ big[0..300], big[0..10], big[0..10] }));
     try std.testing.expect(fits(room, .{ &.{}, &.{}, &.{} }));
+}
+
+test "exl3: ring demand counters attribute misses and hits to their decoder layer" {
+    var stats: Stats = .{};
+    stats.observeDemand(7, true, 12);
+    stats.observeDemand(7, false, 3);
+    stats.observeDemand(9, false, 0);
+    try std.testing.expectEqual(@as(u64, 12), stats.by_layer[7].hit_picks);
+    try std.testing.expectEqual(@as(u64, 3), stats.by_layer[7].miss_picks);
+    try std.testing.expectEqual(@as(u64, 1), stats.by_layer[7].hit_expert_requests);
+    try std.testing.expectEqual(@as(u64, 1), stats.by_layer[7].miss_expert_requests);
+    try std.testing.expectEqual(@as(u64, 0), stats.by_layer[9].miss_expert_requests);
+    try std.testing.expectEqual(stats.hit_picks, stats.by_layer[7].hit_picks);
+    try std.testing.expectEqual(stats.miss_picks, stats.by_layer[7].miss_picks);
+}
+
+test "exl3: prefill observations merge once into persistent lifetime counts with saturation" {
+    var lifetime: [layers_n][routed_n]u32 = @splat(@splat(0));
+    var prefill: [layers_n][routed_n]u32 = @splat(@splat(0));
+    lifetime[0][7] = 5;
+    lifetime[1][9] = std.math.maxInt(u32) - 2;
+    prefill[0][7] = 3;
+    prefill[1][9] = 10;
+    prefill[47][511] = 4;
+
+    mergePrefillCounts(&lifetime, &prefill);
+    try std.testing.expectEqual(@as(u32, 8), lifetime[0][7]);
+    try std.testing.expectEqual(std.math.maxInt(u32), lifetime[1][9]);
+    try std.testing.expectEqual(@as(u32, 4), lifetime[47][511]);
+    try std.testing.expectEqual(@as(u32, 3), prefill[0][7]);
 }
 
 const ReleaseFixture = @import("cuda_exl3_prefill_ring_fixture.zig").Fixture;

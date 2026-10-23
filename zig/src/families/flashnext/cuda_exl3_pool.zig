@@ -99,6 +99,7 @@ pub const Pool = struct {
     layer_tab: []u8,
     v: offload.Vram,
     counts: *[shape.layers][shape.experts]u32,
+    prefill_counts: ?*[shape.layers][shape.experts]u32 = null,
     own_counts: bool,
     round: Round,
     now: u32 = 0,

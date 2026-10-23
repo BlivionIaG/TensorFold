@@ -805,6 +805,36 @@ scheduled 536 more demand copies. The zero-margin candidate passed the host suit
 discarded. This is a diagnostic screen, not a repeated throughput benchmark; retain the existing +16 margin pending a
 better predictor that reduces misses without exposing more demand copies.
 
+## Phase-separated expert history (2026-10-24)
+
+The first persistence experiment merged prompt-prefill routes into the decoder's one lifetime histogram. On the
+2,140/2,310-token TP=2 fixture, this reduced prefill-ring misses, but raised decoder/verify misses on the rank that
+had the largest prefill history. That coupling is rejected: prompt volume must not rewrite the decode eviction prior.
+
+The follow-up stores two independent rank-local histograms in profile format v2: decoder/verify lifetime counts remain
+the pool sizing and eviction signal; prefill counts only rank the prefill ring's speculative experts. Legacy v1
+profiles load as decode-only and migrate on save. The ring merges its actual routed picks into the prefill histogram
+once per completed prefill; synthetic reseed picks are explicitly unobserved. The prefetch order is current-prompt
+observations, persistent prefill history, then decode history.
+
+On the same long prompt corpus after the v2 profile had learned a prior run, telemetry measured prefill-ring miss
+rates of 0.04%/0.03% on ranks 0/1 (1,535/3,543,484 and 1,303/3,891,716 picks). Decode miss rates were
+23.87%/19.20%, and verify miss rates 25.28%/19.45%; against the immediately preceding v2 startup they did not
+regress. These are repeated-corpus counters collected with cache telemetry enabled, across concurrent, alone and
+serial parity checks; they are not a generalization result. Prefill ring still requested 139.0/141.8 GB of expert
+DMA per rank across the sampled prefill events, so fewer misses do not eliminate the prefill transfer cost.
+
+Clean, telemetry-off comparison (TP=2, CUDA decode and prefill graphs on, BF16 shared KV paging, two concurrent
+streams, prompt-cache disabled, prompts 2,140 and 2,310 tokens, 512 output tokens, two repetitions, alone and serial
+hash checks): cold placement measured 32.4 aggregate tok/s, 17.9 per stream, 36.1 steady tok/s, and 6.26 s max TTFT;
+the learned profile measured 32.8 aggregate tok/s, 18.7 per stream, 36.7 steady tok/s, and 6.22 s max TTFT. All
+concurrent, alone, and serial hashes matched. This single paired screen is a small ~1% throughput difference within
+run variation, not a demonstrated performance gain. The change is retained for phase-correct cache history and
+measurably lower repeated-corpus prefill misses, pending broader held-out prompt measurements.
+
+Validation: `zig build test-flashnext-exl3-host` and `zig build native -Dnvcc=nvcc -Dsm=120 -j16` pass on the
+par1-cs13 build host. No claim is made that expert-cache history alone makes CUDA graphs faster.
+
 ## Next steps
 
 1. Meet the graph acceptance gate: reduce decode host boundaries (first target is MTP verify's redundant best-

@@ -155,6 +155,7 @@ test "exl3: phase report stable schema rank and model-row denominators" {
     try std.testing.expect(std.mem.startsWith(u8, text, "EXL3-CACHE v=1 rank=1 world=2 phase=decode rows=16 steps=8 expert_pools=0 kv_layers=1 cache=expert "));
     try std.testing.expect(std.mem.indexOf(u8, text, "device_hit_picks=40 device_miss_picks=10") != null);
     try std.testing.expect(std.mem.indexOf(u8, text, "cache=bf16-kv block_requests=0 block_misses=0 sparse_calls=0 logical_fetch_bytes=0") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text, "EXL3-EXPERT-LAYER") == null);
     try expectError(error.TelemetryDenominator, telemetry.Report.between(before, after, .{ .phase = .prefill, .model_rows = 0, .steps = 1 }));
     after.rank.rank = 0;
     try expectError(error.TelemetryOwnerChanged, telemetry.Report.between(before, after, .{ .phase = .decode, .model_rows = 1, .steps = 1 }));
@@ -166,4 +167,54 @@ test "exl3: phase report stable schema rank and model-row denominators" {
     _ = try telemetry.Report.between(before, after, .{ .phase = .prefill, .model_rows = 1, .steps = 1 });
     before.ring_owner = 12;
     try expectError(error.TelemetryOwnerChanged, telemetry.Report.between(before, after, .{ .phase = .prefill, .model_rows = 1, .steps = 1 }));
+}
+
+test "exl3: routed layer report preserves ranks and aggregates host and device deltas" {
+    var first = [_]telemetry.ExpertLayer{
+        .{ .layer = 0, .owner = 91, .picks = .{ .host_hit_picks = 7, .device_hit_picks = std.math.maxInt(u32) } },
+        .{ .layer = 3, .owner = 92, .picks = .{ .device_miss_picks = 9 } },
+    };
+    var last = first;
+    last[0].picks.host_hit_picks += 3;
+    last[0].picks.host_miss_picks += 2;
+    last[0].picks.device_hit_picks += 11;
+    last[0].picks.device_miss_picks += 4;
+    last[1].picks.device_miss_picks += 5;
+    for (0..2) |rank| {
+        const before: telemetry.Snapshot = .{ .rank = .{ .rank = rank, .world = 2 }, .scope = 7, .kv = &.{}, .expert_layers = &first };
+        var after = before;
+        after.expert_layers = &last;
+        const report = try telemetry.Report.between(before, after, .{ .phase = .verify, .model_rows = 16, .steps = 1 });
+        const text = try report.formatAlloc(std.testing.allocator);
+        defer std.testing.allocator.free(text);
+        const expected = try std.fmt.allocPrint(std.testing.allocator, "EXL3-EXPERT-LAYER v=1 rank={d} world=2 phase=verify rows=16 steps=1 layer=0 hit_picks=14 miss_picks=6 host_hit_picks=3 host_miss_picks=2 device_hit_picks=11 device_miss_picks=4\nEXL3-EXPERT-LAYER v=1 rank={d} world=2 phase=verify rows=16 steps=1 layer=3 hit_picks=0 miss_picks=5 host_hit_picks=0 host_miss_picks=0 device_hit_picks=0 device_miss_picks=5\n", .{ rank, rank });
+        defer std.testing.allocator.free(expected);
+        try std.testing.expect(std.mem.endsWith(u8, text, expected));
+    }
+}
+
+test "exl3: routed layer intervals reject missing owners reassignment regressions and overflow" {
+    var first = [_]telemetry.ExpertLayer{.{ .layer = 7, .owner = 9, .picks = .{ .device_hit_picks = 4 } }};
+    var last = first;
+    const before: telemetry.Snapshot = .{ .rank = .{ .rank = 0, .world = 2 }, .scope = 7, .kv = &.{}, .expert_layers = &first };
+    var after = before;
+    const interval: telemetry.Interval = .{ .phase = .decode, .model_rows = 1, .steps = 1 };
+    after.expert_layers = &.{};
+    try expectError(error.TelemetryOwnerChanged, telemetry.Report.between(before, after, interval));
+    after.expert_layers = &last;
+    last[0].layer += 1;
+    try expectError(error.TelemetryOwnerChanged, telemetry.Report.between(before, after, interval));
+    last = first;
+    last[0].owner += 1;
+    try expectError(error.TelemetryOwnerChanged, telemetry.Report.between(before, after, interval));
+    last = first;
+    last[0].owner = 0;
+    try expectError(error.TelemetryOwnerChanged, telemetry.Report.between(before, after, interval));
+    last = first;
+    last[0].picks.device_hit_picks -= 1;
+    try expectError(error.TelemetryCounterRegression, telemetry.Report.between(before, after, interval));
+    last = first;
+    last[0].picks.host_hit_picks = std.math.maxInt(u64);
+    last[0].picks.device_hit_picks += 1;
+    try expectError(error.Overflow, telemetry.Report.between(before, after, interval));
 }
