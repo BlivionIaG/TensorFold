@@ -443,6 +443,30 @@ about 1.01× to 1.31× its latency. It is rejected and is not integrated or push
 CTA increased pressure enough to erase the expected benefit. A 64-row activation-pipeline alternative remains a
 prototype investigation; no dense-kernel speedup is claimed.
 
+## 2026-10-23 expert-copy and overlap follow-up
+
+An isolated `fn_exl3_dcopy` grid-size screen used the existing CUDA test fixture on both RTX 5060 Ti cards. For 10
+expert lines (17.58 MiB), 36–576 blocks measured 1.458–1.466 ms (12.6 GB/s); the equivalent pinned H2D DMA fixture
+measured 1.352 ms (13.6 GB/s). Results were effectively identical across cards and block counts, so changing copy
+kernel grid size is rejected. The transfer path is near the measured link ceiling; reducing bytes/misses is more
+promising than adding blocks.
+
+The existing side-stream split that computes resident experts while mapped misses copy was tested graph-on in a
+four-leg TP2 HTTP ABBA (off/on/on/off), with shared BF16 paging, 38 lines/layer, `--parallel 2`, blocking NCCL,
+prompt cache disabled and two 128-token samples per draft mode per leg. All outputs matched hash `2c5d814cfa80`,
+golden responses matched and MTP acceptance stayed 87/115. Undrafted means were 35.07 tok/s baseline versus 34.96
+overlap; drafted means were 44.75 versus 45.13 tok/s. The -0.3% / +0.8% differences are within run variation, so
+overlap remains opt-in and is not promoted. The short prompts produced no prefill graph replays.
+
+An opt-in `TF_FLASHNEXT_CACHE_TELEMETRY=1` run on the same short-context configuration collected per-step cache
+counters (the boundary synchronizations add overhead, so its tok/s values are not performance measurements). Across
+323 decode and 107 verify samples per rank, device expert-pick miss fractions were 15.4% on rank 0 and 17.5% on
+rank 1; BF16 KV block misses were zero. This confirms meaningful expert-cache misses but does not exercise long-context
+KV paging. Next, measure per-layer miss distributions and compare fixed versus frequency-informed line budgets under
+the same graph-on TP2 ABBA; retain only a repeatable serving gain with exact outputs and unchanged BF16 paging/cache
+semantics. CPU AVX2 is not the next step: transfer utilization and the prior exact-but-slow CPU prototype do not
+support it.
+
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),
