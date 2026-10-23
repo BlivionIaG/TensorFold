@@ -467,6 +467,15 @@ the same graph-on TP2 ABBA; retain only a repeatable serving gain with exact out
 semantics. CPU AVX2 is not the next step: transfer utilization and the prior exact-but-slow CPU prototype do not
 support it.
 
+A separate opt-in telemetry diagnostic then submitted two concurrent 30,000-ID prompts at TP2 with shared BF16 KV
+paging, context 32,768 and 38 expert lines/layer. The prompt IDs were formed by repeating two golden-fixture ID lists;
+this tests paging mechanics, not natural-text quality. Both requests completed and both ranks reported page fetches and
+rebases. Across 60,000 prompt rows, each rank counted 4,284,422 BF16 block requests and about 302,000 misses (7.05%,
+about 2.47 GB logical fetch payload per rank); the two-token verify phase counted 678/684 misses and about 5.55/5.60
+MB per rank. This is direct evidence that BF16 KV paging reaches the RAM-backed sparse-fetch path at long context.
+Telemetry adds synchronization, so no throughput claim is made. Decode graph mode was enabled, but this short output
+did not produce a replay counter; prefill graphs were not enabled, so this run is not graph-performance evidence.
+
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),
