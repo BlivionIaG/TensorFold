@@ -126,6 +126,30 @@ current pushed baseline, the newly measured chunk-size change gives about 5% low
 decode graph replay remains within 0.16% of eager. There is not yet a comparable, controlled end-to-end decode
 benchmark from project start that supports one cumulative decode-speedup number.
 
+## 2026-10-23 batched EXL3 dispatch and TP=2 two-stream gate
+
+The batched decode keep-buffer path was calling the affine expert path for EXL3 layers, whose affine pointers are not
+initialized by the EXL3 loader. The focused host test also requires an unattached expert pool to fail before any
+keep-buffer copy. The fix now preflights `needsPool()`, copies the requested keep buffers, and dispatches through
+`exl3_pass.moe`. On the current fork head plus this change, `zig build test-flashnext-exl3-host` passes and
+`zig build native -Dnvcc=nvcc -Dsm=120 -j16` passes (one existing unused-variable nvcc warning).
+
+The rebuilt binary passed an HTTP TP=2 `--parallel 2` decode-graph test on both RTX 5060 Ti cards at 16,384 context
+with BF16 KV paging, 68 expert lines/rank, two planned streams, a 0.5 GiB memory reserve, drafts off, and prompt
+cache disabled. Two 128-token concurrent requests for each of two prompts, repeated twice, matched their solo token
+hashes (4/4 per prompt); the serial controls also matched (1/1 per prompt), with no failed or unmeasured requests.
+Both ranks logged decode graph replay. This test had no prefill graph replays and is not a performance comparison;
+the line-count/reserve settings are admission accommodations, not defaults. Attempts at 76 lines and at the 76-line
+single-stream graph budget were rejected at startup for insufficient memory; reducing the pool to 68 lines admitted
+the two-stream run.
+
+A separate 1 GiB prompt-cache run through `tools/bench_cache.py` used the same TP=2/two-stream BF16-paged graph setup,
+a 2,571-token completion prompt, 64 output tokens, two repeated requests and two concurrent requests. All outputs
+matched the first response hashes, but every request reported `cache_state=cold`, `cached_tokens=0`, zero stored
+states and zero hits; the strict cache gate therefore failed qualification. This completion fixture does not
+invalidate the previously passing chat warm/branch/rewind cache gate, but cache reuse for this fixture remains
+unproven and the difference in request path needs investigation. No speedup is claimed for this correctness fix.
+
 ## Matched 5a94359c TP2 prefill comparison (2026-10-22)
 
 An exclusive four-run ABBA comparison (baseline/current/current/baseline) tested the pushed `5a94359c` source and
