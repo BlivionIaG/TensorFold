@@ -132,6 +132,14 @@ averaged 5,300.7 ms (4.85% higher latency). Reject this larger chunk setting for
 consistent with the earlier 256-to-2,048 improvement being workload/starting-point specific; it does not justify
 globally increasing the current default.
 
+An additional counter-only telemetry run attributed rank 0/1 cross-layer prefetches to 13,098/13,719 copies, of
+which 4,712/4,778 (36.0%/34.8%) were evicted unused; their logical payloads were 8.69/8.81 GB. The telemetry
+sampling mode adds a synchronization boundary, so its wall time is not used. A separate uninstrumented four-leg
+ABBA compared current `ring_ahead=2` with `TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD=0`: mean wall was 5,060.0 ms with
+lookahead and 6,409.9 ms without it (+26.7% latency when disabled), despite 6.5–6.9% fewer expert copies. Every
+run replayed 72 graphs and returned the same logits hash. Thus prefetch traffic is not safely removable wholesale;
+the next opportunity is to improve which experts are prefetched, while retaining the asynchronous lookahead.
+
 ## Cumulative performance context
 
 The earliest recorded one-row kernel/decode-step optimization reduced a test-harness decode step from 2.4–3.0 s to
