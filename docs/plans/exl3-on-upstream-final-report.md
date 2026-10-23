@@ -5,7 +5,7 @@ Machine: par1-cs13, two RTX 5060 Ti 16 GiB (sm_120), 251 GB RAM, pack
 `Qwen3.8-Flash-Next-exl3-3.05bpw`. All measurements are test measurements on idle cards under a lock
 wrapper, not benchmarks.
 
-## Current handover (2026-10-20)
+## Current handover (2026-10-23)
 
 Upstream draft PR [#1113](https://github.com/ashhart/TensorFold/pull/1113) is open from the fork branch
 `exl3-on-upstream-wip` into upstream `main`. The branch integrates current upstream at `d1018b318`; exact upstream
@@ -23,6 +23,12 @@ bit-equality gate. Across 8192-row prompts with 1024-, 2048- and 4096-row chunks
 within run variation; a graph-specific prefill win is not demonstrated. An 8192-row chunk OOMed and fell back to
 the non-deep path, so it is excluded from graph results. Graph performance remains an open acceptance gate.
 
+A TP=2 real-text HTTP ABBA on the same native binary, with graphs and shared BF16 paging enabled, measured a small
+prefill-only improvement from setting expert-ring lookahead to one layer: 5.1851 s versus 5.2499 s for an 8,192-token
+prompt (+1.25% throughput). All 12 measured one-token outputs matched. Lookahead 1 becomes the default, but this is
+not a decode gain, concurrent-throughput result, or meaningful progress toward the 2× target by itself. The isolated
+synthetic-ID profiler shows a similar ~1% result at 8k and 16k rows, with about 2.8% more expert copies.
+
 The near-200k × 2 TP=2 BF16 needle test (195,938 and 195,957 prompt tokens) passed on this tree before the final
 agent changes; it was not rerun on the exact PR head. Treat that result as demonstrated on a near-final tree, not
 as a final-head gate or an exact-200k test. The follow-up implementation now combines BF16 paging, snapshots, TP=2,
@@ -30,6 +36,12 @@ graphs, MTP and two concurrent HTTP chat histories at ordinary lengths. Restored
 warm, branch and rewind cache phases each reuse 4,122/4,139 prompt tokens with exact response hashes versus cold
 cache. The 200k × 2 gate remains explicitly deferred. Live-rank overflow/failure injection and graph speedup across
 the intended drafted workload remain open. BF16 is required; int8 KV is out of scope.
+
+A fresh two-rank shared-BF16 snapshot/restore test on this change matched saved state, logits and graph-mode outputs
+through eight decode steps, but failed the additional assertion that a prefill graph must replay after restore. The
+same assertion fails with the previous `ring_ahead=2` setting, so this is not attributed to the lookahead change;
+prefill-graph replay after shared snapshot restore remains an open gate. This test therefore does not establish full
+snapshot/cache correctness under graphs.
 
 ## 2026-10-20 upstream-main integration and release checks
 
@@ -140,6 +152,36 @@ ABBA compared current `ring_ahead=2` with `TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD=
 lookahead and 6,409.9 ms without it (+26.7% latency when disabled), despite 6.5–6.9% fewer expert copies. Every
 run replayed 72 graphs and returned the same logits hash. Thus prefetch traffic is not safely removable wholesale;
 the next opportunity is to improve which experts are prefetched, while retaining the asynchronous lookahead.
+
+## 2026-10-23 TP2 expert-prefetch lookahead ABBA
+
+An exclusive TP2 `prefill-prof` ABBA on both RTX 5060 Ti cards compared `ring_ahead=1` against `ring_ahead=2` at
+8,192 and 16,384 rows. Both tests enabled BF16 KV paging and CUDA prefill graphs; warm-up/capture ran before the
+measured forward. Inputs are deterministic PRNG IDs (seed `0x9e3779b9`), so this is an isolated schedule profile, not
+a real-text performance receipt. Each rank returned the same logits hash for both settings (`ffcf463b229c2aa6` at 8k,
+`662339a95f0de2d7` at 16k), with 72 and 168 graph replays respectively and zero eager fallbacks.
+
+At 8k, mean slower-rank wall time was 5,005.6 ms with lookahead 1 and 5,058.0 ms with lookahead 2 (+1.05% rows/s for 1).
+At 16k, it was 10,257.1 ms and 10,367.4 ms (+1.07% rows/s for 1). The result repeats across these two tested
+shapes. Lookahead 1 made about 2.8% more expert copies, so the profile suggests improved overlap/wait time rather than
+less traffic or fewer misses.
+
+A real-text HTTP follow-up used source head `60c92357b` plus the one-line default change, the same native binary
+throughout (`e3bf1015f9e0d1847d83f5b651bdabefa48c5ecfc0c45d665e7c5197da6827e3`), Qwen3.8-Flash-Next EXL3 pack
+fingerprint `e98f5301e6eb58ab48a117e892f71aecd19b449cec5513a620c53cdcb95ddce4`, two RTX 5060 Ti 16 GiB (SM 12.0),
+Linux 6.8.0-147-generic, NVIDIA driver 615.71.09, CUDA 13.4, and Zig 0.17.0. Each server was TP=2, context 32k,
+parallel capacity 2, 38 expert lines, shared BF16 KV paging, CUDA decode/prefill graphs, drafts off, and prompt cache
+off. The request was serial (not concurrent): first 8,192 IDs from the same locally held real-text fixture
+(SHA-256 `b74a9216bb35cf88763989f4fd30ce93dfd726d033403b5c8c268b2b96c2d9b8`), one generated token. The first
+request per server was discarded as graph warm-up; three fresh measured requests followed. Four exclusive server
+legs ran lookahead 1/2/2/1. Mean server-reported prefill was 5.1851 s at 1 and 5.2499 s at 2: **1.25% higher
+prefill throughput** at lookahead 1. All 12 measured outputs had token hash
+`c6f3ac57944a531490cd39902d0f777715fd005efac9a30622d5f5205e7f6894`; both graph flags were enabled and server logs
+confirm shared BF16 paging. The HTTP server does not emit per-request replay counts. The same binary's synthetic
+`prefill-prof` gate separately logged 72/168 graph replays at 8k/16k. This confirms a small, repeatable prefill gain on one real-text prompt,
+not a decode win, concurrency throughput result, 2× result, or snapshot/prefix-reuse gate. The runtime default is
+reduced to 1; `TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD` remains the override. Snapshot/cache behavior was not changed
+and is not re-claimed by this benchmark.
 
 ## 2026-10-23 TP2 reduced HC writeback experiment
 

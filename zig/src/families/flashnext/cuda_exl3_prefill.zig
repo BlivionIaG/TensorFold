@@ -70,7 +70,7 @@ pub const Options = struct {
     /// Experts a ring pass computes at most.
     ring_pass: usize = 32,
     /// Layers ahead the ring prefetches (the guess: the hottest experts, as many as the current layer used).
-    ring_ahead: usize = 2,
+    ring_ahead: usize = 1,
     /// Dense EXL3 projections of a deep chunk's sub-blocks on #806's prompt tiles (Dense.prompt, .tiles) instead of
     /// the reference 128-row blocks: 1.4-2x faster at 128+ rows, a different fp32 order (bf16-level changes; the
     /// same float64 error, tf-cuda-test exl3-prefill dense). TF_FLASHNEXT_EXL3_PREFILL_TILES=0: the reference.
