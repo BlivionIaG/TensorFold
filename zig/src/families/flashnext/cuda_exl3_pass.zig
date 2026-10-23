@@ -180,21 +180,40 @@ pub const Budget = struct {
     max_rows: usize = moe_rows,
 };
 
-/// TF_FLASHNEXT_EXL3_LINES (lines a layer), TF_FLASHNEXT_EXL3_RESERVE_MB and TF_FLASHNEXT_EXL3_STREAMS (streams the
-/// pools leave cache room for; 1 by default) over `stream_bytes`.
+/// TF_FLASHNEXT_EXL3_LINES and TF_FLASHNEXT_EXL3_RESERVE_MB override pool sizing. `requested_streams` is the server's
+/// actual concurrency; standalone test callers may omit it and use TF_FLASHNEXT_EXL3_STREAMS (default 1).
 pub fn budgetFromEnv(stream_bytes: u64) !Budget {
-    var b: Budget = .{ .other = stream_bytes };
+    return budgetFromEnvWithStreams(stream_bytes, null);
+}
+
+pub fn budgetForStreams(stream_bytes: u64, requested_streams: u32) !Budget {
+    return budgetFromEnvWithStreams(stream_bytes, requested_streams);
+}
+
+fn budgetFromEnvWithStreams(stream_bytes: u64, requested_streams: ?u32) !Budget {
+    const streams = requested_streams orelse 1;
+    var b: Budget = .{ .other = try streamReservation(stream_bytes, streams) };
     if (dplan.enabled()) {
         b.planner_rows = if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_ROWS")) |v| @max(1, try std.fmt.parseInt(u64, std.mem.span(v), 10)) else 16;
     }
     if (std.c.getenv("TF_FLASHNEXT_EXL3_LINES")) |v| b.lines = try std.fmt.parseInt(usize, std.mem.span(v), 10);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_RESERVE_MB")) |v| b.reserve = try memory.mebibytes(std.mem.span(v));
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS")) |v| {
-        const streams = try std.fmt.parseInt(u64, std.mem.span(v), 10);
-        if (streams == 0) return error.InvalidStreamCount;
-        b.other = try std.math.mul(u64, stream_bytes, streams);
-    }
+    if (requested_streams == null) if (std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS")) |v| {
+        const env_streams = try std.fmt.parseInt(u64, std.mem.span(v), 10);
+        if (env_streams == 0) return error.InvalidStreamCount;
+        b.other = try std.math.mul(u64, stream_bytes, env_streams);
+    };
     return b;
+}
+
+fn streamReservation(stream_bytes: u64, streams: u32) !u64 {
+    if (streams == 0) return error.InvalidStreamCount;
+    return std.math.mul(u64, stream_bytes, streams);
+}
+
+test "EXL3 pool reserves the requested number of concurrent stream caches" {
+    try std.testing.expectEqual(@as(u64, 200), try streamReservation(100, 2));
+    try std.testing.expectError(error.InvalidStreamCount, streamReservation(100, 0));
 }
 
 pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, free_after: u64 = 0, scratch_bytes: u64 = 0, graph_reservation: u64 = 0, after_pool_bytes: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0 };

@@ -96,8 +96,8 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     if (o.vision) |v| stream_bytes = try std.math.add(u64, stream_bytes, try std.math.add(u64, try std.math.mul(u64, v.image_tokens, @import("cuda_prompt_wt.zig").dims * 2), try std.math.mul(u64, 16, o.context)));
     try @import("cuda_exl3_kv.zig").logStream(own.engine, window, stream_bytes); // K10: what a stream holds, by piece
     own.stream_bytes = stream_bytes;
-    var pool_budget = try exl3_pass.budgetFromEnv(stream_bytes);
-    if (mode == .exl3 and @import("cuda_exl3_graph.zig").enabled()) pool_budget.graph_reservation = try @import("cuda_exl3_graph_memory.zig").startupReservation();
+    var pool_budget = try exl3_pass.budgetForStreams(stream_bytes, o.lanes);
+    if (mode == .exl3 and @import("cuda_exl3_graph.zig").enabled()) pool_budget.graph_reservation = try @import("cuda_exl3_graph_memory.zig").startupReservationForStreams(o.lanes);
     own.graph_reservation = pool_budget.graph_reservation;
     if (own.graph_reservation != 0) std.log.info("flashnext rank {d}: lane admission protects full graph reservation {d} bytes; already materialized graphs remain charged in free memory, so admission conservatively reserves those bytes twice", .{ o.rank, own.graph_reservation });
     const attached = try exl3_pass.attach(gpa, io, driver, own.stream, own.engine.layers[0..own.engine.n_layers], if (own.head) |h| &h.layer else null, own.engine.chunk, pool_budget);

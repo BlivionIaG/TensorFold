@@ -352,9 +352,9 @@ fn openWith(comptime F: type, a: Allocator, gpa: Allocator, io: std.Io, o: api.O
         low = try std.fmt.allocPrint(a, " on rank {d}, the smallest room of the ranks", .{pr.rank});
     };
     const free = loaded.free_streams;
-    const grow = budget.growRoom(room, !@hasField(F.Options, "lanes"));
-    const wrapped = kv_pages.wrapped(F, loaded, free, served.stream_bytes, room);
-    const layout = wrapped.layout;
+    const preallocates_lanes = if (@hasDecl(F, "preallocates_lanes")) F.preallocates_lanes else @hasField(F.Options, "lanes");
+    const grow = budget.growRoom(room, !preallocates_lanes);
+    const layout = kv_pages.layout(loaded);
     var paged: ?kv_pages.Plan = null;
     const streams = if (layout) |l| blk: {
         paged = try kv_pages.plan(F, a, l, wrapped.room, o, @intCast(window), problem, host_cache, kv_pages.enginePaged(loaded)) orelse return null;

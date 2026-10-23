@@ -22,7 +22,11 @@ pub fn workloadPolicy(streams: u64, layers: u64) !Policy {
 
 pub fn policyFromEnv() !Policy {
     const stream_text = std.mem.span(std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS") orelse "1");
-    var settings = try workloadPolicy(try std.fmt.parseInt(u64, stream_text, 10), 48);
+    return policyFromEnvForStreams(try std.fmt.parseInt(u64, stream_text, 10));
+}
+
+fn policyFromEnvForStreams(streams: u64) !Policy {
+    var settings = try workloadPolicy(streams, 48);
     settings.reservation_bytes = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_RESERVATION_MIB", settings.reservation_bytes);
     settings.headroom_bytes = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_HEADROOM_MIB", settings.headroom_bytes);
     settings.charge.exec = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_EXEC_MIB", settings.charge.exec);
@@ -75,14 +79,24 @@ fn configureLocked(settings: Policy) !void {
 }
 
 pub fn startupReservation() !u64 {
+    return startupReservationWithStreams(null);
+}
+
+pub fn startupReservationForStreams(streams: u32) !u64 {
+    if (streams == 0) return error.InvalidGraphPolicy;
+    return startupReservationWithStreams(streams);
+}
+
+fn startupReservationWithStreams(streams: ?u32) !u64 {
     lock();
     defer unlock();
     if (configured == null) {
-        try configureLocked(try policyFromEnv());
+        const proposed = if (streams) |count| try policyFromEnvForStreams(count) else try policyFromEnv();
+        try configureLocked(proposed);
         const settings = configured.?;
         std.log.info("EXL3 graph budget auxiliary logical allowance: {d} MiB (heuristic, only the unmaterialized remainder is protected from TP admission)", .{settings.auxiliary_bytes / mib});
         std.log.info("EXL3 graph budget heuristic allowances (not measured exec bytes): reservation {d} MiB, headroom {d} MiB, exec/template/transient {d}/{d}/{d} MiB", .{ settings.reservation_bytes / mib, settings.headroom_bytes / mib, settings.charge.exec / mib, settings.charge.template / mib, settings.charge.transient / mib });
-        std.log.info("EXL3 workload heuristic follows TF_FLASHNEXT_EXL3_STREAMS: two decode variants per stream, 48 prefill layer execs and two MTP chain variants per stream; local exec allowances are heuristic, not measured GPU sizes; local templates are released after instantiation", .{});
+        std.log.info("EXL3 workload heuristic follows requested server concurrency (or TF_FLASHNEXT_EXL3_STREAMS for standalone tests): two decode variants per stream, 48 prefill layer execs and two MTP chain variants per stream; local exec allowances are heuristic, not measured GPU sizes; local templates are released after instantiation", .{});
     }
     return configured.?.reservation_bytes;
 }
@@ -177,6 +191,12 @@ test "exl3: runtime policy defaults are bounded heuristics and MiB overrides par
     try std.testing.expectError(error.InvalidGraphPolicy, parseMib("-1"));
     try std.testing.expectError(error.InvalidGraphPolicy, parseMib("1x"));
     try std.testing.expectError(error.Overflow, parseMib("18446744073709551615"));
+}
+
+test "exl3: graph reservation scales with the requested concurrent stream count" {
+    const one = try workloadPolicy(1, 48);
+    const two = try workloadPolicy(2, 48);
+    try std.testing.expectEqual(@as(u64, 66 * mib), two.reservation_bytes - one.reservation_bytes);
 }
 
 test "exl3: startup reservation configures the environment policy without a separate configure call" {
