@@ -43,6 +43,22 @@ same assertion fails with the previous `ring_ahead=2` setting, so this is not at
 prefill-graph replay after shared snapshot restore remains an open gate. This test therefore does not establish full
 snapshot/cache correctness under graphs.
 
+## 2026-10-23 score-grid graph-key ABBA follow-up
+
+An existing four-leg TP=2 HTTP ABBA (bucket off/on/on/off) used both RTX 5060 Ti cards, `--parallel 2`, 8,192 real-text
+prompt IDs, 512 generated tokens, graph-enabled decode and prefill, shared BF16 KV paging, 38 expert lines, prompt
+cache disabled, and drafts both off and on. Each leg discarded a warm-up request, then measured two requests per
+draft mode. All requests returned the same full token hash
+`600815b14b64d917c86eebf8279154089d014500a6d213246692cf86d918680f`; drafted/undrafted parity held.
+
+Mean prefill was 5.2437 s with bucketing off and 5.2473 s on (0.07% slower with the candidate). Mean undrafted decode
+was 26.911 versus 27.007 tok/s (+0.36%); drafted decode was 25.214 versus 25.381 tok/s (+0.66%). These deltas are
+within run variation and do not qualify as an improvement. The candidate reduced main-round graph instantiations
+from 8 to 6 in the server summary, while prefill graph counters were unchanged; the additional capture reuse did not
+translate into measured end-to-end speed. The score-grid bucket implementation is therefore rejected and removed
+from the source tree. This result rules out this bucketing approach as a meaningful performance step; it does not
+close the separate shared-snapshot/prefill-replay correctness gate.
+
 ## 2026-10-20 upstream-main integration and release checks
 
 The merge resolves the shared Flash Next hooks against current upstream `main`. On par1-cs13, Zig 0.17
