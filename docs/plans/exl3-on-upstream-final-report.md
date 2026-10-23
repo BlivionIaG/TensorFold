@@ -140,6 +140,18 @@ lookahead and 6,409.9 ms without it (+26.7% latency when disabled), despite 6.5â
 run replayed 72 graphs and returned the same logits hash. Thus prefetch traffic is not safely removable wholesale;
 the next opportunity is to improve which experts are prefetched, while retaining the asynchronous lookahead.
 
+## 2026-10-23 TP2 reduced HC writeback experiment
+
+An exclusive four-leg ABBA compared the existing TP2 HC writeback (`TF_FLASHNEXT_EXL3_PREFILL_REDUCED_BRANCH=0`)
+with the reduced-writeback path (`=1`) on both RTX 5060 Ti cards. The workload was an 8,192-row graph-on prefill
+with BF16 KV paging, 1,024-row chunks, overlapped NCCL reductions, and identical rank/output hashes
+(`ffcf463b229c2aa6`). Default legs averaged 5,062.2 ms; reduced-writeback legs averaged 4,958.6 ms: **2.05% lower
+latency / 2.09% higher rows/s**. All legs replayed 72 prefill graphs with zero eager layer fallbacks; expert copies,
+pass counts, and planner behavior matched. This is a promising measured opt-in prefill improvement, not a 2x gain,
+not a serving/decode result, and not yet the default. The reduced path changes HC writeback arithmetic; snapshot/
+restore on private BF16-paged lanes also passed exact continuation and graph replay. A matching shared-paging cache
+reuse gate is still running and is required before promoting the option or calling the cache path fully validated.
+
 ## Cumulative performance context
 
 The earliest recorded one-row kernel/decode-step optimization reduced a test-harness decode step from 2.4â€“3.0 s to
