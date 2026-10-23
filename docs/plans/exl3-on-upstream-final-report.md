@@ -149,8 +149,11 @@ with BF16 KV paging, 1,024-row chunks, overlapped NCCL reductions, and identical
 latency / 2.09% higher rows/s**. All legs replayed 72 prefill graphs with zero eager layer fallbacks; expert copies,
 pass counts, and planner behavior matched. This is a promising measured opt-in prefill improvement, not a 2x gain,
 not a serving/decode result, and not yet the default. The reduced path changes HC writeback arithmetic; snapshot/
-restore on private BF16-paged lanes also passed exact continuation and graph replay. A matching shared-paging cache
-reuse gate is still running and is required before promoting the option or calling the cache path fully validated.
+restore on private BF16-paged lanes also passed exact continuation and graph replay. The matching shared-paging
+cache-reuse gate failed with `GraphBudgetExceeded` during decode graph replay after restoring shared snapshots;
+both ranks matched the paired BF16 logits through step 2 before the failure. The option remains opt-in, and shared
+snapshot/cache reuse with graphs is not yet validated. The failure is being investigated as graph-budget/cache
+admission behavior, not treated as evidence of a numerical mismatch.
 
 ## Cumulative performance context
 
