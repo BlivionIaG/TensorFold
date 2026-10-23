@@ -443,6 +443,14 @@ about 1.01× to 1.31× its latency. It is rejected and is not integrated or push
 CTA increased pressure enough to erase the expected benefit. A 64-row activation-pipeline alternative remains a
 prototype investigation; no dense-kernel speedup is claimed.
 
+An opt-in BF16 HC up-projection/mix fusion was screened with a standalone CUDA exactness test on sm_120. It passed
+byte-exact projection, rounded-product, mixed-output and FP32 reduction checks, including changed-input graph replay.
+Four eager/captured ABBA pairs on synthetic nonzero BF16 weights measured baseline versus fused per-call latency at
+rows 1/4/8/16: eager 7.45/7.64/8.13/10.09 us versus 9.15/9.43/10.82/16.39 us; graph 8.22/8.22/10.25/12.28 us
+versus 10.27/10.41/12.31/17.55 us. The candidate lost at every width and is rejected; these are isolated synthetic
+kernel timings, not model-weight or serving measurements. The one-launch design is not sufficient to offset its
+resource/occupancy cost on the RTX 5060 Ti.
+
 ## 2026-10-23 expert-copy and overlap follow-up
 
 An isolated `fn_exl3_dcopy` grid-size screen used the existing CUDA test fixture on both RTX 5060 Ti cards. For 10
@@ -475,6 +483,51 @@ about 2.47 GB logical fetch payload per rank); the two-token verify phase counte
 MB per rank. This is direct evidence that BF16 KV paging reaches the RAM-backed sparse-fetch path at long context.
 Telemetry adds synchronization, so no throughput claim is made. Decode graph mode was enabled, but this short output
 did not produce a replay counter; prefill graphs were not enabled, so this run is not graph-performance evidence.
+
+An opt-in per-layer extension to that telemetry reused the existing planner counters and reported each rank's
+routed hit/miss picks by decoder layer. On a TP2 graph-on HTTP run with `--parallel 2`, 32,768-token configured
+context, the 128-token HTTP gate, and prompt cache disabled, aggregate pick-miss rates were rank 0: prefill
+20.05%, decode 9.72%, verify 7.56%; rank 1: prefill 18.79%, decode 8.47%, verify 5.80%. Highest decode miss counts
+in this short fixture were rank 0 layer 1 (339) and layer 6 (248), and rank 1 layer 0 (328) and layer 21 (240).
+These are aggregate diagnostic counts, not a natural long-context distribution; opt-in telemetry synchronization
+means the run is not a performance benchmark, and it did not measure KV paging misses. Drafted and undrafted outputs
+matched on every prompt; two of six prompts did not match the strict golden check. Next use these counts to screen a
+fixed-total, minimum-floor per-layer line-budget allocator, then validate under an uninstrumented TP2 ABBA with exact
+output and BF16 paging/cache-reuse gates before keeping any policy change.
+
+## 2026-10-23 persisted expert placement under BF16 paging
+
+A fresh per-rank placement profile was collected from the same six-prompt fixture and then compared against cold
+placement in an uninstrumented TP2 ABBA. Both runs used the same server binary, `--parallel 2`, 32,768-token context,
+graphs enabled, BF16 KV paging/shared allocation enabled, prompt cache disabled, and fixed pool budgets of 38 lines
+on rank 0 and 49 on rank 1. Each gate requested 128 output tokens; the client benchmark requests were sequential,
+so this is not a concurrent-request benchmark. Full serving output hashes were represented by gate hash
+`2c5d814cfa80` in all four runs; drafted output equaled undrafted output, and two of six prompts failed the strict
+golden check in every configuration.
+
+| Decode mode | Cold map | Fresh map | Throughput change |
+|---|---:|---:|---:|
+| Drafts off | 35.19 tok/s | 38.04 tok/s | +8.1% |
+| Drafts on | 47.07 tok/s | 48.92 tok/s | +3.9% |
+
+Separate opt-in telemetry runs with the same prompt fixture measured combined decode/verify device-pick misses at
+15.43% → 14.22% on rank 0 and 11.89% → 10.44% on rank 1. These telemetry runs include boundary synchronization
+and are used only for miss counts, not throughput. Decode graphs replayed in the throughput runs; this short fixture
+did not establish long-context KV-page misses, prefill-graph benefit, or two simultaneous live requests.
+
+The next miss-reduction candidate is a fixed-total per-layer line budget informed by these measurements, not a larger
+rank-wide allocation. The current device planner explicitly rejects pools whose `opt.lines` differ and sizes its device
+state with one shared line count; the prefill ring also builds offsets from each pool's line count. A correct allocator
+therefore requires variable-sized planner-state offsets and graph-safe launch/state handling, then an end-to-end memory
+ledger that preserves BF16 KV, graph scratch and the minimum pool floor. No heterogeneous line-budget policy is currently
+implemented or measured.
+
+A profile from an older workload was also tested and regressed this fixture: misses rose to 19.50% on rank 0 and
+17.13% on rank 1; its uninstrumented ABBA averaged 1.7% lower undrafted and 4.0% lower drafted throughput than cold
+placement. Profile reuse is therefore workload-sensitive. This experiment validates the existing opt-in profile
+mechanism for a matched prompt mix; it does not justify enabling historical profiles by default or claim a general
+serving speedup. Next work: make profile freshness/recency safe, then repeat with a longer representative workload
+and simultaneous requests before promoting a placement policy.
 
 ## What this adds
 
