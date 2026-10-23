@@ -15,8 +15,9 @@ one large draft and is not merge-ready.
 The user's acceptance target is TP=2 with CUDA graphs on both decode and prefill, and graphs must improve
 performance. BF16 is the main KV format; dynamic KV paging to RAM is also required. CPU expert execution is
 deferred. Decode graphs match eager for eligible captured shapes, but input preparation, the MTP chain's absorb
-step, and host readback remain outside capture. No repeatable graph speedup over optimized blocking-NCCL eager
-decode has been demonstrated. Prefill graphs capture each layer's dense sub-blocks; expert scheduling and ring
+step, and host readback remain outside capture. A new serving ABBA shows a narrow no-draft decode gain but a
+material MTP-drafted regression; graphs therefore do not yet meet the performance acceptance gate. Prefill graphs
+capture each layer's dense sub-blocks; expert scheduling and ring
 copies remain eager. A new event-wait-node path preserves overlap with TP=2 sub-block reductions and passes the
 bit-equality gate. Across 8192-row prompts with 1024-, 2048- and 4096-row chunks, graph throughput tracks eager
 within run variation; a graph-specific prefill win is not demonstrated. An 8192-row chunk OOMed and fell back to
@@ -27,8 +28,8 @@ agent changes; it was not rerun on the exact PR head. Treat that result as demon
 as a final-head gate or an exact-200k test. The follow-up implementation now combines BF16 paging, snapshots, TP=2,
 graphs, MTP and two concurrent HTTP chat histories at ordinary lengths. Restored graph state/logits match exactly;
 warm, branch and rewind cache phases each reuse 4,122/4,139 prompt tokens with exact response hashes versus cold
-cache. The 200k × 2 gate remains explicitly deferred. Live-rank overflow/failure injection and repeatable graph
-speedup remain open; no graph performance win is claimed. BF16 is required; int8 KV is out of scope.
+cache. The 200k × 2 gate remains explicitly deferred. Live-rank overflow/failure injection and graph speedup across
+the intended drafted workload remain open. BF16 is required; int8 KV is out of scope.
 
 ## 2026-10-20 upstream-main integration and release checks
 
@@ -155,6 +156,24 @@ both ranks matched the paired BF16 logits through step 2 before the failure. The
 snapshot/cache reuse with graphs is not yet validated. The failure is being investigated as graph-budget/cache
 admission behavior, not treated as evidence of a numerical mismatch.
 
+## 2026-10-23 TP2 HTTP graph/eager decode ABBA
+
+An exclusive off/on/on/off serving comparison used the same rebuilt binary on both RTX 5060 Ti cards, TP=2,
+`--parallel 2`, BF16 KV paging with shared pages, 38 expert-pool lines per layer, prompt cache disabled, and a
+16-token completion prompt with a 512-token output. Each server was restarted per leg; the gate first ran its three
+golden fixtures, then measured two undrafted and two drafted completions. Thus this is a two-stream-capacity server
+but serial HTTP timing (not concurrent-request aggregate throughput). All four measured outputs used hash
+`b170e8433207`, and drafted/undrafted results matched. Graph-on runs replayed the stable round graph 477 times,
+the MTP chain 21 times, and captured four shapes; prefill graph counters stayed zero for this short prompt.
+
+Mean decode throughput was 32.36 tok/s eager versus 34.79 tok/s graph-on without drafts (+7.5%), but 49.17 tok/s
+eager versus 41.51 tok/s graph-on with drafts (−15.6%). The four ABBA legs consistently show that the current
+graph-enabled drafted path is slower, despite replay. The server reported first-completion prefill/TTFT around
+1.39–1.43 s in eager legs and 0.26–0.32 s in graph legs; because this short prompt triggered no prefill graph and
+these values varied with server warm state, do not treat them as a prefill-graph result. This test does not establish
+a prefill graph speedup or overall multi-request improvement. Retain graphs as opt-in and profile the MTP
+verify/absorb and host boundaries before changing defaults; the TP=2 graph performance requirement is not met yet.
+
 ## Cumulative performance context
 
 The earliest recorded one-row kernel/decode-step optimization reduced a test-harness decode step from 2.4–3.0 s to
@@ -163,8 +182,9 @@ current chunk-size change. Historical prefill notes report 100–210 rows/s for 
 1,555 rows/s in the later TP=2 deep-prefill runs (nominally 5.8–15.6×). The old and new numbers were not collected
 as a controlled same-binary ABBA experiment, so this range is directional, not a causal speedup claim. On the
 current pushed baseline, the newly measured chunk-size change gives about 5% lower 8k prefill wall time; current
-decode graph replay remains within 0.16% of eager. There is not yet a comparable, controlled end-to-end decode
-benchmark from project start that supports one cumulative decode-speedup number.
+decode graph replay remains within 0.16% of eager in the prior kernel-level profile. The latest serving ABBA reports
+graphs +7.5% without drafts but −15.6% with drafts, so it is not a general decode win. There is not yet a comparable,
+controlled end-to-end decode benchmark from project start that supports one cumulative decode-speedup number.
 
 ## 2026-10-23 batched EXL3 dispatch and TP=2 two-stream gate
 
