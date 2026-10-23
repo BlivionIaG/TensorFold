@@ -601,6 +601,24 @@ sensitivity: the measured short 128-token c=2 decode gain is not general. Keep p
 should optimize online decode residency separately from prefill warmth, with per-layer/per-expert miss and exposed
 copy-time attribution, then validate using held-out prompts and longer c=2 traffic.
 
+## 2026-10-23 exclude synthetic prefetches from expert history
+
+Code review found that deep-prefill's synthetic `fakePicks` were passed to `Pool.plan`, which called `offload.observe`
+and recorded those synthetic IDs as routed-expert demand. The deep-prefill prefetcher chooses IDs in ascending order,
+so this could bias the use-count table later consulted by decode eviction and persisted placement. `Pool.planUnobserved`
+now shares the same plan/copy behavior while skipping only the demand-history update; deep-prefill uses it. A focused
+round-planner regression test proves synthetic picks still plan misses without changing the counts. The EXL3 host
+suite and native build passed.
+
+An exclusive graph-on TP2 ABBA compared the previous binary (`6da1082b…`) with the candidate
+(`35ad6e6c…`), BF16 paging enabled, `--parallel 2`, prompt cache off, two simultaneous 16,384-token prompts made by
+repeating two fixture token sequences, and 512 output tokens each. Outputs matched exactly for both requests in every
+leg. Aggregate decode averaged 45.16 tok/s on baseline and 45.08 tok/s on candidate (−0.18%); no speedup was measured.
+Separate synchronized miss telemetry is diagnostic only: combined decode miss rate averaged 12.56% baseline versus
+12.53% candidate across two ABBA samples, effectively unchanged. Prefill telemetry in this test reported zero picks,
+so it cannot establish a prefill miss change. Keep the history fix for correctness, not as a performance optimization;
+the next optimization still needs to reduce real decode misses/copy stalls without sacrificing resident hits.
+
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),

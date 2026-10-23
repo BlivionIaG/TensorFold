@@ -31,6 +31,7 @@ pub const Pass = struct { id_lo: u32, id_hi: u32, copy_lo: u32, copy_hi: u32 };
 pub const Options = struct {
     swap_every: u16 = 4,
     swap_cap: u16 = 96,
+    observe: bool = true,
     /// Bytes a swap round may prefetch (the copy budget); 0 disables prefetch.
     prefetch_bytes: u64 = 0,
     /// Device bytes of one line (prefetch budget unit).
@@ -235,7 +236,7 @@ pub fn plan(
     for (uniq) |id| held_n += @intFromBool(offload.lineOf(v.*, layer, id) != null);
     if (n_unique > held_n and blocked(v.*, &.{}) >= v.slots.len) return error.Busy;
 
-    offload.observe(&counts[layer], routed) catch return error.Length;
+    if (opt.observe) offload.observe(&counts[layer], routed) catch return error.Length;
     const row: []const u32 = &counts[layer];
 
     // held first (pass 0), misses hottest first; ids[] is rewritten in pass order
@@ -450,6 +451,17 @@ test "misses fill empty lines in one pass, then the same picks are all hits" {
     try testing.expectEqual(@as(usize, 3), f.r.passIds(0).len);
     // a hit touched its line
     try testing.expectEqual(@as(u32, 2), f.stamp[offload.lineOf(f.v, 3, 9).?]);
+}
+
+test "synthetic prefetch picks do not heat expert history" {
+    var f: Fix = .{};
+    try f.init(10, 16);
+    defer f.deinit();
+    try f.go(&[_]i32{ 7, 8, 9 }, 1, 1, .{ .observe = false });
+    try testing.expectEqual(@as(usize, 3), f.r.misses_());
+    try testing.expectEqual(@as(u32, 0), f.counts[3][7]);
+    try testing.expectEqual(@as(u32, 0), f.counts[3][8]);
+    try testing.expectEqual(@as(u32, 0), f.counts[3][9]);
 }
 
 test "a miss evicts the coldest line outside the round, never a line the round reads" {

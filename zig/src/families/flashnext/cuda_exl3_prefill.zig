@@ -870,7 +870,7 @@ fn prefetch(dp: *Deep, pool: *pool_.Pool, own: ?tp_.Rank, o: Options) !void {
     }
     const rows = fakePicks(dp, ids[0..k]);
     if (rows == 0) return;
-    const r = try pool.plan(dp.fake[0 .. rows * slots], rows);
+    const r = try pool.planUnobserved(dp.fake[0 .. rows * slots], rows);
     if (r.n_passes != 1) return error.Exl3PrefillPass;
     // the copies wait for nothing on the compute stream: the aux stream takes the gates and the release
     try pool.stage(r, 0, dp.aux);
