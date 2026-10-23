@@ -559,6 +559,28 @@ mechanism for a matched prompt mix; it does not justify enabling historical prof
 serving speedup. Next work: make profile freshness/recency safe, then repeat with a longer representative workload
 and simultaneous requests before promoting a placement policy.
 
+## 2026-10-23 concurrent expert-miss profile ABBA
+
+To follow up on the serial-only allocator result, an uninstrumented cold/profile/profile/cold ABBA ran on both RTX
+5060 Ti cards with TP=2, graphs on, BF16 shared KV paging, `--parallel 2`, prompt cache off, and two genuinely
+simultaneous 128-token HTTP requests per run. The profile had first been refreshed from concurrent two-prompt traffic;
+the cold legs used no saved profile. The two prompts were `ids16` and `The capital of France is`. Both response hashes
+were identical in every leg (`2c5d814cfa80...` and `e6ed6704d14d...`).
+
+| Placement | Mean per-request decode | Aggregate of two simultaneous requests |
+|---|---:|---:|
+| Cold (legs 1 and 4) | 29.84 tok/s | 59.68 tok/s |
+| Concurrent-traffic profile (legs 2 and 3) | 32.64 tok/s | 65.29 tok/s |
+| Change | +9.4% | +9.4% |
+
+This is the first uninstrumented c=2 throughput gain for the rank-local placement profile, on this short prompt/output
+fixture. The sequential-profile attempt improved c=2 miss rate only 6.7%; after saving a profile from concurrent
+traffic, synchronized telemetry measured 7.67% combined decode/verify misses versus 10.27% cold (25.3% fewer).
+Telemetry rates are diagnostic only and are not used for throughput. The four ABBA legs preserve exact output hashes,
+but this small two-prompt fixture does not establish a general gain, long-context miss behavior, or 200k concurrency.
+Keep profiling opt-in; next test more representative concurrent prompts and contexts, then measure layer-wise hit/miss
+and copy-time attribution without telemetry before changing defaults.
+
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),
