@@ -581,6 +581,26 @@ but this small two-prompt fixture does not establish a general gain, long-contex
 Keep profiling opt-in; next test more representative concurrent prompts and contexts, then measure layer-wise hit/miss
 and copy-time attribution without telemetry before changing defaults.
 
+## 2026-10-23 held-out concurrent decode follow-up
+
+A second, corrected test checked whether the short c=2 gain generalizes. First, a profile was seeded from the original
+two concurrent prompts (`ids16` and `The capital of France is`, 128 tokens each). The saved rank profiles were copied
+before testing. An uninstrumented cold/profile/profile/cold ABBA then ran two simultaneous 512-token requests for
+`ids16` and a held-out prompt, `Once upon a time, in a small village by the sea`, with TP=2, graphs enabled, BF16
+shared paging, `--parallel 2`, and prompt cache off. The exact output hashes matched across all four legs for both
+prompts (`d90919073a11...` and `6eb24709e75a...`). Mean per-request decode was 25.13 tok/s cold and 25.08 tok/s
+profiled (−0.2%); aggregate was 50.25 vs 50.16 tok/s. This does not confirm a decode throughput benefit on the
+held-out/longer-output fixture. The model was `Qwen3.8-Flash-Next-exl3-3.05bpw`; the native binary SHA-256 was
+`6da1082ba830286548e06d6f80911794ec45e1926568bbae9437d12fbaeaf3dc`.
+
+Separate synchronized telemetry runs on the same held-out workload are miss diagnostics only. Combined prefill misses
+fell from 9,885/13,440 picks (73.55%) cold to 2,708/13,440 (20.15%) with the profile. Decode misses did not improve:
+81,447/490,560 picks (16.60%) cold versus 82,568/490,560 (16.83%) profiled. Thus startup warming cuts prefill misses,
+but the static profile did not lower decode misses for this 512-token workload. This reinforces workload/phase
+sensitivity: the measured short 128-token c=2 decode gain is not general. Keep persisted placement opt-in; next work
+should optimize online decode residency separately from prefill warmth, with per-layer/per-expert miss and exposed
+copy-time attribution, then validate using held-out prompts and longer c=2 traffic.
+
 ## What this adds
 
 The EXL3 pack now runs through upstream's own Flash Next CUDA family and server (`tensorfold-native serve`),
