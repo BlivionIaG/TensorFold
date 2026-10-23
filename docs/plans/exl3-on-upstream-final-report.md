@@ -73,8 +73,28 @@ hash `600815b14b64d917c86eebf8279154089d014500a6d213246692cf86d918680f`.
 Mean prefill was 5.1738 s with the option off and 5.1771 s on (0.06% slower). Undrafted decode was 26.960 versus
 26.950 tok/s (-0.04%); drafted decode was 25.261 versus 25.259 tok/s (-0.01%). This is no measurable improvement;
 leave the option off by default. Graph logs show stable main-round replay, but reported zero MTP-chain graph captures
-in this workload despite the accepted drafts, so this run does not establish that the draft chain itself was graphed.
-Determine why chain capture is bypassed or undercounted before using drafted graph results as proof of graph speed.
+in that workload despite the accepted drafts, so that run did not establish that the draft chain itself was graphed.
+The following short-decode ABBA separately confirms MTP-chain graph replay for its own workload; the difference
+between those run configurations remains unexplained.
+
+## 2026-10-23 clean TP2 short-decode graph/eager ABBA
+
+A follow-up clean-binary ABBA (`graph/eager/eager/graph`) repeated the short HTTP decode gate on source head
+`7f8b7a194`, without temporary chain-tracing instrumentation. Binary SHA-256 was
+`a20e5165c138dbbf0192c3fb62aa091acf277aae40eddbfc66c2247efba36385`. Both RTX 5060 Ti cards ran TP=2 with
+`--parallel 2`, a 32,768-token window, shared BF16 KV paging, 38 expert lines/layer, blocking NCCL, and prompt cache
+disabled. Each leg ran the same golden checks and two 128-token measurements per draft mode. Output hash prefix
+`2c5d814cfa80` matched across all runs; drafted runs accepted 87 of 115 proposals in every leg.
+
+Undrafted decode averaged 30.03 tok/s eager versus 33.72 tok/s with graphs (**+12.3%**). Drafted decode averaged
+41.96 tok/s eager versus 43.91 tok/s with graphs (**+4.6%**). Rank 0 reported 188 main-round graph replays and 54
+MTP-chain replays after four captures; rank 1 has no MTP head. This confirms the MTP chain graph captures and
+replays on this short greedy workload. It does not explain why the separate 8,192-ID/512-output verify-best ABBA
+reported zero chain replays, and it does not supersede that longer drafted regression (eager was 15.6% faster).
+Treat this as a workload-specific short-decode improvement, not a general graph win or progress toward 2×. The
+prefill timer was about 0.25 s in graph legs versus 1.39 s eager, but prefill graph counters were zero and repeated
+fixture requests may reuse warmed request state; exclude this from any prefill claim. TP=2 prefill graph speedup
+remains unproven.
 
 ## 2026-10-20 upstream-main integration and release checks
 
@@ -255,11 +275,15 @@ The earliest recorded one-row kernel/decode-step optimization reduced a test-har
 0.41–0.45 s (roughly 5.3–7.3×); that work is already part of the pushed baseline and is not a new gain from the
 current chunk-size change. Historical prefill notes report 100–210 rows/s for the old batched pass, versus 1,225–
 1,555 rows/s in the later TP=2 deep-prefill runs (nominally 5.8–15.6×). The old and new numbers were not collected
-as a controlled same-binary ABBA experiment, so this range is directional, not a causal speedup claim. On the
-current pushed baseline, the newly measured chunk-size change gives about 5% lower 8k prefill wall time; current
-decode graph replay remains within 0.16% of eager in the prior kernel-level profile. The latest serving ABBA reports
-graphs +7.5% without drafts but −15.6% with drafts, so it is not a general decode win. There is not yet a comparable,
-controlled end-to-end decode benchmark from project start that supports one cumulative decode-speedup number.
+as a controlled same-binary ABBA experiment, so this range is directional, not a causal speedup claim. The named
+`5a94359c`→`03d4dbf3` controlled TP=2 prefill ABBA measured **4.90% more rows/s** (16,384 rows, 4,096-row chunks,
+BF16 paging, graphs on) with identical output hashes. A later lookahead ABBA measured +1.25% 8k prefill throughput;
+reduced HC writeback measured +2.09% 8k prefill rows/s but remains opt-in because shared-snapshot graph replay
+failed. The clean short-decode ABBA measured graph-on gains of 12.3% undrafted and 4.6% drafted at 128 output
+tokens; a separate 512-token ABBA measured +7.5% undrafted but −15.6% drafted. These are workload-specific, not
+cumulative gains and do not establish 2×. Historical prefill records are roughly 5.8–15.6× directional and
+one-row harness decode 5.3–7.3×, but those are not controlled same-workload comparisons. There is no defensible
+single cumulative end-to-end decode speedup from project start.
 
 ## 2026-10-23 batched EXL3 dispatch and TP=2 two-stream gate
 
