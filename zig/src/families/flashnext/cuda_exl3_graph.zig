@@ -697,7 +697,7 @@ fn references(key: Key, tail: u64) bool {
     return false;
 }
 
-pub fn releaseSeq(seq: anytype) void {
+fn releaseSeqImpl(seq: anytype, keep_prefill: bool) void {
     const tail = seq.tail.ptr;
     if (tail == 0) return;
     for (&entries) |*entry| if (entry.*) |*x| if (references(x.key, tail)) {
@@ -710,13 +710,23 @@ pub fn releaseSeq(seq: anytype) void {
     for (&last_key) |*kinds| for (kinds) |*key| if (key.*) |k| if (references(k, tail)) {
         key.* = null;
     };
-    for (&pentries) |*entry| if (entry.*) |*x| if (x.key.seq[2] == tail) {
-        dropPrefill(x);
-        entry.* = null;
-    };
-    for (&pseen) |*entry| if (entry.*) |x| if (x.key.seq[2] == tail) {
-        entry.* = null;
-    };
+    if (!keep_prefill) {
+        for (&pentries) |*entry| if (entry.*) |*x| if (x.key.seq[2] == tail) {
+            dropPrefill(x);
+            entry.* = null;
+        };
+        for (&pseen) |*entry| if (entry.*) |*x| if (x.key.seq[2] == tail) {
+            entry.* = null;
+        };
+    }
+}
+
+pub fn releaseSeq(seq: anytype) void {
+    releaseSeqImpl(seq, false);
+}
+
+pub fn releaseDecodeSeq(seq: anytype) void {
+    releaseSeqImpl(seq, true);
 }
 
 /// The engine's deinit: graphs and the device planner go.
@@ -1354,14 +1364,14 @@ fn dropPrefill(entry: *PEntry) void {
 }
 const pcache_n = 112;
 var pentries: [pcache_n]?PEntry = @splat(null);
-var pseen: [128]?struct { key: PKey, n: u32 } = @splat(null);
+var pseen: [pcache_n * 2]?struct { key: PKey, n: u32 } = @splat(null);
 var pseen_at: usize = 0;
 var pcur: ?PKey = null;
 var pcur_admission: ?memory.Ticket = null;
 var pcur_binding_admission: ?memory.Ticket = null;
 var pcur_binding_request: ?prefill_binding.Request = null;
 
-pub var prefill_stats: struct { captures: u64 = 0, updates: u64 = 0, replays: u64 = 0, rebinds: u64 = 0, eager: u64 = 0, admission_misses: u64 = 0, capture_ns: u64 = 0 } = .{};
+pub var prefill_stats: struct { captures: u64 = 0, updates: u64 = 0, replays: u64 = 0, paged_replays: u64 = 0, rebinds: u64 = 0, sighting_hits: u64 = 0, sighting_misses: u64 = 0, eager: u64 = 0, admission_misses: u64 = 0, capture_ns: u64 = 0 } = .{};
 
 fn prefillAdmissionMiss() Prefill {
     prefill_stats.eager += 1;
@@ -1435,7 +1445,7 @@ test "exl3: GDN prefill keys bind the actual layer buffers including driver and 
 
 test "exl3: prefill origin candidates preserve paging generation, incarnation and allocation keys" {
     const key: PKey = .{ .layer = 7, .rows = 512, .sub = 256, .pos0 = 4096, .deep = 1, .base = 2, .base_cap = 4096, .seq = .{ 3, 4, 5, 4096, 6 }, .paging = .{ 7, 8, 9, 10, 11, 12 }, .wait_count = 0, .wait_key = 0, .scores = 13, .tiles = true, .positions = 14, .stream = 15 };
-    const request: prefill_binding.Request = .{ .functions = .{ .prep = 1, .scores = 2, .chunks = 3, .ahead = 4, .plan = 5, .remap = 6 }, .rows = 512, .sub = 256, .pos0 = 4096, .positions = 14, .cap = 32768, .origin = 1024, .page_rows = 256, .shared = true, .keys = 16, .values = 17 };
+    const request: prefill_binding.Request = .{ .functions = .{ .prep = 1, .scores = 2, .chunks = 3, .ahead = 4, .plan = 5, .remap = 6 }, .rows = 512, .sub = 256, .pos0 = 4096, .positions = 14, .cap = 32768, .origin = 1024, .page_rows = 256, .shared = true, .generation = 1, .keys = 16, .values = 17 };
     var binding: prefill_binding.Binding = .{ .graph = undefined, .request = request, .records = &.{} };
     var driver: cuda.Driver = undefined;
     pentries = @splat(null);
@@ -1512,11 +1522,47 @@ fn psighting(k: PKey) u32 {
     const s = pshape(k);
     for (&pseen) |*e| if (e.*) |*x| if (std.meta.eql(x.key, s)) {
         x.n += 1;
+        prefill_stats.sighting_hits += 1;
         return x.n;
     };
+    prefill_stats.sighting_misses += 1;
     pseen[pseen_at % pseen.len] = .{ .key = s, .n = 1 };
     pseen_at += 1;
     return 1;
+}
+
+test "exl3: prefill warmup history retains two lanes and two chunk banks" {
+    pseen = @splat(null);
+    pseen_at = 0;
+    defer {
+        pseen = @splat(null);
+        pseen_at = 0;
+    }
+    var keys: [2 * 2 * wt.layers_n]PKey = undefined;
+    var count: usize = 0;
+    for (0..2) |sequence| for (0..2) |bank| for (0..wt.layers_n) |layer| {
+        keys[count] = .{
+            .layer = layer,
+            .rows = 4096,
+            .sub = 256,
+            .pos0 = bank * 4096,
+            .deep = 100 + bank,
+            .base = 200,
+            .base_cap = 8192,
+            .seq = .{ 1, 2, 300 + sequence, 8192, 4 },
+            .paging = .{ 5, 6, 7, 8, 9, sequence + bank + 1 },
+            .wait_count = 0,
+            .wait_key = 0,
+            .scores = 10,
+            .tiles = true,
+            .positions = 11,
+            .stream = 12,
+        };
+        count += 1;
+    };
+    try std.testing.expectEqual(@as(usize, 192), count);
+    for (keys) |key| try std.testing.expectEqual(@as(u32, 1), psighting(key));
+    for (keys) |key| try std.testing.expectEqual(@as(u32, 2), psighting(key));
 }
 
 /// TF_FLASHNEXT_EXL3_GRAPH_PREFILL_AFTER: the sighting of a layer shape that captures it (default 2: a chunk takes
@@ -1563,7 +1609,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         .base = base.ids,
         .base_cap = base.cap,
         .seq = .{ if (q.conv.len > 0) q.conv[0].ptr else 0, if (q.kc.len > 0) q.kc[0].ptr else 0, q.tail.ptr, q.cap, if (q.state.len > 0) q.state[0].ptr else 0 },
-        .paging = if (!linear) (if (q.paged) |pg| pg.graphKey() else @splat(0)) else @splat(0),
+        .paging = if (!linear) (if (q.paged) |pg| pg.prefillGraphKey() else @splat(0)) else @splat(0),
         .wait_count = waits.len,
         .wait_key = wait_key,
         .scores = q.scores,
@@ -1577,6 +1623,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         if (x.binding) |binding| if (binding.poisoned) continue;
         x.used = clock;
         prefill_stats.replays += 1;
+        if (x.binding != null) prefill_stats.paged_replays += 1;
         try x.exec.launchOn(p.stream);
         return .replayed;
     };
@@ -1588,6 +1635,7 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
         entry.used = clock;
         prefill_stats.rebinds += 1;
         prefill_stats.replays += 1;
+        prefill_stats.paged_replays += 1;
         try entry.exec.launchOn(p.stream);
         return .replayed;
     };
@@ -1879,6 +1927,26 @@ test "exl3: sequence graph retirement removes mixed lanes and pending work witho
     try std.testing.expectEqual(@as(u32, 1), sighting(owner_key));
     releaseSeq(Seq{ .tail = .{ .ptr = 100 } });
     try std.testing.expectEqual(@as(usize, 4), GraphTestDriver.exec_drops);
+}
+
+test "exl3: snapshot graph retirement keeps prefill templates but drops decode graphs" {
+    clear();
+    defer clear();
+    GraphTestDriver.exec_drops = 0;
+    GraphTestDriver.graph_drops = 0;
+    var driver = GraphTestDriver.driver();
+    const exec: cuda.graph.Exec = .{ .d = &driver, .handle = @ptrFromInt(1) };
+    var key: Key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 };
+    key.seq[0][2] = 100;
+    entries[0] = .{ .key = key, .exec = exec, .used = 1 };
+    const pkey: PKey = .{ .layer = 0, .rows = 32, .sub = 16, .pos0 = 0, .deep = 1, .base = 2, .base_cap = 32, .seq = .{ 1, 2, 100, 32, 3 }, .paging = @splat(0), .wait_count = 0, .wait_key = 0, .scores = 4, .tiles = false };
+    pentries[0] = .{ .key = pkey, .exec = exec, .used = 1 };
+    pseen[0] = .{ .key = pkey, .n = 2 };
+    const Seq = struct { tail: struct { ptr: u64 } };
+    releaseDecodeSeq(Seq{ .tail = .{ .ptr = 100 } });
+    try std.testing.expect(entries[0] == null);
+    try std.testing.expect(pentries[0] != null);
+    try std.testing.expect(pseen[0] != null);
 }
 
 test "exl3: pending graph deadlines and failed instantiation never expose an executable" {

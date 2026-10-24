@@ -16,13 +16,14 @@ pub const Request = struct {
     origin: usize,
     page_rows: usize,
     shared: bool,
+    generation: u64,
     keys: u64,
     values: u64,
 
     pub fn validate(self: Request) !void {
         if (self.rows == 0 or self.sub == 0 or self.sub % parts.att_rows != 0 or
             self.rows > 65536 or self.positions == 0 or self.page_rows == 0 or self.page_rows > parts.att_rows or
-            self.origin % wt.index_ratio != 0 or self.origin > self.pos0 or self.pos0 > self.cap or self.rows > self.cap - self.pos0 or
+            self.origin % wt.index_ratio != 0 or (self.shared and self.generation == 0) or self.origin > self.pos0 or self.pos0 > self.cap or self.rows > self.cap - self.pos0 or
             self.cap > std.math.maxInt(c_int) or self.keys == 0 or self.values == 0) return error.UnsupportedPrefillBinding;
         comptime var functions = std.meta.fieldNames(Functions);
         inline for (functions, 0..) |field, index| {
@@ -49,6 +50,8 @@ pub const Request = struct {
         after.pos0 = 0;
         before.origin = 0;
         after.origin = 0;
+        before.generation = 0;
+        after.generation = 0;
         if (!std.meta.eql(before, after)) return false;
         for (0..divUp(self.rows, parts.att_rows)) |block| {
             if (self.sparse(block) != target.sparse(block)) return false;
@@ -126,7 +129,7 @@ pub const Record = struct {
                 if (params.grid_z != request.chunks(record.block) or params.grid_y != wt.kv_heads or params.block_x != 128 or
                     params.grid_x == 0 or params.grid_x > @min(request.page_rows, block_rows)) return error.UnsupportedPrefillBinding;
             },
-            .plan => if (record.values[7] != request.origin or record.values[3] == 0 or record.values[3] > request.page_rows or params.grid_x != 1 or params.block_x != 1024) return error.UnsupportedPrefillBinding,
+            .plan => if (record.values[7] != request.origin or (request.shared and record.values[22] != request.generation) or record.values[3] == 0 or record.values[3] > request.page_rows or params.grid_x != 1 or params.block_x != 1024) return error.UnsupportedPrefillBinding,
             .remap => if (record.values[4] != request.origin or params.grid_x == 0 or params.grid_x > request.page_rows or params.block_x != 256) return error.UnsupportedPrefillBinding,
         }
         if (params.block_y != 1 or params.block_z != 1) return error.UnsupportedPrefillBinding;
@@ -135,7 +138,8 @@ pub const Record = struct {
 
     pub fn changed(self: Record, before: Request, target: Request) bool {
         return switch (self.kind) {
-            .prep, .plan, .remap => before.origin != target.origin,
+            .prep, .remap => before.origin != target.origin,
+            .plan => before.origin != target.origin or before.generation != target.generation,
             .scores => before.scores(self.block) != target.scores(self.block),
             .chunks => before.chunks(self.block) != target.chunks(self.block),
         };
@@ -150,7 +154,10 @@ pub const Record = struct {
             },
             .scores => record.params.grid_y = target.scores(record.block),
             .chunks => record.params.grid_z = target.chunks(record.block),
-            .plan => record.values[7] = target.origin,
+            .plan => {
+                record.values[7] = target.origin;
+                if (target.shared) record.values[22] = target.generation;
+            },
             .remap => record.values[4] = target.origin,
         }
         return record;
@@ -178,6 +185,7 @@ pub fn requestFor(pass: anytype, linear: bool, layer: usize, rows: usize, sub: u
         .origin = pg.win0[index],
         .page_rows = paging.pagingRows(pg.cfg, pg.win0[index], parts.att_rows) catch return null,
         .shared = pg.cfg.shared_lanes != 0,
+        .generation = if (pg.cfg.shared_lanes != 0) pg.shared_sequence.generation else 0,
         .keys = pg.devRows(index, false),
         .values = pg.devRows(index, true),
     };

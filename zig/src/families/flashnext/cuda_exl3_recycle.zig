@@ -55,7 +55,12 @@ pub fn takeSeq(e: *prompt.Engine, cap: usize) !?prompt.Seq {
             s.deinit(e.gpa);
         }
         const st = e.stream.*;
-        if (s.paged) |pg| try pg.resetForReuse(st);
+        var previous_lane: ?u32 = null;
+        if (s.paged) |pg| {
+            if (pg.cfg.shared_lanes != 0) previous_lane = pg.shared_sequence.lane;
+            try pg.resetForReuse(st);
+            if (previous_lane) |lane| if (pg.shared_sequence.lane != lane) @import("cuda_exl3_graph.zig").releaseSeq(&s);
+        }
         for ([_][]cuda.DeviceBuffer{ s.conv, s.state, s.kc, s.vc, s.ikc, s.pooled }) |bs| try zero(bs, st);
         try s.tail.fill8(0, st.handle);
         @memset(s.logits, 0);
@@ -98,7 +103,7 @@ pub fn giveSeq(s: *prompt.Seq) bool {
     if (draining or !enabled() or !canRetainSeq(s)) return false;
     for (&seqs) |*slot| if (slot.* == null) {
         if (s.paged) |pg| {
-            @import("cuda_exl3_graph.zig").releaseSeq(s);
+            @import("cuda_exl3_graph.zig").releaseDecodeSeq(s);
             pg.retireForReuse() catch @panic("recycled shared KV owner did not retire");
         } else s.tail.d.synchronize() catch @panic("recycled sequence consumers did not drain");
         slot.* = s.*;

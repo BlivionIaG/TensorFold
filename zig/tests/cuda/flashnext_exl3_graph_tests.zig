@@ -288,6 +288,7 @@ const Eng = struct {
     }
 
     fn initPaged(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, paging: ?X.kvpage.Config) !*Eng {
+        const graph_reservation = if ((paging != null or X.kvpage.force != null or X.kvpage.configFromEnv() != null) and X.graph.enabled()) try X.graph.memory.startupReservationForStreams(1) else 0;
         const g = try gpu.gpa.create(Eng);
         errdefer gpu.gpa.destroy(g);
         g.gpu = gpu;
@@ -323,6 +324,7 @@ const Eng = struct {
         errdefer g.out.free();
         X.prefill.reserveFor(g.e, cap_default, world);
         var budget = try xpass.budgetFromEnv(0);
+        budget.graph_reservation = graph_reservation;
         if (paging) |_| {
             const layout = try X.kv.sequenceLayout(X.kv.of(g.e), cap_default, g.e.chunk, g.e.page_config);
             budget.other = try std.math.add(u64, budget.other, try std.math.mul(u64, layout.bytes.device(), 2));
@@ -796,22 +798,26 @@ fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8,
     defer allocator.free(expected);
     var reference: [2]?*snaps.Snap = .{ null, null };
     defer for (reference) |item| if (item) |saved| snaps.drop(allocator, g.stream, saved);
-    for ([_]graph.Mode{ .off, .graph, .graph }, 0..) |mode, run_index| {
+    for ([_]graph.Mode{ .off, .graph, .graph, .graph }, 0..) |mode, run_index| {
         graph.force = mode;
         try dplan.toHost();
         g.e.round_graph.clear();
         if (shared) {
             const previous = second.paged.?.shared_sequence;
             const window = second.paged.?.devRows(0, false);
+            const reuse_before = X.recycle.stats.seq_reused;
+            graph.force = .graph;
             second_live = false;
             second.deinit(allocator);
             second = try g.e.newSeq(cap_default);
             second_live = true;
+            graph.force = mode;
+            try check.expect(X.recycle.stats.seq_reused == reuse_before + 1, "rank {d}: request recycle reused the retained sequence allocations", .{rank});
             const current = second.paged.?.shared_sequence;
             try check.expect(previous.arena == current.arena and previous.lane == current.lane and current.generation > previous.generation and current.generation > second_saved.owned_blocks.?.source.generation, "rank {d}: saved source restores into recycled lane with a new generation", .{rank});
             try check.expect(window == second.paged.?.devRows(0, false), "rank {d}: recycled lane retains its fixed window address", .{rank});
             try probe.?.unchanged(g);
-            std.debug.print("SHARED rank {d}/{d}: recycled lane {d}, source generation {d}, destination generation {d}, stable window {x}\n", .{ rank, world, current.lane, second_saved.owned_blocks.?.source.generation, current.generation, window });
+            std.debug.print("SHARED rank {d}/{d}: recycled lane {d}, sequence reuse count +1, source generation {d}, destination generation {d}, stable window {x}\n", .{ rank, world, current.lane, second_saved.owned_blocks.?.source.generation, current.generation, window });
         }
         try snaps.restore(g.stream, &g.seq, null, first_saved);
         if (shared) {
@@ -867,7 +873,14 @@ fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8,
             }
         }
         if (mode == .graph) {
-            try check.expect(graph.prefill_stats.replays > prefill_before.replays, "rank {d} prefill graph replay after restore", .{rank});
+            std.debug.print("SNAPSHOT rank {d}/{d} graph cache run={d}: prefill captures +{d}, updates +{d}, replays +{d}, paged replays +{d}, rebinds +{d}, sighting hits +{d}, misses +{d}, eager +{d}; decode replays +{d}\n", .{ rank, world, run_index, graph.prefill_stats.captures - prefill_before.captures, graph.prefill_stats.updates - prefill_before.updates, graph.prefill_stats.replays - prefill_before.replays, graph.prefill_stats.paged_replays - prefill_before.paged_replays, graph.prefill_stats.rebinds - prefill_before.rebinds, graph.prefill_stats.sighting_hits - prefill_before.sighting_hits, graph.prefill_stats.sighting_misses - prefill_before.sighting_misses, graph.prefill_stats.eager - prefill_before.eager, graph.stats.replays - before.replays });
+            if (run_index == 1) {
+                try check.expect(graph.prefill_stats.captures + graph.prefill_stats.updates + graph.prefill_stats.replays + graph.prefill_stats.eager > prefill_before.captures + prefill_before.updates + prefill_before.replays + prefill_before.eager, "rank {d} restored prefill graph warmup runs", .{rank});
+            } else if (run_index == 2) {
+                try check.expect(graph.prefill_stats.captures + graph.prefill_stats.updates + graph.prefill_stats.replays > prefill_before.captures + prefill_before.updates + prefill_before.replays, "rank {d} restored prefill graph captures or rebinds after warmup", .{rank});
+            } else {
+                try check.expect(graph.prefill_stats.paged_replays > prefill_before.paged_replays, "rank {d} paged-attention graph replay after snapshot restore", .{rank});
+            }
             try check.expect(graph.stats.replays > before.replays, "rank {d} concurrent decode graph replay after restore", .{rank});
         }
         if (probe) |foreign| {

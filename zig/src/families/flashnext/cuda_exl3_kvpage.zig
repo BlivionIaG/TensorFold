@@ -723,6 +723,15 @@ pub const Paged = struct {
         return .{ pg.dev.ptr, pg.tabs.ptr, pg.work.ptr, pg.host_dev, std.hash.Wyhash.hash(0, std.mem.asBytes(&shape)), std.hash.Wyhash.hash(0, std.mem.asBytes(&pg.win0)) };
     }
 
+    pub fn prefillGraphKey(pg: *const Paged) [6]u64 {
+        const strict = pg.graphKey();
+        const logical = pg.logicalGraphKey();
+        const lane: u64 = if (pg.cfg.shared_lanes == 0) 0 else pg.shared_sequence.lane;
+        const arena: u64 = if (pg.cfg.shared_lanes == 0) 0 else pg.shared_arena.?.id;
+        const shape = .{ logical[0], lane, arena };
+        return .{ strict[0], strict[1], strict[2], strict[3], std.hash.Wyhash.hash(0, std.mem.asBytes(&shape)), std.hash.Wyhash.hash(strict[4], std.mem.asBytes(&strict[5])) };
+    }
+
     pub fn logicalGraphKey(pg: *const Paged) [2]u64 {
         var shape: [6 + attn_n]usize = undefined;
         shape[0..6].* = .{ pg.cap, pg.wr, pg.cfg.window, pg.cfg.rows, pg.cfg.slots, pg.cfg.shared_lanes };
@@ -920,6 +929,31 @@ test "exl3: kvpage graph key changes on rebase and host store replacement" {
     pg.win0[0] = 0;
     pg.host_dev = 5;
     try std.testing.expect(!std.meta.eql(first, pg.graphKey()));
+}
+
+test "exl3: prefill graph key separates reusable geometry from generation and origin" {
+    var pg: Paged = undefined;
+    pg.dev.ptr = 1;
+    pg.tabs.ptr = 2;
+    pg.work.ptr = 3;
+    pg.host_dev = 4;
+    pg.cap = 200016;
+    pg.cfg = .{ .window = 4096, .rows = 2048, .slots = 20000 };
+    pg.wr = pg.cfg.window + pg.cfg.rows + ratio;
+    pg.incarnation = 1;
+    pg.win0 = @splat(65536);
+    const first = pg.prefillGraphKey();
+    pg.incarnation += 1;
+    const new_generation = pg.prefillGraphKey();
+    try std.testing.expectEqual(first[4], new_generation[4]);
+    try std.testing.expect(first[5] != new_generation[5]);
+    pg.win0[0] += ratio;
+    const moved = pg.prefillGraphKey();
+    try std.testing.expectEqual(first[4], moved[4]);
+    try std.testing.expect(moved[5] != new_generation[5]);
+    pg.cfg.slots += 1;
+    const changed_shape = pg.prefillGraphKey();
+    try std.testing.expect(changed_shape[4] != moved[4]);
 }
 
 test "exl3: kvpage capacity subdivision boundaries and checked admission" {
