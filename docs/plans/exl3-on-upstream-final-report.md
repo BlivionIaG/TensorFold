@@ -1035,3 +1035,38 @@ copy kernel's block count does not matter; the copies are link-bound. No default
 
 Consequence: about 16% of kernel time is all-reduce wait caused by miss variance, and eliminating that variance would be worth at most a
 few percent per step. The decode step has no single large inefficiency to remove with a tuning knob.
+
+### Hit/miss overlap on by default (+4% decode without drafts)
+
+`TF_FLASHNEXT_EXL3_OVERLAP` (the held experts compute while the misses' copies run on a side stream, then the misses' experts
+follow) was compiled but default-off and unmeasured. It is active in graph mode (same graph coverage). With the stock 144-block copy
+kernel it gave no gain (summed per-request decode 58.1/58.6 against 58.3-58.5/59.0-59.1 tok/s at 2,048-token prompts), because the
+copy kernel's blocks fill the 36 SMs and the held experts' kernels cannot run beside them. With few copy blocks the gain appears and
+plateaus (2,048-token prompts, 256 generated tokens, 38 lines, summed per-request decode, two measured batches each):
+
+| overlap | copy blocks | decode tok/s |
+|---|---|---|
+| off | 144 | 58.3-58.5, 59.0 |
+| on | 144 | 58.0-58.1, 58.6 |
+| on | 32 | 59.2, 59.9 |
+| on | 16 | 60.4, 61.0 |
+| on | 2, 4, 6, 8 | 60.5-60.6, 61.0-61.1 |
+
+The copy is link-bound (a block-count sweep without overlap was identical to the digit), so 2 blocks already saturate it. Default
+change: the split is on unless `TF_FLASHNEXT_EXL3_OVERLAP=0`, and with it on the copy kernel uses a quarter of the SMs, at least 8
+blocks (9 on the 36-SM RTX 5060 Ti); `TF_FLASHNEXT_EXL3_DCOPY_BLOCKS` still overrides.
+
+Validation on the exact new defaults, ABBA against `OVERLAP=0` with 144 blocks, 16,384-token prompts, 128 generated tokens, 38 lines,
+window off, TP=2, graphs, shared BF16 paging; summed per-request decode tok/s (aggregate in parentheses), all hashes `44f75f…`:
+
+| drafts | new default (two legs, two batches each) | old behavior (two legs, two batches each) | change |
+|---|---|---|---|
+| off | 31.99, 32.34, 32.01, 32.16 (16.07-16.12) | 30.79, 30.90, 30.68, 30.93 (15.79-15.83) | +4.4% (+1.6% aggregate) |
+| on | 19.87, 19.88, 19.79, 19.83 (12.37-12.40) | 20.12, 20.04, 20.00, 20.04 (12.44-12.48) | -1.0% |
+
+The MTP chain does not use the split and loses about 1% to the smaller copy-block count. The snapshot gate
+(`flashnext-exl3-graph … snapshot-shared`) passes on both ranks with the new defaults, `zig fmt --check` and
+`zig build test-flashnext-exl3-host` pass.
+
+Configuration note: on this setup drafted decode (about 20 tok/s summed, 71% draft acceptance, 62 rounds for 128 tokens) is far slower
+than undrafted decode (about 32 tok/s), so serving with `--no-drafts` is the faster setting for these two cards today.
