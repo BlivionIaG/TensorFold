@@ -1304,6 +1304,38 @@ fn slotsPass(dp: *Deep, x: *load.Experts, st: cuda.Stream, l: cuda.exl3_experts.
 pub fn head(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, next: []const u32, rows: u64, scores: bool) !bool {
     const op = opts();
     const n = next.len;
+    // A paired window hands the head up to two deep chunks of rows: it runs them as two slices (headSplit).
+    if (!scores and deep != null and n > deep.?.rows) {
+        const first = headSplit(n, deep.?.rows, op.min_rows) orelse return false;
+        if (!try headSlice(Tri, o, d, next[0..first], rows, false)) return false;
+        if (!try headSlice(Tri, o, d, next[first..], rows + first * wide * 2, false)) return error.UnexpectedTensor;
+        return true;
+    }
+    return headSlice(Tri, o, d, next, rows, scores);
+}
+
+/// Where a head call of `n` rows over a paired window splits into two deep-sized slices, or null when it cannot.
+fn headSplit(n: usize, deep_rows: usize, min_rows: usize) ?usize {
+    if (n <= deep_rows or n > 2 * deep_rows) return null;
+    const first = ((n + 1) / 2 + att_rows - 1) / att_rows * att_rows;
+    if (first >= n or first > deep_rows or n - first < min_rows) return null;
+    return first;
+}
+
+test "exl3: a paired window's head splits into two deep slices that cannot decline after the first runs" {
+    try std.testing.expectEqual(@as(?usize, 4096), headSplit(8192, 4096, 512));
+    try std.testing.expectEqual(@as(?usize, null), headSplit(4096, 4096, 512));
+    try std.testing.expectEqual(@as(?usize, null), headSplit(8193, 4096, 512));
+    var n: usize = 4097;
+    while (n <= 8192) : (n += 61) {
+        const first = headSplit(n, 4096, 512) orelse continue;
+        try std.testing.expect(first <= 4096 and first % att_rows == 0 and n - first <= first and n - first >= 512);
+    }
+}
+
+fn headSlice(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, next: []const u32, rows: u64, scores: bool) !bool {
+    const op = opts();
+    const n = next.len;
     if (!op.enabled or !headEnabled() or scores or n < op.min_rows or d.media != null) return false;
     const e = o.e;
     const dp = deep orelse return false;

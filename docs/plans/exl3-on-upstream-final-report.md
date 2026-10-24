@@ -806,3 +806,79 @@ miss reduction does not apply to the MTP path in this fixture.
 Validation also passed `zig build test-flashnext-exl3-host`, `zig fmt --check` on the changed Zig files, `git diff --check`,
 and the native sm_120 build. The option remains experimental and default-off pending held-out prompts, longer sessions,
 and broader MTP/profile interactions.
+
+## 2026-10-24 prefill-graph churn attribution and two-chunk window ABBA
+
+Setup for every leg below: par1-cs13, two RTX 5060 Ti, TP=2, `--parallel 2`, shared BF16 KV paging, decode and prefill
+graphs on, MTP drafts on, prompt cache off, two concurrent 16,384-token prompts, 128 generated tokens, two warm-up and
+two measured batches per leg. All 16 measured requests across the legs below produced the same token hash
+`44f75f563088…`.
+
+**Prefill graph churn is not the bottleneck.** With 38 expert lines and prefill graphs on, the server counters read
+`shared lanes reassigned 0`, `admission misses 0`, and prefill graphs replay/eager/instantiated/updated 1200/96/240/0 with
+`capture 440 ms` (rank 0) and `401 ms` (rank 1) for the whole run, against about 14 s of prefill per batch. The 96 eager
+runs and 240 captures are a one-time fill (240 sighted, 96 run eagerly before instantiation); they did not recur in the
+measured batches. The lane-reassignment hypothesis is refuted; even a perfect graph policy bounds the saving at well under
+1 s.
+
+**Prefill is bound by the expert stream over PCIe.** Opt-in cache telemetry (`TF_FLASHNEXT_CACHE_TELEMETRY=1`) showed rank 0
+moving 427 GB through the expert ring for four batches (about 107 GB per batch, about 13 GB per 4096-row chunk), with
+13% of ring copies unused. At 14.4 s per batch that is about 7.4 GB/s per rank over a PCIe 4.0 x8 link.
+
+**The two-chunk window (`TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK=1`) shortens prefill when it is admitted.** At 38 lines per
+layer it is declined (`extra_device=588070912`, free 6.36 GB against 6.60 GB protected). At 26 lines per layer it is
+admitted. ABBA on one binary (two-chunk, one-chunk, one-chunk, two-chunk), 26 lines per layer:
+
+| leg | mean prefill, measured batches | aggregate decode tok/s |
+|---|---|---|
+| two-chunk (A) | 12.503, 12.511 | 15.75, 15.74 |
+| one-chunk (B) | 14.428, 14.422 | 14.92, 14.94 |
+| one-chunk (B) | 15.732, 14.420 | 14.92, 14.97 |
+| two-chunk (A) | 12.537, 12.543 | 15.71, 15.76 |
+
+Two-chunk prefill is about 13% shorter (12.52 s against 14.42 s, ignoring the one 15.73 s outlier in a one-chunk leg), with the
+same direction in both orders, about 15% more prefill throughput. Reference points at 38 lines with one chunk (separate
+runs, not part of the ABBA): prefill 14.41 s, decode 15.87 tok/s. Two-chunk at 26 lines therefore costs about 0.8% decode
+against the 38-line configuration. The higher decode throughput of the two-chunk legs over the one-chunk legs at 26 lines
+(about +5.5%) is unexplained and was not isolated; do not read it as a window effect.
+
+This is a measured, correctness-preserving prefill gain for this workload, not the 2× target. It depends on trading 12 of 38
+expert lines per layer for the window's extra device memory, and it was measured on one prompt shape and one machine. The
+option stays default-off until held-out prompt shapes, longer prompts, and the MTP and snapshot paths are re-checked.
+
+### Prompt-length and MTP sweep of the two-chunk window (same day)
+
+Same binary, machine, 26 lines per layer and flags as the ABBA above; one server start per leg and order two-chunk,
+one-chunk, one-chunk, two-chunk (A B B A). Per leg one warm-up batch (discarded) and two measured batches of two
+concurrent prompts, 128 generated tokens. Every measured request returned the same token hash across all four legs in each
+row (8,192 and 30,000 tokens without drafts, 16,384 tokens with request-level MTP drafts).
+
+| prompt tokens | drafts | mean prefill s, two-chunk (4 batches) | mean prefill s, one-chunk (4 batches) | change |
+|---|---|---|---|---|
+| 8,192 | off | 4.925 | 6.47 (one 7.76 outlier excluded) | −24% |
+| 30,000 | off | 25.92 | 29.50 | −12% |
+| 16,384 | on | 15.37 | 15.23 (one 16.58 outlier excluded) | +1% (no gain) |
+
+The window shortens prefill for every no-draft shape tried, with the same direction in both orders. With MTP drafts on it
+did not at first: drafted prompts also ran as 8,192-row paired passes, but `head()` in `cuda_exl3_prefill.zig` declined any
+call with more rows than the deep chunk (`dp.rows < n`), so the MTP head silently took the slow per-chunk path for every
+paired pass. Aggregate decode for drafted 16,384-token requests was 11.5 tok/s in both modes, below the undrafted 15.7 tok/s,
+which matches the earlier finding that MTP-drafted decode regresses on this setup.
+
+**Head fix.** `head()` now splits a paired window's rows into two deep-sized slices (`headSplit`: the first aligned up to
+`att_rows` and at most one deep chunk, the second no larger and not under `min_rows`, so the second slice cannot decline after
+the first has run). The log line `the MTP head runs expert-major over deep chunks (4096 rows first)` confirms the deep head path
+engages. Re-measured with the same ABBA procedure (two-chunk, one-chunk, one-chunk, two-chunk), 16,384 prompt tokens,
+drafts on, 26 lines per layer, all 16 measured requests with token hash `44f75f56…`:
+
+| leg | mean prefill s, two measured batches | aggregate decode tok/s |
+|---|---|---|
+| two-chunk (A1) | 13.177, 13.231 | 12.80, 12.78 |
+| one-chunk (B1) | 15.214, 15.215 | 11.65, 11.66 |
+| one-chunk (B2) | 15.211, 15.232 | 11.67, 11.67 |
+| two-chunk (A2) | 13.179, 13.211 | 12.77, 12.81 |
+
+Drafted prefill is 13.2% shorter (13.20 s against 15.22 s) and drafted aggregate decode is 9.6% higher (12.79 against 11.66
+tok/s); the decode difference is again not isolated to a cause. One-chunk drafted prefill is unchanged by the fix (15.2 s).
+Host validation: `zig fmt --check` passes and `zig build test-flashnext-exl3-host` passes on par1-cs25 including a new
+`headSplit` test. These sweeps do not cover the snapshot path or prompts above 30,000 tokens; the window stays default-off.
