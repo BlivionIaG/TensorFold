@@ -924,3 +924,23 @@ Supporting evidence: decode-phase expert cache counters were identical between w
 (25,152 plans, 176,210 hit picks, 68,222 miss picks, 66,693 device copies, a 72.1% device hit rate at 26 lines), and decode
 graph coverage was the same (468 round-2 replays, 8 eager). This was not confirmed with a decode-only run. Treat the window as
 a prefill optimization only; no decode improvement from it is claimed.
+
+### How much of decode is exposed expert-copy time (estimate)
+
+Two decode-phase telemetry runs on the same binary and workload (TP=2, graphs, shared BF16 paging, two concurrent 16,384-token
+prompts, 128 generated tokens, window off) differ only in expert lines per layer:
+
+| lines per layer | device copies per decode step (rank 0) | device miss rate | sum of per-request decode tok/s |
+|---|---|---|---|
+| 38 | 95.3 | 20.8% | 29.7 |
+| 26 | 127.3 | 27.9% | 26.95 |
+
+Treating step time as proportional to 1/tok/s, 32 more copies per step cost about 3.4 ms, or about 0.106 ms per copy. A copy is
+one 1.76 MiB line, so that is roughly 17 GB/s: close to the PCIe 4.0 x8 link rate, which means these copies are almost entirely
+exposed (not hidden behind compute). At 38 lines that puts about 10 ms of a roughly 34 ms step (about 30%) on expert misses.
+
+Consequences (estimates from two operating points, not a controlled sweep): removing every miss would cut step time by at most
+about 30% (about 1.4× decode), so cache policy alone cannot reach 2×, and a 6% reduction in copies, the size of the best offline
+replay result, is worth about 2% of step time, which is inside run variation. Large decode gains need either hiding the copies
+(a router-independent prefetch of the next layer's likely experts) or shrinking the 23–24 ms non-miss part of the step. Neither
+has been attempted.
