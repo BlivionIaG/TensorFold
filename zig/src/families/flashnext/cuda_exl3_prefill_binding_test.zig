@@ -15,6 +15,7 @@ fn request(shared: bool) binding.Request {
         .origin = 1024,
         .page_rows = 256,
         .shared = shared,
+        .generation = if (shared) 0x1234567800000001 else 0,
         .keys = 0x2000000020,
         .values = 0x3000000030,
     };
@@ -61,7 +62,7 @@ fn recordFor(req: binding.Request, kind: binding.Kind, block: usize) binding.Rec
             record.values[7] = req.origin;
             record.params.grid_x = 1;
             record.params.block_x = 1024;
-            if (req.shared) record.values[22] = 0x1234567800000001;
+            if (req.shared) record.values[22] = req.generation;
         },
         .remap => record.values[4] = req.origin,
     }
@@ -83,6 +84,7 @@ test "exl3: prefill origin binding keeps dense-sparse and paging-split topology 
     var target = base;
     target.pos0 = 8192;
     target.origin = 4096;
+    target.generation += 1;
     try std.testing.expect(base.compatible(target));
     target.page_rows = 32;
     try std.testing.expect(!base.compatible(target));
@@ -208,7 +210,7 @@ test "exl3: prefill rebind updates all origin arguments and grids without stale 
             try std.testing.expectEqualDeep(expected.values, record.values);
             try std.testing.expectEqual(expected.params.grid_y, record.params.grid_y);
             try std.testing.expectEqual(expected.params.grid_z, record.params.grid_z);
-            if (record.kind == .plan and shared) try std.testing.expectEqual(@as(u64, 0x1234567800000001), record.values[22]);
+            if (record.kind == .plan and shared) try std.testing.expectEqual(target.generation, record.values[22]);
         }
         setter.calls = 0;
         try state.apply(&setter, target);

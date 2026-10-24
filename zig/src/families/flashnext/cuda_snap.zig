@@ -327,7 +327,7 @@ pub fn restoreData(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, snap: *con
     defer finishShared(seq, shared_lease);
     errdefer failShared(stream, seq, shared_lease);
     if (snap.paged != null) try quiesce(stream);
-    @import("cuda_exl3_graph.zig").releaseSeq(seq);
+    @import("cuda_exl3_graph.zig").releaseDecodeSeq(seq);
     if (d) |h| h.verify_cache.invalidate();
     seq.invalidated = true;
     if (shared_lease) |lease| try seq.paged.?.shared_arena.?.submitted(lease);
