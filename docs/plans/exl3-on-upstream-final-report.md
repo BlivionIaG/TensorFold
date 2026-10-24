@@ -997,3 +997,16 @@ were identical across all four legs for both requests (`1c2777f5â€¦`, `a65bd936â
 two requests' prefills overlapping differently in that batch and are not used.) Two-chunk shortens the whole batch by 12.5%
 (26.5 s against 30.3 s), request 1 prefill by 15% and request 2 prefill by 24%, with identical outputs. The gain therefore holds
 for different, non-repeating prompt content and unequal prompt lengths, not only for the repeated-ID fixture.
+
+### Trimming the graph reservation to fit the window at more lines (dead end)
+
+The window's admission gap at 38 lines is about 0.8 GB. The graph budget is a heuristic (reservation 660 MiB plus headroom 128 MiB;
+`exec/template/transient` 16/16/32 MiB, "not measured exec bytes"), so two env overrides were tried on the 38/32-line server:
+`TF_FLASHNEXT_EXL3_GRAPH_RESERVATION_MIB=128` with `..._HEADROOM_MIB=32` fails startup with `InvalidGraphPolicy`, and
+`..._RESERVATION_MIB=400` with `..._HEADROOM_MIB=64` (32 lines) starts but the window is declined with
+`incremental graph reservation unavailable (required=0 supplied=419430400)`: an explicit reservation override disables the
+window's own graph reservation. Closing the gap would need code that applies `withWindowReservation` to manual values and a measured
+(not heuristic) graph footprint; neither was attempted. The window therefore still fits only after trimming 12 lines per layer at a
+32k context (17 at 64k). Making it the default is a decode-versus-prefill trade that depends on output length: at 26 lines decode is
+about 6% slower (14.9 against 15.87 tok/s aggregate) while a 16k prefill is 1.9 s shorter, so the window pays back only when generated
+tokens are fewer than about 300 per 16k-token prompt. It is left opt-in.
