@@ -840,7 +840,7 @@ Two-chunk prefill is about 13% shorter (12.52 s against 14.42 s, ignoring the on
 same direction in both orders, about 15% more prefill throughput. Reference points at 38 lines with one chunk (separate
 runs, not part of the ABBA): prefill 14.41 s, decode 15.87 tok/s. Two-chunk at 26 lines therefore costs about 0.8% decode
 against the 38-line configuration. The higher decode throughput of the two-chunk legs over the one-chunk legs at 26 lines
-(about +5.5%) is unexplained and was not isolated; do not read it as a window effect.
+(about +5.5%) is not a decode speedup: see the correction below.
 
 This is a measured, correctness-preserving prefill gain for this workload, not the 2× target. It depends on trading 12 of 38
 expert lines per layer for the window's extra device memory, and it was measured on one prompt shape and one machine. The
@@ -913,3 +913,14 @@ Prefill is 7.3% shorter with the window (60.58 s against 65.0 s; 65.0 is the mea
 shrinks with prompt length (24% at 8k, 13% at 16k, 12% at 30k, 7% at 60k), consistent with the fixed dense and attention work
 growing relative to the expert stream. At this length the prefill graph counters show 1330 replays, 1438 eager runs and 1141
 admission misses against a 112-entry graph cache, so very long prompts mostly run eagerly. Decode is unchanged by the window.
+
+### Correction: the window gives no decode gain
+
+The decode figures above that favored the window (about +5% to +10%) are most likely a prefill/decode interleaving effect, not a
+faster decode. With two concurrent prompts, the first request decodes while the second is still prefilling, and the
+reported per-request and aggregate decode rates include that overlap. A shorter prefill ends the overlap sooner, so both
+requests report a higher rate (7.86/20.5 tok/s with the window against 7.47/19.5 without, TTFT 9.9/20.0 s against 10.4/21.0 s).
+Supporting evidence: decode-phase expert cache counters were identical between window-on and window-off server logs
+(25,152 plans, 176,210 hit picks, 68,222 miss picks, 66,693 device copies, a 72.1% device hit rate at 26 lines), and decode
+graph coverage was the same (468 round-2 replays, 8 eager). This was not confirmed with a decode-only run. Treat the window as
+a prefill optimization only; no decode improvement from it is claimed.
