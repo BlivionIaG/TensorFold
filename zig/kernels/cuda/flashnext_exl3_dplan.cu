@@ -17,9 +17,12 @@
 #define DP_EXPERTS 512
 #define DP_SHARED 512
 #define DP_MAXU 256
+#define DP_RECENT_WINDOW 256
+#define DP_RECENT_WORDS_PER_ROW (DP_EXPERTS / 32)
+#define DP_RECENT_WORDS (DP_RECENT_WINDOW * DP_RECENT_WORDS_PER_ROW)
 
 struct DpMisc {
-    unsigned now, rounds, hit_slots, miss_slots, copies, evictions, overflow, inplace;
+    unsigned now, rounds, hit_slots, miss_slots, copies, evictions, overflow, inplace, recent_cursor, recent_filled;
 };
 
 __device__ __forceinline__ bool dp_colder(unsigned ca, unsigned sa, int ia, unsigned cb, unsigned sb, int ib) {
@@ -33,7 +36,7 @@ __device__ __forceinline__ bool dp_colder(unsigned ca, unsigned sa, int ia, unsi
 // src: per routed expert three host-bank device addresses, lens: their byte counts, k2: their half-bit widths.
 // work: per copy three {src, dst, len} triples (int64), work_n: the copy count.
 extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
-    const int* __restrict__ picks, int n, unsigned* __restrict__ st, int lines, long long* __restrict__ tab0,
+    const int* __restrict__ picks, int n, unsigned* __restrict__ st, int lines, int recent_enabled, long long* __restrict__ tab0,
     long long* __restrict__ tab1, long long* __restrict__ tab2, int* __restrict__ k2t0, int* __restrict__ k2t1,
     int* __restrict__ k2t2, const long long* __restrict__ src, const long long* __restrict__ lens,
     const int* __restrict__ k2, unsigned long long line_base, unsigned long long line_bytes, unsigned long long off0,
@@ -43,7 +46,10 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     unsigned* stamp = st + lines;
     int* line_of = reinterpret_cast<int*>(st + 2 * lines);
     unsigned* counts = st + 2 * lines + DP_EXPERTS;
-    DpMisc* misc = reinterpret_cast<DpMisc*>(st + 2 * lines + 2 * DP_EXPERTS);
+    unsigned* recent_counts = counts + DP_EXPERTS;
+    unsigned* recent_rows = recent_counts + DP_EXPERTS;
+    DpMisc* misc = reinterpret_cast<DpMisc*>(recent_rows + DP_RECENT_WORDS);
+    const unsigned* score = recent_enabled ? recent_counts : counts;
 
     __shared__ unsigned short uniq[DP_MAXU];
     __shared__ unsigned short app[DP_MAXU];
@@ -60,6 +66,34 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     if (t == 0) {
         now = ++misc->now;
         misc->rounds += 1;
+        if (recent_enabled) {
+            const int rows = n / 11;
+            for (int row = 0; row < rows; ++row) {
+                unsigned* expired = recent_rows + misc->recent_cursor * DP_RECENT_WORDS_PER_ROW;
+                for (int word = 0; word < DP_RECENT_WORDS_PER_ROW; ++word) {
+                    unsigned removed = expired[word];
+                    while (removed != 0) {
+                        const int bit = __ffs(removed) - 1;
+                        const int expert = word * 32 + bit;
+                        recent_counts[expert] -= 1;
+                        removed &= removed - 1;
+                    }
+                    expired[word] = 0;
+                }
+                for (int slot = 0; slot < 11; ++slot) {
+                    const int expert = picks[row * 11 + slot];
+                    if (expert < 0 || expert >= DP_SHARED) continue;
+                    const unsigned bit = 1u << (expert & 31);
+                    unsigned& word = expired[expert >> 5];
+                    if ((word & bit) == 0) {
+                        word |= bit;
+                        recent_counts[expert] += 1;
+                    }
+                }
+                misc->recent_cursor = (misc->recent_cursor + 1) % DP_RECENT_WINDOW;
+                if (misc->recent_filled < DP_RECENT_WINDOW) misc->recent_filled += 1;
+            }
+        }
         int nu = 0;
         bool over = false;
         for (int i = 0; i < n; ++i) {
@@ -96,7 +130,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
             int b = a - 1;
             while (b >= 0) {
                 const unsigned short y = miss[b];
-                const unsigned cx = counts[uniq[x]], cy = counts[uniq[y]];
+                const unsigned cx = score[uniq[x]], cy = score[uniq[y]];
                 const bool hotter = cx != cy ? cx > cy : (app[x] != app[y] ? app[x] > app[y] : uniq[x] < uniq[y]);
                 if (!hotter) break;
                 miss[b + 1] = y;
@@ -138,7 +172,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
             }
             if (bempty) continue;
             if (keep[id >> 5] & (1u << (id & 31))) continue;
-            const unsigned c = counts[id], s = stamp[i];
+            const unsigned c = score[id], s = stamp[i];
             if (bi < 0 || dp_colder(c, s, i, bc, bs, bi)) { bc = c; bs = s; bi = i; }
         }
         // empty lines win (encoded as count 0 with a flag in the stamp key's top bit), lowest index among them
