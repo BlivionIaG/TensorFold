@@ -1070,3 +1070,13 @@ The MTP chain does not use the split and loses about 1% to the smaller copy-bloc
 
 Configuration note: on this setup drafted decode (about 20 tok/s summed, 71% draft acceptance, 62 rounds for 128 tokens) is far slower
 than undrafted decode (about 32 tok/s), so serving with `--no-drafts` is the faster setting for these two cards today.
+
+### Drafts versus no drafts on real text (new defaults)
+
+Same server (38 lines, overlap default, window off, TP=2, graphs, shared BF16 paging), two different text prompts (16,008 and 12,758
+tokens, built as in the real-text window test), 192 generated tokens, one discarded warm-up batch and two measured batches per
+mode. Summed per-request decode: drafts off 25.45 and 26.80 tok/s, drafts on 20.06 and 21.13 tok/s (about 21% lower with drafts).
+Draft acceptance was 77% (161/208) on the first prompt and 50% (130/260) on the second. Token hashes were identical between the
+two modes for both requests, so drafting is exact but slower here: each drafted round verifies more rows, needs more distinct
+experts, and the extra expert misses cost more than the accepted extra tokens save. `--no-drafts` is the faster setting on this
+setup.
