@@ -882,3 +882,9 @@ Drafted prefill is 13.2% shorter (13.20 s against 15.22 s) and drafted aggregate
 tok/s); the decode difference is again not isolated to a cause. One-chunk drafted prefill is unchanged by the fix (15.2 s).
 Host validation: `zig fmt --check` passes and `zig build test-flashnext-exl3-host` passes on par1-cs25 including a new
 `headSplit` test. These sweeps do not cover the snapshot path or prompts above 30,000 tokens; the window stays default-off.
+
+**Snapshot gate.** `run-snapshot-gate.sh` (`tf-cuda-test flashnext-exl3-graph … snapshot-shared`, TP=2, shared BF16 paging, graphs
+on, `TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK=1`) was rebuilt from the tree with the head change and passed on both ranks (exit
+codes 0/0): shared-slot snapshot remapping, recycled generation, foreign windows/history/continuation, exact eager/graph
+state and logits, prefill replays 112 and decode replays 3. This gate's prompts are short, so it shows the window-on build
+keeps snapshot behavior intact; it does not by itself prove the snapshot path on 8,192-row paired passes.
