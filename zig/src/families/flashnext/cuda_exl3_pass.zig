@@ -8,6 +8,8 @@ const load = @import("cuda_exl3_load.zig");
 const pool_ = @import("cuda_exl3_pool.zig");
 const dplan = @import("cuda_exl3_dplan.zig");
 const memory = @import("exl3_startup_memory.zig");
+const line_deltas = @import("exl3_line_deltas.zig");
+const profile_line_budget = @import("exl3_profile_line_budget.zig");
 
 const dims = wt.dims;
 const slots = wt.slots;
@@ -216,7 +218,7 @@ test "EXL3 pool reserves the requested number of concurrent stream caches" {
     try std.testing.expectError(error.InvalidStreamCount, streamReservation(100, 0));
 }
 
-pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, free_after: u64 = 0, scratch_bytes: u64 = 0, graph_reservation: u64 = 0, after_pool_bytes: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0 };
+pub const Attached = struct { layers: usize = 0, lines: usize = 0, line_bytes: usize = 0, device_bytes: u64 = 0, free_before: u64 = 0, free_after: u64 = 0, scratch_bytes: u64 = 0, graph_reservation: u64 = 0, after_pool_bytes: u64 = 0, bank_bytes: u64 = 0, bank_ns: u64 = 0, prefill_window_bytes: u64 = 0 };
 
 pub fn freeBytes(d: *const cuda.Driver) !u64 {
     var free: usize = 0;
@@ -229,9 +231,10 @@ pub fn freeBytes(d: *const cuda.Driver) !u64 {
 /// scratch of `rows`-row passes, then gives each offloaded layer the same number of lines from what is free after
 /// `b.reserve` and `b.other`, with one lifetime use table shared by the decoder layers (the MTP layer keeps its own).
 /// A no-op for a checkpoint without offloaded experts.
-pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cuda.Stream, layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, rows: usize, b: Budget) !Attached {
+pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cuda.Stream, layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, rows: usize, b: Budget, profile_counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !Attached {
     var all: [wt.layers_n + 1]*load.Experts = undefined;
     const n = offloadedLayers(layers, mtp, &all);
+    const delta_text = if (std.c.getenv("TF_FLASHNEXT_EXL3_LINE_DELTAS")) |value| std.mem.span(value) else null;
     var out: Attached = .{};
     const scratch_before = try freeBytes(d);
     out.graph_reservation = b.graph_reservation;
@@ -245,7 +248,10 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
         try @import("cuda_exl3_tp.zig").reserve(x.ops, st, x.layer, rows);
         break;
     };
-    if (n == 0) return out;
+    if (n == 0) {
+        if (delta_text != null) return error.InvalidLineDeltaIndex;
+        return out;
+    }
     for (all[0..n]) |x| {
         out.line_bytes = @max(out.line_bytes, x.lineBytes());
         out.bank_bytes += x.bank.?.bytes.len;
@@ -266,23 +272,109 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
         const picks_bytes = try std.math.mul(u64, try std.math.mul(u64, pool_.passesFor(pool_.min_lines), b.max_rows), slots * 4);
         fixed = try std.math.add(u64, fixed, try std.math.add(u64, cuda.exl3_pool.Tables.init(wt.experts_n + 1).bytes + (64 << 10), picks_bytes));
     }
-    const future = try std.math.add(u64, b.other, b.graph_reservation);
-    const pool_room = try memory.available(free, reserve, future);
+    var future = try std.math.add(u64, b.other, b.graph_reservation);
     const planner_fixed = if (b.planner_rows) |planner_rows| try memory.plannerBytes(n, 0, planner_rows) else 0;
     const line_cost = try std.math.add(u64, out.line_bytes, if (b.planner_rows != null) 8 else 0);
     const all_fixed = try std.math.add(u64, fixed, planner_fixed);
+    const prefill = @import("cuda_exl3_prefill.zig");
+    const minimum_pools = try memory.poolBytes(b.lines orelse pool_.min_lines, line_cost, n, all_fixed);
+    const protected = try std.math.add(u64, try std.math.add(u64, reserve, future), minimum_pools);
+    out.prefill_window_bytes = prefill.reserveTwoChunk(d, free, protected, b.graph_reservation) catch |err| declined: {
+        std.log.warn("flashnext exl3 prefill: two-chunk reservation refused ({t}); keeping single-chunk prefill", .{err});
+        break :declined 0;
+    };
+    const graph_memory = @import("cuda_exl3_graph_memory.zig");
+    const window_reservation = graph_memory.twoChunkReservationBytes();
+    if (!prefill.twoChunkAllocated() and window_reservation != 0 and b.graph_reservation == window_reservation) {
+        out.graph_reservation = try graph_memory.declineTwoChunkReservation();
+        future = try std.math.add(u64, b.other, out.graph_reservation);
+    }
+    if (out.prefill_window_bytes != 0) {
+        free = @intCast(try freeBytes(d));
+        out.free_before = free;
+    }
+    const pool_room = try memory.available(free, reserve, future);
     const lines = b.lines orelse try pool_.linesFor(free, reserve, try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines);
     if (lines < pool_.min_lines) return error.PoolTooSmall;
-    if (try memory.poolBytes(lines, line_cost, n, all_fixed) > pool_room) return error.InsufficientStartupMemory;
+    const startup_bytes = try memory.poolBytes(lines, line_cost, n, all_fixed);
+    if (startup_bytes > pool_room) return error.InsufficientStartupMemory;
     out.after_pool_bytes = if (b.planner_rows) |planner_rows| try memory.plannerBytes(n, lines, planner_rows) else 0;
     out.lines = lines;
-    _ = gpa;
-    // the first decoder layer's pool owns the lifetime use table the other decoder layers share
-    var counts: ?*[pool_.shape.layers][pool_.shape.experts]u32 = null;
-    var decoder: u8 = 0;
-    for (all[0..n]) |x| {
+    var pool_lines: [wt.layers_n + 1]usize = @splat(lines);
+    var line_bytes: [wt.layers_n + 1]usize = undefined;
+    var profile_sized = false;
+    var profile_min_lines: usize = std.math.maxInt(usize);
+    var profile_max_lines: usize = 0;
+    var decoder_pool_count: usize = 0;
+    for (all[0..n], 0..) |x, index| {
+        line_bytes[index] = x.lineBytes();
         const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
-        try x.attach(io, d, if (is_mtp) 0 else decoder, lines, b.max_rows, if (is_mtp) null else counts);
+        if (!is_mtp) decoder_pool_count += 1;
+    }
+    if (delta_text == null and shouldProfileSize(profileSizingEnabled(), b.lines)) if (profile_counts) |prior| {
+        var count_rows: [wt.layers_n][]const u32 = undefined;
+        var allocation_costs: [wt.layers_n]usize = undefined;
+        var allocation_lines: [wt.layers_n]usize = undefined;
+        var decoder_index: usize = 0;
+        var has_profile_signal = false;
+        for (all[0..n], 0..) |x, pool_index| {
+            const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
+            if (is_mtp) continue;
+            for (prior[decoder_index]) |count| {
+                has_profile_signal = has_profile_signal or count != 0;
+            }
+            count_rows[decoder_index] = &prior[decoder_index];
+            allocation_costs[decoder_index] = try std.math.add(usize, line_bytes[pool_index], if (b.planner_rows != null) 8 else 0);
+            decoder_index += 1;
+        }
+        if (has_profile_signal and decoder_index == wt.layers_n) {
+            const rank = all[0].tp orelse try @import("cuda_exl3_tp.zig").Rank.init(1, 0);
+            const maybe_plan: ?profile_line_budget.Budget = profile_line_budget.allocate(gpa, .{
+                .counts = &count_rows,
+                .rank = rank.rank,
+                .world = rank.world,
+                .line_bytes = &allocation_costs,
+                .uniform_lines = lines,
+                .min_lines = pool_.min_lines,
+                .max_rows = b.max_rows,
+                .slots = slots,
+            }, &allocation_lines) catch |err| blk: {
+                std.log.info("flashnext exl3: profile-sized pools unavailable ({s}); retaining uniform decoder pools", .{@errorName(err)});
+                break :blk null;
+            };
+            if (maybe_plan) |plan| {
+                decoder_index = 0;
+                for (all[0..n], 0..) |x, pool_index| {
+                    const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
+                    if (is_mtp) continue;
+                    pool_lines[pool_index] = allocation_lines[decoder_index];
+                    profile_min_lines = @min(profile_min_lines, allocation_lines[decoder_index]);
+                    profile_max_lines = @max(profile_max_lines, allocation_lines[decoder_index]);
+                    decoder_index += 1;
+                }
+                if (plan.uniform_fallback) {
+                    @memset(pool_lines[0..n], lines);
+                    std.log.info("flashnext exl3: profile candidate changed total variable CUDA bytes; retaining uniform decoder pools", .{});
+                } else {
+                    out.after_pool_bytes = if (b.planner_rows) |planner_rows| try memory.plannerBytesForPools(pool_lines[0..n], planner_rows) else 0;
+                    profile_sized = true;
+                }
+                std.log.info("flashnext exl3: profile-weighted decoder allocation used {d}/{d} variable CUDA bytes (expert lines, per-line planner state and device picks); saved lifetime picks are a proxy, not latency; MTP remains uniform", .{ plan.allocated_bytes, plan.baseline_bytes });
+                std.log.info("flashnext exl3: profile decoder pool sizes range {d}..{d} lines; uniform-equivalent baseline was {d}", .{ profile_min_lines, profile_max_lines, lines });
+            }
+        }
+    };
+    if (delta_text) |text| {
+        const plan = try line_deltas.apply(text, lines, decoder_pool_count, line_bytes[0..n], pool_.min_lines, b.planner_rows, fixed, startup_bytes, pool_lines[0..n]);
+        out.after_pool_bytes = plan.planner_bytes;
+        std.log.info("flashnext exl3: experimental rank-local decoder pool line deltas {s}; base={d} planner_bytes={d} startup_bytes={d}", .{ text, lines, plan.planner_bytes, plan.pool_bytes });
+    }
+    // the first decoder layer's pool owns the lifetime use table the other decoder layers share
+    var counts = profile_counts;
+    var decoder: u8 = 0;
+    for (all[0..n], pool_lines[0..n]) |x, count| {
+        const is_mtp = if (mtp) |l| (if (l.exl3) |m| m == x else false) else false;
+        try x.attach(io, d, if (is_mtp) 0 else decoder, count, b.max_rows, if (is_mtp) null else counts);
         if (is_mtp) dplan.mtp_pool = x.pool.?; // the draft head's experts plan on the device too (cuda_exl3_chain.zig)
         if (!is_mtp and counts == null) counts = x.pool.?.counts;
         if (!is_mtp) decoder += 1;
@@ -294,8 +386,29 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
         std.log.err("EXL3 pool reservation shortfall: free_before={d} free_after={d} pool_bytes={d} floor={d} allocator_margin={d} future={d} planner={d}", .{ free, out.free_after, out.device_bytes, reserve_floor, b.margin, future, out.after_pool_bytes });
         return err;
     };
-    std.log.info("flashnext exl3: {d} offloaded expert layers, {d} lines a layer of {d:.2} MiB ({d:.2} GiB on the device, {d:.2} GiB free before); pinned host bank {d:.2} GiB copied in {d:.1} s", .{ out.layers, out.lines, @as(f64, @floatFromInt(out.line_bytes)) / (1 << 20), @as(f64, @floatFromInt(out.device_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.free_before)) / (1 << 30), @as(f64, @floatFromInt(out.bank_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.bank_ns)) / 1e9 });
+    const allocation = if (delta_text != null) "uniform-equivalent lines (experimental deltas applied)" else if (profile_sized) "uniform-equivalent lines (profile-sized decoder pools)" else "lines a layer";
+    std.log.info("flashnext exl3: {d} offloaded expert layers, {d} {s} of {d:.2} MiB ({d:.2} GiB on the device, {d:.2} GiB free before); pinned host bank {d:.2} GiB copied in {d:.1} s", .{ out.layers, out.lines, allocation, @as(f64, @floatFromInt(out.line_bytes)) / (1 << 20), @as(f64, @floatFromInt(out.device_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.free_before)) / (1 << 30), @as(f64, @floatFromInt(out.bank_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.bank_ns)) / 1e9 });
     return out;
+}
+
+test {
+    _ = line_deltas;
+    _ = profile_line_budget;
+}
+
+fn profileSizingEnabled() bool {
+    const value = std.c.getenv("TF_FLASHNEXT_EXL3_PROFILE_SIZING") orelse return false;
+    return shouldProfileSize(std.mem.eql(u8, std.mem.span(value), "1"), null);
+}
+
+fn shouldProfileSize(enabled: bool, explicit_lines: ?usize) bool {
+    return enabled and explicit_lines == null;
+}
+
+test "exl3: profile sizing requires explicit opt-in and does not override fixed line budgets" {
+    try std.testing.expect(!shouldProfileSize(false, null));
+    try std.testing.expect(!shouldProfileSize(true, 32));
+    try std.testing.expect(shouldProfileSize(true, null));
 }
 
 /// native/cuda_memory.zig reserveBytes for a discrete card: TENSORFOLD_MEMORY_RESERVE_GIB, else max(1 GiB, total / 32).

@@ -155,12 +155,84 @@ pub const Snapshot = struct {
     experts: Experts = .{},
     kv: []KvSample,
     expert_pools: usize = 0,
+    layers: []LayerSample = &.{},
 
     pub fn deinit(snapshot: *Snapshot, allocator: std.mem.Allocator) void {
         allocator.free(snapshot.kv);
+        allocator.free(snapshot.layers);
         snapshot.* = undefined;
     }
 };
+
+pub const LayerCounts = struct {
+    host_plans: u64 = 0,
+    host_hit_picks: u64 = 0,
+    host_miss_picks: u64 = 0,
+    host_mandatory_copies: u64 = 0,
+    host_prefetch_copies: u64 = 0,
+    pool_dma_copies: u64 = 0,
+    pool_dma_requested_bytes: u64 = 0,
+    device_plans: u64 = 0,
+    device_hit_picks: u64 = 0,
+    device_miss_picks: u64 = 0,
+    device_copies: u64 = 0,
+    device_inplace_experts: u64 = 0,
+    device_overflow_plans: u64 = 0,
+    mapped_copy_payload_min_bytes: u64 = 0,
+    mapped_copy_payload_max_bytes: u64 = 0,
+
+    pub fn fromExperts(experts: Experts) LayerCounts {
+        var result: LayerCounts = undefined;
+        inline for (@typeInfo(LayerCounts).@"struct".field_names) |field| @field(result, field) = @field(experts, field);
+        return result;
+    }
+};
+
+pub const LayerSample = struct {
+    owner: u64,
+    kind: enum { decoder, mtp },
+    layer: usize,
+    lines: usize,
+    counts: LayerCounts = .{},
+
+    fn samePool(first: LayerSample, last: LayerSample) bool {
+        return first.owner != 0 and first.owner == last.owner and first.kind == last.kind and first.layer == last.layer and first.lines == last.lines;
+    }
+};
+
+pub fn LayerCursor(comptime capacity: usize) type {
+    return struct {
+        lock: std.atomic.Mutex = .unlocked,
+        scope: u64 = 0,
+        rank: Rank = .{ .rank = 0, .world = 1 },
+        samples: [capacity]LayerSample = undefined,
+        len: usize = 0,
+
+        pub fn claim(cursor: *@This(), allocator: std.mem.Allocator, before: Snapshot, after: Snapshot) ![]LayerSample {
+            while (!cursor.lock.tryLock()) std.atomic.spinLoopHint();
+            defer cursor.lock.unlock();
+            if (before.layers.len != after.layers.len or after.layers.len > capacity) return error.TelemetryOwnerChanged;
+            if (!std.meta.eql(before.rank, after.rank) or before.scope != after.scope) return error.TelemetryOwnerChanged;
+            if (cursor.len != 0 and (cursor.scope != after.scope or !std.meta.eql(cursor.rank, after.rank) or cursor.len != after.layers.len)) return error.TelemetryOwnerChanged;
+            const result = try allocator.alloc(LayerSample, after.layers.len);
+            errdefer allocator.free(result);
+            for (before.layers, after.layers, result, 0..) |first, last, *delta, index| {
+                if (!first.samePool(last)) return error.TelemetryOwnerChanged;
+                for (after.layers[0..index]) |previous| if (previous.owner == last.owner) return error.TelemetryDuplicateOwner;
+                if (cursor.len != 0 and !cursor.samples[index].samePool(last)) return error.TelemetryOwnerChanged;
+                delta.* = last;
+                delta.counts = try difference(LayerCounts, first.counts, last.counts);
+            }
+            for (after.layers, 0..) |last, index| {
+                cursor.samples[index] = last;
+            }
+            cursor.scope = after.scope;
+            cursor.rank = after.rank;
+            cursor.len = after.layers.len;
+            return result;
+        }
+    };
+}
 
 pub const Interval = struct {
     phase: Phase,
@@ -181,11 +253,18 @@ pub const Report = struct {
     kv: Kv,
     expert_pools: usize = 0,
     kv_layers: usize = 0,
+    layers: []const LayerSample = &.{},
 
     pub fn write(report: Report, writer: *std.Io.Writer) !void {
         try report.header(writer, "expert");
         inline for (@typeInfo(Experts).@"struct".field_names) |field| try writer.print(" {s}={d}", .{ field, @field(report.experts, field) });
         try writer.writeByte('\n');
+        for (report.layers) |layer| {
+            try report.header(writer, "expert-layer");
+            try writer.print(" pool={d} kind={s} layer={d} lines={d}", .{ layer.owner, @tagName(layer.kind), layer.layer, layer.lines });
+            inline for (@typeInfo(LayerCounts).@"struct".field_names) |field| try writer.print(" {s}={d}", .{ field, @field(layer.counts, field) });
+            try writer.writeByte('\n');
+        }
         try report.header(writer, "bf16-kv");
         inline for (@typeInfo(Kv).@"struct".field_names) |field| try writer.print(" {s}={d}", .{ field, @field(report.kv, field) });
         try writer.writeByte('\n');

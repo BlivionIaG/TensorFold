@@ -166,6 +166,7 @@ pub fn Namespace(comptime Tri: type) type {
             ranks: ?*ranks.Session = null,
             head: ?*mtp.Head = null,
             profile: ?@import("cuda_exl3_frequency_state.zig").State = null,
+            profile_counts: ?@import("cuda_exl3_frequency.zig").Counts = null,
             depth: usize = mtp.default_depth,
             confidence: f64 = mtp.default_confidence,
             /// A captured Triton set (TENSORFOLD_CUDA_KERNELS) for comparison, else null: our own glue.

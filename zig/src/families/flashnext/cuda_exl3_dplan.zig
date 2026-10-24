@@ -22,24 +22,19 @@ const pool_ = @import("cuda_exl3_pool.zig");
 const offload = pool_.offload;
 const telemetry = @import("exl3_telemetry.zig");
 const recent_demand = @import("exl3_recent_demand.zig");
+const layout = @import("exl3_dplan_layout.zig");
+pub const demand_trace = @import("exl3_dplan_trace.zig");
+pub const replay = @import("exl3_dplan_replay.zig");
+pub const policy_eval = @import("exl3_dplan_policy_eval.zig");
 
-const experts_n: usize = 512;
-const recent_window: usize = 256;
-const recent_words_per_row: usize = experts_n / 32;
-const recent_words: usize = recent_window * recent_words_per_row;
-const misc_words: usize = 10;
-
-fn recentCountsOffset(lines: usize) usize {
-    return 2 * lines + 2 * experts_n;
-}
-
-fn recentOffset(lines: usize) usize {
-    return 2 * lines + 3 * experts_n;
-}
-
-pub fn miscOffset(lines: usize) usize {
-    return recentOffset(lines) + recent_words;
-}
+const experts_n = layout.experts_n;
+const recent_window = layout.recent_window;
+const recent_words_per_row = experts_n / 32;
+const misc_words = layout.misc_words;
+const recentCountsOffset = layout.recentCountsOffset;
+const recentOffset = layout.recentOffset;
+pub const miscOffset = layout.miscOffset;
+pub const PoolState = layout.PoolState;
 const empty_id = offload.Cache.empty_id;
 
 comptime {
@@ -48,12 +43,65 @@ comptime {
 
 test {
     _ = recent_demand;
+    _ = layout;
+    _ = demand_trace;
+    _ = replay;
+    _ = @import("exl3_dplan_trace_test.zig");
+    _ = @import("exl3_dplan_trace_replay_test.zig");
+    _ = policy_eval;
+}
+
+test "exl3: demand trace diagnostic APIs reject disabled capture" {
+    var dp: DevPlan = undefined;
+    dp.trace_mem = null;
+    try std.testing.expectEqual(@as(usize, 0), dp.traceDeviceBytes());
+    try std.testing.expectError(error.TraceDisabled, dp.readTraceAfterConsumers(0, &.{}));
+    try std.testing.expectError(error.TraceDisabled, dp.downloadTraceAfterConsumers(std.testing.allocator, 0));
+    try dp.traceOwnership(undefined, true);
+    try dp.traceOwnership(undefined, false);
+}
+
+test "exl3: ownership trace checkpoints use ragged pool state and serialized compute stream" {
+    const Probe = struct {
+        var calls: usize = 0;
+        var arguments: [4][4]u64 = undefined;
+        var streams: [4]cuda.abi.Stream = undefined;
+
+        fn launch(_: cuda.abi.Function, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, stream: cuda.abi.Stream, parameters: ?[*]?*anyopaque, _: ?[*]?*anyopaque) callconv(.c) c_int {
+            inline for (.{ u64, c_int, u64, c_int }, 0..) |Type, index| {
+                const value: *const Type = @ptrCast(@alignCast(parameters.?[index].?));
+                arguments[calls][index] = @intCast(value.*);
+            }
+            streams[calls] = stream;
+            calls += 1;
+            return 0;
+        }
+    };
+    var driver: cuda.Driver = undefined;
+    driver.api.cuLaunchKernel = Probe.launch;
+    var entries = [_]PoolState{ try PoolState.init(10, 0), try PoolState.init(31, stateWords(10)) };
+    var device: DevPlan = undefined;
+    device.pool_states = &entries;
+    device.state.ptr = 0x10000;
+    device.trace_mem = .{ .d = &driver, .ptr = 0x100000, .len = 2 * demand_trace.pool_bytes, .borrowed = true };
+    device.trace_checkpoint_fn = .{ .d = &driver, .handle = @ptrFromInt(1) };
+    const stream: cuda.Stream = .{ .d = &driver, .handle = @ptrFromInt(2) };
+    Probe.calls = 0;
+    try device.traceOwnership(stream, true);
+    try device.traceOwnership(stream, false);
+    for (0..4) |call| {
+        const index = call % 2;
+        try std.testing.expectEqual([4]u64{ device.state.ptr + entries[index].byteOffset(), entries[index].lines, 0x100000 + index * demand_trace.pool_bytes, @intFromBool(call < 2) }, Probe.arguments[call]);
+        try std.testing.expectEqual(stream.handle, Probe.streams[call]);
+    }
+    device.trace_mem = null;
+    device.trace_checkpoint_fn = null;
+    try device.traceOwnership(stream, true);
+    try std.testing.expectEqual(@as(usize, 4), Probe.calls);
 }
 
 /// u32 words of one layer's device state.
-pub fn stateWords(lines: usize) usize {
-    return miscOffset(lines) + misc_words;
-}
+pub const stateWords = layout.stateWords;
 
 test "exl3: recent-demand planner state is separate from lifetime profile counts" {
     try std.testing.expectEqual(@as(usize, 3 * experts_n), recentOffset(10) - 20);
@@ -79,8 +127,7 @@ pub const DevPlan = struct {
     copy_fn: cuda.Function,
     restore_fn: cuda.Function,
     pools: []*pool_.Pool,
-    lines: usize,
-    words: usize,
+    pool_states: []PoolState,
     /// Rows a planned round may hold: rows * 10 distinct experts must fit the lines.
     max_rows: usize,
     state: cuda.DeviceBuffer,
@@ -108,24 +155,31 @@ pub const DevPlan = struct {
     history_initialized: bool = false,
     /// Experts read in place from the host bank (more misses than free lines in a round), summed at each pull.
     inplace: u64 = 0,
+    trace_mem: ?cuda.DeviceBuffer = null,
+    trace_checkpoint_fn: ?cuda.Function = null,
 
-    const static_bytes = experts_n * 3 * (8 + 8 + 4);
+    const static_bytes = layout.static_bytes;
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, pools: []const *pool_.Pool) !*DevPlan {
         if (!cuda.kernels.available) return error.BuiltWithoutKernels;
         if (pools.len == 0) return error.Invalid;
-        const lines = pools[0].opt.lines;
-        for (pools) |p| if (p.opt.lines != lines or p.lines.spec.experts < experts_n) return error.Invalid;
+        const pool_states = try gpa.alloc(PoolState, pools.len);
+        errdefer gpa.free(pool_states);
+        var total_words: usize = 0;
+        for (pools, pool_states) |p, *entry| {
+            if (p.lines.spec.experts < experts_n) return error.Invalid;
+            entry.* = try PoolState.init(p.opt.lines, total_words);
+            total_words = entry.endWords();
+        }
         var mod = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_dplan);
         errdefer mod.unload();
         const dp = try gpa.create(DevPlan);
         errdefer gpa.destroy(dp);
-        const words = stateWords(lines);
         const own = try gpa.dupe(*pool_.Pool, pools);
         errdefer gpa.free(own);
-        var state = try cuda.DeviceBuffer.alloc(d, pools.len * words * 4);
+        var state = try cuda.DeviceBuffer.alloc(d, total_words * @sizeOf(u32));
         errdefer state.free();
-        var mirror = try cuda.HostBuffer.alloc(d, pools.len * words * 4);
+        var mirror = try cuda.HostBuffer.alloc(d, state.len);
         errdefer mirror.free();
         var statics = try cuda.DeviceBuffer.alloc(d, pools.len * static_bytes);
         errdefer statics.free();
@@ -133,6 +187,17 @@ pub const DevPlan = struct {
         // round's experts are read in place from the mapped bank for that round (fn_exl3_dplan), so any row count
         // up to this bound plans in one pass
         const max_rows = maxRows();
+        var trace_mem: ?cuda.DeviceBuffer = null;
+        errdefer if (trace_mem) |*buffer| buffer.free();
+        if (traceEnabled()) {
+            for (pools, pool_states, 0..) |p, entry, index| _ = try demand_trace.header(index, p.opt.layer, entry.lines, max_rows);
+            trace_mem = try cuda.DeviceBuffer.alloc(d, try std.math.mul(usize, pools.len, demand_trace.pool_bytes));
+            try trace_mem.?.fill32(0, null);
+            for (pools, pool_states, 0..) |p, entry, index| {
+                const header = try demand_trace.header(index, p.opt.layer, entry.lines, max_rows);
+                try trace_mem.?.upload(index * demand_trace.pool_bytes, std.mem.asBytes(&header));
+            }
+        }
         var work = try cuda.DeviceBuffer.alloc(d, workCap(max_rows) * 9 * 8 + 256 + (experts_n + 64) * 4);
         errdefer work.free();
         const seen = try gpa.alloc(Misc, pools.len);
@@ -169,8 +234,7 @@ pub const DevPlan = struct {
             .copy_fn = try mod.function("fn_exl3_dcopy"),
             .restore_fn = try mod.function("fn_exl3_drestore"),
             .pools = own,
-            .lines = lines,
-            .words = words,
+            .pool_states = pool_states,
             .max_rows = max_rows,
             .state = state,
             .mirror = mirror,
@@ -182,6 +246,8 @@ pub const DevPlan = struct {
             .ev_copy = ev_copy,
             .split = split,
             .overlap = overlapFromEnv(pools[0]),
+            .trace_mem = trace_mem,
+            .trace_checkpoint_fn = if (trace_mem != null) try mod.function("fn_exl3_dcheckpoint") else null,
         };
         if (std.c.getenv("TF_FLASHNEXT_EXL3_DCOPY_BLOCKS")) |v| dp.copy_blocks = std.fmt.parseInt(u32, std.mem.span(v), 10) catch dp.copy_blocks;
         return dp;
@@ -189,6 +255,7 @@ pub const DevPlan = struct {
 
     pub fn deinit(dp: *DevPlan) void {
         dp.side.synchronize() catch {};
+        if (dp.trace_mem) |*buffer| buffer.free();
         dp.split.free();
         dp.ev_copy.deinit();
         dp.ev_plan.deinit();
@@ -199,21 +266,22 @@ pub const DevPlan = struct {
         dp.state.free();
         dp.mod.unload();
         dp.gpa.free(dp.seen);
+        dp.gpa.free(dp.pool_states);
         dp.gpa.free(dp.pools);
         dp.gpa.destroy(dp);
     }
 
     fn mirrorOf(dp: *DevPlan, i: usize) []u32 {
-        const all = std.mem.bytesAsSlice(u32, dp.mirror.bytes[0 .. dp.pools.len * dp.words * 4]);
-        return @alignCast(all[i * dp.words ..][0..dp.words]);
+        const all: []u32 = @alignCast(std.mem.bytesAsSlice(u32, dp.mirror.bytes[0..dp.state.len]));
+        return dp.pool_states[i].slice(all);
     }
 
     /// The host's residency up to the device, on `s` (a no-op if the device owns it). Waits for every pool's copies.
     pub fn toDevice(dp: *DevPlan, s: cuda.Stream) !void {
         dp.stream = s;
         if (dp.owner == .device) return;
-        const lines = dp.lines;
         for (dp.pools, 0..) |p, i| {
+            const lines = dp.pool_states[i].lines;
             // copies in flight land, prefetched lines count as resident (the device knows no in-flight state)
             try p.lines.drain();
             for (p.line_tab, p.slots_tab) |*state, id| if (state.* == .inflight) {
@@ -241,6 +309,7 @@ pub const DevPlan = struct {
             dp.seen[i] = misc.*;
         }
         try s.d.check(s.d.api.cuMemcpyHtoDAsync_v2(dp.state.ptr, dp.mirror.bytes.ptr, dp.state.len, s.handle), "cuMemcpyHtoDAsync");
+        try dp.traceOwnership(s, true);
         dp.history_initialized = true;
         dp.owner = .device;
         dp.pushes += 1;
@@ -249,12 +318,13 @@ pub const DevPlan = struct {
     /// The device's residency back to the host pools (a no-op if the host owns it): waits for the last round's stream.
     pub fn toHost(dp: *DevPlan) !void {
         if (dp.owner == .host) return;
+        if (dp.stream) |s| try dp.traceOwnership(s, false);
         if (dp.stream) |s| try s.synchronize();
         try dp.side.synchronize();
         try dp.d.check(dp.d.api.cuMemcpyDtoH_v2(dp.mirror.bytes.ptr, dp.state.ptr, dp.state.len), "cuMemcpyDtoH");
-        const lines = dp.lines;
         var overflow: u64 = 0;
         for (dp.pools, 0..) |p, i| {
+            const lines = dp.pool_states[i].lines;
             const m = dp.mirrorOf(i);
             const line_id: []const i32 = @ptrCast(m[0..lines]);
             const stamp = m[lines .. 2 * lines];
@@ -302,7 +372,7 @@ pub const DevPlan = struct {
         try dp.d.check(dp.d.api.cuMemcpyDtoH_v2(dp.mirror.bytes.ptr, dp.state.ptr, dp.state.len), "cuMemcpyDtoH");
         for (dp.pools, 0..) |_, i| {
             const m = dp.mirrorOf(i);
-            const misc: *const Misc = @ptrCast(m[miscOffset(dp.lines)..][0..misc_words]);
+            const misc: *const Misc = @ptrCast(m[miscOffset(dp.pool_states[i].lines)..][0..misc_words]);
             inline for (.{ "rounds", "hit_slots", "miss_slots", "copies", "evictions", "overflow", "inplace" }) |f| @field(t, f) += @field(misc, f) - @field(dp.seen[i], f);
         }
         return t;
@@ -315,12 +385,51 @@ pub const DevPlan = struct {
         for (dp.pools, 0..) |candidate, index| {
             if (candidate != pool) continue;
             var observed: Misc = undefined;
-            const offset = (index * dp.words + miscOffset(dp.lines)) * 4;
+            const entry = dp.pool_states[index];
+            const offset = entry.byteOffset() + miscOffset(entry.lines) * @sizeOf(u32);
             try dp.state.download(offset, std.mem.asBytes(&observed));
             try telemetry.add(telemetry.Device, &total, try telemetry.Device.pendingBounded(observed, dp.seen[index], dp.max_rows * 10));
             return total;
         }
         return total;
+    }
+
+    /// Exact additional device allocation; tracing is fixed at init and costs zero bytes when disabled.
+    pub fn traceDeviceBytes(dp: *const DevPlan) usize {
+        return if (dp.trace_mem) |buffer| buffer.len else 0;
+    }
+
+    fn traceOwnership(dp: *const DevPlan, stream: cuda.Stream, transfer: bool) !void {
+        const buffer = dp.trace_mem orelse return;
+        for (dp.pool_states, 0..) |entry, index| {
+            var args: cuda.launch.Args = .{};
+            args.add(dp.state.ptr + entry.byteOffset());
+            args.add(@as(c_int, @intCast(entry.lines)));
+            args.add(buffer.ptr + index * demand_trace.pool_bytes);
+            args.add(@as(c_int, @intFromBool(transfer)));
+            try cuda.launch.launch(dp.trace_checkpoint_fn.?, .{ .grid = .{ .x = 1 }, .block = .{ .x = 1 } }, stream, &args);
+        }
+    }
+
+    /// Caller must join all planner/expert consumers and stop submissions before this blocking diagnostic read.
+    /// Outside capture only. Borrows `out` (pool_words u32s); reading does not consume records.
+    /// The initial seed, ownership checkpoints and ordered rounds include warmup/speculation.
+    pub fn readTraceAfterConsumers(dp: *const DevPlan, index: usize, out: []u32) !demand_trace.View {
+        const buffer = dp.trace_mem orelse return error.TraceDisabled;
+        if (index >= dp.pools.len or out.len != demand_trace.pool_words) return error.Invalid;
+        try buffer.download(index * demand_trace.pool_bytes, std.mem.sliceAsBytes(out));
+        return demand_trace.View.init(out);
+    }
+
+    /// Allocating diagnostic read with the same joined/quiescent contract. Caller owns the snapshot.
+    /// Snapshot.view().encode() serializes little-endian records and all full checkpoints.
+    pub fn downloadTraceAfterConsumers(dp: *const DevPlan, allocator: std.mem.Allocator, index: usize) !demand_trace.Snapshot {
+        if (dp.trace_mem == null) return error.TraceDisabled;
+        if (index >= dp.pools.len) return error.Invalid;
+        const words = try allocator.alloc(u32, demand_trace.pool_words);
+        errdefer allocator.free(words);
+        _ = try dp.readTraceAfterConsumers(index, words);
+        return .{ .allocator = allocator, .words = words };
     }
 
     /// The in-place experts of the last plan ([512] int32) and their count after it.
@@ -330,6 +439,7 @@ pub const DevPlan = struct {
 
     /// After the round's experts (on `s`): the in-place experts' table entries cleared.
     pub fn restore(dp: *DevPlan, s: cuda.Stream, i: usize) !void {
+        if (i >= dp.pools.len) return error.Invalid;
         const p = dp.pools[i];
         var a: cuda.Args = .{};
         a.add(dp.ovfList());
@@ -354,10 +464,16 @@ pub const DevPlan = struct {
 
     /// Plans pool `i`'s round of `rows` rows on the device and copies its misses into their lines, on `s`: after this
     /// the pool's tables hold every expert `picks` [rows * 11] names. Graph-capturable (no host work depends on it).
+    /// All launches and graph replays using this DevPlan MUST be serialized on one compute timeline.
+    /// A stream handoff must join previous planner, copy and expert/restore consumers first.
+    /// The shared work/split scratch already requires this; trace headers have the same single writer.
+    /// The side stream runs copies only and never writes planner state or trace records.
     pub fn plan(dp: *DevPlan, s: cuda.Stream, i: usize, picks: u64, rows: usize) !void {
         if (rows == 0 or rows > dp.max_rows) return error.PoolPasses;
+        if (i >= dp.pools.len) return error.Invalid;
         const p = dp.pools[i];
-        const st = dp.state.ptr + i * dp.words * 4;
+        const entry = dp.pool_states[i];
+        const st = dp.state.ptr + entry.byteOffset();
         const sb = dp.statics.ptr + i * static_bytes;
         const work = dp.work.ptr;
         const work_n = dp.work.ptr + workCap(dp.max_rows) * 9 * 8;
@@ -365,7 +481,7 @@ pub const DevPlan = struct {
         a.add(picks);
         a.add(@as(c_int, @intCast(rows * 11)));
         a.add(st);
-        a.add(@as(c_int, @intCast(dp.lines)));
+        a.add(@as(c_int, @intCast(entry.lines)));
         a.add(@as(c_int, @intFromBool(recentEvictionEnabled())));
         for (0..3) |w| a.add(p.lines.table(w));
         for (0..3) |w| a.add(p.lines.widths(w));
@@ -381,6 +497,7 @@ pub const DevPlan = struct {
         a.add(if (dp.overlap) dp.split.ptr + dp.max_rows * 11 * 4 else @as(u64, 0));
         a.add(dp.ovfList());
         a.add(dp.ovfList() + experts_n * 4);
+        a.add(if (dp.trace_mem) |buffer| buffer.ptr + i * demand_trace.pool_bytes else @as(u64, 0));
         try cuda.launch.launch(dp.plan_fn, .{ .grid = .{ .x = 1 }, .block = .{ .x = 256 } }, s, &a);
         var c: cuda.Args = .{};
         c.add(work);
@@ -416,8 +533,85 @@ pub fn recentEvictionEnabled() bool {
     return std.mem.eql(u8, std.mem.span(value), "1");
 }
 
+/// TF_FLASHNEXT_EXL3_DPLAN_TRACE=1 enables bounded per-pool demand capture at planner initialization.
+/// No per-round host reads, transfers, allocations, synchronization, or placement-policy changes.
+fn traceEnabled() bool {
+    const value = std.c.getenv("TF_FLASHNEXT_EXL3_DPLAN_TRACE") orelse return false;
+    return std.mem.eql(u8, std.mem.span(value), "1");
+}
+
+test "exl3: demand trace planner arguments stay fixed and joined reads isolate pools" {
+    const Probe = struct {
+        var trace_address: u64 = 0;
+        var launches: usize = 0;
+
+        fn launch(function: cuda.abi.Function, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: c_uint, _: cuda.abi.Stream, parameters: ?[*]?*anyopaque, _: ?[*]?*anyopaque) callconv(.c) c_int {
+            launches += 1;
+            if (@intFromPtr(function.?) == 1) {
+                const address: *const u64 = @ptrCast(@alignCast(parameters.?[25].?));
+                trace_address = address.*;
+            }
+            return 0;
+        }
+
+        fn download(destination: ?*anyopaque, source: u64, length: usize) callconv(.c) c_int {
+            const target: [*]u8 = @ptrCast(destination.?);
+            const origin: [*]const u8 = @ptrFromInt(source);
+            @memcpy(target[0..length], origin[0..length]);
+            return 0;
+        }
+    };
+    var driver: cuda.Driver = undefined;
+    driver.api.cuLaunchKernel = Probe.launch;
+    driver.api.cuMemcpyDtoH_v2 = Probe.download;
+    const words = try std.testing.allocator.alloc(u32, 2 * demand_trace.pool_words);
+    defer std.testing.allocator.free(words);
+    for (0..2) |index| @memcpy(words[index * demand_trace.pool_words ..][0..demand_trace.header_words], &try demand_trace.header(index, index, 10, 16));
+    var resident: pool_.Pool = undefined;
+    resident.lines.tables.ptr = 4096;
+    resident.lines.mem.ptr = 8192;
+    resident.lines.tlay = cuda.exl3_pool.Tables.init(513);
+    resident.lines.layout = cuda.exl3_pool.Layout.init(.{ 256, 256, 256 });
+    var pools = [_]*pool_.Pool{ &resident, &resident };
+    var states = [_]PoolState{ try PoolState.init(10, 0), try PoolState.init(10, stateWords(10)) };
+    var device: DevPlan = undefined;
+    device.pools = &pools;
+    device.pool_states = &states;
+    device.max_rows = 16;
+    device.state.ptr = 16384;
+    device.statics.ptr = 32768;
+    device.work.ptr = 65536;
+    device.plan_fn = .{ .d = &driver, .handle = @ptrFromInt(1) };
+    device.copy_fn = .{ .d = &driver, .handle = @ptrFromInt(2) };
+    device.copy_blocks = 1;
+    device.overlap = false;
+    device.trace_mem = .{ .d = &driver, .ptr = @intFromPtr(words.ptr), .len = words.len * 4, .borrowed = true };
+    const out = try std.testing.allocator.alloc(u32, demand_trace.pool_words);
+    defer std.testing.allocator.free(out);
+    const stream: cuda.Stream = .{ .d = &driver, .handle = null };
+    Probe.launches = 0;
+    for (0..2) |index| {
+        for (0..2) |_| {
+            try device.plan(stream, index, 1024, 1);
+            try std.testing.expectEqual(@intFromPtr(words.ptr) + index * demand_trace.pool_bytes, Probe.trace_address);
+        }
+        const view = try device.readTraceAfterConsumers(index, out);
+        try std.testing.expectEqual(@as(usize, 0), view.recorded());
+        try std.testing.expectEqual(@as(u32, @intCast(index)), view.words[2]);
+    }
+    try std.testing.expectEqual(@as(usize, 8), Probe.launches);
+    try std.testing.expectEqual(words.len * 4, device.traceDeviceBytes());
+    try std.testing.expectError(error.Invalid, device.readTraceAfterConsumers(2, out));
+    try std.testing.expectError(error.Invalid, device.readTraceAfterConsumers(0, out[1..]));
+    device.trace_mem = null;
+    try device.plan(stream, 0, 1024, 1);
+    try std.testing.expectEqual(@as(u64, 0), Probe.trace_address);
+    try std.testing.expectEqual(@as(usize, 0), device.traceDeviceBytes());
+    try std.testing.expectError(error.TraceDisabled, device.readTraceAfterConsumers(0, out));
+}
+
 /// The device planner over `layers`' pools (the decoder layers only), made once for `owner`; null when a layer has no
-/// pool (resident experts) or the pools differ in lines.
+/// pool (resident experts).
 pub fn forLayers(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const anyopaque, layers: []const @import("cuda_prompt_load.zig").Layer) !?*DevPlan {
     if (global) |g| {
         if (global_owner == owner) return g;
@@ -436,7 +630,7 @@ pub fn forLayers(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const an
     }
     if (n == 0) return null;
     // the MTP layer's pool last (its own lifetime counts; the draft chain plans it on the device)
-    if (mtp_pool) |mp| if (mp.opt.lines == pools[0].opt.lines and n < pools.len) {
+    if (mtp_pool) |mp| if (n < pools.len) {
         pools[n] = mp;
         n += 1;
     };

@@ -455,7 +455,7 @@ pub const Experts = struct {
             .direct = true, // the bank is pinned: one H2D a projection on the copy engine, no staging memcpy
             .codebook = .mul1,
             .act_mode = l.act_mode,
-            .max_passes = pool_.passesFor(lines),
+            .max_passes = pool_.passesFor(pool_.min_lines),
         }, counts);
         x.pool = p;
         x.layer = p.tables();

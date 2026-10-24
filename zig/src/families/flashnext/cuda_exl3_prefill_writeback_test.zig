@@ -30,6 +30,7 @@ const Copies = struct {
 pub fn run(comptime Deep: type, comptime layout: anytype, comptime view: anytype, comptime pending: anytype, comptime compact: anytype, comptime select: anytype) !void {
     var driver: cuda.Driver = undefined;
     var dp: Deep = undefined;
+    dp.shared = null;
     dp.world = 2;
     dp.rows = 7;
     dp.lay = layout(dp.rows, dp.world);

@@ -327,6 +327,15 @@ in the steady phase. The average round-time difference is 0.04%, noise-level rat
 profile used a fixed 16-token prompt and 64 rounds; BF16 paging was enabled, but the short context caused no KV page
 misses. An earlier exploratory run selected eager mode by mistake and is excluded from this graph-on comparison.
 
+### Quantified gap to the 2× objective
+
+On these matched workloads, doubling prefill throughput against `5a94359c` requires reducing 16k prefill latency from
+13.1654 s to at most 6.5827 s (about 2,489 rows/s); the measured `03d4dbf3` result is 12.5501 s, so another 47.5%
+latency reduction is required. Doubling graph decode throughput requires reducing the measured 22.485 ms/round to at
+most 11.2425 ms; `03d4dbf3` measured 22.475 ms, essentially unchanged. The decode fixture is short-context with no
+KV page misses, and the prefill fixture is a warmed synthetic forward; these thresholds quantify those fixtures only,
+not long-context HTTP serving. No current result establishes the 2× objective.
+
 ## 2026-10-22 16k paged graph/eager miss diagnostic
 
 A current-head diagnostic on `d467247b` used TP=2, BF16 paging, a 16,384-token repeated-QBench-ID fixture, 64
@@ -518,11 +527,9 @@ and are used only for miss counts, not throughput. Decode graphs replayed in the
 did not establish long-context KV-page misses, prefill-graph benefit, or two simultaneous live requests.
 
 The next miss-reduction candidate is a fixed-total per-layer line budget informed by these measurements, not a larger
-rank-wide allocation. The current device planner explicitly rejects pools whose `opt.lines` differ and sizes its device
-state with one shared line count; the prefill ring also builds offsets from each pool's line count. A correct allocator
-therefore requires variable-sized planner-state offsets and graph-safe launch/state handling, then an end-to-end memory
-ledger that preserves BF16 KV, graph scratch and the minimum pool floor. No heterogeneous line-budget policy is currently
-implemented or measured.
+rank-wide allocation. The device planner and prefill-ring layout require variable-sized planner-state offsets and
+graph-safe launch/state handling. A local ragged-pool prototype was screened below, but is not committed or promoted.
+The exact startup budget must preserve BF16 KV, graph scratch, and the minimum pool floor.
 
 A profile from an older workload was also tested and regressed this fixture: misses rose to 19.50% on rank 0 and
 17.13% on rank 1; its uninstrumented ABBA averaged 1.7% lower undrafted and 4.0% lower drafted throughput than cold
@@ -530,6 +537,70 @@ placement. Profile reuse is therefore workload-sensitive. This experiment valida
 mechanism for a matched prompt mix; it does not justify enabling historical profiles by default or claim a general
 serving speedup. Next work: make profile freshness/recency safe, then repeat with a longer representative workload
 and simultaneous requests before promoting a placement policy.
+
+## 2026-10-24 profile-sized line-budget screen
+
+The ragged-pool prototype fixes the device picks-buffer capacity from the minimum line floor, so profile-weighted line
+counts preserve the modeled variable CUDA allocation exactly. On the two TP2 ranks, startup logged 4,806,791,424 and
+5,780,005,248 bytes allocated, equal to each rank's uniform baseline; pool sizes ranged 30–73 lines (rank 0, uniform
+54) and 44–84 (rank 1, uniform 65). This is an allocator-budget equality, not a full independent VRAM audit.
+
+An uninstrumented graph-on cold/profile/profile/cold ABBA used two concurrent mixed requests, 256 generated tokens,
+32,768 configured context, prompt cache off, and shared BF16 KV. Aggregate results were 34.5/34.8/34.7/34.5 tok/s;
+each leg had zero failures and exact alone/serial equality, with the same two output hashes. The profile arms averaged
+34.75 tok/s versus 34.50 for the controls (+0.7%), which is not a reliable serving gain.
+
+A separate matched telemetry profile/control pair used the same workload and output hashes. Verify device-pick misses
+changed from 110,253 to 101,117 on rank 0 (−8.3%) and from 88,309 to 91,727 on rank 1 (+3.9%): combined verify misses
+fell 2.9%. Combined decode misses increased 3.5%. Telemetry synchronizes at boundaries and is only miss evidence;
+these counters are rank-asymmetric and do not establish a robust total-miss or throughput improvement. Keep the
+allocator experimental. Next, score candidate budgets by replaying ordered demand through the production admission and
+eviction policy, then repeat with held-out concurrent prompts before considering promotion.
+
+The held-out check used two different concurrent code/chat prompts with the profile trained on the original pair.
+Under telemetry, profile versus uniform measured verify misses of 121,127 versus 113,923 on rank 0 (+6.3%) and
+117,102 versus 98,834 on rank 1 (+18.5%); combined verify misses rose 11.9%, and combined decode misses rose 26.8%.
+The uninstrumented aggregate was 33.1 versus 33.9 tok/s (−2.4%). All legs had zero failures and identical per-request
+hashes. This falsifies generalization for this profile-sizing heuristic; do not promote it. Review also found two
+contradictory/stale expectations in the new allocator tests and that profile loading would activate sizing without an
+explicit opt-in. The prototype remains an experiment; the next candidate is ordered-demand replay, not another
+histogram tweak.
+
+The separately committed recent-demand eviction policy (`7d0970d35`, default-off) was then tested on the same held-out
+pair in a graph-on TP2/c=2 ABBA. Uniform legs averaged 34.45 aggregate tok/s; recent-demand legs averaged 33.50 tok/s
+(−2.8%). A matched telemetry pair measured 270,350 combined decode/verify misses with recent-demand versus 259,479
+with uniform placement (+4.2%); verify misses rose 3.6% and decode misses 6.8%. All four throughput legs and both
+telemetry legs had zero failures and identical per-request hashes. Keep recent-demand default-off; it helped the original
+pair but did not generalize to this held-out mix.
+
+Review also identified a startup-ledger undercount after adding the recent-demand state: the old estimate omitted 4,610
+u32 words per planner pool (18,440 bytes), or about 0.84–0.86 MiB/rank for the current pool counts. The local startup
+ledger now derives state bytes from the planner layout. This is a correctness/accounting fix, not a cache-speed claim.
+
+### Next expert-miss experiment
+
+On 2026-10-24, an opt-in DPLAN v3 diagnostic captured 1,024 decode rounds per pool in a 1 MiB trace and exactly replayed them. The TP2 graph-on run used BF16 paged KV, a 10-line expert pool, and one golden prompt on the direct Engine path (not the shared-arena server path). All 96 decoder-pool traces (48 per rank) had zero drops and 1,024/1,024 verified transitions; both ranks produced output hash `da8b74115bc2f3bc`. Decode graphs replayed 1,018/1,024 rounds per rank. TP2's rank masks split 491,520 routed picks across both ranks (236,927 on rank 0; 254,593 on rank 1). The production lifetime policy recorded 122,984 misses/copies on rank 0 and 137,392 on rank 1: 260,376/491,520 combined picks (53.0%), with 231,144 hits. The offline evaluator's lifetime copy count exactly matched production. Combined LRU replayed 293,031 copies (+12.5%); decayed frequency replayed 258,797 (−0.61%, 1,579 fewer). The previous interim note mistakenly doubled the denominator; the rank-specific counts above are verified from all 96 trace files.
+
+A second exact TP2 graph-on trace used 56 expert lines/layer, matching the recent serving configuration, with the same 1,024-token single-prompt fixture. All 96 traces replayed 1,024/1,024 transitions with matching rank hashes. Production misses/copies were 17,629 on rank 0 and 21,477 on rank 1 (39,106/491,520 combined picks, 7.95%). Offline decayed-frequency replay reduced copies to 37,753 (−3.46%); guarded admission reduced copies to 33,720 (−13.8%) while mapping 4,023 cold picks rather than copying them. These are trace counterfactuals, not measured throughput wins; mapped-read cost is not represented.
+
+The v4 trace format adds strict checkpoints for device-planner ownership transfers. A sequential two-prompt run (512 decode rounds each, 10 lines/layer) passed exact replay on all 96 pools with two checkpoints and 1,024/1,024 transitions; the per-segment TP2 output hashes matched across ranks, with combined hash `1f63a7addea9e585`. Production recorded 81,671 misses on rank 0 and 89,854 on rank 1 (171,525/491,520 combined picks, 34.9%). This demonstrates reuse across sequential prompt segments only—not concurrent serving, throughput, or 200k context. No policy is promoted until checkpoint-aware counterfactuals and uninstrumented serving tests pass.
+
+Checkpoint-aware offline replay now cross-checks each trace's lifetime-policy rounds, hit/miss picks, copies, evictions, mapped experts, and mapped picks against the exact device-planner replay; the 96-pool run passed this guard. Across its recorded device segments, LRU caused 182,921 copies (+6.64%); decayed-frequency caused 165,699 (−3.40%, rank 0 −3.55%, rank 1 −3.25%). Guarded admission cut simulated copies to 17,478 (−89.8%) only by mapping 167,186 cold expert picks. These are segment-conditioned counterfactuals: at each checkpoint candidates restart from the production state, and host-prefill intervals/costs are excluded. The mapped-read byte traffic and latency are not modeled, so guarded admission is not a speedup claim. Next, evaluate a default-off decayed-frequency runtime candidate and quantify actual mapped traffic on held-out concurrent prompts; retain the current policy unless both-rank misses and uninstrumented TP2 graph-on serving improve.
+
+The held-out regressions reject both histogram-sized pools and recent-only eviction as general policies. Current DPLAN
+telemetry records aggregate/per-layer hit, miss-pick, copy, eviction, and in-place totals, but those totals cannot
+reconstruct planner order or reuse distance. The ring contains only a bounded recent window and is not a complete
+trace. The planner also admits every miss when a line is available; it does not compare a newcomer against a resident
+before evicting, so cache-pollution/bypass is not measured yet.
+
+The bounded, opt-in DPLAN trace now records ordered picks and exact planner transitions, including strict checkpoints
+when host prefill transfers pool ownership back to the device planner. Replay verifies every device segment and the
+recorded checkpoint states; it deliberately excludes the host-prefill interval. Candidate policy replay is therefore
+segment-conditioned, not continuous across requests. Keep tracing out of throughput runs. Next evaluate a default-off
+decayed-frequency runtime candidate, count actual mapped-read traffic, and test on held-out concurrent prompts. Reject
+dropped or discontinuous traces; preserve TP2 budgets, the 10-line floor, graph capture/replay, snapshots, cache isolation,
+and BF16 KV paging. Promotion requires miss improvement on both ranks plus an uninstrumented graph-on serving gain
+outside baseline variation. Experimental policies remain opt-in/default-off until then.
 
 ## What this adds
 

@@ -31,6 +31,7 @@ const prompt = @import("cuda_prompt.zig");
 const ring_ = @import("cuda_exl3_prefill_ring.zig");
 const history_ = @import("cuda_exl3_prefill_history.zig");
 const tp_ = @import("cuda_exl3_tp.zig");
+const window_ = @import("exl3_prefill_window.zig");
 
 const dims = wt.dims;
 const wide = wt.wide;
@@ -79,6 +80,7 @@ pub const Options = struct {
     /// +5%, ms/token unchanged, prefill +0.17 s; off by default, TF_FLASHNEXT_EXL3_PREFILL_RESEED=1).
     reseed: bool = false,
     reduced_branch: bool = false,
+    two_chunk: bool = false,
 };
 
 pub fn optionsFromEnv() Options {
@@ -94,6 +96,7 @@ pub fn optionsFromEnv() Options {
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TILES")) |v| o.tiles = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RESEED")) |v| o.reseed = std.mem.eql(u8, std.mem.span(v), "1");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_REDUCED_BRANCH")) |v| o.reduced_branch = std.mem.eql(u8, std.mem.span(v), "1");
+    o.two_chunk = window_.enabled(if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK")) |value| std.mem.span(value) else null);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING")) |v| o.ring = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_PASS")) |v| o.ring_pass = @max(1, std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_pass);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD")) |v| o.ring_ahead = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_ahead;
@@ -193,6 +196,7 @@ const Layout = struct {
 const HostLayout = struct {
     ids: usize,
     pos: usize,
+    pos_stride: usize,
     emb: usize,
     xs: usize,
     picks: usize,
@@ -212,7 +216,8 @@ const HostLayout = struct {
         }.f;
         const pairs = rows * slots;
         l.ids = take(&at, rows * 4);
-        l.pos = take(&at, (rows / att_rows + 1) * 16);
+        l.pos_stride = (rows / att_rows + 1) * 16;
+        l.pos = take(&at, l.pos_stride * (wt.layers_n + 1));
         l.emb = take(&at, rows * dims * 2);
         l.xs = take(&at, rows * (dims / 32) * 4);
         l.picks = take(&at, pairs * 4);
@@ -229,6 +234,24 @@ const Pass = struct { id_lo: u32, id_hi: u32, m_lo: u32, m_n: u32, i_lo: u32, i_
 /// Sub-blocks a deep chunk holds at most (chunk's view array).
 const max_sub = 64;
 
+const Persistent = struct {
+    h: usize,
+    pss: usize,
+    inj: usize,
+    y: usize,
+    wts: usize,
+    total: usize,
+
+    fn of(rows: usize) Persistent {
+        const h = rows * wide * 2;
+        const pss = std.mem.alignForward(usize, rows * pss_n * 4, 256);
+        const inj = std.mem.alignForward(usize, rows * streams * 2, 256);
+        const y = rows * slots * dims * 4;
+        const wts = std.mem.alignForward(usize, rows * slots * 4, 256);
+        return .{ .h = 0, .pss = h, .inj = h + pss, .y = h + pss + inj, .wts = h + pss + inj + y, .total = h + pss + inj + y + wts };
+    }
+};
+
 const Deep = struct {
     gpa: std.mem.Allocator,
     owner: *const anyopaque,
@@ -237,6 +260,7 @@ const Deep = struct {
     lay: Layout,
     hl: HostLayout,
     dev: cuda.DeviceBuffer,
+    sum_dev: ?cuda.DeviceBuffer = null,
     host: cuda.HostBuffer,
     kern: pk.Kernels,
     aux: cuda.Stream,
@@ -263,8 +287,19 @@ const Deep = struct {
     used: [wt.layers_n]usize = @splat(routed_guess),
     history: [wt.layers_n]history_.Slot = @splat(.{}),
     history_shape: ?history_.Shape = null,
+    second: ?*Deep = null,
+    shared: ?*const Deep = null,
+    window_graph_reservation: u64 = 0,
 
     fn dptr(dp: *const Deep, off: usize) u64 {
+        if (dp.shared) |source| {
+            const persistent = Persistent.of(dp.rows);
+            inline for (.{ "h", "pss", "inj", "y", "wts" }) |field| {
+                if (off == @field(dp.lay, field)) return dp.dev.ptr + @field(persistent, field);
+            }
+            if (off == dp.lay.sum) if (dp.sum_dev) |buffer| return buffer.ptr;
+            return source.dptr(off);
+        }
         return dp.dev.ptr + off;
     }
     fn hbytes(dp: *const Deep, off: usize, n: usize) []u8 {
@@ -287,6 +322,18 @@ pub fn ringTelemetry(owner: *const anyopaque) ?RingTelemetry {
 pub fn release() void {
     if (deep) |dp| {
         @import("cuda_exl3_graph.zig").clearPrefill();
+        if (dp.second) |second| {
+            dp.aux.synchronize() catch @panic("two-chunk aux retirement synchronization failed");
+            dp.dev.d.synchronize() catch @panic("two-chunk compute retirement synchronization failed");
+            second.host.free();
+            if (dp.red != null) {
+                for (&second.red_ev) |*event| event.deinit();
+                second.red_go.deinit();
+            }
+            if (second.sum_dev) |*buffer| buffer.free();
+            second.dev.free();
+            dp.gpa.destroy(second);
+        }
         if (dp.ring) |r| r.deinit();
         if (dp.red) |*rs| {
             rs.synchronize() catch {};
@@ -328,15 +375,26 @@ pub fn reserveFor(e: *prompt.Engine, context: usize, tp: usize) void {
 pub fn stepRows(e: *const prompt.Engine, draft_rows: ?usize) usize {
     var n = e.chunk;
     if (deep) |dp| if (dp.owner == @as(*const anyopaque, e) and opts().enabled) {
-        n = @max(n, dp.rows);
+        n = @max(n, stepCapacity(dp.rows, opts().two_chunk and dp.second != null));
     };
     if (draft_rows) |r| n = @min(n, @max(r, 1));
     return n;
 }
 
+fn stepCapacity(rows: usize, paired: bool) usize {
+    return if (paired and rows <= window_.max_rows) rows * 2 else rows;
+}
+
 /// Rows of streams a lane's MTP draft keeps (cuda_lanes.zig, cuda_lanes_load.zig): a whole step's.
 pub fn draftRows(e: *const prompt.Engine) usize {
-    return stepRows(e, null);
+    var n = stepRows(e, null);
+    if (deep) |dp| if (dp.owner == @as(*const anyopaque, e)) {
+        const o = opts();
+        if (o.two_chunk and o.enabled and o.ring and !o.reduced_branch and dp.world == 2) {
+            n = @max(n, stepCapacity(dp.rows, true));
+        }
+    };
+    return n;
 }
 
 /// The engine's deinit: frees the deep chunk's buffers if `owner` made them.
@@ -386,6 +444,68 @@ pub fn reserveAt(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const an
     }
     deep = dp;
     std.log.info("flashnext exl3 prefill: deep chunks of {d} rows, {d:.2} GiB on the device, {d:.1} MiB pinned (world {d})", .{ rows, @as(f64, @floatFromInt(dp.lay.total)) / (1 << 30), @as(f64, @floatFromInt(dp.hl.total)) / (1 << 20), world });
+}
+
+pub fn reserveTwoChunk(d: *const cuda.Driver, free: u64, protected: u64, graph_reservation: u64) !u64 {
+    const o = opts();
+    if (!o.two_chunk or !o.enabled or !o.ring or o.reduced_branch) return 0;
+    const dp = deep orelse return 0;
+    if (dp.dev.d != d or dp.world != 2 or dp.rows > window_.max_rows) return 0;
+    if (dp.second != null) return 0;
+    const graph_required = @import("cuda_exl3_graph_memory.zig").twoChunkReservationBytes();
+    if (@import("cuda_exl3_graph.zig").enabled() and (graph_required == 0 or graph_reservation < graph_required)) {
+        std.log.info("flashnext exl3 prefill: two-chunk window declined, incremental graph reservation unavailable (required={d} supplied={d})", .{ graph_required, graph_reservation });
+        return 0;
+    }
+    const persistent = Persistent.of(dp.rows);
+    const sum_bytes = if (dp.world > 1) try std.math.mul(usize, dp.rows, dims * 4) else 0;
+    const device_bytes = try std.math.add(usize, persistent.total, sum_bytes);
+    if (!window_.admits(free, protected, device_bytes)) {
+        std.log.info("flashnext exl3 prefill: two-chunk window declined, extra_device={d} full_layout={d} extra_pinned=0 protected={d} free={d}", .{ device_bytes, dp.lay.total, protected, free });
+        return 0;
+    }
+    const second = try dp.gpa.create(Deep);
+    second.* = .{ .gpa = dp.gpa, .owner = dp.owner, .rows = dp.rows, .world = dp.world, .lay = dp.lay, .hl = dp.hl, .dev = undefined, .host = undefined, .kern = dp.kern, .aux = dp.aux, .red = dp.red, .red_ev = undefined, .red_go = undefined, .shared = dp };
+    var device_allocated = false;
+    var host_allocated = false;
+    var made_events: usize = 0;
+    var reduce_event_allocated = false;
+    errdefer {
+        if (reduce_event_allocated) second.red_go.deinit();
+        for (second.red_ev[0..made_events]) |*event| event.deinit();
+        if (host_allocated) second.host.free();
+        if (second.sum_dev) |*buffer| buffer.free();
+        if (device_allocated) second.dev.free();
+        dp.gpa.destroy(second);
+    }
+    second.dev = try cuda.DeviceBuffer.alloc(d, persistent.total);
+    device_allocated = true;
+    if (sum_bytes != 0) {
+        second.sum_dev = try cuda.DeviceBuffer.alloc(d, sum_bytes);
+    }
+    second.host = try cuda.HostBuffer.alloc(d, second.hl.total);
+    host_allocated = true;
+    if (dp.red != null) {
+        for (&second.red_ev) |*event| {
+            event.* = try cuda.Event.init(d, false);
+            made_events += 1;
+        }
+        second.red_go = try cuda.Event.init(d, false);
+        reduce_event_allocated = true;
+    } else {
+        second.red_ev = dp.red_ev;
+        second.red_go = dp.red_go;
+    }
+    try d.check(d.api.cuMemsetD8Async(second.dptr(second.lay.y), 0, dp.rows * slots * dims * 4, dp.aux.handle), "cuMemsetD8Async");
+    try dp.aux.synchronize();
+    dp.second = second;
+    dp.window_graph_reservation = graph_reservation;
+    std.log.info("flashnext exl3 prefill: experimental two-chunk window, chunk_rows={d} hidden_bytes={d} full_layout={d} extra_device={d} extra_pinned={d}", .{ dp.rows, 2 * dp.rows * wide * 2, dp.lay.total, device_bytes, second.hl.total });
+    return device_bytes;
+}
+
+pub fn twoChunkAllocated() bool {
+    return if (deep) |buffers| buffers.second != null else false;
 }
 
 fn applies(e: *prompt.Engine, seq: *prompt.Seq, ids: []const u32, hooks: batch.Hooks, o: Options) bool {
@@ -477,6 +597,18 @@ pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq
     const n_chunks = (ids.len + cap_rows - 1) / cap_rows;
     const deep_rows = @min(cap_rows, ((ids.len + n_chunks - 1) / n_chunks + att_rows - 1) / att_rows * att_rows);
     const rg = if (o.ring) try ringOf(dp, e) else null;
+    var window_room: usize = 0;
+    if (o.two_chunk) {
+        var supported = dp.second != null and rg != null and world == 2 and !dp.reduced_branch and seq.kv8 == null and deep_rows <= window_.max_rows and ids.len > deep_rows;
+        if (@import("cuda_exl3_graph.zig").enabled()) {
+            const required = @import("cuda_exl3_graph_memory.zig").twoChunkReservationBytes();
+            if (required == 0 or dp.window_graph_reservation < required) supported = false;
+        }
+        for (e.layers[0..e.n_layers]) |*layer| if (@import("cuda_exl3_heads.zig").isSplit(layer)) {
+            supported = false;
+        };
+        window_room = try agree(e, if (supported) deep_rows else 0);
+    }
     if (o.tiles and !o.slots_kernel) {
         try warmTiles(e);
         tiles_on = true;
@@ -486,6 +618,12 @@ pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq
     defer if (rg) |r| r.end(p.stream, o.reseed) catch |err| std.log.err("flashnext exl3 prefill: ring end: {t}", .{err});
     var at: usize = 0;
     while (at < ids.len) {
+        if (window_room != 0) {
+            const plan_ = try window_.Plan.init(ids.len - at, window_room, att_rows);
+            try twoChunk(Tri, dp, &p, s, ids[at..][0..plan_.rows], seq.fed + at, sub, hooks, at, at + plan_.rows == ids.len, seq.logits, o, rg.?, plan_);
+            at += plan_.rows;
+            continue;
+        }
         const n = @min(deep_rows, ids.len - at);
         const last = at + n == ids.len;
         const lg: batch.Logits = if (last) hooks.logits else .none;
@@ -570,6 +708,160 @@ const Gather = struct {
 
 fn upload(st: cuda.Stream, dst: u64, bytes: []const u8) !void {
     try st.d.check(st.d.api.cuMemcpyHtoDAsync_v2(dst, bytes.ptr, bytes.len, st.handle), "cuMemcpyHtoDAsync");
+}
+
+fn windowStage(dp: *Deep, p: anytype, ids: []const u32, pos0: usize) !void {
+    const n = ids.len;
+    try p.stream.synchronize();
+    const id32 = std.mem.bytesAsSlice(i32, dp.hbytes(dp.hl.ids, n * 4));
+    for (id32, ids) |*destination, id| destination.* = @intCast(id);
+    const blocks = (n + att_rows - 1) / att_rows;
+    const positions = std.mem.bytesAsSlice(i32, dp.hbytes(dp.hl.pos, blocks * 16));
+    @memset(positions, 0);
+    for (0..blocks) |block| positions[4 * block] = @intCast(pos0 + block * att_rows);
+    try upload(p.stream, dp.dptr(dp.lay.ids), dp.hbytes(dp.hl.ids, n * 4));
+    try upload(p.stream, dp.dptr(dp.lay.pos), dp.hbytes(dp.hl.pos, blocks * 16));
+    if (p.m.table_dense) {
+        try p.tri.embedDense(dp.dptr(dp.lay.ids), p.m.table_w, dp.dptr(dp.lay.h), dims, streams, n);
+    } else {
+        try p.tri.embed(dp.dptr(dp.lay.ids), p.m.table_w, p.m.table_s, p.m.table_b, dp.dptr(dp.lay.h), dims, streams, n);
+    }
+}
+
+fn windowInputs(dp: *Deep, p: anytype, ids: []const u32, pos0: usize, layer: usize) !void {
+    const blocks = (ids.len + att_rows - 1) / att_rows;
+    const positions_offset = dp.hl.pos + (layer + 1) * dp.hl.pos_stride;
+    const positions: []i32 = @alignCast(std.mem.bytesAsSlice(i32, dp.hbytes(positions_offset, blocks * 16)));
+    @memset(positions, 0);
+    for (0..blocks) |block| positions[4 * block] = @intCast(pos0 + block * att_rows);
+    try upload(p.stream, dp.dptr(dp.lay.pos), dp.hbytes(positions_offset, blocks * 16));
+    if (layer == ple_layer) {
+        const embedding: []u16 = @alignCast(std.mem.bytesAsSlice(u16, dp.hbytes(dp.hl.emb, ids.len * dims * 2)));
+        const sums: []f32 = @alignCast(std.mem.bytesAsSlice(f32, dp.hbytes(dp.hl.xs, ids.len * (dims / 32) * 4)));
+        try p.m.ngram.rows(p.seq.history[0..], ids, embedding, sums);
+        try upload(p.stream, dp.dptr(dp.lay.ple_emb), std.mem.sliceAsBytes(embedding));
+        try upload(p.stream, dp.dptr(dp.lay.ple_xs), std.mem.sliceAsBytes(sums));
+    }
+}
+
+fn windowDense(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratch, layer: usize, n: usize, pos0: usize, sub: usize, waits: []const cuda.Event) !void {
+    const graph = @import("cuda_exl3_graph.zig");
+    const lw = &p.m.layers[layer];
+    const n_sub = (n + sub - 1) / sub;
+    var views: [max_sub]batch.Scratch = undefined;
+    for (0..n_sub) |block| views[block] = view(base, dp, block * sub);
+    defer p.s = base;
+    p.s = base;
+    p.rows = n;
+    p.pos0 = pos0;
+    const capture = try graph.prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles_on, waits, dp.dptr(dp.lay.pos));
+    errdefer graph.prefillAbort(p, capture);
+    if (capture != .replayed) for (0..n_sub) |block| {
+        const at = block * sub;
+        const count = @min(sub, n - at);
+        p.s = &views[block];
+        p.rows = count;
+        p.pos0 = pos0 + at;
+        pendingWriteback(p, dp, if (layer == 0) null else layer - 1, at);
+        if (block < waits.len) switch (capture) {
+            .eager => try p.stream.wait(waits[block]),
+            .capturing => try p.stream.waitExternal(waits[block]),
+            .replayed => unreachable,
+        };
+        try layerBlock(Tri, p, lw, layer, count);
+    };
+    try graph.prefillEnd(p, capture);
+    dp.red_n = 0;
+}
+
+fn windowFinish(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratch, n: usize, sub: usize, logits: batch.Logits, streams_out: u64, logits_host: ?[]u8) !void {
+    const n_sub = (n + sub - 1) / sub;
+    var views: [max_sub]batch.Scratch = undefined;
+    for (0..n_sub) |block| views[block] = view(base, dp, block * sub);
+    defer p.s = base;
+    stats.chunks += 1;
+    stats.rows += n;
+    const last_block = n_sub - 1;
+    const last_rows = n - last_block * sub;
+    if (streams_out != 0) {
+        for (0..n_sub) |block| {
+            const count = @min(sub, n - block * sub);
+            p.s = &views[block];
+            p.rows = count;
+            pendingWriteback(p, dp, wt.layers_n - 1, block * sub);
+            try p.writeback(0, count);
+            try p.copy(streams_out + block * sub * wide * 2, views[block].h, count * wide * 2);
+        }
+    }
+    if (logits == .none) return;
+    p.s = &views[last_block];
+    p.rows = last_rows;
+    const scratch = p.s;
+    const row = last_rows - 1;
+    if (streams_out != 0) {
+        if (row > 0) {
+            try p.copy(scratch.h, scratch.h + row * wide * 2, wide * 2);
+            try p.copy(scratch.pss, scratch.pss + row * pss_n * 4, pss_n * 4);
+        }
+    } else {
+        try compactLast(p, dp.reduced_branch, row);
+        pendingWriteback(p, dp, wt.layers_n - 1, last_block * sub);
+        try p.writeback(0, 1);
+    }
+    try p.readout(p.m.mixer, 0, 1);
+    if (p.m.head.n == vocab) {
+        try p.lane(scratch.mixed, scratch.xsm, p.m.head, scratch.logits, scratch.dummy, 1, 1);
+    } else {
+        const collective = p.m.collective orelse return error.TensorParallelUnavailable;
+        try p.lane(scratch.mixed, scratch.xsm, p.m.head, scratch.head_local, scratch.dummy, 1, 1);
+        try collective.gather(p.stream, scratch.head_local, scratch.logits, vocab / 2);
+    }
+    if (logits_host) |destination| {
+        if (p.m.collective) |collective| try collective.finish(p.stream);
+        try p.stream.synchronize();
+        try p.stream.d.check(p.stream.d.api.cuMemcpyDtoH_v2(destination.ptr, scratch.logits, vocab * 2), "cuMemcpyDtoH");
+    }
+}
+
+fn twoChunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratch, ids: []const u32, pos0: usize, sub: usize, hooks: batch.Hooks, output_at: usize, last: bool, logits_host: []u8, o: Options, ring: *ring_.Ring, plan_: window_.Plan) !void {
+    const buffers = [_]*Deep{ dp, dp.second.? };
+    for (plan_.segments[0..plan_.count]) |segment| {
+        if ((segment.rows + sub - 1) / sub > max_sub) return error.UnexpectedTensor;
+    }
+    try p.stream.synchronize();
+    try ring.newChunk();
+    history_.prepare(&dp.history, &dp.history_shape, .{ .sub = sub, .lo = ring.own_lo, .hi = ring.own_hi });
+    for (0..@min(o.ring_ahead + 1, wt.layers_n)) |layer| _ = try ring.prefetch(layer, @min(routed_n_, dp.used[layer]), keepFree(ring, o), .initial_prefetch);
+    for (plan_.segments[0..plan_.count], 0..) |segment, index| {
+        try windowStage(buffers[index], p, ids[segment.offset..][0..segment.rows], pos0 + segment.offset);
+    }
+    var schedule = plan_.iterator(p.m.layers.len);
+    while (schedule.next()) |step| {
+        const active = buffers[step.chunk];
+        const segment = plan_.segments[step.chunk];
+        try windowInputs(active, p, ids[segment.offset..][0..segment.rows], pos0 + segment.offset, step.layer);
+        try windowDense(Tri, active, p, base, step.layer, segment.rows, pos0 + segment.offset, sub, active.red_ev[0..active.red_n]);
+        if (active != dp) {
+            active.used = dp.used;
+            active.history = dp.history;
+        }
+        const layer = &p.m.layers[step.layer];
+        try ringMoe(Tri, active, ring, p, layer, step.layer, segment.rows, o);
+        if (active != dp) {
+            dp.used = active.used;
+            dp.history = active.history;
+        }
+        try rankSum(active, p, layer.exl3.?, segment.rows, sub);
+        if (step.layer + 1 == p.m.layers.len) {
+            for (active.red_ev[0..active.red_n]) |event| try p.stream.wait(event);
+            active.red_n = 0;
+        }
+    }
+    for (plan_.segments[0..plan_.count], 0..) |segment, index| {
+        const final = last and index + 1 == plan_.count;
+        const output = if (hooks.streams == 0) 0 else hooks.streams + (output_at + segment.offset) * wide * 2;
+        try windowFinish(Tri, buffers[index], p, base, segment.rows, sub, if (final) hooks.logits else .none, output, if (final and hooks.logits != .none) logits_host else null);
+    }
 }
 
 fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratch, ids: []const u32, pos0: usize, sub: usize, logits: batch.Logits, streams_out: u64, logits_host: ?[]u8, o: Options, rg: ?*ring_.Ring) !void {
@@ -1317,6 +1609,140 @@ fn warmTiles(e: *prompt.Engine) !void {
 test "exl3: reduced prefill writeback preserves slot rounding sub-blocks and tail selection" {
     try @import("cuda_exl3_prefill_writeback_test.zig").run(Deep, Layout.of, view, pendingWriteback, compactLast, selectWriteback);
     try std.testing.expect(!(Options{}).reduced_branch);
+}
+
+test "exl3: two-chunk scheduling and reservation contracts" {
+    _ = window_;
+    try std.testing.expect(!(Options{}).two_chunk);
+    try std.testing.expectEqual(@as(usize, 4096), stepCapacity(4096, false));
+    try std.testing.expectEqual(@as(usize, 8192), stepCapacity(4096, true));
+    try std.testing.expectEqual(@as(usize, 8192), stepCapacity(8192, true));
+}
+
+test "exl3: two-chunk arenas retain hidden and deferred HC operands without aliasing" {
+    const rows = 4096;
+    const layout = Layout.of(rows, 2);
+    const persistent = Persistent.of(rows);
+    try std.testing.expectEqual(@as(usize, 727399424), layout.total);
+    const host_layout = HostLayout.of(rows);
+    try std.testing.expectEqual(@as(usize, 160 << 20), 2 * rows * wide * 2);
+    var driver: cuda.Driver = undefined;
+    var first: Deep = undefined;
+    first.world = 2;
+    first.rows = rows;
+    first.shared = null;
+    first.lay = layout;
+    first.dev = .{ .d = &driver, .ptr = 0x100000, .len = layout.total };
+    first.sum_dev = null;
+    var second = first;
+    second.dev.ptr += layout.total;
+    second.dev.len = persistent.total;
+    second.rows = rows;
+    second.shared = &first;
+    var base: batch.Scratch = undefined;
+    base.moe_f32 = 0;
+    const fields = .{ "h", "pss", "inj", "mixed", "xsm", "y", "wts", "picks", "ple_emb", "ple_xs", "ids", "pos", "members", "items", "kscratch", "sum" };
+    inline for (fields, 0..) |field, index| {
+        const start = @field(layout, field);
+        const end = if (index + 1 < fields.len) @field(layout, fields[index + 1]) else layout.total;
+        try std.testing.expectEqual(@as(usize, 0), start % 256);
+        try std.testing.expect(start < end and end <= layout.total);
+        try std.testing.expect(first.dev.ptr + end <= second.dev.ptr);
+    }
+    for ([_]usize{ 0, 1024, 3072 }) |offset| {
+        const a = view(&base, &first, offset);
+        const b = view(&base, &second, offset);
+        inline for (.{ "h", "pss", "inj", "y", "wts" }) |field| {
+            const second_start = second.dev.ptr + @field(persistent, field);
+            try std.testing.expect(@field(b, field) >= second_start and @field(b, field) < second.dev.ptr + persistent.total);
+            try std.testing.expect(@field(a, field) < second.dev.ptr);
+        }
+        inline for (.{ "mixed", "xsm", "picks", "ple_emb", "ple_xs", "ids", "pos", "moe_f32" }) |field| {
+            try std.testing.expectEqual(@field(a, field), @field(b, field));
+        }
+    }
+    inline for (.{ "members", "items", "kscratch", "sum" }) |field| try std.testing.expectEqual(first.dptr(@field(layout, field)), second.dptr(@field(layout, field)));
+    try std.testing.expectEqual(@as(usize, 546127872), persistent.total);
+    try std.testing.expect(persistent.total < layout.total);
+    try std.testing.expect(host_layout.total > rows * dims * 2);
+    try std.testing.expect(!window_.admits(layout.total - 1, 0, layout.total));
+    try std.testing.expect(window_.admits(layout.total, 0, layout.total));
+}
+
+test "exl3: two-chunk memory refusal performs no CUDA allocation" {
+    const saved_deep = deep;
+    const saved_options = options;
+    const graph = @import("cuda_exl3_graph.zig");
+    const saved_force = graph.force;
+    defer {
+        deep = saved_deep;
+        options = saved_options;
+        graph.force = saved_force;
+    }
+    graph.force = .off;
+    options = .{ .two_chunk = true };
+    var driver: cuda.Driver = undefined;
+    var buffers: Deep = undefined;
+    buffers.dev = .{ .d = &driver, .ptr = 0x100000, .len = 1 };
+    buffers.world = 2;
+    buffers.rows = 4096;
+    buffers.lay = Layout.of(4096, 2);
+    buffers.second = null;
+    deep = &buffers;
+    try std.testing.expectEqual(@as(u64, 0), try reserveTwoChunk(&driver, Persistent.of(4096).total - 1, 0, 0));
+    try std.testing.expect(buffers.second == null);
+}
+
+test "exl3: two-chunk PLE input staging advances mutable history only in chronological PLE segments" {
+    const Fixture = struct {
+        calls: usize = 0,
+        before: [2][2]i64 = undefined,
+
+        fn sync(_: cuda.abi.Stream) callconv(.c) cuda.abi.Result {
+            return cuda.abi.success;
+        }
+
+        fn copy(_: cuda.abi.DevicePtr, _: ?*const anyopaque, _: usize, _: cuda.abi.Stream) callconv(.c) cuda.abi.Result {
+            return cuda.abi.success;
+        }
+
+        pub fn rows(self: *@This(), history: []i64, ids: []const u32, embedding: []u16, sums: []f32) !void {
+            self.before[self.calls] = history[0..2].*;
+            self.calls += 1;
+            for (ids) |id| {
+                history[0] = history[1];
+                history[1] = id;
+            }
+            @memset(embedding, 0);
+            @memset(sums, 0);
+        }
+    };
+    var driver: cuda.Driver = undefined;
+    driver.api.cuStreamSynchronize = Fixture.sync;
+    driver.api.cuMemcpyHtoDAsync_v2 = Fixture.copy;
+    const host_layout = HostLayout.of(256);
+    const host = try std.testing.allocator.alignedAlloc(u8, .@"16", host_layout.total);
+    defer std.testing.allocator.free(host);
+    var buffers: Deep = undefined;
+    buffers.rows = 256;
+    buffers.shared = null;
+    buffers.lay = Layout.of(256, 2);
+    buffers.hl = host_layout;
+    buffers.host = .{ .d = &driver, .bytes = host };
+    buffers.dev = .{ .d = &driver, .ptr = 0x100000, .len = buffers.lay.total };
+    var fixture: Fixture = .{};
+    var history: [2]i64 = .{ -2, -1 };
+    var pass = .{ .stream = cuda.Stream{ .d = &driver, .handle = null }, .m = .{ .ngram = &fixture }, .seq = .{ .history = &history } };
+    var ids: [512]u32 = undefined;
+    for (&ids, 1..) |*id, value| id.* = @intCast(value);
+    for (0..2) |index| try windowInputs(&buffers, &pass, ids[index * 256 ..][0..256], index * 256, 0);
+    try std.testing.expectEqual(@as(usize, 0), fixture.calls);
+    try std.testing.expectEqualSlices(i64, &.{ -2, -1 }, &history);
+    for (0..2) |index| try windowInputs(&buffers, &pass, ids[index * 256 ..][0..256], index * 256, ple_layer);
+    try std.testing.expectEqual(@as(usize, 2), fixture.calls);
+    try std.testing.expectEqualSlices(i64, &.{ -2, -1 }, &fixture.before[0]);
+    try std.testing.expectEqualSlices(i64, &.{ 255, 256 }, &fixture.before[1]);
+    try std.testing.expectEqualSlices(i64, &.{ 511, 512 }, &history);
 }
 
 test "exl3: prefill passes keep each expert's pairs together, items relative to their pass" {

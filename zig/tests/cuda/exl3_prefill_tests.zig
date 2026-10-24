@@ -825,7 +825,7 @@ const Eng = struct {
         try gpu.d.check(gpu.d.api.cuMemGetInfo_v2(&free3, &total), "cuMemGetInfo");
         var b = try xpass.budgetFromEnv(0);
         if (lines) |n| b.lines = n;
-        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, b);
+        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, b, null);
         var free4: usize = 0;
         try gpu.d.check(gpu.d.api.cuMemGetInfo_v2(&free4, &total), "cuMemGetInfo");
         const gib = struct {

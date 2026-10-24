@@ -334,7 +334,7 @@ const Eng = struct {
                 std.debug.print("SHARED rank {d}/{d}: lanes {d}, cap {d}, window {d}+rows {d}, physical window rows {d}, slots {d}x4, K/V side rows {d}, device {d}, tables {d}, work {d}, common {d} bytes resident before pools; future two lane caches {d} bytes\n", .{ rank, world, arena.layout.options.lanes, cap_default, arena.layout.options.window, arena.layout.options.rows, arena.layout.window_rows, arena.layout.options.slots, arena.layout.side_rows, arena.layout.device_bytes, arena.layout.table_bytes, arena.layout.work_bytes, common_bytes, budget.other });
             } else try check.expect(common_bytes == 0 and g.e.shared_arena == null, "rank {d}: private control has no shared allocation", .{rank});
         }
-        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, budget);
+        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, budget, null);
         std.debug.print("RESULT rank {d}/{d} load: {d:.1} s; {d} lines a layer x {d} layers ({d:.2} GiB of pool)\n", .{ rank, world, ms(t0, check.now(gpu.io)) / 1e3, g.attached.lines, g.attached.layers, gib(g.attached.device_bytes) });
         return g;
     }

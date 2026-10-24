@@ -121,6 +121,11 @@ const usage =
     \\  flashnext-exl3 DIR names|norms|router [layers] [rows]|layer [layers]  Flash Next on an EXL3 pack vs float64
     \\  flashnext-exl3-tp RANK PORT DIR layer [layers]|sum|head|memory  EXL3 expert parallel on two ranks vs tp=1 and float64
     \\  flashnext-exl3-engine DIR tf|gen GOLDEN [LINES] | bench [LINES]  the family's Engine with the offload pool vs the reference golden
+    \\  flashnext-exl3-tpe RANK 2 PORT DIR trace GOLDEN PREFIX [ROUNDS [SCHEDULE [REPEATS]]]
+    \\    graph-on TP2 v3; rounds/segment=1024, CSV zero-based prompt schedule=0, repeats=1
+    \\    sequential shared-pool workload, independent sequence/KV; not concurrent requests
+    \\    e.g. trace GOLDEN PREFIX 128 0,1,2 2; rejects schedules exceeding 1 MiB/pool
+    \\  flashnext-exl3-tpe 0 1 0 - policy FILES...             compare lifetime/LRU/frequency/bypass on expert demand
     \\  flashnext-exl3-tpe RANK WORLD PORT DIR tf|gen GOLDEN DUMP | bench | hit FILES | graph  the Engine at tp=1/2 with per-rank pools
     \\  flashnext-exl3-graph plan | RANK WORLD PORT DIR eq GOLDEN [STEPS] [MODES]  the pool planned on the device and decode graphs vs the host cut
     \\  flashnext-attn            Flash Next's own attention glue, pooling and block scores against float64 (synthetic)

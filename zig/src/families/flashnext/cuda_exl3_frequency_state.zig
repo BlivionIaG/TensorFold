@@ -30,20 +30,32 @@ pub const State = struct {
     }
 };
 
+pub const Prepared = struct {
+    state: State,
+    counts: ?codec.Counts,
+};
+
 pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, own: anytype, world: u32, rank: u32) !?State {
+    const prepared = try prepare(gpa, io, dir, own.engine.layers[0..own.engine.n_layers], own.head, world, rank) orelse return null;
+    var state = prepared.state;
+    errdefer state.deinit();
+    if (prepared.counts) |*counts| try finish(own, counts);
+    return state;
+}
+
+pub fn prepare(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, layers: anytype, head: anytype, world: u32, rank: u32) !?Prepared {
     const root = std.c.getenv("TF_FLASHNEXT_EXL3_PROFILE_DIR") orelse return null;
     if (std.mem.span(root).len == 0) return null;
     if (comptime @import("builtin").os.tag == .windows) {
         std.log.warn("EXL3 placement profiles require POSIX storage; persistence disabled", .{});
         return null;
     }
-    const layers = own.engine.layers[0..own.engine.n_layers];
     if (!available(layers)) {
         std.log.warn("EXL3 placement profile rank {d}: unavailable decoder pools; persistence disabled", .{rank});
         return null;
     }
     const before = std.Io.Clock.awake.now(io).toNanoseconds();
-    const model = fingerprint(gpa, io, dir, layers, own.head) catch |err| {
+    const model = fingerprint(gpa, io, dir, layers, head) catch |err| {
         std.log.warn("EXL3 placement profile rank {d}: fingerprint unavailable ({s}); persistence disabled", .{ rank, @errorName(err) });
         return null;
     };
@@ -53,8 +65,34 @@ pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, own: anytype, w
         return null;
     };
     errdefer state.deinit();
-    _ = try restore(&state, own);
-    return state;
+    var counts: ?codec.Counts = codec.read(gpa, io, state.path, state.identity) catch |err| blk: {
+        std.log.warn("EXL3 placement profile rank {d}: cold start ({s})", .{ rank, @errorName(err) });
+        break :blk null;
+    };
+    if (counts) |*value| {
+        if (value.mtp_present != (mtpExperts(head) != null)) {
+            std.log.warn("EXL3 placement profile rank {d}: cold start (MTP schema mismatch)", .{rank});
+            counts = null;
+        } else {
+            decay(value);
+            std.log.info("EXL3 placement profile rank {d}: loaded and decayed rank-local placement counts before pool allocation", .{rank});
+        }
+    }
+    return .{ .state = state, .counts = counts };
+}
+
+pub fn finish(own: anytype, counts: *const codec.Counts) !void {
+    const layers = own.engine.layers[0..own.engine.n_layers];
+    if (!available(layers)) return error.ProfileUnavailable;
+    for (layers, 0..) |layer, index| {
+        const pool = layer.exl3.?.pool orelse return error.ProfileUnavailable;
+        pool.counts[pool.opt.layer] = counts.decoder[index];
+    }
+    if (mtpPool(own.head)) |pool| pool.counts[pool.opt.layer] = counts.mtp;
+    var warmed: usize = 0;
+    for (layers) |layer| warmed += try layer.exl3.?.pool.?.warmProfile();
+    if (mtpPool(own.head)) |pool| warmed += try pool.warmProfile();
+    std.log.info("EXL3 placement profile: imported and warmed {d} expert lines after pool allocation", .{warmed});
 }
 
 fn open(gpa: std.mem.Allocator, io: std.Io, root: []const u8, identity: codec.Identity) !State {
@@ -124,8 +162,8 @@ fn available(layers: anytype) bool {
     if (layers.len != 48) return false;
     for (layers) |layer| {
         const experts = layer.exl3 orelse return false;
-        const pool = experts.pool orelse return false;
-        if (pool.opt.layer >= 48) return false;
+        if (experts.bank == null or experts.routed.len != codec.experts) return false;
+        if (experts.pool) |pool| if (pool.opt.layer >= 48) return false;
     }
     return true;
 }
@@ -134,6 +172,11 @@ fn mtpPool(head: anytype) @TypeOf(head.?.layer.exl3.?.pool) {
     const present = head orelse return null;
     const experts = present.layer.exl3 orelse return null;
     return experts.pool;
+}
+
+fn mtpExperts(head: anytype) @TypeOf(head.?.layer.exl3) {
+    const present = head orelse return null;
+    return present.layer.exl3;
 }
 
 fn decay(counts: *codec.Counts) void {
@@ -198,12 +241,17 @@ fn fingerprint(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, layers: anyt
         hashBytes(&hash, bytes);
     }
     hashBytes(&hash, "decoder-routed-trellis");
-    for (layers) |layer| hashRouted(&hash, layer.exl3.?.pool.?.src.routed);
-    if (mtpPool(head)) |pool| {
+    for (layers) |layer| hashRouted(&hash, expertRouted(layer.exl3.?));
+    if (mtpExperts(head)) |experts| {
         hashBytes(&hash, "mtp-routed-trellis");
-        hashRouted(&hash, pool.src.routed);
+        hashRouted(&hash, expertRouted(experts));
     }
     return hash.finalResult();
+}
+
+fn expertRouted(experts: anytype) []const [3][]const u8 {
+    if (experts.pool) |pool| return pool.src.routed;
+    return experts.routed;
 }
 
 const MockPool = struct {
@@ -226,7 +274,8 @@ const MockPool = struct {
     }
 };
 
-const MockExperts = struct { pool: ?*MockPool };
+const mock_routed: [512][3][]const u8 = @splat(.{ "gate", "up", "down" });
+const MockExperts = struct { pool: ?*MockPool, bank: ?[]const u8 = "bank", routed: []const [3][]const u8 = &mock_routed };
 const MockLayer = struct { exl3: ?*MockExperts };
 const Mock = struct {
     decoder: [48][512]u32 = @splat(@splat(0)),
@@ -240,7 +289,7 @@ const Mock = struct {
         mock.* = .{};
         mock.engine.n_layers = 48;
         for (&mock.pools, &mock.experts, 0..) |*pool, *experts, index| {
-            pool.* = .{ .counts = if (index == 48) &mock.mtp else &mock.decoder, .opt = .{ .layer = if (index == 48) 0 else @intCast(index) } };
+            pool.* = .{ .counts = if (index == 48) &mock.mtp else &mock.decoder, .opt = .{ .layer = if (index == 48) 0 else @intCast(index) }, .src = .{ .routed = &mock_routed } };
             experts.* = .{ .pool = pool };
             if (index < 48) mock.engine.layers[index] = .{ .exl3 = experts };
         }
@@ -408,6 +457,25 @@ test "exl3: placement state pulls only owning planner before copying decoder and
     try std.testing.expectError(error.ProfilePlannerOwnerMismatch, snapshot(&own, @as(?*MockPlan, &unrelated)));
 }
 
+test "exl3: prepared placement counts import and warm only after pools attach" {
+    var mock: Mock = undefined;
+    mock.init();
+    var own = mock.owner(true);
+    var counts: codec.Counts = .{};
+    for (&counts.decoder, 0..) |*row, layer| row[7] = @intCast(layer + 1);
+    counts.mtp[7] = 73;
+    counts.mtp_present = true;
+
+    try finish(&own, &counts);
+
+    for (mock.pools[0..48], 0..) |pool, layer| {
+        try std.testing.expectEqual(@as(u32, @intCast(layer + 1)), mock.decoder[layer][7]);
+        try std.testing.expectEqual(@as(usize, 1), pool.warm_calls);
+    }
+    try std.testing.expectEqual(@as(u32, 73), mock.mtp[0][7]);
+    try std.testing.expectEqual(@as(usize, 1), mock.pools[48].warm_calls);
+}
+
 test "exl3: placement fingerprint reads routed and metadata bytes, ignores pool size and distinguishes MTP" {
     if (comptime @import("builtin").os.tag == .windows) return error.SkipZigTest;
     const allocator = std.testing.allocator;
@@ -422,6 +490,9 @@ test "exl3: placement fingerprint reads routed and metadata bytes, ignores pool 
     mock.init();
     const own = mock.owner(false);
     const original = try fingerprint(allocator, io, root, &mock.engine.layers, own.head);
+    for (&mock.experts) |*experts| experts.pool = null;
+    try std.testing.expectEqual(original, try fingerprint(allocator, io, root, &mock.engine.layers, own.head));
+    for (&mock.experts, &mock.pools) |*experts, *pool| experts.pool = pool;
     mock.pools[0].opt.lines = 23;
     try std.testing.expectEqual(original, try fingerprint(allocator, io, root, &mock.engine.layers, own.head));
     mock.pools[47].src.routed = &.{.{ "changed gate", "up", "down" }};
