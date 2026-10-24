@@ -253,8 +253,32 @@ pub const DevPlan = struct {
         return dp;
     }
 
+    /// With the trace on and TF_FLASHNEXT_EXL3_DPLAN_TRACE_DIR set: each pool's raw buffer as dplan-<pid>-pool<N>.bin.
+    fn dumpTrace(dp: *DevPlan) void {
+        const dir = std.c.getenv("TF_FLASHNEXT_EXL3_DPLAN_TRACE_DIR") orelse return;
+        const buffer = dp.trace_mem orelse return;
+        if (dp.stream) |s| s.synchronize() catch return;
+        const bytes = std.heap.page_allocator.alloc(u8, demand_trace.pool_bytes) catch return;
+        defer std.heap.page_allocator.free(bytes);
+        for (0..dp.pools.len) |index| {
+            buffer.download(index * demand_trace.pool_bytes, bytes) catch return;
+            var path: [256]u8 = undefined;
+            const name = std.fmt.bufPrint(&path, "{s}/dplan-{d}-pool{d}.bin\x00", .{ std.mem.span(dir), std.c.getpid(), index }) catch return;
+            const fd = std.c.open(@ptrCast(name.ptr), .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true }, @as(std.c.mode_t, 0o644));
+            if (fd < 0) return;
+            defer _ = std.c.close(fd);
+            var sent: usize = 0;
+            while (sent < bytes.len) {
+                const n = std.c.write(fd, bytes[sent..].ptr, bytes.len - sent);
+                if (n <= 0) break;
+                sent += @intCast(n);
+            }
+        }
+    }
+
     pub fn deinit(dp: *DevPlan) void {
         dp.side.synchronize() catch {};
+        dumpTrace(dp);
         if (dp.trace_mem) |*buffer| buffer.free();
         dp.split.free();
         dp.ev_copy.deinit();

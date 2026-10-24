@@ -944,3 +944,36 @@ about 30% (about 1.4× decode), so cache policy alone cannot reach 2×, and a 6%
 replay result, is worth about 2% of step time, which is inside run variation. Large decode gains need either hiding the copies
 (a router-independent prefetch of the next layer's likely experts) or shrinking the 23–24 ms non-miss part of the step. Neither
 has been attempted.
+
+### Next-layer expert prefetch: predictability from a DPLAN trace (negative result)
+
+To size a prefetch that hides decode expert copies, a default-off dump was added to `cuda_exl3_dplan.zig`: with
+`TF_FLASHNEXT_EXL3_DPLAN_TRACE=1` and `TF_FLASHNEXT_EXL3_DPLAN_TRACE_DIR=<dir>`, each pool's raw v4 trace buffer is written to
+`dplan-<pid>-pool<N>.bin` when the planner is destroyed (only a gracefully stopped rank dumps; a rank killed with SIGKILL does not).
+`tools/exl3_dplan_predict.py <dir>` parses the files and replays them.
+
+Capture: rank 0 of a TP=2 graph-on server (26 lines per layer, shared BF16 paging, window off), two concurrent 4,096-token
+prompts, 700 generated tokens each, drafts off. 48 decoder pools retained 1,074 aligned rounds (rows per round equal across all
+layers in every round); the trace has a discontinuity from request ownership transfers, and 1,026 later rounds were dropped by the
+bounded buffer.
+
+Method: train a co-occurrence table on the first half of the rounds (picks of layer L, same round, to picks of layer L+1), then on
+the second half predict the top-N experts of layer L+1 from layer L's picks, excluding experts already resident in a simulated
+26-line LRU cache, and compare against that layer's real misses:
+
+| prefetched experts per layer | share of misses covered | share of issued copies that were needed |
+|---|---|---|
+| 2 | 30.9% | 13.0% |
+| 4 | 46.8% | 9.8% |
+| 8 | 63.6% | 6.7% |
+| 16 | 78.7% | 4.1% |
+| 32 | 88.9% | 2.3% |
+
+Even the best precision wastes 87% of the copies, and at the measured 0.106 ms per copy (near PCIe line rate) the wasted
+traffic costs more than the saved misses. For example top-2 issues 2 copies to save about 0.26 misses per layer-round: about
+0.21 ms of link time against about 0.03 ms saved. This predictor does not support a prefetch. The next-layer prefetch is
+rejected as a decode optimization on this evidence.
+
+Limits: the prompt is a repeated golden-fixture ID list, so generation is repetitive and the simulated LRU missed only 10.9%
+of needed experts against 20.8–27.9% in the serving telemetry; a diverse workload would lower predictability further, not raise
+it. One rank, one capture, a plain LRU model rather than the real planner, and a single co-occurrence predictor were tried.
