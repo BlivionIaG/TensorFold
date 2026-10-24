@@ -1099,3 +1099,21 @@ BF16 paging, two measured batches per row, summed per-request decode tok/s, all 
 A request that asks for drafts therefore decodes at the plain rate by default (about 63% faster than before on this prompt and about
 21% faster on real text), with identical output. The snapshot gate passes on both ranks on a freshly built runner, and
 `zig fmt --check`, `zig build test-flashnext-exl3-host` and `zig build compile-cuda-tests` pass.
+
+### Second, independent ABBA of the default-path changes (real text, drafts requested)
+
+Different content from the repeated-ID runs: two different text prompts (16,008 and 12,758 tokens), 192 generated tokens, 38 lines,
+TP=2, graphs, shared BF16 paging, window off, one discarded warm-up batch and two measured batches per leg and request mode. New =
+the branch defaults (overlap on with few copy blocks, plain decode on offloaded experts); old = `TF_FLASHNEXT_EXL3_OVERLAP=0`,
+`TF_FLASHNEXT_EXL3_DCOPY_BLOCKS=144`, `TF_FLASHNEXT_EXL3_DRAFTS=1`. Order new, old, old, new. Token hashes were identical for both
+requests in every leg and mode (`b143a9…`, `2b3c44…`).
+
+| requests ask for | new: summed decode tok/s, batch wall s | old: summed decode tok/s, batch wall s |
+|---|---|---|
+| drafts (a normal client) | 25.80, 26.96, 26.95, 27.02; 32.3, 32.2, 32.2, 32.2 | 20.50, 20.78, 20.52, 19.75; 39.2, 39.0, 39.2, 39.1 |
+| no drafts | 26.65, 26.81, 25.47, 26.83; 32.4, 32.4, 32.4, 32.3 | 25.90, 26.07, 25.92, 26.07; 32.8, 32.8, 32.8, 32.8 |
+
+For a client that asks for drafts the batch finishes in 32.2 s instead of 39.1 s (17.6% shorter, 21% more throughput) and summed
+decode is about 30% higher. For a client that already disabled drafts the overlap alone gives about 2-3% on summed decode and 1.3%
+on batch wall time. Together with the repeated-ID ABBA (+4.4% undrafted, +61% for drafted requests) this is two independent
+workloads in both orders.
