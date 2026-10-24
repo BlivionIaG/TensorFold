@@ -888,3 +888,28 @@ on, `TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK=1`) was rebuilt from the tree with the 
 codes 0/0): shared-slot snapshot remapping, recycled generation, foreign windows/history/continuation, exact eager/graph
 state and logits, prefill replays 112 and decode replays 3. This gate's prompts are short, so it shows the window-on build
 keeps snapshot behavior intact; it does not by itself prove the snapshot path on 8,192-row paired passes.
+
+### Admission thresholds and a 60,000-token prompt
+
+The window needs `extra_device=588070912` bytes and is admitted only when `free >= protected + extra`. Free memory stayed at about
+6.35–6.37 GB in every probe; what moved was `protected`, which falls about 69 MB per expert line per layer. Probes
+(TP=2, 32,768-token context unless noted, window on): 38 lines declined (protected 6.575 GB), 38 lines with a 17,408-token
+context declined (6.575 GB; a smaller window does not help), 29 lines declined (5.953 GB, still about 0.18 GB short), 26 lines
+admitted. At a 65,536-token context 26 lines is declined (protected 6.089 GB) and 21 lines is admitted. The practical rule on
+this card is therefore a loss of 12 lines per layer at a 32k context and 17 at a 64k context.
+
+A 60,000-token prompt at a 65,536-token context and 21 lines, ABBA on one binary (two concurrent prompts, 128 generated tokens,
+drafts off, one discarded warm-up batch and two measured batches per leg), all measured requests with token hash
+`566ecfab…`:
+
+| leg | mean prefill s, two measured batches | aggregate decode tok/s |
+|---|---|---|
+| two-chunk (A1) | 60.44, 60.59 | 5.30, 5.29 |
+| one-chunk (B1) | 65.37, 65.45 | 5.30, 5.30 |
+| one-chunk (B2) | 65.37, 64.05 | 5.30, 5.30 |
+| two-chunk (A2) | 60.62, 60.67 | 5.29, 5.29 |
+
+Prefill is 7.3% shorter with the window (60.58 s against 65.0 s; 65.0 is the mean of all four one-chunk batches). The gain
+shrinks with prompt length (24% at 8k, 13% at 16k, 12% at 30k, 7% at 60k), consistent with the fixed dense and attention work
+growing relative to the expert stream. At this length the prefill graph counters show 1330 replays, 1438 eager runs and 1141
+admission misses against a 112-entry graph cache, so very long prompts mostly run eagerly. Decode is unchanged by the window.
