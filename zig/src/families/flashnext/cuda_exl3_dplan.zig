@@ -2,16 +2,16 @@
 //! the router and the experts, so the whole step (48 layers, the head, at tp=2 the NCCL sums) is one stream of device
 //! work that a CUDA graph can hold (cuda_exl3_graph.zig).
 //!
-//! Each decoder layer's pool keeps its residency twice: the host's (exl3_offload.Vram + the lifetime counts, which
-//! prefill, the MTP head and any eager round plan with) and this device copy. One of them owns it at a time:
+//! Each decoder layer's pool keeps its residency twice: the host's (exl3_offload.Vram + lifetime counts, which
+//! prefill, the MTP head and any eager round plan with) and this device copy. Optional recent-demand eviction state
+//! stays with this planner across ownership transfers and is not request-snapshot state:
 //!   toDevice: the host's lines, stamps, counts and clock go up (one H2D on the compute stream, after the pools'
 //!     copy streams drained), then every decode round plans on the device;
-//!   toHost: the device copy comes back (one D2H after the stream finished) and rebuilds each pool's Vram, counts and
+//!   toHost: the device copy comes back (one D2H after the stream finished) and rebuilds each pool's Vram, lifetime counts and
 //!     statistics, before any host plan (cuda_exl3_pass.pooled, the expert-major prefill).
-//! The device planner follows the host planner's rules for a one-pass round without prefetch or double-buffer
-//! protection (exl3_round.zig `plan` with `protect` empty), so the two produce the same lines for the same picks
-//! (tf-cuda-test flashnext-exl3-graph plan). The tables are the pool's own (fixed addresses): the device rewrites them
-//! in place exactly where the host's Lines.load would.
+//! By default, the device planner follows the host planner's rules for a one-pass round without prefetch or
+//! double-buffer protection. Experimental recent eviction changes only miss ordering and victim scores; it still
+//! computes every routed expert. The tables are the pool's own (fixed addresses): the device rewrites them in place.
 //!
 //! A miss is copied by fn_exl3_dcopy, a grid reading the pinned host bank through its mapped address (unified
 //! addressing), instead of a DMA on the pool's copy stream: the copy is device work ordered on the compute stream.
@@ -21,14 +21,44 @@ const cuda = @import("cuda");
 const pool_ = @import("cuda_exl3_pool.zig");
 const offload = pool_.offload;
 const telemetry = @import("exl3_telemetry.zig");
+const recent_demand = @import("exl3_recent_demand.zig");
 
 const experts_n: usize = 512;
-const misc_words: usize = 8;
+const recent_window: usize = 256;
+const recent_words_per_row: usize = experts_n / 32;
+const recent_words: usize = recent_window * recent_words_per_row;
+const misc_words: usize = 10;
+
+fn recentCountsOffset(lines: usize) usize {
+    return 2 * lines + 2 * experts_n;
+}
+
+fn recentOffset(lines: usize) usize {
+    return 2 * lines + 3 * experts_n;
+}
+
+pub fn miscOffset(lines: usize) usize {
+    return recentOffset(lines) + recent_words;
+}
 const empty_id = offload.Cache.empty_id;
+
+comptime {
+    if (recent_demand.expert_count != experts_n) @compileError("recent expert history shape mismatch");
+}
+
+test {
+    _ = recent_demand;
+}
 
 /// u32 words of one layer's device state.
 pub fn stateWords(lines: usize) usize {
-    return 2 * lines + 2 * experts_n + misc_words;
+    return miscOffset(lines) + misc_words;
+}
+
+test "exl3: recent-demand planner state is separate from lifetime profile counts" {
+    try std.testing.expectEqual(@as(usize, 3 * experts_n), recentOffset(10) - 20);
+    try std.testing.expectEqual(@as(usize, recent_window * recent_words_per_row), miscOffset(10) - recentOffset(10));
+    try std.testing.expectEqual(@as(usize, misc_words), stateWords(10) - miscOffset(10));
 }
 
 /// The planned copies a round can hold: a row's ten routed picks each.
@@ -39,7 +69,7 @@ fn workCap(max_rows: usize) usize {
 pub const Owner = enum { host, device };
 
 /// Device statistics of a layer (the misc words after now).
-pub const Misc = extern struct { now: u32, rounds: u32, hit_slots: u32, miss_slots: u32, copies: u32, evictions: u32, overflow: u32, inplace: u32 };
+pub const Misc = extern struct { now: u32, rounds: u32, hit_slots: u32, miss_slots: u32, copies: u32, evictions: u32, overflow: u32, inplace: u32, recent_cursor: u32, recent_filled: u32 };
 
 pub const DevPlan = struct {
     gpa: std.mem.Allocator,
@@ -75,6 +105,7 @@ pub const DevPlan = struct {
     seen: []Misc,
     pushes: u64 = 0,
     pulls: u64 = 0,
+    history_initialized: bool = false,
     /// Experts read in place from the host bank (more misses than free lines in a round), summed at each pull.
     inplace: u64 = 0,
 
@@ -193,6 +224,7 @@ pub const DevPlan = struct {
             const stamp = m[lines .. 2 * lines];
             const line_of: []i32 = @ptrCast(m[2 * lines ..][0..experts_n]);
             const counts = m[2 * lines + experts_n ..][0..experts_n];
+            if (!dp.history_initialized) @memset(m[recentCountsOffset(lines)..miscOffset(lines)], 0);
             @memset(line_of, -1);
             for (0..lines) |ln| {
                 const id = p.slots_tab[ln];
@@ -202,11 +234,14 @@ pub const DevPlan = struct {
                 if (held) line_of[id] = @intCast(ln);
             }
             @memcpy(counts, &p.counts[p.opt.layer]);
-            const misc: *Misc = @ptrCast(m[2 * lines + 2 * experts_n ..][0..misc_words]);
-            misc.* = .{ .now = p.now, .rounds = 0, .hit_slots = 0, .miss_slots = 0, .copies = 0, .evictions = 0, .overflow = 0, .inplace = 0 };
+            const misc: *Misc = @ptrCast(m[miscOffset(lines)..][0..misc_words]);
+            const recent_cursor = if (dp.history_initialized) misc.recent_cursor else 0;
+            const recent_filled = if (dp.history_initialized) misc.recent_filled else 0;
+            misc.* = .{ .now = p.now, .rounds = 0, .hit_slots = 0, .miss_slots = 0, .copies = 0, .evictions = 0, .overflow = 0, .inplace = 0, .recent_cursor = recent_cursor, .recent_filled = recent_filled };
             dp.seen[i] = misc.*;
         }
         try s.d.check(s.d.api.cuMemcpyHtoDAsync_v2(dp.state.ptr, dp.mirror.bytes.ptr, dp.state.len, s.handle), "cuMemcpyHtoDAsync");
+        dp.history_initialized = true;
         dp.owner = .device;
         dp.pushes += 1;
     }
@@ -224,7 +259,7 @@ pub const DevPlan = struct {
             const line_id: []const i32 = @ptrCast(m[0..lines]);
             const stamp = m[lines .. 2 * lines];
             const counts = m[2 * lines + experts_n ..][0..experts_n];
-            const misc: *const Misc = @ptrCast(m[2 * lines + 2 * experts_n ..][0..misc_words]);
+            const misc: *const Misc = @ptrCast(m[miscOffset(lines)..][0..misc_words]);
             for (0..lines) |ln| {
                 const id = line_id[ln];
                 p.slots_tab[ln] = if (id < 0) empty_id else @intCast(id);
@@ -267,7 +302,7 @@ pub const DevPlan = struct {
         try dp.d.check(dp.d.api.cuMemcpyDtoH_v2(dp.mirror.bytes.ptr, dp.state.ptr, dp.state.len), "cuMemcpyDtoH");
         for (dp.pools, 0..) |_, i| {
             const m = dp.mirrorOf(i);
-            const misc: *const Misc = @ptrCast(m[2 * dp.lines + 2 * experts_n ..][0..misc_words]);
+            const misc: *const Misc = @ptrCast(m[miscOffset(dp.lines)..][0..misc_words]);
             inline for (.{ "rounds", "hit_slots", "miss_slots", "copies", "evictions", "overflow", "inplace" }) |f| @field(t, f) += @field(misc, f) - @field(dp.seen[i], f);
         }
         return t;
@@ -280,7 +315,7 @@ pub const DevPlan = struct {
         for (dp.pools, 0..) |candidate, index| {
             if (candidate != pool) continue;
             var observed: Misc = undefined;
-            const offset = (index * dp.words + 2 * dp.lines + 2 * experts_n) * 4;
+            const offset = (index * dp.words + miscOffset(dp.lines)) * 4;
             try dp.state.download(offset, std.mem.asBytes(&observed));
             try telemetry.add(telemetry.Device, &total, try telemetry.Device.pendingBounded(observed, dp.seen[index], dp.max_rows * 10));
             return total;
@@ -331,6 +366,7 @@ pub const DevPlan = struct {
         a.add(@as(c_int, @intCast(rows * 11)));
         a.add(st);
         a.add(@as(c_int, @intCast(dp.lines)));
+        a.add(@as(c_int, @intFromBool(recentEvictionEnabled())));
         for (0..3) |w| a.add(p.lines.table(w));
         for (0..3) |w| a.add(p.lines.widths(w));
         a.add(sb);
@@ -372,6 +408,12 @@ pub fn enabled() bool {
     if (@import("cuda_exl3_graph.zig").force) |f| return f != .off;
     if (std.c.getenv("TF_FLASHNEXT_EXL3_DPLAN")) |v| return std.mem.eql(u8, std.mem.span(v), "1");
     return @import("cuda_exl3_graph.zig").enabled();
+}
+
+/// Experimental recent-demand eviction policy. Lifetime counts still persist and seed startup placement.
+pub fn recentEvictionEnabled() bool {
+    const value = std.c.getenv("TF_FLASHNEXT_EXL3_RECENT_EVICTION") orelse return false;
+    return std.mem.eql(u8, std.mem.span(value), "1");
 }
 
 /// The device planner over `layers`' pools (the decoder layers only), made once for `owner`; null when a layer has no

@@ -14,8 +14,8 @@ test "exl3: replay device sampling reads executed counters without pulling owner
     resident.telemetry_valid = true;
     var pools = [_]*pool.Pool{&resident};
     var state: [planner.stateWords(1)]u32 = @splat(0);
-    const executed: planner.Misc = .{ .now = 104, .rounds = 4, .hit_slots = 30, .miss_slots = 10, .copies = 8, .evictions = 2, .overflow = 0, .inplace = 1 };
-    const offset = (2 + 2 * 512) * 4;
+    const executed: planner.Misc = .{ .now = 104, .rounds = 4, .hit_slots = 30, .miss_slots = 10, .copies = 8, .evictions = 2, .overflow = 0, .inplace = 1, .recent_cursor = 9, .recent_filled = 8 };
+    const offset = planner.miscOffset(1) * 4;
     @memcpy(std.mem.sliceAsBytes(&state)[offset..][0..@sizeOf(planner.Misc)], std.mem.asBytes(&executed));
     var seen = [_]planner.Misc{std.mem.zeroes(planner.Misc)};
     var device: planner.DevPlan = undefined;
