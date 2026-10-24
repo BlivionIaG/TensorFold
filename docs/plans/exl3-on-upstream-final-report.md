@@ -37,11 +37,13 @@ warm, branch and rewind cache phases each reuse 4,122/4,139 prompt tokens with e
 cache. The 200k × 2 gate remains explicitly deferred. Live-rank overflow/failure injection and graph speedup across
 the intended drafted workload remain open. BF16 is required; int8 KV is out of scope.
 
-A fresh two-rank shared-BF16 snapshot/restore test on this change matched saved state, logits and graph-mode outputs
-through eight decode steps, but failed the additional assertion that a prefill graph must replay after restore. The
-same assertion fails with the previous `ring_ahead=2` setting, so this is not attributed to the lookahead change;
-prefill-graph replay after shared snapshot restore remains an open gate. This test therefore does not establish full
-snapshot/cache correctness under graphs.
+A follow-up on `e22c4552a` passes this gate on both RTX 5060 Ti ranks: shared BF16 paging, recycled request allocation,
+snapshot restore, exact state/logit continuation, and graph-mode decode. The earlier zero-capture result came from a
+128-entry FIFO warmup history evicting the 192-shape working set (two lanes × two chunk banks × 48 layers). Raising
+history capacity to 224 allowed each rank to capture 112 graph entries; the bounded graph cache then replayed all 112
+on the next run, including 28 paged-attention replays and four safe generation/origin rebinds. The other 80 shapes ran
+eagerly as intended by the 112-entry cache bound. This proves cache reuse and correctness, not a latency gain; graph
+speedup remains an open measured-performance gate.
 
 ## 2026-10-23 score-grid graph-key ABBA follow-up
 
