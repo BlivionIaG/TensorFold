@@ -255,6 +255,14 @@ pub const Pool = struct {
     /// Host step of a round: `picks` [rows * slots] (int32, -1 skipped, 512 the shared expert), as the device holds
     /// them. Decides hits, misses, victims and passes; enqueues nothing. The result stays valid until the next plan.
     pub fn plan(p: *Pool, picks: []const i32, rows: usize) !*const Round {
+        return p.planInternal(picks, rows, true);
+    }
+
+    pub fn planUnobserved(p: *Pool, picks: []const i32, rows: usize) !*const Round {
+        return p.planInternal(picks, rows, false);
+    }
+
+    fn planInternal(p: *Pool, picks: []const i32, rows: usize, observe: bool) !*const Round {
         if (rows == 0 or rows > p.opt.max_rows or picks.len != rows * p.opt.slots) return error.Invalid;
         p.now += 1;
         p.round_no += 1;
@@ -265,6 +273,7 @@ pub const Pool = struct {
             .prefetch_bytes = p.opt.prefetch_bytes,
             .line_bytes = p.lines.layout.line_bytes,
             .protect = if (p.opt.double_buffer) p.prev[0..p.prev_n] else &.{},
+            .observe = observe,
         };
         round_.plan(&p.v, p.opt.layer, picks, p.counts, p.now, p.round_no, ropt, &p.round) catch |e| switch (e) {
             error.Busy => {
