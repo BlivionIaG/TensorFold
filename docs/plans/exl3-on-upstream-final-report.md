@@ -977,3 +977,23 @@ rejected as a decode optimization on this evidence.
 Limits: the prompt is a repeated golden-fixture ID list, so generation is repetitive and the simulated LRU missed only 10.9%
 of needed experts against 20.8–27.9% in the serving telemetry; a diverse workload would lower predictability further, not raise
 it. One rank, one capture, a plain LRU model rather than the real planner, and a single co-occurrence predictor were tried.
+
+### Two-chunk window on real, different prompts per request
+
+All earlier window measurements sent the same repeated-ID prompt to both requests. This ABBA (two-chunk, one-chunk, one-chunk,
+two-chunk; same binary, 26 lines per layer, 32,768 context, TP=2, graphs, shared BF16 paging, drafts off, 128 generated tokens)
+sent two different text prompts built from the checkout's own files: request 1 is Zig source (16,008 tokens), request 2 is
+markdown docs and test sources (12,758 tokens). One discarded warm-up batch and two measured batches per leg. Token hashes
+were identical across all four legs for both requests (`1c2777f5…`, `a65bd936…`).
+
+| leg | request 1 prefill s | request 2 prefill s | batch wall s |
+|---|---|---|---|
+| two-chunk (A1) | 17.95, 17.95 | 8.14, 8.14 | 26.52, 26.51 |
+| one-chunk (B1) | 21.19, 21.25 | 10.66, 10.70 | 30.35, 30.35 |
+| one-chunk (B2) | 21.20, 21.27 | 10.68, 10.71 | 30.33, 30.33 |
+| two-chunk (A2) | 13.16*, 17.99 | 8.16*, 8.17 | 26.62, 26.62 |
+
+(*one measured A2 batch reported a lower prefill for each request, but the same batch wall time; the lower figures come from the
+two requests' prefills overlapping differently in that batch and are not used.) Two-chunk shortens the whole batch by 12.5%
+(26.5 s against 30.3 s), request 1 prefill by 15% and request 2 prefill by 24%, with identical outputs. The gain therefore holds
+for different, non-repeating prompt content and unequal prompt lengths, not only for the repeated-ID fixture.
