@@ -26,6 +26,7 @@ const gemma_embed = @import("metal_gemma4_embed.zig");
 const gemma_mixed = @import("metal_gemma4_mixed.zig");
 const lfm2_argmax = @import("metal_lfm2_argmax.zig");
 const lfm2_streams = @import("metal_lfm2_streams.zig");
+const lfm2_tap = @import("metal_lfm2_tap.zig");
 const lfm2_controls = @import("metal_lfm2_controls.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
@@ -190,6 +191,22 @@ pub fn main(init: std.process.Init) !u8 {
             try lfm2_streams_list.append(a, p);
             try kernels.append(a, p.kernel());
         }
+    }
+    var tap_list: std.ArrayList(*lfm2_tap.Probe) = .empty;
+    defer {
+        for (tap_list.items) |p| {
+            p.deinit();
+            a.destroy(p);
+        }
+        tap_list.deinit(a);
+    }
+    for ([_]lfm2_controls.Mutation{ .none, .tap_packed_rows, .tap_clobbers_column }) |m| {
+        if (!wanted(o, if (m == .none) lfm2_tap.name else m.name())) continue;
+        const p = try a.create(lfm2_tap.Probe);
+        errdefer a.destroy(p);
+        p.* = try lfm2_tap.Probe.init(a, device, queue, m);
+        try tap_list.append(a, p);
+        try kernels.append(a, p.kernel());
     }
     var rows_list: std.ArrayList(*rows_k.Row) = .empty;
     var proj_list: std.ArrayList(*affine_k.Proj) = .empty;
