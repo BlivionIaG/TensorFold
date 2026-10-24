@@ -3,7 +3,7 @@ const policy = @import("exl3_graph_budget.zig");
 
 pub const Charge = policy.Charge;
 pub const Class = policy.Class;
-pub const Policy = struct { reservation_bytes: u64, headroom_bytes: u64, auxiliary_bytes: u64 = 0, charge: Charge, prefill_charge: ?Charge = null, chain_charge: ?Charge = null };
+pub const Policy = struct { reservation_bytes: u64, headroom_bytes: u64, auxiliary_bytes: u64 = 0, charge: Charge, prefill_charge: ?Charge = null, chain_charge: ?Charge = null, two_chunk_reserved: bool = false };
 const mib: u64 = 1024 * 1024;
 
 pub fn defaultPolicy() Policy {
@@ -27,12 +27,41 @@ pub fn policyFromEnv() !Policy {
 
 fn policyFromEnvForStreams(streams: u64) !Policy {
     var settings = try workloadPolicy(streams, 48);
-    settings.reservation_bytes = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_RESERVATION_MIB", settings.reservation_bytes);
+    const window = @import("exl3_prefill_window.zig");
+    const two_chunk = window.enabled(if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK")) |value| std.mem.span(value) else null);
+    const proposed = try withWindowReservation(settings, two_chunk, null);
+    settings = try withWindowReservation(settings, two_chunk, try envBytes("TF_FLASHNEXT_EXL3_GRAPH_RESERVATION_MIB", proposed.reservation_bytes));
     settings.headroom_bytes = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_HEADROOM_MIB", settings.headroom_bytes);
     settings.charge.exec = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_EXEC_MIB", settings.charge.exec);
     settings.charge.template = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_TEMPLATE_MIB", settings.charge.template);
     settings.charge.transient = try envBytes("TF_FLASHNEXT_EXL3_GRAPH_TRANSIENT_MIB", settings.charge.transient);
     return settings;
+}
+
+fn withWindowReservation(base: Policy, enabled: bool, limit: ?u64) !Policy {
+    var settings = base;
+    const charge = settings.prefill_charge orelse settings.charge;
+    const extra = if (enabled) try @import("exl3_prefill_window.zig").graphBytes(charge.exec, charge.template, charge.transient) else 0;
+    const required = try std.math.add(u64, base.reservation_bytes, extra);
+    settings.reservation_bytes = limit orelse required;
+    settings.two_chunk_reserved = enabled and settings.reservation_bytes >= required;
+    if (settings.two_chunk_reserved) settings.auxiliary_bytes = try std.math.add(u64, base.auxiliary_bytes, extra);
+    return settings;
+}
+
+test "exl3: two-chunk graph reservation includes bindings peaks and declines explicit underfunding" {
+    const base = try workloadPolicy(2, 48);
+    try std.testing.expectEqualDeep(base, try withWindowReservation(base, false, null));
+    const expanded = try withWindowReservation(base, true, null);
+    try std.testing.expect(expanded.two_chunk_reserved);
+    try std.testing.expectEqual(@as(u64, 288 * mib), expanded.reservation_bytes - base.reservation_bytes);
+    try std.testing.expectEqual(@as(u64, 288 * mib), expanded.auxiliary_bytes - base.auxiliary_bytes);
+    const short = try withWindowReservation(base, true, expanded.reservation_bytes - 1);
+    try std.testing.expect(!short.two_chunk_reserved);
+    try std.testing.expectEqual(base.auxiliary_bytes, short.auxiliary_bytes);
+    var overflow = base;
+    overflow.reservation_bytes = std.math.maxInt(u64);
+    try std.testing.expectError(error.Overflow, withWindowReservation(overflow, true, null));
 }
 
 fn envBytes(name: [:0]const u8, fallback: u64) !u64 {
@@ -80,6 +109,35 @@ fn configureLocked(settings: Policy) !void {
 
 pub fn startupReservation() !u64 {
     return startupReservationWithStreams(null);
+}
+
+pub fn twoChunkReservationBytes() u64 {
+    lock();
+    defer unlock();
+    return if (configured) |settings| (if (settings.two_chunk_reserved) settings.reservation_bytes else 0) else 0;
+}
+
+pub fn declineTwoChunkReservation() !u64 {
+    lock();
+    defer unlock();
+    var settings = configured orelse return 0;
+    if (!settings.two_chunk_reserved) return settings.reservation_bytes;
+    const charge = settings.prefill_charge orelse settings.charge;
+    const extra = try @import("exl3_prefill_window.zig").graphBytes(charge.exec, charge.template, charge.transient);
+    settings.reservation_bytes = try std.math.sub(u64, settings.reservation_bytes, extra);
+    settings.auxiliary_bytes = try std.math.sub(u64, settings.auxiliary_bytes, extra);
+    settings.two_chunk_reserved = false;
+    try configureLocked(settings);
+    return settings.reservation_bytes;
+}
+
+test "exl3: declined two-chunk allocation returns the original graph reservation before capture" {
+    const base = try workloadPolicy(2, 48);
+    try configure(try withWindowReservation(base, true, null));
+    try std.testing.expect(twoChunkReservationBytes() > base.reservation_bytes);
+    try std.testing.expectEqual(base.reservation_bytes, try declineTwoChunkReservation());
+    try std.testing.expectEqual(@as(u64, 0), twoChunkReservationBytes());
+    try std.testing.expectEqual(base.reservation_bytes, try declineTwoChunkReservation());
 }
 
 pub fn startupReservationForStreams(streams: u32) !u64 {

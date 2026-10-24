@@ -69,7 +69,7 @@ const Eng = struct {
         _ = try g.e.reserveScores(cap, @min(cap, g.e.chunk));
         g.seq = try g.e.newSeq(cap);
         if (deep_rows > 0) try xpre.reserve(gpu.gpa, gpu.d, g.e, deep_rows);
-        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, try xpass.budgetFromEnv(0));
+        g.attached = try xpass.attach(gpu.gpa, gpu.io, gpu.d, g.stream, g.e.layers[0..g.e.n_layers], null, g.e.chunk, try xpass.budgetFromEnv(0), null);
         var free: usize = 0;
         var total: usize = 0;
         try gpu.d.check(gpu.d.api.cuMemGetInfo_v2(&free, &total), "cuMemGetInfo");

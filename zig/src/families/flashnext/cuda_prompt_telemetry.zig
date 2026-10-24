@@ -4,11 +4,14 @@ const counters = cache.counters;
 
 pub const State = struct {
     enabled: bool = false,
+    layers_enabled: bool = false,
+    layer_cursor: counters.LayerCursor(@import("cuda_prompt_wt.zig").layers_n + 1) = .{},
     rank: counters.Rank = .{ .rank = 0, .world = 1 },
     forward_phase: counters.Phase = .unknown,
 
     pub fn fromEnv(rank: usize, world: usize) State {
-        const state: State = .{ .enabled = enabledFromEnv(), .rank = .{ .rank = rank, .world = world } };
+        const enabled = enabledFromEnv();
+        const state: State = .{ .enabled = enabled, .layers_enabled = enabled and layersEnabledFromEnv(), .rank = .{ .rank = rank, .world = world } };
         if (state.enabled) std.log.warn("EXL3-CACHE-SAMPLING v=1 rank={d} world={d} optin_boundary_sync=1 bytes=logical_payload_not_pcie", .{ rank, world });
         return state;
     }
@@ -91,6 +94,11 @@ pub fn enabledFromEnv() bool {
     return std.mem.eql(u8, std.mem.span(value), "1");
 }
 
+pub fn layersEnabledFromEnv() bool {
+    const value = std.c.getenv("TF_FLASHNEXT_EXL3_LAYER_TELEMETRY") orelse return false;
+    return std.mem.eql(u8, std.mem.span(value), "1");
+}
+
 pub fn failed(engine: anytype, phase: counters.Phase, failure: anyerror) void {
     std.log.warn("EXL3-CACHE-INVALID v=1 rank={d} world={d} phase={s} reason={s}", .{ engine.telemetry.rank.rank, engine.telemetry.rank.world, @tagName(phase), @errorName(failure) });
 }
@@ -125,10 +133,16 @@ pub fn finishWithSampler(engine: anytype, sequences: anytype, before: counters.S
         return;
     };
     defer after.deinit(engine.gpa);
-    const report = counters.Report.between(before, after, .{ .phase = phase, .model_rows = rows, .steps = 1, .allow_initial_kv_reset = phase == .prefill }) catch |failure| {
+    var report = counters.Report.between(before, after, .{ .phase = phase, .model_rows = rows, .steps = 1, .allow_initial_kv_reset = phase == .prefill }) catch |failure| {
         failed(engine, phase, failure);
         return;
     };
+    const layers = if (engine.telemetry.layers_enabled) engine.telemetry.layer_cursor.claim(engine.gpa, before, after) catch |failure| {
+        failed(engine, phase, failure);
+        return;
+    } else &.{};
+    defer engine.gpa.free(layers);
+    report.layers = layers;
     emit(engine, report) catch |failure| {
         failed(engine, phase, failure);
         return;

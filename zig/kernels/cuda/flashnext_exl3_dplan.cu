@@ -25,6 +25,141 @@ struct DpMisc {
     unsigned now, rounds, hit_slots, miss_slots, copies, evictions, overflow, inplace, recent_cursor, recent_filled;
 };
 
+struct DpTraceHeader {
+    unsigned magic, version, pool_index, layer, lines, max_rows, seed_words, record_words;
+    unsigned capacity, recorded, dropped_lo, dropped_hi, discontinuity, invalid_launch, checkpoints, dropped_checkpoints;
+};
+
+static_assert(sizeof(DpTraceHeader) == 64, "trace header ABI");
+static_assert(sizeof(DpMisc) == 40, "planner misc ABI");
+
+static constexpr unsigned DP_TRACE_WORDS = 1024 * 1024 / 4;
+
+__device__ __forceinline__ bool dp_trace_valid(DpTraceHeader* header, int lines) {
+    const unsigned long long state_words = 2ull * static_cast<unsigned>(lines) + 3 * DP_EXPERTS + DP_RECENT_WORDS + 10;
+    const unsigned long long record_words = 15ull + 11ull * header->max_rows;
+    const unsigned long long base = 16 + 2 * state_words;
+    const unsigned long long checkpoint_words = 4 + 2 * state_words;
+    if (lines <= 0 || header->magic != 0x44505431 || header->version != 4 ||
+        header->lines != static_cast<unsigned>(lines) || header->max_rows == 0 ||
+        base >= DP_TRACE_WORDS || record_words > DP_TRACE_WORDS - base ||
+        header->seed_words != state_words || header->record_words != record_words ||
+        header->capacity != (DP_TRACE_WORDS - base) / record_words || header->recorded > header->capacity ||
+        header->discontinuity > 1 || header->invalid_launch > 1 ||
+        header->checkpoints > (DP_TRACE_WORDS - base) / checkpoint_words ||
+        base + static_cast<unsigned long long>(header->recorded) * record_words >
+            DP_TRACE_WORDS - static_cast<unsigned long long>(header->checkpoints) * checkpoint_words) {
+        header->invalid_launch = 1;
+        return false;
+    }
+    return true;
+}
+
+extern "C" __global__ void fn_exl3_dcheckpoint(const unsigned* st, int lines, unsigned* trace, int transfer) {
+    if (trace == nullptr || threadIdx.x != 0 || blockIdx.x != 0) return;
+    auto* header = reinterpret_cast<DpTraceHeader*>(trace);
+    if (!dp_trace_valid(header, lines)) return;
+    if (transfer != 0 && transfer != 1) {
+        header->invalid_launch = 1;
+        return;
+    }
+    unsigned* seed = trace + 16;
+    unsigned* terminal = seed + header->seed_words;
+    const bool initialized = header->recorded != 0 || header->checkpoints != 0;
+    if (transfer == 0) {
+        if (initialized)
+            for (unsigned index = 0; index < header->seed_words; ++index)
+                if (terminal[index] != st[index]) header->discontinuity = 1;
+        return;
+    }
+    const unsigned stride = 4 + 2 * header->seed_words;
+    const unsigned end = 16 + 2 * header->seed_words + header->recorded * header->record_words;
+    const unsigned start = DP_TRACE_WORDS - header->checkpoints * stride;
+    if (start - end < stride || header->dropped_lo != 0 || header->dropped_hi != 0 || header->dropped_checkpoints != 0) {
+        if (header->dropped_checkpoints != 0xffffffffu) ++header->dropped_checkpoints;
+        return;
+    }
+    unsigned* checkpoint = trace + start - stride;
+    checkpoint[0] = header->recorded;
+    checkpoint[1] = 1;
+    checkpoint[2] = header->seed_words;
+    checkpoint[3] = header->checkpoints;
+    for (unsigned index = 0; index < header->seed_words; ++index) {
+        if (!initialized) seed[index] = terminal[index] = st[index];
+        checkpoint[4 + index] = terminal[index];
+        checkpoint[4 + header->seed_words + index] = st[index];
+        terminal[index] = st[index];
+    }
+    ++header->checkpoints;
+}
+
+__device__ __forceinline__ unsigned* dp_trace_begin(const int* picks, int n, unsigned* trace,
+                                                    const unsigned* st, int recent_enabled, int lines) {
+    if (trace == nullptr) return nullptr;
+    DpTraceHeader* header = reinterpret_cast<DpTraceHeader*>(trace);
+    if (!dp_trace_valid(header, lines)) return nullptr;
+    if (n <= 0 || n % 11 != 0 || static_cast<unsigned>(n / 11) > header->max_rows) {
+        header->invalid_launch = 1;
+        return nullptr;
+    }
+    const unsigned end = 16 + 2 * header->seed_words + header->recorded * header->record_words;
+    const unsigned start = DP_TRACE_WORDS - header->checkpoints * (4 + 2 * header->seed_words);
+    if (start - end < header->record_words || header->dropped_checkpoints != 0) {
+        unsigned long long dropped = static_cast<unsigned long long>(header->dropped_hi) << 32 | header->dropped_lo;
+        if (dropped != ~0ull) ++dropped;
+        header->dropped_lo = static_cast<unsigned>(dropped);
+        header->dropped_hi = static_cast<unsigned>(dropped >> 32);
+        return nullptr;
+    }
+    unsigned* seed = trace + 16;
+    unsigned* terminal = seed + header->seed_words;
+    for (unsigned index = 0; index < header->seed_words; ++index) {
+        if (header->recorded == 0 && header->checkpoints == 0) seed[index] = st[index];
+        else if (terminal[index] != st[index]) header->discontinuity = 1;
+    }
+    unsigned* round = terminal + header->seed_words + header->recorded * header->record_words;
+    round[0] = static_cast<unsigned>(n / 11);
+    round[1] = 0;
+    round[2] = 0;
+    round[3] = static_cast<unsigned>(recent_enabled);
+    unsigned seen[DP_EXPERTS / 32] = {};
+    unsigned* raw = round + 15;
+    for (int pick = 0; pick < n; ++pick) {
+        const int expert = picks[pick];
+        raw[pick] = static_cast<unsigned>(expert);
+        if (expert < 0 || expert >= DP_SHARED) continue;
+        round[1] += 1;
+        const unsigned bit = 1u << (expert & 31);
+        if ((seen[expert >> 5] & bit) == 0) round[2] += 1;
+        seen[expert >> 5] |= bit;
+    }
+    return round;
+}
+
+__device__ __forceinline__ void dp_trace_end(unsigned* trace, unsigned* round, const unsigned* st,
+                                             const DpMisc* misc, const int* picks, int n,
+                                             const int* ovf, int n_ovf) {
+    if (round == nullptr) return;
+    DpTraceHeader* header = reinterpret_cast<DpTraceHeader*>(trace);
+    const unsigned* counters = reinterpret_cast<const unsigned*>(misc);
+    for (unsigned index = 0; index < 10; ++index) round[4 + index] = counters[index];
+    unsigned mapped_experts[DP_EXPERTS / 32] = {};
+    for (int mapped = 0; mapped < n_ovf; ++mapped) {
+        const int expert = ovf[mapped];
+        mapped_experts[expert >> 5] |= 1u << (expert & 31);
+    }
+    unsigned mapped_picks = 0;
+    for (int pick = 0; pick < n; ++pick) {
+        const int expert = picks[pick];
+        if (expert >= 0 && expert < DP_SHARED && (mapped_experts[expert >> 5] & (1u << (expert & 31))))
+            ++mapped_picks;
+    }
+    round[14] = mapped_picks;
+    unsigned* terminal = trace + 16 + header->seed_words;
+    for (unsigned index = 0; index < header->seed_words; ++index) terminal[index] = st[index];
+    header->recorded += 1;
+}
+
 __device__ __forceinline__ bool dp_colder(unsigned ca, unsigned sa, int ia, unsigned cb, unsigned sb, int ib) {
     if (ca != cb) return ca < cb;
     if (sa != sb) return sa < sb;
@@ -41,7 +176,8 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     int* __restrict__ k2t2, const long long* __restrict__ src, const long long* __restrict__ lens,
     const int* __restrict__ k2, unsigned long long line_base, unsigned long long line_bytes, unsigned long long off0,
     unsigned long long off1, unsigned long long off2, long long* __restrict__ work, int* __restrict__ work_n,
-    int* __restrict__ hit_picks, int* __restrict__ miss_picks, int* __restrict__ ovf, int* __restrict__ ovf_n) {
+    int* __restrict__ hit_picks, int* __restrict__ miss_picks, int* __restrict__ ovf, int* __restrict__ ovf_n,
+    unsigned* __restrict__ trace) {
     int* line_id = reinterpret_cast<int*>(st);
     unsigned* stamp = st + lines;
     int* line_of = reinterpret_cast<int*>(st + 2 * lines);
@@ -60,10 +196,12 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     __shared__ unsigned rkey_c[256], rkey_s[256];
     __shared__ int rkey_i[256];
     const int t = threadIdx.x;
+    unsigned* trace_round = nullptr;
 
-    if (t < DP_EXPERTS / 32) keep[t] = 0;
+    for (int word = t; word < DP_EXPERTS / 32; word += blockDim.x) keep[word] = 0;
     __syncthreads();
     if (t == 0) {
+        trace_round = dp_trace_begin(picks, n, trace, st, recent_enabled, lines);
         now = ++misc->now;
         misc->rounds += 1;
         if (recent_enabled) {
@@ -244,6 +382,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     if (t == 0) {
         *work_n = n_copy;
         *ovf_n = n_ovf;
+        dp_trace_end(trace, trace_round, st, misc, picks, n, ovf, n_ovf);
     }
 }
 

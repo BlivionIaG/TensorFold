@@ -30,7 +30,7 @@ pub fn roundCap(cap: usize, limit: usize) usize {
 var seqs: [pool_n]?prompt.Seq = @splat(null);
 var drafts: [pool_n]?Draft = @splat(null);
 var draining = false;
-pub var stats: struct { seq_reused: u64 = 0, seq_kept: u64 = 0, seq_evicted: u64 = 0, draft_reused: u64 = 0, draft_kept: u64 = 0 } = .{};
+pub var stats: struct { seq_reused: u64 = 0, seq_kept: u64 = 0, seq_evicted: u64 = 0, shared_lane_reassigned: u64 = 0, draft_reused: u64 = 0, draft_kept: u64 = 0 } = .{};
 
 fn zero(bufs: []cuda.DeviceBuffer, s: cuda.Stream) !void {
     for (bufs) |b| try b.fill8(0, s.handle);
@@ -59,7 +59,10 @@ pub fn takeSeq(e: *prompt.Engine, cap: usize) !?prompt.Seq {
         if (s.paged) |pg| {
             if (pg.cfg.shared_lanes != 0) previous_lane = pg.shared_sequence.lane;
             try pg.resetForReuse(st);
-            if (previous_lane) |lane| if (pg.shared_sequence.lane != lane) @import("cuda_exl3_graph.zig").releaseSeq(&s);
+            if (previous_lane) |lane| if (pg.shared_sequence.lane != lane) {
+                stats.shared_lane_reassigned += 1;
+                @import("cuda_exl3_graph.zig").releaseSeq(&s);
+            };
         }
         for ([_][]cuda.DeviceBuffer{ s.conv, s.state, s.kc, s.vc, s.ikc, s.pooled }) |bs| try zero(bs, st);
         try s.tail.fill8(0, st.handle);

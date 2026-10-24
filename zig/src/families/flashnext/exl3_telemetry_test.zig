@@ -167,3 +167,51 @@ test "exl3: phase report stable schema rank and model-row denominators" {
     before.ring_owner = 12;
     try expectError(error.TelemetryOwnerChanged, telemetry.Report.between(before, after, .{ .phase = .prefill, .model_rows = 1, .steps = 1 }));
 }
+
+test "exl3: per-layer deltas sum to aggregate counters and overlapping reports claim counters once" {
+    const rank: telemetry.Rank = .{ .rank = 0, .world = 2 };
+    var before_layers = [_]telemetry.LayerSample{.{ .owner = 11, .kind = .decoder, .layer = 4, .lines = 20 }};
+    var after_layers = before_layers;
+    after_layers[0].counts.host_miss_picks = 5;
+    after_layers[0].counts.host_mandatory_copies = 2;
+    after_layers[0].counts.device_miss_picks = 3;
+    after_layers[0].counts.device_copies = 1;
+    var before: telemetry.Snapshot = .{ .rank = rank, .scope = 42, .kv = &.{}, .layers = &before_layers, .expert_pools = 1 };
+    var after = before;
+    after.layers = &after_layers;
+    after.experts.host_miss_picks = 5;
+    after.experts.host_mandatory_copies = 2;
+    after.experts.device_miss_picks = 3;
+    after.experts.device_copies = 1;
+    var cursor: telemetry.LayerCursor(2) = .{};
+    const first = try cursor.claim(std.testing.allocator, before, after);
+    defer std.testing.allocator.free(first);
+    const report = try telemetry.Report.between(before, after, .{ .phase = .decode, .model_rows = 1, .steps = 1 });
+    try std.testing.expectEqual(report.experts.host_miss_picks, first[0].counts.host_miss_picks);
+    try std.testing.expectEqual(report.experts.host_mandatory_copies, first[0].counts.host_mandatory_copies);
+    try std.testing.expectEqual(report.experts.device_miss_picks, first[0].counts.device_miss_picks);
+    try std.testing.expectEqual(report.experts.device_copies, first[0].counts.device_copies);
+
+    var concurrent_before_layers = after_layers;
+    var concurrent_after_layers = after_layers;
+    concurrent_before_layers[0].counts.host_miss_picks = 3;
+    concurrent_before_layers[0].counts.host_mandatory_copies = 1;
+    concurrent_before_layers[0].counts.device_miss_picks = 2;
+    concurrent_before_layers[0].counts.device_copies = 0;
+    concurrent_after_layers[0].counts.host_miss_picks = 8;
+    concurrent_after_layers[0].counts.host_mandatory_copies = 4;
+    concurrent_after_layers[0].counts.device_miss_picks = 6;
+    concurrent_after_layers[0].counts.device_copies = 2;
+    before.layers = &concurrent_before_layers;
+    after.layers = &concurrent_after_layers;
+    before.experts = .{ .host_miss_picks = 5, .host_mandatory_copies = 2, .device_miss_picks = 3, .device_copies = 1 };
+    after.experts = .{ .host_miss_picks = 10, .host_mandatory_copies = 5, .device_miss_picks = 7, .device_copies = 3 };
+    const second = try cursor.claim(std.testing.allocator, before, after);
+    defer std.testing.allocator.free(second);
+    const second_report = try telemetry.Report.between(before, after, .{ .phase = .decode, .model_rows = 1, .steps = 1 });
+    try std.testing.expectEqual(second_report.experts.host_miss_picks, second[0].counts.host_miss_picks);
+    try std.testing.expectEqual(second_report.experts.host_mandatory_copies, second[0].counts.host_mandatory_copies);
+    try std.testing.expectEqual(second_report.experts.device_miss_picks, second[0].counts.device_miss_picks);
+    try std.testing.expectEqual(second_report.experts.device_copies, second[0].counts.device_copies);
+    try std.testing.expectEqual(@as(u64, 10), first[0].counts.host_miss_picks + second[0].counts.host_miss_picks);
+}

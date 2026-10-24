@@ -18,6 +18,8 @@ pub fn sampleAfterConsumers(allocator: std.mem.Allocator, engine: *prompt.Engine
     var totals: counters.Experts = .{};
     var attached: [weights.layers_n + 1]*@import("cuda_exl3_load.zig").Experts = undefined;
     const attached_count = pass.offloadedPools(engine.layers[0..engine.n_layers], mtp, &attached);
+    var layers: []counters.LayerSample = if (engine.telemetry.layers_enabled) try allocator.alloc(counters.LayerSample, attached_count) else @constCast(&.{});
+    errdefer allocator.free(layers);
     var seen: [weights.layers_n + 1]*pool.Pool = undefined;
     var seen_count: usize = 0;
     for (attached[0..attached_count]) |experts| {
@@ -47,7 +49,7 @@ pub fn sampleAfterConsumers(allocator: std.mem.Allocator, engine: *prompt.Engine
             minimum = 0;
         }
         const host = try counters.difference(counters.Device, resident.telemetry_device, .{ .plans = resident.stats.rounds, .hit_picks = resident.stats.hit_slots, .miss_picks = resident.stats.miss_slots, .copies = resident.stats.misses, .evictions = resident.stats.evictions, .inplace_experts = resident.telemetry_device.inplace_experts, .overflow_plans = resident.telemetry_device.overflow_plans });
-        try counters.add(counters.Experts, &totals, .{
+        const contribution: counters.Experts = .{
             .host_plans = host.plans,
             .host_hit_picks = host.hit_picks,
             .host_miss_picks = host.miss_picks,
@@ -63,7 +65,19 @@ pub fn sampleAfterConsumers(allocator: std.mem.Allocator, engine: *prompt.Engine
             .device_overflow_plans = device.overflow_plans,
             .mapped_copy_payload_min_bytes = try std.math.mul(u64, device.copies, minimum),
             .mapped_copy_payload_max_bytes = try std.math.mul(u64, device.copies, maximum),
-        });
+        };
+        try counters.add(counters.Experts, &totals, contribution);
+        if (engine.telemetry.layers_enabled) {
+            var layer_sample: counters.LayerSample = .{ .owner = resident.telemetry_id, .kind = .mtp, .layer = 0, .lines = resident.opt.lines, .counts = counters.LayerCounts.fromExperts(contribution) };
+            for (engine.layers[0..engine.n_layers], 0..) |layer, decoder_index| if (layer.exl3) |decoder| {
+                if (decoder.pool == resident) {
+                    layer_sample.kind = .decoder;
+                    layer_sample.layer = decoder_index;
+                    break;
+                }
+            };
+            layers[seen_count - 1] = layer_sample;
+        }
     }
     var count: usize = 0;
     for (sequences, 0..) |sequence, index| {
@@ -94,7 +108,8 @@ pub fn sampleAfterConsumers(allocator: std.mem.Allocator, engine: *prompt.Engine
         totals.ring_miss_expert_requests = observed.miss_expert_requests;
         if (observed.attribution) |by_source| @import("cuda_exl3_prefill_attribution.zig").publish(by_source, &totals);
     }
-    return .{ .rank = rank, .scope = hash.final(), .ring_owner = if (ring) |observed| observed.owner else 0, .experts = totals, .kv = samples, .expert_pools = seen_count };
+    const sampled_layers = if (engine.telemetry.layers_enabled) try allocator.realloc(layers, seen_count) else layers;
+    return .{ .rank = rank, .scope = hash.final(), .ring_owner = if (ring) |observed| observed.owner else 0, .experts = totals, .kv = samples, .expert_pools = seen_count, .layers = sampled_layers };
 }
 
 test "exl3: cache telemetry pure host contracts" {
