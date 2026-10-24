@@ -249,6 +249,7 @@ pub const DevPlan = struct {
             .trace_mem = trace_mem,
             .trace_checkpoint_fn = if (trace_mem != null) try mod.function("fn_exl3_dcheckpoint") else null,
         };
+        if (dp.overlap) dp.copy_blocks = overlapCopyBlocks(d) catch dp.copy_blocks;
         if (std.c.getenv("TF_FLASHNEXT_EXL3_DCOPY_BLOCKS")) |v| dp.copy_blocks = std.fmt.parseInt(u32, std.mem.span(v), 10) catch dp.copy_blocks;
         return dp;
     }
@@ -706,9 +707,18 @@ fn maxRows() usize {
     return @max(1, std.fmt.parseInt(usize, std.mem.span(v), 10) catch 16);
 }
 
-/// TF_FLASHNEXT_EXL3_OVERLAP=1 turns the split on (default off: compiled, not yet run on the real pack, unmeasured).
+/// The split is on unless TF_FLASHNEXT_EXL3_OVERLAP=0: +3-4% decode on two RTX 5060 Ti (see the report).
 fn overlapFromEnv(p: *const pool_.Pool) bool {
     _ = p;
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_OVERLAP") orelse return false;
-    return std.mem.eql(u8, std.mem.span(v), "1");
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_OVERLAP") orelse return true;
+    return !std.mem.eql(u8, std.mem.span(v), "0");
+}
+
+/// With the split the copies run beside the held experts: a quarter of the SMs, at least 8 blocks, keeps the link busy.
+fn overlapCopyBlocks(d: *const cuda.Driver) !u32 {
+    var device: c_int = 0;
+    var sms: c_int = 0;
+    try d.check(d.api.cuDeviceGet(&device, 0), "cuDeviceGet");
+    try d.check(d.api.cuDeviceGetAttribute(&sms, .multiprocessor_count, device), "cuDeviceGetAttribute");
+    return @max(8, @as(u32, @intCast(sms)) / 4);
 }
