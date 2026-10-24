@@ -865,3 +865,27 @@ were removed from the draft because they describe obsolete decisions and conflic
 
 Not done on purpose: no change to `docs/recipes`, no family or model registration (held until the strict golden
 gate passes).
+
+## 2026-10-24 recent-demand device eviction
+
+The graph/DPLAN path now has an opt-in 256-row, per-layer expert-demand ring (`TF_FLASHNEXT_EXL3_RECENT_EVICTION=1`).
+Lifetime counts still seed initial placement and remain available to profile persistence; the recent score only affects
+decode miss ordering and device-pool victim selection. The policy does not skip routed experts, alter logits, or enter
+request snapshots. Host prefill allocation is unchanged. It is off by default.
+
+Validation on par1-cs13 used the `Qwen3.8-Flash-Next-exl3-3.05bpw` pack, both RTX 5060 Ti cards (sm_120), TP=2,
+32,768 configured context, CUDA graphs on, `--parallel 2`, shared BF16 KV paging on, and prompt cache off. Two concurrent
+HTTP prompts generated 512 output IDs each with drafting disabled. With synchronized per-layer telemetry, baseline decode
+misses were 31,844 on rank 0 and 25,446 on rank 1 (57,290 total); recent-demand measured 29,012 and 22,060 (51,072,
+−10.9%). Both per-request output hashes matched between policies. This count comparison is diagnostic and is not used
+for throughput.
+
+Two uninstrumented base/recent pairs in opposite order used the same two concurrent prompts and output length. Mean
+per-request decode was 27.97 tok/s baseline versus 28.53 tok/s recent-demand (+2.0%); all four output hashes matched.
+This is a small result from one prompt pair, not a broad speedup claim. A separate graph-on, shared-BF16-paged, concurrent
+512-output MTP-on run also matched both no-draft output hashes; telemetry misses were 729→726, so the larger no-draft
+miss reduction does not apply to the MTP path in this fixture.
+
+Validation also passed `zig build test-flashnext-exl3-host`, `zig fmt --check` on the changed Zig files, `git diff --check`,
+and the native sm_120 build. The option remains experimental and default-off pending held-out prompts, longer sessions,
+and broader MTP/profile interactions.
