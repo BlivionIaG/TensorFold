@@ -1010,3 +1010,28 @@ window's own graph reservation. Closing the gap would need code that applies `wi
 32k context (17 at 64k). Making it the default is a decode-versus-prefill trade that depends on output length: at 26 lines decode is
 about 6% slower (14.9 against 15.87 tok/s aggregate) while a 16k prefill is 1.9 s shorter, so the window pays back only when generated
 tokens are fewer than about 300 per 16k-token prompt. It is left opt-in.
+
+### Decode profile under nsys and a copy-kernel sweep (no change found)
+
+nsys 2026.3 on each rank in turn (`--trace=cuda --cuda-graph-trace=node`), TP=2, 38 lines per layer, graphs on, shared BF16 paging,
+window off, two concurrent 2,048-token prompts, 256 generated tokens, three batches. Rank 0 and rank 1 kernel totals:
+
+| | rank 0 | rank 1 |
+|---|---|---|
+| total kernel time | 31.79 s | 31.12 s |
+| NCCL all-reduce | 5.68 s | 5.05 s |
+| everything else | 26.11 s | 26.07 s |
+
+Rank 0's biggest kernels: all-reduce 17.9%, `fn_exl3_dcopy` (expert miss copy, on a side stream) 12.6%, `tf_exl3_linear_10_2_8` 9.9%,
+`tf_exl3_linear_10_2_4` 7.8%, `tf_exl3_grouped_2` 7.6%, `tf_qmmf` kernels about 10.5% together. The GPU is busy about 82% of the
+decode window. The all-reduce median is 28 µs but its mean is 142 µs, so most of its time is waiting for the other rank. The
+non-all-reduce work is equal on both ranks and both wait about the same, so the skew is symmetric (per-layer variation in misses on
+whichever rank is unlucky), not one structurally heavier rank. A per-instance arrival comparison was attempted and discarded: the two
+ranks' all-reduce counts differ (37,446 against 36,192, prefill all-reduces included), so the pairing is invalid.
+
+Sweep of `TF_FLASHNEXT_EXL3_DCOPY_BLOCKS` (default 144 blocks of 256 threads on a 36-SM card) at 12, 24, 48 and 144, ABBA-style
+repeats, same workload: summed per-request decode 58.3/58.9 tok/s for every value, identical to the digit, with identical hashes. The
+copy kernel's block count does not matter; the copies are link-bound. No default change.
+
+Consequence: about 16% of kernel time is all-reduce wait caused by miss variance, and eliminating that variance would be worth at most a
+few percent per step. The decode step has no single large inefficiency to remove with a tuning knob.
