@@ -1080,3 +1080,22 @@ Draft acceptance was 77% (161/208) on the first prompt and 50% (130/260) on the 
 two modes for both requests, so drafting is exact but slower here: each drafted round verifies more rows, needs more distinct
 experts, and the extra expert misses cost more than the accepted extra tokens save. `--no-drafts` is the faster setting on this
 setup.
+
+### Requests decode plain by default when experts are offloaded
+
+Drafted rounds lose to plain decode on offloaded experts (previous section). The lane engine now ignores a request's draft flag when
+the engine has offloaded expert layers (`plainByDefault()` in `cuda_exl3_pass.zig`, used where `cuda_lanes.zig` decides `drafting`);
+`TF_FLASHNEXT_EXL3_DRAFTS=1` restores drafting. Engines without offloaded experts are unchanged. The MTP head and its draft stream
+memory are still loaded; only the per-request drafting is skipped (a later change could also skip loading them).
+
+Validation on the new binary, 16,384-token prompts, 128 generated tokens, 38 lines, overlap default, window off, TP=2, graphs, shared
+BF16 paging, two measured batches per row, summed per-request decode tok/s, all hashes `44f75f…`:
+
+| server setting | request draft=false | request draft=true |
+|---|---|---|
+| new default | 32.01, 32.14 | 32.30, 32.32 (127 rounds, no drafts accepted) |
+| `TF_FLASHNEXT_EXL3_DRAFTS=1` | 32.02, 32.22 | 19.83, 19.81 (62 rounds, 65/92 accepted) |
+
+A request that asks for drafts therefore decodes at the plain rate by default (about 63% faster than before on this prompt and about
+21% faster on real text), with identical output. The snapshot gate passes on both ranks on a freshly built runner, and
+`zig fmt --check`, `zig build test-flashnext-exl3-host` and `zig build compile-cuda-tests` pass.

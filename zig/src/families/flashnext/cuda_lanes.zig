@@ -280,7 +280,7 @@ pub fn Namespace(comptime Tri: type) type {
                 if (ids.len == 0 or ids.len + s.max_new > self.context) return error.PromptTooLong;
                 const gop = try self.lanes.getOrPut(self.gpa, s);
                 if (gop.found_existing) dropLane(self, gop.value_ptr);
-                const drafting = self.head != null and s.drafts;
+                const drafting = self.head != null and s.drafts and !@import("cuda_exl3_pass.zig").plainByDefault();
                 // without the head's drafts, one row a stream a round: only a drafted window can rewind its states
                 if (!drafting) {
                     s.drafts = false;
