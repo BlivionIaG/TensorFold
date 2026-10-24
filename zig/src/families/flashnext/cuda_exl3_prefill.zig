@@ -761,7 +761,7 @@ fn moe(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), lw: *const @import("c
             const ids_ = dp.order[ps.id_lo..ps.id_hi];
             fake_rows = fakePicks(dp, ids_);
             if (fake_rows > 0) {
-                r = try pl.plan(dp.fake[0 .. fake_rows * slots], fake_rows);
+                r = try pl.planUnobserved(dp.fake[0 .. fake_rows * slots], fake_rows);
                 if (r.?.n_passes != 1) return error.Exl3PrefillPass;
                 try pl.stage(r.?, 0, st);
                 stats.copies += r.?.misses_();
