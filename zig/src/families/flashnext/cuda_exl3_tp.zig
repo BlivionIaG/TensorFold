@@ -183,6 +183,8 @@ pub const Scratch = struct {
     picks: ?cuda.DeviceBuffer = null,
     wts: ?cuda.DeviceBuffer = null,
     sum: ?cuda.DeviceBuffer = null,
+    /// `rows` fp32 ones at the end of `wts`: the write-back's weights for the ranks' sum read in place (no place launch).
+    ones: u64 = 0,
     rows: usize = 0,
     /// Experts.run's scratch for `moe_cap` rows, zeroed when allocated (a skipped slot reads its stale, finite y).
     moe: ?cuda.DeviceBuffer = null,
@@ -213,7 +215,9 @@ pub const Scratch = struct {
             };
             t.rows = 0;
             t.picks = try cuda.DeviceBuffer.alloc(t.d, rows * slots * 4);
-            t.wts = try cuda.DeviceBuffer.alloc(t.d, rows * slots * 4);
+            t.wts = try cuda.DeviceBuffer.alloc(t.d, rows * slots * 4 + rows * 4);
+            t.ones = t.wts.?.ptr + rows * slots * 4;
+            try s.d.check(s.d.api.cuMemsetD32Async(t.ones, 0x3f800000, rows, s.handle), "cuMemsetD32Async");
             t.sum = try cuda.DeviceBuffer.alloc(t.d, rows * dims * 4);
             t.rows = rows;
         }
@@ -290,6 +294,12 @@ pub fn reservedBytes(t: *const Scratch) usize {
     return n;
 }
 
+/// TF_FLASHNEXT_EXL3_TP_DIRECT: 0 place the sum into the slot layout, 1 (default) write back from the sum in place, 2 both.
+fn directMode() u8 {
+    const value = std.c.getenv("TF_FLASHNEXT_EXL3_TP_DIRECT") orelse return 1;
+    return std.fmt.parseInt(u8, std.mem.span(value), 10) catch 1;
+}
+
 /// The rank's half of the MoE branch, then the ranks' sum: cuda_exl3_pass.moe for a layer whose experts carry a rank.
 /// `p` is the pass (`*cuda_batch.Pass(Tri)`); on return s.y / s.wts hold what the write-back reads.
 pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
@@ -326,6 +336,13 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
         try ex.run(st, x.layer, xin, dims, .bf16, mp + r0 * slots * 4, mw + r0 * slots * 4, rows, sum + r0 * dims * 4, sc);
     }
     try c.sum(st, sum, n * dims);
+    // the write-back reads the sum with weight 1 itself: fma(sum, 1, 0) is the bits `place`'s slot 0 gave it
+    const mode = directMode();
+    if (comptime @hasField(@TypeOf(p.*), "pending_tp")) if (p.tp_direct and mode != 0) {
+        p.pending_tp = .{ sum, t.ones };
+        if (mode == 2) try t.place(st, sum, s.y, s.wts, n);
+        return;
+    };
     try t.place(st, sum, s.y, s.wts, n);
 }
 

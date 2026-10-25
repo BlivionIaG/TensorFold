@@ -61,6 +61,7 @@ pub fn head(self: anytype, logits_host: ?[]u8) !void {
                 try self.copy(s.y, s.y + r * slots * dims * 4, slots * dims * 4);
                 try self.copy(s.wts, s.wts + r * slots * 4, slots * 4);
                 if (self.pending_f32) try self.copy(s.moe_f32, s.moe_f32 + r * dims * 4, dims * 4);
+                if (self.pending_tp) |tp| self.pending_tp = .{ tp[0] + r * dims * 4, tp[1] + r * 4 };
             }
             if (self.hooks.streams == 0) try self.writeback(0, 1);
             try self.readout(self.m.mixer, 0, 1);
