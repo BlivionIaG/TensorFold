@@ -1234,3 +1234,25 @@ the expert pools from 3.5 GB to roughly 8.5 GB (about 2.4 times the cache; at 69
 line sweep, +37% cache gave +6% to +12% decode, so even a 2.4-fold cache is more likely to land decode in the 40s of tokens per second than at
 Strata's 75-104, which also benefits from its CPU lane and from MTP drafting that pays off at a 95% hit rate. The expert-cache enlargement is the first
 and largest step; the CPU lane (the vendored `exl3_cpu.cpp` runs on cs13's AVX2) and revisiting MTP follow it.
+
+### 68 lines per layer: the shared KV window was sized for 8 lanes
+
+With shared BF16 KV paging on, `TF_FLASHNEXT_KVPAGE_SHARED_LANES` defaults to 8 lanes (`cuda_exl3_kvpage.zig`), while the server runs
+`--parallel 2`. Setting it to 2 shrinks the `shared BF16 KV common allocation` from 2,023,234,372 to 809,961,172 bytes per rank (1.21 GB), and the pools can
+take it. Sweep with `--no-drafts`, `TF_FLASHNEXT_EXL3_RESERVE_MB=512` and `TF_FLASHNEXT_KVPAGE_SHARED_LANES=2`, branch defaults otherwise, single
+request, `tools/exl3_single_request_bench.py`, 192 forced tokens, three requests per prompt (decode tok/s; the 70-token row excludes the first,
+cold request):
+
+| lines per layer | 70-token prompt | 16k Zig prompt | 12.8k docs prompt | result |
+|---|---|---|---|---|
+| 38 (defaults, drafts loaded, 8 lanes) | 34.2-36.5 | 26.6-29.1 | 28.7-29.3 | baseline |
+| 52 (no drafts, 512 MB reserve) | 36.2-38.2 | 30.9-31.5 | 30.6-32.7 | fits |
+| 60 (plus 2 lanes) | 38.6-39.6 | 32.6-34.4 (first 27.9) | 31.9-34.1 | fits |
+| 68 (plus 2 lanes) | 40.4-40.9 | 35.1-35.4 (first 32.2) | 32.9-34.0 | fits |
+| 76 (plus 2 lanes) | | | | refused |
+
+`tools/exl3_serve_tp2.sh` now defaults to this configuration (68 lines, no drafts, 512 MB reserve, KV lanes equal to `PARALLEL`) and was run end to end on cs13:
+38.8-40.7 tok/s on the 70-token prompt, 33.3-34.7 on the 16k prompt, 32.9-35.4 on the 12.8k prompt, time to first token unchanged (0.57 s,
+10.4 s, 9.5 s). Against the defaults that is about +13% to +20% decode on short prompts and +16% to +26% on long ones, for no code change. Limits: the
+KV window sized for two lanes means a third concurrent request would not fit, 72 lines was not tried, the 512 MB reserve was tested only in these
+runs, and the gap to Strata (75-104 tok/s) is still 2.1 to 3 times.
