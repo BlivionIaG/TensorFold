@@ -1371,3 +1371,38 @@ launches and 819 matmul launches per step) are the remaining suspects, none prof
 There is no power cap, no memory down-clock (no compute-state P2 cap) and no thermal limit (59-63 C). The GPU is busy 95% of the time but its memory system only 45%, which agrees with the nsys estimate that the dense 5-bit
 and `qmmf` matmuls reach about 215-280 GB/s of the 448 GB/s available: their time goes to latency or instruction issue inside the kernels, not to waiting on DRAM. Decode in this run was 40.6-43.0 tok/s on the short prompt and
 29.9-38.3 tok/s on the 16k prompt (512 tokens, three requests each; the long-prompt spread is wide). Finding out which of latency, instruction issue or occupancy is responsible needs the performance counters (`ncu`), which this account cannot read.
+
+
+## 2026-10-25: upstream merge validation, place-free TP combine, MTP drafting on code
+
+Branch `exl3-on-upstream-merge` (merge of upstream at 98796c566, then fixes). Two merge regressions found and fixed on the GPU:
+
+- The prefill graph binding only knew the one-row indexer `scores` kernel; upstream now launches the 8-row, 256-block `scores_tile`
+  when there are four index heads, so every paged attention graph was refused at capture and the snapshot gate failed
+  ("paged-attention graph replay after snapshot restore"). `Request.tile` now selects the tile kernel, grid and block divisor.
+  The gate passes on both ranks (replays +112, paged +28, rebinds +4, as before the merge).
+- `cuda_mtp.zig` read the dense `lm_head.weight` tensor to type the draft artifact, which an EXL3 pack does not have
+  (MissingTensor at start with drafts on). The head's format now follows its role when the tensor is absent.
+  Also fixed: a dangling vtable address returned by `backend()` (the ranked table is now comptime-static).
+
+A/B, merged build against the build before the upstream merge (same server settings, 72 lines, plain decode, 3 prompts, A/B/B/A):
+identical output hashes on all three prompts, decode +0.7% to +1.3%, TTFT about 2% slower on 12-16k prompts (cause not found).
+
+Place-free tensor-parallel combine (`TF_FLASHNEXT_EXL3_TP_DIRECT`, default 1; 0 restores the old path): the write-back reads the all-reduced
+sum in place with fp32 ones as weights, so `fn_exl3_tp_place` (48 launches a step) is gone. A first version changed the text of two prompts
+because the head's last-row compaction moved y and the weights but not the sum pointer; fixed, and all three hashes match the baseline.
+Decode +0.35% to +0.5% (45.0 against 44.99 tok/s short, 34.2 against 34.1 zig, 35.4 against 35.2 docs).
+
+MTP drafting on the merged build (64 lines, `TF_FLASHNEXT_EXL3_DRAFTS=1`, no `--no-drafts`; outputs identical to plain decode):
+
+| prompt | plain tok/s | drafted tok/s | accepted drafts |
+|---|---|---|---|
+| story (40 tokens in) | 45.0 | 36.0 | 102 of 190 |
+| Zig source (16k) | 34.2 | 96.2 | 180 of 185 |
+| markdown docs (12.8k) | 35.2 | 36.4 | 130 of 192 |
+
+Drafting is worth 2.8 times on predictable text (it matches Strata's 83-104 tok/s on the same Zig prompt) and loses 20% on free text. A round costs
+about 22 ms plain, 60 ms for a 3-wide window and 180 ms at 16 rows (each row brings its own experts over PCIe), so it only pays above about 2.7
+tokens a round. Depth 2, 3 or confidence 0.85 changed story throughput by less than 8% and did not remove the loss. Turning on upstream's
+`plain_guard` with a fitted window-cost table made the story prompt slower (32 against 36 tok/s) and was reverted; a per-stream rule that falls
+back to plain rounds below the break-even acceptance is the open item. Drafts therefore stay opt-in for now.
