@@ -1169,3 +1169,40 @@ Consequences for the plan (hypotheses to test, not results): raising our expert 
 lane or MTP tuning. At 26 to 38 lines, every 12 added lines measured about +10% decode (summed per-request 26.95 to 29.7 tok/s), and the hit rate
 rises faster than linearly as the cache approaches the hot set. The first steps are to find what the 7.5 GB `persistent` holds and what can move to
 host memory or be sharded across the ranks, then to seed the pools from a hot-expert profile at startup.
+
+### Where the 16 GB goes, and how many expert lines fit
+
+Per-rank memory ledger at 38 lines (default features, `--parallel 2`, 32,768 context, shared BF16 KV paging), from the two ranks' startup logs:
+
+| item | rank 0 | rank 1 |
+|---|---|---|
+| weights resident on the device | about 5.0 GB | about 5.0 GB |
+| shared BF16 KV window (`common allocation`) | 2.02 GB | 2.02 GB |
+| MTP head (loaded unless `--no-drafts`) | 0.50 GB | 0 |
+| prompt scratch | 0.76 GB | 0.76 GB |
+| deep prefill rows (4096) | 0.73 GB | 0.73 GB |
+| pool scratch | 0.52 GB | 0.31 GB |
+| two streams | 1.09 GB | 0.81 GB |
+| graph reservation | 0.39 GB | 0.39 GB |
+| startup reserve floor | 1.07 GB (`TF_FLASHNEXT_EXL3_RESERVE_MB`, default 1024) | same |
+| expert pools (38 lines) | 3.47 GB | 3.54 GB |
+
+The ledger line `free_after_pools` (2.8 GB and 3.4 GB) is not spare room: admission also holds back the reserve and the future bytes (streams, graphs,
+planner), so 38 lines is already near the limit; 44 lines at the default settings and 56 lines were refused with `InsufficientStartupMemory`.
+Real headroom comes from not loading the head (`--no-drafts` frees 0.5 GB on rank 0) and from a smaller reserve floor.
+
+Sweep with `--no-drafts` and `TF_FLASHNEXT_EXL3_RESERVE_MB=512`, branch defaults otherwise (overlap on, window off, TP=2, graphs), single request,
+`tools/exl3_single_request_bench.py`, 192 forced tokens, three requests per prompt (decode tok/s):
+
+| lines per layer | 70-token prompt | 16k Zig prompt | 12.8k docs prompt | result |
+|---|---|---|---|---|
+| 38 (default, drafts loaded) | 33.7-36.5 | 26.6-29.1 | 28.7-29.3 | baseline |
+| 44 | 34.5-36.4 | 28.6-30.1 | 30.0-33.9 | fits |
+| 48 | 34.1-36.7 | 29.3-34.7 | 29.9-31.4 | fits |
+| 52 | 35.8-38.2 | 30.9-31.5 | 30.6-32.7 | fits |
+| 56 | | | | starts loading, never serves |
+
+Going from 38 to 52 lines (+37% cache) is worth about +6% to +12% decode, and time to first token is unchanged (10.4 s at 16k). That is a
+configuration change that needs no code, but it is far short of the gap: Strata's cache holds about four times as many experts and reaches a
+94-99% hit rate. To get there the resident state per rank has to shrink by several GB (weights, the 2 GB KV window, prefill scratch), which means a layer
+split or other sharding of the dense weights rather than another tuning knob.
