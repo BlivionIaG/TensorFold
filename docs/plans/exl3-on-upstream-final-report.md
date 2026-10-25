@@ -1338,3 +1338,20 @@ for the widest matrices, which fits the achieved 215 GB/s of the 448 GB/s limit.
 bits never depend on the row count (linear.py plan)": the split changes the order of the fp32 accumulation, so the outputs would no longer be bit-identical to the current kernels or to the reference, and the branch's earlier verification
 (layers 0, 3 and 17 bit-identical to TP=1, graphs bit-equal to eager) depends on that. Any speedup of the dense kernels therefore has to either keep the accumulation order (deeper prefetch or more loads in flight per
 thread inside the existing grid) or be accepted as near-exact and checked by token hashes instead of bit equality. The same applies to sharding the dense projections across the ranks, which splits sums between cards. Neither was built.
+
+### Result: splitting K for the wide 5-bit matmuls does not speed decode (rejected)
+
+To test the under-occupancy explanation in the previous section, `plan()` was given an opt-in (`TF_EXL3_WIDE_SPLIT=1`) that splits K for outputs of 64 to 191 column blocks, which moves the 80- and 96-block
+projections to 160-320 blocks. It built and passed the host tests. A/B on cs13 at 72 lines per layer, single-user (`PARALLEL=1`, no drafts), the launch script, three requests per prompt
+(decode tok/s; legs in the order off, on, on; the second "off" leg did not finish and is not used):
+
+| prompt | split off | split on (two legs) |
+|---|---|---|
+| 70-token | 39.2, 40.7, 40.6 | 38.8, 40.5, 41.6 and 38.8, 41.8, 41.8 |
+| 16k Zig | 33.9, 34.4, 35.3 | 33.9, 33.7, 36.4 and 34.8, 33.3, 36.2 |
+| 12.8k docs | 34.4, 34.4, 35.2 | 33.2, 35.6, 35.2 and 33.4, 34.2, 34.6 |
+
+No gain outside run variation (about 3% on these rows), so more blocks in flight for the widest matrices is not what limits them; the extra partial-sum scratch also made
+80 lines no longer fit (rank 1 was 0.02 GiB short of its stream budget). The change was removed. The output-hash comparison planned for this test was not usable (the bench prefixes each request with a unique id).
+The 215-280 GB/s the dense kernels reach is therefore not explained by launch shape; the trellis decode work per byte, instruction issue, or the replicated small kernels around them (390 hyper-connection
+launches and 819 matmul launches per step) are the remaining suspects, none profiled at instruction level (ncu was not run).
