@@ -1444,3 +1444,10 @@ The all-reduce in prefill is the largest kernel on both ranks (6.2-6.7 s of abou
 the next sub-block's compute (TF_FLASHNEXT_EXL3_PREFILL_OVERLAP), over host shared memory: `nvidia-smi topo -p2p r` reports GNS (chipset not supported)
 for the pair, so no peer-to-peer. A bf16 exchange would halve those bytes but changes the rounding (the sum of two bf16-rounded partials instead of the
 fp32 sum rounded once) and was not built.
+
+Decode all-reduce, per-node graph trace of both ranks (96 tokens, short prompt, 40.5 tok/s under nsys): rank 0 recorded 9,216 all-reduce launches and
+rank 1 4,978, so the two traces cannot be paired by index with confidence, and the processes' clocks are separate (an alignment check by end time
+failed, 2.1-2.6 s apart). Pairing from the tail anyway, the shorter of each pair's durations had a median of 22.5 us (p90 48 us) and the longer one 51.6 us (p90
+169 us): about 1.5 ms a step of pure transport and about 4.1 ms with the wait for the slower rank. If that holds, a faster transport could save under 1 ms
+(3%) and the larger part of the all-reduce cost is waiting for the other rank, which only balancing the two ranks' work would remove. Which rank
+arrives later was not established; that needs one trace with both ranks on the same clock (a single nsys session over both processes).
