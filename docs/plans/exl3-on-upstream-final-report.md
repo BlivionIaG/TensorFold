@@ -1422,3 +1422,10 @@ is short, and it costs decode through the lines it takes.
 Resident memory per rank at 72 lines (ledger): dense weights and fixed state 5.62 GB, expert pools 6.40 GB, prompt scratch 0.78 GB, deep prefill
 0.73 GB, pool scratch 0.32 GB, graph reservation 0.32 GB, stream 0.24 GB, 1.99 GB free after the pools. Shrinking scratch frees about 1 GB (about 14
 lines, 2-3% decode by the 4-line sweep); a larger step needs the dense weights sharded across the ranks. Not done.
+
+Second attempt, same day: plain rounds that skip the head, stashing their kept rows (tokens, and the streams in the unused tail of the draft's
+`streams` buffer) and catching the head up in one batched absorb when drafting resumes. Measured against always drafting: story 39.0 tok/s (the
+non-stashing rule got 40.6 and the no-head server 45.0), docs 34.0 (against 36.6), and the Zig prompt failed (no decode figure, a different output
+hash), so the catch-up path has a bug and, more to the point, the head was not the main cost of a plain round on a drafting server: the verify-round
+path itself is slower than the graph decode step. Reverted; drafting stays opt-in. A drafting default would need the plain round to be the graph decode
+step itself, not a one-row verify window.
