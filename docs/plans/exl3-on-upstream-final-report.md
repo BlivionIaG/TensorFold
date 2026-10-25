@@ -1256,3 +1256,25 @@ cold request):
 10.4 s, 9.5 s). Against the defaults that is about +13% to +20% decode on short prompts and +16% to +26% on long ones, for no code change. Limits: the
 KV window sized for two lanes means a third concurrent request would not fit, 72 lines was not tried, the 512 MB reserve was tested only in these
 runs, and the gap to Strata (75-104 tok/s) is still 2.1 to 3 times.
+
+### One user: 80 lines, and where the curve flattens
+
+For a single-user server (`--parallel 1`, `TF_FLASHNEXT_KVPAGE_SHARED_LANES=1`, `TF_FLASHNEXT_EXL3_RESERVE_MB=256`) the shared KV allocation is 0.61 GB per rank. At 76
+lines the stream check then refused to start ("the CUDA memory budget fits no stream"), because it applies a separate 1.0 GiB device reserve. That reserve is
+`TENSORFOLD_MEMORY_RESERVE_GIB` (default the larger of 1 GiB and 1/32 of the card; the code allows 0.5 GiB at the least). With it set to 0.5, 72, 76 and 80 lines serve.
+Single request, `tools/exl3_single_request_bench.py`, 192 forced tokens, three requests per prompt, decode tok/s (the 70-token row excludes the cold first request):
+
+| setup | lines | 70-token | 16k Zig | 12.8k docs |
+|---|---|---|---|---|
+| defaults (drafts loaded, 8 KV lanes, `--parallel 2`) | 38 | 34.2-36.5 | 26.6-29.1 | 28.7-29.3 |
+| no drafts, 2 KV lanes, reserve 512 MB, `--parallel 2` | 68 | 40.4-40.9 | 35.1-35.4 | 32.9-34.0 |
+| plus `--parallel 1`, 1 KV lane, reserves 256 MB and 0.5 GiB | 72 | 40.7-40.7 | 34.6-35.7 | 33.3-35.1 |
+| same | 76 | 42.1-42.5 | 34.3-35.6 | 34.9-36.2 |
+| same | 80 | 41.7-42.8 | 34.7-36.1 | 34.8-36.8 |
+
+Beyond about 68 lines each further four lines add only 1% to 3%, and the long-prompt rows barely move (35 tok/s, about 28.5 ms per token). That matches the
+nsys profile: the roughly 23 ms of each step that is not expert-miss copying (all-reduce waiting, the dense and expert kernels) is now most of the step. Strata's 75-104 tok/s means 10 to 13 ms per
+token, so its per-step cost is also less than half of our non-miss time even before drafting. The cache enlargement is therefore done (about +20% to +30% over the defaults); the next gains have to come from the
+step itself (the per-layer all-reduce of expert-parallel TP, kernel efficiency) and from making drafting pay, not from more lines.
+`tools/exl3_serve_tp2.sh` uses 80 lines when `PARALLEL=1` and 68 otherwise. The 80-line single-user setup was run through the sweep script, not through the launch script, and the 0.5 GiB reserve is the
+supported minimum with no headroom for other GPU users.
