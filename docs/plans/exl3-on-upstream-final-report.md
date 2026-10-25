@@ -1412,3 +1412,13 @@ every 12) was measured against always drafting on the same three prompts (hashes
 45.0 of a server without the head), Zig 92.0 against 96.5 (-5%), docs 34.5 against 36.6 (-6%). A plain round still absorbs its kept rows into the head,
 so the loss is only partly recovered, and the rule costs the predictable prompts. Reverted. What would make drafting the default is a plain round
 that skips the head entirely and catches the head's cache up when drafting resumes; not built.
+
+Prefill, merged build, 72 lines (two-chunk off) against 64 lines with `TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK=1` (72 lines does not start with it:
+its 588 MB window leaves the pools no room), temperature 0, 64 tokens: 16k Zig prompt TTFT 10.64 s against 10.21 s (-4%, same text);
+12.8k docs prompt 10.54 s against 8.52 s (-19%) but the text differs (hash 0c279a3ea5d3 against 091349946f19), and decode on that prompt is
+about 8% lower at 64 lines (31.2-32.0 against 34.1-35.1). The window is therefore not a default: it changes the bits on a prompt whose last chunk
+is short, and it costs decode through the lines it takes.
+
+Resident memory per rank at 72 lines (ledger): dense weights and fixed state 5.62 GB, expert pools 6.40 GB, prompt scratch 0.78 GB, deep prefill
+0.73 GB, pool scratch 0.32 GB, graph reservation 0.32 GB, stream 0.24 GB, 1.99 GB free after the pools. Shrinking scratch frees about 1 GB (about 14
+lines, 2-3% decode by the 4-line sweep); a larger step needs the dense weights sharded across the ranks. Not done.
