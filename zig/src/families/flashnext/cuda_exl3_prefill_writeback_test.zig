@@ -43,6 +43,7 @@ pub fn run(comptime Deep: type, comptime layout: anytype, comptime view: anytype
     base.dummy = 0xdead;
     var call: Call = undefined;
     var pass: batch.Pass(Tri) = undefined;
+    pass.pending_tp = null;
     pass.tri = .{ .call = &call };
     const sum = dp.dev.ptr + dp.lay.sum;
     const sub: usize = 3;

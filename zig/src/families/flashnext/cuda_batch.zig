@@ -113,6 +113,12 @@ pub fn Pass(comptime Tri: type) type {
         /// The pending write-back's branch sits in fp32 in moe_f32 (something added to it, or it is kept).
         pending_f32: bool = false,
         pending_f32_weights: ?u64 = null,
+        /// Expert parallel's summed branch and its ones weights (cuda_exl3_tp.moe), read by the write-back in place.
+        pending_tp: ?[2]u64 = null,
+        tp_direct: bool = false,
+        /// This layer's out projection leaves part's other slices alone; its writeback adds the zero slice once.
+        zero_slices: bool = false,
+
         // ---- launches ----------------------------------------------------------------------------------------
 
         /// qmm.cu's lane tile over m rows: out bf16 [m, n] (sk 1) or the unreduced fp32 slices [sk, m, n] in part.
@@ -190,6 +196,11 @@ pub fn Pass(comptime Tri: type) type {
                 return;
             }
             self.pending = null;
+            if (self.pending_tp) |tp| {
+                self.pending_tp = null;
+                try self.tri.hcWriteback(h, h, pss, dummy, "*bf16", inj, tp[0] + r0 * dims * 4, "*fp32", tp[1] + r0 * 4, "*fp32", rs, n, dims, streams, 2, 0, 1, 1);
+                return;
+            }
             if (self.pending_f32) {
                 // the fp32 branch rounded once, as MODE 2 rounds its sum (a slice of one)
                 self.pending_f32 = false;
@@ -543,6 +554,7 @@ pub fn Pass(comptime Tri: type) type {
             self.pending = null;
             self.pending_f32 = false;
             self.pending_f32_weights = null;
+            self.pending_tp = null;
             // the gather writes the scratch's pinned rows, so the last pass's uploads must have read them first
             if (!self.prepared) try s.ready();
             const emb = s.hostEmb(n);
@@ -583,7 +595,9 @@ pub fn Pass(comptime Tri: type) type {
                 self.zero_slices = false;
                 try self.tri.hcWriteback(s.h, s.h, s.pss, s.part, "*fp32", s.inj, s.dummy, "*bf16", s.dummy, "*bf16", sl.stride, n, dims, streams, 4, 1, 1, sl.count);
                 try self.readoutKeep(lw.mlp_hc, 0, n, keep.mlp_hc);
+                self.tp_direct = keep.moe_ids == 0 and keep.moe_wts == 0 and keep.moe_branch == 0 and self.addAt(layer) == null;
                 try self.moeBlockKeep(lw, keep);
+                self.tp_direct = false;
                 try self.moeAdds(layer, keep);
                 self.pending = layer;
             }
