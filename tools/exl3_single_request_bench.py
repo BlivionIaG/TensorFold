@@ -1,5 +1,6 @@
+"""Single-request prefill/decode bench over the OpenAI chat API, shared by our server and Strata: PORT."""
 import json, os, sys, time, urllib.request, uuid
-sys.path.insert(0, os.path.expanduser("~"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import exl3_text_abba as t
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080

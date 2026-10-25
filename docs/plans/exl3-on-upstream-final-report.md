@@ -1117,3 +1117,31 @@ For a client that asks for drafts the batch finishes in 32.2 s instead of 39.1 s
 decode is about 30% higher. For a client that already disabled drafts the overlap alone gives about 2-3% on summed decode and 1.3%
 on batch wall time. Together with the repeated-ID ABBA (+4.4% undrafted, +61% for drafted requests) this is two independent
 workloads in both orders.
+
+### Comparison with Strata on the same two RTX 5060 Ti (single request)
+
+Strata 0.2.4.2 (`7dd5cf1`, engine 0.1.48 for CUDA 13) was installed on cs13 with `./setup.sh --model IQ3_XXS --context 32768 --gpus all
+--yes`: the Qwen3.8-Flash-Next IQ3_XXS GGUF (47.0 GB, about 3.06 bits per weight), automatic layer split across both cards, its MTP draft
+layer with `--spec 4 --spec-min-p 0.5`, int8 KV, expert cache `auto` (about 15.7 GiB of VRAM used on each card), one request at a time
+(its default). Neither Strata nor project-maya has an EXL3 path for this model, so the weights differ in format (a GGUF IQ3_XXS against our
+EXL3 3.05 bpw) and quality was not compared. Ours was the branch defaults (overlap on, plain decode, window off, 38 lines per layer, TP=2,
+graphs, shared BF16 paging, 32,768 context). Both were driven by `tools/exl3_single_request_bench.py` (chat endpoint, thinking off,
+temperature 0, `ignore_eos`, 192 requested tokens, a unique prefix per run so no prefix cache applies), three requests per prompt. The
+prompts are a 70-token story request and the two real-text prompts used earlier (Zig source and markdown docs). Strata stopped some code
+answers early despite `ignore_eos` (41-96 tokens), so its decode figures for those rows cover fewer tokens.
+
+| prompt | metric | ours (EXL3, TP=2) | Strata (IQ3_XXS) |
+|---|---|---|---|
+| 70 tokens | time to first token | 0.73-0.76 s | 0.57-0.78 s |
+| 70 tokens | decode | 33.7-36.5 tok/s | 75.1-87.1 tok/s |
+| about 16,050 tokens (Zig) | time to first token | 10.38-10.50 s | 7.47-7.62 s |
+| about 16,050 tokens (Zig) | decode | 26.6-29.1 tok/s | 83.1-103.6 tok/s |
+| about 12,800 tokens (docs) | time to first token | 9.45-9.65 s | 6.74-6.85 s |
+| about 12,800 tokens (docs) | decode | 28.7-29.3 tok/s | 101.1-102.1 tok/s |
+
+On this hardware Strata decodes 2.3 to 3.5 times faster and prefills long prompts about 1.4 times faster (about 2,100 against 1,550 tokens/s
+at 16k); short-prompt first-token time is the same. Our two-chunk window (26 lines) closes part of the prefill gap (about 12.5 s per 16k
+prompt in the two-request runs) but not the decode gap. From the design documents and the profile, the likely causes of the decode gap are
+that Strata computes cold experts on the CPU instead of copying them over PCIe (our exposed miss copies are about 30% of a step), splits layers
+across the cards (pipeline) instead of expert-parallel with an all-reduce every layer (about 16% of our kernel time is all-reduce wait), and
+makes its MTP drafting pay off (ours loses to plain decode). These causes were not isolated by experiment.
