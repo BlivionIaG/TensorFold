@@ -686,6 +686,12 @@ pub fn releaseFor(owner: *const anyopaque) void {
     };
 }
 
+/// Pool `i`'s line_of table (line or -1 by expert id) in the planner's device state.
+pub fn lineOfPtr(dp: *const DevPlan, i: usize) u64 {
+    const e = dp.pool_states[i];
+    return dp.state.ptr + e.byteOffset() + 2 * @as(u64, e.lines) * @sizeOf(u32);
+}
+
 /// One offloaded layer's experts on the device plan: plan + copies, then `Experts.run` on the pool's tables, as the
 /// host cut's single pass runs it (cuda_exl3_pass.pooled): same kernels, same inputs, so the same bits.
 pub fn runLayer(dp: *DevPlan, st: cuda.Stream, i: usize, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
