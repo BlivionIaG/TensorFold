@@ -1429,3 +1429,18 @@ non-stashing rule got 40.6 and the no-head server 45.0), docs 34.0 (against 36.6
 hash), so the catch-up path has a bug and, more to the point, the head was not the main cost of a plain round on a drafting server: the verify-round
 path itself is slower than the graph decode step. Reverted; drafting stays opt-in. A drafting default would need the plain round to be the graph decode
 step itself, not a one-row verify window.
+
+Long-prompt TTFT after the merge (16k Zig prompt, warm 10.40 s old, 10.63-10.66 s merged; 12.8k docs 10.35 against 10.55; cold first request 11.7
+against 12.2): the difference is identical with prefill graphs off (10.40/10.65, 10.35/10.56), so it is not the graph path. An nsys comparison of rank 0's
+kernel time for one 16k prefill run finds the merged build no slower in aggregate (12,466 ms against 12,574 ms): upstream's kernels replace
+`fn_gdn_rows` (467 ms), `fn_attn_chunks` (343 ms), `fn_hc_dense_mix` (175 ms), `fn_qsa_scores` (99 ms) and `fn_hc_normalize` (82 ms) with
+`fn_gdn_fused` (509 ms), `fn_attn_chunks_one` (314 ms), `fn_hc_dense_mix8` (108 ms), `fn_hc_normalize_cols` (154 ms), `qsa_tile::scores` (32 ms) and
+`tf_route_logits_wide` (57 ms), and the all-reduce kernel (6.38 s old, 6.47 s merged) grows by 90 ms, a rank's wait on the other. With a profile of
+both ranks of the merged build the two ranks' kernel totals are within 2% (12.9 s and 12.7 s), so the extra 0.2-0.3 s is not a throughput regression of
+either rank's kernels but synchronisation skew (new `fn_gdn_fused` and the tile kernels have different per-layer timing on the two ranks); it was not
+chased further.
+
+The all-reduce in prefill is the largest kernel on both ranks (6.2-6.7 s of about 12.8 s for the run), but it runs on the reduce stream overlapped with
+the next sub-block's compute (TF_FLASHNEXT_EXL3_PREFILL_OVERLAP), over host shared memory: `nvidia-smi topo -p2p r` reports GNS (chipset not supported)
+for the pair, so no peer-to-peer. A bf16 exchange would halve those bytes but changes the rounding (the sum of two bf16-rounded partials instead of the
+fp32 sum rounded once) and was not built.
