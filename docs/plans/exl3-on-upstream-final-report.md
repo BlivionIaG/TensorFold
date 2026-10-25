@@ -1329,3 +1329,12 @@ Two ways to cut that 11.8 ms while keeping tensor parallelism (neither prototype
 of the memory limit, worth roughly 4 ms of the step, with no structural change; (2) shard the dense projections across the two ranks (column-parallel input projections, row-parallel
 `out_proj`, and the hyper-connection mixes folded into the existing per-layer reduction), which would halve each rank's streaming (up to about 5 to 6 ms) but adds a second
 collective per layer, which costs 25 to 60 us per call here, so it pays only if the extra reductions are fused into the one we already do.
+
+### Why the dense kernels run at about half the memory limit, and what stops a quick fix
+
+The launch shape of every EXL3 linear comes from `plan()` in `zig/src/cuda/exl3.zig`, called as `plan(k, n, 192, 8)`: when the output has at least 64 blocks of 128 columns (N >= 8192) it uses 8 warps and no split of K, so the grid is just N / 128 blocks
+(80 or 96 for the DeltaNet and full-attention input projections), about 2.2 blocks of 256 threads per SM on a 36-SM card; only narrower outputs (under 64 blocks) are split along K until they reach 192 blocks. That under-occupies the memory system
+for the widest matrices, which fits the achieved 215 GB/s of the 448 GB/s limit. The obvious change is to split K for those shapes too (and so use about 192 blocks), but the function's comment says the plan is chosen from the shape alone "so a row's
+bits never depend on the row count (linear.py plan)": the split changes the order of the fp32 accumulation, so the outputs would no longer be bit-identical to the current kernels or to the reference, and the branch's earlier verification
+(layers 0, 3 and 17 bit-identical to TP=1, graphs bit-equal to eager) depends on that. Any speedup of the dense kernels therefore has to either keep the accumulation order (deeper prefetch or more loads in flight per
+thread inside the existing grid) or be accepted as near-exact and checked by token hashes instead of bit equality. The same applies to sharding the dense projections across the ranks, which splits sums between cards. Neither was built.
