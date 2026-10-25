@@ -1206,3 +1206,31 @@ Going from 38 to 52 lines (+37% cache) is worth about +6% to +12% decode, and ti
 configuration change that needs no code, but it is far short of the gap: Strata's cache holds about four times as many experts and reaches a
 94-99% hit rate. To get there the resident state per rank has to shrink by several GB (weights, the 2 GB KV window, prefill scratch), which means a layer
 split or other sharding of the dense weights rather than another tuning knob.
+
+### What the pack holds, and a sized plan for a larger expert cache
+
+Tensor sizes by role in `Qwen3.8-Flash-Next-exl3-3.05bpw` (84.95 GB total, from the safetensors headers, `tools/exl3_pack_sizes.py`):
+
+| role | size | where it lives today |
+|---|---|---|
+| routed experts | 45.77 GB | pinned host banks (about 22 GB per rank), expert pools on the device |
+| per-layer n-gram embedding shards | 32.64 GB | host memory |
+| DeltaNet attention | 1.32 GB | device, both ranks |
+| hyper-connection mixes | 1.28 GB | device, both ranks |
+| embed_tokens | 1.27 GB | device |
+| MTP head | 1.04 GB (0.5 GB on the device, rank 0) | device unless `--no-drafts` |
+| lm_head | 0.40 GB | device (split by vocabulary) |
+| full attention | 0.38 GB | device (heads split) |
+| shared expert, router, projections, other | about 0.6 GB | device |
+
+The on-device dense set is therefore about 5.8 GB, and the measured 5.0 GB resident on each rank says most of it is replicated, not sharded.
+A layer split would roughly halve it (-2.9 GB per rank). Against Strata's 10.95 GiB of expert cache per card, our 3.5 GB of pools is paying for:
+12.5 GB of other state per rank at 38 lines (weights 5.0, KV window 2.0, prompt scratch 0.76, deep prefill 0.73, pool scratch 0.3-0.5, streams 0.8-1.1,
+graph reservation 0.39, reserve floor 1.07, head 0.5 on rank 0).
+
+Sized estimate of what could be recovered per rank (arithmetic from the ledger above, not tested): layer-split dense weights 2.9 GB, a smaller KV
+device window about 1.0 GB, the reserve floor 0.5 GB, prefill rows and scratch about 0.4 GB, no MTP head 0.5 GB on rank 0. Together about 5 GB, which would take
+the expert pools from 3.5 GB to roughly 8.5 GB (about 2.4 times the cache; at 69-84 MB per line that is on the order of 100 lines). From the 38 to 52
+line sweep, +37% cache gave +6% to +12% decode, so even a 2.4-fold cache is more likely to land decode in the 40s of tokens per second than at
+Strata's 75-104, which also benefits from its CPU lane and from MTP drafting that pays off at a 95% hit rate. The expert-cache enlargement is the first
+and largest step; the CPU lane (the vendored `exl3_cpu.cpp` runs on cs13's AVX2) and revisiting MTP follow it.
