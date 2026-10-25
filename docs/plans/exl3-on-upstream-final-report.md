@@ -1278,3 +1278,31 @@ token, so its per-step cost is also less than half of our non-miss time even bef
 step itself (the per-layer all-reduce of expert-parallel TP, kernel efficiency) and from making drafting pay, not from more lines.
 `tools/exl3_serve_tp2.sh` uses 80 lines when `PARALLEL=1` and 68 otherwise. The 80-line single-user setup was run through the sweep script, not through the launch script, and the 0.5 GiB reserve is the
 supported minimum with no headroom for other GPU users.
+
+### The decode step at 80 lines, from nsys (rank 0)
+
+nsys trace of rank 0 with the single-user setup (80 lines, `--parallel 1`, no drafts, graphs; a short story prompt, 256 generated tokens, three runs at
+40.3, 44.1 and 44.7 tok/s under the profiler), counted per decode step (765 steps, `tools/exl3_nsys_step_breakdown.py`). Wall time was 24.2 ms per step under the profiler
+and the non-copy kernels kept the GPU 81% busy.
+
+| category | ms per step | launches per step |
+|---|---|---|
+| EXL3 matmuls (`tf_exl3_linear_*`, `tf_exl3_grouped_*`, gate-up and down epilogues) | 10.85 | 819 |
+| `qmmf` matmuls | 4.56 | 234 |
+| NCCL all-reduce and gather | 3.07 | 49 |
+| expert miss copy (side stream, overlapped) | 2.07 | 47 |
+| hyper-connection kernels | 0.95 | 390 |
+| router | 0.65 | 96 |
+| DeltaNet kernels | 0.42 | 108 |
+| planner, attention and KV paging, other | 0.85 | about 400 |
+
+Largest single kernels: `tf_exl3_linear_10_2_8` 3.87 ms (49 launches, 79 us each, 80-96 blocks), `tf_exl3_linear_10_2_4` 3.41 ms (108 launches, 31 us), NCCL all-reduce 2.94 ms
+(48 launches, 61 us each, mostly waiting for the other rank), `qmmf` 2.68 and 1.87 ms, `tf_exl3_grouped_2` 2.57 ms (192 launches, 13 us).
+
+What this says: the expert misses are no longer the cost (2.07 ms of copy, hidden on a side stream); the step is about 15.4 ms of matmul kernels, 3 ms of all-reduce wait and the rest small kernels.
+The dense matmuls run identically on both ranks. Pack inspection (`tools/exl3_pack_sizes.py` and the trellis shapes): routed experts are 3-bit, the DeltaNet projections (1.3 GB) and `lm_head` are 5-bit,
+and the on-device dense set is about 5.8 GB, so a rank streams a few GB of dense weights per token (roughly 3.6 GB per step including experts and the head, which is about 8 ms at the card's 448 GB/s).
+That mapping from kernel names to weights is an inference from sizes and launch counts, not confirmed by a per-kernel trace of the weights each reads. Implications that follow (hypotheses): sharding the dense
+projections across the ranks would cut that per-rank streaming roughly in half but adds collectives per layer, and each NCCL call already costs 61 us here, so it only pays if the
+gathers are folded into the existing per-layer all-reduce; a layer split removes the all-reduce (about 3 ms) and the replication but leaves one card idle per token for a single stream.
+Neither was prototyped.
