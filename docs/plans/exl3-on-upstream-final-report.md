@@ -1145,3 +1145,27 @@ prompt in the two-request runs) but not the decode gap. From the design document
 that Strata computes cold experts on the CPU instead of copying them over PCIe (our exposed miss copies are about 30% of a step), splits layers
 across the cards (pipeline) instead of expert-parallel with an all-reduce every layer (about 16% of our kernel time is all-reduce wait), and
 makes its MTP drafting pay off (ours loses to plain decode). These causes were not isolated by experiment.
+
+### Why Strata decodes faster: the expert cache hit rate (measured in its log; causes inferred)
+
+Strata prints per request: `expert cache 94.1% hit (+1.3% of the routed experts over PCIe)`, 95.2%, 97.5%, 97.2%, 97.9% and 98.9% (+0.1%) on the
+same prompts used above. Ours at 38 lines per layer measured a 20.8% device miss rate (a 79% hit rate) in the decode telemetry, and 27.9% at 26
+lines (72% hit). So Strata moves roughly 5 to 20 times fewer experts over PCIe per token, and the exposed miss copies that take about 30% of our
+decode step (previous sections) are close to absent for it. This alone accounts for a large part of the decode gap, before any CPU lane or MTP effect.
+
+What is visible in Strata's setup log and files explains how it gets there:
+- It fills each GPU's expert cache with 7,507 experts in 10.95 GiB of VRAM (about 1.5 MB per IQ3_XXS expert), roughly 15,000 experts across the two
+  cards, about 61% of the model's 24,576. Ours holds 38 lines x 49 layers per rank, 3.23 GiB per rank, about 3,700 experts across both ranks (15%).
+- It splits layers across the two cards, so each card holds the dense weights of only its own layers. Ours is expert-parallel: each rank's ledger
+  shows `persistent=7.53 GB` (dense weights, replicated or mostly replicated, and other fixed state), `scratch`, `deep_prefill`, `pool_scratch`
+  and `graph_reservation`, leaving 3.47 GB for expert pools out of a 16 GB card. Why persistent is 7.5 GB was not broken down in this work.
+- It ships a pretrained hot-expert profile (`data/expert-profile.bin`, passed as `--expert-profile`) that seeds the cache. Our profile-sized pools
+  failed to generalize on held-out prompts earlier (-2.4% throughput), but those were sizing experiments, not seeding the same cache.
+- Its CPU lane runs cold experts from host RAM. The vendored kernel `src/dsv41/vendor/exl3_cpu.cpp` (MIT, from project-maya) implements the EXL3 mul1
+  codebook for K bits 1-8 with AVX-512 or AVX2+FMA. cs13's EPYC 7452 has AVX2+FMA only (no AVX-512), so the AVX2 tier would run there. With 94-99%
+  hits the CPU lane serves only the remaining 1-6%.
+
+Consequences for the plan (hypotheses to test, not results): raising our expert cache from 3.2 GiB to near 10 GiB per rank is worth more than a CPU
+lane or MTP tuning. At 26 to 38 lines, every 12 added lines measured about +10% decode (summed per-request 26.95 to 29.7 tok/s), and the hit rate
+rises faster than linearly as the cache approaches the hot set. The first steps are to find what the 7.5 GB `persistent` holds and what can move to
+host memory or be sharded across the ranks, then to seed the pools from a hot-expert profile at startup.
