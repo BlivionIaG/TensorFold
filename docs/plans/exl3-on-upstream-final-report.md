@@ -1355,3 +1355,19 @@ No gain outside run variation (about 3% on these rows), so more blocks in flight
 80 lines no longer fit (rank 1 was 0.02 GiB short of its stream budget). The change was removed. The output-hash comparison planned for this test was not usable (the bench prefixes each request with a unique id).
 The 215-280 GB/s the dense kernels reach is therefore not explained by launch shape; the trellis decode work per byte, instruction issue, or the replicated small kernels around them (390 hyper-connection
 launches and 819 matmul launches per step) are the remaining suspects, none profiled at instruction level (ncu was not run).
+
+### The cards are not throttled; the dense kernels are not bandwidth-bound
+
+`nvidia-smi` sampled every 0.5 s on both 5060 Ti while the single-user setup (72 lines, `PARALLEL=1`, no drafts) decoded 512-token replies (567 busy samples at 50% utilization or more, per card):
+
+| | GPU 0 | GPU 1 |
+|---|---|---|
+| SM clock | 2,898 MHz average (max 3,210) | 2,879 MHz (max 3,210) |
+| memory clock | 13,801 MHz average (max 14,001) | 13,801 MHz |
+| power | 102 W average (limit 180) | 103 W |
+| GPU utilization / memory utilization | 95% / 45% | 95% / 47% |
+| performance state | P1 | P1 |
+
+There is no power cap, no memory down-clock (no compute-state P2 cap) and no thermal limit (59-63 C). The GPU is busy 95% of the time but its memory system only 45%, which agrees with the nsys estimate that the dense 5-bit
+and `qmmf` matmuls reach about 215-280 GB/s of the 448 GB/s available: their time goes to latency or instruction issue inside the kernels, not to waiting on DRAM. Decode in this run was 40.6-43.0 tok/s on the short prompt and
+29.9-38.3 tok/s on the 16k prompt (512 tokens, three requests each; the long-prompt spread is wide). Finding out which of latency, instruction issue or occupancy is responsible needs the performance counters (`ncu`), which this account cannot read.
