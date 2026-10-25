@@ -16,6 +16,8 @@ pub const Request = struct {
     origin: usize,
     page_rows: usize,
     shared: bool,
+    /// the indexer scores ran on the 8-row, 256-block tile (four index heads), not the one-row kernel
+    tile: bool = false,
     generation: u64,
     keys: u64,
     values: u64,
@@ -64,7 +66,7 @@ pub const Request = struct {
     }
 
     pub fn scores(self: Request, block: usize) u32 {
-        return @intCast(divUp(@min(parts.scoreStride(self.cap), divUp(self.end(block), wt.index_ratio)), 64));
+        return @intCast(divUp(@min(parts.scoreStride(self.cap), divUp(self.end(block), wt.index_ratio)), if (self.tile) 256 else 64));
     }
 };
 
@@ -122,7 +124,7 @@ pub const Record = struct {
                     record.values[8] != request.values -% (request.origin * row_bytes)) return error.UnsupportedPrefillBinding;
             },
             .scores => {
-                if (!request.sparse(record.block) or params.grid_x != block_rows or params.grid_y != request.scores(record.block) or params.grid_z != 1 or params.block_x != 256 or
+                if (!request.sparse(record.block) or params.grid_x != (if (request.tile) divUp(block_rows, 8) else block_rows) or params.grid_y != request.scores(record.block) or params.grid_z != 1 or params.block_x != 256 or
                     record.values[4] != parts.scoreStride(request.cap)) return error.UnsupportedPrefillBinding;
             },
             .chunks => {
@@ -171,12 +173,13 @@ pub fn requestFor(pass: anytype, linear: bool, layer: usize, rows: usize, sub: u
     const paging = @import("cuda_exl3_kvpage.zig");
     if (paging.trace != null or @import("cuda_exl3_heads.zig").isSplit(&pass.m.layers[layer])) return null;
     const pg = pass.seq.paged orelse return null;
+    const tile = wt.index_heads == 4;
     const glue = pass.tri.own orelse return null;
     const index = wt.attnIndex(layer);
     const plan = if (pg.cfg.shared_lanes == 0) pg.k.plan else (pg.shared_arena.?.kernels orelse return null).plan;
     const remap = if (pg.cfg.shared_lanes == 0) pg.k.remap else (pg.shared_arena.?.kernels orelse return null).remap;
     const request: Request = .{
-        .functions = .{ .prep = @intFromPtr(glue.f.prep.handle), .scores = @intFromPtr(glue.f.scores.handle), .chunks = @intFromPtr(glue.f.chunks.handle), .ahead = @intFromPtr(glue.f.chunks_ahead.handle), .plan = @intFromPtr(plan.handle), .remap = @intFromPtr(remap.handle) },
+        .functions = .{ .prep = @intFromPtr(glue.f.prep.handle), .scores = @intFromPtr((if (tile) glue.f.scores_tile else glue.f.scores).handle), .chunks = @intFromPtr(glue.f.chunks.handle), .ahead = @intFromPtr(glue.f.chunks_ahead.handle), .plan = @intFromPtr(plan.handle), .remap = @intFromPtr(remap.handle) },
         .rows = rows,
         .sub = sub,
         .pos0 = pos0,
@@ -185,6 +188,7 @@ pub fn requestFor(pass: anytype, linear: bool, layer: usize, rows: usize, sub: u
         .origin = pg.win0[index],
         .page_rows = paging.pagingRows(pg.cfg, pg.win0[index], parts.att_rows) catch return null,
         .shared = pg.cfg.shared_lanes != 0,
+        .tile = tile,
         .generation = if (pg.cfg.shared_lanes != 0) pg.shared_sequence.generation else 0,
         .keys = pg.devRows(index, false),
         .values = pg.devRows(index, true),
