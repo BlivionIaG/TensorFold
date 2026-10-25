@@ -1459,3 +1459,22 @@ misses makes the other wait, about 85 us a layer or about 4 ms of a 24 ms step, 
 shared expert would move only the 59/41 asymmetry; the rest is the per-token binomial split of ten picks across two id ranges plus each rank's own
 misses. It would take dynamic balancing (a pick served by whichever rank has it resident, which needs experts held by both ranks) or removing the
 per-layer dependency (a layer split) to recover it. Neither is built.
+
+Balanced decode ownership (`TF_FLASHNEXT_EXL3_BALANCE=1`, off by default; both ranks then pin every routed expert, 42.2 GiB each instead of 21.1, load
+time 47 s to 70 s). The tp=2 expert-parallel split gives rank 0 ids 0-255 and rank 1 ids 256-511 plus the shared expert, so each layer's ten picks fall
+on the ranks by chance and the rank with the more expensive set makes the other wait (about 85 us a layer, 4 ms of a 24 ms step, measured with both
+ranks in one nsys session). Three dealings were tried, same server settings, 72 lines, plain decode, three prompts (balance off: short 45.1, Zig 34.0,
+docs 35.1 tok/s):
+
+- by count only (`fn_exl3_tp_balance`: move the lowest-weight picks of the heavier rank): short 40.7, Zig 31.4, docs 32.7. It sends picks to a
+  rank whose cache does not hold them, so the lost hits cost more than the wait saved.
+- by residency and load (`fn_exl3_tp_deal`; each rank publishes its next layer's line_of flags in a tail of the layer's all-reduce, 2 x 513 floats, so
+  both ranks decide on the same inputs with no extra collective; a pick resident on one rank runs there, on both on the lighter rank, on neither on its
+  home rank): short 42.5, Zig 34.3, docs 35.9. The same request gives different text on two runs (the grouping of the fp32 partial sums follows the
+  cache state), so it is not reproducible.
+- the same with a pick resident on both staying on its home rank unless that rank is clearly heavier (current code): short 43.7, Zig 34.7 (+2.1%), docs
+  36.0 (+2.5%); identical hashes across two runs of the same server. Docs prefill TTFT is about 1.1 s slower (11.9 s against 10.5 s); the Zig prompt is not.
+
+It is neutral to slightly negative on free text and +2% on long prompts, at double the pinned memory and a slower start, and the text depends on the
+cache history. Left in the tree, off by default. The wait is mostly the per-token randomness of which experts a layer needs and where they are
+resident; recovering it needs either replicated hot experts on both ranks (cache capacity) or a layer split.

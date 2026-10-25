@@ -53,6 +53,9 @@ pub const shared_rank: usize = 1;
 /// Rows an `Experts.run` call takes (cuda_exl3_pass.zig's block).
 pub const moe_rows: usize = @import("cuda_exl3_pass.zig").moe_rows;
 
+/// Floats appended to the all-reduce of a balanced layer: each rank's flags for the next layer's pool, 513 a rank (512 flags and a marker).
+pub const tail_floats: usize = 2 * 513;
+
 /// The ids [lo, hi) rank `rank` of `world` holds.
 pub const Rank = struct {
     world: usize,
@@ -114,10 +117,13 @@ pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store, mlp: [
     defer for (&scales) |*l| l.deinit(gpa);
     var buf: [256]u8 = undefined;
     var at: usize = 0;
+    // TF_FLASHNEXT_EXL3_BALANCE: every routed expert (and the shared one on its rank) is held, whoever owns it by id range
+    const lo_e: usize = if (balance()) 0 else r.lo;
+    const hi_e: usize = if (balance()) (if (r.rank == shared_rank) table_n else wt.experts_n) else r.hi;
     if (offload) {
         // the bank's size from the headers of the rank's own experts, then one pinned region for the layer
         var total: usize = 0;
-        for (r.lo..r.hi) |e| {
+        for (lo_e..hi_e) |e| {
             for (projs) |proj| total += align256((try load.mat(store, try expertName(&buf, mlp, e, proj))).trellis.len);
             store.release();
         }
@@ -126,7 +132,7 @@ pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store, mlp: [
         for (x.routed) |*e| e.* = .{ &.{}, &.{}, &.{} };
     }
     const t0 = std.Io.Clock.awake.now(store.io).toNanoseconds();
-    for (r.lo..r.hi) |e| {
+    for (lo_e..hi_e) |e| {
         for (projs, 0..) |proj, j| {
             const m = try load.mat(store, try expertName(&buf, mlp, e, proj));
             if (m.k != ks[j] or m.n != ns[j]) return error.UnexpectedTensor;
@@ -146,7 +152,7 @@ pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store, mlp: [
     // a scale row's fp16 count: suh_g D, svh_g I, suh_u D, svh_u I, suh_d I, svh_d D
     const rows = [6]usize{ dims, width, dims, width, width, dims };
     var base: [6]u64 = undefined;
-    for (&base, scales, rows) |*b, l, n| b.* = try up(x, d, l.items) - r.lo * n * 2;
+    for (&base, scales, rows) |*b, l, n| b.* = try up(x, d, l.items) - lo_e * n * 2;
     x.layer = .{
         // offloaded: the pool's tables replace these at attach (0 until then; a pass refuses an unattached layer)
         .gate = if (offload) 0 else try up(x, d, std.mem.sliceAsBytes(x.trellis[0])),
@@ -179,6 +185,9 @@ pub const Scratch = struct {
     mod: cuda.Module,
     mask_fn: cuda.Function,
     place_fn: cuda.Function,
+    balance_fn: cuda.Function,
+    publish_fn: cuda.Function,
+    deal_fn: cuda.Function,
     /// Masked picks (int32) and weights (fp32) [rows, 11]; the rank's combined branch, then the ranks' sum [rows, D].
     picks: ?cuda.DeviceBuffer = null,
     wts: ?cuda.DeviceBuffer = null,
@@ -195,7 +204,7 @@ pub const Scratch = struct {
         var m = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_tp);
         errdefer m.unload();
         const t = try gpa.create(Scratch);
-        t.* = .{ .gpa = gpa, .d = d, .mod = m, .mask_fn = try m.function("fn_exl3_tp_mask"), .place_fn = try m.function("fn_exl3_tp_place") };
+        t.* = .{ .gpa = gpa, .d = d, .mod = m, .mask_fn = try m.function("fn_exl3_tp_mask"), .place_fn = try m.function("fn_exl3_tp_place"), .balance_fn = try m.function("fn_exl3_tp_balance"), .publish_fn = try m.function("fn_exl3_tp_publish"), .deal_fn = try m.function("fn_exl3_tp_deal") };
         return t;
     }
 
@@ -218,7 +227,7 @@ pub const Scratch = struct {
             t.wts = try cuda.DeviceBuffer.alloc(t.d, rows * slots * 4 + rows * 4);
             t.ones = t.wts.?.ptr + rows * slots * 4;
             try s.d.check(s.d.api.cuMemsetD32Async(t.ones, 0x3f800000, rows, s.handle), "cuMemsetD32Async");
-            t.sum = try cuda.DeviceBuffer.alloc(t.d, rows * dims * 4);
+            t.sum = try cuda.DeviceBuffer.alloc(t.d, rows * dims * 4 + tail_floats * 4);
             t.rows = rows;
         }
         const cap = @min(rows, moe_rows);
@@ -245,6 +254,47 @@ pub const Scratch = struct {
         a.add(@as(c_int, @intCast(r.lo)));
         a.add(@as(c_int, @intCast(r.hi)));
         try cuda.launch.launch(t.mask_fn, .{ .grid = .{ .x = @intCast((n + 255) / 256) }, .block = .{ .x = 256 } }, s, &a);
+    }
+
+    /// Each row's picks dealt between the ranks by count: this rank keeps its own, the others become -1 with weight 0.
+    pub fn deal(t: *const Scratch, s: cuda.Stream, picks: u64, wts: u64, mpicks: u64, mwts: u64, rows: usize, r: Rank) !void {
+        var a: cuda.Args = .{};
+        a.add(picks);
+        a.add(wts);
+        a.add(mpicks);
+        a.add(mwts);
+        a.add(@as(c_int, @intCast(rows)));
+        a.add(@as(c_int, @intCast(slots)));
+        a.add(@as(c_int, @intCast((try Rank.init(2, 0)).hi)));
+        a.add(@as(c_int, @intCast(r.rank)));
+        try cuda.launch.launch(t.balance_fn, .{ .grid = .{ .x = @intCast((rows + 255) / 256) }, .block = .{ .x = 256 } }, s, &a);
+    }
+
+    /// This rank's residency flags for the next layer's pool, into its segment of the tail.
+    pub fn publish(t: *const Scratch, s: cuda.Stream, tail: u64, next_line_of: u64, marker: f32, r: Rank) !void {
+        var a: cuda.Args = .{};
+        a.add(tail);
+        a.add(next_line_of);
+        a.add(marker);
+        a.add(@as(c_int, @intCast(r.rank)));
+        try cuda.launch.launch(t.publish_fn, .{ .grid = .{ .x = 3 }, .block = .{ .x = 256 } }, s, &a);
+    }
+
+    /// Residency-aware dealing of each row's picks (fn_exl3_tp_deal).
+    pub fn dealResident(t: *const Scratch, s: cuda.Stream, picks: u64, wts: u64, mpicks: u64, mwts: u64, own_line_of: u64, tail: u64, rows: usize, marker: f32, r: Rank) !void {
+        var a: cuda.Args = .{};
+        a.add(picks);
+        a.add(wts);
+        a.add(mpicks);
+        a.add(mwts);
+        a.add(own_line_of);
+        a.add(tail);
+        a.add(@as(c_int, @intCast(rows)));
+        a.add(@as(c_int, @intCast(slots)));
+        a.add(@as(c_int, @intCast((try Rank.init(2, 0)).hi)));
+        a.add(@as(c_int, @intCast(r.rank)));
+        a.add(marker);
+        try cuda.launch.launch(t.deal_fn, .{ .grid = .{ .x = @intCast((rows + 255) / 256) }, .block = .{ .x = 256 } }, s, &a);
     }
 
     /// The summed branch [rows, D] into y [rows, 11, D] slot 0 (others 0) and weights {1, 0, ...}.
@@ -294,6 +344,12 @@ pub fn reservedBytes(t: *const Scratch) usize {
     return n;
 }
 
+/// TF_FLASHNEXT_EXL3_BALANCE=1: decode deals the picks between the ranks by count (fn_exl3_tp_balance); both ranks then hold every expert.
+pub fn balance() bool {
+    const value = std.c.getenv("TF_FLASHNEXT_EXL3_BALANCE") orelse return false;
+    return std.mem.eql(u8, std.mem.span(value), "1");
+}
+
 /// TF_FLASHNEXT_EXL3_TP_DIRECT: 0 place the sum into the slot layout, 1 (default) write back from the sum in place, 2 both.
 fn directMode() u8 {
     const value = std.c.getenv("TF_FLASHNEXT_EXL3_TP_DIRECT") orelse return 1;
@@ -316,7 +372,13 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     const mp = t.picks.?.ptr;
     const mw = t.wts.?.ptr;
     const sum = t.sum.?.ptr;
-    try t.mask(st, s.picks, s.wts, mp, mw, n * slots, r);
+    // balanced decode: the planner's residency (own table, and the peer's from the last all-reduce's tail) steers the deal
+    const plan_state = @import("cuda_exl3_dplan.zig").active;
+    const idx: ?usize = if (balance() and r.world == 2) (if (plan_state) |d| (if (x.pool) |pool| d.indexOf(pool) else null) else null) else null;
+    const dealt = if (idx) |i| i < 48 else false;
+    const tail = sum + @as(u64, n) * dims * 4;
+    const marker: f32 = if (idx) |i| @as(f32, @floatFromInt(i + 1)) + 0.25 else 0;
+    if (dealt) try t.dealResident(st, s.picks, s.wts, mp, mw, @import("cuda_exl3_dplan.zig").lineOfPtr(plan_state.?, idx.?), tail, n, marker, r) else if (balance() and r.world == 2) try t.deal(st, s.picks, s.wts, mp, mw, n, r) else try t.mask(st, s.picks, s.wts, mp, mw, n * slots, r);
     if (x.needsPool()) return error.Exl3PoolNotAttached;
     const sc = try cuda.exl3_experts.scratch(t.moe.?.ptr, x.layer, t.moe_cap, slots);
     var r0: usize = 0;
@@ -335,7 +397,11 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
         }
         try ex.run(st, x.layer, xin, dims, .bf16, mp + r0 * slots * 4, mw + r0 * slots * 4, rows, sum + r0 * dims * 4, sc);
     }
-    try c.sum(st, sum, n * dims);
+    if (dealt) {
+        const next = (idx.? + 1) % 48;
+        try t.publish(st, tail, @import("cuda_exl3_dplan.zig").lineOfPtr(plan_state.?, next), @as(f32, @floatFromInt(next + 1)) + 0.25, r);
+        try c.sum(st, sum, n * dims + tail_floats);
+    } else try c.sum(st, sum, n * dims);
     // the write-back reads the sum with weight 1 itself: fma(sum, 1, 0) is the bits `place`'s slot 0 gave it
     const mode = directMode();
     if (comptime @hasField(@TypeOf(p.*), "pending_tp")) if (p.tp_direct and mode != 0) {
