@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub const max_layers = 48;
-pub const max_width = 16;
+pub const max_width = @import("cuda_mtp.zig").max_rows;
 
 pub fn supportsWindow(width: usize) bool {
     return width >= 2 and width <= max_width;

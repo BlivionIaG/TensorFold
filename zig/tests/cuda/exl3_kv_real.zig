@@ -369,7 +369,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
         try ib.upload(idw * 4, std.mem.sliceAsBytes(&[_]i32{ pr.nk, pr.spr }));
         try qb.upload(0, std.mem.sliceAsBytes(pr.q));
         const chunks = if (pr.spr != 0) nch else (pr.pos + 1 + 511) / 512;
-        try g.attnChunks(r.stream, qb.ptr, r.kc[ai].ptr, r.vc[ai].ptr, posb.ptr, s.po, s.pm, s.pl, ib.ptr, ib.ptr + idw * 4, ib.ptr + idw * 4 + 4, 1, kv_heads, chunks, true);
+        try g.attnChunks(r.stream, qb.ptr, r.kc[ai].ptr, r.vc[ai].ptr, posb.ptr, s.po, s.pm, s.pl, ib.ptr, ib.ptr + idw * 4, ib.ptr + idw * 4 + 4, 1, kv_heads, chunks, true, .{});
         try g.attnMerge(r.stream, s.po, s.pm, s.pl, posb.ptr, outb.ptr, ib.ptr + idw * 4, ib.ptr + idw * 4 + 4, 1, kv_heads, true);
         const again = try fx.download(u16, gpu, r.stream, outb.ptr, q_heads * head_dim);
         replay_equal += @intFromBool(std.mem.eql(u16, again, pr.ao));

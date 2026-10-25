@@ -116,8 +116,8 @@ pub fn attnRows(p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anyty
     const vc = p.seq.vc[ai].ptr;
     const ikc = p.seq.ikc[ai].ptr;
     const pooled = p.seq.pooled[ai].ptr;
-    try p.tri.attnPrep(pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kc, vc, at.iq, ikc, s.dummy, s.dummy, wt.eps, n, 0);
-    try p.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, wt.eps, n);
+    try p.tri.attnPrep(pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kc, vc, at.iq, ikc, s.dummy, s.dummy, wt.eps, n, 0, .{});
+    try p.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, wt.eps, n, .{});
     const nb = parts.scoreStride(p.seq.cap);
     var r0: usize = 0;
     var b: usize = 0;
@@ -132,7 +132,7 @@ pub fn attnRows(p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anyty
         try select(p, at.iq + r0 * wt.index_heads * wt.index_dim * 2, pooled, pos, nb, m, ends);
         if (trace) |t| try t.record(p.stream, ai, p.pos0 + r0, m, p.lanes.len > 0, s.qids, s.qnk, s.qspr);
         const chunks = cdiv(@min(ends, wt.dense_keys), 512);
-        try p.tri.attnChunks(at.q + r0 * wt.q_heads * head_dim * 2, kc, vc, pos, s.po, s.pm, s.pl, s.qids, s.qnk, s.qspr, m, kv_heads, chunks, true);
+        try p.tri.attnChunks(at.q + r0 * wt.q_heads * head_dim * 2, kc, vc, pos, s.po, s.pm, s.pl, s.qids, s.qnk, s.qspr, m, kv_heads, chunks, true, .{});
         try p.tri.attnMerge(s.po, s.pm, s.pl, pos, at.ao + r0 * wt.out_k * 2, s.qnk, s.qspr, m, kv_heads, true);
     }
 }
@@ -140,7 +140,7 @@ pub fn attnRows(p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anyty
 /// Block scores (rows past `top` complete blocks) and fn_qsa_select into s.qids / qnk / qspr, as upstream.
 pub fn select(p: anytype, iq: u64, pooled: u64, pos: u64, nb: usize, m: usize, ends: usize) !void {
     const s = p.s;
-    if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)));
+    if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)), .{});
     var a: cuda.Args = .{};
     a.add(p.seq.scores);
     a.add(pos);
@@ -786,8 +786,8 @@ pub const Paged = struct {
         const vd = pg.devV(ai);
         const ikc = p.seq.ikc[ai].ptr;
         const pooled = p.seq.pooled[ai].ptr;
-        try p.tri.attnPrep(pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kd -% w0 * row_bytes, vd -% w0 * row_bytes, at.iq, ikc, s.dummy, s.dummy, wt.eps, n, 0);
-        try p.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, wt.eps, n);
+        try p.tri.attnPrep(pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kd -% w0 * row_bytes, vd -% w0 * row_bytes, at.iq, ikc, s.dummy, s.dummy, wt.eps, n, 0, .{});
+        try p.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, wt.eps, n, .{});
         const nb = parts.scoreStride(p.seq.cap);
         var r0: usize = 0;
         var b: usize = 0;
@@ -811,7 +811,7 @@ pub const Paged = struct {
                 if (ends / ratio > top) {
                     try pg.page(p.stream, ai, ids, nk, spr, count);
                 } else if (w0 != 0) return error.KvPageWindow;
-                try p.tri.attnChunks(at.q + (r0 + first) * wt.q_heads * head_dim * 2, kd, vd, pos, s.po, s.pm, s.pl, ids, nk, spr, count, kv_heads, chunks, true);
+                try p.tri.attnChunks(at.q + (r0 + first) * wt.q_heads * head_dim * 2, kd, vd, pos, s.po, s.pm, s.pl, ids, nk, spr, count, kv_heads, chunks, true, .{});
                 try p.tri.attnMerge(s.po, s.pm, s.pl, pos, at.ao + (r0 + first) * wt.out_k * 2, nk, spr, count, kv_heads, true);
                 first += count;
             }
@@ -1097,10 +1097,10 @@ test "exl3: kvpage real attention dispatch preserves selection and slices sparse
             return cuda.abi.success;
         }
 
-        fn attnPrep(_: @This(), _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: f32, _: usize, _: usize) !void {}
-        fn qsaPool(_: @This(), _: u64, _: u64, _: u64, _: u64, _: u64, _: f32, _: usize) !void {}
-        fn qsaScores(_: @This(), _: u64, _: u64, _: u64, _: u64, _: usize, _: usize, _: usize) !void {}
-        fn attnChunks(_: @This(), query: u64, _: u64, _: u64, pos: u64, _: u64, _: u64, _: u64, ids: u64, nk: u64, spr: u64, rows: usize, _: usize, chunks: usize, qsa: bool) !void {
+        fn attnPrep(_: @This(), _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: u64, _: f32, _: usize, _: usize, _: @import("cuda_glue.zig").Pg) !void {}
+        fn qsaPool(_: @This(), _: u64, _: u64, _: u64, _: u64, _: u64, _: f32, _: usize, _: @import("cuda_glue.zig").Pg) !void {}
+        fn qsaScores(_: @This(), _: u64, _: u64, _: u64, _: u64, _: usize, _: usize, _: usize, _: @import("cuda_glue.zig").Pg) !void {}
+        fn attnChunks(_: @This(), query: u64, _: u64, _: u64, pos: u64, _: u64, _: u64, _: u64, ids: u64, nk: u64, spr: u64, rows: usize, _: usize, chunks: usize, qsa: bool, _: @import("cuda_glue.zig").Pg) !void {
             try std.testing.expectEqual(query_base + consumed * wt.q_heads * head_dim * 2, query);
             try std.testing.expectEqual(pos_base + (selected - 1) * 16, pos);
             try std.testing.expectEqual(ids_base + (consumed % att_rows) * idw * 4, ids);

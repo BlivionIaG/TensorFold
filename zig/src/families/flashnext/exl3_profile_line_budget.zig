@@ -442,7 +442,7 @@ test "profile budget: fewer picks bytes also retain the exact uniform budget" {
 test "profile budget: TP2 line count above the local expert bank is rejected for caller fallback" {
     const histogram: [experts]u32 = @splat(1);
     var request = testRequest(&.{&histogram}, &.{8}, 257, 10);
-    var output: [1]usize = .{ 257 };
+    var output: [1]usize = .{257};
     try std.testing.expectError(error.InvalidBounds, allocate(std.testing.allocator, request, &output));
     try std.testing.expectEqual(@as(usize, 257), output[0]);
     request.uniform_lines = 256;

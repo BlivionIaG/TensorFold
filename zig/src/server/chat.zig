@@ -7,6 +7,7 @@ const fields_mod = @import("fields.zig");
 const reply_text = @import("reply_text.zig");
 const tool_stream = @import("tool_stream.zig");
 const tool_parse = @import("tool_parse.zig");
+const tool_lfm2 = @import("tool_lfm2.zig");
 const prompt_mod = @import("prompt.zig");
 const log = @import("log.zig");
 const ids = @import("ids.zig");
@@ -17,7 +18,6 @@ const Mailbox = @import("mailbox.zig").Mailbox;
 const Value = json.Value;
 const Cx = errors.Cx;
 const Allocator = std.mem.Allocator;
-
 pub const Prompt = union(enum) { text: []const u8, ids: []const u32 };
 
 /// What a route hands the reply: Python's chat() arguments.
@@ -70,6 +70,31 @@ pub const Failure = error{ Refused, Cancelled, Failed, OutOfMemory };
 
 const nowNs = clock.nowNs;
 const seconds = clock.seconds;
+
+test "Server recovery: token staging allocation failure ends the loop without consuming tokens" {
+    for (0..2) |fail_index| {
+        var m: Mailbox = .{ .io = std.testing.io, .gpa = std.testing.allocator, .finished = true };
+        defer m.deinit();
+        try m.tokens.append(std.testing.allocator, 42);
+        try m.chunks.append(std.testing.allocator, 1);
+        try m.rows.append(std.testing.allocator, .{ .token = 42, .logprob = -1 });
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = fail_index });
+        var g: Generation = undefined;
+        g.a = failing.allocator();
+        g.box = &m;
+        g.chunk_index = 0;
+        g.consumed = 0;
+        g.lp = .{};
+        const Gone = struct {
+            pub fn check(_: @This()) bool {
+                return false;
+            }
+        };
+        try std.testing.expectError(error.OutOfMemory, g.loop(Gone{}));
+        try std.testing.expectEqual(@as(usize, 0), g.consumed);
+        try std.testing.expectEqual(@as(usize, 0), g.chunk_index);
+    }
+}
 
 /// Python's ``bool(fields.get(key))`` on the sampling fields.
 fn flag(f: Value, key: []const u8) ?bool {
@@ -160,6 +185,8 @@ pub fn prepare(srv: *Server, cx: *Cx, input: Input, gone: anytype) Failure!Prepa
             request.think_close = srv.think_close;
             request.think_end = srv.think_close_end;
         }
+        // The answer quota is separate only on engines that enforce it.
+        if (srv.info.answer_limit) @import("thinking_reserve.zig").apply(&request, srv.config.thinking_reserve, if (window > 0) window - n else std.math.maxInt(u32), srv.think_close_end);
     }
     if (input.logprobs) |count| request.logprobs = try @import("logprobs.zig").admit(srv, cx, thinking, request.think_budget, count);
     request.prompt_logprobs = input.prompt_logprobs;
@@ -201,6 +228,7 @@ pub fn generate(srv: *Server, cx: *Cx, prepared: Prepared, sink: ?Sink, gone: an
         error.Busy => cx.fail(.capacity, "the engine is busy; retry shortly", .{}),
         error.Closed => cx.fail(.capacity, "the engine is unavailable; retry after it restarts", .{}),
         error.InvalidSpans => cx.fail(.request, "the prompt span layout is invalid", .{}),
+        error.InvalidRequest => cx.fail(.request, "the request does not match the loaded model", .{}),
         error.Stale => cx.fail(.server, "{s}", .{api.stale_message}),
     };
     release(srv, preparing); // a background request waits only while a foreground one prepares
@@ -319,12 +347,13 @@ const Generation = struct {
             }
             try fresh.append(g.a, t);
         }
-        const all = try g.visible.extend(g.a, g.srv.text, decodeText, fresh.items);
+        const all = try g.visible.extend(g.a, g.srv.text, reply_text.decodeText, fresh.items);
         const text = g.stops.visible(all, true);
         if (g.visible.pending()) return; // a character still split across tokens
         var answer = text;
         if (g.thinking) {
-            const split = try reply_text.splitThinking(g.a, text, false, g.srv.markers);
+            const close = try g.visible.closeOf(g.a, reply_text.decodeText, g.srv.text, g.srv.close_id);
+            const split = try reply_text.splitThinkingAt(g.a, text, false, g.srv.markers, close);
             const piece = g.streamed_reasoning.after(split.reasoning, true);
             if (piece.len > 0) {
                 try g.streamed_reasoning.set(g.a, split.reasoning, piece);
@@ -332,6 +361,7 @@ const Generation = struct {
             }
             answer = split.answer;
         }
+        answer = try tool_lfm2.dsml(g.a, answer, g.tools, false); // the answer only, so a call the reasoning mentions is not made
         const shown = if (g.calls != null) try reply_text.hideInto(g.a, &g.hidden, answer, false) else answer;
         const vis = reply_text.heldBack(reply_text.streamingVisible(shown), g.calls != null);
         const copied = @intFromPtr(vis.ptr) >= @intFromPtr(g.hidden.items.ptr) and @intFromPtr(vis.ptr) <= @intFromPtr(g.hidden.items.ptr) + g.hidden.items.len;
@@ -384,9 +414,16 @@ const Generation = struct {
             var ended = false;
             if (g.chunk_index < m.chunks.items.len) {
                 const end = m.chunks.items[g.chunk_index];
+                chunk = g.a.dupe(u32, m.tokens.items[g.consumed..end]) catch |e| {
+                    m.mutex.unlock(m.io);
+                    return e;
+                };
+                if (g.lp) |*l| l.rows.appendSlice(g.a, m.rows.items[g.consumed..end]) catch |e| {
+                    g.a.free(chunk.?);
+                    m.mutex.unlock(m.io);
+                    return e;
+                };
                 g.chunk_index += 1;
-                chunk = g.a.dupe(u32, m.tokens.items[g.consumed..end]) catch null;
-                if (g.lp) |*l| l.rows.appendSlice(g.a, m.rows.items[g.consumed..end]) catch {};
                 g.consumed = end;
             } else if (m.finished) {
                 ended = true;
@@ -424,6 +461,7 @@ const Generation = struct {
         const reason: []const u8 = g.reason orelse switch (m.reason) {
             .stop => "stop",
             .length => "length",
+            .silence => return cx.other("the text engine returned a speech-only finish reason"),
             .cancelled => "cancelled",
             .failed => return cx.other(if (m.message.len > 0) try a.dupe(u8, m.message) else "the reply failed"),
         };
@@ -437,7 +475,7 @@ const Generation = struct {
         var content: []const u8 = text;
         var reasoning: ?[]const u8 = null;
         if (g.thinking) {
-            const split = try reply_text.splitThinking(a, text, true, g.srv.markers);
+            const split = try reply_text.splitThinkingTokens(a, reply_text.decodeText, g.srv.text, text, true, g.srv.markers, content_tokens, g.srv.close_id);
             const r = reply_text.pyStrip(split.reasoning);
             reasoning = if (r.len > 0) r else null;
             content = split.answer;
@@ -446,6 +484,7 @@ const Generation = struct {
             content = h.content;
             reasoning = h.reasoning;
         }
+        content = try tool_lfm2.dsml(a, content, g.tools, true);
         if (g.sink) |sink| {
             const thought = g.streamed_reasoning.text.items;
             if (reasoning) |r| if (std.mem.startsWith(u8, r, thought) and r.len > thought.len)
@@ -551,10 +590,6 @@ const StopHook = struct {
         return false;
     }
 };
-
-fn decodeText(t: anytype, a: Allocator, tokens: []const u32) ![]u8 {
-    return t.decode(a, tokens);
-}
 
 /// ``{key: text}``: a streamed delta (role, content or reasoning_content).
 pub fn deltaOf(a: Allocator, key: []const u8, text: []const u8) Allocator.Error!Value {

@@ -237,7 +237,7 @@ fn kernelMode(gpu: check.Gpu) !void {
         const uvc = try r.out(end * kv_heads * head_dim * 2);
         const uiq = try r.out(rows * index_heads * index_dim * 2);
         const uik = try r.out(end * index_dim * 2);
-        try g.attnPrep(r.s, dp, dpos, dqw, dkw, diw, dinv, uq, ukc, uvc, uiq, uik, eps, rows);
+        try g.attnPrep(r.s, dp, dpos, dqw, dkw, diw, dinv, uq, ukc, uvc, uiq, uik, eps, rows, .{});
         const ukc_h = try r.back(u16, ukc, end * kv_heads * head_dim);
         const uvc_h = try r.back(u16, uvc, end * kv_heads * head_dim);
         for ([_]bool{ false, true }) |rot| {
@@ -326,7 +326,7 @@ fn kernelMode(gpu: check.Gpu) !void {
         const dkc = try r.dev(std.mem.sliceAsBytes(kc));
         const dvc = try r.dev(std.mem.sliceAsBytes(vc));
         const base_out = try r.out(rows * q_heads * head_dim * 2);
-        try g.attnChunks(r.s, try r.dev(std.mem.sliceAsBytes(q)), dkc, dvc, dpos, po, pm, pl, dids, dnk, dspr, rows, kv_heads, chunks, true);
+        try g.attnChunks(r.s, try r.dev(std.mem.sliceAsBytes(q)), dkc, dvc, dpos, po, pm, pl, dids, dnk, dspr, rows, kv_heads, chunks, true, .{});
         try g.attnMerge(r.s, po, pm, pl, dpos, base_out, dnk, dspr, rows, kv_heads, true);
         var e_base: Err = .{};
         for (try r.back(u16, base_out, want.len), want) |x, w| addErr(&e_base, bf(x), w);
@@ -366,7 +366,7 @@ fn kernelMode(gpu: check.Gpu) !void {
                     tileRow(codes_v[i * head_dim ..][0..head_dim], sc_v[i * ng ..][0..ng], tv[i * head_dim ..][0..head_dim]);
                 }
                 const up = try r.out(rows * q_heads * head_dim * 2);
-                try g.attnChunks(r.s, dq, try r.dev(std.mem.sliceAsBytes(tk)), try r.dev(std.mem.sliceAsBytes(tv)), dpos, po, pm, pl, dids, dnk, dspr, rows, kv_heads, chunks, true);
+                try g.attnChunks(r.s, dq, try r.dev(std.mem.sliceAsBytes(tk)), try r.dev(std.mem.sliceAsBytes(tv)), dpos, po, pm, pl, dids, dnk, dspr, rows, kv_heads, chunks, true, .{});
                 try g.attnMerge(r.s, po, pm, pl, dpos, up, dnk, dspr, rows, kv_heads, true);
                 try check.sameBytes("kv8 attention == upstream's chunk/merge on the dequantised bf16 cache", std.mem.sliceAsBytes(got), std.mem.sliceAsBytes(try r.back(u16, up, want.len)));
             }
@@ -450,7 +450,7 @@ const Attn = struct {
             try a.k8.attnChunks(a.s, a.q, a.p.c, a.pos, a.po, a.pm, a.pl, a.ids, a.nk, a.spr, a.rows, q_heads, kv_heads, a.chunks, true);
             try a.k8.attnMerge(a.s, a.po, a.pm, a.pl, a.pos, a.out, a.nk, a.spr, a.rows, q_heads, kv_heads, true, true);
         } else {
-            try a.g.attnChunks(a.s, a.q, a.p.kc, a.p.vc, a.pos, a.po, a.pm, a.pl, a.ids, a.nk, a.spr, a.rows, kv_heads, a.chunks, true);
+            try a.g.attnChunks(a.s, a.q, a.p.kc, a.p.vc, a.pos, a.po, a.pm, a.pl, a.ids, a.nk, a.spr, a.rows, kv_heads, a.chunks, true, .{});
             try a.g.attnMerge(a.s, a.po, a.pm, a.pl, a.pos, a.out, a.nk, a.spr, a.rows, kv_heads, true);
         }
     }
@@ -709,7 +709,7 @@ fn benchMode(gpu: check.Gpu, cap: usize) !void {
             inv: u64,
             rows: usize,
             fn go(p: *const @This()) anyerror!void {
-                try p.g.qsaPool(p.s, p.ikc, p.pooled, p.pos, p.kw, p.inv, 1e-6, p.rows);
+                try p.g.qsaPool(p.s, p.ikc, p.pooled, p.pos, p.kw, p.inv, 1e-6, p.rows, .{});
             }
         };
         for ([_]usize{ 1, 256 }) |rows| {

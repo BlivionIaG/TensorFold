@@ -11,6 +11,8 @@ const limits_k = @import("metal_limits.zig");
 const h3_k = @import("metal_h3.zig");
 const h3_topk = @import("metal_h3_topk.zig");
 const drama3_k = @import("metal_drama3.zig");
+const glm_eh_k = @import("metal_glm_eh.zig");
+const glm_rows_k = @import("metal_glm_rows.zig");
 
 const flash_pool = @import("metal_flashnext_pool.zig");
 const flash = @import("metal_flashnext.zig");
@@ -159,7 +161,7 @@ pub fn main(init: std.process.Init) !u8 {
     var flash_list: [8]flash.Probe = undefined;
     var flash_made: usize = 0;
     defer for (flash_list[0..flash_made]) |*probe| probe.deinit();
-    var pool_list: [4]flash_pool.Probe = undefined;
+    var pool_list: [6]flash_pool.Probe = undefined;
     var pool_made: usize = 0;
     defer for (pool_list[0..pool_made]) |*probe| probe.deinit();
     for (std.enums.values(tf.flashnext_vision_contract.Which)) |w| for ([_]f64{ 0, 4 }) |factor| {
@@ -185,6 +187,12 @@ pub fn main(init: std.process.Init) !u8 {
     if (wanted(o, drama3_k.spec().name)) {
         d3norm = try drama3_k.Norm.init(a, device, queue);
         try kernels.append(a, d3norm.?.kernel());
+    }
+    var glm_eh: ?glm_eh_k.Nax = null;
+    defer if (glm_eh) |*n| n.deinit();
+    if (wanted(o, glm_eh_k.spec().name)) {
+        glm_eh = try glm_eh_k.Nax.init(a, device, queue);
+        try kernels.append(a, glm_eh.?.kernel());
     }
     var topk: ?topk_k.TopK = null;
     defer if (topk) |*t| t.deinit();
@@ -226,6 +234,9 @@ pub fn main(init: std.process.Init) !u8 {
         ntiles += 1;
     };
     for (tiles[0..ntiles]) |*x| try kernels.append(a, x.kernel());
+    var glm_windows: glm_rows_k.Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer glm_windows.deinit();
+    try glm_windows.collect(o.only);
     var t: g.Tally = .{};
     const t0 = std.Io.Clock.awake.now(init.io);
     if (o.gates) {

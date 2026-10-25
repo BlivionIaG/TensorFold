@@ -127,6 +127,7 @@ pub fn takeDraft(stream: cuda.Stream, cap: usize, draft_n: usize, rows: usize) !
     if (!enabled()) return null;
     for (&drafts) |*slot| if (slot.*) |*d| if (d.cap == cap and d.dlogits.len == draft_n * 2 and d.rows_cap == @max(rows, @import("cuda_mtp.zig").max_rows)) {
         var x = d.*;
+        x.stream = stream;
         x.verify_cache.invalidate();
         slot.* = null;
         for ([_]cuda.DeviceBuffer{ x.kc, x.vc, x.ikc, x.pooled }) |b| try b.fill8(0, stream.handle);

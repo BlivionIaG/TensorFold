@@ -4,6 +4,8 @@ const tokenizer = @import("tokenizer");
 const template = @import("template");
 const json = @import("json");
 const model_text = @import("model_text.zig");
+const dsv41_chat = @import("dsv41_chat");
+const dsv41 = if (@hasDecl(dsv41_chat, "template")) dsv41_chat.template else dsv41_chat;
 const Value = json.Value;
 const Allocator = std.mem.Allocator;
 
@@ -12,6 +14,7 @@ pub const HfText = struct {
     arena: std.heap.ArenaAllocator,
     tok: tokenizer.Tokenizer,
     source: []const u8 = "",
+    native_deepseek: bool = false,
     tool_source: []const u8 = "",
     compiled: ?template.Compiled = null,
     tool_compiled: ?template.Compiled = null,
@@ -35,7 +38,18 @@ pub const HfText = struct {
         // each request renders its chat up to three times, and a chat's earlier messages come back every turn
         t.tok.memo = try tokenizer.Memo.create(gpa, 64 << 20);
         const config = readJson(io, a, dir, "tokenizer_config.json");
-        const model_config = readJson(io, a, dir, "config.json");
+        const model_config = readEosJson(io, a, dir, "config.json", 64 << 20) catch |e| {
+            problem.* = try std.fmt.allocPrint(pa, "cannot read config.json EOS ({s})", .{@errorName(e)});
+            return error.Load;
+        };
+        const generation = readEosJson(io, a, dir, "generation_config.json", 1 << 20) catch |e| {
+            problem.* = try std.fmt.allocPrint(pa, "cannot read generation_config.json EOS ({s})", .{@errorName(e)});
+            return error.Load;
+        };
+        if (model_config == .object) if (model_config.object.get("model_type")) |kind| {
+            t.native_deepseek = template_override == null and kind == .string and
+                (std.mem.eql(u8, kind.string, "deepseek_v4") or std.mem.eql(u8, kind.string, "deepseek_v41"));
+        };
         if (template_override) |path| {
             t.source = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(16 << 20)) catch |e| {
                 problem.* = try std.fmt.allocPrint(pa, "cannot read chat template override ({s})", .{@errorName(e)});
@@ -43,7 +57,11 @@ pub const HfText = struct {
             };
         } else try t.readTemplates(io, a, dir, config);
         t.specials = try specialsOf(a, config);
-        t.eos = try t.eosIds(a, model_config, config);
+        t.eos = t.eosIds(a, model_config, generation, config, t.tok.id_to_token.tokens.items.len) catch |e| {
+            if (e == error.OutOfMemory) return e;
+            problem.* = try std.fmt.allocPrint(pa, "invalid checkpoint EOS ({s})", .{@errorName(e)});
+            return error.Load;
+        };
         try t.readPostProcessor(io, a, dir);
         if (t.source.len > 0) {
             var diag: template.Diag = .{};
@@ -69,6 +87,18 @@ pub const HfText = struct {
         const path = std.fs.path.join(a, &.{ dir, name }) catch return .null;
         const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(64 << 20)) catch return .null;
         return std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{}) catch .null;
+    }
+
+    /// Optional EOS documents are absent only on FileNotFound; malformed present data refuses the text load.
+    fn readEosJson(io: std.Io, a: Allocator, dir: []const u8, name: []const u8, limit: usize) !std.json.Value {
+        const path = try std.fs.path.join(a, &.{ dir, name });
+        const bytes = std.Io.Dir.cwd().readFileAlloc(io, path, a, .limited(limit)) catch |e| switch (e) {
+            error.FileNotFound => return .null,
+            else => return e,
+        };
+        const doc = try std.json.parseFromSliceLeaky(std.json.Value, a, bytes, .{ .allocate = .alloc_always });
+        if (doc != .object) return error.BadEos;
+        return doc;
     }
 
     /// chat_template.jinja, else chat_template.json, else tokenizer_config.json's (named: "default", and "tool_use").
@@ -124,30 +154,23 @@ pub const HfText = struct {
         return .{ .object = out };
     }
 
-    /// Model end ids plus the tokenizer's chat end, when both are declared.
-    fn eosIds(t: *HfText, a: Allocator, model_config: std.json.Value, config: std.json.Value) ![]const u32 {
+    /// Shared model/generation EOS, plus the tokenizer's chat end when declared.
+    fn eosIds(t: *HfText, a: Allocator, model: std.json.Value, generation: std.json.Value, config: std.json.Value, vocab: usize) ![]const u32 {
+        const bound = try tokenizer.eos.vocabulary(model, vocab);
+        const ids = try tokenizer.eos.resolve(a, model, generation, bound);
+        defer a.free(ids);
         var out: std.ArrayList(u32) = .empty;
-        if (model_config == .object) {
-            const holders = [_]?std.json.Value{ model_config.object.get("eos_token_id"), if (model_config.object.get("text_config")) |tc| (if (tc == .object) tc.object.get("eos_token_id") else null) else null };
-            for (holders) |h| {
-                const v = h orelse continue;
-                switch (v) {
-                    .integer => |i| try out.append(a, @intCast(i)),
-                    .array => |list| for (list.items) |x| if (x == .integer) try out.append(a, @intCast(x.integer)),
-                    else => {},
-                }
-                if (out.items.len > 0) break;
-            }
-        }
+        errdefer out.deinit(a);
+        try out.appendSlice(a, ids);
         if (config == .object) if (config.object.get("eos_token")) |e| {
             const piece = switch (e) {
-                .string => |s| s,
+                .string => |value| value,
                 .object => |o| if (o.get("content")) |c| (if (c == .string) c.string else "") else "",
                 else => "",
             };
-            if (t.tok.specialTokenId(piece)) |id| if (std.mem.indexOfScalar(u32, out.items, id) == null) try out.append(a, id);
+            if (t.tok.specialTokenId(piece)) |id| try tokenizer.eos.appendId(a, &out, id, bound);
         };
-        return out.items;
+        return out.toOwnedSlice(a);
     }
 
     /// The tokens ``add_special_tokens`` adds: TemplateProcessing's single template, or Bert and Roberta's cls and sep.
@@ -207,11 +230,13 @@ pub const HfText = struct {
             .token_string = tokenStringFn,
             .vocab_size = vocabFn,
             .eos_ids = eosFn,
+            .added = addedFn,
             .render = renderFn,
             .template_source = sourceFn,
             .special = specialFn,
             .token_bytes = tokenBytesFn,
             .encode_plain = encodePlainFn,
+            .encode_masked = encodeMaskedFn,
         } };
     }
 
@@ -219,6 +244,10 @@ pub const HfText = struct {
         const t = self(ctx);
         const piece = t.tok.id_to_token.get(id) orelse return false;
         return t.tok.specials.contains(piece);
+    }
+
+    fn addedFn(ctx: *anyopaque, id: u32) bool {
+        return self(ctx).tok.isAdded(id);
     }
 
     fn self(ctx: *anyopaque) *HfText {
@@ -234,6 +263,19 @@ pub const HfText = struct {
 
     fn encodePlainFn(ctx: *anyopaque, a: Allocator, s: []const u8) model_text.Error![]u32 {
         return self(ctx).tok.encodePlain(a, s) catch |e| if (e == error.OutOfMemory) error.OutOfMemory else error.Template;
+    }
+
+    fn encodeMaskedFn(ctx: *anyopaque, a: Allocator, s: []const u8, spans: []const model_text.Span, problem: *[]const u8) model_text.Error![]u32 {
+        return self(ctx).tok.encodeMasked(a, s, spans) catch |err| {
+            if (err == error.OutOfMemory) return error.OutOfMemory;
+            problem.* = if (err == error.UnsafeNormalizedAddedTokenMask)
+                "normalized added tokens cannot be matched safely through this normalizer with request text"
+            else if (err == error.UnsafeAddedTokenMask)
+                "request text tokenizes to an added-token id in this tokenizer; the prompt cannot be encoded safely"
+            else
+                "the tokenizer cannot encode this prompt with request byte provenance";
+            return error.Template;
+        };
     }
 
     fn decodeFn(ctx: *anyopaque, a: Allocator, ids: []const u32) Allocator.Error![]u8 {
@@ -263,31 +305,60 @@ pub const HfText = struct {
 
     fn sourceFn(ctx: *anyopaque) []const u8 {
         const t = self(ctx);
-        return if (t.tool_source.len > 0) std.mem.concat(t.arena.allocator(), u8, &.{ t.source, " ", t.tool_source }) catch t.source else t.source;
+        const source = if (t.native_deepseek and t.compiled == null) "enable_thinking thinking_mode reasoning_effort [\"none\", \"minimal\", \"low\", \"medium\", \"high\", \"xhigh\", \"max\"] " ++ dsv41.BOS ++ dsv41.USER ++ dsv41.ASSISTANT ++ dsv41.CALLS_OPEN else t.source;
+        return if (t.tool_source.len > 0) std.mem.concat(t.arena.allocator(), u8, &.{ source, " ", t.tool_source }) catch source else source;
     }
 
-    fn renderFn(ctx: *anyopaque, a: Allocator, messages: Value, options: model_text.RenderOptions, problem: *[]const u8) model_text.Error![]u8 {
+    fn renderDeepseek(_: *HfText, a: Allocator, messages: Value, options: model_text.RenderOptions, problem: *[]const u8) model_text.Error!model_text.Rendered {
+        var opts: dsv41.Options = .{ .thinking = options.enable_thinking, .add_generation_prompt = options.add_generation_prompt };
+        if (options.tools) |tools| {
+            if (tools != .array) {
+                problem.* = "tools must be a list";
+                return error.Template;
+            }
+            opts.tools = tools.array;
+        }
+        if (options.reasoning_effort) |effort| {
+            const budget = dsv41.effortOf(effort) orelse {
+                problem.* = "reasoning_effort must be 1-100 or low / medium / high / max";
+                return error.Template;
+            };
+            opts.thinking = options.enable_thinking and budget != null;
+            opts.budget = budget orelse dsv41.default_budget;
+        }
+        var diag: dsv41.Problem = .{};
+        const out = dsv41.renderProvenance(a, messages, opts, &diag) catch |err| {
+            if (err == error.OutOfMemory) return error.OutOfMemory;
+            problem.* = diag.message;
+            return error.Template;
+        };
+        return .{ .text = out.text, .spans = out.spans };
+    }
+
+    fn renderFn(ctx: *anyopaque, a: Allocator, messages: Value, options: model_text.RenderOptions, problem: *[]const u8) model_text.Error!model_text.Rendered {
         const t = self(ctx);
         const compiled = if (options.tools != null and t.tool_compiled != null) &t.tool_compiled.? else if (t.compiled) |*c| c else {
+            if (t.native_deepseek) return t.renderDeepseek(a, messages, options, problem);
             problem.* = "this checkpoint has no chat template: send a completion prompt instead";
             return error.Template;
         };
-        var context: std.json.ObjectMap = .empty;
+        var globals: std.json.ObjectMap = .empty;
         if (t.specials == .object) {
             var it = t.specials.object.iterator();
-            while (it.next()) |e| try context.put(a, e.key_ptr.*, e.value_ptr.*);
+            while (it.next()) |e| try globals.put(a, e.key_ptr.*, e.value_ptr.*);
         }
+        try globals.put(a, "thinking_mode", .{ .string = if (options.enable_thinking) "thinking" else "chat" });
+        var context: std.json.ObjectMap = .empty;
         try context.put(a, "enable_thinking", .{ .bool = options.enable_thinking });
-        try context.put(a, "thinking_mode", .{ .string = if (options.enable_thinking) "thinking" else "chat" });
         if (options.reasoning_effort) |e| try context.put(a, "reasoning_effort", .{ .string = e });
         var diag: template.Diag = .{};
         const tools: std.json.Value = if (options.tools) |tl| try toStd(a, tl) else .null;
-        const out = template.render(a, compiled, try toStd(a, messages), tools, .{ .object = context }, options.add_generation_prompt, &diag) catch |e| {
+        const out = template.renderProvenanceGlobals(a, compiled, try toStd(a, messages), tools, .{ .object = context }, .{ .object = globals }, options.add_generation_prompt, &diag) catch |e| {
             if (e == error.OutOfMemory) return error.OutOfMemory;
             problem.* = diag.msg;
             return error.Template;
         };
-        return out;
+        return .{ .text = out.s, .spans = out.spans };
     }
 };
 
@@ -300,12 +371,12 @@ test "model EOS does not hide a different tokenizer chat end" {
     try t.tok.vocab.put("<|im_end|>", 248046);
     const model = try std.json.parseFromSliceLeaky(std.json.Value, a, "{\"text_config\":{\"eos_token_id\":248044}}", .{});
     const config = try std.json.parseFromSliceLeaky(std.json.Value, a, "{\"eos_token\":\"<|im_end|>\"}", .{});
-    try std.testing.expectEqualSlices(u32, &.{ 248044, 248046 }, try t.eosIds(a, model, config));
+    try std.testing.expectEqualSlices(u32, &.{ 248044, 248046 }, try t.eosIds(a, model, .null, config, 248047));
     const same = try std.json.parseFromSliceLeaky(std.json.Value, a, "{\"eos_token_id\":[248046]}", .{});
-    try std.testing.expectEqualSlices(u32, &.{248046}, try t.eosIds(a, same, config));
+    try std.testing.expectEqualSlices(u32, &.{248046}, try t.eosIds(a, same, .null, config, 248047));
     const added = try std.json.parseFromSliceLeaky(std.json.Value, a, "{\"eos_token\":{\"content\":\"<|im_end|>\"}}", .{});
-    try std.testing.expectEqualSlices(u32, &.{ 248044, 248046 }, try t.eosIds(a, model, added));
-    try std.testing.expectEqualSlices(u32, &.{248046}, try t.eosIds(a, .null, config));
+    try std.testing.expectEqualSlices(u32, &.{ 248044, 248046 }, try t.eosIds(a, model, .null, added, 248047));
+    try std.testing.expectEqualSlices(u32, &.{248046}, try t.eosIds(a, .null, .null, config, 248047));
 }
 
 /// Our JSON value as std.json's, ints exact (past i64 as number strings) and keys in order.
@@ -351,20 +422,20 @@ test "explicit template overrides checkpoint templates including tool prompts an
     const messages = (try json.parse(a, "[{\"role\":\"user\",\"content\":\"H\"}]")).ok;
     const named = try HfText.load(gpa, io, dir, null, a, &problem);
     defer named.deinit();
-    try std.testing.expectEqualStrings("defaultH", try named.text().render(a, messages, .{}, &problem));
-    try std.testing.expectEqualStrings("toolsH", try named.text().render(a, messages, .{ .tools = .{ .array = &.{} } }, &problem));
+    try std.testing.expectEqualStrings("defaultH", (try named.text().render(a, messages, .{}, &problem)).text);
+    try std.testing.expectEqualStrings("toolsH", (try named.text().render(a, messages, .{ .tools = .{ .array = &.{} } }, &problem)).text);
     try tmp.dir.writeFile(io, .{ .sub_path = "override.jinja", .data = "override{{ messages[0].content }}" });
     const tool_override = try HfText.load(gpa, io, dir, path, a, &problem);
     defer tool_override.deinit();
-    try std.testing.expectEqualStrings("overrideH", try tool_override.text().render(a, messages, .{ .tools = .{ .array = &.{} } }, &problem));
+    try std.testing.expectEqualStrings("overrideH", (try tool_override.text().render(a, messages, .{ .tools = .{ .array = &.{} } }, &problem)).text);
     try tmp.dir.writeFile(io, .{ .sub_path = "chat_template.jinja", .data = "sidecar{{ messages[0].content }}" });
     const sidecar = try HfText.load(gpa, io, dir, null, a, &problem);
     defer sidecar.deinit();
-    try std.testing.expectEqualStrings("sidecarH", try sidecar.text().render(a, messages, .{}, &problem));
+    try std.testing.expectEqualStrings("sidecarH", (try sidecar.text().render(a, messages, .{}, &problem)).text);
     const overridden = try HfText.load(gpa, io, dir, path, a, &problem);
     defer overridden.deinit();
     for ([_]model_text.RenderOptions{ .{}, .{ .tools = .{ .array = &.{} } } }) |options|
-        try std.testing.expectEqualStrings("overrideH", try overridden.text().render(a, messages, options, &problem));
+        try std.testing.expectEqualStrings("overrideH", (try overridden.text().render(a, messages, options, &problem)).text);
     const missing = try std.fmt.allocPrint(a, "{s}/missing.jinja", .{dir});
     try std.testing.expectError(error.Load, HfText.load(gpa, io, dir, missing, a, &problem));
     try tmp.dir.writeFile(io, .{ .sub_path = "override.jinja", .data = "{% unknown %}" });
@@ -373,4 +444,10 @@ test "explicit template overrides checkpoint templates including tool prompts an
     const empty = try HfText.load(gpa, io, dir, path, a, &problem);
     defer empty.deinit();
     try std.testing.expectError(error.Template, empty.text().render(a, messages, .{}, &problem));
+}
+
+test {
+    _ = @import("hf_eos_test.zig");
+    _ = @import("dory_chat_test.zig");
+    _ = @import("deepseek_chat_test.zig");
 }

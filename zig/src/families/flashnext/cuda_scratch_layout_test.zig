@@ -8,7 +8,7 @@ test "exl3: scratch omits only classic MoE allocations and keeps every common vi
         var removed: usize = 0;
         var retained: usize = 0;
         for (classic, exl3, 0..) |before, after, index| {
-            if (index >= 37 and index <= 46) {
+            if (index >= 38 and index <= 47) {
                 try std.testing.expectEqual(@as(?usize, null), after);
                 removed += @max(before.?, 256);
             } else {
@@ -18,9 +18,9 @@ test "exl3: scratch omits only classic MoE allocations and keeps every common vi
         }
         try std.testing.expectEqual(retained, Scratch.bytesForFormat(cap, .exl3));
         try std.testing.expectEqual(removed, Scratch.bytes(cap) - retained);
-        try std.testing.expectEqual(@as(?usize, cap * 11 * 2560 * 4), exl3[47]);
-        try std.testing.expectEqual(@as(?usize, cap * 2560 * 4), exl3[49]);
-        try std.testing.expectEqual(@as(?usize, cap * 128 * 4), exl3[50]);
+        try std.testing.expectEqual(@as(?usize, cap * 11 * 2560 * 4), exl3[48]);
+        try std.testing.expectEqual(@as(?usize, cap * 2560 * 4), exl3[50]);
+        try std.testing.expectEqual(@as(?usize, cap * 128 * 4), exl3[51]);
     }
 }
 
