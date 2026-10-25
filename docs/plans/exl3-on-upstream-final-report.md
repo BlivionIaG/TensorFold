@@ -1406,3 +1406,9 @@ about 22 ms plain, 60 ms for a 3-wide window and 180 ms at 16 rows (each row bri
 tokens a round. Depth 2, 3 or confidence 0.85 changed story throughput by less than 8% and did not remove the loss. Turning on upstream's
 `plain_guard` with a fitted window-cost table made the story prompt slower (32 against 36 tok/s) and was reverted; a per-stream rule that falls
 back to plain rounds below the break-even acceptance is the open item. Drafts therefore stay opt-in for now.
+
+Follow-up, same day: a per-stream rule in `cuda_lanes.zig` draftFn (smoothed kept share of the window's drafts below 0.8 gives plain rounds, a probe
+every 12) was measured against always drafting on the same three prompts (hashes identical): story 40.6 against 36.1 tok/s (+12%, still below the
+45.0 of a server without the head), Zig 92.0 against 96.5 (-5%), docs 34.5 against 36.6 (-6%). A plain round still absorbs its kept rows into the head,
+so the loss is only partly recovered, and the rule costs the predictable prompts. Reverted. What would make drafting the default is a plain round
+that skips the head entirely and catches the head's cache up when drafting resumes; not built.
