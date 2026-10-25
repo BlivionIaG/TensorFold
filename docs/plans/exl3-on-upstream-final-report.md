@@ -1306,3 +1306,26 @@ That mapping from kernel names to weights is an inference from sizes and launch 
 projections across the ranks would cut that per-rank streaming roughly in half but adds collectives per layer, and each NCCL call already costs 61 us here, so it only pays if the
 gathers are folded into the existing per-layer all-reduce; a layer split removes the all-reduce (about 3 ms) and the replication but leaves one card idle per token for a single stream.
 Neither was prototyped.
+
+### Which weights the decode kernels read, and how close they run to the memory limit
+
+Kernel names decode as `tf_exl3_linear_{2 x bits}_{codebook}_{warps}` (`exl3_linear.cu`: `K2` is twice the width in bits, `CB` 2 is the mul1 codebook, `WK` the warps per block), so
+`tf_exl3_linear_10_2_8` is 5-bit mul1 with 8 warps and `tf_exl3_linear_10_2_4` is 5-bit with 4 warps. The pack's 5-bit tensors (trellis shapes, `tools/exl3_pack_sizes.py`
+and the bit listing) are the DeltaNet projections (`in_proj_qkv` 0.59 GB, `in_proj_z` 0.35 GB, `out_proj` 0.35 GB over 36 layers), full attention (`q_proj` 0.24 GB, `o_proj` 0.12 GB,
+`k_proj` and `v_proj` 0.01 GB each over 12 layers), the shared expert (0.15 GB over 48 layers; rank 1 only) and `lm_head` (0.40 GB, vocabulary split). Routed experts are 3-bit.
+Matching launches per step and grid sizes (grid x is N / 128) from the 80-line nsys trace of rank 0:
+
+| kernel | launches per step | grid | likely weights (inferred) | bytes read per step | ms per step | achieved bandwidth |
+|---|---|---|---|---|---|---|
+| `tf_exl3_linear_10_2_8` | 49 | 80 or 96 blocks | DeltaNet `in_proj_qkv` (36, N 10240) + full-attention `q_proj` (12, N 12288) + one more | about 0.83 GB | 3.87 | about 215 GB/s |
+| `tf_exl3_linear_10_2_4` | 108 | 16 to 160 blocks | DeltaNet `in_proj_z` and `out_proj` (72) + full-attention `o_proj`, `k_proj`, `v_proj` (36) | about 0.85 GB | 3.41 | about 250 GB/s |
+| `qmmf_kernel` (two variants) | 234 | small grids | 4 hyper-connection mix matrices per layer (192) plus others; 1.28 GB in the pack | about 1.3 GB | 4.56 | about 280 GB/s |
+| `tf_exl3_grouped_2` | 192 | 11 x 5 x 8 etc. | routed experts (3-bit), the rank's share | small | 2.57 | not computed |
+
+The card's memory bandwidth is 448 GB/s, so these dense kernels run at roughly 50% to 62% of the limit, and about 11.8 ms of the 24 ms step is spent streaming dense weights that both ranks read in full. The kernel-to-weight match
+rests on launch counts, grid sizes and the pack's tensor sizes; it was not confirmed by tracing which tensor each launch reads, and the bandwidths assume each weight is read once.
+
+Two ways to cut that 11.8 ms while keeping tensor parallelism (neither prototyped): (1) make the kernels faster, by moving the 5-bit EXL3 dense matmuls and the `qmmf` matrices from about 55% to about 85%
+of the memory limit, worth roughly 4 ms of the step, with no structural change; (2) shard the dense projections across the two ranks (column-parallel input projections, row-parallel
+`out_proj`, and the hyper-connection mixes folded into the existing per-layer reduction), which would halve each rank's streaming (up to about 5 to 6 ms) but adds a second
+collective per layer, which costs 25 to 60 us per call here, so it pays only if the extra reductions are fused into the one we already do.
