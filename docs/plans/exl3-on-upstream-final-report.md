@@ -1451,3 +1451,11 @@ failed, 2.1-2.6 s apart). Pairing from the tail anyway, the shorter of each pair
 169 us): about 1.5 ms a step of pure transport and about 4.1 ms with the wait for the slower rank. If that holds, a faster transport could save under 1 ms
 (3%) and the larger part of the all-reduce cost is waiting for the other rank, which only balancing the two ranks' work would remove. Which rank
 arrives later was not established; that needs one trace with both ranks on the same clock (a single nsys session over both processes).
+
+Straggler check with both ranks in one nsys session (one clock; 96 decode tokens, short prompt; 4,616 all-reduces paired by end time): the process
+that started first arrives later at 2,714 of them (59%, mean wait 81 us) and the other at 1,902 (41%, mean wait 87 us); once both have arrived the
+all-reduce itself takes a median of 21.9 us. So there is no fixed straggler: each layer, whichever rank had the more expensive set of picks and
+misses makes the other wait, about 85 us a layer or about 4 ms of a 24 ms step, and transport is 1 ms. A static rebalance of experts or of the
+shared expert would move only the 59/41 asymmetry; the rest is the per-token binomial split of ten picks across two id ranges plus each rank's own
+misses. It would take dynamic balancing (a pick served by whichever rank has it resident, which needs experts held by both ranks) or removing the
+per-layer dependency (a layer split) to recover it. Neither is built.
