@@ -306,6 +306,7 @@ pub const Engine = struct {
             };
         };
         try e.backend.keep(windows, paths);
+        if (e.cfg.timed and e.cfg.plain_guard and heads.items.len > 0) try e.observeShared(plans, outcomes, heads.items, whos);
         if (e.cfg.timed) {
             // the drafts budgets priced past each stream's first are no part of the round's overhead
             var steps: i64 = 0;
@@ -315,6 +316,21 @@ pub const Engine = struct {
             try e.rule.observeOverhead(@intCast(plans.len), total, ms, sampled, e.rule.headMs(budgets));
         }
         if (e.backend.round_observer != null) e.backend.observed(paths);
+    }
+
+    /// The guard's tokens a ms of a shared round: each head stream's tokens over the round's time, not its first round.
+    fn observeShared(e: *Engine, plans: []const Plan, outcomes: []const Outcome, heads: []const usize, whos: []const depth.Who) !void {
+        const a = e.arena.allocator();
+        const picked = try a.alloc(depth.Who, heads.len);
+        const tokens = try a.alloc(usize, heads.len);
+        var n: usize = 0;
+        for (heads, whos) |i, w| {
+            if (plans[i].stream.rounds <= 1 or (plans[i].kind != .head and plans[i].kind != .none)) continue;
+            picked[n] = w;
+            tokens[n] = outcomes[i].got.len;
+            n += 1;
+        }
+        if (n > 0) try e.rule.observeShared(picked[0..n], tokens[0..n], e.clock.elapsedMs(.cost));
     }
 
     /// Commit the target-sampled path (after the thinking budget's cut), each token with its path row's logprob row.

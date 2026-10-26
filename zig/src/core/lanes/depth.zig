@@ -125,6 +125,16 @@ pub const Rule = struct {
         span.* += w * (ms - span.*);
     }
 
+    /// A shared round's ms against each stream's tokens; a plain stream counts only when no stream chained.
+    pub fn observeShared(r: *Rule, whos: []const Who, tokens: []const usize, ms: f64) !void {
+        var any_chain = false;
+        for (whos) |w| {
+            _ = try r.rates(w);
+            any_chain = any_chain or w.state.*.?.chain;
+        }
+        for (whos, tokens) |w, t| if (w.state.*.?.chain or !any_chain) try r.observeRate(w, t, ms);
+    }
+
     /// Whether the stream's next round runs without the head's drafts: its measured plain tokens a ms beat its drafted
     /// ones (by `plain_margin`). Drafts are measured first, then plain once; a plain stream drafts one probe round
     /// after a growing run of plain rounds, so a change of text (code after prose) is noticed.
@@ -465,4 +475,50 @@ test "with chances on the wire, a stream whose plain rounds earn more tokens a m
     st.?.chain = true;
     for (0..8) |_| try rule.observeRate(who, 4, 60.0);
     try std.testing.expectEqual(@as(i64, 2), try rule.headDepth(&who, null, probe));
+}
+
+test "a shared round teaches each stream's guard; without it two streams draft forever, and a mixed round never charges a plain stream" {
+    const gpa = std.testing.allocator;
+    const empty: Table = .{};
+    var rule: Rule = .{ .gpa = gpa, .prior = &.{ 0.5, 0.5 }, .most_drafts = 2, .family_costs = &empty, .shared_costs = &empty, .mtp_step_ms = 0.5, .plain_guard = true, .node_probabilities = true, .batch_rows = 8 };
+    defer rule.deinit();
+    var sa: ?State = null;
+    var sb: ?State = null;
+    defer if (sa) |*s| s.deinit(gpa);
+    defer if (sb) |*s| s.deinit(gpa);
+    var whos = [_]Who{ .{ .state = &sa, .draft_room = 100, .finished = false, .forced = false }, .{ .state = &sb, .draft_room = 100, .finished = false, .forced = false } };
+    const never = struct {
+        fn copy(_: *anyopaque, _: *const Who) bool {
+            return false;
+        }
+    };
+    var unused: u8 = 0;
+    const probe: Probe = .{ .ptr = &unused, .copy = never.copy };
+    var out: [2]i64 = undefined;
+    // the failure: shared rounds that observe nothing keep both streams on drafts however poorly they pay
+    for (0..20) |_| {
+        try rule.budgets(&whos, probe, false, &out);
+        try std.testing.expectEqual(@as(i64, 2), out[0]);
+        try std.testing.expectEqual(@as(i64, 2), out[1]);
+    }
+    // the correction: drafted rounds of 55 ms commit 1 token a stream, plain rounds of 25 ms the same
+    var rounds: usize = 0;
+    while (rounds < 40) : (rounds += 1) {
+        try rule.budgets(&whos, probe, false, &out);
+        const drafted = out[0] > 0;
+        try rule.observeShared(&whos, &.{ 1, 1 }, if (drafted) 55.0 else 25.0);
+        if (!drafted and sa.?.plain_n >= min_samples) break;
+    }
+    try std.testing.expect(rounds < 40);
+    try rule.budgets(&whos, probe, false, &out);
+    try std.testing.expectEqual(@as(i64, 0), out[0]);
+    try std.testing.expectEqual(@as(i64, 0), out[1]);
+    // a mixed round (one stream chained) measures the drafted stream and leaves the plain one's rate alone
+    sa.?.chain = true;
+    sb.?.chain = false;
+    const plain_before = sb.?.plain_n;
+    const drafted_before = sa.?.draft_n;
+    try rule.observeShared(&whos, &.{ 2, 1 }, 70.0);
+    try std.testing.expectEqual(plain_before, sb.?.plain_n);
+    try std.testing.expectEqual(drafted_before + 1, sa.?.draft_n);
 }
