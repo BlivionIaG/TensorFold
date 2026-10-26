@@ -11,4 +11,3 @@ pub const dspark = @import("dspark.zig");
 pub const dspark_config = @import("dspark_config.zig");
 pub const dspark_block = @import("dspark_block.zig");
 pub const dspark_quant = @import("dspark_quant.zig");
-pub const verify_costs = @import("verify_costs.zig");

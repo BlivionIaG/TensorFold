@@ -210,12 +210,6 @@ test "lfm2 dspark: lfm2_qk on half-split rows and gains gives interleaved RoPE's
         }
     }
 }
-
-test "lfm2 dspark: the drafter verifies by its confidence head unless asked otherwise" {
-    const o: @import("dspark.zig").Options = .{ .capacity = 64 };
-    try std.testing.expectEqual(@import("dspark.zig").Verify.scheduled, o.verify);
-}
-
 test "lfm2 dspark: a settled hold moves the timed passes at its block counts a tenth of the way to its GPU ms" {
     var d: ds.Drafter = undefined;
     const grid = [_]lanes.hold_price.HoldCost{ .{ .streams = 1, .depth = 1, .ms = 1 }, .{ .streams = 4, .depth = 1, .ms = 2 }, .{ .streams = 4, .depth = 4, .ms = 4 }, .{ .streams = 8, .depth = 1, .ms = 3 } };
@@ -275,12 +269,4 @@ test "lfm2 dspark: a settled hold refuses a NaN, infinity or invalid pick as the
     }
     picks[3 * ds.pass_rows] = .{ .nonfinite = 1 }; // a step past the block's depth is not read
     try block.copyPicks(&picks, &chains, &.{ 2, 2 });
-}
-
-test "lfm2 dspark: an asked scheduled verify without the confidence head is refused by name, the default falls back" {
-    const asked: ds.Options = .{ .capacity = 64, .verify_asked = true };
-    try std.testing.expectError(error.ScheduledVerifyNeedsConfidenceHead, ds.admitVerify(asked, false));
-    try ds.admitVerify(asked, true);
-    try ds.admitVerify(.{ .capacity = 64 }, false);
-    try ds.admitVerify(.{ .capacity = 64, .verify = .depth, .verify_asked = true }, false);
 }

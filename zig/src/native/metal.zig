@@ -337,7 +337,6 @@ fn refusal(a: Allocator, o: api.Open, dense: bool) !?[]const u8 {
     const one_mac: ?[]const u8 = if (std.mem.eql(u8, t, "nemotron_h")) "Nemotron" else if (std.mem.eql(u8, t, "lfm2_moe")) "LFM2.5-24B-A2B" else if (isGemma4(t)) "Gemma 4" else if (std.mem.eql(u8, t, "step5_vl")) "Step-5" else if (std.mem.eql(u8, t, "spark2_5")) "Spark-X2.6" else if (!std.mem.eql(u8, t, "qwen3_5")) null else if (dense) "Qwen3.8-27B" else "Qwen3.5-2B";
     if (o.speed_up != null) if (one_mac) |name| return try std.fmt.allocPrint(a, "--speed-up joins two Macs for Flash Next, GLM-5.3-Flash and GLM-5.3 only: serve {s} without it", .{name});
     if (o.recall and std.mem.eql(u8, t, "qwen4_exp")) return recall_refusal;
-    if ((o.draft_verify != null or o.verify_costs != null) and (o.drafter == null or !std.mem.eql(u8, t, "lfm2_moe"))) return "--draft-verify and --verify-costs set the verify of LFM2.5-24B-A2B's DSpark drafter: serve it with --drafter";
     if (spill.refusal(o)) |why| return why;
     if (o.learn == null) return null;
     // the 27B writes conversation states

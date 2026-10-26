@@ -274,9 +274,6 @@ pub const Family = struct { model_type: []const u8, formats: []const []const u8,
 /// The math an NVFP4 checkpoint runs: its own (FP4 rows into NVFP4 layers, FP8 into FP8 ones), or bf16 rows throughout.
 pub const Precision = enum { checkpoint, full };
 
-/// An external drafter's verify: the depth rule's rows, its whole block, or its confidence head's survivals.
-pub const DraftVerify = enum { depth, fixed, scheduled };
-
 /// What a server asks of the engine it opens: the checkpoint, and the serve flags an engine reads.
 pub const Open = struct {
     pub fn fsrRefusal(o: Open, backend: []const u8) ?[]const u8 {
@@ -304,9 +301,6 @@ pub const Open = struct {
     /// --drafter: a draft model's directory (null: none); --drafter-bits: 4, 0 for bf16, or 8 (LFM2 only).
     drafter: ?[]const u8 = null,
     drafter_bits: u8 = 4,
-    /// --draft-verify and --verify-costs (a tf-lfm2-verify-costs table): the LFM2 DSpark drafter's verify rows.
-    draft_verify: ?DraftVerify = null,
-    verify_costs: ?[]const u8 = null,
     /// Whether --drafter-bits was given: LFM2's drafter runs bf16 as released unless it is asked for 8-bit codes.
     drafter_bits_given: bool = false,
     /// --record: each stream's committed rows and tapped features written under this folder, for drafter training.

@@ -293,7 +293,6 @@ pub fn metalTargets(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         .{ .name = "tf-lfm2-bench", .path = "zig/tests/lfm2_bench.zig", .about = "LFM2-MoE prompt-chunk and one-row decode timing" },
         .{ .name = "tf-lfm2-exact", .path = "zig/tests/lfm2_exact.zig", .about = "LFM2-MoE prompt chunks, windows and committed-state exactness" },
         .{ .name = "tf-lfm2-dspark", .path = "zig/tests/lfm2_dspark.zig", .about = "LFM2's DSpark drafter on the GPU against an fp32 host reference of the released drafter" },
-        .{ .name = "tf-lfm2-verify-costs", .path = "zig/tests/lfm2_verify_costs.zig", .about = "LFM2 verify forward ms by stream count and rows a stream, written as a cost table" },
         .{ .name = "tf-lfm2-fp64", .path = "zig/tests/lfm2_fp64.zig", .about = "LFM2 projection classes and attention on the tensor units, the tiles and the twin, each against float64" },
         .{ .name = "tensorfold", .path = "zig/src/main.zig", .about = "The native engine's command line" },
         .{ .name = "tf-nemotron-fixtures", .path = "zig/tests/nemotron_fixtures.zig", .about = "Nemotron kernels against the Python engine's captured ops" },

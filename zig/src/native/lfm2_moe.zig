@@ -111,14 +111,6 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     }
     errdefer if (h.wrap) |*w| w.deinit();
     var facts = if (h.wrap) |*w| w.facts(h.metal.facts()) else h.metal.facts();
-    const profiled = if (h.draft != null) verifyCosts(a, io, o.verify_costs) catch |err| {
-        problem.* = try std.fmt.allocPrint(a, "--verify-costs {s} is not a tf-lfm2-verify-costs table ({s})", .{ o.verify_costs.?, @errorName(err) });
-        h.wrap.?.deinit();
-        h.draft.?.deinit();
-        release(h);
-        return null;
-    } else null;
-    if (profiled) |t| facts.shared_costs = t;
     // a drafting stream prices its copy windows by its own copies: on distinct prompts they keep breaking
     if (h.wrap != null) facts.own_copy_rates = true;
     h.config = try lanes.Config.init(gpa, facts, q.state.window_rows, q.state.window_rows - 1);
@@ -166,21 +158,6 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
         std.log.info("lfm2: DSpark drafts from --drafter, {d} a round at most, {s}", .{ d.config.block, mode });
     }
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
-}
-
-/// --verify-costs: a tf-lfm2-verify-costs table's shared forward ms by total rows (null: none named; `a`-owned).
-fn verifyCosts(a: std.mem.Allocator, io: std.Io, path: ?[]const u8) !?[]const lanes.config.Cost {
-    const file = path orelse return null;
-    const text = try std.Io.Dir.cwd().readFileAlloc(io, file, a, .limited(1 << 20));
-    const t = try q.verify_costs.parse(a, text);
-    std.log.info("lfm2: verify costs from {s}, {d} totals of rows", .{ file, t.len });
-    return t;
-}
-
-/// --draft-verify as the drafter's verify (null: the default).
-fn verifyMode(v: ?api.DraftVerify) q.dspark.Verify {
-    const asked = v orelse return q.dspark.default_verify;
-    return std.meta.stringToEnum(q.dspark.Verify, @tagName(asked)).?;
 }
 
 /// The prompt cache's copies of a stream: the target's state at a mark (backend.zig), and the drafter's context there.

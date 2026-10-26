@@ -102,8 +102,6 @@ pub const flags = [_]Flag{
     .{ .name = "--slide-graph", .native = true },
     .{ .name = "--drafter", .native = true },
     .{ .name = "--drafter-bits", .choices = &.{ "0", "4", "8" }, .native = true },
-    .{ .name = "--draft-verify", .choices = &.{ "depth", "fixed", "scheduled" }, .native = builtin.os.tag == .macos },
-    .{ .name = "--verify-costs", .native = builtin.os.tag == .macos },
     .{ .name = "--record", .native = true },
     .{ .name = "--kv-cache", .choices = &.{ "bf16", "fp8" }, .native = true },
     .{ .name = "--prompt-precision", .choices = &.{ "bf16", "int8" }, .native = true },
@@ -220,8 +218,6 @@ pub const Args = struct {
     compact_memory: ?[]const u8 = null,
     drafter: ?[]const u8 = null,
     drafter_bits: ?u8 = null, // null: not given (a family without its own default takes 4)
-    draft_verify: ?api.DraftVerify = null, // the LFM2 DSpark drafter's verify rows (null: the engine's default)
-    verify_costs: ?[]const u8 = null, // a tf-lfm2-verify-costs table pricing them (null: costs timed at load)
     record: ?[]const u8 = null, // drafter training rows written under this folder
     kv_cache: []const u8 = "bf16", // fp8: e4m3 attention caches with a scale a row, about twice the context
     prompt_precision: []const u8 = "bf16", // int8: prompt matmuls quantize their inputs to int8 a 64-input group
@@ -553,8 +549,6 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .drafter = args.drafter,
         .drafter_bits = args.drafter_bits orelse 4,
         .drafter_bits_given = args.drafter_bits != null,
-        .draft_verify = args.draft_verify,
-        .verify_costs = args.verify_costs,
         .record = args.record,
         .kv8 = std.mem.eql(u8, args.kv_cache, "fp8"),
         .prompt_int8 = std.mem.eql(u8, args.prompt_precision, "int8"),

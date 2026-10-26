@@ -178,7 +178,7 @@ pub fn main(init: std.process.Init) !void {
     defer pool.pop();
     const m = try q.Model.load(gpa, init.io, args[1]);
     defer m.deinit();
-    const d = try q.dspark.Drafter.init(gpa, init.io, m, args[2], .{ .capacity = length + 64, .bits = bits, .verify = .scheduled });
+    const d = try q.dspark.Drafter.init(gpa, init.io, m, args[2], .{ .capacity = length + 64, .bits = bits });
     defer d.deinit();
     const cfg = d.config;
     // the compared block's rows (a hold of depth d runs a d-row block)
