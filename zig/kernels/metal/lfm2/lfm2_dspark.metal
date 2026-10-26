@@ -218,12 +218,12 @@ constant constexpr uint BF16_ROWS = 16;
     for (uint j = 0; j < 4; ++j) acc[i][j] = simdgroup_matrix<float, 8, 8>(0.0f);
   const uint sr = (sg / 2) * 32, sc = (sg % 2) * 32;
   for (uint k0 = 0; k0 < p.k; k0 += 32) {
-    for (uint i = t; i < 64 * 4; i += 128) { // 64 rows of 32 bf16 as 4 chunks of 8
+    for (uint i = t; i < 64 * 4; i += 128) { // 64 rows of 32 bf16 as 4 chunks of 8, 16 bytes a load
       const uint r = i / 4, q = (i % 4) * 8;
-      for (uint j = 0; j < 8; ++j) {
-        xs[r * 32 + q + j] = r0 + r < p.rows ? x[size_t(r0 + r) * p.k + k0 + q + j] : bfloat(0.0f);
-        ws[r * 32 + q + j] = c0 + r < p.n ? w[size_t(c0 + r) * p.k + k0 + q + j] : bfloat(0.0f);
-      }
+      const uint4 xv = r0 + r < p.rows ? *(const device uint4*)(x + size_t(r0 + r) * p.k + k0 + q) : uint4(0);
+      const uint4 wv = c0 + r < p.n ? *(const device uint4*)(w + size_t(c0 + r) * p.k + k0 + q) : uint4(0);
+      *(threadgroup uint4*)(xs + r * 32 + q) = xv;
+      *(threadgroup uint4*)(ws + r * 32 + q) = wv;
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     for (uint kk = 0; kk < 32; kk += 8) {
