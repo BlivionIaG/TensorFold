@@ -361,6 +361,8 @@ pub fn run(gpu: check.Gpu) !void {
     for (act_round_k.entries, &act_rounds) |e, *x| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .entry = e, .act = &act_rows, .ctl = if (e.keep != null) try mods[5].function("tf_ctl_act_round") else null };
     defer for (&act_rounds) |*x| x.deinit();
     for (&act_rounds) |*x| try kernels.append(a, x.kernel());
+    const spark_acts = try @import("contract_spark_act.zig").Group.create(a, gpu, s, &act_rows, mods[5], &kernels);
+    defer spark_acts.destroy();
     var gemma_ops: @import("contract_gemma_ops.zig").Group = .{};
     defer gemma_ops.deinit();
     try gemma_ops.init(gpu, s, &act_rows, &vit, &round_fns, mods[5]);
@@ -409,7 +411,7 @@ pub fn run(gpu: check.Gpu) !void {
     for (q35_k.forms, &q35s) |f, *x| x.* = try q35_k.Q35.init(.{ .gpu = gpu, .s = s }, f, q35_mod, q35_kv8);
     defer for (&q35s) |*x| x.deinit();
     for (&q35s) |*x| try kernels.append(a, x.kernel());
-    var window_fns = try cuda.window_attention.WindowAttention.load(gpu.d);
+    var window_fns = try window_k.load(gpu.d);
     defer window_fns.unload();
     var windows: [window_k.cfgs.len]window_k.Window = undefined;
     for (window_k.cfgs, &windows) |f, *x| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .f = f, .g = &window_fns };
@@ -569,6 +571,8 @@ pub fn run(gpu: check.Gpu) !void {
     };
     defer for (&contiguous) |*x| x.deinit();
     for (&contiguous) |*x| try kernels.append(a, x.kernel());
+    const weight_only = try @import("contract_weight_only_suite.zig").Suite.create(a, gpu, s, &kernels);
+    defer weight_only.destroy(a);
     var t: g.Tally = .{};
     try @import("contract_dump.zig").run(a, kernels.items);
     const t0 = check.now(gpu.io);

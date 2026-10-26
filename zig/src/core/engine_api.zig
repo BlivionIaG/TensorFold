@@ -72,6 +72,8 @@ pub const Request = struct {
     shared_prefixes: []const u32 = &.{},
     /// Where the latest user message's text starts: a state kept before it lets an edit of that turn resume (0: none).
     rewind_len: u32 = 0,
+    /// End of the latest user message in this prompt (0: unknown); background reply passes leave it unknown.
+    user_end: u32 = 0,
     /// Prompt chunk starts after 0 (Python PrefillPlan); empty selects the engine's plan.
     chunks: []const u32 = &.{},
     /// Decoded intervals [start,end), sorted, nonempty and strictly separated; an empty list uses prompt arithmetic.
@@ -264,6 +266,10 @@ pub const Open = struct {
     context: ?i64 = null,
     max_frames: ?u32 = null,
     silence: speech_guard.Config = .{},
+    /// Allocate an independent backbone state per speech lane; Metal Drama only.
+    cfg_enabled: bool = false,
+    /// Submit the two independent CFG sequences in one Metal command buffer, not vectorized GEMM.
+    cfg_batched: bool = false,
     lanes: u32 = 8,
     /// --parallel named a number: an engine whose memory fits fewer streams refuses instead of serving fewer.
     lanes_fixed: bool = false,
@@ -286,6 +292,8 @@ pub const Open = struct {
     learn_conversations: bool = false,
     /// --learn-daily-gib: what learned states may write a day under the root, every model together.
     learn_daily_gib: f64 = 32,
+    /// --spill-gib (Macs): states evicted from RAM go to the store `learn_conversations` opens (off: written behind).
+    spill: prompt_cache.rows.Spill = .off,
     /// --slide: Sliding Weights learns into the served weights, live (off: learn requests are refused).
     slide: bool = false,
     /// --recall: the server attaches Recall's record once the engine loads; an engine that reads none refuses first.

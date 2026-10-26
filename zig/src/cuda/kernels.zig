@@ -12,6 +12,10 @@ fn Blob(comptime import_name: []const u8) type {
 /// False in host-only builds (no nvcc, no prebuilt fatbins); every image is then empty.
 pub const available = options.with_kernels;
 
+pub const qwen4_hc: []const u8 = if (available) &Blob("fatbin_qwen4_hc").bytes else &.{};
+pub const qwen4_ple: []const u8 = if (available) &Blob("fatbin_qwen4_ple").bytes else &.{};
+pub const qwen4_gdn: []const u8 = if (available) &Blob("fatbin_qwen4_gdn").bytes else &.{};
+pub const qwen4_projection: []const u8 = if (available) &Blob("fatbin_qwen4_projection").bytes else &.{};
 pub const gdn: []const u8 = if (available) &Blob("fatbin_gdn").bytes else &.{};
 pub const flashnext_gdn: []const u8 = if (available) &Blob("fatbin_flashnext_gdn").bytes else &.{};
 pub const flashnext_exl3: []const u8 = if (available) &Blob("fatbin_flashnext_exl3").bytes else &.{};
@@ -63,6 +67,7 @@ pub const tree_attention: []const u8 = if (available) &Blob("fatbin_tree_attenti
 pub const block_attention: []const u8 = if (available) &Blob("fatbin_block_attention").bytes else &.{};
 pub const window_attention: []const u8 = if (available) &Blob("fatbin_window_attention").bytes else &.{};
 pub const window_rows: []const u8 = if (available) &Blob("fatbin_window_rows").bytes else &.{};
+pub const window_pages: []const u8 = if (available) &Blob("fatbin_window_pages").bytes else &.{};
 pub const moe_glue: []const u8 = if (available) &Blob("fatbin_moe_glue").bytes else &.{};
 pub const dense_rows: []const u8 = if (available) &Blob("fatbin_dense_rows").bytes else &.{};
 pub const modelopt_pack: []const u8 = if (available) &Blob("fatbin_modelopt_pack").bytes else &.{};

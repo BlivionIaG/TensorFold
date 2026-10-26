@@ -165,6 +165,22 @@ extern "C" __global__ void __launch_bounds__(NT) tf_softcap_rows(const __nv_bflo
     tf_act_round::softcap_rows(x, out, n, cap, tf_act_round::SOFTCAP_ALL);
 }
 
+// Spark2.5's head gate: out[r, h d + e] = bf16(o * bf16(sigmoid(g[r * g_ld + h]))) (d % 64 == 0); xs: out's sums.
+extern "C" __global__ void __launch_bounds__(NT) tf_head_gate_rows(const __nv_bfloat16* __restrict__ o,
+                                                                   const __nv_bfloat16* __restrict__ g, long long g_ld,
+                                                                   __nv_bfloat16* __restrict__ out,
+                                                                   float* __restrict__ xs, int heads, int d) {
+    tf_act_round::head_gate_rows(o, g, g_ld, out, xs, heads, d, tf_act_round::HEAD_GATE_ALL);
+}
+
+// out = bf16(bf16(gelu(gate)) * up), PyTorch's exact erf GELU in fp32 (Spark2.5's MLP); xs (or null) out's sums.
+extern "C" __global__ void __launch_bounds__(NT) tf_gelu_erf_rows(const __nv_bfloat16* __restrict__ gate, long long g_ld,
+                                                                  const __nv_bfloat16* __restrict__ up, long long u_ld,
+                                                                  __nv_bfloat16* __restrict__ out, float* __restrict__ xs,
+                                                                  int n) {
+    tf_act_round::gelu_erf_rows(gate, g_ld, up, u_ld, out, xs, n, tf_act_round::GELU_ERF_ALL);
+}
+
 // Dory's nGPT activations (act_l2.cuh): a scaled sigmoid gate and a scaled SwiGLU, each row then L2-normed.
 #include "act_l2.cuh"
 

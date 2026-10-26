@@ -51,6 +51,7 @@ pub const glm = @import("families/glm/glm.zig");
 pub const qwen35 = @import("families/qwen3_5/qwen3_5.zig");
 pub const gemma4 = @import("families/gemma4/gemma4.zig");
 pub const step5 = @import("families/step5/step5.zig");
+pub const spark25_metal = @import("families/spark25/metal.zig");
 pub const lfm2_moe = @import("families/lfm2_moe/lfm2_moe.zig");
 pub const flashnext_pack = @import("families/flashnext/pack.zig");
 
@@ -79,6 +80,7 @@ test {
     _ = @import("families/gemma4/gemma4.zig");
     _ = @import("families/qwen3_5/backend.zig");
     _ = @import("families/step5/step5.zig");
+    _ = @import("families/spark25/metal.zig");
     _ = @import("families/lfm2_moe/config.zig");
     _ = @import("families/lfm2_moe/backend.zig");
     _ = @import("families/lfm2_moe/state.zig");
@@ -89,6 +91,8 @@ pub const lane_projection = @import("core/lane_projection.zig");
 pub const recurrent_forks = @import("core/recurrent_forks.zig");
 
 pub const shared_kv = @import("core/shared_kv.zig");
+
+pub const kv_pool = @import("core/kv_pool.zig");
 
 pub const shared_attention = @import("core/shared_attention.zig");
 
@@ -110,3 +114,18 @@ pub const bf16_topk_gpu = @import("bf16_topk_gpu");
 pub const tree_commit_gpu = @import("tree_commit_gpu");
 
 pub const tree_slots = @import("core/tree_slots.zig");
+
+pub const weight_only = @import("core/weight_only.zig");
+pub const weight_only_contract = @import("core/contract/weight_only.zig");
+pub const weight_only_cuda_adapter = @import("core/weight_only_cuda_impl.zig").Adapter;
+pub const weight_only_metal_adapter = @import("core/weight_only_metal_impl.zig").Adapter;
+pub const hc_activation = @import("core/hc_activation.zig");
+pub const hc_activation_contract = @import("core/contract/hc_activation.zig");
+pub const hc_activation_cuda_adapter = @import("core/hc_activation_cuda_impl.zig").Adapter;
+pub const hc_activation_metal_adapter = @import("core/hc_activation_metal_impl.zig").Adapter;
+pub const hc_pointwise = @import("core/hc_pointwise.zig");
+pub const hc_pointwise_cuda_adapter = @import("core/hc_pointwise_cuda_impl.zig").Adapter;
+pub const hc_pointwise_metal_adapter = @import("core/hc_pointwise_metal_impl.zig").Adapter;
+pub const hc_pointwise_contract = @import("core/contract/hc_pointwise.zig");
+
+pub const attention_ref = @import("core/attention_ref.zig");

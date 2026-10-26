@@ -82,6 +82,7 @@ pub fn build(b: *std.Build) void {
     _ = ids_files.addCopyFile(b.path("zig/src/families/nemotron/draft_ids.txt"), "draft_ids.txt");
     const draft_ids = b.createModule(.{ .root_source_file = ids_files.add("draft_ids.zig", "pub const text = @embedFile(\"draft_ids.txt\");\n") });
     const test_step = b.step("test", "Unit tests (macOS includes available Metal device checks)");
+    @import("zig/build/qwen4.zig").steps(b, test_step);
     @import("zig/build/kernel_symbols.zig").tests(b, test_step);
     @import("zig/build/checkpoint_security.zig").tests(b, test_step);
     if (b.graph.host.result.os.tag == .macos) {
@@ -199,9 +200,12 @@ pub fn build(b: *std.Build) void {
     grammar_build.steps(b, target, xgrammar);
     grammar_build.hostTests(b, test_step);
     contract_build.hostTests(b, gemma4_contract_host);
+    // the CPU-only fake server and engine-less CLI (zig build server-cpu), behind zig/tests/server/build.sh
+    @import("zig/build/server.zig").cpuArtefacts(b, b.graph.host, optimize, build_options);
     sys_build.wire(b);
     @import("zig/build/checkpoint_config.zig").wire(b);
     @import("zig/build/save_guard.zig").wire(b);
+    @import("zig/build/dev_tools.zig").wire(b, target);
 }
 
 /// The native Metal server build is owned by the shared Metal target module.
