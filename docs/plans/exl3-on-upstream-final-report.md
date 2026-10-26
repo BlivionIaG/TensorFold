@@ -1580,3 +1580,14 @@ Mean per-round verify time (ms) and draft time (ms), measured with a temporary r
 | 7 | 58.2 / 5.2 | 94.2 / 9.8 |
 
 A plain decode step is about 22 ms, so the first extra row costs about 18 ms and each further row 6-9 ms. There is no cliff between 2 and 3 rows; the jump is from 1 to 2 rows. The cost is the PCIe copy of experts the extra row misses in the device lines, so cache capacity and prediction (not kernel time) bound speculation. Resulting decode: short 37-40, docs 40.7-41, zig 102 tok/s (plain 48.9 / 38.2 / 36.2).
+
+## Lookahead expert prefetch (tried, rejected)
+
+While layer L ran, layer L+1's router was applied to layer L's MoE input, the predicted picks were planned (a prefetch round of `fn_exl3_dplan` that leaves demand statistics alone) and the predicted misses were copied on a side stream, joined before layer L+1's experts. Output stayed bit-identical. On the short prompt with drafts on, 80 lines, windows of 2 or more rows:
+
+| | real-round misses | hit rate | copies per layer-round | decode |
+|---|---|---|---|---|
+| off | 7897 | 94.3% | 0.77 | 36.2-40.1 |
+| prefetch | 4070 | 97.0% | 1.53 | 32.7-35.6 (-11%) |
+
+The early router names the right expert for only about 42% of the copies it issues (roughly 9100 prefetch copies saved about 3800 misses), so link traffic doubles and the copy kernels' SMs slow the compute. Docs fell 12%, zig 1%. A window's misses are about 250 MB per rank, which at 13-14 GB/s is the 18 ms the first extra row costs: the PCIe link, not compute, bounds speculation. Prefetch only pays with a predictor far above 42% precision.
