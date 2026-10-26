@@ -1539,3 +1539,6 @@ run as three waves of 36; the bandwidth test had all 96 resident.
   (8, 4, 4, 8) on the three prompts: short 45.3 to 46.35 tok/s (+2.3%), Zig 33.97 to 34.5 (+1.6%), docs 35.2 to 35.7 (+1.4%), both four-warp legs agreeing. The Zig text is unchanged; the short
   and docs text differ after about 110 characters (a near-tie flips, both continuations read the same in quality) because the block's partial sums group in four, not eight. `tools/exl3_serve_tp2.sh`
   now exports it in the fast mode (`PLAN_WIDE_WK=8` restores linear.py's plan).
+
+Narrow-N block target with the four-warp plan on (A/B/C/B/A, 192, 80, 108, 80, 192): a target of 108 gave the same plan as 192 (same hashes, 46.3/34.5/35.7 tok/s); a target of 80
+(K split 2 for the 40-block projections, one resident wave) changed the bits and was slightly slower (45.9/34.4/35.6). Reverted; the narrow plan stays at linear.py's 192.
