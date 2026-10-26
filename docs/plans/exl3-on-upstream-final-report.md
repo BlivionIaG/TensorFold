@@ -1619,3 +1619,15 @@ A plain round's kept rows were stashed (their main-model streams and next tokens
 a drafted round came, with a flush before snapshots. Output stayed identical. With a 16-row stash short prose fell to 42.7 tok/s (44.3
 before) and docs rose to 43; with 4 rows short was 44.4 and docs 41-42.5, inside run-to-run noise. A long flush touches many distinct
 head experts and misses the head's pool, so one big absorb costs about what the single ones did. Not kept.
+
+## Can misses be predicted or avoided? (offline, 1,190 plain decode rounds of prose, 80 lines per rank and layer)
+
+Traces: `TF_FLASHNEXT_EXL3_DPLAN_TRACE=1` with `_TRACE_DIR`, both ranks, 48 decoder pools, one row a round.
+
+- Layer-to-layer co-occurrence (the picks of layer L from both ranks predicting layer L+1, trained on the first 60% of the rounds, tested on
+  the rest; only experts not resident under LRU count). Top-3: precision 0.37, covers 3% of the misses; top-6: precision 0.29, covers 8%.
+  A layer's routing does not point at the next layer's novel experts, so a prefetch from it cannot pay (the early-router attempt above got 0.42).
+- Replacement policy on the same picks (misses a pick): LRU 5.96%, decayed frequency 5.08% (decay 0.99), Belady optimum 3.35%. The planner's
+  windowed recent-demand score is already a frequency policy of that family, so a different policy gains at most about 1-2% of decode.
+
+So at 80 lines the miss rate (about 5%) cannot be cut by prediction or a better policy; only capacity (lines) or fewer bytes a miss moves it.
