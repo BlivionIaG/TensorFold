@@ -108,3 +108,8 @@ shared-round guard.
 reads its history and verify rows from its own part of the ids, so its rows route its own text's experts. Both flags
 are refused unless an `lfm2_moe` checkpoint is served with `--drafter`. `tf-lfm2-dspark` also prints the confidence
 head against its fp32 reference and times shared holds of 2 to 16 streams.
+
+The loader reads the checkpoint one matrix at a time and keeps only the 8-bit codes; a stream's drafter lane is one
+Metal buffer (its layers' keys and values, then its staged rows), and its bytes join the streams the load limit
+admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-lfm2-dspark` also counts host
+allocations over twenty served drafter rounds, which must be none.
