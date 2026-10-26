@@ -30,6 +30,7 @@ test {
     _ = pass;
     _ = tp;
     _ = kv;
+    _ = @import("cuda_exl3_kv_test.zig");
     _ = kvpage;
     _ = @import("cuda_exl3_kvpage_test.zig");
     _ = prefill_k;
