@@ -261,7 +261,7 @@ pub const Engine = struct {
         e.clock.start();
         const a = e.arena.allocator();
         const plans = try a.alloc(Plan, entries.len);
-        e.plain_round = e.cfg.shared_guard and !try e.guard.drafts(entries.len);
+        e.plain_round = e.cfg.shared_guard and e.cfg.timed and !try e.guard.drafts(entries.len);
         defer e.plain_round = false;
         for (entries, plans) |s, *p| p.* = try win.plan(e, s, null);
         try win.allocate(e, plans);
@@ -293,7 +293,7 @@ pub const Engine = struct {
         const budgets = try a.alloc(i64, heads.items.len);
         const sampled = win.anySampled(plans);
         // the guard's plain stretches: no stream drafts, so the round costs what it would without a head
-        const guarded = e.cfg.shared_guard and !try e.guard.drafts(plans.len);
+        const guarded = e.cfg.shared_guard and e.cfg.timed and !try e.guard.drafts(plans.len);
         if (guarded) @memset(budgets, 0) else try e.rule.budgets(whos, win.probe(e), sampled, budgets);
         const ids = try a.alloc(ev.Value, heads.items.len);
         for (ids, heads.items) |*id, i| id.* = str(plans[i].stream.id);
@@ -323,7 +323,7 @@ pub const Engine = struct {
             try trail.event(e, &.{ f("ev", str("overhead")), f("streams", int(plans.len)), f("rows", int(total)), f("ms", ev.bits(ms)) });
             try e.rule.observeOverhead(@intCast(plans.len), total, ms, sampled, e.rule.headMs(budgets));
         }
-        if (e.cfg.shared_guard) try e.guard.observe(plans.len, shared_guard.committed(outcomes), e.clock.elapsedMs(.overhead));
+        if (e.cfg.shared_guard and e.cfg.timed) try e.guard.observe(plans.len, shared_guard.committed(outcomes), e.clock.elapsedMs(.overhead));
         if (e.backend.round_observer != null) e.backend.observed(paths);
     }
 

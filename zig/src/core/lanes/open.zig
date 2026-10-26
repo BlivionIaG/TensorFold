@@ -137,7 +137,7 @@ pub fn firstDepth(e: *Engine, s: *Stream, reach: Reach) !u32 {
     var who = win.who(s);
     // a stream joining shared rounds the guard runs plain holds no drafts, as the guard measured it faster
     const others = e.activeCount();
-    if (others > 0 and e.cfg.family_streams and e.cfg.shared_guard and !try e.guard.drafts(others + 1)) return 0;
+    if (others > 0 and e.cfg.family_streams and e.cfg.shared_guard and e.cfg.timed and !try e.guard.drafts(others + 1)) return 0;
     if (reach == .head and e.cfg.node_probabilities) return @intCast(try e.rule.headDepth(&who, null, win.probe(e)));
     return @intCast(try e.rule.depth(who));
 }
