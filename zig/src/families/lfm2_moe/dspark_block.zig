@@ -338,8 +338,7 @@ fn readConfidence(d: *Drafter, l: *Lane, depth: u32, bi: usize) void {
     l.conf_len = depth;
 }
 
-/// A finished signalled hold's picks into the lanes' held chains; a nonfinite or invalid pick is refused as the
-/// synchronous path refuses it, and no lane keeps a chain then.
+/// A finished hold's picks into the lanes' held chains; a nonfinite or invalid pick is refused, as when synchronous.
 pub fn readPicks(d: *Drafter, lanes: []const *Lane, depths: []const u32) !void {
     const picks = d.s.picks.slice(Pick, d.config.block * ds.pass_rows);
     var chains: [ds.pass_rows][]u32 = undefined;

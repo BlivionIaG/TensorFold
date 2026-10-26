@@ -98,8 +98,7 @@ constant constexpr uint MARKOV_SPAN = 512;
   }
 }
 
-// A verify window's held drafts from the drafter's picks: picks[i * stride] into ids[i]. A pick flagged nonfinite
-// (the word after it) or past the vocabulary becomes token 0 and sets bad, which the host reads after the verify.
+// Held drafts from picks[i * stride] into ids[i]; a nonfinite or past-vocabulary pick is token 0 and sets bad.
 [[kernel]] void lfm2_draft_ids(const device uint* picks [[buffer(0)]], constant uint4& p [[buffer(1)]],
                                device uint* ids [[buffer(2)]], device atomic_uint* bad [[buffer(3)]],
                                uint i [[thread_position_in_grid]]) {
