@@ -113,3 +113,9 @@ The loader reads the checkpoint one matrix at a time and keeps only the 8-bit co
 Metal buffer (its layers' keys and values, then its staged rows), and its bytes join the streams the load limit
 admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-lfm2-dspark` also counts host
 allocations over twenty served drafter rounds, which must be none.
+
+A hold runs on one concurrent encoder with a barrier only where a step reads an earlier step's writes: q, k and v,
+and gate and up, share one sums pass, and the blocks of a shared hold attend side by side. A projection takes the
+scalar twin up to 8 rows, the window kernel past them where the GPU has no tensor units, and the tensor units from
+9 rows (the head from 5) where it has them. When one lane's stage of 128 verified rows fills, its absorb pass takes
+every lane's staged rows, so the lanes' stages fill together.
