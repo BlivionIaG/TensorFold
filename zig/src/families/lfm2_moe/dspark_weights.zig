@@ -128,7 +128,7 @@ fn matrices(_: []const u8, rank: usize) bool {
     return rank == 2;
 }
 
-/// The drafter's checkpoint read as released (`bits` 0) or quantized to 8-bit codes, a matrix at a time; buffers freed after.
+/// The checkpoint read as released (`bits` 0) or quantized to 8-bit codes, a matrix at a time; buffers freed after.
 pub fn load(gpa: std.mem.Allocator, device: mtl.Device, io: std.Io, dir: []const u8, cfg: *const dc.Config, bits: u8) !Weights {
     if (bits != 0 and bits != 8) return error.UnsupportedDraftBits;
     var check = ckpt.Checkpoint.init(gpa);
