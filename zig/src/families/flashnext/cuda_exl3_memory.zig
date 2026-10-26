@@ -31,6 +31,8 @@ pub fn isExl3(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) bool {
 pub fn tensorBytes(name: []const u8, e: Entry, o: Options) !u64 {
     const bytes: u64 = e.end - e.begin;
     if (wt.hostOnly(name)) return 0;
+    // the BF16 embedding table is pinned host memory the gather reads in place (cuda_embed.Table.uploadDenseHost)
+    if (e.dtype == .bf16 and std.mem.indexOf(u8, name, "embed_tokens") != null) return 0;
     // the codebook marker is checked at load and never uploaded
     if (std.mem.endsWith(u8, name, ".mul1") or std.mem.endsWith(u8, name, ".mcg")) return 0;
     if (std.mem.indexOf(u8, name, ".mlp.experts.") != null) {
