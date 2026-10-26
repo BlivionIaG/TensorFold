@@ -1725,3 +1725,55 @@ TTFT is request start to first streamed piece; prefill tok/s is prompt tokens ov
 Drafts cost about 5-6% of prefill and TTFT on long prompts (the head's prompt pass and 8 fewer lines) and make streaming bursty (zig: 17 tokens every
 ~180 ms, p99 gap 310 ms against 62 ms), in exchange for 3x decode on code-like text and 1.5x on docs. The first request after a start also pays graph
 capture (short: TTFT 1.97 s).
+
+## Campaign: Strata, long runs, two users, quality, request types, cold start, async graphs (rebased tree, TP=2, two RTX 5060 Ti)
+
+All rows: TTFT s / prefill tok/s / decode tok/s / mean ITL ms, second request unless noted, temperature 0, `ignore_eos`.
+
+**Strata re-run** (0.2.4.2 IQ3_XXS GGUF, layer split, MTP `--spec 4`, int8 KV, expert cache auto, 15.7 GiB on each card, one request at a time, a unique prefix per request;
+it produced all 192 tokens this time; prompt token counts differ by 1-30 from ours because of the tokenizer):
+
+| prompt | Strata | ours (drafts + guard, 80 lines) | ours (plain, 88 lines) |
+|---|---|---|---|
+| short | 0.65 / n/a / 88.0 / 11.4 (first request 77.1) | 0.37 / n/a / 50.1 / 20.0 | 0.32 / n/a / 48.9 / 20.4 |
+| zig (16k) | 7.77 / 2,065 / 98.9 / 10.1 | 11.25 / 1,424 / 106.0 / 9.4 | 10.64 / 1,506 / 36.2 / 27.7 |
+| docs (13k) | 6.94 / 1,845 / 105.0 / 9.5 | 10.94 / 1,168 / 59.5 / 16.8 | 10.35 / 1,234 / 38.2 / 26.2 |
+
+Strata streams smoothly (about 1.05 tokens a chunk); its prefill is 1.4-1.6x ours.
+
+**Long outputs and a 31k-token prompt** (drafts default vs plain; the output hash matches in every pair):
+
+| run | drafts | plain |
+|---|---|---|
+| 1,500 tokens, 40-token prompt | decode 45.2, ITL 22.1, gap p99 38.7 ms | decode 48.1, ITL 20.8, gap p99 29.9 ms |
+| 1,000 tokens, docs (13k) | TTFT 12.95, decode 51.4, ITL 19.5, gap p99 174 ms | TTFT 10.77, decode 36.2, ITL 27.6 |
+| 31,661-token prompt, first request | TTFT 36.8 (prefill 860) | TTFT 22.2 (1,424) |
+| 31,661-token prompt, second | TTFT 22.96 (1,379), decode 37.7, ITL 26.6 | TTFT 21.9 (1,445), decode 38.1, ITL 26.2 |
+
+Memory at the end: 15.2 GB / 14.4 GB (drafts), 14.6 / 14.8 GB (plain) used of 16. Over 1,500 tokens of prose the guard loses 6% to the plain run (its drafted probe rounds);
+at 31k tokens drafts give no decode gain. The first long request pays about 14 s of extra warm-up with drafts.
+
+**Two concurrent users** (`--parallel 2`; drafts 64 lines, plain 68 lines; two simultaneous requests of the same prompt):
+
+| prompt | one stream on the 2-lane server: drafts / plain decode | two streams: aggregate tok/s incl. prefill, drafts / plain |
+|---|---|---|
+| short | 41.4 / 42.3 | 57.9 / 74.7 (per-stream decode 30.9, 32.1 / 40.1, 42.0) |
+| zig | 96.5 / 32.1 | 14.1-14.4 / 13.0-13.5 |
+| docs | 53.1 / 35.3 | 12.8-13.1 / 13.2-13.5 |
+
+Prefills serialize: the second stream's TTFT is about twice the first (zig 22.7 vs 11.2 s) and the stream already decoding stalls for the other's whole prefill
+(chunk gap p99 about 2.8-3.1 s, in both configurations). Two concurrent prose streams are 22% slower with drafts than plain: the tokens/ms guard only observes lone-stream rounds
+(core/lanes/engine.zig roundLone), so in shared rounds it never learns and always drafts. Not fixed yet.
+
+**Quality** (24 prompts, 20 with a checkable answer: arithmetic, facts, reasoning, code keywords; temperature 0): the replicated plain run, drafts, the split and split + drafts all get
+20/20. Drafts are byte-identical to the plain run on 24/24; the DeltaNet split matches on 20/24 and the other four diverge after 84, 220, 285 and 423 characters (fp32 order) with the answers intact.
+This is a smoke test, not an eval: no perplexity or task-set run.
+
+**Request types** (drafts on): thinking mode works (reasoning returned, answer 391); a tool call returns `get_weather` with `{"city":"Paris"}`; a `json_schema` response format returns HTTP 400 because
+`libtfgrammar.so` is missing on this machine (the server warns at start), so structured output is untested. With `--prompt-cache-gib 4`: a repeated 8k-token prompt has TTFT 0.21 s (cold 8.7 s), a changed tail 6.7 s;
+decode and the other types are unchanged. One difference to chase: with the cache on, the docs prompt's output hash differs (9e64..) from the cache-off run (f77b..) while staying consistent between its own cold and hit requests.
+
+**Cold start:** load 56.7 s with the MTP head, 45.9 s plain; the first request after a start has TTFT 1.95 s for a 40-token prompt (graph captures) against 0.37 s warm.
+
+**Async graph instantiation** (`TF_FLASHNEXT_EXL3_GRAPH_ASYNC=1`, now settable from the serve script's environment): no difference with the 12-sighting capture rule (short 49.6 / zig 105.8 / docs 59.3 vs 49.9 / 105.9 / 59.4; TTFT identical);
+with few captures left there is little for it to hide. It runs 8 draft chains eagerly while instantiating. Leave it off.

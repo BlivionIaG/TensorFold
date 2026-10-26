@@ -16,3 +16,11 @@ Append a row for every change that is meant to move a number, with the commit, a
 
 Not in the table (measured, rejected, in the final report): lookahead expert prefetch (-11%), lazy head absorb (noise), layer co-occurrence prefetch (covers 3-8% of misses),
 DeltaNet split through prefill (TTFT +18%), attention split without paging (-1 to -2%). Opt-in: `TF_FLASHNEXT_GDN_SPLIT=1` (+5% plain decode, neutral with drafts).
+
+## Strata reference (0.2.4.2 IQ3_XXS, same machine, one request, campaign above)
+
+| prompt | TTFT s | prefill tok/s | decode tok/s | mean ITL ms |
+|---|---|---|---|---|
+| short | 0.65 | n/a | 88.0 | 11.4 |
+| zig | 7.77 | 2,065 | 98.9 | 10.1 |
+| docs | 6.94 | 1,845 | 105.0 | 9.5 |
