@@ -29,7 +29,7 @@ pub const Verify = enum { depth, fixed, scheduled };
 /// The verify when none is asked: the confidence-scheduled one.
 pub const default_verify: Verify = .scheduled;
 
-/// `bits`: 0 runs the released bf16 matrices as stored, 8 quantizes to 8-bit codes; `verify_asked`: --draft-verify given.
+/// `bits`: 0 runs the bf16 matrices as stored, 8 quantizes them at load; `verify_asked`: --draft-verify given.
 pub const Options = struct { capacity: usize, bits: u8 = 0, verify: Verify = default_verify, verify_asked: bool = false };
 
 /// An asked scheduled verify needs the checkpoint's confidence head; the default one falls back to the depth rule.
