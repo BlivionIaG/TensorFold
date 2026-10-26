@@ -1542,3 +1542,12 @@ run as three waves of 36; the bandwidth test had all 96 resident.
 
 Narrow-N block target with the four-warp plan on (A/B/C/B/A, 192, 80, 108, 80, 192): a target of 108 gave the same plan as 192 (same hashes, 46.3/34.5/35.7 tok/s); a target of 80
 (K split 2 for the 40-block projections, one resident wave) changed the bits and was slightly slower (45.9/34.4/35.6). Reverted; the narrow plan stays at linear.py's 192.
+
+One decode layer, from the trace of both ranks in one session (a GDN layer, steady state, 455 us, rank 0): the MoE experts take 83 us (dplan, group, a 36 us gate-up
+`grouped_2` and a 22 us down, the miss pass 3 us), the all-reduce 129 us (that layer's wait), the attention-side hyper-connection readout 47 us (`hc_writeback_moe`,
+`hc_normalize_cols`, `qmmf` 11x8 22 us, `hc_reduce_act`, `qmmf` 160 17 us, `hc_dense_mix8`), the GDN projections 67 us (`linear_10_2_8` on one stream beside `linear_10_2_4` on another, so the
+two already overlap), the GDN recurrence 14 us, the output projection 32 us, the mlp-side readout 50 us, the router 15 us. The two readouts are 21% of the layer and 29% of the bytes a token reads (1.28 GB);
+their dependent chain cannot overlap the all-reduce wait because it reads the stream state the combine produces.
+
+`qmmf` K-split cap (`TF_QMMF_SPLIT_CAP`, 8 by default; 16 leaves the cluster launch for a separate reduce kernel), A/B/B/A with the four-warp plan on: short 46.35 to 46.23 tok/s,
+Zig 34.5 to 34.66, docs 35.68 to 35.96 (the docs text equals the eight-warp plan's again); within noise. Reverted.
