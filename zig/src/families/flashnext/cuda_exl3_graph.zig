@@ -798,12 +798,14 @@ fn tpUpdate() bool {
     return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it (default 2; 1 captures at once). With a
-/// blocking communicator a capture costs 3-7 ms and an in-place update 1-3 ms, and recycled stream buffers
-/// (cuda_exl3_recycle.zig) keep keys stable across requests, so a key is captured once and replayed from then on.
-fn after() u32 {
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER") orelse return 2;
-    return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
+/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it, for rounds and windows alike (default: 2 for
+/// a decode round, 12 for a window; 1 captures at once). A round is one key replayed for the whole decode. A window key
+/// is one of many (rows x state set x attention seams) and a TP capture costs about 39 ms (an instantiation, never an
+/// update): most window keys were captured and replayed zero or one time, and on a 13k-token prompt the captures took
+/// more than half the decode (docs 40.6 -> 59 tok/s at 12).
+fn after(key: Key) u32 {
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER")) |v| return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
+    return if (key.kind == 2) 12 else 2;
 }
 
 /// Captures `pass.chunk(ids, pos0, null)` (prepared) under `key`, or replays the graph captured under it. A key not
@@ -896,7 +898,7 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
         return e.exec.?.launchOn(pass.stream);
     }
     if (try tryRebind(key, pass)) return;
-    if (sighting(key) < after()) {
+    if (sighting(key) < after(key)) {
         stats.eager_dplan += 1;
         note(key, .eager);
         pass.prepared = true;
@@ -1025,8 +1027,8 @@ fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []const 
     if (entry) |x| x.used = clock;
     const vote = if (entry != null) graphVote(entry, c.graphTimeoutMs()) else collective.GraphVote{
         .state = if (stateRequest(key, pass)) |request|
-            if (rebindCandidate(key, request, true) != null) .capture else if (sighting(key) < after()) .eager else .capture
-        else if (sighting(key) < after()) .eager else .capture,
+            if (rebindCandidate(key, request, true) != null) .capture else if (sighting(key) < after(key)) .eager else .capture
+        else if (sighting(key) < after(key)) .eager else .capture,
     };
     const decision = try c.graphAgree(signature, vote);
     switch (decision.choice) {
