@@ -9,6 +9,7 @@ pub fn newPlacedSeq(engine: *prompt.Engine, cap: usize) !prompt.Seq {
 
 pub fn deinit(sequence: *prompt.Seq, allocator: std.mem.Allocator) void {
     if (@import("cuda_exl3_recycle.zig").giveSeq(sequence)) return;
+    if (sequence.stream) |stream| @import("cuda").completion.drain(stream.d, stream, "Flash Next sequence work did not drain before release");
     if (sequence.paged != null or sequence.invalidated) sequence.tail.d.synchronize() catch @panic("sequence consumers did not drain before freeing allocations");
     @import("cuda_exl3_graph.zig").releaseSeq(sequence);
     if (sequence.media) |*media| media.deinit();
@@ -19,5 +20,6 @@ pub fn deinit(sequence: *prompt.Seq, allocator: std.mem.Allocator) void {
     }
     if (sequence.tail.ptr != 0) sequence.tail.free();
     if (sequence.paged) |pager| pager.destroy();
+    if (sequence.ptable) |*table| table.deinit(allocator);
     allocator.free(sequence.logits);
 }

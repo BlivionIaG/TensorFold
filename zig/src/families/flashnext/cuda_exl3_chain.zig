@@ -235,10 +235,10 @@ fn step(comptime Tri: type, o: anytype, tri: Tri, p: *batch.Pass(Tri), d: *mtp.D
         try tri.embed(s.ids, e.table.w.ptr, e.table.s.ptr, e.table.b.ptr, s.ple_keys, dims, streams, 1);
     }
     try tri.rmsnorm(s.ple_keys, h.norm_e.ptr, s.mixed, s.xsm, eps, wide, 1, dims, dims);
-    try p.lane(s.mixed, s.xsm, h.fc_e, s.dummy, s.part, 1, fc_sk);
+    _ = try p.lane(s.mixed, s.xsm, h.fc_e, s.dummy, s.part, 1, fc_sk);
     try p.sumSlices(s.part, s.branch, true, dims, fc_sk);
     try tri.rmsnorm(d.out.ptr, h.norm_h.ptr, s.norm, s.gq, eps, wide, 1, wide, wide);
-    try p.lane(s.norm, s.gq, h.fc_h, s.dummy, s.part, streams, fc_sk);
+    _ = try p.lane(s.norm, s.gq, h.fc_h, s.dummy, s.part, streams, fc_sk);
     try p.sumSlices(s.part, s.ple_gated, true, streams * dims, fc_sk);
     try tri.addStreams(s.branch, s.ple_gated, s.h, 1, dims, streams);
     try p.writeback(0, 1);
@@ -251,7 +251,7 @@ fn step(comptime Tri: type, o: anytype, tri: Tri, p: *batch.Pass(Tri), d: *mtp.D
     try p.writeback(0, 1);
     try p.copy(d.out.ptr, s.h, wide * 2);
     try p.readout(h.mixer, 0, 1);
-    try p.lane(s.mixed, s.xsm, h.draft, d.dlogits.ptr, s.dummy, 1, 1);
+    _ = try p.lane(s.mixed, s.xsm, h.draft, d.dlogits.ptr, s.dummy, 1, 1);
 }
 
 /// The chain's launches on `p`'s stream: the decision reset, every pick's record into st.best; after a pick that

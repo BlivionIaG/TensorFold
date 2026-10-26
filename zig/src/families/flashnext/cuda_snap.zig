@@ -69,6 +69,7 @@ const gdn = @import("cuda_gdn.zig");
 const Draft = @import("cuda_mtp_draft.zig").Draft;
 const kv = @import("cuda_exl3_kv.zig");
 const pager = @import("cuda_exl3_kvpage.zig");
+const pages = @import("cuda_pages.zig");
 
 const conv_bytes = (gdn.taps - 1) * gdn.conv_dim * 2;
 const state_bytes = wt.state_n * 4;
@@ -98,7 +99,10 @@ pub fn bytesKv(at: usize, head: bool, r: kv.Rows) usize {
 
 /// A sequence's K/V rows a token, read from its buffers (cap rows each).
 fn seqRows(seq: *const prompt.Seq) kv.Rows {
-    return .{ .kv = seq.kc[0].len / seq.cap, .scales = if (seq.kv8) |c| c.ks[0].len / seq.cap else 0 };
+    // borrowed page views carry no length: their rows are upstream's (bf16, two KV heads)
+    const per = if (seq.ptable != null or seq.cap == 0) 0 else seq.kc[0].len / seq.cap;
+    if (per == 0) return kv.snapRows(false, 2);
+    return .{ .kv = per, .scales = if (seq.kv8) |c| c.ks[0].len / seq.cap else 0 };
 }
 
 /// One kept state; `head`: it holds the MTP head's cache over the same rows, which a drafting stream needs.
@@ -168,15 +172,11 @@ fn move(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, base: u64, at: usize,
         pieces[count..][0..4].* = attnPieces((&h.kc)[0..1], (&h.vc)[0..1], (&h.ikc)[0..1], (&h.pooled)[0..1], at);
         count += 4;
     }
-    if (d) |h| {
-        pieces[count..][0..4].* = attnPieces((&h.kc)[0..1], (&h.vc)[0..1], (&h.ikc)[0..1], (&h.pooled)[0..1], at);
-        count += 4;
-    }
     for (pieces[0..count], 0..) |p, pi| for (p.bufs, 0..) |b, layer| {
         if (p.n == 0) continue;
         // the model's caches on the stream's pages; the head's too in a pool lane (the layer after the model's)
         const head = pi >= 7 and d != null and d.?.pg.pt != 0;
-        if ((pi >= 2 and pi < 6) or head) if (seq.paged) |*pg| {
+        if ((pi >= 2 and pi < 6) or head) if (seq.ptable) |*pg| {
             // the same bytes in the same order as a contiguous cache's, a run a page
             const part: pages.Part = @fromBackingInt(@intCast(if (head) pi - 7 else pi - 2));
             const at_layer = if (head) wt.attn_n else layer;

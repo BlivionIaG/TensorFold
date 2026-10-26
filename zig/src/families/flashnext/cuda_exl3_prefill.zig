@@ -804,10 +804,10 @@ fn windowFinish(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch
     }
     try p.readout(p.m.mixer, 0, 1);
     if (p.m.head.n == vocab) {
-        try p.lane(scratch.mixed, scratch.xsm, p.m.head, scratch.logits, scratch.dummy, 1, 1);
+        _ = try p.lane(scratch.mixed, scratch.xsm, p.m.head, scratch.logits, scratch.dummy, 1, 1);
     } else {
         const collective = p.m.collective orelse return error.TensorParallelUnavailable;
-        try p.lane(scratch.mixed, scratch.xsm, p.m.head, scratch.head_local, scratch.dummy, 1, 1);
+        _ = try p.lane(scratch.mixed, scratch.xsm, p.m.head, scratch.head_local, scratch.dummy, 1, 1);
         try collective.gather(p.stream, scratch.head_local, scratch.logits, vocab / 2);
     }
     if (logits_host) |destination| {
@@ -963,11 +963,11 @@ fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratc
     }
     try p.readout(p.m.mixer, 0, 1);
     if (p.m.head.n == vocab) {
-        try p.lane(s.mixed, s.xsm, p.m.head, s.logits, s.dummy, 1, 1);
+        _ = try p.lane(s.mixed, s.xsm, p.m.head, s.logits, s.dummy, 1, 1);
     } else {
         // the head split by vocabulary (expert parallel): each rank's half, gathered in vocabulary order (projectHead)
         const c = p.m.collective orelse return error.TensorParallelUnavailable;
-        try p.lane(s.mixed, s.xsm, p.m.head, s.head_local, s.dummy, 1, 1);
+        _ = try p.lane(s.mixed, s.xsm, p.m.head, s.head_local, s.dummy, 1, 1);
         try c.gather(st, s.head_local, s.logits, vocab / 2);
     }
     if (logits_host) |lh| {
@@ -989,8 +989,8 @@ fn layerBlock(comptime Tri: type, p: *batch.Pass(Tri), lw: *const @import("cuda_
     if (layer == ple_layer) {
         if (p.pending != null) try p.writeback(0, m);
         // Pass.pleBlock for a prompt's rows (no lanes)
-        try p.lane(s.ple_emb, s.ple_xs, lw.key, s.ple_keys, s.dummy, m, 1);
-        try p.lane(s.ple_emb, s.ple_xs, lw.val, s.dummy, s.ple_part, m, 4);
+        _ = try p.lane(s.ple_emb, s.ple_xs, lw.key, s.ple_keys, s.dummy, m, 1);
+        _ = try p.lane(s.ple_emb, s.ple_xs, lw.val, s.dummy, s.ple_part, m, 4);
         try p.sumSlices(s.ple_part, s.ple_vals, true, m * dims, 4);
         try p.tri.pleGate(s.ple_keys, s.ple_vals, s.h, lw.nk.ptr, lw.nq.ptr, s.ple_gated, s.ple_pss, eps, m, dims, streams);
         try p.tri.pleConv(s.ple_gated, s.ple_pss, lw.nc.ptr, p.seq.tail.ptr, lw.ple_cw.ptr, s.h, s.h, s.ple_nrow, eps, m, dims, streams, 4, 3);
@@ -999,7 +999,7 @@ fn layerBlock(comptime Tri: type, p: *batch.Pass(Tri), lw: *const @import("cuda_
     try p.writeback(0, m);
     try p.readout(lw.attn_hc, 0, m);
     if (lw.linear) {
-        try p.gdnBlock(lw, wt.linearIndex(layer), .{});
+        try p.gdnBlock(lw, layer, wt.linearIndex(layer), .{});
     } else {
         try p.attnBlock(lw, wt.attnIndex(layer));
     }
@@ -1383,10 +1383,10 @@ fn headSlice(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, 
             try tri.embed(v.ids, e.table.w.ptr, e.table.s.ptr, e.table.b.ptr, v.ple_keys, dims, streams, m);
         }
         try tri.rmsnorm(v.ple_keys, h.norm_e.ptr, v.mixed, v.xsm, eps, wide, m, dims, dims);
-        try p.lane(v.mixed, v.xsm, h.fc_e, v.dummy, v.part, m, mtp.fc_sk);
+        _ = try p.lane(v.mixed, v.xsm, h.fc_e, v.dummy, v.part, m, mtp.fc_sk);
         try p.sumSlices(v.part, v.branch, true, m * dims, mtp.fc_sk);
         try tri.rmsnorm(rows + at * wide * 2, h.norm_h.ptr, v.norm, v.gq, eps, wide, m, wide, wide);
-        try p.lane(v.norm, v.gq, h.fc_h, v.dummy, v.part, streams * m, mtp.fc_sk);
+        _ = try p.lane(v.norm, v.gq, h.fc_h, v.dummy, v.part, streams * m, mtp.fc_sk);
         try p.sumSlices(v.part, v.ple_gated, true, streams * m * dims, mtp.fc_sk);
         try tri.addStreams(v.branch, v.ple_gated, v.h, m, dims, streams);
         try p.writeback(0, m);

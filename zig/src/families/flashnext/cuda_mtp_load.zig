@@ -5,10 +5,16 @@ const wt = @import("cuda_prompt_wt.zig");
 const core = @import("core");
 const projection = @import("cuda_projection.zig");
 
-pub fn draft(a: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store, ids: []const u32) !wt.Q4 {
-    const mode = if (std.c.getenv("TF_FLASHNEXT_DRAFT_HEAD")) |v| std.mem.span(v) else "bf16";
-    const affine = std.mem.eql(u8, mode, "affine4");
-    if (!affine and !std.mem.eql(u8, mode, "bf16")) return error.BadDraftHead;
+pub const Mode = enum { bf16, affine4 };
+pub fn mode() !Mode {
+    const value = if (std.c.getenv("TF_FLASHNEXT_DRAFT_HEAD")) |v| std.mem.span(v) else "bf16";
+    if (std.mem.eql(u8, value, "bf16")) return .bf16;
+    if (std.mem.eql(u8, value, "affine4")) return .affine4;
+    return error.BadDraftHead;
+}
+pub fn draft(a: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store, artifact: *const core.proposal_vocab.Artifact, role: Mode) !wt.Q4 {
+    const ids = artifact.ids();
+    const affine = role == .affine4;
     if (try @import("cuda_exl3_mtp.zig").draft(a, d, store, ids, affine)) |q| return q;
     const tensor = try store.tensor("language_model.lm_head.weight");
     if (tensor.dtype == .bf16) {

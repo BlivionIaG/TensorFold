@@ -103,6 +103,7 @@ pub const Store = struct {
         var parsed = try std.json.parseFromSlice(std.json.Value, gpa, text, .{});
         errdefer parsed.deinit();
         try exl3_store.addPatch(io, dir, &parsed);
+        _ = try core.safetensors.index.weightMap(parsed.value);
         return .{ .gpa = gpa, .io = io, .dir = dir, .parsed = parsed };
     }
 

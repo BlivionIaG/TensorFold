@@ -317,7 +317,8 @@ pub const cuda_sets = [_]CudaSet{
     } ++ learning.cuda_132 ++ @import("paging_pending.zig").cuda_132 ++ @import("nemotron_prompt_records.zig").cuda_132 ++ @import("glm_cuda_records.zig").cuda_132 ++ @import("qwen_served_records.zig").cuda_132 ++ @import("flashnext_tile_records.zig").cuda_132) },
     .{ .release = .{ .major = 13, .minor = 3 }, .usage = &([_]Override{
         .{ .name = "router tf_nemo_topk", .usage = .{ .{ .regs = 94, .static = 0, .bound = 32 }, .{ .regs = 95, .static = 0, .bound = 32 }, .{ .regs = 95, .static = 0, .bound = 32 }, .{ .regs = 96, .static = 0, .bound = 32 }, .{ .regs = 96, .static = 0, .bound = 32 } } },
-    } },
+        .{ .name = "flashnext_batch fn_qsa_select", .usage = .{ .{ .regs = 32, .static = 1168, .bound = 1024 }, .{ .regs = 50, .static = 1168, .bound = 1024 }, .{ .regs = 50, .static = 1168, .bound = 1024 }, .{ .regs = 44, .static = 1168, .bound = 1024 }, .{ .regs = 44, .static = 1168, .bound = 1024 } } },
+    } ++ @import("flashnext_tile_records.zig").cuda_133 ++ @import("glm_cuda_records.zig").cuda_133) },
     .{ .release = .{ .major = 13, .minor = 4 }, .usage = &.{.{ .name = "exl3_candidate tf_exl3_prompt_2", .usage = .{ .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 80, .static = 32768, .bound = 256 }, .{ .regs = 77, .static = 32768, .bound = 256 }, .{ .regs = 77, .static = 32768, .bound = 256 } } }} },
 };
 pub fn newer(x: limits.Nvcc, y: limits.Nvcc) bool {

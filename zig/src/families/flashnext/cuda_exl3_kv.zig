@@ -226,11 +226,11 @@ pub fn attnBlock(p: anytype, k8: *const Kv8, lw: anytype, ai: usize, c: Kv8.Cach
     const top = wt.index_top;
     const idw = wt.index_idw;
     const proj_n = wt.proj_n;
-    try p.lane(s.mixed, s.xsm, lw.proj, pa, s.dummy, n, 1);
+    _ = try p.lane(s.mixed, s.xsm, lw.proj, pa, s.dummy, n, 1);
     const ikc = p.seq.ikc[ai].ptr;
     const pooled = p.seq.pooled[ai].ptr;
     try k8.prepRows(p.stream, pa, s.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, s.q, c, s.iq, ikc, 1e-6, n, proj_n, wt.q_heads, kv_heads, rot);
-    try p.tri.qsaPool(ikc, pooled, s.pos, lw.ik_scale.ptr, s.inv, 1e-6, n);
+    try p.tri.qsaPool(ikc, pooled, s.pos, lw.ik_scale.ptr, s.inv, 1e-6, n, .{});
     const nb = (cdiv(p.seq.cap, ratio) + 15) / 16 * 16;
     var r0: usize = 0;
     var b: usize = 0;
@@ -243,7 +243,7 @@ pub fn attnBlock(p: anytype, k8: *const Kv8, lw: anytype, ai: usize, c: Kv8.Cach
         if (ends > p.seq.cap) return error.UnexpectedTensor;
         const pos = s.pos + b * 16;
         const iq = s.iq + r0 * wt.index_heads * wt.index_dim * 2;
-        if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)));
+        if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)), .{});
         var a: cuda.Args = .{};
         a.add(p.seq.scores);
         a.add(pos);
@@ -258,7 +258,7 @@ pub fn attnBlock(p: anytype, k8: *const Kv8, lw: anytype, ai: usize, c: Kv8.Cach
         try k8.attnMerge(p.stream, s.po, s.pm, s.pl, pos, s.ao + r0 * wt.out_k * 2, s.qnk, s.qspr, m, wt.q_heads, kv_heads, true, rot);
     }
     try p.tri.attnGate(s.ao, pa, s.gated, s.gxs_attn, n, proj_n, wt.q_heads, head_dim);
-    try p.lane(s.gated, s.gxs_attn, lw.out, s.dummy, s.part, n, wt.out_sk);
+    _ = try p.lane(s.gated, s.gxs_attn, lw.out, s.dummy, s.part, n, wt.out_sk);
 }
 
 fn cdiv(a: usize, b: usize) usize {
@@ -604,7 +604,7 @@ pub fn attnRows(p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anyty
     const top = wt.index_top;
     const att_rows: usize = 256;
     try k8.prepRows(p.stream, pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kv, at.iq, ikc, 1e-6, n, wt.proj_n, wt.q_heads, kv_heads, c.rot);
-    try p.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, 1e-6, n);
+    try p.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, 1e-6, n, .{});
     const nb = (cdiv(p.seq.cap, ratio) + 15) / 16 * 16;
     var r0: usize = 0;
     var b: usize = 0;
@@ -617,7 +617,7 @@ pub fn attnRows(p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anyty
         if (ends > p.seq.cap) return error.UnexpectedTensor;
         const pos = at.pos + b * 16;
         const iq = at.iq + r0 * wt.index_heads * wt.index_dim * 2;
-        if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)));
+        if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)), .{});
         var a: cuda.Args = .{};
         a.add(p.seq.scores);
         a.add(pos);

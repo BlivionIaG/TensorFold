@@ -140,7 +140,7 @@ fn stepLayer(gpu: check.Gpu, p: *fx.Pass, k8: *const Kv.Kv8, v: Variant, vq: *co
     try p.writeback(0, n);
     try p.readout(lw.attn_hc, 0, n);
     if (lw.linear) {
-        try p.gdnBlock(lw, wt.linearIndex(l), .{});
+        try p.gdnBlock(lw, l, wt.linearIndex(l), .{});
     } else {
         const ai = wt.attnIndex(l);
         if (v.kv8) return stepRest(gpu, p, lw, l, n, h, Kv.attnBlock(p, k8, lw, ai, vq.c8[ai], v.rot));
@@ -347,7 +347,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
             try fx.uploadTo(gpu, p.stream, p.s.h, std.mem.sliceAsBytes(h[b0 * wide ..][0 .. n * wide]));
             try p.writeback(0, n);
             try p.readout(mixer, 0, n);
-            try p.lane(p.s.mixed, p.s.xsm, head, logits_d.ptr, p.s.dummy, n, 1);
+            _ = try p.lane(p.s.mixed, p.s.xsm, head, logits_d.ptr, p.s.dummy, n, 1);
             const got = try fx.download(u16, gpu, r.stream, logits_d.ptr, n * vocab);
             defer gpu.gpa.free(got);
             @memcpy(lg[vi][0 .. n * vocab], got);
@@ -390,7 +390,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
             try fx.uploadTo(gpu, p.stream, p.s.h, std.mem.sliceAsBytes(h[t0r * wide ..][0 .. tail * wide]));
             try p.writeback(0, tail);
             try p.readout(mixer, 0, tail);
-            try p.lane(p.s.mixed, p.s.xsm, head, logits_d.ptr, p.s.dummy, tail, 1);
+            _ = try p.lane(p.s.mixed, p.s.xsm, head, logits_d.ptr, p.s.dummy, tail, 1);
             const got = try fx.download(u16, gpu, r.stream, logits_d.ptr, tail * vocab);
             defer gpu.gpa.free(got);
             @memcpy(lg[vi][0 .. tail * vocab], got);

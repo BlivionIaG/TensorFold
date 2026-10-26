@@ -594,14 +594,14 @@ fn bf16Rows(a: std.mem.Allocator, rng: std.Random, n: usize, sigma: f32) ![]u16 
 fn laneOut(gpu: Gpu, p: *Pass, w: wt.Q4, x: u64, m: usize, sk: usize) !struct { bf: ?[]u16 = null, f: ?[]f32 = null, rest_zero: bool = true } {
     const s = p.s;
     if (sk == 1) {
-        try p.lane(x, s.dummy, w, s.proj, s.dummy, m, 1);
+        _ = try p.lane(x, s.dummy, w, s.proj, s.dummy, m, 1);
         return .{ .bf = try download(u16, gpu, p.stream, s.proj, m * w.n) };
     }
     // the slices in a buffer of their own: a 12,288-wide part's exceeds the pass's out_sk x dims `part`
     var slices = try cuda.DeviceBuffer.alloc(gpu.d, sk * m * w.n * 4);
     defer slices.free();
     try slices.fill8(0xff, p.stream.handle);
-    try p.lane(x, s.dummy, w, s.dummy, slices.ptr, m, sk);
+    _ = try p.lane(x, s.dummy, w, s.dummy, slices.ptr, m, sk);
     const all = try download(f32, gpu, p.stream, slices.ptr, sk * m * w.n);
     defer gpu.gpa.free(all);
     var zero = true;
@@ -863,7 +863,7 @@ pub fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []con
     try p.readout(lw.attn_hc, 0, n);
     try tap(gpu, p, s.mixed, taps.attn_mixed[0 .. n * dims]);
     try tap(gpu, p, s.inj, taps.attn_inj[0 .. n * streams]);
-    if (lw.linear) try p.gdnBlock(lw, wt.linearIndex(l), .{}) else try p.attnBlock(lw, wt.attnIndex(l));
+    if (lw.linear) try p.gdnBlock(lw, l, wt.linearIndex(l), .{}) else try p.attnBlock(lw, wt.attnIndex(l));
     const branch = try download(f32, gpu, p.stream, s.part, n * dims);
     defer gpu.gpa.free(branch);
     for (tr.attn_branch[0 .. n * dims], branch) |*d, v| d.* = v;
@@ -1130,7 +1130,7 @@ fn pleMode(gpu: Gpu, dir: []const u8) !void {
         var slices = try cuda.DeviceBuffer.alloc(gpu.d, 4 * m * dims * 4);
         defer slices.free();
         try slices.fill8(0xff, p.stream.handle);
-        try p.lane(xd.ptr, p.s.dummy, value, p.s.dummy, slices.ptr, m, 4);
+        _ = try p.lane(xd.ptr, p.s.dummy, value, p.s.dummy, slices.ptr, m, 4);
         const all = try download(f32, gpu, p.stream, slices.ptr, 4 * m * dims);
         defer gpu.gpa.free(all);
         const sum = try a.alloc(f64, m * dims);

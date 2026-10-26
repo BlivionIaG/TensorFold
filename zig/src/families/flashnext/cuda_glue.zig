@@ -36,6 +36,7 @@ const Fns = struct {
     wb_slices: cuda.Function,
     normalize: cuda.Function,
     normalize_cols: cuda.Function, // fn_hc_normalize's bits over 256-column slices (dims a multiple of 256)
+    dense_mix8: cuda.Function, // fn_hc_dense_mix's bits, a warp a 32-column group, eight a block
     dense_mix: cuda.Function,
     shared_swiglu: cuda.Function,
     shared_scatter: cuda.Function,
@@ -122,6 +123,7 @@ pub const Glue = struct {
             .wb_slices = try g.hc.function("fn_hc_writeback_slices"),
             .normalize = try g.hc.function("fn_hc_normalize"),
             .normalize_cols = try g.hc.function("fn_hc_normalize_cols"),
+            .dense_mix8 = try g.hc.function("fn_hc_dense_mix8"),
             .dense_mix = try g.hc.function("fn_hc_dense_mix"),
             .shared_swiglu = try g.hc.function("fn_shared_swiglu"),
             .shared_scatter = try g.hc.function("fn_shared_scatter"),

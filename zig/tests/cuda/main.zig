@@ -360,6 +360,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "flashnext-exl3-engine")) return flashnext_exl3_engine_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "flashnext-exl3-tpe")) return flashnext_exl3_tp_engine_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "flashnext-exl3-graph")) return flashnext_exl3_graph_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "flashnext-pages")) return @import("contract_fn_pages.zig").run(gpu);
     if (std.mem.eql(u8, cmd, "info")) return info(gpu);
     if (std.mem.eql(u8, cmd, "smoke")) return runtime_tests.smoke(gpu);
     if (std.mem.eql(u8, cmd, "shared-context")) return runtime_tests.sharedContext(gpu);

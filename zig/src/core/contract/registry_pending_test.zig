@@ -22,7 +22,7 @@ test "EXL3 prompt resource records select measured CUDA 13.4 usage without chang
         try std.testing.expectEqual(@as(u32, 256), usage.bound);
     }
 }
-test "pending 13.0 CUDA launches have no invented usage and cannot pass the measured gate" {
+test "CUDA lane resources distinguish recorded launches from missing receipts" {
     for (cuda_pending) |r| {
         try std.testing.expect(r.launch.threads > 0);
         var missing: usize = 0;

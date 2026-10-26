@@ -177,10 +177,10 @@ pub fn attnBlock(p: anytype, lw: anytype, ai: usize) !void {
     const s = p.s;
     const n = p.rows;
     const pa = s.proj;
-    const g: *const Glue = p.tri.own orelse return error.NativeGlueRequired;
+    const g: *const Glue = if (comptime @hasField(@TypeOf(p.tri), "own")) (p.tri.own orelse return error.NativeGlueRequired) else return error.NativeGlueRequired;
     if (p.tri.set != null) return error.NativeGlueRequired;
     const c = p.m.collective orelse return error.TensorParallelUnavailable;
-    try p.lane(s.mixed, s.xsm, lw.proj, pa, s.dummy, n, 1);
+    _ = try p.lane(s.mixed, s.xsm, lw.proj, pa, s.dummy, n, 1);
     if (p.lanes.len > 0) {
         const own_seq = p.seq;
         const own_pos0 = p.pos0;
@@ -195,7 +195,7 @@ pub fn attnBlock(p: anytype, lw: anytype, ai: usize) !void {
         }
     } else try rows(p, g, lw, ai, pa, n, s.pos, s.q, s.iq, s.ao);
     try p.tri.attnGate(s.ao, pa, s.gated, s.gxs_attn, n, rank_pw, rank_q, head_dim);
-    try p.lane(s.gated, s.gxs_attn, lw.out, s.dummy, s.part, n, wt.out_sk);
+    _ = try p.lane(s.gated, s.gxs_attn, lw.out, s.dummy, s.part, n, wt.out_sk);
     try c.sum(p.stream, s.part, n * wt.dims);
 }
 
@@ -216,7 +216,7 @@ fn rows(p: anytype, g: *const Glue, lw: anytype, ai: usize, pa: u64, n: usize, p
         for ([_]usize{ rank_pw, rank_q, rank_kv, wt.index_heads, wt.index_dim, wt.half }) |v| a.add(ci(v));
         try go(g.f.prep, st, .{ n, rank_q + rank_kv + wt.index_heads + 1, 1 }, 256, 0, &a);
     }
-    try p.tri.qsaPool(ikc, pooled, pos_at, lw.ik_scale.ptr, s.inv, wt.eps, n);
+    try p.tri.qsaPool(ikc, pooled, pos_at, lw.ik_scale.ptr, s.inv, wt.eps, n, .{});
     const ratio = wt.index_ratio;
     const top = wt.index_top;
     const att_rows: usize = 256;
@@ -232,7 +232,7 @@ fn rows(p: anytype, g: *const Glue, lw: anytype, ai: usize, pa: u64, n: usize, p
         if (ends > p.seq.cap) return error.UnexpectedTensor;
         const pos = pos_at + b * 16;
         const iq = iq_at + r0 * wt.index_heads * wt.index_dim * 2;
-        if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)));
+        if (ends / ratio > top) try p.tri.qsaScores(iq, pooled, pos, p.seq.scores, nb, m, @min(nb, cdiv(ends, ratio)), .{});
         var a: cuda.Args = .{};
         a.add(p.seq.scores);
         a.add(pos);

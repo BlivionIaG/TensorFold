@@ -86,7 +86,7 @@ fn step(gpu: Gpu, a: std.mem.Allocator, p: *T.Pass, lw: *const pl.Layer, l: usiz
     try T.uploadTo(gpu, p.stream, s.h, std.mem.sliceAsBytes(h_in));
     try p.writeback(0, n);
     try p.readout(lw.attn_hc, 0, n);
-    if (lw.linear) try p.gdnBlock(lw, wt.linearIndex(l), .{}) else try p.attnBlock(lw, wt.attnIndex(l));
+    if (lw.linear) try p.gdnBlock(lw, l, wt.linearIndex(l), .{}) else try p.attnBlock(lw, wt.attnIndex(l));
     try p.tri.hcWriteback(s.h, s.h, s.pss, s.part, "*fp32", s.inj, s.dummy, "*bf16", s.dummy, "*bf16", n * dims, n, dims, streams, 4, 1, 1, wt.out_sk);
     try p.readout(lw.mlp_hc, 0, n);
     try p.moeBlock(lw);
@@ -453,9 +453,9 @@ fn headMode(gpu: Gpu, dir: []const u8) !void {
         defer yf.free();
         var yh = try cuda.DeviceBuffer.alloc(gpu.d, m * wt.vocab * 2);
         defer yh.free();
-        try p.lane(x.ptr, p.s.dummy, full, yf.ptr, p.s.dummy, m, 1);
+        _ = try p.lane(x.ptr, p.s.dummy, full, yf.ptr, p.s.dummy, m, 1);
         try e0.record(p.stream);
-        try p.lane(x.ptr, p.s.dummy, full, yf.ptr, p.s.dummy, m, 1);
+        _ = try p.lane(x.ptr, p.s.dummy, full, yf.ptr, p.s.dummy, m, 1);
         try e1.record(p.stream);
         try e1.synchronize();
         const t_full = try e0.elapsedMs(e1);
@@ -465,9 +465,9 @@ fn headMode(gpu: Gpu, dir: []const u8) !void {
             const tmp = try a.alloc(u16, m * h.n);
             var yr = try cuda.DeviceBuffer.alloc(gpu.d, m * h.n * 2);
             defer yr.free();
-            try p.lane(x.ptr, p.s.dummy, h, yr.ptr, p.s.dummy, m, 1);
+            _ = try p.lane(x.ptr, p.s.dummy, h, yr.ptr, p.s.dummy, m, 1);
             try e0.record(p.stream);
-            try p.lane(x.ptr, p.s.dummy, h, yr.ptr, p.s.dummy, m, 1);
+            _ = try p.lane(x.ptr, p.s.dummy, h, yr.ptr, p.s.dummy, m, 1);
             try e1.record(p.stream);
             try e1.synchronize();
             t_half = @max(t_half, try e0.elapsedMs(e1));

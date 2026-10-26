@@ -64,16 +64,13 @@ pub fn Namespace(comptime Tri: type) type {
 
         /// Living Weights' learner (--slide): lessons put neurons in each layer's pocket beside its shared expert.
         pub const slide = slide_mod.Slide(Tri);
-
         /// The first file a lesson would rewrite through a link, or null: a teaching copy may hard-link the others.
         pub const linked = slide_mod.linked;
-
         /// What a learner over the loaded engine `p` learns into; `dir` must outlive it.
         pub fn learnModel(p: *anyopaque, dir: []const u8) slide.Model {
             const own: *Cuda = @ptrCast(@alignCast(p));
             return .{ .e = own.engine, .tri = own.tri(), .dir = dir, .lay = own.lay };
         }
-
         /// One stream's prompt-and-reply driver, as native/cuda.zig types it; this family has none.
         pub const LoneRun = *const fn (ctx: *anyopaque, s: *lanes.Stream, hooks: *anyopaque, committed: *const fn (*anyopaque) void, yield: *const fn (*anyopaque) bool, resumed: bool) anyerror!bool;
         pub const Loaded = struct {
@@ -104,23 +101,11 @@ pub fn Namespace(comptime Tri: type) type {
 
         /// Device bytes of the checkpoint: the n-gram tables stay mapped, the MTP head counts; 0 if unread.
         pub fn deviceWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) u64 {
-            if (exl3_memory.isExl3(gpa, io, dir)) return exl3_memory.weightBytes(gpa, io, dir);
-            const main = weights.deviceBytes(gpa, io, dir) catch return 0;
-            return main + mtp.headBytes();
+            return bytes.deviceWeightBytes(gpa, io, dir);
         }
 
         pub fn placementWeightBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, world: usize, rank: usize, drafts: bool) !u64 {
-            if ((world != 1 and world != 2) or rank >= world) return error.BadRank;
-            const mode = try config.mode(gpa, io, dir);
-            if (mode == .exl3) return exl3_memory.placement(gpa, io, dir, world, rank, drafts);
-            if (mode == .modelopt) {
-                const main = try @import("cuda_rank_memory.zig").estimate(gpa, io, dir, world, rank);
-                // Dense draft projections and vocabulary rows exceed the affine head's estimate.
-                return main + if (drafts and rank == 0) mtp.headBytes() + (1 << 30) else @as(u64, 0);
-            }
-            if (world != 1) return error.UnsupportedQuantization;
-            const main = try weights.deviceBytes(gpa, io, dir);
-            return main + if (drafts) mtp.headBytes() else @as(u64, 0);
+            return bytes.placementWeightBytes(gpa, io, dir, world, rank, drafts);
         }
 
         /// The tower's weights and one call's scratch, which rank zero holds beside the text weights with --vision.
@@ -183,6 +168,7 @@ pub fn Namespace(comptime Tri: type) type {
             graph_reservation: u64 = 0,
             /// --slide: the pocket's layout, from config.json at load.
             lay: living.Layout = undefined,
+            kv: kvl.State = .{},
 
             pub fn tri(self: *Cuda) Tri {
                 return .{ .set = if (self.set) |*x| x else null, .own = &self.glue, .s = self.stream };
@@ -299,7 +285,8 @@ pub fn Namespace(comptime Tri: type) type {
                 }
                 // a window's rows past the reply's last token (its drafts) still need cache slots
                 const cap = if (self.engine.page_config != null) @min(prompt.max_tokens, self.context + mtp.max_rows) else @import("cuda_exl3_recycle.zig").roundCap(@min(ids.len + s.max_new + (if (drafting) mtp.max_rows else 0), prompt.max_tokens), @min(prompt.max_tokens, self.context + mtp.max_rows));
-                gop.value_ptr.* = .{ .seq = (if (self.ranks) |r| r.create(cap) else self.engine.newSeq(cap)) catch |err| {
+                const from = self.kv.choose();
+                gop.value_ptr.* = .{ .seq = (if (self.ranks) |r| r.create(cap) else if (from == .pool) self.kv.pool.?.open(cap) else self.engine.newSeq(cap)) catch |err| {
                     self.lanes.removeByPtr(gop.key_ptr);
                     return err;
                 }, .from = from };
@@ -310,7 +297,7 @@ pub fn Namespace(comptime Tri: type) type {
                     dropLane(self, l);
                     self.lanes.removeByPtr(gop.key_ptr);
                 }
-                if (drafting) l.draft = try mtp.Draft.init(self.gpa, self.engine.driver, self.stream, cap, self.head.?.ids.len, @import("cuda_exl3_prefill.zig").draftRows(self.engine)); // EXL3 deep prefill
+                if (drafting) l.draft = if (from == .pool) try self.kv.pool.?.draft(&l.seq, cap) else try mtp.Draft.init(self.gpa, self.engine.driver, self.stream, cap, self.head.?.ids.len, @import("cuda_exl3_prefill.zig").draftRows(self.engine)); // EXL3 deep prefill
                 if (s.images.len != 0) {
                     const v = self.vision orelse return error.VisionNotEnabled;
                     l.seq.media = try v.state(ids, s.images);
@@ -341,7 +328,10 @@ pub fn Namespace(comptime Tri: type) type {
             fn step(self: *Cuda, s: *lanes.Stream, l: *Lane) !bool {
                 const ids = s.prompt();
                 const at = l.filled orelse return true;
-                if (s.isCancelled()) return error.Cancelled;
+                if (s.isCancelled()) {
+                    s.keepInterruptedPrefill(@intCast(at));
+                    return error.Cancelled;
+                }
                 var stop = @min(ids.len, at + @import("cuda_exl3_prefill.zig").stepRows(self.engine, if (l.draft) |*d| d.rows_cap else null)); // EXL3 deep prefill
                 for (s.reuse.marks) |m| if (m > at and m < stop) {
                     stop = m;
@@ -385,6 +375,7 @@ pub fn Namespace(comptime Tri: type) type {
 
         pub fn release(p: *anyopaque) void {
             const own: *Cuda = @ptrCast(@alignCast(p));
+            cuda.completion.drain(own.engine.driver, own.stream, "flashnext: release did not drain");
             if (own.profile) |*profile| profile.save(own);
             var it = own.lanes.valueIterator();
             while (it.next()) |l| dropLane(own, l);
@@ -481,11 +472,10 @@ pub fn Namespace(comptime Tri: type) type {
                 if (l.draft != null) {
                     if (rows > mtp.max_rows) return error.WindowTooWide;
                     for (w.positions, 0..) |p, r| if (p != l.seq.fed + 1 + r) return error.PositionMismatch;
-                    var row_ids: [mtp.max_rows]u32 = undefined;
-                    row_ids[0] = w.pending;
-                    @memcpy(row_ids[1..rows], w.tokens);
-                    try self.ops().verifySampled(&l.seq, d, row_ids[0..rows], w.stream.sampling);
-                    try self.ops().draws(d, w.stream.sampling, o.sampled[0..rows]);
+                    row_ids[wi][0] = w.pending;
+                    @memcpy(row_ids[wi][1..rows], w.tokens);
+                    drafted[held] = wi;
+                    held += 1;
                 } else {
                     if (rows != 1) return error.CannotRewind;
                     if (w.positions[0] != l.seq.fed + 1) return error.PositionMismatch;

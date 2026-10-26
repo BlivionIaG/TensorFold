@@ -6,6 +6,7 @@ const core = @import("core");
 const embed = @import("cuda_embed.zig");
 const hc = @import("cuda_hc.zig");
 const exl3_ple = @import("cuda_exl3_ple.zig");
+const ple_pool = @import("cuda_ple_pool.zig");
 
 const golden: u64 = 0x9E3779B97F4A7C15;
 const mix1: u64 = 0xBF58476D1CE4E5B9;
@@ -345,6 +346,7 @@ pub const Ngram = struct {
     format: enum { mlx, nvfp4, exl3 } = .mlx,
     tables: [max_shards]core.nvfp4_rows.Table = undefined,
     x3: ?*exl3_ple.Table = null,
+    pool: ?*ple_pool.Pool = null, // the gather's parked workers (null: every row on the caller's thread)
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, model_dir: []const u8) !Ngram {
         const cfg = try readSpec(gpa, io, model_dir);
@@ -419,6 +421,7 @@ pub const Ngram = struct {
 
     pub fn deinit(g: *Ngram) void {
         if (g.x3) |t| t.destroy();
+        if (g.pool) |p| p.destroy();
         for (g.files.items) |*o| o.close(g.gpa);
         g.files.deinit(g.gpa);
     }
@@ -471,9 +474,9 @@ pub const Ngram = struct {
             for (0..history.len - 1) |i| hist[i] = hist[i + 1];
             hist[history.len - 1] = token;
         }
-        const max_threads = 128;
-        const n_threads = if (g.format == .exl3 and items <= 1024) 1 else @min(max_threads, items / 4); // EXL3 rows decode in about a microsecond: a decode step's few rows cost less than one thread spawn
-        if (n_threads <= 1) {
+        // EXL3 rows decode in about a microsecond: a decode step's few rows cost less than one thread spawn
+        const n_threads = if (g.format == .exl3 and items <= 1024) 1 else @min(ple_pool.max_parts, items / 4);
+        if (n_threads <= 1 or g.pool == null) {
             try g.fill(ids, out, 0, items);
         } else {
             const split: Split = .{ .g = g, .ids = ids, .out = out, .per = (items + n_threads - 1) / n_threads };
@@ -520,4 +523,6 @@ test "a fresh window hashes token 7 into sixteen rows" {
 test {
     _ = @import("cuda_ple_nvfp4_test.zig");
     _ = @import("cuda_exl3_ple.zig");
+    _ = @import("cuda_ple_pool.zig");
+    _ = @import("cuda_ple_pool_gather_test.zig");
 }

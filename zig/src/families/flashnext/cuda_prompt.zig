@@ -118,7 +118,7 @@ pub fn pooledBytes(cap: usize) usize {
 }
 const round_graph = @import("cuda_round_graph.zig");
 const cache_telemetry = @import("cuda_prompt_telemetry.zig");
-
+const pages = @import("cuda_pages.zig");
 /// One loaded checkpoint: the embedding table, every layer, the mixer and head, and the batched pass's scratch.
 pub const Engine = struct {
     gpa: std.mem.Allocator,
@@ -316,8 +316,7 @@ pub const Engine = struct {
 
     /// A fresh cache whose attention caches are `given` pages (owned by the cache from here), else contiguous.
     pub fn newSeqOn(e: *Engine, cap: usize, given: ?pages.Paged) !Seq {
-        var paged = given;
-        errdefer if (paged) |*p| p.deinit(e.gpa);
+        if (given != null) return e.newSeqPageTable(cap, given);
         e.round_graph.clear();
         if (cap == 0) return error.UnexpectedTensor;
         if (e.page_config) |cfg| if (cfg.shared_lanes != 0) {
@@ -326,6 +325,7 @@ pub const Engine = struct {
         };
         if (try @import("cuda_exl3_recycle.zig").takeSeq(e, cap)) |kept| return kept;
         if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_prompt_lifecycle.zig").newPlacedSeq(e, cap);
+        if (e.page_config == null) return e.newSeqPageTable(cap, null); // contiguous caches: upstream's flow, which drains before it frees
         const logits = try e.gpa.alloc(u8, vocab * 2);
         errdefer e.gpa.free(logits);
         const conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
@@ -347,6 +347,7 @@ pub const Engine = struct {
         errdefer tail.free();
         try tail.fill8(0, e.stream.handle);
         return .{
+            .stream = e.stream.*,
             .conv = conv,
             .state = state,
             .kc = kc,
@@ -356,21 +357,46 @@ pub const Engine = struct {
             .tail = tail,
             .history = .{ e.eos, e.eos },
             .fed = 0,
-            .logits = &.{},
+            .logits = logits,
             .cap = cap,
             .paged = paged,
             .recycle_owner = e,
         };
-        paged = null; // seq owns the pages from here
+    }
+
+    /// A fresh cache whose attention caches are the given page table's pages (owned by the cache from here).
+    fn newSeqPageTable(e: *Engine, cap: usize, given: ?pages.Paged) !Seq {
+        var table = given;
+        errdefer if (table) |*p| p.deinit(e.gpa);
+        e.round_graph.clear();
+        if (cap == 0 or cap > max_tokens) return error.UnexpectedTensor;
+        _ = try seqBytesPaged(cap, if (table) |p| p.tokens else 0);
+        var seq: Seq = .{
+            .stream = e.stream.*,
+            .ptable = table,
+            .conv = &.{},
+            .state = &.{},
+            .kc = &.{},
+            .vc = &.{},
+            .ikc = &.{},
+            .pooled = &.{},
+            .tail = .{ .d = e.driver, .ptr = 0, .len = 0 },
+            .history = .{ e.eos, e.eos },
+            .fed = 0,
+            .logits = &.{},
+            .cap = cap,
+            .recycle_owner = e,
+        };
+        table = null; // seq owns the pages from here
         // One rollback owns every published array, and drains before releasing any destination.
         errdefer seq.deinit(e.gpa);
         seq.logits = try e.gpa.alloc(u8, vocab * 2);
         seq.conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
         seq.state = try zeros(e.gpa, e.driver, e.stream.*, linear_n, state_n * 4);
-        seq.kc = if (seq.paged) |*p| try p.views(e.gpa, e.driver, .key) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
-        seq.vc = if (seq.paged) |*p| try p.views(e.gpa, e.driver, .value) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
-        seq.ikc = if (seq.paged) |*p| try p.views(e.gpa, e.driver, .index) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * index_dim * 2);
-        seq.pooled = if (seq.paged) |*p| try p.views(e.gpa, e.driver, .pooled) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, pooledBytes(cap));
+        seq.kc = if (seq.ptable) |*p| try p.views(e.gpa, e.driver, .key) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
+        seq.vc = if (seq.ptable) |*p| try p.views(e.gpa, e.driver, .value) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
+        seq.ikc = if (seq.ptable) |*p| try p.views(e.gpa, e.driver, .index) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * index_dim * 2);
+        seq.pooled = if (seq.ptable) |*p| try p.views(e.gpa, e.driver, .pooled) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, pooledBytes(cap));
         seq.tail = try cuda.DeviceBuffer.alloc(e.driver, ple_tail_n * wide * 2);
         try seq.tail.fill8(0, e.stream.handle);
         return seq;
@@ -393,7 +419,7 @@ pub const Engine = struct {
         return e.forward(Tri, tri, seq, ids, .{});
     }
 
-    const complete = measured.complete;
+    pub const complete = measured.complete;
 
     pub fn reserveSharedKv(e: *Engine, cap: usize) !usize {
         return shared_kv.reserve(e, cap);
@@ -574,6 +600,8 @@ test "exl3: Engine graph-hit lease covers every owner without paging callbacks o
 pub const Seq = struct {
     recycle_owner: ?*Engine = null,
     invalidated: bool = false,
+    /// The owning compute stream; synthetic non-device fixtures may leave it absent.
+    stream: ?cuda.Stream = null,
     media: ?@import("cuda_media.zig").State = null,
     rank_id: u64 = 0,
     conv: []cuda.DeviceBuffer,
@@ -583,7 +611,7 @@ pub const Seq = struct {
     ikc: []cuda.DeviceBuffer,
     pooled: []cuda.DeviceBuffer,
     /// kc, vc, ikc and pooled as borrowed views of page 0 of these pages (null: each its own contiguous buffer).
-    paged: ?pages.Paged = null,
+    ptable: ?pages.Paged = null,
     tail: cuda.DeviceBuffer,
     history: [2]i64,
     fed: usize,
@@ -598,7 +626,12 @@ pub const Seq = struct {
 
     /// The caches a batched pass reads and leaves; `scores` the engine's block scores (Engine.reserveScores).
     pub fn view(s: *Seq, scores: u64) batch.SeqState {
-        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .kv8 = s.kv8, .paged = s.paged };
+        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .kv8 = s.kv8, .paged = s.paged, .pg = s.pg() };
+    }
+
+    /// The attention kernels' page argument (zero: contiguous caches).
+    pub fn pg(s: *const Seq) @import("cuda_glue.zig").Pg {
+        return if (s.ptable) |*p| p.pg() else .{};
     }
 
     pub fn deinit(s: *Seq, gpa: std.mem.Allocator) void {
@@ -608,6 +641,11 @@ pub const Seq = struct {
 
 fn freeBufs(bs: []cuda.DeviceBuffer) void {
     for (bs) |*b| b.free();
+}
+
+fn freeOwned(gpa: std.mem.Allocator, bs: []cuda.DeviceBuffer) void {
+    freeBufs(bs);
+    gpa.free(bs);
 }
 
 test "linear layers skip every fourth index and attention starts at 3" {

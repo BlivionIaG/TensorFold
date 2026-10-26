@@ -67,11 +67,11 @@ test "exl3: greedy verification consumes completed records without touching the 
     const ops: Ops(struct {}) = .{ .e = undefined, .tri = .{}, .h = undefined };
     var drawn: [tokens.len]u32 = undefined;
     window.verify_cache.publish(window.verify_cache.generation, window.rows, window.fed0);
-    try ops.draws(&window, null, &drawn);
+    try ops.draws(&window, null, &.{}, &drawn);
     try std.testing.expectEqualSlices(u32, &tokens, &drawn);
     try std.testing.expect(window.verify_cache.ready == null);
     window.verify_cache.publish(window.verify_cache.generation, window.rows, window.fed0);
-    try ops.draws(&window, .{ .seed = 0, .temperature = 0 }, &drawn);
+    try ops.draws(&window, .{ .seed = 0, .temperature = 0 }, &.{}, &drawn);
     try std.testing.expectEqualSlices(u32, &tokens, &drawn);
 }
 
@@ -667,7 +667,7 @@ pub fn Ops(comptime Tri: type) type {
             const n = d.rows;
             const greedy = if (sm) |s| s.temperature <= 0 else true;
             const cached = d.verify_cache.take(n, d.fed0, greedy);
-            if (greedy) {
+            if (greedy and masks.len == 0) {
                 if (cached) {
                     @memcpy(d.best_host[0 .. 4 * n], d.verify_host.?.slice(f32)[0 .. 4 * n]);
                 } else {

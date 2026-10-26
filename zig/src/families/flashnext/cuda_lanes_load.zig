@@ -23,6 +23,8 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     if (o.tp != 1 and ((mode != .modelopt and mode != .exl3) or captured != null)) return error.UnsupportedQuantization;
     if (o.slide and (mode != .affine or o.tp != 1)) return error.UnsupportedLearningFormat;
     if (o.slide and captured != null) return error.TrainingOnCapturedGlue;
+    const page_tokens = try @import("cuda_kv_lanes.zig").paging();
+    if (page_tokens > 0 and (o.tp != 1 or o.slide or captured != null or mode == .exl3)) return error.FlashNextPagesUnsupported; // EXL3 pages its own K/V (cuda_exl3_kvpage.zig)
     const driver: *cuda.Driver = @constCast(ctx.d);
     const own = try gpa.create(Cuda);
     errdefer gpa.destroy(own);
@@ -89,11 +91,18 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     const deep_before = cuda.usage(false).device;
     @import("cuda_exl3_prefill.zig").reserveFor(own.engine, o.context, o.tp); // EXL3 offload: deep prefill rows before the pools
     const deep_bytes = cuda.usage(false).device -| deep_before;
-    var stream_bytes = try @import("cuda_exl3_kv.zig").engineSeqBytes(@import("cuda_exl3_kv.zig").of(own.engine), window, own.engine.chunk);
+    const own_seq_bytes = try @import("cuda_exl3_kv.zig").engineSeqBytes(@import("cuda_exl3_kv.zig").of(own.engine), window, own.engine.chunk);
+    var stream_bytes = own_seq_bytes;
     if (own.head) |h| {
         stream_bytes = try std.math.add(u64, stream_bytes, mtp.Draft.bytes(window, h.ids.len, @import("cuda_exl3_prefill.zig").draftRows(own.engine)));
     } else if (o.drafts and o.tp == 2) stream_bytes = try std.math.add(u64, stream_bytes, mtp.Draft.bytes(1, 1, @import("cuda_exl3_prefill.zig").draftRows(own.engine))); // rank 1's window (no head cache)
     if (o.vision) |v| stream_bytes = try std.math.add(u64, stream_bytes, try std.math.add(u64, try std.math.mul(u64, v.image_tokens, @import("cuda_prompt_wt.zig").dims * 2), try std.math.mul(u64, 16, o.context)));
+    if (page_tokens > 0) {
+        // the lane's head runs at the engine's chunk: its cache on the stream's pages, its buffers in the run
+        own.kv.head = if (own.head) |h| .{ .draft_n = h.ids.len, .rows = own.engine.chunk } else null;
+        const head_bytes = if (own.head) |h| mtp.Draft.bytes(window, h.ids.len, own.engine.chunk) else 0;
+        own.kv.layout = @import("cuda_kv_lanes.zig").layout(o.context, page_tokens, own.kv.head, stream_bytes - own_seq_bytes - head_bytes);
+    }
     try @import("cuda_exl3_kv.zig").logStream(own.engine, window, stream_bytes); // K10: what a stream holds, by piece
     own.stream_bytes = stream_bytes;
     var pool_budget = try exl3_pass.budgetForStreams(stream_bytes, o.lanes);

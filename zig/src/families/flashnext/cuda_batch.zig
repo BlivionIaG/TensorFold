@@ -11,6 +11,12 @@ const load = @import("cuda_prompt_load.zig");
 const parts = @import("cuda_batch_state.zig");
 const exl3_pass = @import("cuda_exl3_pass.zig");
 const exl3_kvpage = @import("cuda_exl3_kvpage.zig");
+const batch_lanes = @import("cuda_batch_lanes.zig");
+const tiles = @import("cuda_tiles.zig");
+const tk = @import("cuda_tile_kernels.zig");
+const nvfp4_tile = @import("cuda_nvfp4_tile.zig");
+const zs = @import("cuda_zero_slice.zig");
+const ops = @import("cuda_batch_ops.zig");
 
 const layers_n = wt.layers_n;
 const linear_n = wt.linear_n;
@@ -122,34 +128,14 @@ pub fn Pass(comptime Tri: type) type {
 
         // ---- launches ----------------------------------------------------------------------------------------
 
-        /// qmm.cu's lane tile over m rows: out bf16 [m, n] (sk 1) or the unreduced fp32 slices [sk, m, n] in part.
-        pub fn lane(self: *Self, x: u64, xs: u64, w: Q4, out: u64, part: u64, m: usize, sk: usize) !void {
-            if (w.exl3) |e| return exl3_pass.lane(self, x, e, out, part, m, sk);
-            if (w.native) |native| {
-                if (sk == 1) return self.k.native_lane.matmul(self.stream, x, w.k, m, native, out, self.s.native_part);
-                // Legacy callers consume SK slices; the native lane has already reduced its own shape-driven slices.
-                try self.k.native_lane.matmulF32(self.stream, x, w.k, m, native, part, self.s.native_part);
-                const bytes = m * w.n * 4;
-                if (sk > 1) try self.stream.d.check(self.stream.d.api.cuMemsetD8Async(part + bytes, 0, bytes * (sk - 1), self.stream.handle), "cuMemsetD8Async");
-                return;
+        /// qmm.cu's arithmetic over m rows into out (bf16) or part (fp32 K slices); returns the slices (1 when folded).
+        pub fn lane(self: *Self, x: u64, xs: u64, w: Q4, out: u64, part: u64, m: usize, sk: usize) !usize {
+            if (w.exl3) |e| {
+                try exl3_pass.lane(self, x, e, out, part, m, sk);
+                return sk; // the first slice written, the other sk - 1 zero-filled (cuda_exl3_pass.lane)
             }
-            const bm: usize = 16;
-            const bn: usize = 64;
-            const k = w.k;
-            const rows_t = cdiv(m, bm);
-            const cols_t = cdiv(w.n, bn);
-            const sweep = @max(@as(usize, 1), @min(rows_t, (12 << 20) / (bm * k * 2)));
-            const npad = (w.n + 127) / 128 * 128;
-            var a: cuda.Args = .{};
-            a.add(x);
-            a.add(xs);
-            a.add(w.w.ptr);
-            a.add(w.s.ptr);
-            a.add(w.b.ptr);
-            a.add(out);
-            a.add(part);
-            for ([_]usize{ m, w.n, k, sk, npad, k, sweep }) |v| a.add(cint(v));
-            try cuda.launch.launch(self.k.lane, .{ .grid = .{ .x = @intCast(rows_t * cols_t), .z = @intCast(sk) }, .block = .{ .x = 128 }, .shared = qmm_smem }, self.stream, &a);
+            if (try zs.lane(self.k, self.stream, self.s, self.zero_slices, x, w, part, m, sk)) |one| return one;
+            return tiles.matmul(self.k, self.stream, x, xs, w, out, part, self.s.native_part, m, sk);
         }
 
         pub fn sumSlices(self: *Self, part: u64, out: u64, bf16: bool, n: usize, sk: usize) !void {
@@ -286,7 +272,7 @@ pub fn Pass(comptime Tri: type) type {
             }
         }
 
-        pub fn gdnBlock(self: *Self, lw: *const Layer, li: usize, keep: LayerKeep) !void {
+        pub fn gdnBlock(self: *Self, lw: *const Layer, layer: usize, li: usize, keep: LayerKeep) !void {
             const s = self.s;
             const n = self.rows;
             // decode rows under 64 on a rank's half of the heads (cuda_exl3_gdn_split.zig); the rest on every head
@@ -635,13 +621,8 @@ pub fn Pass(comptime Tri: type) type {
         }
 
         /// Column tiles keep their own reduction order; each gathered row restores global vocabulary order.
-        fn projectHead(self: *Self, out: u64, n: usize) !void {
-            const s = self.s;
-            if (self.m.head.n == vocab) return self.lane(s.mixed, s.xsm, self.m.head, out, s.dummy, n, 1);
-            if (self.m.head.n != vocab / 2 or n > @min(s.cap, parts.head_local_rows)) return error.UnexpectedTensor;
-            const c = self.m.collective orelse return error.TensorParallelUnavailable;
-            try self.lane(s.mixed, s.xsm, self.m.head, s.head_local, s.dummy, n, 1);
-            for (0..n) |r| try c.gather(self.stream, s.head_local + r * vocab, out + r * vocab * 2, vocab / 2);
+        pub fn projectHead(self: *Self, out: u64, n: usize) !void {
+            return @import("cuda_batch_head.zig").projectHead(self, out, n);
         }
 
         /// After a layer's experts, when something adds to or keeps its output: the slots' fp32 sum, adds, kept branch.
