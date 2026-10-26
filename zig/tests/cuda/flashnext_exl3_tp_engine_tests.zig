@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-//! flashnext-exl3-tpe: the Qwen3.8-Flash-Next EXL3 pack through the Flash Next family's Engine at tp=1 or tp=2.
-=======
 //! flashnext-exl3-tpe: the Flash Next EXL3 pack through the family Engine at tp=1 or tp=2; this hub parses the mode.
->>>>>>> origin/agent/split-offload
 const std = @import("std");
 const check = @import("check.zig");
 const decode = @import("flashnext_exl3_tpe_decode_tests.zig");

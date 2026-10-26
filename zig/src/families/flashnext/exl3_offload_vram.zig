@@ -14,7 +14,7 @@ const copyCount = pol.copyCount;
 
 pub const Line = enum { empty, inflight, resident };
 
-/// VRAM working set. Host RAM still holds every routed expert. `stamp` is the last reap or touch time. A higher stamp
+/// VRAM working set. Host RAM still holds every routed expert. `stamp` is the last reap or touch time. A higher stamp.
 pub const Vram = struct {
     slots: []u16,
     line: []Line,

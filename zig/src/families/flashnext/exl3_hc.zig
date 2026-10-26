@@ -28,7 +28,7 @@ pub fn bounceBytes(tokens: usize) u64 {
     return @as(u64, @intCast(tokens)) * 5120 * 2;
 }
 
-// --------------------------------------------------------------------------------------------- Hyper-connection pre /...
+// --------------------------------------------------------------------------------------------- Hyper-connection pre /....
 
 pub const Dims = struct { streams: usize, dim: usize, lowrank: usize };
 pub const real: Dims = .{ .streams = shape.hc_count, .dim = shape.hidden, .lowrank = shape.hc_lowrank };

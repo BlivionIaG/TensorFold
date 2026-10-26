@@ -1,4 +1,4 @@
-//! A multi-part EXL3 projection's parts on parallel streams (a DeltaNet layer's q|k|v, z, b, a; attention's q, k, v).).).
+//! A multi-part EXL3 projection's parts on parallel streams (a DeltaNet layer's q|k|v, z, b, a; attention's q, k, v).).).).
 
 const std = @import("std");
 const cuda = @import("cuda");

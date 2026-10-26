@@ -102,7 +102,7 @@ pub fn valueRow(codes: []const i8, scales: []const f16, rot: bool, out: []f64) v
     }
 }
 
-// -- kernel mode...
+// -- kernel mode....
 
 /// Keys with a few loud channels, as k_norm + rope leaves them (a lognormal scale a channel).
 fn loudRows(r: *Rig, n: usize, width: usize) ![]u16 {
@@ -392,7 +392,7 @@ fn kernelMode(gpu: check.Gpu) !void {
     check.pass("kv8 attention: plain int8 == upstream's kernels on the dequantised cache bit for bit (dense, sparse, read-ahead and one-tile); rotated within upstream's own error of its cache's float64", .{});
 }
 
-// -- bench mode...
+// -- bench mode....
 
 const Bench = struct {
     s: cuda.Stream,

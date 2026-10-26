@@ -96,7 +96,7 @@ pub fn scheduleUsed(
     return scheduleUsedAt(v, 0, ids, &table, policy, now, decisions, scratch, owned);
 }
 
-/// Generate path. Misses sort by `counts[layer]`. A victim scores `counts[victim.layer][victim.id]`. Keep is `(layer
+/// Generate path. Misses sort by `counts[layer]`. A victim scores `counts[victim.layer][victim.id]`. Keep is `(layer).
 pub fn scheduleUsedAt(
     v: *Vram,
     layer: u8,

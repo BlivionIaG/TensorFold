@@ -8,7 +8,7 @@ const hub = @import("cuda_exl3_graph.zig");
 const gcache = @import("cuda_exl3_graph_cache.zig");
 const gbudget = @import("cuda_exl3_graph_budget.zig");
 
-// ---- prefill: one layer's sub-blocks of a deep chunk..
+// ---- prefill: one layer's sub-blocks of a deep chunk...
 
 pub const Prefill = enum { eager, replayed, capturing };
 const prefill_binding = @import("cuda_exl3_prefill_binding.zig");

@@ -358,7 +358,7 @@ test "device sum is resident plus kv, and a 16 GiB card refuses the overflow" {
     try std.testing.expectEqual(@as(u64, 0), expertLinesOf(1, 0));
     try std.testing.expectEqual(@as(u64, 1), expertLinesOf(full_expert_bytes, full_expert_bytes));
 
-    // One head leaves 672 MiB at bf16, so 700 MiB steps to int8. 741 MiB is this pin's int4 room; one more MiB misses...
+    // One head leaves 672 MiB at bf16, so 700 MiB steps to int8. 741 MiB is this pin's int4 room; one more MiB misses....
     const ranks: usize = 2;
     const tight_pin: u64 = 15 << 30;
     try std.testing.expectEqual(KvFit{ .dtype = .int8, .floor_held = true }, try kvFit(card_bytes, tight_pin, 8192, 700 << 20, ranks));

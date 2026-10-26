@@ -350,7 +350,7 @@ pub fn placement(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, world: usi
     return try deviceBytes(gpa, io, dir, o, r) + head;
 }
 
-// ---- the head's vocabulary split...
+// ---- the head's vocabulary split....
 
 /// Rank `rank`'s output columns [lo, hi) of an `n`-column EXL3 matrix: whole 128-column blocks, equal shares.
 pub fn headCut(n: usize, world: usize, rank: usize) ![2]usize {

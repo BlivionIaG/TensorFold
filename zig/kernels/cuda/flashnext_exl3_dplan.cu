@@ -268,7 +268,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
         n_ovf = 0;
     }
     __syncthreads();
-    // the split (optional): picks held when the round started (and the shared expert) vs the misses this round copies...
+    // the split (optional): picks held when the round started (and the shared expert) vs the misses this round copies....
     if (hit_picks != nullptr) {
         for (int i = t; i < n; i += blockDim.x) {
             const int p = picks[i];
