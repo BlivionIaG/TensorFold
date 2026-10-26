@@ -104,6 +104,8 @@ pub const Drafted = struct {
         m.draft_probabilities = false;
         m.head_trees = d.trees;
         m.shared_guard = d.shared_guard;
+        m.copy_first = d.copy_first;
+        m.hold_costs = d.hold_costs;
         if (d.chances and x.drafter.vtable.chances != null) {
             // a chain's drafts priced by the drafter's own chances; the next hold as deep as the grant and its slack
             m.draft_probabilities = d.confidence_floor == null;

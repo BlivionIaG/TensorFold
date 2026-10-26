@@ -39,6 +39,8 @@ pub const Model = struct {
     draft_slack: u32 = 0, // drafts past a stream's last grant, short or not (0: the Constants' own)
     draft_streams: bool = false, // the head drafts every stream of a shared round in one batch
     shared_guard: bool = false, // a shared round drafts only while drafted rounds measure faster (shared_guard.zig)
+    copy_first: bool = false, // a copy ahead takes the round: the head holds no drafts for it (a drafter's own pass)
+    hold_costs: []const @import("hold_price.zig").HoldCost = &.{}, // a drafter's own hold pass, timed at load
     head_trees: bool = false, // the head drafts trees of lanes (DraftRequest.lanes) and holds them
     join_tail: bool = false, // a prompt in pieces leaves its last token for the next shared round's window (Backend.join)
     piece_runs: bool = false, // a round's pieces go to the backend in one call (Backend.pieces: one forward over them)
@@ -169,6 +171,8 @@ pub const Config = struct {
                 .draft_slack = if (m.draft_slack > 0) m.draft_slack else (Constants{}).draft_slack,
                 .grant_slack = if (m.draft_slack > 0) m.draft_slack else (Constants{}).grant_slack,
                 .short_slack = if (m.draft_slack > 0) m.draft_slack else (Constants{}).short_slack,
+                .copy_first = m.copy_first and !m.context_copies,
+                .hold_costs = m.hold_costs,
             },
             .draft_step_ms = m.draft_step_ms,
         };

@@ -226,6 +226,7 @@ pub const Stream = struct {
     proposal_depth: ?u32 = null, // null: legacy; otherwise the last routed request, zero until it succeeds
     granted: ?u32 = null,
     grant_short: bool = false, // the last grant verified fewer drafts than the stream held
+    grant_gain: ?f64 = null, // the drafts its last grant expected to keep (the chances it was priced by)
     copy_width: ?u32 = null,
 
     pub fn init(gpa: Allocator, spec: Spec) !Stream {
@@ -289,6 +290,7 @@ pub const Stream = struct {
         s.served = null;
         s.granted = null;
         s.grant_short = false;
+        s.grant_gain = null;
         s.copy_width = null;
         s.proposal_depth = null;
     }

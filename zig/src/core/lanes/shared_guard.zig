@@ -52,6 +52,7 @@ pub const Guard = struct {
         if (e.mode == 1 and e.skip) for (whos) |*w| {
             w.granted = 1;
             w.grant_short = false;
+            w.gain = null; // priced by its first draft's rate, not a grant of none
         };
         return e.mode == 1;
     }
