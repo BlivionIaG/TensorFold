@@ -63,7 +63,7 @@ pub const Probe = struct {
     ids: []u32 = &.{},
     args: [8]rig_.Ref = undefined,
     y: rig_.Ref = undefined,
-    bad: rig_.Ref = undefined, // draft_ids: the flag word it sets for a flagged or invalid pick
+    bad: rig_.Ref = undefined, // draft_ids: the flag word it sets for a flagged or invalid pick, zeroed each run
 
     pub fn init(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue, w: Which) !Probe {
         const kernels: [2][:0]const u8 = switch (w) {
@@ -116,7 +116,6 @@ pub const Probe = struct {
             const at = [4]u32{ stride, @intCast(s.rows), vocab, 0 };
             p.args[1] = try p.rig.input(std.mem.asBytes(&at));
             p.y = try p.rig.output(p.count());
-            p.bad = try p.rig.output(4);
             return true;
         }
         if (s.n != vocab or s.k != rank or s.rows == 0) return false;
@@ -169,6 +168,8 @@ pub const Probe = struct {
             e.setBuffer(p.args[0].buf, p.args[0].off, 0);
             e.setBuffer(p.args[1].buf, p.args[1].off, 1);
             e.setBuffer(p.y.buf, p.y.off, 2);
+            p.bad = try p.rig.scratch(4);
+            @memset(p.rig.bytes(p.bad, 4), 0);
             e.setBuffer(p.bad.buf, p.bad.off, 3);
             e.dispatchThreads(mtl.Size.of(p.rows, 1, 1), mtl.Size.of(32, 1, 1));
             return p.rig.finish(pass);
