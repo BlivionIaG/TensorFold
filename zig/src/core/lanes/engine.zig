@@ -75,6 +75,7 @@ pub const Engine = struct {
                 .plain_guard = cfg.plain_guard,
                 .node_probabilities = cfg.node_probabilities,
                 .granted_depth = cfg.granted_depth,
+                .lone_guard = cfg.granted_depth and cfg.shared_guard and cfg.timed,
                 .confidence_floor = cfg.draft_confidence,
                 .batch_rows = cfg.batch_rows,
                 .batched_heads = cfg.draft_streams,
@@ -238,6 +239,7 @@ pub const Engine = struct {
                 lone_costs.observe(s, plan.cost_probe_rows, rows, ms);
             }
         }
+        if (e.rule.lone_guard and e.alone and s.drafts and (plan.kind == .head or plan.kind == .none)) try e.rule.observeLone(win.who(s), lone_costs.band(s.context.items.len), o.got.len, e.clock.elapsedMs(.cost));
         if (e.cfg.timed and s.graft_room != null and s.rounds > 1) {
             // the stream's round time beyond its window and head levels, for the lane planner
             if (e.cfg.lane_costs.get(@intCast(rows))) |w| {

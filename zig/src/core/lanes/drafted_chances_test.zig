@@ -17,7 +17,7 @@ const gpa = std.testing.allocator;
 const most_streams = 8;
 
 /// drafted_test's drafter with a chance for each held draft: `sure` where its guess is right, `unsure` where wrong.
-const Priced = struct {
+pub const Priced = struct {
     head: dt.FakeDrafter,
     sure: f64 = 0.7,
     unsure: f64 = 0.7,
@@ -56,7 +56,7 @@ const Priced = struct {
         return true;
     }
 
-    fn drafter(p: *Priced) dr.Drafter {
+    pub fn drafter(p: *Priced) dr.Drafter {
         const base_ = p.head.drafter();
         p.vtable = base_.vtable.*;
         p.inner_hold = base_.vtable.hold;
@@ -65,7 +65,7 @@ const Priced = struct {
         return .{ .ptr = &p.head, .vtable = &p.vtable };
     }
 
-    fn deinit(p: *Priced) void {
+    pub fn deinit(p: *Priced) void {
         p.at.deinit(gpa);
         p.head.deinit();
     }
@@ -91,7 +91,7 @@ const Seen = struct {
 
 var costs: [16]Cost = undefined;
 
-fn base() Model {
+pub fn base() Model {
     for (&costs, 1..) |*c, w| c.* = .{ .width = @intCast(w), .ms = 5.0 + 0.8 * @as(f64, @floatFromInt(w)) };
     return .{ .exact_width = 16, .gpu_tokens = true, .window_costs = &costs, .hidden_rows = true, .batch_rows = 32, .max_streams = most_streams };
 }

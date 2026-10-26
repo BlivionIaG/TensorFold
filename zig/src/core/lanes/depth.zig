@@ -19,6 +19,7 @@ pub const Constants = struct {
 
 pub const HoldCost = @import("hold_price.zig").HoldCost;
 const holdMs = @import("hold_price.zig").holdMs;
+const lone_guard = @import("lone_guard.zig");
 
 /// A stream's acceptance by depth and probe counters (Python `_depth_state[stream]`).
 pub const State = struct {
@@ -27,6 +28,7 @@ pub const State = struct {
     plain: ?u64 = null,
     wait: ?u64 = null,
     ms: ?Table = null, // plain_guard: the stream's own round times
+    lone: lone_guard.Lone = .{}, // lone_guard: whether its lone holds draft
 
     pub fn deinit(st: *State, gpa: Allocator) void {
         gpa.free(st.p);
@@ -45,6 +47,7 @@ pub const Who = struct {
     gain: ?f64 = null, // the drafts its last grant expected to keep (null: none priced)
     stream: ?*anyopaque = null,
     sampled: bool = false, // keyed draws: host work a row that a greedy round does not have
+    shared: bool = false, // a shared round's budget: the lone guard stays out
 };
 
 /// Whether a copied continuation is ahead of a stream (the round loop proposes; Python `_copy_proposal`).
@@ -68,6 +71,9 @@ pub const Rule = struct {
     plain_guard: bool,
     node_probabilities: bool,
     granted_depth: bool = false, // node_probabilities: a stream drafts its last grant plus draft_slack, lone ones too
+    lone_guard: bool = false, // granted_depth: a lone stream holds drafts only while its drafted rounds measure faster
+    lone_k: lone_guard.Constants = .{},
+    lone_plain: lone_guard.Plain = .{}, // plain rounds' tokens a ms, every lone stream's
     confidence_floor: ?f64 = null,
     batch_rows: u32,
     batched_heads: bool = false, // one batch drafts every stream of a shared round (its steps: the deepest stream's)
@@ -209,13 +215,31 @@ pub const Rule = struct {
     /// The last grant plus its slack (the deepest chain before any); after a grant of none, a probe of draft_slack.
     fn grantDepth(r: *Rule, who: Who) !i64 {
         const most = @min(@as(i64, r.most_drafts), @max(1, who.draft_room - 1));
+        if (r.lone_guard and !who.shared) {
+            const l = &(try r.state(who)).lone;
+            if (!l.drafts()) return 0;
+            if (l.fresh) {
+                l.fresh = false;
+                return @min(most, 1 + r.k.grant_slack);
+            }
+        }
         const granted = who.granted orelse return most;
-        _ = try r.rates(who);
-        const st = &who.state.*.?;
+        const st = try r.state(who);
         if (granted == 0) return if (!r.plain_guard or r.probePlain(st)) @min(most, r.k.draft_slack) else 0;
         st.plain = 0;
         st.wait = r.k.depth_probe_every;
         return @min(most, @as(i64, granted) + r.slack(who));
+    }
+
+    fn state(r: *Rule, who: Who) !*State {
+        _ = try r.rates(who);
+        return &who.state.*.?;
+    }
+
+    /// A lone round's committed tokens and wall ms at the stream's context band, for the lone guard.
+    pub fn observeLone(r: *Rule, who: Who, band: usize, tokens: usize, ms: f64) !void {
+        if (!r.lone_guard) return;
+        (try r.state(who)).lone.observe(r.lone_k, r.lone_plain.at(who.sampled, band), tokens, ms);
     }
 
     /// Python `_head_depth`: the next round's head drafts for a stream (0 when forced, 1 or none with a copy ahead).
@@ -307,6 +331,7 @@ pub const Rule = struct {
         }
         if (r.node_probabilities) {
             for (whos, out) |*w, *o| {
+                w.shared = true;
                 const inner = try r.headDepth(w, null, probe);
                 const granted: i64 = if (w.granted) |g| g else r.most_drafts;
                 o.* = try r.headDepth(w, if (r.granted_depth) inner else @min(inner, granted + r.k.draft_slack), probe);
