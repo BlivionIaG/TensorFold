@@ -291,7 +291,7 @@ pub fn kernelMode(gpu: check.Gpu) !void {
                 try g.attnMerge(r.s, po, pm, pl, dpos, up, dnk, dspr, rows, kv_heads, true);
                 try check.sameBytes("kv8 attention == upstream's chunk/merge on the dequantised bf16 cache", std.mem.sliceAsBytes(got), std.mem.sliceAsBytes(try r.back(u16, up, want.len)));
             }
-            // vs the float64 of the original cache, and vs the float64 of what the int8 cache holds (its own kernel
+            // vs the float64 of the original cache, and vs the float64 of what the int8 cache holds.
             var e_q: Err = .{};
             for (got, want) |x, w| addErr(&e_q, bf(x), w);
             const kf = try a.alloc(f64, nrow * head_dim);

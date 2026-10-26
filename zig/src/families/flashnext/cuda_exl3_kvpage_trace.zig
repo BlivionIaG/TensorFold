@@ -10,7 +10,7 @@ const top = wt.index_top;
 const idw = wt.index_idw;
 const att_rows = parts.att_rows;
 
-/// Records: u32 layer (attention index), u32 first position, u32 rows, u32 kind (0 prompt, 1 decode round); then a row
+/// Records: u32 layer (attention index), u32 first position, u32 rows, u32 kind (0 prompt, 1 decode round).
 pub const Trace = struct {
     gpa: std.mem.Allocator,
     out: std.ArrayList(u8) = .empty,

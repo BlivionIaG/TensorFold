@@ -220,7 +220,7 @@ pub const Deep = struct {
     host: cuda.HostBuffer,
     kern: pk.Kernels,
     aux: cuda.Stream,
-    /// Expert parallel: the ranks' all-reduces run on `red`, one a sub-block, so the next layer's sub-block b only
+    /// Expert parallel: the ranks' all-reduces run on `red`, one a sub-block.
     red: ?cuda.Stream = null,
     red_ev: [max_sub]cuda.Event = undefined,
     red_go: cuda.Event = undefined,

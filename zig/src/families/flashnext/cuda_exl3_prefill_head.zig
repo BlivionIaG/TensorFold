@@ -105,7 +105,7 @@ fn headSlice(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, 
         p.pos0 = d.len + at;
         p.pending = null;
         try p.stage(next[at..][0..m]);
-        // forwardHead's piece up to the router (the embedding branch, the hidden branch, attention over the head's
+        // forwardHead's piece up to the router (the embedding branch, the hidden branch).
         if (e.table.dense) {
             try tri.embedDense(v.ids, e.table.w.ptr, v.ple_keys, dims, streams, m);
         } else {

@@ -59,7 +59,7 @@ pub fn keepFree(r: *const ring_.Ring, o: Options) usize {
     return @min(r.slots() / 2, routed_n_ + 2 * o.ring_pass);
 }
 
-/// The layer's experts over all `n` rows of the deep chunk, through the ring: the experts the ring already holds first
+/// The layer's experts over all `n` rows of the deep chunk, through the ring.
 pub fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), lw: *const @import("cuda_prompt_load.zig").Layer, layer: usize, n: usize, o: Options) !void {
     const x = lw.exl3.?;
     const pool = x.pool.?;

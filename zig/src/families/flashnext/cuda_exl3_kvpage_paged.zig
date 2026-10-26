@@ -51,7 +51,7 @@ const Kern = struct {
     }
 };
 
-/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256]
+/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256].
 pub const Paged = struct {
     gpa: std.mem.Allocator,
     d: *const cuda.Driver,
@@ -269,7 +269,7 @@ pub const Paged = struct {
         try pg.d.check(pg.d.api.cuMemcpyDtoDAsync_v2(dst, src, n, stream.handle), "cuMemcpyDtoDAsync");
     }
 
-    /// Moves the window so rows [pos0, pos0 + n) fit: the rows that leave it are written out to host memory, the last
+    /// Moves the window so rows [pos0, pos0 + n) fit: the rows that leave it are written out to host memory.
     fn rebase(pg: *Paged, ai: usize, pos0: usize, stream: cuda.Stream) !void {
         const w0 = pg.win0[ai];
         const new0 = (pos0 -| pg.cfg.window) / ratio * ratio;
@@ -520,7 +520,7 @@ pub const Paged = struct {
         return pg.host.bytes[off..][0 .. pg.cap * row_bytes];
     }
 
-    /// attnRows over the paged cache: prep writes the rows into the window (its base offset by -win0 rows), and each
+    /// attnRows over the paged cache: prep writes the rows into the window (its base offset by -win0 rows).
     pub fn attnRows(pg: *Paged, p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype) !void {
         try pg.validateSharedLeaseOn(p.stream);
         const s = p.s;

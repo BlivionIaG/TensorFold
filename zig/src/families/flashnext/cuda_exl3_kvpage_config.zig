@@ -28,7 +28,7 @@ pub fn cint(v: usize) c_int {
     return @intCast(v);
 }
 
-/// Shape of a paged sequence's device side (TF_FLASHNEXT_KVPAGE=1 turns it on for every new sequence; the sizes from
+/// Shape of a paged sequence's device side (TF_FLASHNEXT_KVPAGE=1 turns it on for every new sequence).
 pub const Config = struct {
     /// Tokens kept dense on the card before a call's first row (>= 2051, so a dense row's keys are all in it).
     window: usize = 4096,
