@@ -1707,3 +1707,21 @@ about 400 MB of KV window plus 117 MB of weights, roughly 6 lines (about +2%), l
 conflicts, and the last commit sets the tree to the merge result that was benchmarked and tested, so the tree is byte-identical to merging upstream/main).
 Measured on that tree, drafts on, 80 lines, one user: short 49.95, zig 106.0, docs 59.3 tok/s with unchanged hashes (merge before the rebase: 50.0 / 106.1 / 59.3);
 the 294 EXL3 host tests pass. `exl3-on-upstream-merge` keeps the merge-based history.
+
+## Shipped defaults, all four metrics (rebased tree, one user, TP=2, graphs, 192 output tokens, second request)
+
+TTFT is request start to first streamed piece; prefill tok/s is prompt tokens over TTFT; decode is (tokens - 1) over the streamed span; ITL is that span over
+(tokens - 1); gap p50/p99 are the gaps between streamed chunks (a drafted round streams several tokens at once); the 40-token prompt's prefill rate is not meaningful.
+
+| prompt | config | TTFT | prefill tok/s | decode tok/s | mean ITL | chunk gap p50 / p99 | tokens per chunk |
+|---|---|---|---|---|---|---|---|
+| short (40 tok) | drafts + guard, 80 lines | 0.37 s | n/a | 50.1 | 20.0 ms | 20.9 / 49.6 ms | 1.19 |
+| short | plain, 88 lines | 0.32 s | n/a | 48.9 | 20.4 ms | 19.9 / 33.6 ms | 1.0 |
+| zig (16,022 tok) | drafts + guard | 11.25 s | 1,424 | 106.0 | 9.4 ms | 178.8 / 310.4 ms | 17.4 |
+| zig | plain | 10.64 s | 1,506 | 36.2 | 27.7 ms | 25.8 / 61.9 ms | 1.0 |
+| docs (12,780 tok) | drafts + guard | 10.94 s | 1,168 | 59.5 | 16.8 ms | 49.2 / 88.9 ms | 3.1 |
+| docs | plain | 10.35 s | 1,234 | 38.2 | 26.2 ms | 25.3 / 52.6 ms | 1.0 |
+
+Drafts cost about 5-6% of prefill and TTFT on long prompts (the head's prompt pass and 8 fewer lines) and make streaming bursty (zig: 17 tokens every
+~180 ms, p99 gap 310 ms against 62 ms), in exchange for 3x decode on code-like text and 1.5x on docs. The first request after a start also pays graph
+capture (short: TTFT 1.97 s).
