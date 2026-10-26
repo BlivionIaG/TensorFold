@@ -1478,3 +1478,17 @@ docs 35.1 tok/s):
 It is neutral to slightly negative on free text and +2% on long prompts, at double the pinned memory and a slower start, and the text depends on the
 cache history. Left in the tree, off by default. The wait is mostly the per-token randomness of which experts a layer needs and where they are
 resident; recovering it needs either replicated hot experts on both ranks (cache capacity) or a layer split.
+
+Decode kernel shapes against this card (36 SMs), from the both-ranks decode trace: `tf_exl3_linear_10_2_8` launches 80 blocks (96 for 12 of its calls) of
+256 threads at one block an SM (2.22 and 2.67 waves, so 74% and 89% of the last waves filled), `tf_exl3_linear_10_2_4` 160 and 192 blocks at three an SM
+(1.48 and 1.78 waves), the 160-block `qmmf` 2.22 waves at two an SM, `tf_exl3_grouped_2` 4.07 and 2.04 waves. Summed idle fraction: about 2.4 ms of
+the 22 ms step. The host's split-K plan (`exl3.plan`, `exl3_block_dense.plan`) is linear.py's, aimed at 192 blocks. Making the block target
+(`PLAN_BLOCKS` 192, 216, 320, 432) and the wide-N K split (`PLAN_WIDE_SK` 1, 2) environment-settable and sweeping them on the short prompt (plain decode,
+72 lines): every block target gave the same output hash as the default and 45.2-45.6 tok/s against 45.15 (the plan never changed: min-tile and divisibility
+limits cap the split), and a wide-N split of 2 changed the bits and was slower (44.6). No gain, reverted. Reaching the idle waves would need new tilings in
+the kernel itself (a different tile along N or an uneven K split), not a different host plan.
+
+Bytes a token reads (file headers): the Strata GGUF 3.9 GB of dense tensors and 0.9 GB of experts per token, ours 4.0 GB and 0.9 GB. The formats cost the
+same bytes; Strata's 10-13 ms step is about 4.8 GB at the card's bandwidth, while each of our GPUs reads about 4.45 GB (the dense set replicated) in 22 ms.
+By estimated bytes per kernel group our matmuls reach about 63% (hyper-connection), 74% (DeltaNet, attention, head) and 33% (expert kernels) of peak,
+plus about 3-4 ms of per-layer sync wait and 3-4 ms of small kernels and gaps. A layer split would not close that gap (est. 22 to 18-19 ms).
