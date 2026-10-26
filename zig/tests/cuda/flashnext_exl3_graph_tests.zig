@@ -910,7 +910,7 @@ const Profiler = struct {
 };
 
 /// A profiling window for nsys: `steps` decode rounds (one row) then `steps` verify windows of `rows` rows, after a
-/// warm-up that captures their graphs (TF_FLASHNEXT_EXL3_GRAPH_AFTER=1 recommended), inside cuProfilerStart/Stop.
+/// warm-up that captures their graphs (TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER=1 recommended), inside cuProfilerStart/Stop.
 fn profMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize, rows: usize, which: []const u8) !void {
     const a = gpu.gpa;
     const g = try Eng.init(gpu, rank, world, port, dir);

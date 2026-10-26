@@ -31,7 +31,7 @@ fn readState(sequence: *const flash.prompt.Seq, target: []u8) !void {
 
 pub fn run(engine: anytype, comptime operations: anytype) !void {
     try require("TF_FLASHNEXT_EXL3_GRAPH_STATE_REBIND", "1");
-    try require("TF_FLASHNEXT_EXL3_GRAPH_AFTER", "1");
+    try require("TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER", "1");
     try require("TF_FLASHNEXT_EXL3_GRAPH_ASYNC", "0");
     try check.expect(engine.seq.paged == null and engine.world == 2, "rebind fixture requires two ranks and the dense control KV layout", .{});
     var draft: flash.mtp.Draft = undefined;

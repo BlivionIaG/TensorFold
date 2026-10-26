@@ -14,7 +14,7 @@
 //!   flashnext-exl3-engine DIR bench [LINES]         prefill rows/s at 16, 256 and 2048 tokens and decode ms/token,
 //!                                                    with the pool's hit rate (a measurement on an idle card)
 //!
-//! LINES (or TF_FLASHNEXT_EXL3_LINES) fixes the pool's lines a layer; without it the pool takes free memory.
+//! LINES (or TF_FLASHNEXT_EXPERT_LINES) fixes the pool's lines a layer; without it the pool takes free memory.
 const std = @import("std");
 const cuda = @import("cuda");
 const core = @import("core");

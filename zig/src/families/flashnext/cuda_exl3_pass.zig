@@ -126,10 +126,10 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
 pub var offloaded_layers: usize = 0;
 
 /// Drafted rounds verify more rows, need more distinct experts and lose to plain decode on offloaded experts
-/// (measured on two RTX 5060 Ti: about 21% slower on real text): requests decode plain unless TF_FLASHNEXT_EXL3_DRAFTS=1.
+/// (measured on two RTX 5060 Ti: about 21% slower on real text): requests decode plain unless TF_FLASHNEXT_DRAFT_ENABLE=1.
 pub fn plainByDefault() bool {
     if (offloaded_layers == 0) return false;
-    const value = std.c.getenv("TF_FLASHNEXT_EXL3_DRAFTS") orelse return true;
+    const value = std.c.getenv("TF_FLASHNEXT_DRAFT_ENABLE") orelse return true;
     return !std.mem.eql(u8, std.mem.span(value), "1");
 }
 
@@ -193,7 +193,7 @@ pub const Budget = struct {
     max_rows: usize = moe_rows,
 };
 
-/// TF_FLASHNEXT_EXL3_LINES and TF_FLASHNEXT_EXL3_RESERVE_MB override pool sizing. `requested_streams` is the server's
+/// TF_FLASHNEXT_EXPERT_LINES and TF_FLASHNEXT_EXPERT_RESERVE_MB override pool sizing. `requested_streams` is the server's
 /// actual concurrency; standalone test callers may omit it and use TF_FLASHNEXT_EXL3_STREAMS (default 1).
 pub fn budgetFromEnv(stream_bytes: u64) !Budget {
     return budgetFromEnvWithStreams(stream_bytes, null);
@@ -209,8 +209,8 @@ fn budgetFromEnvWithStreams(stream_bytes: u64, requested_streams: ?u32) !Budget 
     if (dplan.enabled()) {
         b.planner_rows = if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_ROWS")) |v| @max(1, try std.fmt.parseInt(u64, std.mem.span(v), 10)) else 16;
     }
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_LINES")) |v| b.lines = try std.fmt.parseInt(usize, std.mem.span(v), 10);
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_RESERVE_MB")) |v| b.reserve = try memory.mebibytes(std.mem.span(v));
+    if (std.c.getenv("TF_FLASHNEXT_EXPERT_LINES")) |v| b.lines = try std.fmt.parseInt(usize, std.mem.span(v), 10);
+    if (std.c.getenv("TF_FLASHNEXT_EXPERT_RESERVE_MB")) |v| b.reserve = try memory.mebibytes(std.mem.span(v));
     if (requested_streams == null) if (std.c.getenv("TF_FLASHNEXT_EXL3_STREAMS")) |v| {
         const env_streams = try std.fmt.parseInt(u64, std.mem.span(v), 10);
         if (env_streams == 0) return error.InvalidStreamCount;

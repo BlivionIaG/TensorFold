@@ -1551,3 +1551,18 @@ their dependent chain cannot overlap the all-reduce wait because it reads the st
 
 `qmmf` K-split cap (`TF_QMMF_SPLIT_CAP`, 8 by default; 16 leaves the cluster launch for a separate reduce kernel), A/B/B/A with the four-warp plan on: short 46.35 to 46.23 tok/s,
 Zig 34.5 to 34.66, docs 35.68 to 35.96 (the docs text equals the eight-warp plan's again); within noise. Reverted.
+
+## Toggle streamlining (2026-10-26)
+
+The CUDA path read 118 environment names (about 80 of them `TF_FLASHNEXT_*`); 56 appear in a script, a doc or a test. Naming scheme now: user-facing settings are `TF_FLASHNEXT_<AREA>_<SETTING>`
+(`DRAFT_*`, `EXPERT_*`); the EXL3 graph, prefill and KV-paging families keep their `TF_FLASHNEXT_EXL3_*` and `TF_FLASHNEXT_KVPAGE_*` prefixes, which were already coherent; names left over from upstream
+(`TF_FLASHNEXT_KV_PAGES*`, `BATCH_HEADS`, `GDN_FUSED`, the `FZ_*` and `FN_*` debug set of the Mac engine) are untouched so the upstream PR does not conflict.
+
+Renamed (same meaning): `TF_FLASHNEXT_EXL3_DRAFTS` to `TF_FLASHNEXT_DRAFT_ENABLE` (drafting with offloaded experts; off unless 1), `TF_FLASHNEXT_DRAFTS` to `TF_FLASHNEXT_DRAFT_DEPTH`,
+`TF_FLASHNEXT_CONFIDENCE` to `TF_FLASHNEXT_DRAFT_CONFIDENCE`, `TF_FLASHNEXT_EXL3_LINES` to `TF_FLASHNEXT_EXPERT_LINES`, `TF_FLASHNEXT_EXL3_RESERVE_MB` to `TF_FLASHNEXT_EXPERT_RESERVE_MB`,
+`TF_FLASHNEXT_EXL3_GRAPH_AFTER` to `TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER` (parallel to `..._GRAPH_PREFILL_AFTER`).
+
+Removed, with the value we run built in (none was used by a script, doc or test): `TF_FLASHNEXT_EXL3_FORK`, `_RECYCLE`, `_OVERLAP`, `_PREFILL_HEAD`, `_PREFILL_MIN`, `_PREFILL_PREFETCH`, `_PREFILL_KERNEL`,
+`_PREFILL_TILES`, `_PREFILL_RESEED`, `_PREFILL_RING_PASS`, `TF_FLASHNEXT_KVPAGE_ROWS`, `TF_FLASHNEXT_KVPAGE_SLOTS`; and the three of this session's experiments: `TF_FLASHNEXT_EXL3_BALANCE` (code removed),
+`TF_FLASHNEXT_EXL3_TP_DIRECT` (the place-free combine is always on) and `TF_FLASHNEXT_EXL3_PLAN_WIDE_WK` (four warps a block is the plan for every N; the deeper-prefetch variant of the eight-warp kernel, now unused, is removed with it).
+`tools/exl3_serve_tp2.sh` drops the exports that only repeated a default (`..._GRAPH_AFTER`, `..._GRAPH_PREFILL_AFTER`).

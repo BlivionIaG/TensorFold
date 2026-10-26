@@ -798,11 +798,11 @@ fn tpUpdate() bool {
     return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_AFTER: the sighting of a key that captures it (default 2; 1 captures at once). With a
+/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it (default 2; 1 captures at once). With a
 /// blocking communicator a capture costs 3-7 ms and an in-place update 1-3 ms, and recycled stream buffers
 /// (cuda_exl3_recycle.zig) keep keys stable across requests, so a key is captured once and replayed from then on.
 fn after() u32 {
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_AFTER") orelse return 2;
+    const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER") orelse return 2;
     return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
 }
 

@@ -191,13 +191,13 @@ pub fn configFromEnv() ?Config {
     const v = std.c.getenv("TF_FLASHNEXT_KVPAGE") orelse return null;
     if (!std.mem.eql(u8, std.mem.span(v), "1")) return null;
     const d: Config = .{};
-    var rows = envUsize("TF_FLASHNEXT_KVPAGE_ROWS", d.rows);
+    var rows = d.rows;
     if (std.mem.eql(u8, std.mem.span(std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL") orelse "1"), "1")) {
         rows = @max(rows, envUsize("TF_FLASHNEXT_EXL3_PREFILL_ROWS", 4096));
     }
     const shared = std.mem.eql(u8, std.mem.span(std.c.getenv("TF_FLASHNEXT_KVPAGE_SHARED") orelse "0"), "1");
     const shared_lanes = if (shared) envUsize("TF_FLASHNEXT_KVPAGE_SHARED_LANES", 8) else 0;
-    return .{ .window = envUsize("TF_FLASHNEXT_KVPAGE_WINDOW", d.window), .slots = envUsize("TF_FLASHNEXT_KVPAGE_SLOTS", d.slots), .rows = rows, .shared_lanes = if (shared and shared_lanes == 0) std.math.maxInt(usize) else shared_lanes };
+    return .{ .window = envUsize("TF_FLASHNEXT_KVPAGE_WINDOW", d.window), .slots = d.slots, .rows = rows, .shared_lanes = if (shared and shared_lanes == 0) std.math.maxInt(usize) else shared_lanes };
 }
 
 pub fn configIdentity(cfg: ?Config) u64 {

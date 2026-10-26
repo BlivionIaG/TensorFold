@@ -66,13 +66,13 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     try @import("cuda_exl3_kv.zig").setup(own.engine, o.kv8, mode == .exl3); // K10: int8 KV, host index keys, chunk
     // the pass's scratch for a full chunk, once for the engine (every prompt, window, round and head pass)
     _ = try own.engine.reserve(@max(@min(o.context, own.engine.chunk), if (o.slide) @as(usize, @import("cuda_train.zig").pack_rows) else 0));
-    // the MTP head unless --no-drafts (TF_FLASHNEXT_DRAFTS and _CONFIDENCE: the chain's rule, 6 and 0.60)
+    // the MTP head unless --no-drafts (TF_FLASHNEXT_DRAFT_DEPTH and _CONFIDENCE: the chain's rule, 6 and 0.60)
     if (o.drafts and (o.tp == 1 or o.rank == 0)) {
         const head_before = cuda.usage(false).device;
         own.head = try mtp.Head.init(gpa, io, driver, &own.stream, dir);
         persistent_bytes = try std.math.add(u64, persistent_bytes, cuda.usage(false).device -| head_before);
-        own.depth = @max(1, @min(mtp.max_chain, F.envUsize("TF_FLASHNEXT_DRAFTS", mtp.default_depth)));
-        if (std.c.getenv("TF_FLASHNEXT_CONFIDENCE")) |v| own.confidence = std.fmt.parseFloat(f64, std.mem.span(v)) catch mtp.default_confidence;
+        own.depth = @max(1, @min(mtp.max_chain, F.envUsize("TF_FLASHNEXT_DRAFT_DEPTH", mtp.default_depth)));
+        if (std.c.getenv("TF_FLASHNEXT_DRAFT_CONFIDENCE")) |v| own.confidence = std.fmt.parseFloat(f64, std.mem.span(v)) catch mtp.default_confidence;
     }
     errdefer if (own.head) |h| h.deinit();
     const window = @min(o.context + mtp.max_rows, prompt.max_tokens);

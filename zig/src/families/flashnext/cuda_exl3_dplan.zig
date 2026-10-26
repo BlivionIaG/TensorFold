@@ -139,7 +139,7 @@ pub const DevPlan = struct {
     /// The stream the last device round ran on (toHost waits for it).
     stream: ?cuda.Stream = null,
     copy_blocks: u32 = 144,
-    /// Overlap (TF_FLASHNEXT_EXL3_OVERLAP): the held experts compute while the misses' copies run on `side`, then the
+    /// Overlap: the held experts compute while the misses' copies run on `side`, then the
     /// misses' experts (and the combine) follow; the per-slot outputs are the single pass's (each slot is written by
     /// the one pass that holds its expert, as the host cut's split rounds do).
     overlap: bool = false,
@@ -245,7 +245,7 @@ pub const DevPlan = struct {
             .ev_plan = ev_plan,
             .ev_copy = ev_copy,
             .split = split,
-            .overlap = overlapFromEnv(pools[0]),
+            .overlap = true, // the held experts compute beside the misses' copies: +3-4% decode on two RTX 5060 Ti (see the report)
             .trace_mem = trace_mem,
             .trace_checkpoint_fn = if (trace_mem != null) try mod.function("fn_exl3_dcheckpoint") else null,
         };
@@ -686,12 +686,6 @@ pub fn releaseFor(owner: *const anyopaque) void {
     };
 }
 
-/// Pool `i`'s line_of table (line or -1 by expert id) in the planner's device state.
-pub fn lineOfPtr(dp: *const DevPlan, i: usize) u64 {
-    const e = dp.pool_states[i];
-    return dp.state.ptr + e.byteOffset() + 2 * @as(u64, e.lines) * @sizeOf(u32);
-}
-
 /// One offloaded layer's experts on the device plan: plan + copies, then `Experts.run` on the pool's tables, as the
 /// host cut's single pass runs it (cuda_exl3_pass.pooled): same kernels, same inputs, so the same bits.
 pub fn runLayer(dp: *DevPlan, st: cuda.Stream, i: usize, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
@@ -711,13 +705,6 @@ pub fn runLayer(dp: *DevPlan, st: cuda.Stream, i: usize, ex: *const cuda.exl3_ex
 fn maxRows() usize {
     const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_ROWS") orelse return 16;
     return @max(1, std.fmt.parseInt(usize, std.mem.span(v), 10) catch 16);
-}
-
-/// The split is on unless TF_FLASHNEXT_EXL3_OVERLAP=0: +3-4% decode on two RTX 5060 Ti (see the report).
-fn overlapFromEnv(p: *const pool_.Pool) bool {
-    _ = p;
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_OVERLAP") orelse return true;
-    return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
 /// With the split the copies run beside the held experts: a quarter of the SMs, at least 8 blocks, keeps the link busy.

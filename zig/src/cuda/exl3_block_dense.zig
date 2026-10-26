@@ -15,14 +15,6 @@ pub fn dtypeSize(t: DType) usize {
 
 // -- Plans and tables (pure: host tests cover them) -------------------------------------------------------------
 
-/// TF_FLASHNEXT_EXL3_PLAN_WIDE_WK: warps a block for a wide N (nb >= 64): 8 (linear.py's) or 4. Four-warp blocks fit three to an SM here, so the
-/// 96-block launches are one resident wave instead of three; the block's partial sums are grouped differently (other last bits).
-fn wideWk() usize {
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_PLAN_WIDE_WK") orelse return 8;
-    const n = std.fmt.parseInt(usize, std.mem.span(v), 10) catch 8;
-    return if (n == 4) 4 else 8;
-}
-
 /// linear.plan: (K splits, warps a program) for a K x N layer, the shape's alone (every row count one reduction).
 pub fn plan(k: usize, n: usize) [2]usize {
     const blocks = 192;
@@ -30,7 +22,9 @@ pub fn plan(k: usize, n: usize) [2]usize {
     const kt = k / 16;
     const nb = n / 128;
     var sk: usize = 1;
-    var wk: usize = if (nb >= 64) wideWk() else 4;
+    // Four warps a block for every N, not linear.py's eight for a wide one: three four-warp blocks fit an SM of the 36-SM card, so the 96-block launches
+    // of a 12288-column projection are one resident wave instead of three (+1.4% to +2.3% decode; the block's partial sums group in four).
+    var wk: usize = 4;
     if (nb < 64) {
         while (nb * sk < blocks and sk < 64) sk *= 2;
     }

@@ -4,7 +4,7 @@
 //! so a captured graph holds them as parallel branches. Every part is the same kernels on the same inputs writing
 //! its own columns: the same bits (tf-cuda-test flashnext-exl3-graph eq). A decode projection launches 80-192
 //! programs that leave an SM wave partly empty; the next part fills it.
-//! TF_FLASHNEXT_EXL3_FORK=0 runs the parts one after another (upstream order).
+//! Without the fork the parts run one after another (upstream order); only a test turns it off.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -26,12 +26,10 @@ pub const Fork = struct {
 var forks: std.AutoHashMapUnmanaged(*load.Ops, *Fork) = .empty;
 
 pub fn enabled() bool {
-    if (force) |f| return f;
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_FORK") orelse return true;
-    return !std.mem.eql(u8, std.mem.span(v), "0");
+    return force orelse true;
 }
 
-/// A test's override of TF_FLASHNEXT_EXL3_FORK.
+/// A test's override of the fork.
 pub var force: ?bool = null;
 
 /// Ops.reserve's hook: the branches' streams, kernels and scratch for `o`'s widest projection, before any pass.
