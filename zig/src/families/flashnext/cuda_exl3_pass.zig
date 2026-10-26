@@ -125,12 +125,13 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
 /// Offloaded expert layers of this process's engine (set when the pools are built); 0: none.
 pub var offloaded_layers: usize = 0;
 
-/// Drafted rounds verify more rows, need more distinct experts and lose to plain decode on offloaded experts
-/// (measured on two RTX 5060 Ti: about 21% slower on real text): requests decode plain unless TF_FLASHNEXT_DRAFT_ENABLE=1.
+/// A drafted window on offloaded experts costs about 18 ms for its first extra row (the missed experts' PCIe copies), so
+/// drafts only pay where they land often; the lane engine's guard (core/lanes/depth.zig) runs a stream plain where its
+/// measured tokens a ms say so. TF_FLASHNEXT_DRAFT_ENABLE=0 decodes every request plain (the head still loads unless --no-drafts).
 pub fn plainByDefault() bool {
     if (offloaded_layers == 0) return false;
-    const value = std.c.getenv("TF_FLASHNEXT_DRAFT_ENABLE") orelse return true;
-    return !std.mem.eql(u8, std.mem.span(value), "1");
+    const value = std.c.getenv("TF_FLASHNEXT_DRAFT_ENABLE") orelse return false;
+    return std.mem.eql(u8, std.mem.span(value), "0");
 }
 
 pub var pool_time: struct { cut_ns: u64 = 0, plan_ns: u64 = 0, blocks: u64 = 0 } = .{};
