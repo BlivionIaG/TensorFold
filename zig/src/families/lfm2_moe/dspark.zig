@@ -407,6 +407,21 @@ pub const Drafter = struct {
             l.staged = 0;
         }
         const r = run orelse return;
+        // the other lanes' staged rows join the pass: one waited pass a stage's worth of rounds, not one a stream
+        var others = d.lanes.valueIterator();
+        while (others.next()) |lp| {
+            const pc = stagedPiece(lp.*) orelse continue;
+            if (count == pieces.len or rows + pc.rows > absorb_rows) {
+                try block.absorbPass(d, r.e, pieces[0..count]);
+                count = 0;
+                rows = 0;
+            }
+            pieces[count] = pc;
+            count += 1;
+            rows += pc.rows;
+            lp.*.end += lp.*.staged;
+            lp.*.staged = 0;
+        }
         if (count > 0) try block.absorbPass(d, r.e, pieces[0..count]);
         try block.end(r.cb, r.e);
     }
