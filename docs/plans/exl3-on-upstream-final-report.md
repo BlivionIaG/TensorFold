@@ -1612,3 +1612,10 @@ One user, TP=2, two RTX 5060 Ti, graphs, 192 tokens, temperature 0, output hashe
 Still open: a plain round on a drafting stream carries the head's absorb of its row (about 1.9 ms eager), which the 80-line plain
 leg does not (short 44.3 vs 47.8). A lazy absorb that stashes the plain rows' hidden states and absorbs them in one pass when drafting
 resumes would remove it.
+
+### Lazy head absorb (tried, reverted)
+
+A plain round's kept rows were stashed (their main-model streams and next tokens) and the head absorbed the whole run in one pass when
+a drafted round came, with a flush before snapshots. Output stayed identical. With a 16-row stash short prose fell to 42.7 tok/s (44.3
+before) and docs rose to 43; with 4 rows short was 44.4 and docs 41-42.5, inside run-to-run noise. A long flush touches many distinct
+head experts and misses the head's pool, so one big absorb costs about what the single ones did. Not kept.
