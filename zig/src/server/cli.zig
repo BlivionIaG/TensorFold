@@ -219,7 +219,7 @@ pub const Args = struct {
     compact_keep: ?u32 = null,
     compact_memory: ?[]const u8 = null,
     drafter: ?[]const u8 = null,
-    drafter_bits: u8 = 4,
+    drafter_bits: ?u8 = null, // null: not given (a family without its own default takes 4)
     draft_verify: ?api.DraftVerify = null, // the LFM2 DSpark drafter's verify rows (null: the engine's default)
     verify_costs: ?[]const u8 = null, // a tf-lfm2-verify-costs table pricing them (null: costs timed at load)
     record: ?[]const u8 = null, // drafter training rows written under this folder
@@ -551,7 +551,8 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .lanes_fixed = parallelFixed(args.parallel),
         .drafts = !args.no_drafts,
         .drafter = args.drafter,
-        .drafter_bits = args.drafter_bits,
+        .drafter_bits = args.drafter_bits orelse 4,
+        .drafter_bits_given = args.drafter_bits != null,
         .draft_verify = args.draft_verify,
         .verify_costs = args.verify_costs,
         .record = args.record,

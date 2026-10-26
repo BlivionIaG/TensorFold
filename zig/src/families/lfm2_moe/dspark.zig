@@ -29,8 +29,8 @@ pub const Verify = enum { depth, fixed, scheduled };
 /// The verify when none is asked: the confidence-scheduled one.
 pub const default_verify: Verify = .scheduled;
 
-/// `bits`: the quantized width (8 keeps the fp32 reference's drafts; 4 does not); `verify_asked`: --draft-verify given.
-pub const Options = struct { capacity: usize, bits: u8 = 8, verify: Verify = default_verify, verify_asked: bool = false };
+/// `bits`: 0 runs the released bf16 matrices as stored, 8 quantizes to 8-bit codes; `verify_asked`: --draft-verify given.
+pub const Options = struct { capacity: usize, bits: u8 = 0, verify: Verify = default_verify, verify_asked: bool = false };
 
 /// An asked scheduled verify needs the checkpoint's confidence head; the default one falls back to the depth rule.
 pub fn admitVerify(o: Options, has_head: bool) !void {

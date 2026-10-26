@@ -8,6 +8,7 @@ const tile = @import("../../core/tile_qmm.zig");
 const am = @import("../../core/affine_mm.zig");
 const round = @import("tree_round_gpu");
 const ds = @import("dspark.zig");
+const dw = @import("dspark_weights.zig");
 const Drafter = ds.Drafter;
 const Lane = ds.Lane;
 
@@ -21,6 +22,7 @@ fn attnArgs(lane: *const Lane, keys: u64) AttnArgs {
     return .{ .len = @intCast(keys - 1), .cap = @intCast(lane.cap), .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .subs = st.subs };
 }
 const Pick = round.contract.Pick;
+const Bf16Args = extern struct { rows: u32, n: u32, k: u32 };
 const MarkovArgs = extern struct { stride: u32, rank: u32, vocab: u32, prev_stride: u32 };
 const ConfidenceArgs = extern struct { n: u32, pass: u32, vocab: u32, rank: u32, hidden: u32 };
 /// Tokens a Markov scan threadgroup takes (the kernel's MARKOV_SPAN), and threadgroups a stream's row takes.
@@ -59,12 +61,19 @@ const Enc = struct {
     }
 
     /// y[rows] = x[rows] W^T: the M5's tensor units from naxFrom rows, else the twin (scalar to scalar_rows) or tiles.
-    fn project(x: Enc, w: tile.Matrix, in: Ref, out: Ref, rows: usize) !void {
+    fn project(x: Enc, w: dw.Linear, in: Ref, out: Ref, rows: usize) !void {
         return x.projectAll(&.{w}, in, &.{out}, rows);
     }
 
-    /// y_i[rows] = x[rows] W_i^T on one input and shape: one sums pass, then products free to overlap.
-    fn projectAll(x: Enc, ws: []const tile.Matrix, in: Ref, outs: []const Ref, rows: usize) !void {
+    /// y_i[rows] = x[rows] W_i^T on one input and shape: bf16 matrices straight, else one sums pass, products free to overlap.
+    fn projectAll(x: Enc, lins: []const dw.Linear, in: Ref, outs: []const Ref, rows: usize) !void {
+        if (lins[0] == .bf16) {
+            for (lins, outs) |lin, out| x.bf16(lin.bf16, in, out, rows);
+            return;
+        }
+        var buf: [4]tile.Matrix = undefined;
+        for (lins, 0..) |lin, i| buf[i] = lin.codes;
+        const ws = buf[0..lins.len];
         const t = &x.d.target.kernels.tiles;
         const sums = Ref{ .buf = x.d.s.sums };
         const k = ws[0].k;
@@ -87,6 +96,20 @@ const Enc = struct {
         tile.encodeSums(x.e, t, k, in.buf, in.off, x.d.s.sums, rows);
         x.sync();
         for (ws, outs) |w, out| try tile.encode(x.e, t, w, in.buf, in.off, x.d.s.sums, 0, out.buf, out.off, rows);
+    }
+
+    /// y[rows] = x[rows] W^T over the released bf16 matrix: 16 rows a pass of W up to 32 rows, else 64x64 tiles.
+    fn bf16(x: Enc, m: dw.Bf16, in: Ref, out: Ref, rows: usize) void {
+        const args = Bf16Args{ .rows = @intCast(rows), .n = @intCast(m.n), .k = @intCast(m.k) };
+        const few = rows <= 32;
+        if (few) x.pipe("lfm2_bf16_rows") else x.pipe("lfm2_bf16_mma");
+        x.e.setBuffer(in.buf, in.off, 0);
+        x.e.setBuffer(m.w, 0, 1);
+        x.e.setBytes(std.mem.asBytes(&args), 2);
+        x.e.setBuffer(out.buf, out.off, 3);
+        if (few) {
+            x.e.dispatchGroups(mtl.Size.of((m.n + 7) / 8, (rows + 15) / 16, 1), mtl.Size.of(256, 1, 1));
+        } else x.e.dispatchGroups(mtl.Size.of((m.n + 63) / 64, (rows + 63) / 64, 1), mtl.Size.of(128, 1, 1));
     }
 
     /// h += r when `add`, then out = norm(h) * gain: LFM2's own norm (the drafter's width and eps are the target's).
@@ -304,7 +327,7 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
     }
     x.norm(s.h, s.r, d.w.norm, true, s.x, tail);
     x.sync();
-    try x.project(fwd.matrix(emb), .{ .buf = s.x }, .{ .buf = s.logits }, tail);
+    try x.project(.{ .codes = fwd.matrix(emb) }, .{ .buf = s.x }, .{ .buf = s.logits }, tail);
     x.sync();
     try markov(x, blocks.len, n, steps);
     if (d.confident()) confidence(x, blocks.len, n, steps);
@@ -384,17 +407,28 @@ fn markov(x: Enc, streams: usize, n: u32, depth: u32) !void {
     const e = x.e;
     for (0..depth) |i| {
         // step i's previous token: the pending one (each block's first id), then step i - 1's pick
-        x.pipe("lfm2_markov_scan");
+        switch (d.w.w2) {
+            .codes => x.pipe("lfm2_markov_scan"),
+            .bf16 => x.pipe("lfm2_markov_scan_bf16"),
+        }
         e.setBuffer(s.logits, i * c.vocab * 2, 0);
         e.setBuffer(d.w.w1, 0, 1);
-        e.setBuffer(d.w.w2.w, d.w.w2.w_off, 2);
+        e.setBuffer(switch (d.w.w2) {
+            .codes => |m| m.w,
+            .bf16 => |m| m.w,
+        }, switch (d.w.w2) {
+            .codes => |m| m.w_off,
+            .bf16 => 0,
+        }, 2);
         if (i == 0) e.setBuffer(s.ids, 0, 3) else e.setBuffer(s.picks, (i - 1) * ds.pass_rows * @sizeOf(Pick), 3);
         const args = MarkovArgs{ .stride = n * c.vocab, .rank = d.config.rank, .vocab = c.vocab, .prev_stride = if (i == 0) n else @sizeOf(Pick) / 4 };
         e.setBytes(std.mem.asBytes(&args), 4);
         e.setBuffer(s.best, 0, 5);
         e.setBuffer(s.at, 0, 6);
-        e.setBuffer(d.w.w2.scales, d.w.w2.s_off, 7);
-        e.setBuffer(d.w.w2.biases, d.w.w2.b_off, 8);
+        if (d.w.w2 == .codes) {
+            e.setBuffer(d.w.w2.codes.scales, d.w.w2.codes.s_off, 7);
+            e.setBuffer(d.w.w2.codes.biases, d.w.w2.codes.b_off, 8);
+        }
         e.dispatchGroups(mtl.Size.of(scan_groups, streams, 1), mtl.Size.of(256, 1, 1));
         x.sync();
         x.pipe("lfm2_markov_pick");

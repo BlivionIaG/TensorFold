@@ -163,7 +163,7 @@ test "parse and capabilities share the table" {
     try std.testing.expectEqual(@as(usize, 2), args.api_key.len);
     try std.testing.expect(!args.thinking);
     try std.testing.expectEqualStrings("x", (try parse(a, &.{ "m", "--drafter", "x" }, &u)).drafter.?);
-    try std.testing.expectEqual(@as(u8, 0), (try parse(a, &.{ "m", "--drafter-bits", "0" }, &u)).drafter_bits);
+    try std.testing.expectEqual(@as(?u8, 0), (try parse(a, &.{ "m", "--drafter-bits", "0" }, &u)).drafter_bits);
     try std.testing.expectError(error.Usage, parse(a, &.{ "m", "--drafter-bits", "8" }, &u));
     if (@import("builtin").os.tag == .macos) {
         const verify = try parse(a, &.{ "m", "--draft-verify", "scheduled", "--verify-costs", "/t" }, &u);

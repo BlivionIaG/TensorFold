@@ -1,4 +1,4 @@
-//! The DSpark drafter's weights: bf16 linears quantized to MLX affine codes at load, norms and W1 kept as stored.
+//! The DSpark drafter's weights: the released bf16 linears as stored, or on request quantized to 8-bit affine codes.
 const std = @import("std");
 const mtl = @import("metal");
 const c = @import("config.zig");
@@ -10,17 +10,23 @@ const tile = @import("../../core/tile_qmm.zig");
 
 const shared = mtl.ResourceOptions.shared | mtl.ResourceOptions.untracked;
 
+/// An [n, k] bf16 matrix as released (rows only reordered for half-split RoPE where the checkpoint is read).
+pub const Bf16 = struct { w: mtl.Buffer, n: usize, k: usize };
+
+/// A linear: bf16 as stored (bits 0), or MLX affine codes at the loader's width.
+pub const Linear = union(enum) { bf16: Bf16, codes: tile.Matrix };
+
 /// A bf16 vector in its own buffer (norm gains; RoPE-paired ones in the half-split order the kernels rotate).
 pub const Vector = mtl.Buffer;
 
 pub const Layer = struct {
-    q: tile.Matrix,
-    k: tile.Matrix,
-    v: tile.Matrix,
-    o: tile.Matrix,
-    gate: tile.Matrix,
-    up: tile.Matrix,
-    down: tile.Matrix,
+    q: Linear,
+    k: Linear,
+    v: Linear,
+    o: Linear,
+    gate: Linear,
+    up: Linear,
+    down: Linear,
     input_norm: Vector,
     post_norm: Vector,
     q_norm: Vector,
@@ -28,13 +34,13 @@ pub const Layer = struct {
 };
 
 pub const Weights = struct {
-    fc: tile.Matrix,
+    fc: Linear,
     hidden_norm: Vector,
     norm: Vector,
     layers: [8]Layer,
-    /// The Markov head: W1 [vocab, rank] bf16 as stored (rows gathered by token), W2 [vocab, rank] as 8-bit codes.
+    /// The Markov head: W1 [vocab, rank] bf16 as stored (rows gathered by token), W2 [vocab, rank] as the linears.
     w1: mtl.Buffer,
-    w2: tile.Matrix,
+    w2: Linear,
     /// The confidence head: its [hidden + rank] bf16 weights and fp32 bias (null: the checkpoint has none).
     confidence: ?mtl.Buffer = null,
     confidence_bias: f32 = 0,
@@ -87,8 +93,8 @@ const Loader = struct {
         return b;
     }
 
-    /// An [n, k] bf16 matrix as affine codes at the loader's width; rows reordered for half-split RoPE when `paired`.
-    fn matrix(l: Loader, name: []const u8, n: usize, k: usize, paired: bool) !tile.Matrix {
+    /// An [n, k] bf16 matrix as it is or as affine codes; rows reordered for half-split RoPE when `paired`.
+    fn matrix(l: Loader, name: []const u8, n: usize, k: usize, paired: bool) !Linear {
         const t = try l.tensor(name, &.{ n, k });
         var rows = t.host(u16);
         var moved: ?[]u16 = null;
@@ -99,12 +105,17 @@ const Loader = struct {
             for (0..n) |r| @memcpy(m[r * k ..][0..k], rows[quant.halfSplit(r, c.head_dim) * k ..][0..k]);
             rows = m;
         }
+        if (l.bits == 0) {
+            const b = try l.buffer(n * k * 2);
+            @memcpy(b.slice(u16, n * k), rows);
+            return .{ .bf16 = .{ .w = b, .n = n, .k = k } };
+        }
         const codes = try l.buffer(n * k * l.bits / 8);
         const scales = try l.buffer(n * k / 64 * 2);
         const biases = try l.buffer(n * k / 64 * 2);
         const job: quant.Job = .{ .src = rows, .k = k, .bits = l.bits, .codes = codes.slice(u8, n * k * l.bits / 8), .scales = scales.slice(u16, n * k / 64), .biases = biases.slice(u16, n * k / 64) };
         try job.all(l.gpa, n);
-        return .{ .w = codes, .scales = scales, .biases = biases, .n = n, .k = k, .bits = l.bits };
+        return .{ .codes = .{ .w = codes, .scales = scales, .biases = biases, .n = n, .k = k, .bits = l.bits } };
     }
 };
 
@@ -117,9 +128,9 @@ fn matrices(_: []const u8, rank: usize) bool {
     return rank == 2;
 }
 
-/// The drafter's checkpoint read and quantized at `bits` (4 or 8), a matrix at a time; its buffers are released after.
+/// The drafter's checkpoint read as released (`bits` 0) or quantized to 8-bit codes, a matrix at a time; buffers freed after.
 pub fn load(gpa: std.mem.Allocator, device: mtl.Device, io: std.Io, dir: []const u8, cfg: *const dc.Config, bits: u8) !Weights {
-    if (bits != 4 and bits != 8) return error.UnsupportedDraftBits;
+    if (bits != 0 and bits != 8) return error.UnsupportedDraftBits;
     var check = ckpt.Checkpoint.init(gpa);
     defer check.deinit();
     var stage: ckpt.Stage = .{ .device = device };

@@ -172,7 +172,7 @@ pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     if (args.len < 4 or args.len > 6) return error.ExpectedModelDrafterPromptLengthRowsBits;
-    const bits: u8 = if (args.len == 6) try std.fmt.parseInt(u8, args[5], 10) else 8;
+    const bits: u8 = if (args.len == 6) try std.fmt.parseInt(u8, args[5], 10) else 0;
     const length = try std.fmt.parseInt(usize, args[3], 10);
     const pool = mtl.objc.Pool.push();
     defer pool.pop();

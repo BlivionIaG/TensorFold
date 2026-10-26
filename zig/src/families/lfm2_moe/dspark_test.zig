@@ -11,12 +11,12 @@ const lanes = @import("lanes");
 
 const shared = mtl.ResourceOptions.shared;
 
-const Rig = struct {
+pub const Rig = struct {
     device: mtl.Device,
     queue: mtl.Queue,
     k: kernels.Kernels,
 
-    fn init() !Rig {
+    pub fn init() !Rig {
         const device = mtl.Device.init() catch return error.SkipZigTest;
         errdefer device.deinit();
         const queue = try device.queue();
@@ -24,13 +24,13 @@ const Rig = struct {
         return .{ .device = device, .queue = queue, .k = try kernels.load(device) };
     }
 
-    fn deinit(r: *Rig) void {
+    pub fn deinit(r: *Rig) void {
         r.k.deinit();
         r.queue.deinit();
         r.device.deinit();
     }
 
-    fn buffer(r: *Rig, comptime T: type, n: usize) !mtl.Buffer {
+    pub fn buffer(r: *Rig, comptime T: type, n: usize) !mtl.Buffer {
         const b = try r.device.buffer(n * @sizeOf(T), shared);
         @memset(b.slice(u8, n * @sizeOf(T)), 0);
         return b;
@@ -50,7 +50,7 @@ const Rig = struct {
     }
 };
 
-fn noise(seed: u64, out: []u16, scale: f32) void {
+pub fn noise(seed: u64, out: []u16, scale: f32) void {
     var prng = std.Random.DefaultPrng.init(seed);
     for (out) |*v| v.* = quant.toBf16((prng.random().float(f32) * 2 - 1) * scale);
 }

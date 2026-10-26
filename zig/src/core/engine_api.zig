@@ -307,6 +307,8 @@ pub const Open = struct {
     /// --draft-verify and --verify-costs (a tf-lfm2-verify-costs table): the LFM2 DSpark drafter's verify rows.
     draft_verify: ?DraftVerify = null,
     verify_costs: ?[]const u8 = null,
+    /// Whether --drafter-bits was given: LFM2's drafter runs bf16 unless it is refused a width it has no mode for.
+    drafter_bits_given: bool = false,
     /// --record: each stream's committed rows and tapped features written under this folder, for drafter training.
     record: ?[]const u8 = null,
     speed_up: ?[]const u8 = null,
