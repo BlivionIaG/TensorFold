@@ -152,8 +152,11 @@ pub fn end(cb: mtl.CommandBuffer, e: mtl.ComputeEncoder) !void {
     return finish(cb, e);
 }
 
-/// The blocks' drafts into their lanes' held chains: the backbone over every block's rows, then the Markov chain.
-pub fn hold(d: *Drafter, blocks: []const Block) !void {
+/// A GPU event a hold signals instead of being waited on, and the value it sets.
+pub const Signal = struct { event: mtl.Event, value: u64 };
+
+/// The blocks' drafts (backbone, then Markov chain) into the lanes' held chains; with `signal`, left for readPicks.
+pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBuffer {
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     const s = &d.s;
@@ -230,6 +233,13 @@ pub fn hold(d: *Drafter, blocks: []const Block) !void {
     x.norm(s.h, s.r, d.w.norm, true, s.x, tail);
     try x.project(fwd.matrix(emb), .{ .buf = s.x }, .{ .buf = s.logits }, tail);
     try markov(x, blocks.len, n, steps);
+    if (signal) |sg| { // committed unwaited, the command buffer returned retained
+        e.end();
+        cb.signalEvent(sg.event, sg.value);
+        const kept = cb.retain();
+        cb.commit();
+        return kept;
+    }
     try finish(cb, e);
     const picks = s.picks.slice(Pick, d.config.block * ds.pass_rows);
     for (blocks, 0..) |b, bi| {
@@ -239,6 +249,19 @@ pub fn hold(d: *Drafter, blocks: []const Block) !void {
             h.* = p.token;
         }
         b.lane.held_len = b.depth;
+    }
+    return null;
+}
+
+/// A finished signalled hold's picks into the lanes' held chains (a pick past the vocabulary reads as token 0).
+pub fn readPicks(d: *Drafter, lanes: []const *Lane, depths: []const u32) void {
+    const picks = d.s.picks.slice(Pick, d.config.block * ds.pass_rows);
+    for (lanes, depths, 0..) |l, depth, bi| {
+        for (l.held[0..depth], 0..) |*h, i| {
+            const p = picks[i * ds.pass_rows + bi];
+            h.* = if (p.token < c.vocab) p.token else 0;
+        }
+        l.held_len = depth;
     }
 }
 

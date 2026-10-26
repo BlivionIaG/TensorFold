@@ -97,3 +97,11 @@ constant constexpr uint MARKOV_SPAN = 512;
     picks[2 * s + 1] = tn[0];
   }
 }
+
+// A verify window's held drafts from the drafter's picks: picks[i * stride] into ids[i], a token past the vocabulary 0.
+[[kernel]] void lfm2_draft_ids(const device uint* picks [[buffer(0)]], constant uint4& p [[buffer(1)]],
+                               device uint* ids [[buffer(2)]], uint i [[thread_position_in_grid]]) {
+  if (i >= p.y) return;
+  const uint token = picks[size_t(i) * p.x];
+  ids[i] = token < p.z ? token : 0u;
+}

@@ -32,6 +32,7 @@ const names = [_][:0]const u8{
     "lfm2_tap",
     "lfm2_markov_scan",
     "lfm2_markov_pick",
+    "lfm2_draft_ids",
 };
 
 pub const Kernels = struct {

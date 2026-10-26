@@ -153,7 +153,7 @@ pub fn main(init: std.process.Init) !void {
         try absorb(d, .{ .lane = lane, .src = .{ .buf = taps.buf, .off = at * width * 2 }, .rows = rows, .p0 = at });
     }
     lane.end = ctx;
-    try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }});
+    _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }}, null);
     var held: [16]u32 = undefined;
     @memcpy(held[0..block], lane.held[0..block]);
     const gpu = held[0..block];
@@ -171,12 +171,12 @@ pub fn main(init: std.process.Init) !void {
         var best: f64 = std.math.floatMax(f64);
         for (0..5) |_| {
             const t0 = std.Io.Clock.awake.now(init.io);
-            try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = depth }});
+            _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = depth }}, null);
             best = @min(best, @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(init.io)).toNanoseconds())) / 1e6);
         }
         std.debug.print("hold at depth {d}: {d:.2} ms (best of 5)\n", .{ depth, best });
     }
-    try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }});
+    _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }}, null);
     // the host reference, fp32 throughout
     var r: Ref = .{ .gpa = gpa, .check = ck.Checkpoint.init(gpa), .cfg = cfg };
     defer r.check.deinit();

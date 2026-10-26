@@ -20,16 +20,17 @@ const glm_rows_k = @import("metal_glm_rows.zig");
 
 const flash_pool = @import("metal_flashnext_pool.zig");
 const flash = @import("metal_flashnext.zig");
-const fsr = @import("metal_fsr.zig");
 const gemma = @import("metal_gemma4.zig");
 const gemma_embed = @import("metal_gemma4_embed.zig");
 const gemma_mixed = @import("metal_gemma4_mixed.zig");
 const lfm2_argmax = @import("metal_lfm2_argmax.zig");
 const lfm2_streams = @import("metal_lfm2_streams.zig");
 const lfm2_tap = @import("metal_lfm2_tap.zig");
-const lfm2_controls = @import("metal_lfm2_controls.zig");
 const lfm2_dspark = @import("metal_lfm2_dspark.zig");
+const lfm2_bf16 = @import("metal_lfm2_bf16.zig");
 const lfm2_attn = @import("metal_lfm2_attn.zig");
+const lfm2_conf = @import("metal_lfm2_confidence.zig");
+const lfm2_controls = @import("metal_lfm2_controls.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
 
@@ -210,20 +211,84 @@ pub fn main(init: std.process.Init) !u8 {
         try tap_list.append(a, p);
         try kernels.append(a, p.kernel());
     }
-    var dspark_list: [1]lfm2_dspark.Probe = undefined;
-    var lfm2_made: usize = 0;
-    defer for (dspark_list[0..lfm2_made]) |*p| p.deinit();
-    for (std.enums.values(lfm2_dspark.Which)) |w| {
-        if (!wanted(o, lfm2_dspark.spec(w).name)) continue;
-        dspark_list[lfm2_made] = try lfm2_dspark.Probe.init(a, device, queue, w);
-        lfm2_made += 1;
+    var drafter_list: std.ArrayList(*lfm2_dspark.Probe) = .empty;
+    var block_list: std.ArrayList(*lfm2_attn.Probe) = .empty;
+    var bf16_list: std.ArrayList(*lfm2_bf16.Probe) = .empty;
+    defer {
+        for (drafter_list.items) |p| {
+            p.deinit();
+            a.destroy(p);
+        }
+        for (block_list.items) |p| {
+            p.deinit();
+            a.destroy(p);
+        }
+        for (bf16_list.items) |p| {
+            p.deinit();
+            a.destroy(p);
+        }
+        drafter_list.deinit(a);
+        block_list.deinit(a);
+        bf16_list.deinit(a);
     }
-    for (dspark_list[0..lfm2_made]) |*p| try kernels.append(a, p.kernel());
-    var block_attn: ?lfm2_attn.Probe = null;
-    defer if (block_attn) |*p| p.deinit();
-    if (wanted(o, lfm2_attn.name)) {
-        block_attn = try lfm2_attn.Probe.init(a, device, queue);
-        try kernels.append(a, block_attn.?.kernel());
+    for (std.enums.values(lfm2_controls.Mutation)) |m| {
+        const drafter_which: ?lfm2_dspark.Which = switch (m) {
+            .markov_nan_dropped, .markov_first_prev => .markov_step,
+            .markov_bf16_nan_dropped, .markov_bf16_first_prev => .markov_step_bf16,
+            .draft_ids_unzeroed => .draft_ids,
+            else => null,
+        };
+        if (m == .none or drafter_which != null) {
+            for (std.enums.values(lfm2_dspark.Which)) |w| {
+                if (m != .none and w != drafter_which.?) continue;
+                if (!wanted(o, if (m == .none) lfm2_dspark.spec(w).name else m.name())) continue;
+                const p = try a.create(lfm2_dspark.Probe);
+                errdefer a.destroy(p);
+                p.* = try lfm2_dspark.Probe.init(a, device, queue, w, m);
+                try drafter_list.append(a, p);
+                try kernels.append(a, p.kernel());
+            }
+        }
+        const bf16_which: ?lfm2_bf16.Which = switch (m) {
+            .bf16_rows_short_k, .bf16_rows_last_row => .rows,
+            .bf16_tile_untransposed, .bf16_tile_last_column => .tile,
+            else => null,
+        };
+        if (m == .none or bf16_which != null) {
+            for (std.enums.values(lfm2_bf16.Which)) |w| {
+                if (m != .none and w != bf16_which.?) continue;
+                if (!wanted(o, if (m == .none) lfm2_bf16.spec(w).name else m.name())) continue;
+                const p = try a.create(lfm2_bf16.Probe);
+                errdefer a.destroy(p);
+                p.* = try lfm2_bf16.Probe.init(a, device, queue, w, m);
+                try bf16_list.append(a, p);
+                try kernels.append(a, p.kernel());
+            }
+        }
+        if (m == .none or m == .block_attention_causal) {
+            if (!wanted(o, if (m == .none) lfm2_attn.name else m.name())) continue;
+            const p = try a.create(lfm2_attn.Probe);
+            errdefer a.destroy(p);
+            p.* = try lfm2_attn.Probe.init(a, device, queue, m);
+            try block_list.append(a, p);
+            try kernels.append(a, p.kernel());
+        }
+    }
+    var conf_list: std.ArrayList(*lfm2_conf.Probe) = .empty;
+    defer {
+        for (conf_list.items) |p| {
+            p.deinit();
+            a.destroy(p);
+        }
+        conf_list.deinit(a);
+    }
+    for ([_]lfm2_controls.Mutation{ .none, .confidence_no_w1 }) |m| {
+        if (!wanted(o, if (m == .none) lfm2_conf.name else m.name())) continue;
+        const p = try a.create(lfm2_conf.Probe);
+        errdefer a.destroy(p);
+        p.* = try lfm2_conf.Probe.init(a, device, queue, m);
+        try conf_list.append(a, p);
+        try kernels.append(a, p.kernel());
     }
     var rows_list: std.ArrayList(*rows_k.Row) = .empty;
     var proj_list: std.ArrayList(*affine_k.Proj) = .empty;
@@ -259,15 +324,6 @@ pub fn main(init: std.process.Init) !u8 {
             flash_made += 1;
             try kernels.append(a, flash_list[flash_made - 1].kernel());
         }
-    };
-    var fsr_probes: [4]fsr.Probe = undefined;
-    var fsr_made: usize = 0;
-    defer for (fsr_probes[0..fsr_made]) |*probe| probe.deinit();
-    for ([_]usize{ 4, 6 }) |bits| for ([_]bool{ false, true }) |control| {
-        if (!wanted(o, fsr.Probe.name(bits, control))) continue;
-        fsr_probes[fsr_made] = .{ .a = a, .device = device, .queue = queue, .bits = bits, .control = control };
-        fsr_made += 1;
-        try kernels.append(a, fsr_probes[fsr_made - 1].kernel());
     };
     var d3norm: ?drama3_k.Norm = null;
     defer if (d3norm) |*n| n.deinit();
@@ -360,9 +416,6 @@ pub fn main(init: std.process.Init) !u8 {
     var glm_windows: glm_rows_k.Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
     defer glm_windows.deinit();
     try glm_windows.collect(o.only);
-    var nemotron_experts: @import("metal_nemotron_experts.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
-    defer nemotron_experts.deinit();
-    try nemotron_experts.collect(o.only);
     const weight_only = @import("metal_weight_only.zig");
     const weight_source = try weight_only.text(a);
     defer a.free(weight_source);
@@ -401,8 +454,6 @@ pub fn main(init: std.process.Init) !u8 {
     defer native_ple.destroy();
     const native_gdn = try @import("metal_qwen4_gdn.zig").Suite.create(a, device, queue, &kernels, o.only);
     defer native_gdn.destroy();
-    const moss_image = try @import("metal_moss_image.zig").Suite.create(a, device, queue, &kernels, o.only);
-    defer moss_image.destroy();
     var t: g.Tally = .{};
     const t0 = std.Io.Clock.awake.now(init.io);
     if (o.gates) {
@@ -416,8 +467,6 @@ pub fn main(init: std.process.Init) !u8 {
         lim += try gemma.limits(a, device, o.only);
         lim += try gemma_embed.limits(a, device, o.only);
         lim += try gemma_mixed.limits(a, device, o.only);
-        lim += try lfm2_dspark.limits(a, device, o.only);
-        lim += try lfm2_attn.limits(a, device, o.only);
     }
     const t2 = std.Io.Clock.awake.now(init.io);
     const ms = struct {

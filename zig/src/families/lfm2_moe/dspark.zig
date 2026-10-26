@@ -9,6 +9,7 @@ const block = @import("dspark_block.zig");
 const st = @import("state.zig");
 const snapshot = @import("snapshot.zig");
 const Model = @import("model.zig").Model;
+const backend = @import("backend.zig");
 
 const dr = lanes.drafter;
 const Stream = lanes.Stream;
@@ -34,6 +35,7 @@ pub const Lane = struct {
     staged: u32 = 0,
     held: [16]u32 = @splat(0),
     held_len: u32 = 0,
+    slot: ?u32 = null, // its block's place in the last signalled hold, whose picks still hold its drafts
 };
 
 /// The passes' working buffers, one pass at a time on the target's queue.
@@ -75,11 +77,19 @@ pub const Drafter = struct {
     /// One stream's hold wall ms at full depth, and that over the block (the depth rule's cost a draft).
     hold_ms: f64 = 0,
     step_ms: f64 = 0,
+    event: mtl.Event = undefined,
+    signalled: u64 = 0,
+    pending: ?mtl.CommandBuffer = null,
+    pass: [pass_rows]*Lane = undefined, // the signalled hold's lanes and depths, in its blocks' order
+    depths: [pass_rows]u32 = undefined,
+    pass_len: usize = 0,
 
     pub fn init(gpa: std.mem.Allocator, io: std.Io, target: *Model, dir: []const u8, options: Options) !*Drafter {
         const d = try gpa.create(Drafter);
         errdefer gpa.destroy(d);
         d.* = .{ .gpa = gpa, .io = io, .target = target, .config = try dc.Config.read(gpa, io, dir), .w = undefined, .options = options, .s = undefined };
+        d.event = try target.device.event();
+        errdefer d.event.deinit();
         d.w = try dw.load(gpa, target.device, io, dir, &d.config, options.bits);
         errdefer d.w.deinit(gpa);
         errdefer for (d.owned.items) |b| b.deinit();
@@ -90,6 +100,8 @@ pub const Drafter = struct {
     }
 
     pub fn deinit(d: *Drafter) void {
+        d.settle() catch {};
+        d.event.deinit();
         var it = d.lanes.valueIterator();
         while (it.next()) |l| d.dropLane(l.*);
         d.lanes.deinit(d.gpa);
@@ -232,11 +244,13 @@ pub const Drafter = struct {
 
     fn releaseFn(ptr: *anyopaque, s: *Stream) void {
         const d = cast(ptr);
+        d.unpass() catch {};
         if (d.lanes.fetchRemove(s)) |e| d.dropLane(e.value);
     }
 
     fn heldFn(ptr: *anyopaque, streams: []const *Stream, out: []const []u32) anyerror!void {
         const d = cast(ptr);
+        try d.settle();
         for (streams, out) |s, o| {
             const l = d.lanes.get(s) orelse return error.DraftStreamUnknown;
             if (o.len > l.held_len) return error.DraftHeldFewer;
@@ -252,6 +266,7 @@ pub const Drafter = struct {
     /// Stream `s`'s context copied into `snap` when its lane stands at the snapshot's position (a prompt chunk's end).
     pub fn keepLane(d: *Drafter, s: *Stream, snap: *snapshot.Snap) !void {
         const l = d.lanes.get(s) orelse return;
+        try d.settle();
         try d.flush(l);
         if (l.end != snap.at) return;
         const bytes = try d.gpa.alloc(u8, @intCast(d.keptBytes(snap.at)));
@@ -283,6 +298,7 @@ pub const Drafter = struct {
     /// Rows from `start` replace the context there: verified rows wait on the host for the next hold, others run now.
     fn absorbFn(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
         const d = cast(ptr);
+        try d.settle();
         const width = d.tapBytes();
         const pool = mtl.objc.Pool.push();
         defer pool.pop();
@@ -297,6 +313,7 @@ pub const Drafter = struct {
             if (it.start > l.end + l.staged) try d.resumeLane(it.stream, l, it.start); // a prompt pass that resumed
             if (it.start + f.rows + d.config.block > l.cap) return error.DraftContextGap;
             l.held_len = 0;
+            l.slot = null;
             const src = mtl.Buffer{ .id = @ptrFromInt(f.buffer) };
             // rows from `start` replace what was staged past it; rows before the absorbed end go to the GPU now
             const keep: u32 = if (it.start >= l.end) @intCast(it.start - l.end) else 0;
@@ -343,6 +360,7 @@ pub const Drafter = struct {
     /// Each stream's chain of `depth` drafts after `pending` at `position`, its block's rows in a pass of pass_rows.
     fn holdFn(ptr: *anyopaque, items: []const dr.Hold) anyerror!void {
         const d = cast(ptr);
+        try d.unpass();
         var at: usize = 0;
         while (at < items.len) {
             // as many streams as their blocks' rows fit a pass: each block is as long as the pass's deepest chain
@@ -364,8 +382,59 @@ pub const Drafter = struct {
                 if (l.end + l.staged != anchor or anchor + d.config.block > l.cap) return error.DraftContextGap;
                 b.* = .{ .lane = l, .pending = it.pending, .anchor = anchor, .depth = it.depth };
             }
-            try block.hold(d, blocks[0..group.len]);
+            if (group.len == items.len) { // one pass: signalled, not waited on
+                d.signalled += 1;
+                d.pending = try block.hold(d, blocks[0..group.len], .{ .event = d.event, .value = d.signalled });
+                for (blocks[0..group.len], 0..) |b, bi| {
+                    d.pass[bi] = b.lane;
+                    d.depths[bi] = b.depth;
+                    b.lane.slot = @intCast(bi);
+                    b.lane.held_len = 0;
+                }
+                d.pass_len = group.len;
+                continue;
+            }
+            _ = try block.hold(d, blocks[0..group.len], null);
         }
+    }
+
+    /// The signalled hold waited on, its picks read into its lanes' held chains (nothing pending: nothing done).
+    fn settle(d: *Drafter) !void {
+        const cb = d.pending orelse return;
+        d.pending = null;
+        defer cb.release();
+        cb.wait();
+        if (cb.failure()) |msg| {
+            std.log.err("lfm2 dspark: a hold failed on the GPU: {s}", .{msg});
+            return error.DraftGpuFailed;
+        }
+        block.readPicks(d, d.pass[0..d.pass_len], d.depths[0..d.pass_len]);
+    }
+
+    /// The signalled hold settled and its lanes' picks forgotten (a lane may be dropped, or a hold may overwrite).
+    fn unpass(d: *Drafter) !void {
+        defer {
+            for (d.pass[0..d.pass_len]) |l| l.slot = null;
+            d.pass_len = 0;
+        }
+        try d.settle();
+    }
+
+    /// Where stream `s`'s drafts from the last signalled hold lie in the picks, for a verify to copy on the GPU.
+    pub fn device(ptr: *anyopaque, s: *Stream) ?backend.Device {
+        const d = cast(ptr);
+        const l = d.lanes.get(s) orelse return null;
+        const slot = l.slot orelse return null;
+        return .{ .src = d.s.picks, .off = slot * 8, .stride = pass_rows * 2, .wait = .{ .event = d.event, .value = d.signalled } };
+    }
+
+    /// The target's verify reading the held drafts on the device, or as host tokens where it cannot.
+    pub fn heldSource(d: *Drafter) backend.HeldSource {
+        return .{ .ptr = d, .get = device, .host = hostHeld };
+    }
+
+    fn hostHeld(ptr: *anyopaque, s: *Stream, out: []u32) anyerror!void {
+        return heldFn(ptr, &.{s}, &.{out});
     }
 
     /// Holds on an empty context: the pipelines compiled, then one-draft and full-depth holds timed (best of three).
@@ -375,7 +444,7 @@ pub const Drafter = struct {
         var best: [2]f64 = @splat(std.math.floatMax(f64));
         for (0..4) |i| for ([_]u32{ 1, d.config.block }, &best) |depth, *b| {
             const t0 = std.Io.Clock.awake.now(d.io);
-            try block.hold(d, &.{.{ .lane = l, .pending = 1, .anchor = 0, .depth = depth }});
+            _ = try block.hold(d, &.{.{ .lane = l, .pending = 1, .anchor = 0, .depth = depth }}, null);
             const ms = @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(d.io)).toNanoseconds())) / 1e6;
             if (i > 0) b.* = @min(b.*, ms);
         };
