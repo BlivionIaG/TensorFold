@@ -463,6 +463,9 @@ test "a family that keeps copies to shared rounds proposes none for a lone strea
         try std.testing.expect((try win.copyProposal(&engine, &s)).tokens.len >= 2);
         engine.alone = true;
         try std.testing.expectEqual(lone_copies, (try win.copyProposal(&engine, &s)).tokens.len >= 2);
+        engine.alone = false;
+        engine.plain_round = true; // a shared round the guard keeps plain: no copies either, as with drafts off
+        try std.testing.expectEqual(@as(usize, 0), (try win.copyProposal(&engine, &s)).tokens.len);
     }
 }
 

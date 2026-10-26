@@ -50,6 +50,7 @@ pub const Engine = struct {
     accepted: u64 = 0,
     shared_rounds: u64 = 0,
     alone: bool = true, // this step has one live stream: its copies may take their ramp
+    plain_round: bool = false, // a shared round the guard keeps plain: no stream copies or drafts, as with drafts off
     lone_kept: [2][lone_costs.bands]?lone_costs.Kept = @splat(@splat(null)), // the newest lone calibrations, greedy then sampled, a band each
     steps: u64 = 0,
     arena: std.heap.ArenaAllocator, // a round's temporaries
@@ -260,6 +261,8 @@ pub const Engine = struct {
         e.clock.start();
         const a = e.arena.allocator();
         const plans = try a.alloc(Plan, entries.len);
+        e.plain_round = e.cfg.shared_guard and !try e.guard.drafts(entries.len);
+        defer e.plain_round = false;
         for (entries, plans) |s, *p| p.* = try win.plan(e, s, null);
         try win.allocate(e, plans);
         for (plans) |*p| try win.constrain(e, p);

@@ -197,7 +197,7 @@ fn headTrunk(e: *Engine, s: *Stream, p: Plan, levels: usize) !?fill.Trunk {
 
 /// A copy from the context backed by `enter_match` ids (Python `_copy_proposal`), else Recall's when it should pay.
 pub fn copyProposal(e: *Engine, s: *Stream) !Copy {
-    if (e.cfg.max_copy == 0 or s.force.items.len > 0 or (e.cfg.root_copies and s.root_copy_miss)) return .{};
+    if (e.cfg.max_copy == 0 or e.plain_round or s.force.items.len > 0 or (e.cfg.root_copies and s.root_copy_miss)) return .{};
     const width: u32 = if (e.alone) (s.copy_width orelse e.cfg.first_copy) else e.cfg.first_copy;
     const most = @min(@as(i64, width), s.draftRoom() - 1);
     if (s.proposer) |p| if (!e.alone or e.cfg.lone_copies) {
