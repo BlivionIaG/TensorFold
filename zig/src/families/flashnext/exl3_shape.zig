@@ -1,6 +1,4 @@
 //! Published text shape of turboderp/Qwen3.8-Flash-Next-exl3, revision 3.05bpw_h5_ng5.
-//! Read from that revision's config.json on 2026-10-16 (text_config + quantization_config).
-//! Per-tensor EXL3 widths still come from each trellis, never from `bits`.
 
 const std = @import("std");
 

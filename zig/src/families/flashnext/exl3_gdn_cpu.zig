@@ -1,18 +1,4 @@
 //! CPU oracle for one Gated DeltaNet layer of Qwen3.8-Flash-Next (qwen4_exp_text), everything between the two EXL3
-//! projections: causal depthwise conv with state, SiLU, q/k L2 norm, the gated delta-rule recurrence, and the
-//! gated RMS norm. All maths in f64; the device keeps the recurrent state in fp32.
-//!
-//! Verified against the model's own code, transformers `models/qwen4_exp/modeling_qwen4_exp.py` (5.8.0.dev0):
-//!   Qwen4ExpTextGatedDeltaNet.forward         conv over [q|k|v] channels, silu, split [key_dim, key_dim, value_dim],
-//!                                             beta = sigmoid(b), g = -exp(A_log) * softplus(a + dt_bias),
-//!                                             q and k repeat_interleave by nv/nk (value head hv uses key head hv / (nv/nk))
-//!   torch_recurrent_gated_delta_rule          q,k = l2norm(eps 1e-6: x * rsqrt(sum x^2 + 1e-6)), q *= dk^-0.5,
-//!                                             S = S * exp(g); kv = S^T k; d = (v - kv) * beta; S += k d^T; o = S^T q
-//!   Qwen4ExpTextRMSNormGated (activation = config.output_gate_type = "sigmoid", NOT silu):
-//!                                             w * (y * rsqrt(mean(y^2) + eps)) * sigmoid(z), w stored as is (not 1 + w)
-//! and against the affine path's Metal kernel (kernels/metal/decode/fn_gdn.metal), which implements the same
-//! arithmetic with the state laid out [value head][value row][key column].
-//! The prefill (chunked) rule in the model is mathematically this recurrence, so one token loop is the oracle for both.
 
 const std = @import("std");
 
@@ -45,8 +31,7 @@ pub const Dims = struct {
 /// Flash Next: 16 key heads, 48 value heads, 128 x 128, kernel 4.
 pub const qwen: Dims = .{ .nk = 16, .nv = 48, .dk = 128, .dv = 128, .taps = 4 };
 
-/// Per-sequence, per-layer state. `conv` is time-major, oldest row first: the last `taps - 1` raw projection rows.
-/// `rec` is [value head][value row][key column] (the device layout).
+/// Per-sequence, per-layer state.
 pub const State = struct {
     conv: []f64,
     rec: []f64,
@@ -102,7 +87,6 @@ pub fn rowsDot(w: []const f64, x: []const f64, y: []f64) void {
 }
 
 /// One token of the causal depthwise conv: out = silu(sum_tap w[c][tap] * x[t - (taps-1) + tap]), x before the
-/// sequence is the stored state (zeros at a fresh sequence). Shifts the state in place.
 pub fn convStep(d: Dims, p: Params, conv: []f64, x: []const f64, out: []f64) void {
     const c = d.channels();
     const kp = d.keep();
@@ -174,8 +158,7 @@ pub fn gatedNorm(d: Dims, p: Params, y: []const f64, z: []const f64, out: []f64)
     }
 }
 
-/// `n` tokens, in order, from the projection outputs: qkv [n][channels], z [n][nv*dv], a and b [n][nv].
-/// out is [n][nv*dv], the out_proj input. The state is carried in `st`.
+/// `n` tokens, in order, from the projection outputs: qkv [n][channels], z [n][nv*dv], a and b [n][nv]. out is
 pub fn tokens(gpa: std.mem.Allocator, d: Dims, p: Params, st: State, n: usize, qkv: []const f64, z: []const f64, a: []const f64, b: []const f64, out: []f64) !void {
     const c = d.channels();
     const zw = d.zWidth();
@@ -196,7 +179,6 @@ pub fn tokens(gpa: std.mem.Allocator, d: Dims, p: Params, st: State, n: usize, q
 }
 
 /// Byte sizes of the device state table: conv rows are fp16 (they are raw EXL3 projection outputs), the recurrent
-/// state is fp32. One entry per (slot, layer); a sequence's layers are contiguous.
 pub const Table = struct {
     dims: Dims,
     layers: usize,

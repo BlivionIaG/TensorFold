@@ -10,8 +10,7 @@ const Advanced = struct {
     ncclCommGetAsyncError: *const fn (nccl.Comm, *nccl.Result) callconv(.c) nccl.Result,
 };
 
-/// How long a wait polls before it sleeps between polls (a decode step's work ends within a few milliseconds; each
-/// 50 us sleep can add up to ~100 us to the step).
+/// How long a wait polls before it sleeps between polls (a decode step's work ends within a few milliseconds; each 50
 const spin_ns: u64 = 3 * std.time.ns_per_ms;
 
 pub const GraphState = enum(u32) { eager, capture, pending, ready, failed, timed_out };
@@ -93,7 +92,6 @@ pub const Collective = struct {
         } else try link.receive(std.mem.asBytes(&id), until);
         var config: nccl.Config = .{};
         // TF_FLASHNEXT_NCCL_BLOCKING=1: a blocking communicator (NCCL enqueues on the calling thread; a nonblocking
-        // one hands each collective to its own thread, ~100 us of host time an eager collective)
         if (std.c.getenv("TF_FLASHNEXT_NCCL_BLOCKING")) |v| if (std.mem.eql(u8, std.mem.span(v), "1")) {
             config.blocking = 1;
         };
@@ -137,8 +135,7 @@ pub const Collective = struct {
                     if (try s.done()) return;
                 } else return;
             }
-            // a nonblocking enqueue lands within tens of microseconds: poll that long before sleeping (each sleep
-            // of 50 us cost every eager or captured collective ~100 us of host time)
+            // a nonblocking enqueue lands within tens of microseconds: poll that long before sleeping (each sleep of
             polls += 1;
             if (polls == 1) spin_until = wire.now() + spin_ns;
             if (wire.now() < spin_until) std.atomic.spinLoopHint() else wire.pause();

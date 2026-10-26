@@ -1,14 +1,10 @@
 //! Host side of the unquantized hc_lowrank split.
-//! Each rank already owns 160 of the 320-wide axis and produces a hidden partial.
-//! Those partials meet here, rank 0 then rank 1. No CUDA.
 
 const std = @import("std");
 const shape = @import("exl3_shape.zig");
 const tp = @import("exl3_tp.zig");
 
-/// One rank's dense product. `w` is row-major `[hc_lowrank/2][hidden]`: column `j` is strided by `hidden`,
-/// matching `exl3_cpu.gemv`, so `out[j]` is the dot of `x` with that column.
-/// A length other than those three sizes returns `error.Length` before any store. Does not allocate.
+/// One rank's dense product.
 pub fn partial(w: []const f32, x: []const f32, out: []f32) error{Length}!void {
     const part = shape.hc_lowrank / 2;
     const n = shape.hidden;
@@ -20,8 +16,7 @@ pub fn partial(w: []const f32, x: []const f32, out: []f32) error{Length}!void {
     }
 }
 
-/// Hidden-sized sum of the two partials. Rank 0, then rank 1. Not inside `partial`.
-/// A length other than `hidden` returns `error.Length` before any store.
+/// Hidden-sized sum of the two partials.
 pub fn add(partial0: []const f32, partial1: []const f32, out: []f32) error{Length}!void {
     const n = shape.hidden;
     if (partial0.len != n or partial1.len != n or out.len != n) return error.Length;
@@ -29,33 +24,11 @@ pub fn add(partial0: []const f32, partial1: []const f32, out: []f32) error{Lengt
 }
 
 /// `exl3_bounce_bytes` for hc_lowrank only.
-/// D2H of this partial (2560 values, 5120 bytes) plus H2D of the summed hidden, one layer.
-/// Not multiplied by 48. MoE and GDN are not included.
 pub fn bounceBytes(tokens: usize) u64 {
     return @as(u64, @intCast(tokens)) * 5120 * 2;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Hyper-connection pre / post, expand / collapse. Host f32, with an f64 oracle.
-//
-// Where it runs: on the host, like the lowrank split above. The three matrices are dense F16 in the pack
-// (`input_mix_weight_down` [320][10240], `input_mix_weight_up` [10240][320], `block_inject_weight` [4][10240],
-// all out-major, i.e. torch `nn.Linear` weights), they are not EXL3, and the existing design bounces the
-// block output to the host (`bounceBytes`) and the mixed hidden back. 10240x320 MACs twice is ~7 M flops.
-//
-// Maths, from the tensorfold MLX reference (`families/qwen4_exp/model_layers.py` `HyperConnection`,
-// `_write_back`, `model.py` `DecoderLayer`/`Body`/`Qwen4Exp.hidden`), with S streams of D, wide = S*D, stream-major
-// (`h[s * D + d]`, the `reshape(S, D)` of `tile(embed, S)`):
-//   normed  = per-stream centred RMSNorm: normed[s, d] = h[s, d] / sqrt(mean_d(h[s, :]^2) + eps) * (norm[s*D+d] + offset)
-//   low     = silu((down @ normed) / S)                       // [lowrank]
-//   mix     = sigmoid(up @ low)                               // [wide]
-//   mixed   = mean_s(mix[s, d] * normed[s, d])                // block input [D]
-//   inject  = 2 * sigmoid((block_inject @ normed) / S)        // [S], absent for the final collapse
-//   post:     h[s, d] += branch[d] * inject[s]
-// expand (model start): h[s, d] = embed[d] for every s. collapse (model end): `pre` of
-// `hyper_connection_mixer` (no inject), its `mixed` is the hidden the head reads (no final norm in the pack).
-// `offset` is `scan.centredOffset` over the attention hc_norm means (1 when stored as gamma-1).
-// ---------------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------------- Hyper-connection pre /
 
 pub const Dims = struct { streams: usize, dim: usize, lowrank: usize };
 pub const real: Dims = .{ .streams = shape.hc_count, .dim = shape.hidden, .lowrank = shape.hc_lowrank };
@@ -89,7 +62,6 @@ fn checkWeights(d: Dims, w: Weights) Error!void {
 }
 
 /// Block input `mixed` [dim] and, when the weights carry `block_inject_weight` and `inject` is non-null, the S gates.
-/// `h` is [streams * dim]. Lengths are checked before any store. Does not allocate.
 pub fn pre(d: Dims, w: Weights, offset: f32, eps: f32, h: []const f32, mixed: []f32, inject: ?[]f32, scratch: []f32) Error!void {
     const wide = d.streams * d.dim;
     try checkWeights(d, w);
@@ -151,7 +123,6 @@ pub fn expand(d: Dims, embed: []const f32, out: []f32) Error!void {
 }
 
 /// The same maths in f64, written as plain loops over (stream, dim) with no scratch, for the oracle.
-/// `mixed` is [dim]; `inject` [streams] or null. Allocation-free.
 pub fn preF64(d: Dims, w: Weights, offset: f64, eps: f64, h: []const f64, mixed: []f64, inject: ?[]f64, low: []f64, mix: []f64, normed: []f64) Error!void {
     const wide = d.streams * d.dim;
     try checkWeights(d, w);

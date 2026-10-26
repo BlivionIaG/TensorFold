@@ -1,7 +1,4 @@
 //! Two-rank cuts for the Qwen3.8-Flash-Next EXL3 3.05 pack.
-//! An EXL3 axis splits only when it is a multiple of 128 Hadamard blocks on every rank.
-//! Gate and up are K-split (N=640 is not). Down is N-split (K=640 is not).
-//! Routed experts are split by id. Reductions add rank 0, then rank 1.
 
 const std = @import("std");
 const shape = @import("exl3_shape.zig");

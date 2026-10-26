@@ -1,9 +1,4 @@
 //! exl3-kv: the KV-memory levers for 200k contexts (docs/plans/exl3-kv-memory.md), on one card.
-//! Usage: tf-cuda-test exl3-kv kernel          int8 KV kernels (flashnext_exl3_kv.cu) vs the host codes, vs upstream's
-//!                                              chunk/merge kernels on the dequantised bf16 cache (bits), vs float64
-//!        tf-cuda-test exl3-kv bench [CAP]     decode and prompt attention over a CAP-token cache (200,016): bf16
-//!                                              (upstream) and int8 (ours), device or mapped pinned host memory; the
-//!                                              copy-engine and gather alternatives; host round trip of the ids
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");
@@ -107,7 +102,7 @@ pub fn valueRow(codes: []const i8, scales: []const f16, rot: bool, out: []f64) v
     }
 }
 
-// -- kernel mode -------------------------------------------------------------------------------------------------------
+// -- kernel mode
 
 /// Keys with a few loud channels, as k_norm + rope leaves them (a lognormal scale a channel).
 fn loudRows(r: *Rig, n: usize, width: usize) ![]u16 {
@@ -370,7 +365,7 @@ fn kernelMode(gpu: check.Gpu) !void {
                 try g.attnMerge(r.s, po, pm, pl, dpos, up, dnk, dspr, rows, kv_heads, true);
                 try check.sameBytes("kv8 attention == upstream's chunk/merge on the dequantised bf16 cache", std.mem.sliceAsBytes(got), std.mem.sliceAsBytes(try r.back(u16, up, want.len)));
             }
-            // vs the float64 of the original cache, and vs the float64 of what the int8 cache holds (its own kernel error)
+            // vs the float64 of the original cache, and vs the float64 of what the int8 cache holds (its own kernel
             var e_q: Err = .{};
             for (got, want) |x, w| addErr(&e_q, bf(x), w);
             const kf = try a.alloc(f64, nrow * head_dim);
@@ -397,7 +392,7 @@ fn kernelMode(gpu: check.Gpu) !void {
     check.pass("kv8 attention: plain int8 == upstream's kernels on the dequantised cache bit for bit (dense, sparse, read-ahead and one-tile); rotated within upstream's own error of its cache's float64", .{});
 }
 
-// -- bench mode ---------------------------------------------------------------------------------------------------------
+// -- bench mode
 
 const Bench = struct {
     s: cuda.Stream,
@@ -457,7 +452,6 @@ const Attn = struct {
 };
 
 /// `rows` consecutive sparse rows ending at `end0 + rows`: row 0 picks `top` random blocks, each next row keeps a
-/// fraction `keep` of the previous row's blocks and draws the rest anew (the selection overlap a real prompt shows).
 fn overlapIds(rng: std.Random, a: std.mem.Allocator, end0: usize, rows: usize, keep: f64, ids: []i32, nk: []i32) !void {
     const complete0 = (end0 + 1) / ratio;
     var cur = try std.DynamicBitSetUnmanaged.initEmpty(a, complete0 + rows);

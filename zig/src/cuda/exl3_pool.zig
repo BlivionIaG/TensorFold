@@ -1,19 +1,4 @@
 //! Device lines for one layer's EXL3 routed-expert offload on upstream's `exl3_experts.Experts`.
-//!
-//! `Experts` reads a trellis POINTER per expert (int64 [E] for gate, up, down) and a half-bit width per expert (int32
-//! [E] each), all in device memory, in the stored layout. So a line is ONE device region holding one expert's gate, up
-//! and down trellis back to back (no strips reorder), and making expert `id` resident in line `i` is: copy the line,
-//! then write `id`'s six table words (three pointers, three widths) to point into line `i`. The expert that line held
-//! has its entries zeroed (no stale pointer survives). The tables' addresses never change, so a CUDA graph that baked
-//! them in replays after any number of swaps.
-//!
-//! Ordering, all on the device (the host never waits for a copy unless it reuses a staging slot):
-//!   copy stream: [wait release(epoch of the last pass that read the line)] -> H2D line -> table memsets -> line event
-//!   compute stream: [wait line event] for every line a pass reads -> experts -> release event (an epoch)
-//! A miss is staged: the host copies the expert's three trellis tensors from the (mmapped) checkpoint into a pinned
-//! staging line, then one H2D moves the whole line on the copy engine (measured 13.7 GB/s, 5-8x faster than kernels
-//! reading mapped host memory). `direct` skips the staging memcpy when the source bytes are already pinned.
-//! Which expert goes in which line is the policy's business (families/flashnext/exl3_offload.zig, exl3_round.zig).
 
 const std = @import("std");
 const abi = @import("abi.zig");
@@ -219,7 +204,6 @@ pub const Lines = struct {
     }
 
     /// Uploads the never-offloaded expert `id` (the shared expert) once into its own region (it may be wider than a
-    /// routed line) and points its table entries at it. Synchronous: call before the first round.
     pub fn setResident(l: *Lines, id: usize, src: [3][]const u8, k2: [3]i32) !void {
         if (id >= l.spec.experts or l.shared != null) return error.Invalid;
         const lay = Layout.init(.{ src[0].len, src[1].len, src[2].len });
@@ -260,7 +244,6 @@ pub const Lines = struct {
     }
 
     /// Makes `id` resident in `line`: the copy waits for the line's readers, then H2D (staged or direct), then `id`'s
-    /// table entries point into the line and `evicted`'s (if any) are zeroed, then the line's event.
     pub fn load(l: *Lines, line: usize, id: usize, src: [3][]const u8, k2: [3]i32, evicted: ?usize, direct: bool, io: std.Io) !void {
         if (line >= l.spec.lines or id >= l.spec.experts) return error.Invalid;
         for (src, l.spec.bytes) |s, cap| if (s.len > cap) return error.Invalid;
@@ -312,7 +295,6 @@ pub const Lines = struct {
     }
 
     /// After a compute pass that read `lines`: a release event on `compute`; a later copy into any of those lines
-    /// waits for it on the device.
     pub fn release(l: *Lines, compute: Stream, lines: []const u32) !void {
         l.epoch += 1;
         const slot = l.epoch % release_ring;

@@ -1,5 +1,4 @@
-//! The batched pass's EXL3 branches (cuda_batch.zig): `lane` for a Projection whose rows are EXL3 parts, `moe` for a
-//! layer whose experts are EXL3. `p` is the pass (`*cuda_batch.Pass(Tri)`): its stream, kernels and scratch.
+//! The batched pass's EXL3 branches (cuda_batch.zig):
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -37,8 +36,7 @@ fn part(p: anytype, ops: *load.Ops, pt: load.Part, x: u64, k: usize, m: usize, y
     }
 }
 
-/// Pass.lane() for an EXL3 projection: out bf16 [m, n] (sk 1), or fp32 [m, n] in part's first slice with the other
-/// sk - 1 slices zeroed (the slice-summing callers' contract, as the native lane keeps it).
+/// Pass.lane() for an EXL3 projection: out bf16 [m, n] (sk 1), or fp32 [m, n] in part's first slice with the other sk
 pub fn lane(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: usize, sk: usize) !void {
     const s = p.stream;
     if (e.x == .f16) return laneF16(p, x, e, out, slices, m, sk);
@@ -54,7 +52,6 @@ pub fn lane(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: u
 }
 
 /// One part of a bf16 sk-1 lane() on the pass's stream: one part over the whole row, or a single row, writes its
-/// columns in place; otherwise through the stitch buffer.
 fn onePart(p: anytype, e: *const load.Proj, pt: load.Part, x: u64, m: usize, out: u64) !void {
     const s = p.stream;
     if (pt.n == e.n or m == 1) return part(p, e.ops, pt, x, e.k, m, out + pt.col * 2, false);
@@ -63,8 +60,7 @@ fn onePart(p: anytype, e: *const load.Proj, pt: load.Part, x: u64, m: usize, out
     try copy2d(s, out + pt.col * 2, e.n * 2, tmp, pt.n * 2, pt.n * 2, m);
 }
 
-/// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32,
-/// summed in fp32: bf16 [m, n] for sk 1 (fn_sum_slices), else the two products as K slices 0 and 1, the rest zeroed.
+/// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32
 fn laneF16(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: usize, sk: usize) !void {
     const s = p.stream;
     if (e.parts.len != 1 or e.parts[0].kind != .native) return error.UnexpectedTensor;
@@ -86,9 +82,6 @@ fn laneF16(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: us
 }
 
 /// Pass.moeBlock() for EXL3 experts: the router's 513 logits (the BF16 rows the Store widened exactly), each row's ten
-/// picks and the shared slot (id 512), then every slot's expert output, fp32 y [rows, 11, dims], in blocks of rows.
-/// Offloaded layers cut each block in two: segment A (block, router, top-k) ends with the picks on the host, the pool
-/// plans hits and misses, and segment B (copies on the copy engine, then the experts on its tables) follows.
 pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     if (x.tp != null) return @import("cuda_exl3_tp.zig").moe(p, lw, x); // expert parallel (plan step 10)
     const s = p.s;
@@ -121,13 +114,9 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
 }
 
 /// Host time of the A/B cut (the picks D2H and its wait) and of Pool.plan, summed over every pooled block (read by
-/// tf-cuda-test flashnext-exl3-engine).
-/// Offloaded expert layers of this process's engine (set when the pools are built); 0: none.
 pub var offloaded_layers: usize = 0;
 
-/// A drafted window on offloaded experts costs about 18 ms for its first extra row (the missed experts' PCIe copies), so
-/// drafts only pay where they land often; the lane engine's guard (core/lanes/depth.zig) runs a stream plain where its
-/// measured tokens a ms say so. TF_FLASHNEXT_DRAFT_ENABLE=0 decodes every request plain (the head still loads unless --no-drafts).
+/// A drafted window on offloaded experts costs about 18 ms for its first extra row (the missed experts' PCIe copies)
 pub fn plainByDefault() bool {
     if (offloaded_layers == 0) return false;
     const value = std.c.getenv("TF_FLASHNEXT_DRAFT_ENABLE") orelse return false;
@@ -137,12 +126,9 @@ pub fn plainByDefault() bool {
 pub var pool_time: struct { cut_ns: u64 = 0, plan_ns: u64 = 0, blocks: u64 = 0 } = .{};
 
 /// One block of `rows` rows through `pool`: per-slot outputs in sc.y, and with `wts` != 0 the last pass also combines
-/// every slot (sc.y keeps the earlier passes' slots; a slot no pass ran reads its stale, finite value at weight 0) into
-/// fp32 `out` [rows, dims] (expert parallel's rank branch, cuda_exl3_tp.moe).
 pub fn pooled(st: cuda.Stream, ops: *load.Ops, pool: *pool_.Pool, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
     const host = (ops.picks orelse return error.Exl3ScratchNotReserved).slice(i32)[0 .. rows * slots];
     // the device planned the last decode rounds of this pool: its residency back to the host pools first (the MTP
-    // layer's pool is never device-planned: a draft step leaves the decoder pools on the device)
     if (dplan.current()) |dp| if (dp.indexOf(pool) != null) try dp.toHost();
     const io = pool.io;
     const t0 = std.Io.Clock.awake.now(io).toNanoseconds();
@@ -180,13 +166,11 @@ pub fn offloadedLayers(layers: []const @import("cuda_prompt_load.zig").Layer, mt
 pub const Budget = struct {
     graph_reservation: u64 = 0,
     planner_rows: ?u64 = null,
-    /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB,
-    /// else the larger of 1 GiB and a 32nd of the card, native/cuda_memory.zig reserveBytes) plus `margin`.
+    /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB
     reserve: ?u64 = null,
     /// What the pools leave beyond the server's reserve: allocator rounding and the copy streams' own memory.
     margin: u64 = 256 << 20,
-    /// Bytes the family still allocates after the pools: each admitted stream's caches (Loaded.stream_bytes) times
-    /// the streams the pools must leave room for.
+    /// Bytes the family still allocates after the pools: each admitted stream's caches (Loaded.stream_bytes) times the
     other: u64 = 0,
     /// Lines a layer, or null: from free memory (cuda_exl3_round.linesFor).
     lines: ?usize = null,
@@ -194,8 +178,7 @@ pub const Budget = struct {
     max_rows: usize = moe_rows,
 };
 
-/// TF_FLASHNEXT_EXPERT_LINES and TF_FLASHNEXT_EXPERT_RESERVE_MB override pool sizing. `requested_streams` is the server's
-/// actual concurrency; standalone test callers may omit it and use TF_FLASHNEXT_EXL3_STREAMS (default 1).
+/// TF_FLASHNEXT_EXPERT_LINES and TF_FLASHNEXT_EXPERT_RESERVE_MB override pool sizing.
 pub fn budgetFromEnv(stream_bytes: u64) !Budget {
     return budgetFromEnvWithStreams(stream_bytes, null);
 }
@@ -239,10 +222,7 @@ pub fn freeBytes(d: *const cuda.Driver) !u64 {
     return free;
 }
 
-/// The sizing hook (cuda_lanes_load.zig, once everything else of the family is allocated): reserves every EXL3
-/// scratch of `rows`-row passes, then gives each offloaded layer the same number of lines from what is free after
-/// `b.reserve` and `b.other`, with one lifetime use table shared by the decoder layers (the MTP layer keeps its own).
-/// A no-op for a checkpoint without offloaded experts.
+/// The sizing hook (cuda_lanes_load.zig, once everything else of the family is allocated): reserves every EXL3 scratch
 pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cuda.Stream, layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, rows: usize, b: Budget, profile_counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !Attached {
     var all: [wt.layers_n + 1]*load.Experts = undefined;
     const n = offloadedLayers(layers, mtp, &all);
@@ -277,7 +257,6 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     const reserve_floor = b.reserve orelse serverReserve(total);
     const reserve = b.reserve orelse try std.math.add(u64, reserve_floor, b.margin);
     // beside its lines a layer holds the shared expert's region, its six tables and its masked picks (sized for the
-    // fewest lines, the most passes); counted as fixed bytes before the lines share what is left
     var fixed: u64 = 0;
     for (all[0..n]) |x| {
         for (x.shared) |t| fixed = try std.math.add(u64, fixed, try std.math.mul(u64, (try std.math.add(u64, t.len, 255)) / 256, 256));

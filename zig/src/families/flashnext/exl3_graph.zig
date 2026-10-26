@@ -1,14 +1,4 @@
 //! Host-side description of what a CUDA graph may bake in versus what replay overwrites (ported from
-//! exl3-flashnext-window-wip, retargeted to upstream's `Experts` pointer tables).
-//! No CUDA calls. A replay binding is overwritten on each replay; a fixed binding stays
-//! for the life of that executable graph. One capture per rank, layer, and window.
-//!
-//! On upstream's `Experts` the graph's kernel arguments are the ADDRESSES of the per-expert gate/up/down trellis
-//! pointer tables and k2 tables, the picks and the weights. The offload pool rewrites the tables' CONTENTS in
-//! device memory (memsets on its copy stream) when a line changes hands, so `expert_tables` and `picks` are replay
-//! inputs whose addresses stay put, and the pool's line memory (`pool_lines`) is fixed. A round with a copy, or a line
-//! whose copy has not landed, runs its staging before the replay (`roundReady`); the graph is never recaptured for a
-//! swap.
 
 const std = @import("std");
 const offload = @import("exl3_offload.zig");
@@ -57,9 +47,7 @@ fn listed(name: []const u8, table: []const []const u8) bool {
     return false;
 }
 
-/// Expert ids (pool line indices, the old engine), the expert pointer tables, picks, PLE rows, and the KV index must be
-/// replay inputs; pool lines and the resident suh/svh stacks are fixed.
-/// Slot pointers and the hit mask are not published.
+/// Expert ids (pool line indices, the old engine), the expert pointer tables, picks, PLE rows, and the KV index must
 pub fn isReplayName(name: []const u8) bool {
     return listed(name, &replay_names);
 }
@@ -81,7 +69,6 @@ pub fn valid(c: Capture) bool {
 }
 
 /// Same window, same binding order, same replay flags, and the same address on every fixed binding.
-/// Replay addresses may differ.
 pub fn sameTopology(a: Capture, b: Capture) bool {
     if (a.window != b.window or a.bindings.len != b.bindings.len) return false;
     for (a.bindings, b.bindings) |ba, bb| {
@@ -104,8 +91,7 @@ fn sameKey(a: Key, b: Key) bool {
     return a.rank == b.rank and a.layer == b.layer and a.window == b.window;
 }
 
-/// Cold start stays eager through the first reap wave. That is the only eager window.
-/// Ready only when `startup` is false, no decision is `.copy`, and no line is `.inflight`.
+/// Cold start stays eager through the first reap wave.
 pub fn captureReady(startup: bool, decisions: []const offload.Decision, lines: []const offload.Line) bool {
     if (startup) return false;
     for (decisions) |d| if (d == .copy) return false;
@@ -114,7 +100,6 @@ pub fn captureReady(startup: bool, decisions: []const offload.Decision, lines: [
 }
 
 /// Upstream `Experts` + offload pool: a captured experts graph replays as is when the round copies nothing.
-/// Otherwise the pool stages the copies (and rewrites the tables) first; the replay still needs no recapture.
 pub fn roundReady(startup: bool, r: *const round_.Round) bool {
     if (startup) return false;
     return r.allHits() and !r.masked();
@@ -147,7 +132,6 @@ fn colder(a: LineUse, b: LineUse) bool {
 }
 
 /// `rank_pinned + kv_rank + n * stride + workspace` fits on the card.
-/// Neither pin nor KV is reduced. Overflow does not fit.
 fn cardHolds(rank_pinned: u64, kv_rank: u64, n: usize, stride: u64, workspace: u64) bool {
     const rows: u64 = @intCast(n);
     const line_bytes = std.math.mul(u64, rows, stride) catch return false;
@@ -157,13 +141,7 @@ fn cardHolds(rank_pinned: u64, kv_rank: u64, n: usize, stride: u64, workspace: u
     return total <= card_bytes;
 }
 
-/// Lines kept once the batch workspace is placed. Kept rows are packed at the front.
-/// `workspace <= device_reserve` keeps every line.
-/// A larger workspace drops the coldest rows until
-/// `rank_pinned + kv_rank + kept * stride + workspace <= card_bytes`.
-/// Coldest is the smallest count, then the smaller layer, then the smaller id.
-/// `rank_pinned` and `kv_rank` are not reduced. Zero rows that still miss the card
-/// return `error.GraphWorkspace`.
+/// Lines kept once the batch workspace is placed.
 pub fn fitWorkspace(
     rank_pinned: u64,
     kv_rank: u64,

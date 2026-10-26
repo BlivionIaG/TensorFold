@@ -1,6 +1,4 @@
 //! EXL3 admission for the Flash Next CUDA family: config.json's quantization_config names quant_method "exl3" and the
-//! "mul1" codebook. The geometry and semantics are the ones cuda_config.zig fixes for every mode. The bit widths are
-//! never read from `bits` (3.05 here is an average): each matrix's width comes from its own trellis (16 * bits words).
 
 const std = @import("std");
 
@@ -33,8 +31,7 @@ pub fn named(root: std.json.ObjectMap) bool {
     return std.mem.eql(u8, m, "exl3");
 }
 
-/// The first field an EXL3 checkpoint differs in from what the family serves, else null. `geometry` is
-/// cuda_config.geometry (shapes, then semantics), passed in so this file stays out of cuda_config's privates.
+/// The first field an EXL3 checkpoint differs in from what the family serves, else null.
 pub fn mismatch(root: std.json.ObjectMap, text: std.json.ObjectMap, comptime geometry: fn (std.json.ObjectMap) ?[]const u8) ?[]const u8 {
     const q = block(root) orelse return "quantization_config";
     const m = word(q, "quant_method") orelse return "quantization_config.quant_method";

@@ -1,6 +1,4 @@
-//! Header-only home for one tensor name. No safetensors open, no download, no allocation.
-//! First match wins: mixer patch, n-gram row, vision, shared expert, routed bank, centred norm, resident set.
-//! Routed ids are `0 .. shape.experts`. The shared expert is the next id and is not this bank.
+//! Header-only home for one tensor name.
 
 const std = @import("std");
 const scan = @import("exl3_scan.zig");
@@ -74,16 +72,13 @@ pub fn home(t: Tensor) Home {
     if (contains(t.name, "shared_expert")) return .shared_resident;
     if (isRouted(t.name)) return .routed_host;
 
-    // Gamma is a rank-1 `.plain` weight. An EXL3 part of that module is not the
-    // centred tensor, and rule 7 must not take it: `embed` sits inside
-    // `pre_fc_norm_embedding`, and `mtp` sits beside `pre_fc_norm_*`.
+    // Gamma is a rank-1 `.plain` weight.
     if (isCentred(t.name)) {
         if (kind == .exl3_part) return .plain;
         return .centred_norm;
     }
 
-    // `mtp` pins the MTP head. `mtp.fc_embedding` is the host embed remainder
-    // (trellis, suh, svh, mul1), not that head and not `pre_fc_norm_embedding`.
+    // `mtp` pins the MTP head.
     if (contains(t.name, "mtp.fc_embedding")) return .plain;
 
     if ((kind == .exl3_part or kind == .plain) and isResident(t.name)) return .resident;
@@ -91,7 +86,6 @@ pub fn home(t: Tensor) Home {
 }
 
 /// True when `which` is the cache's host place and both host banks refuse a resident copy.
-/// `placeWeights` is called with a zero budget; routed experts and the n-gram table are still host.
 pub fn hostBank(which: cache.Place) bool {
     const budget = cache.Budget{
         .device_bytes = 0,
@@ -193,11 +187,7 @@ test "a tensor name picks one home and the host banks stay off device" {
     try std.testing.expect(hostBank(.host));
 }
 
-/// Where the bytes for this rank live. A cut can still split a pinned tensor.
-/// `vram_pinned` is a GEMM or a bias on the decode path of every token.
-/// The embedding table is `host`: one row is 5 KiB, the table is about 1.2 GiB.
-/// `mtp.fc_embedding` stays with that table. The `mtp` token does not pin it.
-/// `vram_learned` is a routed expert this rank may stage. The other rank's ids are not.
+/// Where the bytes for this rank live.
 pub const Stay = enum { vram_pinned, vram_learned, host, disk, other_rank, skip };
 
 /// Integer after `.experts.`, or null when the name is not a routed expert.

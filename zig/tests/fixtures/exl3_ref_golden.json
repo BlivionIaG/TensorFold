@@ -1,7 +1,7 @@
 {
  "what": "Independent reference: Python TensorFold CUDA engine (qwen4_exp/cuda) on the EXL3 pack; routed expert trellises in host-mapped pinned memory (only allocation site changed), serial decode path, no MTP, no graphs, bf16 KV, greedy argmax",
  "pack": "/data/models/Qwen3.8-Flash-Next-exl3-3.05bpw",
- "command": "tools/exl3_ref_golden.py --tf /home/chenco_adm/tf-final/src --pack /data/models/Qwen3.8-Flash-Next-exl3-3.05bpw --out golden.json",
+ "command": "tools/exl3_ref_golden.py --tf ~/tf-final/src --pack /data/models/Qwen3.8-Flash-Next-exl3-3.05bpw --out golden.json",
  "started_utc": "2026-10-18T22:40:21Z",
  "finished_utc": "2026-10-18T22:42:31Z",
  "versions": {
@@ -2241,12 +2241,12 @@
  "harness_changes": [
   "exl3.expert_table: 'big' (routed-expert trellis buffer) in cudaHostRegister'd host memory read through UVA (42.32 GiB); no other line changed",
   "exl3.PREFILL_ROWS=64 (scratch rows; prompts <= 40 tokens), decode.Engine(capacity=128, max_rows=1, prefill_rows=64, graphs=False), load(mtp=False, draft_vocab=None); capacity admission not run",
-  "run on par1-cs13 GPU 1 under ~/bin/gpurun 1, extensions JIT-built with TORCH_EXTENSIONS_DIR=~/tensorfold-c-ref/ext; reference source ~/tf-final/src read-only (not a git checkout)",
+  "run on the test machine GPU 1 under ~/bin/gpurun 1, extensions JIT-built with TORCH_EXTENSIONS_DIR=~/tensorfold-c-ref/ext; reference source ~/tf-final/src read-only (not a git checkout)",
   "logits are the engine's bf16 head output: resolution 0.125 in [16,32), 0.0625 in [8,16)"
  ],
  "remote_paths": {
   "pack": "/data/models/Qwen3.8-Flash-Next-exl3-3.05bpw",
   "python": "/data/src/kt-venv/bin/python",
-  "reference_src": "/home/chenco_adm/tf-final/src"
+  "reference_src": "~/tf-final/src"
  }
 }

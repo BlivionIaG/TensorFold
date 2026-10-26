@@ -1,6 +1,6 @@
 """Per-decode-step kernel time by category from an nsys SQLite export of a rank (counts fn_exl3_dplan launches / 48 as steps). Edit f."""
 import sqlite3, collections, re, subprocess, os
-f = "/home/chenco_adm/nsys80-r0"
+f = "~/nsys80-r0"
 if not os.path.exists(f + ".sqlite"):
     subprocess.run(["nsys", "stats", "--report", "cuda_gpu_kern_sum", "-o", "/dev/null", f + ".nsys-rep"], capture_output=True)
 c = sqlite3.connect(f + ".sqlite")

@@ -1,23 +1,4 @@
-//! CPU oracle for one Qwen3.8-Flash-Next full-attention layer (layers 3, 7, ... 47), written against the model's own definition:
-//! `qwen4_exp/model_layers.py` (`SparseAttention`, `Indexer`, `CenteredRMSNorm`) and the Python family's `glue.attn_prep`
-//! and `attention._pool/_scores/_select`, read from the TensorFold Python family on par1-cs13.
-//!
-//! What was checked against that definition (and what each test below pins):
-//!  - q_proj has 2 * 24 * 256 outputs and is reshaped [heads, 2 * 256]: per head the first 256 are the query, the last 256 the
-//!    output gate (interleaved per head, not two halves). `prepare` reads q at `h * 512` and `attend` reads gate at `h * 512 + 256`.
-//!  - q_norm / k_norm / indexer q_layernorm / k_layernorm: fp32 RMSNorm, eps 1e-6, scale `1 + w` for centred storage (offset from
-//!    `exl3_scan.centredOffset`, the caller adds it), result rounded to bf16.
-//!  - RoPE is `mx.fast.rope(traditional=False)`: rotate-half over the first `rotary_dim = 0.25 * 256 = 64` dims, pairs (i, i + 32),
-//!    angle `pos * theta^(-2 i / 64)`, theta 1e7. mrope_interleaved sections [11, 11, 10] pick the t/h/w position per frequency index
-//!    (`i % 3 == 1 && i < 33` is h, `i % 3 == 2 && i < 30` is w, else t); for text every axis is the same 1D position, so the angle
-//!    is `pos * inv_freq[i]` (`mropeAxisCounts` below pins the 11/11/10 partition).
-//!  - Output gate: `bf16(bf16(o) / (1 + exp(-gate)))` before o_proj (fp16 here: the EXL3 linear reads fp16 and bf16 values fit).
-//!  - Indexer: `index_qk_proj` is 5 * 128 outputs, 4 query heads then one key. The key is stored raw (bf16). Blocks of 4 keys are
-//!    pooled (fp32 mean -> bf16 -> k_layernorm -> RoPE at the block's first position 4 * b -> bf16). Queries get q_layernorm + RoPE at
-//!    their own position. Score = sum over heads of relu(q . pooled) / sqrt(128). A row with at most 512 complete blocks (end <= 2051)
-//!    attends densely; otherwise it attends to the 512 best blocks (ties to the lower block id) and the 0..3 unfinished tail keys.
-//!  - Attention scale is `256 ** -0.5`; GQA maps q head h to kv head h / 12.
-//! Arithmetic is f64 with the model's rounding points (bf16 after norm, after RoPE, after o; fp16 where a linear reads or writes).
+//! CPU oracle for one Qwen3.8-Flash-Next full-attention layer (layers 3, 7, ... 47), written against the model's own
 
 const std = @import("std");
 const shape = @import("exl3_shape.zig");
@@ -130,7 +111,7 @@ pub const Cache = struct {
     }
 };
 
-/// Projections of one token (what the EXL3 linears emit, fp16): q_proj [24 * 512], k_proj [512], v_proj [512], index_qk_proj [640].
+/// Projections of one token (what the EXL3 linears emit, fp16): q_proj [24 * 512], k_proj [512], v_proj [512]
 pub const Proj = struct {
     qp: []const f16,
     kp: []const f16,
@@ -138,8 +119,7 @@ pub const Proj = struct {
     ip: []const f16,
 };
 
-/// The normed, rotated queries (bf16 values, [24 * 256]) and indexer queries ([4 * 128]) of one token. Writes this token's
-/// K, V and raw index key into the cache.
+/// The normed, rotated queries (bf16 values, [24 * 256]) and indexer queries ([4 * 128]) of one token.
 pub fn prepare(c: *Cache, pos: usize, p: Proj, n: *const Norms, q_out: []f64, iq_out: []f64) void {
     var buf: [head_dim]f64 = undefined;
     for (0..q_heads) |h| {
@@ -182,7 +162,7 @@ pub fn blockScores(c: *const Cache, iq: []const f64, complete: usize, out: []f64
     }
 }
 
-/// The `top_blocks` best blocks, ties to the lower id, in ascending block order. `scores.len` is the complete-block count.
+/// The `top_blocks` best blocks, ties to the lower id, in ascending block order.
 pub fn selectBlocks(gpa: std.mem.Allocator, scores: []const f64, out: *[top_blocks]usize) !void {
     const order = try gpa.alloc(usize, scores.len);
     defer gpa.free(order);
@@ -199,8 +179,7 @@ pub fn selectBlocks(gpa: std.mem.Allocator, scores: []const f64, out: *[top_bloc
     std.mem.sort(usize, out, {}, std.sort.asc(usize));
 }
 
-/// Keys a row at `end = pos + 1` reads. `blocks` is the selection for a sparse row (ignored when dense).
-/// Dense rows read keys 0 .. end; sparse rows read 4 keys per selected block, then the tail. Returns the key count.
+/// Keys a row at `end = pos + 1` reads.
 pub fn keyList(end: usize, blocks: ?*const [top_blocks]usize, out: *[max_keys]usize) usize {
     const complete = end / ratio;
     if (complete <= top_blocks) {
@@ -258,7 +237,7 @@ pub const RowInfo = struct {
     blocks: [top_blocks]usize = undefined,
 };
 
-/// The whole row: prepare, pool the blocks this token completes, select, attend. `scores` is scratch for tokens / 4 blocks.
+/// The whole row: prepare, pool the blocks this token completes, select, attend.
 pub fn row(
     c: *Cache,
     pos: usize,

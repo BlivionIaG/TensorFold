@@ -1,8 +1,4 @@
 //! KV quant and the resident-set budget.
-//! `layerBytes` is v0.6.6 `kvcache.py` `row_bytes` times tokens: K and V, scales included.
-//! Groups of 32 go through one normalized 32-point Hadamard. Dequant stays in that domain.
-//! Routed experts and the n-gram table are host-only; they are not part of the device sum.
-//! `resumeAt` is the prefix rule. A later step calls it from the prompt cache.
 
 const std = @import("std");
 const shape = @import("exl3_shape.zig");
@@ -155,7 +151,6 @@ pub const card_bytes: u64 = 16 << 30;
 pub const device_reserve: u64 = 256 << 20;
 
 /// Bytes left for routed experts after pinned GEMMs, KV, and the reserve.
-/// A zero result means the card is already full. The n-gram table is not an argument.
 pub fn learnedBytes(device: u64, pinned: u64, kv: u64) u64 {
     if (pinned >= device) return 0;
     const after_pinned = device - pinned;
@@ -171,8 +166,7 @@ fn matrixBytes(k: usize, n: usize) u64 {
     return kn * 3050 / 8000 + @as(u64, k + n) * 2;
 }
 
-/// One routed expert as this rank stores it. Two ranks keep half of each matrix.
-/// That half is a cut helper, not the bytes reserved for one resident expert.
+/// One routed expert as this rank stores it.
 pub fn expertBytes(ranks: usize) u64 {
     const k = shape.hidden;
     const n = shape.expert_intermediate;
@@ -193,14 +187,12 @@ pub fn expertLinesOf(room: u64, line: u64) u64 {
     return room / line;
 }
 
-/// KV for every full-attention layer. GDN layers have no KV table.
-/// Both heads: one rank keeps the whole head count.
+/// KV for every full-attention layer.
 pub fn contextKv(tokens: usize, dtype: Dtype) error{ HeadDim, Ranks }!u64 {
     return contextKvRank(tokens, dtype, 1);
 }
 
-/// This rank's KV. Heads split evenly. A zero rank, or a count that does not
-/// divide the head count, is refused instead of charging zero bytes.
+/// This rank's KV. Heads split evenly.
 pub fn contextKvRank(tokens: usize, dtype: Dtype, ranks: usize) error{ HeadDim, Ranks }!u64 {
     if (ranks == 0 or shape.kv_heads % ranks != 0) return error.Ranks;
     const layers: u64 = shape.layers / shape.full_attention_interval;
@@ -215,9 +207,6 @@ pub const KvFit = struct {
 };
 
 /// Widest KV that still leaves `expert_floor` bytes for learned experts.
-/// Sized with one head per rank. bf16 is kept while it fits. `.int4` with
-/// `floor_held` false missed the floor; the caller drops lines instead of
-/// starting on int4.
 pub fn kvFit(device: u64, pinned: u64, tokens: usize, expert_floor: u64, ranks: usize) error{ HeadDim, Ranks }!KvFit {
     const order = [_]Dtype{ .bf16, .int8, .int4 };
     for (order) |dtype| {
@@ -369,8 +358,7 @@ test "device sum is resident plus kv, and a 16 GiB card refuses the overflow" {
     try std.testing.expectEqual(@as(u64, 0), expertLinesOf(1, 0));
     try std.testing.expectEqual(@as(u64, 1), expertLinesOf(full_expert_bytes, full_expert_bytes));
 
-    // One head leaves 672 MiB at bf16, so 700 MiB steps to int8. 741 MiB is
-    // this pin's int4 room; one more MiB misses, and that int4 is not a start dtype.
+    // One head leaves 672 MiB at bf16, so 700 MiB steps to int8. 741 MiB is this pin's int4 room; one more MiB misses
     const ranks: usize = 2;
     const tight_pin: u64 = 15 << 30;
     try std.testing.expectEqual(KvFit{ .dtype = .int8, .floor_held = true }, try kvFit(card_bytes, tight_pin, 8192, 700 << 20, ranks));

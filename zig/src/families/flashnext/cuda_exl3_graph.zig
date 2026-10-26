@@ -1,20 +1,4 @@
 //! CUDA graphs for an EXL3 Flash Next decode step with the expert offload pool (TF_FLASHNEXT_EXL3_GRAPH=1).
-//!
-//! With the pool planned on the device (cuda_exl3_dplan.zig) a decode step has no host wait between its first launch
-//! and its logits, so the step is captured once and replayed: a decode round (Engine.round, one row a stream) and an
-//! MTP verify window (Engine.forward with every row's logits, up to the planner's row bound) each take ONE graph
-//! launch; at tp=2 the graph also holds the step's NCCL sums and the head's gathers (both ranks capture the same
-//! calls in the same order, the rank engine keeps them in lockstep).
-//!
-//! What a replay may change and how (the graph-safety rules of exl3_graph.zig):
-//!  - token ids, positions and the n-gram rows: pinned host bytes the graph's copies read, rewritten by `prepare`
-//!    before each launch (upstream's cuda_round_graph.zig does the same for its tp round);
-//!  - the experts each layer reads: the pool's pointer tables, rewritten in place by the device planner;
-//!  - everything else (weights, scratch, caches, the sequence's buffers, the logits buffer) sits at fixed addresses,
-//!    which the key holds: a different address, row count, attention chunk count or score-tile count captures anew.
-//! A step the graph cannot take (more rows than the planner's bound, media) runs eagerly with the host cut.
-//!
-//! TF_FLASHNEXT_EXL3_DPLAN=1 alone plans on the device without capturing (the same kernels launched one by one).
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -218,14 +202,12 @@ pub const Key = struct {
 pub var capturing: bool = false;
 
 /// A copy node from pinned host bytes (the pass's staging): the graph reads them at every replay, as `prepare` left
-/// them. A pageable source fails the capture (the driver refuses it), so stale custody copies cannot hide here.
 pub fn pinnedCopy(s: cuda.Stream, dst: u64, bytes: []const u8) !void {
     if (bytes.len == 0) return;
     try s.d.check(s.d.api.cuMemcpyHtoDAsync_v2(dst, bytes.ptr, bytes.len, s.handle), "cuMemcpyHtoDAsync");
 }
 
-/// `template`: the graph an update took this exec's parameters from, kept while the exec uses them (a tp graph's
-/// NCCL resources are tied to the graph they were captured in).
+/// `template`: the graph an update took this exec's parameters from, kept while the exec uses them (a tp graph's NCCL
 const Entry = struct { key: Key, exec: ?cuda.graph.Exec = null, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null, cohort: u64 = 0, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null, binding: ?state_binding.Binding = null, poisoned: bool = false };
 
 fn stateRebindEnabled() bool {
@@ -539,8 +521,7 @@ test "exl3: state binding current pass supports exact window layouts through the
     try @import("cuda_exl3_state_request_test.zig").currentPass(Key, windowStateRequest);
 }
 
-/// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs
-/// eagerly meanwhile, and replays from the next sighting after the instantiation landed).
+/// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs eagerly
 pub const Pending = struct {
     thread: std.Thread = undefined,
     done: std.atomic.Value(bool) = .init(false),
@@ -764,7 +745,6 @@ fn sameShape(a: Key, b: Key) bool {
 }
 
 /// Keys seen without a graph, and how often (a key is captured at its `after`-th sighting; one-off shapes, e.g. a
-/// request's rare window sizes, stay eager).
 const Seen = struct { key: Key, n: u32, used: u64 };
 var seen: [256]?Seen = @splat(null);
 
@@ -791,29 +771,19 @@ fn sighting(key: Key) u32 {
     return 1;
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0: tp graphs are always instantiated; default: updated in place like tp=1's,
-/// their captured template kept alive with the exec (NCCL's captured resources belong to it).
+/// TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0: tp graphs are always instantiated; default: updated in place like tp=1's
 fn tpUpdate() bool {
     const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE") orelse return true;
     return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it, for rounds and windows alike (default: 2 for
-/// a decode round, 12 for a window; 1 captures at once). A round is one key replayed for the whole decode. A window key
-/// is one of many (rows x state set x attention seams) and a TP capture costs about 39 ms (an instantiation, never an
-/// update): most window keys were captured and replayed zero or one time, and on a 13k-token prompt the captures took
-/// more than half the decode (docs 40.6 -> 59 tok/s at 12).
+/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it, for rounds and windows alike
 fn after(key: Key) u32 {
     if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER")) |v| return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
     return if (key.kind == 2) 12 else 2;
 }
 
-/// Captures `pass.chunk(ids, pos0, null)` (prepared) under `key`, or replays the graph captured under it. A key not
-/// yet seen `after()` times runs eagerly (prepared, uncaptured). A new key whose shape matches a cached graph's
-/// updates that graph in place (cudaGraphExecUpdate) instead of instantiating one, except with a collective (NCCL's
-/// captured resources belong to the graph they were captured in, so a tp graph is always instantiated).
-/// Coverage by step kind (0 round, 1 window) and rows (1..16): replays, eager first sightings, captures that
-/// instantiated, captures that updated in place. TF_FLASHNEXT_EXL3_GRAPH_LOG=N logs it every N steps (default 256).
+/// Captures `pass.chunk(ids, pos0, null)` (prepared) under `key`, or replays the graph captured under it.
 pub const Outcome = enum { replay, eager, instantiated, updated };
 pub var coverage: [2][17][4]u32 = @splat(@splat(@splat(0)));
 var steps_seen: u64 = 0;
@@ -928,7 +898,6 @@ fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
     const tp = pass.m.collective != null;
     const at: *Entry = blk: {
         // a same-shape graph is updated in place only when it is stale (its key not used for a while, e.g. a finished
-        // stream's) or the cache is full: two live variants of one shape (a window's state ping-pong) keep two graphs
         var free_slot = false;
         for (&entries) |*e| free_slot = free_slot or e.* == null;
         if ((!tp or tpUpdate()) and capturedBinding(key, pass, graph) == null) {
@@ -1196,7 +1165,6 @@ fn planner(e: anytype, rows: usize) !?*dplan.DevPlan {
 }
 
 /// Engine.round's hook: true when this module ran the round (device plan, captured or not); false leaves it to the
-/// engine. `p` is the round's pass (lanes set), `out` its logits [rows, vocab].
 pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u64, out: u64) !bool {
     for (seqs) |q| if (q.media != null) return false;
     if (seqs.len > max_lanes) return false;
@@ -1242,7 +1210,6 @@ pub fn round(e: anytype, p: anytype, seqs: anytype, ids: []const u32, scores: u6
 }
 
 /// Engine.forward's hook for a window: every row's logits into hooks.logits_out (an MTP verify window, or a one-row
-/// step), at most the planner's rows. True when this module ran it (seq.fed and seq.logits advanced as forward does).
 pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
     const hooks = p.hooks;
     if (hooks.logits != .all or hooks.logits_out == 0 or seq.media != null or ids.len == 0 or ids.len > att_rows) return false;
@@ -1296,14 +1263,7 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
     return true;
 }
 
-// ---- prefill: one layer's sub-blocks of a deep chunk -------------------------------------------------------------
-//
-// The expert-major prefill (cuda_exl3_prefill.zig) runs each layer as its dense sub-blocks (HC read-outs, DeltaNet or
-// attention, write-backs, router and top-k over every sub-block of the deep chunk) and then the layer's experts, whose
-// passes the host plans from the layer's picks (the ring, the members, the copies): that half stays eager. The dense
-// half has no host dependency and is captured per layer: a DeltaNet layer's graph depends only on the chunk's shape
-// (rows, sub-block size) and replays for every later chunk of that shape; an attention layer's launch geometry follows
-// the chunk's position, so each chunk re-captures it and updates the cached graph in place when the topology holds.
+// ---- prefill: one layer's sub-blocks of a deep chunk
 
 pub const Prefill = enum { eager, replayed, capturing };
 const prefill_binding = @import("cuda_exl3_prefill_binding.zig");
@@ -1383,7 +1343,6 @@ fn prefillAdmissionMiss() Prefill {
 }
 
 /// TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1 captures prefill layers under TF_FLASHNEXT_EXL3_GRAPH=1 (default off pending
-/// measurements). TP=2 graphs capture each incoming sub-block reduction as an external event wait.
 fn prefillEnabled() bool {
     if (!enabled() or broken) return false;
     const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_PREFILL") orelse return false;
@@ -1567,7 +1526,6 @@ test "exl3: prefill warmup history retains two lanes and two chunk banks" {
 }
 
 /// TF_FLASHNEXT_EXL3_GRAPH_PREFILL_AFTER: the sighting of a layer shape that captures it (default 2: a chunk takes
-/// seconds, a capture milliseconds).
 fn prefillAfter() u32 {
     const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_PREFILL_AFTER") orelse return 2;
     return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
@@ -1581,9 +1539,7 @@ pub fn clearPrefill() void {
     pseen = @splat(null);
 }
 
-/// Before a layer's sub-blocks: `.replayed` (the graph ran; skip the sub-blocks), `.capturing` (run them: they are
-/// recorded; then `prefillEnd`), or `.eager` (run them; `prefillEnd` is a no-op).
-/// External event waits for expert-parallel sub-blocks are captured in order with the dense work.
+/// Before a layer's sub-blocks:
 pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: usize, pos0: usize, deep: u64, base: anytype, tiles: bool, waits: []const cuda.Event, positions: u64) !Prefill {
     if (enabled() and broken) return error.GraphCaptureFailed;
     if (p.seq.paged) |pg| try pg.validateSharedLeaseOn(p.stream);
@@ -1666,7 +1622,6 @@ pub fn prefillBegin(p: anytype, linear: bool, layer: usize, rows: usize, sub: us
 }
 
 /// After a layer's sub-blocks ran under `.capturing`: the graph is instantiated (or a cached one of the same shape
-/// updated) and launched.
 pub fn prefillEnd(p: anytype, how: Prefill) !void {
     defer if (p.seq.paged) |pg| {
         pg.graph_prepared = false;

@@ -95,7 +95,7 @@ fn envF64(name: [:0]const u8, default: f64) f64 {
     return std.fmt.parseFloat(f64, std.mem.span(v)) catch default;
 }
 
-/// The drafted check (TF_FLASHNEXT_DRAFT_DEPTH): serial and drafted decoding of `count` tokens a prompt, token for token.
+/// The drafted check (TF_FLASHNEXT_DRAFT_DEPTH): serial and drafted decoding of `count` tokens a prompt, token for
 pub fn check(comptime Tri: type, gpa: std.mem.Allocator, io: std.Io, driver: *cuda.Driver, stream: *cuda.Stream, tri: Tri, model_dir: []const u8, prompts: []const []const u32, count: usize) !bool {
     var e = try prompt.Engine.init(gpa, io, driver, stream, model_dir);
     defer e.deinit();

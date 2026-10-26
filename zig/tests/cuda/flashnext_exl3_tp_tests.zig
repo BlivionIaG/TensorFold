@@ -1,13 +1,4 @@
 //! flashnext-exl3-tp: EXL3 expert parallel (cuda_exl3_tp.zig) on two ranks, one process a GPU, through the Flash Next
-//! family's own loaders, pass and NCCL Collective (NCCL >= 2.30 on LD_LIBRARY_PATH).
-//! Usage (run rank 1 and rank 0 together, CUDA_VISIBLE_DEVICES one card each):
-//!   tf-cuda-test flashnext-exl3-tp RANK PORT DIR layer [layers]  whole decoder layers (default 0,3,17): tp=2 vs tp=1 on
-//!                                                                rank 0 (picks, the exact fp32 regrouping, output bits)
-//!                                                                and rank 0's tp=2 output vs float64 (the tp=1 gates)
-//!   tf-cuda-test flashnext-exl3-tp RANK PORT DIR sum             the MoE sum at 1/128/512/2048 rows: all-reduce vs
-//!                                                                rank-order send/recv + tf_rank_sum, bits and times
-//!   tf-cuda-test flashnext-exl3-tp 0 0 DIR head                  (one card) the lm_head vocabulary split vs the whole
-//!   tf-cuda-test flashnext-exl3-tp 0 0 DIR memory                (one card) per-rank bytes and the 200k budgets
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");
@@ -231,7 +222,7 @@ fn layerMode(gpu: Gpu, rk: *Ranks, dir: []const u8, which: []const usize) !void 
             check.expect(sum_exact == sum_total, "layer {d}: tp=2's MoE sum is not the fp32 regrouping of tp=1's slots ({d}/{d})", .{ l, sum_exact, sum_total }) catch {
                 ok = false;
             };
-            // an fp32 regrouping of 11 terms: a few ulps of the branch's peak; bf16 outputs then differ by at most 1 ulp
+            // an fp32 regrouping of 11 terms: a few ulps of the branch's peak; bf16 outputs then differ by at most 1
             check.expect(branch_abs <= 1e-5 * branch_peak, "layer {d}: tp=2 MoE branch off tp=1 by {e:.3} of peak", .{ l, branch_abs / branch_peak }) catch {
                 ok = false;
             };

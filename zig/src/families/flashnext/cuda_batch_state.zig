@@ -50,7 +50,6 @@ pub const fused_rows: usize = 1024;
 /// Rows a pass holds at most unless asked for more.
 pub const default_chunk: usize = 1536;
 /// Rows of `head_local` (a vocabulary-split head's local logits) a scratch holds at most: every row by default; an
-/// EXL3 engine sets it to its widest logits pass (0 with a whole head, cuda_exl3_kv.zig setup, K10 lever 3).
 pub var head_local_rows: usize = std.math.maxInt(usize);
 /// The most rows TF_FLASHNEXT_CHUNK may ask for (the largest measured pass; its scratch is about 13 GiB more).
 pub const max_chunk: usize = 16384;

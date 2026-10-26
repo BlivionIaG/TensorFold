@@ -1,24 +1,4 @@
 //! Expert-major prefill for an EXL3 Flash Next checkpoint whose routed experts live in host memory (the offload pool).
-//!
-//! The batched pass (cuda_batch.zig `chunk`) takes up to `Engine.chunk` rows through every layer, and its MoE copies the
-//! experts a 256-row block picked into the layer's pool lines: a long prompt copies every expert of every layer about
-//! once per block. Here a prompt goes through in DEEP chunks of `rows` rows (thousands): every layer runs the pass's own
-//! blocks (HC read-outs, DeltaNet / attention, write-backs, router and top-k) on sub-blocks of the engine's chunk size
-//! over device rows that persist for the whole deep chunk, then the layer's routed experts run EXPERT-MAJOR over all
-//! `rows` rows: each expert a pair picked is staged into a pool line once and computed on every pair that picked it
-//! (flashnext_exl3_prefill.cu, 64-member tiles), in passes of at most half the layer's lines, so a pass's copies run on
-//! the copy engine while the previous pass computes. A deep chunk thus copies each expert of a layer at most once.
-//!
-//! Bits: every block but the routed experts is the pass's own, row for row (its kernels are row-invariant), so the
-//! streams stay those of the batched pass until the experts' fp32 sums, which run in another order (64-member tiles
-//! over all of K instead of runSlots' split-K partials): per pair the output moves by fp32 rounding, measured at about
-//! 4e-5 of a layer's peak (tf-cuda-test exl3-prefill prompt). The logits change accordingly (bf16 noise).
-//!
-//! The hook: Engine.forward calls `forward` first; it declines (false) for anything but a plain prompt on one rank of an
-//! EXL3 checkpoint with pooled or resident experts, no media, no window keep, no logits for every row.
-//! TF_FLASHNEXT_EXL3_PREFILL=0 turns it off; _ROWS sets the deep chunk (default 8192), _MIN the shortest prompt
-//! that takes it (default 512 rows), _TILES=0 keeps the dense projections on the reference kernels, _RING=0 stages
-//! each layer into its own lines, _KERNEL=slots runs the experts through runSlots (the batched pass's bits).
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -54,7 +34,6 @@ pub const Options = struct {
     /// Rows a deep chunk holds (whole attention blocks).
     rows: usize = 8192,
     /// The deep chunk the server reserves at load (reserveFor): its buffers come out of the pools' share of the card
-    /// (0.16 GiB a 1024 rows), so the server takes fewer than `rows` unless TF_FLASHNEXT_EXL3_PREFILL_ROWS says.
     serve_rows: usize = 4096,
     /// The shortest prompt that takes this path.
     min_rows: usize = 512,
@@ -63,21 +42,16 @@ pub const Options = struct {
     /// Stage the next layer's first pass while this layer's blocks compute.
     prefetch: bool = true,
     /// Run each pass through Experts.runSlots (256-row blocks over masked picks) instead of the 64-member prefill
-    /// kernel: the batched pass's bits exactly (a check of everything but the kernel; slow).
     slots_kernel: bool = false,
     /// Every decoder layer's pool lines as one ring the copy engine streams the coming layers' experts into
-    /// (cuda_exl3_prefill_ring.zig); false: each layer stages into its own lines, in passes of half of them.
     ring: bool = true,
     /// Experts a ring pass computes at most.
     ring_pass: usize = 32,
     /// Layers ahead the ring prefetches (the guess: the hottest experts, as many as the current layer used).
     ring_ahead: usize = 1,
     /// Dense EXL3 projections of a deep chunk's sub-blocks on #806's prompt tiles (Dense.prompt, .tiles) instead of
-    /// the reference 128-row blocks: 1.4-2x faster at 128+ rows, a different fp32 order (bf16-level changes; the
-    /// same float64 error, tf-cuda-test exl3-prefill dense).
     tiles: bool = true,
     /// After a ring prefill, refill every pool with its layer's hottest experts of the prefills (measured: decode hit
-    /// +5%, ms/token unchanged, prefill +0.17 s; off).
     reseed: bool = false,
     reduced_branch: bool = false,
     two_chunk: bool = false,
@@ -122,7 +96,6 @@ pub const Stats = struct {
 pub var stats: Stats = .{};
 
 /// Device bytes of a deep chunk's own rows: streams, sums, gates, mixed rows, slot outputs, picks, n-gram rows, and
-/// the experts' compact scratch and member lists.
 pub fn deviceBytes(rows: usize) usize {
     return Layout.of(rows, 1).total;
 }
@@ -258,8 +231,7 @@ const Deep = struct {
     host: cuda.HostBuffer,
     kern: pk.Kernels,
     aux: cuda.Stream,
-    /// Expert parallel: the ranks' all-reduces run on `red`, one a sub-block, so the next layer's sub-block b only waits
-    /// for its own rows' sum (`red_ev[b]`) and the others' reduce under its compute; `red_n` sub-blocks are in flight.
+    /// Expert parallel: the ranks' all-reduces run on `red`, one a sub-block, so the next layer's sub-block b only
     red: ?cuda.Stream = null,
     red_ev: [max_sub]cuda.Event = undefined,
     red_go: cuda.Event = undefined,
@@ -348,8 +320,6 @@ pub fn release() void {
 }
 
 /// The server's sizing hook (cuda_lanes_load.zig, before the pools take the free memory): the deep chunk's buffers for
-/// an EXL3 checkpoint with offloaded experts on one rank, sized for min(TF_FLASHNEXT_EXL3_PREFILL_ROWS, context).
-/// A failure leaves the batched pass in charge of prompts.
 pub fn reserveFor(e: *prompt.Engine, context: usize, tp: usize) void {
     const o = opts();
     if (!o.enabled or (tp != 1 and tp != 2) or e.n_layers != wt.layers_n) return;
@@ -364,8 +334,7 @@ pub fn reserveFor(e: *prompt.Engine, context: usize, tp: usize) void {
     reserveAt(e.gpa, e.driver, e, rows, tp) catch |err| std.log.warn("flashnext exl3 prefill: deep chunks of {d} rows refused ({t}); prompts take the batched pass", .{ rows, err });
 }
 
-/// Rows a serving lane prefills a step (cuda_lanes.zig `step`): a deep chunk when this engine holds deep buffers,
-/// else the engine's chunk; at most `draft_rows` (the lane's draft keeps that many rows of streams).
+/// Rows a serving lane prefills a step (cuda_lanes.zig `step`): a deep chunk when this engine holds deep buffers, else
 pub fn stepRows(e: *const prompt.Engine, draft_rows: ?usize) usize {
     var n = e.chunk;
     if (deep) |dp| if (dp.owner == @as(*const anyopaque, e) and opts().enabled) {
@@ -396,14 +365,12 @@ pub fn releaseFor(owner: *const anyopaque) void {
     if (deep) |dp| if (dp.owner == owner) release();
 }
 
-/// Allocates the deep chunk's buffers for `rows` rows now (before the pool takes the free memory). A no-op if they
-/// exist and are at least that large.
+/// Allocates the deep chunk's buffers for `rows` rows now (before the pool takes the free memory).
 pub fn reserve(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const anyopaque, rows_in: usize) !void {
     return reserveAt(gpa, d, owner, rows_in, 1);
 }
 
 /// `reserve` for a rank of `world` (expert parallel at 2: the ranks' sum, and per-slot outputs zeroed once so a slot
-/// another rank computed only ever holds finite values for the write-back's zero weights).
 pub fn reserveAt(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const anyopaque, rows_in: usize, world: usize) !void {
     const rows = rows_in / att_rows * att_rows;
     if (rows == 0 or (world != 1 and world != 2)) return error.Invalid;
@@ -506,7 +473,7 @@ fn applies(e: *prompt.Engine, seq: *prompt.Seq, ids: []const u32, hooks: batch.H
     if (!o.enabled or ids.len < o.min_rows) return false;
     if (hooks.keep != null or hooks.logits == .all) return false;
     if (seq.media != null or e.n_layers != wt.layers_n) return false;
-    // expert parallel (cuda_exl3_tp.zig) at two ranks over the engine's collective; the head whole or split by vocabulary
+    // expert parallel (cuda_exl3_tp.zig) at two ranks over the engine's collective; the head whole or split by
     const world = worldOf(e);
     if (e.head_q.n != vocab and !(world == 2 and e.head_q.n == vocab / 2)) return false;
     for (e.layers[0..e.n_layers]) |*l| {
@@ -522,7 +489,6 @@ fn worldOf(e: *const prompt.Engine) usize {
 }
 
 /// Expert parallel: both ranks take the deep path or neither, with the same deep chunk (the smaller rank's): each
-/// rank's room ([rank 0's, rank 1's] summed over the collective). 0: this prompt takes the batched pass on both.
 fn agree(e: *prompt.Engine, mine: usize) !usize {
     const c = e.collective orelse return mine;
     const st = e.stream.*;
@@ -556,7 +522,6 @@ pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq
     const sub = s.cap / att_rows * att_rows;
     if (sub == 0) return false;
     // the deep chunk: as large as asked (whole attention blocks), no larger than the prompt needs; its sub-blocks are
-    // the pass's chunks, the last one shorter
     const rows = @max(att_rows, @min(o.rows, (ids.len + att_rows - 1) / att_rows * att_rows) / att_rows * att_rows);
     // the buffers reserved at load (reserveFor) are kept whatever their size; a first prompt without them allocates
     const world = worldOf(e);
@@ -631,7 +596,6 @@ pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq
 }
 
 /// A sub-block's view of the pass's scratch: the per-row buffers a layer keeps across its sub-blocks point into the
-/// deep chunk's rows [r0, r0 + n); everything else is the pass's own (reused by every sub-block).
 fn view(base: *const batch.Scratch, dp: *const Deep, r0: usize) batch.Scratch {
     var v = base.*;
     const l = dp.lay;
@@ -983,7 +947,6 @@ fn profile() bool {
 }
 
 /// One sub-block of one layer, as Pass.chunk runs it, up to the router's picks (the experts come after every
-/// sub-block, expert-major).
 fn layerBlock(comptime Tri: type, p: *batch.Pass(Tri), lw: *const @import("cuda_prompt_load.zig").Layer, layer: usize, m: usize) !void {
     const s = p.s;
     if (layer == ple_layer) {
@@ -1081,9 +1044,6 @@ fn maskOwned(picks: []i32, r: ?tp_.Rank) void {
 }
 
 /// Expert parallel: after a layer's passes, each row's branch over this rank's slots (on the compute stream), then on
-/// the reduce stream one all-reduce of [rows, 2560] fp32 a sub-block (both ranks issue the same calls with the same
-/// rows in the same order) and its sum placed where the write-back reads it; the next layer's sub-block b waits for
-/// red_ev[b] only. TF_FLASHNEXT_EXL3_PREFILL_OVERLAP=0: one all-reduce of all rows on the compute stream.
 fn rankSum(dp: *Deep, p: anytype, x: *const load.Experts, n: usize, sub: usize) !void {
     const r = x.tp orelse return;
     if (r.world == 1) return;
@@ -1142,7 +1102,6 @@ fn fakePicks(dp: *Deep, ids: []const u16) usize {
 }
 
 /// Stages up to a pass's worth of the next layer's experts that its pool does not hold (lowest ids first): a deep
-/// chunk uses nearly every expert, so any of them is a copy its MoE would make anyway.
 fn prefetch(dp: *Deep, pool: *pool_.Pool, own: ?tp_.Rank, o: Options) !void {
     const want = passLines(pool, o);
     var ids: [table_n]u16 = undefined;
@@ -1166,7 +1125,6 @@ fn prefetch(dp: *Deep, pool: *pool_.Pool, own: ?tp_.Rank, o: Options) !void {
 }
 
 /// The layer's passes: pass 0 the shared expert and every expert the pool holds (no copy), then the others in id
-/// order, at most `passLines` new experts and `member_cap` members a pass. Fills order, passes, cnt.
 fn plan(dp: *Deep, x: *const load.Experts, picks: []const i32, o: Options) !void {
     @memset(&dp.cnt, 0);
     for (picks) |pk_| {
@@ -1226,7 +1184,6 @@ fn plan(dp: *Deep, x: *const load.Experts, picks: []const i32, o: Options) !void
 }
 
 /// Members (pairs grouped by expert in pass order, pairs ascending) and items (first relative to the pass's first
-/// member) of every pass; fills each pass's ranges.
 fn build(dp: *Deep, picks: []const i32, members: []i32, items: []i32) struct { members: usize, items: usize } {
     var m_at: u32 = 0;
     var i_at: u32 = 0;
@@ -1259,13 +1216,11 @@ fn build(dp: *Deep, picks: []const i32, members: []i32, items: []i32) struct { m
 }
 
 /// One pass through Experts.runSlots: the deep chunk's picks with every expert outside the pass masked to -1, in the
-/// batched pass's 256-row blocks (a check: these are the batched pass's kernels and bits).
 fn slotsPass(dp: *Deep, x: *load.Experts, st: cuda.Stream, l: cuda.exl3_experts.Layer, picks: []const i32, ps: Pass, n: usize) !void {
     var in_pass: [table_n]bool = @splat(false);
     for (dp.order[ps.id_lo..ps.id_hi]) |id| in_pass[id] = true;
     const pairs = n * slots;
     // the members' pinned region holds the masked picks (members are not used in this mode); the previous pass's
-    // upload must have read it
     try st.synchronize();
     const masked: []i32 = @alignCast(std.mem.bytesAsSlice(i32, dp.hbytes(dp.hl.members, pairs * 4)));
     for (picks[0..pairs], masked) |pk_, *o| o.* = if (pk_ >= 0 and pk_ < table_n and in_pass[@intCast(pk_)]) pk_ else -1;
@@ -1286,14 +1241,6 @@ fn slotsPass(dp: *Deep, x: *load.Experts, st: cuda.Stream, l: cuda.exl3_experts.
 // ---------------------------------------------------------------------------------------------------- the MTP head
 
 /// The hook in cuda_mtp_ops.zig `forwardHead` (a lane's prompt chunk through the MTP head, after the main pass kept
-/// its streams): the head's one layer EXPERT-MAJOR over the whole chunk. forwardHead runs the layer in 256-row pieces,
-/// each piece's MoE copying nearly every expert of the head's pool (about 1.7 s per 8192 rows of copies); here every
-/// piece runs up to the router's picks over the deep chunk's rows (the attention reads the head's cache in piece
-/// order, as there), then the experts once over all rows (`moe`: each expert staged once), then each piece's
-/// write-back. The head is one layer, so nothing a piece reads depends on another piece's experts: the same maths as
-/// forwardHead but the experts' fp32 sum order (the 64-member kernel). Declines (false) unless the engine holds deep
-/// buffers of at least `next.len` rows and the head's experts are pooled on this rank (whole: the MTP head is rank 0's
-/// under expert parallel), for a prompt chunk (no scores) of at least the minimum rows without media.
 pub fn head(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, next: []const u32, rows: u64, scores: bool) !bool {
     const op = opts();
     const n = next.len;
@@ -1376,7 +1323,7 @@ fn headSlice(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, 
         p.pos0 = d.len + at;
         p.pending = null;
         try p.stage(next[at..][0..m]);
-        // forwardHead's piece up to the router (the embedding branch, the hidden branch, attention over the head's cache)
+        // forwardHead's piece up to the router (the embedding branch, the hidden branch, attention over the head's
         if (e.table.dense) {
             try tri.embedDense(v.ids, e.table.w.ptr, v.ple_keys, dims, streams, m);
         } else {
@@ -1455,8 +1402,7 @@ fn keepFree(r: *const ring_.Ring, o: Options) usize {
     return @min(r.slots() / 2, routed_n_ + 2 * o.ring_pass);
 }
 
-/// The layer's experts over all `n` rows of the deep chunk, through the ring: the experts the ring already holds
-/// first (in load order), then the misses (hottest first), `ring_pass` a pass, each pass's copies queued a pass ahead.
+/// The layer's experts over all `n` rows of the deep chunk, through the ring: the experts the ring already holds first
 fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), lw: *const @import("cuda_prompt_load.zig").Layer, layer: usize, n: usize, o: Options) !void {
     const x = lw.exl3.?;
     const pool = x.pool.?;

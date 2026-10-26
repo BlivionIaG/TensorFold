@@ -1,13 +1,4 @@
-//! CPU f64 oracle for the whole Qwen3.8-Flash-Next EXL3 forward, assembled from the per-op oracles
-//! (`exl3_hc` preF64/postF64, `exl3_gdn_cpu`, `exl3_attn_cpu`, `exl3_moe` routing, `exl3_cpu` swiglu).
-//! It works layer-major: every prompt row goes through layer l before any row goes through layer l + 1, which is
-//! exactly the causal order for a teacher-forced pass and lets each layer's weights be decoded once.
-//!
-//! `QMat` is the EXL3 matrix as the Zig decoder (`exl3_format`) defines it, W = diag(suh) H_K Wq H_N diag(svh), applied to a
-//! vector without materialising W: y = ((x * suh) H_K) Wq H_N * svh, with the 128-wide Hadamard blocks done as a fast
-//! Walsh-Hadamard transform. `exl3_format.dequantize` (dense 128x128 rotations) is the reference it is tested against.
-//! Wq is the unpacked rotated-domain fp16 matrix, kept as f32 (exact), accumulated in f64.
-//! No CUDA.
+//! CPU f64 oracle for the whole Qwen3.8-Flash-Next EXL3 forward, assembled from the per-op oracles (`exl3_hc`
 
 const std = @import("std");
 const format = @import("exl3_format.zig");
@@ -26,7 +17,7 @@ pub const inter: usize = 640;
 
 // -- parallel for ------------------------------------------------------------------------------------------
 
-/// Runs `f(ctx, i)` for i in 0..n over up to `max_threads` threads (the caller included). `f` stores its own errors in `ctx`.
+/// Runs `f(ctx, i)` for i in 0..n over up to `max_threads` threads (the caller included).
 pub fn parallelFor(n: usize, max_threads: usize, ctx: anytype, comptime f: anytype) void {
     const Ctx = @TypeOf(ctx);
     const W = struct {
@@ -52,7 +43,7 @@ pub fn parallelFor(n: usize, max_threads: usize, ctx: anytype, comptime f: anyty
 
 // -- QMat --------------------------------------------------------------------------------------------------
 
-/// In-place orthonormal Walsh-Hadamard transform of each 128 block of `x` (Sylvester order, H[i][j] = (-1)^popcount(i&j) / sqrt(128)).
+/// In-place orthonormal Walsh-Hadamard transform of each 128 block of `x` (Sylvester order, H[i][j] =
 pub fn fwht128(x: []f64) void {
     std.debug.assert(x.len % 128 == 0);
     const inv = 1.0 / @sqrt(128.0);
@@ -124,7 +115,7 @@ pub const QMat = struct {
         for (y, m.svh) |*o, s| o.* *= s;
     }
 
-    /// Same as `apply` with the output columns [lo, hi) only (the Hadamard blocks must be whole: lo and hi multiples of 128).
+    /// Same as `apply` with the output columns [lo, hi) only (the Hadamard blocks must be whole: lo and hi multiples
     pub fn applyCols(m: QMat, tmp_h: []const f64, y: []f64, lo: usize, hi: usize) void {
         std.debug.assert(lo % 128 == 0 and hi % 128 == 0 and y.len == hi - lo);
         @memset(y, 0);
@@ -495,7 +486,7 @@ fn expertApply(m: *const [3]QMat, x: []const f64, tmp: []f64, g: []f64, u: []f64
     m[2].apply(glu, y, tmp[0..inter]);
 }
 
-/// Routed + shared experts for `rows` rows from the f64 hidden `x` (the f64 router, not the device's). Records the picks.
+/// Routed + shared experts for `rows` rows from the f64 hidden `x` (the f64 router, not the device's).
 pub fn moeBranch(gpa: std.mem.Allocator, w: *const MoeW, x: []const f64, rows: usize, out: []f64, picks_out: []u16) !void {
     const picks = picks_out;
     const weights = try gpa.alloc(f64, rows * topk);

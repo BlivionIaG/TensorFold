@@ -1,11 +1,4 @@
 //! Stable buffers for captured decode graphs (cuda_exl3_graph.zig): a graph holds a sequence's and its draft window's
-//! device addresses, and every request used to allocate new ones (its own capacity, its own buffers), so verify
-//! windows rarely repeated a graph key and ran eagerly or paid a capture. With graphs on, a stream's capacity is
-//! rounded up to a multiple of `bucket` tokens and a finished stream's sequence and draft buffers are kept (zeroed on
-//! reuse exactly as a new one is) for the next stream of the same capacity, on both ranks.
-//! The capacity only bounds the caches and strides the block scores; no kernel reads past a row's own positions
-//! (fn_qsa_select uses the stride as a stride), so the bits do not change (tf-cuda-test flashnext-exl3-graph eq and
-//! the serve gate's hash). It follows the decode graphs.
 
 const std = @import("std");
 const cuda = @import("cuda");

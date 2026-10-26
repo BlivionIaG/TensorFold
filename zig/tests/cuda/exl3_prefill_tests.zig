@@ -1,21 +1,4 @@
 //! exl3-prefill: the pieces of a Flash Next EXL3 prefill, timed on the pack's real tensors (one idle card).
-//!
-//!   exl3-prefill DIR experts [LAYER]   upstream's grouped experts (Experts.runSlots) on one fully resident layer:
-//!                                      ms a call at 16..1408 rows (Zipf and uniform picks), then one 1024-row block
-//!                                      split into expert-major passes over masked picks (bytes equal to one call)
-//!   exl3-prefill DIR copy [LAYER]      expert lines from a pinned bank: Lines.load (copy + table writes) vs one bare
-//!                                      H2D of the same bytes, and copies running beside a 1024-row experts call
-//!   exl3-prefill DIR prompt [LAYER]    the prefill experts kernel (flashnext_exl3_prefill.cu, 64-member tiles) vs
-//!                                      runSlots: y against y at 16..1408 rows, ms at 16..8192 rows, expert-major passes
-//!   exl3-prefill DIR engine IDS N,N.. [LINES] [cmp]  the family's Engine with the offload pool (as serve attaches it):
-//!                                      prefill rows/s of the first N ids of IDS (u32 little-endian token ids, real text)
-//!                                      through the expert-major deep chunks; `cmp` also runs the batched pass on the
-//!                                      same prompt and compares the last row's logits
-//!   exl3-prefill DIR agree IDS FIRST STEP COUNT [LINES]  last-row logits of COUNT prompt lengths FIRST, FIRST+STEP..:
-//!                                      the batched pass vs the deep path (env options as set) and vs the text's own
-//!                                      next token (top-1 agreement, next-token accuracy, |d| on the batched top-5)
-//!   exl3-prefill DIR dense             exl3.Dense prompt rows: reference 128-row blocks vs #806 tiles, 16..2048 rows,
-//!                                      each against the other and rows 0-1 against an exact float64 product
 const std = @import("std");
 const cuda = @import("cuda");
 const core = @import("core");
@@ -213,7 +196,7 @@ const LayerData = struct {
     }
 };
 
-/// Picks for `rows` rows: ten distinct routed ids then the shared expert; Zipf(s) over a fixed permutation (s 0: uniform).
+/// Picks for `rows` rows: ten distinct routed ids then the shared expert;
 fn genPicks(rng: std.Random, s: f64, rows: usize, out: []i32) void {
     var perm: [routed_n]u16 = undefined;
     for (&perm, 0..) |*p, i| p.* = @intCast(i);

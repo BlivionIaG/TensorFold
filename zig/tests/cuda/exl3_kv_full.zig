@@ -1,13 +1,4 @@
 //! exl3-kv full: all 48 layers of the EXL3 pack through the family's own pass code, one layer resident at a time
-//! (layer streaming: every routed expert of that layer resident, then freed), and the logits of the last rows through
-//! the mixer and the EXL3 lm_head, once per KV variant. The variants differ only in the attention caches: after each
-//! attention block the rows it wrote are replaced by what an int8 / int4 cache would hold (fn_kv_roundtrip), so every
-//! later row and layer reads the quantised keys and values through upstream's kernels.
-//! Usage: tf-cuda-test exl3-kv full DIR PROBES CHUNK VARIANTS FILE[,FILE...]
-//!   PROBES  the prompt's last tokens fed one row at a time (decode rows); their logits are compared
-//!   CHUNK   prompt chunk rows (<= 256 keeps one attention block a chunk)
-//!   VARIANTS comma list of bf16 | int8r | int8 | int4r | int4 (the first is the reference; bf16 recommended)
-//! Layers 0 and 1 (GDN, the PLE) run once through Pass.chunk (they have no attention cache); 2..47 step block by block.
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");
@@ -32,7 +23,6 @@ const Side = struct { bits: u32 = 16, rot: bool = false };
 const Variant = struct { name: []const u8, k: Side = .{}, v: Side = .{}, chunk: usize = 0, kv8: bool = false, rot: bool = false };
 
 /// bf16 | int8 | int8r | int4 | int4r (K and V alike) | kbf16v8 | k8v4r (K and V apart), each with an optional @CHUNK
-/// (the prompt fed in chunks of CHUNK rows instead of the default: with bf16 it is the run's numerical noise floor).
 fn parseVariant(a: std.mem.Allocator, t: []const u8) !Variant {
     var v: Variant = .{ .name = try a.dupe(u8, t) };
     var base = t;
@@ -272,7 +262,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
     const hs = try a.alloc([]u16, nv);
     for (hs) |*h| h.* = try a.alloc(u16, total * wide);
 
-    // layers 0 and 1 (embedding, GDN, the PLE) through Pass.chunk, the streams after layer 1 kept: the same for every variant
+    // layers 0 and 1 (embedding, GDN, the PLE) through Pass.chunk, the streams after layer 1 kept: the same for every
     {
         var table = try flash.embed.Table.uploadDense(gpu.d, try r.store.tensor(flash.embed.weight_name));
         defer table.deinit();

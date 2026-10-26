@@ -1,11 +1,4 @@
-//! The EXL3 pack's tensors as the Flash Next loaders read them (cuda_prompt_wt.zig `Store`):
-//!  - the MTP head's mixer lives in `mtp_hyper_connection_mixer_patch.safetensors`, outside the index: its names join
-//!    the store's weight map at open;
-//!  - its dense weights (router, shared gate, every hyper-connection tensor, in_proj_a/b, the PLE projections, conv
-//!    and norm, the MTP pre-norm) are stored F16 where the loaders read BF16. Each is widened to BF16 when every value
-//!    survives the round trip exactly (an F16 that came from a BF16 checkpoint always does: 8 significant bits, BF16's
-//!    exponent range). A tensor with any inexact value is refused by name (error.F16NotBf16Exact), never rounded.
-//! EXL3's own parts (`.trellis`, `.suh`, `.svh`, the codebook marker) keep their stored dtype: only `.weight` widens.
+//! The EXL3 pack's tensors as the Flash Next loaders read them (cuda_prompt_wt.zig `Store`): - the MTP head's mixer
 
 const std = @import("std");
 const core = @import("core");
@@ -13,8 +6,7 @@ const core = @import("core");
 /// The mixer file the index does not name (the MTP head's `mtp.hyper_connection_mixer.*`).
 pub const patch_file = "mtp_hyper_connection_mixer_patch.safetensors";
 
-/// Adds every tensor of `dir`'s mixer patch to the index's weight map (the file absent: nothing). Names already in the
-/// index keep their shard. The strings live in the parsed index's arena.
+/// Adds every tensor of `dir`'s mixer patch to the index's weight map (the file absent: nothing).
 pub fn addPatch(io: std.Io, dir: []const u8, parsed: *std.json.Parsed(std.json.Value)) !void {
     const a = parsed.arena.allocator();
     const wm = (parsed.value.object.getPtr("weight_map") orelse return);

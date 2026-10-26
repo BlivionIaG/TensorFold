@@ -1,20 +1,4 @@
 //! flashnext-exl3-engine: the Qwen3.8-Flash-Next EXL3 pack through the Flash Next family's own Engine
-//! (families/flashnext/cuda_prompt.zig), with the offload pool attached exactly as the server attaches it
-//! (cuda_exl3_pass.attach, called from cuda_lanes_load.open), checked against the independent reference golden
-//! (zig/tests/fixtures/exl3_ref_golden.json: the Python engine's bf16 logits and greedy ids).
-//!
-//!   flashnext-exl3-engine DIR tf GOLDEN [LINES]     the golden's 16-id prompt teacher-forced in one pass: every
-//!                                                    position's top-1 and top-5 against the golden's, the logit
-//!                                                    difference on the golden's top-5 ids, and the EXL3 lm_head on the
-//!                                                    pass's own head rows against an exact float64 product
-//!   flashnext-exl3-engine DIR tfc GOLDEN [LINES]    each golden prompt and the golden's 24 greedy ids teacher-forced:
-//!                                                    our top-1 at every continuation step, with both margins
-//!   flashnext-exl3-engine DIR gen GOLDEN [LINES]    greedy 24 tokens for each golden prompt (prefill, then
-//!                                                    Engine.round a token): ids equal to the golden's
-//!   flashnext-exl3-engine DIR bench [LINES]         prefill rows/s at 16, 256 and 2048 tokens and decode ms/token,
-//!                                                    with the pool's hit rate (a measurement on an idle card)
-//!
-//! LINES (or TF_FLASHNEXT_EXPERT_LINES) fixes the pool's lines a layer; without it the pool takes free memory.
 const std = @import("std");
 const cuda = @import("cuda");
 const core = @import("core");
@@ -384,7 +368,6 @@ fn greedyRun(g: *Eng, ids: []const u32, out: []u32, step_ms: ?*f64) !void {
 }
 
 /// Each golden prompt followed by the golden's own 24 greedy ids, teacher-forced in one pass: our top-1 at every
-/// continuation position against the golden's greedy id, with both margins (top-1 minus top-2).
 fn tfcMode(gpu: Gpu, dir: []const u8, golden_path: []const u8, lines: ?usize) !void {
     const a = gpu.gpa;
     var golden = try Golden.open(gpu, golden_path);

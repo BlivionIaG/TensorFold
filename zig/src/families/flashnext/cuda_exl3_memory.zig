@@ -1,8 +1,4 @@
-//! Device bytes of an EXL3 Flash Next checkpoint as cuda_exl3_load.zig places it: EXL3 matrices in their stored
-//! layout (trellis, suh, svh; the codebook marker stays on the host), dense weights widened to BF16 and packed as
-//! projection.dense packs them, norms and GDN scalars as fp32, the router's 513 rows as stored. Routed experts' trellis
-//! words are host-resident under offload (`routed_on_host`; the pool decides which lines reach the device), while their
-//! stacked suh/svh scales and the per-expert pointer and width tables stay resident.
+//! Device bytes of an EXL3 Flash Next checkpoint as cuda_exl3_load.zig places it:
 
 const std = @import("std");
 const core = @import("core");
@@ -42,7 +38,7 @@ pub fn tensorBytes(name: []const u8, e: Entry, o: Options) !u64 {
     if (std.mem.endsWith(u8, name, ".trellis") or std.mem.endsWith(u8, name, ".suh") or std.mem.endsWith(u8, name, ".svh")) return bytes;
     if (!std.mem.endsWith(u8, name, ".weight") and e.rank == 1) return try std.math.mul(u64, e.dim(0), 4); // A_log, dt_bias as fp32
     if ((e.dtype == .f16 or e.dtype == .bf16) and e.rank == 2 and std.mem.endsWith(u8, name, ".weight")) {
-        // the router's rows and the embedding table go up as stored (BF16); every other dense matrix through projection.dense
+        // the router's rows and the embedding table go up as stored (BF16); every other dense matrix through
         if (std.mem.indexOf(u8, name, ".mlp.gate.") != null or std.mem.indexOf(u8, name, ".shared_expert_gate.") != null or std.mem.indexOf(u8, name, "embed_tokens") != null) return bytes;
         return try std.math.mul(u64, try std.math.mul(u64, cuda.nvfp4.padded(e.dim(0)), e.dim(1)), 2);
     }
@@ -84,7 +80,6 @@ pub fn deviceBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Optio
 }
 
 /// The MTP head's device bytes: its `mtp.*` tensors placed as the main layers' are (its routed experts under the same
-/// option), plus the draft vocabulary's bf16 rows dequantised from the EXL3 lm_head (cuda_mtp.zig's 79,591 ids).
 pub fn headBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: Options) !u64 {
     var store = try wt.Store.open(gpa, io, dir);
     defer store.deinit();

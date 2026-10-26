@@ -1,17 +1,4 @@
-//! The DeltaNet heads split across the two expert-parallel ranks, for decode rows only (rounds and windows under 64 rows).
-//!
-//! Rank r runs key heads 8r..8r+7 and value heads 24r..24r+23 of every linear-attention layer: its projections read half
-//! of the replicated EXL3 weights (views, no copy: the stored layout [K/16][N/16][words] takes a column range or an input
-//! row range by an offset and a shorter extent, strides unchanged), the recurrence updates half of the state, and the
-//! out projection, cut by input rows (24 whole 128-row blocks of the input transform), gives the rank's partial sum of
-//! [rows, 2560] fp32 that one all-reduce adds (cuda_batch.zig gdnBlock). The weights, conv windows and states keep their
-//! whole-layer layouts and sizes: prompt passes (64 rows or more) still run every head on both ranks, so a rank's other
-//! half of the states holds what its last prompt pass left, and only a rank's own half is read after.
-//!
-//! Layout of the rank's projection row (global column positions, as the whole layer's): q [1024r, +1024), k
-//! [2048 + 1024r, +1024), v [4096 + 3072r, +3072), z [10240 + 3072r, +3072), then the dense b and a rows (96 columns,
-//! computed whole on both ranks: a few KB of weights).
-//! TF_FLASHNEXT_GDN_SPLIT=1 turns it on at tp=2 (default off).
+//! The DeltaNet heads split across the two expert-parallel ranks, for decode rows only (rounds and windows under 64
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -71,8 +58,7 @@ fn wrap(d: *cuda.Driver, p: *load.Proj) projection.Projection {
     return out;
 }
 
-/// Rank `rank`'s views of a linear-attention layer's stitched q|k|v|z|b|a projection and its out projection, or null when
-/// the layer is not the EXL3 shape this split reads (the whole layer then stays replicated).
+/// Rank `rank`'s views of a linear-attention layer's stitched q|k|v|z|b|a projection and its out projection, or null
 pub fn build(gpa: std.mem.Allocator, d: *cuda.Driver, proj: projection.Projection, out: projection.Projection, rank: usize) !?Views {
     if (rank > 1) return error.BadRank;
     const pe = proj.exl3 orelse return null;

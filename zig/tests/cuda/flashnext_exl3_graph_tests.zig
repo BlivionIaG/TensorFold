@@ -1,16 +1,4 @@
 //! flashnext-exl3-graph: the EXL3 offload pool planned on the device (cuda_exl3_dplan.zig) and the decode step as one
-//! CUDA graph (cuda_exl3_graph.zig).
-//!
-//!   flashnext-exl3-graph plan                               synthetic pools: the device planner's lines, stamps,
-//!                                                          counts and tables equal the host planner's after random
-//!                                                          rounds, every resident line holds its expert's bytes;
-//!                                                          the mapped-bank copy kernel's bandwidth vs the copy engine
-//!   flashnext-exl3-graph RANK WORLD PORT DIR eq GOLDEN [STEPS] [MODES]
-//!                                                          the real pack at tp=1/2: each golden prompt prefilled,
-//!                                                          then STEPS greedy decode rounds and the same continuation
-//!                                                          as verify windows (rows 3,1,4,2,8,16,...) under each mode
-//!                                                          (off = host cut, dplan = device plan eager, graph):
-//!                                                          every step's logits bit-equal to off's, ms/token, hit rate
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");
@@ -449,8 +437,7 @@ fn runMode(g: *Eng, ids: []const u32, steps: usize, r: *Run) !void {
     r.ms_window_row = ms(tw, check.now(g.gpu.io)) / @as(f64, @floatFromInt(steps));
 }
 
-/// Two sequences in one decode round (two rows, each its own caches): `steps` rounds after both prompts, every round's
-/// two logits rows hashed into `out`; ms per round.
+/// Two sequences in one decode round (two rows, each its own caches):
 fn pairRun(g: *Eng, b: *prompt.Seq, ids_a: []const u32, ids_b: []const u32, steps: usize, out: []u64) !f64 {
     try dplan.toHost();
     try g.reset();
@@ -549,7 +536,6 @@ fn eqMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, golde
 }
 
 /// A long prompt through the deep prefill (TF_FLASHNEXT_EXL3_PREFILL_ROWS sets its chunks), then `steps` greedy
-/// rounds, twice per mode; every run's last-row logits and decode logits hashed and compared with the first eager run.
 fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, n: usize, steps: usize) !void {
     const a = gpu.gpa;
     const g = try Eng.init(gpu, rank, world, port, dir);
@@ -601,7 +587,6 @@ fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, 
 }
 
 /// One warmed TP2 deep-prefill forward inside a CUDA-profiler API range for Nsight Systems.
-/// The profiler window excludes graph warm-up and host setup; no per-layer synchronization is added.
 fn prefillProfMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, n: usize, which: []const u8) !void {
     var stage: []const u8 = "engine initialization";
     errdefer std.debug.print("prefill-prof rank={d} failed during {s}\n", .{ rank, stage });
@@ -909,8 +894,7 @@ const Profiler = struct {
     }
 };
 
-/// A profiling window for nsys: `steps` decode rounds (one row) then `steps` verify windows of `rows` rows, after a
-/// warm-up that captures their graphs (TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER=1 recommended), inside cuProfilerStart/Stop.
+/// A profiling window for nsys:
 fn profMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, steps: usize, rows: usize, which: []const u8) !void {
     const a = gpu.gpa;
     const g = try Eng.init(gpu, rank, world, port, dir);
@@ -981,8 +965,7 @@ fn ngramMode(gpu: Gpu, dir: []const u8) !void {
     };
 }
 
-/// A scheduling change's bits: every golden prompt's decode rounds and windows (runMode) under `which` (off, dplan,
-/// graph) with the parallel projection parts (X.fork) off, off again and on; logits compared bit for bit, ms/token.
+/// A scheduling change's bits: every golden prompt's decode rounds and windows (runMode) under `which` (off, dplan
 fn forkMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, golden_path: []const u8, steps: usize, which: []const u8) !void {
     const a = gpu.gpa;
     const text = try std.Io.Dir.cwd().readFileAlloc(gpu.io, golden_path, a, .limited(1 << 26));

@@ -1,12 +1,4 @@
 // Flash Next EXL3 prefill experts: upstream's transposed 64-member prompt tiles (exl3_prompt.cuh, after #976 and
-// MiaAI-Lab) for any per-expert width (K2 half-bits) of the mul1 codebook, on compacted pairs.
-//
-// A call takes items (expert, first, count <= 64) over a member list of pair ids (row * slots + slot) that the host
-// built, expert by expert. The rotated inputs and the gate/up outputs are COMPACT: member c of the list owns row c of
-// xg, xu and xd, so a call needs scratch for its own pairs only (an expert-major pass of a prefill chunk). The down
-// writes each pair's fp32 output to y[pair], the layout Experts.runSlots leaves (y [rows * slots, D]).
-// Per pair the maths is runSlots' (act_mode 1: fp32 SwiGLU): the same fp16 rotated input, the same epilogue formulas;
-// only the fp32 order of the K sum differs (one pass over K here, split-K partials summed in order there).
 
 #include <cstdint>
 #include <cuda_bf16.h>
@@ -292,8 +284,6 @@ extern "C" __global__ void __launch_bounds__(256, 2) tf_exl3pf_down(const half* 
 }
 
 // Expert parallel (cuda_exl3_tp.zig): a rank's deep chunk computed only its own pairs (picks in [LO, HI)); row r's
-// combined branch over those slots in slot order (fp32 fmaf from 0), into sum [rows, D] for the ranks' all-reduce.
-// Another rank's slot is skipped by a select (its y is never read). Block (row), 256 threads over D.
 extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_tp_combine(const float* __restrict__ y, const float* __restrict__ wts,
         const int* __restrict__ pick, float* __restrict__ sum, int slots, int D, int lo, int hi) {
     __shared__ float w_sh[32];
@@ -315,8 +305,6 @@ extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_tp_combine(const flo
 }
 
 // The ranks' summed branch back where the write-back reads it: y[r, 0, :] = sum[r], weights {1, 0, ..., 0}. The other
-// slots' y keep finite values (zeroed when the deep buffers are made, then only expert outputs and sums), so the
-// write-back's fma(y_k, 0, acc) adds exactly 0 for them. Block (row), 256 threads over D.
 extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_tp_place(const float* __restrict__ sum, float* __restrict__ y,
         float* __restrict__ wts, int slots, int D) {
     const int r = blockIdx.x;

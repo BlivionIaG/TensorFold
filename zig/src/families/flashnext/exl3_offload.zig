@@ -1,15 +1,7 @@
 //! Host expert-cache policy for Flash Next EXL3 offload (ported from exl3-flashnext-window-wip, unchanged rules).
-//! Routed experts stay in host RAM. A VRAM line is a copy that is in flight until
-//! `reap`, then resident. Eviction is LRU among resident lines; an in-flight line
-//! is not reusable until it is reaped. `planRound` does not write either table.
-//! Shared expert 512 is always a hit and never occupies a routed slot.
-//! Generate addresses a line as `(layer, id)` through `scheduleUsedAt` and `reapAt`.
-//! `schedule` and `onDevice` stay id-only and are not used on a layer-tagged table.
-//! On upstream's `Experts` a miss is always copied (the device pool, `cuda_exl3_pool.zig`, has no CPU path): the round
-//! planner (`exl3_round.zig`) stages every miss with `stageUsedAt` and keeps the copy budget for optional prefetch.
 
 const std = @import("std");
-/// Flash Next's routed geometry (was exl3_shape.zig): 48 decoder layers, 512 routed experts, the shared expert is id 512.
+/// Flash Next's routed geometry (was exl3_shape.zig): 48 decoder layers, 512 routed experts, the shared expert is id
 pub const shape = struct {
     pub const layers: usize = 48;
     pub const experts: usize = 512;
@@ -49,10 +41,7 @@ pub fn find(c: Cache, id: u16) ?usize {
     return indexOf(c.slots, id);
 }
 
-/// One decision per id. Does not write the slot table.
-/// Unique misses sort by count descending, then id ascending. The first
-/// `copy_bytes / expert_bytes` of those (0 when `expert_bytes` is 0) are `copy`;
-/// the rest are `cpu`. Duplicate ids in `ids` share one decision.
+/// One decision per id. Does not write the slot table. Unique misses sort by count descending, then id ascending. The
 pub fn planRound(
     c: Cache,
     ids: []const u16,
@@ -83,11 +72,6 @@ pub fn planRound(
 }
 
 /// Install on swap rounds only (`round > 0` and `round % swap_every == 0`).
-/// Residents named in `requested` are heated before victims are chosen.
-/// Candidates are unique non-resident, non-shared ids, hottest first, at most
-/// `swap_cap`. Empty lines are filled before any eviction. A line placed earlier
-/// in this call is not a victim of a later candidate. Returns how many experts
-/// were installed.
 pub fn swap(
     c: *Cache,
     requested: []const u16,
@@ -118,8 +102,7 @@ pub fn swap(
     return @intCast(installed);
 }
 
-/// Fill slots from a routed histogram of length 512. Hottest count, then lower id.
-/// `freq[slot] = histogram[id]`. Id 512 is not a histogram entry and is not stored.
+/// Fill slots from a routed histogram of length 512.
 pub fn installProfile(c: *Cache, histogram: []const u32) void {
     std.debug.assert(histogram.len == shape.experts);
     std.debug.assert(c.slots.len == c.freq.len);
@@ -195,7 +178,6 @@ fn heatResidents(c: *Cache, requested: []const u16) void {
 }
 
 /// Lowest frequency, skipping lines already placed in this call.
-/// Equal frequency evicts the higher slot index.
 fn victim(c: Cache, skip: []const u16) ?usize {
     var best: ?usize = null;
     for (c.slots, 0..) |id, i| {
@@ -210,8 +192,7 @@ fn victim(c: Cache, skip: []const u16) ?usize {
 
 pub const Line = enum { empty, inflight, resident };
 
-/// VRAM working set. Host RAM still holds every routed expert.
-/// `stamp` is the last reap or touch time. A higher stamp is newer.
+/// VRAM working set. Host RAM still holds every routed expert. `stamp` is the last reap or touch time. A higher stamp
 pub const Vram = struct {
     slots: []u16,
     line: []Line,
@@ -229,8 +210,7 @@ pub const Vram = struct {
     }
 };
 
-/// True once `id` has been reaped into VRAM.
-/// Id-only: the first matching line wins. Generate calls `residentAt`.
+/// True once `id` has been reaped into VRAM. Id-only: the first matching line wins.
 pub fn onDevice(v: Vram, id: u16) bool {
     const i = vramIndex(v, id) orelse return false;
     return v.line[i] == .resident;
@@ -250,16 +230,12 @@ pub fn touch(v: *Vram, id: u16, now: u32) bool {
     return true;
 }
 
-/// Start a host-to-VRAM copy of `id`. An empty line is used first.
-/// Otherwise the resident line with the oldest stamp is replaced.
-/// An in-flight line is left alone. `error.Busy` means every line is still in flight.
+/// Start a host-to-VRAM copy of `id`.
 pub fn stage(v: *Vram, id: u16) error{ Busy, Shared }!usize {
     return stageKeeping(v, id, &.{});
 }
 
 /// Same as `stage`, except a resident whose id is in `keep` is not a victim.
-/// `error.Busy` means every line is in flight or held by `keep`.
-/// Id-only. A newly assigned line is layer 0. Do not call this on a multi-layer table.
 pub fn stageKeeping(v: *Vram, id: u16, keep: []const u16) error{ Busy, Shared }!usize {
     if (id == shared_id or id == Cache.empty_id) return error.Shared;
     if (vramIndex(v.*, id)) |i| {
@@ -275,12 +251,7 @@ pub fn stageKeeping(v: *Vram, id: u16, keep: []const u16) error{ Busy, Shared }!
     return slot;
 }
 
-/// One step of the VRAM cache. Does not reap.
-/// A resident id is touched and decided `hit`. An in-flight id is `cpu` until reap.
-/// Unique misses, hottest first, are staged until the copy budget runs out or every
-/// free line is gone. A staged miss is `copy` and stays off-device until `reap`.
-/// Residents named in `ids` are not eviction victims. Shared id 512 is `hit`.
-/// A zero `expert_bytes` stages nothing: every miss stays `cpu`.
+/// One step of the VRAM cache.
 pub fn schedule(
     v: *Vram,
     ids: []const u16,
@@ -320,8 +291,7 @@ pub fn schedule(
     }
 }
 
-/// The copy of `(layer, id)` has landed. Another layer's resident or inflight
-/// line is not this copy. Generate calls this, not `reap`.
+/// The copy of `(layer, id)` has landed.
 pub fn reapAt(v: *Vram, layer: u8, id: u16, now: u32) error{NotInflight}!void {
     const i = vramIndexAt(v.*, layer, id) orelse return error.NotInflight;
     if (v.line[i] != .inflight) return error.NotInflight;
@@ -329,14 +299,12 @@ pub fn reapAt(v: *Vram, layer: u8, id: u16, now: u32) error{NotInflight}!void {
     v.stamp[i] = now;
 }
 
-/// Layer-0 wrapper. Does not promote another layer's inflight copy.
-/// Old tests are layer 0. Generate calls `reapAt`.
+/// Layer-0 wrapper. Does not promote another layer's inflight copy. Old tests are layer 0. Generate calls `reapAt`.
 pub fn reap(v: *Vram, id: u16, now: u32) error{NotInflight}!void {
     return reapAt(v, 0, id, now);
 }
 
-/// First occupied slot with this id, on any layer. That alias is what
-/// `schedule` and `onDevice` still call. Generate uses `vramIndexAt`.
+/// First occupied slot with this id, on any layer.
 fn vramIndex(v: Vram, id: u16) ?usize {
     if (id == Cache.empty_id) return null;
     for (v.slots, 0..) |slot, i| {
@@ -396,8 +364,6 @@ pub fn countAt(counts: *const [shape.layers][shape.experts]u32, layer: u8, id: u
 }
 
 /// Lowest `counts[layer][id]`, then oldest stamp, then the higher slot index.
-/// A keep entry is `(keep_layer, id)`. The same id on another layer is not protected.
-/// Equal counts are the stamp LRU, so a zeroed table matches `vramLruKeep`.
 fn vramCold(
     v: Vram,
     counts: *const [shape.layers][shape.experts]u32,
@@ -437,8 +403,7 @@ fn usedFirst(ctx: UsedOrder, a: u16, b: u16) bool {
     return a < b;
 }
 
-/// Add one to each routed id in `ids`. Shared id 512 is not a histogram entry.
-/// `counts` is one cell per routed expert (`shape.experts`).
+/// Add one to each routed id in `ids`.
 pub fn observe(counts: []u32, ids: []const u16) error{Length}!void {
     if (counts.len != shape.experts) return error.Length;
     for (ids) |id| {
@@ -458,9 +423,7 @@ fn inOwned(owned: Owned, id: u16) bool {
     return id >= owned.lo and id < owned.hi;
 }
 
-/// Fill empty VRAM lines with the hottest counted ids. No eviction.
-/// Ties take the lower id. Count 0 and ids already in the table are skipped.
-/// Staged lines stay in flight until `reap`.
+/// Fill empty VRAM lines with the hottest counted ids.
 pub fn seedHottest(v: *Vram, counts: []const u32, limit: u16) error{Length}!u16 {
     return seedSpan(v, counts, limit, allOwned());
 }
@@ -489,9 +452,7 @@ fn seedSpan(v: *Vram, counts: []const u32, limit: u16, owned: Owned) error{Lengt
     return seeded;
 }
 
-/// Use every empty line. Hottest owned ids go in first. Lines that are still
-/// empty take the remaining owned ids, low id first, so the card is not left
-/// idle while the histogram warms up. No eviction. The other rank's ids are skipped.
+/// Use every empty line. Hottest owned ids go in first. Lines that are still empty take the remaining owned ids, low
 pub fn fillOwned(v: *Vram, counts: []const u32, owned: Owned) error{Length}!u16 {
     if (owned.hi > shape.experts or owned.lo > owned.hi) return error.Length;
     var n: u16 = try seedSpan(v, counts, std.math.maxInt(u16), owned);
@@ -580,11 +541,7 @@ fn fillStripe(v: *Vram, lines: u16, owned: Owned, used: *[shape.layers]u16, plac
     return n;
 }
 
-/// Stage up to `lines` owned experts. `lines` is the caller's live count.
-/// Each layer gets `lines / shape.layers`, and the remainder goes one each to the low layers.
-/// A zero histogram fills the lowest owned id on each of those layers.
-/// A warm histogram takes the hottest owned pair that still fits that stripe, then
-/// fills any line still empty. The other rank's ids are not staged.
+/// Stage up to `lines` owned experts.
 pub fn fillOwnedLayers(v: *Vram, lines: u16, counts: []const [shape.experts]u32, owned: Owned) error{Length}!u16 {
     if (counts.len != shape.layers) return error.Length;
     if (owned.hi > shape.experts or owned.lo > owned.hi) return error.Length;
@@ -595,7 +552,6 @@ pub fn fillOwnedLayers(v: *Vram, lines: u16, counts: []const [shape.experts]u32,
 }
 
 /// `stageKeeping`, but the victim is the coldest lifetime count.
-/// Layer 0 only: a flat histogram does not score another layer's copy.
 pub fn stageUsed(v: *Vram, id: u16, keep: []const u16, counts: []const u32) error{ Busy, Shared, Length }!usize {
     if (counts.len != shape.experts) return error.Length;
     var table: [shape.layers][shape.experts]u32 = std.mem.zeroes([shape.layers][shape.experts]u32);
@@ -626,10 +582,6 @@ pub fn stageUsedAt(
 }
 
 /// `schedule`, ordered by lifetime counts from `observe`.
-/// A high count keeps its line even when its stamp is older.
-/// Residents named in `ids` are not victims. `schedule` itself is unchanged.
-/// This is the layer-0 wrapper. It is not the multi-layer path: the flat
-/// histogram is copied into layer 0, so another layer's copy scores 0.
 pub fn scheduleUsed(
     v: *Vram,
     ids: []const u16,
@@ -647,10 +599,7 @@ pub fn scheduleUsed(
     return scheduleUsedAt(v, 0, ids, &table, policy, now, decisions, scratch, owned);
 }
 
-/// Generate path. Misses sort by `counts[layer]`. A victim scores
-/// `counts[victim.layer][victim.id]`. Keep is `(layer, id)` for this call's ids.
-/// An id outside `owned` stays `.cpu` and is not staged. Shared 512 is a hit
-/// and does not occupy a line. A landed copy is promoted with `reapAt`.
+/// Generate path. Misses sort by `counts[layer]`. A victim scores `counts[victim.layer][victim.id]`. Keep is `(layer
 pub fn scheduleUsedAt(
     v: *Vram,
     layer: u8,
@@ -707,9 +656,7 @@ pub fn lineOf(v: Vram, layer: u8, id: u16) ?usize {
 /// A host-to-device copy the policy asked for: expert `id` into pool line `line`.
 pub const Copy = struct { id: u16, line: u32 };
 
-/// Per pick, the pool line the hit kernel reads, or -1 when the kernel must skip the slot
-/// (a `.copy` or `.cpu` decision, the shared expert, or a line that is not resident).
-/// The kernel ignores a negative id, so the host writes that slot's row into `y` itself.
+/// Per pick, the pool line the hit kernel reads, or -1 when the kernel must skip the slot (a `.copy` or `.cpu`
 pub fn lineIds(v: Vram, layer: u8, ids: []const u16, decisions: []const Decision, out: []i32) error{Length}!void {
     if (decisions.len != ids.len or out.len != ids.len) return error.Length;
     for (ids, decisions, out) |id, d, *o| {
@@ -722,7 +669,6 @@ pub fn lineIds(v: Vram, layer: u8, ids: []const u16, decisions: []const Decision
 }
 
 /// Unique `(id, line)` pairs the round staged: a `.copy` decision whose line is in flight.
-/// Returns how many were written. `out` shorter than the unique count is `error.Length`.
 pub fn stagedCopies(v: Vram, layer: u8, ids: []const u16, decisions: []const Decision, out: []Copy) error{Length}!usize {
     if (decisions.len != ids.len) return error.Length;
     var n: usize = 0;
@@ -1372,8 +1318,7 @@ test "reapAt promotes one inflight layer and leaves the other inflight" {
     try std.testing.expectEqual(@as(u32, 4), stamp[1]);
     try std.testing.expectEqual(@as(u32, 3), stamp[0]);
 
-    // Layer 0 is already resident. The wrapper must not treat that as the
-    // layer-40 inflight copy, and must not move layer 40.
+    // Layer 0 is already resident.
     line[1] = .inflight;
     stamp[1] = 0;
     try std.testing.expectError(error.NotInflight, reap(&vram, 7, 9));
@@ -1460,8 +1405,7 @@ test "scheduleUsed is the layer-0 wrapper and is not the multi-layer path" {
     stamp = .{ 1, 50 };
     layer = .{ 0, 40 };
 
-    // The flat vector says id 4 is hot. The wrapper stores that on layer 0 only,
-    // so the layer-40 copy scores 0 and is the victim.
+    // The flat vector says id 4 is hot.
     var flat: [shape.experts]u32 = @splat(0);
     flat[1] = 1;
     flat[4] = 100;

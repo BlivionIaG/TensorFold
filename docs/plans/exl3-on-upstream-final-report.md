@@ -1,7 +1,7 @@
 # EXL3 Qwen3.8-Flash-Next on upstream TensorFold: final report
 
 Branch `exl3-on-upstream-wip` (staging branch `exl3-c-main`), originally based on upstream tag `v1.1.0` and now merged with current upstream `main`.
-Machine: par1-cs13, two RTX 5060 Ti 16 GiB (sm_120), 251 GB RAM, pack
+Machine: the test machine, two RTX 5060 Ti 16 GiB (sm_120), 251 GB RAM, pack
 `Qwen3.8-Flash-Next-exl3-3.05bpw`. All measurements are test measurements on idle cards under a lock
 wrapper, not benchmarks.
 
@@ -100,7 +100,7 @@ remains unproven.
 
 ## 2026-10-20 upstream-main integration and release checks
 
-The merge resolves the shared Flash Next hooks against current upstream `main`. On par1-cs13, Zig 0.17
+The merge resolves the shared Flash Next hooks against current upstream `main`. On the test machine, Zig 0.17
 `zig build test-cuda-host` passes after fixing a test fixture that left the new paging option undefined;
 `zig build native -Dnvcc=nvcc -Dsm=120 -j16` also passes. `zig fmt --check zig/src zig/tests` passes after formatting
 the three reported Zig files. These checks validate compilation and host tests only; the final-head TP=2 serving,
@@ -790,7 +790,7 @@ Lifetime counts still seed initial placement and remain available to profile per
 decode miss ordering and device-pool victim selection. The policy does not skip routed experts, alter logits, or enter
 request snapshots. Host prefill allocation is unchanged. It is off by default.
 
-Validation on par1-cs13 used the `Qwen3.8-Flash-Next-exl3-3.05bpw` pack, both RTX 5060 Ti cards (sm_120), TP=2,
+Validation on the test machine used the `Qwen3.8-Flash-Next-exl3-3.05bpw` pack, both RTX 5060 Ti cards (sm_120), TP=2,
 32,768 configured context, CUDA graphs on, `--parallel 2`, shared BF16 KV paging on, and prompt cache off. Two concurrent
 HTTP prompts generated 512 output IDs each with drafting disabled. With synchronized per-layer telemetry, baseline decode
 misses were 31,844 on rank 0 and 25,446 on rank 1 (57,290 total); recent-demand measured 29,012 and 22,060 (51,072,
@@ -809,7 +809,7 @@ and broader MTP/profile interactions.
 
 ## 2026-10-24 prefill-graph churn attribution and two-chunk window ABBA
 
-Setup for every leg below: par1-cs13, two RTX 5060 Ti, TP=2, `--parallel 2`, shared BF16 KV paging, decode and prefill
+Setup for every leg below: the test machine, two RTX 5060 Ti, TP=2, `--parallel 2`, shared BF16 KV paging, decode and prefill
 graphs on, MTP drafts on, prompt cache off, two concurrent 16,384-token prompts, 128 generated tokens, two warm-up and
 two measured batches per leg. All 16 measured requests across the legs below produced the same token hash
 `44f75f563088…`.
@@ -880,7 +880,7 @@ drafts on, 26 lines per layer, all 16 measured requests with token hash `44f75f5
 
 Drafted prefill is 13.2% shorter (13.20 s against 15.22 s) and drafted aggregate decode is 9.6% higher (12.79 against 11.66
 tok/s); the decode difference is again not isolated to a cause. One-chunk drafted prefill is unchanged by the fix (15.2 s).
-Host validation: `zig fmt --check` passes and `zig build test-flashnext-exl3-host` passes on par1-cs25 including a new
+Host validation: `zig fmt --check` passes and `zig build test-flashnext-exl3-host` passes on the second test machine including a new
 `headSplit` test. These sweeps do not cover the snapshot path or prompts above 30,000 tokens; the window stays default-off.
 
 **Snapshot gate.** `run-snapshot-gate.sh` (`tf-cuda-test flashnext-exl3-graph … snapshot-shared`, TP=2, shared BF16 paging, graphs
@@ -1120,7 +1120,7 @@ workloads in both orders.
 
 ### Comparison with Strata on the same two RTX 5060 Ti (single request)
 
-Strata 0.2.4.2 (`7dd5cf1`, engine 0.1.48 for CUDA 13) was installed on cs13 with `./setup.sh --model IQ3_XXS --context 32768 --gpus all
+Strata 0.2.4.2 (`7dd5cf1`, engine 0.1.48 for CUDA 13) was installed on the test machine with `./setup.sh --model IQ3_XXS --context 32768 --gpus all
 --yes`: the Qwen3.8-Flash-Next IQ3_XXS GGUF (47.0 GB, about 3.06 bits per weight), automatic layer split across both cards, its MTP draft
 layer with `--spec 4 --spec-min-p 0.5`, int8 KV, expert cache `auto` (about 15.7 GiB of VRAM used on each card), one request at a time
 (its default). Neither Strata nor project-maya has an EXL3 path for this model, so the weights differ in format (a GGUF IQ3_XXS against our
@@ -1162,7 +1162,7 @@ What is visible in Strata's setup log and files explains how it gets there:
 - It ships a pretrained hot-expert profile (`data/expert-profile.bin`, passed as `--expert-profile`) that seeds the cache. Our profile-sized pools
   failed to generalize on held-out prompts earlier (-2.4% throughput), but those were sizing experiments, not seeding the same cache.
 - Its CPU lane runs cold experts from host RAM. The vendored kernel `src/dsv41/vendor/exl3_cpu.cpp` (MIT, from project-maya) implements the EXL3 mul1
-  codebook for K bits 1-8 with AVX-512 or AVX2+FMA. cs13's EPYC 7452 has AVX2+FMA only (no AVX-512), so the AVX2 tier would run there. With 94-99%
+  codebook for K bits 1-8 with AVX-512 or AVX2+FMA. the test machine's EPYC 7452 has AVX2+FMA only (no AVX-512), so the AVX2 tier would run there. With 94-99%
   hits the CPU lane serves only the remaining 1-6%.
 
 Consequences for the plan (hypotheses to test, not results): raising our expert cache from 3.2 GiB to near 10 GiB per rank is worth more than a CPU
@@ -1233,7 +1233,7 @@ device window about 1.0 GB, the reserve floor 0.5 GB, prefill rows and scratch a
 the expert pools from 3.5 GB to roughly 8.5 GB (about 2.4 times the cache; at 69-84 MB per line that is on the order of 100 lines). From the 38 to 52
 line sweep, +37% cache gave +6% to +12% decode, so even a 2.4-fold cache is more likely to land decode in the 40s of tokens per second than at
 Strata's 75-104, which also benefits from its CPU lane and from MTP drafting that pays off at a 95% hit rate. The expert-cache enlargement is the first
-and largest step; the CPU lane (the vendored `exl3_cpu.cpp` runs on cs13's AVX2) and revisiting MTP follow it.
+and largest step; the CPU lane (the vendored `exl3_cpu.cpp` runs on the test machine's AVX2) and revisiting MTP follow it.
 
 ### 68 lines per layer: the shared KV window was sized for 8 lanes
 
@@ -1251,7 +1251,7 @@ cold request):
 | 68 (plus 2 lanes) | 40.4-40.9 | 35.1-35.4 (first 32.2) | 32.9-34.0 | fits |
 | 76 (plus 2 lanes) | | | | refused |
 
-`tools/exl3_serve_tp2.sh` now defaults to this configuration (68 lines, no drafts, 512 MB reserve, KV lanes equal to `PARALLEL`) and was run end to end on cs13:
+`tools/exl3_serve_tp2.sh` now defaults to this configuration (68 lines, no drafts, 512 MB reserve, KV lanes equal to `PARALLEL`) and was run end to end on the test machine:
 38.8-40.7 tok/s on the 70-token prompt, 33.3-34.7 on the 16k prompt, 32.9-35.4 on the 12.8k prompt, time to first token unchanged (0.57 s,
 10.4 s, 9.5 s). Against the defaults that is about +13% to +20% decode on short prompts and +16% to +26% on long ones, for no code change. Limits: the
 KV window sized for two lanes means a third concurrent request would not fit, 72 lines was not tried, the 512 MB reserve was tested only in these
@@ -1342,7 +1342,7 @@ thread inside the existing grid) or be accepted as near-exact and checked by tok
 ### Result: splitting K for the wide 5-bit matmuls does not speed decode (rejected)
 
 To test the under-occupancy explanation in the previous section, `plan()` was given an opt-in (`TF_EXL3_WIDE_SPLIT=1`) that splits K for outputs of 64 to 191 column blocks, which moves the 80- and 96-block
-projections to 160-320 blocks. It built and passed the host tests. A/B on cs13 at 72 lines per layer, single-user (`PARALLEL=1`, no drafts), the launch script, three requests per prompt
+projections to 160-320 blocks. It built and passed the host tests. A/B on the test machine at 72 lines per layer, single-user (`PARALLEL=1`, no drafts), the launch script, three requests per prompt
 (decode tok/s; legs in the order off, on, on; the second "off" leg did not finish and is not used):
 
 | prompt | split off | split on (two legs) |
@@ -1493,7 +1493,7 @@ same bytes; Strata's 10-13 ms step is about 4.8 GB at the card's bandwidth, whil
 By estimated bytes per kernel group our matmuls reach about 63% (hyper-connection), 74% (DeltaNet, attention, head) and 33% (expert kernels) of peak,
 plus about 3-4 ms of per-layer sync wait and 3-4 ms of small kernels and gaps. A layer split would not close that gap (est. 22 to 18-19 ms).
 
-Nsight Compute counters, read at last (cs13 allows `sudo ncu`; the account itself cannot read counters). 22 decode launches of the main kernels, rank 0, 72 lines,
+Nsight Compute counters, read at last (the test machine allows `sudo ncu`; the account itself cannot read counters). 22 decode launches of the main kernels, rank 0, 72 lines,
 plain decode, ncu's default base clocks, `gpu__dram_throughput` as a share of peak:
 
 | kernel (grid) | time | DRAM throughput | SM throughput | issue slots active | warps active | dominant stall (per issued instruction) |

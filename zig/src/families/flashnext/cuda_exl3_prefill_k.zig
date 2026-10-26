@@ -1,10 +1,4 @@
 //! The Flash Next EXL3 prefill experts (kernels/cuda/flashnext_exl3_prefill.cu): 64-member transposed prompt tiles on
-//! upstream's pointer tables for any per-expert width, over a host-built member list (an expert-major pass).
-//!
-//! A pass is a set of experts and every (row, slot) pair of a chunk that picked one of them. The host groups the pairs
-//! by expert (ascending ids, pairs in order) into `members` and cuts each expert's run into items of at most 64:
-//! (expert, first, count). Member c owns the compact rows c of the rotated inputs and the SwiGLU outputs; the down
-//! writes pair p's fp32 output to y[p] as Experts.runSlots does.
 const std = @import("std");
 const cuda = @import("cuda");
 
@@ -67,8 +61,6 @@ pub fn maxItems(pairs: usize, experts: usize) usize {
 }
 
 /// Counting sort of `picks` (int32 [pairs], -1 or ids outside the table skipped) by expert, keeping only experts with
-/// `take[id]` (null: all): members in (expert ascending, pair ascending) order, items of at most `tile` members.
-/// `counts` is caller scratch of the table length.
 pub fn build(picks: []const i32, take: ?[]const bool, counts: []u32, p: *Plan) void {
     @memset(counts, 0);
     const e_n = counts.len;
@@ -121,7 +113,6 @@ pub const Device = struct {
 };
 
 /// One pass: rotate every member's input, gate/up + SwiGLU, down into y [pairs, dims] fp32 (y[p] for member p).
-/// `x` bf16 rows (stride in elements), `picks` the pairs' expert ids on the device.
 pub fn run(k: *const Kernels, s: cuda.Stream, l: exl3e.Layer, x: u64, stride: usize, picks: u64, slots: usize, n_members: usize, n_items: usize, dv: Device, y: u64) !void {
     if (n_members == 0) return;
     const d = l.dims;

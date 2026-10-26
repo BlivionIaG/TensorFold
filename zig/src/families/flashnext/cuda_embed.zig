@@ -83,7 +83,7 @@ pub const Table = struct {
     rows: usize,
     dims: usize,
     dense: bool = false,
-    /// A dense table kept in pinned host memory the kernels read in place (`w` borrows its device address): a decode step reads one row of it.
+    /// A dense table kept in pinned host memory the kernels read in place (`w` borrows its device address): a decode
     host: ?cuda.HostBuffer = null,
 
     /// Copies the three tensors. `dims` is hidden size (eight values per stored word).
@@ -113,7 +113,7 @@ pub const Table = struct {
         return .{ .w = try cuda.DeviceBuffer.fromHost(d, weight.bytes), .s = zero, .b = zero, .rows = weight.dim(0), .dims = weight.dim(1), .dense = true };
     }
 
-    /// Own a dense table in mapped host memory instead of VRAM: the gather reads its rows over PCIe, and the card keeps the 1.27 GB for expert lines.
+    /// Own a dense table in mapped host memory instead of VRAM: the gather reads its rows over PCIe, and the card
     pub fn uploadDenseHost(d: *const cuda.Driver, weight: Tensor) !Table {
         if (weight.dtype != .bf16 or weight.rank != 2 or weight.dim(0) == 0 or weight.dim(1) == 0 or weight.dim(1) % 8 != 0)
             return error.UnexpectedTensor;

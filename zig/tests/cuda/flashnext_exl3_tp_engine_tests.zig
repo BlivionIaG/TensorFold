@@ -1,28 +1,4 @@
-//! flashnext-exl3-tpe: the Qwen3.8-Flash-Next EXL3 pack through the Flash Next family's Engine at tp=1 or tp=2
-//! (expert parallel, cuda_exl3_tp.zig) with each rank's own offload pool attached as the server attaches it
-//! (cuda_exl3_pass.attach) and the lm_head split by vocabulary at tp=2 (cuda_exl3_load.shardHead). One process a card;
-//! at tp=2 both ranks run the same calls in lockstep over the family's NCCL Collective (NCCL >= 2.30).
-//!
-//!   flashnext-exl3-tpe RANK WORLD PORT DIR tf GOLDEN DUMP   the golden's 16-id prompt teacher-forced; WORLD 1 writes
-//!                                                          its bf16 logits to DUMP, WORLD 2 compares rank 0's to DUMP
-//!                                                          (top-1 at every position, bit-equal count, max |d|) and
-//!                                                          both to the golden
-//!   flashnext-exl3-tpe RANK WORLD PORT DIR tfc GOLDEN DUMP  the same with the golden's 23 greedy ids after the prompt
-//!                                                          (each continuation step teacher-forced, both margins)
-//!   flashnext-exl3-tpe RANK WORLD PORT DIR gen GOLDEN DUMP  greedy 24 for each golden prompt; WORLD 1 writes the ids,
-//!                                                          WORLD 2 compares (and the two ranks' ids)
-//!   flashnext-exl3-tpe RANK WORLD PORT DIR bench            prefill 16/256/2048 rows, decode ms/token, each rank's
-//!                                                          pool hit rate, lines and free memory
-//!   flashnext-exl3-tpe RANK 2 PORT DIR trace GOLDEN PREFIX [ROUNDS [SCHEDULE [REPEATS]]]
-//!                                                          rounds per segment (default 1024); zero-based CSV prompt
-//!                                                          schedule (default 0), repeated REPEATS times (default 1)
-//!                                                          sequential shared pools, independent KV; not concurrency
-//!                                                          binary trace per expert pool after exact lifetime-policy replay
-//!   flashnext-exl3-tpe 0 1 0 - policy FILES...             compare lifetime, LRU, decayed frequency/admission and Belady
-//!   flashnext-exl3-tpe 0 1 0 - hit FILES...                host replay of real router picks through the pool's planner
-//!                                                          masked to each expert-parallel rank (RANKS: 1 or 2)
-//!   flashnext-exl3-tpe RANK 2 PORT - graph                  ncclAllReduce on the family's nonblocking communicator
-//!                                                          captured in a CUDA graph and replayed on both ranks
+//! flashnext-exl3-tpe: the Qwen3.8-Flash-Next EXL3 pack through the Flash Next family's Engine at tp=1 or tp=2 (expert
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");

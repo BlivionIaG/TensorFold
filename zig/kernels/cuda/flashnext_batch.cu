@@ -60,8 +60,7 @@ static __device__ __forceinline__ float conv_act(const __nv_bfloat16* __restrict
 }
 }  // namespace fn_gdn
 
-// Program (row, unit), 256 threads: key head u's normed q and k (u < nkl: head hk0 + u), else value head hv0 + u - nkl's v,
-// decay g and beta. Every index is the layout's global one, so a rank can run a subset of the heads.
+// Program (row, unit), 256 threads: key head u's normed q and k (u < nkl: head hk0 + u), else value head hv0 + u
 static __device__ __forceinline__ void gdn_front(
         const __nv_bfloat16* __restrict__ P, const __nv_bfloat16* __restrict__ cs, const __nv_bfloat16* __restrict__ cw,
         const float* __restrict__ a_log, const float* __restrict__ dt_bias, float* __restrict__ qn,

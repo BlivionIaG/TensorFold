@@ -22,8 +22,7 @@ pub fn plan(k: usize, n: usize) [2]usize {
     const kt = k / 16;
     const nb = n / 128;
     var sk: usize = 1;
-    // Four warps a block for every N, not linear.py's eight for a wide one: three four-warp blocks fit an SM of the 36-SM card, so the 96-block launches
-    // of a 12288-column projection are one resident wave instead of three (+1.4% to +2.3% decode; the block's partial sums group in four).
+    // Four warps a block for every N, not linear.py's eight for a wide one: three four-warp blocks fit an SM of the
     var wk: usize = 4;
     if (nb < 64) {
         while (nb * sk < blocks and sk < 64) sk *= 2;

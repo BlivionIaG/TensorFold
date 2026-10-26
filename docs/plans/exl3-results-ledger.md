@@ -25,6 +25,6 @@ DeltaNet split through prefill (TTFT +18%), attention split without paging (-1 t
 | zig | 7.77 | 2,065 | 98.9 | 10.1 |
 | docs | 6.94 | 1,845 | 105.0 | 9.5 |
 
-## Request types with the grammar library built (cs13, xgrammar v0.2.8, `zig build grammar -Dxgrammar=DIR`)
+## Request types with the grammar library built (the test machine, xgrammar v0.2.8, `zig build grammar -Dxgrammar=DIR`)
 
 Thinking, a tool call (`get_weather` with `{"city":"Paris"}`) and a `json_schema` response format all succeed, with drafts on and plain.

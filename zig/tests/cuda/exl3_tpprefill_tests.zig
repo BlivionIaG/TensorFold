@@ -1,14 +1,4 @@
 //! exl3-tpprefill: the expert-major deep-chunk prefill (cuda_exl3_prefill.zig) at tp=1 and at tp=2 expert parallel
-//! (cuda_exl3_tp.zig), through the Flash Next family's Engine with each rank's own offload pool attached as the server
-//! attaches it. One process a card; at tp=2 both ranks run the same calls in lockstep over the family's Collective.
-//!
-//!   exl3-tpprefill RANK WORLD PORT DIR IDS N1,N2,.. ROWS CAP MODE DUMP
-//!     IDS   int32 token ids (real text); each N takes its first N ids from a fresh sequence of CAP tokens
-//!     ROWS  the deep chunk (rows, reserved before the pools); MODE deep | both (deep, then the batched pass)
-//!     DUMP  path prefix: WORLD 1 writes DUMP-N.bin (deep last-row logits bf16 + GREEDY greedy ids), WORLD 2 compares
-//!           rank 0's against it (max |d|, top-1, greedy ids)
-//!   Env TF_TEST_GREEDY (default 16) greedy decode rounds after each prefill; TF_TEST_BOTH_MAX: the batched pass only
-//!   up to that many tokens.
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");

@@ -1,54 +1,4 @@
-//! An EXL3 pack's MTP head on v1.1.0's Flash Next family (cuda_mtp.zig): the draft vocabulary rows here, the rest a design.
-//!
-//! ## What the head computes (upstream cuda_mtp_ops.zig `forwardHead`, = tensorfold qwen4_exp mtp.py `FlashMTP`)
-//!   e   = fc_embedding(norm_e(embed(token t+1)))             norm over 2,560 (tri.rmsnorm, group = dims)
-//!   hs  = fc_hidden(norm_h(streams_t) as 4 rows of 2,560)     ONE RMS over the whole 10,240 row (group = wide), then
-//!                                                             fc_hidden per stream: what the EXL3 reference does too
-//!   x   = e + hs[s] per stream; one attention + MoE decoder layer (`mtp.layers.0`, its own KV, no PLE)
-//!   out = hyper_connection_mixer readout of x, then the draft head: bf16 rows of lm_head at the 79,591 draft ids.
-//! Upstream's maths already matches the EXL3 reference; only the weights' formats differ.
-//!
-//! ## EXL3 tensors (pack on par1-cs13, index + mtp_hyper_connection_mixer_patch.safetensors, read 2026-10-19)
-//!   mtp.fc_embedding.{trellis,suh,svh,mul1}, mtp.fc_hidden.{...}       EXL3 2560 -> 2560 (mtp_bits 3)
-//!   mtp.pre_fc_norm_embedding.weight [2560], mtp.pre_fc_norm_hidden.weight [10240]   gamma - 1 (store.norm_offset)
-//!   mtp.layers.0.{self_attn.*, mlp.experts.N.*, mlp.shared_expert.*, mlp.gate, mlp.shared_expert_gate,
-//!                 attn_hyper_connection.*, mlp_hyper_connection.*}     as a main attention layer (F16 gates and HC)
-//!   mtp.hyper_connection_mixer.{hc_norm [10240], input_mix_weight_down [320,10240], _up [10240,320]}  F16, in the
-//!                 patch file, which model.safetensors.index.json does not name
-//!   lm_head.{trellis [160, 15520, 80], suh [2560], svh [248320], mul1}  EXL3 5-bit (head_bits 5), K = 2560, N = vocab
-//!
-//! ## Hook points (one line each into upstream files; the work lives in cuda_exl3_*.zig)
-//!   1. cuda_mtp_load.zig `draft` (after the mode check): `if (try exl3_mtp.draft(a, d, store, ids, affine)) |q| return q;`
-//!      DONE here: `draft` below dequantises the lm_head columns of the draft ids (exl3_format.dequantize on the
-//!      128-column blocks that hold them) to bf16 rows [ids, 2560] and uploads them through projection.dense (or the
-//!      affine4 packer under TF_FLASHNEXT_DRAFT_HEAD=affine4). The forward's `p.lane(.., h.draft, ..)` is unchanged.
-//!   2. cuda_mtp.zig Head.init `fc` (line ~198): `cuda_projection_load.load` refuses EXL3 (`UnsupportedQuantization`:
-//!      no `.weight`). E1's `Projection.exl3` load (plan step 4) covers it: in `load`, `if (store.has(prefix ++
-//!      ".trellis")) return cuda_exl3_proj.load(...)`. `forwardHead` runs fc_e/fc_h through `Pass.lane(.., fc_sk = 4)`:
-//!      an EXL3 lane must honour `sk > 1` callers that read `part` (fp32 slices) and `sumSlices`, or return sk = 1
-//!      with the sum already in `out` (then the two `sumSlices` calls at cuda_mtp_ops.zig:146 and :150 must be
-//!      skipped for EXL3: one branch each, `if (!h.fc_e.isExl3())`).
-//!   3. cuda_mtp.zig Head.init `wt.loadHc(.., "language_model.mtp.hyper_connection_mixer", false)` (line ~179): the
-//!      Store (cuda_prompt_wt.zig `resolveKey`/`shard`) must fall back to the patch file for names the index lacks
-//!      (plan step 2), and `loadHc` needs the F16 dense HC path (plan step 3; `loadDenseHc` takes bf16 today, and
-//!      `asF32` refuses F16, so `normScale` of an F16 hc_norm fails too).
-//!   4. cuda_mtp.zig Head.init `load.loadLayerAt(.., "language_model.mtp.layers.0", false, false)` (line ~185): the
-//!      alias `language_model.mtp.` -> `mtp.` already resolves; the layer needs E1's EXL3 attention projections and
-//!      `Experts` (plan steps 4-5) and the F16 router/shared gate (step 3). Its experts can stay resident (one layer,
-//!      513 x 3-bit experts, about 0.95 GB) or ride on the offload pool as a 49th layer.
-//!   5. cuda_mtp.zig `store.detectNorms()` (line ~164) reads the 48 decoder `attn_hyper_connection.hc_norm` (F16 in
-//!      this pack): same F16 `asF32` fix as 3. q_norm/k_norm of `mtp.layers.0.self_attn` average ~2.7 stored, still
-//!      gamma - 1 (the branch's exl3_mtp.zig used the single convention); upstream applies one offset to all: fine.
-//!   6. cuda_mtp.zig `headBytes` (admission estimate) counts affine bytes; an EXL3 head is fc 2 x 2560 x 2560 x 3/8,
-//!      the layer's EXL3 bytes and the bf16 draft rows (79,591 x 2560 x 2 = 407.5 MB). A one-line branch on the format.
-//!   7. Not needed: the draft chain, verify windows, rollback (cuda_mtp_draft.zig, cuda_mtp_ops.zig) are format-free.
-//!
-//! ## Draft rows: what is exact and what is not
-//! EXL3 columns are not separable (a 128-column Hadamard mixes them), so a row is decoded from its whole column block
-//! and rounded to bf16 once (round to nearest even from the float64 value). A draft logit then differs from the full
-//! head's by at most 2^-9 * sum_k |x_k W[k,v]| (bf16 keeps 8 significant bits), the bound `tf-cuda-test exl3-draft`
-//! checks against the full EXL3 head (upstream exl3.Dense, fp32 out) and an exact float64 product. Drafts are proposals:
-//! the main head verifies every token, so acceptance (drafted == undrafted) is unaffected; only the acceptance rate is.
+//! An EXL3 pack's MTP head on v1.1.0's Flash Next family (cuda_mtp.zig): the draft vocabulary rows here, the rest a
 
 const std = @import("std");
 const core = @import("core");
@@ -165,8 +115,7 @@ fn work(w: *Work, gpa: std.mem.Allocator) !void {
     }
 }
 
-/// Row i of `out` ([ids.len, K] bf16) is lm_head's column `ids[i]` (the weight row of token ids[i]), decoded in float64
-/// by exl3_format.dequantize on the 128-column block that holds it and rounded once to bf16. Up to `threads` threads.
+/// Row i of `out` ([ids.len, K] bf16) is lm_head's column `ids[i]` (the weight row of token ids[i]), decoded in
 pub fn draftRows(gpa: std.mem.Allocator, head: Head, ids: []const u32, out: []u16, threads: usize) !void {
     if (out.len != ids.len * head.k) return error.UnexpectedTensor;
     for (ids) |id| if (id >= head.n) return error.InvalidToken;

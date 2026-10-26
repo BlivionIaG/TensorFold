@@ -1,65 +1,5 @@
 //! Flash Next prompt states for the shared prompt cache: one stream's caches after `at` tokens, copied on the device.
-//!
 //! BF16 paged snapshot format and ordering contract (version 1, exact pager geometry).
-//!
-//! A paged sequence is not a dense kc/vc allocation. Its kc/vc views alias compact device windows. Dividing their
-//! lengths by seq.cap, or copying at * row_bytes from them, cannot describe the logical history. The host store
-//! alone is also insufficient: rows still in each device window have not necessarily been written back.
-//!
-//! Format: keep the dense/int8 format separate, with an explicit version and paging discriminator in Snap. The
-//! paged header records at, history, head presence, BF16 row width, attention-layer count, index ratio, cap,
-//! window/rows/slots, wr and nblocks, plus checked offsets/lengths for every section. No stored GPU pointers are
-//! executable after restore. The initial exact-state format requires equal pager geometry and capacity on the
-//! destination; reject a mismatch before touching it. A future capacity-changing format must explicitly re-encode
-//! slot2blk's layer * nblocks keys and rebuild both inverse tables, rather than copying those keys unchanged.
-//!
-//! Payload, at one completed sequence boundary:
-//! - Existing convolution, recurrent state, PLE tail, IKC [0,at), complete pooled blocks and optional MTP head
-//!   state. Include partially pooled raw IKC rows; they are needed when the next block completes.
-//! - Canonical BF16 host K/V [layer][K|V][0,at), after flushing every pending window interval [win0[layer],at).
-//! - The entire compact device K/V allocation, including all windows and shared slot payloads, and the entire
-//!   tabs allocation: blk2slot, mark, ctl (including global clock, sticky status and per-layer epoch), slot2blk,
-//!   stamp. Copying only host history and resetting tables would lose the requested mappings and LRU state.
-//! - Host win0, rebases and written arrays. graph_prepared is transient execution state and restores as false.
-//!   work lists and status_host are scratch: rebuild/overwrite them before use; never restore stale completion
-//!   status as proof that an operation completed. Logical rows >= at are invalid irrespective of their bytes.
-//!
-//! Save ordering:
-//! 1. Exclude scheduling/replay for this sequence. Establish an event dependency from every producer (including
-//!    prefill reduction and copy streams) onto the snapshot stream; synchronizing this stream alone is insufficient
-//!    unless the caller already joined those producers. Reject an outstanding draft or inconsistent head mark.
-//! 2. Validate ALL layer ranges, geometry and checked sizes before any copy; require win0 aligned to index_ratio,
-//!    win0 <= at <= min(cap,win0+wr), and reject a sticky paging failure after a completed status transfer.
-//! 3. Allocate the budgeted snapshot, enqueue window writebacks, then canonical host-prefix copies, device K/V,
-//!    tables and ordinary state on the ordered stream. Snapshot storage owns its copies; it never aliases a live
-//!    pager. Preserve counters as well as data; flush itself does not advance epochs or rebase windows.
-//! 4. Wait for the copies before publishing the immutable snapshot or releasing source/storage ownership. On a
-//!    submission failure, drain already submitted copies before freeing their targets. If draining fails, retain
-//!    ownership until the device/session is quiesced. A partial snapshot must never reach the prompt cache.
-//!
-//! Restore ordering:
-//! 1. Validate format, bounds, byte counts, pager geometry, sequence capacity and optional MTP head availability
-//!    before changing the destination. Drain prior uses and pending graph instantiation before overwriting state.
-//! 2. Invalidate MTP verification generation before the first mutation, so previously published or delayed results
-//!    cannot be consumed. Restore into the destination's own allocations; never transplant snapshot addresses.
-//! 3. Copy canonical host rows, compact device payload, tables, IKC/pooled/recurrent/tail/head state, then wait.
-//!    Restore host origins/counters only after device completion; clear graph_prepared and refresh paging status.
-//!    Matching tables, slot payloads and clock must become visible together before another attention call.
-//! 4. Commit seq.fed/history and reset Draft's transient drafted/rows state and len only after successful completion.
-//!    On a failure after mutation, discard/poison the destination rather than publishing its previous position over
-//!    partially restored memory. The snapshot remains immutable and reusable. Destroy snapshots only after their
-//!    last asynchronous reader completes; dropping a source sequence must not invalidate saved storage.
-//!
-//! Integration: the engine freezes pager configuration at load; serving lanes use the configured, budgeted capacity.
-//! snapBytes charges the canonical prefix, windows/slots, tables, ordinary state, next logits, optional head and header.
-//! Snapshots own mapped host storage. The scheduler serializes operations; context completion joins all CUDA producers.
-//! cuda_rank_engine uses prepare/copy/commit acknowledgements before returning a restored pair to scheduling.
-//! releaseSeq joins pending graph instantiations and discards captures that reference the destination sequence.
-//! Failed submissions drain through CUDA's completion policy before freeing storage; an undrainable context terminates
-//! the rank through the existing completion handler. A partially restored sequence remains invalid for execution.
-//!
-//! Acceptance gates are specified in zig/tests/cuda/exl3_kvpage_tests.zig; host fakes alone do not establish GPU or
-//! serving correctness. The snapshot command checks device lifecycle; flashnext-exl3-graph snapshot checks TP2 parity.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -90,8 +30,7 @@ pub fn bytes(at: usize, head: bool) usize {
     return wt.linear_n * (conv_bytes + state_bytes) + (wt.attn_n + @intFromBool(head)) * attnBytes(at) + tail_bytes;
 }
 
-/// `bytes` for a sequence whose K/V rows are `r` (int8 codes and scales, or one KV head a rank: cuda_exl3_kv.zig);
-/// the head's cache stays upstream's.
+/// `bytes` for a sequence whose K/V rows are `r` (int8 codes and scales, or one KV head a rank: cuda_exl3_kv.zig); the
 pub fn bytesKv(at: usize, head: bool, r: kv.Rows) usize {
     const layer = at * (2 * (r.kv + r.scales) + index_row) + at / wt.index_ratio * index_row;
     return wt.linear_n * (conv_bytes + state_bytes) + wt.attn_n * layer + @as(usize, @intFromBool(head)) * attnBytes(at) + tail_bytes;
@@ -263,8 +202,6 @@ fn discard(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
 
 /// A copy of `seq` (and of the head's cache, with `d`) as it stands after `seq.fed` tokens.
 /// Kept states go to mapped pinned host memory (copied at ~14 GB/s by the same DtoD copies; the device keeps none of
-/// them): set once at load (cuda_lanes_load.zig, TF_FLASHNEXT_SNAP_HOST), and the native host then budgets the prompt
-/// cache in host memory (Loaded.host_snaps).
 pub var on_host: bool = false;
 
 pub fn save(gpa: std.mem.Allocator, driver: *const cuda.Driver, stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft) !*Snap {

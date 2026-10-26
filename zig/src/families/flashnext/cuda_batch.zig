@@ -366,8 +366,7 @@ pub fn Pass(comptime Tri: type) type {
             try cuda.launch.launch(if (state_out != 0) self.k.chain_to else self.k.chain, .{ .grid = .{ .x = gdn.nv, .y = gdn.dv / 16 }, .block = .{ .x = 128 } }, self.stream, &a);
         }
 
-        /// Whether this pass's rows are decode rows: under 64 in all (a lane under 64 each), where the DeltaNet kernels
-        /// take a rank's heads.
+        /// Whether this pass's rows are decode rows: under 64 in all (a lane under 64 each), where the DeltaNet
         fn halfRows(self: *const Self) bool {
             if (self.lanes.len == 0) return self.rows < 64;
             for (self.lanes) |l| if (l.rows >= 64) return false;

@@ -17,8 +17,7 @@ pub const Table = struct {
     dtype: cache.Dtype,
     bytes: []u8,
 
-    /// `contextKvRank` refuses a zero rank count, or a count that does not divide
-    /// the KV heads, before this divides.
+    /// `contextKvRank` refuses a zero rank count, or a count that does not divide the KV heads, before this divides.
     pub fn init(
         gpa: std.mem.Allocator,
         tokens: usize,
@@ -46,8 +45,7 @@ pub const Table = struct {
         gpa.free(self.bytes);
     }
 
-    /// One head, one token, one full-attention layer. `layer` is the table index
-    /// (not the model layer). A head this rank does not store is refused before any store.
+    /// One head, one token, one full-attention layer.
     pub fn write(self: *Table, head: usize, layer: usize, token: usize, src: []const u8) error{ Head, Slot, Length }!void {
         const off = try self.locate(head, layer, token, src.len);
         @memcpy(self.bytes[off..][0..src.len], src);

@@ -1,10 +1,4 @@
-//! A multi-part EXL3 projection's parts on parallel streams (a DeltaNet layer's q|k|v, z, b, a; attention's
-//! q, k, v, indexer): each EXL3 part after the first runs on its own side stream with its own Dense scratch (rotated
-//! input, split partials, counters, stitch buffer), forked from and joined back into the pass's stream with events,
-//! so a captured graph holds them as parallel branches. Every part is the same kernels on the same inputs writing
-//! its own columns: the same bits (tf-cuda-test flashnext-exl3-graph eq). A decode projection launches 80-192
-//! programs that leave an SM wave partly empty; the next part fills it.
-//! Without the fork the parts run one after another (upstream order); only a test turns it off.
+//! A multi-part EXL3 projection's parts on parallel streams (a DeltaNet layer's q|k|v, z, b, a; attention's q, k, v
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -81,8 +75,6 @@ fn copy2d(s: cuda.Stream, dst: u64, dpitch: usize, src: u64, spitch: usize, widt
 }
 
 /// Pass.lane()'s parts loop (bf16 out, sk 1) with the EXL3 parts after the first on side streams; false when the
-/// projection does not fork (one EXL3 part, too many rows, no branches reserved), and the caller runs its loop.
-/// `run(part, y)` runs a part on the pass's stream as the caller's loop would.
 pub fn lane(p: anytype, x: u64, e: *const load.Proj, out: u64, m: usize, comptime runMain: anytype) !bool {
     if (!enabled() or m > max_rows) return false;
     var n_exl3: usize = 0;

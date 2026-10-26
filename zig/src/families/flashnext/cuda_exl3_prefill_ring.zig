@@ -1,15 +1,4 @@
-//! The prefill line ring: during an expert-major prefill every decoder layer's pool lines (cuda_exl3_pool.zig) form ONE
-//! ring of expert slots, so the copy engine streams the experts of the coming layers while the current layer's blocks
-//! compute. A layer's pool uses its own lines only while that layer runs; a prefill walks the layers in order, so the
-//! other layers' lines are idle memory for it. Each layer's pointer tables (the pool's, fixed addresses) point into the
-//! ring while its experts compute; at the end every pool is left empty (policy state cleared, routed table entries
-//! zeroed) and refills itself on the next rounds.
-//!
-//! Ordering, on the device:
-//!   copy stream: [wait the release of the pass that last read the slot] -> H2D of the expert -> after a batch of
-//!                copies, one H2D of the layer's pointer table from its pinned shadow -> batch event
-//!   compute stream: [wait the batch event of the pass's last expert] -> prefill experts kernel -> release event
-//! A slot that holds an expert no pass has read yet (`pending`) is never overwritten.
+//! The prefill line ring: during an expert-major prefill every decoder layer's pool lines (cuda_exl3_pool.zig) form
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -25,7 +14,6 @@ const release_ring = 4096;
 /// Copies a batch holds before its table upload and event.
 const batch_copies = 16;
 /// Pinned snapshots of a layer's pointer tables, one a batch in flight (a batch uploads its snapshot, never the live
-/// shadow, which the host keeps rewriting).
 const snap_ring = 64;
 
 const SlotState = enum(u8) { free, pending };
@@ -61,7 +49,6 @@ pub const Ring = struct {
     pools: [layers_n]*pool_.Pool,
     addr: []u64,
     /// Each slot's projection offsets and room (its pool's line layout: under expert parallel a rank's layers hold
-    /// different widest experts, so their lines differ; an expert only goes into a slot it fits).
     off: [][3]u32,
     room_of: [][3]u32,
     state: []SlotState,
@@ -190,7 +177,6 @@ pub const Ring = struct {
     }
 
     /// Before a prefill: nothing of the pools' may run (`s` drained), every slot free, each layer's table image read
-    /// (the shared expert's entries stay as the pool wrote them) with every routed entry absent, then the routed widths.
     pub fn begin(r: *Ring, s: cuda.Stream) !void {
         try s.synchronize();
         for (r.pools) |p| try p.lines.drain();
@@ -236,9 +222,7 @@ pub const Ring = struct {
         }
     }
 
-    /// After a prefill: every pool empty (policy state, routed table entries), the device idle; then, with `reseed`,
-    /// each pool refills its lines with its layer's hottest experts of the prefills so far (copies queued on the copy
-    /// engine, nothing waits for them but the first rounds that read those lines).
+    /// After a prefill: every pool empty (policy state, routed table entries), the device idle; then, with `reseed`
     pub fn end(r: *Ring, s: cuda.Stream, reseed: bool) !void {
         try r.closeBatch();
         try r.copy.synchronize();
@@ -355,8 +339,7 @@ pub const Ring = struct {
         }
         const k = r.next;
         r.next = (r.next + 1) % r.slots();
-        // the open batch's snapshot first (it must not see the evicted expert gone), then the wait for the slot's
-        // last reader, then the evicted expert's entries (later snapshots are uploaded behind that wait)
+        // the open batch's snapshot first (it must not see the evicted expert gone), then the wait for the slot's last
         if (r.open_layer != null and (r.open_layer.? != layer or r.open_n == batch_copies)) try r.closeBatch();
         try r.afterReaders(k);
         if (r.owner[k] != 0) {
@@ -434,8 +417,7 @@ pub const Ring = struct {
         }
     }
 
-    /// Tops `layer` up to `want` loaded experts with the ones not loaded, hottest (prefill counts, then the pool's lifetime
-    /// counts) first, leaving `keep_free` slots; returns how many were queued.
+    /// Tops `layer` up to `want` loaded experts with the ones not loaded, hottest (prefill counts, then the pool's
     pub fn prefetch(r: *Ring, layer: usize, want: usize, keep_free: usize, source: attribution_.Source) !usize {
         var order: [routed_n]u16 = undefined;
         var n: usize = 0;

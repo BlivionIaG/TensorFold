@@ -1,12 +1,4 @@
 //! flashnext-exl3: the Flash Next CUDA family on a real EXL3 pack (Qwen3.8-Flash-Next 3.05bpw), against our float64
-//! oracles (exl3_fwd_cpu.zig and the per-op ones it assembles), through the family's OWN loaders and pass code.
-//! Usage: tf-cuda-test flashnext-exl3 <pack dir> names                 every tensor the family reads resolves; nothing
-//!                                                                     indexed is left unclaimed but the vision tower
-//!        tf-cuda-test flashnext-exl3 <pack dir> norms                 the one centred-norm convention and its cross-checks
-//!        tf-cuda-test flashnext-exl3 <pack dir> router [layers] [rows] router picks (device) vs float64 (default 0,3,17)
-//!        tf-cuda-test flashnext-exl3 <pack dir> ple                   PLE key/value from fp16 n-gram rows vs float64
-//!        tf-cuda-test flashnext-exl3 <pack dir> layer [layers]        projections, then one whole decoder layer (prefill
-//!                                                                     8 rows + 4 decode rows) vs the float64 layer (0,3)
 const std = @import("std");
 const cuda = @import("cuda");
 const core = @import("core");
@@ -376,7 +368,7 @@ fn router(gpu: Gpu, dir: []const u8, layers: []const usize, rows: usize) !void {
     const rng = prng.random();
     var worst_rows_diff: usize = 0;
     for (layers) |l| {
-        // the family's router buffer, as cuda_prompt_load builds it: mlp.gate's 512 rows then the shared gate (Store-widened)
+        // the family's router buffer, as cuda_prompt_load builds it: mlp.gate's 512 rows then the shared gate
         var nb: [128]u8 = undefined;
         const gate = try store.tensor(try std.fmt.bufPrint(&nb, "language_model.model.layers.{d}.mlp.gate.weight", .{l}));
         try check.expect(gate.is(.bf16, &.{ experts_n, dims }), "router: layer {d} gate is not the loaders' bf16 [512, 2560]", .{l});
@@ -635,8 +627,6 @@ fn denseRows(a: std.mem.Allocator, w: []const f64, n: usize, k: usize, xb: []con
 }
 
 /// The fp16 rotated-input contract: x * suh after the Hadamard is rounded to fp16 (2^-11 of each term), so a column's
-/// error is a few 1e-4 of the row's peak. exl3-pack measured 1.75e-4 .. 2.4e-4 (uniform rows); here N(0, 1) rows give
-/// 1.3e-4 .. 3.04e-4 (layer 3 q_proj, one row, peak 4.5).
 const proj_f32_tol = 4e-4;
 const proj_bf16_tol = 4e-3; // bf16 output rounding: half an ulp is 2^-9 of a value, at most 1.95e-3 of the peak
 
@@ -768,7 +758,7 @@ const ExpertCtx = struct {
     }
 };
 
-/// The oracle's layer (exl3_fwd_cpu.LayerW) from the pack's stored tensors, decoded by the Zig f64 decoder. Arena-owned.
+/// The oracle's layer (exl3_fwd_cpu.LayerW) from the pack's stored tensors, decoded by the Zig f64 decoder.
 const Oracle = struct {
     attn_hc: HcHost,
     mlp_hc: HcHost,
@@ -1027,13 +1017,10 @@ pub fn layerCheck(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l
     std.debug.print("  device time for the 5 calls (read-backs between blocks included): {d:.0} ms\n", .{device_ms});
     std.debug.print("  worst staged: attn readout mixed {e:.3} inject {e:.3}; mixer {e:.3}; mlp readout mixed {e:.3} inject {e:.3}; MoE {e:.3}; write-back {e:.3}\n", .{ alone.attn_mixed, alone.attn_inj, alone.mixer, alone.mlp_mixed, alone.mlp_inj, alone.moe, alone.writeback });
     std.debug.print("  worst chained: mixer {e:.3}, streams {e:.3}, MoE {e:.3}, output {e:.3}\n", .{ worst.mixer, worst.streams, worst.moe, worst.out });
-    // Each block alone, fed the device's own input: its bf16 output and the roundings inside it (the read-out's act and
-    // inject, the projections' bf16 rows, the MoE weights' bf16) stay under 1% of the peak.
+    // Each block alone, fed the device's own input: its bf16 output and the roundings inside it (the read-out's act
     const staged = [_]f64{ alone.attn_mixed, alone.attn_inj, alone.mixer, alone.mlp_mixed, alone.mlp_inj, alone.moe, alone.writeback };
     for (staged) |v| try check.expect(v <= 0.01, "layer {d}: a block alone differs from float64 by {d:.4} of its peak (> 0.01)", .{ l, v });
     // Chained from the embedding: the old engine's gates (mixer 1% GDN / 3% attention, streams 1%, MoE 2%) hold; its
-    // output gate was 1% with f32 residual streams, and upstream keeps the streams in bf16 between blocks, so the
-    // write-back's rounding lands on top of the chained MoE error: the output gate here is 2% (layer 0 measured 1.23e-2).
     const mixer_tol: f64 = if (wt.linearLayer(l)) 0.01 else 0.03;
     try check.expect(worst.mixer <= mixer_tol, "layer {d}: mixer branch differs from the oracle ({d:.4} > {d})", .{ l, worst.mixer, mixer_tol });
     try check.expect(worst.streams <= 0.01, "layer {d}: streams after the mixer differ ({d:.4})", .{ l, worst.streams });
@@ -1071,8 +1058,6 @@ fn layerMode(gpu: Gpu, dir: []const u8, which: []const usize) !void {
 }
 
 /// The PLE key/value projections of an EXL3 pack take the n-gram rows as fp16 (cuda_exl3_ple.zig's default): through
-/// Pass.lane() (exact split into two bf16 rows, two bf16 products, fp32 sums) against float64 of the fp16 rows times the
-/// stored F16 weights; beside it, the error the rows would carry if rounded to bf16 first (TF_FLASHNEXT_PLE_EMB=bf16).
 fn pleMode(gpu: Gpu, dir: []const u8) !void {
     var rig: Rig = undefined;
     try rig.init(gpu, dir, 8, 64);

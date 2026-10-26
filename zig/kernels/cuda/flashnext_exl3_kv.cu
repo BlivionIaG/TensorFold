@@ -1,13 +1,4 @@
 // Flash Next attention over an int8 KV cache (ours, K10 prototype): upstream's flashnext_attn.cu prep / chunks / merge
-// with the cache stored as int8 codes plus one fp16 scale a 32-group, dequantised into the same bf16 smem tiles.
-//
-// Storage (per attention layer, per sequence): K8/V8 [pos][HK][256] int8 and KS/VS [pos][HK][8] fp16. Groups of 32
-// go through one normalized 32-point Hadamard (Sylvester order; exl3_cache.zig's policy) when ROT != 0: dots are
-// unchanged by an orthogonal map, so queries are stored rotated by the prep, keys and values are cached rotated, and
-// the merge rotates the output back (H is its own inverse). Code: clamp(floor(x / s * 128) + 128, 0, 255) - 128,
-// value (c + 0.5) * s / 128, s = fp16(max |x| over the group) (the fp16 s is used on both sides).
-// The attention maths after the tile load is upstream's attn_chunks unchanged (same mma tiles, same online softmax),
-// so a bf16 cache that holds the dequantised values gives the same bits (tf-cuda-test exl3-kv kernel checks this).
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
@@ -136,7 +127,6 @@ extern "C" __global__ void __launch_bounds__(256) fn_kv8_prep(const __nv_bfloat1
 }
 
 // Upstream's attn_chunks with each tile's keys and values read as int8 codes + scales (cp.async into a raw buffer, NB
-// raw buffers in flight), dequantised into one bf16 tile pair, then the same mma / online-softmax maths.
 template <int NB>
 __device__ __forceinline__ void kv8_chunks(const __nv_bfloat16* __restrict__ Q, const int8_t* __restrict__ K8,
                                            const __half* __restrict__ KS, const int8_t* __restrict__ V8,
@@ -372,8 +362,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_kv8_pack(const __nv_bfloat1
     quant8(ROT ? wht32(x) : x, C + row * HD + threadIdx.x, S + row * NG + threadIdx.x / GR);
 }
 
-// Gather (the explicit-staging alternative to reading a host cache in place): `n` keys' rows of `row_bytes` (a multiple
-// of 16) from `src` (device or mapped host) at ids[k] into dst row k, a warp a key. ids < 0 copy nothing.
+// Gather (the explicit-staging alternative to reading a host cache in place):
 extern "C" __global__ void __launch_bounds__(256) fn_kv_gather(const uint4* __restrict__ src, uint4* __restrict__ dst,
                                                                const int* __restrict__ ids, int n, int row_vecs) {
     const int k = blockIdx.x * (blockDim.x >> 5) + (threadIdx.x >> 5);
@@ -384,8 +373,6 @@ extern "C" __global__ void __launch_bounds__(256) fn_kv_gather(const uint4* __re
 }
 
 // Test support (tf-cuda-test exl3-kv full): a bf16 cache's rows [rows][256] replaced in place by what an int8 (BITS 8)
-// or int4 (BITS 4) cache would hold, back in the model's domain and rounded to bf16. An emulation of the cache's
-// error inside upstream's own attention kernels (any BITS 2..15: finer grids measure the run's sensitivity); the int8 kernels' own arithmetic is checked separately (kernel mode).
 extern "C" __global__ void __launch_bounds__(256) fn_kv_roundtrip(__nv_bfloat16* __restrict__ X, long long rows, int ROT, int BITS) {
     const long long row = blockIdx.x;
     if (row >= rows) return;

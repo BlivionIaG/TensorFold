@@ -1,17 +1,4 @@
 //! One round's miss plan for a per-layer EXL3 expert pool (the host half of `cuda_exl3_pool.Pool.plan`).
-//! Port of exl3_step.zig's round step onto upstream's `Experts`: there is no CPU expert any more, so every miss is
-//! copied. A round is the picks of `rows` rows (`slots` a row, -1 skipped, the shared expert 512 never staged).
-//!
-//! The round splits into passes when its distinct routed experts do not fit the lines: pass 0 computes every expert
-//! already held (resident, or a prefetch still in flight) plus the hottest misses that fit; each later pass takes the
-//! next misses. A pass's copies may evict a line an EARLIER pass of the same round read: the device side orders that
-//! (the copy waits for the earlier pass's release event), so after each pass its copies count as resident here. A
-//! line of a copy that no compute waits for (a prefetch) stays in flight until `exl3_offload.reapAt`, and an
-//! in-flight line is never a victim (the policy's in-flight protection).
-//!
-//! Prefetch: on swap rounds (`round % swap_every == 0`, round > 0) the hottest non-held experts by lifetime count
-//! replace strictly colder residents (or fill empty lines) that this round does not use, at most `swap_cap` and at most
-//! `prefetch_bytes / line_bytes` a round (the copy budget). No CUDA here.
 
 const std = @import("std");
 const offload = @import("exl3_offload.zig");
@@ -25,7 +12,6 @@ pub const shared_id = offload.shared_id;
 pub const Copy = struct { id: u16, line: u32, evicted: u16 };
 
 /// Ranges into `Round.ids` (the experts the pass computes) and `Round.copies` (what it stages first).
-/// A round always has at least one pass; pass 0 also computes the shared expert.
 pub const Pass = struct { id_lo: u32, id_hi: u32, copy_lo: u32, copy_hi: u32 };
 
 pub const Options = struct {
@@ -37,8 +23,6 @@ pub const Options = struct {
     /// Device bytes of one line (prefetch budget unit).
     line_bytes: u64 = 1,
     /// Double buffering: experts (of this layer) whose lines a single-pass round should not evict when it has room
-    /// without them, normally the previous round's. Their compute may still be running, so a copy into their lines
-    /// would wait for it; sparing them lets the copy overlap that compute. Ignored when the round would not fit.
     protect: []const u16 = &.{},
 };
 
@@ -59,7 +43,7 @@ pub const Round = struct {
     n_copies: usize = 0,
     n_passes: usize = 0,
     n_prefetch: usize = 0,
-    /// Routed slots (pick in 0..511) whose expert was held / missing when the round started; shared slots counted apart.
+    /// Routed slots (pick in 0..511) whose expert was held / missing when the round started; shared slots counted
     hit_slots: u32 = 0,
     miss_slots: u32 = 0,
     shared_slots: u32 = 0,
@@ -194,9 +178,7 @@ fn snapshot(v: Vram, out: []u16) void {
     for (v.slots, v.line, out) |id, state, *o| o.* = if (state == .empty) empty_id else id;
 }
 
-/// Plans one round of `layer` (see the file header). Writes `v` (touches, staged lines) and `counts[layer]` (observe).
-/// error.Busy: in-flight lines leave no line for a pass (reap or wait for the copies, then plan again; nothing was
-/// written). error.Length: a pick above 512 or more picks than the round was sized for.
+/// Plans one round of `layer` (see the file header).
 pub fn plan(
     v: *Vram,
     layer: u8,
@@ -229,9 +211,7 @@ pub fn plan(
     }
     const routed = r.routed[0..n_routed];
     const uniq = r.ids[0..n_unique];
-    // capacity check before anything is written: pass 0 holds the held experts, so at least one more line, or
-    // nothing to copy, must be free of in-flight copies of other experts
-    // (a pass after pass 0 can use every line not in flight, so one such line is enough)
+    // capacity check before anything is written: pass 0 holds the held experts, so at least one more line, or nothing
     var held_n: usize = 0;
     for (uniq) |id| held_n += @intFromBool(offload.lineOf(v.*, layer, id) != null);
     if (n_unique > held_n and blocked(v.*, &.{}) >= v.slots.len) return error.Busy;
@@ -380,8 +360,7 @@ pub fn minLines(top_k: usize) usize {
     return top_k;
 }
 
-/// Lines a layer gets from `free` device bytes after `reserve` and `other` (KV, scratch, graphs: the family's budget),
-/// shared evenly by `layers` pools; refuses fewer than `min_lines` a layer.
+/// Lines a layer gets from `free` device bytes after `reserve` and `other` (KV, scratch, graphs: the family's budget)
 pub fn linesFor(free: u64, reserve: u64, other: u64, line_bytes: u64, layers: usize, min_lines: usize) error{PoolTooSmall}!usize {
     if (line_bytes == 0 or layers == 0) return error.PoolTooSmall;
     const spend = std.math.sub(u64, free, reserve +| other) catch return error.PoolTooSmall;

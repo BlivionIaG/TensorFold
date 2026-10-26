@@ -1,16 +1,4 @@
 //! The MTP draft chain as one CUDA graph (TF_FLASHNEXT_EXL3_GRAPH=1, greedy drafts).
-//!
-//! Upstream's chain (cuda_mtp_ops.Ops.draft) picks a draft on the host after every head step: fn_row_best, a blocking
-//! read of four floats, then the next step uploads that token. Here the whole chain is captured once per shape: each
-//! pick's record stays on the device, fn_exl3_draft_token turns its column into the next step's input token, and the
-//! head step (the same launches as forwardHead for one row, its experts on the device planner) runs on it; the host
-//! reads the chain's records once and applies upstream's confidence rule to them. Every step past an early stop still
-//! runs (its cache entries are past the chain and are trimmed by the next absorb, as drafted entries always are), so
-//! the drafts and their probabilities are upstream's bit for bit (tf-cuda-test flashnext-exl3-graph and the serve
-//! gate's drafted == undrafted).
-//!
-//! `enter`/`leave` (cuda_mtp_ops.forwardHead's hook) also put every head step of up to the planner's rows, eager or
-//! captured, on the device planner, so the head's pool stays device-owned between decode steps.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -218,7 +206,6 @@ fn seams(end: usize, chunks: *u32, tiles: *u32) void {
 }
 
 /// One head step for one row whose token is on the device: forwardHead's launches for `next.len == 1` (streams from
-/// d.out, scores into d.dlogits), its position from the pinned row `j`.
 fn step(comptime Tri: type, o: anytype, tri: Tri, p: *batch.Pass(Tri), d: *mtp.Draft, st: *State, j: usize, len0: usize) !void {
     const e = o.e;
     const h = o.h;
@@ -255,8 +242,6 @@ fn step(comptime Tri: type, o: anytype, tri: Tri, p: *batch.Pass(Tri), d: *mtp.D
 }
 
 /// The chain's launches on `p`'s stream: the decision reset, every pick's record into st.best; after a pick that
-/// continues, its token and decision (fn_exl3_draft_next) and a conditional node whose body (captured on st.side
-/// through `ps`, a pass on that stream) is the next head step: a chain that stops skips its remaining steps.
 fn chainBody(comptime Tri: type, o: anytype, p: *batch.Pass(Tri), ps: *batch.Pass(Tri), d: *mtp.Draft, st: *State, picks: usize, heads: usize, len0: usize, confidence: f64) !void {
     const h = o.h;
     const stream = p.stream;
@@ -402,7 +387,6 @@ fn sameShape(a: Key, b: Key) bool {
 }
 
 /// Replays the chain's graph (true), or captures it; a new graph instantiates on a worker thread and this chain runs
-/// eagerly (false), as does every chain until it landed.
 fn run(comptime Tri: type, key: Key, o: anytype, p: *batch.Pass(Tri), ps: *batch.Pass(Tri), d: *mtp.Draft, st: *State, picks: usize, heads: usize, len0: usize, confidence: f64) !bool {
     clock += 1;
     for (&entries) |*en| if (en.*) |*x| if (std.meta.eql(x.key, key)) {

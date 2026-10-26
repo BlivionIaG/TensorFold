@@ -1,17 +1,8 @@
-//! One row of the Flash Next router.
-//! v0.6.6 `src/tensorfold/cuda/moe.py` `_topk_rows`: fp32 logits, ties to the
-//! lower id, softmax over the selected routed logits only, then the shared
-//! expert in the last slot. Weights and the shared gate round through bf16
-//! the same way as `zig/src/core/contract/contract.zig` `toBf16` / `fromBf16`.
-//! This file does not import that module: `zig test` here cannot use `../`.
+//! One row of the Flash Next router. v0.6.6 `src/tensorfold/cuda/moe.py` `_topk_rows`: fp32 logits, ties to the lower
 
 const std = @import("std");
 
-/// `logits` is `experts + 1` fp32 values. The last value is the shared gate.
-/// `picks` and `weights` hold `topk + 1` slots. The last slot is the shared
-/// expert id (`logits.len - 1`) and its sigmoid weight.
-/// `scratch` is `experts` long and is overwritten.
-/// Length is checked before any store to `picks` or `weights`.
+/// `logits` is `experts + 1` fp32 values.
 pub fn select(
     logits: []const f32,
     topk: usize,

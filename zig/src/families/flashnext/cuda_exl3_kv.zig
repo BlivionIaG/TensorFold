@@ -1,11 +1,4 @@
 //! KV memory for 200k-token contexts on 16 GiB cards (K10, docs/plans/exl3-kv-memory.md): the per-sequence and
-//! per-card byte arithmetic of each lever, and the int8-KV attention kernels (flashnext_exl3_kv.cu).
-//!
-//! The kernels are upstream's flashnext_attn.cu prep / chunks / merge with the cache stored as int8 codes and one fp16
-//! scale a 32-group (exl3_cache.zig's policy: an optional normalized 32-point Hadamard per group). Their pointers may be
-//! device memory or mapped pinned host memory (`HostBuffer.allocMapped(..).device()`): the chunk kernel reads only the
-//! keys the sparse indexer listed (<= 2,051 a row), so a host-resident cache costs PCIe reads, not device bytes.
-//! Not wired into the pass yet: the hook is one branch in cuda_batch.zig attnRows (see the plan).
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -78,7 +71,6 @@ pub fn seqBytes(cap: usize, p: Policy) SeqBytes {
 }
 
 /// The MTP head's one attention layer of its draft cache (the part of cuda_mtp_draft.zig Draft.bytes that grows with
-/// `cap`) under the same policy; the rest of Draft.bytes is fixed (streams, logits, saved states).
 pub fn draftAttnBytes(cap: usize, p: Policy) u64 {
     return (if (p.kv_host) 0 else @as(u64, cap) * kvRowBytes(p.kv, p.heads)) + (if (p.ikc_host) 0 else @as(u64, cap) * index_row) + pooledBytes(cap);
 }
@@ -96,8 +88,7 @@ pub fn chunkSmem(nb: u32) u32 {
     return tile_heads * row + 2 * tile_keys * row + tile_heads * (tile_keys + 8) * 2 + nb * 2 * tile_keys * @as(u32, @intCast(head_dim)) + nb * 2 * tile_keys * @as(u32, @intCast(head_dim / group)) * 2;
 }
 
-/// Rows up to which the chunk kernel keeps the next tile's codes in flight (upstream's bf16 kernel: 16). The int8
-/// tile's smem is one bf16 pair plus NB raw buffers, so NB 2 costs 17 KiB more, not a second bf16 pair.
+/// Rows up to which the chunk kernel keeps the next tile's codes in flight (upstream's bf16 kernel: 16).
 pub var ahead_rows: usize = 16;
 
 pub const Kv8 = struct {
@@ -213,9 +204,6 @@ pub const Kv8 = struct {
 // -- the pass's attention block over an int8 cache ------------------------------------------------------------------
 
 /// cuda_batch.zig Pass.attnBlock with the layer's K/V in `c` (int8 codes + scales) instead of seq.kc/vc: the same
-/// projection, pooling, block scores, selection, gate and output projection; prep, chunks and merge are ours. The hook
-/// in the pass is one branch at the top of attnBlock (`if (self.seq.kv8) |c| return exl3_kv.attnBlock(...)`, plan).
-/// One sequence's rows (a prompt chunk or one stream's decode rows); a decode round over several lanes is refused here.
 pub fn attnBlock(p: anytype, k8: *const Kv8, lw: anytype, ai: usize, c: Kv8.Cache, rot: bool) !void {
     const s = p.s;
     const n = p.rows;
@@ -268,7 +256,6 @@ fn cdiv(a: usize, b: usize) usize {
 // -- the int8 cache in the family's engine (plan §8): `of(engine)`, Seq/SeqState.kv8, Pass.attnRows -------------
 
 /// What an engine's new sequences hold (set once at load by `setup`, before any sequence; kept here by engine address
-/// so prompt.Engine carries no field: upstream's tests build engines field by field).
 pub const EngineKv = struct {
     /// The int8 kernels, loaded: every new sequence keeps int8 K/V (kc/vc hold the codes, SeqKv8 the scales).
     k8: ?*Kv8 = null,
@@ -340,12 +327,9 @@ pub fn enable(e: anytype, int8: bool, rot: bool, ikc_host: bool) !void {
 /// Widest logits pass the server runs (a decode round of 32 streams, an MTP window): `head_local`'s rows.
 pub const head_local_serve_rows: usize = 64;
 /// K10 lever 3: the pass's chunk for an EXL3 checkpoint unless TF_FLASHNEXT_CHUNK says (+3% prompt time a chunk at
-/// 1024 vs 1536, 0.45 GiB less scratch).
 pub const exl3_chunk: usize = 1024;
 
-/// The server's load hook (cuda_lanes_load.zig, right after the engine loads, before any scratch or sequence): the
-/// KV placement from `--kv-cache fp8` (int8 here: our cache is int8 codes, not e4m3) and TF_FLASHNEXT_KV /
-/// TF_FLASHNEXT_IKC_HOST; for an EXL3 checkpoint also the chunk (1024) and `head_local` sized for logits passes only.
+/// The server's load hook (cuda_lanes_load.zig, right after the engine loads, before any scratch or sequence): the KV
 pub fn setup(e: anytype, kv8_flag: bool, exl3: bool) !void {
     const f = fromEnv(kv8_flag);
     const heads = @import("cuda_exl3_heads.zig").kvHeads(e.layers[0..e.n_layers]);
@@ -385,9 +369,7 @@ pub fn logStream(e: anytype, window: usize, stream_bytes: usize) !void {
     });
 }
 
-/// Whether kept prompt states go to pinned host memory (cuda_snap.on_host, set here): TF_FLASHNEXT_SNAP_HOST=1|0,
-/// by default for an EXL3 checkpoint served past 32,768 tokens (its streams leave the card no room for 100+ MiB states
-/// that grow by 27 KiB a token).
+/// Whether kept prompt states go to pinned host memory (cuda_snap.on_host, set here):
 pub fn snapHost(context: usize, exl3: bool) bool {
     var on = exl3 and context > 32768;
     if (std.c.getenv("TF_FLASHNEXT_SNAP_HOST")) |v| on = std.mem.eql(u8, std.mem.span(v), "1");
@@ -397,8 +379,6 @@ pub fn snapHost(context: usize, exl3: bool) bool {
 }
 
 /// cuda_lanes.zig rankRoom: the ranks agree how many STREAMS fit (each its own stream_bytes: rank 1 holds no MTP head
-/// cache, so its streams are smaller), returned as this rank's bytes for that many streams. The native host then
-/// admits the same count on both ranks. Fixed point (1/65536 of a stream) through Session.room's min.
 pub fn rankRoom(r: anytype, local: u64, stream_bytes: usize) !u64 {
     if (stream_bytes == 0) return r.room(local);
     const sb: u64 = stream_bytes;
@@ -445,7 +425,6 @@ pub fn engineSeqBytes(k: EngineKv, cap: usize, chunk: usize) !usize {
 }
 
 /// The snapshot rows of one layer of a sequence of `heads` KV heads: codes or bf16 K (and V) a token, and scales a
-/// token (0: bf16).
 pub fn snapRows(int8: bool, heads: usize) Rows {
     return if (int8) .{ .kv = heads * head_dim, .scales = heads * (head_dim / group) * 2 } else .{ .kv = heads * head_dim * 2, .scales = 0 };
 }
@@ -477,7 +456,6 @@ pub fn forget(gpa: std.mem.Allocator, e: *const anyopaque) void {
 }
 
 /// prompt.Engine.newSeq under a non-default placement: the same buffers, K/V as codes (+ scales) and/or the indexer
-/// keys in one mapped host buffer the 12 layers' DeviceBuffers borrow.
 pub fn newSeq(e: anytype, comptime Seq: type, cap: usize) !Seq {
     const gpa = e.gpa;
     const d = e.driver;
@@ -589,10 +567,7 @@ const Held = struct {
     }
 };
 
-/// cuda_batch.zig Pass.attnRows over an int8 cache (the hook: `if (self.seq.kv8) |c| return ...`): `n` rows of
-/// p.seq from p.pos0, at `at` (positions, queries, indexer queries, outputs). The same projection rows, pooling,
-/// block scores and selection as upstream's; prep, chunks and merge ours. A decode round calls it once a lane with that
-/// lane's seq, as upstream's attnBlock does, so multi-lane rounds take int8 caches too.
+/// cuda_batch.zig Pass.attnRows over an int8 cache (the hook:
 pub fn attnRows(p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype, c: SeqKv8) !void {
     const s = p.s;
     if (p.seq.media != null) return error.Kv8MediaUnsupported;

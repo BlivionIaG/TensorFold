@@ -1,10 +1,4 @@
 //! CPU f64 oracle for one Flash Next MoE block: router, routed experts, shared expert, combine.
-//! Built from `exl3_format.dequantize` (the Zig decoder) and `exl3_cpu.swiglu`, with the model's own
-//! routing maths, not `exl3_route.select`: softmax over all 512 routed logits, take the top `topk`
-//! (ties to the lower id), renormalise by their sum (tensorfold `families/qwen4_exp/model_layers.py`
-//! `SparseMoE.route`). That equals a softmax over only the selected logits, which `select` computes.
-//! Output = sum_k w_k * expert_k(x) + sigmoid(shared_gate . x) * shared(x), with
-//! expert(x) = down(silu(gate x) * (up x)). No CUDA.
 
 const std = @import("std");
 const format = @import("exl3_format.zig");
@@ -54,8 +48,7 @@ pub fn expert(gate: Dense, up: Dense, down: Dense, x: []const f64, gate_buf: []f
     try down.apply(glu_buf, out);
 }
 
-/// `logits` is `experts + 1` values, the last being the shared-gate dot. Writes `picks[0..topk]`
-/// (descending probability, ties to the lower id), their renormalised `weights`, and the shared sigmoid weight.
+/// `logits` is `experts + 1` values, the last being the shared-gate dot.
 pub fn routeFromLogits(logits: []const f64, topk: usize, picks: []u16, weights: []f64, shared_weight: *f64) error{Length}!void {
     if (logits.len < 2 or topk == 0 or topk > logits.len - 1 or picks.len != topk or weights.len != topk) return error.Length;
     const experts = logits.len - 1;

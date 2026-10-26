@@ -1,15 +1,4 @@
 //! exl3-pool: the Flash Next EXL3 expert offload pool (families/flashnext/cuda_exl3_pool.zig, cuda/exl3_pool.zig) on
-//! upstream's `exl3_experts.Experts`, with real tensors of the pack (port of exl3-flashnext-window-wip's exl3-offload).
-//! Host bank: the memory-mapped shards. Reference: the same layer fully resident (513 experts on the device, tables
-//! pointing at them). Every comparison is byte for byte: the pool only changes which device address a pointer table
-//! entry holds, so the kernels must produce the same bits.
-//!
-//!   exl3-pool <pack> equal [layers]   pool at 10, 24, 64 lines vs fully resident over rounds forcing misses, evictions,
-//!                                     split passes (16-row chunks) and prefetch; line bytes, tables, staged-bytes ledger
-//!   exl3-pool <pack> graph [layers]   runSlots captured once over the pool's tables, replayed after line swaps
-//!   exl3-pool <pack> bench [layer]    miss cost a expert and a round (staged and pinned-direct), copy/compute overlap
-//!   exl3-pool <pack> hit <picks.bin>...  hit rate vs line count: synthetic skewed 200 tokens, and real router picks
-//!   exl3-pool <pack> [layers]         equal + graph
 const std = @import("std");
 const cuda = @import("cuda");
 const core = @import("core");
@@ -645,7 +634,6 @@ fn overlapChunk(gpu: Gpu, ex: *const exl3e.Experts, s: cuda.Stream, ld: *const L
 }
 
 /// 60 decode rounds (one row each, skewed picks known ahead), sequential (sync every round) vs pipelined (the host
-/// stages round N+1 while round N computes), with and without double buffering.
 fn decodePipe(gpu: Gpu, ex: *const exl3e.Experts, s: cuda.Stream, ld: *const LayerData, src: fpool.Source, lines: usize, pipelined: bool, double: bool) !struct { wall: f64, hit: f64, release_waits: u64, protected: u64 } {
     const gpa = gpu.gpa;
     var pool = try fpool.Pool.init(gpa, gpu.io, gpu.d, src, ld.scales(), .{ .layer = @intCast(ld.layer), .lines = lines, .direct = true, .double_buffer = double }, null);
@@ -732,8 +720,7 @@ const Sim = struct {
     copies: u64 = 0,
 };
 
-/// Host-only replay of a pick sequence through one layer's policy (the same planner the pool runs).
-/// picks [tokens][10] routed ids; the first `prompt` tokens go in 16-row rounds, the rest one row a round.
+/// Host-only replay of a pick sequence through one layer's policy (the same planner the pool runs). picks [tokens][10]
 fn simulate(gpa: std.mem.Allocator, layer: u8, picks: []const u16, tokens: usize, prompt: usize, lines: usize, prefetch_lines: usize, counts: *[policy.shape.layers][policy.shape.experts]u32) !Sim {
     const slots_tab = try gpa.alloc(u16, lines);
     defer gpa.free(slots_tab);

@@ -1,6 +1,4 @@
-//! CPU GEMV for one EXL3 matrix. No allocation.
-//! The matrix is `exl3_format.dequantize`. y[j] = sum_i x[i] * W[i*N + j].
-//! `gemv` is the scalar oracle. `gemvAvx2` matches it with four column accumulators.
+//! CPU GEMV for one EXL3 matrix.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -14,9 +12,6 @@ const avx2_target = builtin.cpu.arch == .x86_64 and
 const Acc = @Vector(4, f64);
 
 /// fp32 SwiGLU from the v0.6.6 gate-up epilogue (`act_mode` 1).
-/// `gate` is clamped to `limit` from above. `up` is clamped to `[-limit, limit]`.
-/// `out[i] = silu(gate_i) * up_i`. A `limit` of +inf leaves both sides unclamped.
-/// `error.Length` is returned before any store to `out`.
 pub fn swiglu(gate: []const f64, up: []const f64, out: []f64, limit: f64) error{Length}!void {
     if (gate.len != up.len or gate.len != out.len) return error.Length;
     for (gate, up, out) |g, u, *y| {
@@ -26,8 +21,7 @@ pub fn swiglu(gate: []const f64, up: []const f64, out: []f64, limit: f64) error{
     }
 }
 
-/// Weighted sum of `weights.len` expert rows. `rows` is row-major `[topk][n]`.
-/// `out[j] = sum_s weights[s] * rows[s * n + j]`. Length is checked before any store.
+/// Weighted sum of `weights.len` expert rows.
 pub fn combine(rows: []const f64, weights: []const f64, n: usize, out: []f64) error{Length}!void {
     if (n == 0 or out.len != n or weights.len == 0 or rows.len != weights.len * n) return error.Length;
     @memset(out, 0);
@@ -38,8 +32,6 @@ pub fn combine(rows: []const f64, weights: []const f64, n: usize, out: []f64) er
 }
 
 /// K = tiles_k * 16 and N = tiles_n * 16, both multiples of 128 (one Hadamard block).
-/// `scratch` holds 3*K*N f64 values: decoded W in `[0, K*N)`, then `dequantize`'s 2*K*N workspace.
-/// `error.Length` is returned before any store to `y`.
 pub fn gemv(
     w: format.Width,
     codebook: format.Codebook,
@@ -69,10 +61,7 @@ pub fn gemv(
     }
 }
 
-/// Bit-exact with `gemv`. Lane `t` is column `j + t`, and that lane alone adds
-/// `x[i] * W[i * N + j + t]` for increasing `i`. Folding the four products into
-/// one sum is a different dot product. Mul and add stay separate: an FMA would
-/// not match `gemv`. Scratch is the same `3 * K * N` f64 buffer `gemv` uses.
+/// Bit-exact with `gemv`.
 pub fn gemvAvx2(
     w: format.Width,
     codebook: format.Codebook,
@@ -104,7 +93,6 @@ pub fn gemvAvx2(
 }
 
 /// Same four lanes as the AVX2 loop, one left-to-right sum per column.
-/// Strict mode blocks a contracted FMA and a reassociated chain.
 fn accumulatePortable(weight: []const f64, x: []const f64, y: []f64) void {
     @setFloatMode(.strict);
     const k = x.len;
@@ -166,8 +154,7 @@ fn avx2Store(p: [*]f64, v: Acc) void {
         : .{ .memory = true });
 }
 
-/// ymm lanes are columns j..j+3. vmovupd: `scratch` is f64-aligned, not 32.
-/// vmulpd then vaddpd. Not vfmadd, and not an AVX-512 instruction.
+/// ymm lanes are columns j..j+3. vmovupd:
 fn accumulateAvx2(weight: []const f64, x: []const f64, y: []f64) void {
     comptime if (builtin.cpu.arch != .x86_64) @compileError("AVX2 GEMV is x86_64 only");
     const k = x.len;

@@ -1,12 +1,4 @@
-//! EXL3 weights for the Flash Next CUDA family's own loaders (cuda_projection_load.zig, cuda_prompt_load.zig):
-//!  - `Proj`: a projection made of column parts, each an EXL3 matrix in its stored layout (cuda.exl3.Weight, no
-//!    strips reorder) or a dense BF16 lane weight (the F16 in_proj_a/b, widened exactly by the Store), written into
-//!    one row of `n` columns: what Projection.exl3 points at and Pass.lane() runs (cuda_exl3_pass.zig);
-//!  - `Experts`: one layer's 512 routed experts and the shared one as id 512 in the same 513-entry pointer and width
-//!    tables (cuda.exl3_experts.Layer), suh/svh stacked [513, ·], resident;
-//!  - `Ops`: the kernels and scratch every EXL3 projection and expert call of one engine shares (one exl3.Dense, one
-//!    exl3_experts.Experts), counted so the last owner unloads them.
-//! Widths come from each matrix's own trellis (16 * bits int16 words a tile), never from config.json's `bits`.
+//! EXL3 weights for the Flash Next CUDA family's own loaders (cuda_projection_load.zig, cuda_prompt_load.zig)
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -44,8 +36,6 @@ pub const Ops = struct {
     /// Expert parallel's masks, sums and kernels (cuda_exl3_tp.zig), made on first use.
     tp: ?*@import("cuda_exl3_tp.zig").Scratch = null,
     /// Sizing maxima over what was loaded (`reserve` allocates every scratch for them once, before any round): the
-    /// widest EXL3 input, Dense's split partials and counters for 128 rows, the widest part narrower than its row,
-    /// an fp16-input projection's k and n, and one experts layer's shape.
     max_k: usize = 0,
     max_z: usize = 0,
     max_counters: usize = 0,
@@ -114,7 +104,6 @@ pub const Ops = struct {
     }
 
     /// Every scratch the EXL3 calls of a pass of up to `rows` rows read, allocated now (after `s` drains), so no call
-    /// inside a round grows a buffer (a growth synchronises, and would move an address a captured graph holds).
     pub fn reserve(o: *Ops, s: cuda.Stream, rows: usize, moe_rows: usize, slots: usize) !void {
         try s.synchronize();
         if (o.max_k > 0) {
@@ -324,11 +313,7 @@ pub fn load(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, prefix: []co
     return wrap(gpa, d, store, prefix, &.{""}, n, k);
 }
 
-/// Engine.initRank's head for an EXL3 pack: `lm_head` (5-bit, K = 2,560, N = 248,320) as one EXL3 projection that
-/// Pass.lane() runs through exl3.Dense (bf16 logits, as the dense BF16 head writes them); null for any other pack.
-/// At tp=2 the head is split by vocabulary by default (cuda_exl3_tp.headProjection: 124,160 columns a rank at whole
-/// 128-column Hadamard blocks, joined by cuda_batch.zig projectHead's ncclAllGather); TF_FLASHNEXT_SHARD_HEAD=0 keeps
-/// the whole head on both ranks. At tp=1 a split is refused.
+/// Engine.initRank's head for an EXL3 pack:
 pub fn head(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, world: usize, rank: usize) !?projection.Projection {
     if (!has(store, "language_model.lm_head")) return null;
     if (shardHead(world)) return try @import("cuda_exl3_tp.zig").headProjection(gpa, d, store, "language_model.lm_head", world, rank);
@@ -356,9 +341,6 @@ pub fn stitched(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, prefix: 
 }
 
 /// cuda_prompt_load's PLE branch: an EXL3 pack's n-gram rows reach key_proj and value_proj as fp16 bit patterns
-/// (cuda_exl3_ple.zig's default, as the reference multiplies fp16 rows by the F16 projections), so both dense
-/// projections take fp16 rows: split exactly into two bf16 rows, two bf16 products summed in fp32
-/// (cuda_exl3_pass.zig). TF_FLASHNEXT_PLE_EMB=bf16 keeps the bf16 lanes (the rows then come rounded to bf16).
 pub fn pleRows(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, key: *projection.Projection, value: *projection.Projection) !void {
     if (store.exl3_ops == null) return; // not an EXL3 pack: the n-gram rows are bf16
     if (@import("cuda_exl3_ple.zig").optionsFromEnv().emb != .f16) return;
@@ -381,9 +363,6 @@ pub fn pleRows(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, key: *pro
 }
 
 /// One layer's routed experts and the shared expert (id `wt.experts_n`) for exl3_experts.Experts.
-/// Resident (TF_FLASHNEXT_EXL3_ROUTED=device): every trellis on the device, `layer` complete at load.
-/// Offloaded (the default): the routed and shared trellis words in `bank` (pinned host memory, one region a layer),
-/// the stacked suh/svh on the device, and `layer`'s six tables are the pool's (`attach`, once the family has sized it).
 pub const Experts = struct {
     gpa: std.mem.Allocator,
     ops: *Ops,
@@ -439,7 +418,6 @@ pub const Experts = struct {
     }
 
     /// Makes the pool: `lines` device lines, `counts` the family's lifetime use table (null: the pool's own), `layer`
-    /// the policy's index; then `layer`'s tables are the pool's (fixed addresses, rewritten in place on a swap).
     pub fn attach(x: *Experts, io: std.Io, d: *const cuda.Driver, which: u8, lines: usize, max_rows: usize, counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !void {
         if (x.bank == null or x.pool != null) return error.Invalid;
         const p = try x.gpa.create(pool_.Pool);
@@ -478,7 +456,6 @@ fn align256(n: usize) usize {
 }
 
 /// Every routed expert of `mlp`, the shared expert as id 512 (the same 2560 x 640 x 2560 shape): resident, or with
-/// their trellis words in one pinned host region (see `Experts`).
 pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, mlp: []const u8, world: usize, rank: usize) !*Experts {
     if (world != 1 or rank != 0) return @import("cuda_exl3_tp.zig").experts(gpa, d, store, mlp, world, rank); // plan step 10
     const count = wt.experts_n + 1;

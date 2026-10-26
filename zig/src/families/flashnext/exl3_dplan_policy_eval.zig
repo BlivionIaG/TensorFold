@@ -1,19 +1,4 @@
-//! CPU counterfactuals for one ordered pool-demand timeline. Options.seed supplies
-//! the trace's initial state when requested; policies share that initial
-//! state and evolve independently. Raw picks determine demand and LRU order.
-//! Misses are measured against residency at the start of each round. Every current
-//! demand is pinned, including newly admitted experts; excess misses use the mapped
-//! bank. One admission means one whole-expert copy, with no prefetch or byte model.
-//! Counts describe this model only and do not predict runtime or transfer latency.
-//! Lifetime uses saturating u32 counts, hottest-miss admission, then count/stamp/line
-//! victim ties as in DPLAN. LRU admits most recently picked misses first and evicts
-//! least recently picked residents, preserving raw last-pick order within a round.
-//! Decayed frequency right-shifts every score at configured round boundaries before
-//! adding appearances; it admits by score/appearances/ID and evicts by score/LRU/line.
-//! Decayed admission additionally bypasses a newcomer colder than its eligible victim.
-//! Seeds initialize scores for frequency policies; no pre-trace decay history
-//! can be inferred. Seed stamps initialize LRU with numeric stamp order and line ties.
-//! More than 256 unique routed experts is rejected because DPLAN overflows there.
+//! CPU counterfactuals for one ordered pool-demand timeline.
 
 const std = @import("std");
 const trace = @import("exl3_dplan_trace.zig");
@@ -291,14 +276,7 @@ pub fn evaluateTrace(allocator: std.mem.Allocator, view: trace.View) !Comparison
     return total;
 }
 
-/// Belady with optional admission is optimal for uniform-cost sequential requests:
-/// on a full-cache miss, discard the farthest-next-use of residents AND the incoming
-/// expert (discarding the incoming expert is a bypass). Equal next uses may tie.
-/// The stream contains each expert once per round, in raw first-appearance order.
-/// It relaxes round pinning. Every feasible round policy has a feasible sequential
-/// execution with the same unique misses, so this optimum is a lower bound on
-/// miss_experts only. Repeated pick costs, copies and mapped reads are not bounded.
-/// Future use ends at the supplied trace boundary; no unseen suffix is inferred.
+/// Belady with optional admission is optimal for uniform-cost sequential requests: on a full-cache miss, discard the
 pub fn beladyLowerBound(allocator: std.mem.Allocator, rounds: []const trace.Round, options: Options) !u64 {
     try validateOptions(options);
     var count: usize = 0;

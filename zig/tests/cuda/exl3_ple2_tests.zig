@@ -1,14 +1,4 @@
-//! exl3-ple2: an EXL3 pack's n-gram path on v1.1.0's Flash Next family (cuda_ple.Ngram with `format = .exl3`).
-//! 1. Row ids: upstream's `lastIds` against the numpy port of tensorfold qwen4_exp `NGram.ids` (crc32 recorded on the
-//!    exl3-flashnext-window-wip branch, qbench row 3, 24 tokens) and, element by element, against that branch's
-//!    `exl3_ple_ids.ids` (ported below as `oursIds`) over every token of all 22 qbench prompts.
-//! 2. Rows: the stored bytes through the mapping and through pread + hot cache, byte-equal, crc32 equal to the numpy
-//!    reference; `Ngram.rows` decoded values (fp16) in both reader modes, crc32 equal to the numpy port of `_ple_rows`.
-//! 3. RSS: the 30.4 GiB file is not resident (mapping and pread), and the hot cache's hit ratio over real text.
-//! 4. The layer-1 injection through upstream's own kernels (fn_ple_gate, fn_ple_conv) on real EXL3 weights (F16
-//!    key/value projections done on the host as the reference's F16 dense does, conv weights F16 -> bf16 as exl3.py
-//!    does), whole-prompt and token-by-token, against the float64 oracle and the f32/bf16 emulation of the reference.
-//! Usage: tf-cuda-test exl3-ple2 <pack dir> [qbench row (3)] [tokens (24)]
+//! exl3-ple2: an EXL3 pack's n-gram path on v1.1.0's Flash Next family (cuda_ple.Ngram with `format = .exl3`). 1.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -346,7 +336,7 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         const got = crc(bytesOf(i64, ids));
         std.debug.print("ids[0][0..4] = {any}; ids crc32 {x:0>8} (numpy NGram.ids {x:0>8})\n", .{ ids[0..4], got, py_ids_crc });
         if (qrow == 3 and count == 24) try check.expect(got == py_ids_crc, "upstream lastIds crc32 {x:0>8} != numpy {x:0>8}", .{ got, py_ids_crc });
-        // every token of every qbench prompt: upstream's lastIds against the branch's incremental ids, element by element
+        // every token of every qbench prompt: upstream's lastIds against the branch's incremental ids, element by
         var compared: usize = 0;
         var eos_seen: usize = 0;
         for (qrows) |r| {

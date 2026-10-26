@@ -108,8 +108,7 @@ pub const Rule = struct {
         }
     }
 
-    /// A finished round's tokens and wall ms. A round's time includes the head chain it launched for the next round, so it
-    /// counts as drafted when its end chose drafts (preferPlain ran before this) and as plain when it chose none.
+    /// A finished round's tokens and wall ms.
     pub fn observeRate(r: *Rule, who: Who, tokens: usize, ms: f64) !void {
         _ = try r.rates(who);
         const st = &who.state.*.?;
@@ -126,8 +125,6 @@ pub const Rule = struct {
     }
 
     /// Whether the stream's next round runs without the head's drafts: its measured plain tokens a ms beat its drafted
-    /// ones (by `plain_margin`). Drafts are measured first, then plain once; a plain stream drafts one probe round
-    /// after a growing run of plain rounds, so a change of text (code after prose) is noticed.
     fn preferPlain(r: *Rule, who: Who) !bool {
         _ = try r.rates(who);
         const st = &who.state.*.?;

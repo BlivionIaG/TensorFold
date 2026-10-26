@@ -204,7 +204,7 @@ Status: active implementation, 2026-10-20. Branch `exl3-c-main`. Task: prove a d
 paging cache at long context on upstream's attention kernels: a sequence's full bf16 K/V in pinned host memory, the
 card holding a recent dense window plus an LRU cache of the 4-key blocks the sparse indexer selects.
 
-Every number is tagged: **measured** (par1-cs13, one idle RTX 5060 Ti under `~/bin/gpurun`, sm_120), **replay**
+Every number is tagged: **measured** (the test machine, one idle RTX 5060 Ti under `~/bin/gpurun`, sm_120), **replay**
 (offline simulation over measured selection traces), or *estimate* (arithmetic, not a run).
 
 ## 1. What the attention reads (measured traces, replayed)
@@ -403,7 +403,7 @@ placement-aware `newSeq` path honors the BF16 pager instead of allocating reside
 uses the same sequence layout, configured chunk and one-row placeholders. Quantized KV and split-head placement are
 rejected when paging is enabled. Later work adds pager-aware snapshot state and TP2 graph replay counters.
 
-Latest hardware gates (par1-cs13, both 5060 Ti cards, TP=2): graph snapshot/restore parity passes on both ranks.
+Latest hardware gates (the test machine, both 5060 Ti cards, TP=2): graph snapshot/restore parity passes on both ranks.
 The 12,040-token two-request HTTP gate passes with BF16 paging, MTP, graph mode and exact warm/branch/rewind cache
 parity; each rank logs prefill replays and captures. Four alternating 4,139-token DPLAN/graph runs also preserve exact
 cross-mode hashes and cache hits, but do not show a repeatable graph speedup. The 16,384-row deep-prefill graph gate

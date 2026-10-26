@@ -1,16 +1,4 @@
 //! DPLAN v4: default off, little-endian u32 words, fixed 1 MiB per device pool.
-//! Header: magic, version, pool, layer, lines, max_rows, state_words, record_words,
-//! capacity, recorded, dropped low/high, discontinuity, invalid launch, checkpoints,
-//! dropped checkpoints. Round records grow forward; ownership checkpoints grow
-//! backward from the buffer end. Each checkpoint is {round index, kind=1,
-//! state_words, ordinal}, followed by the outgoing and incoming full states.
-//! One full initial seed and one terminal checkpoint precede fixed-size records.
-//! Records: rows, valid picks, unique experts, recent flag, ten POST-plan misc words,
-//! mapped pick count, then max_rows * 11 raw i32 pick bits in original row order.
-//! A pre-state unequal to the previous checkpoint invalidates the timeline.
-//! First capacity rounds are retained; excess rounds saturate a u64 drop counter.
-//! Counters describe planner decisions, not completed weight reads. Submissions
-//! and joined diagnostic reads must obey DevPlan's serialized compute timeline.
 
 const std = @import("std");
 const layout = @import("exl3_dplan_layout.zig");

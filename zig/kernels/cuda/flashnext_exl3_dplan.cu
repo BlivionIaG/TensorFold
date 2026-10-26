@@ -1,16 +1,4 @@
 // The Flash Next family's EXL3 device-side pool plan (cuda_exl3_dplan.zig): one layer's offload round planned on the
-// device, so a decode step needs no host wait between the router and the experts and runs as ONE captured graph.
-//
-// The rules are the host planner's (exl3_round.zig `plan` over exl3_offload.zig's Vram, one pass, no prefetch, no
-// double-buffer protection): the round's routed picks raise the layer's lifetime counts; held experts are touched
-// (stamp = now); misses, hottest first (count desc, appearances desc, id asc), each take the first empty line, else the
-// coldest resident line not used by this round (count asc, stamp asc, higher line). A miss's three table entries point
-// into its line, the evicted expert's are zeroed, and its copy (host bank -> line) joins the work list that
-// fn_exl3_dcopy runs next. Every line must fit: the caller only plans rounds of at most `lines` distinct experts.
-//
-// State, per layer (u32 words at `st`): line_id[L] (expert or -1), stamp[L], line_of[512] (line or -1), counts[512],
-// then now, rounds, hit_slots, miss_slots, copies, evictions, overflow, in-place reads (more misses than lines
-// free of the round's experts: read from the mapped bank in place for that round).
 
 #include <stdint.h>
 
@@ -167,9 +155,6 @@ __device__ __forceinline__ bool dp_colder(unsigned ca, unsigned sa, int ia, unsi
 }
 
 // One block of 256 threads. picks [n] int32 (-1 skipped, 512 the shared expert, masked to the rank's ids at tp=2).
-// tab: three int64 [E] pointer tables then (k2tab) three int32 [E] width tables (the pool's, exl3_pool.Tables).
-// src: per routed expert three host-bank device addresses, lens: their byte counts, k2: their half-bit widths.
-// work: per copy three {src, dst, len} triples (int64), work_n: the copy count.
 extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
     const int* __restrict__ picks, int n, unsigned* __restrict__ st, int lines, int recent_enabled, long long* __restrict__ tab0,
     long long* __restrict__ tab1, long long* __restrict__ tab2, int* __restrict__ k2t0, int* __restrict__ k2t1,
@@ -283,8 +268,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
         n_ovf = 0;
     }
     __syncthreads();
-    // the split (optional): picks held when the round started (and the shared expert) vs the misses this round copies;
-    // the experts of the first set run while the copies of the second land
+    // the split (optional): picks held when the round started (and the shared expert) vs the misses this round copies
     if (hit_picks != nullptr) {
         for (int i = t; i < n; i += blockDim.x) {
             const int p = picks[i];
@@ -366,8 +350,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
                 n_copy += 1;
                 misc->copies += 1;
             } else {
-                // no line is free of this round's experts: the expert is read in place from the mapped host bank
-                // this round (same bytes, so the same results; slower), and its entries are cleared after the round
+                // no line is free of this round's experts: the expert is read in place from the mapped host bank this
                 for (int w = 0; w < 3; ++w) {
                     tabs[w][id] = src[id * 3 + w];
                     k2s[w][id] = k2[id * 3 + w];
@@ -404,7 +387,6 @@ extern "C" __global__ void fn_exl3_drestore(const int* __restrict__ ovf, const i
 }
 
 // The planned copies: each segment {src (host bank, mapped), dst (a line), len (bytes, a multiple of 16)} read as
-// 16-byte words by the whole grid. Reads of pinned host memory over PCIe: many independent loads in flight.
 extern "C" __global__ void __launch_bounds__(256) fn_exl3_dcopy(const long long* __restrict__ work,
                                                                 const int* __restrict__ work_n) {
     const int segs = *work_n * 3;
@@ -427,15 +409,12 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dcopy(const long long*
 }
 
 // The draft chain on the device (cuda_exl3_chain.zig): fn_row_best's record [best, log-sum-exp, column bits, -] of a
-// draft row picks the draft vocabulary's id at that column as the next chained step's input token.
 extern "C" __global__ void fn_exl3_draft_token(const float* __restrict__ best, const unsigned* __restrict__ ids,
                                                int* __restrict__ token) {
     if (threadIdx.x == 0 && blockIdx.x == 0) token[0] = static_cast<int>(ids[__float_as_int(best[2])]);
 }
 
 // The chain's step decision on the device: the next token as fn_exl3_draft_token, then upstream's stop rule
-// (Ops.draft: a pick below `confidence` ends the chain) folded into `alive`, which also drives the conditional
-// node around the next head step (cudaGraphSetConditional) and is kept per step for the host.
 extern "C" __global__ void fn_exl3_draft_next(const float* __restrict__ best, const unsigned* __restrict__ ids,
                                               int* __restrict__ token, int* __restrict__ alive,
                                               int* __restrict__ alive_out, cudaGraphConditionalHandle handle,

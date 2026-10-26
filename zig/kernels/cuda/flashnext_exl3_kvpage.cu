@@ -1,21 +1,4 @@
 // Dynamic KV paging for Flash Next attention (ours; cuda_exl3_kvpage.zig, docs/plans/exl3-kv-paging.md).
-//
-// A sequence's full K/V of each attention layer lives in (mapped, pinned) host memory, [pos][2][256] bf16 each. The
-// card keeps one compact buffer for K and one for V, [12 windows of WR rows | S slots of 4 rows]: a layer's window
-// holds its positions [win0, win0 + WR) densely; the slots, shared by the 12 layers, hold 4-key blocks the sparse
-// indexer selected (slot2blk keys a slot by layer * nblocks + block). A layer's kernels see the buffer from its own
-// window: window rows 0..WR-1, slot s at row SB + 4 s with SB = (12 - layer) * WR. After
-// upstream's fn_qsa_select listed each row's keys (positions), these kernels
-//   kvp_plan   (one block): the call's unique blocks outside the window; hits are stamped with the call's epoch; the
-//              misses take the least recently used slots (radix selection of the smallest stamps, as fn_qsa_select
-//              picks the largest scores; equal stamps claimed in any order), and the block <-> slot tables updated;
-//   kvp_fetch  : each miss's 4 rows of K and V read from host memory into its slot;
-//   kvp_remap  : each sparse row's key list rewritten from positions into rows of the compact buffer;
-// so upstream's fn_attn_chunks / fn_attn_merge run unchanged on the compact buffer. Dense rows (<= 2051 keys) read
-// rows 0..n-1, which is the window while win0 == 0 (the window is never moved before position WR - chunk).
-//
-// ctl (ints, one set a layer): [0] sequence clock (layer 0 only), [1] misses of the last call, [2] sticky failure,
-// [3] misses in total, [4] needed blocks in total, [5] calls with a sparse row, [6] last executed epoch.
 #include <cuda_bf16.h>
 #include <stdint.h>
 
@@ -130,7 +113,6 @@ __device__ __forceinline__ void kvp_plan_body(const int* __restrict__ ids, const
         __syncthreads();
     }
     // every slot above the cut and `left` of those equal to it (any of them: equal stamps are equally old) take the
-    // misses; claims through two shared counters, so no block-wide scan
     __shared__ int s_eq, s_place;
     if (threadIdx.x == 0) {
         s_eq = 0;
@@ -194,7 +176,6 @@ extern "C" __global__ void __launch_bounds__(256) kvp_shared_release(
 }
 
 // Each miss's block: 4 rows of K and of V (ROW16 16-byte words a row) from host memory into its slot (dk / dv: the
-// slots' first row, WR 0; or a layer's window base with WR its slot base rows).
 extern "C" __global__ void __launch_bounds__(256) kvp_fetch(const uint4* __restrict__ hk, const uint4* __restrict__ hv,
                                                             uint4* __restrict__ dk, uint4* __restrict__ dv,
                                                             const int* __restrict__ ctl, const int* __restrict__ fetch,
@@ -244,7 +225,6 @@ extern "C" __global__ void __launch_bounds__(256) kvp_remap(int* __restrict__ id
 }
 
 // n rows of 16-byte words: dst[i] = src[i] for i < n (a window move within one buffer, issued in non-overlapping
-// pieces by the host, or a write-out to host memory).
 extern "C" __global__ void __launch_bounds__(256) kvp_copy(const uint4* __restrict__ src, uint4* __restrict__ dst, long long n) {
     for (long long i = static_cast<long long>(blockIdx.x) * blockDim.x + threadIdx.x; i < n; i += static_cast<long long>(gridDim.x) * blockDim.x) dst[i] = src[i];
 }

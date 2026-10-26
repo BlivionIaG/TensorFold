@@ -1,12 +1,4 @@
 //! Dynamic KV paging for long contexts (docs/plans/exl3-kv-paging.md): a sequence's full K/V of the 12 attention
-//! layers in pinned host memory, the card holding a recent dense window and an LRU-like cache of the 4-key blocks
-//! the sparse indexer selects. Upstream's attention kernels are unchanged: they read K/V through the rows' key lists,
-//! so the paged path rewrites each list into positions of one compact device buffer [window | block slots].
-//!
-//! Also the selection trace (TF_FLASHNEXT_KVPAGE_TRACE): every attention row's selected blocks, recorded after
-//! fn_qsa_select, for the offline cache replay (tools/exl3_kvpage_replay.py).
-//!
-//! The hook in the pass is one line at the top of cuda_batch.zig attnRows (`takes` / `attnRows` here).
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -40,8 +32,7 @@ fn cint(v: usize) c_int {
 
 // -- the selection trace --------------------------------------------------------------------------------------------
 
-/// Records: u32 layer (attention index), u32 first position, u32 rows, u32 kind (0 prompt, 1 decode round); then a
-/// row each: u16 count (0: the row is dense, else 512) and that many u16 block ids (block = key / 4), in block order.
+/// Records: u32 layer (attention index), u32 first position, u32 rows, u32 kind (0 prompt, 1 decode round); then a row
 pub const Trace = struct {
     gpa: std.mem.Allocator,
     out: std.ArrayList(u8) = .empty,
@@ -107,7 +98,6 @@ pub fn takes(seq: anytype) bool {
 }
 
 /// cuda_batch.zig attnRows (rope, cache writes, pooling, then each 256-row block's scores, selection and attention)
-/// with the trace after each selection, or with the sequence's paged K/V. `at` is the pass's RowsAt.
 pub fn attnRows(p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype) !void {
     if (p.seq.media != null) return error.KvPageMedia;
     if (p.seq.paged) |pg| return pg.attnRows(p, lw, ai, pa, n, at);
@@ -153,8 +143,7 @@ pub fn select(p: anytype, iq: u64, pooled: u64, pos: u64, nb: usize, m: usize, e
 
 // -- the paged store ------------------------------------------------------------------------------------------------
 
-/// Shape of a paged sequence's device side (TF_FLASHNEXT_KVPAGE=1 turns it on for every new sequence; the sizes
-/// from TF_FLASHNEXT_KVPAGE_WINDOW / _SLOTS / _ROWS).
+/// Shape of a paged sequence's device side (TF_FLASHNEXT_KVPAGE=1 turns it on for every new sequence; the sizes from
 pub const Config = struct {
     /// Tokens kept dense on the card before a call's first row (>= 2051, so a dense row's keys are all in it).
     window: usize = 4096,
@@ -298,8 +287,7 @@ pub const Stats = struct {
     }
 };
 
-/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256];
-/// on the card, for K and for V, [12 windows of wr rows | 4 * slots rows] [2][256] bf16 and the block tables.
+/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256]
 pub const Paged = struct {
     gpa: std.mem.Allocator,
     d: *const cuda.Driver,
@@ -517,8 +505,7 @@ pub const Paged = struct {
         try pg.d.check(pg.d.api.cuMemcpyDtoDAsync_v2(dst, src, n, stream.handle), "cuMemcpyDtoDAsync");
     }
 
-    /// Moves the window so rows [pos0, pos0 + n) fit: the rows that leave it are written out to host memory, the
-    /// last `window` tokens before pos0 move to the window's start (pieces no longer than the shift: no overlap).
+    /// Moves the window so rows [pos0, pos0 + n) fit: the rows that leave it are written out to host memory, the last
     fn rebase(pg: *Paged, ai: usize, pos0: usize, stream: cuda.Stream) !void {
         const w0 = pg.win0[ai];
         const new0 = (pos0 -| pg.cfg.window) / ratio * ratio;
@@ -541,7 +528,6 @@ pub const Paged = struct {
     }
 
     /// Every row the sequence holds written out to host memory (the window's rows too): host K/V then equal what an
-    /// all-on-device cache would hold, for a check or a snapshot.
     pub fn flush(pg: *Paged, stream: cuda.Stream, fed: usize) !void {
         _ = try pg.snapshot(fed);
         for (0..attn_n) |ai| try pg.flushLayer(stream, ai, fed);
@@ -655,7 +641,6 @@ pub const Paged = struct {
     }
 
     /// One call's paging after fn_qsa_select listed `m` rows' keys in qids / qnk / qspr: the plan (hits stamped, the
-    /// misses given the least recently used slots), the misses' rows fetched from host memory, the lists remapped.
     pub fn page(pg: *Paged, stream: cuda.Stream, ai: usize, qids: u64, qnk: u64, qspr: u64, m: usize) !void {
         if (ai >= attn_n) return error.KvPageRows;
         if (try pagingRows(pg.cfg, pg.win0[ai], m) != m) return error.KvPageCapacity;
@@ -771,8 +756,7 @@ pub const Paged = struct {
         return pg.host.bytes[off..][0 .. pg.cap * row_bytes];
     }
 
-    /// attnRows over the paged cache: prep writes the rows into the window (its base offset by -win0 rows), and
-    /// each 256-row block's key lists go through kvp_plan / kvp_fetch / kvp_remap before upstream's chunks and merge.
+    /// attnRows over the paged cache: prep writes the rows into the window (its base offset by -win0 rows), and each
     pub fn attnRows(pg: *Paged, p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype) !void {
         try pg.validateSharedLeaseOn(p.stream);
         const s = p.s;

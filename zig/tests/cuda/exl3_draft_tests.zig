@@ -1,11 +1,4 @@
 //! exl3-draft: the MTP draft head rows of an EXL3 pack (cuda_exl3_mtp.draftRows) against the full EXL3 lm_head.
-//! The 79,591 draft ids' rows are decoded from lm_head's trellis (exl3_format.dequantize per 128-column block, one bf16
-//! rounding). For hidden vectors x (a real embedding row and a random row, bf16), the draft logits sum_k x_k row_v[k]
-//! (float64) are compared with
-//!   - the full head through upstream's exl3.Dense (fp32 out) at the draft columns, and
-//!   - the exact float64 product x · diag(suh) H Wq H diag(svh) at those columns (first x only: 636M products),
-//! each within the bf16 bound 2^-9 sum_k |x_k W[k,v]| (plus the kernel's own error against float64 for the GPU).
-//! Usage: tf-cuda-test exl3-draft <pack dir> [threads]
 
 const std = @import("std");
 const cuda = @import("cuda");

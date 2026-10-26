@@ -11,7 +11,7 @@ same bytes over PCIe through the same device pointer). Every kernel, the maths a
 reference engine's own. The capacity admission is bypassed (the weights do not "fit" by its rule), and the
 engine is built directly (``decode.Engine``) without MTP, graphs or the HTTP server.
 
-Usage (par1-cs13, one card):
+Usage (the test machine, one card):
   ~/bin/gpurun 1 env TORCH_EXTENSIONS_DIR=$HOME/tensorfold-c-ref/ext \
       /data/src/kt-venv/bin/python tools/exl3_ref_golden.py --tf ~/tf-final/src \
       --pack /data/models/Qwen3.8-Flash-Next-exl3-3.05bpw --out golden.json

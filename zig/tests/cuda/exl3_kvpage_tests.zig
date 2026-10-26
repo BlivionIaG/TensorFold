@@ -1,41 +1,4 @@
 //! exl3-kvpage: dynamic KV paging for long contexts (docs/plans/exl3-kv-paging.md) on the family's Engine with the
-//! EXL3 offload pool, as serve attaches it (one card).
-//!
-//!   exl3-kvpage DIR trace IDS N[,N..] DECODE OUT [prompt]
-//!       the first N ids of IDS (u32 little-endian, real text) prefilled, then DECODE greedy rounds; every attention
-//!       row's selected blocks recorded (cuda_exl3_kvpage.Trace) into OUT-N.bin (prompt rows only with `prompt`)
-//!   exl3-kvpage none kernel [SLOTS]
-//!       the paging kernels on synthetic key lists: every remapped key reads its own host row, misses against an
-//!       LRU model on the host, the plan's cost a call
-//!   exl3-kvpage DIR cmp IDS N[,N..] DECODE WINDOW SLOTS [NEEDLE_AT]
-//!       each prompt through the all-on-device cache, then through the paged one (window WINDOW tokens a layer, SLOTS
-//!       4-key block slots shared by the 12 layers): the prefill's last logits and the DECODE greedy tokens must be
-//!       bit-equal, and every K/V row of every attention layer equal after the decode (paged rows flushed to host);
-//!       ms, copies and device bytes.
-//!       NEEDLE_AT (a fraction, e.g. 0.25): a sentence with a 5-digit code inserted that far into the text and a
-//!       question about it appended; the greedy answer must contain the code (both caches)
-//!
-//! BF16 paged snapshot acceptance plan (the format/order contract is in cuda_snap.zig):
-//! 1. Host-driver fakes: allocate/save/restore failures at every section, queued copies drained before freeing,
-//!    truncated/unknown formats and checked-size overflow, exact byte admission, incompatible capacity/geometry,
-//!    no mutation on preflight rejection, and no successful publication after a partial copy failure.
-//! 2. Kernel lifecycle: save at 0, 1, 3, 4, dense/sparse boundaries, and immediately before/after several rebases.
-//!    Seed distinct BF16 bit patterns (including NaNs/signed zero) per layer/K/V/row, dirty window tails and occupied
-//!    LRU slots; compare canonical rows, device windows/slots, both mapping directions, marks, epochs and stamps.
-//!    Test same-sequence rewind, restore into a distinct compatible sequence, source drop, repeated restore and
-//!    snapshot drop while two other sequences remain live. Host snapshots must remain immutable through each case.
-//! 3. Model continuation: save, run a suffix, restore, then require bit-identical eager logits and flushed BF16 K/V
-//!    for that suffix; repeat across a window rebase and with partial pooled blocks and PLE n-gram history.
-//! 4. MTP: require a settled head mark; reject outstanding drafts. Populate verification cache before restore and
-//!    inject a delayed pre-restore publication; neither may survive the generation change. Check restored head
-//!    rows, len/drafted/rows, recurrent rollback state and drafted/serial continuation equality across rebases.
-//! 5. TP2/graphs: two distinct live histories, staggered rebases, capture/replay before AND after restore, and drop/
-//!    recreation of one lane while the other remains live. Compare every rank's canonical K/V and outputs to eager;
-//!    require both attention and GDN graph reuse where compatible, and recapture when origin arguments differ.
-//! 6. Inject one-rank overflow, copy failure, delayed instantiation and peer failure. Require bounded failure,
-//!    joined producers, no failed-batch results or stale verification results, no live-buffer reuse and clean drop.
-//! 7. After those gates, two concurrent 200k TP2 requests with BF16 RAM paging, snapshot branch/reuse and MTP, graph
-//!    prefill/decode parity, host/device peak accounting and cold/warm timings. No gate above has been run here.
 const std = @import("std");
 const cuda = @import("cuda");
 const check = @import("check.zig");

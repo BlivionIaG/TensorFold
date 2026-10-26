@@ -1,11 +1,8 @@
-//! EXL3 safetensors header scan. Names and shapes only. No weight bytes.
-//! Group rules follow the v0.6.6 `parse_group` checker.
-//! `centredOffset` copies at most 64 means onto the stack. A longer slice is `NormAmbiguous`.
+//! EXL3 safetensors header scan.
 
 const std = @import("std");
 
 /// Same tags, in the same order, as `exl3_format.Codebook`.
-/// This file is its own `zig test` root, so it cannot import `../../core/exl3_format.zig`.
 pub const format = struct {
     pub const Codebook = enum { inst3, mcg, mul1 };
 };
@@ -117,8 +114,6 @@ pub fn admit(codebook: []const u8, average_bits: f32, head_bits: ?f32, mtp_bits:
 }
 
 /// 1 when centred norms are stored as gamma-1, 0 when stored as gamma.
-/// Empty input returns 1. More than 64 means is `NormAmbiguous` and is not allocated.
-/// Median is the upper middle element, `sorted[len / 2]`.
 pub fn centredOffset(means: []const f32) error{NormAmbiguous}!f32 {
     if (means.len == 0) return 1;
     if (means.len > 64) return error.NormAmbiguous;

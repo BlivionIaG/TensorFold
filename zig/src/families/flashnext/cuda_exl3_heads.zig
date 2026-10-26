@@ -1,19 +1,4 @@
 //! The attention head split across the two expert-parallel ranks (docs/plans/exl3-kv-memory.md lever (b), §3): rank r
-//! keeps query heads 12r..12r+11 and KV head r of every full-attention layer, so each rank's K/V cache is half of
-//! upstream's replicated one. The indexer (its projection, pooled keys, scores and selection) stays replicated: both
-//! ranks list the same blocks from the same keys.
-//!
-//! Loader (cuda_prompt_load.zig's attention branch, one hook): the stitched q|k|v|indexer row keeps q_proj's columns
-//! [6144r, 6144r + 6144) (12 heads of [query 256 | gate 256]), k_proj's and v_proj's [256r, 256r + 256) and the whole
-//! indexer projection (640): 7,296 columns, all whole 128-column EXL3 Hadamard blocks, so every kept column is the
-//! whole matrix's column bit for bit (the output transform is block diagonal). o_proj keeps input rows
-//! [3072r, 3072r + 3072): 24 whole 128-row blocks of the input transform, so each rank's product is a partial sum of
-//! the whole one and one fp32 all-reduce of [rows, 2560] a layer adds the two (not bit-identical to tp=1: fp32 order).
-//!
-//! Pass (cuda_batch.zig attnBlock, one hook keyed on the layer: its projection is 7,296 wide): upstream's kernels with
-//! the rank's head counts (fn_attn_prep / _chunks / _merge / _gate take PW, NQ, NKV, H, HK, G as arguments), then
-//! o_proj into s.part slice 0 and the collective sum. bf16 K/V only (the int8 cache refuses a split layer).
-//! TF_FLASHNEXT_ATTN_SPLIT=0 keeps upstream's replicated attention at tp=2.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -38,8 +23,7 @@ comptime {
     std.debug.assert(rank_pw == 7296 and rank_out_k == 3072);
 }
 
-/// Whether attention layers split at `world`: at 2 unless TF_FLASHNEXT_ATTN_SPLIT=0; never at 1. K/V paging
-/// (TF_FLASHNEXT_KVPAGE=1) reads the replicated layout only, so it takes precedence over the split.
+/// Whether attention layers split at `world`: at 2 unless TF_FLASHNEXT_ATTN_SPLIT=0; never at 1.
 pub fn splitAt(world: usize) bool {
     if (world != 2) return false;
     if (@import("cuda_exl3_kvpage.zig").configFromEnv() != null) return false;
@@ -171,8 +155,7 @@ fn cdiv(a: usize, b: usize) usize {
     return (a + b - 1) / b;
 }
 
-/// cuda_batch.zig Pass.attnBlock for a split layer: the rank's projection row, its heads' attention on its KV head,
-/// the gate, o_proj's partial sum into s.part slice 0 (the other slices zeroed by the EXL3 lane), then the ranks' sum.
+/// cuda_batch.zig Pass.attnBlock for a split layer: the rank's projection row, its heads' attention on its KV head
 pub fn attnBlock(p: anytype, lw: anytype, ai: usize) !void {
     const s = p.s;
     const n = p.rows;

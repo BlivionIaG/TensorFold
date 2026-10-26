@@ -1,8 +1,4 @@
 //! exl3-pack: v1.1.0's EXL3 operators (exl3.Dense, exl3_experts.Experts) on a real Flash Next EXL3 pack's shapes.
-//! Each projection: the error of rows 1 and 5 against an exact float64 product (x · diag(suh) H Wq H diag(svh)),
-//! then the min over 5 batches of the mean call time (cudaEvent). The routed experts: one row's ten picks of
-//! layer 0 (gate, up, SwiGLU in fp32, down, weighted sum) against float64 the same way.
-//! Usage: tf-cuda-test exl3-pack <pack dir> [launches per batch, default 20]
 const std = @import("std");
 const cuda = @import("cuda");
 const core = @import("core");
@@ -262,8 +258,7 @@ const ExpCall = struct {
     }
 };
 
-/// Ten experts of `layer` as E = 10, one row picking all ten (weights 0.1): fp32 out vs float64. The first `mapped`
-/// experts' trellis words sit in mapped page-locked host memory (the kernel reads them over PCIe, no copy).
+/// Ten experts of `layer` as E = 10, one row picking all ten (weights 0.1): fp32 out vs float64.
 fn experts(b: *Bench, ex: *const exl3e.Experts, pack: *const Pack, a: std.mem.Allocator, rng: std.Random, layer: usize, act_mode: i32, mapped: usize) !void {
     const count = 10;
     var buf: [160]u8 = undefined;
@@ -394,8 +389,7 @@ fn experts(b: *Bench, ex: *const exl3e.Experts, pack: *const Pack, a: std.mem.Al
     }
     const err = compareF32(got, want);
     const ms = try b.time(call, ExpCall.go);
-    // with a 64 MiB memset between calls (evicts the 32 MiB L2, so mapped host bytes come over PCIe each call),
-    // minus the memset alone
+    // with a 64 MiB memset between calls (evicts the 32 MiB L2, so mapped host bytes come over PCIe each call), minus
     var flush = try cuda.DeviceBuffer.alloc(b.gpu.d, 64 << 20);
     defer flush.free();
     const Flushed = struct {
@@ -412,7 +406,7 @@ fn experts(b: *Bench, ex: *const exl3e.Experts, pack: *const Pack, a: std.mem.Al
     std.debug.print("  cold L2 (64 MiB memset between calls, its time subtracted): {d:.4} ms\n", .{with - alone});
     std.debug.print("routed experts L{d} (1 row x 10 picks, act_mode {d}, {d} of 10 from mapped host memory) K={d} I={d} halves={d}/{d}/{d} ms={d:>8.4}  max|err|={e:.3} peak={d:.3} rel={e:.2}\n", .{ layer, act_mode, mapped, dims, width, g[0].halves, u[0].halves, dn[0].halves, ms, err.max_abs, err.peak, err.worst_rel });
     if (mapped > 0) {
-        // the copy-engine alternative: the same experts' trellis bytes, pinned host to device, one copy an expert matrix
+        // the copy-engine alternative: the same experts' trellis bytes, pinned host to device, one copy an expert
         var total: usize = 0;
         for (0..mapped) |e| total += (g[e].trellis.len + u[e].trellis.len + dn[e].trellis.len) * 2;
         var src = try cuda.HostBuffer.alloc(b.gpu.d, total);
@@ -528,7 +522,6 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
 }
 
 /// nccl-lat <rank> <id file>: two processes, one GPU each; fp32 all-reduce (sum) latency at a few sizes, cudaEvent
-/// timed on rank 0 (min over 5 batches of 100). Rank 0 writes NCCL's unique id to the file, rank 1 reads it.
 pub fn ncclLatency(gpu: Gpu, rest: []const [:0]const u8) !void {
     if (rest.len < 2) return error.MissingArgument;
     const rank = try std.fmt.parseInt(c_int, rest[0], 10);

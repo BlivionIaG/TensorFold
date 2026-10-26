@@ -1,20 +1,4 @@
 //! The offload pool planned on the device (flashnext_exl3_dplan.cu): a decode round's MoE needs no host wait between
-//! the router and the experts, so the whole step (48 layers, the head, at tp=2 the NCCL sums) is one stream of device
-//! work that a CUDA graph can hold (cuda_exl3_graph.zig).
-//!
-//! Each decoder layer's pool keeps its residency twice: the host's (exl3_offload.Vram + lifetime counts, which
-//! prefill, the MTP head and any eager round plan with) and this device copy. Optional recent-demand eviction state
-//! stays with this planner across ownership transfers and is not request-snapshot state:
-//!   toDevice: the host's lines, stamps, counts and clock go up (one H2D on the compute stream, after the pools'
-//!     copy streams drained), then every decode round plans on the device;
-//!   toHost: the device copy comes back (one D2H after the stream finished) and rebuilds each pool's Vram, lifetime counts and
-//!     statistics, before any host plan (cuda_exl3_pass.pooled, the expert-major prefill).
-//! By default, the device planner follows the host planner's rules for a one-pass round without prefetch or
-//! double-buffer protection. Experimental recent eviction changes only miss ordering and victim scores; it still
-//! computes every routed expert. The tables are the pool's own (fixed addresses): the device rewrites them in place.
-//!
-//! A miss is copied by fn_exl3_dcopy, a grid reading the pinned host bank through its mapped address (unified
-//! addressing), instead of a DMA on the pool's copy stream: the copy is device work ordered on the compute stream.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -139,9 +123,7 @@ pub const DevPlan = struct {
     /// The stream the last device round ran on (toHost waits for it).
     stream: ?cuda.Stream = null,
     copy_blocks: u32 = 144,
-    /// Overlap: the held experts compute while the misses' copies run on `side`, then the
-    /// misses' experts (and the combine) follow; the per-slot outputs are the single pass's (each slot is written by
-    /// the one pass that holds its expert, as the host cut's split rounds do).
+    /// Overlap: the held experts compute while the misses' copies run on `side`, then the misses' experts (and the
     overlap: bool = false,
     side: cuda.Stream,
     ev_plan: cuda.Event,
@@ -184,8 +166,6 @@ pub const DevPlan = struct {
         var statics = try cuda.DeviceBuffer.alloc(d, pools.len * static_bytes);
         errdefer statics.free();
         // rows a planned round may hold (MTP verify windows reach 16): more distinct misses than lines free of the
-        // round's experts are read in place from the mapped bank for that round (fn_exl3_dplan), so any row count
-        // up to this bound plans in one pass
         const max_rows = maxRows();
         var trace_mem: ?cuda.DeviceBuffer = null;
         errdefer if (trace_mem) |*buffer| buffer.free();
@@ -437,8 +417,6 @@ pub const DevPlan = struct {
     }
 
     /// Caller must join all planner/expert consumers and stop submissions before this blocking diagnostic read.
-    /// Outside capture only. Borrows `out` (pool_words u32s); reading does not consume records.
-    /// The initial seed, ownership checkpoints and ordered rounds include warmup/speculation.
     pub fn readTraceAfterConsumers(dp: *const DevPlan, index: usize, out: []u32) !demand_trace.View {
         const buffer = dp.trace_mem orelse return error.TraceDisabled;
         if (index >= dp.pools.len or out.len != demand_trace.pool_words) return error.Invalid;
@@ -446,8 +424,7 @@ pub const DevPlan = struct {
         return demand_trace.View.init(out);
     }
 
-    /// Allocating diagnostic read with the same joined/quiescent contract. Caller owns the snapshot.
-    /// Snapshot.view().encode() serializes little-endian records and all full checkpoints.
+    /// Allocating diagnostic read with the same joined/quiescent contract.
     pub fn downloadTraceAfterConsumers(dp: *const DevPlan, allocator: std.mem.Allocator, index: usize) !demand_trace.Snapshot {
         if (dp.trace_mem == null) return error.TraceDisabled;
         if (index >= dp.pools.len) return error.Invalid;
@@ -488,11 +465,6 @@ pub const DevPlan = struct {
     }
 
     /// Plans pool `i`'s round of `rows` rows on the device and copies its misses into their lines, on `s`: after this
-    /// the pool's tables hold every expert `picks` [rows * 11] names. Graph-capturable (no host work depends on it).
-    /// All launches and graph replays using this DevPlan MUST be serialized on one compute timeline.
-    /// A stream handoff must join previous planner, copy and expert/restore consumers first.
-    /// The shared work/split scratch already requires this; trace headers have the same single writer.
-    /// The side stream runs copies only and never writes planner state or trace records.
     pub fn plan(dp: *DevPlan, s: cuda.Stream, i: usize, picks: u64, rows: usize) !void {
         if (rows == 0 or rows > dp.max_rows) return error.PoolPasses;
         if (i >= dp.pools.len) return error.Invalid;
@@ -541,8 +513,7 @@ pub const DevPlan = struct {
 /// The engine's device planner (one engine a process: a rank), made on the first device round.
 var global: ?*DevPlan = null;
 var global_owner: ?*const anyopaque = null;
-/// Set while a decode round runs with device plans (cuda_exl3_graph.zig): cuda_exl3_pass.moe takes `layer` instead
-/// of the host cut.
+/// Set while a decode round runs with device plans (cuda_exl3_graph.zig): cuda_exl3_pass.moe takes `layer` instead of
 pub var active: ?*DevPlan = null;
 
 /// TF_FLASHNEXT_EXL3_DPLAN: 1 plans decode rounds on the device (implied by TF_FLASHNEXT_EXL3_GRAPH=1).
@@ -559,7 +530,6 @@ pub fn recentEvictionEnabled() bool {
 }
 
 /// TF_FLASHNEXT_EXL3_DPLAN_TRACE=1 enables bounded per-pool demand capture at planner initialization.
-/// No per-round host reads, transfers, allocations, synchronization, or placement-policy changes.
 fn traceEnabled() bool {
     const value = std.c.getenv("TF_FLASHNEXT_EXL3_DPLAN_TRACE") orelse return false;
     return std.mem.eql(u8, std.mem.span(value), "1");
@@ -636,7 +606,6 @@ test "exl3: demand trace planner arguments stay fixed and joined reads isolate p
 }
 
 /// The device planner over `layers`' pools (the decoder layers only), made once for `owner`; null when a layer has no
-/// pool (resident experts).
 pub fn forLayers(gpa: std.mem.Allocator, d: *const cuda.Driver, owner: *const anyopaque, layers: []const @import("cuda_prompt_load.zig").Layer) !?*DevPlan {
     if (global) |g| {
         if (global_owner == owner) return g;
@@ -687,7 +656,6 @@ pub fn releaseFor(owner: *const anyopaque) void {
 }
 
 /// One offloaded layer's experts on the device plan: plan + copies, then `Experts.run` on the pool's tables, as the
-/// host cut's single pass runs it (cuda_exl3_pass.pooled): same kernels, same inputs, so the same bits.
 pub fn runLayer(dp: *DevPlan, st: cuda.Stream, i: usize, ex: *const cuda.exl3_experts.Experts, layer: cuda.exl3_experts.Layer, xin: u64, picks: u64, rows: usize, sc: cuda.exl3_experts.Scratch, wts: u64, out: u64) !void {
     try dp.plan(st, i, picks, rows);
     if (!dp.overlap) {

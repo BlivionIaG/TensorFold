@@ -1,38 +1,4 @@
-//! Two-rank expert parallel for an EXL3 Flash Next checkpoint (plan step 10 of docs/plans/exl3-on-upstream-1.1.0.md),
-//! on upstream's rank engine (cuda_rank_engine.zig: one process a GPU, rank 1 replays rank 0's operations) and its
-//! NCCL `Collective`.
-//!
-//! What a rank holds and runs:
-//!  - routed experts by id (exl3_tp.zig `routed_set`): rank 0 ids 0..255, rank 1 ids 256..511. An EXL3 expert cannot be
-//!    cut along its 640-wide intermediate (320 is not a multiple of the 128-wide Hadamard block), which is why
-//!    upstream's ModelOpt `Cut` (intermediate halves) does not apply;
-//!  - the shared expert (id 512) on rank 1, so each rank owns ONE contiguous id range: rank 0 [0, 256), rank 1
-//!    [256, 513). Both ranks run the same kernel sequence (no rank branch in the pass: the other rank's slots are
-//!    masked, not skipped by a different code path), so rank 1 replays rank 0's operations and a captured round graph
-//!    has the same nodes on both. Upstream puts its shared expert on rank 0 behind an `if (rank == 0)` branch; here
-//!    rank 0 already carries the MTP head and the sampled logits, so the shared expert's compute and its 2.9 MB a layer
-//!    on rank 1 balance that;
-//!  - every expert table keeps its 513 global ids (the offload pool's tables, `shared_id` 512 and its policy are
-//!    unchanged); the stacked suh/svh scales hold only the rank's rows, their base pointers shifted by `lo` rows so the
-//!    kernels' `scale[e * width]` still indexes by global id;
-//!  - attention, GDN, hyper-connections, the router and KV are replicated, as upstream's ModelOpt tp does;
-//!  - offloaded (the default): each rank's routed trellis in its own pinned bank (its 256 experts, about 21 GiB a
-//!    process) and its own pool per layer (cuda_exl3_pass.attach sizes it from the rank's free memory), planning on the
-//!    rank's masked picks: the same lines cover half the experts, so a rank's hit rate is higher than tp=1's;
-//!  - the lm_head split by vocabulary (cuda_exl3_load.shardHead, default at tp=2): 124,160 columns a rank.
-//!
-//! The MoE branch (`moe`, the hook in cuda_exl3_pass.moe): the router and top-k run on both ranks (same rows, same
-//! picks); `fn_exl3_tp_mask` turns the other rank's slots into pick -1, weight 0; `Experts.run` combines the rank's
-//! slots in slot order (fp32 fmaf, as the write-back does) into [rows, 2560] fp32; ONE `Collective.sum` over that
-//! (not upstream's per-slot [rows, 11, 2560]: 11 times less traffic); `fn_exl3_tp_place` writes the sum into slot 0 of
-//! the pass's `y` with weights {1, 0, ...}, so the upstream write-back is unchanged and writes the sum's bf16.
-//! tp=2 differs from tp=1 only in the fp32 grouping of the 11 terms: (rank 0's chain) + (rank 1's chain).
-//! With two ranks the all-reduce is a single fp32 addition a + b, which is commutative, so both ranks get the same
-//! bits whatever NCCL's algorithm (checked on the device by flashnext-exl3-tp).
-//!
-//! Masked slots and stale values: `Experts.run` leaves a skipped slot's per-slot output as it was in the scratch and
-//! multiplies it by the slot's weight. The weight is 0 and the scratch is zeroed when allocated and only ever holds
-//! finite expert outputs, so a skipped slot adds exactly 0.
+//! Two-rank expert parallel for an EXL3 Flash Next checkpoint (plan step 10 of docs/plans/exl3-on-upstream-1.1.0.md)
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -91,10 +57,6 @@ fn expertName(b: []u8, mlp: []const u8, e: usize, proj: []const u8) ![]const u8 
 }
 
 /// cuda_exl3_load.experts at world 2: the rank's experts, the 513-entry tables (other ids zero), the scales' rows
-/// lo..hi with their bases shifted to global ids. Offloaded (the default, cuda_exl3_load.offloaded): only the rank's
-/// own trellis words go to a pinned host bank (about half the tp=1 bank a process), the other rank's ids stay empty
-/// in `routed` (the pool never stages them: their picks are masked to -1 before it plans), and the pool attached by
-/// cuda_exl3_pass.attach owns the tables. Resident (TF_FLASHNEXT_EXL3_ROUTED=device): the rank's experts on the device.
 pub fn experts(gpa: std.mem.Allocator, d: *cuda.Driver, store: *wt.Store, mlp: []const u8, world: usize, rank: usize) !*load.Experts {
     const r = try Rank.init(world, rank);
     const offload = load.offloaded();
@@ -183,7 +145,7 @@ pub const Scratch = struct {
     picks: ?cuda.DeviceBuffer = null,
     wts: ?cuda.DeviceBuffer = null,
     sum: ?cuda.DeviceBuffer = null,
-    /// `rows` fp32 ones at the end of `wts`: the write-back's weights for the ranks' sum read in place (no place launch).
+    /// `rows` fp32 ones at the end of `wts`: the write-back's weights for the ranks' sum read in place (no place
     ones: u64 = 0,
     rows: usize = 0,
     /// Experts.run's scratch for `moe_cap` rows, zeroed when allocated (a skipped slot reads its stale, finite y).
@@ -266,9 +228,6 @@ pub fn scratchOf(ops: *load.Ops) !*Scratch {
 }
 
 /// Every expert-parallel scratch a pass of up to `rows` rows reads, allocated now (cuda_exl3_pass.attach, before the
-/// pools size themselves from free memory), so no round grows a buffer (a growth synchronises the stream and moves an
-/// address a captured graph would hold): the masked picks, weights and the ranks' sum for `rows` rows, Experts.run's
-/// scratch for a block (zeroed), and the pinned picks of the pool's A/B cut.
 pub fn reserve(ops: *load.Ops, s: cuda.Stream, l: cuda.exl3_experts.Layer, rows: usize) !void {
     const t = try scratchOf(ops);
     try t.ensure(s, l, rows);
@@ -295,7 +254,6 @@ pub fn reservedBytes(t: *const Scratch) usize {
 }
 
 /// The rank's half of the MoE branch, then the ranks' sum: cuda_exl3_pass.moe for a layer whose experts carry a rank.
-/// `p` is the pass (`*cuda_batch.Pass(Tri)`); on return s.y / s.wts hold what the write-back reads.
 pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     const r = x.tp orelse return error.UnexpectedTensor;
     const s = p.s;
@@ -385,7 +343,6 @@ pub fn deviceBytes(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, o: memor
 }
 
 /// cuda_exl3_memory.placement at world 2: the rank's experts, everything else replicated, the MTP head on rank 0
-/// (cuda_lanes_load.zig loads it there only).
 pub fn placement(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, world: usize, rank: usize, drafts: bool) !u64 {
     const r = try Rank.init(world, rank);
     const o = memory.options();
@@ -393,13 +350,7 @@ pub fn placement(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, world: usi
     return try deviceBytes(gpa, io, dir, o, r) + head;
 }
 
-// ---- the head's vocabulary split ---------------------------------------------------------------------------------
-//
-// cuda_head.zig splits a BF16 lm_head by output rows and cuda_batch.zig projectHead joins the halves with
-// ncclAllGather. An EXL3 lm_head [K 2560, N 248,320] splits along N at 128-column blocks (Hadamard), 124,160 columns
-// a rank; Pass.lane() already runs an EXL3 Projection of n = vocab / 2, so projectHead needs no change. What is missing
-// is the hook in cuda_prompt.Engine.initRank that reads `lm_head` as EXL3 at all (the serve stage's); with it,
-// `headProjection(..., world, rank)` is that hook's tp=2 branch under TF_FLASHNEXT_SHARD_HEAD=1.
+// ---- the head's vocabulary split
 
 /// Rank `rank`'s output columns [lo, hi) of an `n`-column EXL3 matrix: whole 128-column blocks, equal shares.
 pub fn headCut(n: usize, world: usize, rank: usize) ![2]usize {

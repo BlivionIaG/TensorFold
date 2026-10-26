@@ -83,7 +83,7 @@ pub const Layer = struct {
     native_experts: ?mixed.Owned = null,
     /// EXL3 routed experts with the shared one as id 512 (cuda_exl3_load.zig).
     exl3: ?*exl3_load.Experts = null,
-    /// The rank's decode views of a linear-attention layer's projections when the DeltaNet heads split (cuda_exl3_gdn_split.zig).
+    /// The rank's decode views of a linear-attention layer's projections when the DeltaNet heads split
     half: ?@import("cuda_exl3_gdn_split.zig").Views = null,
 
     pub fn free(self: *Layer, gpa: std.mem.Allocator) void {

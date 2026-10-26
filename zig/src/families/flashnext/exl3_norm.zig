@@ -1,13 +1,9 @@
-//! Centred RMSNorm apply. The addend is `scan.centredOffset`, not a second median test.
-//! No module epsilon: the caller passes `eps`.
+//! Centred RMSNorm apply.
 
 const std = @import("std");
 const scan = @import("exl3_scan.zig");
 
 /// `rms = sqrt(mean(x²) + eps)`, then `out[i] = x[i] / rms * (weight[i] + offset)`.
-/// `offset` is 1 for gamma-1 storage and 0 for gamma. A non-finite or negative `eps`
-/// is `error.Length`: the error set has no separate eps refusal. Every refusal
-/// returns before a store to `out`.
 pub fn apply(x: []const f32, weight: []const f32, means: []const f32, eps: f32, out: []f32) error{ Length, NormAmbiguous }!void {
     const offset = try scan.centredOffset(means);
     if (!std.math.isFinite(eps) or eps < 0) return error.Length;

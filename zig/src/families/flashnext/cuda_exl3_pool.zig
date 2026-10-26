@@ -1,15 +1,4 @@
 //! One layer's EXL3 routed-expert offload pool on upstream's `Experts` (plan step 6 of
-//! docs/plans/exl3-on-upstream-1.1.0.md). Routed trellis stays in host memory (the mmapped checkpoint); `lines` device
-//! lines hold the hot experts; the shared expert (id 512) and every expert's suh/svh stay resident.
-//!
-//! The segment cut is explicit. Per round of a layer (`rows` rows of `slots` picks, the shared expert in its slot):
-//!   graph A (block, router, top-k) -> D2H of the picks -> `plan(picks)` on the host (policy, no device work)
-//!   -> for each pass j of the returned round: `stage(round, j, s)` (copies + table rewrites on the copy stream,
-//!      `s` waits on the device), `Experts.runSlots(.., picksFor(round, j, own), ..)` (graph B), `release(round, j, s)`.
-//! A hit needs no host work beyond the plan; an all-hit round (`round.allHits()`) has nothing to stage and its graph
-//! B replays as captured: the tables (`tables()`) are device memory at fixed addresses, rewritten in place.
-//! A round whose distinct experts do not fit the lines runs as several passes over masked picks (each slot's output is
-//! written by exactly one pass; slots of other passes are left untouched, which is what runSlots does with pick -1).
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -59,15 +48,13 @@ pub const Options = struct {
     swap_cap: u16 = 96,
     /// Bytes a swap round may prefetch (the copy budget); 0: no prefetch.
     prefetch_bytes: u64 = 0,
-    /// Double buffering: a round that fits without them does not evict the previous round's lines, so its copies
-    /// need not wait for the previous round's compute.
+    /// Double buffering: a round that fits without them does not evict the previous round's lines, so its copies need
     double_buffer: bool = true,
     /// Masked-pick buffers for this many passes of a split round (0: the round's own bound, uniq + 1).
     max_passes: usize = 0,
 };
 
 /// Passes a round of a `lines`-line pool can split into when nothing prefetches (`prefetch_bytes` 0): pass 0 and one
-/// pass a full pool of misses over the 512 routed experts, plus one for rounding.
 pub fn passesFor(lines: usize) usize {
     return 2 + (shape.experts + lines - 1) / lines;
 }
@@ -253,7 +240,6 @@ pub const Pool = struct {
     }
 
     /// Host step of a round: `picks` [rows * slots] (int32, -1 skipped, 512 the shared expert), as the device holds
-    /// them. Decides hits, misses, victims and passes; enqueues nothing. The result stays valid until the next plan.
     pub fn plan(p: *Pool, picks: []const i32, rows: usize) !*const Round {
         return p.planInternal(picks, rows, true);
     }
@@ -322,8 +308,7 @@ pub const Pool = struct {
         try p.lines.load(c.line, c.id, p.src.routed[c.id], p.k2[c.id], ev, p.opt.direct, p.io);
     }
 
-    /// Device step of pass `j`: its copies and table rewrites on the copy stream, its masked picks (if any) on `s`, and
-    /// `s` waits for every line the pass reads. The host only blocks to reuse a staging slot.
+    /// Device step of pass `j`: its copies and table rewrites on the copy stream, its masked picks (if any) on `s`
     pub fn stage(p: *Pool, r: *const Round, j: usize, s: cuda.Stream) !void {
         for (r.passCopies(j)) |c| try p.loadCopy(c);
         if (r.masked()) {
@@ -342,8 +327,7 @@ pub const Pool = struct {
         return p.picks_dev.ptr + j * p.opt.max_rows * p.opt.slots * 4;
     }
 
-    /// After pass `j` was enqueued on `s`: its lines are protected until it finishes. After the last pass, the round's
-    /// prefetch copies (swap rounds) go on the copy stream.
+    /// After pass `j` was enqueued on `s`: its lines are protected until it finishes.
     pub fn release(p: *Pool, r: *const Round, j: usize, s: cuda.Stream) !void {
         try p.lines.release(s, r.passLines(j));
         if (j + 1 == r.n_passes) {

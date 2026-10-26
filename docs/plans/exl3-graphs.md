@@ -54,7 +54,7 @@ while later sub-block reductions are still running. Graphs are cleared before th
 The experts' half stays eager: its passes, ring copies and member lists are planned on the host from each layer's picks
 (data-dependent shapes).
 
-## Measurements (par1-cs13, 2x 5060 Ti, idle cards under gpurun)
+## Measurements (the test machine, 2x 5060 Ti, idle cards under gpurun)
 
 Engine test `flashnext-exl3-graph eq` (3 golden prompts, 48 greedy rounds + the same continuation as windows 3,1,4,2;
 every step's bf16 logits bit-equal to the host cut, both ranks), decode ms/token:
@@ -112,7 +112,7 @@ claimed as a graph speedup.
 ## Combined TP=2 paging/cache gate (2026-10-20)
 
 The rebuilt server now reports prefill graph replay/capture counters, decode coverage, decode preparation time and
-cumulative graph capture time. On par1-cs13, a two-request 12,040-token TP=2 run used BF16 KV paging, MTP, prompt
+cumulative graph capture time. On the test machine, a two-request 12,040-token TP=2 run used BF16 KV paging, MTP, prompt
 snapshots and prefill/decode graph mode. With capture-after=1, each rank reported 72 prefill graph replays and 216
 captures across cold prefill. With the normal capture-after=2 threshold, parity remained exact, but prefill reported
 0 replays, 192 eager layer executions and 96 captures; cumulative prefill capture time fell from about 0.5 s to

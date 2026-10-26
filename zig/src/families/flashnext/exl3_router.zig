@@ -1,9 +1,4 @@
 //! Rank 0 of the Flash Next router.
-//! `mlp.gate` is a replicated bf16 matrix, 512 by 2560 (2,621,440 bytes).
-//! A 513th row would be 2,626,560 bytes and is not read from that product.
-//! `mlp.shared_expert_gate` is a second replicated vector. Its length is the
-//! caller's header span in bf16 elements, not an expert-cut width.
-//! Both dots stay fp32. `exl3_route.select` applies the sigmoid.
 
 const std = @import("std");
 const route = @import("exl3_route.zig");
@@ -25,9 +20,7 @@ comptime {
     std.debug.assert((gate_rows + 1) * gate_cols * @sizeOf(u16) == 2_626_560);
 }
 
-/// Storage type of the two replicated gate tensors. The published 3.05bpw pack stores both as F16
-/// (safetensors header `F16`, verified: std 0.02 as F16, 1e-6 as bf16), although config.json says bfloat16.
-/// `launch` keeps the bf16 reading; use `launchDtype(.f16, ...)` for the pack.
+/// Storage type of the two replicated gate tensors.
 pub const Dtype = enum { bf16, f16 };
 
 fn dot(dtype: Dtype, weight: []const u8, x: []const f32) f32 {
@@ -44,11 +37,6 @@ fn dot(dtype: Dtype, weight: []const u8, x: []const f32) f32 {
 }
 
 /// `gate` is row-major bf16, exactly `gate_bytes`, times `hidden` (`gate_cols`).
-/// `shared_gate` is bf16; `shared_x.len` is its element count (the header span).
-/// `logits` receives 512 routed dots, then the one shared-gate dot.
-/// `select` writes `picks` and `weights`. Rank, empty, and size checks
-/// return before any of those stores. An empty gate is the absent `mlp.gate`
-/// token: nothing is invented.
 pub fn launch(
     rank: usize,
     gate: []const u8,

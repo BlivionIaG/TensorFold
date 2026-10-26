@@ -1,19 +1,4 @@
 //! An EXL3 pack's n-gram table (ExLlamaV3 `ngram_embedding.safetensors`) behind `cuda_ple.Ngram` (`format = .exl3`).
-//!
-//! The pack ships the table outside model.safetensors.index.json, as one file: 128 shards `shard_{i}.trellis` int16
-//! [rows, 51] (one fp16 scale word, then 160 tail-biting mul1 values of 5 bits), `head_bias` fp16 [16, 160], and the hash
-//! constants `layer_multipliers`, `head_vocab_sizes`, `head_offsets` (checked here against `cuda_ple.Hash`, which derives
-//! them from the config). Row ids and shard placement are upstream's (`Hash`, `lastIds`, `Hash.locate`): on the real
-//! pack they are byte-equal to the ids of tensorfold's qwen4_exp `NGram.ids` (tf-cuda-test exl3-ple2).
-//!
-//! A row decodes as tensorfold's qwen4_exp/cuda/exl3_mm.py `_ple_rows` (ExLlamaV3 `ngram_dequant`):
-//!   out[i] = fp16(f32(fp16 mul1(state_i)) * f32(scale) + f32(head_bias[head][i])).
-//! The reference keeps these values fp16 and multiplies them by the fp16 key/value projections (exl3.py `ple_layer`),
-//! so `Ngram.rows` writes fp16 bit patterns by default; `.emb = .bf16` rounds them once more for a bf16-only lane.
-//!
-//! Two readers behind the same `row`: the file mapping (`.map`, madvise RANDOM, nothing populated), or explicit preads
-//! (`.pread`: the 30 GiB file is never mapped) through a 4096-row direct-mapped hot cache (512 KiB).
-//! TF_FLASHNEXT_PLE_READ=pread and TF_FLASHNEXT_PLE_EMB=bf16 select them at load.
 
 const std = @import("std");
 const core = @import("core");
@@ -70,7 +55,6 @@ pub fn decodeRow(words: []const i16, bits: usize, bias: []const f16, out: []f16)
     if (words.len != width or bias.len != row_values or out.len != row_values) return error.NgramWidth;
     const scale: f32 = @floatCast(@as(f16, @bitCast(words[0])));
     // `state(words, bits, i)` for every i at once: value j is stream bits [j * bits, (j + 1) * bits); state i is
-    // values i, i - 1, ... (tail-biting) packed `bits` apart from bit 0, the low 16 bits (the same bits as `state`)
     var vals: [row_values]u32 = undefined;
     const mask: u32 = (@as(u32, 1) << @intCast(bits)) - 1;
     for (&vals, 0..) |*v, j| {
@@ -169,7 +153,7 @@ pub const Table = struct {
         return std.fmt.bufPrint(buf, "model.language_model.layers.{d}.ple.ple_embedding.ngram_embedding.{s}", .{ ple.layer, part });
     }
 
-    /// The pack's table when `dir` holds an EXL3 n-gram file whose constants equal `hash`'s; null when there is no such file.
+    /// The pack's table when `dir` holds an EXL3 n-gram file whose constants equal `hash`'s; null when there is no
     pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, hash: ple.Hash, opts: Options) !?*Table {
         const path = try std.fs.path.join(gpa, &.{ dir, file_name });
         defer gpa.free(path);
