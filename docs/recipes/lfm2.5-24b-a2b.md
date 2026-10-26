@@ -82,3 +82,29 @@ drafted rounds measure faster than plain ones at that stream count.
 against an fp32 host reference of the released checkpoint (the same taps and the target's embedding and head),
 prints each draft against the reference's pick with the margin between the reference's two best tokens, and times
 the drafter's passes; a near tie can pick the other token.
+
+### Verify schedule
+
+The drafter also carries a confidence head: a linear map of a draft's final block row and `W1[previous token]`
+(2,304 inputs) to one logit, through a sigmoid (`lfm2_dspark_confidence`). It does not change the drafts.
+`--draft-verify` picks how they are verified:
+
+- `scheduled` (the default): a chain's chance at draft j is the product of its first j confidences. Each round the
+  lane core's window allocator takes the likeliest drafts over all streams while the expected tokens a ms rise, so
+  each stream gets its own verify length, and the next hold drafts as deep as the stream's grant. A hold still
+  running on the GPU is priced by its lane's last confidences, so the host does not wait for it.
+- `depth`: the lane core's depth rule, from each stream's measured acceptance by depth.
+- `fixed`: every round verifies the whole block, as LiquidAI's published benchmarks did; a shared round still fits
+  32 rows.
+
+With `scheduled` a stream with a copy ahead verifies the copy and asks no hold, and a drafting stream prices its copy
+windows by its own copies. The lane core also weighs the hold pass itself: the drafter times holds of 1 to 16
+blocks at load and corrects those prices toward each settled hold's GPU time. A lone stream holds drafts only while
+its drafted rounds measure faster than plain ones (`zig/src/core/lanes/lone_guard.zig`); shared rounds keep the
+shared-round guard.
+
+`--verify-costs FILE` replaces the costs timed at load with a table from `tf-lfm2-verify-costs MODEL FILE [HISTORY
+[IDS...]]` (lines `streams rows_each total_rows ms`), measured on the serving Mac. With token id files each stream
+reads its history and verify rows from its own part of the ids, so its rows route its own text's experts. Both flags
+are refused unless an `lfm2_moe` checkpoint is served with `--drafter`. `tf-lfm2-dspark` also prints the confidence
+head against its fp32 reference and times shared holds of 2 to 16 streams.
