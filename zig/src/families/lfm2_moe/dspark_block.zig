@@ -65,7 +65,7 @@ const Enc = struct {
         return x.projectAll(&.{w}, in, &.{out}, rows);
     }
 
-    /// y_i[rows] = x[rows] W_i^T on one input and shape: bf16 matrices straight, else one sums pass, products free to overlap.
+    /// y_i[rows] = x[rows] W_i^T on one input and shape: bf16 matrices straight, else one sums pass, products overlap.
     fn projectAll(x: Enc, lins: []const dw.Linear, in: Ref, outs: []const Ref, rows: usize) !void {
         if (lins[0] == .bf16) {
             for (lins, outs) |lin, out| x.bf16(lin.bf16, in, out, rows);
