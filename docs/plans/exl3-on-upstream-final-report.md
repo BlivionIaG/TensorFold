@@ -1591,3 +1591,24 @@ While layer L ran, layer L+1's router was applied to layer L's MoE input, the pr
 | prefetch | 4070 | 97.0% | 1.53 | 32.7-35.6 (-11%) |
 
 The early router names the right expert for only about 42% of the copies it issues (roughly 9100 prefetch copies saved about 3800 misses), so link traffic doubles and the copy kernels' SMs slow the compute. Docs fell 12%, zig 1%. A window's misses are about 250 MB per rank, which at 13-14 GB/s is the 18 ms the first extra row costs: the PCIe link, not compute, bounds speculation. Prefetch only pays with a predictor far above 42% precision.
+
+## Drafts on by default, with a tokens-a-ms guard
+
+Why drafts lost on prose: every round launched the head's chain even where the stream was better off plain, and a drafted window
+costs about 18 ms for its first extra row (the missed experts' PCIe copies), so prose paid for drafts it did not use. The lane engine's
+depth rule (core/lanes/depth.zig) now keeps, per stream, the tokens a ms of rounds that launched the chain (a round's time carries the
+chain it launched) and of rounds that did not. It runs plain where plain earns more, leaves plain only on a 20% win, and drafts one probe
+round after a growing run of plain ones (8, 16, 32, 64) so a change of text is noticed. The flashnext backend reports `plain_guard`;
+`TF_FLASHNEXT_DRAFT_ENABLE=0` is the only switch left (drafting is on), `tools/exl3_serve_tp2.sh` loads the head (`DRAFTS=0` drops it).
+
+One user, TP=2, two RTX 5060 Ti, graphs, 192 tokens, temperature 0, output hashes identical in every leg (tok/s, second request):
+
+| prompt | plain, 88 lines | plain, 80 lines | drafts, no guard, 80 | drafts + guard, 80 | guard, two lanes, 64 | plain, two lanes, 68 |
+|---|---|---|---|---|---|---|
+| short prose | 48.9 | 47.8 | 37-40 | 44.3 | 43.3 | 45.6 |
+| zig, 16k prompt | 36.2 | 35.4 | 101.8 | 102.0 | 93.6 | 33.8 |
+| docs, 13k prompt | 38.2 | 36.9 | 40.3 | 40.6 | 39.8 | 34.9 |
+
+Still open: a plain round on a drafting stream carries the head's absorb of its row (about 1.9 ms eager), which the 80-line plain
+leg does not (short 44.3 vs 47.8). A lazy absorb that stashes the plain rows' hidden states and absorbs them in one pass when drafting
+resumes would remove it.
