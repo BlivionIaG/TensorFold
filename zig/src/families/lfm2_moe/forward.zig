@@ -146,11 +146,13 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
     const e = cb.compute(.serial);
     const plan = if (segs.batched(record, segments.len)) segs.prepare(e, s, segments) else null;
     const enc = Encoder{ .e = e, .m = m, .s = s, .prompt = prompt, .record = record, .plan = plan };
+    if (held.len > 0) @memset(s.bad.contents()[0..4], 0);
     for (held) |h| {
         enc.pipe("lfm2_draft_ids");
         e.setBuffer(h.src, h.off, 0);
         e.setValue([4]u32{ h.stride, h.count, c.vocab, 0 }, 1);
         e.setBuffer(s.ids, h.row * 4, 2);
+        e.setBuffer(s.bad, 0, 3);
         enc.threads(.{ h.count, 1, 1 }, .{ 32, 1, 1 });
     }
     const embedding = m.weights.embedding;
@@ -198,6 +200,7 @@ pub fn runHeld(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []c
         std.debug.print("LFM2 forward: {s}\n", .{msg});
         return error.GpuFailed;
     }
+    if (held.len > 0 and std.mem.readInt(u32, s.bad.contents()[0..4], .little) != 0) return error.DraftNonfinite;
     var base: usize = 0;
     for (segments) |seg| {
         const logit_row = if (head == .all) base + seg.rows - 1 else 0;

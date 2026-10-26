@@ -30,7 +30,13 @@ pub const Verify = enum { depth, fixed, scheduled };
 pub const default_verify: Verify = .scheduled;
 
 /// `bits`: the width the bf16 linears are quantized to (8 keeps the fp32 reference's drafts; 4 does not).
-pub const Options = struct { capacity: usize, bits: u8 = 8, verify: Verify = default_verify };
+/// `verify_asked`: --draft-verify was given, so a scheduled verify without the confidence head is refused, not depth.
+pub const Options = struct { capacity: usize, bits: u8 = 8, verify: Verify = default_verify, verify_asked: bool = false };
+
+/// An asked scheduled verify needs the checkpoint's confidence head; the default one falls back to the depth rule.
+pub fn admitVerify(o: Options, has_head: bool) !void {
+    if (o.verify == .scheduled and o.verify_asked and !has_head) return error.ScheduledVerifyNeedsConfidenceHead;
+}
 
 /// One stream's context keys and values a layer ([kv head][cap][head dim], as the target's attention reads them).
 pub const Lane = struct {
@@ -110,6 +116,7 @@ pub const Drafter = struct {
         errdefer d.w.deinit(gpa);
         errdefer for (d.owned.items) |b| b.deinit();
         errdefer d.owned.deinit(gpa);
+        try admitVerify(options, d.w.confidence != null);
         try d.scratch();
         try d.warm();
         return d;
@@ -478,7 +485,7 @@ pub const Drafter = struct {
             return error.DraftGpuFailed;
         }
         d.priceHold((cb.gpuEnd() - cb.gpuStart()) * 1000);
-        block.readPicks(d, d.pass[0..d.pass_len], d.depths[0..d.pass_len]);
+        try block.readPicks(d, d.pass[0..d.pass_len], d.depths[0..d.pass_len]);
     }
 
     /// A settled hold's GPU ms against its price: the timed passes at its block counts move a tenth of the way to it.

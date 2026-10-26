@@ -98,12 +98,16 @@ constant constexpr uint MARKOV_SPAN = 512;
   }
 }
 
-// A verify window's held drafts from the drafter's picks: picks[i * stride] into ids[i], a token past the vocabulary 0.
+// A verify window's held drafts from the drafter's picks: picks[i * stride] into ids[i]. A pick flagged nonfinite
+// (the word after it) or past the vocabulary becomes token 0 and sets bad, which the host reads after the verify.
 [[kernel]] void lfm2_draft_ids(const device uint* picks [[buffer(0)]], constant uint4& p [[buffer(1)]],
-                               device uint* ids [[buffer(2)]], uint i [[thread_position_in_grid]]) {
+                               device uint* ids [[buffer(2)]], device atomic_uint* bad [[buffer(3)]],
+                               uint i [[thread_position_in_grid]]) {
   if (i >= p.y) return;
   const uint token = picks[size_t(i) * p.x];
-  ids[i] = token < p.z ? token : 0u;
+  const bool ok = token < p.z && picks[size_t(i) * p.x + 1] == 0u;
+  ids[i] = ok ? token : 0u;
+  if (!ok) atomic_store_explicit(bad, 1u, memory_order_relaxed);
 }
 
 // DSpark's confidence logit of draft i of stream s: proj . [x row s * n + i, W1[previous token]] in fp32, no bias.

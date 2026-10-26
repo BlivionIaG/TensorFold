@@ -55,6 +55,9 @@ pub const Config = struct {
         }
         out.tap_count = @intCast(taps.array.items.len);
         try kinds(o, out.layers);
+        // the block's MLP is the fixed SiLU gate
+        const act = o.get("hidden_act") orelse return error.BadDraftConfig;
+        if (act != .string or !std.mem.eql(u8, act.string, "silu")) return error.UnsupportedDraftActivation;
         // the vendored defaults decide the block: non-causal attention, interleaved RoPE, a plain Markov head
         if (o.get("is_causal") != null) return error.UnsupportedDraftMask;
         const neox = o.get("rope_is_neox_style") orelse return error.BadDraftConfig;
@@ -126,6 +129,7 @@ test "lfm2 dspark: other drafters and shapes are refused with their reason" {
     try std.testing.expectError(error.DraftForAnotherTarget, edited("\"num_target_layers\":40", "\"num_target_layers\":24"));
     try std.testing.expectError(error.DraftForAnotherTarget, edited("26,34]", "26,44]"));
     try std.testing.expectError(error.UnsupportedDraftShape, edited("\"head_dim\":64", "\"head_dim\":128"));
+    try std.testing.expectError(error.UnsupportedDraftActivation, edited("\"silu\"", "\"gelu\""));
     try std.testing.expectError(error.UnsupportedDraftRope, edited("\"rope_is_neox_style\":false", "\"rope_is_neox_style\":true"));
     try std.testing.expectError(error.UnsupportedMarkovHead, edited("\"vanilla\"", "\"gated\""));
     try std.testing.expectError(error.UnsupportedDraftMask, edited("\"full_attention\"]", "\"sliding_attention\"]"));

@@ -4,6 +4,8 @@ const mtl = @import("metal");
 const c = @import("config.zig");
 const kernels = @import("kernels.zig");
 const quant = @import("dspark_quant.zig");
+const block = @import("dspark_block.zig");
+const Pick = @import("tree_round_gpu").contract.Pick;
 const ds = @import("dspark.zig");
 const lanes = @import("lanes");
 
@@ -232,4 +234,53 @@ test "lfm2 dspark: a settled hold moves the timed passes at its block counts a t
     try std.testing.expectEqual(@as(f64, 2.2), d.holds[1].ms); // no GPU time: nothing learned
     d.priceHold(2.6 * 2);
     try std.testing.expect(d.holds[1].ms > 2.2 and d.holds[3].ms > 3 and d.holds[0].ms == 1);
+}
+
+/// lfm2_draft_ids on one pick (token, nonfinite flag) at a stride of 4 words: the id it wrote and the bad flag.
+fn draftIds(r: *Rig, pick: Pick) ![2]u32 {
+    const picks = try r.buffer(u32, 4);
+    defer picks.deinit();
+    const ids = try r.buffer(u32, 1);
+    defer ids.deinit();
+    const bad = try r.buffer(u32, 1);
+    defer bad.deinit();
+    picks.slice(u32, 4)[0] = pick.token;
+    picks.slice(u32, 4)[1] = pick.nonfinite;
+    try r.run("lfm2_draft_ids", &.{ picks, ids, bad }, [4]u32{ 4, 1, c.vocab, 0 }, 1, .{ 1, 1 });
+    return .{ ids.slice(u32, 1)[0], bad.slice(u32, 1)[0] };
+}
+
+test "lfm2 dspark: held ids carry a flagged or invalid pick as token 0 and the bad flag, a good pick untouched" {
+    var r = try Rig.init();
+    defer r.deinit();
+    try std.testing.expectEqual([2]u32{ 5, 0 }, try draftIds(&r, .{ .token = 5 }));
+    try std.testing.expectEqual([2]u32{ c.vocab - 1, 0 }, try draftIds(&r, .{ .token = c.vocab - 1 }));
+    for ([_]u32{ 1, 2, 4, 7 }) |kind| try std.testing.expectEqual([2]u32{ 0, 1 }, try draftIds(&r, .{ .token = 9, .nonfinite = kind }));
+    try std.testing.expectEqual([2]u32{ 0, 1 }, try draftIds(&r, .{ .token = std.math.maxInt(u32) }));
+    try std.testing.expectEqual([2]u32{ 0, 1 }, try draftIds(&r, .{ .token = c.vocab }));
+}
+
+test "lfm2 dspark: a settled hold refuses a NaN, infinity or invalid pick as the synchronous path does" {
+    var picks: [4 * ds.pass_rows]Pick = @splat(.{ .token = 3 });
+    var a: [4]u32 = undefined;
+    var b: [4]u32 = undefined;
+    const chains = [_][]u32{ &a, &b };
+    try block.copyPicks(&picks, &chains, &.{ 2, 2 });
+    try std.testing.expectEqualSlices(u32, &.{ 3, 3 }, a[0..2]);
+    const bad = [_]Pick{ .{ .token = 3, .nonfinite = 1 }, .{ .token = 3, .nonfinite = 2 }, .{ .token = 3, .nonfinite = 4 }, .{ .token = std.math.maxInt(u32) }, .{ .token = c.vocab } };
+    for (bad) |p| {
+        picks[ds.pass_rows + 1] = p; // the second block's second step
+        try std.testing.expectError(error.DraftNonfinite, block.copyPicks(&picks, &chains, &.{ 2, 2 }));
+        picks[ds.pass_rows + 1] = .{ .token = 3 };
+    }
+    picks[3 * ds.pass_rows] = .{ .nonfinite = 1 }; // a step past the block's depth is not read
+    try block.copyPicks(&picks, &chains, &.{ 2, 2 });
+}
+
+test "lfm2 dspark: an asked scheduled verify without the confidence head is refused by name, the default falls back" {
+    const asked: ds.Options = .{ .capacity = 64, .verify_asked = true };
+    try std.testing.expectError(error.ScheduledVerifyNeedsConfidenceHead, ds.admitVerify(asked, false));
+    try ds.admitVerify(asked, true);
+    try ds.admitVerify(.{ .capacity = 64 }, false);
+    try ds.admitVerify(.{ .capacity = 64, .verify = .depth, .verify_asked = true }, false);
 }

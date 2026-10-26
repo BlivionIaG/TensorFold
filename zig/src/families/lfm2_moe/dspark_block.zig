@@ -338,16 +338,27 @@ fn readConfidence(d: *Drafter, l: *Lane, depth: u32, bi: usize) void {
     l.conf_len = depth;
 }
 
-/// A finished signalled hold's picks into the lanes' held chains (a pick past the vocabulary reads as token 0).
-pub fn readPicks(d: *Drafter, lanes: []const *Lane, depths: []const u32) void {
+/// A finished signalled hold's picks into the lanes' held chains; a nonfinite or invalid pick is refused as the
+/// synchronous path refuses it, and no lane keeps a chain then.
+pub fn readPicks(d: *Drafter, lanes: []const *Lane, depths: []const u32) !void {
     const picks = d.s.picks.slice(Pick, d.config.block * ds.pass_rows);
+    var chains: [ds.pass_rows][]u32 = undefined;
+    for (lanes, chains[0..lanes.len]) |l, *ch| ch.* = &l.held;
+    try copyPicks(picks, chains[0..lanes.len], depths);
     for (lanes, depths, 0..) |l, depth, bi| {
-        for (l.held[0..depth], 0..) |*h, i| {
-            const p = picks[i * ds.pass_rows + bi];
-            h.* = if (p.token < c.vocab) p.token else 0;
-        }
         l.held_len = depth;
         readConfidence(d, l, depth, bi);
+    }
+}
+
+/// Step i of block bi is picks[i * ds.pass_rows + bi]: each block's first `depth` picks into its chain.
+pub fn copyPicks(picks: []const Pick, chains: []const []u32, depths: []const u32) !void {
+    for (chains, depths, 0..) |chain, depth, bi| {
+        for (chain[0..depth], 0..) |*h, i| {
+            const p = picks[i * ds.pass_rows + bi];
+            if (p.nonfinite != 0 or p.token >= c.vocab) return error.DraftNonfinite;
+            h.* = p.token;
+        }
     }
 }
 
