@@ -138,7 +138,7 @@ pub const Drafter = struct {
         const r = pass_rows;
         const wide = @max(pass_rows, absorb_rows);
         const i = d.config.intermediate;
-        const partials = @max(st.split_rows, d.config.block) * st.subs * c.query_heads * st.chunks;
+        const partials = d.partRows() * st.subs * c.query_heads * st.chunks;
         const sums = @max(absorb_rows * (d.config.tap_count * c.hidden / 64), r * (i / 64));
         d.s = .{
             .ids = try d.buffer(r * 4),
@@ -165,6 +165,11 @@ pub const Drafter = struct {
             .picks = try d.buffer(d.config.block * r * 8),
             .conf = try d.buffer(d.config.block * r * 4),
         };
+    }
+
+    /// Query rows the attention partials hold at once: a whole hold pass's, so its blocks attend side by side.
+    pub fn partRows(d: *const Drafter) usize {
+        return @max(pass_rows, d.config.block);
     }
 
     /// The drafter's buffers that every round reads (weights and scratch), for the server's residency set.

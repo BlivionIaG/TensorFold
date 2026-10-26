@@ -14,12 +14,29 @@ const Lane = ds.Lane;
 const kw = c.kv_heads * c.head_dim;
 const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32 };
 const AttnArgs = extern struct { len: u32, cap: u32, scale: f32, subs: u32 };
+/// Partials a query row takes in the scratch (the kernels' QH x CHUNKS x SUBS).
+const part_row = c.query_heads * st.chunks * st.subs;
+
+fn attnArgs(lane: *const Lane, keys: u64) AttnArgs {
+    return .{ .len = @intCast(keys - 1), .cap = @intCast(lane.cap), .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .subs = st.subs };
+}
 const Pick = round.contract.Pick;
 const MarkovArgs = extern struct { stride: u32, rank: u32, vocab: u32, prev_stride: u32 };
 const ConfidenceArgs = extern struct { n: u32, pass: u32, vocab: u32, rank: u32, hidden: u32 };
 /// Tokens a Markov scan threadgroup takes (the kernel's MARKOV_SPAN), and threadgroups a stream's row takes.
 pub const scan_span = 512;
 pub const scan_groups = (c.vocab + scan_span - 1) / scan_span;
+
+/// Rows a drafter projection takes on the scalar twin at most (faster there than the window or tensor units).
+const scalar_rows = 8;
+/// Rows from which the target's head (128,000 outputs) runs on the tensor units, where the GPU has them.
+const head_rows = 5;
+
+/// Rows from which `w` runs on the tensor units: outputs of the hidden width or fewer stay on the twin to its rows.
+fn naxFrom(w: tile.Matrix) usize {
+    if (w.n <= c.hidden) return tile.twin_rows + 1;
+    return if (w.n == c.vocab) head_rows else scalar_rows + 1;
+}
 
 /// A buffer and byte offset.
 pub const Ref = struct { buf: mtl.Buffer, off: usize = 0 };
@@ -30,23 +47,46 @@ pub const Block = struct { lane: *Lane, pending: u32, anchor: u64, depth: u32 };
 const Enc = struct {
     d: *Drafter,
     e: mtl.ComputeEncoder,
+    conc: bool = false, // a concurrent encoder: each step waits for the writes before it at `sync`
+
+    /// Later dispatches see the writes before this point (a no-op on a serial encoder).
+    fn sync(x: Enc) void {
+        if (x.conc) x.e.barrier();
+    }
 
     fn pipe(x: Enc, comptime key: []const u8) void {
         x.e.setPipeline(x.d.target.kernels.get(key));
     }
 
-    /// y[rows] = x[rows] W^T: the twin up to its rows, past them the M5's tensor-unit kernels, else the tiles.
+    /// y[rows] = x[rows] W^T: the M5's tensor units from naxFrom rows, else the twin (scalar to scalar_rows) or tiles.
     fn project(x: Enc, w: tile.Matrix, in: Ref, out: Ref, rows: usize) !void {
+        return x.projectAll(&.{w}, in, &.{out}, rows);
+    }
+
+    /// y_i[rows] = x[rows] W_i^T on one input and shape: one sums pass, then products free to overlap.
+    fn projectAll(x: Enc, ws: []const tile.Matrix, in: Ref, outs: []const Ref, rows: usize) !void {
         const t = &x.d.target.kernels.tiles;
-        if (rows > tile.twin_rows) if (x.d.target.kernels.naxPipes(w.bits)) |p| {
-            const sums = Ref{ .buf = x.d.s.sums };
-            am.rowSums(x.e, p, c.group, in, sums, @intCast(rows), @intCast(w.k));
-            const q = .{ .w = Ref{ .buf = w.w, .off = w.w_off }, .s = Ref{ .buf = w.scales, .off = w.s_off }, .b = Ref{ .buf = w.biases, .off = w.b_off }, .n = @as(u32, @intCast(w.n)), .k = @as(u32, @intCast(w.k)) };
-            return am.dense(x.e, p, in, sums, q, out, @intCast(rows));
+        const sums = Ref{ .buf = x.d.s.sums };
+        const k = ws[0].k;
+        const nax = x.d.target.kernels.naxPipes(ws[0].bits);
+        if (rows >= naxFrom(ws[0])) if (nax) |p| {
+            am.rowSums(x.e, p, c.group, in, sums, @intCast(rows), @intCast(k));
+            x.sync();
+            for (ws, outs) |w, out| {
+                const q = .{ .w = Ref{ .buf = w.w, .off = w.w_off }, .s = Ref{ .buf = w.scales, .off = w.s_off }, .b = Ref{ .buf = w.biases, .off = w.b_off }, .n = @as(u32, @intCast(w.n)), .k = @as(u32, @intCast(w.k)) };
+                am.dense(x.e, p, in, sums, q, out, @intCast(rows));
+            }
+            return;
         };
-        if (rows <= tile.twin_rows and x.d.target.kernels.twin) return tile.encodeTwin(x.e, t, w, in.buf, in.off, out.buf, out.off, rows);
-        tile.encodeSums(x.e, t, w.k, in.buf, in.off, x.d.s.sums, rows);
-        try tile.encode(x.e, t, w, in.buf, in.off, x.d.s.sums, 0, out.buf, out.off, rows);
+        if (rows <= tile.twin_rows and x.d.target.kernels.twin) {
+            // beside the tensor units the scalar twin takes every row count it has; elsewhere the window from 9 rows
+            const window: usize = if (nax != null) tile.twin_rows + 1 else scalar_rows + 1;
+            for (ws, outs) |w, out| try tile.encodeTwinFrom(x.e, t, w, in.buf, in.off, out.buf, out.off, rows, window);
+            return;
+        }
+        tile.encodeSums(x.e, t, k, in.buf, in.off, x.d.s.sums, rows);
+        x.sync();
+        for (ws, outs) |w, out| try tile.encode(x.e, t, w, in.buf, in.off, x.d.s.sums, 0, out.buf, out.off, rows);
     }
 
     /// h += r when `add`, then out = norm(h) * gain: LFM2's own norm (the drafter's width and eps are the target's).
@@ -78,25 +118,33 @@ const Enc = struct {
         x.e.dispatchGroups(mtl.Size.of(c.query_heads + c.kv_heads, rows, 1), mtl.Size.of(32, 1, 1));
     }
 
-    /// Query rows [row, row + rows) against the lane's keys [0, keys), all of them visible to every row.
-    fn attend(x: Enc, layer: usize, lane: *const Lane, row: usize, rows: usize, keys: u64) void {
+    /// The chunks' partials of query rows [row, row + rows) against the lane's keys, at partial row `part`.
+    fn partials(x: Enc, layer: usize, lane: *const Lane, row: usize, rows: usize, keys: u64, part: usize) void {
         const s = &x.d.s;
-        const args = AttnArgs{ .len = @intCast(keys - 1), .cap = @intCast(lane.cap), .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .subs = st.subs };
+        const args = attnArgs(lane, keys);
         const used = (keys + st.chunk_keys - 1) / st.chunk_keys * st.subs;
+        const at = part * part_row;
         x.pipe("lfm2_attn_block");
         x.e.setBuffer(s.queries, row * c.hidden * 2, 0);
         x.e.setBuffer(lane.mem, lane.kv(layer, false).off, 1);
         x.e.setBuffer(lane.mem, lane.kv(layer, true).off, 2);
         x.e.setBytes(std.mem.asBytes(&args), 3);
-        x.e.setBuffer(s.pm, 0, 4);
-        x.e.setBuffer(s.pl, 0, 5);
-        x.e.setBuffer(s.po, 0, 6);
+        x.e.setBuffer(s.pm, at * 4, 4);
+        x.e.setBuffer(s.pl, at * 4, 5);
+        x.e.setBuffer(s.po, at * c.head_dim * 4, 6);
         x.e.setValue(@as(u32, @intCast(rows)), 7);
         x.e.dispatchGroups(mtl.Size.of((rows + 7) / 8, c.kv_heads, @intCast(used)), mtl.Size.of(128, 1, 1));
+    }
+
+    /// The partials from partial row `part` merged into the attention's output rows [row, row + rows).
+    fn merge(x: Enc, lane: *const Lane, row: usize, rows: usize, keys: u64, part: usize) void {
+        const s = &x.d.s;
+        const args = attnArgs(lane, keys);
+        const at = part * part_row;
         x.pipe("lfm2_attn_block_merge");
-        x.e.setBuffer(s.pm, 0, 0);
-        x.e.setBuffer(s.pl, 0, 1);
-        x.e.setBuffer(s.po, 0, 2);
+        x.e.setBuffer(s.pm, at * 4, 0);
+        x.e.setBuffer(s.pl, at * 4, 1);
+        x.e.setBuffer(s.po, at * c.head_dim * 4, 2);
         x.e.setBytes(std.mem.asBytes(&args), 3);
         x.e.setBuffer(s.y, row * c.hidden * 2, 4);
         x.e.dispatchGroups(mtl.Size.of(c.query_heads, rows, 1), mtl.Size.of(32, 1, 1));
@@ -108,25 +156,32 @@ pub const Piece = struct { lane: *Lane, src: Ref, rows: usize, p0: u64 };
 
 /// Each piece's rows into its lane's keys and values (fc, hidden_norm, k, v, k_norm, RoPE) in passes on `e`.
 pub fn absorbPass(d: *Drafter, e: mtl.ComputeEncoder, pieces: []const Piece) !void {
+    return absorbOn(.{ .d = d, .e = e }, pieces);
+}
+
+fn absorbOn(x: Enc, pieces: []const Piece) !void {
+    const d = x.d;
     const s = &d.s;
-    const x = Enc{ .d = d, .e = e };
     var rows: usize = 0;
     for (pieces) |pc| {
         try x.project(d.w.fc, pc.src, .{ .buf = s.fcx, .off = rows * c.hidden * 2 }, pc.rows);
+        x.sync(); // the pieces' projections share the sums scratch
         rows += pc.rows;
     }
     if (rows == 0 or rows > ds.absorb_rows) return error.DraftContextGap;
     x.norm(s.fcx, s.fcx, d.w.hidden_norm, false, s.fcx, rows); // in place: a thread reads its values first
+    x.sync();
     for (0..d.config.layers) |i| {
         const ly = &d.w.layers[i];
-        try x.project(ly.k, .{ .buf = s.fcx }, .{ .buf = s.k }, rows);
-        try x.project(ly.v, .{ .buf = s.fcx }, .{ .buf = s.v }, rows);
+        try x.projectAll(&.{ ly.k, ly.v }, .{ .buf = s.fcx }, &.{ .{ .buf = s.k }, .{ .buf = s.v } }, rows);
+        x.sync();
         var at: usize = 0;
         for (pieces) |pc| {
             const q = Ref{ .buf = s.fcx, .off = at * c.hidden * 2 };
             x.qk(q, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, i, pc.lane, pc.p0, .{ .buf = s.dump }, pc.rows);
             at += pc.rows;
         }
+        x.sync();
     }
 }
 
@@ -143,6 +198,30 @@ pub fn end(cb: mtl.CommandBuffer, e: mtl.ComputeEncoder) !void {
     if (cb.failure()) |msg| {
         std.log.err("lfm2 dspark: command buffer failed: {s}", .{msg});
         return error.GpuFailed;
+    }
+}
+
+/// Layer `layer`'s q, k, v and every block's attention (a lone block's last layer: `out` rows), on a concurrent `x`.
+fn attendBlocks(x: Enc, layer: usize, blocks: []const Block, n: u32, rows: usize, out: usize) !void {
+    const s = &x.d.s;
+    const ly = &x.d.w.layers[layer];
+    // the three projections, every block's keys, then waves of as many blocks as the partials hold at once
+    try x.projectAll(&.{ ly.q, ly.k, ly.v }, .{ .buf = s.x }, &.{ .{ .buf = s.q }, .{ .buf = s.k }, .{ .buf = s.v } }, rows);
+    x.sync();
+    for (blocks, 0..) |b, bi| {
+        const at = bi * n;
+        x.qk(.{ .buf = s.q, .off = at * c.hidden * 2 }, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, layer, b.lane, b.anchor, .{ .buf = s.queries, .off = at * c.hidden * 2 }, n);
+    }
+    x.sync();
+    const each = if (blocks.len == 1) out else n;
+    const wave = @max(1, x.d.partRows() / n);
+    var first: usize = 0;
+    while (first < blocks.len) : (first += wave) {
+        const last = @min(blocks.len, first + wave);
+        for (blocks[first..last], first..) |b, bi| x.partials(layer, b.lane, bi * n, each, b.anchor + n, (bi - first) * n);
+        x.sync();
+        for (blocks[first..last], first..) |b, bi| x.merge(b.lane, bi * n, each, b.anchor + n, (bi - first) * n);
+        x.sync();
     }
 }
 
@@ -169,15 +248,15 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
     // past the last layer's attention a lone block carries only the rows its chain reads; several keep them all
     const tail = if (blocks.len == 1) steps else rows;
     const cb = d.target.queue.commandBuffer();
-    const x = Enc{ .d = d, .e = cb.compute(.serial) };
-    const e = x.e;
+    // one concurrent encoder: independent dispatches overlap, each dependent step waits at a barrier
+    const x = Enc{ .d = d, .e = cb.compute(.concurrent), .conc = true };
     // the blocks' staged context rows first, in the same command buffer
     var staged: [ds.pass_rows]Piece = undefined;
     var count: usize = 0;
     var held: usize = 0;
     for (blocks) |b| if (ds.Drafter.stagedPiece(b.lane)) |pc| {
         if (held + pc.rows > ds.absorb_rows) {
-            try absorbPass(d, e, staged[0..count]);
+            try absorbOn(x, staged[0..count]);
             count = 0;
             held = 0;
         }
@@ -185,49 +264,51 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         count += 1;
         held += pc.rows;
     };
-    if (count > 0) try absorbPass(d, e, staged[0..count]);
+    if (count > 0) try absorbOn(x, staged[0..count]);
     for (blocks) |b| {
         b.lane.end += b.lane.staged;
         b.lane.staged = 0;
     }
     const t = d.target;
     const emb = t.weights.embedding;
-    e.setPipeline(t.kernels.embed(emb.bits));
-    e.setBuffer(s.ids, 0, 0);
-    e.setBuffer(emb.w, emb.w_off, 1);
-    e.setBuffer(emb.scales, emb.s_off, 2);
-    e.setBuffer(emb.biases, emb.b_off, 3);
-    e.setBuffer(s.h, 0, 4);
+    x.e.setPipeline(t.kernels.embed(emb.bits));
+    x.e.setBuffer(s.ids, 0, 0);
+    x.e.setBuffer(emb.w, emb.w_off, 1);
+    x.e.setBuffer(emb.scales, emb.s_off, 2);
+    x.e.setBuffer(emb.biases, emb.b_off, 3);
+    x.e.setBuffer(s.h, 0, 4);
     const units = c.hidden / @as(usize, if (emb.bits == 6) 4 else 8 / emb.bits);
-    e.dispatchThreads(mtl.Size.of(units, rows, 1), mtl.Size.of(256, 1, 1));
+    x.e.dispatchThreads(mtl.Size.of(units, rows, 1), mtl.Size.of(256, 1, 1));
+    x.sync();
     for (0..d.config.layers) |i| {
         const ly = &d.w.layers[i];
         const out = if (i + 1 == d.config.layers) tail else rows;
         x.norm(s.h, s.r, ly.input_norm, i > 0, s.x, rows);
-        try x.project(ly.q, .{ .buf = s.x }, .{ .buf = s.q }, rows);
-        try x.project(ly.k, .{ .buf = s.x }, .{ .buf = s.k }, rows);
-        try x.project(ly.v, .{ .buf = s.x }, .{ .buf = s.v }, rows);
-        for (blocks, 0..) |b, bi| {
-            const at = bi * n;
-            x.qk(.{ .buf = s.q, .off = at * c.hidden * 2 }, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, i, b.lane, b.anchor, .{ .buf = s.queries, .off = at * c.hidden * 2 }, n);
-            x.attend(i, b.lane, at, if (blocks.len == 1) out else n, b.anchor + n);
-        }
+        x.sync();
+        try attendBlocks(x, i, blocks, n, rows, out);
         try x.project(ly.o, .{ .buf = s.y }, .{ .buf = s.r }, out);
+        x.sync();
         x.norm(s.h, s.r, ly.post_norm, true, s.x, out);
-        try x.project(ly.gate, .{ .buf = s.x }, .{ .buf = s.gate }, out);
-        try x.project(ly.up, .{ .buf = s.x }, .{ .buf = s.up }, out);
+        x.sync();
+        try x.projectAll(&.{ ly.gate, ly.up }, .{ .buf = s.x }, &.{ .{ .buf = s.gate }, .{ .buf = s.up } }, out);
+        x.sync();
         x.pipe("lfm2_swiglu");
-        e.setBuffer(s.gate, 0, 0);
-        e.setBuffer(s.up, 0, 1);
-        e.setBuffer(s.act, 0, 2);
-        e.setValue(@as(u32, @intCast(out * d.config.intermediate)), 3);
-        e.dispatchThreads(mtl.Size.of(out * d.config.intermediate / 8, 1, 1), mtl.Size.of(256, 1, 1));
+        x.e.setBuffer(s.gate, 0, 0);
+        x.e.setBuffer(s.up, 0, 1);
+        x.e.setBuffer(s.act, 0, 2);
+        x.e.setValue(@as(u32, @intCast(out * d.config.intermediate)), 3);
+        x.e.dispatchThreads(mtl.Size.of(out * d.config.intermediate / 8, 1, 1), mtl.Size.of(256, 1, 1));
+        x.sync();
         try x.project(ly.down, .{ .buf = s.act }, .{ .buf = s.r }, out);
+        x.sync();
     }
     x.norm(s.h, s.r, d.w.norm, true, s.x, tail);
+    x.sync();
     try x.project(fwd.matrix(emb), .{ .buf = s.x }, .{ .buf = s.logits }, tail);
+    x.sync();
     try markov(x, blocks.len, n, steps);
     if (d.confident()) confidence(x, blocks.len, n, steps);
+    const e = x.e;
     if (signal) |sg| { // committed unwaited, the command buffer returned retained
         e.end();
         cb.signalEvent(sg.event, sg.value);
@@ -305,11 +386,13 @@ fn markov(x: Enc, streams: usize, n: u32, depth: u32) !void {
         e.setBuffer(d.w.w2.scales, d.w.w2.s_off, 7);
         e.setBuffer(d.w.w2.biases, d.w.w2.b_off, 8);
         e.dispatchGroups(mtl.Size.of(scan_groups, streams, 1), mtl.Size.of(256, 1, 1));
+        x.sync();
         x.pipe("lfm2_markov_pick");
         e.setBuffer(s.best, 0, 0);
         e.setBuffer(s.at, 0, 1);
         e.setValue(@as(u32, scan_groups), 2);
         e.setBuffer(s.picks, i * ds.pass_rows * @sizeOf(Pick), 3);
         e.dispatchGroups(mtl.Size.of(streams, 1, 1), mtl.Size.of(256, 1, 1));
+        x.sync();
     }
 }
