@@ -16,6 +16,7 @@ const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32 };
 const AttnArgs = extern struct { len: u32, cap: u32, scale: f32, subs: u32 };
 const Pick = round.contract.Pick;
 const MarkovArgs = extern struct { stride: u32, rank: u32, vocab: u32, prev_stride: u32 };
+const ConfidenceArgs = extern struct { n: u32, pass: u32, vocab: u32, rank: u32, hidden: u32 };
 /// Tokens a Markov scan threadgroup takes (the kernel's MARKOV_SPAN), and threadgroups a stream's row takes.
 pub const scan_span = 512;
 pub const scan_groups = (c.vocab + scan_span - 1) / scan_span;
@@ -233,6 +234,7 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
     x.norm(s.h, s.r, d.w.norm, true, s.x, tail);
     try x.project(fwd.matrix(emb), .{ .buf = s.x }, .{ .buf = s.logits }, tail);
     try markov(x, blocks.len, n, steps);
+    if (d.confident()) confidence(x, blocks.len, n, steps);
     if (signal) |sg| { // committed unwaited, the command buffer returned retained
         e.end();
         cb.signalEvent(sg.event, sg.value);
@@ -250,7 +252,16 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         }
         b.lane.held_len = b.depth;
     }
+    for (blocks, 0..) |b, bi| readConfidence(d, b.lane, b.depth, bi);
     return null;
+}
+
+/// Lane `l`'s drafts' chances from slot `bi` of the last hold's logits: sigmoid(logit + bias); none: left as they are.
+fn readConfidence(d: *Drafter, l: *Lane, depth: u32, bi: usize) void {
+    if (!d.confident()) return;
+    const logits = d.s.conf.slice(f32, d.config.block * ds.pass_rows);
+    for (l.conf[0..depth], 0..) |*p, i| p.* = 1 / (1 + @exp(-(logits[i * ds.pass_rows + bi] + d.w.confidence_bias)));
+    l.conf_len = depth;
 }
 
 /// A finished signalled hold's picks into the lanes' held chains (a pick past the vocabulary reads as token 0).
@@ -262,7 +273,24 @@ pub fn readPicks(d: *Drafter, lanes: []const *Lane, depths: []const u32) void {
             h.* = if (p.token < c.vocab) p.token else 0;
         }
         l.held_len = depth;
+        readConfidence(d, l, depth, bi);
     }
+}
+
+/// Each stream's draft i confidence logit (the final norm's row i, W1 of the token before draft i), for readConfidence.
+fn confidence(x: Enc, streams: usize, n: u32, depth: u32) void {
+    const d = x.d;
+    const e = x.e;
+    x.pipe("lfm2_dspark_confidence");
+    e.setBuffer(d.s.x, 0, 0);
+    e.setBuffer(d.w.w1, 0, 1);
+    e.setBuffer(d.s.ids, 0, 2);
+    e.setBuffer(d.s.picks, 0, 3);
+    e.setBuffer(d.w.confidence.?, 0, 4);
+    const args = ConfidenceArgs{ .n = n, .pass = ds.pass_rows, .vocab = c.vocab, .rank = d.config.rank, .hidden = c.hidden };
+    e.setBytes(std.mem.asBytes(&args), 5);
+    e.setBuffer(d.s.conf, 0, 6);
+    e.dispatchGroups(mtl.Size.of(depth, streams, 1), mtl.Size.of(256, 1, 1));
 }
 
 /// Step i of each stream: its row i's logits plus W2 W1[previous draft] (the pending token first), then the argmax.

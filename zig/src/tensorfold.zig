@@ -91,6 +91,7 @@ test {
     _ = @import("families/lfm2_moe/dspark_config.zig");
     _ = @import("families/lfm2_moe/dspark_quant.zig");
     _ = @import("families/lfm2_moe/dspark_test.zig");
+    _ = @import("families/lfm2_moe/verify_costs.zig");
 }
 
 pub const lane_projection = @import("core/lane_projection.zig");

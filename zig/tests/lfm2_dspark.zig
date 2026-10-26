@@ -125,7 +125,7 @@ pub fn main(init: std.process.Init) !void {
     defer pool.pop();
     const m = try q.Model.load(gpa, init.io, args[1]);
     defer m.deinit();
-    const d = try q.dspark.Drafter.init(gpa, init.io, m, args[2], .{ .capacity = length + 64, .bits = bits });
+    const d = try q.dspark.Drafter.init(gpa, init.io, m, args[2], .{ .capacity = length + 64, .bits = bits, .verify = .scheduled });
     defer d.deinit();
     const cfg = d.config;
     // the compared block's rows (a hold of depth d runs a d-row block)
@@ -156,6 +156,8 @@ pub fn main(init: std.process.Init) !void {
     _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }}, null);
     var held: [16]u32 = undefined;
     @memcpy(held[0..block], lane.held[0..block]);
+    var conf: [16]f32 = undefined;
+    @memcpy(conf[0..block], lane.conf[0..block]);
     const gpu = held[0..block];
     for ([_]usize{ 1, 4, 16 }) |rows| {
         var best: f64 = std.math.floatMax(f64);
@@ -269,6 +271,9 @@ pub fn main(init: std.process.Init) !void {
     const w1 = try r.get("markov_head.markov_w1.weight");
     const w2 = try r.get("markov_head.markov_w2.weight");
     const bias = try a.alloc(f32, c.vocab);
+    const proj = try r.get("confidence_head.proj.weight");
+    const proj_bias = (try r.get("confidence_head.proj.bias"))[0];
+    var conf_worst: f32 = 0;
     var prev = ids[ctx];
     var same: usize = 0;
     var worst: f32 = 0;
@@ -294,8 +299,16 @@ pub fn main(init: std.process.Init) !void {
         same += @intFromBool(ok);
         std.debug.print("step {d}: reference {d} (margin {d:.3}, second {d}), GPU {d} {s}\n", .{ i, best, margin, second, gpu[i], if (ok) "equal" else "DIFFERENT" });
         if (!ok) worst = @max(worst, margin);
+        // the confidence head: [final norm row i, W1 of the token before draft i] . proj + bias, through a sigmoid
+        var logit: f32 = proj_bias;
+        for (h[i * c.hidden ..][0..c.hidden], proj[0..c.hidden]) |x0, w0| logit += x0 * w0;
+        for (w1[@as(usize, prev) * cfg.rank ..][0..cfg.rank], proj[c.hidden..]) |x0, w0| logit += x0 * w0;
+        const want = 1 / (1 + @exp(-logit));
+        conf_worst = @max(conf_worst, @abs(want - conf[i]));
+        std.debug.print("step {d}: confidence reference {d:.4}, GPU {d:.4}\n", .{ i, want, conf[i] });
         prev = gpu[i]; // teacher-forced: step i + 1 follows the GPU's pick, so each step is compared alone
     }
     std.debug.print("the reference's largest margin over a different GPU pick: {d:.3}\n", .{worst});
+    std.debug.print("the confidences' worst difference from the fp32 reference: {d:.5}\n", .{conf_worst});
     std.debug.print("{d} of {d} drafts equal the fp32 reference's picks on the same chain ({d}-token context)\n", .{ same, n, ctx });
 }

@@ -22,8 +22,13 @@ pub const absorb_rows = 2048;
 pub const stage_rows = 128;
 const kw = c.kv_heads * c.head_dim;
 
+/// Verify rows by the core's depth rule, the whole block (fixed), or the confidence head's chances (scheduled).
+pub const Verify = enum { depth, fixed, scheduled };
+/// The verify when none is asked: the confidence-scheduled one.
+pub const default_verify: Verify = .scheduled;
+
 /// `bits`: the width the bf16 linears are quantized to (8 keeps the fp32 reference's drafts; 4 does not).
-pub const Options = struct { capacity: usize, bits: u8 = 8 };
+pub const Options = struct { capacity: usize, bits: u8 = 8, verify: Verify = default_verify };
 
 /// One stream's context keys and values a layer ([kv head][cap][head dim], as the target's attention reads them).
 pub const Lane = struct {
@@ -35,6 +40,8 @@ pub const Lane = struct {
     staged: u32 = 0,
     held: [16]u32 = @splat(0),
     held_len: u32 = 0,
+    conf: [16]f32 = @splat(0), // each held draft's chance given the drafts before it landed (the confidence head)
+    conf_len: u32 = 0, // the drafts `conf` covers: the last settled hold's depth
     slot: ?u32 = null, // its block's place in the last signalled hold, whose picks still hold its drafts
 };
 
@@ -62,6 +69,7 @@ pub const Scratch = struct {
     best: mtl.Buffer, // the Markov scan's best score and token of each threadgroup, by stream
     at: mtl.Buffer,
     picks: mtl.Buffer,
+    conf: mtl.Buffer, // the confidence logits, step by step, a pass's blocks each
 };
 
 pub const Drafter = struct {
@@ -147,6 +155,7 @@ pub const Drafter = struct {
             .best = try d.buffer(r * block.scan_groups * 4),
             .at = try d.buffer(r * block.scan_groups * 4),
             .picks = try d.buffer(d.config.block * r * 8),
+            .conf = try d.buffer(d.config.block * r * 4),
         };
     }
 
@@ -156,7 +165,12 @@ pub const Drafter = struct {
     }
 
     pub fn drafter(d: *Drafter) dr.Drafter {
-        return .{ .ptr = d, .vtable = &.{ .taps = tapsFn, .facts = factsFn, .open = openFn, .absorb = absorbFn, .hold = holdFn, .held = heldFn, .release = releaseFn } };
+        return .{ .ptr = d, .vtable = &.{ .taps = tapsFn, .facts = factsFn, .open = openFn, .absorb = absorbFn, .hold = holdFn, .held = heldFn, .release = releaseFn, .chances = chancesFn } };
+    }
+
+    /// Whether holds compute the confidence head (the scheduled verify, on a checkpoint that has the head).
+    pub fn confident(d: *const Drafter) bool {
+        return d.options.verify == .scheduled and d.w.confidence != null;
     }
 
     fn cast(ptr: *anyopaque) *Drafter {
@@ -173,7 +187,46 @@ pub const Drafter = struct {
 
     fn factsFn(ptr: *anyopaque) dr.Facts {
         const d = cast(ptr);
-        return .{ .depth = d.config.block, .step_ms = d.step_ms, .prior = prior[0..d.config.block], .batched = true, .shared_guard = true, .stream_bytes = d.laneBytes(d.options.capacity) };
+        var f: dr.Facts = .{ .depth = d.config.block, .step_ms = d.step_ms, .prior = prior[0..d.config.block], .batched = true, .shared_guard = true, .stream_bytes = d.laneBytes(d.options.capacity) };
+        switch (d.options.verify) {
+            .depth => {},
+            .fixed => { // every round the whole block, no plain stretches
+                f.chances = true;
+                f.confidence_floor = 0;
+                f.shared_guard = false;
+            },
+            .scheduled => f.chances = d.confident(),
+        }
+        return f;
+    }
+
+    /// A held chain's chances: the confidence head's running product, or for a fixed window, ones that fall by depth.
+    fn chancesFn(ptr: *anyopaque, s: *Stream, out: []f64) anyerror!bool {
+        const d = cast(ptr);
+        const l = d.lanes.get(s) orelse return false;
+        if (d.options.verify == .fixed) { // no wait: equal chances at a depth share a capped round's rows evenly
+            for (out, 1..) |*o, j| o.* = 1 - 1e-3 * @as(f64, @floatFromInt(j));
+            return true;
+        }
+        if (!d.confident()) return false;
+        if (d.pending != null and l.slot != null and l.conf_len > 0) {
+            // the hold still runs: the lane's last settled confidences price it, so the host does not wait on the GPU
+            if (out.len > d.depths[l.slot.?]) return error.DraftHeldFewer;
+            var reach: f64 = 1;
+            for (out, 0..) |*o, j| {
+                reach *= l.conf[@min(j, l.conf_len - 1)];
+                o.* = reach;
+            }
+            return true;
+        }
+        try d.settle();
+        if (out.len > l.held_len) return error.DraftHeldFewer;
+        var reach: f64 = 1;
+        for (out, l.conf[0..out.len]) |*o, p| {
+            reach *= p;
+            o.* = reach;
+        }
+        return true;
     }
 
     pub fn laneBytes(d: *const Drafter, capacity: usize) usize {

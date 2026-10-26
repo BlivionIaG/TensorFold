@@ -206,3 +206,8 @@ test "lfm2 dspark: lfm2_qk on half-split rows and gains gives interleaved RoPE's
         }
     }
 }
+
+test "lfm2 dspark: the drafter verifies by its confidence head unless asked otherwise" {
+    const o: @import("dspark.zig").Options = .{ .capacity = 64 };
+    try std.testing.expectEqual(@import("dspark.zig").Verify.scheduled, o.verify);
+}
