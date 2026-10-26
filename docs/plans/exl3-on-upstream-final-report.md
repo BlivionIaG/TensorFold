@@ -1631,3 +1631,29 @@ Traces: `TF_FLASHNEXT_EXL3_DPLAN_TRACE=1` with `_TRACE_DIR`, both ranks, 48 deco
   windowed recent-demand score is already a frequency policy of that family, so a different policy gains at most about 1-2% of decode.
 
 So at 80 lines the miss rate (about 5%) cannot be cut by prediction or a better policy; only capacity (lines) or fewer bytes a miss moves it.
+
+## Window graph captures and the DeltaNet split (the largest drafted-decode loss was capture time)
+
+Per-step coverage (`TF_FLASHNEXT_EXL3_GRAPH_LOG=40`) on the 13k-token docs prompt with drafts on showed most verify windows
+*instantiated* a graph and few replayed one (rows 2: 13 replays, 25 instantiations; rows 3 and 5: none replayed), with 2.3 s of
+capture in about 5 s of decode. A TP capture is an instantiation (an in-place update is refused with a collective) and costs about
+39 ms; a window key is rows x DeltaNet state set x attention seams, so each is seen only a few times. Capturing a window on its 12th
+sighting instead of its 2nd (decode rounds stay at 2; `TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER` overrides both):
+
+| prompt | before | after | 
+|---|---|---|
+| short prose | 44.3 | 50.0 |
+| zig, 16k prompt | 102 | 106 |
+| docs, 13k prompt | 40.6 | 59.3 |
+
+Output hashes identical; unchanged after merging upstream/main (133 commits), 294 EXL3 host tests pass. Sweep: after 6, 12 and 30 gave
+docs 55.3, 59.3, 59.4, so the value is not sensitive.
+
+DeltaNet head split (`TF_FLASHNEXT_GDN_SPLIT=1`, off): each rank runs half of the key and value heads for rounds and windows under 64 rows; its
+projections read half of the replicated EXL3 weights through column views (stride_nb offset, shorter n) and the out projection through an
+input-row view (stride_k offset, shorter k), with one fp32 all-reduce of the out partial sum per layer (measured 0.85 ms for 36 extra
+all-reduces, ~24 us each). Plain decode at 88 lines: short 48.9 -> 51.4, zig 36.2 -> 37.4, docs 38.2 -> 40.0 tok/s; text stays correct. With drafts on and
+the capture fix it is neutral (48.0 / 105.6 / 58.0), and before the fix it hurt docs because the split graphs have more nodes to instantiate.
+Not done: freeing the unused half of the weights (prefill still reads the whole set), the 12 full-attention layers (the existing head
+split is disabled by KV paging), and an adaptive guard margin (a fixed 1.2 leave-plain margin was tuned on one prompt; 1.05 to 1.15
+did not change docs, which was the captures, not the guard).
