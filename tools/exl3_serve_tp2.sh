@@ -12,6 +12,9 @@ export TENSORFOLD_CHECKPOINT_SHA256=${TENSORFOLD_CHECKPOINT_SHA256:-$(cat "$mode
 export TF_FLASHNEXT_KVPAGE=1 TF_FLASHNEXT_KVPAGE_SHARED=1 TF_FLASHNEXT_EXL3_GRAPH=1 TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1
 export TF_FLASHNEXT_EXL3_GRAPH_PREFILL_AFTER=2 TF_FLASHNEXT_EXL3_GRAPH_AFTER=2 TF_FLASHNEXT_EXL3_GRAPH_ASYNC=0
 if [ "${FAST:-1}" = 1 ]; then
+  # four-warp blocks for the wide dense matrices: all 96 blocks of a 12288-column projection are resident at once on the 36-SM card (+1.4% to +2.3% decode;
+  # the partial sums group differently, so the last bits of the text differ from the eight-warp plan). PLAN_WIDE_WK=8 restores linear.py's plan.
+  export TF_FLASHNEXT_EXL3_PLAN_WIDE_WK=${PLAN_WIDE_WK:-4}
   export TF_FLASHNEXT_KVPAGE_SHARED_LANES=${PARALLEL:-2}
   if [ "${PARALLEL:-2}" = 1 ]; then
     # one user: a 0.5 GiB device reserve (the supported minimum) and a 256 MB planner reserve let 80 lines fit
