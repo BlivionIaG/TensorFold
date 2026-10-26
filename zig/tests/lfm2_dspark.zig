@@ -125,6 +125,47 @@ fn absorb(d: *q.dspark.Drafter, piece: q.dspark_block.Piece) !void {
     try q.dspark_block.end(run.cb, run.e);
 }
 
+/// Served rounds through the drafter's interface: after four warm rounds, no host allocation and one hold pass a round.
+fn steady(gpa: std.mem.Allocator, d: *q.dspark.Drafter, taps: mtl.Buffer, ids: []const u32, ctx: usize) !void {
+    const lanes = tf.lanes;
+    var s = try lanes.Stream.init(gpa, .{ .id = "steady", .prompt = ids[0 .. ctx + 1], .max_new = 160 });
+    defer s.deinit(gpa);
+    const dr = d.drafter();
+    try dr.open(&s);
+    defer dr.release(&s);
+    const width: u32 = @intCast(d.tapBytes());
+    const feats = struct {
+        fn at(buf: mtl.Buffer, row: usize, rows: usize, w: u32) lanes.backend.Features {
+            return .{ .buffer = @intFromPtr(buf.id), .offset = row * w, .rows = @intCast(rows), .row_bytes = w, .space = .device, .dtype = .bf16 };
+        }
+    };
+    try dr.absorb(&.{.{ .stream = &s, .features = feats.at(taps, 0, ctx, width), .start = 0, .follow = &.{} }});
+    var counted = std.testing.FailingAllocator.init(gpa, .{});
+    var anchor: u64 = ctx;
+    const rounds = 24;
+    const warm = 4;
+    var holds: u64 = 0;
+    for (0..rounds) |r| {
+        if (r == warm) {
+            d.gpa = counted.allocator();
+            holds = d.signalled;
+        }
+        try dr.hold(&.{.{ .stream = &s, .pending = ids[@intCast(anchor % ctx)], .position = anchor + 1, .depth = 3 }});
+        var chances: [3]f64 = undefined;
+        _ = try dr.chances(&s, &chances);
+        var drafts: [3]u32 = undefined;
+        try dr.held(&.{&s}, &.{&drafts});
+        const rows = r % 3 + 1;
+        const at: usize = @intCast(anchor % (ctx - 3));
+        try dr.absorb(&.{.{ .stream = &s, .features = feats.at(taps, at, rows, width), .start = anchor, .follow = &.{}, .prompt = false }});
+        anchor += rows;
+    }
+    d.gpa = gpa;
+    const n = rounds - warm;
+    std.debug.print("steady rounds: {d} rounds of hold, chances, held and a verified absorb: {d} host allocations, {d} resizes, {d} unwaited holds\n", .{ n, counted.allocations, counted.resize_index, d.signalled - holds });
+    if (counted.allocations != 0 or counted.resize_index != 0 or d.signalled - holds != n) return error.SteadyRoundsAllocate;
+}
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const args = try init.minimal.args.toSlice(init.arena.allocator());
@@ -218,6 +259,7 @@ pub fn main(init: std.process.Init) !void {
         }
         std.debug.print("hold of {d} streams at depth {d}: {d:.2} ms, GPU {d:.2} ms (best of 5)\n", .{ streams, depth, best, gpu_best });
     };
+    try steady(gpa, d, taps.buf, ids, ctx);
     _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }}, null);
     // the host reference, fp32 throughout
     var r: Ref = .{ .gpa = gpa, .check = ck.Checkpoint.init(gpa), .cfg = cfg };

@@ -34,17 +34,21 @@ pub const Options = struct { capacity: usize, bits: u8 = 8, verify: Verify = def
 
 /// One stream's context keys and values a layer ([kv head][cap][head dim], as the target's attention reads them).
 pub const Lane = struct {
-    keys: [8]mtl.Buffer,
-    values: [8]mtl.Buffer,
+    mem: mtl.Buffer, // each layer's keys then values, then the staged rows (shared storage)
     cap: usize, // positions each holds: the context and one block past it
+    stage_at: usize, // the staged rows' byte offset in `mem`
     end: u64 = 0, // context rows absorbed: positions [0, end)
-    stage: mtl.Buffer, // tapped rows [end, end + staged), not absorbed yet (shared storage)
-    staged: u32 = 0,
+    staged: u32 = 0, // tapped rows [end, end + staged), not absorbed yet
     held: [16]u32 = @splat(0),
     held_len: u32 = 0,
     conf: [16]f32 = @splat(0), // each held draft's chance given the drafts before it landed (the confidence head)
     conf_len: u32 = 0, // the drafts `conf` covers: the last settled hold's depth
     slot: ?u32 = null, // its block's place in the last signalled hold, whose picks still hold its drafts
+
+    /// Layer `layer`'s keys, or its values when `values`, in `mem`.
+    pub fn kv(l: *const Lane, layer: usize, values: bool) block.Ref {
+        return .{ .buf = l.mem, .off = (2 * layer + @intFromBool(values)) * l.cap * kw * 2 };
+    }
 };
 
 /// The passes' working buffers, one pass at a time on the target's queue.
@@ -66,8 +70,8 @@ pub const Scratch = struct {
     act: mtl.Buffer,
     logits: mtl.Buffer,
     sums: mtl.Buffer,
-    fcx: mtl.Buffer,
-    hctx: mtl.Buffer,
+    fcx: mtl.Buffer, // an absorb pass's context rows: fc's output, normed in place
+    dump: mtl.Buffer, // the query heads lfm2_qk rotates from context rows, which no one reads
     best: mtl.Buffer, // the Markov scan's best score and token of each threadgroup, by stream
     at: mtl.Buffer,
     picks: mtl.Buffer,
@@ -139,7 +143,7 @@ pub const Drafter = struct {
         d.s = .{
             .ids = try d.buffer(r * 4),
             .h = try d.buffer(r * c.hidden * 2),
-            .x = try d.buffer(wide * c.hidden * 2),
+            .x = try d.buffer(r * c.hidden * 2),
             .r = try d.buffer(r * c.hidden * 2),
             .y = try d.buffer(r * c.hidden * 2),
             .q = try d.buffer(r * c.hidden * 2),
@@ -155,7 +159,7 @@ pub const Drafter = struct {
             .logits = try d.buffer(r * c.vocab * 2),
             .sums = try d.buffer(sums * 4),
             .fcx = try d.buffer(absorb_rows * c.hidden * 2),
-            .hctx = try d.buffer(absorb_rows * c.hidden * 2),
+            .dump = try d.buffer(absorb_rows * c.hidden * 2),
             .best = try d.buffer(r * block.scan_groups * 4),
             .at = try d.buffer(r * block.scan_groups * 4),
             .picks = try d.buffer(d.config.block * r * 8),
@@ -236,8 +240,9 @@ pub const Drafter = struct {
         return true;
     }
 
+    /// A stream's lane at `capacity` positions: its context keys and values a layer, and its staged rows.
     pub fn laneBytes(d: *const Drafter, capacity: usize) usize {
-        return 2 * d.config.layers * (capacity + d.config.block) * kw * 2 + stage_rows * d.tapBytes();
+        return @intCast(d.keptBytes(capacity + d.config.block) + stage_rows * d.tapBytes());
     }
 
     /// A tapped row's bytes: every tap's hidden row, bf16.
@@ -248,7 +253,7 @@ pub const Drafter = struct {
     /// The lane's staged rows as an absorb piece (null: none staged).
     pub fn stagedPiece(l: *Lane) ?block.Piece {
         if (l.staged == 0) return null;
-        return .{ .lane = l, .src = .{ .buf = l.stage }, .rows = l.staged, .p0 = l.end };
+        return .{ .lane = l, .src = .{ .buf = l.mem, .off = l.stage_at }, .rows = l.staged, .p0 = l.end };
     }
 
     /// The lane's staged rows absorbed now, in a command buffer of their own.
@@ -272,33 +277,17 @@ pub const Drafter = struct {
         try d.lanes.put(d.gpa, s, l);
     }
 
+    /// A lane in one buffer of laneBytes(capacity).
     pub fn newLane(d: *Drafter, capacity: usize) !*Lane {
         const l = try d.gpa.create(Lane);
         errdefer d.gpa.destroy(l);
-        l.* = .{ .keys = undefined, .values = undefined, .stage = try d.target.device.buffer(stage_rows * d.tapBytes(), shared), .cap = capacity + d.config.block };
-        errdefer l.stage.deinit();
-        var made: usize = 0;
-        errdefer for (0..made) |i| {
-            l.keys[i].deinit();
-            l.values[i].deinit();
-        };
-        for (0..d.config.layers) |i| {
-            l.keys[i] = try d.target.device.buffer(l.cap * kw * 2, shared);
-            l.values[i] = d.target.device.buffer(l.cap * kw * 2, shared) catch |e| {
-                l.keys[i].deinit();
-                return e;
-            };
-            made += 1;
-        }
+        const at: usize = @intCast(d.keptBytes(capacity + d.config.block));
+        l.* = .{ .mem = try d.target.device.buffer(d.laneBytes(capacity), shared), .cap = capacity + d.config.block, .stage_at = at };
         return l;
     }
 
     pub fn dropLane(d: *Drafter, l: *Lane) void {
-        l.stage.deinit();
-        for (0..d.config.layers) |i| {
-            l.keys[i].deinit();
-            l.values[i].deinit();
-        }
+        l.mem.deinit();
         d.gpa.destroy(l);
     }
 
@@ -348,8 +337,8 @@ pub const Drafter = struct {
     fn copyLane(d: *const Drafter, l: *const Lane, at: usize, bytes: []u8, out: bool) void {
         const n = at * c.head_dim * 2;
         var off: usize = 0;
-        for (0..d.config.layers) |i| for ([_]mtl.Buffer{ l.keys[i], l.values[i] }) |buf| for (0..c.kv_heads) |h| {
-            const live = (buf.contents() + h * l.cap * c.head_dim * 2)[0..n];
+        for (0..d.config.layers) |i| for ([_]block.Ref{ l.kv(i, false), l.kv(i, true) }) |r| for (0..c.kv_heads) |h| {
+            const live = (r.buf.contents() + r.off + h * l.cap * c.head_dim * 2)[0..n];
             if (out) @memcpy(bytes[off..][0..n], live) else @memcpy(live, bytes[off..][0..n]);
             off += n;
         };
@@ -380,7 +369,7 @@ pub const Drafter = struct {
             l.staged = @min(l.staged, keep);
             if (it.start >= l.end and l.staged + f.rows <= stage_rows) {
                 const from = (src.contents() + f.offset)[0 .. f.rows * width];
-                @memcpy((l.stage.contents() + l.staged * width)[0 .. f.rows * width], from);
+                @memcpy((l.mem.contents() + l.stage_at + l.staged * width)[0 .. f.rows * width], from);
                 l.staged += f.rows;
                 continue;
             }
@@ -517,6 +506,12 @@ pub const Drafter = struct {
         return heldFn(ptr, &.{s}, &.{out});
     }
 
+    fn mibOf(bufs: []const mtl.Buffer) f64 {
+        var n: usize = 0;
+        for (bufs) |b| n += b.length();
+        return @as(f64, @floatFromInt(n)) / (1024.0 * 1024.0);
+    }
+
     /// Holds on empty contexts: the pipelines compiled, then holds timed by blocks and depth (best of three).
     fn warm(d: *Drafter) !void {
         var made: [hold_grid[hold_grid.len - 1]]*Lane = undefined;
@@ -534,6 +529,7 @@ pub const Drafter = struct {
         d.hold_ms = best[1];
         d.step_ms = best[1] / @as(f64, @floatFromInt(d.config.block));
         std.log.info("lfm2 dspark: a 1-draft hold takes {d:.2} ms, a {d}-draft hold {d:.2} ms", .{ best[0], d.config.block, best[1] });
+        std.log.info("lfm2 dspark: weights {d:.1} MiB, scratch {d:.1} MiB, a stream {d} KiB a position and {d} KiB staged", .{ mibOf(d.w.buffers()), mibOf(d.owned.items), d.keptBytes(1) / 1024, stage_rows * d.tapBytes() / 1024 });
         var blocks: [hold_grid[hold_grid.len - 1]]block.Block = undefined;
         for (made, &blocks) |lane, *b| b.* = .{ .lane = lane, .pending = 1, .anchor = 0, .depth = 1 };
         d.holds_len = 0;
