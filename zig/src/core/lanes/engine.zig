@@ -74,6 +74,7 @@ pub const Engine = struct {
                 .draft_step_ms = cfg.draft_step_ms,
                 .plain_guard = cfg.plain_guard,
                 .node_probabilities = cfg.node_probabilities,
+                .granted_depth = cfg.granted_depth,
                 .confidence_floor = cfg.draft_confidence,
                 .batch_rows = cfg.batch_rows,
                 .batched_heads = cfg.draft_streams,
@@ -293,7 +294,7 @@ pub const Engine = struct {
         const budgets = try a.alloc(i64, heads.items.len);
         const sampled = win.anySampled(plans);
         // the guard's plain stretches: no stream drafts, so the round costs what it would without a head
-        const guarded = e.cfg.shared_guard and !try e.guard.drafts(plans.len);
+        const guarded = e.cfg.shared_guard and !try e.guard.draftsFresh(plans.len, whos);
         if (guarded) @memset(budgets, 0) else try e.rule.budgets(whos, win.probe(e), sampled, budgets);
         const ids = try a.alloc(ev.Value, heads.items.len);
         for (ids, heads.items) |*id, i| id.* = str(plans[i].stream.id);

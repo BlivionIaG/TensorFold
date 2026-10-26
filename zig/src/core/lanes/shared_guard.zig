@@ -1,6 +1,7 @@
 //! Whether a shared round drafts at all: drafted and plain rounds' measured tokens a ms, by stream count.
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const depth = @import("depth.zig");
 
 pub const Constants = struct {
     explore: [2]u32 = .{ 16, 4 }, // measured rounds plain and drafted rounds run when their rate is (re)taken
@@ -43,6 +44,16 @@ pub const Guard = struct {
     /// Whether a shared round of `streams` streams may draft (false: every stream runs its row alone).
     pub fn drafts(g: *Guard, streams: usize) !bool {
         return (try g.entry(streams)).mode == 1;
+    }
+
+    /// drafts(); a drafted stretch's first round grants every stream one draft, so it measures drafted rounds.
+    pub fn draftsFresh(g: *Guard, streams: usize, whos: []depth.Who) !bool {
+        const e = try g.entry(streams);
+        if (e.mode == 1 and e.skip) for (whos) |*w| {
+            w.granted = 1;
+            w.grant_short = false;
+        };
+        return e.mode == 1;
     }
 
     /// A finished shared round: its committed tokens and wall ms, in the mode drafts() gave it.
@@ -130,14 +141,33 @@ test "a mode's first round is not measured: it carries the other mode's drafts" 
     try std.testing.expectEqual(@as(?f64, 0.1), (try g.entry(2)).rate[1]);
 }
 
+test "a drafted stretch starts from a grant of one: a plain stretch's grants of none would hold nothing to measure" {
+    var g: Guard = .{ .gpa = std.testing.allocator, .k = .{ .explore = .{ 2, 2 }, .exploit = 4 } };
+    defer g.deinit();
+    var st: ?depth.State = null;
+    var whos = [_]depth.Who{.{ .state = &st, .draft_room = 100, .finished = false, .forced = false, .granted = 0 }};
+    try std.testing.expect(!try g.draftsFresh(2, &whos)); // plain first: grants as they are
+    try std.testing.expectEqual(@as(?u32, 0), whos[0].granted);
+    for (0..3) |_| try g.observe(2, 1, 4);
+    try std.testing.expect(try g.draftsFresh(2, &whos)); // the drafted stretch's first round
+    try std.testing.expectEqual(@as(?u32, 1), whos[0].granted);
+    try g.observe(2, 1, 4); // its first round, skipped
+    whos[0].granted = 0;
+    try std.testing.expect(try g.draftsFresh(2, &whos)); // later rounds keep the allocation's grants
+    try std.testing.expectEqual(@as(?u32, 0), whos[0].granted);
+}
+
 test "a guard allocates once a stream count: its rounds after that take no allocation" {
     var counted = std.testing.FailingAllocator.init(std.testing.allocator, .{});
     var g: Guard = .{ .gpa = counted.allocator(), .k = .{ .explore = .{ 2, 2 }, .exploit = 4 } };
     defer g.deinit();
     for ([_]usize{ 1, 4, 8, 16 }) |streams| _ = try run(&g, streams, 1, 0.25, 0.2);
     const first = .{ counted.allocations, counted.resize_index };
+    var st: [16]?depth.State = @splat(null);
+    var whos: [16]depth.Who = undefined;
+    for (&whos, &st) |*w, *s| w.* = .{ .state = s, .draft_room = 100, .finished = false, .forced = false, .granted = 1 };
     for (0..200) |i| for ([_]usize{ 1, 4, 8, 16 }) |streams| {
-        _ = try g.drafts(streams);
+        _ = try g.draftsFresh(streams, whos[0..streams]);
         try g.observe(streams, i % 3 + 1, 4);
     };
     try std.testing.expectEqual(first[0], counted.allocations);

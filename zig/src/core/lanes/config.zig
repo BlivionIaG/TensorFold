@@ -35,6 +35,8 @@ pub const Model = struct {
     max_streams: u32 = 0, // a shared forward's streams at most (0: 32)
     shared_costs: []const Cost = &.{}, // shared forwards' ms by total rows (timed at load)
     draft_probabilities: bool = false, // the head gives each drafted node's chance of landing
+    granted_depth: bool = false, // with draft_probabilities: every stream drafts its last grant plus a slack
+    draft_slack: u32 = 0, // drafts past a stream's last grant, short or not (0: the Constants' own)
     draft_streams: bool = false, // the head drafts every stream of a shared round in one batch
     shared_guard: bool = false, // a shared round drafts only while drafted rounds measure faster (shared_guard.zig)
     head_trees: bool = false, // the head drafts trees of lanes (DraftRequest.lanes) and holds them
@@ -65,6 +67,7 @@ pub const Config = struct {
     batch_rows: u32,
     batch_streams: u32,
     node_probabilities: bool,
+    granted_depth: bool = false, // Model.granted_depth
     fill_lanes: u32 = 0, // rows a window may grow to with suffix-match branches (0: off; lanes/fill.zig)
     fill_match: u32 = 8, // context tokens a suffix-match branch must match (shorter ones are coincidental phrases)
     fill_floor: f64 = 0.35, // the share of grafted rows a stream must keep to go on reading its chain back every round
@@ -148,6 +151,7 @@ pub const Config = struct {
             .batch_rows = batch_rows,
             .batch_streams = if (streams) (if (m.max_streams != 0) m.max_streams else 32) else 1,
             .node_probabilities = m.draft_probabilities or m.draft_confidence != null,
+            .granted_depth = m.granted_depth and m.draft_probabilities,
             .draft_streams = m.draft_streams,
             .shared_guard = m.shared_guard,
             .head_trees = m.head_trees,
@@ -160,7 +164,12 @@ pub const Config = struct {
             .shared_costs = try alloc.extendCosts(gpa, timed.items, batch_rows),
             .lane_costs = try alloc.extendCosts(gpa, m.lane_costs, 64),
             .mtp_step_ms = m.mtp_step_ms,
-            .k = .{ .depth_rate = if (m.depth_rate > 0) m.depth_rate else (Constants{}).depth_rate },
+            .k = .{
+                .depth_rate = if (m.depth_rate > 0) m.depth_rate else (Constants{}).depth_rate,
+                .draft_slack = if (m.draft_slack > 0) m.draft_slack else (Constants{}).draft_slack,
+                .grant_slack = if (m.draft_slack > 0) m.draft_slack else (Constants{}).grant_slack,
+                .short_slack = if (m.draft_slack > 0) m.draft_slack else (Constants{}).short_slack,
+            },
             .draft_step_ms = m.draft_step_ms,
         };
     }

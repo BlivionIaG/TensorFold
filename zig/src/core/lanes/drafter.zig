@@ -19,6 +19,9 @@ pub const Facts = struct {
     lane_costs: []const Cost = &.{}, // the same for the lane planner (Model.lane_costs)
     tree_nodes: u32 = 0, // hold() without lanes grows its own tree of up to `depth` nodes, at most this many (tree, chances)
     shared_guard: bool = false, // shared rounds draft only while they measure faster than plain ones (Model.shared_guard)
+    chances: bool = false, // chances() gives each held chain draft's chance: verify rows go by them (Model.granted_depth)
+    confidence_floor: ?f64 = null, // with chances: every round drafts the deepest chain and verifies drafts this likely
+    slack: u32 = 0, // with chances: drafts a hold offers past the stream's last grant (0: the depth rule's own)
 };
 
 /// Target rows [start, start + features.rows) and the token after each; `rows`, when given, picks which to absorb.
