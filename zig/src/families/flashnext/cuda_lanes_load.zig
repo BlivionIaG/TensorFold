@@ -20,6 +20,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     // refused before the stream, the glue or a captured set loads
     const chunk = try prompt.chunkRows();
     const mode = try config.mode(gpa, io, dir);
+    if (mode == .exl3) try @import("cuda_exl3_arch.zig").check(ctx.d); // sm_120 only: refused before any weight loads
     if (o.tp != 1 and ((mode != .modelopt and mode != .exl3) or captured != null)) return error.UnsupportedQuantization;
     if (o.slide and (mode != .affine or o.tp != 1)) return error.UnsupportedLearningFormat;
     if (o.slide and captured != null) return error.TrainingOnCapturedGlue;

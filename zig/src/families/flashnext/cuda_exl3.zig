@@ -1,5 +1,6 @@
 //! EXL3 checkpoints on the Flash Next CUDA family: what the upstream files' one-line hooks call.
 pub const config = @import("cuda_exl3_config.zig");
+pub const arch = @import("cuda_exl3_arch.zig");
 pub const store = @import("cuda_exl3_store.zig");
 pub const memory = @import("cuda_exl3_memory.zig");
 pub const load = @import("cuda_exl3_load.zig");
@@ -24,6 +25,7 @@ pub const batch = @import("cuda_batch.zig");
 
 test {
     _ = config;
+    _ = arch;
     _ = store;
     _ = memory;
     _ = load;
