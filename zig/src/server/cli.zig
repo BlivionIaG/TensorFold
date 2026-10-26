@@ -101,7 +101,7 @@ pub const flags = [_]Flag{
     .{ .name = "--slide", .kind = .store_true, .native = true },
     .{ .name = "--slide-graph", .native = true },
     .{ .name = "--drafter", .native = true },
-    .{ .name = "--drafter-bits", .choices = &.{ "0", "4" }, .native = true },
+    .{ .name = "--drafter-bits", .choices = &.{ "0", "4", "8" }, .native = true },
     .{ .name = "--draft-verify", .choices = &.{ "depth", "fixed", "scheduled" }, .native = builtin.os.tag == .macos },
     .{ .name = "--verify-costs", .native = builtin.os.tag == .macos },
     .{ .name = "--record", .native = true },

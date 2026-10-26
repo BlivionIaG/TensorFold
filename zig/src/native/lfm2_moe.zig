@@ -82,13 +82,13 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     h.draft = null;
     h.wrap = null;
     if (if (o.drafts) o.drafter else null) |dir| {
-        if (o.drafter_bits_given and o.drafter_bits != 0) {
-            problem.* = "--drafter-bits: the LFM2 DSpark drafter runs the released bf16 matrices; it takes 0 and no other width";
+        const bits: u8 = if (o.drafter_bits_given) o.drafter_bits else 0;
+        if (bits != 0 and bits != 8) {
+            problem.* = "--drafter-bits: the LFM2 DSpark drafter takes 0 (bf16 as released, the default) or 8 (8-bit codes quantized at load)";
             release(h);
             return null;
         }
-        const verify = verifyMode(o.draft_verify);
-        h.draft = q.dspark.Drafter.init(gpa, io, model, dir, .{ .capacity = window, .bits = 0, .verify = verify }) catch |err| {
+        h.draft = q.dspark.Drafter.init(gpa, io, model, dir, .{ .capacity = window, .bits = bits }) catch |err| {
             problem.* = try std.fmt.allocPrint(a, "the native LFM2 drafter cannot load {s} ({s}): it takes LiquidAI/LFM2.5-24B-A2B-DSpark", .{ dir, @errorName(err) });
             release(h);
             return null;
@@ -161,7 +161,10 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     };
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
     try h.host.start();
-    if (h.draft) |d| std.log.info("lfm2: DSpark drafts from --drafter, {d} a round at most, bf16 matrices as released, {t} verify", .{ d.config.block, d.options.verify });
+    if (h.draft) |d| {
+        const mode = if (d.options.bits == 8) "8-bit codes quantized at load (--drafter-bits 8), not the released bf16" else "bf16 matrices as released";
+        std.log.info("lfm2: DSpark drafts from --drafter, {d} a round at most, {s}", .{ d.config.block, mode });
+    }
     return .{ .engine = h.host.engine(), .close = Host.close, .ctx = h };
 }
 

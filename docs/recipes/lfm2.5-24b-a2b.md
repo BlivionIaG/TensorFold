@@ -69,8 +69,10 @@ The drafter has no embedding and no head of its own:
   drafter was trained on.
 - Markov head: row i's logits plus `W2 W1[previous token]` (rank 256); draft i is their argmax.
 
-Its bf16 linears are quantized at load to 8-bit MLX affine codes in groups of 64 and run on the family's kernels
-and `core/tile_qmm`; the q and k rows are reordered so that the target's half-split RoPE kernel gives the
+The drafter runs the released bf16 matrices as they are (`--drafter-bits 0`, the default). `--drafter-bits 8` instead
+quantizes them at load to 8-bit MLX affine codes in groups of 64, about 5% faster on one stream and 361 MiB of weights
+against 625 MiB; the server logs which mode runs, and 4 bits is refused. Both run on the family's kernels
+(bf16 on `lfm2_bf16_rows`, `lfm2_bf16_mma` and `lfm2_markov_scan_bf16`, 8-bit on `core/tile_qmm`); the q and k rows are reordered so that the target's half-split RoPE kernel gives the
 checkpoint's interleaved RoPE. Its own kernels are `lfm2_tap`, `lfm2_attn_block` and `lfm2_attn_block_merge`
 (non-causal block attention, the target's attention kernels with a template flag), `lfm2_markov_scan` and
 `lfm2_markov_pick` (a Markov step) and `lfm2_draft_ids` (a hold's drafts into the next verify's rows on the GPU, so
