@@ -1,5 +1,4 @@
 //! Flash Next prompt states for the shared prompt cache: one stream's caches after `at` tokens, copied on the device.
-//! BF16 paged snapshot format and ordering contract (version 1, exact pager geometry).
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -200,10 +199,10 @@ fn discard(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
     gpa.destroy(snap);
 }
 
-/// A copy of `seq` (and of the head's cache, with `d`) as it stands after `seq.fed` tokens.
-/// Kept states go to mapped pinned host memory (copied at ~14 GB/s by the same DtoD copies; the device keeps none of
+/// Kept states go to mapped pinned host memory, set once at load (TF_FLASHNEXT_SNAP_HOST); the host budgets the cache.
 pub var on_host: bool = false;
 
+/// A copy of `seq` (and of the head's cache, with `d`) as it stands after `seq.fed` tokens.
 pub fn save(gpa: std.mem.Allocator, driver: *const cuda.Driver, stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft) !*Snap {
     const at = seq.fed;
     if (seq.invalidated) return error.SnapshotDestinationInvalid;

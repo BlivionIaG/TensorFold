@@ -60,7 +60,7 @@ fn onePart(p: anytype, e: *const load.Proj, pt: load.Part, x: u64, m: usize, out
     try copy2d(s, out + pt.col * 2, e.n * 2, tmp, pt.n * 2, pt.n * 2, m);
 }
 
-/// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32....
+/// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32.
 fn laneF16(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: usize, sk: usize) !void {
     const s = p.stream;
     if (e.parts.len != 1 or e.parts[0].kind != .native) return error.UnexpectedTensor;
@@ -166,7 +166,7 @@ pub fn offloadedLayers(layers: []const @import("cuda_prompt_load.zig").Layer, mt
 pub const Budget = struct {
     graph_reservation: u64 = 0,
     planner_rows: ?u64 = null,
-    /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB).).).).
+    /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB).
     reserve: ?u64 = null,
     /// What the pools leave beyond the server's reserve: allocator rounding and the copy streams' own memory.
     margin: u64 = 256 << 20,

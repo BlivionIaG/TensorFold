@@ -488,8 +488,7 @@ pub fn hostTests(b: *std.Build, draft_ids: *std.Build.Module, build_options: *st
         golden_build.step(b, host, server_tests, native_modules.api, mods.tokenizer, template, native_modules.engines);
         @import("cortheon_fuzz.zig").add(b, host, native_modules.api, mods.tokenizer, template);
     }
-    // the tokenizer's own tests (memo, steps, regex, unicode) run here: no other test binary reaches them
-    // the Flash Next family's EXL3 hooks alone (every test named "exl3: ..."), without the rest of the host suite
+    // the tokenizer's own tests run here: no other test binary reaches them; the EXL3 hooks alone run as "exl3: ..."
     b.step("test-flashnext-exl3-host", "Flash Next EXL3 admission, store, sizing and loader host tests").dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = flashnextModule(b, host, .debug, cuda, mods.core, mods.lanes, mods.qwen_vision), .filters = &.{"exl3: "} })).step);
     const trace_writer_build = b.addSystemCommand(&.{ "c++", "-std=c++17", "-O1" });
     trace_writer_build.addFileArg(b.path("zig/src/families/flashnext/exl3_dplan_trace_kernel_test.cpp"));
