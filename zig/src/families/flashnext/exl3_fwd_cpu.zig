@@ -1,12 +1,12 @@
 //! CPU f64 oracle for the whole Qwen3.8-Flash-Next EXL3 forward, assembled from the per-op oracles (`exl3_hc`
 
 const std = @import("std");
-const format = @import("exl3_format.zig");
 const hc = @import("exl3_hc.zig");
 const gdn_cpu = @import("exl3_gdn_cpu.zig");
 const attn_cpu = @import("exl3_attn_cpu.zig");
 const moe = @import("exl3_moe.zig");
 const cpu = @import("exl3_cpu.zig");
+const qmat = @import("exl3_qmat.zig");
 
 pub const hidden: usize = 2560;
 pub const streams: usize = 4;
@@ -15,6 +15,7 @@ pub const topk: usize = 10;
 pub const experts: usize = 512;
 pub const inter: usize = 640;
 
+<<<<<<< HEAD
 // -- parallel for ------------------------------------------------------------------------------------------
 
 /// Runs `f(ctx, i)` for i in 0..n over up to `max_threads` threads (the caller included).
@@ -43,7 +44,7 @@ pub fn parallelFor(n: usize, max_threads: usize, ctx: anytype, comptime f: anyty
 
 // -- QMat --------------------------------------------------------------------------------------------------
 
-/// In-place orthonormal Walsh-Hadamard transform of each 128 block of `x` (Sylvester order, H[i][j] =).).
+/// In-place orthonormal Walsh-Hadamard transform of each 128 block of `x` (Sylvester order, H[i][j] =).).).
 pub fn fwht128(x: []f64) void {
     std.debug.assert(x.len % 128 == 0);
     const inv = 1.0 / @sqrt(128.0);
@@ -158,6 +159,11 @@ const UnpackJob = struct {
         }
     }
 };
+=======
+pub const QMat = qmat.QMat;
+pub const parallelFor = qmat.parallelFor;
+pub const fwht128 = qmat.fwht128;
+>>>>>>> origin/agent/split-offload
 
 // -- small ops ---------------------------------------------------------------------------------------------
 
@@ -549,85 +555,6 @@ pub fn layerRows(gpa: std.mem.Allocator, w: LayerW, st: *LayerState, pos0: usize
     hcPostRows(h, branch, inject, rows);
 }
 
-// -- tests -------------------------------------------------------------------------------------------------
-
-test "fwht128 is orthonormal and equals the dense Sylvester matrix" {
-    var rng = std.Random.DefaultPrng.init(3);
-    var x: [256]f64 = undefined;
-    for (&x) |*v| v.* = rng.random().float(f64) * 2 - 1;
-    var y = x;
-    fwht128(&y);
-    for (0..2) |blk| {
-        for (0..128) |i| {
-            var s: f64 = 0;
-            for (0..128) |j| {
-                const sign: f64 = if (@popCount(i & j) & 1 == 1) -1 else 1;
-                s += sign * x[blk * 128 + j];
-            }
-            try std.testing.expectApproxEqAbs(s / @sqrt(128.0), y[blk * 128 + i], 1e-12);
-        }
-    }
-    fwht128(&y);
-    for (x, y) |a, b| try std.testing.expectApproxEqAbs(a, b, 1e-12);
-}
-
-test "QMat.apply equals the dense decoder's dequantize then matvec" {
-    const gpa = std.testing.allocator;
-    var rng = std.Random.DefaultPrng.init(17);
-    const r = rng.random();
-    for ([_]u16{ 4, 6, 10 }) |halves| {
-        const tiles_k: usize = 8;
-        const tiles_n: usize = 16;
-        const k = tiles_k * 16;
-        const n = tiles_n * 16;
-        const words = @as(usize, halves) * 8;
-        const trellis = try gpa.alloc(i16, tiles_k * tiles_n * words);
-        defer gpa.free(trellis);
-        for (trellis) |*v| v.* = @bitCast(r.int(u16));
-        const suh = try gpa.alloc(f16, k);
-        defer gpa.free(suh);
-        const svh = try gpa.alloc(f16, n);
-        defer gpa.free(svh);
-        for (suh) |*v| v.* = if (r.boolean()) 1.0 else -1.0;
-        for (svh) |*v| v.* = @floatCast(0.5 + r.float(f32));
-        const dense = try gpa.alloc(f64, k * n);
-        defer gpa.free(dense);
-        const scratch = try gpa.alloc(f64, 2 * k * n);
-        defer gpa.free(scratch);
-        format.dequantize(.{ .halves = halves }, .mul1, trellis, tiles_k, tiles_n, suh, svh, dense, scratch);
-        var q = try QMat.init(gpa, halves, trellis, tiles_k, tiles_n, suh, svh, 4);
-        defer q.deinit(gpa);
-        var x: [k]f64 = undefined;
-        for (&x) |*v| v.* = r.floatNorm(f64);
-        var want: [n]f64 = undefined;
-        for (0..n) |j| {
-            var s: f64 = 0;
-            for (0..k) |i| s += x[i] * dense[i * n + j];
-            want[j] = s;
-        }
-        var got: [n]f64 = undefined;
-        var tmp: [k]f64 = undefined;
-        q.apply(&x, &got, &tmp);
-        for (want, got) |a, b| try std.testing.expectApproxEqAbs(a, b, 1e-9 * (1 + @abs(a)));
-        // column slices equal the whole
-        var prep: [k]f64 = undefined;
-        q.prepare(&x, &prep);
-        var part: [128]f64 = undefined;
-        q.applyCols(&prep, &part, 128, 256);
-        for (part, got[128..256]) |a, b| try std.testing.expectApproxEqAbs(a, b, 1e-12);
-    }
-}
-
-test "parallelFor visits every index once" {
-    const Ctx = struct {
-        hits: []std.atomic.Value(u8),
-        fn f(c: *@This(), i: usize) void {
-            _ = c.hits[i].fetchAdd(1, .monotonic);
-        }
-    };
-    var hits: [1000]std.atomic.Value(u8) = undefined;
-    for (&hits) |*h| h.* = std.atomic.Value(u8).init(0);
-    var c: Ctx = .{ .hits = &hits };
-    parallelFor(hits.len, 8, &c, Ctx.f);
-    for (&hits) |*h| try std.testing.expectEqual(@as(u8, 1), h.load(.monotonic));
+comptime {
+    _ = qmat;
 }

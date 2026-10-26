@@ -1,26 +1,14 @@
-//! flashnext-exl3: the Flash Next CUDA family on a real EXL3 pack (Qwen3.8-Flash-Next 3.05bpw), against our float64
+//! flashnext-exl3: the Flash Next CUDA family on a real EXL3 pack against our float64 oracle; this hub parses the mode.
 const std = @import("std");
-const cuda = @import("cuda");
-const core = @import("core");
-const flash = @import("flashnext");
 const check = @import("check.zig");
-const fwd = @import("exl3_fwd_cpu.zig");
-const hc = @import("exl3_hc.zig");
-const moe = @import("exl3_moe.zig");
-const router_cpu = @import("exl3_router.zig");
-const route_cpu = @import("exl3_route.zig");
-const scan = @import("exl3_scan.zig");
-const place = @import("exl3_place.zig");
-const gdn_cpu = @import("exl3_gdn_cpu.zig");
-const attn_cpu = @import("exl3_attn_cpu.zig");
+const shared = @import("flashnext_exl3_rig.zig");
+const names_tests = @import("flashnext_exl3_names_tests.zig");
+const proj_tests = @import("flashnext_exl3_proj_tests.zig");
+const layer_tests = @import("flashnext_exl3_layer_tests.zig");
 
-const X = flash.exl3;
-const wt = X.prompt_wt;
-const pl = X.prompt_load;
-const batch = X.batch;
 const Gpu = check.Gpu;
-const st = core.safetensors;
 
+<<<<<<< HEAD
 const dims = wt.dims;
 const wide = wt.wide;
 const streams = wt.streams;
@@ -1139,6 +1127,20 @@ fn pleMode(gpu: Gpu, dir: []const u8) !void {
     try check.expect(worst_value <= 1e-5, "ple: value_proj from fp16 rows is {e:.3} of peak from float64", .{worst_value});
     check.pass("ple: fp16 n-gram rows through key/value (exact bf16 split): key {e:.3}, value {e:.3} of peak (bf16-rounded rows: {e:.3})", .{ worst_key, worst_value, worst_bf16 });
 }
+=======
+pub const default_ids = shared.default_ids;
+pub const RawPack = shared.RawPack;
+pub const bfValue = shared.bfValue;
+pub const Err = shared.Err;
+pub const errOf = shared.errOf;
+pub const download = shared.download;
+pub const uploadTo = shared.uploadTo;
+pub const Pass = shared.Pass;
+pub const Rig = shared.Rig;
+pub const Taps = layer_tests.Taps;
+pub const deviceLayer = layer_tests.deviceLayer;
+pub const layerCheck = layer_tests.layerCheck;
+>>>>>>> origin/agent/split-offload
 
 fn parseList(gpa: std.mem.Allocator, text: []const u8) ![]usize {
     var list: std.ArrayList(usize) = .empty;
@@ -1151,19 +1153,19 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
     if (rest.len < 2) return error.MissingArgument;
     const dir = rest[0];
     const mode = rest[1];
-    if (std.mem.eql(u8, mode, "names")) return names(gpu, dir);
-    if (std.mem.eql(u8, mode, "norms")) return norms(gpu, dir);
-    if (std.mem.eql(u8, mode, "ple")) return pleMode(gpu, dir);
+    if (std.mem.eql(u8, mode, "names")) return names_tests.names(gpu, dir);
+    if (std.mem.eql(u8, mode, "norms")) return names_tests.norms(gpu, dir);
+    if (std.mem.eql(u8, mode, "ple")) return proj_tests.pleMode(gpu, dir);
     if (std.mem.eql(u8, mode, "router")) {
         const which = try parseList(gpu.gpa, if (rest.len > 2) rest[2] else "0,3,17");
         defer gpu.gpa.free(which);
         const rows = if (rest.len > 3) try std.fmt.parseInt(usize, rest[3], 10) else 4096;
-        return router(gpu, dir, which, rows);
+        return names_tests.router(gpu, dir, which, rows);
     }
     if (std.mem.eql(u8, mode, "layer")) {
         const which = try parseList(gpu.gpa, if (rest.len > 2) rest[2] else "0,3");
         defer gpu.gpa.free(which);
-        return layerMode(gpu, dir, which);
+        return layer_tests.layerMode(gpu, dir, which);
     }
     return error.UnknownMode;
 }

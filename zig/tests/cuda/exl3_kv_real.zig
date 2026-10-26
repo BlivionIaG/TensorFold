@@ -1,4 +1,4 @@
-//! exl3-kv real: the first LAYERS decoder layers of the EXL3 pack through the family's own pass (Pass.chunk: embed).).
+//! exl3-kv real: the first LAYERS decoder layers of the EXL3 pack through the family's own pass (Pass.chunk: embed).).).
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");

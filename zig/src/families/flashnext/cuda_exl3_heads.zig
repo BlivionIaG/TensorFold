@@ -155,7 +155,7 @@ fn cdiv(a: usize, b: usize) usize {
     return (a + b - 1) / b;
 }
 
-/// cuda_batch.zig Pass.attnBlock for a split layer: the rank's projection row, its heads' attention on its KV head..
+/// cuda_batch.zig Pass.attnBlock for a split layer: the rank's projection row, its heads' attention on its KV head...
 pub fn attnBlock(p: anytype, lw: anytype, ai: usize) !void {
     const s = p.s;
     const n = p.rows;
