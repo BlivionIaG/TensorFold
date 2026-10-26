@@ -2,6 +2,7 @@
 
 const cuda = @import("cuda");
 const wt = @import("cuda_prompt_wt.zig");
+const hub = @import("cuda_exl3_kv.zig");
 
 const group: usize = 32;
 const head_dim = wt.head_dim;
@@ -15,9 +16,6 @@ pub fn chunkSmem(nb: u32) u32 {
     const row: u32 = @intCast((head_dim + 8) * 2);
     return tile_heads * row + 2 * tile_keys * row + tile_heads * (tile_keys + 8) * 2 + nb * 2 * tile_keys * @as(u32, @intCast(head_dim)) + nb * 2 * tile_keys * @as(u32, @intCast(head_dim / group)) * 2;
 }
-
-/// Rows up to which the chunk kernel keeps the next tile's codes in flight (upstream's bf16 kernel: 16).
-pub var ahead_rows: usize = 16;
 
 pub const Kv8 = struct {
     module: cuda.Module,
@@ -84,7 +82,7 @@ pub const Kv8 = struct {
         for ([_]usize{ nq, nkv, g, 512, if (qsa) wt.nch else wt.dense_nch }) |v| a.add(int(v));
         a.add(@as(f32, 0.0625));
         for ([_]usize{ wt.index_idw, @intFromBool(qsa) }) |v| a.add(int(v));
-        const ahead = rows <= ahead_rows;
+        const ahead = rows <= hub.ahead_rows;
         try go(if (ahead) k.chunks_ahead else k.chunks, s, .{ rows, nkv, chunks }, 128, chunkSmem(if (ahead) 2 else 1), &a);
     }
 

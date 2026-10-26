@@ -80,6 +80,9 @@ pub fn draftAttnBytes(cap: usize, p: Policy) u64 {
 
 pub const gib: f64 = 1024.0 * 1024.0 * 1024.0;
 
+/// Rows up to which the chunk kernel keeps the next tile's codes in flight (upstream's bf16 kernel: 16).
+pub var ahead_rows: usize = 16;
+
 // -- the int8 cache in the family's engine (plan §8): `of(engine)`, Seq/SeqState.kv8, Pass.attnRows -------------
 
 /// What an engine's new sequences hold (set once at load by `setup`, before any sequence; kept here by engine address
