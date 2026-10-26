@@ -10,6 +10,7 @@ pub const Constants = struct {
     depth_probe_every: u64 = 8, // rounds between probes one depth deeper
     cost_rate: f64 = 0.2, // weight of the newest round in a depth's measured time
     plain_margin: f64 = 1.05, // a drafted depth must beat plain rounds' tokens a ms by this much
+    leave_plain_margin: f64 = 1.2, // a stream on plain rounds returns to drafts on its own estimates only by this much (a round's time is noisy)
     plain_wait_most: u64 = 64, // plain rounds between probes at most
     rate_weight: f64 = 0.25, // weight of the newest round in a stream's plain and drafted tokens a ms
     draft_slack: i64 = 2, // drafts a stream offers past what its last shared round granted it
@@ -135,7 +136,8 @@ pub const Rule = struct {
             if (st.plain_n < min_samples) break :blk true;
             const plain = st.plain_tok / st.plain_ms;
             const drafted = st.draft_tok / st.draft_ms;
-            if (drafted >= plain * r.k.plain_margin) {
+            const margin = if (st.chain) r.k.plain_margin else r.k.leave_plain_margin;
+            if (drafted >= plain * margin) {
                 st.plain = 0;
                 st.wait = r.k.depth_probe_every;
                 break :blk false;
