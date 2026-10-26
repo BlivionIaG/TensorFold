@@ -239,7 +239,8 @@ pub const Rule = struct {
     /// A lone round's committed tokens and wall ms at the stream's context band, for the lone guard.
     pub fn observeLone(r: *Rule, who: Who, band: usize, tokens: usize, ms: f64) !void {
         if (!r.lone_guard) return;
-        (try r.state(who)).lone.observe(r.lone_k, r.lone_plain.at(who.sampled, band), tokens, ms);
+        const memo = r.lone_plain.memo(who.sampled, band);
+        (try r.state(who)).lone.observeBand(r.lone_k, r.lone_plain.at(who.sampled, band), memo, tokens, ms);
     }
 
     /// Python `_head_depth`: the next round's head drafts for a stream (0 when forced, 1 or none with a copy ahead).
