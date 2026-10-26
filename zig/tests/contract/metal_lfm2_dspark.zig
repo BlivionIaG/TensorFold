@@ -7,13 +7,13 @@ const c = contract.spec;
 const g = contract.gates;
 const rig_ = @import("rig.zig");
 
-pub const Which = enum { markov_step, draft_ids };
+pub const Which = enum { markov_step, draft_ids, markov_step_bf16 };
 const rank = 256;
 const vocab = 128000;
 const span = 512; // tokens a scan threadgroup takes (the kernel's MARKOV_SPAN)
 const groups = (vocab + span - 1) / span;
 const table = 1000; // W1's rows in the check: ids are inside it or past the vocabulary (a zero row)
-const names = [_][]const u8{ "metal lfm2 markov step", "metal lfm2 draft ids" };
+const names = [_][]const u8{ "metal lfm2 markov step", "metal lfm2 draft ids", "metal lfm2 markov step bf16" };
 const stride = 64; // words between a stream's picks: a hold pass's 32 blocks, a token and a flag each
 
 const ids_shapes = [_]c.Shape{ .{ .rows = 1, .n = 1, .k = 1 }, .{ .rows = 4, .n = 1, .k = 1 }, .{ .rows = 15, .n = 1, .k = 1 } };
@@ -30,7 +30,7 @@ fn depth(_: c.Shape) usize {
 pub fn spec(w: Which) c.Spec {
     return switch (w) {
         .draft_ids => .{ .name = names[1], .accum = .none, .depth = none, .out = .raw, .served = &ids_shapes, .sums = .{ .f16 = 0, .bf16 = 0, .why = "a copy moves tokens: no sums" } },
-        .markov_step => .{ .name = names[0], .accum = .none, .depth = depth, .out = .raw, .served = &step_shapes, .nan = .{ .stated = "a row with a NaN score is flagged nonfinite" }, .sums = .{ .f16 = 0, .bf16 = 0, .why = "picks are tokens: the check bounds each pick's score by gamma(256), not sum bits" } },
+        .markov_step, .markov_step_bf16 => .{ .name = if (w == .markov_step) names[0] else names[2], .accum = .none, .depth = depth, .out = .raw, .served = &step_shapes, .nan = .{ .stated = "a row with a NaN score is flagged nonfinite" }, .sums = .{ .f16 = 0, .bf16 = 0, .why = "picks are tokens: the check bounds each pick's score by gamma(256), not sum bits" } },
     };
 }
 
@@ -60,6 +60,7 @@ pub const Probe = struct {
     codes: []u8 = &.{},
     scales: []u16 = &.{},
     biases: []u16 = &.{},
+    w2: []u16 = &.{}, // the bf16 step's W2
     ids: []u32 = &.{},
     args: [8]rig_.Ref = undefined,
     y: rig_.Ref = undefined,
@@ -68,6 +69,7 @@ pub const Probe = struct {
     pub fn init(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue, w: Which) !Probe {
         const kernels: [2][:0]const u8 = switch (w) {
             .markov_step => .{ "lfm2_markov_scan", "lfm2_markov_pick" },
+            .markov_step_bf16 => .{ "lfm2_markov_scan_bf16", "lfm2_markov_pick" },
             .draft_ids => .{ "lfm2_draft_ids", "lfm2_draft_ids" },
         };
         const first = try rig_.pipeline(device, sources.lfm2, kernels[0]);
@@ -77,7 +79,7 @@ pub const Probe = struct {
     }
 
     fn drop(p: *Probe) void {
-        inline for (.{ "src", "w1", "codes", "scales", "biases", "ids" }) |f| {
+        inline for (.{ "src", "w1", "codes", "scales", "biases", "w2", "ids" }) |f| {
             p.a.free(@field(p, f));
             @field(p, f) = &.{};
         }
@@ -132,6 +134,10 @@ pub const Probe = struct {
             sc.* = c.toBf16(@as(f32, @floatFromInt(i % 7 + 1)) / 4096);
             bi.* = c.toBf16(@as(f32, @floatFromInt(i % 5)) / 64 - 0.03);
         }
+        if (p.which == .markov_step_bf16) {
+            p.w2 = try p.a.alloc(u16, vocab * rank);
+            fill(p.w2, seed +% 9, .random);
+        }
         // the previous token every second word (the picks' layout): inside W1, its last row, or past the vocabulary
         p.ids = try p.a.alloc(u32, 2 * s.rows);
         for (p.ids, 0..) |*id, i| id.* = if (i % 2 == 1) 0xdead else switch ((i / 2) % 3) {
@@ -141,7 +147,7 @@ pub const Probe = struct {
         };
         p.args[0] = try p.rig.input(std.mem.sliceAsBytes(p.src));
         p.args[1] = try p.rig.input(std.mem.sliceAsBytes(p.w1));
-        p.args[2] = try p.rig.input(p.codes);
+        p.args[2] = if (p.which == .markov_step_bf16) try p.rig.input(std.mem.sliceAsBytes(p.w2)) else try p.rig.input(p.codes);
         p.args[3] = try p.rig.input(std.mem.sliceAsBytes(p.ids));
         const args = [4]u32{ 2 * vocab, rank, vocab, 2 };
         p.args[4] = try p.rig.input(std.mem.asBytes(&args));
@@ -155,7 +161,7 @@ pub const Probe = struct {
 
     pub fn count(p: *Probe) usize {
         return switch (p.which) {
-            .markov_step => p.rows * 8,
+            .markov_step, .markov_step_bf16 => p.rows * 8,
             .draft_ids => p.rows * 4,
         };
     }
@@ -180,8 +186,10 @@ pub const Probe = struct {
         for (p.args[0..5], 0..) |r, i| e.setBuffer(r.buf, r.off, i);
         e.setBuffer(best.buf, best.off, 5);
         e.setBuffer(at.buf, at.off, 6);
-        e.setBuffer(p.args[5].buf, p.args[5].off, 7);
-        e.setBuffer(p.args[6].buf, p.args[6].off, 8);
+        if (p.which == .markov_step) {
+            e.setBuffer(p.args[5].buf, p.args[5].off, 7);
+            e.setBuffer(p.args[6].buf, p.args[6].off, 8);
+        }
         e.dispatchGroups(mtl.Size.of(groups, p.rows, 1), mtl.Size.of(256, 1, 1));
         e.setPipeline(p.pipes[1]);
         e.setBuffer(best.buf, best.off, 0);
@@ -225,7 +233,7 @@ pub const Probe = struct {
                 var size: f64 = 0;
                 if (id < table) for (0..rank) |i| {
                     const k = (v * rank + i) / 64;
-                    const w = @as(f64, c.fromBf16(p.scales[k])) * @as(f64, @floatFromInt(p.codes[v * rank + i])) + c.fromBf16(p.biases[k]);
+                    const w: f64 = if (p.which == .markov_step_bf16) c.fromBf16(p.w2[v * rank + i]) else @as(f64, c.fromBf16(p.scales[k])) * @as(f64, @floatFromInt(p.codes[v * rank + i])) + c.fromBf16(p.biases[k]);
                     dot += w * c.fromBf16(p.w1[id * rank + i]);
                     size += @abs(w * c.fromBf16(p.w1[id * rank + i]));
                 };
