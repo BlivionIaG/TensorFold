@@ -869,7 +869,7 @@ fn prefillOnce(g: *Eng, ids: []const u32, deep_on: bool, out: []u16) !f64 {
     var o = xpre.optionsFromEnv();
     o.enabled = deep_on;
     if (rows_override) |r| o.rows = r;
-    xpre.options = o;
+    xpre.state.options = o;
     try g.reset();
     const t0 = check.now(g.gpu.io);
     try g.e.forward(flash.Tri, g.tri(), &g.seq, ids, .{ .logits = .last });
@@ -960,10 +960,10 @@ fn engineRun(gpu: Gpu, dir: []const u8, rest: []const [:0]const u8) !void {
         if (rr != 0) std.debug.print("deep chunk rows {d}:\n", .{rr});
         const ids = all_ids[0..n];
         const p0 = g.poolStats();
-        xpre.stats = .{};
+        xpre.state.stats = .{};
         const t_new = try prefillOnce(g, ids, o.enabled, new);
         const p1 = g.poolStats();
-        const xs_ = xpre.stats;
+        const xs_ = xpre.state.stats;
         std.debug.print("PREFILL {d:6} tokens ({s}): {d:9.1} ms = {d:7.1} rows/s; pool copies {d} ({d:.1} GiB, {d:.2} a layer per 1k rows), deep chunks {d}, passes {d}, prefetched {d}, members {d}; host: picks wait {d:.1} ms, plan {d:.1} ms\n", .{ n, if (o.enabled) "expert-major deep" else "batched pass", t_new, @as(f64, @floatFromInt(n)) / (t_new / 1e3), p1.misses - p0.misses, @as(f64, @floatFromInt(p1.misses - p0.misses)) * 1.758 / 1024, @as(f64, @floatFromInt(p1.misses - p0.misses)) / 48 / (@as(f64, @floatFromInt(n)) / 1000), xs_.chunks, xs_.passes, xs_.prefetched, xs_.members, @as(f64, @floatFromInt(xs_.host_wait_ns)) / 1e6, @as(f64, @floatFromInt(xs_.plan_ns)) / 1e6 });
         // decode after the prefill: the pools were left empty by the ring (or hold the batched pass's lines)
         if (decode_steps > 0) try decodeAfter(g, n);

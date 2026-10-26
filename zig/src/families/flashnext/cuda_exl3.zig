@@ -33,6 +33,8 @@ test {
     _ = kvpage;
     _ = prefill_k;
     _ = prefill;
+    _ = @import("cuda_exl3_prefill_test.zig");
+    _ = @import("cuda_exl3_prefill_head.zig");
     _ = @import("cuda_exl3_prefill_ring.zig");
     _ = dplan;
     _ = graph;

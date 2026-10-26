@@ -554,12 +554,12 @@ fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, 
         try g.reset();
         _ = try g.swap(3);
         const p0 = graph.prefill_stats;
-        const f0 = X.prefill.stats;
+        const f0 = X.prefill.state.stats;
         const t0 = check.now(gpu.io);
         try g.forward(ids, .{ .logits = .last });
         const t1 = check.now(gpu.io);
         const p1 = graph.prefill_stats;
-        const f1 = X.prefill.stats;
+        const f1 = X.prefill.state.stats;
         try check.expect(f1.chunks > f0.chunks and f1.rows >= f0.rows + n, "rank {d}: deep prefill ran instead of falling back", .{rank});
         if (m == .graph) try check.expect(p1.captures + p1.updates + p1.replays > p0.captures + p0.updates + p0.replays, "rank {d}: prefill graph captured or replayed a layer", .{rank});
         hs[0] = std.hash.Wyhash.hash(0, g.seq.logits);
@@ -612,7 +612,7 @@ fn prefillProfMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const 
         try g.stream.synchronize();
     }
     const before = graph.prefill_stats;
-    const f_before = X.prefill.stats;
+    const f_before = X.prefill.state.stats;
     stage = "profile setup";
     try g.reset();
     _ = try g.swap(3);
@@ -626,7 +626,7 @@ fn prefillProfMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const 
     _ = prof.stop();
     try g.stream.synchronize();
     const after = graph.prefill_stats;
-    const f_after = X.prefill.stats;
+    const f_after = X.prefill.state.stats;
     if (use_graphs and after.replays == before.replays) return error.NoPrefillGraphReplay;
     const hash = std.hash.Wyhash.hash(0, g.seq.logits);
     stage = "rank hash check";
@@ -727,7 +727,7 @@ fn snapshotStorageMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []co
     paging.slots = 1024;
     paging.window = 4096;
     paging.rows = 4096;
-    if ((X.prefill.options orelse X.prefill.optionsFromEnv()).serve_rows > paging.rows) return error.SharedSnapshotPrefillRows;
+    if ((X.prefill.state.options orelse X.prefill.optionsFromEnv()).serve_rows > paging.rows) return error.SharedSnapshotPrefillRows;
     try paging.validate();
     const previous = X.kvpage.force;
     X.kvpage.force = paging;
@@ -817,10 +817,10 @@ fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8,
         }
         const before = graph.stats;
         const prefill_before = graph.prefill_stats;
-        const deep_before = X.prefill.stats;
+        const deep_before = X.prefill.state.stats;
         try g.forward(ids[first_end..][0..8192], .{ .logits = .last });
         try g.e.forward(flash.Tri, g.tri(), &second, ids[second_end..][0..8192], .{ .logits = .last });
-        if (paired) try check.expect(X.prefill.stats.chunks > deep_before.chunks and X.prefill.stats.rows >= deep_before.rows + 16384, "rank {d}: both paired lanes actually execute deep prefill", .{rank});
+        if (paired) try check.expect(X.prefill.state.stats.chunks > deep_before.chunks and X.prefill.state.stats.rows >= deep_before.rows + 16384, "rank {d}: both paired lanes actually execute deep prefill", .{rank});
         var tokens = [_]u32{ prompt.argmax(g.seq.logits), prompt.argmax(second.logits) };
         const sequences = [_]*prompt.Seq{ &g.seq, &second };
         for (0..steps + 1) |step| {
