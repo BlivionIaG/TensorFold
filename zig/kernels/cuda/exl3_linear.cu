@@ -159,6 +159,9 @@ __device__ __forceinline__ void linear_body(LinearArgs a) {
         const half* x0 = static_cast<const half*>(a.xh) + (size_t)r0 * K;
         const half* x1 = static_cast<const half*>(a.xh) + (size_t)r1 * K;
         const uint32_t* tile = tiles + (size_t)kt0 * a.stride_k;
+        uint32_t cur[PF ? SR : 1], nxt[PF ? SR : 1];
+        if constexpr (PF) load_step<K2>(tile, lane, cur);     // the weights do not wait for the previous kernel
+
         // x's fragments of k step kt: rows g (and g + 8): [0] [2] k 2t.., 2t + 8..; [1] [3] the same of row g + 8
         auto load_x = [&](int kt, uint32_t (&u)[4]) {
             u[0] = __ldg(reinterpret_cast<const uint32_t*>(x0 + kt * 16 + 2 * t));
@@ -166,8 +169,13 @@ __device__ __forceinline__ void linear_body(LinearArgs a) {
             u[1] = __ldg(reinterpret_cast<const uint32_t*>(x1 + kt * 16 + 2 * t));
             u[3] = __ldg(reinterpret_cast<const uint32_t*>(x1 + kt * 16 + 2 * t + 8));
         };
-        // the 8 tiles of step i from the loaded words `cur` (or straight from global memory without prefetch)
-        auto mma_step = [&](int i, const uint32_t (&u)[4], const uint32_t (&cur)[PF ? SR : 1]) {
+#pragma unroll 1
+        for (int i = 0; i < per_warp; ++i) {
+            uint32_t u[4];
+            load_x(kt0 + i, u);
+            if constexpr (PF) {
+                if (i + 1 < per_warp) load_step<K2>(tile + (size_t)(i + 1) * a.stride_k, lane, nxt);
+            }
 #pragma unroll
             for (int j = 0; j < 8; ++j) {
                 uint32_t w[LW];
@@ -178,49 +186,9 @@ __device__ __forceinline__ void linear_body(LinearArgs a) {
                 mma16816(acc[j][0], u, b0);
                 mma16816(acc[j][1], u, b1);
             }
-        };
-        // Eight-warp blocks have registers to spare (one block of 256 threads an SM): their loads run two steps ahead through three
-        // rotating buffers (no copies). Four-warp blocks keep the one-step prefetch so three of them still fit an SM.
-        constexpr bool DEEP = PF && WK == 8;
-        uint32_t cur[PF ? SR : 1], nxt[PF ? SR : 1];
-        [[maybe_unused]] uint32_t far[DEEP ? SR : 1];
-        if constexpr (PF) load_step<K2>(tile, lane, cur);     // the weights do not wait for the previous kernel
-        if constexpr (DEEP) {
-            if (per_warp > 1) load_step<K2>(tile + a.stride_k, lane, nxt);
-#pragma unroll 1
-            for (int i = 0; i < per_warp; i += 3) {
-                {
-                    uint32_t u[4];
-                    load_x(kt0 + i, u);
-                    if (i + 2 < per_warp) load_step<K2>(tile + (size_t)(i + 2) * a.stride_k, lane, far);
-                    mma_step(i, u, cur);
-                }
-                if (i + 1 < per_warp) {
-                    uint32_t u[4];
-                    load_x(kt0 + i + 1, u);
-                    if (i + 3 < per_warp) load_step<K2>(tile + (size_t)(i + 3) * a.stride_k, lane, cur);
-                    mma_step(i + 1, u, nxt);
-                }
-                if (i + 2 < per_warp) {
-                    uint32_t u[4];
-                    load_x(kt0 + i + 2, u);
-                    if (i + 4 < per_warp) load_step<K2>(tile + (size_t)(i + 4) * a.stride_k, lane, nxt);
-                    mma_step(i + 2, u, far);
-                }
-            }
-        } else {
-#pragma unroll 1
-            for (int i = 0; i < per_warp; ++i) {
-                uint32_t u[4];
-                load_x(kt0 + i, u);
-                if constexpr (PF) {
-                    if (i + 1 < per_warp) load_step<K2>(tile + (size_t)(i + 1) * a.stride_k, lane, nxt);
-                }
-                mma_step(i, u, cur);
-                if constexpr (PF) {
+            if constexpr (PF) {
 #pragma unroll
-                    for (int q = 0; q < SR; ++q) cur[q] = nxt[q];
-                }
+                for (int q = 0; q < SR; ++q) cur[q] = nxt[q];
             }
         }
 

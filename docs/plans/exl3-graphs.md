@@ -29,7 +29,7 @@ Measured first, then chosen over "graph A / host plan / graph B per layer":
   head's gathers (both ranks capture the same calls). Pinned uploads (ids, positions, n-gram rows) become copy nodes
   read at replay; `prepare` rewrites them before each launch. Keys: rows, the sequences' buffers, attention chunk and
   score-tile seams, scratch address and capacity, scores, logits, keep/streams, planner state. A key is captured at
-  its 6th sighting (`TF_FLASHNEXT_EXL3_GRAPH_AFTER`, prefill layers at the 2nd: `..._PREFILL_AFTER`); a new key of a
+  its 6th sighting (`TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER`, prefill layers at the 2nd: `..._PREFILL_AFTER`); a new key of a
   cached shape updates that exec in place (`cuGraphExecUpdate`, 2-3 ms instead of a 20-35 ms instantiate), at tp=2
   too: the captured template is kept alive with the exec because NCCL's captured resources belong to it
   (`TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0` instantiates instead).

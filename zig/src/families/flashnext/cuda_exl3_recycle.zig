@@ -5,7 +5,7 @@
 //! reuse exactly as a new one is) for the next stream of the same capacity, on both ranks.
 //! The capacity only bounds the caches and strides the block scores; no kernel reads past a row's own positions
 //! (fn_qsa_select uses the stride as a stride), so the bits do not change (tf-cuda-test flashnext-exl3-graph eq and
-//! the serve gate's hash). TF_FLASHNEXT_EXL3_RECYCLE=0 turns it off.
+//! the serve gate's hash). It follows the decode graphs.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -16,9 +16,7 @@ pub const bucket: usize = 4096;
 const pool_n = 4;
 
 pub fn enabled() bool {
-    if (!@import("cuda_exl3_graph.zig").enabled()) return false;
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_RECYCLE") orelse return true;
-    return !std.mem.eql(u8, std.mem.span(v), "0");
+    return @import("cuda_exl3_graph.zig").enabled();
 }
 
 /// A stream's capacity: `cap` rounded up to the bucket (at most `limit`) when recycling.

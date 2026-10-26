@@ -74,10 +74,10 @@ pub const Options = struct {
     ring_ahead: usize = 1,
     /// Dense EXL3 projections of a deep chunk's sub-blocks on #806's prompt tiles (Dense.prompt, .tiles) instead of
     /// the reference 128-row blocks: 1.4-2x faster at 128+ rows, a different fp32 order (bf16-level changes; the
-    /// same float64 error, tf-cuda-test exl3-prefill dense). TF_FLASHNEXT_EXL3_PREFILL_TILES=0: the reference.
+    /// same float64 error, tf-cuda-test exl3-prefill dense).
     tiles: bool = true,
     /// After a ring prefill, refill every pool with its layer's hottest experts of the prefills (measured: decode hit
-    /// +5%, ms/token unchanged, prefill +0.17 s; off by default, TF_FLASHNEXT_EXL3_PREFILL_RESEED=1).
+    /// +5%, ms/token unchanged, prefill +0.17 s; off).
     reseed: bool = false,
     reduced_branch: bool = false,
     two_chunk: bool = false,
@@ -90,15 +90,9 @@ pub fn optionsFromEnv() Options {
         o.rows = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.rows;
         o.serve_rows = o.rows;
     }
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_MIN")) |v| o.min_rows = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.min_rows;
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_PREFETCH")) |v| o.prefetch = !std.mem.eql(u8, std.mem.span(v), "0");
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_KERNEL")) |v| o.slots_kernel = std.mem.eql(u8, std.mem.span(v), "slots");
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TILES")) |v| o.tiles = !std.mem.eql(u8, std.mem.span(v), "0");
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RESEED")) |v| o.reseed = std.mem.eql(u8, std.mem.span(v), "1");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_REDUCED_BRANCH")) |v| o.reduced_branch = std.mem.eql(u8, std.mem.span(v), "1");
     o.two_chunk = window_.enabled(if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK")) |value| std.mem.span(value) else null);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING")) |v| o.ring = !std.mem.eql(u8, std.mem.span(v), "0");
-    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_PASS")) |v| o.ring_pass = @max(1, std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_pass);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD")) |v| o.ring_ahead = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_ahead;
     return o;
 }
@@ -1299,8 +1293,7 @@ fn slotsPass(dp: *Deep, x: *load.Experts, st: cuda.Stream, l: cuda.exl3_experts.
 /// write-back. The head is one layer, so nothing a piece reads depends on another piece's experts: the same maths as
 /// forwardHead but the experts' fp32 sum order (the 64-member kernel). Declines (false) unless the engine holds deep
 /// buffers of at least `next.len` rows and the head's experts are pooled on this rank (whole: the MTP head is rank 0's
-/// under expert parallel), for a prompt chunk (no scores) of at least TF_FLASHNEXT_EXL3_PREFILL_MIN rows without media.
-/// TF_FLASHNEXT_EXL3_PREFILL_HEAD=0 keeps forwardHead.
+/// under expert parallel), for a prompt chunk (no scores) of at least the minimum rows without media.
 pub fn head(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, next: []const u32, rows: u64, scores: bool) !bool {
     const op = opts();
     const n = next.len;
@@ -1424,8 +1417,7 @@ fn headSlice(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, 
 var head_logged = false;
 
 fn headEnabled() bool {
-    const v = std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_HEAD") orelse return true;
-    return !std.mem.eql(u8, std.mem.span(v), "0");
+    return true;
 }
 
 // ---------------------------------------------------------------------------------------------------- the ring
