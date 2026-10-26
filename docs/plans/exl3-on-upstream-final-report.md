@@ -1526,3 +1526,16 @@ Two more kernel experiments on the dense `tf_exl3_linear` instances, both revert
 
 Neither occupancy nor the number of concurrent streams limits the dense kernels. They stay at 63-66% of DRAM peak (the hyper-connection `qmmf` reaches 77%), which may be close to what
 this access pattern and GDDR7 deliver; a different tile format (not a reshuffle of the same loads) would be needed to find out.
+
+Why the dense kernels sit at 65% of DRAM peak, found with a bandwidth test and a residency argument. A bare-loads test on one 5060 Ti (rotating 40 MB buffers so L2 cannot help):
+ideal 16-byte streaming reaches 420 GB/s (94% of 448) at any grid of 96 or more blocks; the EXL3 tile access pattern alone (8 warps a block, each on its own k range, 24
+scalar loads a lane a step, a trivial consumer) reads the 19.7 MB of a 96-block projection in 39.5 us (497 GB/s, the overlapping lane words partly served by L2). The real
+`tf_exl3_linear_10_2_8` takes 68 us on the same matrix. So the loads are not the limit: it is residency. An eight-warp block of 147 registers fits once an SM, so the 96 blocks
+run as three waves of 36; the bandwidth test had all 96 resident.
+
+- Three rotating prefetch buffers two steps ahead for eight-warp blocks (no register copies; 0 bytes of spill): output bit-identical, the kernel 4% faster in isolation (65.3 us, DRAM 68%), decode
+  +0.4% (45.3/34.0/35.2 tok/s). Kept: it is exact.
+- Four-warp blocks for wide N (`TF_FLASHNEXT_EXL3_PLAN_WIDE_WK=4`, new; 8 stays the library default): three blocks fit an SM, so the 96-block launches are one resident wave. Decode, A/B/B/A
+  (8, 4, 4, 8) on the three prompts: short 45.3 to 46.35 tok/s (+2.3%), Zig 33.97 to 34.5 (+1.6%), docs 35.2 to 35.7 (+1.4%), both four-warp legs agreeing. The Zig text is unchanged; the short
+  and docs text differ after about 110 characters (a near-tie flips, both continuations read the same in quality) because the block's partial sums group in four, not eight. `tools/exl3_serve_tp2.sh`
+  now exports it in the fast mode (`PLAN_WIDE_WK=8` restores linear.py's plan).
