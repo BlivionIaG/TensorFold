@@ -43,7 +43,7 @@ pub fn parallelFor(n: usize, max_threads: usize, ctx: anytype, comptime f: anyty
 
 // -- QMat --------------------------------------------------------------------------------------------------
 
-/// In-place orthonormal Walsh-Hadamard transform of each 128 block of `x` (Sylvester order, H[i][j] =).
+/// In-place orthonormal Walsh-Hadamard transform of each 128 block of `x` (Sylvester order, H[i][j] =).).
 pub fn fwht128(x: []f64) void {
     std.debug.assert(x.len % 128 == 0);
     const inv = 1.0 / @sqrt(128.0);

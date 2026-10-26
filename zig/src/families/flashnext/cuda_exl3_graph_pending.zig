@@ -4,7 +4,7 @@ const std = @import("std");
 const cuda = @import("cuda");
 const wire = @import("cuda_rank_wire.zig");
 
-/// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs eagerly
+/// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for).
 pub const Pending = struct {
     thread: std.Thread = undefined,
     done: std.atomic.Value(bool) = .init(false),

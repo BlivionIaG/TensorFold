@@ -192,7 +192,7 @@ fn victim(c: Cache, skip: []const u16) ?usize {
 
 pub const Line = enum { empty, inflight, resident };
 
-/// VRAM working set. Host RAM still holds every routed expert. `stamp` is the last reap or touch time. A higher stamp.
+/// VRAM working set. Host RAM still holds every routed expert. `stamp` is the last reap or touch time. A higher stamp..
 pub const Vram = struct {
     slots: []u16,
     line: []Line,
@@ -599,7 +599,7 @@ pub fn scheduleUsed(
     return scheduleUsedAt(v, 0, ids, &table, policy, now, decisions, scratch, owned);
 }
 
-/// Generate path. Misses sort by `counts[layer]`. A victim scores `counts[victim.layer][victim.id]`. Keep is `(layer).
+/// Generate path. Misses sort by `counts[layer]`. A victim scores `counts[victim.layer][victim.id]`. Keep is `(layer).).
 pub fn scheduleUsedAt(
     v: *Vram,
     layer: u8,

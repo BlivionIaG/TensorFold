@@ -15,7 +15,7 @@ const gpending = @import("cuda_exl3_graph_pending.zig");
 const Key = gkey.Key;
 const Pending = gpending.Pending;
 
-/// `template`: the graph an update took this exec's parameters from, kept while the exec uses them (a tp graph's NCCL
+/// `template`: the graph an update took this exec's parameters from, kept while the exec uses them.
 pub const Entry = struct { key: Key, exec: ?cuda.graph.Exec = null, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null, cohort: u64 = 0, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null, binding: ?state_binding.Binding = null, poisoned: bool = false };
 
 /// A pending entry whose instantiation finished becomes a usable graph (or is dropped if it failed); true if usable.
@@ -171,13 +171,13 @@ pub fn sighting(key: Key) u32 {
     return 1;
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0: tp graphs are always instantiated; default: updated in place like tp=1's
+/// TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0: tp graphs are always instantiated; default: updated in place like tp=1's.
 pub fn tpUpdate() bool {
     const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE") orelse return true;
     return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it, for rounds and windows alike
+/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it, for rounds and windows alike.
 pub fn after(key: Key) u32 {
     if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER")) |v| return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
     return if (key.kind == 2) 12 else 2;

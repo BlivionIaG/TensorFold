@@ -287,7 +287,7 @@ pub const Stats = struct {
     }
 };
 
-/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256].
+/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256]..
 pub const Paged = struct {
     gpa: std.mem.Allocator,
     d: *const cuda.Driver,

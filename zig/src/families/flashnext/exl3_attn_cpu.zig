@@ -111,7 +111,7 @@ pub const Cache = struct {
     }
 };
 
-/// Projections of one token (what the EXL3 linears emit, fp16): q_proj [24 * 512], k_proj [512], v_proj [512].
+/// Projections of one token (what the EXL3 linears emit, fp16): q_proj [24 * 512], k_proj [512], v_proj [512]..
 pub const Proj = struct {
     qp: []const f16,
     kp: []const f16,

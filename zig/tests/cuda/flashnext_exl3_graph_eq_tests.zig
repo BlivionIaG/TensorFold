@@ -171,7 +171,7 @@ pub fn eqMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, g
     check.pass("rank {d}/{d}: decode rounds and verify windows on the device plan and in graphs are bit-identical to the host cut ({d} steps a prompt)", .{ rank, world, steps });
 }
 
-/// A scheduling change's bits: every golden prompt's decode rounds and windows (runMode) under `which` (off, dplan
+/// A scheduling change's bits: every golden prompt's decode rounds and windows (runMode) under `which` (off, dplan).
 pub fn forkMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, golden_path: []const u8, steps: usize, which: []const u8) !void {
     const a = gpu.gpa;
     const text = try std.Io.Dir.cwd().readFileAlloc(gpu.io, golden_path, a, .limited(1 << 26));

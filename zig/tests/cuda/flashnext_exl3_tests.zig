@@ -368,7 +368,7 @@ fn router(gpu: Gpu, dir: []const u8, layers: []const usize, rows: usize) !void {
     const rng = prng.random();
     var worst_rows_diff: usize = 0;
     for (layers) |l| {
-        // the family's router buffer, as cuda_prompt_load builds it: mlp.gate's 512 rows then the shared gate.
+        // the family's router buffer, as cuda_prompt_load builds it: mlp.gate's 512 rows then the shared gate..
         var nb: [128]u8 = undefined;
         const gate = try store.tensor(try std.fmt.bufPrint(&nb, "language_model.model.layers.{d}.mlp.gate.weight", .{l}));
         try check.expect(gate.is(.bf16, &.{ experts_n, dims }), "router: layer {d} gate is not the loaders' bf16 [512, 2560]", .{l});
