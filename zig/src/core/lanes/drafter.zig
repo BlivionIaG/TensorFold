@@ -18,6 +18,7 @@ pub const Facts = struct {
     window_costs: []const Cost = &.{}, // the target's window ms by rows (timed at load), for the depth rule
     lane_costs: []const Cost = &.{}, // the same for the lane planner (Model.lane_costs)
     tree_nodes: u32 = 0, // hold() without lanes grows its own tree of up to `depth` nodes, at most this many (tree, chances)
+    shared_guard: bool = false, // shared rounds draft only while they measure faster than plain ones (Model.shared_guard)
 };
 
 /// Target rows [start, start + features.rows) and the token after each; `rows`, when given, picks which to absorb.

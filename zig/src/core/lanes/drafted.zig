@@ -103,6 +103,7 @@ pub const Drafted = struct {
         m.draft_streams = d.batched;
         m.draft_probabilities = false;
         m.head_trees = d.trees;
+        m.shared_guard = d.shared_guard;
         if (d.tree_nodes > 0) {
             // the drafter grows its own trees, best first, and prices their nodes
             m.drafts = @min(d.tree_nodes, if (target.exact_width > 1) target.exact_width - 1 else 0);

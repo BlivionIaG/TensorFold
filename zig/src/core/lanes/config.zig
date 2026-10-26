@@ -36,6 +36,7 @@ pub const Model = struct {
     shared_costs: []const Cost = &.{}, // shared forwards' ms by total rows (timed at load)
     draft_probabilities: bool = false, // the head gives each drafted node's chance of landing
     draft_streams: bool = false, // the head drafts every stream of a shared round in one batch
+    shared_guard: bool = false, // a shared round drafts only while drafted rounds measure faster (shared_guard.zig)
     head_trees: bool = false, // the head drafts trees of lanes (DraftRequest.lanes) and holds them
     join_tail: bool = false, // a prompt in pieces leaves its last token for the next shared round's window (Backend.join)
     piece_runs: bool = false, // a round's pieces go to the backend in one call (Backend.pieces: one forward over them)
@@ -68,6 +69,7 @@ pub const Config = struct {
     fill_match: u32 = 8, // context tokens a suffix-match branch must match (shorter ones are coincidental phrases)
     fill_floor: f64 = 0.35, // the share of grafted rows a stream must keep to go on reading its chain back every round
     draft_streams: bool,
+    shared_guard: bool = false,
     head_trees: bool,
     /// a prompt in pieces leaves its last token as the pending row of its first shared round's window
     join_tail: bool = false,
@@ -147,6 +149,7 @@ pub const Config = struct {
             .batch_streams = if (streams) (if (m.max_streams != 0) m.max_streams else 32) else 1,
             .node_probabilities = m.draft_probabilities or m.draft_confidence != null,
             .draft_streams = m.draft_streams,
+            .shared_guard = m.shared_guard,
             .head_trees = m.head_trees,
             .join_tail = m.join_tail,
             .piece_runs = m.piece_runs,

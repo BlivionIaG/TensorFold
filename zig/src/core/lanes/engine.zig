@@ -3,6 +3,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Config = @import("config.zig").Config;
 const depth = @import("depth.zig");
+const shared_guard = @import("shared_guard.zig");
 const accept = @import("accept.zig");
 const be = @import("backend.zig");
 const sm = @import("stream.zig");
@@ -43,6 +44,7 @@ pub const Engine = struct {
     log: ?*ev.Log = null,
     trim: ?trim.Trim = null, // a family's row policy in place of the built-in allocation (lanes/trim.zig)
     rule: depth.Rule,
+    guard: shared_guard.Guard,
     live: std.ArrayList(*Stream) = .empty, // admitted streams in admission order (Python `_live`)
     drafted: u64 = 0,
     accepted: u64 = 0,
@@ -75,6 +77,7 @@ pub const Engine = struct {
                 .batch_rows = cfg.batch_rows,
                 .batched_heads = cfg.draft_streams,
             },
+            .guard = .{ .gpa = gpa },
         };
     }
 
@@ -82,6 +85,7 @@ pub const Engine = struct {
         e.live.deinit(e.gpa);
         e.unread.deinit(e.gpa);
         e.rule.deinit();
+        e.guard.deinit();
         for (&e.lone_kept) |*mode| for (mode) |*k| if (k.*) |*x| x.deinit(e.gpa);
         e.arena.deinit();
     }
@@ -285,7 +289,9 @@ pub const Engine = struct {
         for (whos, heads.items) |*w, i| w.* = win.who(plans[i].stream);
         const budgets = try a.alloc(i64, heads.items.len);
         const sampled = win.anySampled(plans);
-        try e.rule.budgets(whos, win.probe(e), sampled, budgets);
+        // the guard's plain stretches: no stream drafts, so the round costs what it would without a head
+        const guarded = e.cfg.shared_guard and !try e.guard.drafts(plans.len);
+        if (guarded) @memset(budgets, 0) else try e.rule.budgets(whos, win.probe(e), sampled, budgets);
         const ids = try a.alloc(ev.Value, heads.items.len);
         for (ids, heads.items) |*id, i| id.* = str(plans[i].stream.id);
         try trail.event(e, &.{ f("ev", str("budgets")), f("streams", .{ .list = ids }), f("depths", .{ .i64s = budgets }) });
@@ -314,6 +320,7 @@ pub const Engine = struct {
             try trail.event(e, &.{ f("ev", str("overhead")), f("streams", int(plans.len)), f("rows", int(total)), f("ms", ev.bits(ms)) });
             try e.rule.observeOverhead(@intCast(plans.len), total, ms, sampled, e.rule.headMs(budgets));
         }
+        if (e.cfg.shared_guard) try e.guard.observe(plans.len, shared_guard.committed(outcomes), e.clock.elapsedMs(.overhead));
         if (e.backend.round_observer != null) e.backend.observed(paths);
     }
 
