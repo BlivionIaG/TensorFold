@@ -1513,3 +1513,16 @@ What is left is each warp's own memory-level parallelism: the main loop prefetch
 so the loads of a step are issued in one burst. A deeper pipeline (two or three steps in flight, through `cp.async` into shared memory because the
 registers are spent) would be the next kernel change; at 85% of peak the dense kernels (about 10 ms of the 22 ms step) would save roughly 2-2.5 ms. Not built.
 The 12-20 block launches (36 a step) fill a third of the GPU's SMs; the expert kernels reach only 33-44% of DRAM peak but move small amounts per launch.
+
+Two more kernel experiments on the dense `tf_exl3_linear` instances, both reverted:
+
+- Register cap (`__launch_bounds__(WK * 32, WK == 8 ? 2 : 4)`): the instances compiled to 128 registers with a 40-56 byte stack, and the profile of the capped
+  build shows more warps resident (30% against 17%) but slower kernels in isolation: `tf_exl3_linear_10_2_8` (96 blocks) 73.7 us against 68.3, the 160-block
+  `tf_exl3_linear_10_2_4` 42.3 us against 35.5, DRAM throughput 61% and 53% against 66% and 63%. End to end it changed nothing (hashes identical, decode
+  45.2/33.9/35.1 tok/s).
+- Interleaved k tiles (the block's warps take adjacent k tiles each step, one contiguous 10 KB stream a block instead of eight 25 KB ranges, so about 100 DRAM
+  streams instead of about 770 across the card): decode 45.2/33.9/35.0 tok/s, the same as before; the sums are grouped differently so the short and docs prompts
+  produced different text (Zig identical).
+
+Neither occupancy nor the number of concurrent streams limits the dense kernels. They stay at 63-66% of DRAM peak (the hyper-connection `qmmf` reaches 77%), which may be close to what
+this access pattern and GDDR7 deliver; a different tile format (not a reshuffle of the same loads) would be needed to find out.
