@@ -49,12 +49,12 @@ fn matmul(gpa: std.mem.Allocator, w: []const f32, x: []const f32, y: []f32, n: u
     const hs = try gpa.alloc(std.Thread, threads);
     defer gpa.free(hs);
     var made: usize = 0;
+    defer for (hs[0..made]) |h| h.join(); // a failed spawn still joins the workers already running
     var at: usize = 0;
     while (at < n) : (at += per) {
         hs[made] = try std.Thread.spawn(.{}, Job.run, .{ w, x, y, n, k, rows, at, @min(n, at + per) });
         made += 1;
     }
-    for (hs[0..made]) |h| h.join();
 }
 
 fn rms(x: []f32, gain: []const f32) void {
@@ -76,19 +76,21 @@ fn rope(x: []f32, pos: u64, theta: f32) void {
     };
 }
 
-/// The target's embedding row `id`, dequantized from its 6-bit codes (MLX's scale * q + bias).
+/// The target's embedding row `id`, dequantized from its codes at the checkpoint's own width (scale * q + bias).
 fn embedRow(m: *q.Model, id: u32, out: []f32) void {
     const e = m.weights.embedding;
-    const codes = (e.w.contents() + e.w_off)[@as(usize, id) * c.hidden * 6 / 8 ..][0 .. c.hidden * 6 / 8];
+    const bits: usize = e.bits;
+    const row_bytes = c.hidden * bits / 8;
+    const codes = (e.w.contents() + e.w_off)[@as(usize, id) * row_bytes ..][0..row_bytes];
     const sc = @as([*]const u16, @ptrCast(@alignCast(e.scales.contents() + e.s_off)))[@as(usize, id) * c.hidden / 64 ..][0 .. c.hidden / 64];
     const bi = @as([*]const u16, @ptrCast(@alignCast(e.biases.contents() + e.b_off)))[@as(usize, id) * c.hidden / 64 ..][0 .. c.hidden / 64];
-    for (0..c.hidden / 4) |u| {
-        const w = codes[u * 3 ..][0..3];
-        const qs = [4]u32{ w[0] & 0x3f, (w[0] >> 6) | ((@as(u32, w[1]) & 0x0f) << 2), (w[1] >> 4) | ((@as(u32, w[2]) & 0x03) << 4), w[2] >> 2 };
-        for (qs, 0..) |qv, j| {
-            const g = (u * 4 + j) / 64;
-            out[u * 4 + j] = quant.toF32(sc[g]) * @as(f32, @floatFromInt(qv)) + quant.toF32(bi[g]);
-        }
+    for (0..c.hidden) |j| {
+        // codes are a little-endian bit stream: code j takes bits [j * bits, (j + 1) * bits)
+        const at = j * bits;
+        var word: u32 = codes[at / 8];
+        if (at / 8 + 1 < row_bytes) word |= @as(u32, codes[at / 8 + 1]) << 8;
+        const qv = (word >> @intCast(at % 8)) & ((@as(u32, 1) << @intCast(bits)) - 1);
+        out[j] = quant.toF32(sc[j / 64]) * @as(f32, @floatFromInt(qv)) + quant.toF32(bi[j / 64]);
     }
 }
 
