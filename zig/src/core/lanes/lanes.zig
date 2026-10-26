@@ -34,12 +34,14 @@ pub const drafted = @import("drafted.zig");
 pub const recorder = @import("recorder.zig");
 pub const logprob = @import("logprob.zig");
 pub const grammar = @import("grammar.zig");
+pub const grammar_fake = @import("grammar_fake.zig"); // a stand-in libtfgrammar for tests
 
 pub const Engine = engine.Engine;
 pub const Config = config.Config;
 pub const Model = config.Model;
 pub const Stream = stream.Stream;
 pub const Sampling = sampling.Sampling;
+pub const Penalties = sampling.Penalties;
 pub const SuffixLookup = proposer.SuffixLookup;
 pub const LogprobRow = logprob.Row;
 pub const Trim = trim.Trim;
