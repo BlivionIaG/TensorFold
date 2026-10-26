@@ -240,6 +240,8 @@ pub fn Namespace(comptime Tri: type) type {
                     .max_streams = round_streams,
                     // a shared round's greedy streams draft in one head pass a step (lanes_draft.batched)
                     .draft_streams = drafting and lanes_draft.batchHeads(),
+                    // plain rounds compete with drafted ones on each stream's own measured tokens a ms.
+                    .plain_guard = drafting and @import("cuda_exl3_pass.zig").offloaded_layers != 0,
                 };
             }
 
