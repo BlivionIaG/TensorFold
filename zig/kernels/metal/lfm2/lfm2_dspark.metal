@@ -105,3 +105,30 @@ constant constexpr uint MARKOV_SPAN = 512;
   const uint token = picks[size_t(i) * p.x];
   ids[i] = token < p.z ? token : 0u;
 }
+
+// DSpark's confidence logit of draft i of stream s: proj . [x row s * n + i, W1[previous token]] in fp32, no bias.
+struct lfm2_confidence_args { uint n, pass, vocab, rank, hidden; };
+[[kernel]] void lfm2_dspark_confidence(const device bfloat* x [[buffer(0)]], const device bfloat* w1 [[buffer(1)]],
+                                       const device uint* ids [[buffer(2)]], const device uint* picks [[buffer(3)]],
+                                       const device bfloat* proj [[buffer(4)]],
+                                       constant lfm2_confidence_args& p [[buffer(5)]], device float* out [[buffer(6)]],
+                                       uint2 tg [[threadgroup_position_in_grid]], uint t [[thread_index_in_threadgroup]],
+                                       uint sg [[simdgroup_index_in_threadgroup]],
+                                       uint lane [[thread_index_in_simdgroup]]) {
+  threadgroup float part[8];
+  const uint i = tg.x, s = tg.y;
+  // the previous token: the block's pending id for the first draft, else the Markov step's pick before it
+  const uint id = i == 0 ? ids[size_t(s) * p.n] : picks[2 * (size_t(i - 1) * p.pass + s)];
+  const device bfloat* row = x + (size_t(s) * p.n + i) * p.hidden;
+  float d = 0.0f;
+  for (uint k = t; k < p.hidden; k += 256) d = fma(float(row[k]), float(proj[k]), d);
+  if (id < p.vocab)
+    for (uint k = t; k < p.rank; k += 256) d = fma(float(w1[size_t(id) * p.rank + k]), float(proj[p.hidden + k]), d);
+  d = simd_sum(d);
+  if (lane == 0) part[sg] = d;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (t != 0) return;
+  float sum = 0.0f;
+  for (uint g = 0; g < 8; ++g) sum += part[g];
+  out[size_t(i) * p.pass + s] = sum;
+}
