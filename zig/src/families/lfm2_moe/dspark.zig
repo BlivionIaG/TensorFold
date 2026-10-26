@@ -348,7 +348,7 @@ pub const Drafter = struct {
         };
     }
 
-    /// Rows from `start` replace the context there: verified rows wait on the host for the next hold, others run now.
+    /// Rows from `start` replace the context there: rows that fit the stage wait on the host for the next hold.
     fn absorbFn(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
         const d = cast(ptr);
         try d.settle();
@@ -371,7 +371,7 @@ pub const Drafter = struct {
             // rows from `start` replace what was staged past it; rows before the absorbed end go to the GPU now
             const keep: u32 = if (it.start >= l.end) @intCast(it.start - l.end) else 0;
             l.staged = @min(l.staged, keep);
-            if (!it.prompt and it.start >= l.end and l.staged + f.rows <= stage_rows) {
+            if (it.start >= l.end and l.staged + f.rows <= stage_rows) {
                 const from = (src.contents() + f.offset)[0 .. f.rows * width];
                 @memcpy((l.stage.contents() + l.staged * width)[0 .. f.rows * width], from);
                 l.staged += f.rows;
