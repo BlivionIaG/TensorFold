@@ -15,11 +15,27 @@ fn now() i128 {
 const counts = [_]usize{ 1, 2, 3, 4, 6, 8, 12, 16 };
 const reps = 9;
 
+fn readIds(gpa: std.mem.Allocator, io: std.Io, path: []const u8, list: *std.ArrayList(u32)) !void {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(io, path, gpa, .limited(1 << 22));
+    defer gpa.free(bytes);
+    var it = std.mem.tokenizeAny(u8, bytes, " \n\r\t,");
+    while (it.next()) |t| try list.append(gpa, try std.fmt.parseInt(u32, t, 10));
+}
+
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len < 3 or args.len > 4) return error.ExpectedModelOutputHistory;
-    const history: usize = if (args.len == 4) try std.fmt.parseInt(usize, args[3], 10) else 1024;
+    if (args.len < 3) return error.ExpectedModelOutputHistory;
+    var history: usize = if (args.len >= 4) try std.fmt.parseInt(usize, args[3], 10) else 1024;
+    // Token id files: every file's ids end to end; stream i reads its history and then its rows from its own sixteenth.
+    var real: std.ArrayList(u32) = .empty;
+    defer real.deinit(gpa);
+    for (args[@min(args.len, 4)..]) |path| try readIds(gpa, init.io, path, &real);
+    const part = real.items.len / 16;
+    if (real.items.len > 0) {
+        if (part < st.window_rows + 64) return error.IdFilesTooShort;
+        history = @min(history, part - st.window_rows);
+    }
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     const m = try q.Model.load(gpa, init.io, args[1]);
@@ -34,13 +50,13 @@ pub fn main(init: std.process.Init) !void {
     for (caches[0..], 0..) |*k, i| {
         k.* = try st.Cache.init(gpa, m.device, &m.config.attention, history + st.window_rows + 1);
         made += 1;
-        for (ids, 0..) |*id, j| id.* = @intCast((j * 7919 + 13 + i * 104729) % 120000);
+        for (ids, 0..) |*id, j| id.* = if (part > 0) real.items[i * part + j] else @intCast((j * 7919 + 13 + i * 104729) % 120000);
         try q.forward.run(m, &scratch, &.{.{ .cache = k, .rows = history }}, ids, false, .last);
     }
     var out: std.Io.Writer.Allocating = .init(gpa);
     defer out.deinit();
     const w = &out.writer;
-    try w.print("# LFM2 verify forward ms (median of {d}) by streams and rows a stream, {d}-token histories\n", .{ reps, history });
+    try w.print("# LFM2 verify forward ms (median of {d}) by streams and rows a stream, {d}-token histories, {s} rows\n", .{ reps, history, if (part > 0) "real" else "synthetic" });
     try w.print("# streams rows_each total_rows ms\n", .{});
     var segments: [st.batch_rows]q.forward.Segment = undefined;
     var tokens: [st.batch_rows]u32 = undefined;
@@ -48,7 +64,11 @@ pub fn main(init: std.process.Init) !void {
     for (counts) |streams| {
         var each: usize = 1;
         while (each <= st.window_rows and streams * each <= st.batch_rows) : (each += 1) {
-            for (segments[0..streams], caches[0..streams]) |*s, *k| s.* = .{ .cache = k, .rows = each };
+            for (segments[0..streams], caches[0..streams], 0..) |*s, *k, i| {
+                s.* = .{ .cache = k, .rows = each };
+                // real rows: the tokens after the stream's history, as a verify of drafts that all land
+                if (part > 0) @memcpy(tokens[i * each ..][0..each], real.items[i * part + history ..][0..each]);
+            }
             var times: [reps + 2]f64 = undefined;
             for (&times) |*t| {
                 const t0 = now();
