@@ -22,8 +22,7 @@ pub fn plan(k: usize, n: usize) [2]usize {
     const kt = k / 16;
     const nb = n / 128;
     var sk: usize = 1;
-    // Four warps a block for every N, not linear.py's eight for a wide one: three four-warp blocks fit an SM of the
-    var wk: usize = 4;
+    var wk: usize = if (nb >= 64) 8 else 4;
     if (nb < 64) {
         while (nb * sk < blocks and sk < 64) sk *= 2;
     }

@@ -32,7 +32,7 @@ fn cint(v: usize) c_int {
 
 // -- the selection trace --------------------------------------------------------------------------------------------
 
-/// Records: u32 layer (attention index), u32 first position, u32 rows, u32 kind (0 prompt, 1 decode round); then a row
+/// Records: u32 layer (attention index), u32 first position, u32 rows, u32 kind (0 prompt, 1 decode round).
 pub const Trace = struct {
     gpa: std.mem.Allocator,
     out: std.ArrayList(u8) = .empty,
@@ -143,7 +143,7 @@ pub fn select(p: anytype, iq: u64, pooled: u64, pos: u64, nb: usize, m: usize, e
 
 // -- the paged store ------------------------------------------------------------------------------------------------
 
-/// Shape of a paged sequence's device side (TF_FLASHNEXT_KVPAGE=1 turns it on for every new sequence; the sizes from
+/// Shape of a paged sequence's device side (TF_FLASHNEXT_KVPAGE=1 turns it on for every new sequence).
 pub const Config = struct {
     /// Tokens kept dense on the card before a call's first row (>= 2051, so a dense row's keys are all in it).
     window: usize = 4096,
@@ -287,7 +287,7 @@ pub const Stats = struct {
     }
 };
 
-/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256]
+/// One sequence's K/V of the 12 attention layers: all of it in mapped pinned host memory, [layer][K|V][cap][2][256].
 pub const Paged = struct {
     gpa: std.mem.Allocator,
     d: *const cuda.Driver,
@@ -505,7 +505,7 @@ pub const Paged = struct {
         try pg.d.check(pg.d.api.cuMemcpyDtoDAsync_v2(dst, src, n, stream.handle), "cuMemcpyDtoDAsync");
     }
 
-    /// Moves the window so rows [pos0, pos0 + n) fit: the rows that leave it are written out to host memory, the last
+    /// Moves the window so rows [pos0, pos0 + n) fit: the rows that leave it are written out to host memory.
     fn rebase(pg: *Paged, ai: usize, pos0: usize, stream: cuda.Stream) !void {
         const w0 = pg.win0[ai];
         const new0 = (pos0 -| pg.cfg.window) / ratio * ratio;
@@ -756,7 +756,7 @@ pub const Paged = struct {
         return pg.host.bytes[off..][0 .. pg.cap * row_bytes];
     }
 
-    /// attnRows over the paged cache: prep writes the rows into the window (its base offset by -win0 rows), and each
+    /// attnRows over the paged cache: prep writes the rows into the window (its base offset by -win0 rows).
     pub fn attnRows(pg: *Paged, p: anytype, lw: anytype, ai: usize, pa: u64, n: usize, at: anytype) !void {
         try pg.validateSharedLeaseOn(p.stream);
         const s = p.s;

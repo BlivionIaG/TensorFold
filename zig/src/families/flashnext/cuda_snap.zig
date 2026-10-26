@@ -30,7 +30,7 @@ pub fn bytes(at: usize, head: bool) usize {
     return wt.linear_n * (conv_bytes + state_bytes) + (wt.attn_n + @intFromBool(head)) * attnBytes(at) + tail_bytes;
 }
 
-/// `bytes` for a sequence whose K/V rows are `r` (int8 codes and scales, or one KV head a rank: cuda_exl3_kv.zig); the
+/// `bytes` for a sequence whose K/V rows are `r` (int8 codes and scales, or one KV head a rank: cuda_exl3_kv.zig).
 pub fn bytesKv(at: usize, head: bool, r: kv.Rows) usize {
     const layer = at * (2 * (r.kv + r.scales) + index_row) + at / wt.index_ratio * index_row;
     return wt.linear_n * (conv_bytes + state_bytes) + wt.attn_n * layer + @as(usize, @intFromBool(head)) * attnBytes(at) + tail_bytes;

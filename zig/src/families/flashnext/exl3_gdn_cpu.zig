@@ -158,7 +158,7 @@ pub fn gatedNorm(d: Dims, p: Params, y: []const f64, z: []const f64, out: []f64)
     }
 }
 
-/// `n` tokens, in order, from the projection outputs: qkv [n][channels], z [n][nv*dv], a and b [n][nv]. out is
+/// `n` tokens, in order, from the projection outputs: qkv [n][channels], z [n][nv*dv],.
 pub fn tokens(gpa: std.mem.Allocator, d: Dims, p: Params, st: State, n: usize, qkv: []const f64, z: []const f64, a: []const f64, b: []const f64, out: []f64) !void {
     const c = d.channels();
     const zw = d.zWidth();

@@ -1,4 +1,4 @@
-//! An EXL3 pack's MTP head on v1.1.0's Flash Next family (cuda_mtp.zig): the draft vocabulary rows here, the rest a
+//! An EXL3 pack's MTP head on v1.1.0's Flash Next family (cuda_mtp.zig): the draft vocabulary rows here.
 
 const std = @import("std");
 const core = @import("core");
@@ -115,7 +115,7 @@ fn work(w: *Work, gpa: std.mem.Allocator) !void {
     }
 }
 
-/// Row i of `out` ([ids.len, K] bf16) is lm_head's column `ids[i]` (the weight row of token ids[i]), decoded in
+/// Row i of `out` ([ids.len, K] bf16) is lm_head's column `ids[i]` (the weight row of token ids[i]).
 pub fn draftRows(gpa: std.mem.Allocator, head: Head, ids: []const u32, out: []u16, threads: usize) !void {
     if (out.len != ids.len * head.k) return error.UnexpectedTensor;
     for (ids) |id| if (id >= head.n) return error.InvalidToken;

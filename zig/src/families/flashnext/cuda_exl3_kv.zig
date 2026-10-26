@@ -329,7 +329,7 @@ pub const head_local_serve_rows: usize = 64;
 /// K10 lever 3: the pass's chunk for an EXL3 checkpoint unless TF_FLASHNEXT_CHUNK says (+3% prompt time a chunk at
 pub const exl3_chunk: usize = 1024;
 
-/// The server's load hook (cuda_lanes_load.zig, right after the engine loads, before any scratch or sequence): the KV
+/// The server's load hook (cuda_lanes_load.zig, right after the engine loads, before any scratch or sequence).
 pub fn setup(e: anytype, kv8_flag: bool, exl3: bool) !void {
     const f = fromEnv(kv8_flag);
     const heads = @import("cuda_exl3_heads.zig").kvHeads(e.layers[0..e.n_layers]);

@@ -1,4 +1,4 @@
-//! flashnext-exl3-tpe: the Qwen3.8-Flash-Next EXL3 pack through the Flash Next family's Engine at tp=1 or tp=2 (expert
+//! flashnext-exl3-tpe: the Qwen3.8-Flash-Next EXL3 pack through the Flash Next family's Engine at tp=1 or tp=2.
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");

@@ -965,7 +965,7 @@ fn ngramMode(gpu: Gpu, dir: []const u8) !void {
     };
 }
 
-/// A scheduling change's bits: every golden prompt's decode rounds and windows (runMode) under `which` (off, dplan
+/// A scheduling change's bits: every golden prompt's decode rounds and windows (runMode) under `which` (off, dplan).
 fn forkMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, golden_path: []const u8, steps: usize, which: []const u8) !void {
     const a = gpu.gpa;
     const text = try std.Io.Dir.cwd().readFileAlloc(gpu.io, golden_path, a, .limited(1 << 26));

@@ -1,4 +1,4 @@
-//! The EXL3 pack's tensors as the Flash Next loaders read them (cuda_prompt_wt.zig `Store`): - the MTP head's mixer
+//! The EXL3 pack's tensors as the Flash Next loaders read them (cuda_prompt_wt.zig `Store`).
 
 const std = @import("std");
 const core = @import("core");

@@ -1,4 +1,4 @@
-//! The prefill line ring: during an expert-major prefill every decoder layer's pool lines (cuda_exl3_pool.zig) form
+//! The prefill line ring: during an expert-major prefill every decoder layer's pool lines.
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -339,7 +339,7 @@ pub const Ring = struct {
         }
         const k = r.next;
         r.next = (r.next + 1) % r.slots();
-        // the open batch's snapshot first (it must not see the evicted expert gone), then the wait for the slot's last
+        // the open batch's snapshot first (it must not see the evicted expert gone).
         if (r.open_layer != null and (r.open_layer.? != layer or r.open_n == batch_copies)) try r.closeBatch();
         try r.afterReaders(k);
         if (r.owner[k] != 0) {
@@ -417,7 +417,7 @@ pub const Ring = struct {
         }
     }
 
-    /// Tops `layer` up to `want` loaded experts with the ones not loaded, hottest (prefill counts, then the pool's
+    /// Tops `layer` up to `want` loaded experts with the ones not loaded, hottest (prefill counts).
     pub fn prefetch(r: *Ring, layer: usize, want: usize, keep_free: usize, source: attribution_.Source) !usize {
         var order: [routed_n]u16 = undefined;
         var n: usize = 0;

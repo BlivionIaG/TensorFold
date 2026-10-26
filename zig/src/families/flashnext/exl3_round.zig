@@ -43,7 +43,7 @@ pub const Round = struct {
     n_copies: usize = 0,
     n_passes: usize = 0,
     n_prefetch: usize = 0,
-    /// Routed slots (pick in 0..511) whose expert was held / missing when the round started; shared slots counted
+    /// Routed slots (pick in 0..511) whose expert was held / missing when the round started.
     hit_slots: u32 = 0,
     miss_slots: u32 = 0,
     shared_slots: u32 = 0,
@@ -211,7 +211,7 @@ pub fn plan(
     }
     const routed = r.routed[0..n_routed];
     const uniq = r.ids[0..n_unique];
-    // capacity check before anything is written: pass 0 holds the held experts, so at least one more line, or nothing
+    // capacity check before anything is written: pass 0 holds the held experts, so at least one more line.
     var held_n: usize = 0;
     for (uniq) |id| held_n += @intFromBool(offload.lineOf(v.*, layer, id) != null);
     if (n_unique > held_n and blocked(v.*, &.{}) >= v.slots.len) return error.Busy;

@@ -1,4 +1,4 @@
-//! exl3-kv real: the first LAYERS decoder layers of the EXL3 pack through the family's own pass (Pass.chunk: embed
+//! exl3-kv real: the first LAYERS decoder layers of the EXL3 pack through the family's own pass (Pass.chunk: embed).
 const std = @import("std");
 const cuda = @import("cuda");
 const flash = @import("flashnext");
@@ -186,7 +186,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
     const ai = wt.attnIndex(n_layers - 1);
     const s = p.s;
 
-    // -- prompt passes: the first chunk size drives the analysis; the others only time it
+    // -- prompt passes: the first chunk size drives the analysis.
     var st_prefill: Stats = .{};
     var win: Window = .{};
     var blk_buf: [top]u32 = undefined;
@@ -242,7 +242,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
         std.debug.print("RESULT layer {d}: a sparse 256-row prompt block reads {d:.0} distinct keys on average, {d} at most ({d} blocks)\n", .{ n_layers - 1, @as(f64, @floatFromInt(st_prefill.distinct)) / @as(f64, @floatFromInt(st_prefill.blocks)), st_prefill.max_distinct, st_prefill.blocks });
     }
 
-    // -- probe rows: one token a pass (a decode row each), the pass's own q, selection and attention output kept
+    // -- probe rows: one token a pass (a decode row each), the pass's own q, selection.
     const probe = try a.alloc(Probe, probes);
     var st_decode: Stats = .{};
     for (0..probes) |i| {

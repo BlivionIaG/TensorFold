@@ -262,7 +262,7 @@ pub fn run(gpu: check.Gpu, rest: []const [:0]const u8) !void {
     const hs = try a.alloc([]u16, nv);
     for (hs) |*h| h.* = try a.alloc(u16, total * wide);
 
-    // layers 0 and 1 (embedding, GDN, the PLE) through Pass.chunk, the streams after layer 1 kept: the same for every
+    // layers 0 and 1 (embedding, GDN, the PLE) through Pass.chunk, the streams after layer 1 kept.
     {
         var table = try flash.embed.Table.uploadDense(gpu.d, try r.store.tensor(flash.embed.weight_name));
         defer table.deinit();

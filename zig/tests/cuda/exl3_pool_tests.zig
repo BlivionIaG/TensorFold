@@ -720,7 +720,7 @@ const Sim = struct {
     copies: u64 = 0,
 };
 
-/// Host-only replay of a pick sequence through one layer's policy (the same planner the pool runs). picks [tokens][10]
+/// Host-only replay of a pick sequence through one layer's policy.
 fn simulate(gpa: std.mem.Allocator, layer: u8, picks: []const u16, tokens: usize, prompt: usize, lines: usize, prefetch_lines: usize, counts: *[policy.shape.layers][policy.shape.experts]u32) !Sim {
     const slots_tab = try gpa.alloc(u16, lines);
     defer gpa.free(slots_tab);

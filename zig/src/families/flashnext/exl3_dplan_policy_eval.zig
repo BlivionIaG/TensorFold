@@ -276,7 +276,7 @@ pub fn evaluateTrace(allocator: std.mem.Allocator, view: trace.View) !Comparison
     return total;
 }
 
-/// Belady with optional admission is optimal for uniform-cost sequential requests: on a full-cache miss, discard the
+/// Belady with optional admission is optimal for uniform-cost sequential requests: on a full-cache miss.
 pub fn beladyLowerBound(allocator: std.mem.Allocator, rounds: []const trace.Round, options: Options) !u64 {
     try validateOptions(options);
     var count: usize = 0;

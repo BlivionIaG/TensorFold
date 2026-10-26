@@ -1,4 +1,4 @@
-//! The DeltaNet heads split across the two expert-parallel ranks, for decode rows only (rounds and windows under 64
+//! The DeltaNet heads split across the two expert-parallel ranks, for decode rows only (rounds).
 
 const std = @import("std");
 const cuda = @import("cuda");
@@ -58,7 +58,7 @@ fn wrap(d: *cuda.Driver, p: *load.Proj) projection.Projection {
     return out;
 }
 
-/// Rank `rank`'s views of a linear-attention layer's stitched q|k|v|z|b|a projection and its out projection, or null
+/// Rank `rank`'s views of a linear-attention layer's stitched q|k|v|z|b|a projection and its out projection.
 pub fn build(gpa: std.mem.Allocator, d: *cuda.Driver, proj: projection.Projection, out: projection.Projection, rank: usize) !?Views {
     if (rank > 1) return error.BadRank;
     const pe = proj.exl3 orelse return null;

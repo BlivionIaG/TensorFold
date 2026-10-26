@@ -389,7 +389,7 @@ fn experts(b: *Bench, ex: *const exl3e.Experts, pack: *const Pack, a: std.mem.Al
     }
     const err = compareF32(got, want);
     const ms = try b.time(call, ExpCall.go);
-    // with a 64 MiB memset between calls (evicts the 32 MiB L2, so mapped host bytes come over PCIe each call), minus
+    // with a 64 MiB memset between calls (evicts the 32 MiB L2, so mapped host bytes come over PCIe each call).
     var flush = try cuda.DeviceBuffer.alloc(b.gpu.d, 64 << 20);
     defer flush.free();
     const Flushed = struct {
@@ -406,7 +406,7 @@ fn experts(b: *Bench, ex: *const exl3e.Experts, pack: *const Pack, a: std.mem.Al
     std.debug.print("  cold L2 (64 MiB memset between calls, its time subtracted): {d:.4} ms\n", .{with - alone});
     std.debug.print("routed experts L{d} (1 row x 10 picks, act_mode {d}, {d} of 10 from mapped host memory) K={d} I={d} halves={d}/{d}/{d} ms={d:>8.4}  max|err|={e:.3} peak={d:.3} rel={e:.2}\n", .{ layer, act_mode, mapped, dims, width, g[0].halves, u[0].halves, dn[0].halves, ms, err.max_abs, err.peak, err.worst_rel });
     if (mapped > 0) {
-        // the copy-engine alternative: the same experts' trellis bytes, pinned host to device, one copy an expert
+        // the copy-engine alternative: the same experts' trellis bytes, pinned host to device.
         var total: usize = 0;
         for (0..mapped) |e| total += (g[e].trellis.len + u[e].trellis.len + dn[e].trellis.len) * 2;
         var src = try cuda.HostBuffer.alloc(b.gpu.d, total);

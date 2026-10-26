@@ -1,4 +1,4 @@
-//! One row of the Flash Next router. v0.6.6 `src/tensorfold/cuda/moe.py` `_topk_rows`: fp32 logits, ties to the lower
+//! One row of the Flash Next router. v0.6.6 `src/tensorfold/cuda/moe.py` `_topk_rows`: fp32 logits.
 
 const std = @import("std");
 

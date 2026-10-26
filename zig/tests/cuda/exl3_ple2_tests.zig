@@ -336,7 +336,7 @@ pub fn run(gpu: Gpu, rest: []const [:0]const u8) !void {
         const got = crc(bytesOf(i64, ids));
         std.debug.print("ids[0][0..4] = {any}; ids crc32 {x:0>8} (numpy NGram.ids {x:0>8})\n", .{ ids[0..4], got, py_ids_crc });
         if (qrow == 3 and count == 24) try check.expect(got == py_ids_crc, "upstream lastIds crc32 {x:0>8} != numpy {x:0>8}", .{ got, py_ids_crc });
-        // every token of every qbench prompt: upstream's lastIds against the branch's incremental ids, element by
+        // every token of every qbench prompt: upstream's lastIds against the branch's incremental ids.
         var compared: usize = 0;
         var eos_seen: usize = 0;
         for (qrows) |r| {

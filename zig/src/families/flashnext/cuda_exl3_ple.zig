@@ -153,7 +153,7 @@ pub const Table = struct {
         return std.fmt.bufPrint(buf, "model.language_model.layers.{d}.ple.ple_embedding.ngram_embedding.{s}", .{ ple.layer, part });
     }
 
-    /// The pack's table when `dir` holds an EXL3 n-gram file whose constants equal `hash`'s; null when there is no
+    /// The pack's table when `dir` holds an EXL3 n-gram file whose constants equal `hash`'s; null.
     pub fn open(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, hash: ple.Hash, opts: Options) !?*Table {
         const path = try std.fs.path.join(gpa, &.{ dir, file_name });
         defer gpa.free(path);

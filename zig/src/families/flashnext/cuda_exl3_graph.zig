@@ -207,7 +207,7 @@ pub fn pinnedCopy(s: cuda.Stream, dst: u64, bytes: []const u8) !void {
     try s.d.check(s.d.api.cuMemcpyHtoDAsync_v2(dst, bytes.ptr, bytes.len, s.handle), "cuMemcpyHtoDAsync");
 }
 
-/// `template`: the graph an update took this exec's parameters from, kept while the exec uses them (a tp graph's NCCL
+/// `template`: the graph an update took this exec's parameters from, kept while the exec uses them.
 const Entry = struct { key: Key, exec: ?cuda.graph.Exec = null, used: u64, template: ?cuda.graph.Graph = null, pending: ?*Pending = null, cohort: u64 = 0, admission: ?memory.Ticket = null, stream: ?cuda.Stream = null, binding: ?state_binding.Binding = null, poisoned: bool = false };
 
 fn stateRebindEnabled() bool {
@@ -521,7 +521,7 @@ test "exl3: state binding current pass supports exact window layouts through the
     try @import("cuda_exl3_state_request_test.zig").currentPass(Key, windowStateRequest);
 }
 
-/// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for: it runs eagerly
+/// A captured graph being instantiated on a worker thread (20-35 ms that the step need not wait for).
 pub const Pending = struct {
     thread: std.Thread = undefined,
     done: std.atomic.Value(bool) = .init(false),
@@ -771,13 +771,13 @@ fn sighting(key: Key) u32 {
     return 1;
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0: tp graphs are always instantiated; default: updated in place like tp=1's
+/// TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE=0: tp graphs are always instantiated; default: updated in place like tp=1's.
 fn tpUpdate() bool {
     const v = std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_TP_UPDATE") orelse return true;
     return !std.mem.eql(u8, std.mem.span(v), "0");
 }
 
-/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it, for rounds and windows alike
+/// TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER: the sighting of a key that captures it, for rounds and windows alike.
 fn after(key: Key) u32 {
     if (std.c.getenv("TF_FLASHNEXT_EXL3_GRAPH_DECODE_AFTER")) |v| return @max(1, std.fmt.parseInt(u32, std.mem.span(v), 10) catch 2);
     return if (key.kind == 2) 12 else 2;
@@ -1263,7 +1263,7 @@ pub fn forward(e: anytype, p: anytype, seq: anytype, ids: []const u32) !bool {
     return true;
 }
 
-// ---- prefill: one layer's sub-blocks of a deep chunk
+// ---- prefill: one layer's sub-blocks of a deep chunk.
 
 pub const Prefill = enum { eager, replayed, capturing };
 const prefill_binding = @import("cuda_exl3_prefill_binding.zig");

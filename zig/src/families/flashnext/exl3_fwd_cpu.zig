@@ -43,7 +43,7 @@ pub fn parallelFor(n: usize, max_threads: usize, ctx: anytype, comptime f: anyty
 
 // -- QMat --------------------------------------------------------------------------------------------------
 
-/// In-place orthonormal Walsh-Hadamard transform of each 128 block of `x` (Sylvester order, H[i][j] =
+/// In-place orthonormal Walsh-Hadamard transform of each 128 block of `x` (Sylvester order, H[i][j] =).
 pub fn fwht128(x: []f64) void {
     std.debug.assert(x.len % 128 == 0);
     const inv = 1.0 / @sqrt(128.0);
@@ -115,7 +115,7 @@ pub const QMat = struct {
         for (y, m.svh) |*o, s| o.* *= s;
     }
 
-    /// Same as `apply` with the output columns [lo, hi) only (the Hadamard blocks must be whole: lo and hi multiples
+    /// Same as `apply` with the output columns [lo, hi) only (the Hadamard blocks must be whole: lo.
     pub fn applyCols(m: QMat, tmp_h: []const f64, y: []f64, lo: usize, hi: usize) void {
         std.debug.assert(lo % 128 == 0 and hi % 128 == 0 and y.len == hi - lo);
         @memset(y, 0);

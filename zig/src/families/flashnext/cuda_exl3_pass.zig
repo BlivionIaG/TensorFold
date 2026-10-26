@@ -36,7 +36,7 @@ fn part(p: anytype, ops: *load.Ops, pt: load.Part, x: u64, k: usize, m: usize, y
     }
 }
 
-/// Pass.lane() for an EXL3 projection: out bf16 [m, n] (sk 1), or fp32 [m, n] in part's first slice with the other sk
+/// Pass.lane() for an EXL3 projection: out bf16 [m, n] (sk 1), or fp32 [m.
 pub fn lane(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: usize, sk: usize) !void {
     const s = p.stream;
     if (e.x == .f16) return laneF16(p, x, e, out, slices, m, sk);
@@ -60,7 +60,7 @@ fn onePart(p: anytype, e: *const load.Proj, pt: load.Part, x: u64, m: usize, out
     try copy2d(s, out + pt.col * 2, e.n * 2, tmp, pt.n * 2, pt.n * 2, m);
 }
 
-/// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32
+/// fp16 rows through a dense BF16 lane weight: x = hi + lo exactly (fn_exl3_split_f16), hi . w and lo . w in fp32.
 fn laneF16(p: anytype, x: u64, e: *const load.Proj, out: u64, slices: u64, m: usize, sk: usize) !void {
     const s = p.stream;
     if (e.parts.len != 1 or e.parts[0].kind != .native) return error.UnexpectedTensor;
@@ -166,11 +166,11 @@ pub fn offloadedLayers(layers: []const @import("cuda_prompt_load.zig").Layer, mt
 pub const Budget = struct {
     graph_reservation: u64 = 0,
     planner_rows: ?u64 = null,
-    /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB
+    /// Device bytes left free after the pools; null: the native server's own reserve (TENSORFOLD_MEMORY_RESERVE_GIB).
     reserve: ?u64 = null,
     /// What the pools leave beyond the server's reserve: allocator rounding and the copy streams' own memory.
     margin: u64 = 256 << 20,
-    /// Bytes the family still allocates after the pools: each admitted stream's caches (Loaded.stream_bytes) times the
+    /// Bytes the family still allocates after the pools: each admitted stream's caches.
     other: u64 = 0,
     /// Lines a layer, or null: from free memory (cuda_exl3_round.linesFor).
     lines: ?usize = null,
@@ -222,7 +222,7 @@ pub fn freeBytes(d: *const cuda.Driver) !u64 {
     return free;
 }
 
-/// The sizing hook (cuda_lanes_load.zig, once everything else of the family is allocated): reserves every EXL3 scratch
+/// The sizing hook (cuda_lanes_load.zig, once everything else of the family is allocated).
 pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cuda.Stream, layers: []const @import("cuda_prompt_load.zig").Layer, mtp: ?*const @import("cuda_prompt_load.zig").Layer, rows: usize, b: Budget, profile_counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !Attached {
     var all: [wt.layers_n + 1]*load.Experts = undefined;
     const n = offloadedLayers(layers, mtp, &all);

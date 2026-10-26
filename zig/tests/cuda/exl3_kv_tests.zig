@@ -102,7 +102,7 @@ pub fn valueRow(codes: []const i8, scales: []const f16, rot: bool, out: []f64) v
     }
 }
 
-// -- kernel mode
+// -- kernel mode.
 
 /// Keys with a few loud channels, as k_norm + rope leaves them (a lognormal scale a channel).
 fn loudRows(r: *Rig, n: usize, width: usize) ![]u16 {
@@ -365,7 +365,7 @@ fn kernelMode(gpu: check.Gpu) !void {
                 try g.attnMerge(r.s, po, pm, pl, dpos, up, dnk, dspr, rows, kv_heads, true);
                 try check.sameBytes("kv8 attention == upstream's chunk/merge on the dequantised bf16 cache", std.mem.sliceAsBytes(got), std.mem.sliceAsBytes(try r.back(u16, up, want.len)));
             }
-            // vs the float64 of the original cache, and vs the float64 of what the int8 cache holds (its own kernel
+            // vs the float64 of the original cache, and vs the float64 of what the int8 cache holds.
             var e_q: Err = .{};
             for (got, want) |x, w| addErr(&e_q, bf(x), w);
             const kf = try a.alloc(f64, nrow * head_dim);
@@ -392,7 +392,7 @@ fn kernelMode(gpu: check.Gpu) !void {
     check.pass("kv8 attention: plain int8 == upstream's kernels on the dequantised cache bit for bit (dense, sparse, read-ahead and one-tile); rotated within upstream's own error of its cache's float64", .{});
 }
 
-// -- bench mode
+// -- bench mode.
 
 const Bench = struct {
     s: cuda.Stream,

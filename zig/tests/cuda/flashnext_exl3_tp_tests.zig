@@ -222,7 +222,7 @@ fn layerMode(gpu: Gpu, rk: *Ranks, dir: []const u8, which: []const usize) !void 
             check.expect(sum_exact == sum_total, "layer {d}: tp=2's MoE sum is not the fp32 regrouping of tp=1's slots ({d}/{d})", .{ l, sum_exact, sum_total }) catch {
                 ok = false;
             };
-            // an fp32 regrouping of 11 terms: a few ulps of the branch's peak; bf16 outputs then differ by at most 1
+            // an fp32 regrouping of 11 terms: a few ulps of the branch's peak; bf16 outputs.
             check.expect(branch_abs <= 1e-5 * branch_peak, "layer {d}: tp=2 MoE branch off tp=1 by {e:.3} of peak", .{ l, branch_abs / branch_peak }) catch {
                 ok = false;
             };

@@ -47,7 +47,7 @@ fn listed(name: []const u8, table: []const []const u8) bool {
     return false;
 }
 
-/// Expert ids (pool line indices, the old engine), the expert pointer tables, picks, PLE rows, and the KV index must
+/// Expert ids (pool line indices, the old engine), the expert pointer tables, picks, PLE rows.
 pub fn isReplayName(name: []const u8) bool {
     return listed(name, &replay_names);
 }

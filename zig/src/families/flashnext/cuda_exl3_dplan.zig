@@ -123,7 +123,7 @@ pub const DevPlan = struct {
     /// The stream the last device round ran on (toHost waits for it).
     stream: ?cuda.Stream = null,
     copy_blocks: u32 = 144,
-    /// Overlap: the held experts compute while the misses' copies run on `side`, then the misses' experts (and the
+    /// Overlap: the held experts compute while the misses' copies run on `side`, then the misses' experts.
     overlap: bool = false,
     side: cuda.Stream,
     ev_plan: cuda.Event,
@@ -513,7 +513,7 @@ pub const DevPlan = struct {
 /// The engine's device planner (one engine a process: a rank), made on the first device round.
 var global: ?*DevPlan = null;
 var global_owner: ?*const anyopaque = null;
-/// Set while a decode round runs with device plans (cuda_exl3_graph.zig): cuda_exl3_pass.moe takes `layer` instead of
+/// Set while a decode round runs with device plans (cuda_exl3_graph.zig).
 pub var active: ?*DevPlan = null;
 
 /// TF_FLASHNEXT_EXL3_DPLAN: 1 plans decode rounds on the device (implied by TF_FLASHNEXT_EXL3_GRAPH=1).

@@ -1,4 +1,4 @@
-//! CPU oracle for one Qwen3.8-Flash-Next full-attention layer (layers 3, 7, ... 47), written against the model's own
+//! CPU oracle for one Qwen3.8-Flash-Next full-attention layer (layers 3, 7, ... 47).
 
 const std = @import("std");
 const shape = @import("exl3_shape.zig");
@@ -111,7 +111,7 @@ pub const Cache = struct {
     }
 };
 
-/// Projections of one token (what the EXL3 linears emit, fp16): q_proj [24 * 512], k_proj [512], v_proj [512]
+/// Projections of one token (what the EXL3 linears emit, fp16): q_proj [24 * 512], k_proj [512], v_proj [512].
 pub const Proj = struct {
     qp: []const f16,
     kp: []const f16,

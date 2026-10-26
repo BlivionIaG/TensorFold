@@ -10,7 +10,7 @@ const Advanced = struct {
     ncclCommGetAsyncError: *const fn (nccl.Comm, *nccl.Result) callconv(.c) nccl.Result,
 };
 
-/// How long a wait polls before it sleeps between polls (a decode step's work ends within a few milliseconds; each 50
+/// How long a wait polls before it sleeps between polls (a decode step's work ends within a few milliseconds).
 const spin_ns: u64 = 3 * std.time.ns_per_ms;
 
 pub const GraphState = enum(u32) { eager, capture, pending, ready, failed, timed_out };
@@ -135,7 +135,7 @@ pub const Collective = struct {
                     if (try s.done()) return;
                 } else return;
             }
-            // a nonblocking enqueue lands within tens of microseconds: poll that long before sleeping (each sleep of
+            // a nonblocking enqueue lands within tens of microseconds: poll that long before sleeping.
             polls += 1;
             if (polls == 1) spin_until = wire.now() + spin_ns;
             if (wire.now() < spin_until) std.atomic.spinLoopHint() else wire.pause();

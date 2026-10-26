@@ -231,7 +231,7 @@ const Deep = struct {
     host: cuda.HostBuffer,
     kern: pk.Kernels,
     aux: cuda.Stream,
-    /// Expert parallel: the ranks' all-reduces run on `red`, one a sub-block, so the next layer's sub-block b only
+    /// Expert parallel: the ranks' all-reduces run on `red`, one a sub-block.
     red: ?cuda.Stream = null,
     red_ev: [max_sub]cuda.Event = undefined,
     red_go: cuda.Event = undefined,
@@ -334,7 +334,7 @@ pub fn reserveFor(e: *prompt.Engine, context: usize, tp: usize) void {
     reserveAt(e.gpa, e.driver, e, rows, tp) catch |err| std.log.warn("flashnext exl3 prefill: deep chunks of {d} rows refused ({t}); prompts take the batched pass", .{ rows, err });
 }
 
-/// Rows a serving lane prefills a step (cuda_lanes.zig `step`): a deep chunk when this engine holds deep buffers, else
+/// Rows a serving lane prefills a step (cuda_lanes.zig `step`): a deep chunk when this engine holds deep buffers.
 pub fn stepRows(e: *const prompt.Engine, draft_rows: ?usize) usize {
     var n = e.chunk;
     if (deep) |dp| if (dp.owner == @as(*const anyopaque, e) and opts().enabled) {
@@ -473,7 +473,7 @@ fn applies(e: *prompt.Engine, seq: *prompt.Seq, ids: []const u32, hooks: batch.H
     if (!o.enabled or ids.len < o.min_rows) return false;
     if (hooks.keep != null or hooks.logits == .all) return false;
     if (seq.media != null or e.n_layers != wt.layers_n) return false;
-    // expert parallel (cuda_exl3_tp.zig) at two ranks over the engine's collective; the head whole or split by
+    // expert parallel (cuda_exl3_tp.zig) at two ranks over the engine's collective.
     const world = worldOf(e);
     if (e.head_q.n != vocab and !(world == 2 and e.head_q.n == vocab / 2)) return false;
     for (e.layers[0..e.n_layers]) |*l| {
@@ -1323,7 +1323,7 @@ fn headSlice(comptime Tri: type, o: anytype, d: *@import("cuda_mtp.zig").Draft, 
         p.pos0 = d.len + at;
         p.pending = null;
         try p.stage(next[at..][0..m]);
-        // forwardHead's piece up to the router (the embedding branch, the hidden branch, attention over the head's
+        // forwardHead's piece up to the router (the embedding branch, the hidden branch).
         if (e.table.dense) {
             try tri.embedDense(v.ids, e.table.w.ptr, v.ple_keys, dims, streams, m);
         } else {
@@ -1402,7 +1402,7 @@ fn keepFree(r: *const ring_.Ring, o: Options) usize {
     return @min(r.slots() / 2, routed_n_ + 2 * o.ring_pass);
 }
 
-/// The layer's experts over all `n` rows of the deep chunk, through the ring: the experts the ring already holds first
+/// The layer's experts over all `n` rows of the deep chunk, through the ring.
 fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri), lw: *const @import("cuda_prompt_load.zig").Layer, layer: usize, n: usize, o: Options) !void {
     const x = lw.exl3.?;
     const pool = x.pool.?;

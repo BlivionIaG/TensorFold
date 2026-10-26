@@ -48,7 +48,7 @@ pub const Options = struct {
     swap_cap: u16 = 96,
     /// Bytes a swap round may prefetch (the copy budget); 0: no prefetch.
     prefetch_bytes: u64 = 0,
-    /// Double buffering: a round that fits without them does not evict the previous round's lines, so its copies need
+    /// Double buffering: a round that fits without them does not evict the previous round's lines.
     double_buffer: bool = true,
     /// Masked-pick buffers for this many passes of a split round (0: the round's own bound, uniq + 1).
     max_passes: usize = 0,

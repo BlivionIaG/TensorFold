@@ -268,7 +268,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
         n_ovf = 0;
     }
     __syncthreads();
-    // the split (optional): picks held when the round started (and the shared expert) vs the misses this round copies
+    // the split (optional): picks held when the round started (and the shared expert) vs the misses this round copies.
     if (hit_picks != nullptr) {
         for (int i = t; i < n; i += blockDim.x) {
             const int p = picks[i];
@@ -350,7 +350,7 @@ extern "C" __global__ void __launch_bounds__(256) fn_exl3_dplan(
                 n_copy += 1;
                 misc->copies += 1;
             } else {
-                // no line is free of this round's experts: the expert is read in place from the mapped host bank this
+                // no line is free of this round's experts: the expert is read in place from the mapped host bank.
                 for (int w = 0; w < 3; ++w) {
                     tabs[w][id] = src[id * 3 + w];
                     k2s[w][id] = k2[id * 3 + w];

@@ -1,7 +1,7 @@
 //! Host expert-cache policy for Flash Next EXL3 offload (ported from exl3-flashnext-window-wip, unchanged rules).
 
 const std = @import("std");
-/// Flash Next's routed geometry (was exl3_shape.zig): 48 decoder layers, 512 routed experts, the shared expert is id
+/// Flash Next's routed geometry (was exl3_shape.zig): 48 decoder layers, 512 routed experts.
 pub const shape = struct {
     pub const layers: usize = 48;
     pub const experts: usize = 512;
@@ -41,7 +41,7 @@ pub fn find(c: Cache, id: u16) ?usize {
     return indexOf(c.slots, id);
 }
 
-/// One decision per id. Does not write the slot table. Unique misses sort by count descending, then id ascending. The
+/// One decision per id. Does not write the slot table. Unique misses sort by count descending.
 pub fn planRound(
     c: Cache,
     ids: []const u16,
@@ -192,7 +192,7 @@ fn victim(c: Cache, skip: []const u16) ?usize {
 
 pub const Line = enum { empty, inflight, resident };
 
-/// VRAM working set. Host RAM still holds every routed expert. `stamp` is the last reap or touch time. A higher stamp
+/// VRAM working set. Host RAM still holds every routed expert. `stamp` is the last reap or touch time. A higher stamp.
 pub const Vram = struct {
     slots: []u16,
     line: []Line,
@@ -452,7 +452,7 @@ fn seedSpan(v: *Vram, counts: []const u32, limit: u16, owned: Owned) error{Lengt
     return seeded;
 }
 
-/// Use every empty line. Hottest owned ids go in first. Lines that are still empty take the remaining owned ids, low
+/// Use every empty line. Hottest owned ids go in first. Lines that are still empty take the remaining owned ids.
 pub fn fillOwned(v: *Vram, counts: []const u32, owned: Owned) error{Length}!u16 {
     if (owned.hi > shape.experts or owned.lo > owned.hi) return error.Length;
     var n: u16 = try seedSpan(v, counts, std.math.maxInt(u16), owned);
@@ -599,7 +599,7 @@ pub fn scheduleUsed(
     return scheduleUsedAt(v, 0, ids, &table, policy, now, decisions, scratch, owned);
 }
 
-/// Generate path. Misses sort by `counts[layer]`. A victim scores `counts[victim.layer][victim.id]`. Keep is `(layer
+/// Generate path. Misses sort by `counts[layer]`. A victim scores `counts[victim.layer][victim.id]`. Keep is `(layer).
 pub fn scheduleUsedAt(
     v: *Vram,
     layer: u8,

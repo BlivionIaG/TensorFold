@@ -38,7 +38,7 @@ pub fn tensorBytes(name: []const u8, e: Entry, o: Options) !u64 {
     if (std.mem.endsWith(u8, name, ".trellis") or std.mem.endsWith(u8, name, ".suh") or std.mem.endsWith(u8, name, ".svh")) return bytes;
     if (!std.mem.endsWith(u8, name, ".weight") and e.rank == 1) return try std.math.mul(u64, e.dim(0), 4); // A_log, dt_bias as fp32
     if ((e.dtype == .f16 or e.dtype == .bf16) and e.rank == 2 and std.mem.endsWith(u8, name, ".weight")) {
-        // the router's rows and the embedding table go up as stored (BF16); every other dense matrix through
+        // the router's rows and the embedding table go up as stored (BF16).
         if (std.mem.indexOf(u8, name, ".mlp.gate.") != null or std.mem.indexOf(u8, name, ".shared_expert_gate.") != null or std.mem.indexOf(u8, name, "embed_tokens") != null) return bytes;
         return try std.math.mul(u64, try std.math.mul(u64, cuda.nvfp4.padded(e.dim(0)), e.dim(1)), 2);
     }

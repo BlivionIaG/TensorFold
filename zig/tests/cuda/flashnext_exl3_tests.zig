@@ -368,7 +368,7 @@ fn router(gpu: Gpu, dir: []const u8, layers: []const usize, rows: usize) !void {
     const rng = prng.random();
     var worst_rows_diff: usize = 0;
     for (layers) |l| {
-        // the family's router buffer, as cuda_prompt_load builds it: mlp.gate's 512 rows then the shared gate
+        // the family's router buffer, as cuda_prompt_load builds it: mlp.gate's 512 rows then the shared gate.
         var nb: [128]u8 = undefined;
         const gate = try store.tensor(try std.fmt.bufPrint(&nb, "language_model.model.layers.{d}.mlp.gate.weight", .{l}));
         try check.expect(gate.is(.bf16, &.{ experts_n, dims }), "router: layer {d} gate is not the loaders' bf16 [512, 2560]", .{l});
@@ -1017,7 +1017,7 @@ pub fn layerCheck(gpu: Gpu, r: *Rig, raw: *const RawPack, lw: *const pl.Layer, l
     std.debug.print("  device time for the 5 calls (read-backs between blocks included): {d:.0} ms\n", .{device_ms});
     std.debug.print("  worst staged: attn readout mixed {e:.3} inject {e:.3}; mixer {e:.3}; mlp readout mixed {e:.3} inject {e:.3}; MoE {e:.3}; write-back {e:.3}\n", .{ alone.attn_mixed, alone.attn_inj, alone.mixer, alone.mlp_mixed, alone.mlp_inj, alone.moe, alone.writeback });
     std.debug.print("  worst chained: mixer {e:.3}, streams {e:.3}, MoE {e:.3}, output {e:.3}\n", .{ worst.mixer, worst.streams, worst.moe, worst.out });
-    // Each block alone, fed the device's own input: its bf16 output and the roundings inside it (the read-out's act
+    // Each block alone, fed the device's own input: its bf16 output and the roundings inside it.
     const staged = [_]f64{ alone.attn_mixed, alone.attn_inj, alone.mixer, alone.mlp_mixed, alone.mlp_inj, alone.moe, alone.writeback };
     for (staged) |v| try check.expect(v <= 0.01, "layer {d}: a block alone differs from float64 by {d:.4} of its peak (> 0.01)", .{ l, v });
     // Chained from the embedding: the old engine's gates (mixer 1% GDN / 3% attention, streams 1%, MoE 2%) hold; its

@@ -145,7 +145,7 @@ pub const Scratch = struct {
     picks: ?cuda.DeviceBuffer = null,
     wts: ?cuda.DeviceBuffer = null,
     sum: ?cuda.DeviceBuffer = null,
-    /// `rows` fp32 ones at the end of `wts`: the write-back's weights for the ranks' sum read in place (no place
+    /// `rows` fp32 ones at the end of `wts`: the write-back's weights for the ranks' sum read in place.
     ones: u64 = 0,
     rows: usize = 0,
     /// Experts.run's scratch for `moe_cap` rows, zeroed when allocated (a skipped slot reads its stale, finite y).
@@ -350,7 +350,7 @@ pub fn placement(gpa: std.mem.Allocator, io: std.Io, dir: []const u8, world: usi
     return try deviceBytes(gpa, io, dir, o, r) + head;
 }
 
-// ---- the head's vocabulary split
+// ---- the head's vocabulary split.
 
 /// Rank `rank`'s output columns [lo, hi) of an `n`-column EXL3 matrix: whole 128-column blocks, equal shares.
 pub fn headCut(n: usize, world: usize, rank: usize) ![2]usize {
