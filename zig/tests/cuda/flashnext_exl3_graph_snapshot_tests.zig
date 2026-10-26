@@ -106,7 +106,7 @@ pub fn snapshotStorageMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: 
     paging.slots = 1024;
     paging.window = 4096;
     paging.rows = 4096;
-    if ((X.prefill.options orelse X.prefill.optionsFromEnv()).serve_rows > paging.rows) return error.SharedSnapshotPrefillRows;
+    if ((X.prefill.state.options orelse X.prefill.state.optionsFromEnv()).serve_rows > paging.rows) return error.SharedSnapshotPrefillRows;
     try paging.validate();
     const previous = X.kvpage.force;
     X.kvpage.force = paging;
@@ -196,10 +196,10 @@ pub fn snapshotMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const
         }
         const before = graph.stats;
         const prefill_before = graph.prefill_stats;
-        const deep_before = X.prefill.stats;
+        const deep_before = X.prefill.state.stats;
         try g.forward(ids[first_end..][0..8192], .{ .logits = .last });
         try g.e.forward(flash.Tri, g.tri(), &second, ids[second_end..][0..8192], .{ .logits = .last });
-        if (paired) try check.expect(X.prefill.stats.chunks > deep_before.chunks and X.prefill.stats.rows >= deep_before.rows + 16384, "rank {d}: both paired lanes actually execute deep prefill", .{rank});
+        if (paired) try check.expect(X.prefill.state.stats.chunks > deep_before.chunks and X.prefill.state.stats.rows >= deep_before.rows + 16384, "rank {d}: both paired lanes actually execute deep prefill", .{rank});
         var tokens = [_]u32{ prompt.argmax(g.seq.logits), prompt.argmax(second.logits) };
         const sequences = [_]*prompt.Seq{ &g.seq, &second };
         for (0..steps + 1) |step| {

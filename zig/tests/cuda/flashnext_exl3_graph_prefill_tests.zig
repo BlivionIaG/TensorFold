@@ -31,12 +31,12 @@ pub fn prefillMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const 
         try g.reset();
         _ = try g.swap(3);
         const p0 = graph.prefill_stats;
-        const f0 = X.prefill.stats;
+        const f0 = X.prefill.state.stats;
         const t0 = check.now(gpu.io);
         try g.forward(ids, .{ .logits = .last });
         const t1 = check.now(gpu.io);
         const p1 = graph.prefill_stats;
-        const f1 = X.prefill.stats;
+        const f1 = X.prefill.state.stats;
         try check.expect(f1.chunks > f0.chunks and f1.rows >= f0.rows + n, "rank {d}: deep prefill ran instead of falling back", .{rank});
         if (m == .graph) try check.expect(p1.captures + p1.updates + p1.replays > p0.captures + p0.updates + p0.replays, "rank {d}: prefill graph captured or replayed a layer", .{rank});
         hs[0] = std.hash.Wyhash.hash(0, g.seq.logits);
@@ -89,7 +89,7 @@ pub fn prefillProfMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []co
         try g.stream.synchronize();
     }
     const before = graph.prefill_stats;
-    const f_before = X.prefill.stats;
+    const f_before = X.prefill.state.stats;
     stage = "profile setup";
     try g.reset();
     _ = try g.swap(3);
@@ -103,7 +103,7 @@ pub fn prefillProfMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []co
     _ = prof.stop();
     try g.stream.synchronize();
     const after = graph.prefill_stats;
-    const f_after = X.prefill.stats;
+    const f_after = X.prefill.state.stats;
     if (use_graphs and after.replays == before.replays) return error.NoPrefillGraphReplay;
     const hash = std.hash.Wyhash.hash(0, g.seq.logits);
     stage = "rank hash check";
