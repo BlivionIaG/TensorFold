@@ -191,14 +191,14 @@ fn once(g: *Eng, ids: []const u32, deep: bool, rows: usize, steps: usize) !Run {
     var o = xpre.optionsFromEnv();
     o.enabled = deep;
     o.rows = rows;
-    xpre.options = o;
-    xpre.stats = .{};
+    xpre.state.options = o;
+    xpre.state.stats = .{};
     try g.reset();
     _ = try g.swap(ids.len);
     const t0 = check.now(g.gpu.io);
     try g.forward(ids);
     const t = ms(t0, check.now(g.gpu.io));
-    const st = xpre.stats;
+    const st = xpre.state.stats;
     const logits = try a.alloc(u16, vocab);
     @memcpy(std.mem.sliceAsBytes(logits), g.seq.logits);
     const greedy = try a.alloc(u32, steps + 1);

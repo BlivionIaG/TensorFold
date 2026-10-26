@@ -81,9 +81,9 @@ pub fn run(gpu: check.Gpu, rank: usize, world: usize, port: u16, directory: []co
     const previous_paging = paging.force;
     paging.force = config;
     defer paging.force = previous_paging;
-    const previous_options = prefill.options;
-    prefill.options = .{ .rows = step_rows, .serve_rows = step_rows, .min_rows = step_rows, .ring = false, .prefetch = false, .tiles = false };
-    defer prefill.options = previous_options;
+    const previous_options = prefill.state.options;
+    prefill.state.options = .{ .rows = step_rows, .serve_rows = step_rows, .min_rows = step_rows, .ring = false, .prefetch = false, .tiles = false };
+    defer prefill.state.options = previous_options;
     const previous_mode = graph.force;
     defer graph.force = previous_mode;
     const engine = try operations.init(gpu, rank, world, port, directory, config);
@@ -118,7 +118,7 @@ pub fn run(gpu: check.Gpu, rank: usize, world: usize, port: u16, directory: []co
         defer gpu.gpa.free(reference);
         try readState(&eager, engine.stream, reference);
         const before = graph.prefill_stats;
-        const before_deep = prefill.stats;
+        const before_deep = prefill.state.stats;
         const old_origin = pager.win0[0];
         const old_page_rows = try paging.pagingRows(pager.cfg, old_origin, step_rows);
         graph.force = .graph;
@@ -135,7 +135,7 @@ pub fn run(gpu: check.Gpu, rank: usize, world: usize, port: u16, directory: []co
         const peer_exact = try operations.swap(engine, @intFromBool(exact));
         if (!exact) try check.sameBytes("prefill-origin logits, recurrent/conv/PLE, indexer and canonical BF16 K/V", actual, reference);
         try check.expect(exact and peer_exact == 1, "rank {d}: {s} step {d} exact eager/rebound logits and state", .{ rank, storage, step });
-        try check.expect(prefill.stats.chunks == before_deep.chunks + 1 and prefill.stats.rows == before_deep.rows + step_rows, "rank {d}: step {d} uses one actual deep-prefill chunk", .{ rank, step });
+        try check.expect(prefill.state.stats.chunks == before_deep.chunks + 1 and prefill.state.stats.rows == before_deep.rows + step_rows, "rank {d}: step {d} uses one actual deep-prefill chunk", .{ rank, step });
         const end = first + step_rows;
         const sparse_transition = first / 4 <= 512 and end / 4 > 512;
         const split_transition = old_page_rows != new_page_rows;
