@@ -11,7 +11,7 @@ shift 4
 bin=${TENSORFOLD_BIN:-./zig-out/native/bin/tensorfold-native}
 export TENSORFOLD_CHECKPOINT_SHA256=${TENSORFOLD_CHECKPOINT_SHA256:-$(cat "$model/model.safetensors.index.json" "$model/config.json" | sha256sum | cut -c1-64)}
 export TF_FLASHNEXT_KVPAGE=1 TF_FLASHNEXT_KVPAGE_SHARED=1 TF_FLASHNEXT_EXL3_GRAPH=1 TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1
-export TF_FLASHNEXT_EXL3_GRAPH_ASYNC=0
+export TF_FLASHNEXT_EXL3_GRAPH_ASYNC=${TF_FLASHNEXT_EXL3_GRAPH_ASYNC:-0}
 if [ "${FAST:-1}" = 1 ]; then
   export TF_FLASHNEXT_KVPAGE_SHARED_LANES=${PARALLEL:-2}
   if [ "${PARALLEL:-2}" = 1 ]; then
