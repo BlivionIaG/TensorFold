@@ -1566,3 +1566,17 @@ Removed, with the value we run built in (none was used by a script, doc or test)
 `_PREFILL_TILES`, `_PREFILL_RESEED`, `_PREFILL_RING_PASS`, `TF_FLASHNEXT_KVPAGE_ROWS`, `TF_FLASHNEXT_KVPAGE_SLOTS`; and the three of this session's experiments: `TF_FLASHNEXT_EXL3_BALANCE` (code removed),
 `TF_FLASHNEXT_EXL3_TP_DIRECT` (the place-free combine is always on) and `TF_FLASHNEXT_EXL3_PLAN_WIDE_WK` (four warps a block is the plan for every N; the deeper-prefetch variant of the eight-warp kernel, now unused, is removed with it).
 `tools/exl3_serve_tp2.sh` drops the exports that only repeated a default (`..._GRAPH_AFTER`, `..._GRAPH_PREFILL_AFTER`).
+
+## Verify window cost by row count (drafts on, 80 lines, depth 6)
+
+Mean per-round verify time (ms) and draft time (ms), measured with a temporary round timer (removed):
+
+| rows | short verify / draft | docs verify / draft |
+|---|---|---|
+| 2 | 39.9 / 5.5 | 52.7 / 7.6 |
+| 3 | 49.0 / 6.4 | 61.4 / 9.7 |
+| 4 | 56.8 / 7.5 | 54.0 / 9.5 |
+| 5 | 62.2 / 8.2 | 75.6 / 8.6 |
+| 7 | 58.2 / 5.2 | 94.2 / 9.8 |
+
+A plain decode step is about 22 ms, so the first extra row costs about 18 ms and each further row 6-9 ms. There is no cliff between 2 and 3 rows; the jump is from 1 to 2 rows. The cost is the PCIe copy of experts the extra row misses in the device lines, so cache capacity and prediction (not kernel time) bound speculation. Resulting decode: short 37-40, docs 40.7-41, zig 102 tok/s (plain 48.9 / 38.2 / 36.2).
