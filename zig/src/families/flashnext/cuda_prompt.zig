@@ -186,7 +186,7 @@ pub const Engine = struct {
         try e.store.detectNorms();
         const weight = try e.store.tensor(embed.weight_name);
         if (weight.dtype == .bf16) {
-            e.table = try embed.Table.uploadDense(driver, weight);
+            e.table = try embed.Table.uploadDenseHost(driver, weight);
         } else {
             const scales = try e.store.tensor(embed.scales_name);
             const biases = try e.store.tensor(embed.biases_name);
