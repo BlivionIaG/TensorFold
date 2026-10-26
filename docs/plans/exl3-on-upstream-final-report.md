@@ -1686,3 +1686,24 @@ drafts on gave short 37.8 / 38.6 / 39.9, zig 93.4 / 98.3 / 101.7, docs 37.2 / 38
 
 Depth 1 won short prose (one extra row) and lost docs by a wide margin, which is why a fixed depth could not serve all three; the per-stream
 guard and the 12-sighting window capture (above) replace the choice. The docs losses at shallow depth probably include the window graph captures (not separated at the time).
+
+## Freeing the unused halves (measured, not built)
+
+**DeltaNet split through prefill.** The split's views keep the whole-layer weights because prefill reads them. To free the other half, prefill would have to
+run the split too, so I routed prompt passes (64 rows or more) through the same shard path with head-subset variants of the fused and chain kernels.
+On the 16k-token zig prompt time to first token went from 10.6 to 12.6 s (+18%): the views' strides fail the fast prefill tiles' format check
+(`candidateWeight`), so those projections fall back to the reference 128-row blocks, and each layer all-reduces a chunk-sized fp32 buffer. Two identical
+requests also gave different hashes, so the path was not kept and the decode-only split stands. What it would free is small anyway: about 395 MB a rank
+(about 4.7 lines, roughly +1% decode).
+
+**Attention split under KV paging.** The existing attention-head split (cuda_exl3_heads.zig, 12 query heads and 1 KV head a rank) does not run with KV
+paging, whose 1,220-line module fixes two KV heads a page row. Its speed upside was measured without paging at equal lines (72, no drafts, tok/s second
+request): short 47.1 -> 46.1, zig 35.5 -> 35.1, docs 36.7 -> 36.1. The extra all-reduce a layer costs about what the half-size projections save. What is left is memory:
+about 400 MB of KV window plus 117 MB of weights, roughly 6 lines (about +2%), less the 1-2% above. Not worth porting the paging module.
+
+## Rebase onto upstream/main
+
+`exl3-on-upstream-rebased` is the 150 non-merge commits of the EXL3 work replayed linearly on ashhart/TensorFold main (52f5d9567; the replay took the branch's side on
+conflicts, and the last commit sets the tree to the merge result that was benchmarked and tested, so the tree is byte-identical to merging upstream/main).
+Measured on that tree, drafts on, 80 lines, one user: short 49.95, zig 106.0, docs 59.3 tok/s with unchanged hashes (merge before the rebase: 50.0 / 106.1 / 59.3);
+the 294 EXL3 host tests pass. `exl3-on-upstream-merge` keeps the merge-based history.
