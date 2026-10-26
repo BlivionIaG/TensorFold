@@ -1685,4 +1685,4 @@ drafts on gave short 37.8 / 38.6 / 39.9, zig 93.4 / 98.3 / 101.7, docs 37.2 / 38
 | 4 | 38.1 | 101.8 | 38.8 | 98/187, 180/182, 126/171 |
 
 Depth 1 won short prose (one extra row) and lost docs by a wide margin, which is why a fixed depth could not serve all three; the per-stream
-guard and the 12-sighting window capture (above) replace the choice. The docs losses at shallow depth were mostly graph captures, not drafts.
+guard and the 12-sighting window capture (above) replace the choice. The docs losses at shallow depth probably include the window graph captures (not separated at the time).
