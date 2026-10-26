@@ -1492,3 +1492,24 @@ Bytes a token reads (file headers): the Strata GGUF 3.9 GB of dense tensors and 
 same bytes; Strata's 10-13 ms step is about 4.8 GB at the card's bandwidth, while each of our GPUs reads about 4.45 GB (the dense set replicated) in 22 ms.
 By estimated bytes per kernel group our matmuls reach about 63% (hyper-connection), 74% (DeltaNet, attention, head) and 33% (expert kernels) of peak,
 plus about 3-4 ms of per-layer sync wait and 3-4 ms of small kernels and gaps. A layer split would not close that gap (est. 22 to 18-19 ms).
+
+Nsight Compute counters, read at last (cs13 allows `sudo ncu`; the account itself cannot read counters). 22 decode launches of the main kernels, rank 0, 72 lines,
+plain decode, ncu's default base clocks, `gpu__dram_throughput` as a share of peak:
+
+| kernel (grid) | time | DRAM throughput | SM throughput | issue slots active | warps active | dominant stall (per issued instruction) |
+|---|---|---|---|---|---|---|
+| `tf_exl3_linear_10_2_8` (96) | 68 us | 66% | 35% | 40% | 17% | long scoreboard 2.0, wait 0.5 |
+| `tf_exl3_linear_10_2_4` (160) | 35 us | 63% | 33% | 40% | 20% | long scoreboard 3.0, wait 0.5 |
+| `qmmf` (160) | 19 us | 77% | 12% | 9% | 16% | long scoreboard 15 |
+| `qmmf` (11x8) | 25 us | 66% | 13% | 10% | 16% | long scoreboard 9.8, barrier 5.1 |
+| `tf_exl3_grouped_2` (11x5x8) | 39 us | 44% | 39% | 44% | 22% | long scoreboard 2.0, wait 1.0 |
+| `tf_exl3_grouped_2` (11x20) | 26 us | 33% | 29% | 41% | 22% | long scoreboard 2.1 |
+| `tf_exl3_linear_10_2_4` (16 and 20 blocks) | 12 us | 12-15% | 8-9% | 24% | 8% | long scoreboard 1.7 |
+
+The dense kernels sit at 63-66% of DRAM peak, memory-latency bound (the long-scoreboard stall dominates), with 8 or 12 resident warps an SM. Raising
+residency did not help: capping the registers of every `tf_exl3_linear` instance (`__launch_bounds__(WK * 32, WK == 8 ? 2 : 4)`, so 128 registers or
+fewer) left the output hash identical and decode unchanged (short 45.2, Zig 33.9-34.0, docs 35.1-35.2 tok/s, as before), so occupancy is not the limit.
+What is left is each warp's own memory-level parallelism: the main loop prefetches one k step ahead in registers (8 tiles) and then decodes 8 tiles,
+so the loads of a step are issued in one burst. A deeper pipeline (two or three steps in flight, through `cp.async` into shared memory because the
+registers are spent) would be the next kernel change; at 85% of peak the dense kernels (about 10 ms of the 22 ms step) would save roughly 2-2.5 ms. Not built.
+The 12-20 block launches (36 a step) fill a third of the GPU's SMs; the expert kernels reach only 33-44% of DRAM peak but move small amounts per launch.
