@@ -245,8 +245,6 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         @import("cuda_exl3_prefill.zig").releaseFor(e);
-        @import("cuda_exl3_graph.zig").releaseFor(e);
-        @import("cuda_exl3_recycle.zig").drain(e);
         if (e.page_config) |cfg| if (cfg.shared_lanes != 0) {
             if (e.shared_arena) |arena| arena.destroy() catch @panic("shared KV arena still owns live lanes");
         };
@@ -323,7 +321,6 @@ pub const Engine = struct {
             const arena = e.shared_arena orelse return error.SharedKvArenaRequired;
             if (cap != arena.layout.options.cap) return error.SharedKvCommonCap;
         };
-        if (try @import("cuda_exl3_recycle.zig").takeSeq(e, cap)) |kept| return kept;
         if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_prompt_lifecycle.zig").newPlacedSeq(e, cap);
         if (e.page_config == null) return e.newSeqPageTable(cap, null); // contiguous caches: upstream's flow, which drains before it frees
         const logits = try e.gpa.alloc(u8, vocab * 2);
@@ -360,7 +357,6 @@ pub const Engine = struct {
             .logits = logits,
             .cap = cap,
             .paged = paged,
-            .recycle_owner = e,
         };
     }
 
@@ -385,7 +381,6 @@ pub const Engine = struct {
             .fed = 0,
             .logits = &.{},
             .cap = cap,
-            .recycle_owner = e,
         };
         table = null; // seq owns the pages from here
         // One rollback owns every published array, and drains before releasing any destination.
@@ -502,10 +497,6 @@ pub const Engine = struct {
             .seq = seq.view(scores),
             .hooks = hooks,
         };
-        if (try @import("cuda_exl3_graph.zig").forward(e, &p, seq, ids)) {
-            const one = [_]*Seq{seq};
-            return e.finishPaged(&one);
-        }
         var at: usize = 0;
         while (at < ids.len) {
             const n = @min(s.cap, ids.len - at);
@@ -573,7 +564,7 @@ pub const Engine = struct {
         const has_paged = for (seqs) |q| {
             if (q.paged != null) break true;
         } else false;
-        if (try @import("cuda_exl3_graph.zig").round(e, &p, seqs, ids, scores, out)) {} else if (e.collective != null and round_graph.enabled() and !has_media and !has_paged) {
+        if (e.collective != null and round_graph.enabled() and !has_media and !has_paged) {
             const key = try round_graph.Key.init(seqs, s.ids, scores, out);
             try e.round_graph.run(key, &p, ids);
         } else try p.chunk(ids, 0, null);
@@ -587,18 +578,8 @@ pub const Engine = struct {
     }
 };
 
-test "exl3: Engine graph-hit lease covers every owner without paging callbacks or extra completion waits" {
-    try @import("cuda_prompt_test.zig").graphLease(Engine, Seq, .{
-        .begin = Engine.beginShared,
-        .finish = Engine.finishPaged,
-        .end = Engine.endShared,
-        .fail = Engine.failShared,
-    });
-}
-
 /// One stream's caches. `fed` tokens have already gone through the model.
 pub const Seq = struct {
-    recycle_owner: ?*Engine = null,
     invalidated: bool = false,
     /// The owning compute stream; synthetic non-device fixtures may leave it absent.
     stream: ?cuda.Stream = null,
