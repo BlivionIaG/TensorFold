@@ -119,6 +119,8 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
         return null;
     } else null;
     if (profiled) |t| facts.shared_costs = t;
+    // a drafting stream prices its copy windows by its own copies: on distinct prompts they keep breaking
+    if (h.wrap != null) facts.own_copy_rates = true;
     h.config = try lanes.Config.init(gpa, facts, q.state.window_rows, q.state.window_rows - 1);
     errdefer h.config.deinit(gpa);
     h.clock = .{ .io = io };

@@ -4,6 +4,8 @@ const mtl = @import("metal");
 const c = @import("config.zig");
 const kernels = @import("kernels.zig");
 const quant = @import("dspark_quant.zig");
+const ds = @import("dspark.zig");
+const lanes = @import("lanes");
 
 const shared = mtl.ResourceOptions.shared;
 
@@ -210,4 +212,24 @@ test "lfm2 dspark: lfm2_qk on half-split rows and gains gives interleaved RoPE's
 test "lfm2 dspark: the drafter verifies by its confidence head unless asked otherwise" {
     const o: @import("dspark.zig").Options = .{ .capacity = 64 };
     try std.testing.expectEqual(@import("dspark.zig").Verify.scheduled, o.verify);
+}
+
+test "lfm2 dspark: a settled hold moves the timed passes at its block counts a tenth of the way to its GPU ms" {
+    var d: ds.Drafter = undefined;
+    const grid = [_]lanes.hold_price.HoldCost{ .{ .streams = 1, .depth = 1, .ms = 1 }, .{ .streams = 4, .depth = 1, .ms = 2 }, .{ .streams = 4, .depth = 4, .ms = 4 }, .{ .streams = 8, .depth = 1, .ms = 3 } };
+    @memcpy(d.holds[0..grid.len], &grid);
+    d.holds_len = grid.len;
+    d.pass_len = 4;
+    d.depths[0..4].* = .{ 1, 1, 1, 1 };
+    d.priceHold(4); // priced 2 ms: the 4-block passes rise by a tenth of the doubling
+    try std.testing.expectApproxEqAbs(@as(f64, 2.2), d.holds[1].ms, 1e-12);
+    try std.testing.expectApproxEqAbs(@as(f64, 4.4), d.holds[2].ms, 1e-12);
+    try std.testing.expectEqual(@as(f64, 1), d.holds[0].ms);
+    try std.testing.expectEqual(@as(f64, 3), d.holds[3].ms);
+    d.pass_len = 6; // between 4 and 8 blocks: both move
+    d.depths[0..6].* = .{ 1, 1, 1, 1, 1, 1 };
+    d.priceHold(0);
+    try std.testing.expectEqual(@as(f64, 2.2), d.holds[1].ms); // no GPU time: nothing learned
+    d.priceHold(2.6 * 2);
+    try std.testing.expect(d.holds[1].ms > 2.2 and d.holds[3].ms > 3 and d.holds[0].ms == 1);
 }
