@@ -409,6 +409,6 @@ pub fn layerRows(gpa: std.mem.Allocator, w: LayerW, st: *LayerState, pos0: usize
     hcPostRows(h, branch, inject, rows);
 }
 
-test {
+comptime {
     _ = qmat;
 }

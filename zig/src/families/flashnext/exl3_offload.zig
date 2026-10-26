@@ -44,7 +44,7 @@ pub const stageUsedAt = used.stageUsedAt;
 pub const scheduleUsed = used.scheduleUsed;
 pub const scheduleUsedAt = used.scheduleUsedAt;
 
-test {
+comptime {
     _ = @import("exl3_offload_policy_test.zig");
     _ = @import("exl3_offload_vram_test.zig");
     _ = @import("exl3_offload_used_test.zig");
