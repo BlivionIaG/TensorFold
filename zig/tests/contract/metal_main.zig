@@ -28,6 +28,8 @@ const lfm2_argmax = @import("metal_lfm2_argmax.zig");
 const lfm2_streams = @import("metal_lfm2_streams.zig");
 const lfm2_tap = @import("metal_lfm2_tap.zig");
 const lfm2_controls = @import("metal_lfm2_controls.zig");
+const lfm2_dspark = @import("metal_lfm2_dspark.zig");
+const lfm2_attn = @import("metal_lfm2_attn.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
 
@@ -207,6 +209,21 @@ pub fn main(init: std.process.Init) !u8 {
         p.* = try lfm2_tap.Probe.init(a, device, queue, m);
         try tap_list.append(a, p);
         try kernels.append(a, p.kernel());
+    }
+    var dspark_list: [1]lfm2_dspark.Probe = undefined;
+    var lfm2_made: usize = 0;
+    defer for (dspark_list[0..lfm2_made]) |*p| p.deinit();
+    for (std.enums.values(lfm2_dspark.Which)) |w| {
+        if (!wanted(o, lfm2_dspark.spec(w).name)) continue;
+        dspark_list[lfm2_made] = try lfm2_dspark.Probe.init(a, device, queue, w);
+        lfm2_made += 1;
+    }
+    for (dspark_list[0..lfm2_made]) |*p| try kernels.append(a, p.kernel());
+    var block_attn: ?lfm2_attn.Probe = null;
+    defer if (block_attn) |*p| p.deinit();
+    if (wanted(o, lfm2_attn.name)) {
+        block_attn = try lfm2_attn.Probe.init(a, device, queue);
+        try kernels.append(a, block_attn.?.kernel());
     }
     var rows_list: std.ArrayList(*rows_k.Row) = .empty;
     var proj_list: std.ArrayList(*affine_k.Proj) = .empty;
@@ -399,6 +416,8 @@ pub fn main(init: std.process.Init) !u8 {
         lim += try gemma.limits(a, device, o.only);
         lim += try gemma_embed.limits(a, device, o.only);
         lim += try gemma_mixed.limits(a, device, o.only);
+        lim += try lfm2_dspark.limits(a, device, o.only);
+        lim += try lfm2_attn.limits(a, device, o.only);
     }
     const t2 = std.Io.Clock.awake.now(init.io);
     const ms = struct {
