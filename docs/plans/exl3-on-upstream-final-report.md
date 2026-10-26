@@ -1657,3 +1657,32 @@ the capture fix it is neutral (48.0 / 105.6 / 58.0), and before the fix it hurt 
 Not done: freeing the unused half of the weights (prefill still reads the whole set), the 12 full-attention layers (the existing head
 split is disabled by KV paging), and an adaptive guard margin (a fixed 1.2 leave-plain margin was tuned on one prompt; 1.05 to 1.15
 did not change docs, which was the captures, not the guard).
+
+## Embed table on the host: more lines (plain decode)
+
+The bf16 `embed_tokens` table (1.27 GB) stays in pinned host memory (`Table.host`, one row copied per token; counted as 0 device bytes in
+cuda_exl3_memory), which lets the plain configuration hold 88 lines per layer where 80 fit before. One user, TP=2, graphs, 192 tokens, second request,
+no drafts (tok/s; 96 lines does not fit and fails at load):
+
+| lines | short prose | zig, 16k | docs, 13k |
+|---|---|---|---|
+| 72 | 46.3 | 34.5 | 35.7 |
+| 80 | 47.8 | 35.5 | 36.8 |
+| 88 | 48.9 | 36.2 | 38.2 |
+
+About +0.8 to 1.0 tok/s per 8 lines on every prompt (+5-7% from 72 to 88). With the MTP head loaded 80 lines fit (84 fails): lines 64 / 72 / 80 with
+drafts on gave short 37.8 / 38.6 / 39.9, zig 93.4 / 98.3 / 101.7, docs 37.2 / 38.9 / 40.2 (measured before the draft guard and the window-capture fix).
+
+## Draft depth sweep (before the guard and the capture fix)
+
+`TF_FLASHNEXT_DRAFT_DEPTH` with drafts on, 80 lines (tok/s, second request; accepted drafts / drafts offered over the two requests):
+
+| depth | short | zig | docs | acceptance short / zig / docs |
+|---|---|---|---|---|
+| 1 | 58.3 | 98.2 | 26.4 | 70/121, 179/179, 86/105 |
+| 2 | 40.7 | 102.0 | 30.9 | 88/156, 180/182, 111/136 |
+| 3 | 39.2 | 101.7 | 34.8 | 95/171, 180/182, 120/154 |
+| 4 | 38.1 | 101.8 | 38.8 | 98/187, 180/182, 126/171 |
+
+Depth 1 won short prose (one extra row) and lost docs by a wide margin, which is why a fixed depth could not serve all three; the per-stream
+guard and the 12-sighting window capture (above) replace the choice. The docs losses at shallow depth were mostly graph captures, not drafts.
