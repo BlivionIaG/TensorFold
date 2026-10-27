@@ -2,11 +2,15 @@ const std = @import("std");
 const prompt = @import("cuda_prompt.zig");
 
 pub fn newPlacedSeq(engine: *prompt.Engine, cap: usize) !prompt.Seq {
-    return @import("exl3/kv/cuda_exl3_kv.zig").newSeq(engine, prompt.Seq, cap);
+    var sequence = try @import("exl3/kv/cuda_exl3_kv.zig").newSeq(engine, prompt.Seq, cap);
+    sequence.recycle_owner = engine;
+    return sequence;
 }
 
 pub fn deinit(sequence: *prompt.Seq, allocator: std.mem.Allocator) void {
+    if (@import("exl3/offload/cuda_exl3_recycle.zig").giveSeq(sequence)) return;
     if (sequence.stream) |stream| @import("cuda").completion.drain(stream.d, stream, "Flash Next sequence work did not drain before release");
+    @import("exl3/graph/cuda_exl3_graph.zig").releaseSeq(sequence);
     if (sequence.media) |*media| media.deinit();
     for ([_][]@import("cuda").DeviceBuffer{ sequence.conv, sequence.state, sequence.kc, sequence.vc, sequence.ikc, sequence.pooled }) |buffers| {
         for (buffers) |*buffer| buffer.free();
