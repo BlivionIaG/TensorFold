@@ -165,6 +165,7 @@ pub const Pool = struct {
         p.planes = mib > 0;
         if (mib > 0) {
             p.host = try host_tier.Host.create(gpa, e.driver, logical, frames, kv_page);
+            std.log.info("flashnext: host tier: {d} logical pages ({d} MiB pinned), {d} frames on the device", .{ logical, logical * kv_page >> 20, frames });
             p.pool = &p.host.?.tier.pool;
         } else {
             p.plain = try kv.Pool.init(gpa, count, page_bytes);
