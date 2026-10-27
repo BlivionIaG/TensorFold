@@ -449,6 +449,8 @@ pub const Scratch = struct {
 /// A sequence's state the pass reads and leaves as the row-by-row path would.
 pub const SeqState = struct {
     media: ?@import("cuda_media.zig").View = null,
+    /// An int8 K/V cache (kc/vc hold its codes; cuda_exl3_kv.zig); null: bf16 kc/vc.
+    kv8: ?@import("exl3/kv/cuda_exl3_kv.zig").SeqKv8 = null,
     conv: []cuda.DeviceBuffer,
     state: []cuda.DeviceBuffer,
     kc: []cuda.DeviceBuffer,

@@ -184,7 +184,7 @@ pub fn attnBlock(p: anytype, lw: anytype, ai: usize) !void {
 /// `n` rows of p.seq from p.pos0 on the rank's heads: upstream's attnRows with NQ 12, NKV 1, PW 7296.
 fn rows(p: anytype, g: *const Glue, lw: anytype, ai: usize, pa: u64, n: usize, pos_at: u64, q_at: u64, iq_at: u64, ao_at: u64) !void {
     const s = p.s;
-    if (p.seq.media != null) return error.SplitAttentionUnsupported;
+    if (p.seq.media != null or p.seq.kv8 != null) return error.SplitAttentionUnsupported;
     const kc = p.seq.kc[ai].ptr;
     const vc = p.seq.vc[ai].ptr;
     const ikc = p.seq.ikc[ai].ptr;

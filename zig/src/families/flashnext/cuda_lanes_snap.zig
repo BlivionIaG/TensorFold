@@ -8,7 +8,7 @@ const snap = @import("cuda_snap.zig");
 pub fn Copies(comptime of: anytype) type {
     return struct {
         pub fn bytes(ptr: *anyopaque, at: u32) u64 {
-            return snap.bytesKv(at, of(ptr).head != null, @import("exl3/kv/cuda_exl3_kv.zig").of(of(ptr).engine).rowBytes());
+            return snap.bytesKv(at, of(ptr).head != null, @import("exl3/kv/cuda_exl3_kv.zig").of(of(ptr).engine).rows());
         }
 
         /// The owner stream's state, its prompt pass standing at `at` (a drafting stream's with the head's rows).

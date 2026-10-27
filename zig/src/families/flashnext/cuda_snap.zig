@@ -6,6 +6,7 @@ const prompt = @import("cuda_prompt.zig");
 const wt = @import("cuda_prompt_wt.zig");
 const gdn = @import("cuda_gdn.zig");
 const Draft = @import("cuda_mtp_draft.zig").Draft;
+const kv = @import("exl3/kv/cuda_exl3_kv.zig");
 const pages = @import("cuda_pages.zig");
 
 const conv_bytes = (gdn.taps - 1) * gdn.conv_dim * 2;
@@ -23,17 +24,18 @@ pub fn bytes(at: usize, head: bool) usize {
     return wt.linear_n * (conv_bytes + state_bytes) + (wt.attn_n + @intFromBool(head)) * attnBytes(at) + tail_bytes;
 }
 
-/// `bytes` for a sequence whose K/V rows are `kv_row` bytes a token (one KV head a rank: cuda_exl3_kv.zig).
-pub fn bytesKv(at: usize, head: bool, kv_row: usize) usize {
-    const layer = at * (2 * kv_row + index_row) + at / wt.index_ratio * index_row;
+/// `bytes` for a sequence whose K/V rows are `r` (int8 codes and scales, or one KV head a rank: cuda_exl3_kv.zig).
+pub fn bytesKv(at: usize, head: bool, r: kv.Rows) usize {
+    const layer = at * (2 * (r.kv + r.scales) + index_row) + at / wt.index_ratio * index_row;
     return wt.linear_n * (conv_bytes + state_bytes) + wt.attn_n * layer + @as(usize, @intFromBool(head)) * attnBytes(at) + tail_bytes;
 }
 
-/// A sequence's K/V row bytes a token, read from its buffers (cap rows each).
-fn seqRow(seq: *const prompt.Seq) usize {
-    // borrowed page views carry no length: their rows are upstream's (two KV heads)
+/// A sequence's K/V rows a token, read from its buffers (cap rows each).
+fn seqRows(seq: *const prompt.Seq) kv.Rows {
+    // borrowed page views carry no length: their rows are upstream's (bf16, two KV heads)
     const per = if (seq.paged != null or seq.cap == 0) 0 else seq.kc[0].len / seq.cap;
-    return if (per == 0) prompt.kv_row_bytes else per;
+    if (per == 0) return kv.snapRows(false, 2);
+    return .{ .kv = per, .scales = if (seq.kv8) |c| c.ks[0].len / seq.cap else 0 };
 }
 
 /// One kept state; `head`: it holds the MTP head's cache over the same rows, which a drafting stream needs.
@@ -69,16 +71,22 @@ fn attnPiecesRow(kc: []cuda.DeviceBuffer, vc: []cuda.DeviceBuffer, ikc: []cuda.D
 fn move(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, base: u64, at: usize, way: Way) !void {
     const dr = stream.d;
     var off: u64 = 0;
-    var pieces: [11]Piece = undefined;
+    var pieces: [13]Piece = undefined;
     pieces[0] = .{ .bufs = seq.conv, .n = conv_bytes };
     pieces[1] = .{ .bufs = seq.state, .n = state_bytes };
-    const kv_row = seqRow(seq);
-    pieces[2..6].* = attnPiecesRow(seq.kc, seq.vc, seq.ikc, seq.pooled, at, kv_row);
+    const rows = seqRows(seq);
+    pieces[2..6].* = attnPiecesRow(seq.kc, seq.vc, seq.ikc, seq.pooled, at, rows.kv);
     pieces[6] = .{ .bufs = (&seq.tail)[0..1], .n = tail_bytes };
     var count: usize = 7;
+    if (seq.kv8) |c| {
+        // the int8 cache's scales (its codes went with kc/vc)
+        pieces[7] = .{ .bufs = c.ks, .n = at * rows.scales };
+        pieces[8] = .{ .bufs = c.vs, .n = at * rows.scales };
+        count = 9;
+    }
     if (d) |h| {
-        pieces[7..11].* = attnPieces((&h.kc)[0..1], (&h.vc)[0..1], (&h.ikc)[0..1], (&h.pooled)[0..1], at);
-        count = 11;
+        pieces[count..][0..4].* = attnPieces((&h.kc)[0..1], (&h.vc)[0..1], (&h.ikc)[0..1], (&h.pooled)[0..1], at);
+        count += 4;
     }
     for (pieces[0..count], 0..) |p, pi| for (p.bufs, 0..) |b, layer| {
         if (p.n == 0) continue;
@@ -106,7 +114,7 @@ fn move(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, base: u64, at: usize,
         try dr.check(dr.api.cuMemcpyDtoDAsync_v2(dst, src, p.n, stream.handle), "cuMemcpyDtoDAsync");
         off += p.n;
     };
-    std.debug.assert(off == bytesKv(at, d != null, kv_row));
+    std.debug.assert(off == bytesKv(at, d != null, rows));
 }
 
 fn discard(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
@@ -123,7 +131,7 @@ pub fn save(gpa: std.mem.Allocator, driver: *const cuda.Driver, stream: cuda.Str
     const at = seq.fed;
     if (at > seq.cap) return error.SequenceTooShort;
     if (d) |h| if (h.len != at or h.drafted != 0 or h.open or at > h.cap) return error.NotAtMark;
-    const n = bytesKv(at, d != null, seqRow(seq));
+    const n = bytesKv(at, d != null, seqRows(seq));
     const snap = try allocate(gpa, driver, n, at, seq.history, d != null);
     errdefer discard(gpa, stream, snap);
     try move(stream, seq, d, snap.buf.ptr, at, .save);
@@ -165,9 +173,12 @@ pub fn drop(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
     discard(gpa, stream, snap);
 }
 
-test "a placed state's bytes: one KV head a token, upstream's rows otherwise" {
-    try std.testing.expectEqual(bytes(7, true), bytesKv(7, true, prompt.kv_row_bytes));
-    const half = prompt.kv_row_bytes / 2;
+test "a placed state's bytes: int8 codes and scales or one KV head a token, the head's rows upstream's" {
+    const r = kv.snapRows(true, 2);
+    try std.testing.expectEqual(@as(usize, 12 * (2 * (512 + 32) + 128 * 2)), bytesKv(1, false, r) - bytesKv(0, false, r));
+    try std.testing.expectEqual(bytesKv(1, false, r) - bytesKv(0, false, r) + (2 * 2 * 256 * 2 + 128 * 2), bytesKv(1, true, r) - bytesKv(0, true, r));
+    try std.testing.expectEqual(bytes(7, true), bytesKv(7, true, kv.snapRows(false, 2)));
+    const half = kv.snapRows(false, 1);
     try std.testing.expectEqual(@as(usize, 12 * (2 * 256 * 2 + 128 * 2)), bytesKv(1, false, half) - bytesKv(0, false, half));
 }
 

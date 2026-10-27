@@ -370,6 +370,7 @@ pub fn Pass(comptime Tri: type) type {
 
         /// `n` rows of self.seq from self.pos0: rope, cache writes and pooling, then scores, selection and attention.
         fn attnRows(self: *Self, lw: *const Layer, ai: usize, pa: u64, n: usize, at: RowsAt) !void {
+            if (self.seq.kv8) |c| return @import("exl3/kv/cuda_exl3_kv.zig").attnRows(self, lw, ai, pa, n, at, c); // int8 KV (K10)
             const s = self.s;
             const kc = self.seq.kc[ai].ptr;
             const vc = self.seq.vc[ai].ptr;

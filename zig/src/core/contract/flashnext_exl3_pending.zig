@@ -1,4 +1,4 @@
-//! Flash Next EXL3 launches (TP mask and place, device pool plan, prefill); nvcc 13.4 measured, older pending.
+//! Flash Next EXL3 launches (int8 KV, device pool plan, prefill experts); nvcc 13.4 measured, older pending.
 const std = @import("std");
 const limits = @import("limits.zig");
 const registry = @import("registry.zig");
@@ -14,6 +14,13 @@ pub const records = [_]registry.CudaRecord{
     .{ .launch = .{ .name = "flashnext_exl3_dplan fn_exl3_dcopy", .symbol = "fn_exl3_dcopy", .image = "flashnext_exl3_dplan", .threads = 256 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_dplan fn_exl3_draft_token", .symbol = "fn_exl3_draft_token", .image = "flashnext_exl3_dplan", .threads = 32 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_dplan fn_exl3_draft_next", .symbol = "fn_exl3_draft_next", .image = "flashnext_exl3_dplan", .threads = 32 }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_exl3_kv fn_kv8_prep", .symbol = "fn_kv8_prep", .image = "flashnext_exl3_kv", .threads = 256 }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_exl3_kv fn_kv8_chunks", .symbol = "fn_kv8_chunks", .image = "flashnext_exl3_kv", .threads = 128, .dynamic = 60928, .opt_in = true }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_exl3_kv fn_kv8_chunks_ahead", .symbol = "fn_kv8_chunks_ahead", .image = "flashnext_exl3_kv", .threads = 128, .dynamic = 78336, .opt_in = true }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_exl3_kv fn_kv8_merge", .symbol = "fn_kv8_merge", .image = "flashnext_exl3_kv", .threads = 256 }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_exl3_kv fn_kv8_pack", .symbol = "fn_kv8_pack", .image = "flashnext_exl3_kv", .threads = 256 }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_exl3_kv fn_kv_gather", .symbol = "fn_kv_gather", .image = "flashnext_exl3_kv", .threads = 256 }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_exl3_kv fn_kv_roundtrip", .symbol = "fn_kv_roundtrip", .image = "flashnext_exl3_kv", .threads = 256 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_prefill tf_exl3pf_rotate", .symbol = "tf_exl3pf_rotate", .image = "flashnext_exl3_prefill", .threads = 32 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_prefill tf_exl3pf_gu", .symbol = "tf_exl3pf_gu", .image = "flashnext_exl3_prefill", .threads = 256 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_prefill tf_exl3pf_down", .symbol = "tf_exl3pf_down", .image = "flashnext_exl3_prefill", .threads = 256 }, .usage = registry.none },
@@ -32,6 +39,13 @@ pub const cuda_134 = [_]registry.Override{
     .{ .name = "flashnext_exl3_dplan fn_exl3_dcopy", .usage = .{ .{ .regs = 40, .static = 0, .bound = 256 }, .{ .regs = 38, .static = 0, .bound = 256 }, .{ .regs = 38, .static = 0, .bound = 256 }, .{ .regs = 40, .static = 0, .bound = 256 }, .{ .regs = 40, .static = 0, .bound = 256 } } },
     .{ .name = "flashnext_exl3_dplan fn_exl3_draft_token", .usage = .{ .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 10, .static = 0, .bound = 0 } } },
     .{ .name = "flashnext_exl3_dplan fn_exl3_draft_next", .usage = .{ .{ .regs = 24, .static = 0, .bound = 0 }, .{ .regs = 24, .static = 0, .bound = 0 }, .{ .regs = 24, .static = 0, .bound = 0 }, .{ .regs = 24, .static = 0, .bound = 0 }, .{ .regs = 24, .static = 0, .bound = 0 } } },
+    .{ .name = "flashnext_exl3_kv fn_kv8_prep", .usage = .{ .{ .regs = 32, .static = 128, .bound = 256 }, .{ .regs = 36, .static = 128, .bound = 256 }, .{ .regs = 36, .static = 128, .bound = 256 }, .{ .regs = 31, .static = 128, .bound = 256 }, .{ .regs = 31, .static = 128, .bound = 256 } } },
+    .{ .name = "flashnext_exl3_kv fn_kv8_chunks", .usage = .{ .{ .regs = 72, .static = 640, .bound = 128 }, .{ .regs = 72, .static = 640, .bound = 128 }, .{ .regs = 72, .static = 640, .bound = 128 }, .{ .regs = 72, .static = 640, .bound = 128 }, .{ .regs = 72, .static = 640, .bound = 128 } } },
+    .{ .name = "flashnext_exl3_kv fn_kv8_chunks_ahead", .usage = .{ .{ .regs = 72, .static = 768, .bound = 128 }, .{ .regs = 72, .static = 768, .bound = 128 }, .{ .regs = 72, .static = 768, .bound = 128 }, .{ .regs = 64, .static = 768, .bound = 128 }, .{ .regs = 64, .static = 768, .bound = 128 } } },
+    .{ .name = "flashnext_exl3_kv fn_kv8_merge", .usage = .{ .{ .regs = 29, .static = 0, .bound = 256 }, .{ .regs = 30, .static = 0, .bound = 256 }, .{ .regs = 30, .static = 0, .bound = 256 }, .{ .regs = 25, .static = 0, .bound = 256 }, .{ .regs = 25, .static = 0, .bound = 256 } } },
+    .{ .name = "flashnext_exl3_kv fn_kv8_pack", .usage = .{ .{ .regs = 18, .static = 0, .bound = 256 }, .{ .regs = 20, .static = 0, .bound = 256 }, .{ .regs = 20, .static = 0, .bound = 256 }, .{ .regs = 22, .static = 0, .bound = 256 }, .{ .regs = 22, .static = 0, .bound = 256 } } },
+    .{ .name = "flashnext_exl3_kv fn_kv_gather", .usage = .{ .{ .regs = 32, .static = 0, .bound = 256 }, .{ .regs = 39, .static = 0, .bound = 256 }, .{ .regs = 39, .static = 0, .bound = 256 }, .{ .regs = 38, .static = 0, .bound = 256 }, .{ .regs = 38, .static = 0, .bound = 256 } } },
+    .{ .name = "flashnext_exl3_kv fn_kv_roundtrip", .usage = .{ .{ .regs = 19, .static = 0, .bound = 256 }, .{ .regs = 21, .static = 0, .bound = 256 }, .{ .regs = 21, .static = 0, .bound = 256 }, .{ .regs = 21, .static = 0, .bound = 256 }, .{ .regs = 21, .static = 0, .bound = 256 } } },
     .{ .name = "flashnext_exl3_prefill tf_exl3pf_rotate", .usage = .{ .{ .regs = 22, .static = 0, .bound = 0 }, .{ .regs = 22, .static = 0, .bound = 0 }, .{ .regs = 22, .static = 0, .bound = 0 }, .{ .regs = 19, .static = 0, .bound = 0 }, .{ .regs = 19, .static = 0, .bound = 0 } } },
     .{ .name = "flashnext_exl3_prefill tf_exl3pf_gu", .usage = .{ .{ .regs = 128, .static = 46080, .bound = 256 }, .{ .regs = 128, .static = 46080, .bound = 256 }, .{ .regs = 128, .static = 46080, .bound = 256 }, .{ .regs = 128, .static = 46080, .bound = 256 }, .{ .regs = 128, .static = 46080, .bound = 256 } } },
     .{ .name = "flashnext_exl3_prefill tf_exl3pf_down", .usage = .{ .{ .regs = 128, .static = 46336, .bound = 256 }, .{ .regs = 128, .static = 46336, .bound = 256 }, .{ .regs = 128, .static = 46336, .bound = 256 }, .{ .regs = 128, .static = 46336, .bound = 256 }, .{ .regs = 128, .static = 46336, .bound = 256 } } },

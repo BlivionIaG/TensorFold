@@ -69,15 +69,15 @@ fn discardSeq(slot: *?prompt.Seq, allocator: std.mem.Allocator) void {
 }
 
 fn canRetainSeq(s: *const prompt.Seq) bool {
-    if (s.media != null or s.paged != null or s.recycle_owner == null) return false;
+    if (s.media != null or s.kv8 != null or s.paged != null or s.ikc_host != null or s.recycle_owner == null) return false;
     const placement = @import("../kv/cuda_exl3_kv.zig").of(s.recycle_owner.?);
-    return placement.heads == @import("../../cuda_prompt_wt.zig").kv_heads;
+    return placement.k8 == null and placement.heads == @import("../../cuda_prompt_wt.zig").kv_heads;
 }
 
 fn matches(sequence: *const prompt.Seq, engine: *prompt.Engine, cap: usize) bool {
     if (sequence.recycle_owner != engine or sequence.tail.d != engine.driver or sequence.cap != cap) return false;
     const placement = @import("../kv/cuda_exl3_kv.zig").of(engine);
-    if (placement.heads != @import("../../cuda_prompt_wt.zig").kv_heads) return false;
+    if (placement.k8 != null or placement.heads != @import("../../cuda_prompt_wt.zig").kv_heads or placement.ikc_host) return false;
     return sequence.paged == null;
 }
 

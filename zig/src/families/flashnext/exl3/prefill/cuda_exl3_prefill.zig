@@ -300,7 +300,7 @@ pub fn forward(e: *prompt.Engine, comptime Tri: type, tri: Tri, seq: *prompt.Seq
     const rg = if (o.ring) try ringOf(dp, e) else null;
     var window_room: usize = 0;
     if (o.two_chunk) {
-        var supported = dp.second != null and rg != null and world == 2 and !dp.reduced_branch and deep_rows <= window_.max_rows and ids.len > deep_rows;
+        var supported = dp.second != null and rg != null and world == 2 and !dp.reduced_branch and seq.kv8 == null and deep_rows <= window_.max_rows and ids.len > deep_rows;
         if (@import("../graph/cuda_exl3_graph.zig").enabled()) {
             const required = @import("../graph/cuda_exl3_graph_memory.zig").twoChunkReservationBytes();
             if (required == 0 or dp.window_graph_reservation < required) supported = false;

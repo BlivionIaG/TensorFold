@@ -12,6 +12,7 @@ pub fn deinit(sequence: *prompt.Seq, allocator: std.mem.Allocator) void {
     if (sequence.stream) |stream| @import("cuda").completion.drain(stream.d, stream, "Flash Next sequence work did not drain before release");
     @import("exl3/graph/cuda_exl3_graph.zig").releaseSeq(sequence);
     if (sequence.media) |*media| media.deinit();
+    @import("exl3/kv/cuda_exl3_kv.zig").deinitSeq(allocator, &sequence.kv8, &sequence.ikc_host);
     for ([_][]@import("cuda").DeviceBuffer{ sequence.conv, sequence.state, sequence.kc, sequence.vc, sequence.ikc, sequence.pooled }) |buffers| {
         for (buffers) |*buffer| buffer.free();
         allocator.free(buffers);
