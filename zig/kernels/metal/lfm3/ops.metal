@@ -119,7 +119,8 @@ inline void lfm3_head(const device bfloat* x, const device bfloat* gain, constan
   for (uint pair = 0; pair < 2; ++pair) {
     const uint frequency = lane + 32 * pair;
     const float angle = frequency < p.rotary_pairs ? float(pos) * metal::exp2(-float(frequency) / 64.0f * p.log2_theta) : 0.0f;
-    const float cosine = metal::precise::cos(angle), sine = metal::precise::sin(angle);
+    const float cosine = float(bfloat(metal::precise::cos(angle)));
+    const float sine = float(bfloat(metal::precise::sin(angle)));
     out[pair] = bfloat(v[pair] * cosine - v[pair + 2] * sine);
     out[pair + 2] = bfloat(v[pair + 2] * cosine + v[pair] * sine);
   }

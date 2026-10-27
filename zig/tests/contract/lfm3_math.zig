@@ -132,7 +132,7 @@ fn qkReference(d: Data, acc: c.Accum, order: g.Order, out: []f64, mag: []f64) vo
                 const angle = if (frequency < pairs) @as(f64, @floatFromInt(r)) / std.math.pow(f64, theta, @as(f64, @floatFromInt(frequency)) / 64) else 0;
                 const other = if (i < 64) -normalized[i + 64] else normalized[i - 64];
                 const target = if (part == 0) base + i else d.rows * 2048 + (h * d.rows + r) * 128 + i;
-                out[target] = bf(normalized[i] * @cos(angle) + other * @sin(angle));
+                out[target] = rotary(normalized[i], other, angle);
                 mag[target] = @abs(normalized[i]) + @abs(other);
             }
         };
@@ -142,6 +142,15 @@ fn qkReference(d: Data, acc: c.Accum, order: g.Order, out: []f64, mag: []f64) vo
         out[offset + (h * d.rows + r) * 128 + i] = val(d.z[(r * 4 + h) * 128 + i]);
         mag[offset + (h * d.rows + r) * 128 + i] = @abs(out[offset + (h * d.rows + r) * 128 + i]);
     };
+}
+
+fn rotary(value: f64, other: f64, angle: f64) f64 {
+    return bf(value * bf(@cos(angle)) + other * bf(@sin(angle)));
+}
+
+test "text rotary rounds trigonometric values before multiplying BF16 heads" {
+    try std.testing.expectEqual(@as(f64, 0.6796875), rotary(0.875, 0.25, 1));
+    try std.testing.expectEqual(@as(f64, 0.68359375), bf(0.875 * @cos(@as(f64, 1)) + 0.25 * @sin(@as(f64, 1))));
 }
 
 fn attentionReference(a: std.mem.Allocator, d: Data, acc: c.Accum, order: g.Order, out: []f64, mag: []f64) !void {
