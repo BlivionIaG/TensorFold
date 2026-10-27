@@ -50,7 +50,11 @@ pub const Head = struct { draft_n: usize, rows: usize };
 pub fn layout(capacity: usize, tokens: usize, head: ?Head, extra: usize) kv.Layout {
     const layers = wt.attn_n + @intFromBool(head != null);
     const run = seqRunBytes() + if (head) |h| mtp.Draft.runBytes(h.draft_n, h.rows) else 0;
-    return .{ .fixed_bytes = mostPages(capacity, tokens) * 4 + extra, .token_bytes = pages.pageBytesOf(tokens, layers) / tokens, .page_tokens = @intCast(tokens), .snap_bytes = snap.bytes(0, head != null), .run_bytes = run };
+    // a run is whole pages of the K/V plane: it needs as many pages as that plane alone takes to hold its bytes
+    const kv_page = pages.kvPageBytes(tokens, layers);
+    const run_pages = (run + kv_page - 1) / kv_page;
+    const page = pages.pageBytesOf(tokens, layers);
+    return .{ .fixed_bytes = mostPages(capacity, tokens) * 4 + extra, .token_bytes = page / tokens, .page_tokens = @intCast(tokens), .snap_bytes = snap.bytes(0, head != null), .run_bytes = run_pages * page };
 }
 
 /// `l` with every stream's run `k` pages: the ranks of a pair agree the larger, so their pools open the same ids.
@@ -109,6 +113,7 @@ pub const Pool = struct {
     head: ?Head,
     pool: kv.Pool,
     arena: cuda.DeviceBuffer,
+    ibase: u64, // where the index plane starts in the arena: after `count` pages of the K/V plane
     lanes: []Lane,
 
     /// `streams` lanes and `count` pages of layout `l`, made and touched now; a lane holds only its table idle.
@@ -121,7 +126,7 @@ pub const Pool = struct {
         errdefer gpa.destroy(p);
         var arena = try cuda.DeviceBuffer.alloc(e.driver, try std.math.mul(usize, count, page_bytes));
         errdefer arena.free();
-        p.* = .{ .gpa = gpa, .e = e, .layout = l, .capacity = capacity, .head = head, .pool = try kv.Pool.init(gpa, count, page_bytes), .arena = arena, .lanes = &.{} };
+        p.* = .{ .gpa = gpa, .e = e, .layout = l, .capacity = capacity, .head = head, .pool = try kv.Pool.init(gpa, count, page_bytes), .arena = arena, .ibase = arena.ptr + count * pages.kvPageBytes(l.page_tokens, wt.attn_n + @intFromBool(head != null)), .lanes = &.{} };
         errdefer p.pool.deinit();
         p.lanes = try gpa.alloc(Lane, streams);
         errdefer gpa.free(p.lanes);
@@ -144,7 +149,7 @@ pub const Pool = struct {
         const d = p.e.driver;
         var table = try cuda.DeviceBuffer.alloc(d, mostPages(p.capacity, p.layout.page_tokens) * 4);
         errdefer table.free();
-        const paged: pages.Paged = .{ .base = p.arena.ptr, .table = table, .ids = &.{}, .tokens = p.layout.page_tokens, .own_ids = false, .layers = wt.attn_n + @intFromBool(p.head != null) };
+        const paged: pages.Paged = .{ .base = p.arena.ptr, .ibase = p.ibase, .table = table, .ids = &.{}, .tokens = p.layout.page_tokens, .own_ids = false, .layers = wt.attn_n + @intFromBool(p.head != null) };
         const conv = try gpa.alloc(cuda.DeviceBuffer, wt.linear_n);
         errdefer gpa.free(conv);
         const state = try gpa.alloc(cuda.DeviceBuffer, wt.linear_n);
@@ -211,13 +216,18 @@ pub const Pool = struct {
         return x.seq;
     }
 
+    /// Bytes a run's pages hold: whole pages of the K/V plane.
+    fn runLen(p: *const Pool) usize {
+        return p.layout.runPages() * pages.kvPageBytes(p.layout.page_tokens, wt.attn_n + @intFromBool(p.head != null));
+    }
+
     fn runBase(p: *const Pool, x: *const Lane) u64 {
-        return p.arena.ptr + @as(u64, x.run) * p.layout.pageBytes();
+        return p.arena.ptr + @as(u64, x.run) * pages.kvPageBytes(p.layout.page_tokens, wt.attn_n + @intFromBool(p.head != null));
     }
 
     /// The lane's states as views of its run, laid out afresh (a kept window swaps state buffers with the head's).
     fn mapStates(p: *Pool, seq: *prompt.Seq) !void {
-        if (p.layout.runPages() * p.layout.pageBytes() < seqRunBytes()) return error.FlashNextRunTooShort;
+        if (p.runLen() < seqRunBytes()) return error.FlashNextRunTooShort;
         const x = p.laneOf(seq).?;
         var at = p.runBase(x);
         for (seq.conv) |*b| {
@@ -235,7 +245,7 @@ pub const Pool = struct {
     pub fn draft(p: *Pool, seq: *const prompt.Seq, cap: usize) !mtp.Draft {
         const h = p.head orelse return error.FlashNextRunTooShort;
         const x = p.laneOf(seq) orelse return error.UnknownStream;
-        const run_len = p.layout.runPages() * p.layout.pageBytes();
+        const run_len = p.runLen();
         if (run_len < seqRunBytes()) return error.FlashNextRunTooShort;
         return mtp.Draft.initIn(p.gpa, p.e.driver, cap, h.draft_n, h.rows, &x.seq.paged.?, p.runBase(x) + seqRunBytes(), run_len - seqRunBytes());
     }

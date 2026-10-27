@@ -1,5 +1,4 @@
-//! Flash Next's attention caches as pages: per attention layer, keys, values, indexer keys, then pooled rows (bf16).
-
+//! Flash Next attention caches as pages in two planes: keys and values (K/V), indexer and pooled keys (index).
 const std = @import("std");
 const cuda = @import("cuda");
 const wt = @import("cuda_prompt_wt.zig");
@@ -24,9 +23,19 @@ pub fn rows(part: Part, tokens: usize) usize {
     return if (part == .pooled) tokens / ratio else tokens;
 }
 
-/// Bytes one attention layer's share of a page takes.
+/// Bytes one attention layer's share of a page takes in the K/V plane.
+pub fn kvLayerBytes(tokens: usize) usize {
+    return 2 * tokens * kv_row;
+}
+
+/// Bytes one attention layer's share of a page takes in the index plane.
+pub fn indexLayerBytes(tokens: usize) usize {
+    return tokens * index_row + tokens / ratio * index_row;
+}
+
+/// Bytes one attention layer's share of a page takes, both planes.
 pub fn layerBytes(tokens: usize) usize {
-    return tokens * (2 * kv_row + index_row) + tokens / ratio * index_row;
+    return kvLayerBytes(tokens) + indexLayerBytes(tokens);
 }
 
 /// Bytes a page takes: every attention layer's share.
@@ -34,19 +43,33 @@ pub fn pageBytes(tokens: usize) usize {
     return pageBytesOf(tokens, wt.attn_n);
 }
 
-/// Bytes a page of `layers` attention layers takes (the model's, and the MTP head's cache when it drafts).
+/// Bytes a page of `layers` attention layers takes (the model's, and the MTP head's cache when it drafts), both planes.
 pub fn pageBytesOf(tokens: usize, layers: usize) usize {
     return layers * layerBytes(tokens);
 }
 
-/// Where `part` of attention layer `layer` starts inside a page.
+/// Bytes a page of `layers` layers takes in the K/V plane.
+pub fn kvPageBytes(tokens: usize, layers: usize) usize {
+    return layers * kvLayerBytes(tokens);
+}
+
+/// Bytes a page of `layers` layers takes in the index plane.
+pub fn indexPageBytes(tokens: usize, layers: usize) usize {
+    return layers * indexLayerBytes(tokens);
+}
+
+/// Whether `part` is in the index plane.
+pub fn inIndexPlane(part: Part) bool {
+    return part == .index or part == .pooled;
+}
+
+/// Where `part` of attention layer `layer` starts inside its plane's page.
 pub fn offset(tokens: usize, layer: usize, part: Part) usize {
-    const at = layer * layerBytes(tokens);
-    return at + switch (part) {
-        .key => 0,
-        .value => tokens * kv_row,
-        .index => 2 * tokens * kv_row,
-        .pooled => 2 * tokens * kv_row + tokens * index_row,
+    return switch (part) {
+        .key => layer * kvLayerBytes(tokens),
+        .value => layer * kvLayerBytes(tokens) + tokens * kv_row,
+        .index => layer * indexLayerBytes(tokens),
+        .pooled => layer * indexLayerBytes(tokens) + tokens * index_row,
     };
 }
 
@@ -80,8 +103,10 @@ pub fn checkedLayout(cap: usize, tokens: usize) !Layout {
 
 /// One stream's pages: page i of its positions at `base` + ids[i] pages.
 pub const Paged = struct {
-    /// Where page 0 of the arena starts.
+    /// Where page 0 of the K/V plane starts.
     base: u64,
+    /// Where page 0 of the index plane starts.
+    ibase: u64,
     /// The stream's table on the device, an int a page (`ids` uploaded).
     table: cuda.DeviceBuffer,
     ids: []u32,
@@ -96,18 +121,19 @@ pub const Paged = struct {
     stream: ?cuda.Stream = null,
 
     pub fn pg(p: *const Paged) Pg {
-        return .{ .pt = p.table.ptr, .ps = @intCast(pageBytesOf(p.tokens, p.layers) / 2), .ptok = @intCast(p.tokens) };
+        return .{ .pt = p.table.ptr, .ps = @intCast(kvPageBytes(p.tokens, p.layers) / 2), .ptok = @intCast(p.tokens), .ips = @intCast(indexPageBytes(p.tokens, p.layers) / 2) };
     }
 
     /// `part` of attention layer `layer` in page 0: the cache pointer a kernel takes beside pg().
     pub fn at(p: *const Paged, layer: usize, part: Part) u64 {
-        return p.base + offset(p.tokens, layer, part);
+        return (if (inIndexPlane(part)) p.ibase else p.base) + offset(p.tokens, layer, part);
     }
 
     /// Byte address of row `row` of `part` of `layer` (a position, or a block for pooled).
     pub fn rowAt(p: *const Paged, layer: usize, part: Part, row: usize) u64 {
         const per = rows(part, p.tokens);
-        return p.base + @as(u64, p.ids[row / per]) * pageBytesOf(p.tokens, p.layers) + offset(p.tokens, layer, part) + (row % per) * rowBytes(part);
+        const plane = if (inIndexPlane(part)) p.ibase + @as(u64, p.ids[row / per]) * indexPageBytes(p.tokens, p.layers) else p.base + @as(u64, p.ids[row / per]) * kvPageBytes(p.tokens, p.layers);
+        return plane + offset(p.tokens, layer, part) + (row % per) * rowBytes(part);
     }
 
     /// Borrowed views of each attention layer's `part` in page 0 (what kc, vc, ikc and pooled hold when paged).
@@ -140,22 +166,26 @@ pub fn testPages(gpa: std.mem.Allocator, d: *const cuda.Driver, stream: cuda.Str
     try arena.fill8(0, stream.handle);
     try d.check(d.api.cuMemcpyHtoDAsync_v2(table.ptr, ids.ptr, layout.table, stream.handle), "cuMemcpyHtoDAsync");
     try stream.synchronize();
-    return .{ .base = arena.ptr, .table = table, .ids = ids, .tokens = tokens, .arena = arena, .stream = stream };
+    return .{ .base = arena.ptr, .ibase = arena.ptr + n * kvPageBytes(tokens, wt.attn_n), .table = table, .ids = ids, .tokens = tokens, .arena = arena, .stream = stream };
 }
 
-test "a page's parts tile it in order and pooled rows follow their positions' page" {
+test "a page's parts tile its two planes in order and pooled rows follow their positions" {
     const t = 16;
     try std.testing.expectEqual(@as(usize, 0), offset(t, 0, .key));
     try std.testing.expectEqual(t * kv_row, offset(t, 0, .value));
-    try std.testing.expectEqual(offset(t, 0, .pooled) + t / ratio * index_row, offset(t, 1, .key));
-    try std.testing.expectEqual(pageBytes(t), offset(t, wt.attn_n - 1, .pooled) + t / ratio * index_row);
+    try std.testing.expectEqual(kvLayerBytes(t), offset(t, 1, .key));
+    try std.testing.expectEqual(@as(usize, 0), offset(t, 0, .index));
+    try std.testing.expectEqual(offset(t, 0, .pooled) + t / ratio * index_row, offset(t, 1, .index));
+    try std.testing.expectEqual(kvPageBytes(t, wt.attn_n), offset(t, wt.attn_n - 1, .value) + t * kv_row);
+    try std.testing.expectEqual(indexPageBytes(t, wt.attn_n), offset(t, wt.attn_n - 1, .pooled) + t / ratio * index_row);
+    try std.testing.expectEqual(pageBytes(t), kvPageBytes(t, wt.attn_n) + indexPageBytes(t, wt.attn_n));
     try std.testing.expect(!valid(6) and valid(8) and !valid(0));
     var ids = [_]u32{ 2, 0, 1 };
-    const p: Paged = .{ .base = 1 << 20, .table = .{ .d = undefined, .ptr = 0, .len = 0, .borrowed = true }, .ids = &ids, .tokens = t };
+    const p: Paged = .{ .base = 1 << 20, .ibase = 1 << 30, .table = .{ .d = undefined, .ptr = 0, .len = 0, .borrowed = true }, .ids = &ids, .tokens = t };
     // position 17 is page 1 (id 0) row 1; block 5 (positions 20..23) is page 1 row 1 of the pooled rows
     try std.testing.expectEqual(p.base + offset(t, 3, .value) + kv_row, p.rowAt(3, .value, 17));
-    try std.testing.expectEqual(p.base + offset(t, 3, .pooled) + index_row, p.rowAt(3, .pooled, 5));
-    try std.testing.expectEqual(p.base + 2 * pageBytes(t) + offset(t, 0, .index), p.rowAt(0, .index, 0));
+    try std.testing.expectEqual(p.ibase + offset(t, 3, .pooled) + index_row, p.rowAt(3, .pooled, 5));
+    try std.testing.expectEqual(p.ibase + 2 * indexPageBytes(t, wt.attn_n) + offset(t, 0, .index), p.rowAt(0, .index, 0));
 }
 
 test {
