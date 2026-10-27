@@ -3,6 +3,8 @@ const std = @import("std");
 const mtl = @import("metal");
 const tf = @import("tensorfold");
 const contract = @import("contract");
+const lfm3 = @import("metal_lfm3.zig");
+const lfm3_vision = @import("metal_lfm3_vision.zig");
 const rows_k = @import("metal_rows.zig");
 const affine_k = @import("metal_affine.zig");
 const topk_k = @import("metal_topk.zig");
@@ -126,6 +128,24 @@ pub fn main(init: std.process.Init) !u8 {
         gemma_list.deinit(a);
     }
     var kernels: std.ArrayList(g.Kernel) = .empty;
+    var lfm3_probes: [std.enums.values(lfm3.Kind).len]lfm3.Probe = undefined;
+    var lfm3_count: usize = 0;
+    defer for (lfm3_probes[0..lfm3_count]) |*probe| probe.deinit();
+    for (std.enums.values(lfm3.Kind)) |kind| {
+        if (!wanted(o, lfm3.name(kind))) continue;
+        lfm3_probes[lfm3_count] = try lfm3.Probe.init(a, device, queue, kind);
+        lfm3_count += 1;
+    }
+    for (lfm3_probes[0..lfm3_count]) |*probe| try kernels.append(a, probe.kernel());
+    var lfm3_image_probes: [std.enums.values(lfm3_vision.Kind).len]lfm3_vision.Probe = undefined;
+    var lfm3_image_count: usize = 0;
+    defer for (lfm3_image_probes[0..lfm3_image_count]) |*probe| probe.deinit();
+    for (std.enums.values(lfm3_vision.Kind)) |kind| {
+        if (!wanted(o, lfm3_vision.name(kind))) continue;
+        lfm3_image_probes[lfm3_image_count] = try lfm3_vision.Probe.init(a, device, queue, kind);
+        lfm3_image_count += 1;
+    }
+    for (lfm3_image_probes[0..lfm3_image_count]) |*probe| try kernels.append(a, probe.kernel());
     for (gemma.all_entries) |v| {
         if (!wanted(o, v.name)) continue;
         if (!tensor) {

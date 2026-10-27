@@ -1,0 +1,29 @@
+//! LFM3 text, image-tower and image-copy launches reserve their production threadgroup widths.
+const M = @import("limits.zig").MetalLaunch;
+
+pub const metal = [_]M{
+    .{ .name = "lfm3-vision l3v_dense", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3-vision l3v_rms", .threads = 256, .tg_memory = 32, .reserved = 256 },
+    .{ .name = "lfm3-vision l3v_add", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3-vision l3v_conv", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3-vision l3v_qk", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3-vision l3v_attention", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3-vision l3v_swiglu", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3-vision l3v_layer_norm", .threads = 256, .tg_memory = 32, .reserved = 256 },
+    .{ .name = "lfm3-vision l3v_project", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3-vision l3v_gelu", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3-image lfm3_image_rows", .threads = 256, .tg_memory = 0, .reserved = 256 },
+
+    .{ .name = "lfm3 lfm3_embed_b4", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_embed_b6", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_embed_b8", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_norm", .threads = 256, .tg_memory = 144, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_post_add", .threads = 256, .tg_memory = 144, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_add", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_conv", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_qk", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3 lfm3_gate", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_swiglu", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_attn_partial", .threads = 128, .tg_memory = 2080, .reserved = 128 },
+    .{ .name = "lfm3 lfm3_attn_merge", .threads = 32, .tg_memory = 0, .reserved = 32 },
+};

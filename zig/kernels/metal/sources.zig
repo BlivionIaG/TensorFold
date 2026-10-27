@@ -23,6 +23,11 @@ pub const lfm2 = @embedFile("lfm2/lfm2.metal");
 /// LFM2's prompt attention on the tensor units (nax.h inlined at load, after lfm2.metal's text).
 pub const lfm2_attn_nax = @embedFile("lfm2/lfm2_attn_nax.metal");
 
+pub const lfm3 = @embedFile("lfm3/ops.metal");
+pub const lfm3_attention = @embedFile("lfm3/attention.metal");
+pub const lfm3_image_rows = @embedFile("lfm3/image_rows.metal");
+pub const lfm3_vision = @embedFile("lfm3/vision.metal");
+
 /// Our glue kernels around them: embedding, MLX's RMS arithmetic, argmax, layout moves.
 pub const nemotron_glue = @embedFile("nemotron_glue.metal");
 pub const core_row_projection = @embedFile("core/row_projection.metal");

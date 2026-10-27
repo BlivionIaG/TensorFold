@@ -31,6 +31,16 @@ fn launchOf(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch) !La
             return std.mem.indexOf(u8, s, p) != null;
         }
     }.f;
+    if (std.mem.startsWith(u8, d.name, "lfm3-vision ")) {
+        return .{ .decl = d, .function = fun, .here = sources.lfm3_vision, .pre_m5 = sources.lfm3_vision };
+    }
+    if (std.mem.startsWith(u8, d.name, "lfm3-image ")) {
+        return .{ .decl = d, .function = fun, .here = sources.lfm3_image_rows, .pre_m5 = sources.lfm3_image_rows };
+    }
+    if (std.mem.startsWith(u8, d.name, "lfm3 ")) {
+        const body = try std.mem.concat(a, u8, &.{ sources.lfm3, "\n", sources.lfm3_attention });
+        return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };
+    }
     if (std.mem.startsWith(u8, d.name, "qwen4-native ")) {
         const body = try @import("qwen4").family.limits_sources.source(a, d.name);
         return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };

@@ -2,8 +2,38 @@
 
 Tracking issue: [#1491](https://github.com/ashhart/TensorFold/issues/1491).
 
-This branch adds host checks for LFM3 checkpoint configuration and text tensor layouts.
-It does not register a serving engine. Text generation and image input are not implemented or qualified here.
+The native Metal engine implements LFM3-1.7B text generation and LFM3-VL-2B image-to-text generation.
+Both read the official MLX affine 4-, 6-, and 8-bit checkpoints without converting stored weights.
+This is an experimental family port. Device and model receipts cover an M4 Pro; they do not qualify other Apple GPUs.
+
+## Run the models
+
+Build the native engine with the Zig version in `.zig-version` and Xcode's Metal toolchain:
+
+```sh
+zig build native -Dcpu=apple_m1
+./zig-out/native/bin/tensorfold-native serve LiquidAI/LFM3-1.7B-MLX-4bit --context 8192
+./zig-out/native/bin/tensorfold-native serve LiquidAI/LFM3-VL-2B-MLX-4bit --context 8192
+```
+
+Replace `4bit` with `6bit` or `8bit` for those exports. A complete local checkpoint folder also works.
+The VL checkpoint loads its own image tower. Send images through OpenAI `image_url` content parts.
+The default image budget is 256 tokens per request, with at most four images.
+Video input is not implemented. JPEG and WebP decoding require the matching shared decoder libraries.
+
+The shared lane engine handles target verification, sampling and concurrent streams.
+Convolution history and KV state are kept per stream; partial acceptance restores the accepted row's state.
+Raw prompts of at least 256 tokens can build a repeat-cache entry: the first request records interest,
+the second keeps a prefix state, and a later repeat resumes it. Image cache identity includes image content and grid.
+
+```mermaid
+flowchart LR
+  I[Image pixels] --> V[Vision encoder and projector]
+  V --> E[Placeholder embedding rows]
+  T[Text tokens] --> E
+  E --> D[Shared LFM3 decoder]
+  D --> L[Existing lane engine]
+```
 
 ## Inspect a checkpoint
 
@@ -57,9 +87,45 @@ The header inspections used these revisions:
 
 ## Next gate
 
-Implement the text operators against an independent reference before advertising generation.
-Check the 7-tap convolution, per-head attention gate, sandwich normalization, sliding window, and partial-RoPE formula.
-Then exercise actual 1.7B 4-bit weights through the shared lane engine, followed by 6/8-bit checkpoints.
-The VL encoder and projector need their own native Metal operators and reference checks after text bring-up.
+Checks run on an Apple M4 Pro with 48 GB RAM, macOS 26.5.1, Zig 0.17.0 and MLX 0.32.4:
+
+- All six checkpoints: 186 served checks and 60 cancellation/recovery checks passed, with no failures or skips.
+- Warm repeats reused 896 of 910 prompt tokens and matched the fresh output hash.
+- The 1.7B 4-bit exactness suite passed all 68 default cases. The optional long suite was not run.
+- All 27 LFM3 operator variants passed their declared gates and limits; all seven planted controls were red as intended.
+- The complete repository test target passed 7,231 tests, with 45 skips. Server goldens had no unexpected differences.
+- Lean checks added zero findings over the inherited 428.
+
+The complete global GPU runner stops on an unrelated Gemma case that requires M5 tensor units.
+Its compiler preflight was exercised with a complete measured rotary receipt; the hardware requirement was not bypassed.
+The LFM3 operator and planted-control runs are separate targeted checks, not a claim that the global suite passed.
+
+The independent text reference matched all seven next-token choices in the initial public prompt; its embedding was
+byte-identical. On the 256-patch synthetic vision fixture, patch projection and embedding RMS outputs were byte-identical.
+Projected image rows had relative RMS difference 0.026 against the independent MLX reference, with differences beginning
+in the first encoder layer. This measured case is not an accepted fidelity threshold.
+
+The implementation includes 7-tap convolution, gated full/sliding attention, partial RoPE, sandwich RMS norms,
+and the native hybrid vision encoder and projector. It keeps BF16 activation boundaries and FP32 reductions.
+
+Use the real-checkpoint and served checks in addition to the host admission suite:
+
+```sh
+zig build tf-lfm3-forward tf-lfm3-vision tf-lfm3-exact -Dcpu=apple_m1
+./zig-out/bin/tf-lfm3-exact MODEL_DIR
+./zig-out/bin/tf-lfm3-exact MODEL_DIR --long
+python3 tools/lfm3/serve_check.py --binary ./zig-out/native/bin/tensorfold-native --model-dir MODEL_DIR --cancel --output served.json
+```
+
+The default exactness suite covers 68 prompt, sliding-window, partial-acceptance, shared-stream and snapshot cases.
+The long suite adds five checks through 8,193 tokens. The served checker starts and stops only its own loopback server.
+It compares complete token hashes, checks actual cache reuse, and tests image content, order and corrupt input for VL.
+
+Independent MLX references live in `tools/lfm3/reference.py` and `vision_reference.py`; they are development tools,
+not inference dependencies. Native and MLX reductions can cross different BF16 rounding boundaries.
+Record per-layer errors and teacher-forced token differences; same-engine equality alone does not establish model fidelity.
+
+Long-context fidelity, maximum image budgets, stronger nonlinear accumulation witnesses and other Apple generations
+remain separate qualification work. Structured output requires the native grammar library; logprobs are not advertised.
 
 Agree model-fidelity and performance acceptance criteria on the tracking issue before claiming release readiness.
