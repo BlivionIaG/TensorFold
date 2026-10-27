@@ -69,6 +69,7 @@ pub const Engine = struct {
                 .mtp_step_ms = cfg.mtp_step_ms,
                 .draft_step_ms = cfg.draft_step_ms,
                 .plain_guard = cfg.plain_guard,
+                .rate_guard = cfg.rate_guard,
                 .node_probabilities = cfg.node_probabilities,
                 .confidence_floor = cfg.draft_confidence,
                 .batch_rows = cfg.batch_rows,
@@ -228,6 +229,7 @@ pub const Engine = struct {
                 const first = s.rounds == 1; // a stream's first round carries the prefill-to-decode switch
                 try trail.event(e, &.{ f("ev", str("cost")), f("stream", str(s.id)), f("drafts", int(rows - 1)), f("init", .{ .bool = first }), f("ms", ev.bits(ms)) });
                 try e.rule.observeCost(@intCast(rows - 1), ms, first, win.who(s));
+                if (e.cfg.rate_guard and !first) try e.rule.observeRate(win.who(s), o.got.len, ms);
                 lone_costs.observe(s, plan.cost_probe_rows, rows, ms);
             }
         }
