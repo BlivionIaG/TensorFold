@@ -252,7 +252,7 @@ pub fn run(gpu: check.Gpu) !void {
     }
     defer for (&writebacks) |*w| w.deinit();
     for (&writebacks) |*w| try kernels.append(a, w.kernel());
-    var tp_masks = try @import("contract_flashnext_exl3_tp.zig").Masks.init(gpu, s);
+    var tp_masks = try @import("contract_flashnext_exl3_dplan.zig").Set.init(gpu, s); // pick masks and the device pool plan
     defer tp_masks.deinit();
     try tp_masks.add(a, &kernels);
     var hcnorms: [2]hcnorm_k.Normalize = undefined;
