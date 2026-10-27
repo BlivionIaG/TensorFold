@@ -394,7 +394,8 @@ pub const Pool = struct {
 };
 
 /// The host tier: logical pages in host RAM and device frames that cache them (kv_tier.zig).
-pub const Tier = @import("kv_tier.zig").Tier;
+pub const tier = @import("kv_tier.zig");
+pub const Tier = tier.Tier;
 
 test {
     _ = @import("kv_pool_test.zig");

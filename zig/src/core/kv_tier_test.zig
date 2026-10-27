@@ -415,3 +415,28 @@ test "ranks lending a different count are told apart by the digest" {
     defer b.tier.finish(&lc);
     try expect(a.tier.digest() != b.tier.digest());
 }
+
+test "a lent run is consecutive frames, leaves the free frames, and comes back at finish" {
+    var r: Rig = undefined;
+    try r.open(8, 6);
+    defer r.close();
+    const t = &r.tier;
+    var a = try r.lease(2, 4);
+    _ = try r.pin(&a, a.pages.ids.items[0]); // a mapped frame in the way
+    const first = try t.lendRun(&a, 3);
+    try expectEqual(@as(usize, 3), t.census().lent);
+    for (a.lent.items, 0..) |f, i| try expectEqual(first + i, f);
+    try t.audit();
+    var b = try r.lease(2, 2);
+    try std.testing.expectError(error.FrameMemory, t.lendRun(&b, 3)); // past b's promise
+    _ = try r.pin(&b, b.pages.ids.items[0]);
+    _ = try r.pin(&b, b.pages.ids.items[1]);
+    try std.testing.expectEqual(@as(usize, 0), t.nfree); // 1 mapped (a) + 3 lent + 2 mapped (b)
+    t.finish(&a);
+    t.finish(&b);
+    try expect(t.idle());
+    try t.audit();
+    var c = try r.lease(1, 6);
+    defer t.finish(&c);
+    try expectEqual(@as(u32, 0), try t.lendRun(&c, 6));
+}
