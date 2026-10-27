@@ -141,7 +141,7 @@ pub fn Ops(comptime Tri: type) type {
                 .tri = tri,
                 .k = &e.batch_k,
                 .s = s,
-                .m = .{ .table_w = e.table.w.ptr, .table_s = e.table.s.ptr, .table_b = e.table.b.ptr, .table_dense = e.table.dense, .layers = (&h.layer)[0..1], .mixer = h.mixer, .head = h.draft, .ngram = &e.ngram },
+                .m = .{ .table_w = e.table.w.ptr, .table_s = e.table.s.ptr, .table_b = e.table.b.ptr, .table_dense = e.table.dense, .layers = (&h.layer)[0..1], .mixer = h.mixer, .head = h.draft, .ngram = &e.ngram, .dplan = &e.exl3_dplan },
                 .seq = .{ .media = d.media, .conv = &.{}, .state = &.{}, .kc = (&d.kc)[0..1], .vc = (&d.vc)[0..1], .ikc = (&d.ikc)[0..1], .pooled = (&d.pooled)[0..1], .pg = d.pg, .tail = d.kc, .history = &d.unused_history, .cap = d.cap, .scores = score_rows },
                 .hooks = .{ .logits = .none },
             };
@@ -306,7 +306,7 @@ pub fn Ops(comptime Tri: type) type {
                 .tri = tri,
                 .k = &e.batch_k,
                 .s = s,
-                .m = .{ .table_w = e.table.w.ptr, .table_s = e.table.s.ptr, .table_b = e.table.b.ptr, .table_dense = e.table.dense, .layers = (&h.layer)[0..1], .mixer = h.mixer, .head = h.draft, .ngram = &e.ngram },
+                .m = .{ .table_w = e.table.w.ptr, .table_s = e.table.s.ptr, .table_b = e.table.b.ptr, .table_dense = e.table.dense, .layers = (&h.layer)[0..1], .mixer = h.mixer, .head = h.draft, .ngram = &e.ngram, .dplan = &e.exl3_dplan },
                 .seq = lane_buf[0].seq,
                 .hooks = .{ .logits = .none },
                 .lanes = lane_buf[0..n_l],
@@ -430,8 +430,7 @@ pub fn Ops(comptime Tri: type) type {
             window.verify_cache.invalidate();
             const greedy = if (sm) |sampling| sampling.temperature <= 0 else true;
             const leader = if (ops.main) |main| main.rank == 0 else false;
-            const setting = std.c.getenv("TF_FLASHNEXT_EXL3_VERIFY_BEST") orelse return ops.verify(seq, window, ids);
-            if (!greedy or !leader or ops.e.collective == null or !@import("exl3/graph/cuda_exl3_graph.zig").enabled() or !std.mem.eql(u8, std.mem.span(setting), "1")) return ops.verify(seq, window, ids);
+            if (!@import("cuda_mtp_verify_tail.zig").enabled or !greedy or !leader or ops.e.collective == null or !@import("exl3/graph/cuda_exl3_graph.zig").enabled()) return ops.verify(seq, window, ids);
             if (window.verify_host == null) window.verify_host = try cuda.HostBuffer.alloc(ops.e.driver, max_rows * 16);
             var tail: VerifyTail = .{ .head = ops.h, .draft = window };
             errdefer window.verify_cache.invalidate();

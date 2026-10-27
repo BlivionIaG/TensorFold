@@ -137,6 +137,32 @@ pub fn eqMode(gpu: Gpu, rank: usize, world: usize, port: u16, dir: []const u8, g
             if (mi != 0) all_ok = all_ok and ok;
             if (rank == 0) std.debug.print("RESULT tp={d} {s} {s}: decode {d:.2} ms/token (hit {d:.1}%, {d:.1} copies a token), windows {d:.2} ms/row; logits bit-equal to off: rounds {d}/{d}, window rows {d}/{d}; greedy ids {s}; graph captures {d} (updates {d}) replays {d}, eager-dplan steps {d}, declined {d}, capture {d:.1} ms\n", .{ world, p.object.get("name").?.string, @tagName(m), rs.ms_token, rs.hit, rs.copies, rs.ms_window_row, same_r, steps, same_w, steps, if (std.mem.eql(u32, rs.ids, runs[0].ids)) "equal" else "DIFFER", g1.captures - g0.captures, g1.updates - g0.updates, g1.replays - g0.replays, g1.eager_dplan - g0.eager_dplan, g1.declined - g0.declined, @as(f64, @floatFromInt(g1.capture_ns - g0.capture_ns)) / 1e6 });
         }
+        if (std.mem.indexOf(u8, which, "inject") != null) {
+            // captures fail on rank 1 and instantiations on rank 0: both ranks run those rounds eagerly, bits unchanged
+            graph.clear();
+            graph.fallback.clear();
+            graph.force = .graph;
+            graph.fallback.inject_capture_failures = if (rank == 1 or world == 1) 3 else 0;
+            graph.fallback.inject_instantiate_failures = if (rank == 0) 2 else 0;
+            var injected: Run = .{ .ids = try a.alloc(u32, steps + 1), .round_h = try a.alloc(u64, steps), .window_h = try a.alloc(u64, steps) };
+            defer a.free(injected.ids);
+            defer a.free(injected.round_h);
+            defer a.free(injected.window_h);
+            const before = graph.stats;
+            try runMode(g, ids, steps, &injected);
+            graph.fallback.inject_capture_failures = 0;
+            graph.fallback.inject_instantiate_failures = 0;
+            const h = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(injected.round_h)) ^ std.hash.Wyhash.hash(1, std.mem.sliceAsBytes(injected.window_h));
+            if (world == 2) try check.expect(try g.swap(h) == h, "rank {d}: the two ranks' logits differ (injected capture failures)", .{rank});
+            var same_r: usize = 0;
+            var same_w: usize = 0;
+            for (injected.round_h, runs[0].round_h) |x, y| same_r += @intFromBool(x == y);
+            for (injected.window_h, runs[0].window_h) |x, y| same_w += @intFromBool(x == y);
+            const failures = graph.stats.capture_failures - before.capture_failures;
+            const ok = same_r == steps and same_w == steps and std.mem.eql(u32, injected.ids, runs[0].ids) and failures > 0;
+            all_ok = all_ok and ok;
+            if (rank == 0) std.debug.print("RESULT tp={d} injected failures: {d} captures/instantiations failed on this rank, {d} captures and {d} replays after; logits bit-equal to off: rounds {d}/{d}, window rows {d}/{d}\n", .{ world, failures, graph.stats.captures - before.captures, graph.stats.replays - before.replays, same_r, steps, same_w, steps });
+        }
         graph.force = null;
     }
     // two streams in one round

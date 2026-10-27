@@ -7,6 +7,9 @@ const vocab = wt.vocab;
 const Head = mtp.Head;
 const Draft = mtp.Draft;
 
+/// Not a user switch: the tail is enqueued only when a test or tool turns this on (greedy drafts, graphs, two ranks).
+pub var enabled: bool = false;
+
 pub const VerifyTail = struct {
     head: *Head,
     draft: *Draft,

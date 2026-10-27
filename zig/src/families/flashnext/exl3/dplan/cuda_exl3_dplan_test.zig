@@ -165,3 +165,29 @@ test "exl3: two engines in one process keep separate planner state" {
     try std.testing.expectEqual(@as(?*pool_.Pool, null), a.mtp_pool);
     try std.testing.expect(b.active.? == plan_b and b.mtp_pool.? == pool_b and b.plan.? == plan_b);
 }
+
+test "exl3: every pass built from an engine carries the engine's planner state" {
+    // a pass without it runs the host pool plan without pulling the device planner's residency back first
+    const sources = [_][]const u8{
+        @embedFile("../../cuda_prompt.zig"),
+        @embedFile("../../cuda_mtp_ops.zig"),
+        @embedFile("../prefill/cuda_exl3_prefill.zig"),
+        @embedFile("../prefill/cuda_exl3_prefill_head.zig"),
+        @embedFile("../model/cuda_exl3_chain.zig"),
+    };
+    for (sources) |text| {
+        var literals: usize = 0;
+        var with_state: usize = 0;
+        var from: usize = 0;
+        while (std.mem.indexOfPos(u8, text, from, ".table_dense = ")) |at| {
+            const end = std.mem.indexOfPos(u8, text, at, "\n") orelse text.len;
+            literals += 1;
+            if (std.mem.indexOf(u8, text[at..end], ".dplan = &e.exl3_dplan") != null) with_state += 1;
+            from = end;
+        }
+        // the chain sets it on the pass after building it
+        if (literals == 1 and std.mem.indexOf(u8, text, "p.m.dplan = &e.exl3_dplan") != null) continue;
+        try std.testing.expect(literals > 0);
+        try std.testing.expectEqual(literals, with_state);
+    }
+}
