@@ -326,6 +326,23 @@ extern "C" __global__ void fn_moe_sum(const float* __restrict__ y, const float* 
     out[static_cast<long long>(r) * d + col] = acc;
 }
 
+// EXL3 canonical expert sum: picks < split, picks >= split, each fma-summed in slot order, then added.
+extern "C" __global__ void fn_exl3_group_sum(const float* __restrict__ y, const float* __restrict__ wts, const int* __restrict__ pick,
+                                             float* __restrict__ out, int d, int slots, int split, int lo, int hi, int both) {
+    const int r = blockIdx.x, col = blockIdx.y * blockDim.x + threadIdx.x;
+    if (col >= d) return;
+    float g0 = 0.0f, g1 = 0.0f;
+    for (int k = 0; k < slots; ++k) {
+        const int p = pick[r * slots + k];
+        const bool in0 = both ? p < split : (p >= lo && p < hi);
+        const bool in1 = both && p >= split;
+        if (!in0 && !in1) continue;
+        const float v = __fmaf_rn(y[(static_cast<long long>(r) * slots + k) * d + col], wts[r * slots + k], in0 ? g0 : g1);
+        if (in0) g0 = v; else g1 = v;
+    }
+    out[static_cast<long long>(r) * d + col] = both ? __fadd_rn(g0, g1) : g0;
+}
+
 // dst [rows, width] (rows dst_pitch apart) = the columns src [rows, width] (src_pitch apart), 16-bit values.
 extern "C" __global__ void fn_copy_cols(const uint16_t* __restrict__ src, long long src_pitch, uint16_t* __restrict__ dst,
                                         long long dst_pitch, int width) {

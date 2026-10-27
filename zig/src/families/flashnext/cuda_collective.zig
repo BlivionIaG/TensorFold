@@ -17,6 +17,8 @@ pub const Collective = struct {
     link: wire.Link,
     timeout_ms: u64,
     failed: bool = false,
+    /// How long a wait polls before it sleeps between polls (0: sleeps from the first poll); an EXL3 engine sets it.
+    spin_ns: u64 = 0,
 
     /// `link` has completed the source/settings handshake; it stays owned by the caller.
     pub fn init(link: wire.Link, rank: usize, timeout_ms: u64) !Collective {
@@ -63,6 +65,7 @@ pub const Collective = struct {
 
     fn wait(c: *Collective, stream: ?cuda.Stream, until: u64) !void {
         errdefer c.abort();
+        var spin_until: u64 = 0;
         while (true) {
             try c.link.checkPeer();
             if (wire.now() >= until) return error.RankTimeout;
@@ -73,6 +76,13 @@ pub const Collective = struct {
                 if (stream) |s| {
                     if (try s.done()) return;
                 } else return;
+            }
+            if (c.spin_ns != 0) {
+                if (spin_until == 0) spin_until = wire.now() + c.spin_ns;
+                if (wire.now() < spin_until) {
+                    std.atomic.spinLoopHint();
+                    continue;
+                }
             }
             wire.pause();
         }

@@ -195,17 +195,12 @@ pub fn deviceLayer(gpu: Gpu, p: *Pass, lw: *const pl.Layer, l: usize, ids: []con
     try p.moeBlock(lw);
     const picks = try download(i32, gpu, p.stream, s.picks, n * slots);
     defer gpu.gpa.free(picks);
-    const wts = try download(f32, gpu, p.stream, s.wts, n * slots);
-    defer gpu.gpa.free(wts);
-    const y = try download(f32, gpu, p.stream, s.y, n * slots * dims);
-    defer gpu.gpa.free(y);
+    // the canonical branch (two expert groups, each summed in pick order, then added) as the write-back reads it
+    const branch_f32 = try download(f32, gpu, p.stream, s.moe_f32, n * dims);
+    defer gpu.gpa.free(branch_f32);
     for (0..n) |r| {
         for (0..topk) |k| tr.picks[r * topk + k] = @intCast(picks[r * slots + k]);
-        for (0..dims) |d| {
-            var acc: f64 = 0;
-            for (0..slots) |k| acc += @as(f64, wts[r * slots + k]) * y[(r * slots + k) * dims + d];
-            tr.mlp_branch[r * dims + d] = acc;
-        }
+        for (0..dims) |d| tr.mlp_branch[r * dims + d] = branch_f32[r * dims + d];
     }
     p.pending = l;
     try p.writeback(0, n);
