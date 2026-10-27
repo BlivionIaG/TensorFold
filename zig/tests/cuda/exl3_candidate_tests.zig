@@ -319,7 +319,7 @@ fn windows(gpu: Gpu, s: cuda.Stream) !void {
     const h = try randomMatrix(a, prng.random(), .{ .k = 2048, .n = 256, .bits = 4, .book = .mul1 });
     defer freeHost(a, h);
     const rows = 40;
-    const prompt_rows = 300; // past a 256-row chunk and a 64-row block
+    const prompt_rows = 2100; // past a 2048-row chunk and a 64-row block
     const x = try randomRows(a, prng.random(), prompt_rows, h.k);
     defer a.free(x);
     var rig: Rig = .{ .gpu = gpu };
@@ -370,7 +370,7 @@ fn fp32Out(gpu: Gpu, s: cuda.Stream) !void {
     var prng = std.Random.DefaultPrng.init(0xF32);
     const h = try randomMatrix(a, prng.random(), .{ .k = 2048, .n = 256, .bits = 4, .book = .mcg });
     defer freeHost(a, h);
-    const rows = 300;
+    const rows = 2100;
     const x = try randomRows(a, prng.random(), rows, h.k);
     defer a.free(x);
     var rig: Rig = .{ .gpu = gpu };
