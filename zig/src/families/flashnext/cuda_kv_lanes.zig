@@ -7,6 +7,7 @@ const pages = @import("cuda_pages.zig");
 const mtp = @import("cuda_mtp.zig");
 const snap = @import("cuda_snap.zig");
 const wt = @import("cuda_prompt_wt.zig");
+const host_tier = @import("exl3/kv/cuda_exl3_kvhost.zig");
 
 /// Rows past a request's prompt and reply its pages hold: one drafted window's.
 pub const window_rows: u32 = mtp.max_rows;
@@ -119,7 +120,14 @@ pub const State = struct {
 };
 
 /// One pool lane: its cache's views (its run's states, its stream's pages), that stream's lease and its run.
-const Lane = struct { seq: prompt.Seq, lease: kv.Lease = .{}, used: bool = false, run: u32 = 0 };
+const Lane = struct {
+    seq: prompt.Seq,
+    tl: kv.tier.Lease = .{}, // the stream's reservation: its pages (and, on a host tier, frames)
+    used: bool = false,
+    run: u32 = 0, // the first page (or frame, on a host tier) of its run
+    fids: std.ArrayList(u32) = .empty, // on a host tier: the frame of each page's K/V rows
+    itable: cuda.DeviceBuffer = undefined, // on a host tier: the index plane's table, logical page ids
+};
 
 pub const Pool = struct {
     gpa: std.mem.Allocator,
@@ -127,7 +135,9 @@ pub const Pool = struct {
     layout: kv.Layout,
     capacity: usize,
     head: ?Head,
-    pool: kv.Pool,
+    plain: kv.Pool, // the pool when there is no host tier
+    pool: *kv.Pool, // `plain`, or the host tier's logical pages
+    host: ?*host_tier.Host = null,
     arena: cuda.DeviceBuffer,
     ibase: u64, // where the index plane starts in the arena: after `count` pages of the K/V plane
     lanes: []Lane,
@@ -140,10 +150,25 @@ pub const Pool = struct {
         _ = try std.math.add(u64, l.run_bytes, page_bytes - 1);
         const p = try gpa.create(Pool);
         errdefer gpa.destroy(p);
-        var arena = try cuda.DeviceBuffer.alloc(e.driver, try std.math.mul(usize, count, page_bytes));
+        const layers = wt.attn_n + @intFromBool(head != null);
+        const kv_page = pages.kvPageBytes(l.page_tokens, layers);
+        const ix_page = pages.indexPageBytes(l.page_tokens, layers);
+        // a host tier: `logical` pages in host RAM, `frames` of them on the device at once; else every page is a frame
+        const mib = try host_tier.hostMiB();
+        const logical = if (mib > 0) mib * (1 << 20) / kv_page else count;
+        const frames = if (mib > 0) @min(count, (try host_tier.framesCap()) orelse count) else count;
+        if (logical == 0 or frames == 0 or logical < frames) return error.BadFlashNextKvHost;
+        var arena = try cuda.DeviceBuffer.alloc(e.driver, try std.math.add(usize, try std.math.mul(usize, frames, kv_page), try std.math.mul(usize, logical, ix_page)));
         errdefer arena.free();
-        p.* = .{ .gpa = gpa, .e = e, .layout = l, .capacity = capacity, .head = head, .pool = try kv.Pool.init(gpa, count, page_bytes), .arena = arena, .ibase = arena.ptr + count * pages.kvPageBytes(l.page_tokens, wt.attn_n + @intFromBool(head != null)), .lanes = &.{} };
-        errdefer p.pool.deinit();
+        p.* = .{ .gpa = gpa, .e = e, .layout = l, .capacity = capacity, .head = head, .plain = undefined, .pool = undefined, .arena = arena, .ibase = arena.ptr + frames * kv_page, .lanes = &.{} };
+        if (mib > 0) {
+            p.host = try host_tier.Host.create(gpa, e.driver, logical, frames, kv_page);
+            p.pool = &p.host.?.tier.pool;
+        } else {
+            p.plain = try kv.Pool.init(gpa, count, page_bytes);
+            p.pool = &p.plain;
+        }
+        errdefer if (p.host) |h| h.destroy(gpa) else p.plain.deinit();
         p.lanes = try gpa.alloc(Lane, streams);
         errdefer gpa.free(p.lanes);
         var made: usize = 0;
@@ -151,10 +176,15 @@ pub const Pool = struct {
         for (p.lanes) |*x| {
             x.* = .{ .seq = try p.laneSeq() };
             made += 1;
+            if (p.host != null) {
+                x.itable = try cuda.DeviceBuffer.alloc(e.driver, mostPages(capacity, l.page_tokens) * 4);
+                x.seq.paged.?.itable = x.itable.ptr;
+            }
         }
         errdefer cuda.completion.drain(e.driver, e.stream.*, "flashnext: failed pool initialization did not drain");
         try arena.fill8(0, e.stream.handle);
         for (p.lanes) |x| try x.seq.paged.?.table.fill8(0, e.stream.handle);
+        if (p.host != null) for (p.lanes) |x| try x.itable.fill8(0, e.stream.handle);
         try e.stream.synchronize();
         return p;
     }
@@ -187,15 +217,14 @@ pub const Pool = struct {
     pub fn deinit(p: *Pool) void {
         cuda.completion.drain(p.e.driver, p.e.stream.*, "flashnext: the pool did not drain at close");
         for (p.lanes) |*x| {
-            if (x.used) {
-                p.pool.releaseRun(x.run, p.layout.runPages());
-                p.pool.finish(&x.lease);
-            }
+            if (x.used) p.giveBack(x);
+            if (p.host != null) x.itable.free();
+            x.fids.deinit(p.gpa);
             x.seq.deinit(p.gpa);
         }
         p.gpa.free(p.lanes);
         p.arena.free();
-        p.pool.deinit();
+        if (p.host) |h| h.destroy(p.gpa) else p.plain.deinit();
         p.gpa.destroy(p);
     }
 
@@ -203,7 +232,12 @@ pub const Pool = struct {
     pub fn fits(p: *const Pool, cap: usize) bool {
         if (cap > p.capacity + window_rows) return false;
         const k = p.layout.runPages();
-        for (p.lanes) |x| if (!x.used) return p.pool.fits(p.layout.pages(cap) + k) and p.pool.findRun(k) != null;
+        const n = p.layout.pages(cap);
+        if (p.host) |h| {
+            for (p.lanes) |x| if (!x.used) return h.tier.fits(n, n + k);
+            return false;
+        }
+        for (p.lanes) |x| if (!x.used) return p.pool.fits(n + k) and p.pool.findRun(k) != null;
         return false;
     }
 
@@ -216,15 +250,27 @@ pub const Pool = struct {
         const k = p.layout.runPages();
         const n = p.layout.pages(cap);
         if (n > mostPages(p.capacity, p.layout.page_tokens)) return error.PromptTooLong;
-        try p.pool.promise(&x.lease, n + k);
-        errdefer p.pool.finish(&x.lease);
-        // the run first: pages fill from the bottom, runs from the top; a fragmented pool waits (LaneMemory)
-        const run = p.pool.claimRun(&x.lease, k) orelse return error.LaneMemory;
-        errdefer p.pool.releaseRun(run, k);
-        errdefer cuda.completion.drain(p.e.driver, p.e.stream.*, "flashnext: a failed lane open did not drain");
-        var up: Upload = .{ .p = p, .table = x.seq.paged.?.table };
-        try p.pool.cover(&x.lease, n, .{ .ctx = &up, .write = Upload.write });
-        x.seq.paged.?.ids = x.lease.ids.items;
+        var run: u32 = undefined;
+        var up: Upload = .{ .p = p, .x = x, .table = x.seq.paged.?.table };
+        if (p.host) |h| {
+            // pages in host RAM and a frame each, the run in consecutive frames of its own
+            h.tier.reserve(&x.tl, n, n + k) catch return error.LaneMemory;
+            errdefer h.tier.finish(&x.tl);
+            run = h.tier.lendRun(&x.tl, k) catch return error.LaneMemory;
+            errdefer p.drainFailed();
+            x.fids.clearRetainingCapacity();
+            try h.tier.cover(&x.tl, n, .{ .ctx = &up, .write = Upload.writeFrames });
+        } else {
+            try p.pool.promise(&x.tl.pages, n + k);
+            errdefer p.pool.finish(&x.tl.pages);
+            // the run first: pages fill from the bottom, runs from the top; a fragmented pool waits (LaneMemory)
+            run = p.pool.claimRun(&x.tl.pages, k) orelse return error.LaneMemory;
+            errdefer p.pool.releaseRun(run, k);
+            errdefer p.drainFailed();
+            try p.pool.cover(&x.tl.pages, n, .{ .ctx = &up, .write = Upload.write });
+        }
+        x.seq.paged.?.ids = x.tl.pages.ids.items;
+        x.seq.paged.?.fids = x.fids.items;
         x.run = run;
         try p.mapStates(&x.seq);
         try p.e.clearSeq(&x.seq, cap);
@@ -282,20 +328,59 @@ pub const Pool = struct {
         const x = p.laneOf(seq) orelse return false;
         if (!x.used) return true;
         cuda.completion.drain(p.e.driver, p.e.stream.*, "flashnext: a closed stream did not drain");
-        p.pool.releaseRun(x.run, p.layout.runPages());
-        p.pool.finish(&x.lease);
+        p.giveBack(x);
         if (seq.media) |*m| m.deinit(); // the stream's image state, held by its copy
         seq.media = null;
         x.seq.paged.?.ids = &.{};
+        x.seq.paged.?.fids = &.{};
         x.seq.cap = 0;
         x.used = false;
         return true;
     }
 
+    fn drainFailed(p: *Pool) void {
+        cuda.completion.drain(p.e.driver, p.e.stream.*, "flashnext: a failed lane open did not drain");
+    }
+
+    /// A lane's pages, frames and run go back. On a host tier the pages the prompt store keeps are made canonical first.
+    fn giveBack(p: *Pool, x: *Lane) void {
+        if (p.host) |h| {
+            const t = &h.tier;
+            var flushed = false;
+            for (x.tl.pages.ids.items) |id| if (t.pool.refs[id] > 1 and t.dirty[id]) {
+                h.flush(p.arena, id, p.e.stream.*) catch std.debug.panic("flashnext: a kept page could not reach the host store", .{});
+                flushed = true;
+            };
+            if (flushed) p.e.stream.synchronize() catch std.debug.panic("flashnext: the host store flush did not finish", .{});
+            for (x.tl.pages.ids.items) |id| if (t.pool.refs[id] > 1) h.done(id);
+            t.finish(&x.tl);
+            x.fids.clearRetainingCapacity();
+        } else {
+            p.pool.releaseRun(x.run, p.layout.runPages());
+            p.pool.finish(&x.tl.pages);
+        }
+    }
+
     /// A lane's new table entries uploaded to its device table.
     const Upload = struct {
         p: *Pool,
+        x: *Lane,
         table: cuda.DeviceBuffer,
+
+        /// A host tier: each new page takes a frame; the K/V table gets frames, the index table the page ids.
+        fn writeFrames(ctx: *anyopaque, ids: []const u32, from: usize) anyerror!void {
+            const u: *Upload = @ptrCast(@alignCast(ctx));
+            const t = &u.p.host.?.tier;
+            for (ids[from..]) |id| {
+                const f = try t.pin(&u.x.tl, id);
+                try u.x.fids.append(u.p.gpa, f.frame);
+                t.markDirty(id);
+            }
+            errdefer cuda.completion.drain(u.p.e.driver, u.p.e.stream.*, "flashnext: a failed table upload did not drain");
+            try u.table.uploadAsync(from * 4, std.mem.sliceAsBytes(u.x.fids.items[from..]), u.p.e.stream.handle);
+            try u.x.itable.uploadAsync(from * 4, std.mem.sliceAsBytes(ids[from..]), u.p.e.stream.handle);
+            try u.p.e.stream.synchronize();
+        }
 
         fn write(ctx: *anyopaque, ids: []const u32, from: usize) anyerror!void {
             const u: *Upload = @ptrCast(@alignCast(ctx));

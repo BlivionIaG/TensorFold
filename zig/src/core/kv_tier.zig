@@ -46,6 +46,7 @@ pub const Tier = struct {
     stamp: []u64, // per frame: the LRU clock at its last use
     pinned: []u32, // per frame: calls reading it
     free_frames: []u32,
+    lent_mark: []bool, // per frame: lent to a lease
     nfree: usize,
     promised: usize = 0, // frames promised, summed over leases
     nlent: usize = 0, // frames lent, summed over leases
@@ -70,14 +71,17 @@ pub const Tier = struct {
         const pinned = try gpa.alloc(u32, frames);
         errdefer gpa.free(pinned);
         const free_frames = try gpa.alloc(u32, frames);
+        errdefer gpa.free(free_frames);
+        const lent_mark = try gpa.alloc(bool, frames);
         @memset(frame_of, none);
         @memset(dirty, false);
         @memset(page_of, none);
         @memset(gen, 0);
         @memset(stamp, 0);
         @memset(pinned, 0);
+        @memset(lent_mark, false);
         for (free_frames, 0..) |*f, i| f.* = @intCast(frames - 1 - i); // frame 0 first
-        t.* = .{ .gpa = gpa, .pool = pool, .host = host, .frame_of = frame_of, .dirty = dirty, .page_of = page_of, .gen = gen, .stamp = stamp, .pinned = pinned, .free_frames = free_frames, .nfree = frames };
+        t.* = .{ .gpa = gpa, .pool = pool, .host = host, .frame_of = frame_of, .dirty = dirty, .page_of = page_of, .gen = gen, .stamp = stamp, .pinned = pinned, .free_frames = free_frames, .lent_mark = lent_mark, .nfree = frames };
         t.pool.freed = .{ .ctx = t, .call = freed };
     }
 
@@ -90,6 +94,7 @@ pub const Tier = struct {
         t.gpa.free(t.stamp);
         t.gpa.free(t.pinned);
         t.gpa.free(t.free_frames);
+        t.gpa.free(t.lent_mark);
         t.* = undefined;
     }
 
@@ -180,9 +185,38 @@ pub const Tier = struct {
         while (taken < n) : (taken += 1) {
             const f = t.takeFrame() orelse return error.FrameMemory;
             t.gen[f] +%= 1;
+            t.lent_mark[f] = true;
             l.lent.appendAssumeCapacity(f);
             t.nlent += 1;
         }
+    }
+
+    /// Lend `l` `n` consecutive free frames (a family's state run) for its life; the first frame, or FrameMemory.
+    pub fn lendRun(t: *Tier, l: *Lease, n: usize) error{ FrameMemory, OutOfMemory }!u32 {
+        if (n == 0 or l.pins.items.len + l.lent.items.len + n > l.frames) return error.FrameMemory;
+        var start: usize = 0;
+        var run: usize = 0;
+        for (t.page_of, t.lent_mark, 0..) |p, m, f| {
+            if (p == none and !m) run += 1 else run = 0;
+            if (run == n) {
+                start = f + 1 - n;
+                break;
+            }
+        } else return error.FrameMemory;
+        try l.lent.ensureUnusedCapacity(t.gpa, n);
+        var kept: usize = 0;
+        for (t.free_frames[0..t.nfree]) |f| if (f < start or f >= start + n) {
+            t.free_frames[kept] = f;
+            kept += 1;
+        };
+        t.nfree = kept;
+        for (start..start + n) |f| {
+            t.gen[f] +%= 1;
+            t.lent_mark[f] = true;
+            l.lent.appendAssumeCapacity(@intCast(f));
+        }
+        t.nlent += n;
+        return @intCast(start);
     }
 
     /// The frames lent to `l` go back to the free frames, their generation moved on.
@@ -194,6 +228,7 @@ pub const Tier = struct {
         while (l.lent.items.len > keep) {
             const f = l.lent.pop().?;
             t.gen[f] +%= 1;
+            t.lent_mark[f] = false;
             t.free_frames[t.nfree] = f;
             t.nfree += 1;
             t.nlent -= 1;
@@ -288,7 +323,13 @@ pub const Tier = struct {
             if (t.pool.refs[p] == 0) return error.Broken; // a free page keeps a frame
         }
         if (mapped + t.nfree + t.nlent != t.count()) return error.Broken; // frames neither free, mapped nor lent, or two
-        for (t.free_frames[0..t.nfree]) |f| if (t.page_of[f] != none) return error.Broken;
+        for (t.free_frames[0..t.nfree]) |f| if (t.page_of[f] != none or t.lent_mark[f]) return error.Broken;
+        var marked: usize = 0;
+        for (t.lent_mark, t.page_of) |m, p| {
+            marked += @intFromBool(m);
+            if (m and p != none) return error.Broken; // a lent frame holds a page
+        }
+        if (marked != t.nlent) return error.Broken;
         for (t.frame_of, 0..) |f, p| {
             if (f != none and t.page_of[f] != p) return error.Broken;
             if (t.dirty[p] and f == none) return error.Broken; // unflushed rows with no frame
