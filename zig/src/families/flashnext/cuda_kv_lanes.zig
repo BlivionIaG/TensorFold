@@ -51,10 +51,10 @@ pub const Head = struct { draft_n: usize, rows: usize };
 pub fn layout(capacity: usize, tokens: usize, head: ?Head, extra: usize) kv.Layout {
     const layers = wt.attn_n + @intFromBool(head != null);
     const run = seqRunBytes() + if (head) |h| mtp.Draft.runBytes(h.draft_n, h.rows) else 0;
-    // a run is whole pages of the K/V plane: it needs as many pages as that plane alone takes to hold its bytes
-    const kv_page = pages.kvPageBytes(tokens, layers);
-    const run_pages = (run + kv_page - 1) / kv_page;
+    // a run is whole pages (a host tier: of the K/V plane, which alone takes fewer bytes)
     const page = pages.pageBytesOf(tokens, layers);
+    const run_page = if (host_tier.tiered()) pages.kvPageBytes(tokens, layers) else page;
+    const run_pages = (run + run_page - 1) / run_page;
     return .{ .fixed_bytes = mostPages(capacity, tokens) * 4 + extra, .token_bytes = page / tokens, .page_tokens = @intCast(tokens), .snap_bytes = snap.bytes(0, head != null), .run_bytes = run_pages * page };
 }
 
@@ -138,6 +138,7 @@ pub const Pool = struct {
     plain: kv.Pool, // the pool when there is no host tier
     pool: *kv.Pool, // `plain`, or the host tier's logical pages
     host: ?*host_tier.Host = null,
+    planes: bool = false, // a host tier: the arena holds the K/V plane (frames), then the index plane (logical pages)
     arena: cuda.DeviceBuffer,
     ibase: u64, // where the index plane starts in the arena: after `count` pages of the K/V plane
     lanes: []Lane,
@@ -161,6 +162,7 @@ pub const Pool = struct {
         var arena = try cuda.DeviceBuffer.alloc(e.driver, try std.math.add(usize, try std.math.mul(usize, frames, kv_page), try std.math.mul(usize, logical, ix_page)));
         errdefer arena.free();
         p.* = .{ .gpa = gpa, .e = e, .layout = l, .capacity = capacity, .head = head, .plain = undefined, .pool = undefined, .arena = arena, .ibase = arena.ptr + frames * kv_page, .lanes = &.{} };
+        p.planes = mib > 0;
         if (mib > 0) {
             p.host = try host_tier.Host.create(gpa, e.driver, logical, frames, kv_page);
             p.pool = &p.host.?.tier.pool;
@@ -195,7 +197,7 @@ pub const Pool = struct {
         const d = p.e.driver;
         var table = try cuda.DeviceBuffer.alloc(d, mostPages(p.capacity, p.layout.page_tokens) * 4);
         errdefer table.free();
-        const paged: pages.Paged = .{ .base = p.arena.ptr, .ibase = p.ibase, .table = table, .ids = &.{}, .tokens = p.layout.page_tokens, .own_ids = false, .layers = wt.attn_n + @intFromBool(p.head != null) };
+        const paged: pages.Paged = .{ .base = p.arena.ptr, .ibase = p.ibase, .planes = p.planes, .table = table, .ids = &.{}, .tokens = p.layout.page_tokens, .own_ids = false, .layers = wt.attn_n + @intFromBool(p.head != null) };
         const conv = try gpa.alloc(cuda.DeviceBuffer, wt.linear_n);
         errdefer gpa.free(conv);
         const state = try gpa.alloc(cuda.DeviceBuffer, wt.linear_n);
@@ -255,20 +257,18 @@ pub const Pool = struct {
         if (p.host) |h| {
             // pages in host RAM and a frame each, the run in consecutive frames of its own
             h.tier.reserve(&x.tl, n, n + k) catch return error.LaneMemory;
-            errdefer h.tier.finish(&x.tl);
+        } else try p.pool.promise(&x.tl.pages, n + k);
+        errdefer if (p.host) |h| h.tier.finish(&x.tl) else p.pool.finish(&x.tl.pages);
+        // the run first: pages fill from the bottom, runs from the top; a fragmented pool waits (LaneMemory)
+        if (p.host) |h| {
             run = h.tier.lendRun(&x.tl, k) catch return error.LaneMemory;
-            errdefer p.drainFailed();
+        } else run = p.pool.claimRun(&x.tl.pages, k) orelse return error.LaneMemory;
+        errdefer if (p.host == null) p.pool.releaseRun(run, k);
+        errdefer p.drainFailed();
+        if (p.host) |h| {
             x.fids.clearRetainingCapacity();
             try h.tier.cover(&x.tl, n, .{ .ctx = &up, .write = Upload.writeFrames });
-        } else {
-            try p.pool.promise(&x.tl.pages, n + k);
-            errdefer p.pool.finish(&x.tl.pages);
-            // the run first: pages fill from the bottom, runs from the top; a fragmented pool waits (LaneMemory)
-            run = p.pool.claimRun(&x.tl.pages, k) orelse return error.LaneMemory;
-            errdefer p.pool.releaseRun(run, k);
-            errdefer p.drainFailed();
-            try p.pool.cover(&x.tl.pages, n, .{ .ctx = &up, .write = Upload.write });
-        }
+        } else try p.pool.cover(&x.tl.pages, n, .{ .ctx = &up, .write = Upload.write });
         x.seq.paged.?.ids = x.tl.pages.ids.items;
         x.seq.paged.?.fids = x.fids.items;
         x.run = run;
@@ -280,11 +280,17 @@ pub const Pool = struct {
 
     /// Bytes a run's pages hold: whole pages of the K/V plane.
     fn runLen(p: *const Pool) usize {
-        return p.layout.runPages() * pages.kvPageBytes(p.layout.page_tokens, wt.attn_n + @intFromBool(p.head != null));
+        return p.layout.runPages() * p.runPage();
+    }
+
+    /// Bytes of one page a run holds: a host tier's frames hold the K/V plane alone.
+    fn runPage(p: *const Pool) usize {
+        const layers = wt.attn_n + @intFromBool(p.head != null);
+        return if (p.host != null) pages.kvPageBytes(p.layout.page_tokens, layers) else pages.pageBytesOf(p.layout.page_tokens, layers);
     }
 
     fn runBase(p: *const Pool, x: *const Lane) u64 {
-        return p.arena.ptr + @as(u64, x.run) * pages.kvPageBytes(p.layout.page_tokens, wt.attn_n + @intFromBool(p.head != null));
+        return p.arena.ptr + @as(u64, x.run) * p.runPage();
     }
 
     /// The lane's states as views of its run, laid out afresh (a kept window swaps state buffers with the head's).
@@ -342,7 +348,7 @@ pub const Pool = struct {
         cuda.completion.drain(p.e.driver, p.e.stream.*, "flashnext: a failed lane open did not drain");
     }
 
-    /// A lane's pages, frames and run go back. On a host tier the pages the prompt store keeps are made canonical first.
+    /// A lane's pages, frames and run go back (a host tier: the pages the prompt store keeps are made canonical first).
     fn giveBack(p: *Pool, x: *Lane) void {
         if (p.host) |h| {
             const t = &h.tier;

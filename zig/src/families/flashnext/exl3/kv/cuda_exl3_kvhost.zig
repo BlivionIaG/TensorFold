@@ -1,4 +1,4 @@
-//! The host tier of the Flash Next pool (TF_FLASHNEXT_KV_HOST=MiB): canonical K/V pages in pinned host RAM, device frames.
+//! The host tier of the Flash Next pool (TF_FLASHNEXT_KV_HOST=MiB): canonical K/V in pinned host RAM, cached in frames.
 const std = @import("std");
 const cuda = @import("cuda");
 const kv = @import("core").kv_pool;
@@ -8,6 +8,11 @@ const pages = @import("../../cuda_pages.zig");
 pub fn hostMiB() !usize {
     const v = std.c.getenv("TF_FLASHNEXT_KV_HOST") orelse return 0;
     return std.fmt.parseInt(usize, std.mem.span(v), 10) catch return error.BadFlashNextKvHost;
+}
+
+/// Whether the host tier is on (the page layout then keeps two planes).
+pub fn tiered() bool {
+    return (hostMiB() catch 0) > 0;
 }
 
 /// TF_FLASHNEXT_KV_FRAMES=n: at most n device frames of the K/V plane (unset: the pages the plan gave).
@@ -38,8 +43,7 @@ pub const Host = struct {
         gpa.destroy(h);
     }
 
-    /// Page `id`'s K/V plane from its frame (in `arena`, frames from its start) into the host store; the caller syncs the
-    /// stream, then calls `done`. A page with no frame is already canonical.
+    /// Page `id`'s K/V plane from its frame (in `arena`) to the host store; sync the stream, then call `done`.
     pub fn flush(h: *Host, arena: cuda.DeviceBuffer, id: u32, stream: cuda.Stream) !void {
         const tk = h.tier.resident(id) orelse return;
         try arena.downloadAsync(@as(usize, tk.frame) * h.kv_page, h.tier.host_page(id), stream.handle);
