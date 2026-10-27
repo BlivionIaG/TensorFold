@@ -54,7 +54,7 @@ Use `--local-dir MODEL_DIR` instead of a repository name to inspect files alread
 Use the Zig version in `.zig-version`.
 
 ```sh
-zig build --build-file build-lfm3.zig test tf-lfm3-check
+zig build test-lfm3-host tf-lfm3-check
 ./zig-out/bin/tf-lfm3-check text4.json
 ./zig-out/bin/tf-lfm3-check vl4.json
 python3 -m unittest discover -s tools/lfm3 -p 'test_*.py' -v
