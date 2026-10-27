@@ -63,6 +63,7 @@ pub fn selectWriteback(dp: *Deep, reduced_branch: bool) !void {
         @memset(weights, 1);
         dp.unit_weights = try cuda.DeviceBuffer.fromHost(dp.dev.d, std.mem.sliceAsBytes(weights));
     }
+    if (dp.reduced_branch != reduced_branch) @import("../graph/cuda_exl3_graph.zig").clearPrefill();
     dp.reduced_branch = reduced_branch;
 }
 
@@ -140,6 +141,7 @@ pub fn windowInputs(dp: *Deep, p: anytype, ids: []const u32, pos0: usize, layer:
 }
 
 fn windowDense(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Scratch, layer: usize, n: usize, pos0: usize, sub: usize, waits: []const cuda.Event) !void {
+    const graph = @import("../graph/cuda_exl3_graph.zig");
     const lw = &p.m.layers[layer];
     const n_sub = (n + sub - 1) / sub;
     var views: [max_sub]batch.Scratch = undefined;
@@ -148,16 +150,35 @@ fn windowDense(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.
     p.s = base;
     p.rows = n;
     p.pos0 = pos0;
-    for (0..n_sub) |block| {
-        const at = block * sub;
-        const count = @min(sub, n - at);
-        p.s = &views[block];
-        p.rows = count;
-        p.pos0 = pos0 + at;
-        pendingWriteback(p, dp, if (layer == 0) null else layer - 1, at);
-        if (block < waits.len) try p.stream.wait(waits[block]);
-        try layerBlock(Tri, p, lw, layer, count);
-    }
+    const capture = try graph.prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles.tiles_on, waits, dp.dptr(dp.lay.pos));
+    const Blocks = struct {
+        dp: *Deep,
+        p: *batch.Pass(Tri),
+        views: []batch.Scratch,
+        waits: []const cuda.Event,
+        layer: usize,
+        n: usize,
+        sub: usize,
+        pos0: usize,
+        pub fn run(b: @This(), mode: @TypeOf(capture)) !void {
+            const lw_ = &b.p.m.layers[b.layer];
+            for (0..b.views.len) |block| {
+                const at = block * b.sub;
+                const count = @min(b.sub, b.n - at);
+                b.p.s = &b.views[block];
+                b.p.rows = count;
+                b.p.pos0 = b.pos0 + at;
+                pendingWriteback(b.p, b.dp, if (b.layer == 0) null else b.layer - 1, at);
+                if (block < b.waits.len) switch (mode) {
+                    .eager => try b.p.stream.wait(b.waits[block]),
+                    .capturing => try b.p.stream.waitExternal(b.waits[block]),
+                    .replayed => unreachable,
+                };
+                try layerBlock(Tri, b.p, lw_, b.layer, count);
+            }
+        }
+    };
+    try graph.prefillLayer(p, capture, Blocks{ .dp = dp, .p = p, .views = views[0..n_sub], .waits = waits, .layer = layer, .n = n, .sub = sub, .pos0 = pos0 });
     dp.red_n = 0;
 }
 
@@ -302,15 +323,33 @@ pub fn chunk(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), base: *batch.Sc
             try upload(st, dp.dptr(dp.lay.ple_emb), std.mem.sliceAsBytes(emb));
             try upload(st, dp.dptr(dp.lay.ple_xs), std.mem.sliceAsBytes(xs));
         }
-        for (0..n_sub) |b| {
-            const m = @min(sub, n - b * sub);
-            p.s = &views[b];
-            p.rows = m;
-            p.pos0 = pos0 + b * sub;
-            pendingWriteback(p, dp, if (layer > 0) layer - 1 else null, b * sub);
-            if (b < dp.red_n) try st.wait(dp.red_ev[b]);
-            try layerBlock(Tri, p, lw, layer, m);
-        }
+        const pg = try @import("../graph/cuda_exl3_graph.zig").prefillBegin(p, lw.linear, layer, n, sub, pos0, dp.dev.ptr, base, tiles.tiles_on, dp.red_ev[0..dp.red_n], dp.dptr(dp.lay.pos));
+        const Blocks = struct {
+            dp: *Deep,
+            p: *batch.Pass(Tri),
+            views: []batch.Scratch,
+            lw: *const @TypeOf(lw.*),
+            layer: usize,
+            n: usize,
+            sub: usize,
+            pos0: usize,
+            pub fn run(b: @This(), mode: @TypeOf(pg)) !void {
+                for (0..b.views.len) |blk| {
+                    const m = @min(b.sub, b.n - blk * b.sub);
+                    b.p.s = &b.views[blk];
+                    b.p.rows = m;
+                    b.p.pos0 = b.pos0 + blk * b.sub;
+                    pendingWriteback(b.p, b.dp, if (b.layer > 0) b.layer - 1 else null, blk * b.sub);
+                    if (blk < b.dp.red_n) switch (mode) {
+                        .eager => try b.p.stream.wait(b.dp.red_ev[blk]),
+                        .capturing => try b.p.stream.waitExternal(b.dp.red_ev[blk]),
+                        .replayed => unreachable,
+                    };
+                    try layerBlock(Tri, b.p, b.lw, b.layer, m);
+                }
+            }
+        };
+        try @import("../graph/cuda_exl3_graph.zig").prefillLayer(p, pg, Blocks{ .dp = dp, .p = p, .views = views[0..n_sub], .lw = lw, .layer = layer, .n = n, .sub = sub, .pos0 = pos0 });
         dp.red_n = 0;
         if (rg) |r| try ringMoe(Tri, dp, r, p, lw, layer, n, o) else try moe(Tri, dp, p, lw, layer, n, o);
         try rankSum(dp, p, lw.exl3.?, n, sub);
