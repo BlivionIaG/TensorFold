@@ -27,7 +27,7 @@ fn cdiv(a: usize, b: usize) usize {
 }
 
 /// flashnext_attn.cu's Pg, each cache launch's `pg`: its table, elements and positions a page (pt 0: contiguous).
-pub const Pg = extern struct { pt: u64 = 0, ps: i64 = 0, ptok: c_int = 0 };
+pub const Pg = extern struct { pt: u64 = 0, ps: i64 = 0, ptok: c_int = 0, ips: i64 = 0, ipt: u64 = 0 };
 
 /// The native kernels, by their extern "C" names.
 const Fns = struct {
@@ -452,9 +452,11 @@ test "the attention tiles hold the model's heads" {
 }
 
 test "Pg lays out as flashnext_attn.cu's: the table, elements a page at 8, positions a page at 16, 24 bytes" {
-    try std.testing.expectEqual(@as(usize, 24), @sizeOf(Pg));
+    try std.testing.expectEqual(@as(usize, 40), @sizeOf(Pg));
     try std.testing.expectEqual(@as(usize, 8), @offsetOf(Pg, "ps"));
     try std.testing.expectEqual(@as(usize, 16), @offsetOf(Pg, "ptok"));
+    try std.testing.expectEqual(@as(usize, 24), @offsetOf(Pg, "ips"));
+    try std.testing.expectEqual(@as(usize, 32), @offsetOf(Pg, "ipt"));
 }
 
 test {
