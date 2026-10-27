@@ -52,8 +52,7 @@ pub const Stages = struct {
         // The direction for the block before this one rides along with the norm that adds that block's output.
         const dir = if (s.pending != null) s.direction(index - 1) else null;
         if (dir) |d| {
-            try m.kernels.normSteer(e, s.hidden, s.pending.?, wts.ref(layer.norm), f.get(.eps), f.get(.dims), s.residual,
-                f.get(.input), f.get(.sums), d.buffer, d.alpha, d.mode, h, s.rows);
+            try m.kernels.normSteer(e, s.hidden, s.pending.?, wts.ref(layer.norm), f.get(.eps), f.get(.dims), s.residual, f.get(.input), f.get(.sums), d.buffer, d.alpha, d.mode, h, s.rows);
         } else {
             try m.kernels.norm(e, s.hidden, s.pending, wts.ref(layer.norm), f.get(.eps), f.get(.dims), s.residual, f.get(.input), f.get(.sums), h, s.rows);
         }
@@ -131,8 +130,7 @@ pub const Stages = struct {
         // The last block's output is layer `layers - 1`, and the direction for it rides along with the norm.
         const dir = if (s.pending != null) s.direction(m.config.layers - 1) else null;
         if (dir) |d| {
-            try m.kernels.normSteer(e, s.hidden, s.pending.?, wts.ref(m.weights.norm), f.get(.eps), f.get(.dims), s.residual,
-                f.get(.input), f.get(.sums), d.buffer, d.alpha, d.mode, h, s.rows);
+            try m.kernels.normSteer(e, s.hidden, s.pending.?, wts.ref(m.weights.norm), f.get(.eps), f.get(.dims), s.residual, f.get(.input), f.get(.sums), d.buffer, d.alpha, d.mode, h, s.rows);
         } else {
             try m.kernels.norm(e, s.hidden, s.pending, wts.ref(m.weights.norm), f.get(.eps), f.get(.dims), s.residual, f.get(.input), f.get(.sums), h, s.rows);
         }
@@ -157,7 +155,7 @@ pub const Stages = struct {
     fn direction(s: *Stages, layer: usize) ?Direction {
         const plan = s.model.steer orelse return null;
         const buffer = plan.dir(@intCast(layer)) orelse return null;
-        return .{ .buffer = buffer, .alpha = plan.alpha, .mode = @intFromEnum(plan.mode) };
+        return .{ .buffer = buffer, .alpha = plan.alpha, .mode = @backingInt(plan.mode) };
     }
 
     /// A direction on the device with the strength and the mode it applies in.

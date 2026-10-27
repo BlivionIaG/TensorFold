@@ -290,8 +290,7 @@ pub const Kernels = struct {
     }
 
     /// The norm with a direction inside it: the direction's component leaves the row before the normalisation reads it.
-    pub fn normSteer(k: *Kernels, input_encoder: mtl.ComputeEncoder, h: Ref, residual: Ref, weight: Ref, eps: Ref, dims: Ref,
-        combined: Ref, out: Ref, xs: Ref, dir: mtl.Buffer, alpha: f32, mode: u32, width: u32, rows: u32) !void {
+    pub fn normSteer(k: *Kernels, input_encoder: mtl.ComputeEncoder, h: Ref, residual: Ref, weight: Ref, eps: Ref, dims: Ref, combined: Ref, out: Ref, xs: Ref, dir: mtl.Buffer, alpha: f32, mode: u32, width: u32, rows: u32) !void {
         var span = profile.begin(k.profiler, input_encoder, .norm);
         errdefer span.cancel();
         const e = span.encoder;
