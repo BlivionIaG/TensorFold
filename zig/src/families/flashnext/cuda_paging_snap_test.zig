@@ -68,7 +68,7 @@ const Fixture = struct {
         };
     }
     fn paged(f: *Fixture, d: *const cuda.Driver) pages.Paged {
-        return .{ .base = 0x4000_0000, .table = .{ .d = d, .ptr = 0x5000, .len = 0, .borrowed = true }, .ids = &f.ids, .tokens = 64, .own_ids = false };
+        return .{ .base = 0x4000_0000, .ibase = 0x6000_0000, .table = .{ .d = d, .ptr = 0x5000, .len = 0, .borrowed = true }, .ids = &f.ids, .tokens = 64, .own_ids = false };
     }
     fn seq(f: *Fixture, d: *const cuda.Driver) prompt.Seq {
         return .{ .conv = &f.conv, .state = &f.states, .kc = &f.kv[0], .vc = &f.kv[1], .ikc = &f.kv[2], .pooled = &f.kv[3], .paged = f.paged(d), .tail = .{ .d = d, .ptr = 0x9000_0000, .len = 0, .borrowed = true }, .history = .{ 5, 9 }, .fed = 150, .logits = &.{}, .cap = 200 };

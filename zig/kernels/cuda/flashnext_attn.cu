@@ -80,7 +80,7 @@ __device__ __forceinline__ void fn_attn_prep_body(const __nv_bfloat16* __restric
     const int pos = POS0[0] + r;
     const long long row = static_cast<long long>(r) * PW;
     if (head >= NQ + NKV + NI) {
-        const long long at = PAGED ? page_row(pg, pos, pg.ptok, IHD) : static_cast<long long>(pos) * IHD;
+        const long long at = PAGED ? index_page_row(pg, pos, pg.ptok, IHD) : static_cast<long long>(pos) * IHD;
         if (d < IHD) IKC[at + d] = P[row + NQ * 2 * HD + 2 * NKV * HD + NI * IHD + d];
         return;
     }
@@ -177,7 +177,7 @@ __device__ __forceinline__ void fn_qsa_pool_body(const __nv_bfloat16* __restrict
     const int b = p0 / RATIO + blockIdx.x, d = threadIdx.x;
     if (RATIO * b + RATIO > p0 + R) return;
     // the block's keys: rows RATIO * b on, or (PAGED) the same rows of its one page (a page holds whole blocks)
-    const __nv_bfloat16* keys = IKC + (PAGED ? page_row(pg, RATIO * b, pg.ptok, DI) : 0);
+    const __nv_bfloat16* keys = IKC + (PAGED ? index_page_row(pg, RATIO * b, pg.ptok, DI) : 0);
     const long long first = PAGED ? 0 : static_cast<long long>(RATIO) * b;
     float acc = bf(keys[first * DI + d]);
     for (int k = 1; k < RATIO; ++k) acc = __fadd_rn(acc, bf(keys[(first + k) * DI + d]));
@@ -187,7 +187,7 @@ __device__ __forceinline__ void fn_qsa_pool_body(const __nv_bfloat16* __restrict
     const int p = partner(d, HALF);
     const float xn = rbf(__fmul_rn(__fmul_rn(x, rinv), W[d]));
     const float xpn = rbf(__fmul_rn(__fmul_rn(xs[p], rinv), W[p]));
-    const long long at = PAGED ? page_row(pg, b, pg.ptok / RATIO, DI) : static_cast<long long>(b) * DI;
+    const long long at = PAGED ? index_page_row(pg, b, pg.ptok / RATIO, DI) : static_cast<long long>(b) * DI;
     POOLED[at + d] = __float2bfloat16_rn(rope(xn, xpn, d, HALF, media_pos(RATIO * b, d, HALF, rope3, n, delta), INV));
 }
 
