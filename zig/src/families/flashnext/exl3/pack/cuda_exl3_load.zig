@@ -331,7 +331,6 @@ pub fn stitched(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, prefix: 
 /// cuda_prompt_load's PLE branch: an EXL3 pack's n-gram rows reach key_proj and value_proj as fp16 bit patterns
 pub fn pleRows(gpa: std.mem.Allocator, d: *cuda.Driver, store: *Store, key: *projection.Projection, value: *projection.Projection) !void {
     if (store.exl3_ops == null) return; // not an EXL3 pack: the n-gram rows are bf16
-    if (@import("../model/cuda_exl3_ple.zig").optionsFromEnv().emb != .f16) return;
     for ([_]*projection.Projection{ key, value }) |q| {
         const native = q.native orelse return error.UnexpectedTensor;
         const p = try gpa.create(Proj);

@@ -16,14 +16,11 @@ pub const Read = enum { map, pread };
 pub const Emb = enum { f16, bf16 };
 pub const Options = struct { read: Read = .map, emb: Emb = .f16 };
 
-/// TF_FLASHNEXT_PLE_READ (map | pread) and TF_FLASHNEXT_PLE_EMB (f16 | bf16); anything else keeps the default.
+/// TF_FLASHNEXT_PLE_READ (map | pread); anything else keeps the default. The bf16 rows are a test option (`emb`).
 pub fn optionsFromEnv() Options {
     var o: Options = .{};
     if (std.c.getenv("TF_FLASHNEXT_PLE_READ")) |v| {
         if (std.mem.eql(u8, std.mem.span(v), "pread")) o.read = .pread;
-    }
-    if (std.c.getenv("TF_FLASHNEXT_PLE_EMB")) |v| {
-        if (std.mem.eql(u8, std.mem.span(v), "bf16")) o.emb = .bf16;
     }
     return o;
 }

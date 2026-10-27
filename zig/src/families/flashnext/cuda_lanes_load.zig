@@ -64,7 +64,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     }
     errdefer if (own.vision) |v| v.deinit();
     var persistent_bytes = cuda.usage(false).device;
-    try @import("exl3/kv/cuda_exl3_kv.zig").setup(own.engine, o.kv8, mode == .exl3); // K10: int8 KV, host index keys, chunk
+    try @import("exl3/kv/cuda_exl3_kv.zig").setup(own.engine, mode == .exl3); // K10: the scratch format and the chunk of an EXL3 pack
     // the pass's scratch for a full chunk, once for the engine (every prompt, window, round and head pass)
     _ = try own.engine.reserve(@max(@min(o.context, own.engine.chunk), if (o.slide) @as(usize, @import("cuda_train.zig").pack_rows) else 0));
     // the MTP head unless --no-drafts (TF_FLASHNEXT_DRAFTS and _CONFIDENCE: the chain's rule, 6 and 0.60)
@@ -87,7 +87,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     own.next = 0;
     if (o.slide) own.lay = try @import("cuda_slide.zig").layoutOf(gpa, io, dir);
     const scratch_bytes = cuda.usage(false).device -| persistent_bytes;
-    const own_seq_bytes = if (mode == .exl3) @import("exl3/kv/cuda_exl3_kv.zig").engineSeqBytes(@import("exl3/kv/cuda_exl3_kv.zig").of(own.engine), window) else try prompt.seqBytesPaged(window, try @import("cuda_pages.zig").pageTest());
+    const own_seq_bytes = try prompt.seqBytesPaged(window, try @import("cuda_pages.zig").pageTest());
     var stream_bytes = own_seq_bytes;
     if (own.head) |h| {
         stream_bytes = try std.math.add(u64, stream_bytes, mtp.Draft.bytes(window, h.ids.len, own.engine.chunk));

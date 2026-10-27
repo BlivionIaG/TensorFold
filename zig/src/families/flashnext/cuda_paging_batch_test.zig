@@ -149,7 +149,6 @@ test "paged grouped prompts: every current attention route receives the sequence
     p.pos0 = 0;
     p.seq.cap = 4096;
     p.seq.media = null;
-    p.seq.kv8 = null;
     p.seq.pg = .{};
     p.seq.kc = &buffers;
     p.seq.vc = &buffers;

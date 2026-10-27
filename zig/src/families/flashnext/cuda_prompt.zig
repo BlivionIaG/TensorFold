@@ -244,7 +244,6 @@ pub const Engine = struct {
         if (e.batch_s) |*bs| bs.free(e.gpa);
         if (e.scores) |*b| b.free();
         e.batch_k.deinit();
-        @import("exl3/kv/cuda_exl3_kv.zig").forget(e.gpa, e);
         e.ngram.deinit();
         for (e.layers[0..e.n_layers]) |*l| l.free(e.gpa);
         e.head_q.free();
@@ -308,10 +307,6 @@ pub const Engine = struct {
         var paged = given;
         errdefer if (paged) |*p| p.deinit(e.gpa);
         e.round_graph.clear();
-        if (paged == null) {
-            if (cap == 0) return error.UnexpectedTensor;
-            if (@import("exl3/kv/cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_prompt_lifecycle.zig").newPlacedSeq(e, cap);
-        }
         if (cap == 0 or cap > max_tokens) return error.UnexpectedTensor;
         _ = try seqBytesPaged(cap, if (paged) |p| p.tokens else 0);
         var seq: Seq = .{
@@ -504,15 +499,12 @@ pub const Seq = struct {
     fed: usize,
     logits: []u8,
     cap: usize,
-    /// int8 K/V scales beside the codes in kc/vc, and the indexer keys' mapped host buffer (cuda_exl3_kv.newSeq).
-    kv8: ?@import("exl3/kv/cuda_exl3_kv.zig").SeqKv8 = null,
-    ikc_host: ?cuda.HostBuffer = null,
     /// The model as shipped: no learned neuron acts on its rows (a lesson writer's and its judge's reads).
     untaught: bool = false,
 
     /// The caches a batched pass reads and leaves; `scores` the engine's block scores (Engine.reserveScores).
     pub fn view(s: *Seq, scores: u64) batch.SeqState {
-        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .kv8 = s.kv8, .pg = s.pg() };
+        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .pg = s.pg() };
     }
 
     /// The attention kernels' page argument (zero: contiguous caches).

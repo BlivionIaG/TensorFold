@@ -43,7 +43,6 @@ const exl3_tp2_tests = @import("exl3_tp2_tests.zig");
 const exl3_pack_tests = @import("flashnext_exl3/pack/exl3_pack_tests.zig");
 const exl3_ple2_tests = @import("flashnext_exl3/model/exl3_ple2_tests.zig");
 const exl3_pool_tests = @import("flashnext_exl3/offload/exl3_pool_tests.zig");
-const exl3_kv_tests = @import("flashnext_exl3/kv/exl3_kv_tests.zig");
 const exl3_prefill_tests = @import("flashnext_exl3/prefill/exl3_prefill_tests.zig");
 const exl3_candidate_tests = @import("exl3_candidate_tests.zig");
 const experts3_tests = @import("experts3_tests.zig");
@@ -232,7 +231,6 @@ const usage =
     \\  exl3-ple2 DIR [ROW] [N]    EXL3 n-gram table through cuda_ple.Ngram (ids, rows, RSS) and the PLE kernels vs float64
     \\  exl3-prefill DIR experts|copy [LAYER]|dense  EXL3 prefill pieces on the pack: grouped experts by rows, expert-major passes, line copies, prompt Dense
     \\  exl3-pool DIR [equal|bench|hit FILES] [LAYERS]  Flash Next EXL3 expert offload pool on Experts' pointer tables vs fully resident
-    \\  exl3-kv kernel|bench [CAP]|real DIR ...  int8 KV attention kernels vs upstream and float64; KV placement timings; real-pass KV quality
     \\  exl3-tiles [DIR]          EXL3's tile candidate: codebooks and tiles bit-equal, FP64, rows through qlinear and Dense
     \\  train-pack MODEL EXAMPLES [COUNT]   training passes holding several sequences against one a pass: differences, time
     \\  kernel-contract           the registered kernels through the contract's gates, each planted control red (needs -Dnvcc)
@@ -395,7 +393,6 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "exl3-pack")) return exl3_pack_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-ple2")) return exl3_ple2_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-pool")) return exl3_pool_tests.run(gpu, rest);
-    if (std.mem.eql(u8, cmd, "exl3-kv")) return exl3_kv_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-prefill")) return exl3_prefill_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-tiles")) return exl3_candidate_tests.run(gpu, if (rest.len > 0) rest[0] else null);
     if (std.mem.eql(u8, cmd, "exl3-tp2")) return exl3_tp2_tests.run(gpu, try arg(rest, 0), try arg(rest, 1), if (rest.len > 2) rest[2] else "none");
