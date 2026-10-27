@@ -53,6 +53,13 @@ pub fn layout(capacity: usize, tokens: usize, head: ?Head, extra: usize) kv.Layo
     return .{ .fixed_bytes = mostPages(capacity, tokens) * 4 + extra, .token_bytes = pages.pageBytesOf(tokens, layers) / tokens, .page_tokens = @intCast(tokens), .snap_bytes = snap.bytes(0, head != null), .run_bytes = run };
 }
 
+/// `l` with every stream's run `k` pages: the ranks of a pair agree the larger, so their pools open the same ids.
+pub fn withRunPages(l: kv.Layout, k: usize) kv.Layout {
+    var out = l;
+    out.run_bytes = k * l.pageBytes();
+    return out;
+}
+
 /// Where a stream's caches came from: no pool, the one stream on its own caches beside a pool, or a pool lane.
 pub const From = enum { none, own, pool };
 
@@ -231,6 +238,11 @@ pub const Pool = struct {
         const run_len = p.layout.runPages() * p.layout.pageBytes();
         if (run_len < seqRunBytes()) return error.FlashNextRunTooShort;
         return mtp.Draft.initIn(p.gpa, p.e.driver, cap, h.draft_n, h.rows, &x.seq.paged.?, p.runBase(x) + seqRunBytes(), run_len - seqRunBytes());
+    }
+
+    /// Whether `seq` is a lane's cache.
+    pub fn owns(p: *Pool, seq: *const prompt.Seq) bool {
+        return p.laneOf(seq) != null;
     }
 
     fn laneOf(p: *Pool, seq: *const prompt.Seq) ?*Lane {
