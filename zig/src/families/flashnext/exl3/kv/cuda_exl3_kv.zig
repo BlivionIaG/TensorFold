@@ -71,6 +71,11 @@ pub const EngineKv = struct {
     }
 };
 
+/// Whether this launch's sequences can sit on the core pool's pages: both KV heads on the device.
+pub fn pagesFit(tp: usize) bool {
+    return !@import("../model/cuda_exl3_heads.zig").splitAt(tp);
+}
+
 /// Widest logits pass the server runs (a decode round of 32 streams, an MTP window): `head_local`'s rows.
 pub const head_local_serve_rows: usize = 64;
 /// K10 lever 3: the pass's chunk for an EXL3 checkpoint unless TF_FLASHNEXT_CHUNK says.
