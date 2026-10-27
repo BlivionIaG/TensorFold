@@ -51,3 +51,10 @@ pub fn sequenceBytes(comptime sequenceSize: anytype) !void {
     try std.testing.expectEqual(per_token + weights.attn_n * weights.index_dim * 2, sequenceSize(5) - sequenceSize(4));
     try std.testing.expect(sequenceSize(weights.window) > weights.window * per_token);
 }
+
+pub fn chunkParsing(comptime parseChunk: anytype, comptime batch: type) !void {
+    try std.testing.expectEqual(batch.default_chunk, try parseChunk(null));
+    try std.testing.expectEqual(@as(usize, 4096), try parseChunk("4096"));
+    try std.testing.expectEqual(batch.max_chunk, try parseChunk("16384"));
+    for ([_][]const u8{ "0", "16385", "-1", "4k", "" }) |bad| try std.testing.expectError(error.BadChunk, parseChunk(bad));
+}
