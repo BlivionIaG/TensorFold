@@ -110,7 +110,7 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
 /// Host time of the A/B cut (the picks D2H and its wait) and of Pool.plan, summed over every pooled block (read by
 pub var offloaded_layers: usize = 0;
 
-/// Drafted rounds verify more rows and lose to plain decode on offloaded experts: requests decode plain unless TF_FLASHNEXT_DRAFT_ENABLE=1.
+/// Drafted rounds lose to plain decode on offloaded experts: requests decode plain unless TF_FLASHNEXT_DRAFT_ENABLE=1.
 pub fn plainByDefault() bool {
     if (offloaded_layers == 0) return false;
     const value = std.c.getenv("TF_FLASHNEXT_DRAFT_ENABLE") orelse return true;

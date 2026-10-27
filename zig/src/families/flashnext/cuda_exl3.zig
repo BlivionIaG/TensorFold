@@ -26,6 +26,7 @@ test {
     _ = tp;
     _ = kv;
     _ = @import("cuda_exl3_kv_test.zig");
+    _ = @import("cuda_mtp_ops_test.zig");
     _ = fork;
     _ = telemetry;
     _ = frequency;

@@ -117,7 +117,6 @@ pub fn Pass(comptime Tri: type) type {
         prepared: bool = false,
         /// The pending write-back's branch sits in fp32 in moe_f32 (something added to it, or it is kept).
         pending_f32: bool = false,
-        pending_f32_weights: ?u64 = null,
         /// Expert parallel's summed branch and its ones weights (cuda_exl3_tp.moe), read by the write-back in place.
         pending_tp: ?[2]u64 = null,
         tp_direct: bool = false,
@@ -189,11 +188,6 @@ pub fn Pass(comptime Tri: type) type {
             if (self.pending_f32) {
                 // the fp32 branch rounded once, as MODE 2 rounds its sum (a slice of one)
                 self.pending_f32 = false;
-                if (self.pending_f32_weights) |weights| {
-                    self.pending_f32_weights = null;
-                    try self.tri.hcWriteback(h, h, pss, dummy, "*bf16", inj, s.moe_f32 + r0 * dims * 4, "*fp32", weights + r0 * 4, "*fp32", rs, n, dims, streams, 2, 0, 1, 1);
-                    return;
-                }
                 try self.tri.hcWriteback(h, h, pss, s.moe_f32 + r0 * dims * 4, "*fp32", inj, dummy, "*bf16", dummy, "*bf16", rs, n, dims, streams, 4, 1, 1, 1);
                 return;
             }
@@ -247,27 +241,7 @@ pub fn Pass(comptime Tri: type) type {
         }
 
         pub fn pleBlock(self: *Self, lw: *const Layer, ids: []const u32) !void {
-            const s = self.s;
-            const n = self.rows;
-            // the rows' n-gram embeddings (host gathers from the mapped table) are already uploaded by `stage`
-            _ = ids;
-            _ = try self.lane(s.ple_emb, s.ple_xs, lw.key, s.ple_keys, s.dummy, n, 1);
-            const vsk = try self.lane(s.ple_emb, s.ple_xs, lw.val, s.dummy, s.ple_part, n, 4);
-            try self.sumSlices(s.ple_part, s.ple_vals, true, n * dims, vsk);
-            try self.tri.pleGate(s.ple_keys, s.ple_vals, s.h, lw.nk.ptr, lw.nq.ptr, s.ple_gated, s.ple_pss, eps, n, dims, streams);
-            if (self.lanes.len == 0) {
-                try self.tri.pleConv(s.ple_gated, s.ple_pss, lw.nc.ptr, self.seq.tail.ptr, lw.ple_cw.ptr, s.h, s.h, s.ple_nrow, eps, n, dims, streams, 4, 3);
-                try self.shiftWindow(self.seq.tail.ptr, s.ple_nrow, wide, n, ple_tail_n, wide);
-                return;
-            }
-            // shared rounds: each lane's rows convolved over its own stream's tail, the launch its lone pass makes
-            var row0: usize = 0;
-            for (self.lanes) |l| {
-                const g = row0 * wide * 2;
-                try self.tri.pleConv(s.ple_gated + g, s.ple_pss + row0 * streams * 4, lw.nc.ptr, l.seq.tail.ptr, lw.ple_cw.ptr, s.h + g, s.h + g, s.ple_nrow + g, eps, l.rows, dims, streams, 4, 3);
-                try self.shiftWindow(l.seq.tail.ptr, s.ple_nrow + g, wide, l.rows, ple_tail_n, wide);
-                row0 += l.rows;
-            }
+            return @import("cuda_batch_ple.zig").pleBlock(self, lw, ids);
         }
 
         pub fn gdnBlock(self: *Self, lw: *const Layer, layer: usize, li: usize, keep: LayerKeep) !void {
@@ -537,7 +511,6 @@ pub fn Pass(comptime Tri: type) type {
             self.pos0 = pos0;
             self.pending = null;
             self.pending_f32 = false;
-            self.pending_f32_weights = null;
             self.pending_tp = null;
             // the gather writes the scratch's pinned rows, so the last pass's uploads must have read them first
             if (!self.prepared) try s.ready();
