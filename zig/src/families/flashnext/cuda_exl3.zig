@@ -7,7 +7,6 @@ pub const load = @import("cuda_exl3_load.zig");
 pub const pass = @import("cuda_exl3_pass.zig");
 pub const tp = @import("cuda_exl3_tp.zig");
 pub const kv = @import("cuda_exl3_kv.zig");
-pub const kvpage = @import("cuda_exl3_kvpage.zig");
 pub const prefill_k = @import("cuda_exl3_prefill_k.zig");
 pub const prefill = @import("cuda_exl3_prefill.zig");
 pub const fork = @import("cuda_exl3_fork.zig");
@@ -29,8 +28,6 @@ test {
     _ = tp;
     _ = kv;
     _ = @import("cuda_exl3_kv_test.zig");
-    _ = kvpage;
-    _ = @import("cuda_exl3_kvpage_test.zig");
     _ = prefill_k;
     _ = prefill;
     _ = @import("cuda_exl3_prefill_test.zig");

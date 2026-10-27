@@ -122,9 +122,8 @@ pub fn Namespace(comptime Tri: type) type {
 
         pub fn rankRoom(ptr: *anyopaque, local: u64) !u64 {
             const own = of(ptr);
-            const protected = try @import("cuda_exl3_kvpage.zig").admissionRoom(local, own.stream_bytes, own.engine.page_config);
-            if (own.ranks) |r| return @import("cuda_exl3_kv.zig").rankRoom(r, protected, own.stream_bytes);
-            return protected;
+            if (own.ranks) |r| return @import("cuda_exl3_kv.zig").rankRoom(r, local, own.stream_bytes);
+            return local;
         }
 
         /// A request or load this engine refuses, in words; null: none of its own.
@@ -282,7 +281,7 @@ pub fn Namespace(comptime Tri: type) type {
                     s.proposer = null;
                 }
                 // a window's rows past the reply's last token (its drafts) still need cache slots
-                const cap = if (self.engine.page_config != null) @min(prompt.max_tokens, self.context + mtp.max_rows) else @min(ids.len + s.max_new + (if (drafting) mtp.max_rows else 0), prompt.max_tokens);
+                const cap = @min(ids.len + s.max_new + (if (drafting) mtp.max_rows else 0), prompt.max_tokens);
                 const from = self.kv.choose();
                 gop.value_ptr.* = .{ .seq = (if (self.ranks) |r| r.create(cap) else if (from == .pool) self.kv.pool.?.open(cap) else self.engine.newSeq(cap)) catch |err| {
                     self.lanes.removeByPtr(gop.key_ptr);
@@ -313,7 +312,7 @@ pub fn Namespace(comptime Tri: type) type {
                     l.filled = kept.at;
                     s.cached = @intCast(kept.at);
                 } else |err| switch (err) {
-                    error.SequenceTooShort, error.NoHeadState, error.KvPageSnapshotLayout => {
+                    error.SequenceTooShort, error.NoHeadState => {
                         std.log.warn("flashnext: kept state at {d} not restored ({t})", .{ kept.at, err });
                         s.reuse_failed = true;
                     },
@@ -586,8 +585,6 @@ pub fn Namespace(comptime Tri: type) type {
         // -- the prompt cache's copies ------------------------------------------------------------------------
 
         fn snapBytes(ptr: *anyopaque, at: u32) u64 {
-            const self = of(ptr);
-            if (self.engine.page_config) |cfg| return snap.pagedBytes(@min(self.context + mtp.max_rows, prompt.max_tokens), cfg.forChunk(self.engine.chunk), at, self.head != null) catch std.math.maxInt(u64);
             return snap.bytesKv(at, of(ptr).head != null, @import("cuda_exl3_kv.zig").of(of(ptr).engine).rows());
         }
 

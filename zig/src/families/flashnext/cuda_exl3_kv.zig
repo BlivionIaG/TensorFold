@@ -4,7 +4,6 @@ const std = @import("std");
 const cuda = @import("cuda");
 const wt = @import("cuda_prompt_wt.zig");
 const gdn = @import("cuda_gdn.zig");
-const kvpage = @import("cuda_exl3_kvpage.zig");
 const int8k = @import("cuda_exl3_kv8.zig");
 
 const group: usize = 32;
@@ -163,7 +162,6 @@ pub const exl3_chunk: usize = 1024;
 pub fn setup(e: anytype, kv8_flag: bool, exl3: bool) !void {
     const f = fromEnv(kv8_flag);
     const heads = @import("cuda_exl3_heads.zig").kvHeads(e.layers[0..e.n_layers]);
-    if (kvpage.configFromEnv() != null and (f.int8 or heads != kv_heads)) return error.KvPagePlacement;
     if (heads != kv_heads) (try entryOf(e)).heads = heads;
     if (f.int8 or f.ikc_host) try enable(e, f.int8, f.rot, f.ikc_host);
     if (heads != kv_heads) std.log.info("flashnext: attention heads split across the ranks: {d} query heads and {d} KV head a rank", .{ wt.q_heads / 2, heads });
@@ -181,9 +179,7 @@ pub fn setup(e: anytype, kv8_flag: bool, exl3: bool) !void {
 /// One log line: a stream's device bytes at the window by piece, and the host bytes it maps.
 pub fn logStream(e: anytype, window: usize, stream_bytes: usize) !void {
     const kv = of(e);
-    const layout = try sequenceLayout(kv, window, e.chunk, kvpage.configFromEnv());
-    const b = layout.bytes;
-    if (layout.paging) |cfg| std.log.info("flashnext: BF16 K/V RAM paging enabled: window {d}, slots {d}, rows {d}", .{ cfg.window, cfg.slots, cfg.rows });
+    const b = seqBytes(window, kv.policy());
     std.log.info("flashnext: a stream at a {d}-token window holds {d:.3} GiB on the device (K/V {d:.3} {s}, indexer keys {d:.3}, pooled {d:.3}, DeltaNet {d:.3}, draft and the rest {d:.3}) and {d:.3} GiB of mapped host memory; chunk {d} rows, scratch {d:.3} GiB", .{
         window,
         @as(f64, @floatFromInt(stream_bytes)) / gib,
@@ -203,7 +199,6 @@ pub fn logStream(e: anytype, window: usize, stream_bytes: usize) !void {
 pub fn snapHost(context: usize, exl3: bool) bool {
     var on = exl3 and context > 32768;
     if (std.c.getenv("TF_FLASHNEXT_SNAP_HOST")) |v| on = std.mem.eql(u8, std.mem.span(v), "1");
-    if (kvpage.configFromEnv() != null) on = true;
     @import("cuda_snap.zig").on_host = on;
     return on;
 }
@@ -226,32 +221,9 @@ pub fn release(gpa: std.mem.Allocator, k: *EngineKv) void {
     k.* = .{};
 }
 
-pub const SeqLayout = struct {
-    cache_rows: usize,
-    row: Rows,
-    paging: ?kvpage.Config,
-    bytes: SeqBytes,
-};
-
-pub fn sequenceLayout(placement: EngineKv, cap: usize, chunk: usize, paging: ?kvpage.Config) !SeqLayout {
-    if (cap == 0) return error.UnexpectedTensor;
-    const page_bytes = if (paging) |requested| try kvpage.deviceBytesFor(cap, requested.forChunk(chunk)) else 0;
-    var layout: SeqLayout = .{ .cache_rows = cap, .row = placement.rows(), .paging = null, .bytes = seqBytes(cap, placement.policy()) };
-    if (paging) |requested| {
-        if (placement.k8 != null or placement.heads != kv_heads) return error.KvPagePlacement;
-        const cfg = requested.forChunk(chunk);
-        try cfg.validate();
-        layout.cache_rows = 1;
-        layout.paging = cfg;
-        layout.bytes.host = try std.math.add(u64, layout.bytes.host, layout.bytes.kv);
-        layout.bytes.kv = try std.math.add(u64, page_bytes, wt.attn_n * 2 * layout.row.kv);
-    }
-    return layout;
-}
-
-/// Device bytes of the sequence caches under the same placement and paging shape used by newSeq.
-pub fn engineSeqBytes(k: EngineKv, cap: usize, chunk: usize) !usize {
-    return @intCast((try sequenceLayout(k, cap, chunk, kvpage.configFromEnv())).bytes.device());
+/// Device bytes of the sequence caches under the same placement used by newSeq.
+pub fn engineSeqBytes(k: EngineKv, cap: usize) usize {
+    return @intCast(seqBytes(cap, k.policy()).device());
 }
 
 /// The snapshot rows of one layer of a sequence of `heads` KV heads: codes or bf16 K (and V) a token, and scales a
@@ -292,9 +264,6 @@ pub fn newSeq(e: anytype, comptime Seq: type, cap: usize) !Seq {
     const st = e.stream.*;
     const attn = wt.attn_n;
     const kv = of(e);
-    const layout = try sequenceLayout(kv, cap, e.chunk, e.page_config);
-    const paged = if (layout.paging) |cfg| if (cfg.shared_lanes != 0) try kvpage.Paged.initShared(gpa, d, cap, cfg, e.shared_arena orelse return error.SharedKvArenaRequired) else try kvpage.Paged.init(gpa, d, cap, cfg) else null;
-    errdefer if (paged) |pg| pg.destroy();
     const logits = try gpa.alloc(u8, wt.vocab * 2);
     errdefer gpa.free(logits);
     var held: Held = .{ .gpa = gpa };
@@ -303,9 +272,9 @@ pub fn newSeq(e: anytype, comptime Seq: type, cap: usize) !Seq {
     const state = try held.bufs(d, st, wt.linear_n, wt.state_n * 4);
     const int8 = kv.k8 != null;
     if (int8 and kv.heads != kv_heads) return error.SplitAttentionUnsupported;
-    const row = layout.row;
-    const kc = try held.bufs(d, st, attn, layout.cache_rows * row.kv);
-    const vc = try held.bufs(d, st, attn, layout.cache_rows * row.kv);
+    const row = kv.rows();
+    const kc = try held.bufs(d, st, attn, cap * row.kv);
+    const vc = try held.bufs(d, st, attn, cap * row.kv);
     var ks: []cuda.DeviceBuffer = &.{};
     var vs: []cuda.DeviceBuffer = &.{};
     if (int8) {
@@ -344,7 +313,6 @@ pub fn newSeq(e: anytype, comptime Seq: type, cap: usize) !Seq {
         .cap = cap,
         .kv8 = if (kv.k8) |k| .{ .k = k, .ks = ks, .vs = vs, .rot = kv.rot } else null,
         .ikc_host = host,
-        .paged = paged,
     };
 }
 

@@ -6,8 +6,6 @@ const gdn = @import("cuda_gdn.zig");
 const ple = @import("cuda_ple.zig");
 const weights = @import("cuda_prompt_wt.zig");
 const load = @import("cuda_prompt_load.zig");
-const kvpage = @import("cuda_exl3_kvpage.zig");
-const shared_kv = @import("cuda_prompt_shared_kv.zig");
 pub const batch = @import("cuda_batch.zig");
 const fb = @import("cuda_fn_back.zig");
 const pocket = @import("cuda_pocket.zig");
@@ -146,8 +144,6 @@ pub const Engine = struct {
     round_graph: round_graph.Cache = .{},
     image_factory: ?*@import("cuda_images.zig").Vision = null,
     collective: ?*@import("cuda_collective.zig").Collective = null,
-    page_config: ?kvpage.Config = null,
-    shared_arena: ?*kvpage.shared_device.Arena = null,
     telemetry: cache_telemetry.State = .{},
     /// Each layer's Living Weights pocket, from a taught folder's shards or the learner: every pass adds it.
     pockets: pocket.Pockets = .{},
@@ -174,8 +170,6 @@ pub const Engine = struct {
         e.scratch_format = .classic;
         e.collective = null;
         e.image_factory = null;
-        e.page_config = kvpage.configFromEnv();
-        e.shared_arena = null;
         e.telemetry = cache_telemetry.State.fromEnv(rank, world);
         e.round_graph = .{};
         errdefer for (e.layers[0..e.n_layers]) |*l| l.free(gpa);
@@ -245,9 +239,6 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         @import("cuda_exl3_prefill.zig").releaseFor(e);
-        if (e.page_config) |cfg| if (cfg.shared_lanes != 0) {
-            if (e.shared_arena) |arena| arena.destroy() catch @panic("shared KV arena still owns live lanes");
-        };
         e.round_graph.clear();
         e.pockets.deinit();
         if (e.batch_s) |*bs| bs.free(e.gpa);
@@ -314,62 +305,18 @@ pub const Engine = struct {
 
     /// A fresh cache whose attention caches are `given` pages (owned by the cache from here), else contiguous.
     pub fn newSeqOn(e: *Engine, cap: usize, given: ?pages.Paged) !Seq {
-        if (given != null) return e.newSeqPageTable(cap, given);
+        var paged = given;
+        errdefer if (paged) |*p| p.deinit(e.gpa);
         e.round_graph.clear();
-        if (cap == 0) return error.UnexpectedTensor;
-        if (e.page_config) |cfg| if (cfg.shared_lanes != 0) {
-            const arena = e.shared_arena orelse return error.SharedKvArenaRequired;
-            if (cap != arena.layout.options.cap) return error.SharedKvCommonCap;
-        };
-        if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_prompt_lifecycle.zig").newPlacedSeq(e, cap);
-        if (e.page_config == null) return e.newSeqPageTable(cap, null); // contiguous caches: upstream's flow, which drains before it frees
-        const logits = try e.gpa.alloc(u8, vocab * 2);
-        errdefer e.gpa.free(logits);
-        const conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
-        errdefer freeOwned(e.gpa, conv);
-        const state = try zeros(e.gpa, e.driver, e.stream.*, linear_n, state_n * 4);
-        errdefer freeOwned(e.gpa, state);
-        // K/V paged to host memory (TF_FLASHNEXT_KVPAGE): kc/vc stay one row (cuda_exl3_kvpage.zig holds the rest)
-        const paged = if (e.page_config) |cfg| if (cfg.shared_lanes != 0) try kvpage.Paged.initShared(e.gpa, e.driver, cap, cfg.forChunk(e.chunk), e.shared_arena orelse return error.SharedKvArenaRequired) else try kvpage.Paged.init(e.gpa, e.driver, cap, cfg.forChunk(e.chunk)) else null;
-        errdefer if (paged) |pg| pg.destroy();
-        const kc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, (if (paged != null) 1 else cap) * kv_heads * head_dim * 2);
-        errdefer freeOwned(e.gpa, kc);
-        const vc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, (if (paged != null) 1 else cap) * kv_heads * head_dim * 2);
-        errdefer freeOwned(e.gpa, vc);
-        const ikc = try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * index_dim * 2);
-        errdefer freeOwned(e.gpa, ikc);
-        const pooled = try zeros(e.gpa, e.driver, e.stream.*, attn_n, pooledBytes(cap));
-        errdefer freeOwned(e.gpa, pooled);
-        var tail = try cuda.DeviceBuffer.alloc(e.driver, ple_tail_n * wide * 2);
-        errdefer tail.free();
-        try tail.fill8(0, e.stream.handle);
-        return .{
-            .stream = e.stream.*,
-            .conv = conv,
-            .state = state,
-            .kc = kc,
-            .vc = vc,
-            .ikc = ikc,
-            .pooled = pooled,
-            .tail = tail,
-            .history = .{ e.eos, e.eos },
-            .fed = 0,
-            .logits = logits,
-            .cap = cap,
-            .paged = paged,
-        };
-    }
-
-    /// A fresh cache whose attention caches are the given page table's pages (owned by the cache from here).
-    fn newSeqPageTable(e: *Engine, cap: usize, given: ?pages.Paged) !Seq {
-        var table = given;
-        errdefer if (table) |*p| p.deinit(e.gpa);
-        e.round_graph.clear();
+        if (paged == null) {
+            if (cap == 0) return error.UnexpectedTensor;
+            if (@import("cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_prompt_lifecycle.zig").newPlacedSeq(e, cap);
+        }
         if (cap == 0 or cap > max_tokens) return error.UnexpectedTensor;
-        _ = try seqBytesPaged(cap, if (table) |p| p.tokens else 0);
+        _ = try seqBytesPaged(cap, if (paged) |p| p.tokens else 0);
         var seq: Seq = .{
             .stream = e.stream.*,
-            .ptable = table,
+            .paged = paged,
             .conv = &.{},
             .state = &.{},
             .kc = &.{},
@@ -382,16 +329,16 @@ pub const Engine = struct {
             .logits = &.{},
             .cap = cap,
         };
-        table = null; // seq owns the pages from here
+        paged = null; // seq owns the pages from here
         // One rollback owns every published array, and drains before releasing any destination.
         errdefer seq.deinit(e.gpa);
         seq.logits = try e.gpa.alloc(u8, vocab * 2);
         seq.conv = try zeros(e.gpa, e.driver, e.stream.*, linear_n, (gdn.taps - 1) * gdn.conv_dim * 2);
         seq.state = try zeros(e.gpa, e.driver, e.stream.*, linear_n, state_n * 4);
-        seq.kc = if (seq.ptable) |*p| try p.views(e.gpa, e.driver, .key) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
-        seq.vc = if (seq.ptable) |*p| try p.views(e.gpa, e.driver, .value) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
-        seq.ikc = if (seq.ptable) |*p| try p.views(e.gpa, e.driver, .index) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * index_dim * 2);
-        seq.pooled = if (seq.ptable) |*p| try p.views(e.gpa, e.driver, .pooled) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, pooledBytes(cap));
+        seq.kc = if (seq.paged) |*p| try p.views(e.gpa, e.driver, .key) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
+        seq.vc = if (seq.paged) |*p| try p.views(e.gpa, e.driver, .value) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * kv_heads * head_dim * 2);
+        seq.ikc = if (seq.paged) |*p| try p.views(e.gpa, e.driver, .index) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, cap * index_dim * 2);
+        seq.pooled = if (seq.paged) |*p| try p.views(e.gpa, e.driver, .pooled) else try zeros(e.gpa, e.driver, e.stream.*, attn_n, pooledBytes(cap));
         seq.tail = try cuda.DeviceBuffer.alloc(e.driver, ple_tail_n * wide * 2);
         try seq.tail.fill8(0, e.stream.handle);
         return seq;
@@ -415,26 +362,6 @@ pub const Engine = struct {
     }
 
     pub const complete = measured.complete;
-
-    pub fn reserveSharedKv(e: *Engine, cap: usize) !usize {
-        return shared_kv.reserve(e, cap);
-    }
-
-    fn beginShared(e: *Engine, seqs: []const *Seq) !?kvpage.shared_device.Lease {
-        return shared_kv.begin(e, seqs);
-    }
-
-    fn endShared(e: *Engine, lease: ?kvpage.shared_device.Lease) void {
-        shared_kv.end(e, lease);
-    }
-
-    fn failShared(e: *Engine, lease: ?kvpage.shared_device.Lease, seqs: []const *Seq) void {
-        shared_kv.fail(e, lease, seqs);
-    }
-
-    fn finishPaged(e: *Engine, seqs: []const *Seq) !void {
-        return shared_kv.finish(e, seqs, complete);
-    }
 
     /// Block scores for a `cap`-token sequence's chunks of up to `rows` rows, reallocated only to grow.
     pub fn reserveScores(e: *Engine, cap: usize, rows: usize) !u64 {
@@ -473,16 +400,8 @@ pub const Engine = struct {
     pub const forward = measured.forward;
 
     fn forwardUnmeasured(e: *Engine, comptime Tri: type, tri: Tri, seq: *Seq, ids: []const u32, hooks: batch.Hooks) !void {
-        if (seq.invalidated) return error.SnapshotDestinationInvalid;
         if (ids.len == 0 or seq.fed > seq.cap or ids.len > seq.cap - seq.fed) return error.UnexpectedTensor;
-        const shared_sequences = [_]*Seq{seq};
-        const shared_lease = try e.beginShared(&shared_sequences);
-        defer e.endShared(shared_lease);
-        errdefer e.failShared(shared_lease, &shared_sequences);
-        if (try @import("cuda_exl3_prefill.zig").forward(e, Tri, tri, seq, ids, hooks)) {
-            const one = [_]*Seq{seq};
-            return e.finishPaged(&one);
-        }
+        if (try @import("cuda_exl3_prefill.zig").forward(e, Tri, tri, seq, ids, hooks)) return;
         if ((hooks.keep != null or hooks.logits == .all) and ids.len > e.chunk) return error.UnexpectedTensor;
         const s = try e.reserve(@min(ids.len, e.chunk));
         const scores = try e.reserveScores(seq.cap, s.cap);
@@ -506,10 +425,7 @@ pub const Engine = struct {
             try p.chunk(ids[at..][0..n], seq.fed + at, if (last and hooks.logits != .none) seq.logits else null);
             at += n;
         }
-        if (seq.paged != null) {
-            const one = [_]*Seq{seq};
-            try e.finishPaged(&one);
-        } else if (hooks.logits == .none) try e.complete();
+        if (hooks.logits == .none) try e.complete();
         seq.fed += ids.len;
     }
 
@@ -524,13 +440,9 @@ pub const Engine = struct {
         if (seqs.len == 0 or seqs.len != ids.len) return error.UnexpectedTensor;
         var cap: usize = 0;
         for (seqs) |q| {
-            if (q.invalidated) return error.SnapshotDestinationInvalid;
             if (q.fed + 1 > q.cap) return error.UnexpectedTensor;
             cap = @max(cap, q.cap);
         }
-        const shared_lease = try e.beginShared(seqs);
-        defer e.endShared(shared_lease);
-        errdefer e.failShared(shared_lease, seqs);
         const rows = try e.gpa.alloc(batch.Lane, seqs.len);
         defer e.gpa.free(rows);
         const s = try e.reserve(seqs.len);
@@ -561,15 +473,11 @@ pub const Engine = struct {
         const has_media = for (seqs) |q| {
             if (q.media != null) break true;
         } else false;
-        const has_paged = for (seqs) |q| {
-            if (q.paged != null) break true;
-        } else false;
-        if (e.collective != null and round_graph.enabled() and !has_media and !has_paged) {
+        if (e.collective != null and round_graph.enabled() and !has_media) {
             const key = try round_graph.Key.init(seqs, s.ids, scores, out);
             try e.round_graph.run(key, &p, ids);
         } else try p.chunk(ids, 0, null);
-        try e.finishPaged(seqs);
-        if (!has_paged) try e.complete();
+        try e.complete();
         const d = e.stream.d;
         for (seqs, 0..) |q, r| {
             try d.check(d.api.cuMemcpyDtoH_v2(q.logits.ptr, out + r * vocab * 2, vocab * 2), "cuMemcpyDtoH");
@@ -580,7 +488,6 @@ pub const Engine = struct {
 
 /// One stream's caches. `fed` tokens have already gone through the model.
 pub const Seq = struct {
-    invalidated: bool = false,
     /// The owning compute stream; synthetic non-device fixtures may leave it absent.
     stream: ?cuda.Stream = null,
     media: ?@import("cuda_media.zig").State = null,
@@ -592,7 +499,7 @@ pub const Seq = struct {
     ikc: []cuda.DeviceBuffer,
     pooled: []cuda.DeviceBuffer,
     /// kc, vc, ikc and pooled as borrowed views of page 0 of these pages (null: each its own contiguous buffer).
-    ptable: ?pages.Paged = null,
+    paged: ?pages.Paged = null,
     tail: cuda.DeviceBuffer,
     history: [2]i64,
     fed: usize,
@@ -601,18 +508,17 @@ pub const Seq = struct {
     /// int8 K/V scales beside the codes in kc/vc, and the indexer keys' mapped host buffer (cuda_exl3_kv.newSeq).
     kv8: ?@import("cuda_exl3_kv.zig").SeqKv8 = null,
     ikc_host: ?cuda.HostBuffer = null,
-    paged: ?*kvpage.Paged = null,
     /// The model as shipped: no learned neuron acts on its rows (a lesson writer's and its judge's reads).
     untaught: bool = false,
 
     /// The caches a batched pass reads and leaves; `scores` the engine's block scores (Engine.reserveScores).
     pub fn view(s: *Seq, scores: u64) batch.SeqState {
-        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .kv8 = s.kv8, .paged = s.paged, .pg = s.pg() };
+        return .{ .media = if (s.media) |*m| m.view() else null, .conv = s.conv, .state = s.state, .kc = s.kc, .vc = s.vc, .ikc = s.ikc, .pooled = s.pooled, .tail = s.tail, .history = &s.history, .cap = s.cap, .scores = scores, .kv8 = s.kv8, .pg = s.pg() };
     }
 
     /// The attention kernels' page argument (zero: contiguous caches).
     pub fn pg(s: *const Seq) @import("cuda_glue.zig").Pg {
-        return if (s.ptable) |*p| p.pg() else .{};
+        return if (s.paged) |*p| p.pg() else .{};
     }
 
     pub fn deinit(s: *Seq, gpa: std.mem.Allocator) void {
