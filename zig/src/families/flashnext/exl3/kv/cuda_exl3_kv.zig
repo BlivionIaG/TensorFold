@@ -139,6 +139,12 @@ pub fn fromEnv(kv8_flag: bool) struct { int8: bool, rot: bool, ikc_host: bool } 
     return .{ .int8 = int8, .rot = rot, .ikc_host = ikc_host };
 }
 
+/// Whether this launch's sequences can sit on the core pool's pages: bf16 K/V on the device, both KV heads.
+pub fn pagesFit(tp: usize, kv8_flag: bool) bool {
+    const f = fromEnv(kv8_flag);
+    return !f.int8 and !f.ikc_host and !@import("../model/cuda_exl3_heads.zig").splitAt(tp);
+}
+
 /// Loads the int8 kernels into `e` (an engine with no sequence yet) and sets its sequences' placement.
 pub fn enable(e: anytype, int8: bool, rot: bool, ikc_host: bool) !void {
     const kv = try entryOf(e);
