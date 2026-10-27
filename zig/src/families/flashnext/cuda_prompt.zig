@@ -239,6 +239,8 @@ pub const Engine = struct {
 
     pub fn deinit(e: *Engine) void {
         @import("exl3/prefill/cuda_exl3_prefill.zig").releaseFor(e);
+        @import("exl3/graph/cuda_exl3_graph.zig").releaseFor(e);
+        @import("exl3/offload/cuda_exl3_recycle.zig").drain(e);
         e.round_graph.clear();
         e.pockets.deinit();
         if (e.batch_s) |*bs| bs.free(e.gpa);
@@ -307,6 +309,9 @@ pub const Engine = struct {
         var paged = given;
         errdefer if (paged) |*p| p.deinit(e.gpa);
         e.round_graph.clear();
+        if (paged == null and cap != 0) {
+            if (try @import("exl3/offload/cuda_exl3_recycle.zig").takeSeq(e, cap)) |kept| return kept;
+        }
         if (cap == 0 or cap > max_tokens) return error.UnexpectedTensor;
         _ = try seqBytesPaged(cap, if (paged) |p| p.tokens else 0);
         var seq: Seq = .{
@@ -323,6 +328,7 @@ pub const Engine = struct {
             .fed = 0,
             .logits = &.{},
             .cap = cap,
+            .recycle_owner = if (paged == null) e else null,
         };
         paged = null; // seq owns the pages from here
         // One rollback owns every published array, and drains before releasing any destination.
@@ -411,6 +417,7 @@ pub const Engine = struct {
             .seq = seq.view(scores),
             .hooks = hooks,
         };
+        if (try @import("exl3/graph/cuda_exl3_graph.zig").forward(e, &p, seq, ids)) return;
         var at: usize = 0;
         while (at < ids.len) {
             const n = @min(s.cap, ids.len - at);
@@ -472,7 +479,7 @@ pub const Engine = struct {
             if (q.paged != null) break true;
         } else false;
         // a captured round fixes the lanes' tables: paged streams run the plain pass
-        if (e.collective != null and round_graph.enabled() and !has_media and !has_paged) {
+        if (try @import("exl3/graph/cuda_exl3_graph.zig").round(e, &p, seqs, ids, scores, out)) {} else if (e.collective != null and round_graph.enabled() and !has_media and !has_paged) {
             const key = try round_graph.Key.init(seqs, s.ids, scores, out);
             try e.round_graph.run(key, &p, ids);
         } else try p.chunk(ids, 0, null);
@@ -487,6 +494,7 @@ pub const Engine = struct {
 
 /// One stream's caches. `fed` tokens have already gone through the model.
 pub const Seq = struct {
+    recycle_owner: ?*Engine = null,
     /// The owning compute stream; synthetic non-device fixtures may leave it absent.
     stream: ?cuda.Stream = null,
     media: ?@import("cuda_media.zig").State = null,
@@ -556,10 +564,7 @@ pub fn chunkRows() !usize {
 }
 
 test "TF_FLASHNEXT_CHUNK takes 1 to the largest measured pass and refuses the rest" {
-    try std.testing.expectEqual(batch.default_chunk, try parseChunk(null));
-    try std.testing.expectEqual(@as(usize, 4096), try parseChunk("4096"));
-    try std.testing.expectEqual(batch.max_chunk, try parseChunk("16384"));
-    for ([_][]const u8{ "0", "16385", "-1", "4k", "" }) |bad| try std.testing.expectError(error.BadChunk, parseChunk(bad));
+    try @import("cuda_prompt_test.zig").chunkParsing(parseChunk, batch);
 }
 
 test {
