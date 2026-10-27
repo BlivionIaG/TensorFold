@@ -49,6 +49,8 @@ pub const pocket_stride: usize = 128;
 pub const fused_rows: usize = 1024;
 /// Rows a pass holds at most unless asked for more.
 pub const default_chunk: usize = 1536;
+/// Rows of `head_local` (a vocabulary-split head's local logits) a scratch holds at most: every row by default; an
+pub var head_local_rows: usize = std.math.maxInt(usize);
 /// The most rows TF_FLASHNEXT_CHUNK may ask for (the largest measured pass; its scratch is about 13 GiB more).
 pub const max_chunk: usize = 16384;
 const ratio = wt.index_ratio;
@@ -392,16 +394,6 @@ pub const Scratch = struct {
         return @alignCast(std.mem.bytesAsSlice(f32, s.host.?.bytes[hostAt(s.cap)[3]..][0 .. n * (dims / 32) * 4]));
     }
 
-    /// The buffers in the order `allocationSizes` lists their sizes.
-    const order = [_][]const u8{
-        "ids",       "pos",        "h",          "pss",     "norm",     "rinv",    "dn",         "hc_part",    "hc_up",   "native_part", "act",
-        "xs_act",    "inj",        "mixed",      "xsm",     "proj",     "part",    "gout",       "gxs",        "ys",      "gq",          "gk",
-        "gv",        "ggb",        "q",          "iq",      "po",       "pm",      "pl",         "qids",       "qnk",     "qspr",        "ao",
-        "gated",     "gxs_attn",   "router_l",   "picks",   "wts",      "members", "items",      "counts",     "rank",    "hist",        "shared_gate",
-        "shared_up", "shared_act", "shared_out", "moe_act", "y",        "branch",  "moe_f32",    "pocket_act", "ple_emb", "ple_xs",      "ple_keys",
-        "ple_vals",  "ple_part",   "ple_gated",  "ple_pss", "ple_nrow", "logits",  "head_local", "inv",        "dummy",
-    };
-
     pub fn allocationSizes(cap: usize, format: ScratchFormat) [64]?usize {
         const pairs = cap * slots;
         const nblk = cdiv(pairs, plan_small);
@@ -468,7 +460,7 @@ pub const Scratch = struct {
             cap * streams * 4,
             cap * wide * 2,
             vocab * 2,
-            if (format == .classic) cap * vocab else null,
+            @min(cap, head_local_rows) * vocab,
             half * 4,
             4096,
         };
@@ -497,22 +489,79 @@ pub const Scratch = struct {
             s.free(gpa);
         }
         const sizes = allocationSizes(cap, format);
-        // a row of a decode round or a block of att_rows rows takes `pos`'s 16 bytes
+        s.ids = if (sizes[0]) |len| try s.add(gpa, d, len) else 0;
+        // a position every 16 bytes: one a block of att_rows rows, or one a row of a decode round
+        s.pos = if (sizes[1]) |len| try s.add(gpa, d, len) else 0;
+        s.h = if (sizes[2]) |len| try s.add(gpa, d, len) else 0;
+        s.pss = if (sizes[3]) |len| try s.add(gpa, d, len) else 0;
+        s.norm = if (sizes[4]) |len| try s.add(gpa, d, len) else 0;
+        s.rinv = if (sizes[5]) |len| try s.add(gpa, d, len) else 0;
+        s.dn = if (sizes[6]) |len| try s.add(gpa, d, len) else 0;
+        s.hc_part = if (sizes[7]) |len| try s.add(gpa, d, len) else 0;
+        s.hc_up = if (sizes[8]) |len| try s.add(gpa, d, len) else 0;
+        s.native_part = if (sizes[9]) |len| try s.add(gpa, d, len) else 0;
+        s.act = if (sizes[10]) |len| try s.add(gpa, d, len) else 0;
+        s.xs_act = if (sizes[11]) |len| try s.add(gpa, d, len) else 0;
+        s.inj = if (sizes[12]) |len| try s.add(gpa, d, len) else 0;
+        s.mixed = if (sizes[13]) |len| try s.add(gpa, d, len) else 0;
+        s.xsm = if (sizes[14]) |len| try s.add(gpa, d, len) else 0;
+        s.proj = if (sizes[15]) |len| try s.add(gpa, d, len) else 0;
+        s.part = if (sizes[16]) |len| try s.add(gpa, d, len) else 0;
+        if (sizes[16] != null) {
+            try s.bufs.items[s.bufs.items.len - 1].fill8(0, stream.handle);
+            s.part_zero = true;
+        }
+        s.gout = if (sizes[17]) |len| try s.add(gpa, d, len) else 0;
+        s.gxs = if (sizes[18]) |len| try s.add(gpa, d, len) else 0;
+        s.ys = if (sizes[19]) |len| try s.add(gpa, d, len) else 0;
+        s.gq = if (sizes[20]) |len| try s.add(gpa, d, len) else 0;
+        s.gk = if (sizes[21]) |len| try s.add(gpa, d, len) else 0;
+        s.gv = if (sizes[22]) |len| try s.add(gpa, d, len) else 0;
+        s.ggb = if (sizes[23]) |len| try s.add(gpa, d, len) else 0;
+        s.q = if (sizes[24]) |len| try s.add(gpa, d, len) else 0;
+        s.iq = if (sizes[25]) |len| try s.add(gpa, d, len) else 0;
+        s.po = if (sizes[26]) |len| try s.add(gpa, d, len) else 0;
+        s.pm = if (sizes[27]) |len| try s.add(gpa, d, len) else 0;
+        s.pl = if (sizes[28]) |len| try s.add(gpa, d, len) else 0;
+        s.qids = if (sizes[29]) |len| try s.add(gpa, d, len) else 0;
+        s.qnk = if (sizes[30]) |len| try s.add(gpa, d, len) else 0;
+        s.qspr = if (sizes[31]) |len| try s.add(gpa, d, len) else 0;
+        s.ao = if (sizes[32]) |len| try s.add(gpa, d, len) else 0;
+        s.gated = if (sizes[33]) |len| try s.add(gpa, d, len) else 0;
+        s.gxs_attn = if (sizes[34]) |len| try s.add(gpa, d, len) else 0;
+        s.router_l = if (sizes[35]) |len| try s.add(gpa, d, len) else 0;
+        s.picks = if (sizes[36]) |len| try s.add(gpa, d, len) else 0;
+        s.wts = if (sizes[37]) |len| try s.add(gpa, d, len) else 0;
+        s.members = if (sizes[38]) |len| try s.add(gpa, d, len) else 0;
+        s.items = if (sizes[39]) |len| try s.add(gpa, d, len) else 0;
+        s.counts = if (sizes[40]) |len| try s.add(gpa, d, len) else 0;
+        s.rank = if (sizes[41]) |len| try s.add(gpa, d, len) else 0;
+        s.hist = if (sizes[42]) |len| try s.add(gpa, d, len) else 0;
+        s.shared_gate = if (sizes[43]) |len| try s.add(gpa, d, len) else 0;
+        s.shared_up = if (sizes[44]) |len| try s.add(gpa, d, len) else 0;
+        s.shared_act = if (sizes[45]) |len| try s.add(gpa, d, len) else 0;
+        s.shared_out = if (sizes[46]) |len| try s.add(gpa, d, len) else 0;
+        s.moe_act = if (sizes[47]) |len| try s.add(gpa, d, len) else 0;
+        s.y = if (sizes[48]) |len| try s.add(gpa, d, len) else 0;
+        s.branch = if (sizes[49]) |len| try s.add(gpa, d, len) else 0;
+        s.moe_f32 = if (sizes[50]) |len| try s.add(gpa, d, len) else 0;
+        s.pocket_act = if (sizes[51]) |len| try s.add(gpa, d, len) else 0;
+        s.ple_emb = if (sizes[52]) |len| try s.add(gpa, d, len) else 0;
+        s.ple_xs = if (sizes[53]) |len| try s.add(gpa, d, len) else 0;
+        s.ple_keys = if (sizes[54]) |len| try s.add(gpa, d, len) else 0;
+        s.ple_vals = if (sizes[55]) |len| try s.add(gpa, d, len) else 0;
+        s.ple_part = if (sizes[56]) |len| try s.add(gpa, d, len) else 0;
+        s.ple_gated = if (sizes[57]) |len| try s.add(gpa, d, len) else 0;
+        s.ple_pss = if (sizes[58]) |len| try s.add(gpa, d, len) else 0;
+        s.ple_nrow = if (sizes[59]) |len| try s.add(gpa, d, len) else 0;
+        s.logits = if (sizes[60]) |len| try s.add(gpa, d, len) else 0;
+        s.head_local = if (sizes[61]) |len| try s.add(gpa, d, len) else 0;
         var inv: [half]f32 = undefined;
         for (&inv, 0..) |*o, i| o.* = @floatCast(std.math.pow(f64, 10_000_000.0, -@as(f64, @floatFromInt(i)) / @as(f64, half)));
-        inline for (order, 0..) |name, i| {
-            @field(s, name) = if (sizes[i]) |len| try s.add(gpa, d, len) else 0;
-            if (sizes[i] != null) {
-                const last = &s.bufs.items[s.bufs.items.len - 1];
-                // part's second cap-stride slice stays zeros (native lanes write only the first); dummy is all zeros
-                if (comptime std.mem.eql(u8, name, "part")) {
-                    try last.fill8(0, stream.handle);
-                    s.part_zero = true;
-                }
-                if (comptime std.mem.eql(u8, name, "inv")) try last.uploadAsync(0, std.mem.sliceAsBytes(&inv), stream.handle);
-                if (comptime std.mem.eql(u8, name, "dummy")) try last.fill8(0, stream.handle);
-            }
-        }
+        s.inv = if (sizes[62]) |len| try s.add(gpa, d, len) else 0;
+        try s.bufs.items[s.bufs.items.len - 1].uploadAsync(0, std.mem.sliceAsBytes(&inv), stream.handle);
+        s.dummy = if (sizes[63]) |len| try s.add(gpa, d, len) else 0;
+        try s.bufs.items[s.bufs.items.len - 1].fill8(0, stream.handle);
         try stream.synchronize();
         s.host = try cuda.HostBuffer.alloc(d, hostAt(cap)[4]);
         s.staging = .{ .q = .{ .stream = stream, .event = try cuda.Event.init(d, false) } };
@@ -582,7 +631,38 @@ pub const Model = struct {
     pocket: ?MoeAdd = null,
 };
 
-pub const Gather = @import("cuda_batch_gather.zig").Gather;
+/// The rows' n-gram embeddings, gathered on a host thread while the GPU embeds and runs layer 0.
+pub const Gather = struct {
+    ngram: *const ple.Ngram,
+    history: []i64,
+    ids: []const u32,
+    emb: []u16,
+    xs: []f32,
+    failed: ?anyerror = null,
+    ns: i96 = 0,
+    io: std.Io,
+    /// A round's rows, each gathered after its own stream's history (empty: every row after `history`).
+    lanes: []const Lane = &.{},
+
+    pub fn main(g: *Gather) void {
+        const t0 = std.Io.Clock.awake.now(g.io).toNanoseconds();
+        defer g.ns = std.Io.Clock.awake.now(g.io).toNanoseconds() - t0;
+        if (g.lanes.len == 0) {
+            g.ngram.rows(g.history, g.ids, g.emb, g.xs) catch |err| {
+                g.failed = err;
+            };
+            return;
+        }
+        var row0: usize = 0;
+        for (g.lanes) |l| {
+            g.ngram.rows(l.seq.history[0..], g.ids[row0..][0..l.rows], g.emb[row0 * dims ..][0 .. l.rows * dims], g.xs[row0 * (dims / 32) ..][0 .. l.rows * (dims / 32)]) catch |err| {
+                g.failed = err;
+                return;
+            };
+            row0 += l.rows;
+        }
+    }
+};
 
 test {
     _ = @import("cuda_batch_state_test.zig");
