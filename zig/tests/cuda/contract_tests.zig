@@ -15,6 +15,7 @@ const half_k = @import("contract_lane_half.zig");
 const wide_k = @import("contract_projection_f32.zig");
 const rank_k = @import("contract_rank.zig");
 const writeback_k = @import("contract_flashnext_writeback.zig");
+const exl3_tp_k = @import("contract_flashnext_exl3_tp.zig");
 const hcnorm_k = @import("contract_hc_normalize.zig");
 const hcmix_k = @import("contract_hc_mix.zig");
 const utility_k = @import("contract_utility.zig");
@@ -253,6 +254,9 @@ pub fn run(gpu: check.Gpu) !void {
     }
     defer for (&writebacks) |*w| w.deinit();
     for (&writebacks) |*w| try kernels.append(a, w.kernel());
+    var tp_masks = try exl3_tp_k.Masks.init(gpu, s);
+    defer tp_masks.deinit();
+    try tp_masks.add(a, &kernels);
     var hcnorms: [2]hcnorm_k.Normalize = undefined;
     for (std.enums.values(hcnorm_k.Kind), &hcnorms) |kind, *x| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .kind = kind, .cols_fn = try hc.function("fn_hc_normalize_cols"), .old_fn = try hc.function("fn_hc_normalize") };
     defer for (&hcnorms) |*x| x.deinit();
