@@ -10,9 +10,6 @@ const Advanced = struct {
     ncclCommGetAsyncError: *const fn (nccl.Comm, *nccl.Result) callconv(.c) nccl.Result,
 };
 
-/// How long a wait polls before it sleeps between polls (a decode step's work ends within a few milliseconds).
-const spin_ns: u64 = 3 * std.time.ns_per_ms;
-
 pub const Collective = struct {
     lib: nccl.Library,
     api: Advanced,
@@ -36,10 +33,6 @@ pub const Collective = struct {
             try link.send(std.mem.asBytes(&id), until);
         } else try link.receive(std.mem.asBytes(&id), until);
         var config: nccl.Config = .{};
-        // TF_FLASHNEXT_NCCL_BLOCKING=1: a blocking communicator (NCCL enqueues on the calling thread; a nonblocking
-        if (std.c.getenv("TF_FLASHNEXT_NCCL_BLOCKING")) |v| if (std.mem.eql(u8, std.mem.span(v), "1")) {
-            config.blocking = 1;
-        };
         errdefer c.abort();
         try c.submitted(c.api.ncclCommInitRankConfig(&c.comm, 2, id, @intCast(rank), &config));
         try c.wait(null, until);
@@ -67,8 +60,6 @@ pub const Collective = struct {
 
     fn wait(c: *Collective, stream: ?cuda.Stream, until: u64) !void {
         errdefer c.abort();
-        var polls: u32 = 0;
-        var spin_until: u64 = 0;
         while (true) {
             try c.link.checkPeer();
             if (wire.now() >= until) return error.RankTimeout;
@@ -80,10 +71,7 @@ pub const Collective = struct {
                     if (try s.done()) return;
                 } else return;
             }
-            // a nonblocking enqueue lands within tens of microseconds: poll that long before sleeping.
-            polls += 1;
-            if (polls == 1) spin_until = wire.now() + spin_ns;
-            if (wire.now() < spin_until) std.atomic.spinLoopHint() else wire.pause();
+            wire.pause();
         }
     }
 
