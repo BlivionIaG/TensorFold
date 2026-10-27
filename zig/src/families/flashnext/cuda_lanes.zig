@@ -294,7 +294,7 @@ pub fn Namespace(comptime Tri: type) type {
                     dropLane(self, l);
                     self.lanes.removeByPtr(gop.key_ptr);
                 }
-                if (drafting) l.draft = if (from == .pool) try self.kv.pool.?.draft(&l.seq, cap) else try mtp.Draft.init(self.gpa, self.engine.driver, self.stream, cap, self.head.?.ids.len, @import("cuda_exl3_prefill.zig").draftRows(self.engine)); // EXL3 deep prefill
+                if (drafting) l.draft = if (from == .pool) try self.kv.pool.?.draft(&l.seq, cap) else try mtp.Draft.init(self.gpa, self.engine.driver, self.stream, cap, self.head.?.ids.len, self.engine.chunk);
                 if (s.images.len != 0) {
                     const v = self.vision orelse return error.VisionNotEnabled;
                     l.seq.media = try v.state(ids, s.images);
@@ -329,7 +329,7 @@ pub fn Namespace(comptime Tri: type) type {
                     s.keepInterruptedPrefill(@intCast(at));
                     return error.Cancelled;
                 }
-                var stop = @min(ids.len, at + @import("cuda_exl3_prefill.zig").stepRows(self.engine, if (l.draft) |*d| d.rows_cap else null)); // EXL3 deep prefill
+                var stop = @min(ids.len, at + self.engine.chunk);
                 for (s.reuse.marks) |m| if (m > at and m < stop) {
                     stop = m;
                     break;
