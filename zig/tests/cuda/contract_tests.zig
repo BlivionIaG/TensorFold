@@ -252,6 +252,9 @@ pub fn run(gpu: check.Gpu) !void {
     }
     defer for (&writebacks) |*w| w.deinit();
     for (&writebacks) |*w| try kernels.append(a, w.kernel());
+    var tp_masks = try @import("contract_flashnext_exl3_tp.zig").Masks.init(gpu, s);
+    defer tp_masks.deinit();
+    try tp_masks.add(a, &kernels);
     var hcnorms: [2]hcnorm_k.Normalize = undefined;
     for (std.enums.values(hcnorm_k.Kind), &hcnorms) |kind, *x| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .kind = kind, .cols_fn = try hc.function("fn_hc_normalize_cols"), .old_fn = try hc.function("fn_hc_normalize") };
     defer for (&hcnorms) |*x| x.deinit();
