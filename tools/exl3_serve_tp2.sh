@@ -9,6 +9,8 @@ model=$1 rank=$2 port=$3 master=$4
 shift 4
 bin=${TENSORFOLD_BIN:-./zig-out/native/bin/tensorfold-native}
 export TENSORFOLD_CHECKPOINT_SHA256=${TENSORFOLD_CHECKPOINT_SHA256:-$(cat "$model/model.safetensors.index.json" "$model/config.json" | sha256sum | cut -c1-64)}
+export TF_FLASHNEXT_EXL3_GRAPH=1 TF_FLASHNEXT_EXL3_GRAPH_PREFILL=1
+export TF_FLASHNEXT_EXL3_GRAPH_ASYNC=${TF_FLASHNEXT_EXL3_GRAPH_ASYNC:-0}
 if [ "${FAST:-1}" = 1 ]; then
   if [ "${PARALLEL:-2}" = 1 ]; then
     # one user: a 0.5 GiB device reserve (the supported minimum) and a 256 MB planner reserve let 95 lines fit
