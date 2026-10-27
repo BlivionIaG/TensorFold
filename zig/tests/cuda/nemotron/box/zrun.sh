@@ -1,5 +1,5 @@
 #!/bin/bash
-# One engine command on the GPU with journal lines; the caller holds the GPU lock.
+# One engine command on the GPU with journal lines (caller holds the lock): TF_JOURNAL=<file> zrun.sh RUN CMD ARGS...
 set -u
 RUN="${1:?run id}"
 shift
