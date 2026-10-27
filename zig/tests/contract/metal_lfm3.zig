@@ -75,7 +75,7 @@ pub const Probe = struct {
             &.{ .{ .rows = 8, .n = 7680, .k = 7680 }, .{ .rows = 17, .n = 7680, .k = 7680 } }
         else
             &.{ .{ .rows = 8, .n = 2048, .k = 2048 }, .{ .rows = 17, .n = 2048, .k = 2048 } };
-        return .{ .ctx = p, .vt = &vt, .spec = .{ .name = name(p.kind), .accum = if (reduction) .f32 else .none, .depth = if (math.attention(p.kind)) attentionDepth else depth, .ops = 64, .mids = intermediateRounds(p.kind), .out = .bf16, .in_place = p.kind == .post_add or p.kind == .add or p.kind == .gate, .served = shapes, .tiles = .{ .{ .size = 8 }, .{}, .{} }, .sums = .{ .f16 = 0, .bf16 = 0, .exact = false, .why = "nonlinear BF16 nodes and short convolution do not guarantee a 100x reduced-accumulator witness" } } };
+        return .{ .ctx = p, .vt = &vt, .spec = .{ .name = name(p.kind), .accum = if (reduction) .f32 else .none, .depth = if (math.attention(p.kind)) attentionDepth else depth, .ops = 64, .mids = intermediateRounds(p.kind), .out = .bf16, .in_place = p.kind == .post_add or p.kind == .add or p.kind == .gate, .served = shapes, .tiles = .{ .{ .size = 8 }, .{}, .{} }, .sums = if (p.kind == .conv or p.kind == .post_add) .{ .exact = false } else .{ .f16 = 0, .bf16 = 0, .exact = false, .why = "nonlinear BF16 nodes do not guarantee a 100x reduced-accumulator witness" } } };
     }
     fn values(a: std.mem.Allocator, count_: usize, seed: u64) ![]u16 {
         const out = try a.alloc(u16, count_);
@@ -121,6 +121,30 @@ pub const Probe = struct {
         if (fill == .stress) {
             for (d.x, 0..) |*v, i| v.* = c.toBf16(if (i % 4 < 2) 32 else -32);
             for (d.w, 0..) |*v, i| v.* = c.toBf16(if (i % 4 < 2) 2 else -2);
+            if (p.kind == .post_add) {
+                @memset(d.gain, c.toBf16(1));
+                var squares: f64 = 0;
+                for (0..2048) |i| {
+                    const value: f32 = @floatFromInt(1 + (i * 37 + 11) % 63);
+                    const x = if (i % 2 == 0) -value else value;
+                    squares += @as(f64, x) * x;
+                    for (0..rows) |r| d.x[r * 2048 + i] = c.toBf16(x);
+                }
+                const inverse = 1 / @sqrt(squares / 2048 + 1e-5);
+                for (d.x, d.z) |x, *z| z.* = c.toBf16(@floatCast(-math.bf(math.val(x) * inverse)));
+            }
+            if (p.kind == .conv) {
+                @memset(d.x, 0);
+                @memset(d.w, 0);
+                @memset(d.z, 0);
+                for (0..rows) |r| {
+                    for (0..2048) |ch| d.x[r * 6144 + 2048 + ch] = c.toBf16(1);
+                }
+                for (0..2048) |ch| {
+                    for ([_]f32{ 65536, 255, 254, 1 }, 0..) |bx_value, tap| d.z[tap * 2048 + ch] = c.toBf16(bx_value);
+                    for ([_]f32{ 1, -258, 1, 1 }, 0..) |weight, tap| d.w[ch * 7 + tap] = c.toBf16(weight);
+                }
+            }
         }
         p.data = d;
         for ([_][]const u16{ d.x, d.w, d.z, d.gain }, 0..) |v, i| p.args[i] = try p.rig.input(std.mem.sliceAsBytes(v));

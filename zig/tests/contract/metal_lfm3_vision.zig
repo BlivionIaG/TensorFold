@@ -73,7 +73,7 @@ pub const Probe = struct {
             else => &.{ .{ .rows = 8, .n = 1024, .k = 1024 }, .{ .rows = 17, .n = 1024, .k = 1024 } },
         };
         const reduction = dense(p.kind) or p.kind == .rms or p.kind == .layer_norm or p.kind == .conv or p.kind == .qk or p.kind == .attention;
-        return .{ .ctx = p, .vt = if (p.kind == .image_rows) &copy_vt else &vt, .spec = .{ .name = name(p.kind), .accum = if (reduction) .f32 else .none, .depth = if (p.kind == .attention) attentionDepth else depth, .ops = 64, .mids = if (p.kind == .rms or p.kind == .swiglu) 1 else if (p.kind == .conv or p.kind == .qk) 2 else 0, .out = .bf16, .in_place = inplace(p.kind), .served = shapes, .tiles = .{ .{ .size = 4, .step = if (p.kind == .conv or p.kind == .qk) 4 else 1, .min = if (p.kind == .conv or p.kind == .qk) 4 else 1 }, .{}, .{} }, .sums = if (dense(p.kind)) .{} else .{ .f16 = 0, .bf16 = 0, .exact = false, .why = "nonlinear BF16 image nodes do not guarantee a 100x accumulator witness" } } };
+        return .{ .ctx = p, .vt = if (p.kind == .image_rows) &copy_vt else &vt, .spec = .{ .name = name(p.kind), .accum = if (reduction) .f32 else .none, .depth = if (p.kind == .attention) attentionDepth else depth, .ops = 64, .mids = if (p.kind == .rms or p.kind == .swiglu) 1 else if (p.kind == .conv or p.kind == .qk) 2 else 0, .out = .bf16, .in_place = inplace(p.kind), .served = shapes, .tiles = .{ .{ .size = 4, .step = if (p.kind == .conv or p.kind == .qk) 4 else 1, .min = if (p.kind == .conv or p.kind == .qk) 4 else 1 }, .{}, .{} }, .sums = if (dense(p.kind)) .{} else if (p.kind == .conv or p.kind == .layer_norm) .{ .exact = false } else .{ .f16 = 0, .bf16 = 0, .exact = false, .why = "nonlinear BF16 image nodes do not guarantee a 100x accumulator witness" } } };
     }
     fn values(a: std.mem.Allocator, count_: usize, seed: u64) ![]u16 {
         const data = try a.alloc(u16, count_);
@@ -118,6 +118,36 @@ pub const Probe = struct {
                     d.w[col * s.k + i] = c.toBf16(if (i < s.k / 2) value else -value);
                 };
                 @memset(d.z, 0);
+            } else if (p.kind == .layer_norm) {
+                @memset(d.gain, c.toBf16(1));
+                var mean: f64 = 0;
+                for (0..1024) |i| {
+                    const value: f32 = @floatFromInt(1 + (i * 37 + 11) % 63);
+                    const x = if (i % 2 == 0) -value else value;
+                    mean += x;
+                    for (0..s.rows) |r| d.x[r * 1024 + i] = c.toBf16(x);
+                }
+                mean /= 1024;
+                var squares: f64 = 0;
+                for (d.x[0..1024]) |x| {
+                    const centered = @as(f64, c.fromBf16(x)) - mean;
+                    squares += centered * centered;
+                }
+                const inverse = 1 / @sqrt(squares / 1024 + 1e-6);
+                for (d.x[0..1024], d.z[0..1024]) |x, *z| z.* = c.toBf16(@floatCast(-(@as(f64, c.fromBf16(x)) - mean) * inverse));
+            } else if (p.kind == .conv) {
+                @memset(d.x, 0);
+                @memset(d.w, 0);
+                for (0..s.rows) |row| for (0..1024) |ch| {
+                    d.x[row * 3072 + 1024 + ch] = c.toBf16(1);
+                    d.x[row * 3072 + 2048 + ch] = c.toBf16(1);
+                };
+                for (0..1024) |ch| {
+                    for ([_]f32{ 65536, 255, 254, 1 }, [_]usize{ 4, 5, 7, 8 }, 0..) |bx_value, tap, row| {
+                        d.x[row * 3072 + ch] = c.toBf16(bx_value);
+                        d.w[ch * 9 + tap] = c.toBf16(if (row == 1) @as(f32, -258) else 1);
+                    }
+                }
             } else {
                 for (d.x, 0..) |*v, i| v.* = c.toBf16(if (i % 4 < 2) 32 else -32);
                 for (d.w, 0..) |*v, i| v.* = c.toBf16(if (i % 4 < 2) 2 else -2);
