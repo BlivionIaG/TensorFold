@@ -58,15 +58,16 @@ fn matrixBytes(k: usize, n: usize) u64 {
     return kn * 3050 / 8000 + @as(u64, k + n) * 2;
 }
 
-/// One routed expert as stored.
-pub fn expertBytes() u64 {
+/// One routed expert as this rank stores it.
+pub fn expertBytes(ranks: usize) u64 {
     const k = shape.hidden;
     const n = shape.expert_intermediate;
+    if (ranks == 2) return matrixBytes(k / 2, n) * 2 + matrixBytes(n, k / 2);
     return matrixBytes(k, n) * 2 + matrixBytes(n, k);
 }
 
-pub fn expertLines(room: u64) u64 {
-    return expertLinesOf(room, expertBytes());
+pub fn expertLines(room: u64, ranks: usize) u64 {
+    return expertLinesOf(room, expertBytes(ranks));
 }
 
 /// Budget stride for one owned expert until a header span is larger. Not a line count.
@@ -80,8 +81,15 @@ pub fn expertLinesOf(room: u64, line: u64) u64 {
 
 /// KV for every full-attention layer.
 pub fn contextKv(tokens: usize) u64 {
+    return contextKvRank(tokens, 1) catch unreachable;
+}
+
+/// This rank's KV. Heads split evenly.
+pub fn contextKvRank(tokens: usize, ranks: usize) error{Ranks}!u64 {
+    if (ranks == 0 or shape.kv_heads % ranks != 0) return error.Ranks;
     const layers: u64 = shape.layers / shape.full_attention_interval;
-    return layerBytes(tokens, shape.kv_heads, shape.head_dim) * layers;
+    const heads = shape.kv_heads / ranks;
+    return layerBytes(tokens, heads, shape.head_dim) * layers;
 }
 
 /// Routed experts and the n-gram table always live on the host.
@@ -150,7 +158,8 @@ test "device sum is resident plus kv, and a 16 GiB card refuses the overflow" {
         .ngram_bytes = 0,
     }));
 
-    try std.testing.expectEqual(@as(u64, 1_893_120), expertBytes());
+    try std.testing.expectEqual(@as(u64, 1_893_120), expertBytes(1));
+    try std.testing.expectEqual(@as(u64, 948_480), expertBytes(2));
     try std.testing.expectEqual(@as(u64, 1_901_213), full_expert_bytes);
     try std.testing.expectEqual(@as(u64, 0), expertLinesOf(1, 0));
     try std.testing.expectEqual(@as(u64, 1), expertLinesOf(full_expert_bytes, full_expert_bytes));
@@ -165,4 +174,18 @@ test "device sum is resident plus kv, and a 16 GiB card refuses the overflow" {
         .routed_expert_bytes = 0,
         .ngram_bytes = 0,
     }));
+}
+
+test "one kv head is half of both heads' bytes" {
+    try std.testing.expectEqual(@as(u64, 100_663_296), try contextKvRank(8192, 2));
+    // Both-heads divisor, 24,576 bytes per token.
+    const both: u64 = 24_576;
+    try std.testing.expectEqual(both, contextKv(1));
+    try std.testing.expectEqual(contextKv(8192), try contextKvRank(8192, 1));
+    try std.testing.expectEqual(2 * try contextKvRank(8192, 2), contextKv(8192));
+}
+
+test "a zero rank does not panic and is not a bf16 charge" {
+    try std.testing.expectError(error.Ranks, contextKvRank(8192, 0));
+    try std.testing.expectError(error.Ranks, contextKvRank(8192, 3));
 }

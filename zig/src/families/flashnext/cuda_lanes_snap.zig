@@ -8,7 +8,7 @@ const snap = @import("cuda_snap.zig");
 pub fn Copies(comptime of: anytype) type {
     return struct {
         pub fn bytes(ptr: *anyopaque, at: u32) u64 {
-            return snap.bytes(at, of(ptr).head != null);
+            return snap.bytesKv(at, of(ptr).head != null, @import("exl3/kv/cuda_exl3_kv.zig").of(of(ptr).engine).rowBytes());
         }
 
         /// The owner stream's state, its prompt pass standing at `at` (a drafting stream's with the head's rows).
@@ -17,10 +17,8 @@ pub fn Copies(comptime of: anytype) type {
             const s: *lanes.Stream = @ptrCast(@alignCast(owner orelse return error.NoStream));
             const l = try self.lane(s);
             if (l.seq.fed != at) return error.NotAtMark;
-            if (self.ranks) |r| {
-                if (l.draft != null) return error.TensorRankDraftSnapshotUnavailable;
-                return try r.save(&l.seq);
-            }
+            // ours: a drafting stream's state carries the head's rows on rank 0 (cuda_rank_engine.Session.save)
+            if (self.ranks) |r| return try r.save(&l.seq, if (l.draft) |*d| d else null);
             return try snap.save(self.gpa, self.engine.driver, self.stream, &l.seq, if (l.draft) |*d| d else null);
         }
 
@@ -31,10 +29,7 @@ pub fn Copies(comptime of: anytype) type {
                 std.log.warn("flashnext: a kept state was not restored: no lane ({t})", .{err});
                 return err;
             };
-            if (self.ranks) |r| {
-                if (l.draft != null) return error.NoHeadState;
-                return r.restore(&l.seq, @ptrCast(@alignCast(saved)));
-            }
+            if (self.ranks) |r| return r.restore(&l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved)));
             self.engine.round_graph.clear();
             snap.restore(self.stream, &l.seq, if (l.draft) |*d| d else null, @ptrCast(@alignCast(saved))) catch |err| {
                 std.log.warn("flashnext: a kept state was not restored ({t})", .{err});

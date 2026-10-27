@@ -244,6 +244,7 @@ pub const Engine = struct {
         if (e.batch_s) |*bs| bs.free(e.gpa);
         if (e.scores) |*b| b.free();
         e.batch_k.deinit();
+        @import("exl3/kv/cuda_exl3_kv.zig").forget(e);
         e.ngram.deinit();
         for (e.layers[0..e.n_layers]) |*l| l.free(e.gpa);
         e.head_q.free();
@@ -307,6 +308,10 @@ pub const Engine = struct {
         var paged = given;
         errdefer if (paged) |*p| p.deinit(e.gpa);
         e.round_graph.clear();
+        if (paged == null) {
+            if (cap == 0) return error.UnexpectedTensor;
+            if (@import("exl3/kv/cuda_exl3_kv.zig").of(e).placed()) return @import("cuda_prompt_lifecycle.zig").newPlacedSeq(e, cap);
+        }
         if (cap == 0 or cap > max_tokens) return error.UnexpectedTensor;
         _ = try seqBytesPaged(cap, if (paged) |p| p.tokens else 0);
         var seq: Seq = .{

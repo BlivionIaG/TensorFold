@@ -1,6 +1,10 @@
 const std = @import("std");
 const prompt = @import("cuda_prompt.zig");
 
+pub fn newPlacedSeq(engine: *prompt.Engine, cap: usize) !prompt.Seq {
+    return @import("exl3/kv/cuda_exl3_kv.zig").newSeq(engine, prompt.Seq, cap);
+}
+
 pub fn deinit(sequence: *prompt.Seq, allocator: std.mem.Allocator) void {
     if (sequence.stream) |stream| @import("cuda").completion.drain(stream.d, stream, "Flash Next sequence work did not drain before release");
     if (sequence.media) |*media| media.deinit();

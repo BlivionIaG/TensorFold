@@ -23,6 +23,19 @@ pub fn bytes(at: usize, head: bool) usize {
     return wt.linear_n * (conv_bytes + state_bytes) + (wt.attn_n + @intFromBool(head)) * attnBytes(at) + tail_bytes;
 }
 
+/// `bytes` for a sequence whose K/V rows are `kv_row` bytes a token (one KV head a rank: cuda_exl3_kv.zig).
+pub fn bytesKv(at: usize, head: bool, kv_row: usize) usize {
+    const layer = at * (2 * kv_row + index_row) + at / wt.index_ratio * index_row;
+    return wt.linear_n * (conv_bytes + state_bytes) + wt.attn_n * layer + @as(usize, @intFromBool(head)) * attnBytes(at) + tail_bytes;
+}
+
+/// A sequence's K/V row bytes a token, read from its buffers (cap rows each).
+fn seqRow(seq: *const prompt.Seq) usize {
+    // borrowed page views carry no length: their rows are upstream's (two KV heads)
+    const per = if (seq.paged != null or seq.cap == 0) 0 else seq.kc[0].len / seq.cap;
+    return if (per == 0) prompt.kv_row_bytes else per;
+}
+
 /// One kept state; `head`: it holds the MTP head's cache over the same rows, which a drafting stream needs.
 pub const Snap = struct {
     rank_id: u64 = 0,
@@ -40,9 +53,13 @@ const Piece = struct { bufs: []cuda.DeviceBuffer, n: usize };
 
 /// An attention cache's pieces for `at` rows: complete pooled blocks only (the rest pool again as later rows land).
 fn attnPieces(kc: []cuda.DeviceBuffer, vc: []cuda.DeviceBuffer, ikc: []cuda.DeviceBuffer, pooled: []cuda.DeviceBuffer, at: usize) [4]Piece {
+    return attnPiecesRow(kc, vc, ikc, pooled, at, prompt.kv_row_bytes);
+}
+
+fn attnPiecesRow(kc: []cuda.DeviceBuffer, vc: []cuda.DeviceBuffer, ikc: []cuda.DeviceBuffer, pooled: []cuda.DeviceBuffer, at: usize, kv_row: usize) [4]Piece {
     return .{
-        .{ .bufs = kc, .n = at * prompt.kv_row_bytes },
-        .{ .bufs = vc, .n = at * prompt.kv_row_bytes },
+        .{ .bufs = kc, .n = at * kv_row },
+        .{ .bufs = vc, .n = at * kv_row },
         .{ .bufs = ikc, .n = at * index_row },
         .{ .bufs = pooled, .n = at / wt.index_ratio * index_row },
     };
@@ -55,7 +72,8 @@ fn move(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, base: u64, at: usize,
     var pieces: [11]Piece = undefined;
     pieces[0] = .{ .bufs = seq.conv, .n = conv_bytes };
     pieces[1] = .{ .bufs = seq.state, .n = state_bytes };
-    pieces[2..6].* = attnPieces(seq.kc, seq.vc, seq.ikc, seq.pooled, at);
+    const kv_row = seqRow(seq);
+    pieces[2..6].* = attnPiecesRow(seq.kc, seq.vc, seq.ikc, seq.pooled, at, kv_row);
     pieces[6] = .{ .bufs = (&seq.tail)[0..1], .n = tail_bytes };
     var count: usize = 7;
     if (d) |h| {
@@ -88,7 +106,7 @@ fn move(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, base: u64, at: usize,
         try dr.check(dr.api.cuMemcpyDtoDAsync_v2(dst, src, p.n, stream.handle), "cuMemcpyDtoDAsync");
         off += p.n;
     };
-    std.debug.assert(off == bytes(at, d != null));
+    std.debug.assert(off == bytesKv(at, d != null, kv_row));
 }
 
 fn discard(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
@@ -105,7 +123,7 @@ pub fn save(gpa: std.mem.Allocator, driver: *const cuda.Driver, stream: cuda.Str
     const at = seq.fed;
     if (at > seq.cap) return error.SequenceTooShort;
     if (d) |h| if (h.len != at or h.drafted != 0 or h.open or at > h.cap) return error.NotAtMark;
-    const n = bytes(at, d != null);
+    const n = bytesKv(at, d != null, seqRow(seq));
     const snap = try allocate(gpa, driver, n, at, seq.history, d != null);
     errdefer discard(gpa, stream, snap);
     try move(stream, seq, d, snap.buf.ptr, at, .save);
@@ -145,6 +163,12 @@ pub fn restore(stream: cuda.Stream, seq: *prompt.Seq, d: ?*Draft, snap: *const S
 
 pub fn drop(gpa: std.mem.Allocator, stream: cuda.Stream, snap: *Snap) void {
     discard(gpa, stream, snap);
+}
+
+test "a placed state's bytes: one KV head a token, upstream's rows otherwise" {
+    try std.testing.expectEqual(bytes(7, true), bytesKv(7, true, prompt.kv_row_bytes));
+    const half = prompt.kv_row_bytes / 2;
+    try std.testing.expectEqual(@as(usize, 12 * (2 * 256 * 2 + 128 * 2)), bytesKv(1, false, half) - bytesKv(0, false, half));
 }
 
 test "a state's bytes: about 110 MiB of DeltaNet states and the n-gram tail, then 27 KiB a token" {
