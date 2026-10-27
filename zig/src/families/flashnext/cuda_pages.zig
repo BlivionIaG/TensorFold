@@ -110,6 +110,10 @@ pub const Paged = struct {
     /// The stream's table on the device, an int a page (`ids` uploaded).
     table: cuda.DeviceBuffer,
     ids: []u32,
+    /// The frame of each page's K/V rows when a host tier maps them (empty: the page id is the frame).
+    fids: []const u32 = &.{},
+    /// The index plane's table on the device, an int a page naming the logical page (0: the K/V table's).
+    itable: u64 = 0,
     /// Positions a page holds.
     tokens: usize,
     /// The paged state owns `ids` (the page test's); a pool's lane maps its lease's.
@@ -121,7 +125,7 @@ pub const Paged = struct {
     stream: ?cuda.Stream = null,
 
     pub fn pg(p: *const Paged) Pg {
-        return .{ .pt = p.table.ptr, .ps = @intCast(kvPageBytes(p.tokens, p.layers) / 2), .ptok = @intCast(p.tokens), .ips = @intCast(indexPageBytes(p.tokens, p.layers) / 2) };
+        return .{ .pt = p.table.ptr, .ps = @intCast(kvPageBytes(p.tokens, p.layers) / 2), .ptok = @intCast(p.tokens), .ips = @intCast(indexPageBytes(p.tokens, p.layers) / 2), .ipt = p.itable };
     }
 
     /// `part` of attention layer `layer` in page 0: the cache pointer a kernel takes beside pg().
@@ -132,7 +136,8 @@ pub const Paged = struct {
     /// Byte address of row `row` of `part` of `layer` (a position, or a block for pooled).
     pub fn rowAt(p: *const Paged, layer: usize, part: Part, row: usize) u64 {
         const per = rows(part, p.tokens);
-        const plane = if (inIndexPlane(part)) p.ibase + @as(u64, p.ids[row / per]) * indexPageBytes(p.tokens, p.layers) else p.base + @as(u64, p.ids[row / per]) * kvPageBytes(p.tokens, p.layers);
+        const kv_id = if (p.fids.len > 0) p.fids[row / per] else p.ids[row / per];
+        const plane = if (inIndexPlane(part)) p.ibase + @as(u64, p.ids[row / per]) * indexPageBytes(p.tokens, p.layers) else p.base + @as(u64, kv_id) * kvPageBytes(p.tokens, p.layers);
         return plane + offset(p.tokens, layer, part) + (row % per) * rowBytes(part);
     }
 
