@@ -36,7 +36,7 @@ __device__ __forceinline__ void scores_body(const __nv_bfloat16* __restrict__ IQ
     __syncthreads();
     if (b >= cmax) return;
     Stack st[R][HI];
-    const __nv_bfloat16* kb = POOLED + (PAGED ? page_row(pg, b, pg.ptok / RATIO, DI) : static_cast<long long>(b) * DI);
+    const __nv_bfloat16* kb = POOLED + (PAGED ? index_page_row(pg, b, pg.ptok / RATIO, DI) : static_cast<long long>(b) * DI);
 #pragma unroll
     for (int half = 0; half < 2; ++half) {
         float k[16][4];                                   // the 16 lanes l (bit 0 == half) a half's leaves read
