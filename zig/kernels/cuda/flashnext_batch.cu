@@ -205,6 +205,150 @@ extern "C" __global__ void __launch_bounds__(128) fn_gdn_norm(
     if (lane == 0) xs[(size_t)r * (NV * DV / 32) + hv * (DV / 32) + warp] = gs;
 }
 
+// ---- DeltaNet head split (opt-in): copies of the kernels above over the heads a rank owns, which stay unchanged ----
+extern "C" __global__ void __launch_bounds__(256) fn_gdn_front_h(
+        const __nv_bfloat16* __restrict__ P, const __nv_bfloat16* __restrict__ cs, const __nv_bfloat16* __restrict__ cw,
+        const float* __restrict__ a_log, const float* __restrict__ dt_bias, float* __restrict__ qn,
+        float* __restrict__ kn, float* __restrict__ v, float* __restrict__ gb, int nkl, int hk0, int hv0) {
+    using namespace fn_gdn;
+    const int r = blockIdx.x, u = blockIdx.y, t = threadIdx.x, warp = t >> 5, lane = t & 31;
+    if (u < nkl) {
+        __shared__ float x[2][DK];
+        const int hk = hk0 + u;
+        x[t / DK][t % DK] = conv_act(P, cs, cw, r, t < DK ? hk * DK + t : NK * DK + hk * DK + (t - DK));
+        __syncthreads();
+        if (warp < 2) {
+            float v4[4], ss = 0.0f;
+#pragma unroll
+            for (int i = 0; i < 4; ++i) {
+                v4[i] = x[warp][lane * 4 + i];
+                ss = ss + v4[i] * v4[i];
+            }
+            ss = warp_sum(ss);
+            float inv = 1.0f / sqrtf(ss + 1e-6f);
+            if (warp == 0) inv = inv * (1.0f / sqrtf((float)DK));
+            float* dst = (warp == 0 ? qn : kn) + ((size_t)r * NK + hk) * DK;
+#pragma unroll
+            for (int i = 0; i < 4; ++i) dst[lane * 4 + i] = v4[i] * inv;
+        }
+    } else {
+        const int hv = hv0 + u - nkl;
+        if (t < DV) v[(size_t)r * NV * DV + hv * DV + t] = conv_act(P, cs, cw, r, 2 * NK * DK + hv * DV + t);
+        else if (t == DV) {
+            const float b = __bfloat162float(P[(size_t)r * PW + C + NV * DV + hv]);
+            const float a = __bfloat162float(P[(size_t)r * PW + C + NV * DV + NV + hv]);
+            gb[((size_t)r * NV + hv) * 2] = expf(-expf(a_log[hv]) * softplusf_(a + dt_bias[hv]));
+            gb[((size_t)r * NV + hv) * 2 + 1] = bf(sigmoidf_(b));
+        }
+    }
+}
+
+static __device__ __forceinline__ void gdn_rows_h(
+        const float* __restrict__ qn, const float* __restrict__ kn, const float* __restrict__ v,
+        const float* __restrict__ gb, const float* state_in, float* state_out, int rows, float* __restrict__ ys_out, int hv0) {
+    using namespace fn_gdn;
+    const int hv = hv0 + blockIdx.x, hk = hv / (NV / NK), warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    const int row0 = blockIdx.y * 16 + warp * 4;
+    const size_t sbase = (size_t)hv * DV * DK;
+    float s[4][4];
+#pragma unroll
+    for (int j = 0; j < 4; ++j)
+#pragma unroll
+        for (int i = 0; i < 4; ++i) s[j][i] = state_in[sbase + (size_t)(row0 + j) * DK + lane * 4 + i];
+    float kk[4], qq[4], vv[4], g = 0.0f, beta = 0.0f;
+    auto load = [&](int r, float (&k_)[4], float (&q_)[4], float (&v_)[4], float& g_, float& b_) {
+        const float4 k4 = *reinterpret_cast<const float4*>(kn + ((size_t)r * NK + hk) * DK + lane * 4);
+        const float4 q4 = *reinterpret_cast<const float4*>(qn + ((size_t)r * NK + hk) * DK + lane * 4);
+        const float4 v4 = *reinterpret_cast<const float4*>(v + (size_t)r * NV * DV + hv * DV + row0);
+        k_[0] = k4.x; k_[1] = k4.y; k_[2] = k4.z; k_[3] = k4.w;
+        q_[0] = q4.x; q_[1] = q4.y; q_[2] = q4.z; q_[3] = q4.w;
+        v_[0] = v4.x; v_[1] = v4.y; v_[2] = v4.z; v_[3] = v4.w;
+        g_ = gb[((size_t)r * NV + hv) * 2];
+        b_ = gb[((size_t)r * NV + hv) * 2 + 1];
+    };
+    if (rows > 0) load(0, kk, qq, vv, g, beta);
+    for (int r = 0; r < rows; ++r) {
+        float nk[4], nq[4], nv[4], ng = 0.0f, nb = 0.0f;
+        if (r + 1 < rows) load(r + 1, nk, nq, nv, ng, nb);
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            float kv = 0.0f;
+#pragma unroll
+            for (int i = 0; i < 4; ++i) {
+                s[j][i] = s[j][i] * g;
+                kv = kv + s[j][i] * kk[i];
+            }
+            kv = warp_sum(kv);
+            const float delta = (vv[j] - kv) * beta;
+#pragma unroll
+            for (int i = 0; i < 4; ++i) s[j][i] = s[j][i] + kk[i] * delta;
+        }
+        float o4[4];
+#pragma unroll
+        for (int j = 0; j < 4; ++j) {
+            float o = 0.0f;
+#pragma unroll
+            for (int i = 0; i < 4; ++i) o = o + s[j][i] * qq[i];
+            o4[j] = bf(warp_sum(o));
+        }
+        if (lane == 0) *reinterpret_cast<float4*>(ys_out + ((size_t)r * NV + hv) * DV + row0) = make_float4(o4[0], o4[1], o4[2], o4[3]);
+        if (r + 1 < rows) {
+#pragma unroll
+            for (int i = 0; i < 4; ++i) {
+                kk[i] = nk[i];
+                qq[i] = nq[i];
+                vv[i] = nv[i];
+            }
+            g = ng;
+            beta = nb;
+        }
+    }
+#pragma unroll
+    for (int j = 0; j < 4; ++j)
+#pragma unroll
+        for (int i = 0; i < 4; ++i) state_out[sbase + (size_t)(row0 + j) * DK + lane * 4 + i] = s[j][i];
+}
+
+extern "C" __global__ void __launch_bounds__(128) fn_gdn_rows_h(
+        const float* __restrict__ qn, const float* __restrict__ kn, const float* __restrict__ v,
+        const float* __restrict__ gb, float* state, int rows, float* __restrict__ ys_out, int hv0) {
+    gdn_rows_h(qn, kn, v, gb, state, state, rows, ys_out, hv0);
+}
+
+extern "C" __global__ void __launch_bounds__(128) fn_gdn_rows_to_h(
+        const float* __restrict__ qn, const float* __restrict__ kn, const float* __restrict__ v,
+        const float* __restrict__ gb, const float* state_in, float* state_out, int rows, float* __restrict__ ys_out, int hv0) {
+    gdn_rows_h(qn, kn, v, gb, state_in, state_out, rows, ys_out, hv0);
+}
+
+extern "C" __global__ void __launch_bounds__(128) fn_gdn_norm_h(
+        const float* __restrict__ ys_in, const __nv_bfloat16* __restrict__ P, const __nv_bfloat16* __restrict__ norm_w,
+        float eps, __nv_bfloat16* __restrict__ out, float* __restrict__ xs, int hv0, int nvl) {
+    using namespace fn_gdn;
+    const int r = blockIdx.x, hv = hv0 + blockIdx.y, t = threadIdx.x, warp = t >> 5, lane = t & 31;
+    __shared__ float ys[DV];
+    __shared__ float rinv;
+    ys[t] = ys_in[((size_t)r * NV + hv) * DV + t];
+    __syncthreads();
+    if (warp == 0) {
+        float ss = 0.0f;
+#pragma unroll
+        for (int i = 0; i < 4; ++i) {
+            const float y = ys[lane * 4 + i];
+            ss = ss + y * y;
+        }
+        ss = warp_sum(ss);
+        if (lane == 0) rinv = 1.0f / sqrtf(ss / (float)DV + eps);
+    }
+    __syncthreads();
+    const float yn = bf(bf(ys[t] * rinv) * __bfloat162float(norm_w[t]));
+    const float z = __bfloat162float(P[(size_t)r * PW + C + hv * DV + t]);
+    const float o = bf(yn * sigmoidf_(z));
+    out[(size_t)r * nvl * DV + (hv - hv0) * DV + t] = __float2bfloat16_rn(o);
+    const float gs = warp_sum(o);
+    if (lane == 0) xs[(size_t)r * (nvl * DV / 32) + (hv - hv0) * (DV / 32) + warp] = gs;
+}
+
 // ---- sparse attention (QSA): each row's blocks ----------------------------------------------------------------------
 
 // attention._select's order-preserving key of a block score: negative floats flipped, positive ones topped.
