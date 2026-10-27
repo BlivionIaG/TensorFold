@@ -475,6 +475,8 @@ pub const SeqState = struct {
     scores: u64,
     /// The attention caches' pages (pt 0: kc, vc, ikc and pooled are contiguous rows).
     pg: @import("cuda_glue.zig").Pg = .{},
+    /// A host tier's selection of blocks in slots (null: all in frames).
+    sel: ?*@import("exl3/kv/cuda_exl3_kvtier.zig").LaneSel = null,
 };
 
 /// The block scores' row stride for a cache of `cap` tokens: its blocks rounded up to 16 (the captured _scores').
