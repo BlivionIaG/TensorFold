@@ -1,4 +1,4 @@
-//! Flash Next EXL3 launches (pick mask, prefill tiles in decode's bytes, host-tier K/V); nvcc 13.4 measured, older pending.
+//! Flash Next EXL3 launches (pick mask, prefill tiles, host-tier K/V); nvcc 13.4 measured, older pending.
 const std = @import("std");
 const limits = @import("limits.zig");
 const registry = @import("registry.zig");
