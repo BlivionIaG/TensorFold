@@ -192,9 +192,73 @@ void tf_binned_projection(const device bfloat* X [[buffer(0)]], const device uin
   }
 }
 
+template <int BITS, int GS>
+[[kernel, max_total_threads_per_threadgroup(64)]]
+void tf_binned_twin(const device bfloat* X [[buffer(0)]], const device uint* W [[buffer(1)]],
+                     const device bfloat* S [[buffer(2)]], const device bfloat* B [[buffer(3)]],
+                     constant TfBpArgs& a [[buffer(4)]], device bfloat* Y [[buffer(5)]],
+                     const device float2* sums [[buffer(6)]], const device int2* meta [[buffer(7)]],
+                     uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]],
+                     uint2 tile [[threadgroup_position_in_grid]]) {
+  constexpr int RPS = 4, MB = 2, STEP = GS / 32, BW = GS == 64 ? 7 : 8, PARTS = (BITS + 3) / 4;
+  const int col = (int(tile.x) * 2 + int(sg)) * RPS, first = int(tile.y) * MB, G = a.k / GS;
+  if (col >= a.n || first >= a.rows) return;
+  float2 acc[MB][RPS];
+  bool special[MB];
+  for (int b = 0; b < MB; ++b) {
+    special[b] = false;
+    for (int j = 0; j < RPS; ++j) acc[b][j] = float2(0);
+  }
+  for (int g = 0; g < G; ++g) {
+    float x[MB][STEP];
+    int2 m[MB];
+    for (int b = 0; b < MB; ++b) {
+      if (first + b >= a.rows) continue;
+      const int row = tf_bp_row(min(first + b, a.rows - 1), a.rows);
+      m[b] = meta[size_t(min(first + b, a.rows - 1)) * G + g];
+      special[b] |= m[b].x == 255;
+      for (int i = 0; i < STEP; ++i) x[b][i] = float(X[size_t(row) * a.k + g * GS + int(lane) * STEP + i]);
+    }
+    for (int j = 0; j < RPS; ++j) {
+      uint q[STEP];
+      for (int i = 0; i < STEP; ++i) {
+        const int bit = (g * GS + int(lane) * STEP + i) * BITS, shift = bit % 32;
+        uint code = W[size_t(col + j) * (a.k * BITS / 32) + bit / 32] >> shift;
+        if (shift + BITS > 32) code |= W[size_t(col + j) * (a.k * BITS / 32) + bit / 32 + 1] << (32 - shift);
+        q[i] = code & ((1u << BITS) - 1u);
+      }
+      const float scale = float(S[size_t(col + j) * G + g]), bias = float(B[size_t(col + j) * G + g]);
+      for (int b = 0; b < MB; ++b) {
+        if (first + b >= a.rows) continue;
+        float2 group = float2(0);
+        for (int part = 0; part < PARTS; ++part) for (int bin = 0; bin < m[b].y; ++bin) {
+          float dot = 0;
+          for (int i = 0; i < STEP; ++i) {
+            const int exponent = int((as_type<uint>(x[b][i]) >> 23) & 255u);
+            const float value = (m[b].x - exponent) / BW == bin ? x[b][i] : 0.0f;
+            dot += float((q[i] >> (4 * part)) & 15u) * value;
+          }
+          group = tf_bp_add(group, simd_sum(dot) * (part == 0 ? 1.0f : 16.0f));
+        }
+        const float2 xs = sums[size_t(min(first + b, a.rows - 1)) * G + g];
+        acc[b][j] = tf_bp_pair(acc[b][j], tf_bp_pair(tf_bp_mul(group, scale), tf_bp_mul(xs, bias)));
+#ifdef TF_BP_BAD_ACC
+        acc[b][j] = float2(float(tf_bp_round(acc[b][j])), 0);
+#endif
+      }
+    }
+  }
+  if (lane == 0) for (int b = 0; b < MB; ++b) if (first + b < a.rows) {
+    for (int j = 0; j < RPS; ++j) Y[size_t(first + b) * a.n + col + j] = special[b]
+        ? bfloat(tf_bp_nonfinite<BITS>(X, W, S, B, first + b, col + j, a.k, GS)) : tf_bp_round(acc[b][j]);
+  }
+}
+
 #define TF_BP_ENTRY(B, G) \
 template [[host_name("tf_binned_q" #B "_g" #G)]] [[kernel]] \
-decltype(tf_binned_projection<B, G>) tf_binned_projection<B, G>;
+decltype(tf_binned_projection<B, G>) tf_binned_projection<B, G>; \
+template [[host_name("tf_binned_twin_q" #B "_g" #G)]] [[kernel]] \
+decltype(tf_binned_twin<B, G>) tf_binned_twin<B, G>;
 TF_BP_ENTRY(4, 32)
 TF_BP_ENTRY(4, 64)
 TF_BP_ENTRY(6, 32)
