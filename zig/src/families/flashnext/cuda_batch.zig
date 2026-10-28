@@ -367,7 +367,7 @@ pub fn Pass(comptime Tri: type) type {
             const ikc = self.seq.ikc[ai].ptr;
             const pooled = self.seq.pooled[ai].ptr;
             const pg = self.seq.pg;
-            if (self.seq.sel) |t| if (ai == 0) try t.begin(self.stream, self.pos0, n);
+            if (self.seq.sel) |t| try t.begin(self.stream, ai, self.pos0, n);
             if (self.seq.media) |m| try m.attn(self.stream, pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kc, vc, at.iq, ikc, eps, n, pg) else try self.tri.attnPrep(pa, at.pos, lw.q_scale.ptr, lw.k_scale.ptr, lw.i_scale.ptr, s.inv, at.q, kc, vc, at.iq, ikc, s.dummy, s.dummy, eps, n, 0, pg);
             // attention.qsa_pool for the blocks these rows complete, then each block of rows' scores and attention
             if (self.seq.media) |m| try m.pooled(self.stream, ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, eps, n, pg) else try self.tri.qsaPool(ikc, pooled, at.pos, lw.ik_scale.ptr, s.inv, eps, n, pg);
