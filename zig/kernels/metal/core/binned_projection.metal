@@ -21,8 +21,8 @@ inline float2 tf_bp_mul(float2 a, float b) {
   const float2 product = tf_bp_normal(float2(p, fma(a.y, b, fma(a.x, b, -p))));
 #ifndef TF_BP_BAD_NONFINITE
   if (!isfinite(product.x) || !isfinite(product.y)) {
-    // Cancellation can leave the entire sum in the low component. Only the
-    // nonfinite/overflow path changes the finite multiplication's ordering.
+    // Normalize only nonfinite/overflow inputs; cancellation can leave the whole sum in the low component.
+
     const float2 input = tf_bp_normal(a);
     const float high = input.x * b;
     if (!isfinite(high)) return float2(high, 0);

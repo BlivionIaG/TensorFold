@@ -76,8 +76,8 @@ pub const Probe = struct {
         if (fill == .nonfinite and shape.rows >= 5 and shape.n >= 6) {
             const f = p.inner.f.?;
             const groups = shape.k / p.inner.v.group;
-            // Keep one positive finite input row so nonfinite scales and biases
-            // must retain their signs instead of acquiring a NaN FMA residual.
+            // A finite row with positive sum tests infinity signs without a spurious FMA residual.
+
             @memset(f.x[(shape.rows - 1) * shape.k ..][0..shape.k], c.toBf16(1));
             const values = [_]f32{ std.math.inf(f32), -std.math.inf(f32), std.math.nan(f32) };
             for (values, 0..) |value, i| {
@@ -85,8 +85,8 @@ pub const Probe = struct {
                 f.scales[(i + 3) * groups] = c.toBf16(value);
             }
             if (p.inner.v.bits >= 6) {
-                // The nibble/bin order leaves q*x as (high=0, low=2), so an
-                // infinite scale must multiply the represented sum, not 0.
+                // Nibble/bin accumulation leaves (0, 2); infinite scale must multiply that low-component sum.
+
                 const input = f.x[(shape.rows - 1) * shape.k ..][0..p.inner.v.group];
                 @memset(input, c.toBf16(0));
                 input[0] = c.toBf16(0x1p26);
