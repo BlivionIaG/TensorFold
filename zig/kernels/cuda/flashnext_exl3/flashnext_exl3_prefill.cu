@@ -335,24 +335,26 @@ extern "C" __global__ void __launch_bounds__(256, 2) tf_exl3pf_down(const half* 
     }
 }
 
-// Expert parallel (cuda_exl3_tp.zig): a rank's deep chunk computed only its own pairs (picks in [LO, HI)); row r's
+// The canonical expert reduction: picks in [lo, hi) as two fmaf chains from +0 (below split, the rest), then fadd.
 extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_tp_combine(const float* __restrict__ y, const float* __restrict__ wts,
-        const int* __restrict__ pick, float* __restrict__ sum, int slots, int D, int lo, int hi) {
+        const int* __restrict__ pick, float* __restrict__ sum, int slots, int D, int lo, int hi, int split) {
     __shared__ float w_sh[32];
     __shared__ int own_sh[32];
     const int r = blockIdx.x;
     if ((int)threadIdx.x < slots) {
         const int p = pick[r * slots + threadIdx.x];
-        own_sh[threadIdx.x] = p >= lo && p < hi;
+        own_sh[threadIdx.x] = p >= lo && p < hi ? (p < split ? 1 : 2) : 0;
         w_sh[threadIdx.x] = wts[r * slots + threadIdx.x];
     }
     __syncthreads();
     const float* yr = y + (size_t)r * slots * D;
     for (int d = threadIdx.x; d < D; d += blockDim.x) {
-        float acc = 0.0f;
-        for (int k = 0; k < slots; ++k)
-            if (own_sh[k]) acc = fmaf(yr[(size_t)k * D + d], w_sh[k], acc);
-        sum[(size_t)r * D + d] = acc;
+        float g0 = 0.0f, g1 = 0.0f;
+        for (int k = 0; k < slots; ++k) {
+            if (own_sh[k] == 1) g0 = fmaf(yr[(size_t)k * D + d], w_sh[k], g0);
+            else if (own_sh[k] == 2) g1 = fmaf(yr[(size_t)k * D + d], w_sh[k], g1);
+        }
+        sum[(size_t)r * D + d] = __fadd_rn(g0, g1);
     }
 }
 
@@ -366,24 +368,3 @@ extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_tp_place(const float
     if ((int)threadIdx.x < slots) wts[r * slots + threadIdx.x] = threadIdx.x == 0 ? 1.0f : 0.0f;
 }
 
-// Expert parallel exchange: fp32 rows of D by a pair list; mode 0 packs (value + 0.0f, stored back), mode 1 scatters.
-extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_xs_move(float* __restrict__ y, float* __restrict__ buf,
-        const int* __restrict__ idx, int count, int D, int mode) {
-    for (int t = blockIdx.x; t < count; t += gridDim.x) {
-        float4* row = reinterpret_cast<float4*>(y + (size_t)idx[t] * D);
-        float4* b = reinterpret_cast<float4*>(buf + (size_t)t * D);
-        for (int d = threadIdx.x; d < D / 4; d += blockDim.x) {
-            if (mode == 0) {
-                float4 v = row[d];
-                v.x = __fadd_rn(v.x, 0.0f);
-                v.y = __fadd_rn(v.y, 0.0f);
-                v.z = __fadd_rn(v.z, 0.0f);
-                v.w = __fadd_rn(v.w, 0.0f);
-                b[d] = v;
-                row[d] = v;
-            } else {
-                row[d] = b[d];
-            }
-        }
-    }
-}

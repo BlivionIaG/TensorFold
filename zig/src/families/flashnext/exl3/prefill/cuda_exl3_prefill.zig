@@ -57,8 +57,6 @@ pub fn release() void {
         dp.aux.deinit();
         dp.host.free();
         dp.dev.free();
-        if (dp.xs.own_row.len != 0) dp.gpa.free(dp.xs.own_row);
-        if (dp.xs.peer_row.len != 0) dp.gpa.free(dp.xs.peer_row);
         dp.gpa.destroy(dp);
         state.deep = null;
     }

@@ -67,11 +67,9 @@ pub fn ringMoe(comptime Tri: type, dp: *Deep, r: *ring_.Ring, p: *batch.Pass(Tri
     const pairs = n * slots;
     const hl = dp.hl;
     const t0 = now(p.io);
-    try experts.clearSlots(dp, p, x, n, o);
     const host_picks: []i32 = @alignCast(std.mem.bytesAsSlice(i32, dp.hbytes(hl.picks, pairs * 4)));
     try st.d.check(st.d.api.cuMemcpyDtoHAsync_v2(host_picks.ptr, dp.dptr(dp.lay.picks), pairs * 4, st.handle), "cuMemcpyDtoHAsync");
     try st.synchronize();
-    try @import("cuda_exl3_prefill_xchg.zig").prepare(dp, st, host_picks, x.tp, n);
     maskOwned(host_picks, x.tp);
     const t1 = now(p.io);
     @memset(&dp.cnt, 0);
