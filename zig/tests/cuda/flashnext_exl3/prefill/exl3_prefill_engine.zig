@@ -339,11 +339,13 @@ pub fn equalRun(gpu: Gpu, dir: []const u8, rest: []const [:0]const u8) !void {
     defer a.free(got);
     var want_tokens: [24]u32 = undefined;
     var got_tokens: [24]u32 = undefined;
-    rows_override = null;
-    _ = try prefillOnce(g, ids, false, want);
+    // TF_EQUAL_FIRST_SIZE=1: the first chunk size is the reference (the batched pass is not the canonical reduction's)
+    const first = std.c.getenv("TF_EQUAL_FIRST_SIZE") != null;
+    rows_override = if (first) sizes[0] else null;
+    _ = try prefillOnce(g, ids, first, want);
     try greedy(g, &want_tokens);
     var all_equal = true;
-    for (sizes[0..n_sizes]) |rows| {
+    for (sizes[if (first) 1 else 0..n_sizes]) |rows| {
         rows_override = rows;
         _ = try prefillOnce(g, ids, true, got);
         try greedy(g, &got_tokens);
