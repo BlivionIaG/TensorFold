@@ -145,7 +145,7 @@ pub fn kernelRun(gpu: Gpu, slot_frames: usize) !void {
     var keys_checked: usize = 0;
     const calls: usize = 60;
     for (0..calls) |c| {
-        const m: usize = @min(per_plan, if (c % 10 == 9) 64 else 1);
+        const m: usize = @min(per_plan, @as(usize, if (c % 10 == 9) 64 else 1));
         var need = std.AutoHashMap(u32, void).init(a);
         defer need.deinit();
         for (0..m) |r| {
