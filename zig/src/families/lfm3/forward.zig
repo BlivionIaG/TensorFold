@@ -370,6 +370,7 @@ fn sharedAttention(enc: *Encoder, s: *st.Scratch, segments: []const Segment, lay
     enc.e.setBuffer(s.queries, 0, 0);
     enc.e.setBuffer(s.attention_segments, layer * st.batch_rows * @sizeOf(AttentionSegment), 1);
     enc.e.setBuffer(s.attention_rows, 0, 2);
+    enc.e.setBuffer(s.attention_risk, 0, 3);
     enc.e.setBuffer(s.pm, 0, 4);
     enc.e.setBuffer(s.pl, 0, 5);
     enc.e.setBuffer(s.po, 0, 6);
@@ -377,12 +378,19 @@ fn sharedAttention(enc: *Encoder, s: *st.Scratch, segments: []const Segment, lay
     try enc.end();
     try enc.begin(.attention);
     enc.pipe("lfm3_attn_segments_merge");
+    for (segments) |seg| {
+        const cache = seg.cache.blocks[layer].attention;
+        enc.e.useResource(cache.keys, mtl.ResourceUsage.read);
+        enc.e.useResource(cache.values, mtl.ResourceUsage.read);
+    }
     enc.e.setBuffer(s.pm, 0, 0);
     enc.e.setBuffer(s.pl, 0, 1);
     enc.e.setBuffer(s.po, 0, 2);
     enc.e.setBuffer(s.attention_segments, layer * st.batch_rows * @sizeOf(AttentionSegment), 3);
     enc.e.setBuffer(s.y, 0, 4);
     enc.e.setBuffer(s.attention_rows, 0, 5);
+    enc.e.setBuffer(s.queries, 0, 6);
+    enc.e.setBuffer(s.attention_risk, 0, 7);
     enc.groups(.{ c.query_heads, total, 1 }, .{ 32, 1, 1 });
     try enc.end();
 }
@@ -441,6 +449,7 @@ fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const 
             enc.e.setBuffer(s.pm, 0, 4);
             enc.e.setBuffer(s.pl, 0, 5);
             enc.e.setBuffer(s.po, 0, 6);
+            enc.e.setBuffer(s.attention_risk, 0, 7);
             enc.groups(.{ c.query_heads, rows, last_chunk - chunk_base }, .{ 128, 1, 1 });
             try enc.end();
             try enc.begin(.attention);
@@ -450,6 +459,10 @@ fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const 
             enc.e.setBuffer(s.po, 0, 2);
             enc.e.setBytes(std.mem.asBytes(&args), 3);
             enc.e.setBuffer(s.y, (base + at) * c.hidden * 2, 4);
+            enc.e.setBuffer(s.queries, (base + at) * c.hidden * 2, 5);
+            enc.e.setBuffer(cache.keys, 0, 6);
+            enc.e.setBuffer(cache.values, 0, 7);
+            enc.e.setBuffer(s.attention_risk, 0, 8);
             enc.groups(.{ c.query_heads, rows, 1 }, .{ 32, 1, 1 });
             try enc.end();
         }

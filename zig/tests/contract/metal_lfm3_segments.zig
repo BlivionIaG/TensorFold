@@ -83,6 +83,7 @@ pub const Probe = struct {
         e.setBuffer(b.args[0].buf, b.args[0].off, 0);
         e.setBuffer(p.table.buf, p.table.off, 1);
         e.setBuffer(p.rows.buf, p.rows.off, 2);
+        e.setBuffer(b.risk.buf, b.risk.off, 3);
         for (b.extra, 4..) |ref, slot| e.setBuffer(ref.buf, ref.off, slot);
         e.dispatchGroups(.of(16, b.data.rows, (b.data.history + b.data.rows + 4095) / 4096), .of(128, 1, 1));
         e.setPipeline(p.merge);
@@ -90,6 +91,8 @@ pub const Probe = struct {
         e.setBuffer(p.table.buf, p.table.off, 3);
         e.setBuffer(b.out.buf, b.out.off, 4);
         e.setBuffer(p.rows.buf, p.rows.off, 5);
+        e.setBuffer(b.args[0].buf, b.args[0].off, 6);
+        e.setBuffer(b.risk.buf, b.risk.off, 7);
         e.dispatchGroups(.of(16, b.data.rows, 1), .of(32, 1, 1));
         try b.rig.finish(pass);
     }

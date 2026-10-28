@@ -67,6 +67,7 @@ pub const Probe = struct {
     raw: rig_.Ref = undefined,
     maxima: rig_.Ref = undefined,
     totals: rig_.Ref = undefined,
+    risk: rig_.Ref = undefined,
     const vt = blk: {
         var hooks = g.hooks(Probe);
         hooks.output = output;
@@ -175,6 +176,7 @@ pub const Probe = struct {
         if (vision(p.kind)) {
             p.raw = try p.rig.output(shape.rows * 16 * 65 * 4);
         } else {
+            p.risk = try p.rig.scratch(shape.rows * 16 * 64 * 4);
             p.maxima = try p.rig.scratch(shape.rows * 16 * 64 * 4);
             p.totals = try p.rig.scratch(shape.rows * 16 * 64 * 4);
             p.raw = try p.rig.output(shape.rows * 16 * 64 * 128 * 4);
@@ -243,6 +245,7 @@ pub const Probe = struct {
                     e.setBuffer(p.maxima.buf, p.maxima.off, 4);
                     e.setBuffer(p.totals.buf, p.totals.off, 5);
                     e.setBuffer(p.raw.buf, p.raw.off, 6);
+                    e.setBuffer(p.risk.buf, p.risk.off, 7);
                     e.dispatchGroups(.of(16, p.shape.rows, p.chunks()), .of(128, 1, 1));
                 }
             }
