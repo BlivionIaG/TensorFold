@@ -12,7 +12,7 @@ def sum32(values):
     return result[..., 0]
 
 
-def norm_rows(values, gain, epsilon):
+def norm_rows(values, gain, epsilon, elementary_backend=None):
     original, gain = np.asarray(values), np.asarray(gain)
     if original.ndim == 0 or not np.isfinite(original).all() or not np.array_equal(original, bf(original)):
         raise ValueError('Expected finite BF16 normalization inputs')
@@ -41,5 +41,12 @@ def norm_rows(values, gain, epsilon):
         raise ValueError('Expected a text hidden row or attention head')
     variance = total / np.float32(width) + np.float32(epsilon)
     inverse = (1 / np.sqrt(variance.astype(np.float64))).astype(np.float32)[..., None]
+    if elementary_backend is not None:
+        from elementary_reference import elementary
+        inverse = elementary(variance, 'rsqrt', elementary_backend)[..., None]
     first = bf(values * inverse).astype(np.float32)
-    return bf(first * np.asarray(gain, dtype=np.float32))
+    result = first * np.asarray(gain, dtype=np.float32)
+    if elementary_backend == 'metal':
+        # Metal's FP32 arithmetic flushes subnormal products, before the BF16 store.
+        result = np.where(np.abs(result) < np.finfo(np.float32).tiny, np.copysign(np.float32(0), result), result)
+    return bf(result)

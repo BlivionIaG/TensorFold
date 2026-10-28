@@ -47,8 +47,12 @@ def inject_image_rows(hidden, tokens, rows, start):
 
 
 class Oracle:
-    def __init__(self, directory, weight_mode='exact', dump=None, projection_rounding='fp64', norm_conv_rounding='fp64'):
+    def __init__(self, directory, weight_mode='exact', dump=None, projection_rounding='fp64',
+                 norm_conv_rounding='fp64', attention_rounding='fp64', elementary_backend='numpy'):
         self.directory, self.weight_mode, self.dump = directory, weight_mode, dump
+        if attention_rounding not in ('fp64', 'metal-fp32') or elementary_backend not in ('numpy', 'metal'):
+            raise ValueError('Unsupported attention or elementary rounding mode')
+        self.attention_rounding, self.elementary_backend = attention_rounding, elementary_backend
         self.projection_rounding = projection_rounding
         if norm_conv_rounding not in ('fp64', 'metal'):
             raise ValueError('Unsupported normalization/convolution rounding mode')
@@ -138,7 +142,8 @@ class Oracle:
     def norm(self, values, name):
         if self.norm_conv_rounding == 'metal':
             from text_rounding_reference import norm_rows
-            return norm_rows(values, self.tensor(name + '.weight'), self.text['norm_eps'])
+            return norm_rows(values, self.tensor(name + '.weight'), self.text['norm_eps'],
+                             self.elementary_backend if self.attention_rounding == 'metal-fp32' else None)
         inverse = 1 / np.sqrt(np.mean(values * values, axis=-1, keepdims=True) + self.text['norm_eps'])
         return bf(bf(values * inverse) * self.tensor(name + '.weight'))
 
@@ -147,6 +152,9 @@ class Oracle:
             self.dump(name, value)
 
     def rotary(self, values, kind):
+        if getattr(self, 'attention_rounding', 'fp64') == 'metal-fp32':
+            from text_attention_rounding import rotary
+            return rotary(values, self.text['rope_parameters'][kind], self.elementary_backend)
         width = values.shape[-1]
         spec = self.text['rope_parameters'][kind]
         pairs = int(width * spec.get('partial_rotary_factor', 1)) // 2
@@ -184,16 +192,27 @@ class Oracle:
         k = self.rotary(self.norm(k, prefix + 'self_attn.k_norm'), kind).transpose(1, 0, 2)
         v = v.transpose(1, 0, 2)
         k, v = np.repeat(k, heads // kv, axis=0), np.repeat(v, heads // kv, axis=0)
-        scores = (q @ k.swapaxes(-1, -2)) / math.sqrt(width)
-        distance = np.arange(len(x))[:, None] - np.arange(len(x))[None, :]
-        allowed = distance >= 0
-        if kind == 'sliding_attention':
-            allowed &= distance < self.text['sliding_window']
-        scores = np.where(allowed, scores, -np.inf)
-        probabilities = np.exp(scores - scores.max(axis=-1, keepdims=True))
-        probabilities /= probabilities.sum(axis=-1, keepdims=True)
-        output = bf((probabilities @ v).transpose(1, 0, 2))
-        gates = bf(1 / (1 + np.exp(-self.linear(x, prefix + 'self_attn.gate_proj'))))
+        if self.attention_rounding == 'metal-fp32':
+            from text_attention_rounding import attention
+            output = attention(q, k, v, self.text['sliding_window'] if kind == 'sliding_attention' else 0,
+                               self.elementary_backend).transpose(1, 0, 2)
+        else:
+            scores = (q @ k.swapaxes(-1, -2)) / math.sqrt(width)
+            distance = np.arange(len(x))[:, None] - np.arange(len(x))[None, :]
+            allowed = distance >= 0
+            if kind == 'sliding_attention':
+                allowed &= distance < self.text['sliding_window']
+            scores = np.where(allowed, scores, -np.inf)
+            probabilities = np.exp(scores - scores.max(axis=-1, keepdims=True))
+            probabilities /= probabilities.sum(axis=-1, keepdims=True)
+            output = bf((probabilities @ v).transpose(1, 0, 2))
+        raw_gate = self.linear(x, prefix + 'self_attn.gate_proj')
+        if self.attention_rounding == 'metal-fp32':
+            from elementary_reference import elementary
+            gates = bf(np.float32(1) / (np.float32(1)
+                       + elementary(-raw_gate.astype(np.float32), 'exp', self.elementary_backend)))
+        else:
+            gates = bf(1 / (1 + np.exp(-raw_gate)))
         return self.linear(bf(output * gates[:, :, None]).reshape(len(x), heads * width), prefix + 'self_attn.o_proj')
 
     def run(self, tokens, image_rows=None, image_start=None):
@@ -217,7 +236,11 @@ class Oracle:
             gate, up = self.linear(x, prefix + 'feed_forward.w1'), self.linear(x, prefix + 'feed_forward.w3')
             self.take(tag + '_gate', gate)
             self.take(tag + '_up', up)
-            act = bf(bf(gate / (1 + np.exp(-gate))) * up)
+            if self.attention_rounding == 'metal-fp32':
+                from elementary_reference import swiglu
+                act = swiglu(gate, up, self.elementary_backend)
+            else:
+                act = bf(bf(gate / (1 + np.exp(-gate))) * up)
             self.take(tag + '_act', act)
             result = self.linear(act, prefix + 'feed_forward.w2')
             self.take(tag + '_down', result)
@@ -236,6 +259,8 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--weight-mode', choices=('exact', 'bf16'), default='exact')
     parser.add_argument('--projection-rounding', choices=('fp64', 'metal-row'), default='fp64')
+    parser.add_argument('--attention-rounding', choices=('fp64', 'metal-fp32'), default='fp64')
+    parser.add_argument('--elementary-backend', choices=('numpy', 'metal'), default='numpy')
     parser.add_argument('--norm-conv-rounding', choices=('fp64', 'metal'), default='fp64')
     parser.add_argument('--trace-dir', type=Path)
     parser.add_argument('--image-rows', type=Path, help='Projected rows as a two-dimensional numeric NumPy array')
@@ -247,7 +272,8 @@ def main():
         write(args.trace_dir / (name + '.bf16'), values)
     if args.trace_dir:
         args.trace_dir.mkdir(parents=True, exist_ok=True)
-    oracle = Oracle(args.model_dir, args.weight_mode, dump if args.trace_dir else None, args.projection_rounding, args.norm_conv_rounding)
+    oracle = Oracle(args.model_dir, args.weight_mode, dump if args.trace_dir else None, args.projection_rounding,
+                    args.norm_conv_rounding, args.attention_rounding, args.elementary_backend)
     tokens = np.load(args.tokens, allow_pickle=False)
     if tokens.ndim != 1 or not np.issubdtype(tokens.dtype, np.integer) or tokens.size == 0:
         parser.error('Expected a nonempty one-dimensional integer token array')
@@ -267,8 +293,13 @@ def main():
         arithmetic += '; affine projections instead replay the Metal FP32 lane rounding, other operations remain FP64'
     if args.norm_conv_rounding == 'metal':
         arithmetic += '; normalization and convolution replay the production FP32 reduction sites'
+    if args.attention_rounding == 'metal-fp32':
+        arithmetic += ('; bounded decoder attention/rotary/activations replay FP32 sites with explicit '
+                       + args.elementary_backend + ' elementary functions')
     metadata = {'dtype': 'BF16', 'arithmetic': arithmetic, 'weight_mode': args.weight_mode,
-                'projection_rounding': args.projection_rounding, 'norm_conv_rounding': args.norm_conv_rounding, 'shape': list(logits.shape),
+                'attention_rounding': args.attention_rounding, 'elementary_backend': args.elementary_backend,
+                'projection_rounding': args.projection_rounding, 'norm_conv_rounding': args.norm_conv_rounding,
+                'shape': list(logits.shape),
                 'accepted_threshold': None}
     args.output.with_suffix('.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
