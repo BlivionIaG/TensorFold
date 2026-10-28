@@ -117,6 +117,14 @@ pub const Vision = struct {
                 .conv => |conv| self.convolution(e, conv, gh, gw, patches),
                 .attention => |a| self.attention(e, a, gw, patches),
             }
+            if (index == 2) {
+                try stage(queue, trace, "first_attention_norm", ref(self.x), patches, 1024, &cb, &e, &active);
+                try stage(queue, trace, "first_attention_q", ref(self.q), patches, 1024, &cb, &e, &active);
+                try stage(queue, trace, "first_attention_k", ref(self.k), patches, 512, &cb, &e, &active);
+                try stage(queue, trace, "first_attention_v", ref(self.v), patches, 512, &cb, &e, &active);
+                try stage(queue, trace, "first_attention_context", ref(self.y), patches, 1024, &cb, &e, &active);
+                try stage(queue, trace, "first_attention_operator", ref(self.r), patches, 1024, &cb, &e, &active);
+            }
             if (index == 0) {
                 try stage(queue, trace, "first_conv_in", ref(self.bcx), patches, 3072, &cb, &e, &active);
                 try stage(queue, trace, "first_conv_gated", ref(self.y), patches, 1024, &cb, &e, &active);
