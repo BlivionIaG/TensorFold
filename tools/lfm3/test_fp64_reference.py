@@ -7,7 +7,7 @@ except ImportError:
     np = None
 
 if np is not None:
-    from fp64_reference import Oracle, bf
+    from fp64_reference import Oracle, bf, inject_image_rows
 
 
 def bits(values):
@@ -63,6 +63,20 @@ class ReferenceTests(unittest.TestCase):
         rounded = oracle.weights('projection', slice(0, 1))
         self.assertEqual(rounded[0, 1], 8)
         self.assertNotEqual(rounded[0, 1], expected[0, 1])
+
+    def test_projected_image_rows_replace_only_matching_placeholders(self):
+        hidden = np.arange(12, dtype=np.float64).reshape(3, 4)
+        rows = np.array([[1 + 2 ** -8 + 2 ** -30, 2, 3, 4]])
+        result = inject_image_rows(hidden, [10, 125030, 11], rows, 1)
+        np.testing.assert_array_equal(result[[0, 2]], hidden[[0, 2]])
+        np.testing.assert_array_equal(hidden, np.arange(12).reshape(3, 4))
+        self.assertEqual(result[1, 0], float(bf(rows[0, 0])))
+        for tokens, value, start in (([10, 125030, 11], rows, 0),
+                                      ([10, 125030, 125030], rows, 1),
+                                      ([10, 125030, 11], rows[:, :3], 1),
+                                      ([10, 125030, 11], rows * np.nan, 1)):
+            with self.assertRaises(ValueError):
+                inject_image_rows(hidden, tokens, value, start)
 
     def test_embedding_override_does_not_change_other_projections(self):
         oracle = Oracle.__new__(Oracle)
