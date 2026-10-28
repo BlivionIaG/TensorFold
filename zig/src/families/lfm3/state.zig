@@ -120,6 +120,7 @@ pub const Scratch = struct {
     pm: mtl.Buffer,
     pl: mtl.Buffer,
     po: mtl.Buffer,
+    attention_risk: mtl.Buffer,
     gate: mtl.Buffer,
     up: mtl.Buffer,
     act: mtl.Buffer,
@@ -153,6 +154,7 @@ pub const Scratch = struct {
         out.pm = try mem.alloc(partials * 4);
         out.pl = try mem.alloc(partials * 4);
         out.po = try mem.alloc(partials * c.head_dim * 4);
+        out.attention_risk = try mem.alloc(partials * @sizeOf(u32));
         inline for (.{ "gate", "up", "act" }) |name| @field(out, name) = try mem.alloc(rows * c.intermediate * 2);
         out.sums = null;
         out.binned_sums = null;

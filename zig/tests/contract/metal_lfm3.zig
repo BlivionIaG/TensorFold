@@ -52,6 +52,7 @@ pub const Probe = struct {
     args: [6]rig_.Ref = undefined,
     out: rig_.Ref = undefined,
     extra: [3]rig_.Ref = undefined,
+    risk: rig_.Ref = undefined,
 
     pub fn init(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue, kind: Kind) !Probe {
         const source = try std.mem.concat(a, u8, &.{ sources.lfm3, "\n", sources.lfm3_attention });
@@ -162,6 +163,7 @@ pub const Probe = struct {
             p.extra[1] = try p.rig.output(rows * 512 * 2);
         }
         if (math.attention(p.kind)) {
+            p.risk = try p.rig.scratch(rows * 16 * 64 * 4);
             p.extra[0] = try p.rig.scratch(rows * 16 * 64 * 4);
             p.extra[1] = try p.rig.scratch(rows * 16 * 64 * 4);
             p.extra[2] = try p.rig.scratch(rows * 16 * 64 * 128 * 4);
@@ -245,11 +247,14 @@ pub const Probe = struct {
         bind(e, &.{ p.args[0], p.args[1], p.args[2] });
         e.setBytes(std.mem.asBytes(&args), 3);
         for (p.extra, 4..) |ref, i| e.setBuffer(ref.buf, ref.off, i);
+        e.setBuffer(p.risk.buf, p.risk.off, 7);
         e.dispatchGroups(.of(16, d.rows, last - first), .of(128, 1, 1));
         e.setPipeline(p.merge.?);
         bind(e, &p.extra);
         e.setBytes(std.mem.asBytes(&args), 3);
         e.setBuffer(p.out.buf, p.out.off, 4);
+        for (p.args[0..3], 5..) |ref, i| e.setBuffer(ref.buf, ref.off, i);
+        e.setBuffer(p.risk.buf, p.risk.off, 8);
         e.dispatchGroups(.of(16, d.rows, 1), .of(32, 1, 1));
     }
     pub fn count(p: *Probe) usize {

@@ -10,6 +10,7 @@ const lfm3_sums = @import("metal_lfm3_sums.zig");
 const lfm3_attention_sums = @import("metal_lfm3_attention_sums.zig");
 const lfm3_dual = @import("metal_lfm3_dual.zig");
 const lfm3_segments = @import("metal_lfm3_segments.zig");
+const lfm3_alpha = @import("metal_lfm3_alpha.zig");
 const lfm3_conv_segments = @import("metal_lfm3_conv_segments.zig");
 const binned_projection = @import("metal_binned_projection.zig");
 const lfm3_projection = @import("metal_lfm3_projection.zig");
@@ -172,6 +173,42 @@ pub fn main(init: std.process.Init) !u8 {
         postnorm_count += 1;
     }
     for (postnorm_probes[0..postnorm_count]) |*probe| try kernels.append(a, probe.kernel());
+    var lfm3_skip_probe: ?lfm3_alpha.SkipProbe = null;
+    defer if (lfm3_skip_probe) |*probe| probe.deinit();
+    if (wanted(o, lfm3_alpha.skip_name)) {
+        lfm3_skip_probe = try lfm3_alpha.SkipProbe.init(a, device, queue);
+        try kernels.append(a, lfm3_skip_probe.?.kernel());
+    }
+    var lfm3_clear_probe: ?lfm3_alpha.ClearProbe = null;
+    defer if (lfm3_clear_probe) |*probe| probe.deinit();
+    if (wanted(o, lfm3_alpha.clear_name)) {
+        lfm3_clear_probe = try lfm3_alpha.ClearProbe.init(a, device, queue);
+        try kernels.append(a, lfm3_clear_probe.?.kernel());
+    }
+    var lfm3_overflow_probe: ?lfm3_alpha.OverflowProbe = null;
+    defer if (lfm3_overflow_probe) |*probe| probe.deinit();
+    if (wanted(o, lfm3_alpha.overflow_name)) {
+        lfm3_overflow_probe = try lfm3_alpha.OverflowProbe.init(a, device, queue);
+        try kernels.append(a, lfm3_overflow_probe.?.kernel());
+    }
+    var lfm3_weight_probe: ?lfm3_alpha.NonfiniteWeightProbe = null;
+    defer if (lfm3_weight_probe) |*probe| probe.deinit();
+    if (wanted(o, lfm3_alpha.nonfinite_weight_name)) {
+        lfm3_weight_probe = try lfm3_alpha.NonfiniteWeightProbe.init(a, device, queue);
+        try kernels.append(a, lfm3_weight_probe.?.kernel());
+    }
+    var lfm3_product_probe: ?lfm3_alpha.ProductProbe = null;
+    defer if (lfm3_product_probe) |*probe| probe.deinit();
+    if (wanted(o, lfm3_alpha.product_name)) {
+        lfm3_product_probe = try lfm3_alpha.ProductProbe.init(a, device, queue);
+        try kernels.append(a, lfm3_product_probe.?.kernel());
+    }
+    var lfm3_alpha_probe: ?lfm3_alpha.Probe = null;
+    defer if (lfm3_alpha_probe) |*probe| probe.deinit();
+    if (wanted(o, lfm3_alpha.name)) {
+        lfm3_alpha_probe = try lfm3_alpha.Probe.init(a, device, queue);
+        try kernels.append(a, lfm3_alpha_probe.?.kernel());
+    }
     var lfm3_shared_probes: [3]lfm3_segments.Probe = undefined;
     var lfm3_shared_count: usize = 0;
     defer for (lfm3_shared_probes[0..lfm3_shared_count]) |*probe| probe.deinit();
