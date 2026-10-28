@@ -161,6 +161,10 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     defer pool.pop();
     if (m.projection_candidate != null) try s.prepareProjectionCandidate();
     if (m.binned_candidate != null) try s.prepareBinnedProjectionCandidate();
+    if (segments.len > 1) {
+        if (!record) return error.InvalidLfmSegments;
+        try prepareSharedConv(m, s, segments);
+    }
     var cb = m.queue.commandBuffer();
     var enc = Encoder{ .e = cb.compute(.serial), .m = m, .scratch = s, .record = record };
     var ended = false;
@@ -272,8 +276,43 @@ fn layerStage(enc: *Encoder, trace: ?Trace, name: []u8, index: usize, suffix: []
     return stage(enc, trace, try std.fmt.bufPrint(name, "layer_{d:0>2}_{s}", .{ index, suffix }), value, rows, width, cb, ended);
 }
 
+fn prepareSharedConv(m: *Model, s: *st.Scratch, segments: []const Segment) !void {
+    if (segments.len < 2 or segments.len > st.batch_rows) return error.InvalidLfmSegments;
+    var count: usize = 0;
+    for (segments) |seg| {
+        if (seg.rows == 0 or seg.rows > st.batch_rows - count) return error.InvalidLfmSegments;
+        count += seg.rows;
+    }
+    try s.prepareSharedConv();
+    const table = s.conv_segments.?.slice(@import("kernels.zig").ConvSegment, c.layers * st.batch_rows);
+    const map = s.conv_rows.?.slice(u32, st.batch_rows);
+    var base: usize = 0;
+    for (segments, 0..) |seg, i| {
+        @memset(map[base..][0..seg.rows], @intCast(i));
+        for (m.config.layer_types, 0..) |kind, layer| if (kind == .conv) {
+            table[layer * st.batch_rows + i] = .{ .state = seg.cache.blocks[layer].conv.gpuAddress(), .base = @intCast(base), .rows = @intCast(seg.rows) };
+        };
+        base += seg.rows;
+    }
+}
+
 fn conv(enc: *Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []const Segment, total: usize) !void {
     try enc.projection(cv.in, s.x, 0, s.bcx, 0, total);
+    if (segments.len > 1) {
+        if (!enc.record or total > st.batch_rows) return error.InvalidLfmSegments;
+        try enc.begin(.activation);
+        enc.pipe("lfm3_conv_segments");
+        for (segments) |seg| enc.e.useResource(seg.cache.blocks[layer].conv, mtl.ResourceUsage.read);
+        enc.e.setBuffer(s.bcx, 0, 0);
+        enc.e.setBuffer(s.conv_segments.?, layer * st.batch_rows * @sizeOf(@import("kernels.zig").ConvSegment), 1);
+        enc.tensor(cv.weight, 2);
+        enc.e.setBuffer(s.y, 0, 3);
+        enc.e.setBuffer(s.snapshots[layer].?, 0, 4);
+        enc.e.setBuffer(s.conv_rows.?, 0, 5);
+        enc.threads(.{ c.hidden, total, 1 }, .{ 256, 1, 1 });
+        try enc.end();
+        return enc.projection(cv.out, s.y, 0, s.r, 0, total);
+    }
     var base: usize = 0;
     for (segments) |seg| {
         try enc.begin(.activation);

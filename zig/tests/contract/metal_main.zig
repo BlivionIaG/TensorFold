@@ -8,6 +8,7 @@ const lfm3_sums = @import("metal_lfm3_sums.zig");
 const lfm3_attention_sums = @import("metal_lfm3_attention_sums.zig");
 const lfm3_dual = @import("metal_lfm3_dual.zig");
 const lfm3_segments = @import("metal_lfm3_segments.zig");
+const lfm3_conv_segments = @import("metal_lfm3_conv_segments.zig");
 const binned_projection = @import("metal_binned_projection.zig");
 const lfm3_projection = @import("metal_lfm3_projection.zig");
 const rows_k = @import("metal_rows.zig");
@@ -169,6 +170,15 @@ pub fn main(init: std.process.Init) !u8 {
         lfm3_shared_count += 1;
     };
     for (lfm3_shared_probes[0..lfm3_shared_count]) |*probe| try kernels.append(a, probe.kernel());
+    var lfm3_conv_probes: [2]lfm3_conv_segments.Probe = undefined;
+    var lfm3_conv_count: usize = 0;
+    defer for (lfm3_conv_probes[0..lfm3_conv_count]) |*probe| probe.deinit();
+    for ([_]bool{ false, true }) |bad| {
+        if (!wanted(o, lfm3_conv_segments.name(bad))) continue;
+        lfm3_conv_probes[lfm3_conv_count] = try lfm3_conv_segments.Probe.init(a, device, queue, bad);
+        lfm3_conv_count += 1;
+    }
+    for (lfm3_conv_probes[0..lfm3_conv_count]) |*probe| try kernels.append(a, probe.kernel());
     var lfm3_sum_probes: [8]lfm3_sums.Probe = undefined;
     var lfm3_sum_count: usize = 0;
     defer for (lfm3_sum_probes[0..lfm3_sum_count]) |*probe| probe.deinit();

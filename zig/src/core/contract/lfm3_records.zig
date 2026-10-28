@@ -54,6 +54,8 @@ pub const metal = [_]M{
     .{ .name = "lfm3 lfm3_norm", .threads = 256, .tg_memory = 144, .reserved = 256 },
     .{ .name = "lfm3 lfm3_post_add", .threads = 256, .tg_memory = 144, .reserved = 256 },
     .{ .name = "lfm3 lfm3_add", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 lfm3_conv_segments", .threads = 256, .tg_memory = 0, .reserved = 256 },
+    .{ .name = "lfm3 conv-state-bad lfm3_conv_segments", .threads = 256, .tg_memory = 0, .reserved = 256 },
     .{ .name = "lfm3 lfm3_conv", .threads = 256, .tg_memory = 0, .reserved = 256 },
     .{ .name = "lfm3 lfm3_qk", .threads = 32, .tg_memory = 0, .reserved = 32 },
     .{ .name = "lfm3 lfm3_gate", .threads = 256, .tg_memory = 0, .reserved = 256 },
