@@ -93,6 +93,7 @@ pub const LaneSel = struct {
     flushed: usize = 0, // pages [0, flushed) are canonical in the host store and out of the window
     win0: usize = 0, // the first row not canonical in the host store
     done: [attn_n + 1]usize = @splat(0), // rows each layer (the MTP head last) has been given to write
+    head_on: bool = false, // the MTP head has written (or will write) rows of this stream
     hw: usize = 0, // pages [0, hw) have been flushed once: their host rows are valid
     reset_pending: bool = true,
 
@@ -180,6 +181,7 @@ pub const LaneSel = struct {
             s.win0 = s.flushed * page_rows;
             s.hw = (pos0 + page_rows - 1) / page_rows;
             s.done = @splat(pos0);
+            s.head_on = false;
         }
         const first = pos0 / page_rows;
         if (first < s.flushed) {
@@ -189,8 +191,9 @@ pub const LaneSel = struct {
             try s.reset(stream); // blocks at and past the rewind point hold rows that are about to change
         }
         s.done[ai] = @min(s.done[ai], pos0);
+        if (ai == attn_n) s.head_on = true; // from its first call the MTP head holds pages back until it has written them
         var low = s.done[0];
-        for (s.done[1..]) |d| low = @min(low, d);
+        for (s.done[1..if (s.head_on) attn_n + 1 else attn_n]) |d| low = @min(low, d);
         const target = low / page_rows;
         var p = s.flushed;
         while (p < target) : (p += 1) {
