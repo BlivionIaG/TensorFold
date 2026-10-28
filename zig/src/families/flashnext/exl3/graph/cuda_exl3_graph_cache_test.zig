@@ -122,3 +122,13 @@ test "exl3: asynchronous TP instantiation preserves its NCCL template until owne
     try std.testing.expect(entry.pending == null and entry.exec != null and entry.template != null);
     try std.testing.expectEqual(@as(usize, 0), GraphTestDriver.graph_drops);
 }
+
+test "exl3: a decode round captures on its second sighting and a window on its twelfth" {
+    const round: Key = .{ .kind = 1, .rows = 1, .scratch = 1, .scores = 2, .output = 3 };
+    const window: Key = .{ .kind = 2, .rows = 3, .scratch = 1, .scores = 2, .output = 3 };
+    try std.testing.expectEqual(@as(u32, 2), gcache.afterKey(round));
+    try std.testing.expectEqual(@as(u32, 12), gcache.afterKey(window));
+    gcache.capture_after_override = 1;
+    defer gcache.capture_after_override = null;
+    try std.testing.expectEqual(@as(u32, 1), gcache.afterKey(window));
+}
