@@ -167,7 +167,7 @@ pub const Kernels = struct {
             a.add(chains);
             a.add(out + at * m.n * elem);
             a.add(@as(u32, @intFromBool(f32_out)));
-            try launch_.launch(k.promptd_fns[@backingInt(m.codebook)], .{ .grid = .{ .x = @intCast(m.n / 128), .y = @intCast((r + 63) / 64), .z = 1 }, .block = .{ .x = 256 } }, s, &a);
+            try launch_.launch(k.promptd_fns[@backingInt(m.codebook)], .{ .grid = .{ .x = @intCast(m.n / 128), .y = @intCast((r + 31) / 32), .z = 1 }, .block = .{ .x = 256 } }, s, &a);
         }
     }
 
