@@ -74,6 +74,31 @@ No new tie tolerance or end-to-end acceptance threshold was applied. The primiti
 The oracle is reproducible with `tools/lfm3/fp64_reference.py`; its tests include all finite BF16 encodings,
 adjacent midpoints, double rounding, subnormals, overflow and six-bit cross-word unpacking.
 
+## Binned projection candidate
+
+`binned-projection.json` records the explicit candidate at `75478ed17`; ordinary model loading leaves it disabled.
+It preserves each input value while partitioning exponent ranges and exact code nibbles. M5 uses the shared
+`nax.h` tensor-unit fragments; M4 uses its fallback. Group affine sums use compensated FP32 pairs.
+The integer argument is limited to finite normal aligned products without overflow or underflow.
+It does not establish universal FP64 equivalence for extreme BF16 subnormals or arbitrary inputs.
+
+The actual native M5 tool produced **61,907,040/61,907,040** direct FP64-to-BF16 reference values across 132 captures:
+11 projection classes, all six checkpoints, and prompt/decode widths 64 and 1. All 66 first-row comparisons matched.
+The six small attention-gate cells use the unchanged row fallback and are included explicitly.
+No column had more FP64 error than either the retained original-native or MLX result.
+Those two comparator captures are from the M4, not a same-device M5 performance comparison.
+The file retains worst-column metrics, input/output hashes, artifact identities and the complete contract summaries.
+Both M4 and M5 passed all six operator variants, both planted controls and launch limits.
+These primitive results do not settle whole-model fidelity or served performance.
+
+To reconstruct the fixtures, save `fixture_tokens` as a little-endian uint32 NPY array and run the default
+`tf-lfm3-forward MODEL TOKENS.npy baseline.bf16 trace TRACE_DIR` for each named checkpoint.
+Concatenate the trace files ending in `_<input_stage>.bf16` in filename order to recreate each `input_file`;
+the first `2*k` bytes recreate its `one_row_file`. Verify the recorded input hash before comparing outputs.
+Run `tf-lfm3-project MODEL MODULE INPUT.bf16 ROWS OUTPUT.bf16 --binned` at widths 64 and 1.
+Save the receipt’s `cases` array as `manifest.json` beside the inputs for `tools/lfm3/projection_compare.py`.
+Use the frozen candidate commit for these artifact identities; a later decode-twin candidate requires its own receipt.
+
 ## Controlled performance
 
 `cold-prefill-ab.json` contains all 16 matched pairs / 32 fresh-server cold requests.
