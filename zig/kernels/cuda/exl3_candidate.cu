@@ -182,7 +182,7 @@ struct TfExl3Chains {
   unsigned per, wk;
 };
 
-// The prompt tile (32 rows a block) in decode's bytes at any row count: tf_exl3_rot_in's rows, chains as a decode warp sums.
+// The prompt tile (32 rows a block) in decode's bytes at any row count: rot_in's rows, chains as a decode warp sums.
 template <int K, int C>
 __device__ __forceinline__ void tf_exl3_promptd_job(const __half* Xh, unsigned rows, const uint8_t* T, const __half* svh,
                                                     const TfExl3Matrix m, const TfExl3Chains ch, uint8_t* Y, unsigned y_f32,
