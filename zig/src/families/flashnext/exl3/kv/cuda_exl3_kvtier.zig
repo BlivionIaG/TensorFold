@@ -164,13 +164,12 @@ pub const LaneSel = struct {
             const at = @as(usize, fill.frame) * s.host.kv_page;
             try s.arena.uploadAsync(at, s.host.tier.host_page(id), stream.handle);
         }
-        s.host.tier.markDirty(id); // rows of the window are written; a refilled page is flushed again, equal
+        try s.host.tier.markDirty(s.tl, id); // rows of the window are written; a refilled page is flushed again, equal
         s.fids.items[pidx] = fill.frame;
         try s.setEntry(stream, pidx, fill.frame);
     }
 
-    /// Layer `ai` will write rows [pos0, pos0 + n). A page leaves the window (copied out, unpinned) once every layer has written it;
-    /// the pages these rows land in, and all pages from the window's start, are in frames. Rewinding brings pages back.
+    /// Layer `ai` writes [pos0, pos0 + n): a page leaves the window once every layer wrote it; a rewind brings it back.
     pub fn begin(s: *LaneSel, stream: cuda.Stream, ai: usize, pos0: usize, n: usize) !void {
         if (ai >= attn_n) return;
         if (s.reset_pending) {

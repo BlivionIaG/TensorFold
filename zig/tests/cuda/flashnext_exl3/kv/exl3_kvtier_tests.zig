@@ -1,4 +1,4 @@
-//! exl3-kvtier: the host tier's slots (kvt_plan, kvt_fetch, kvt_remap) against the host's LRU model and the host store's bytes.
+//! exl3-kvtier: the host tier slots (kvt_plan, kvt_fetch, kvt_remap) against the host LRU model and store bytes.
 const std = @import("std");
 const cuda = @import("cuda");
 const core = @import("core");
@@ -54,7 +54,7 @@ const Model = struct {
     }
 };
 
-/// `slot_frames` lent frames of a one-layer tier over `npages` pages: a drifting 512-block selection a call, some calls 64 rows.
+/// `slot_frames` lent frames of a one-layer tier over `npages` pages: drifting 512-block selections.
 pub fn kernelRun(gpu: Gpu, slot_frames: usize) !void {
     const a = gpu.gpa;
     const npages: usize = 200;
