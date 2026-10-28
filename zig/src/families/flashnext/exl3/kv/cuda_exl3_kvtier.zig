@@ -182,7 +182,7 @@ pub const LaneSel = struct {
         }
         const first = pos0 / page_rows;
         if (first < s.flushed) {
-            // a resume, a rewind or the head's priming: the window restarts at this page (the pages are brought in below)
+            // a resume, a rewind or the head priming: the window restarts at this page (brought in below)
             s.flushed = first;
             s.win0 = first * page_rows;
             try s.reset(stream); // blocks at and past the rewind point hold rows that are about to change
