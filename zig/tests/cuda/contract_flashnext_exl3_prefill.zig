@@ -315,3 +315,17 @@ pub const Group = struct {
         self.a.destroy(self);
     }
 };
+
+/// tf-cuda-test exl3-prefill-contract: just these kernels through the gates and the control (the full runner is hours).
+pub fn run(gpu: check.Gpu) !void {
+    var s = try cuda.Stream.init(gpu.d, false);
+    defer s.deinit();
+    var list: std.ArrayList(g.Kernel) = .empty;
+    defer list.deinit(gpu.gpa);
+    const group = try Group.create(gpu.gpa, gpu, s, &list);
+    defer group.destroy();
+    var t: g.Tally = .{};
+    try g.runAll(gpu.gpa, list.items, 0x6b63, &t);
+    std.debug.print("SUMMARY {d} kernels: {d} pass, {d} fail, {d} known; {d} controls: {d} red, {d} missed\n", .{ t.kernels, t.passed, t.failed, t.known, t.controls, t.caught, t.missed });
+    try check.expect(t.problems() == 0, "exl3-prefill-contract: {d} gate failures, {d} controls missed", .{ t.failed, t.missed });
+}
