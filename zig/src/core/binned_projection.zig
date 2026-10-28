@@ -9,6 +9,10 @@ pub const groups = [_]usize{ 32, 64 };
 pub const names = [_][:0]const u8{
     "tf_binned_q4_g32", "tf_binned_q4_g64", "tf_binned_q6_g32", "tf_binned_q6_g64", "tf_binned_q8_g32", "tf_binned_q8_g64",
 };
+pub const twin_names = [_][:0]const u8{
+    "tf_binned_twin_q4_g32", "tf_binned_twin_q4_g64", "tf_binned_twin_q6_g32",
+    "tf_binned_twin_q6_g64", "tf_binned_twin_q8_g32", "tf_binned_twin_q8_g64",
+};
 pub const Args = extern struct { k: i32, n: i32, rows: i32, group: i32 };
 pub const Ref = struct { buf: mtl.Buffer, off: usize = 0 };
 
@@ -19,6 +23,7 @@ pub fn source(device: mtl.Device, a: std.mem.Allocator) ![]u8 {
 pub const Pipelines = struct {
     sums: mtl.Pipeline,
     dense: [names.len]mtl.Pipeline,
+    twin: [names.len]mtl.Pipeline,
 
     pub fn load(device: mtl.Device) !Pipelines {
         const a = std.heap.c_allocator;
@@ -39,12 +44,19 @@ pub const Pipelines = struct {
             p.dense[i] = try mtl.Pipeline.init(device, lib, name, false);
             made += 1;
         }
+        var twins: usize = 0;
+        errdefer for (p.twin[0..twins]) |pipeline| pipeline.deinit();
+        for (twin_names, 0..) |name, i| {
+            p.twin[i] = try mtl.Pipeline.init(device, lib, name, false);
+            twins += 1;
+        }
         return p;
     }
 
     pub fn deinit(p: *Pipelines) void {
         p.sums.deinit();
         for (p.dense) |pipeline| pipeline.deinit();
+        for (p.twin) |pipeline| pipeline.deinit();
     }
 };
 
@@ -82,7 +94,8 @@ pub fn dense(e: mtl.ComputeEncoder, p: *const Pipelines, w: row.Weights, x: Ref,
     const a = try args(w, rows);
     const bits = std.mem.indexOfScalar(u8, &bit_widths, w.bits).?;
     const group = std.mem.indexOfScalar(usize, &groups, w.group).?;
-    e.setPipeline(p.dense[bits * groups.len + group]);
+    const twin = rows <= 32;
+    e.setPipeline(if (twin) p.twin[bits * groups.len + group] else p.dense[bits * groups.len + group]);
     e.setBuffer(x.buf, x.off, 0);
     e.setBuffer(w.w, w.w_off, 1);
     e.setBuffer(w.scales, w.s_off, 2);
@@ -91,7 +104,7 @@ pub fn dense(e: mtl.ComputeEncoder, p: *const Pipelines, w: row.Weights, x: Ref,
     e.setBuffer(y.buf, y.off, 5);
     e.setBuffer(sums.buf, sums.off, 6);
     e.setBuffer(meta.buf, meta.off, 7);
-    e.dispatchGroups(.of(w.n / 32, (rows + 31) / 32, 1), .of(64, 1, 1));
+    e.dispatchGroups(if (twin) .of(w.n / 8, (rows + 1) / 2, 1) else .of(w.n / 32, (rows + 31) / 32, 1), .of(64, 1, 1));
 }
 
 pub fn encode(e: mtl.ComputeEncoder, p: *const Pipelines, w: row.Weights, x: Ref, sums: Ref, meta: Ref, y: Ref, rows: usize) !void {
