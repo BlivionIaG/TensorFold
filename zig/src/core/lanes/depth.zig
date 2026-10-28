@@ -314,7 +314,7 @@ pub const Rule = struct {
             for (whos, out) |*w, *o| {
                 const inner = try r.headDepth(w, null, probe);
                 const granted: i64 = if (w.granted) |g| g else r.most_drafts;
-                o.* = try r.headDepth(w, if (r.granted_depth) inner else @min(inner, granted + r.k.draft_slack), probe);
+                o.* = if (r.granted_depth) inner else try r.headDepth(w, @min(inner, granted + r.k.draft_slack), probe);
             }
             if (r.granted_depth) capPass(out, r.batch_rows);
             if (r.granted_depth and r.k.hold_costs.len > 0) try r.payHolds(whos, sampled, out);
