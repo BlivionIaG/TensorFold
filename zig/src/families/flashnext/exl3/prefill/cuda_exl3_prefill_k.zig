@@ -14,14 +14,12 @@ pub const Kernels = struct {
     /// Expert parallel: a rank's combined branch over its own slots, and the ranks' sum placed for the write-back.
     tp_combine: cuda.Function,
     tp_place: cuda.Function,
-    /// Expert parallel: slot rows packed by a pair list or scattered back (cuda_exl3_prefill_xchg.zig).
-    xs_move: cuda.Function,
 
     pub fn load(d: *const cuda.Driver) !Kernels {
         if (!cuda.kernels.available) return error.BuiltWithoutKernels;
         var mod = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_prefill);
         errdefer mod.unload();
-        return .{ .mod = mod, .rotate = try mod.function("tf_exl3pf_rotate"), .gu = try mod.function("tf_exl3pf_gu"), .down = try mod.function("tf_exl3pf_down"), .tp_combine = try mod.function("tf_exl3pf_tp_combine"), .tp_place = try mod.function("tf_exl3pf_tp_place"), .xs_move = try mod.function("tf_exl3pf_xs_move") };
+        return .{ .mod = mod, .rotate = try mod.function("tf_exl3pf_rotate"), .gu = try mod.function("tf_exl3pf_gu"), .down = try mod.function("tf_exl3pf_down"), .tp_combine = try mod.function("tf_exl3pf_tp_combine"), .tp_place = try mod.function("tf_exl3pf_tp_place") };
     }
 
     pub fn unload(k: *Kernels) void {
@@ -172,8 +170,8 @@ pub fn run(k: *const Kernels, s: cuda.Stream, l: exl3e.Layer, x: u64, stride: us
     try cuda.launch.launch(k.down, .{ .grid = .{ .x = @intCast(d / 256), .y = @intCast(n_items) }, .block = .{ .x = 256 } }, s, &dn);
 }
 
-/// Expert parallel: sum[r] = the fp32 fmaf chain over row r's slots whose pick is in [lo, hi), in slot order.
-pub fn tpCombine(k: *const Kernels, s: cuda.Stream, y: u64, wts: u64, picks: u64, sum: u64, rows: usize, slots: usize, d: usize, lo: usize, hi: usize) !void {
+/// The canonical reduction: picks in [lo, hi) as two fmaf chains in slot order (below split, the rest), then their sum.
+pub fn tpCombine(k: *const Kernels, s: cuda.Stream, y: u64, wts: u64, picks: u64, sum: u64, rows: usize, slots: usize, d: usize, lo: usize, hi: usize, split: usize) !void {
     if (rows == 0) return;
     var a: cuda.Args = .{};
     a.add(y);
@@ -184,6 +182,7 @@ pub fn tpCombine(k: *const Kernels, s: cuda.Stream, y: u64, wts: u64, picks: u64
     a.add(@as(i32, @intCast(d)));
     a.add(@as(i32, @intCast(lo)));
     a.add(@as(i32, @intCast(hi)));
+    a.add(@as(i32, @intCast(split)));
     try cuda.launch.launch(k.tp_combine, .{ .grid = .{ .x = @intCast(rows) }, .block = .{ .x = 256 } }, s, &a);
 }
 

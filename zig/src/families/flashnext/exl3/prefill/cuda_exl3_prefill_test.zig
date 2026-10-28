@@ -57,7 +57,7 @@ test "exl3: two-chunk arenas retain hidden and deferred HC operands without alia
     const rows = 4096;
     const layout = Layout.of(rows, 2);
     const persistent = Persistent.of(rows);
-    try std.testing.expectEqual(@as(usize, 811645952), layout.total);
+    try std.testing.expectEqual(@as(usize, 727399424), layout.total);
     const host_layout = HostLayout.of(rows);
     try std.testing.expectEqual(@as(usize, 160 << 20), 2 * rows * wide * 2);
     var driver: cuda.Driver = undefined;
@@ -223,9 +223,8 @@ test "exl3: expert-parallel prefill masks the other rank's picks and keeps the s
     try std.testing.expectEqualSlices(i32, &picks, &c);
     // every pick lands on exactly one rank
     for (picks, a, b) |p, x, y| if (p >= 0) try std.testing.expect((x == p) != (y == p));
-    // the sum buffer exists only at world 2
-    try std.testing.expectEqual(deviceBytesAt(4096, 1), deviceBytes(4096));
-    try std.testing.expect(deviceBytesAt(4096, 2) >= deviceBytes(4096) + 4096 * dims * 4);
+    // the branch buffer is the same at one rank and two
+    try std.testing.expectEqual(deviceBytesAt(4096, 1), deviceBytesAt(4096, 2));
 }
 
 test "exl3: prefetch history follows deep engine ownership reuse replacement and release" {
@@ -293,16 +292,12 @@ test "exl3: prefetch history follows deep engine ownership reuse replacement and
     try std.testing.expectEqual(@as(usize, 416), history_.want(fourth.history[3], 4096, 400, routed_n_));
 }
 
-test "exl3: the prefill tiles cut K as decode does at Flash Next's shapes, and sum ranks exactly by default" {
+test "exl3: the prefill tiles cut K as decode does at Flash Next's shapes, and the two expert groups split at 256" {
     const pk = @import("cuda_exl3_prefill_k.zig");
     try std.testing.expect(pk.sumsAsDecode(dims, wt.moe_w));
     try std.testing.expect(!pk.sumsAsDecode(dims + 64, wt.moe_w + 64)); // no plan of four 8-tile warps: refused
     // decode's plan here: gate/up in 4 splits of 4 warps, down in 4 warps (chains of 10 k tiles)
     try std.testing.expectEqual(@as(u32, 4), try cuda.exl3_experts.plan(dims, wt.moe_w, true));
     try std.testing.expectEqual(@as(u32, 1), try cuda.exl3_experts.plan(wt.moe_w, dims, false));
-    try std.testing.expect(!(Options{}).rank_partials);
-}
-
-test "xchg: the compact exchange tests run with the prefill tests" {
-    _ = @import("cuda_exl3_prefill_xchg.zig");
+    try std.testing.expectEqual(@as(usize, 256), @import("cuda_exl3_prefill_moe.zig").group_split);
 }

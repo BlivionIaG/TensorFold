@@ -9,7 +9,6 @@ const pool_ = @import("../offload/cuda_exl3_pool.zig");
 const pk = @import("cuda_exl3_prefill_k.zig");
 const tp_ = @import("../tp/cuda_exl3_tp.zig");
 const state = @import("cuda_exl3_prefill_state.zig");
-const xchg = @import("cuda_exl3_prefill_xchg.zig");
 
 const dims = wt.dims;
 const slots = wt.slots;
@@ -37,12 +36,10 @@ pub fn moe(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), lw: *const @impor
     const pairs = n * slots;
     const hl = dp.hl;
     const t0 = now(p.io);
-    try clearSlots(dp, p, x, n, o);
     // the picks of every row on the host: the layer's only wait
     const host_picks: []i32 = @alignCast(std.mem.bytesAsSlice(i32, dp.hbytes(hl.picks, pairs * 4)));
     try st.d.check(st.d.api.cuMemcpyDtoHAsync_v2(host_picks.ptr, dp.dptr(dp.lay.picks), pairs * 4, st.handle), "cuMemcpyDtoHAsync");
     try st.synchronize();
-    try xchg.prepare(dp, st, host_picks, x.tp, n);
     maskOwned(host_picks, x.tp);
     const t1 = now(p.io);
     try plan(dp, x, host_picks, o);
@@ -97,32 +94,28 @@ pub fn maskOwned(picks: []i32, r: ?tp_.Rank) void {
     };
 }
 
-/// Expert parallel: rows start from zero, so the slots another rank owns read zero in the ranks' sum (as decode's).
-pub fn clearSlots(dp: *Deep, p: anytype, x: *const load.Experts, n: usize, o: Options) !void {
-    const r = x.tp orelse return;
-    if (r.world == 1 or o.rank_partials or dp.reduced_branch) return;
-    const st = p.stream;
-    try st.d.check(st.d.api.cuMemsetD8Async(dp.dptr(dp.lay.y), 0, n * slots * dims * 4, st.handle), "cuMemsetD8Async");
-}
+/// The canonical reduction sums the picks below this id and the rest as two groups (the split of the two ranks).
+pub const group_split: usize = 256;
 
-/// Expert parallel: every slot's output summed over the ranks as decode's tp.moe does (rank_partials: branches first).
+/// The canonical expert reduction: a rank's group sums, one fp32 all-reduce of the partial, the branch placed.
 pub fn rankSum(dp: *Deep, p: anytype, x: *const load.Experts, n: usize, sub: usize) !void {
-    const r = x.tp orelse return;
-    if (r.world == 1) return;
-    const c = p.m.collective orelse return error.TensorParallelUnavailable;
     const st = p.stream;
     const sum = dp.dptr(dp.lay.sum);
     const y = dp.dptr(dp.lay.y);
     const wts = dp.dptr(dp.lay.wts);
+    const lo: usize = if (x.tp) |r| r.lo else 0;
+    const hi: usize = if (x.tp) |r| r.hi else table_n;
+    const world: usize = if (x.tp) |r| r.world else 1;
     const t0 = if (profile()) now(p.io) else 0;
-    const partials = state.opts().rank_partials or dp.reduced_branch;
-    const compact = dp.xs.ready and !partials;
-    if (partials) try pk.tpCombine(&dp.kern, st, y, wts, dp.dptr(dp.lay.picks), sum, n, slots, dims, r.lo, r.hi);
-    const unit: usize = if (partials) dims else slots * dims;
-    const buf = if (partials) sum else y;
+    try pk.tpCombine(&dp.kern, st, y, wts, dp.dptr(dp.lay.picks), sum, n, slots, dims, lo, hi, group_split);
+    if (world == 1) {
+        if (!dp.reduced_branch) try pk.tpPlace(&dp.kern, st, sum, y, wts, n, slots, dims);
+        return;
+    }
+    const c = p.m.collective orelse return error.TensorParallelUnavailable;
     if (!overlap() or dp.red == null) {
-        if (compact) try xchg.exchange(dp, c, st, 0, n) else try c.sum(st, buf, n * unit);
-        if (partials and !dp.reduced_branch) try pk.tpPlace(&dp.kern, st, sum, y, wts, n, slots, dims);
+        try c.sum(st, sum, n * dims);
+        if (!dp.reduced_branch) try pk.tpPlace(&dp.kern, st, sum, y, wts, n, slots, dims);
     } else {
         const rs = dp.red.?;
         try dp.red_go.record(st);
@@ -131,8 +124,8 @@ pub fn rankSum(dp: *Deep, p: anytype, x: *const load.Experts, n: usize, sub: usi
         for (0..n_sub) |b| {
             const r0 = b * sub;
             const m = @min(sub, n - r0);
-            if (compact) try xchg.exchange(dp, c, rs, r0, m) else try c.sum(rs, buf + r0 * unit * 4, m * unit);
-            if (partials and !dp.reduced_branch) try pk.tpPlace(&dp.kern, rs, sum + r0 * dims * 4, y + r0 * slots * dims * 4, wts + r0 * slots * 4, m, slots, dims);
+            try c.sum(rs, sum + r0 * dims * 4, m * dims);
+            if (!dp.reduced_branch) try pk.tpPlace(&dp.kern, rs, sum + r0 * dims * 4, y + r0 * slots * dims * 4, wts + r0 * slots * 4, m, slots, dims);
             try dp.red_ev[b].record(rs);
         }
         dp.red_n = n_sub;
