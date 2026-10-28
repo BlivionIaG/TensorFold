@@ -1,4 +1,5 @@
 //! tf-kernel-contract: every registered Metal kernel through gates 1-4, the planted controls, then gate 5's limits.
+const postnorm = @import("metal_lfm3_postnorm.zig");
 const std = @import("std");
 const mtl = @import("metal");
 const tf = @import("tensorfold");
@@ -161,6 +162,15 @@ pub fn main(init: std.process.Init) !u8 {
         lfm3_dual_count += 1;
     }
     for (lfm3_dual_probes[0..lfm3_dual_count]) |*probe| try kernels.append(a, probe.kernel());
+    var postnorm_probes: [2]postnorm.Probe = undefined;
+    var postnorm_count: usize = 0;
+    defer for (postnorm_probes[0..postnorm_count]) |*probe| probe.deinit();
+    for ([_]bool{ false, true }) |bad| {
+        if (!wanted(o, postnorm.name(bad))) continue;
+        postnorm_probes[postnorm_count] = try postnorm.Probe.init(a, device, queue, bad);
+        postnorm_count += 1;
+    }
+    for (postnorm_probes[0..postnorm_count]) |*probe| try kernels.append(a, probe.kernel());
     var lfm3_shared_probes: [3]lfm3_segments.Probe = undefined;
     var lfm3_shared_count: usize = 0;
     defer for (lfm3_shared_probes[0..lfm3_shared_count]) |*probe| probe.deinit();
