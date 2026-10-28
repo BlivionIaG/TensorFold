@@ -92,6 +92,7 @@ pub const LaneSel = struct {
     layers: usize,
     flushed: usize = 0, // pages [0, flushed) are canonical in the host store and out of the window
     win0: usize = 0, // the first row not canonical in the host store
+    done: [attn_n]usize = @splat(0), // rows each layer has been given to write
     reset_pending: bool = true,
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, k: *const Kernels, cap: usize, npages: usize, slot_frames: usize, layers: usize, own: Own) !*LaneSel {
@@ -168,22 +169,30 @@ pub const LaneSel = struct {
         try s.setEntry(stream, pidx, fill.frame);
     }
 
-    /// Rows [pos0, pos0 + n) will be written: older pages are copied out, leave the window; these get frames.
-    pub fn begin(s: *LaneSel, stream: cuda.Stream, pos0: usize, n: usize) !void {
+    /// Layer `ai` will write rows [pos0, pos0 + n). A page leaves the window (copied out, unpinned) once every layer has written it;
+    /// the pages these rows land in, and all pages from the window's start, are in frames. Rewinding brings pages back.
+    pub fn begin(s: *LaneSel, stream: cuda.Stream, ai: usize, pos0: usize, n: usize) !void {
+        if (ai >= attn_n) return;
         if (s.reset_pending) {
             try s.reset(stream);
             s.flushed = 0;
             s.win0 = 0;
+            s.done = @splat(0);
         }
         const first = pos0 / page_rows;
         if (first < s.flushed) {
             // a resume or a rewind: pages from `first` on are the window again
             for (first..s.flushed) |p| try s.ensure(stream, p);
             s.flushed = first;
+            s.win0 = first * page_rows;
+            for (&s.done) |*d| d.* = @min(d.*, pos0);
             try s.reset(stream); // blocks at and past the rewind point hold rows that are about to change
         }
+        var low = s.done[0];
+        for (s.done[1..]) |d| low = @min(low, d);
+        const target = low / page_rows;
         var p = s.flushed;
-        while (p < first) : (p += 1) {
+        while (p < target) : (p += 1) {
             if (s.fids.items[p] == none) continue;
             const id = s.tl.pages.ids.items[p];
             try s.host.flush(s.arena, id, stream);
@@ -193,11 +202,12 @@ pub const LaneSel = struct {
                 s.fids.items[p] = none;
             }
         }
-        s.flushed = first;
-        s.win0 = first * page_rows;
+        if (target > s.flushed) s.flushed = target;
+        s.win0 = s.flushed * page_rows;
+        s.done[ai] = pos0 + n;
         const last = (pos0 + n + page_rows - 1) / page_rows;
         if (last > s.npages) return error.PromptTooLong;
-        for (@min(first, head_pages)..last) |q| if (q < head_pages or q >= first) try s.ensure(stream, q);
+        for (0..last) |q| if (q < head_pages or q >= s.flushed) try s.ensure(stream, q);
     }
 
     /// Rows [fed / page_rows * page_rows, fed) and everything before them are canonical in the host store.
