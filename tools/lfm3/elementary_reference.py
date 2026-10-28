@@ -39,4 +39,3 @@ def swiglu(gate, up, elementary_backend='numpy'):
     # NumPy and Metal precise exp are separately implemented; this mode does not assume byte equality.
     sigmoid = np.float32(1) / (np.float32(1) + elementary(-gate, 'exp', elementary_backend))
     return bf(bf(gate * sigmoid).astype(np.float32) * up)
-
