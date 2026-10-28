@@ -333,7 +333,9 @@ pub const Pool = struct {
         const x = p.laneOf(seq) orelse return error.UnknownStream;
         const run_len = p.runLen();
         if (run_len < seqRunBytes()) return error.FlashNextRunTooShort;
-        return mtp.Draft.initIn(p.gpa, p.e.driver, cap, h.draft_n, h.rows, &x.seq.paged.?, p.runBase(x) + seqRunBytes(), run_len - seqRunBytes());
+        var d = try mtp.Draft.initIn(p.gpa, p.e.driver, cap, h.draft_n, h.rows, &x.seq.paged.?, p.runBase(x) + seqRunBytes(), run_len - seqRunBytes());
+        d.sel = x.sel;
+        return d;
     }
 
     /// Whether `seq` is a lane's cache.

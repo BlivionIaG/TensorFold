@@ -477,6 +477,8 @@ pub const SeqState = struct {
     pg: @import("cuda_glue.zig").Pg = .{},
     /// A host tier's selection of blocks in slots (null: all in frames).
     sel: ?*@import("exl3/kv/cuda_exl3_kvtier.zig").LaneSel = null,
+    /// The selection's layer of this cache's layer 0 (the MTP head's cache is one layer after the model's).
+    sel_layer: usize = 0,
 };
 
 /// The block scores' row stride for a cache of `cap` tokens: its blocks rounded up to 16 (the captured _scores').

@@ -92,7 +92,8 @@ pub const LaneSel = struct {
     layers: usize,
     flushed: usize = 0, // pages [0, flushed) are canonical in the host store and out of the window
     win0: usize = 0, // the first row not canonical in the host store
-    done: [attn_n]usize = @splat(0), // rows each layer has been given to write
+    done: [attn_n + 1]usize = @splat(0), // rows each layer (the MTP head last) has been given to write
+    hw: usize = 0, // pages [0, hw) have been flushed once: their host rows are valid
     reset_pending: bool = true,
 
     pub fn init(gpa: std.mem.Allocator, d: *const cuda.Driver, k: *const Kernels, cap: usize, npages: usize, slot_frames: usize, layers: usize, own: Own) !*LaneSel {
@@ -160,7 +161,7 @@ pub const LaneSel = struct {
         if (s.fids.items[pidx] != none) return;
         const id = s.tl.pages.ids.items[pidx];
         const fill = try s.host.tier.pin(s.tl, id);
-        if (fill.miss and pidx < s.flushed) {
+        if (fill.miss and pidx < s.hw) {
             const at = @as(usize, fill.frame) * s.host.kv_page;
             try s.arena.uploadAsync(at, s.host.tier.host_page(id), stream.handle);
         }
@@ -171,22 +172,22 @@ pub const LaneSel = struct {
 
     /// Layer `ai` writes [pos0, pos0 + n): a page leaves the window once every layer wrote it; a rewind brings it back.
     pub fn begin(s: *LaneSel, stream: cuda.Stream, ai: usize, pos0: usize, n: usize) !void {
-        if (ai >= attn_n) return;
+        if (ai >= s.layers) return;
         if (s.reset_pending) {
             try s.reset(stream);
             s.flushed = 0;
             s.win0 = 0;
+            s.hw = 0;
             s.done = @splat(0);
         }
         const first = pos0 / page_rows;
         if (first < s.flushed) {
-            // a resume or a rewind: pages from `first` on are the window again
-            for (first..s.flushed) |p| try s.ensure(stream, p);
+            // a resume, a rewind or the head's priming: the window restarts at this page (the pages are brought in below)
             s.flushed = first;
             s.win0 = first * page_rows;
-            for (&s.done) |*d| d.* = @min(d.*, pos0);
             try s.reset(stream); // blocks at and past the rewind point hold rows that are about to change
         }
+        s.done[ai] = @min(s.done[ai], pos0);
         var low = s.done[0];
         for (s.done[1..]) |d| low = @min(low, d);
         const target = low / page_rows;
@@ -196,6 +197,7 @@ pub const LaneSel = struct {
             const id = s.tl.pages.ids.items[p];
             try s.host.flush(s.arena, id, stream);
             s.host.done(id);
+            s.hw = @max(s.hw, p + 1);
             if (p >= head_pages) {
                 try s.host.tier.unpin(s.tl, id);
                 s.fids.items[p] = none;
@@ -242,7 +244,7 @@ pub const LaneSel = struct {
         const layer_k = pages.planeOffset(page_rows, ai, .key);
         const layer_v = pages.planeOffset(page_rows, ai, .value);
         var f: cuda.Args = .{};
-        for ([_]u64{ hk + layer_k, hk + layer_v, s.kc[ai].ptr, s.vc[ai].ptr, t.ctl, fetch, s.itable, s.table }) |v| f.add(v);
+        for ([_]u64{ hk + layer_k, hk + layer_v, s.arena.ptr + layer_k, s.arena.ptr + layer_v, t.ctl, fetch, s.itable, s.table }) |v| f.add(v);
         f.add(@as(c_int, @intCast(s.npages)));
         f.add(@as(i64, @intCast(s.host.kv_page / 16)));
         f.add(@as(c_int, @intCast(pages.rowBytes(.key) / 16)));
