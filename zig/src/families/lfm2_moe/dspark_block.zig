@@ -49,6 +49,7 @@ pub const Block = struct { lane: *Lane, pending: u32, anchor: u64, depth: u32 };
 const Enc = struct {
     d: *Drafter,
     e: mtl.ComputeEncoder,
+    bf16_rows_max: usize = 16,
     conc: bool = false, // a concurrent encoder: each step waits for the writes before it at `sync`
 
     /// Later dispatches see the writes before this point (a no-op on a serial encoder).
@@ -98,10 +99,10 @@ const Enc = struct {
         for (ws, outs) |w, out| try tile.encode(x.e, t, w, in.buf, in.off, x.d.s.sums, 0, out.buf, out.off, rows);
     }
 
-    /// y[rows] = x[rows] W^T over the released bf16 matrix: 16 rows a pass of W up to 32 rows, else 64x64 tiles.
+    /// y[rows] = x[rows] W^T over the released bf16 matrix: one 16-row pass of W, else 64x64 tiles.
     fn bf16(x: Enc, m: dw.Bf16, in: Ref, out: Ref, rows: usize) void {
         const args = Bf16Args{ .rows = @intCast(rows), .n = @intCast(m.n), .k = @intCast(m.k) };
-        const few = rows <= 32;
+        const few = rows <= x.bf16_rows_max;
         if (few) x.pipe("lfm2_bf16_rows") else x.pipe("lfm2_bf16_mma");
         x.e.setBuffer(in.buf, in.off, 0);
         x.e.setBuffer(m.w, 0, 1);
@@ -182,7 +183,9 @@ pub fn absorbPass(d: *Drafter, e: mtl.ComputeEncoder, pieces: []const Piece) !vo
     return absorbOn(.{ .d = d, .e = e }, pieces);
 }
 
-fn absorbOn(x: Enc, pieces: []const Piece) !void {
+fn absorbOn(encoder: Enc, pieces: []const Piece) !void {
+    var x = encoder;
+    x.bf16_rows_max = 32; // preserve the context cache's original projection arithmetic
     const d = x.d;
     const s = &d.s;
     var rows: usize = 0;
