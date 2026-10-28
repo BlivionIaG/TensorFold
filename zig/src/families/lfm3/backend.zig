@@ -9,6 +9,7 @@ const fwd = @import("forward.zig");
 const snapshot = @import("snapshot.zig");
 const Model = @import("model.zig").Model;
 const be = lanes.backend;
+const prefill_control = @import("prefill_control.zig");
 pub const greedy = @import("greedy.zig");
 
 pub const Options = struct { capacity: usize, chunk: usize = 128, streams: u32 = 8 };
@@ -94,7 +95,7 @@ pub const Metal = struct {
     }
 
     pub fn backend(self: *Metal) be.Backend {
-        return .{ .ptr = self, .vtable = &.{ .prefill = prefillFn, .first = firstFn, .first_masked = firstMaskedFn, .queue = queueFn, .read = readFn, .verify = verifyFn, .keep = keepFn, .draft = draftFn, .release = releaseFn } };
+        return .{ .ptr = self, .vtable = &.{ .prefill = prefillFn, .first = firstFn, .first_masked = firstMaskedFn, .queue = queueFn, .read = readFn, .verify = verifyFn, .keep = keepFn, .draft = draftFn, .release = releaseFn, .reports_fill = true } };
     }
 
     fn cast(ptr: *anyopaque) *Metal {
@@ -118,6 +119,7 @@ pub const Metal = struct {
         const ids = stream.prompt();
         if (stream.images.len != 0 and self.images == null) return error.Lfm3VisionNotImplemented;
         if (ids.len == 0 or ids.len + stream.max_new > self.options.capacity or self.caches.contains(stream)) return error.InvalidLfmPrompt;
+        try prefill_control.before(stream, 0);
         const capacity = @min(self.options.capacity, ids.len + stream.max_new + st.window_rows);
         const cache = try self.newCache(capacity);
         errdefer self.gpa.destroy(cache);
@@ -134,9 +136,11 @@ pub const Metal = struct {
             stream.cached = @intCast(at);
             stream.reuse_failed = at == 0;
         }
+        prefill_control.completed(stream, at);
         const image_rows = if (self.images) |provider| try provider.prepare(provider.ctx, stream, at) else null;
         var mark: usize = 0;
         while (at < ids.len) {
+            try prefill_control.before(stream, at);
             var end: usize = @min(ids.len, at + self.options.chunk);
             for (stream.chunks) |boundary| if (boundary > at) {
                 end = @min(end, boundary);
@@ -146,9 +150,11 @@ pub const Metal = struct {
             if (mark < stream.reuse.marks.len) end = @min(end, stream.reuse.marks[mark]);
             try fwd.runWithImages(self.model, &self.scratch, &.{.{ .cache = cache, .rows = end - at }}, ids[at..end], false, .last, image_rows);
             at = end;
+            prefill_control.completed(stream, at);
             if (stream.reuse.hook) |hk| if (std.mem.indexOfScalar(u32, stream.reuse.marks, @intCast(at)) != null)
                 hk.at(hk.ptr, stream, @intCast(at));
         }
+        try prefill_control.finished(stream);
     }
 
     fn firstFn(ptr: *anyopaque, stream: *lanes.Stream, position: u64) !u64 {
