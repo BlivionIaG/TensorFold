@@ -90,7 +90,9 @@ pub const LaneHost = struct {
     pub const Job = @import("lane_job.zig").Job;
 
     pub fn init(gpa: Allocator, io: std.Io, core: *lanes.Engine, info_: Info) LaneHost {
-        return .{ .gpa = gpa, .io = io, .core = core, .info_ = info_.ofLanes(), .share = .fromEnv(), .prefix = .fromEnv(), .pressure = .fromEnv() };
+        var shown = info_.ofLanes();
+        shown.draft_sources = shown.draft_sources.ofLanes(core.cfg, shown.lanes);
+        return .{ .gpa = gpa, .io = io, .core = core, .info_ = shown, .share = .fromEnv(), .prefix = .fromEnv(), .pressure = .fromEnv() };
     }
 
     pub fn start(h: *LaneHost) !void {
@@ -263,7 +265,7 @@ pub const LaneHost = struct {
         h.gpa.free(job.marks);
         h.gpa.free(job.key);
         const s = &job.stream;
-        const stats: Stats = if (job.started) .{ .rounds = s.rounds, .drafted = s.drafted, .accepted = s.accepted, .min_rows = s.min_rows, .loop_period = s.loop_period, .prefill_seconds = if (job.prefilled) |done| @as(f64, @floatFromInt(@as(i64, @intCast(@max(0, done - job.began))))) / 1e9 else null } else .{};
+        const stats: Stats = if (job.started) .{ .rounds = s.rounds, .drafted = s.drafted, .accepted = s.accepted, .min_rows = s.min_rows, .loop_period = s.loop_period, .gpu_seconds = s.gpu_seconds, .prefill_seconds = if (job.prefilled) |done| @as(f64, @floatFromInt(@as(i64, @intCast(@max(0, done - job.began))))) / 1e9 else null } else .{};
         var told = if (job.started) recalls.finished(h, job, reason, stats) else stats;
         told.queued_seconds = if (job.admitted_ns) |at| @as(f64, @floatFromInt(@max(0, at - job.submitted))) / 1e9 else 0;
         emit(job, .{ .finished = .{ .reason = reason, .stats = told, .message = message } });

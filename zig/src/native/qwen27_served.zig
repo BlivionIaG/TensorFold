@@ -22,6 +22,7 @@ pub const Options = struct {
     streams: u32, // --parallel: slots at most, fewer when their caches do not fit
     streams_fixed: bool = false, // --parallel named a number: every slot fits, or the server refuses
     drafter: ?[]const u8 = null,
+    drafter_name: ?[]const u8 = null,
     drafter_bits: u8 = 0,
     cache_gib: ?f64 = null,
     cache_over_cap: bool = false,
@@ -35,6 +36,7 @@ pub const Host = struct {
     model: *q.model.Model,
     owns_model: bool,
     runner: q.decode_round.Runner,
+    trace: ?tf.gpu_profile.Trace = null, // TF_Q27_PROFILE: rounds' class GPU times to the log, gpu_seconds in replies
     draft: ?*lb.Draft = null,
     back: *lb.Metal,
     cfg: lanes.Config,
@@ -172,7 +174,7 @@ fn shareRoom(h: *const Host, why: *[]const u8) !u64 {
 /// Room left beside the weights and an 8 GiB margin.
 fn room(model: *const q.model.Model) usize {
     const dev = model.device;
-    return dev.maxWorkingSet() -| dev.allocated() -| (8 << 30);
+    return q.prompt_memory.room(dev.maxWorkingSet(), dev.allocated(), if (std.c.getenv("TF_QWEN27_WORKING_SET_BYTES")) |v| std.mem.span(v) else null) catch 0;
 }
 
 /// Whether a new slot's `bytes` fit in `free`, once kept prompt states (never the one `restoring`) give theirs back.
@@ -195,31 +197,6 @@ const Left = struct {
         return l.room + (l.held - l.store.held) >= l.bytes;
     }
 };
-
-/// One slot's caches at `context` tokens: its K/V rows, its taps ring when drafting, DeltaNet states and scratch.
-fn slotCost(model: *const q.model.Model, context: u32, drafting: bool) usize {
-    const c = model.config;
-    var attention: usize = 0;
-    for (0..c.layers) |i| attention += @intFromBool(c.kind(i) == .attention);
-    const kv = attention * 2 * @as(usize, context) * c.kvDim() * 2;
-    const ring_bytes: usize = if (drafting) 2048 * 5 * c.hidden * 2 else 0;
-    return kv + ring_bytes + (256 << 20); // DeltaNet states, conv tails and scratch, generously
-}
-
-/// The most streams the server offers: slots whose caches fit `left`, at most `want`; a fixed count fits or refuses.
-fn fit(left: usize, per: usize, want: u32, fixed: bool) error{TooManyStreams}!u32 {
-    const n: u32 = @intCast(@max(1, @min(@as(usize, @max(want, 1)), left / per)));
-    return if (fixed and n < want) error.TooManyStreams else n;
-}
-
-test fit {
-    const g: usize = 1 << 30;
-    try std.testing.expectEqual(@as(u32, 8), try fit(80 * g, 2 * g, 8, false));
-    try std.testing.expectEqual(@as(u32, 3), try fit(7 * g, 2 * g, 8, false)); // auto serves what fits
-    try std.testing.expectError(error.TooManyStreams, fit(7 * g, 2 * g, 8, true)); // a fixed --parallel refuses
-    try std.testing.expectEqual(@as(u32, 3), try fit(7 * g, 2 * g, 3, true));
-    try std.testing.expectEqual(@as(u32, 1), try fit(g, 2 * g, 8, false)); // one stream at least
-}
 
 /// Kept states of a fake family whose bytes grow as the 27B's K/V rows (64 KiB a token); `saved` is never read.
 const FakeStates = struct {
@@ -311,12 +288,29 @@ pub fn attach(gpa: Allocator, io: std.Io, model: *q.model.Model, drafter: ?*q.df
     defer pool.pop();
     const capacity = if (o.context == 0) @min(model.config.max_position, 32768) else o.context;
     if (capacity == 0 or capacity > model.config.max_position) return error.ContextFull;
-    const per = slotCost(model, capacity + lb.max_rows, drafter != null or o.drafter != null); // a last window's rows past prompt + max_tokens
-    const left = room(model);
-    const slots = fit(left, per, o.streams, o.streams_fixed) catch |err| {
-        why.* = try std.fmt.allocPrint(a, "--parallel {d} needs {d:.1} GiB for its streams' caches at a {d}-token context, and this Mac leaves {d:.1} GiB beside the weights and an 8 GiB margin: serve --parallel {d}, or lower --context", .{ o.streams, cache_fit.gibs(per * o.streams), capacity, cache_fit.gibs(left), @max(1, left / per) });
+    var draft_model = drafter;
+    const owns_draft = drafter == null and o.drafter != null;
+    if (owns_draft) draft_model = q.dflash.runtime_model.Model.load(gpa, io, model, o.drafter.?, if (o.drafter_bits == 4) .prepared_q4_reference else .bf16_reference) catch |err| {
+        why.* = try std.fmt.allocPrint(a, "the native Qwen3.8-27B drafter cannot load {s} ({s})", .{ o.drafter.?, @errorName(err) });
+        return error.DrafterLoad;
+    };
+    var draft_owned = owns_draft;
+    errdefer if (draft_owned) draft_model.?.deinit();
+    const memory = q.prompt_memory;
+    const fit_prompt = memory.Fit{ .config = model.config, .context = capacity + lb.max_rows, .slots = @max(o.streams, 1), .shared = model.device.tensorUnits(), .ring = if (draft_model) |d| @as(usize, d.ring().window) * d.ring().stride else 0, .current_rows = model.frame.capacity, .left = room(model) };
+    const value = if (std.c.getenv("TF_PROMPT_ROWS")) |v| std.mem.span(v) else null;
+    const row_policy = q.prompt_rows;
+    const rows = @max(lb.max_rows, try fit_prompt.choose(row_policy.requested(model.device.generation(), value), row_policy.override(value) != null));
+    const slots = fit_prompt.streams(rows, o.streams_fixed) catch |err| {
+        why.* = try std.fmt.allocPrint(a, "--parallel {d} needs {d:.1} GiB for its streams and {d}-row prompt scratch at a {d}-token context; {d:.1} GiB remains beside the weights and an 8 GiB margin: lower --parallel or --context", .{ o.streams, cache_fit.gibs(try fit_prompt.cost(rows, @max(o.streams, 1))), rows, capacity, cache_fit.gibs(fit_prompt.left) });
         return err;
     };
+    if (model.frame.capacity != rows) {
+        const next = try q.gpu_frame.Frame.init(model.device, model.config, rows);
+        model.frame.deinit();
+        model.frame = next;
+    }
+    std.log.info("qwen27: prompt capacity={d} rows, startup stream and scratch reserve={d} bytes", .{ rows, try memory.runnerBytes(model.config, capacity + lb.max_rows, slots, rows, model.device.tensorUnits(), fit_prompt.ring) });
     const h = try gpa.create(Host);
     errdefer gpa.destroy(h);
     h.gpa = gpa;
@@ -327,16 +321,19 @@ pub fn attach(gpa: Allocator, io: std.Io, model: *q.model.Model, drafter: ?*q.df
     h.resident = null;
     h.disk_stage = null;
     h.vision = o.images; // closed with the host; a failed attach leaves it to the caller
+    h.trace = null;
     h.runner = try q.decode_round.Runner.initReady(gpa, model, slots, capacity + lb.max_rows, 1);
     errdefer h.runner.deinit();
-    if (drafter) |d| h.draft = try lb.Draft.attach(gpa, &h.runner, d, false) else if (o.drafter) |d| h.draft = lb.Draft.open(gpa, io, model, &h.runner, d, if (o.drafter_bits == 4) .prepared_q4_reference else .bf16_reference) catch |err| {
-        why.* = try std.fmt.allocPrint(a, "the native Qwen3.8-27B drafter cannot load {s} ({s})", .{ d, @errorName(err) });
-        return error.DrafterLoad;
-    };
+    if (profileEvery()) |every| {
+        h.trace = .{ .queue = model.queue, .report_every = every }; // enabled once measure() has priced the windows
+        h.runner.profile(&h.trace.?);
+    }
+    if (draft_model) |d| h.draft = try lb.Draft.attach(gpa, &h.runner, d, owns_draft);
+    draft_owned = false;
     errdefer if (h.draft) |d| d.deinit();
     h.back = try lb.Metal.init(gpa, &h.runner, h.draft);
     errdefer h.back.deinit();
-    h.back.chunk = h.runner.promptRows(q.model.promptRows());
+    h.back.chunk = h.runner.promptRows(@min(rows, row_policy.requested(model.device.generation(), value)));
     h.back.grow = .{ .ctx = h, .room = Host.roomFor, .added = Host.added };
     h.back.vision = o.images;
     if (h.draft != null) try h.back.measure(io);
@@ -346,7 +343,7 @@ pub fn attach(gpa: Allocator, io: std.Io, model: *q.model.Model, drafter: ?*q.df
     h.core = lanes.Engine.init(gpa, &h.cfg, h.back.backend(), h.clock.clock());
     errdefer h.core.deinit();
     const offer: ?api.Vision = if (o.images) |v| .{ .ctx = h, .prepare = Host.prepareImage, .image_token = v.c.image_token, .markers = &v.markers, .image_tokens = v.capacity, .max_images = v.max_images, .explain = tf.qwen_vl.geometry.problem } else null;
-    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .name = "qwen27", .structures = @import("qwen27_masks.zig").supported, .lanes = slots, .context_window = capacity, .prefill_step = @intCast(h.back.chunk), .vision = offer });
+    h.host = api.LaneHost.init(gpa, io, &h.core, .{ .name = "qwen27", .draft_sources = .{ .drafter = if (h.draft != null) .{ .kind = "DFlash2", .name = o.drafter_name orelse o.drafter orelse "" } else null }, .structures = @import("qwen27_masks.zig").supported, .lanes = slots, .context_window = capacity, .prefill_step = @intCast(h.back.chunk), .vision = offer });
     h.host.memory = .{ .ctx = h, .read = readMemory };
     h.host.explain = .{ .text = words };
     h.host.decoded_rows = true; // a reply's rows prefill with the bits decoding gave them, with the cache on or off
@@ -372,9 +369,19 @@ pub fn attach(gpa: Allocator, io: std.Io, model: *q.model.Model, drafter: ?*q.df
     if (o.learn) |l| try disk.attach(h, io, a, l);
     errdefer if (h.cache) |*store| if (store.disk) |r| r.deinit();
     h.host.keepalive_target = .{ .ctx = &h.warm, .tick = mtl.keepalive.Target.tick };
+    if (h.trace) |*t| t.enabled = true; // serving rounds count from here: measure() timed whole, unsplit buffers
     try h.host.start();
     std.log.info("Qwen3.8-27B: {d} streams of {d} tokens{s}{s}", .{ slots, capacity, if (h.draft != null) ", DFlash2 drafts for one of them" else "", if (o.images != null) ", images read" else "" });
     return h;
+}
+
+/// TF_Q27_PROFILE's rounds between log reports, or null (off); a value it cannot read leaves profiling off.
+fn profileEvery() ?u64 {
+    const v = std.mem.span(platform.c.getenv("TF_Q27_PROFILE") orelse return null);
+    return tf.gpu_profile.every(v) catch {
+        std.log.warn("TF_Q27_PROFILE={s} is not 0, 1 or a round count: profiling stays off", .{v});
+        return null;
+    };
 }
 
 /// Reserve later buffers and the loaded share's priced bytes that its construction left outside the footprint.
@@ -419,6 +426,7 @@ pub fn close(ptr: *anyopaque) void {
     h.cfg.deinit(h.gpa);
     h.back.deinit();
     if (h.draft) |d| d.deinit();
+    if (h.trace) |*t| t.reportRest();
     h.runner.deinit();
     if (h.vision) |v| v.deinit();
     if (h.owns_model) h.model.deinit();

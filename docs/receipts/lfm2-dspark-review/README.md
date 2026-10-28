@@ -182,3 +182,11 @@ six slots and 827 with 445 cancellations at sixteen slots, zero wrong replies
 or request errors. All servers shut down gracefully. Hashes and counters are in
 `performance-investigation.json`. This extends, rather than replaces, the
 historical full forward/cache and qualification receipts above.
+
+After that qualification, main `dd0a9cc5e` was merged to resolve a new CLI
+conflict. The resolution retains main's drafter-name reporting and this stack's
+optional precision default. Native plus the same focused regression targets
+pass: 66/66 build steps, 56/56 tests. Lean compares at 425 findings on both main
+and the merged tree, zero new. Performance and served-GPU receipts above are
+for `b4deee277` before this merge; they are not relabeled as exact merged-head
+measurements.

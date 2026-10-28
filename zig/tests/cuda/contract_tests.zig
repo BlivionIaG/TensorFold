@@ -10,6 +10,8 @@ const tail_k = @import("contract_norms_tail.zig");
 const dory_k = @import("contract_dory.zig");
 const router_k = @import("contract_router.zig");
 const mm_k = @import("contract_mm.zig");
+const prefill_many_k = @import("contract_qmm_prefill_many.zig");
+const prefill_tile22_k = @import("contract_qmm_prefill_tile22.zig");
 const mx_k = @import("contract_mxfp8.zig");
 const half_k = @import("contract_lane_half.zig");
 const wide_k = @import("contract_projection_f32.zig");
@@ -34,9 +36,7 @@ const vit_k = @import("contract_vit_glue.zig");
 const act_round_k = @import("contract_act_round.zig");
 const f32w_k = @import("contract_glm_f32w.zig");
 const w4a8_k = @import("contract_w4a8.zig");
-
 const round_k = @import("contract_tree_round.zig");
-
 const act_k = @import("contract_act.zig");
 const vit_g4_group = @import("contract_gemma_group.zig");
 const gdn_k = @import("contract_gdn.zig");
@@ -47,11 +47,9 @@ const glm_index_k = @import("contract_glm_index.zig");
 const glm_attn_k = @import("contract_glm_attn.zig");
 const glm = @import("glm_cuda");
 const elementwise_k = @import("contract_elementwise.zig");
-
 const tree_k = @import("contract_tree_attn.zig");
 const block_k = @import("contract_block_attn.zig");
 const q35_k = @import("contract_q35_attn.zig");
-
 const window_k = @import("contract_window.zig");
 const moe_k = @import("contract_moe.zig");
 const qkr_k = @import("contract_qk_round.zig");
@@ -59,7 +57,6 @@ const fact_k = @import("contract_flashnext_fact.zig");
 const route_k = @import("contract_route_rows.zig");
 const fexp_k = @import("contract_flashnext_fexp.zig");
 const glue_k = @import("contract_flashnext_glue.zig");
-
 const q35_contiguous = @import("contract_q35_contiguous.zig");
 const contract = core.contract;
 const g = contract.gates;
@@ -208,6 +205,12 @@ pub fn run(gpu: check.Gpu) !void {
     }
     defer for (&verify_controls) |*m| m.deinit();
     for (&verify_controls) |*m| if (m.kernel()) |k| try kernels.append(a, k);
+    var prefill_many = prefill_many_k.Registrations.init(gpu, s, &affine4);
+    defer prefill_many.deinit();
+    try prefill_many.append(cap, a, &kernels);
+    var prefill_tile22 = prefill_tile22_k.Registrations.init(gpu, s, &affine4);
+    defer prefill_tile22.deinit();
+    try prefill_tile22.append(cap, a, &kernels);
     var mx = [_]mx_k.Product{
         .{ .rig = .{ .gpu = gpu, .s = s }, .lane = &lane, .clusters = true },
         .{ .rig = .{ .gpu = gpu, .s = s }, .lane = &lane_reduce, .clusters = false },
@@ -336,9 +339,7 @@ pub fn run(gpu: check.Gpu) !void {
     for (std.enums.values(e3_k.Fault), &e3_splits) |f, *x| x.* = .{ .rig = .{ .gpu = gpu, .s = s }, .k = &e3_mods.k, .fault = f };
     defer for (&e3_splits) |*x| x.deinit();
     for (&e3_splits) |*x| try kernels.append(a, x.kernel());
-    var nvfp4 = try cuda.experts.Nvfp4Experts.load(gpu.d, sms);
-    defer nvfp4.unload();
-    const nvfp4_facts = try @import("contract_nvfp4_tile.zig").Group.create(a, gpu, s, &nvfp4, try cuda.grouped.Router.resolve(mods[6]), &kernels);
+    const nvfp4_facts = try @import("contract_nvfp4_tile.zig").Group.create(a, gpu, s, sms, try cuda.grouped.Router.resolve(mods[6]), &kernels);
     defer nvfp4_facts.destroy();
     var round_mod = try cuda.Module.load(gpu.d, kk.tree_round);
     defer round_mod.unload();
@@ -534,9 +535,9 @@ pub fn run(gpu: check.Gpu) !void {
     var glm_pool = glm_pages_k.PoolKeys{ .rig = .{ .gpu = gpu, .s = s }, .f = glm_fns.pool_keys };
     defer glm_pool.deinit();
     try kernels.append(a, glm_pool.kernel());
-    var glm_scores = glm_index_k.Scores{ .rig = .{ .gpu = gpu, .s = s }, .f = glm_fns.scores };
-    defer glm_scores.deinit();
-    try kernels.append(a, glm_scores.kernel());
+    var glm_index = glm_index_k.Index.init(gpu, s, glm_fns);
+    defer glm_index.deinit();
+    try glm_index.append(a, &kernels);
     const glm_fast = try @import("contract_glm_pools.zig").Fast.create(a, gpu, s, glm_fns, &kernels);
     defer glm_fast.destroy(a);
     var glm_ops = try cuda.Module.load(gpu.d, kk.glm_ops);

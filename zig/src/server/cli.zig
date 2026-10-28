@@ -3,7 +3,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const api = @import("engine_api");
 const Allocator = std.mem.Allocator;
-
 pub const Kind = enum {
     value, // --flag VALUE or --flag=VALUE
     store_true, // --flag
@@ -153,10 +152,10 @@ pub const flags = [_]Flag{
     // the native server's own: Cortheon's reasoning program and server-run web research for every chat request
     .{ .name = "--cortheon", .kind = .store_true, .native = true },
 };
-/// The variables this binary honours as the Python engine does, then the CUDA build's.
+/// The variables this binary honours as the Python engine does, then the CUDA build's or the Metal build's.
 pub const env = [_][]const u8{ "TENSORFOLD_API_KEY", "TENSORFOLD_NO_LIVE", "TENSORFOLD_SEED_SALT", "TENSORFOLD_REQUEST_LOG", "TENSORFOLD_NO_UPDATE_CHECK", "HF_HOME", "HF_HUB_CACHE", "HF_HUB_OFFLINE", "BRAVE_SEARCH_API_KEY" } ++
-    (if (cuda_build) [_][]const u8{ "TF_CUDA_DEVICE", "TF_CUDA_SEGMENTS", "TENSORFOLD_CUDA_KERNELS", "TENSORFOLD_MEMORY_RESERVE_GIB", "TENSORFOLD_CUDA_MEMORY_LIMIT_GB", "TENSORFOLD_P2P_DIAGNOSTICS", "TENSORFOLD_P2P_PROBE" } else [_][]const u8{});
-
+    (if (cuda_build) [_][]const u8{ "TF_CUDA_DEVICE", "TF_CUDA_SEGMENTS", "TENSORFOLD_CUDA_KERNELS", "TENSORFOLD_MEMORY_RESERVE_GIB", "TENSORFOLD_CUDA_MEMORY_LIMIT_GB", "TENSORFOLD_P2P_DIAGNOSTICS", "TENSORFOLD_P2P_PROBE" } else [_][]const u8{}) ++
+    (if (builtin.os.tag == .macos) [_][]const u8{"TF_Q27_PROFILE"} else [_][]const u8{});
 pub const Args = struct {
     admission: @import("request_admission.zig").Limits = .{},
     model: []const u8 = "",
@@ -216,6 +215,7 @@ pub const Args = struct {
     compact_keep: ?u32 = null,
     compact_memory: ?[]const u8 = null,
     drafter: ?[]const u8 = null,
+    drafter_name: ?[]const u8 = null, // retained before hub resolution for the engine's serving line
     drafter_bits: ?u8 = null, // null: not given (a family without its own default takes 4)
     record: ?[]const u8 = null, // drafter training rows written under this folder
     kv_cache: []const u8 = "bf16", // fp8: e4m3 attention caches with a scale a row, about twice the context
@@ -546,6 +546,7 @@ pub fn request(a: Allocator, dir: []const u8, model_type: []const u8, args: Args
         .lanes_fixed = parallelFixed(args.parallel),
         .drafts = !args.no_drafts,
         .drafter = args.drafter,
+        .drafter_name = args.drafter_name orelse args.drafter,
         .drafter_bits = args.drafter_bits orelse 4,
         .drafter_bits_given = args.drafter_bits != null,
         .record = args.record,

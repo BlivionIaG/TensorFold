@@ -3,6 +3,7 @@ const std = @import("std");
 const lanes = @import("lanes");
 const Allocator = std.mem.Allocator;
 pub const tfvideo = @import("tfvideo.zig");
+pub const DraftSources = @import("draft_sources.zig").Sources;
 /// The server's name for one request, unique while the process lives.
 pub const Id = u64;
 
@@ -160,6 +161,8 @@ pub const Stats = struct {
     loop_period: ?u32 = null,
     /// Prompt prefill duration measured by the engine host, in seconds.
     prefill_seconds: ?f64 = null,
+    /// The GPU-busy seconds of the forward passes the reply ran in, where profiling times them (TF_Q27_PROFILE).
+    gpu_seconds: ?f64 = null,
     /// Seconds from engine submission to first admission; an engine that admits immediately leaves zero.
     queued_seconds: f64 = 0,
     /// The drafter's own counters as a JSON object, or empty.
@@ -225,6 +228,8 @@ pub const Info = struct {
     warm_turns: bool = false,
     /// The engine decodes plain whatever a request asks: no drafter loaded, or this chip is faster plain.
     plain_only: bool = false,
+    /// Available proposals, independent of a request's choice to use them.
+    draft_sources: DraftSources = .{},
     /// The immutable retained-prefix plan applied at startup, not a process memory limit or current cache occupancy.
     prompt_cache_plan: ?PromptCachePlan = null,
     /// The engine scores decisions (`score`) and writes no text: the server refuses text requests.
@@ -300,6 +305,7 @@ pub const Open = struct {
     drafts: bool = true,
     /// --drafter: a draft model's directory (null: none); --drafter-bits: 4, 0 for bf16, or 8 (LFM2 only).
     drafter: ?[]const u8 = null,
+    drafter_name: ?[]const u8 = null, // the supplied --drafter name, before resolving its directory
     drafter_bits: u8 = 4,
     /// Whether --drafter-bits was given: LFM2's drafter runs bf16 as released unless it is asked for 8-bit codes.
     drafter_bits_given: bool = false,
