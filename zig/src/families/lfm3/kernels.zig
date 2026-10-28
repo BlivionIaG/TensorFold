@@ -12,10 +12,17 @@ pub const AttentionArgs = extern struct { len: u32, cap: u32, scale: f32, window
 
 pub const AttentionSegment = extern struct { keys: u64, values: u64, base: u32, rows: u32, args: AttentionArgs, pad: u32 = 0 };
 
+pub const ConvSegment = extern struct { state: u64, base: u32, rows: u32 };
+comptime {
+    std.debug.assert(@sizeOf(ConvSegment) == 16 and @alignOf(ConvSegment) == 8);
+    std.debug.assert(@offsetOf(ConvSegment, "state") == 0 and @offsetOf(ConvSegment, "base") == 8);
+    std.debug.assert(@offsetOf(ConvSegment, "rows") == 12);
+}
+
 pub const names = [_][:0]const u8{
-    "lfm3_embed_b4",      "lfm3_embed_b6",            "lfm3_embed_b8", "lfm3_norm", "lfm3_post_add", "lfm3_add",
-    "lfm3_attn_segments", "lfm3_attn_segments_merge", "lfm3_conv",     "lfm3_qk",   "lfm3_gate",     "lfm3_swiglu",
-    "lfm3_attn_partial",  "lfm3_attn_merge",
+    "lfm3_embed_b4",      "lfm3_embed_b6",            "lfm3_embed_b8",      "lfm3_norm", "lfm3_post_add", "lfm3_add",
+    "lfm3_attn_segments", "lfm3_attn_segments_merge", "lfm3_conv",          "lfm3_qk",   "lfm3_gate",     "lfm3_swiglu",
+    "lfm3_attn_partial",  "lfm3_attn_merge",          "lfm3_conv_segments",
 };
 
 pub const Kernels = struct {

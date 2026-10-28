@@ -104,12 +104,8 @@ inline float lfm3_head_square_total(const thread float* v) {
 }
 
 // Seven convolution taps over BF16(B*x); snapshots retain the six newest products after every accepted row.
-[[kernel, max_total_threads_per_threadgroup(256)]] void lfm3_conv(const device bfloat* bcx [[buffer(0)]], const device bfloat* state [[buffer(1)]],
-                         const device bfloat* weight [[buffer(2)]], device bfloat* y [[buffer(3)]],
-                         device bfloat* snapshots [[buffer(4)]], constant uint& first [[buffer(5)]],
-                         uint2 at [[thread_position_in_grid]]) {
-  const uint ch = at.x, row = at.y;
-  if (ch >= L3D) return;
+inline void lfm3_conv_one(const device bfloat* bcx, const device bfloat* state,
+    const device bfloat* weight, device bfloat* y, device bfloat* snapshots, uint first, uint ch, uint row) {
   bfloat bx[7];
   for (uint tap = 0; tap < 7; ++tap) {
     const int source = int(row) + int(tap) - 6;
@@ -125,6 +121,35 @@ inline float lfm3_head_square_total(const thread float* v) {
   if (row < first) return;
   for (uint tap = 0; tap < 6; ++tap)
     snapshots[(size_t(row - first) * 6 + tap) * L3D + ch] = bx[tap + 1];
+}
+
+[[kernel, max_total_threads_per_threadgroup(256)]] void lfm3_conv(const device bfloat* bcx [[buffer(0)]], const device bfloat* state [[buffer(1)]],
+                         const device bfloat* weight [[buffer(2)]], device bfloat* y [[buffer(3)]],
+                         device bfloat* snapshots [[buffer(4)]], constant uint& first [[buffer(5)]],
+                         uint2 at [[thread_position_in_grid]]) {
+  const uint ch = at.x, row = at.y;
+  if (ch >= L3D) return;
+  lfm3_conv_one(bcx, state, weight, y, snapshots, first, ch, row);
+}
+
+struct lfm3_conv_segment { ulong state; uint base, rows; };
+[[kernel, max_total_threads_per_threadgroup(256)]] void lfm3_conv_segments(
+    const device bfloat* bcx [[buffer(0)]], constant lfm3_conv_segment* segments [[buffer(1)]],
+    const device bfloat* weight [[buffer(2)]], device bfloat* y [[buffer(3)]],
+    device bfloat* snapshots [[buffer(4)]], const device uint* row_segments [[buffer(5)]],
+    uint2 at [[thread_position_in_grid]]) {
+  const uint ch = at.x;
+  if (ch >= L3D) return;
+  constant lfm3_conv_segment& seg = segments[row_segments[at.y]];
+  const uint row = at.y - seg.base;
+  if (row >= seg.rows) return;
+#ifdef L3_CONV_BAD_STATE
+  const ulong state = segments[0].state;
+#else
+  const ulong state = seg.state;
+#endif
+  lfm3_conv_one(bcx + size_t(seg.base) * 3 * L3D, reinterpret_cast<const device bfloat*>(state), weight,
+    y + size_t(seg.base) * L3D, snapshots + size_t(seg.base) * 6 * L3D, 0, ch, row);
 }
 
 struct lfm3_qk_args { uint len, cap; float eps, log2_theta; uint rotary_pairs; };

@@ -113,6 +113,8 @@ pub const Scratch = struct {
     k: mtl.Buffer,
     v: mtl.Buffer,
     queries: mtl.Buffer,
+    conv_segments: ?mtl.Buffer = null,
+    conv_rows: ?mtl.Buffer = null,
     attention_segments: mtl.Buffer,
     attention_rows: mtl.Buffer,
     pm: mtl.Buffer,
@@ -134,6 +136,8 @@ pub const Scratch = struct {
         out.memory = .{ .gpa = gpa, .device = device };
         errdefer out.memory.deinit();
         out.rows = rows;
+        out.conv_segments = null;
+        out.conv_rows = null;
         out.snapshots = @splat(null);
         const mem = &out.memory;
         out.ids = try mem.alloc(rows * 4);
@@ -160,6 +164,12 @@ pub const Scratch = struct {
             s.* = try mem.alloc(logit_rows * conv_bytes);
         };
         return out;
+    }
+
+    pub fn prepareSharedConv(self: *Scratch) !void {
+        if (self.conv_segments == null)
+            self.conv_segments = try self.memory.alloc(c.layers * batch_rows * @sizeOf(@import("kernels.zig").ConvSegment));
+        if (self.conv_rows == null) self.conv_rows = try self.memory.alloc(batch_rows * 4);
     }
 
     pub fn prepareBinnedProjectionCandidate(self: *Scratch) !void {
