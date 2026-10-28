@@ -6,6 +6,7 @@ const ckpt = @import("../../core/checkpoint_metal.zig");
 const shards = @import("../../core/checkpoint.zig");
 const weights = @import("metal_weights.zig");
 const kernels = @import("kernels.zig");
+const binned = @import("../../core/binned_projection.zig");
 const prompt = @import("prompt_projection.zig");
 const counters = @import("../../core/gpu_counters.zig");
 
@@ -20,6 +21,7 @@ pub const Model = struct {
     resident: ?mtl.ResidencySet = null,
     profile: ?*counters.Recorder = null,
     projection_candidate: ?prompt.Candidate = null,
+    binned_candidate: ?binned.Pipelines = null,
 
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !*Model {
         return loadWithResidency(gpa, io, dir, true);
@@ -32,6 +34,7 @@ pub const Model = struct {
         errdefer gpa.destroy(m);
         m.profile = null;
         m.projection_candidate = null;
+        m.binned_candidate = null;
         m.gpa = gpa;
         m.config = config;
         m.device = try mtl.Device.init();
@@ -60,7 +63,7 @@ pub const Model = struct {
 
     /// Explicit developer qualification path; ordinary model loading retains the established row arithmetic.
     pub fn enableProjectionCandidate(m: *Model) !void {
-        if (m.projection_candidate != null) return error.ProjectionCandidateAlreadyEnabled;
+        if (m.projection_candidate != null or m.binned_candidate != null) return error.ProjectionCandidateAlreadyEnabled;
         var list: std.ArrayList(weights.Linear) = .empty;
         defer list.deinit(m.gpa);
         try list.append(m.gpa, m.weights.embedding);
@@ -74,6 +77,11 @@ pub const Model = struct {
         m.projection_candidate = try prompt.Candidate.init(m.device, list.items);
     }
 
+    pub fn enableBinnedProjectionCandidate(m: *Model) !void {
+        if (m.projection_candidate != null or m.binned_candidate != null) return error.ProjectionCandidateAlreadyEnabled;
+        m.binned_candidate = try binned.Pipelines.load(m.device);
+    }
+
     pub fn dropResident(m: *Model) void {
         if (m.resident) |set| {
             m.queue.removeResidencySet(set);
@@ -85,6 +93,7 @@ pub const Model = struct {
     pub fn deinit(m: *Model) void {
         m.dropResident();
         if (m.projection_candidate) |*candidate| candidate.deinit();
+        if (m.binned_candidate) |*candidate| candidate.deinit();
         m.kernels.deinit();
         m.checkpoint.deinit();
         m.queue.deinit();

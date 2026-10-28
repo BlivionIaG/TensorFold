@@ -21,9 +21,10 @@ const Dump = struct {
 pub fn main(init: std.process.Init) !void {
     const raw_args = try init.minimal.args.toSlice(init.arena.allocator());
     const tiles = raw_args.len > 1 and std.mem.eql(u8, raw_args[raw_args.len - 1], "--tiles");
-    const args = raw_args[0 .. raw_args.len - @intFromBool(tiles)];
-    if (args.len < 4 or args.len > 7) return error.ExpectedModelTokensOutput;
-    if (args.len == 7 and !std.mem.eql(u8, args[4], "images")) return error.ExpectedImageRowsAndStart;
+    const binned = raw_args.len > 1 and std.mem.eql(u8, raw_args[raw_args.len - 1], "--binned");
+    const args = raw_args[0 .. raw_args.len - @intFromBool(tiles or binned)];
+    if (args.len < 4 or args.len > 8) return error.ExpectedModelTokensOutput;
+    if (args.len >= 7 and !std.mem.eql(u8, args[4], "images")) return error.ExpectedImageRowsAndStart;
     if (args.len == 5 and !std.mem.eql(u8, args[4], "embedding") and !std.mem.eql(u8, args[4], "prefix") and !std.mem.eql(u8, args[4], "decode")) return error.ExpectedEmbeddingPrefixOrDecode;
     if (args.len == 6 and !std.mem.eql(u8, args[4], "trace")) return error.ExpectedTraceDirectory;
     const pool = mtl.objc.Pool.push();
@@ -40,13 +41,14 @@ pub fn main(init: std.process.Init) !void {
     const m = try q.Model.load(init.gpa, init.io, args[1]);
     defer m.deinit();
     if (tiles) try m.enableProjectionCandidate();
+    if (binned) try m.enableBinnedProjectionCandidate();
     var image_buffer: ?mtl.Buffer = null;
     defer if (image_buffer) |buffer| buffer.deinit();
     var image_pipeline: ?mtl.Pipeline = null;
     defer if (image_pipeline) |pipeline| pipeline.deinit();
     var span: q.image_rows.Span = undefined;
     var images: ?q.image_rows.Images = null;
-    if (args.len == 7) {
+    if (args.len >= 7) {
         if (m.config.kind != .vision_language) return error.ExpectedVisionLanguageModel;
         const start = try std.fmt.parseInt(u32, args[6], 10);
         const image_bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, args[5], init.gpa, .limited(64 << 20));
@@ -116,8 +118,9 @@ pub fn main(init: std.process.Init) !void {
     }
     const out = try init.gpa.alloc(u8, ids.len * q.config.vocab * 2);
     defer init.gpa.free(out);
-    var dump: Dump = .{ .io = init.io, .a = init.gpa, .dir = if (args.len == 6) args[5] else "" };
-    if (args.len == 6) try std.Io.Dir.cwd().createDirPath(init.io, dump.dir);
+    const tracing = args.len == 6 or args.len == 8;
+    var dump: Dump = .{ .io = init.io, .a = init.gpa, .dir = if (args.len == 8) args[7] else if (args.len == 6) args[5] else "" };
+    if (tracing) try std.Io.Dir.cwd().createDirPath(init.io, dump.dir);
     var at: usize = 0;
     while (at < ids.len) {
         const n: usize = @min(ids.len - at, 32);
@@ -131,9 +134,9 @@ pub fn main(init: std.process.Init) !void {
                 done += rows;
             }
         }
-        if (args.len == 6) {
+        if (tracing) {
             dump.offset = at;
-            try q.forward.runTrace(m, &scratch, &.{.{ .cache = &cache, .rows = n }}, ids[at..][0..n], .all, .{ .ctx = &dump, .take = Dump.take });
+            try q.forward.runTraceWithImages(m, &scratch, &.{.{ .cache = &cache, .rows = n }}, ids[at..][0..n], .all, images, .{ .ctx = &dump, .take = Dump.take });
         } else try q.forward.runWithImages(m, &scratch, &.{.{ .cache = &cache, .rows = n }}, ids[at..][0..n], false, .all, images);
         @memcpy(out[at * q.config.vocab * 2 ..][0 .. n * q.config.vocab * 2], scratch.logits.contents()[0 .. n * q.config.vocab * 2]);
         at += n;

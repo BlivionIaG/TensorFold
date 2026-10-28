@@ -6,7 +6,8 @@ const q = @import("tensorfold").lfm3;
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     const tiled = args.len == 7 and std.mem.eql(u8, args[6], "--tiles");
-    if (args.len != 6 and !tiled) return error.ExpectedModelModuleInputRowsOutput;
+    const binned = args.len == 7 and std.mem.eql(u8, args[6], "--binned");
+    if (args.len != 6 and !tiled and !binned) return error.ExpectedModelModuleInputRowsOutput;
     const rows = try std.fmt.parseInt(usize, args[4], 10);
     if (rows == 0 or rows > 128) return error.ProjectionRowsOutsideFixtureBudget;
     const pool = mtl.objc.Pool.push();
@@ -14,6 +15,7 @@ pub fn main(init: std.process.Init) !void {
     const model = try q.Model.load(init.gpa, init.io, args[1]);
     defer model.deinit();
     if (tiled) try model.enableProjectionCandidate();
+    if (binned) try model.enableBinnedProjectionCandidate();
     var name: [512]u8 = undefined;
     const weights = try model.checkpoint.get(try std.fmt.bufPrint(&name, "{s}.weight", .{args[2]}));
     const scales = try model.checkpoint.get(try std.fmt.bufPrint(&name, "{s}.scales", .{args[2]}));

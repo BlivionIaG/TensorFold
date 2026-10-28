@@ -2,6 +2,7 @@
 const std = @import("std");
 const mtl = @import("metal");
 const sources = @import("kernel_sources");
+const dual = @import("dual_projection.zig");
 const row = @import("row_projection.zig");
 
 pub const chunk_keys = 4096;
@@ -20,6 +21,7 @@ pub const names = [_][:0]const u8{
 pub const Kernels = struct {
     pipelines: [names.len]mtl.Pipeline,
     rows: row.Pipelines,
+    dual: dual.Pipelines,
 
     pub fn get(self: *const Kernels, comptime key: []const u8) mtl.Pipeline {
         inline for (names, 0..) |name, i| if (comptime std.mem.eql(u8, name, key)) return self.pipelines[i];
@@ -38,6 +40,7 @@ pub const Kernels = struct {
     pub fn deinit(self: *Kernels) void {
         for (self.pipelines) |pipeline| pipeline.deinit();
         self.rows.deinit();
+        self.dual.deinit();
     }
 };
 
@@ -55,5 +58,7 @@ pub fn load(device: mtl.Device) !Kernels {
         loaded += 1;
     }
     out.rows = try row.Pipelines.load(device);
+    errdefer out.rows.deinit();
+    out.dual = try dual.Pipelines.load(device);
     return out;
 }
