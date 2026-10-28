@@ -161,7 +161,7 @@ def long_context():
         emit('long-reference-done',length=length,exit=r.returncode)
         assert r.returncode==0
 
-def performance(family='lfm2'):
+def performance(family='lfm2', compare=False):
     model=MODEL; draft=DRAFT; widths=[1,4,8,16]
     if family=='qwen':
         model=HUB/'models--TensorFold--Qwen3.8-27B-MLX-4bit/snapshots/22d8d538154e0e5b6f8dcb1fcc74a60a0798104c'
@@ -170,6 +170,10 @@ def performance(family='lfm2'):
     prompts=[{'name':'code','prompt':'Write a short Python function that computes the Fibonacci sequence and explain it.'},{'name':'chat','prompt':'Explain how matrix multiplication uses a GPU in plain English, then give a small numerical example.'}]
     arms={'main-plain':(MAIN,'plain'),'candidate-plain':(CAND,'plain'),'candidate-drafted':(CAND,'bf16')}
     if family=='qwen': arms={'main-drafted':(MAIN,'bf16'),'candidate-drafted':(CAND,'bf16')}
+    if compare:
+        published=os.environ.get('TF_QUAL_PUBLISHED')
+        if not published: raise SystemExit('compare requires TF_QUAL_PUBLISHED pointing to the earlier PR binary')
+        arms={'main':(MAIN,'plain'),'published':(Path(published),'bf16'),'candidate':(CAND,'bf16')}
     results=[]; reference={}
     order=list(arms)
     for round_ in range(3):
@@ -188,7 +192,7 @@ def performance(family='lfm2'):
                         assert all(h==reference[key] for h in hashes),(family,arm,key,'token mismatch')
                         first=min(x['first'] for x in rows); last=max(x['last'] for x in rows)
                         row={'round':round_,'arm':arm,'prompt':key,'streams':width,'aggregate_decode_tps':width*255/(last-first),'ttft_max':max(x['first']-x['sent'] for x in rows),'requests':rows}
-                        results.append(row); save('performance-'+family,results)
+                        results.append(row); save(('comparison-' if compare else 'performance-')+family,results)
                         emit('performance',family=family,round=round_,arm=arm,prompt=key,streams=width,tps=round(row['aggregate_decode_tps'],2))
 
 def cold_prefill():
@@ -217,4 +221,5 @@ if __name__=='__main__':
         if phase=='functional': functional()
         elif phase=='long': long_context()
         elif phase=='performance': performance(sys.argv[2] if len(sys.argv)>2 else 'lfm2')
+        elif phase=='compare': performance(compare=True)
         elif phase=='cold': cold_prefill()

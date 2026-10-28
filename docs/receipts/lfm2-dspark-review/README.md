@@ -133,3 +133,52 @@ validation; the rejected shared/lone guards have not been restored.
 
 M1, M2, M3, CUDA and HIP were not rerun for this revision. Focused Metal checks
 are not a full cross-family kernel-contract receipt. All nine GitHub checks passed on `2dbbc0e8f` before this receipt-only update.
+
+### Performance follow-up (`b4deee277`, M4 and M5)
+
+Candidate source `b4deee277` keeps context ingestion on the original bf16 row
+kernel through 32 rows, and uses the existing tiled kernel for held blocks past
+16 rows. It measures each admissible held depth and interpolates neighboring
+measured prices. The hold-price unit test covers a nonlinear timing curve.
+Qwen/DFlash2 dispatch and scheduling are unchanged; only LFM2 supplies this hold
+price table.
+
+`performance-investigation.json` retains all 64 M4 comparison cells, their output
+hashes, source hashes and actual arm order. Four-round median changes against
+the published PR are +1.06%, +0.55%, effectively flat and +0.57% for code at
+1/4/8/16 streams; prose changes are +0.27%, +0.75%, +0.41% and +0.42%.
+The 43.99 tok/s lone-code outlier is retained. The final arm order repeats the
+previous order, so this is not a perfectly balanced four-round experiment.
+All reply hashes agree. Independent fp32 drafter picks agree in all nine cases.
+Focused DSpark, shared-lane equality and native-option checks pass: 49 build
+steps and 56 tests. Formatting, whitespace and harness syntax checks pass.
+These small gains do not establish a no-loss result against main.
+
+An earlier candidate changed context projections as well as held blocks and
+regressed M4 16-stream prose by 8.38%. Preserving context projections removes
+that regression in this comparison, supporting context arithmetic as a cause.
+A separate acceptance-cap scheduler experiment lost roughly 2–3% in some M5
+cells and is excluded. Faster individual holds alone did not guarantee faster
+serving. The exact retained candidate also completed M5 validation, with source hashes
+matching this tree and tested executable hashes retained in the JSON receipt.
+
+
+M5 completed 72 cells in three Latin rotations of main without the external
+DSpark drafter, the published PR and the candidate. Four-round M4 and three-round
+M5 results use the same 256-token requests and aggregate decode metric. The main
+arm still permits suffix copying; it is not the literal `"draft": false` oracle.
+Candidate versus published median changes at 1/4/8/16 streams are -0.26%, +0.04%,
++0.31%, +0.58% for code and -0.04%, -0.02%, +0.06%, +0.72% for prose.
+Against main, code is +21.87%, -0.90%, -2.22%, -3.51%; prose is +36.18%, -0.55%,
+-1.19%, -0.36%. Wider concurrency therefore still does not clear a no-loss gate.
+
+Final M5 LFM2 contracts: 11 pass, zero failures, all 17 planted controls red,
+zero limit problems. Independent FP32 drafter picks agree in all nine cases,
+with zero host allocations/resizes in 20 steady rounds. Resumed/fresh equality,
+29 seeded sampled cases, eight 8-bit cells across 1/4/8/16 streams, and long
+contexts of 65,536 and 130,816 tokens (drafted/undrafted and four concurrent/solo)
+all pass. Cancellation stress completes 423 requests with 234 cancellations at
+six slots and 827 with 445 cancellations at sixteen slots, zero wrong replies
+or request errors. All servers shut down gracefully. Hashes and counters are in
+`performance-investigation.json`. This extends, rather than replaces, the
+historical full forward/cache and qualification receipts above.
