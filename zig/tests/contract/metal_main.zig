@@ -5,6 +5,7 @@ const tf = @import("tensorfold");
 const contract = @import("contract");
 const lfm3 = @import("metal_lfm3.zig");
 const lfm3_vision = @import("metal_lfm3_vision.zig");
+const lfm3_sums = @import("metal_lfm3_sums.zig");
 const rows_k = @import("metal_rows.zig");
 const affine_k = @import("metal_affine.zig");
 const topk_k = @import("metal_topk.zig");
@@ -146,6 +147,15 @@ pub fn main(init: std.process.Init) !u8 {
         lfm3_image_count += 1;
     }
     for (lfm3_image_probes[0..lfm3_image_count]) |*probe| try kernels.append(a, probe.kernel());
+    var lfm3_sum_probes: [8]lfm3_sums.Probe = undefined;
+    var lfm3_sum_count: usize = 0;
+    defer for (lfm3_sum_probes[0..lfm3_sum_count]) |*probe| probe.deinit();
+    for (std.enums.values(lfm3_sums.Kind)) |kind| for ([_]bool{ false, true }) |bad| {
+        if (!wanted(o, lfm3_sums.name(kind, bad))) continue;
+        lfm3_sum_probes[lfm3_sum_count] = try lfm3_sums.Probe.init(a, device, queue, kind, bad);
+        lfm3_sum_count += 1;
+    };
+    for (lfm3_sum_probes[0..lfm3_sum_count]) |*probe| try kernels.append(a, probe.kernel());
     for (gemma.all_entries) |v| {
         if (!wanted(o, v.name)) continue;
         if (!tensor) {

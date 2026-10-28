@@ -5,14 +5,14 @@ using namespace metal;
 constant constexpr uint L3CHUNKS = 64;
 constant constexpr uint L3PER = 4096;
 constant constexpr uint L3PART = 1024;
-struct lfm3_attn_args { uint len, cap; float scale; uint window; };
+struct lfm3_attn_args { uint len, cap; float scale; uint window, chunk_base; };
 
 [[kernel, max_total_threads_per_threadgroup(128)]] void lfm3_attn_partial(const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
                                  const device bfloat* values [[buffer(2)]], constant lfm3_attn_args& p [[buffer(3)]],
                                  device float* pm [[buffer(4)]], device float* pl [[buffer(5)]], device float* po [[buffer(6)]],
                                  uint3 tg [[threadgroup_position_in_grid]], uint sg [[simdgroup_index_in_threadgroup]],
                                  uint lane [[thread_index_in_simdgroup]]) {
-  const uint head = tg.x, row = tg.y, chunk = tg.z, count = p.len + row + 1;
+  const uint head = tg.x, row = tg.y, chunk = tg.z + p.chunk_base, count = p.len + row + 1;
   const uint cutoff = p.window == 0 ? 0 : count > p.window ? count - p.window : 0;
   const uint first = max(chunk * L3PER + sg * L3PART, cutoff);
   const uint end = min(chunk * L3PER + (sg + 1) * L3PART, count);

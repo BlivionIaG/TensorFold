@@ -60,15 +60,29 @@ inline float l3v_sum(float x, threadgroup float* partial, uint sg, uint lane) {
   return total;
 }
 
+#ifndef L3_SQUARE_ACC
+#define L3_SQUARE_ACC float
+#endif
+
+inline float l3v_square_partial(const thread float* v) {
+  L3_SQUARE_ACC square = 0.0f;
+  for (uint j = 0; j < 4; ++j) square += v[j] * v[j];
+  return float(square);
+}
+
+inline float l3v_head_square_total(float a, float b) {
+  return simd_sum(float(L3_SQUARE_ACC(a * a + b * b)));
+}
+
 [[kernel, max_total_threads_per_threadgroup(256)]] void l3v_rms(
     const device bfloat* x [[buffer(0)]], const device bfloat* weight [[buffer(1)]], device bfloat* y [[buffer(2)]],
     uint row [[threadgroup_position_in_grid]], uint tid [[thread_position_in_threadgroup]],
     uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
   const size_t base = size_t(row) * L3VW;
-  float v[4], sq = 0.0f;
-  for (uint j = 0; j < 4; ++j) { v[j] = float(x[base + tid + 256 * j]); sq += v[j] * v[j]; }
+  float v[4];
+  for (uint j = 0; j < 4; ++j) v[j] = float(x[base + tid + 256 * j]);
   threadgroup float part[8];
-  const float inv = metal::precise::rsqrt(l3v_sum(sq, part, sg, lane) / float(L3VW) + 1e-5f);
+  const float inv = metal::precise::rsqrt(l3v_sum(l3v_square_partial(v), part, sg, lane) / float(L3VW) + 1e-5f);
   for (uint j = 0; j < 4; ++j) {
     const uint col = tid + 256 * j;
     y[base + col] = bfloat(float(bfloat(v[j] * inv)) * float(weight[col]));
@@ -121,7 +135,7 @@ struct L3vGrid { uint gh, gw; };
   device bfloat* src = query ? q + (size_t(row) * 16 + head) * 64 : k + (size_t(row) * 8 + head - 16) * 64;
   const device bfloat* gain = query ? qn : kn;
   const float a = float(src[lane]), b = float(src[lane + 32]);
-  const float inv = metal::precise::rsqrt(simd_sum(a * a + b * b) / 64.0f + 1e-5f);
+  const float inv = metal::precise::rsqrt(l3v_head_square_total(a, b) / 64.0f + 1e-5f);
   const float na = float(bfloat(float(bfloat(a * inv)) * float(gain[lane])));
   const float nb = float(bfloat(float(bfloat(b * inv)) * float(gain[lane + 32])));
   const uint2 pos = l3v_place(row, gw);
@@ -206,4 +220,24 @@ inline float l3v_erf(float value) {
   if (i >= count) return;
   const float value = float(x[i]);
   x[i] = bfloat(0.5f * value * (1.0f + l3v_erf(value * 0.70710678118654752f)));
+}
+
+// Contract taps call the production square helpers and retain their FP32 outputs.
+[[kernel, max_total_threads_per_threadgroup(256)]] void l3v_rms_sums(
+    const device bfloat* x [[buffer(0)]], device float* out [[buffer(1)]],
+    uint row [[threadgroup_position_in_grid]], uint t [[thread_index_in_threadgroup]],
+    uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  float v[4];
+  for (uint j = 0; j < 4; ++j) v[j] = float(x[size_t(row) * L3VW + t + 256 * j]);
+  threadgroup float part[8];
+  const float total = l3v_sum(l3v_square_partial(v), part, sg, lane);
+  if (t == 0) out[row] = total;
+}
+
+[[kernel, max_total_threads_per_threadgroup(32)]] void l3v_qk_sums(
+    const device bfloat* x [[buffer(0)]], device float* out [[buffer(1)]],
+    uint row [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
+  const size_t base = size_t(row) * 64 + lane;
+  const float total = l3v_head_square_total(float(x[base]), float(x[base + 32]));
+  if (lane == 0) out[row] = total;
 }

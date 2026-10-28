@@ -88,10 +88,13 @@ class Reference:
         normalized = self.round(values * scale)
         return self.round(normalized * self.weights[name + '.weight'])
 
-    def convolution(self, x, prefix):
+    def convolution(self, x, prefix, dump=None):
         mx = self.mx
         width = self.text['hidden_size']
-        b, gate, values = mx.split(self.linear(x, prefix + 'conv.in_proj'), 3, axis=-1)
+        projected = self.linear(x, prefix + 'conv.in_proj')
+        if dump:
+            dump('conv_in', projected)
+        b, gate, values = mx.split(projected, 3, axis=-1)
         gated = self.round(b * values)
         kernel = self.weights[prefix + 'conv.conv.weight'].astype(mx.float32)[:, :, 0]
         taps = kernel.shape[1]
@@ -100,6 +103,8 @@ class Reference:
         for tap in range(taps):
             total = total + padded[tap:tap + x.shape[0]] * kernel[:, tap]
         result = self.round(self.round(total) * gate)
+        if dump:
+            dump('conv_gated', result)
         return self.linear(result, prefix + 'conv.out_proj')
 
     def rotary(self, x, kind):
@@ -150,25 +155,45 @@ class Reference:
         output = self.round(output * gate[:, :, None]).reshape(length, heads * dim)
         return self.linear(output, prefix + 'self_attn.o_proj')
 
-    def run(self, tokens, dump=None, last_only=False):
+    def run(self, tokens, dump=None, last_only=False, image_rows=None, image_start=0):
         mx = self.mx
         hidden = self.embedding(tokens)
+        if image_rows is not None:
+            hidden = mx.concatenate((hidden[:image_start], image_rows, hidden[image_start + image_rows.shape[0]:]), axis=0)
         if dump:
             dump('embedding', hidden)
         for index, kind in enumerate(self.text['layer_types']):
             prefix = self.prefix + f'layers.{index}.'
             x = self.norm(hidden, prefix + 'operator_norm')
-            result = self.convolution(x, prefix) if kind == 'conv' else self.attention(x, prefix, kind)
+            if dump:
+                dump(f'layer_{index:02d}_operator_norm', x)
+            conv_dump = (lambda suffix, value: dump(f'layer_{index:02d}_{suffix}', value)) if dump else None
+            result = self.convolution(x, prefix, conv_dump) if kind == 'conv' else self.attention(x, prefix, kind)
+            if dump:
+                dump(f'layer_{index:02d}_mixer', result)
             hidden = self.round(hidden + self.norm(result, prefix + 'post_operator_norm'))
+            if dump:
+                dump(f'layer_{index:02d}_post_operator', hidden)
             x = self.norm(hidden, prefix + 'ffn_norm')
+            if dump:
+                dump(f'layer_{index:02d}_ffn_norm', x)
             gate = self.linear(x, prefix + 'feed_forward.w1')
             up = self.linear(x, prefix + 'feed_forward.w3')
+            if dump:
+                dump(f'layer_{index:02d}_gate', gate)
+                dump(f'layer_{index:02d}_up', up)
             silu = self.round(gate.astype(mx.float32) * mx.sigmoid(gate.astype(mx.float32)))
-            result = self.linear(self.round(silu * up), prefix + 'feed_forward.w2')
+            act = self.round(silu * up)
+            if dump:
+                dump(f'layer_{index:02d}_act', act)
+            result = self.linear(act, prefix + 'feed_forward.w2')
+            if dump:
+                dump(f'layer_{index:02d}_down', result)
             hidden = self.round(hidden + self.norm(result, prefix + 'post_ffn_norm'))
             mx.eval(hidden)
             if dump:
                 dump(f'layer_{index:02d}', hidden)
+                dump(f'layer_{index:02d}_output', hidden)
         final = self.norm(hidden[-1:] if last_only else hidden, self.prefix + 'embedding_norm')
         if dump:
             dump('final_norm', final)
@@ -189,6 +214,8 @@ def main():
     parser.add_argument('--last-only', action='store_true')
     parser.add_argument('--attention', choices=('sdpa', 'eager'), default='sdpa')
     parser.add_argument('--intermediates-dir', type=Path)
+    parser.add_argument('--image-rows', type=Path, help='Little-endian BF16 projected rows for one image span')
+    parser.add_argument('--image-start', type=int, default=0)
     args = parser.parse_args()
     import mlx.core as mx
     import numpy as np
@@ -200,6 +227,28 @@ def main():
         parser.error('Token IDs exceed the checkpoint vocabulary')
     if tokens.size > model.text['max_position_embeddings']:
         parser.error('Token sequence exceeds the checkpoint context')
+    image_rows = None
+    image_count = 0
+    if args.image_rows is not None:
+        if model.config.get('model_type') != 'lfm3_vl':
+            parser.error('Projected image rows require an LFM3-VL checkpoint')
+        width = model.text['hidden_size']
+        if args.image_rows.stat().st_size == 0 or args.image_rows.stat().st_size % (width * 2):
+            parser.error('Expected complete BF16 projected image rows')
+        raw = np.fromfile(args.image_rows, dtype='<u2')
+        if raw.size == 0 or raw.size % width:
+            parser.error('Expected complete BF16 projected image rows')
+        values = (raw.astype(np.uint32) << 16).view(np.float32).reshape(-1, width)
+        image_count = values.shape[0]
+        end = args.image_start + image_count
+        if args.image_start < 0 or end > tokens.size or not np.isfinite(values).all():
+            parser.error('Image rows are nonfinite or exceed the prompt')
+        positions = np.flatnonzero(tokens == model.config['image_token_id'])
+        if not np.array_equal(positions, np.arange(args.image_start, end)):
+            parser.error('Image placeholders must match the supplied row span exactly')
+        image_rows = mx.array(values).astype(mx.bfloat16)
+    elif args.image_start != 0:
+        parser.error('--image-start requires --image-rows')
     intermediates = {}
 
     def dump(name, values):
@@ -208,12 +257,13 @@ def main():
 
     if args.intermediates_dir:
         args.intermediates_dir.mkdir(parents=True, exist_ok=True)
-    logits = model.run(tokens, dump if args.intermediates_dir else None, args.last_only)
+    logits = model.run(tokens, dump if args.intermediates_dir else None, args.last_only, image_rows, args.image_start)
     mx.eval(logits)
     write_bf16(args.output, logits, mx, np)
     metadata = {
         'shape': list(logits.shape), 'dtype': 'BF16', 'byte_order': 'little',
         'attention': args.attention, 'token_count': int(tokens.size), 'intermediates': intermediates,
+        'image_start': args.image_start, 'image_rows': image_count,
     }
     args.output.with_suffix(args.output.suffix + '.json').write_text(json.dumps(metadata, indent=2) + '\n')
     print(json.dumps(metadata))

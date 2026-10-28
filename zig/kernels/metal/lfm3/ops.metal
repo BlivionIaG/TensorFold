@@ -27,11 +27,22 @@ template [[host_name("lfm3_embed_b4")]] [[kernel]] decltype(lfm3_embed<4>) lfm3_
 template [[host_name("lfm3_embed_b6")]] [[kernel]] decltype(lfm3_embed<6>) lfm3_embed<6>;
 template [[host_name("lfm3_embed_b8")]] [[kernel]] decltype(lfm3_embed<8>) lfm3_embed<8>;
 
-// 256 threads a row, eight BF16 values each; the norm and checkpoint gain keep separate BF16 rounding points.
-inline float lfm3_inverse(const thread float* v, float eps, uint sg, uint lane,
-                          threadgroup float* sums, threadgroup float* result) {
-  float square = 0.0f;
-  for (uint j = 0; j < 8; ++j) square += v[j] * v[j];
+#ifndef L3_SQUARE_ACC
+#define L3_SQUARE_ACC float
+#endif
+
+template <uint N>
+inline float lfm3_square_partial(const thread float* v) {
+  L3_SQUARE_ACC square = 0.0f;
+  for (uint j = 0; j < N; ++j) square += v[j] * v[j];
+  return float(square);
+}
+
+// 256 threads a row and eight BF16 values each retain their production sum order.
+template <bool INVERSE>
+inline float lfm3_square_total(const thread float* v, float eps, uint sg, uint lane,
+                               threadgroup float* sums, threadgroup float* result) {
+  float square = lfm3_square_partial<8>(v);
   square = simd_sum(square);
   if (sg == 0) sums[lane] = 0.0f;
   threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -39,10 +50,19 @@ inline float lfm3_inverse(const thread float* v, float eps, uint sg, uint lane,
   threadgroup_barrier(mem_flags::mem_threadgroup);
   if (sg == 0) {
     const float total = simd_sum(sums[lane]);
-    if (lane == 0) result[0] = metal::precise::rsqrt(total / float(L3D) + eps);
+    if (lane == 0) result[0] = INVERSE ? metal::precise::rsqrt(total / float(L3D) + eps) : total;
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   return result[0];
+}
+
+inline float lfm3_inverse(const thread float* v, float eps, uint sg, uint lane,
+                          threadgroup float* sums, threadgroup float* result) {
+  return lfm3_square_total<true>(v, eps, sg, lane, sums, result);
+}
+
+inline float lfm3_head_square_total(const thread float* v) {
+  return simd_sum(lfm3_square_partial<4>(v));
 }
 
 [[kernel, max_total_threads_per_threadgroup(256)]] void lfm3_norm(device bfloat* h [[buffer(0)]], const device bfloat* r [[buffer(1)]],
@@ -112,9 +132,9 @@ struct lfm3_qk_args { uint len, cap; float eps, log2_theta; uint rotary_pairs; }
 // The zero-tail rotation uses the full 128-wide frequency progression, even when only 32 pairs rotate.
 inline void lfm3_head(const device bfloat* x, const device bfloat* gain, constant lfm3_qk_args& p,
                       uint pos, uint lane, thread bfloat* out) {
-  float v[4], square = 0.0f;
-  for (uint j = 0; j < 4; ++j) { v[j] = float(x[lane + 32 * j]); square += v[j] * v[j]; }
-  const float inv = metal::precise::rsqrt(simd_sum(square) / float(L3H) + p.eps);
+  float v[4];
+  for (uint j = 0; j < 4; ++j) v[j] = float(x[lane + 32 * j]);
+  const float inv = metal::precise::rsqrt(lfm3_head_square_total(v) / float(L3H) + p.eps);
   for (uint j = 0; j < 4; ++j) v[j] = float(bfloat(float(bfloat(v[j] * inv)) * float(gain[lane + 32 * j])));
   for (uint pair = 0; pair < 2; ++pair) {
     const uint frequency = lane + 32 * pair;
@@ -166,4 +186,25 @@ inline void lfm3_head(const device bfloat* x, const device bfloat* gain, constan
     const bfloat silu = bfloat(g * sigmoid);
     out[i] = bfloat(float(silu) * float(up[i]));
   }
+}
+
+// Contract taps expose the same FP32 square reductions before the nonlinear BF16 nodes.
+[[kernel, max_total_threads_per_threadgroup(256)]] void lfm3_norm_sums(
+    const device bfloat* x [[buffer(0)]], device float* out [[buffer(1)]],
+    uint row [[threadgroup_position_in_grid]], uint t [[thread_index_in_threadgroup]],
+    uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  float v[8];
+  for (uint j = 0; j < 8; ++j) v[j] = float(x[size_t(row) * L3D + 8 * t + j]);
+  threadgroup float sums[32], result[1];
+  const float total = lfm3_square_total<false>(v, 0.0f, sg, lane, sums, result);
+  if (t == 0) out[row] = total;
+}
+
+[[kernel, max_total_threads_per_threadgroup(32)]] void lfm3_qk_sums(
+    const device bfloat* x [[buffer(0)]], device float* out [[buffer(1)]],
+    uint row [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
+  float v[4];
+  for (uint j = 0; j < 4; ++j) v[j] = float(x[size_t(row) * L3H + lane + 32 * j]);
+  const float total = lfm3_head_square_total(v);
+  if (lane == 0) out[row] = total;
 }

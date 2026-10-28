@@ -11,9 +11,13 @@ const Buffer = mtl.Buffer;
 pub const Segment = struct { cache: *st.Cache, rows: usize };
 pub const Head = enum { last, all };
 pub var gpu_seconds: f64 = 0;
+pub const Trace = struct {
+    ctx: *anyopaque,
+    take: *const fn (ctx: *anyopaque, name: []const u8, value: Buffer, rows: usize, width: usize) anyerror!void,
+};
 
 const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32, rotary_pairs: u32 };
-const AttnArgs = extern struct { len: u32, cap: u32, scale: f32, window: u32 };
+const AttnArgs = @import("kernels.zig").AttentionArgs;
 
 const Encoder = struct {
     e: mtl.ComputeEncoder,
@@ -74,6 +78,14 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
 }
 
 pub fn runWithImages(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, images: ?@import("image_rows.zig").Images) !void {
+    return execute(m, s, segments, tokens, record, head, images, null);
+}
+
+pub fn runTrace(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, head: Head, trace: Trace) !void {
+    return execute(m, s, segments, tokens, false, head, null, trace);
+}
+
+fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, images: ?@import("image_rows.zig").Images, trace: ?Trace) !void {
     if (images != null and (record or segments.len != 1)) return error.InvalidLfmImageSegments;
     if (tokens.len == 0 or tokens.len > s.rows or (record and tokens.len > st.batch_rows)) return error.LfmRowsExceeded;
     var total: usize = 0;
@@ -87,46 +99,69 @@ pub fn runWithImages(m: *Model, s: *st.Scratch, segments: []const Segment, token
     @memcpy(s.ids.slice(u32, total), tokens);
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
-    const cb = m.queue.commandBuffer();
-    const enc = Encoder{ .e = cb.compute(.serial), .m = m, .record = record };
-    const e = enc.e;
+    var cb = m.queue.commandBuffer();
+    var enc = Encoder{ .e = cb.compute(.serial), .m = m, .record = record };
     var ended = false;
-    errdefer if (!ended) e.end();
+    errdefer if (!ended) enc.e.end();
     const embedding = m.weights.embedding;
-    e.setPipeline(m.kernels.embed(embedding.bits));
-    e.setBuffer(s.ids, 0, 0);
-    e.setBuffer(embedding.w, embedding.w_off, 1);
-    e.setBuffer(embedding.scales, embedding.s_off, 2);
-    e.setBuffer(embedding.biases, embedding.b_off, 3);
-    e.setBuffer(s.h, 0, 4);
-    e.setValue(@as(u32, @intCast(embedding.group)), 5);
+    enc.e.setPipeline(m.kernels.embed(embedding.bits));
+    enc.e.setBuffer(s.ids, 0, 0);
+    enc.e.setBuffer(embedding.w, embedding.w_off, 1);
+    enc.e.setBuffer(embedding.scales, embedding.s_off, 2);
+    enc.e.setBuffer(embedding.biases, embedding.b_off, 3);
+    enc.e.setBuffer(s.h, 0, 4);
+    enc.e.setValue(@as(u32, @intCast(embedding.group)), 5);
     enc.threads(.{ c.hidden, total, 1 }, .{ 256, 1, 1 });
-    if (images) |input| try input.encode(e, s.h, segments[0].cache.len, total);
+    if (images) |input| try input.encode(enc.e, s.h, segments[0].cache.len, total);
+    try stage(&enc, trace, "embedding", s.h, total, c.hidden, &cb, &ended);
     for (m.weights.blocks, 0..) |block, i| {
+        var name: [64]u8 = undefined;
         enc.norm(s.h, block.operator_norm, s.x, total);
+        try layerStage(&enc, trace, &name, i, "operator_norm", s.x, total, c.hidden, &cb, &ended);
         switch (block.mixer) {
-            .conv => |cv| try conv(enc, s, cv, i, segments, total),
-            .attention => |a| try attention(enc, s, a, segments, i, total),
+            .conv => |cv| {
+                try conv(enc, s, cv, i, segments, total);
+                try layerStage(&enc, trace, &name, i, "conv_in", s.bcx, total, c.hidden * 3, &cb, &ended);
+                try layerStage(&enc, trace, &name, i, "conv_gated", s.y, total, c.hidden, &cb, &ended);
+            },
+            .attention => |a| {
+                try attention(enc, s, a, segments, i, total);
+                try layerStage(&enc, trace, &name, i, "attn_q", s.q, total, c.hidden, &cb, &ended);
+                try layerStage(&enc, trace, &name, i, "attn_k", s.k, total, c.kv_heads * c.head_dim, &cb, &ended);
+                try layerStage(&enc, trace, &name, i, "attn_v", s.v, total, c.kv_heads * c.head_dim, &cb, &ended);
+                try layerStage(&enc, trace, &name, i, "attn_gate", s.head_gate, total, c.query_heads, &cb, &ended);
+                try layerStage(&enc, trace, &name, i, "attn_queries", s.queries, total, c.hidden, &cb, &ended);
+                try layerStage(&enc, trace, &name, i, "attn_gated", s.y, total, c.hidden, &cb, &ended);
+            },
         }
+        try layerStage(&enc, trace, &name, i, "mixer", s.r, total, c.hidden, &cb, &ended);
         enc.post(s.r, block.post_operator_norm, s.h, total);
+        try layerStage(&enc, trace, &name, i, "post_operator", s.h, total, c.hidden, &cb, &ended);
         enc.norm(s.h, block.ffn_norm, s.x, total);
+        try layerStage(&enc, trace, &name, i, "ffn_norm", s.x, total, c.hidden, &cb, &ended);
         const ffn = block.ffn;
         try enc.projection(ffn.gate, s.x, 0, s.gate, 0, total);
+        try layerStage(&enc, trace, &name, i, "gate", s.gate, total, c.intermediate, &cb, &ended);
         try enc.projection(ffn.up, s.x, 0, s.up, 0, total);
+        try layerStage(&enc, trace, &name, i, "up", s.up, total, c.intermediate, &cb, &ended);
         enc.pipe("lfm3_swiglu");
-        e.setBuffer(s.gate, 0, 0);
-        e.setBuffer(s.up, 0, 1);
-        e.setBuffer(s.act, 0, 2);
-        e.setValue(@as(u32, @intCast(total * c.intermediate)), 3);
+        enc.e.setBuffer(s.gate, 0, 0);
+        enc.e.setBuffer(s.up, 0, 1);
+        enc.e.setBuffer(s.act, 0, 2);
+        enc.e.setValue(@as(u32, @intCast(total * c.intermediate)), 3);
         enc.threads(.{ total * c.intermediate / 8, 1, 1 }, .{ 256, 1, 1 });
+        try layerStage(&enc, trace, &name, i, "act", s.act, total, c.intermediate, &cb, &ended);
         try enc.projection(ffn.down, s.act, 0, s.r, 0, total);
+        try layerStage(&enc, trace, &name, i, "down", s.r, total, c.hidden, &cb, &ended);
         enc.post(s.r, block.post_ffn_norm, s.h, total);
+        try layerStage(&enc, trace, &name, i, "output", s.h, total, c.hidden, &cb, &ended);
     }
     enc.norm(s.h, m.weights.norm, s.x, total);
+    try stage(&enc, trace, "final_norm", s.x, total, c.hidden, &cb, &ended);
     if (head == .all) try enc.projection(embedding, s.x, 0, s.logits, 0, total) else {
         try enc.projection(embedding, s.x, (total - 1) * c.hidden * 2, s.logits, 0, 1);
     }
-    e.end();
+    enc.e.end();
     ended = true;
     cb.commit();
     cb.wait();
@@ -142,6 +177,25 @@ pub fn runWithImages(m: *Model, s: *st.Scratch, segments: []const Segment, token
         seg.cache.commit(s, base, seg.rows, record);
         base += seg.rows;
     }
+}
+
+fn stage(enc: *Encoder, trace: ?Trace, name: []const u8, value: Buffer, rows: usize, width: usize, cb: *mtl.CommandBuffer, ended: *bool) !void {
+    const hook = trace orelse return;
+    enc.e.end();
+    ended.* = true;
+    cb.commit();
+    cb.wait();
+    gpu_seconds += cb.gpuSeconds();
+    if (cb.failure() != null) return error.GpuFailed;
+    try hook.take(hook.ctx, name, value, rows, width);
+    cb.* = enc.m.queue.commandBuffer();
+    enc.e = cb.compute(.serial);
+    ended.* = false;
+}
+
+fn layerStage(enc: *Encoder, trace: ?Trace, name: []u8, index: usize, suffix: []const u8, value: Buffer, rows: usize, width: usize, cb: *mtl.CommandBuffer, ended: *bool) !void {
+    if (trace == null) return;
+    return stage(enc, trace, try std.fmt.bufPrint(name, "layer_{d:0>2}_{s}", .{ index, suffix }), value, rows, width, cb, ended);
 }
 
 fn conv(enc: Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []const Segment, total: usize) !void {
@@ -196,7 +250,9 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, segments: []const S
         while (at < seg.rows) : (at += st.attn_slice) {
             const rows = @min(seg.rows - at, st.attn_slice);
             const first = seg.cache.len + at;
-            const args = AttnArgs{ .len = @intCast(first), .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .window = if (sliding) c.sliding_window else 0 };
+            const chunk_base = if (sliding) (first + 1 -| c.sliding_window) / st.chunk_keys else 0;
+            const last_chunk = (first + rows + st.chunk_keys - 1) / st.chunk_keys;
+            const args = AttnArgs{ .len = @intCast(first), .cap = cap, .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .window = if (sliding) c.sliding_window else 0, .chunk_base = @intCast(chunk_base) };
             enc.pipe("lfm3_attn_partial");
             e.setBuffer(s.queries, (base + at) * c.hidden * 2, 0);
             e.setBuffer(cache.keys, 0, 1);
@@ -205,7 +261,7 @@ fn attention(enc: Encoder, s: *st.Scratch, a: wts.Attention, segments: []const S
             e.setBuffer(s.pm, 0, 4);
             e.setBuffer(s.pl, 0, 5);
             e.setBuffer(s.po, 0, 6);
-            enc.groups(.{ c.query_heads, rows, (first + rows + st.chunk_keys - 1) / st.chunk_keys }, .{ 128, 1, 1 });
+            enc.groups(.{ c.query_heads, rows, last_chunk - chunk_base }, .{ 128, 1, 1 });
             enc.pipe("lfm3_attn_merge");
             e.setBuffer(s.pm, 0, 0);
             e.setBuffer(s.pl, 0, 1);

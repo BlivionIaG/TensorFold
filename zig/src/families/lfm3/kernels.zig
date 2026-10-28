@@ -7,7 +7,7 @@ const row = @import("../../core/row_projection.zig");
 pub const chunk_keys = 4096;
 pub const max_chunks = 64;
 pub const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32, rotary_pairs: u32 };
-pub const AttentionArgs = extern struct { len: u32, cap: u32, scale: f32, window: u32 };
+pub const AttentionArgs = extern struct { len: u32, cap: u32, scale: f32, window: u32, chunk_base: u32 = 0 };
 
 pub const names = [_][:0]const u8{
     "lfm3_embed_b4", "lfm3_embed_b6", "lfm3_embed_b8", "lfm3_norm",   "lfm3_post_add",     "lfm3_add",

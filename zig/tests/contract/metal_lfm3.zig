@@ -7,6 +7,7 @@ const c = contract.spec;
 const g = contract.gates;
 const rig_ = @import("rig.zig");
 const math = @import("lfm3_math.zig");
+const AttentionArgs = @import("tensorfold").lfm3.kernels.AttentionArgs;
 pub const Kind = math.Kind;
 
 fn depth(_: c.Shape) usize {
@@ -69,7 +70,9 @@ pub const Probe = struct {
 
     pub fn kernel(p: *Probe) g.Kernel {
         const reduction = p.kind == .norm or p.kind == .post_add or p.kind == .conv or math.qk(p.kind) or math.attention(p.kind);
-        const shapes: []const c.Shape = if (math.attention(p.kind))
+        const shapes: []const c.Shape = if (p.kind == .attention_sliding)
+            &.{ .{ .rows = 8, .n = 2048, .k = 257 }, .{ .rows = 1, .n = 2048, .k = 4097 }, .{ .rows = 17, .n = 2048, .k = 4350 }, .{ .rows = 8, .n = 2048, .k = 4351 }, .{ .rows = 17, .n = 2048, .k = 8193 }, .{ .rows = 8, .n = 2048, .k = 65536 } }
+        else if (math.attention(p.kind))
             &.{ .{ .rows = 8, .n = 2048, .k = 257 }, .{ .rows = 1, .n = 2048, .k = 4097 }, .{ .rows = 17, .n = 2048, .k = 1025 } }
         else if (p.kind == .swiglu)
             &.{ .{ .rows = 8, .n = 7680, .k = 7680 }, .{ .rows = 17, .n = 7680, .k = 7680 } }
@@ -216,20 +219,38 @@ pub const Probe = struct {
                 e.dispatchGroups(.of(20, d.rows, 1), .of(32, 1, 1));
             },
             .attention_full, .attention_sliding => {
-                bind(e, &.{ p.args[0], p.args[1], p.args[2] });
-                const args: extern struct { len: u32, cap: u32, scale: f32, window: u32 } = .{ .len = @intCast(d.history), .cap = @intCast(d.history + d.rows), .scale = 1.0 / @sqrt(@as(f32, 128)), .window = if (p.kind == .attention_sliding) 256 else 0 };
-                e.setBytes(std.mem.asBytes(&args), 3);
-                for (p.extra, 4..) |ref, i| e.setBuffer(ref.buf, ref.off, i);
-                e.dispatchGroups(.of(16, d.rows, (d.history + d.rows + 4095) / 4096), .of(128, 1, 1));
-                e.setPipeline(p.merge.?);
-                bind(e, &p.extra);
-                e.setBytes(std.mem.asBytes(&args), 3);
-                e.setBuffer(p.out.buf, p.out.off, 4);
-                e.dispatchGroups(.of(16, d.rows, 1), .of(32, 1, 1));
+                for (p.extra, [_]usize{ d.rows * 16 * 64 * 4, d.rows * 16 * 64 * 4, d.rows * 16 * 64 * 128 * 4 }) |ref, len|
+                    @memset(p.rig.bytes(ref, len), 0xff);
+                p.encodeAttention(e, true);
             },
             else => unreachable,
         }
         try p.rig.finish(pass);
+        if (p.kind == .attention_sliding) {
+            const bounded = try p.a.dupe(u8, try p.rig.outputBytes());
+            defer p.a.free(bounded);
+            const baseline = p.rig.begin();
+            p.encodeAttention(baseline.e, false);
+            try p.rig.finish(baseline);
+            if (!std.mem.eql(u8, bounded, try p.rig.outputBytes())) return error.SlidingChunkPruneChangedBytes;
+        }
+    }
+    fn encodeAttention(p: *Probe, e: mtl.ComputeEncoder, prune: bool) void {
+        const d = p.data;
+        const window: usize = if (p.kind == .attention_sliding) 256 else 0;
+        const first = if (prune and window != 0) (d.history + 1 -| window) / 4096 else 0;
+        const last = (d.history + d.rows + 4095) / 4096;
+        const args = AttentionArgs{ .len = @intCast(d.history), .cap = @intCast(d.history + d.rows), .scale = 1.0 / @sqrt(@as(f32, 128)), .window = @intCast(window), .chunk_base = @intCast(first) };
+        e.setPipeline(p.pipeline);
+        bind(e, &.{ p.args[0], p.args[1], p.args[2] });
+        e.setBytes(std.mem.asBytes(&args), 3);
+        for (p.extra, 4..) |ref, i| e.setBuffer(ref.buf, ref.off, i);
+        e.dispatchGroups(.of(16, d.rows, last - first), .of(128, 1, 1));
+        e.setPipeline(p.merge.?);
+        bind(e, &p.extra);
+        e.setBytes(std.mem.asBytes(&args), 3);
+        e.setBuffer(p.out.buf, p.out.off, 4);
+        e.dispatchGroups(.of(16, d.rows, 1), .of(32, 1, 1));
     }
     pub fn count(p: *Probe) usize {
         return p.data.rows * (if (p.kind == .conv) @as(usize, 7 * 2048) else if (math.qk(p.kind)) @as(usize, 3072) else if (p.kind == .swiglu) @as(usize, 7680) else @as(usize, 2048));

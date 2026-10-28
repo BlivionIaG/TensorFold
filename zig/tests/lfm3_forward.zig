@@ -4,20 +4,68 @@ const mtl = @import("metal");
 const tf = @import("tensorfold");
 const q = tf.lfm3;
 
+const Dump = struct {
+    io: std.Io,
+    a: std.mem.Allocator,
+    dir: []const u8,
+    offset: usize = 0,
+
+    fn take(ptr: *anyopaque, name: []const u8, value: mtl.Buffer, rows: usize, width: usize) !void {
+        const self: *Dump = @ptrCast(@alignCast(ptr));
+        const path = try std.fmt.allocPrint(self.a, "{s}/{d:0>5}_{s}.bf16", .{ self.dir, self.offset, name });
+        defer self.a.free(path);
+        try std.Io.Dir.cwd().writeFile(self.io, .{ .sub_path = path, .data = value.contents()[0 .. rows * width * 2] });
+    }
+};
+
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-    if (args.len != 4 and args.len != 5) return error.ExpectedModelTokensOutput;
+    if (args.len < 4 or args.len > 7) return error.ExpectedModelTokensOutput;
+    if (args.len == 7 and !std.mem.eql(u8, args[4], "images")) return error.ExpectedImageRowsAndStart;
+    if (args.len == 5 and !std.mem.eql(u8, args[4], "embedding") and !std.mem.eql(u8, args[4], "prefix")) return error.ExpectedEmbeddingOrPrefix;
+    if (args.len == 6 and !std.mem.eql(u8, args[4], "trace")) return error.ExpectedTraceDirectory;
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     const bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, args[2], init.gpa, .limited(4 << 20));
     defer init.gpa.free(bytes);
     const a = try tf.npy.parse(bytes);
     if (!std.mem.eql(u8, a.descr, "<u4") or a.rank != 1 or a.count() == 0) return error.ExpectedU32TokenVector;
+    if (args.len == 5 and std.mem.eql(u8, args[4], "embedding") and a.count() > q.state.batch_rows) return error.EmbeddingRowsExceedScratch;
     const ids = try init.gpa.alloc(u32, a.count());
     defer init.gpa.free(ids);
     @memcpy(std.mem.sliceAsBytes(ids), a.data);
+    for (ids) |id| if (id >= q.config.vocab) return error.InvalidLfmToken;
     const m = try q.Model.load(init.gpa, init.io, args[1]);
     defer m.deinit();
+    var image_buffer: ?mtl.Buffer = null;
+    defer if (image_buffer) |buffer| buffer.deinit();
+    var image_pipeline: ?mtl.Pipeline = null;
+    defer if (image_pipeline) |pipeline| pipeline.deinit();
+    var span: q.image_rows.Span = undefined;
+    var images: ?q.image_rows.Images = null;
+    if (args.len == 7) {
+        if (m.config.kind != .vision_language) return error.ExpectedVisionLanguageModel;
+        const start = try std.fmt.parseInt(u32, args[6], 10);
+        const image_bytes = try std.Io.Dir.cwd().readFileAlloc(init.io, args[5], init.gpa, .limited(64 << 20));
+        defer init.gpa.free(image_bytes);
+        const row_bytes = q.config.hidden * 2;
+        if (image_bytes.len == 0 or image_bytes.len % row_bytes != 0) return error.ExpectedBf16ImageRows;
+        const rows = image_bytes.len / row_bytes;
+        if (start > ids.len or rows > ids.len - start) return error.ImageRowsExceedPrompt;
+        for (ids, 0..) |id, at| {
+            if ((id == 125030) != (at >= start and at < start + rows)) return error.ImagePlaceholderMismatch;
+        }
+        var at: usize = 0;
+        while (at < image_bytes.len) : (at += 2) {
+            const value = std.mem.readInt(u16, image_bytes[at..][0..2], .little);
+            if (value & 0x7f80 == 0x7f80) return error.NonfiniteImageRow;
+        }
+        image_buffer = try m.device.buffer(image_bytes.len, mtl.ResourceOptions.shared);
+        @memcpy(image_buffer.?.contents()[0..image_bytes.len], image_bytes);
+        image_pipeline = try q.image_rows.load(m.device);
+        span = .{ .at = start, .rows = @intCast(rows), .source = 0 };
+        images = .{ .buffer = image_buffer.?, .pipeline = image_pipeline.?, .spans = (&span)[0..1] };
+    }
     var cache = try q.state.Cache.init(init.gpa, m.device, &m.config.layer_types, ids.len + 64);
     defer cache.deinit();
     var scratch = try q.state.Scratch.init(init.gpa, m.device, &m.config.layer_types, 32);
@@ -48,6 +96,8 @@ pub fn main(init: std.process.Init) !void {
     defer wide.deinit();
     const out = try init.gpa.alloc(u8, ids.len * q.config.vocab * 2);
     defer init.gpa.free(out);
+    var dump: Dump = .{ .io = init.io, .a = init.gpa, .dir = if (args.len == 6) args[5] else "" };
+    if (args.len == 6) try std.Io.Dir.cwd().createDirPath(init.io, dump.dir);
     var at: usize = 0;
     while (at < ids.len) {
         const n: usize = @min(ids.len - at, 32);
@@ -61,7 +111,10 @@ pub fn main(init: std.process.Init) !void {
                 done += rows;
             }
         }
-        try q.forward.run(m, &scratch, &.{.{ .cache = &cache, .rows = n }}, ids[at..][0..n], false, .all);
+        if (args.len == 6) {
+            dump.offset = at;
+            try q.forward.runTrace(m, &scratch, &.{.{ .cache = &cache, .rows = n }}, ids[at..][0..n], .all, .{ .ctx = &dump, .take = Dump.take });
+        } else try q.forward.runWithImages(m, &scratch, &.{.{ .cache = &cache, .rows = n }}, ids[at..][0..n], false, .all, images);
         @memcpy(out[at * q.config.vocab * 2 ..][0 .. n * q.config.vocab * 2], scratch.logits.contents()[0 .. n * q.config.vocab * 2]);
         at += n;
     }

@@ -112,21 +112,35 @@ pub const Vision = struct {
         try stage(queue, trace, "embedding_norm", ref(self.h), patches, 1024, &cb, &e, &active);
         for (self.weights.blocks, 0..) |block, index| {
             self.norm(e, self.h, block.operator_norm, self.x, patches);
+            if (index == 0) try stage(queue, trace, "first_operator_norm", ref(self.x), patches, 1024, &cb, &e, &active);
             switch (block.mixer) {
                 .conv => |conv| self.convolution(e, conv, gh, gw, patches),
                 .attention => |a| self.attention(e, a, gw, patches),
             }
+            if (index == 0) {
+                try stage(queue, trace, "first_conv_in", ref(self.bcx), patches, 3072, &cb, &e, &active);
+                try stage(queue, trace, "first_conv_gated", ref(self.y), patches, 1024, &cb, &e, &active);
+                try stage(queue, trace, "first_operator", ref(self.r), patches, 1024, &cb, &e, &active);
+            }
             self.add(e, patches);
+            if (index == 0) try stage(queue, trace, "first_residual", ref(self.h), patches, 1024, &cb, &e, &active);
             self.norm(e, self.h, block.ffn_norm, self.x, patches);
+            if (index == 0) try stage(queue, trace, "first_ffn_norm", ref(self.x), patches, 1024, &cb, &e, &active);
             self.kernels.linear(e, ref(self.x), block.gate, ref(self.gate), patches, 2560, 1024);
             self.kernels.linear(e, ref(self.x), block.up, ref(self.up), patches, 2560, 1024);
+            if (index == 0) {
+                try stage(queue, trace, "first_ffn_gate", ref(self.gate), patches, 2560, &cb, &e, &active);
+                try stage(queue, trace, "first_ffn_up", ref(self.up), patches, 2560, &cb, &e, &active);
+            }
             e.setPipeline(self.kernels.get("l3v_swiglu"));
             e.setBuffer(self.gate, 0, 0);
             e.setBuffer(self.up, 0, 1);
             e.setBuffer(self.act, 0, 2);
             e.setValue(@as(u32, @intCast(patches * 2560)), 3);
             e.dispatchThreads(mtl.Size.of(patches * 2560, 1, 1), mtl.Size.of(256, 1, 1));
+            if (index == 0) try stage(queue, trace, "first_ffn_act", ref(self.act), patches, 2560, &cb, &e, &active);
             self.kernels.linear(e, ref(self.act), block.down, ref(self.r), patches, 1024, 2560);
+            if (index == 0) try stage(queue, trace, "first_ffn_down", ref(self.r), patches, 1024, &cb, &e, &active);
             self.add(e, patches);
             var name: [24]u8 = undefined;
             try stage(queue, trace, try std.fmt.bufPrint(&name, "layer_{d:0>2}", .{index}), ref(self.h), patches, 1024, &cb, &e, &active);

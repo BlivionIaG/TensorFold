@@ -2,6 +2,14 @@
 const M = @import("limits.zig").MetalLaunch;
 
 pub const metal = [_]M{
+    .{ .name = "lfm3 square lfm3_norm_sums", .threads = 256, .tg_memory = 144, .reserved = 256 },
+    .{ .name = "lfm3 square-bad lfm3_norm_sums", .threads = 256, .tg_memory = 144, .reserved = 256 },
+    .{ .name = "lfm3 square lfm3_qk_sums", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3 square-bad lfm3_qk_sums", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3-vision square l3v_rms_sums", .threads = 256, .tg_memory = 32, .reserved = 256 },
+    .{ .name = "lfm3-vision square-bad l3v_rms_sums", .threads = 256, .tg_memory = 32, .reserved = 256 },
+    .{ .name = "lfm3-vision square l3v_qk_sums", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3-vision square-bad l3v_qk_sums", .threads = 32, .tg_memory = 0, .reserved = 32 },
     .{ .name = "lfm3-vision l3v_dense", .threads = 32, .tg_memory = 0, .reserved = 32 },
     .{ .name = "lfm3-vision l3v_rms", .threads = 256, .tg_memory = 32, .reserved = 256 },
     .{ .name = "lfm3-vision l3v_add", .threads = 256, .tg_memory = 0, .reserved = 256 },
