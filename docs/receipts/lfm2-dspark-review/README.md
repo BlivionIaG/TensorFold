@@ -30,6 +30,12 @@ multiplication, and `--drafter` refuses a target restricted to one-row verificat
   0 known findings; all 17 planted controls red, 0 missed; 0 limit problems.
 - `tf-kernel-contract --only tile_qmm`: 6 kernels passed gates 1-4, 0 failures,
   0 known findings; 0 limit problems.
+- `tf-lfm2-dspark MODEL DRAFTER 256`: 9/9 drafts equal the independent fp32
+  reference's picks; maximum confidence difference 0.00106; 20 steady drafter
+  rounds had zero host allocations and resizes; exit 0.
+- An additional `tf-lfm2-exact` probe was stopped before completion after 68
+  successful checks, including the 2,047/2,049-token seams. The full tool did not
+  complete, so this is not a full forward/cache qualification receipt.
 
 ## Served equality
 
