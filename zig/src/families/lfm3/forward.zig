@@ -78,6 +78,14 @@ const Encoder = struct {
         try self.end();
     }
 
+    fn pairedProjection(self: *Encoder, a: row.Weights, b: row.Weights, input: Buffer, first: Buffer, second: Buffer, rows: usize) !bool {
+        if (self.m.projection_candidate != null or self.m.binned_candidate != null or !dual.compatible(a, b)) return false;
+        try self.begin(.dense);
+        try dual.encode(self.e, &self.m.kernels.dual, a, b, input, 0, first, 0, second, 0, rows);
+        try self.end();
+        return true;
+    }
+
     fn norm(self: *Encoder, input: Buffer, weight: wts.Tensor, out: Buffer, rows: usize) !void {
         try self.begin(.norm);
         self.pipe("lfm3_norm");
@@ -202,12 +210,8 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
         try enc.norm(s.h, block.ffn_norm, s.x, total);
         try layerStage(&enc, trace, &name, i, "ffn_norm", s.x, total, c.hidden, &cb, &ended);
         const ffn = block.ffn;
-        const paired = m.projection_candidate == null and m.binned_candidate == null and dual.compatible(ffn.gate, ffn.up);
-        if (paired) {
-            try enc.begin(.dense);
-            try dual.encode(enc.e, &m.kernels.dual, ffn.gate, ffn.up, s.x, 0, s.gate, 0, s.up, 0, total);
-            try enc.end();
-        } else try enc.projection(ffn.gate, s.x, 0, s.gate, 0, total);
+        const paired = try enc.pairedProjection(ffn.gate, ffn.up, s.x, s.gate, s.up, total);
+        if (!paired) try enc.projection(ffn.gate, s.x, 0, s.gate, 0, total);
         try layerStage(&enc, trace, &name, i, "gate", s.gate, total, c.intermediate, &cb, &ended);
         if (!paired) try enc.projection(ffn.up, s.x, 0, s.up, 0, total);
         try layerStage(&enc, trace, &name, i, "up", s.up, total, c.intermediate, &cb, &ended);
@@ -332,8 +336,10 @@ fn sharedAttention(enc: *Encoder, s: *st.Scratch, segments: []const Segment, lay
 
 fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const Segment, layer: usize, total: usize) !void {
     try enc.projection(a.q, s.x, 0, s.q, 0, total);
-    try enc.projection(a.k, s.x, 0, s.k, 0, total);
-    try enc.projection(a.v, s.x, 0, s.v, 0, total);
+    if (!try enc.pairedProjection(a.k, a.v, s.x, s.k, s.v, total)) {
+        try enc.projection(a.k, s.x, 0, s.k, 0, total);
+        try enc.projection(a.v, s.x, 0, s.v, 0, total);
+    }
     try enc.projection(a.gate, s.x, 0, s.head_gate, 0, total);
     const sliding = enc.m.config.layer_types[layer] == .sliding_attention;
     const rotary = if (sliding) enc.m.config.sliding_rotary else enc.m.config.full_rotary;
