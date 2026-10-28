@@ -2257,5 +2257,10 @@
       "vl_refusal": true,
       "exit_status": 1
     }
-  ]
+  ],
+  "targeted_contract": {
+    "filter": "LFM3",
+    "summary": "SUMMARY 49 kernels: 49 pass gates 1-4, 0 fail, 0 known findings; 14 controls: 14 red as planted, 0 missed; 0 limit problems; gates 64304 ms, limits 4564 ms",
+    "scope": "Registered text-extraction LFM3 probes and limits; not a complete backend run"
+  }
 }
