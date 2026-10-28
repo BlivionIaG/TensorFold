@@ -365,3 +365,25 @@ extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_tp_place(const float
     for (int d = threadIdx.x; d < D; d += blockDim.x) out[d] = in[d];
     if ((int)threadIdx.x < slots) wts[r * slots + threadIdx.x] = threadIdx.x == 0 ? 1.0f : 0.0f;
 }
+
+// Expert parallel exchange: fp32 rows of D by a pair list; mode 0 packs (value + 0.0f, stored back), mode 1 scatters.
+extern "C" __global__ void __launch_bounds__(256) tf_exl3pf_xs_move(float* __restrict__ y, float* __restrict__ buf,
+        const int* __restrict__ idx, int count, int D, int mode) {
+    for (int t = blockIdx.x; t < count; t += gridDim.x) {
+        float4* row = reinterpret_cast<float4*>(y + (size_t)idx[t] * D);
+        float4* b = reinterpret_cast<float4*>(buf + (size_t)t * D);
+        for (int d = threadIdx.x; d < D / 4; d += blockDim.x) {
+            if (mode == 0) {
+                float4 v = row[d];
+                v.x = __fadd_rn(v.x, 0.0f);
+                v.y = __fadd_rn(v.y, 0.0f);
+                v.z = __fadd_rn(v.z, 0.0f);
+                v.w = __fadd_rn(v.w, 0.0f);
+                b[d] = v;
+                row[d] = v;
+            } else {
+                row[d] = b[d];
+            }
+        }
+    }
+}

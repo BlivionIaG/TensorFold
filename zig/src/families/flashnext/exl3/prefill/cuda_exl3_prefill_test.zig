@@ -57,7 +57,7 @@ test "exl3: two-chunk arenas retain hidden and deferred HC operands without alia
     const rows = 4096;
     const layout = Layout.of(rows, 2);
     const persistent = Persistent.of(rows);
-    try std.testing.expectEqual(@as(usize, 727399424), layout.total);
+    try std.testing.expectEqual(@as(usize, 811645952), layout.total);
     const host_layout = HostLayout.of(rows);
     try std.testing.expectEqual(@as(usize, 160 << 20), 2 * rows * wide * 2);
     var driver: cuda.Driver = undefined;
@@ -297,4 +297,8 @@ test "exl3: the prefill tiles cut K as decode does at Flash Next's shapes, and s
     try std.testing.expectEqual(@as(u32, 4), try cuda.exl3_experts.plan(dims, wt.moe_w, true));
     try std.testing.expectEqual(@as(u32, 1), try cuda.exl3_experts.plan(wt.moe_w, dims, false));
     try std.testing.expect(!(Options{}).rank_partials);
+}
+
+test "xchg: the compact exchange tests run with the prefill tests" {
+    _ = @import("cuda_exl3_prefill_xchg.zig");
 }
