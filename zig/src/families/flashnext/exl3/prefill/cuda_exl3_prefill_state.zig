@@ -46,6 +46,8 @@ pub const Options = struct {
     two_chunk: bool = false,
     /// Expert parallel: all-reduce each rank's branch (a tenth of the traffic, a re-association), not every slot.
     rank_partials: bool = false,
+    /// Expert parallel: all-reduce the padded slot rows (exact, more bytes) instead of sending the owned slots.
+    full_reduce: bool = false,
 };
 
 pub fn optionsFromEnv() Options {
@@ -58,6 +60,7 @@ pub fn optionsFromEnv() Options {
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_REDUCED_BRANCH")) |v| o.reduced_branch = std.mem.eql(u8, std.mem.span(v), "1");
     o.two_chunk = window_.enabled(if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK")) |value| std.mem.span(value) else null);
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RANK_PARTIALS")) |v| o.rank_partials = std.mem.eql(u8, std.mem.span(v), "1");
+    if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_FULL_REDUCE")) |v| o.full_reduce = std.mem.eql(u8, std.mem.span(v), "1");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING")) |v| o.ring = !std.mem.eql(u8, std.mem.span(v), "0");
     if (std.c.getenv("TF_FLASHNEXT_EXL3_PREFILL_RING_AHEAD")) |v| o.ring_ahead = std.fmt.parseInt(usize, std.mem.span(v), 10) catch o.ring_ahead;
     return o;
@@ -115,6 +118,10 @@ pub const Layout = struct {
     kscratch: usize,
     /// Expert parallel only: a rank's combined branch, then the ranks' sum [rows, D] fp32 (0 bytes at world 1).
     sum: usize,
+    /// Expert parallel only: the compact slot exchange's pair lists, then its send and receive rows.
+    xs_own: usize,
+    xs_peer: usize,
+    xs_buf: usize,
     total: usize,
     member_cap: usize,
 
@@ -146,6 +153,9 @@ pub const Layout = struct {
         l.items = take(&at, 3 * pk.maxItems(pairs, table_n) * 4);
         l.kscratch = take(&at, pk.scratchBytes(l.member_cap, dims, wt.moe_w));
         l.sum = take(&at, if (world > 1) rows * dims * 4 else 0);
+        l.xs_own = take(&at, if (world > 1) pairs * 4 else 0);
+        l.xs_peer = take(&at, if (world > 1) pairs * 4 else 0);
+        l.xs_buf = take(&at, if (world > 1) 2 * rows * dims * 4 else 0);
         l.total = at;
         return l;
     }
@@ -161,6 +171,8 @@ pub const HostLayout = struct {
     picks: usize,
     members: usize,
     items: usize,
+    xs_own: usize,
+    xs_peer: usize,
     total: usize,
 
     pub fn of(rows: usize) HostLayout {
@@ -182,6 +194,8 @@ pub const HostLayout = struct {
         l.picks = take(&at, pairs * 4);
         l.members = take(&at, pairs * 4);
         l.items = take(&at, 3 * pk.maxItems(pairs, table_n) * 4);
+        l.xs_own = take(&at, pairs * 4);
+        l.xs_peer = take(&at, pairs * 4);
         l.total = at;
         return l;
     }
@@ -211,6 +225,13 @@ pub const Persistent = struct {
     }
 };
 
+/// The compact slot exchange's per-row pair counts (cuda_exl3_prefill_xchg.zig): prefix sums over the chunk's rows.
+pub const Xs = struct {
+    own_row: []u32 = &.{},
+    peer_row: []u32 = &.{},
+    ready: bool = false,
+};
+
 pub const Deep = struct {
     gpa: std.mem.Allocator,
     owner: *const anyopaque,
@@ -229,6 +250,7 @@ pub const Deep = struct {
     red_go: cuda.Event = undefined,
     red_n: usize = 0,
     reduced_branch: bool = false,
+    xs: Xs = .{},
     unit_weights: ?cuda.DeviceBuffer = null,
     /// The layer's pass plan: expert ids in pass order, the passes, member counts and starts.
     order: [table_n]u16 = undefined,

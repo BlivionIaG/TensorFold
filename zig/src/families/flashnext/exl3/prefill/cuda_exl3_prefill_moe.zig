@@ -9,6 +9,7 @@ const pool_ = @import("../offload/cuda_exl3_pool.zig");
 const pk = @import("cuda_exl3_prefill_k.zig");
 const tp_ = @import("../tp/cuda_exl3_tp.zig");
 const state = @import("cuda_exl3_prefill_state.zig");
+const xchg = @import("cuda_exl3_prefill_xchg.zig");
 
 const dims = wt.dims;
 const slots = wt.slots;
@@ -41,6 +42,7 @@ pub fn moe(comptime Tri: type, dp: *Deep, p: *batch.Pass(Tri), lw: *const @impor
     const host_picks: []i32 = @alignCast(std.mem.bytesAsSlice(i32, dp.hbytes(hl.picks, pairs * 4)));
     try st.d.check(st.d.api.cuMemcpyDtoHAsync_v2(host_picks.ptr, dp.dptr(dp.lay.picks), pairs * 4, st.handle), "cuMemcpyDtoHAsync");
     try st.synchronize();
+    try xchg.prepare(dp, st, host_picks, x.tp, n);
     maskOwned(host_picks, x.tp);
     const t1 = now(p.io);
     try plan(dp, x, host_picks, o);
@@ -114,11 +116,12 @@ pub fn rankSum(dp: *Deep, p: anytype, x: *const load.Experts, n: usize, sub: usi
     const wts = dp.dptr(dp.lay.wts);
     const t0 = if (profile()) now(p.io) else 0;
     const partials = state.opts().rank_partials or dp.reduced_branch;
+    const compact = dp.xs.ready and !partials;
     if (partials) try pk.tpCombine(&dp.kern, st, y, wts, dp.dptr(dp.lay.picks), sum, n, slots, dims, r.lo, r.hi);
     const unit: usize = if (partials) dims else slots * dims;
     const buf = if (partials) sum else y;
     if (!overlap() or dp.red == null) {
-        try c.sum(st, buf, n * unit);
+        if (compact) try xchg.exchange(dp, c, st, 0, n) else try c.sum(st, buf, n * unit);
         if (partials and !dp.reduced_branch) try pk.tpPlace(&dp.kern, st, sum, y, wts, n, slots, dims);
     } else {
         const rs = dp.red.?;
@@ -128,7 +131,7 @@ pub fn rankSum(dp: *Deep, p: anytype, x: *const load.Experts, n: usize, sub: usi
         for (0..n_sub) |b| {
             const r0 = b * sub;
             const m = @min(sub, n - r0);
-            try c.sum(rs, buf + r0 * unit * 4, m * unit);
+            if (compact) try xchg.exchange(dp, c, rs, r0, m) else try c.sum(rs, buf + r0 * unit * 4, m * unit);
             if (partials and !dp.reduced_branch) try pk.tpPlace(&dp.kern, rs, sum + r0 * dims * 4, y + r0 * slots * dims * 4, wts + r0 * slots * 4, m, slots, dims);
             try dp.red_ev[b].record(rs);
         }
