@@ -88,7 +88,12 @@ Concatenate the trace files ending in `_<input_stage>.bf16` in filename order to
 the first `2*k` bytes recreate its `one_row_file`. Verify the recorded input hash before comparing outputs.
 Run `tf-lfm3-project MODEL MODULE INPUT.bf16 ROWS OUTPUT.bf16 --binned` at widths 64 and 1.
 Save the receipt’s `cases` array as `manifest.json` beside the inputs for `tools/lfm3/projection_compare.py`.
-Use the frozen candidate commit for these artifact identities; a later decode-twin candidate requires its own receipt.
+Use the frozen candidate commit for these artifact identities.
+
+`binned-row-twin.json` records the later opt-in row twin at `5a2bdea76`: all 132 captures retain
+123,814,080 bytes exactly against the earlier FP64-exact tiled captures. Both M4 and M5 pass six
+variants and two planted controls. The twin remains disabled for ordinary model loading because
+its serving performance has not passed; these operator results do not qualify a whole model.
 
 ## Controlled performance
 
