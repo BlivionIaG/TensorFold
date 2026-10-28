@@ -32,6 +32,22 @@ class TextRoundingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 norm_rows(value, gain, 1e-5)
 
+@unittest.skipIf(np is None, 'NumPy is required for rounding reference tests')
+class MetalFlushBoundaryTests(unittest.TestCase):
+    def test_named_metal_mode_flushes_fp32_subnormal_gain_product(self):
+        from unittest.mock import patch
+        values = np.ones((1, 128))
+        values[0, 0] = .5
+        gain = np.ones(128)
+        gain[0] = 2 ** -126
+        ideal = norm_rows(values, gain, 1e-5)
+        self.assertGreater(ideal[0, 0], 0)
+        with patch('elementary_reference.elementary',
+                   side_effect=lambda x, operation, backend: (1 / np.sqrt(x.astype(np.float64))).astype(np.float32)):
+            actual = norm_rows(values, gain, 1e-5, 'metal')
+        self.assertEqual(actual[0, 0], 0)
+        np.testing.assert_array_equal(actual[:, 1:], ideal[:, 1:])
+
 
 if __name__ == '__main__':
     unittest.main()
