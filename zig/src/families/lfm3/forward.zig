@@ -99,6 +99,19 @@ const Encoder = struct {
         try self.end();
     }
 
+    fn postNorm(self: *Encoder, input: Buffer, post_weight: wts.Tensor, next_weight: wts.Tensor, residual: Buffer, out: Buffer, rows: usize) !void {
+        try self.begin(.norm);
+        self.pipe("lfm3_post_norm");
+        self.e.setBuffer(input, 0, 0);
+        self.tensor(post_weight, 1);
+        self.e.setBuffer(residual, 0, 2);
+        self.e.setValue(c.eps, 3);
+        self.tensor(next_weight, 4);
+        self.e.setBuffer(out, 0, 5);
+        self.groups(.{ rows, 1, 1 }, .{ 256, 1, 1 });
+        try self.end();
+    }
+
     fn post(self: *Encoder, input: Buffer, weight: wts.Tensor, residual: Buffer, rows: usize) !void {
         try self.begin(.norm);
         self.pipe("lfm3_post_add");
@@ -190,7 +203,7 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     try stage(&enc, trace, "embedding", s.h, total, c.hidden, &cb, &ended);
     for (m.weights.blocks, 0..) |block, i| {
         var name: [64]u8 = undefined;
-        try enc.norm(s.h, block.operator_norm, s.x, total);
+        if (i == 0) try enc.norm(s.h, block.operator_norm, s.x, total);
         try layerStage(&enc, trace, &name, i, "operator_norm", s.x, total, c.hidden, &cb, &ended);
         switch (block.mixer) {
             .conv => |cv| {
@@ -209,9 +222,9 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
             },
         }
         try layerStage(&enc, trace, &name, i, "mixer", s.r, total, c.hidden, &cb, &ended);
-        try enc.post(s.r, block.post_operator_norm, s.h, total);
+        try enc.postNorm(s.r, block.post_operator_norm, block.ffn_norm, s.h, s.x, total);
         try layerStage(&enc, trace, &name, i, "post_operator", s.h, total, c.hidden, &cb, &ended);
-        try enc.norm(s.h, block.ffn_norm, s.x, total);
+
         try layerStage(&enc, trace, &name, i, "ffn_norm", s.x, total, c.hidden, &cb, &ended);
         const ffn = block.ffn;
         const paired = try enc.pairedProjection(ffn.gate, ffn.up, s.x, s.gate, s.up, total);
@@ -230,10 +243,11 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
         try layerStage(&enc, trace, &name, i, "act", s.act, total, c.intermediate, &cb, &ended);
         try enc.projection(ffn.down, s.act, 0, s.r, 0, total);
         try layerStage(&enc, trace, &name, i, "down", s.r, total, c.hidden, &cb, &ended);
-        try enc.post(s.r, block.post_ffn_norm, s.h, total);
+        const next_norm = if (i + 1 < m.weights.blocks.len) m.weights.blocks[i + 1].operator_norm else m.weights.norm;
+        try enc.postNorm(s.r, block.post_ffn_norm, next_norm, s.h, s.x, total);
         try layerStage(&enc, trace, &name, i, "output", s.h, total, c.hidden, &cb, &ended);
     }
-    try enc.norm(s.h, m.weights.norm, s.x, total);
+
     try stage(&enc, trace, "final_norm", s.x, total, c.hidden, &cb, &ended);
     if (head == .all) try enc.projection(embedding, s.x, 0, s.logits, 0, total) else {
         try enc.projection(embedding, s.x, (total - 1) * c.hidden * 2, s.logits, 0, 1);

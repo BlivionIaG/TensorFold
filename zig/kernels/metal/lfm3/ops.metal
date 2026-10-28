@@ -98,6 +98,32 @@ inline float lfm3_head_square_total(const thread float* v) {
   }
 }
 
+[[kernel, max_total_threads_per_threadgroup(256)]] void lfm3_post_norm(
+    const device bfloat* src [[buffer(0)]], const device bfloat* post_gain [[buffer(1)]],
+    device bfloat* h [[buffer(2)]], constant float& eps [[buffer(3)]],
+    const device bfloat* next_gain [[buffer(4)]], device bfloat* out [[buffer(5)]],
+    uint row [[threadgroup_position_in_grid]], uint t [[thread_index_in_threadgroup]],
+    uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  const size_t base = size_t(row) * L3D + 8 * t;
+  float v[8];
+  for (uint j = 0; j < 8; ++j) v[j] = float(src[base + j]);
+  threadgroup float sums[32], result[1];
+  const float inv = lfm3_inverse(v, eps, sg, lane, sums, result);
+  for (uint j = 0; j < 8; ++j) {
+#ifdef L3_POSTNORM_SKIP_ROUND
+    const float normalized = v[j] * inv * float(post_gain[8 * t + j]);
+#else
+    const bfloat normalized = bfloat(float(bfloat(v[j] * inv)) * float(post_gain[8 * t + j]));
+#endif
+    const bfloat updated = bfloat(float(h[base + j]) + float(normalized));
+    h[base + j] = updated;
+    v[j] = float(updated);
+  }
+  const float next_inv = lfm3_inverse(v, eps, sg, lane, sums, result);
+  for (uint j = 0; j < 8; ++j)
+    out[base + j] = bfloat(float(bfloat(v[j] * next_inv)) * float(next_gain[8 * t + j]));
+}
+
 [[kernel, max_total_threads_per_threadgroup(256)]] void lfm3_add(const device bfloat* x [[buffer(0)]], device bfloat* h [[buffer(1)]],
                         constant uint& count [[buffer(2)]], uint i [[thread_position_in_grid]]) {
   if (i < count) h[i] = bfloat(float(h[i]) + float(x[i]));
