@@ -19,10 +19,12 @@ const Dump = struct {
 };
 
 pub fn main(init: std.process.Init) !void {
-    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    const raw_args = try init.minimal.args.toSlice(init.arena.allocator());
+    const tiles = raw_args.len > 1 and std.mem.eql(u8, raw_args[raw_args.len - 1], "--tiles");
+    const args = raw_args[0 .. raw_args.len - @intFromBool(tiles)];
     if (args.len < 4 or args.len > 7) return error.ExpectedModelTokensOutput;
     if (args.len == 7 and !std.mem.eql(u8, args[4], "images")) return error.ExpectedImageRowsAndStart;
-    if (args.len == 5 and !std.mem.eql(u8, args[4], "embedding") and !std.mem.eql(u8, args[4], "prefix")) return error.ExpectedEmbeddingOrPrefix;
+    if (args.len == 5 and !std.mem.eql(u8, args[4], "embedding") and !std.mem.eql(u8, args[4], "prefix") and !std.mem.eql(u8, args[4], "decode")) return error.ExpectedEmbeddingPrefixOrDecode;
     if (args.len == 6 and !std.mem.eql(u8, args[4], "trace")) return error.ExpectedTraceDirectory;
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
@@ -37,6 +39,7 @@ pub fn main(init: std.process.Init) !void {
     for (ids) |id| if (id >= q.config.vocab) return error.InvalidLfmToken;
     const m = try q.Model.load(init.gpa, init.io, args[1]);
     defer m.deinit();
+    if (tiles) try m.enableProjectionCandidate();
     var image_buffer: ?mtl.Buffer = null;
     defer if (image_buffer) |buffer| buffer.deinit();
     var image_pipeline: ?mtl.Pipeline = null;
@@ -94,6 +97,23 @@ pub fn main(init: std.process.Init) !void {
     const prefix = args.len > 4 and std.mem.eql(u8, args[4], "prefix");
     var wide = try q.state.Scratch.init(init.gpa, m.device, &m.config.layer_types, if (prefix) 128 else 1);
     defer wide.deinit();
+    if (args.len == 5 and std.mem.eql(u8, args[4], "decode")) {
+        const history = ids.len - 1;
+        var done: usize = 0;
+        while (done < history) {
+            const rows: usize = @min(history - done, 32);
+            try q.forward.run(m, &scratch, &.{.{ .cache = &cache, .rows = rows }}, ids[done..][0..rows], false, .last);
+            done += rows;
+        }
+        try q.forward.run(m, &wide, &.{.{ .cache = &cache, .rows = 1 }}, ids[history..], false, .all);
+        try std.Io.Dir.cwd().writeFile(init.io, .{ .sub_path = args[3], .data = wide.logits.contents()[0 .. q.config.vocab * 2] });
+        var digest: [32]u8 = undefined;
+        std.crypto.hash.sha2.Sha256.hash(std.mem.sliceAsBytes(ids[0..history]), &digest, .{});
+        std.debug.print("native LFM3 decode: history {d}, row {d}, token {d}, history_u32le_sha256 {s}\n", .{
+            history, history, ids[history], &std.fmt.bytesToHex(digest, .lower),
+        });
+        return;
+    }
     const out = try init.gpa.alloc(u8, ids.len * q.config.vocab * 2);
     defer init.gpa.free(out);
     var dump: Dump = .{ .io = init.io, .a = init.gpa, .dir = if (args.len == 6) args[5] else "" };

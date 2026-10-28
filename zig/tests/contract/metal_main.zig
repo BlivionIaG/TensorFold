@@ -6,6 +6,7 @@ const contract = @import("contract");
 const lfm3 = @import("metal_lfm3.zig");
 const lfm3_sums = @import("metal_lfm3_sums.zig");
 const lfm3_attention_sums = @import("metal_lfm3_attention_sums.zig");
+const lfm3_segments = @import("metal_lfm3_segments.zig");
 const lfm3_projection = @import("metal_lfm3_projection.zig");
 const rows_k = @import("metal_rows.zig");
 const affine_k = @import("metal_affine.zig");
@@ -139,6 +140,15 @@ pub fn main(init: std.process.Init) !u8 {
         lfm3_count += 1;
     }
     for (lfm3_probes[0..lfm3_count]) |*probe| try kernels.append(a, probe.kernel());
+    var lfm3_shared_probes: [3]lfm3_segments.Probe = undefined;
+    var lfm3_shared_count: usize = 0;
+    defer for (lfm3_shared_probes[0..lfm3_shared_count]) |*probe| probe.deinit();
+    for ([_]bool{ false, true }) |sliding| for ([_]bool{ false, true }) |bad| {
+        if (sliding and bad or !wanted(o, lfm3_segments.name(sliding, bad))) continue;
+        lfm3_shared_probes[lfm3_shared_count] = try lfm3_segments.Probe.init(a, device, queue, sliding, bad);
+        lfm3_shared_count += 1;
+    };
+    for (lfm3_shared_probes[0..lfm3_shared_count]) |*probe| try kernels.append(a, probe.kernel());
     var lfm3_sum_probes: [8]lfm3_sums.Probe = undefined;
     var lfm3_sum_count: usize = 0;
     defer for (lfm3_sum_probes[0..lfm3_sum_count]) |*probe| probe.deinit();
