@@ -99,7 +99,9 @@ pub const Graph = struct {
 
     pub fn instantiate(self: Graph) Error!Exec {
         var e: abi.GraphExec = null;
+        const before = probeFree(self.d);
         const res = self.d.api.cuGraphInstantiateWithFlags(&e, self.handle, 0);
+        probeLog(self.d, "instantiate", before);
         // A capture-policy refusal is recoverable: callers can execute the same body eagerly.
         if (res == 800) return error.GraphNotPermitted;
         try self.d.check(res, "cuGraphInstantiateWithFlags");
@@ -118,7 +120,10 @@ pub const Exec = struct {
 
     /// Moves the graph's work to the device ahead of the first launch, so that launch pays no setup.
     pub fn upload(self: Exec, stream: Stream) Error!void {
+        const before = probeFree(self.d);
         try self.d.check(self.d.api.cuGraphUpload(self.handle, stream.handle), "cuGraphUpload");
+        stream.synchronize() catch {};
+        probeLog(self.d, "upload", before);
     }
 
     pub fn launchOn(self: Exec, stream: Stream) Error!void {
@@ -141,3 +146,19 @@ pub const Exec = struct {
         unreachable;
     }
 };
+
+/// TF_FLASHNEXT_MEM_PROBE=1: device bytes a graph instantiation or upload takes (cuMemGetInfo before and after).
+fn probeFree(d: *const Driver) u64 {
+    const v = std.c.getenv("TF_FLASHNEXT_MEM_PROBE") orelse return 0;
+    if (!std.mem.eql(u8, std.mem.span(v), "1")) return 0;
+    var f: usize = 0;
+    var t: usize = 0;
+    d.check(d.api.cuMemGetInfo_v2(&f, &t), "cuMemGetInfo") catch return 0;
+    return f;
+}
+
+fn probeLog(d: *const Driver, what: []const u8, before: u64) void {
+    if (before == 0) return;
+    const after = probeFree(d);
+    std.log.info("memprobe graph {s}: {d} bytes (free {d})", .{ what, @as(i64, @intCast(before)) - @as(i64, @intCast(after)), after });
+}
