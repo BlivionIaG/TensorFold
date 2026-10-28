@@ -1,0 +1,91 @@
+{
+  "status": "verified; binned candidate remains disabled by default",
+  "regression": {
+    "inputs": "BF16 X=+1 [1,64], codes=1, scale=+1, bias=+Inf, group64, bits4",
+    "before": "NaN (0x7fc0), where the independent factored FP64 expression is +Inf",
+    "cause": "FMA product residual inf-inf contaminated the low component of an infinite product.",
+    "fix": "Return the nonfinite product with a zero low component. Finite arithmetic is unchanged.",
+    "before_public_shader_sha256": "8119aa792197ebf3c9b12f767fe0dfe12482189340be8e75ae93f7910ac944ca",
+    "probe_binary_sha256": "18a8d11c077ae817f560d7ed31ea0045c8a1b2c058612d793feb60b627025588",
+    "before_probe_shader_hash": "not retained; original arithmetic is re-executed by the registered nonfinite negative control"
+  },
+  "native_nonfinite_probe": {
+    "shader_sha256": "9741db5d411df5bf490b215d1f6074458b43d4613ce9bfc73753f82c2ee73fbb",
+    "cases_per_host": 30,
+    "raw_candidate_corrected_canonical_pairs_per_host": 960,
+    "finite_outputs_per_host": 96,
+    "nonfinite_outputs_per_host": 864,
+    "axes": [
+      "input",
+      "scale",
+      "bias"
+    ],
+    "planted_values": [
+      "NaN",
+      "+Inf",
+      "-Inf"
+    ],
+    "bits": [
+      4,
+      6,
+      8
+    ],
+    "group": 64,
+    "hosts": {
+      "M4 Pro": {
+        "raw_bytes_equal": true,
+        "signed_inf_nan_classes_match": true,
+        "nonfinite_outputs_certified": 0
+      },
+      "M5 Ultra": {
+        "raw_bytes_equal": true,
+        "signed_inf_nan_classes_match": true,
+        "nonfinite_outputs_certified": 0
+      }
+    }
+  },
+  "kernel_contract": {
+    "fixture": "The existing nonfinite gate retains nonfinite inputs and adds a positive finite row plus NaN and both infinities in scales and biases.",
+    "new_control": "TF_BP_BAD_NONFINITE restores the original product-residual bug and must fail gate1.",
+    "M4 Pro": {
+      "kernels_pass": 6,
+      "kernels_fail": 0,
+      "controls_red_as_planted": 3,
+      "controls_missed": 0,
+      "limit_problems": 0
+    },
+    "M5 Ultra": {
+      "kernels_pass": 6,
+      "kernels_fail": 0,
+      "controls_red_as_planted": 3,
+      "controls_missed": 0,
+      "limit_problems": 0
+    }
+  },
+  "finite_checkpoint_proof": {
+    "host": "M5 Ultra",
+    "cases": 132,
+    "bytes": 123814080,
+    "all_canonical_bytes_equal": true,
+    "prompt_decode_pairs": 66,
+    "all_prompt_decode_first_row_bytes_equal": true,
+    "comparison": "All132 captures match the frozen FP64-exact canonical captures in binned-projection.json; includes six unchanged n16 fallbacks.",
+    "binary_sha256": "0a1b289a5d975c07664bee6ec1e597c70fe063bb000833d561581edeb42b78df"
+  },
+  "artifacts": {
+    "project": "0a1b289a5d975c07664bee6ec1e597c70fe063bb000833d561581edeb42b78df",
+    "contract": "852673342c03945bec17bbebeb13dde44b0f7a4b2daf0366625066d76719c624"
+  },
+  "source_sha256": {
+    "zig/kernels/metal/core/binned_projection.metal": "c839dbf5d8945f907b516de9f8ca0cb2e7d47b8acc4d63c349dc22ec863e1a3c",
+    "zig/tests/contract/metal_binned_projection.zig": "70d92c20bf34d9d86e0f72f1baf2a6a7aab9c31ff22a535e5c8cf618db420e66",
+    "zig/tests/contract/metal_main.zig": "b6e42170977de56d6c12c68c994b7b7fe1fd0f2af7f5865a94d3274116e548db",
+    "zig/tests/contract/metal_limits.zig": "a898d53688271ca6da39daac167e582d7237c9e24d8ba849b211e1b3a9b3a864",
+    "zig/src/core/contract/lfm3_records.zig": "9ba50b5b5e4d0ffc9834e2c83c6b4c11872e57758b6372402ee293a0d41fd34f"
+  },
+  "scope": "No production candidate activation or performance acceptance is asserted by this receipt.",
+  "reproduce_kernel_contract": [
+    "zig build tf-kernel-contract tf-lfm3-project",
+    "zig-out/bin/tf-kernel-contract --only 'LFM3 binned'"
+  ]
+}

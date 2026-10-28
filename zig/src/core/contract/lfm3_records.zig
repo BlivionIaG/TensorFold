@@ -2,6 +2,9 @@
 const M = @import("limits.zig").MetalLaunch;
 
 pub const metal = [_]M{
+    .{ .name = "binned bad-nonfinite tf_binned_twin_q4_g64", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "binned bad-nonfinite tf_binned_sums", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "binned bad-nonfinite tf_binned_q4_g64", .threads = 64, .tg_memory = 5776, .reserved = 64 },
     .{ .name = "binned tf_binned_twin_q4_g32", .threads = 64, .tg_memory = 0, .reserved = 64 },
     .{ .name = "binned tf_binned_twin_q4_g64", .threads = 64, .tg_memory = 0, .reserved = 64 },
     .{ .name = "binned tf_binned_twin_q6_g32", .threads = 64, .tg_memory = 0, .reserved = 64 },

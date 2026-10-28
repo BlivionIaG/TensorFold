@@ -8,7 +8,7 @@ const rig_ = @import("rig.zig");
 const bp = tf.lfm3.binned_projection;
 const c = ct.spec;
 const g = ct.gates;
-pub const Fault = enum { none, rows, accum };
+pub const Fault = enum { none, rows, accum, nonfinite };
 
 pub fn label(a: std.mem.Allocator, bits: u8, group: usize, fault: Fault) ![]u8 {
     return std.fmt.allocPrint(a, "{s}LFM3 binned q{d} g{d} {t}", .{ if (fault == .none) "metal " else "control: ", bits, group, fault });
@@ -47,6 +47,7 @@ pub const Probe = struct {
             .none => "",
             .rows => "#define TF_BP_BAD_ROWS 1\n",
             .accum => "#define TF_BP_BAD_ACC 1\n",
+            .nonfinite => "#define TF_BP_BAD_NONFINITE 1\n",
         }, text });
         defer a.free(source);
         return .{ .inner = inner, .pipelines = try bp.Pipelines.loadSource(device, source), .fault = fault, .label = name };
@@ -65,12 +66,30 @@ pub const Probe = struct {
             .none => null,
             .rows => .shapes,
             .accum => .sums,
+            .nonfinite => .nonfinite,
         } };
     }
     fn prepare(ctx: *anyopaque, shape: c.Shape, fill: g.Fill, seed: u64) !bool {
         const p = parent(ctx);
         if (shape.n % 32 != 0 or shape.k % 64 != 0) return false;
         if (!try p.inner.prepare(shape, fill, seed)) return false;
+        if (fill == .nonfinite and shape.rows >= 5 and shape.n >= 6) {
+            const f = p.inner.f.?;
+            const groups = shape.k / p.inner.v.group;
+            // Keep one positive finite input row so nonfinite scales and biases
+            // must retain their signs instead of acquiring a NaN FMA residual.
+            @memset(f.x[(shape.rows - 1) * shape.k ..][0..shape.k], c.toBf16(1));
+            const values = [_]f32{ std.math.inf(f32), -std.math.inf(f32), std.math.nan(f32) };
+            for (values, 0..) |value, i| {
+                f.biases[i * groups] = c.toBf16(value);
+                f.scales[(i + 3) * groups] = c.toBf16(value);
+            }
+            for ([_]struct { ref: rig_.Ref, data: []const u8 }{
+                .{ .ref = p.inner.x, .data = std.mem.sliceAsBytes(f.x) },
+                .{ .ref = p.inner.s, .data = std.mem.sliceAsBytes(f.scales) },
+                .{ .ref = p.inner.b, .data = std.mem.sliceAsBytes(f.biases) },
+            }) |input| @memcpy(p.inner.rig.bytes(input.ref, input.data.len), input.data);
+        }
         const bytes = try bp.scratchBytes(shape.k, p.inner.v.group, shape.rows);
         p.sums = try p.inner.rig.scratch(bytes);
         p.meta = try p.inner.rig.scratch(bytes);
