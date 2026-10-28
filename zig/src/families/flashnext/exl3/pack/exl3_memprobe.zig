@@ -1,5 +1,4 @@
-//! TF_FLASHNEXT_MEM_PROBE=1: the device's real free bytes (cuMemGetInfo) at each allocation phase of an EXL3 start
-//! and after each graph capture, so a memory ledger can be set against the device rather than the allocator's counters.
+//! TF_FLASHNEXT_MEM_PROBE=1: real free device bytes (cuMemGetInfo) at each allocation phase of an EXL3 start.
 const std = @import("std");
 const cuda = @import("cuda");
 

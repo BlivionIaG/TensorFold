@@ -5,10 +5,7 @@ pub const Charge = policy.Charge;
 pub const Class = policy.Class;
 pub const Policy = struct { reservation_bytes: u64, headroom_bytes: u64, auxiliary_bytes: u64 = 0, charge: Charge, prefill_charge: ?Charge = null, chain_charge: ?Charge = null, two_chunk_reserved: bool = false };
 const mib: u64 = 1024 * 1024;
-/// Slack the admission ledger keeps above the retained graphs (its limit must hold one capture's peak plus the
-/// auxiliary allowance). It is a ledger bound, not device memory: the exec memory of every graph a run holds
-/// (decode rounds and windows, 48 prefill layers, the draft chains) measured 48-62 MiB at one stream, so the pools
-/// and lanes protect the retained allowance only; a capture's transient comes from the device reserve.
+/// Ledger slack over the retained graphs, not device memory: pools and lanes protect the allowance (48-62 MiB used).
 const ledger_slack_bytes: u64 = 192 * mib;
 
 /// What startup keeps free of pools and lanes for the graphs: the ledger limit without its slack.
