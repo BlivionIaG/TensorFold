@@ -33,9 +33,8 @@ multiplication, and `--drafter` refuses a target restricted to one-row verificat
 - `tf-lfm2-dspark MODEL DRAFTER 256`: 9/9 drafts equal the independent fp32
   reference's picks; maximum confidence difference 0.00106; 20 steady drafter
   rounds had zero host allocations and resizes; exit 0.
-- An additional `tf-lfm2-exact` probe was stopped before completion after 68
-  successful checks, including the 2,047/2,049-token seams. The full tool did not
-  complete, so this is not a full forward/cache qualification receipt.
+- Completed `tf-lfm2-exact`: 72/72 checks on both M4 Pro and M5 Ultra, zero
+  failures or skipped checks. This supersedes the earlier interrupted run.
 
 ## Served equality
 
@@ -77,10 +76,60 @@ The measured reduction during load is 508,166,576 bytes (484.6 MiB). This compar
 the original pre-allocation head with the corrected stack rebased onto current
 main; it is not an isolated comparison of #1393's commit on the same base.
 
-## Remaining qualification
+## Extended qualification on the published stack
 
-No new long-context, cancellation/replacement stress, resumed-serving, sampled
-serving or alternating speed qualification is claimed here. The maintainer's
-requested current-main performance cells and other-family A/B remain to be run.
-M1, M2, M3, M5, CUDA and HIP were not run for this revision. The focused Metal
-contract checks above are not the full cross-family `kernel-contract` gate.
+Source `2dbbc0e8f`, main baseline `d0c9dc9fb`. Additional device: Apple M5 Ultra,
+256 GiB RAM, macOS 27.0, Metal compiler 32023.921.6, Zig 0.17.0.
+[Extended evidence](extended-qualification.json) retains request hashes, counters,
+per-round throughput and latency. Generated text and token arrays are omitted.
+[Reproduction harness](qualification.py) supports `functional`, `long`,
+`performance`, `performance qwen`, and `cold`; set `TF_QUAL_MAIN`,
+`TF_QUAL_CANDIDATE`, `TF_QUAL_MODEL`, `TF_QUAL_DRAFTER`, and `TF_QUAL_OUT`
+for the local installations. Run one model process at a time.
+
+Both devices passed real two-turn resumed-versus-fresh chat equality (3,517 cached
+prompt tokens), 29 seeded sampled equality cases across 1/4/8/16 streams, and
+cancellation/replacement stress with Metal API validation enabled. M4 completed
+143 requests with 84 cancellations at six slots and 252 with 134 at sixteen;
+M5 completed 453 with 247 and 852 with 459 respectively. Zero wrong replies or
+request errors. Server shutdowns were graceful.
+
+M5 plain/drafted serving hashes agree at 4,096, 16,384, 65,536 and 130,816 prompt
+tokens. Independent fp32 drafter checks agree on all nine picks at histories
+65,535 and 130,815; maximum confidence differences 0.00532 and 0.00351.
+Twenty steady rounds had zero host allocations/resizes. M5 also passes the same
+11 LFM2 and six tile_qmm contracts, with all 17 LFM2 planted controls red.
+
+### Performance remains an open issue
+
+Three alternating rounds per arm, 256 generated tokens, 1/4/8/16 streams,
+32-token warmups and uncached prompts. Aggregate decode rate uses the span from
+the earliest first token to the latest last token. The `chat` fixture label in
+the JSON means prose submitted to raw completions, not a templated chat request.
+All cross-arm output hashes agree. These results do **not** clear a no-loss gate.
+
+On M5, drafted versus main-plain median decode changes for code at 1/4/8/16
+streams are +19.44%, -0.96%, -2.20%, -4.23%; for prose they are +35.89%,
+-0.72%, -1.25%, -1.17%. Candidate-plain closely follows main-plain.
+On M4, changes are approximately -6.0%, -13.9%, -5.6%, +0.7% for code and
+-6.4%, -13.4%, -7.8%, -8.0% for prose. M4 also shows variation between plain
+arms, so these measurements do not isolate every source of the loss.
+
+M5 cold prefill medians at 2k/8k/32k/64k tokens are 0.1527/0.6027/2.9244/7.3276
+seconds on main-plain versus 0.1634/0.6327/3.0466/7.5652 with the drafter.
+Prompt counts were checked and cached-token counts were zero.
+
+Other-family Qwen3.8-27B plus DFlash2 was tested at one and four streams with
+three alternating rounds on both devices. M4 results vary with each executable's
+independently measured persistent cost record: fresh records give code changes
+of -7.13%/+3.71% and prose -6.47%/+0.83%. The original records and fresh-record
+runs are both retained. No timings were copied between executables. M5 changes are +0.20%/-0.47% for code and +0.05%/+0.70% for prose.
+No blanket other-family performance pass is claimed.
+
+Two isolated, uncommitted experiments (a larger absorb staging buffer and
+removing forced per-stream copy pricing) did not consistently remove the loss.
+Neither experiment is part of this PR. Further pricing work requires its own
+validation; the rejected shared/lone guards have not been restored.
+
+M1, M2, M3, CUDA and HIP were not rerun for this revision. Focused Metal checks
+are not a full cross-family kernel-contract receipt. All nine GitHub checks passed on `2dbbc0e8f` before this receipt-only update.
