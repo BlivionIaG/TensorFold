@@ -1,0 +1,206 @@
+{
+  "scope": "Reuse the existing qualified paired row helper for equal-geometry K/V. Arithmetic and kernel sources unchanged. No performance improvement is claimed before matched serving measurements.",
+  "source_commit": "021f5ce9f56c490762d842e1177dee9516c75837",
+  "host": "Apple M4 Pro 48 GiB, macOS 26.5.1",
+  "native_sha256": "e9a1488abb130af39c21ee08068fe490d5926271cebcd2e9d0f815711e3730b4",
+  "baseline_forward_sha256": "a05dfd241f67e05ab5ba8a0ea978c094b889818a463edab80f29848ceb25d4e3",
+  "candidate_forward_sha256": "8ef7afff7df80dda6d573c1c8c9b0079ecdfc0752fe35c827c4355d6cde549e2",
+  "fixture": "fidelity-prompts/reasoning-257.ids.json",
+  "tokens_npy_sha256": "81449804fdd1a104d6dc9607c27d5cea49237064e50c80a765f68d8eba57f596",
+  "all_six_logit_arrays_equal": true,
+  "equal_logit_bytes": 394752000,
+  "logit_arrays": [
+    {
+      "model": "LFM3-1.7B-MLX-4bit",
+      "bytes": 65792000,
+      "sha256": "aaedf4b7a3db61d3ae5070f182e94faf81224ed5bd0db1145159aa1433ee0812"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-6bit",
+      "bytes": 65792000,
+      "sha256": "2710a9b6ca6033adbdcf00d80e787665998f2a3bceb5b0c2d6a113d9c3e18eac"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-8bit",
+      "bytes": 65792000,
+      "sha256": "68a9e475b459023bf3fbbae092b7cac795ddd64a4c6bad668481246cacc358e9"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-4bit",
+      "bytes": 65792000,
+      "sha256": "118440ccd7fc07a502485a3266a2878ec815f316bcfa9dddd859e5d324fb8654"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-6bit",
+      "bytes": 65792000,
+      "sha256": "9be9b95af0ff0c00697f8737ce9271ccac0e6dcd519b56d49f3666623ae6fd2c"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-8bit",
+      "bytes": 65792000,
+      "sha256": "3d1b90a881f6adbd5df111c72f1b8bfe2f7a6d445e478a7be326e4627aa849b6"
+    }
+  ],
+  "operator_pairs": [
+    {
+      "model": "LFM3-1.7B-MLX-4bit",
+      "rows": 1,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "dda2cad3821cfa4cf617e0326115349407f39fc0745dd9162f5956eabeea674c",
+      "result": "DUAL_PROJECT rows=1 k=2048 n=512 bits=4 group=64 equal_bytes=2048"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-4bit",
+      "rows": 3,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "badfc915b7fb3074e0473c7c12f57f7e9e12a5dc4b552e1750a97a55e2cfb13c",
+      "result": "DUAL_PROJECT rows=3 k=2048 n=512 bits=4 group=64 equal_bytes=6144"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-4bit",
+      "rows": 64,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "b63a3ce95ac63b4c6658f46c28ae63e60b1e7ec8df4523df47ad94dc6844f048",
+      "result": "DUAL_PROJECT rows=64 k=2048 n=512 bits=4 group=64 equal_bytes=131072"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-6bit",
+      "rows": 1,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "db10cfadbb4b600f83c224edbe51e63d1065f8e44f0c7b7b6d23f1df2b8cd0ab",
+      "result": "DUAL_PROJECT rows=1 k=2048 n=512 bits=6 group=64 equal_bytes=2048"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-6bit",
+      "rows": 3,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "40737eb9fd5bf11264c596149d31e5c6d07168e2d255ffae6f8c8605534c2ec9",
+      "result": "DUAL_PROJECT rows=3 k=2048 n=512 bits=6 group=64 equal_bytes=6144"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-6bit",
+      "rows": 64,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "cecf2508e4de61c6e75839e1c87764bcdae093d05d1f29d03831db1e476f01b3",
+      "result": "DUAL_PROJECT rows=64 k=2048 n=512 bits=6 group=64 equal_bytes=131072"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-8bit",
+      "rows": 1,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "db64b16362a24abdb2fbf3adba14d5fddd470ccbf017e5e1ee1532cf8eed7d90",
+      "result": "DUAL_PROJECT rows=1 k=2048 n=512 bits=8 group=64 equal_bytes=2048"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-8bit",
+      "rows": 3,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "4793dcbc5e1ca98f5ed831a1c7b83973a4654dbb2fff14fa745a32da567783e7",
+      "result": "DUAL_PROJECT rows=3 k=2048 n=512 bits=8 group=64 equal_bytes=6144"
+    },
+    {
+      "model": "LFM3-1.7B-MLX-8bit",
+      "rows": 64,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "9c6a7b9422c6719539de6b1e5f47868f46309de3229daa915e6ec928d63d0d6d",
+      "result": "DUAL_PROJECT rows=64 k=2048 n=512 bits=8 group=64 equal_bytes=131072"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-4bit",
+      "rows": 1,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "059da5133f34b6f00c1100a6a372585cc4d201daf53f04b49b6b996c355aeddb",
+      "result": "DUAL_PROJECT rows=1 k=2048 n=512 bits=4 group=32 equal_bytes=2048"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-4bit",
+      "rows": 3,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "9c53356c2c353867d5548148f1db591c04a9c76931e9fe939fc3d1fe37d60623",
+      "result": "DUAL_PROJECT rows=3 k=2048 n=512 bits=4 group=32 equal_bytes=6144"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-4bit",
+      "rows": 64,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "ac1a507d9a12b4da7985b104bb8518f5b8642c79ebb85920717e72cb503d7399",
+      "result": "DUAL_PROJECT rows=64 k=2048 n=512 bits=4 group=32 equal_bytes=131072"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-6bit",
+      "rows": 1,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "5855f56f4481b466d18d5fc26643e557687259c5f9d4bf59356f7ac662a92c64",
+      "result": "DUAL_PROJECT rows=1 k=2048 n=512 bits=6 group=64 equal_bytes=2048"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-6bit",
+      "rows": 3,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "45e9d76e6dbe6d2c91bf1e3865ef86e60236d667c38e602deb77aa833d5c17be",
+      "result": "DUAL_PROJECT rows=3 k=2048 n=512 bits=6 group=64 equal_bytes=6144"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-6bit",
+      "rows": 64,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "35ec818b558d14a1b2243b8760ed0fd8bda97895272ea6ced3cc5ae6dcb5f0c9",
+      "result": "DUAL_PROJECT rows=64 k=2048 n=512 bits=6 group=64 equal_bytes=131072"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-8bit",
+      "rows": 1,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "eeb398acf7512e1c70d698ca30854921368ce3eb128b6734656a4cc25bb77173",
+      "result": "DUAL_PROJECT rows=1 k=2048 n=512 bits=8 group=64 equal_bytes=2048"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-8bit",
+      "rows": 3,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "d8388b6ed87375fbea31a1e09784ac1482a5cedfa678210be5877539637b0a97",
+      "result": "DUAL_PROJECT rows=3 k=2048 n=512 bits=8 group=64 equal_bytes=6144"
+    },
+    {
+      "model": "LFM3-VL-2B-MLX-8bit",
+      "rows": 64,
+      "module_a": "language_model.model.layers.2.self_attn.k_proj",
+      "module_b": "language_model.model.layers.2.self_attn.v_proj",
+      "input_sha256": "4e0b08dc7cca474bcfb6d052a9cdd977b7ea8ae3eb08410eb1b6d453f3c34d30",
+      "result": "DUAL_PROJECT rows=64 k=2048 n=512 bits=8 group=64 equal_bytes=131072"
+    }
+  ],
+  "real_image8_logits": {
+    "values": 11520000,
+    "equal_to_retained_native_baseline": true,
+    "sha256": "db730509b6d7dcb3d6d134b59b6434dfb43ebc85cdd3fe351bc8cc4148b47642"
+  },
+  "exactness_summary": "LFM3_EXACT mode=default passed=68 failed=0 skipped=0 prompt=5 windows=60 shared=2 snapshots=1 long=0 gpu_seconds=142.716",
+  "build_summaries": [
+    "Build Summary: 69/69 steps succeeded",
+    "Build Summary: 724/724 steps succeeded; 982/1000 tests passed (18 skipped)"
+  ],
+  "source_sha256": {
+    "zig/src/families/lfm3/forward.zig": "2946616a0b565c8c9baea9d35da279d18b752a0f2a8cd3834dd9c2ab6d45d8c1",
+    "zig/src/families/lfm3/dual_projection.zig": "763f0b7f47d0b00642e6e911f6874dd2987716432ba7721b01811a0accf87cd3",
+    "zig/kernels/metal/lfm3/projectiondual.metal": "05a21d65ec7563d9fadecf49bd88269b17d351591f674a5359c5aacccbfc6601",
+    "zig/kernels/metal/core/row_projection.metal": "86963d6266a982f4cac7c85265048703841a9545c19f2d2c5271eb8e02a0879b"
+  }
+}
