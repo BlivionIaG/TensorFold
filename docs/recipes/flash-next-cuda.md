@@ -136,6 +136,10 @@ starts a rank. These switches tune it:
 | `TF_FLASHNEXT_EXL3_PREFILL_TWO_CHUNK` | `0` | Experimental: `1` (two ranks, ring) runs a second deep chunk beside the first when memory admits it. |
 | `TF_FLASHNEXT_EXL3_PREFILL_SNAP_GRID` | on | Diagnostics only: `0` keeps prompt-cache states at any row instead of on the serving step's starts, to test that a resumed prompt equals a fresh one. |
 | `TF_FLASHNEXT_PROFILE` | `0` | Diagnostics only: `1` times the ranks' combine, all-reduce and place of a deep chunk, with a wait each. |
+| `TF_FLASHNEXT_KV_PAGES` | unset | `n`: streams beside the first take their attention caches from one pool of `n`-position pages. |
+| `TF_FLASHNEXT_KV_HOST` | unset | With `TF_FLASHNEXT_KV_PAGES`: MiB of pinned host RAM holding the K/V plane of every page; `0` is no host tier. |
+| `TF_FLASHNEXT_KV_FRAMES` | the pages the plan gave | With the host tier: at most this many device frames of the K/V plane. |
+| `TF_FLASHNEXT_KV_SLOTS` | 128 | With the host tier: frames lent to a stream, 64 four-row slots a frame for each attention layer. |
 | `TF_FLASHNEXT_PLE_READ` | `map` | `pread` reads the n-gram embedding rows by positional read. |
 | `TF_FLASHNEXT_SNAP_HOST` | `1` above 32,768 tokens of context, else `0` | Whether kept prompt-cache states live in pinned host memory. |
 | `TF_FLASHNEXT_CACHE_TELEMETRY` | `0` | Diagnostics only: `1` logs `EXL3-CACHE` expert-cache counters per phase, with a sync at each boundary. |
