@@ -46,6 +46,7 @@ const exl3_ple2_tests = @import("flashnext_exl3/model/exl3_ple2_tests.zig");
 const exl3_draft_tests = @import("flashnext_exl3/tp/exl3_draft_tests.zig");
 const exl3_pool_tests = @import("flashnext_exl3/offload/exl3_pool_tests.zig");
 const exl3_prefill_tests = @import("flashnext_exl3/prefill/exl3_prefill_tests.zig");
+const exl3_tpprefill_tests = @import("flashnext_exl3/tp/exl3_tpprefill_tests.zig");
 const exl3_candidate_tests = @import("exl3_candidate_tests.zig");
 const experts3_tests = @import("experts3_tests.zig");
 const moe_tests = @import("moe_tests.zig");
@@ -237,9 +238,12 @@ const usage =
     \\  exl3-ple2 DIR [ROW] [N]    EXL3 n-gram table through cuda_ple.Ngram (ids, rows, RSS) and the PLE kernels vs float64
     \\  exl3-draft DIR [THREADS]   EXL3 draft head rows dequantised from lm_head vs the full head (Dense) and float64
     \\  exl3-prefill DIR experts|copy [LAYER]|dense  EXL3 prefill pieces on the pack: grouped experts by rows, expert-major passes, line copies, prompt Dense
+    \\  exl3-prefill DIR equal IDS N ROWS[,ROWS] [LINES]  deep prefill at each chunk size vs the batched pass: last-row logits bytes and greedy tokens
+    \\  exl3-tpprefill RANK WORLD PORT DIR IDS NS ROWS CAP deep|both DUMP  EXL3 deep prefill at tp=1/2 vs the batched pass and tp=1
     \\  exl3-pool DIR [equal|bench|hit FILES] [LAYERS]  Flash Next EXL3 expert offload pool on Experts' pointer tables vs fully resident
     \\  exl3-tiles [DIR]          EXL3's tile candidate: codebooks and tiles bit-equal, FP64, rows through qlinear and Dense
     \\  train-pack MODEL EXAMPLES [COUNT]   training passes holding several sequences against one a pass: differences, time
+    \\  exl3-prefill-contract     the prefill expert tiles alone through the contract (gates 1-4 and the control)
     \\  kernel-contract           the registered kernels through the contract's gates, each planted control red (needs -Dnvcc)
     \\  qwen-pages                qwen35.cu's attention cache through a page table: paged == contiguous, float64, red controls
     \\  kernel-contract-limits DIR   each registered launch against sm_80/86/89/120/121 from the fatbins in DIR
@@ -406,6 +410,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "exl3-draft")) return exl3_draft_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-pool")) return exl3_pool_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-prefill")) return exl3_prefill_tests.run(gpu, rest);
+    if (std.mem.eql(u8, cmd, "exl3-tpprefill")) return exl3_tpprefill_tests.run(gpu, rest);
     if (std.mem.eql(u8, cmd, "nccl-lat")) return exl3_pack_tests.ncclLatency(gpu, rest);
     if (std.mem.eql(u8, cmd, "exl3-tiles")) return exl3_candidate_tests.run(gpu, if (rest.len > 0) rest[0] else null);
     if (std.mem.eql(u8, cmd, "exl3-tp2")) return exl3_tp2_tests.run(gpu, try arg(rest, 0), try arg(rest, 1), if (rest.len > 2) rest[2] else "none");
@@ -466,6 +471,7 @@ fn run(gpu: check.Gpu, cmd: []const u8, rest: []const [:0]const u8) !void {
     if (std.mem.eql(u8, cmd, "q27-gemm")) return q27_gemm_tests.run(gpu);
     if (std.mem.eql(u8, cmd, "gdn-back-27b")) return gdn_back_tests.runShape(gpu, 5120, 64);
     if (std.mem.eql(u8, cmd, "kernel-contract")) return contract_tests.run(gpu);
+    if (std.mem.eql(u8, cmd, "exl3-prefill-contract")) return @import("contract_flashnext_exl3_prefill.zig").run(gpu);
     if (std.mem.eql(u8, cmd, "qwen-pages")) return @import("contract_qwen_pages.zig").run(gpu);
     if (std.mem.eql(u8, cmd, "kernel-contract-limits")) return contract_tests.fatbins(gpu, try arg(rest, 0));
     if (std.mem.eql(u8, cmd, "tree")) return tree_tests.run(gpu);
