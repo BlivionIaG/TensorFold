@@ -128,7 +128,7 @@ pub fn open(comptime F: type, gpa: std.mem.Allocator, io: std.Io, ctx: *const cu
     own.graph_reservation = attached.graph_reservation;
     _ = probe.at(driver, "after_pools");
     own.engine.exl3_dplan.mtp_pool = attached.mtp_pool;
-    if (own.graph_reservation != 0) std.log.info("flashnext rank {d}: lane admission protects full graph reservation {d} bytes; already materialized graphs remain charged in free memory, so admission conservatively reserves those bytes twice", .{ o.rank, own.graph_reservation });
+    if (own.graph_reservation != 0) std.log.info("flashnext rank {d}: pools and lanes keep {d} bytes free for the retained graphs (measured exec memory of a full run: under 64 MiB a stream; captures draw on the device reserve)", .{ o.rank, own.graph_reservation });
     if (own.profile_counts) |*counts| try placement.finish(own, counts);
     const ledger: memory.Ledger = .{
         .persistent = persistent_bytes,

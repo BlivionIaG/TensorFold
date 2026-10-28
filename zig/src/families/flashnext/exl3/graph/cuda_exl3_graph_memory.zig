@@ -5,6 +5,16 @@ pub const Charge = policy.Charge;
 pub const Class = policy.Class;
 pub const Policy = struct { reservation_bytes: u64, headroom_bytes: u64, auxiliary_bytes: u64 = 0, charge: Charge, prefill_charge: ?Charge = null, chain_charge: ?Charge = null, two_chunk_reserved: bool = false };
 const mib: u64 = 1024 * 1024;
+/// Slack the admission ledger keeps above the retained graphs (its limit must hold one capture's peak plus the
+/// auxiliary allowance). It is a ledger bound, not device memory: the exec memory of every graph a run holds
+/// (decode rounds and windows, 48 prefill layers, the draft chains) measured 48-62 MiB at one stream, so the pools
+/// and lanes protect the retained allowance only; a capture's transient comes from the device reserve.
+const ledger_slack_bytes: u64 = 192 * mib;
+
+/// What startup keeps free of pools and lanes for the graphs: the ledger limit without its slack.
+fn protectedBytes(reservation: u64) u64 {
+    return reservation -| ledger_slack_bytes;
+}
 
 pub fn defaultPolicy() Policy {
     return workloadPolicy(8, 48) catch unreachable;
@@ -17,7 +27,7 @@ pub fn workloadPolicy(streams: u64, layers: u64) !Policy {
     const chain = try std.math.mul(u64, try std.math.mul(u64, streams, 2), mib);
     const auxiliary = try std.math.add(u64, prefill, chain);
     const retained = try std.math.add(u64, decode, auxiliary);
-    return .{ .reservation_bytes = try std.math.add(u64, retained, 192 * mib), .headroom_bytes = 128 * mib, .auxiliary_bytes = try std.math.add(u64, auxiliary, 32 * mib), .charge = .{ .exec = 16 * mib, .template = 16 * mib, .transient = 32 * mib }, .prefill_charge = .{ .exec = mib, .template = 0, .transient = 32 * mib }, .chain_charge = .{ .exec = mib, .template = 0, .transient = 32 * mib } };
+    return .{ .reservation_bytes = try std.math.add(u64, retained, ledger_slack_bytes), .headroom_bytes = 128 * mib, .auxiliary_bytes = try std.math.add(u64, auxiliary, 32 * mib), .charge = .{ .exec = 16 * mib, .template = 16 * mib, .transient = 32 * mib }, .prefill_charge = .{ .exec = mib, .template = 0, .transient = 32 * mib }, .chain_charge = .{ .exec = mib, .template = 0, .transient = 32 * mib } };
 }
 
 pub fn policyFromEnv() !Policy {
@@ -98,30 +108,30 @@ pub fn startupReservation() !u64 {
 pub fn twoChunkReservationBytes() u64 {
     lock();
     defer unlock();
-    return if (configured) |settings| (if (settings.two_chunk_reserved) settings.reservation_bytes else 0) else 0;
+    return if (configured) |settings| (if (settings.two_chunk_reserved) protectedBytes(settings.reservation_bytes) else 0) else 0;
 }
 
 pub fn declineTwoChunkReservation() !u64 {
     lock();
     defer unlock();
     var settings = configured orelse return 0;
-    if (!settings.two_chunk_reserved) return settings.reservation_bytes;
+    if (!settings.two_chunk_reserved) return protectedBytes(settings.reservation_bytes);
     const charge = settings.prefill_charge orelse settings.charge;
     const extra = try @import("../prefill/exl3_prefill_window.zig").graphBytes(charge.exec, charge.template, charge.transient);
     settings.reservation_bytes = try std.math.sub(u64, settings.reservation_bytes, extra);
     settings.auxiliary_bytes = try std.math.sub(u64, settings.auxiliary_bytes, extra);
     settings.two_chunk_reserved = false;
     try configureLocked(settings);
-    return settings.reservation_bytes;
+    return protectedBytes(settings.reservation_bytes);
 }
 
 test "exl3: declined two-chunk allocation returns the original graph reservation before capture" {
     const base = try workloadPolicy(2, 48);
     try configure(try withWindowReservation(base, true, null));
-    try std.testing.expect(twoChunkReservationBytes() > base.reservation_bytes);
-    try std.testing.expectEqual(base.reservation_bytes, try declineTwoChunkReservation());
+    try std.testing.expect(twoChunkReservationBytes() > protectedBytes(base.reservation_bytes));
+    try std.testing.expectEqual(protectedBytes(base.reservation_bytes), try declineTwoChunkReservation());
     try std.testing.expectEqual(@as(u64, 0), twoChunkReservationBytes());
-    try std.testing.expectEqual(base.reservation_bytes, try declineTwoChunkReservation());
+    try std.testing.expectEqual(protectedBytes(base.reservation_bytes), try declineTwoChunkReservation());
 }
 
 pub fn startupReservationForStreams(streams: u32) !u64 {
@@ -140,7 +150,7 @@ fn startupReservationWithStreams(streams: ?u32) !u64 {
         std.log.info("EXL3 graph budget heuristic allowances (not measured exec bytes): reservation {d} MiB, headroom {d} MiB, exec/template/transient {d}/{d}/{d} MiB", .{ settings.reservation_bytes / mib, settings.headroom_bytes / mib, settings.charge.exec / mib, settings.charge.template / mib, settings.charge.transient / mib });
         std.log.info("EXL3 workload heuristic follows requested server concurrency (or TF_FLASHNEXT_EXL3_STREAMS for standalone tests): two decode variants per stream, 48 prefill layer execs and two MTP chain variants per stream; local exec allowances are heuristic, not measured GPU sizes; local templates are released after instantiation", .{});
     }
-    return configured.?.reservation_bytes;
+    return protectedBytes(configured.?.reservation_bytes);
 }
 
 pub fn setFreeMemoryHook(hook: ?*const fn () anyerror!u64) void {
@@ -222,6 +232,12 @@ test "exl3: runtime admissions charge pending overlap and reject reconfiguration
     try std.testing.expectError(error.StaleGraphTicket, release(second));
 }
 
+test "exl3: startup protects the retained graph allowance without the ledger slack" {
+    const one = try workloadPolicy(1, 48);
+    try std.testing.expectEqual(@as(u64, 114 * mib), protectedBytes(one.reservation_bytes));
+    try std.testing.expectEqual(@as(u64, 0), protectedBytes(100));
+}
+
 test "exl3: runtime policy defaults are bounded heuristics" {
     const settings = defaultPolicy();
     const bounded = try Ledger.init(settings.reservation_bytes, settings.headroom_bytes);
@@ -247,8 +263,8 @@ test "exl3: startup reservation configures the environment policy without a sepa
     configured = null;
     ledger = null;
     const expected = try policyFromEnv();
-    try std.testing.expectEqual(expected.reservation_bytes, try startupReservation());
-    try std.testing.expectEqual(expected.reservation_bytes, try startupReservation());
+    try std.testing.expectEqual(protectedBytes(expected.reservation_bytes), try startupReservation());
+    try std.testing.expectEqual(protectedBytes(expected.reservation_bytes), try startupReservation());
 }
 
 test "exl3: installed physical allocations are not subtracted twice by the free query" {
