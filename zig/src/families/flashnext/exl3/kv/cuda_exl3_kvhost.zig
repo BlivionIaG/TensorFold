@@ -37,6 +37,13 @@ pub const Host = struct {
         return h;
     }
 
+    /// The ranks exchange the tier's shape, slot count and digest at open; one that differs refuses.
+    pub fn lockstep(h: *const Host, e: anytype, slots: usize) !void {
+        const c = e.collective orelse return;
+        const both = try exchange(e, c, kv.tier.Lockstep.vector(&h.tier, slots));
+        kv.tier.Lockstep.agree(both[0], both[1]) catch return error.FlashNextTierRanksDisagree;
+    }
+
     pub fn destroy(h: *Host, gpa: std.mem.Allocator) void {
         h.tier.deinit();
         h.store.free();
@@ -53,3 +60,32 @@ pub const Host = struct {
         h.tier.sync(id);
     }
 };
+
+/// Each rank's `mine`, side by side, from one sum across the ranks.
+fn exchange(e: anytype, c: anytype, mine: [kv.tier.Lockstep.len]f32) ![2][kv.tier.Lockstep.len]f32 {
+    const n = kv.tier.Lockstep.len;
+    const st = e.stream.*;
+    var b = try cuda.DeviceBuffer.alloc(e.driver, 256);
+    defer b.free();
+    var v: [2][n]f32 = .{ @splat(0), @splat(0) };
+    v[e.layers[0].exl3.?.tp.?.rank] = mine;
+    try st.synchronize();
+    try b.upload(0, std.mem.asBytes(&v));
+    try c.sum(st, b.ptr, 2 * n);
+    try c.finish(st);
+    try b.download(0, std.mem.asBytes(&v));
+    return v;
+}
+
+/// The pages and frames both ranks can hold: the smaller of each (rank 1 has no MTP head, so its pages are smaller).
+pub fn agreeShape(e: anytype, logical: usize, frames: usize) !kv.tier.Shape {
+    const mine: kv.tier.Shape = .{ .host_pages = logical, .frames = frames };
+    const c = e.collective orelse return mine;
+    var m: [kv.tier.Lockstep.len]f32 = @splat(0);
+    m[0] = @floatFromInt(logical);
+    m[1] = @floatFromInt(frames);
+    const both = try exchange(e, c, m);
+    const a: kv.tier.Shape = .{ .host_pages = @intFromFloat(both[0][0]), .frames = @intFromFloat(both[0][1]) };
+    const b: kv.tier.Shape = .{ .host_pages = @intFromFloat(both[1][0]), .frames = @intFromFloat(both[1][1]) };
+    return a.agree(b);
+}

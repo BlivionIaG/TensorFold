@@ -160,10 +160,14 @@ pub const Pool = struct {
         const ix_page = pages.indexPageBytes(l.page_tokens, layers);
         // a host tier: `logical` pages in host RAM, `frames` of them on the device at once; else every page is a frame
         const mib = try host_tier.hostMiB();
-        const logical = if (mib > 0) mib * (1 << 20) / kv_page else count;
         const slot_frames = if (mib > 0) try kvt.slotFrames() else 0;
         const per_stream = kvt.framesFor(l.runPages(), slot_frames);
-        const frames = if (mib > 0) (try host_tier.framesCap()) orelse streams * per_stream else count;
+        const mine_pages = if (mib > 0) mib * (1 << 20) / kv_page else count;
+        const mine_frames = if (mib > 0) (try host_tier.framesCap()) orelse streams * per_stream else count;
+        // two ranks hold the same logical pages and frames: the smaller of each
+        const agreed = if (mib > 0) try host_tier.agreeShape(e, mine_pages, mine_frames) else kv.tier.Shape{ .host_pages = mine_pages, .frames = mine_frames };
+        const logical = agreed.host_pages;
+        const frames = agreed.frames;
         if (logical == 0 or frames == 0 or (mib > 0 and frames < per_stream)) return error.BadFlashNextKvHost;
         var arena = try cuda.DeviceBuffer.alloc(e.driver, try std.math.add(usize, try std.math.mul(usize, frames, kv_page), try std.math.mul(usize, logical, ix_page)));
         errdefer arena.free();
@@ -181,6 +185,7 @@ pub const Pool = struct {
         }
         errdefer if (p.host) |h| h.destroy(gpa) else p.plain.deinit();
         errdefer if (p.kern) |*kn| kn.unload();
+        if (p.host) |h| try h.lockstep(e, slot_frames);
         p.lanes = try gpa.alloc(Lane, streams);
         errdefer gpa.free(p.lanes);
         var made: usize = 0;
