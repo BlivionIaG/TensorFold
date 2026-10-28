@@ -143,6 +143,9 @@ pub const Copy = struct {
         };
     }
 
+    /// The kernel copies `work_n` lines of three segments (gate, up, down): the shape's rows are lines.
+    const per_line = 3;
+
     /// Words (16 bytes) of segment `i`: the shape's longest, then shorter ones.
     fn words(shape: c.Shape, i: usize) usize {
         return @max(1, shape.n - (i * 37) % @max(shape.n / 2, 1));
@@ -154,7 +157,8 @@ pub const Copy = struct {
         const a = self.rig.gpu.gpa;
         a.free(self.src);
         var total: usize = 0;
-        for (0..shape.rows) |i| total += words(shape, i) * 16;
+        const segs = shape.rows * per_line;
+        for (0..segs) |i| total += words(shape, i) * 16;
         self.src = try a.alloc(u8, total);
         var prng = std.Random.DefaultPrng.init(seed ^ 0x636f7079);
         prng.random().bytes(self.src);
@@ -165,10 +169,10 @@ pub const Copy = struct {
         self.blocks = if (seed & 2 == 0) 1 else 3;
         const dsrc = try self.rig.input(self.src);
         self.dst = try self.rig.output(total);
-        const work = try a.alloc(i64, shape.rows * 3);
+        const work = try a.alloc(i64, segs * 3);
         defer a.free(work);
         var at: usize = 0;
-        for (0..shape.rows) |i| {
+        for (0..segs) |i| {
             const len = words(shape, i) * 16;
             work[i * 3 + 0] = @intCast(dsrc + at);
             work[i * 3 + 1] = @intCast(self.dst + at);
