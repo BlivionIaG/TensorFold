@@ -146,18 +146,26 @@ struct L3vGrid { uint gh, gw; };
   src[lane + 32] = bfloat(nb * cs + na * sn);
 }
 
-// Noncausal grouped attention, one simdgroup per query and head, with fp32 softmax and weighted sums.
-[[kernel, max_total_threads_per_threadgroup(32)]] void l3v_attention(
-    const device bfloat* q [[buffer(0)]], const device bfloat* k [[buffer(1)]], const device bfloat* v [[buffer(2)]],
-    device bfloat* y [[buffer(3)]], constant uint& patches [[buffer(4)]], uint2 tg [[threadgroup_position_in_grid]],
-    uint lane [[thread_index_in_simdgroup]]) {
-  const uint head = tg.x, row = tg.y, kh = head / 2;
+#ifndef L3_ATTN_ACC
+#define L3_ATTN_ACC float
+#endif
+
+inline float l3v_attention_dot(float a, float b, const device bfloat* k) {
+  L3_ATTN_ACC dot = a * float(k[0]);
+  dot += b * float(k[32]);
+  return simd_sum(float(dot));
+}
+
+inline float3 l3v_attention_row(const device bfloat* q, const device bfloat* k, const device bfloat* v,
+                               uint patches, uint head, uint row, uint lane) {
+  const uint kh = head / 2;
   const size_t qi = (size_t(row) * 16 + head) * 64 + lane;
   const float qa = float(q[qi]), qb = float(q[qi + 32]);
-  float maximum = -INFINITY, total = 0.0f, ya = 0.0f, yb = 0.0f;
+  float maximum = -INFINITY;
+  L3_ATTN_ACC total = 0.0f, ya = 0.0f, yb = 0.0f;
   for (uint key = 0; key < patches; ++key) {
     const size_t ki = (size_t(key) * 8 + kh) * 64 + lane;
-    const float score = simd_sum(qa * float(k[ki]) + qb * float(k[ki + 32])) * 0.125f;
+    const float score = l3v_attention_dot(qa, qb, k + ki) * 0.125f;
     const float next = max(maximum, score);
     const float alpha = maximum == -INFINITY ? 0.0f : metal::precise::exp(maximum - next);
     const float probability = score == -INFINITY ? 0.0f : metal::precise::exp(score - next);
@@ -166,8 +174,38 @@ struct L3vGrid { uint gh, gw; };
     yb = yb * alpha + probability * float(v[ki + 32]);
     maximum = next;
   }
-  y[qi] = bfloat(ya / total);
-  y[qi + 32] = bfloat(yb / total);
+  return float3(float(ya), float(yb), float(total));
+}
+
+// Noncausal grouped attention retains the production FP32 row loop and its final BF16 outputs.
+[[kernel, max_total_threads_per_threadgroup(32)]] void l3v_attention(
+    const device bfloat* q [[buffer(0)]], const device bfloat* k [[buffer(1)]], const device bfloat* v [[buffer(2)]],
+    device bfloat* y [[buffer(3)]], constant uint& patches [[buffer(4)]], uint2 tg [[threadgroup_position_in_grid]],
+    uint lane [[thread_index_in_simdgroup]]) {
+  const float3 sums = l3v_attention_row(q, k, v, patches, tg.x, tg.y, lane);
+  const size_t qi = (size_t(tg.y) * 16 + tg.x) * 64 + lane;
+  y[qi] = bfloat(sums.x / sums.z);
+  y[qi + 32] = bfloat(sums.y / sums.z);
+}
+
+// Contract taps observe the same row loop before its BF16 division and output round.
+[[kernel, max_total_threads_per_threadgroup(32)]] void l3v_attention_sums(
+    const device bfloat* q [[buffer(0)]], const device bfloat* k [[buffer(1)]], const device bfloat* v [[buffer(2)]],
+    device float* out [[buffer(3)]], constant uint& patches [[buffer(4)]], uint2 tg [[threadgroup_position_in_grid]],
+    uint lane [[thread_index_in_simdgroup]]) {
+  const float3 sums = l3v_attention_row(q, k, v, patches, tg.x, tg.y, lane);
+  const size_t base = (size_t(tg.y) * 16 + tg.x) * 65;
+  out[base + lane] = sums.x;
+  out[base + lane + 32] = sums.y;
+  if (lane == 0) out[base + 64] = sums.z;
+}
+
+[[kernel, max_total_threads_per_threadgroup(32)]] void l3v_attention_dot_sums(
+    const device bfloat* q [[buffer(0)]], const device bfloat* k [[buffer(1)]], device float* out [[buffer(2)]],
+    uint row [[threadgroup_position_in_grid]], uint lane [[thread_index_in_simdgroup]]) {
+  const size_t base = size_t(row) * 64 + lane;
+  const float total = l3v_attention_dot(float(q[base]), float(q[base + 32]), k + base);
+  if (lane == 0) out[row] = total;
 }
 
 [[kernel, max_total_threads_per_threadgroup(256)]] void l3v_swiglu(

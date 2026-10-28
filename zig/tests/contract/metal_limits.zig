@@ -32,14 +32,16 @@ fn launchOf(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch) !La
         }
     }.f;
     if (std.mem.startsWith(u8, d.name, "lfm3-vision ")) {
-        const body = if (has(d.name, " square-bad ")) try std.mem.concat(a, u8, &.{ "#define L3_SQUARE_ACC half\n", sources.lfm3_vision }) else sources.lfm3_vision;
+        const lfm3_head = if (has(d.name, " square-bad ")) "#define L3_SQUARE_ACC half\n" else if (has(d.name, " attention-bad ")) "#define L3_ATTN_ACC half\n" else "";
+        const body = try std.mem.concat(a, u8, &.{ lfm3_head, sources.lfm3_vision });
         return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };
     }
     if (std.mem.startsWith(u8, d.name, "lfm3-image ")) {
         return .{ .decl = d, .function = fun, .here = sources.lfm3_image_rows, .pre_m5 = sources.lfm3_image_rows };
     }
     if (std.mem.startsWith(u8, d.name, "lfm3 ")) {
-        const body = try std.mem.concat(a, u8, &.{ if (has(d.name, " square-bad ")) "#define L3_SQUARE_ACC half\n" else "", sources.lfm3, "\n", sources.lfm3_attention });
+        const lfm3_head = if (has(d.name, " square-bad ")) "#define L3_SQUARE_ACC half\n" else if (has(d.name, " attention-bad ")) "#define L3_ATTN_ACC half\n" else "";
+        const body = try std.mem.concat(a, u8, &.{ lfm3_head, sources.lfm3, "\n", sources.lfm3_attention });
         return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };
     }
     if (std.mem.startsWith(u8, d.name, "qwen4-native ")) {
