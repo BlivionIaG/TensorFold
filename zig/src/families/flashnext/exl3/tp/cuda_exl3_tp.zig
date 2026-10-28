@@ -140,9 +140,12 @@ pub const Scratch = struct {
     d: *const cuda.Driver,
     mod: cuda.Module,
     mask_fn: cuda.Function,
+    merge_fn: cuda.Function,
     /// The rank's picks (int32) [rows, 11]: the other rank's slots are -1.
     picks: ?cuda.DeviceBuffer = null,
     rows: usize = 0,
+    /// Where the peer's block lands inside `picks`' buffer (after the picks), for up to `xchg_rows` rows.
+    recv_off: usize = 0,
     /// Experts.run's scratch for `moe_cap` rows, zeroed when allocated (a skipped slot reads its stale, finite y).
     moe: ?cuda.DeviceBuffer = null,
     moe_cap: usize = 0,
@@ -152,7 +155,7 @@ pub const Scratch = struct {
         var m = try cuda.Module.load(d, cuda.kernels.flashnext_exl3_tp);
         errdefer m.unload();
         const t = try gpa.create(Scratch);
-        t.* = .{ .gpa = gpa, .d = d, .mod = m, .mask_fn = try m.function("fn_exl3_tp_mask") };
+        t.* = .{ .gpa = gpa, .d = d, .mod = m, .mask_fn = try m.function("fn_exl3_tp_mask"), .merge_fn = try m.function("fn_exl3_tp_merge") };
         return t;
     }
 
@@ -169,7 +172,8 @@ pub const Scratch = struct {
             if (t.picks) |*b| b.free();
             t.picks = null;
             t.rows = 0;
-            t.picks = try cuda.DeviceBuffer.alloc(t.d, rows * slots * 4);
+            t.recv_off = align256(rows * slots * 4);
+            t.picks = try cuda.DeviceBuffer.alloc(t.d, t.recv_off + @min(rows, xchg_rows) * slots * dims * 4);
             t.rows = rows;
         }
         const cap = @min(rows, moe_rows);
@@ -196,6 +200,22 @@ pub const Scratch = struct {
         try cuda.launch.launch(t.mask_fn, .{ .grid = .{ .x = @intCast((n + 255) / 256) }, .block = .{ .x = 256 } }, s, &a);
     }
 };
+
+/// Rows up to which the ranks swap their slot blocks (one send and receive each way) instead of an all-reduce.
+pub const xchg_rows: usize = 16;
+
+/// The peer's block merged under the picks: own value, the peer's or zero, each plus 0.0f.
+pub fn merge(t: *const Scratch, s: cuda.Stream, y: u64, picks: u64, n: usize, r: Rank) !void {
+    var a: cuda.Args = .{};
+    a.add(y);
+    a.add(t.picks.?.ptr + t.recv_off);
+    a.add(picks);
+    a.add(@as(c_int, @intCast(dims)));
+    a.add(@as(c_int, @intCast(r.lo)));
+    a.add(@as(c_int, @intCast(r.hi)));
+    a.add(@as(c_int, @intCast(table_n)));
+    try cuda.launch.launch(t.merge_fn, .{ .grid = .{ .x = @intCast(n * slots) }, .block = .{ .x = 256 } }, s, &a);
+}
 
 /// The Ops' expert-parallel scratch, made on first use.
 pub fn scratchOf(ops: *load.Ops) !*Scratch {
@@ -244,7 +264,8 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     const mp = t.picks.?.ptr;
     try t.mask(st, s.picks, mp, n * slots, r);
     if (x.needsPool()) return error.Exl3PoolNotAttached;
-    try st.d.check(st.d.api.cuMemsetD8Async(s.y, 0, n * slots * dims * 4, st.handle), "cuMemsetD8Async");
+    const swap = n <= xchg_rows;
+    if (!swap) try st.d.check(st.d.api.cuMemsetD8Async(s.y, 0, n * slots * dims * 4, st.handle), "cuMemsetD8Async");
     var r0: usize = 0;
     while (r0 < n) : (r0 += t.moe_cap) {
         const rows = @min(t.moe_cap, n - r0);
@@ -265,7 +286,9 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
         }
         try ex.runSlots(st, x.layer, xin, dims, .bf16, mp + r0 * slots * 4, rows, sc);
     }
-    try c.sum(st, s.y, n * slots * dims);
+    if (!swap) return c.sum(st, s.y, n * slots * dims);
+    try c.exchange(st, s.y, n * slots * dims, t.picks.?.ptr + t.recv_off, n * slots * dims);
+    try merge(t, st, s.y, s.picks, n, r);
 }
 
 // ---- memory ------------------------------------------------------------------------------------------------------

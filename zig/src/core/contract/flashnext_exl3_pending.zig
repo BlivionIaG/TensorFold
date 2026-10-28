@@ -7,6 +7,7 @@ const registry = @import("registry.zig");
 pub const records = [_]registry.CudaRecord{
     .{ .launch = .{ .name = "flashnext_exl3 fn_exl3_split_f16", .symbol = "fn_exl3_split_f16", .image = "flashnext_exl3", .threads = 256 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_tp fn_exl3_tp_mask", .symbol = "fn_exl3_tp_mask", .image = "flashnext_exl3_tp", .threads = 256 }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_exl3_tp fn_exl3_tp_merge", .symbol = "fn_exl3_tp_merge", .image = "flashnext_exl3_tp", .threads = 256 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_dplan fn_exl3_dcheckpoint", .symbol = "fn_exl3_dcheckpoint", .image = "flashnext_exl3_dplan", .threads = 1 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_dplan fn_exl3_dplan", .symbol = "fn_exl3_dplan", .image = "flashnext_exl3_dplan", .threads = 256 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_dplan fn_exl3_drestore", .symbol = "fn_exl3_drestore", .image = "flashnext_exl3_dplan", .threads = 256 }, .usage = registry.none },
@@ -28,6 +29,7 @@ pub const records = [_]registry.CudaRecord{
 pub const cuda_134 = [_]registry.Override{
     .{ .name = "flashnext_exl3 fn_exl3_split_f16", .usage = .{ .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 12, .static = 0, .bound = 0 }, .{ .regs = 12, .static = 0, .bound = 0 } } },
     .{ .name = "flashnext_exl3_tp fn_exl3_tp_mask", .usage = .{ .{ .regs = 16, .static = 0, .bound = 0 }, .{ .regs = 16, .static = 0, .bound = 0 }, .{ .regs = 16, .static = 0, .bound = 0 }, .{ .regs = 18, .static = 0, .bound = 0 }, .{ .regs = 18, .static = 0, .bound = 0 } } },
+    .{ .name = "flashnext_exl3_tp fn_exl3_tp_merge", .usage = .{ .{ .regs = 18, .static = 0, .bound = 256 }, .{ .regs = 18, .static = 0, .bound = 256 }, .{ .regs = 18, .static = 0, .bound = 256 }, .{ .regs = 28, .static = 0, .bound = 256 }, .{ .regs = 28, .static = 0, .bound = 256 } } },
     .{ .name = "flashnext_exl3_dplan fn_exl3_dcheckpoint", .usage = .{ .{ .regs = 32, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 } } },
     .{ .name = "flashnext_exl3_dplan fn_exl3_dplan", .usage = .{ .{ .regs = 32, .static = 4688, .bound = 256 }, .{ .regs = 40, .static = 4688, .bound = 256 }, .{ .regs = 40, .static = 4688, .bound = 256 }, .{ .regs = 48, .static = 4688, .bound = 256 }, .{ .regs = 48, .static = 4688, .bound = 256 } } },
     .{ .name = "flashnext_exl3_dplan fn_exl3_drestore", .usage = .{ .{ .regs = 20, .static = 0, .bound = 0 }, .{ .regs = 20, .static = 0, .bound = 0 }, .{ .regs = 20, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 } } },
