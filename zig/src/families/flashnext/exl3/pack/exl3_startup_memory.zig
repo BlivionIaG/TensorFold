@@ -45,6 +45,19 @@ pub fn available(free: u64, reserve: u64, future: u64) !u64 {
     return free - held;
 }
 
+/// Lines a rank holds: the asked count is the floor; at world 2 a rank with room for more takes them.
+pub fn rankLines(explicit: usize, world: usize, fit: ?usize) usize {
+    if (world != 2) return explicit;
+    return @max(explicit, fit orelse explicit);
+}
+
+test "exl3: a rank with room beyond the asked lines takes them, the binding rank and one rank keep the ask" {
+    try std.testing.expectEqual(@as(usize, 80), rankLines(80, 2, 70));
+    try std.testing.expectEqual(@as(usize, 90), rankLines(80, 2, 90));
+    try std.testing.expectEqual(@as(usize, 80), rankLines(80, 2, null));
+    try std.testing.expectEqual(@as(usize, 80), rankLines(80, 1, 90));
+}
+
 pub fn laneRoom(local: u64, graph_reservation: u64) u64 {
     return local -| graph_reservation;
 }

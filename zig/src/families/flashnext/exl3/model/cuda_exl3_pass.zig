@@ -282,7 +282,11 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
         out.free_before = free;
     }
     const pool_room = try memory.available(free, reserve, future);
-    const lines = b.lines orelse try pool_.linesFor(free, reserve, try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines);
+    const world: usize = if (all[0].tp) |t| t.world else 1;
+    const fit = pool_.linesFor(free, try std.math.add(u64, reserve_floor, b.margin), try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines) catch null;
+    const uniform = std.c.getenv("TF_FLASHNEXT_EXL3_UNIFORM_LINES") != null;
+    const lines = if (b.lines) |explicit| (if (delta_text != null or uniform) explicit else memory.rankLines(explicit, world, fit)) else try pool_.linesFor(free, reserve, try std.math.add(u64, future, all_fixed), line_cost, n, pool_.min_lines);
+    if (b.lines) |explicit| if (lines != explicit) std.log.info("flashnext exl3: this rank holds {d} lines a layer, {d} more than the {d} asked for: it has the room (residency never changes output bytes)", .{ lines, lines - explicit, explicit });
     if (lines < pool_.min_lines) return error.PoolTooSmall;
     const startup_bytes = try memory.poolBytes(lines, line_cost, n, all_fixed);
     if (startup_bytes > pool_room) return error.InsufficientStartupMemory;
