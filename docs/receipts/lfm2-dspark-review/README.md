@@ -261,3 +261,13 @@ python3 docs/receipts/lfm2-dspark-review/wide_matrix.py
 
 `TF_QUAL_MODEL` overrides the default target snapshot path. The reproducer uses
 only Python's standard library and the sibling `qualification.py` helper.
+
+### Allocation follow-up
+
+Probability fallback now overwrites its existing output buffer when a provider declines. Grafted probabilities fill the draft prefix directly in the final output. Structured-output held tokens are read directly into the final row buffer before grafts. Probability multiplication order, copy rates, parent indexing and decoding policy are unchanged.
+
+For `n` fallback probabilities this saves `8*n` arena bytes. For `d` drafted prefix nodes it saves `8*d` arena bytes plus their copy. With `h` held tokens and `g` graft tokens, grammar row assembly saves `4*(2*h+g)` arena bytes and the held/joined intermediate copies. These are per affected call, not reductions in model weights or a measured serving peak.
+
+The bounded-workspace regression permits only the final probability buffer, denies allocator growth, and covers both declined providers and grafted prefixes. The previous implementation fails it with OutOfMemory; the refactor passes. A grammar regression covers held-token and graft order, including replacing a rejected graft with grammar-generated tokens. The shared-lane/native host checks pass 57/57 steps, 341 tests passed and three skipped. The Metal draft-source fixture now initializes the shared timing count introduced by the calibration change; otherwise its deliberately undefined backend could crash.
+
+The M5 native build passes. An alternating before/after serving comparison at 1/4/8/16 streams is queued behind another qualification's GPU lock. No extra throughput improvement or universal no-regression result is claimed for this allocation-only follow-up yet.
