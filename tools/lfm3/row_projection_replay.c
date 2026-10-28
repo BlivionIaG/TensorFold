@@ -59,3 +59,19 @@ int lfm3_row_replay(const float *x, const uint8_t *codes, const float *scales, c
   free(sums);
   return 0;
 }
+
+// BF16 operands' dense projection uses one FP32 accumulator per lane and the same adjacent butterfly.
+void lfm3_dense_replay(const float *x, const float *weight, float *output, int rows, int n, int k) {
+  for (int row = 0; row < rows; ++row) {
+    for (int column = 0; column < n; ++column) {
+      float lanes[32] = {0};
+      for (int lane = 0; lane < 32; ++lane)
+        for (int i = lane; i < k; i += 32)
+          lanes[lane] = fmaf(x[(int64_t)row * k + i], weight[(int64_t)column * k + i], lanes[lane]);
+      for (int distance = 1; distance < 32; distance *= 2)
+        for (int lane = 0; lane < 32; lane += 2 * distance)
+          lanes[lane] = lanes[lane] + lanes[lane + distance];
+      output[(int64_t)row * n + column] = lanes[0];
+    }
+  }
+}

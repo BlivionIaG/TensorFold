@@ -47,9 +47,12 @@ def inject_image_rows(hidden, tokens, rows, start):
 
 
 class Oracle:
-    def __init__(self, directory, weight_mode='exact', dump=None, projection_rounding='fp64'):
+    def __init__(self, directory, weight_mode='exact', dump=None, projection_rounding='fp64', norm_conv_rounding='fp64'):
         self.directory, self.weight_mode, self.dump = directory, weight_mode, dump
         self.projection_rounding = projection_rounding
+        if norm_conv_rounding not in ('fp64', 'metal'):
+            raise ValueError('Unsupported normalization/convolution rounding mode')
+        self.norm_conv_rounding = norm_conv_rounding
         valid_rounding = projection_rounding in ('fp64', 'metal-row')
         if not valid_rounding or (projection_rounding == 'metal-row' and weight_mode != 'exact'):
             raise ValueError('Metal row replay requires exact affine weights')
@@ -133,6 +136,9 @@ class Oracle:
         return bf(output)
 
     def norm(self, values, name):
+        if self.norm_conv_rounding == 'metal':
+            from text_rounding_reference import norm_rows
+            return norm_rows(values, self.tensor(name + '.weight'), self.text['norm_eps'])
         inverse = 1 / np.sqrt(np.mean(values * values, axis=-1, keepdims=True) + self.text['norm_eps'])
         return bf(bf(values * inverse) * self.tensor(name + '.weight'))
 
@@ -162,7 +168,9 @@ class Oracle:
         padded = np.pad(gated, ((taps - 1, 0), (0, 0)))
         total = np.zeros_like(gated)
         for tap in range(taps):
-            total += padded[tap:tap + len(x)] * kernel[:, tap]
+            total = total + padded[tap:tap + len(x)] * kernel[:, tap]
+            if self.norm_conv_rounding == 'metal':
+                total = total.astype(np.float32).astype(np.float64)
         mixed = bf(bf(total) * gate)
         self.take(tag + '_conv_gated', mixed)
         return self.linear(mixed, prefix + 'conv.out_proj')
@@ -228,6 +236,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--weight-mode', choices=('exact', 'bf16'), default='exact')
     parser.add_argument('--projection-rounding', choices=('fp64', 'metal-row'), default='fp64')
+    parser.add_argument('--norm-conv-rounding', choices=('fp64', 'metal'), default='fp64')
     parser.add_argument('--trace-dir', type=Path)
     parser.add_argument('--image-rows', type=Path, help='Projected rows as a two-dimensional numeric NumPy array')
     parser.add_argument('--image-start', type=int)
@@ -238,7 +247,7 @@ def main():
         write(args.trace_dir / (name + '.bf16'), values)
     if args.trace_dir:
         args.trace_dir.mkdir(parents=True, exist_ok=True)
-    oracle = Oracle(args.model_dir, args.weight_mode, dump if args.trace_dir else None, args.projection_rounding)
+    oracle = Oracle(args.model_dir, args.weight_mode, dump if args.trace_dir else None, args.projection_rounding, args.norm_conv_rounding)
     tokens = np.load(args.tokens, allow_pickle=False)
     if tokens.ndim != 1 or not np.issubdtype(tokens.dtype, np.integer) or tokens.size == 0:
         parser.error('Expected a nonempty one-dimensional integer token array')
@@ -256,8 +265,10 @@ def main():
     arithmetic = 'FP64 reductions with direct binary64-to-BF16 RNE activation boundaries'
     if args.projection_rounding == 'metal-row':
         arithmetic += '; affine projections instead replay the Metal FP32 lane rounding, other operations remain FP64'
+    if args.norm_conv_rounding == 'metal':
+        arithmetic += '; normalization and convolution replay the production FP32 reduction sites'
     metadata = {'dtype': 'BF16', 'arithmetic': arithmetic, 'weight_mode': args.weight_mode,
-                'projection_rounding': args.projection_rounding, 'shape': list(logits.shape),
+                'projection_rounding': args.projection_rounding, 'norm_conv_rounding': args.norm_conv_rounding, 'shape': list(logits.shape),
                 'accepted_threshold': None}
     args.output.with_suffix('.json').write_text(json.dumps(metadata, indent=2) + '\n')
 

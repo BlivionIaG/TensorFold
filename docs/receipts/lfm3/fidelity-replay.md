@@ -73,5 +73,29 @@ python3 tools/lfm3/vision_fp64_reference.py --model-dir MODEL_DIR --patches patc
 
 `real-image-fp64.json` pins the official model card's cat URL, downloaded JPEG, canonical PNG and patch hashes.
 The photographed image produces 70 projected rows. It reports all vision-row errors and separates identical-input decoder comparisons
-from native/FP64 towers feeding their own rows. All 16 teacher-forced suffix rows have matching top tokens in that end-to-end comparison;
-placeholder-position differences remain in the receipt. This is one real-image fixture, not a broad real-image benchmark.
+from native/FP64 towers feeding their own rows. On identical FP64 projected rows, the 6/8-bit decoders match all 16 suffix top tokens;
+the 4-bit decoder has one lowest-index difference with overlapping maximum sets. With each tower feeding its own rows, 4/6-bit match
+all 16 suffix top tokens; 8-bit matches 14/16. Those different-input results are retained and are not an accepted end-to-end pass.
+This is one real-image fixture, not a broad real-image benchmark.
+
+The download URL can change its bytes; reproduce this receipt only with the recorded hashes.
+The image itself is not redistributed here. The token fixture is the `tokens` array in `real-image-fp64.json`:
+
+```sh
+python3 -c "import json,numpy as np; np.save('image-tokens.npy',np.asarray(json.load(open('docs/receipts/lfm3/real-image-fp64.json'))['tokens'],dtype='<u4'))"
+python3 -c "import numpy as np; x=np.fromfile('fp64-image.bf16',dtype='<u2'); np.save('projected.npy',(x.astype('u4')<<16).view('f4').reshape(-1,2048))"
+./zig-out/bin/tf-lfm3-forward MODEL_DIR image-tokens.npy native-on-fp64-rows.bf16 images fp64-image.bf16 4
+python3 tools/lfm3/fp64_reference.py --model-dir MODEL_DIR --tokens image-tokens.npy --image-rows projected.npy --image-start 4 --output fp64-image-text.bf16
+```
+
+The affine-only replay still had one disjoint VL6 reasoning position repeated at three fixture lengths.
+`rounded-fp64-resolution.json` adds the explicitly named FP32 RMS-normalization and seven-tap convolution round sites for those cells:
+
+```sh
+LFM3_ROW_REPLAY_LIBRARY="$PWD/row-replay.so" python3 tools/lfm3/fp64_reference.py --model-dir MODEL_DIR --tokens TOKENS.npy --output rounded.bf16 --projection-rounding metal-row --norm-conv-rounding metal
+```
+
+All intermediate BF16 arrays in the first two convolutional layers then match native bytes exactly on the traced 64-row history.
+The three repeated histories have zero disjoint maximum sets; 19 lowest-index differences remain across the combined 5,581-row view,
+all with overlapping maximum sets. Each cell names its rounding sites. This does not apply a new tie rule or erase ideal-FP64 differences.
+`earliest-stage-rounding.json` records both actual first-divergence fixtures, shared-helper raw captures and unchanged derived bounds.

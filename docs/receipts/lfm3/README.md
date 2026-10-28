@@ -8,9 +8,9 @@ Checkpoint revisions and run instructions are in the [family recipe](../../recip
 
 - Initial corrected native: `a8df9730ee637237545311a6753dd4bdcb13e860700d65a01a033ae818ee0d18`.
 - Optimized benchmark native: `5c8a04d4af599879797f4f5bed8e00ab7d9d70732e698bd2a1ec2a01ec762e09`.
-- Final source build: `251079309919aa9b21ca8cc6a89c58fc3fc9a9baf800fa5ce6a6af313a5b5f65`.
+- Guarded row-pair build: `251079309919aa9b21ca8cc6a89c58fc3fc9a9baf800fa5ce6a6af313a5b5f65`.
 
-The final build additionally closes a diagnostic encoder when counter setup fails.
+The guarded row-pair build additionally closes a diagnostic encoder when counter setup fails.
 That change does not alter the production projection or attention arithmetic. Its serving checks were rerun separately.
 
 Correctness runs used an M4 Pro with 48 GB RAM, macOS 26.5.1 and Zig 0.17.0.
@@ -21,7 +21,7 @@ A measured footprint on the M5 is not a smaller-RAM qualification.
 
 The optimized M4 binary passed all six greedy/seeded-sampling suites: 303 passed, zero failed or skipped.
 These cover drafted/plain, concurrent/solo, real cache reuse, edited prefixes, image order/content,
-corrupt input and cancellation/recovery. The final source binary also passed 303/303 on the M5.
+corrupt input and cancellation/recovery. The guarded row-pair binary also passed 303/303 on the M5.
 
 Text4 and VL4 grammar runs on both hosts each passed 32 configurations, concurrent comparisons and five refusals.
 On each host, full-token capture verified 64/64 configuration groups, including hidden reasoning, across drafted/plain/concurrent requests.
@@ -30,7 +30,7 @@ Grammar requires the matching optional library; these tests used an isolated bun
 `04133accdcecd01cd7dd4e8730855905850967ed8c6bd6d8a637258264ae7687`.
 
 The 4-bit text long suite passed 73/73, including chunk and 8,193-token seams.
-The final LFM3-only contract run on the M4 reported:
+The row-pair LFM3-only contract run on the M4 reported:
 
 ```text
 SUMMARY 50 kernels: 50 pass gates 1-4, 0 fail, 0 known findings; 13 controls: 13 red as planted, 0 missed; 0 limit problems; gates 19521 ms, limits 133 ms
@@ -98,6 +98,26 @@ Small decode-rate differences are descriptive; they are not a separately establi
 Earlier standard-server comparisons still showed MLX-VLM faster, especially for long cold prefill.
 The faster arithmetic-changing matrix candidate failed the strict no-worse precision comparison and was excluded.
 The slower uniform-exponential candidate was also excluded. No unvalidated GQA experiment is enabled.
+
+## Paired FFN and CPU greedy follow-up
+
+`greedy-dual.json` records the subsequent immutable `b804c6ed` native build.
+The FFN gate/up projections share one dispatch while retaining each projection's shared helper and BF16 stores.
+A SIMD CPU greedy reduction preserves the first maximum, signed-zero ties and nonfinite rejection;
+masked and positive-temperature sampling keep the original path.
+All 58 LFM3 kernel checks passed, all 16 controls were red, and launch limits had zero problems.
+The real text4 exactness suite passed 68/68; six M5 sampled/cancellation serving suites passed 303/303.
+Actual projection pairs retained 247,628,160 bytes, and six complete teacher-forced logit arrays retained 394,752,000 bytes.
+
+Matched M5 old/new/new/old runs used three repetitions and 256 output tokens per request.
+All 240 concurrent full-token digests matched across the corresponding prompts and legs;
+240/240 concurrent-to-solo and 32/32 serial checks passed.
+Text code/prose single-stream rates changed from 309.27/322.59 to 317.39/332.83 tok/s;
+four-stream aggregate rates changed from 682.50/717.25 to 836.65/856.70 tok/s.
+VL decoder code/prose rates changed from 292.69/290.90 to 301.68/299.90 tok/s;
+four-stream rates changed from 656.00/658.15 to 813.40/810.10 tok/s.
+These are medians of the two run medians, with all raw three-repetition cells retained.
+This ABBA experiment measures only 4-bit performance and does not assert standard-server parity.
 
 ## Reproduce
 
