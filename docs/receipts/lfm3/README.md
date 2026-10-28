@@ -122,3 +122,12 @@ The native server did not return its rendered arrays, so matching counts are not
 To repeat cold HTTP measurements, start a fresh owned server with `--context 70000 --parallel 4 --prompt-cache-gib 0`,
 POST a saved body to `/v1/chat/completions`, and retain usage, full token hash and timings from the stream.
 The supplied bodies omit the optional model alias. Keep the exact bodies unchanged between compared builds.
+
+## All-width matched baseline
+
+`all-width-performance-baseline.json` records the shared-attention binary before the SIMD greedy and paired-FFN follow-ups.
+Both native and the standard server completed 72 retained single-stream requests, 360 retained concurrency requests and 48 cold requests in total.
+Every measured decode/concurrency reply has 256 tokens; each cold request has 16 output tokens and zero cached prompt tokens.
+All 180 native concurrent-to-solo and 24 serial comparisons matched. Exact public prompts, client hashes, token hashes and timings are retained.
+There is one cold sample per cell and three decode/concurrency repetitions. These baseline rates remain below the standard server; they are not a performance-gate pass.
+The native binary SHA is `d1656249bdb581b147faacbd3b3c557c00b6c45b710eeddce517a67178b6ba2b`.
