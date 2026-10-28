@@ -168,7 +168,7 @@ pub const LaneSel = struct {
         try s.setEntry(stream, pidx, fill.frame);
     }
 
-    /// Rows [pos0, pos0 + n) will be written: older pages are copied out and leave the window; these rows' pages get frames.
+    /// Rows [pos0, pos0 + n) will be written: older pages are copied out, leave the window; these get frames.
     pub fn begin(s: *LaneSel, stream: cuda.Stream, pos0: usize, n: usize) !void {
         if (s.reset_pending) {
             try s.reset(stream);
