@@ -6,6 +6,8 @@ const st = @import("state.zig");
 const wts = @import("metal_weights.zig");
 const c = @import("config.zig");
 const row = @import("../../core/row_projection.zig");
+const dual = @import("dual_projection.zig");
+const binned = @import("../../core/binned_projection.zig");
 const pairs = @import("row_projection.zig");
 const Buffer = mtl.Buffer;
 pub const counters = @import("../../core/gpu_counters.zig");
@@ -21,11 +23,14 @@ pub const Trace = struct {
 const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32, rotary_pairs: u32 };
 const AttnArgs = @import("kernels.zig").AttentionArgs;
 
+const Prepared = struct { address: u64, off: usize, k: usize, rows: usize, group: usize };
+
 const Encoder = struct {
     e: mtl.ComputeEncoder,
     m: *Model,
     scratch: *st.Scratch,
     record: bool,
+    binned_prepared: ?Prepared = null,
 
     fn begin(self: *Encoder, kind: counters.Class) !void {
         if (self.m.profile) |profile| try profile.beginSpan(&self.e, kind);
@@ -35,7 +40,8 @@ const Encoder = struct {
         if (self.m.profile) |profile| try profile.endSpan(&self.e);
     }
 
-    fn pipe(self: Encoder, comptime key: []const u8) void {
+    fn pipe(self: *Encoder, comptime key: []const u8) void {
+        self.binned_prepared = null;
         self.e.setPipeline(self.m.kernels.get(key));
     }
 
@@ -53,7 +59,20 @@ const Encoder = struct {
 
     fn projection(self: *Encoder, w: row.Weights, x: Buffer, x_off: usize, y: Buffer, y_off: usize, rows: usize) !void {
         try self.begin(.dense);
-        if (self.m.projection_candidate) |*candidate| {
+        if (self.m.binned_candidate) |*candidate| {
+            if (binned.supports(w)) {
+                const sums = binned.Ref{ .buf = self.scratch.binned_sums orelse return error.MissingBinnedScratch };
+                const meta = binned.Ref{ .buf = self.scratch.binned_meta orelse return error.MissingBinnedScratch };
+                const key = Prepared{ .address = x.gpuAddress(), .off = x_off, .k = w.k, .rows = rows, .group = w.group };
+                const reuse = if (self.binned_prepared) |prior| prior.address == key.address and prior.off == key.off and
+                    prior.k == key.k and prior.rows == key.rows and prior.group == key.group else false;
+                if (!reuse) {
+                    try binned.prepare(self.e, candidate, w, .{ .buf = x, .off = x_off }, sums, meta, rows);
+                    self.binned_prepared = key;
+                }
+                try binned.dense(self.e, candidate, w, .{ .buf = x, .off = x_off }, sums, meta, .{ .buf = y, .off = y_off }, rows);
+            } else try pairs.encode(self.e, &self.m.kernels.rows, w, x, x_off, y, y_off, rows);
+        } else if (self.m.projection_candidate) |*candidate| {
             try candidate.encode(self.e, &self.m.kernels.rows, w, x, x_off, self.scratch.sums orelse return error.MissingProjectionCandidateScratch, y, y_off, rows);
         } else try pairs.encode(self.e, &self.m.kernels.rows, w, x, x_off, y, y_off, rows);
         try self.end();
@@ -92,6 +111,7 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
 pub fn project(m: *Model, s: *st.Scratch, w: row.Weights, input: Buffer, output: Buffer, rows: usize) !void {
     if (m.profile != null or rows == 0 or rows > s.rows) return error.InvalidLfmProjectionFixture;
     if (m.projection_candidate != null) try s.prepareProjectionCandidate();
+    if (m.binned_candidate != null) try s.prepareBinnedProjectionCandidate();
     const cb = m.queue.commandBuffer();
     var enc = Encoder{ .e = cb.compute(.serial), .m = m, .scratch = s, .record = false };
     var ended = false;
@@ -112,6 +132,10 @@ pub fn runTrace(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []
     return execute(m, s, segments, tokens, false, head, null, trace);
 }
 
+pub fn runTraceWithImages(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, head: Head, images: ?@import("image_rows.zig").Images, trace: Trace) !void {
+    return execute(m, s, segments, tokens, false, head, images, trace);
+}
+
 fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const u32, record: bool, head: Head, images: ?@import("image_rows.zig").Images, trace: ?Trace) !void {
     if (trace != null and m.profile != null) return error.ConflictingLfmDiagnostics;
     if (images != null and (record or segments.len != 1)) return error.InvalidLfmImageSegments;
@@ -128,6 +152,7 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
     if (m.projection_candidate != null) try s.prepareProjectionCandidate();
+    if (m.binned_candidate != null) try s.prepareBinnedProjectionCandidate();
     var cb = m.queue.commandBuffer();
     var enc = Encoder{ .e = cb.compute(.serial), .m = m, .scratch = s, .record = record };
     var ended = false;
@@ -177,9 +202,14 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
         try enc.norm(s.h, block.ffn_norm, s.x, total);
         try layerStage(&enc, trace, &name, i, "ffn_norm", s.x, total, c.hidden, &cb, &ended);
         const ffn = block.ffn;
-        try enc.projection(ffn.gate, s.x, 0, s.gate, 0, total);
+        const paired = m.projection_candidate == null and m.binned_candidate == null and dual.compatible(ffn.gate, ffn.up);
+        if (paired) {
+            try enc.begin(.dense);
+            try dual.encode(enc.e, &m.kernels.dual, ffn.gate, ffn.up, s.x, 0, s.gate, 0, s.up, 0, total);
+            try enc.end();
+        } else try enc.projection(ffn.gate, s.x, 0, s.gate, 0, total);
         try layerStage(&enc, trace, &name, i, "gate", s.gate, total, c.intermediate, &cb, &ended);
-        try enc.projection(ffn.up, s.x, 0, s.up, 0, total);
+        if (!paired) try enc.projection(ffn.up, s.x, 0, s.up, 0, total);
         try layerStage(&enc, trace, &name, i, "up", s.up, total, c.intermediate, &cb, &ended);
         try enc.begin(.activation);
         enc.pipe("lfm3_swiglu");

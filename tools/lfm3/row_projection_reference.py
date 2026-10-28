@@ -102,5 +102,36 @@ def main():
     args.output.with_suffix('.json').write_text(json.dumps(receipt, indent=2) + '\n')
 
 
+def dense_rows(inputs, weight):
+    inputs, weight = np.asarray(inputs), np.asarray(weight)
+    if inputs.ndim != 2 or weight.ndim != 2 or inputs.shape[1] != weight.shape[1] or inputs.shape[1] % 32:
+        raise ValueError('Expected compatible dense row matrices with complete 32-lane passes')
+    if any(not np.isfinite(x).all() or not np.array_equal(x, bf(x)) for x in (inputs, weight)):
+        raise ValueError('Dense replay requires finite BF16 operands')
+    inputs, weight = np.ascontiguousarray(inputs, dtype=np.float32), np.ascontiguousarray(weight, dtype=np.float32)
+    output = np.empty((len(inputs), len(weight)), dtype=np.float32)
+    library = os.environ.get('LFM3_ROW_REPLAY_LIBRARY')
+    if library:
+        function = ctypes.CDLL(library).lfm3_dense_replay
+        pointer = ctypes.POINTER(ctypes.c_float)
+        function.argtypes = [pointer, pointer, pointer] + [ctypes.c_int] * 3
+        function.restype = None
+        function(inputs.ctypes.data_as(pointer), weight.ctypes.data_as(pointer), output.ctypes.data_as(pointer),
+                 len(inputs), len(weight), inputs.shape[1])
+        return output
+    for row in range(0, len(inputs), 8):
+        x = inputs[row:row + 8]
+        for column in range(0, len(weight), 256):
+            w = weight[column:column + 256]
+            lanes = np.zeros((len(x), len(w), 32), dtype=np.float32)
+            for at in range(0, inputs.shape[1], 32):
+                lanes = (x[:, None, at:at + 32].astype(np.float64)
+                         * w[None, :, at:at + 32].astype(np.float64) + lanes).astype(np.float32)
+            for distance in (1, 2, 4, 8, 16):
+                lanes = lanes + lanes[..., np.arange(32) ^ distance]
+            output[row:row + len(x), column:column + len(w)] = lanes[..., 0]
+    return output
+
+
 if __name__ == '__main__':
     main()

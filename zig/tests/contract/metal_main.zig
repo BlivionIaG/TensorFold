@@ -6,7 +6,9 @@ const contract = @import("contract");
 const lfm3 = @import("metal_lfm3.zig");
 const lfm3_sums = @import("metal_lfm3_sums.zig");
 const lfm3_attention_sums = @import("metal_lfm3_attention_sums.zig");
+const lfm3_dual = @import("metal_lfm3_dual.zig");
 const lfm3_segments = @import("metal_lfm3_segments.zig");
+const binned_projection = @import("metal_binned_projection.zig");
 const lfm3_projection = @import("metal_lfm3_projection.zig");
 const rows_k = @import("metal_rows.zig");
 const affine_k = @import("metal_affine.zig");
@@ -140,6 +142,24 @@ pub fn main(init: std.process.Init) !u8 {
         lfm3_count += 1;
     }
     for (lfm3_probes[0..lfm3_count]) |*probe| try kernels.append(a, probe.kernel());
+    var lfm3_dual_probes: [8]lfm3_dual.Probe = undefined;
+    var lfm3_dual_count: usize = 0;
+    defer for (lfm3_dual_probes[0..lfm3_dual_count]) |*probe| probe.deinit();
+    for ([_]u8{ 4, 6, 8 }) |bits| for ([_]usize{ 32, 64 }) |group| {
+        const name = try lfm3_dual.label(a, bits, group, .none);
+        defer a.free(name);
+        if (!wanted(o, name)) continue;
+        lfm3_dual_probes[lfm3_dual_count] = try lfm3_dual.Probe.init(a, device, queue, bits, group, .none);
+        lfm3_dual_count += 1;
+    };
+    for ([_]lfm3_dual.Fault{ .second, .tail }) |fault| {
+        const name = try lfm3_dual.label(a, 4, 64, fault);
+        defer a.free(name);
+        if (!wanted(o, name)) continue;
+        lfm3_dual_probes[lfm3_dual_count] = try lfm3_dual.Probe.init(a, device, queue, 4, 64, fault);
+        lfm3_dual_count += 1;
+    }
+    for (lfm3_dual_probes[0..lfm3_dual_count]) |*probe| try kernels.append(a, probe.kernel());
     var lfm3_shared_probes: [3]lfm3_segments.Probe = undefined;
     var lfm3_shared_count: usize = 0;
     defer for (lfm3_shared_probes[0..lfm3_shared_count]) |*probe| probe.deinit();
@@ -167,6 +187,25 @@ pub fn main(init: std.process.Init) !u8 {
         lfm3_attention_count += 1;
     };
     for (lfm3_attention_probes[0..lfm3_attention_count]) |*probe| try kernels.append(a, probe.kernel());
+    var binned_probes: [8]binned_projection.Probe = undefined;
+    var binned_count: usize = 0;
+    defer for (binned_probes[0..binned_count]) |*probe| probe.deinit();
+    for ([_]u8{ 4, 6, 8 }) |bits| for ([_]usize{ 32, 64 }) |group| {
+        const name = try binned_projection.label(a, bits, group, .none);
+        defer a.free(name);
+        if (!wanted(o, name)) continue;
+        binned_probes[binned_count] = try binned_projection.Probe.init(a, device, queue, bits, group, .none);
+        binned_count += 1;
+    };
+    for ([_]binned_projection.Fault{ .rows, .accum }) |fault| {
+        const name = try binned_projection.label(a, 4, 64, fault);
+        defer a.free(name);
+        if (!wanted(o, name)) continue;
+        binned_probes[binned_count] = try binned_projection.Probe.init(a, device, queue, 4, 64, fault);
+        binned_count += 1;
+    }
+    for (binned_probes[0..binned_count]) |*probe| try kernels.append(a, probe.kernel());
+
     var lfm3_projection_probes: [14]lfm3_projection.Probe = undefined;
     var lfm3_projection_count: usize = 0;
     defer for (lfm3_projection_probes[0..lfm3_projection_count]) |*probe| probe.deinit();

@@ -8,9 +8,9 @@ Checkpoint revisions and run instructions are in the [family recipe](../../recip
 
 - Initial corrected native: `a8df9730ee637237545311a6753dd4bdcb13e860700d65a01a033ae818ee0d18`.
 - Optimized benchmark native: `5c8a04d4af599879797f4f5bed8e00ab7d9d70732e698bd2a1ec2a01ec762e09`.
-- Final source build: `251079309919aa9b21ca8cc6a89c58fc3fc9a9baf800fa5ce6a6af313a5b5f65`.
+- Guarded row-pair build: `251079309919aa9b21ca8cc6a89c58fc3fc9a9baf800fa5ce6a6af313a5b5f65`.
 
-The final build additionally closes a diagnostic encoder when counter setup fails.
+The guarded row-pair build additionally closes a diagnostic encoder when counter setup fails.
 That change does not alter the production projection or attention arithmetic. Its serving checks were rerun separately.
 
 Correctness runs used an M4 Pro with 48 GB RAM, macOS 26.5.1 and Zig 0.17.0.
@@ -21,7 +21,7 @@ A measured footprint on the M5 is not a smaller-RAM qualification.
 
 The optimized M4 binary passed all six greedy/seeded-sampling suites: 303 passed, zero failed or skipped.
 These cover drafted/plain, concurrent/solo, real cache reuse, edited prefixes, image order/content,
-corrupt input and cancellation/recovery. The final source binary also passed 303/303 on the M5.
+corrupt input and cancellation/recovery. The guarded row-pair binary also passed 303/303 on the M5.
 
 Text4 and VL4 grammar runs on both hosts each passed 32 configurations, concurrent comparisons and five refusals.
 On each host, full-token capture verified 64/64 configuration groups, including hidden reasoning, across drafted/plain/concurrent requests.
@@ -30,7 +30,7 @@ Grammar requires the matching optional library; these tests used an isolated bun
 `04133accdcecd01cd7dd4e8730855905850967ed8c6bd6d8a637258264ae7687`.
 
 The 4-bit text long suite passed 73/73, including chunk and 8,193-token seams.
-The final LFM3-only contract run on the M4 reported:
+The row-pair LFM3-only contract run on the M4 reported:
 
 ```text
 SUMMARY 50 kernels: 50 pass gates 1-4, 0 fail, 0 known findings; 13 controls: 13 red as planted, 0 missed; 0 limit problems; gates 19521 ms, limits 133 ms
@@ -65,6 +65,31 @@ No new tie tolerance or end-to-end acceptance threshold was applied. The primiti
 The oracle is reproducible with `tools/lfm3/fp64_reference.py`; its tests include all finite BF16 encodings,
 adjacent midpoints, double rounding, subnormals, overflow and six-bit cross-word unpacking.
 
+## Binned projection candidate
+
+`binned-projection.json` records the explicit candidate at `75478ed17`; ordinary model loading leaves it disabled.
+It preserves each input value while partitioning exponent ranges and exact code nibbles. M5 uses the shared
+`nax.h` tensor-unit fragments; M4 uses its fallback. Group affine sums use compensated FP32 pairs.
+The integer argument is limited to finite normal aligned products without overflow or underflow.
+It does not establish universal FP64 equivalence for extreme BF16 subnormals or arbitrary inputs.
+
+The actual native M5 tool produced **61,907,040/61,907,040** direct FP64-to-BF16 reference values across 132 captures:
+11 projection classes, all six checkpoints, and prompt/decode widths 64 and 1. All 66 first-row comparisons matched.
+The six small attention-gate cells use the unchanged row fallback and are included explicitly.
+No column had more FP64 error than either the retained original-native or MLX result.
+Those two comparator captures are from the M4, not a same-device M5 performance comparison.
+The file retains worst-column metrics, input/output hashes, artifact identities and the complete contract summaries.
+Both M4 and M5 passed all six operator variants, both planted controls and launch limits.
+These primitive results do not settle whole-model fidelity or served performance.
+
+To reconstruct the fixtures, save `fixture_tokens` as a little-endian uint32 NPY array and run the default
+`tf-lfm3-forward MODEL TOKENS.npy baseline.bf16 trace TRACE_DIR` for each named checkpoint.
+Concatenate the trace files ending in `_<input_stage>.bf16` in filename order to recreate each `input_file`;
+the first `2*k` bytes recreate its `one_row_file`. Verify the recorded input hash before comparing outputs.
+Run `tf-lfm3-project MODEL MODULE INPUT.bf16 ROWS OUTPUT.bf16 --binned` at widths 64 and 1.
+Save the receipt’s `cases` array as `manifest.json` beside the inputs for `tools/lfm3/projection_compare.py`.
+Use the frozen candidate commit for these artifact identities; a later decode-twin candidate requires its own receipt.
+
 ## Controlled performance
 
 `cold-prefill-ab.json` contains all 16 matched pairs / 32 fresh-server cold requests.
@@ -90,6 +115,26 @@ Earlier standard-server comparisons still showed MLX-VLM faster, especially for 
 The faster arithmetic-changing matrix candidate failed the strict no-worse precision comparison and was excluded.
 The slower uniform-exponential candidate was also excluded. No unvalidated GQA experiment is enabled.
 
+## Paired FFN and CPU greedy follow-up
+
+`greedy-dual.json` records the subsequent immutable `b804c6ed` native build.
+The FFN gate/up projections share one dispatch while retaining each projection's shared helper and BF16 stores.
+A SIMD CPU greedy reduction preserves the first maximum, signed-zero ties and nonfinite rejection;
+masked and positive-temperature sampling keep the original path.
+All 58 LFM3 kernel checks passed, all 16 controls were red, and launch limits had zero problems.
+The real text4 exactness suite passed 68/68; six M5 sampled/cancellation serving suites passed 303/303.
+Actual projection pairs retained 247,628,160 bytes, and six complete teacher-forced logit arrays retained 394,752,000 bytes.
+
+Matched M5 old/new/new/old runs used three repetitions and 256 output tokens per request.
+All 240 concurrent full-token digests matched across the corresponding prompts and legs;
+240/240 concurrent-to-solo and 32/32 serial checks passed.
+Text code/prose single-stream rates changed from 309.27/322.59 to 317.39/332.83 tok/s;
+four-stream aggregate rates changed from 682.50/717.25 to 836.65/856.70 tok/s.
+VL decoder code/prose rates changed from 292.69/290.90 to 301.68/299.90 tok/s;
+four-stream rates changed from 656.00/658.15 to 813.40/810.10 tok/s.
+These are medians of the two run medians, with all raw three-repetition cells retained.
+This ABBA experiment measures only 4-bit performance and does not assert standard-server parity.
+
 ## Reproduce
 
 Use the pinned Zig version and a complete local checkpoint. Developer references need NumPy; the MLX reference also needs MLX.
@@ -113,3 +158,17 @@ The native server did not return its rendered arrays, so matching counts are not
 To repeat cold HTTP measurements, start a fresh owned server with `--context 70000 --parallel 4 --prompt-cache-gib 0`,
 POST a saved body to `/v1/chat/completions`, and retain usage, full token hash and timings from the stream.
 The supplied bodies omit the optional model alias. Keep the exact bodies unchanged between compared builds.
+
+## All-width matched baseline
+
+`all-width-performance-baseline.json` records the shared-attention binary before the SIMD greedy and paired-FFN follow-ups.
+Both native and the standard server completed 72 retained single-stream requests, 360 retained concurrency requests and 48 cold requests in total.
+Every measured decode/concurrency reply has 256 tokens; each cold request has 16 output tokens and zero cached prompt tokens.
+All 180 native concurrent-to-solo and 24 serial comparisons matched. Exact public prompts, client hashes, token hashes and timings are retained.
+There is one cold sample per cell and three decode/concurrency repetitions. These baseline rates remain below the standard server; they are not a performance-gate pass.
+The native binary SHA is `d1656249bdb581b147faacbd3b3c557c00b6c45b710eeddce517a67178b6ba2b`.
+
+The public long-prompt wrapper is `tools/lfm3/bench_decode.py`; its prompts match the recorded JSON exactly.
+Use `python3 tools/lfm3/bench_decode.py decode URL MODEL --tokens 256 --reps 3 --temperatures 0 --output decode.json`.
+For concurrency use the `concurrent` mode with `--levels 1,4 --alone --serial` on native, or `--levels 1,4 --no-seed` on standard.
+Verify every reply length in the evidence; a shorter standard reply does not establish an equal-length rate.

@@ -2,6 +2,22 @@
 const M = @import("limits.zig").MetalLaunch;
 
 pub const metal = [_]M{
+    .{ .name = "binned tf_binned_sums", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "binned tf_binned_q4_g32", .threads = 64, .tg_memory = 5776, .reserved = 64 },
+    .{ .name = "binned tf_binned_q4_g64", .threads = 64, .tg_memory = 5776, .reserved = 64 },
+    .{ .name = "binned tf_binned_q6_g32", .threads = 64, .tg_memory = 5776, .reserved = 64 },
+    .{ .name = "binned tf_binned_q6_g64", .threads = 64, .tg_memory = 5776, .reserved = 64 },
+    .{ .name = "binned tf_binned_q8_g32", .threads = 64, .tg_memory = 5776, .reserved = 64 },
+    .{ .name = "binned tf_binned_q8_g64", .threads = 64, .tg_memory = 5776, .reserved = 64 },
+    .{ .name = "binned bad-rows tf_binned_sums", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "binned bad-rows tf_binned_q4_g64", .threads = 64, .tg_memory = 5776, .reserved = 64 },
+    .{ .name = "binned bad-acc tf_binned_sums", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "binned bad-acc tf_binned_q4_g64", .threads = 64, .tg_memory = 5776, .reserved = 64 },
+    .{ .name = "lfm3-dual lfm3_projection_dual_q4", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "lfm3-dual lfm3_projection_dual_q6", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "lfm3-dual lfm3_projection_dual_q8", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "lfm3-dual bad-second lfm3_projection_dual_q4", .threads = 64, .tg_memory = 0, .reserved = 64 },
+    .{ .name = "lfm3-dual bad-tail lfm3_projection_dual_q4", .threads = 64, .tg_memory = 0, .reserved = 64 },
     .{ .name = "lfm3 segment-bad lfm3_attn_segments_merge", .threads = 32, .tg_memory = 0, .reserved = 32 },
     .{ .name = "lfm3 lfm3_attn_segments", .threads = 128, .tg_memory = 2080, .reserved = 128 },
     .{ .name = "lfm3 lfm3_attn_segments_merge", .threads = 32, .tg_memory = 0, .reserved = 32 },

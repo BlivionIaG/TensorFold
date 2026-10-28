@@ -9,6 +9,7 @@ const fwd = @import("forward.zig");
 const snapshot = @import("snapshot.zig");
 const Model = @import("model.zig").Model;
 const be = lanes.backend;
+pub const greedy = @import("greedy.zig");
 
 pub const Options = struct { capacity: usize, chunk: usize = 128, streams: u32 = 8 };
 
@@ -264,6 +265,7 @@ pub fn value(word: u16) f64 {
 
 /// The unchanged top-k candidates for the shared fp64 keyed sampler; a `mask` keeps its allowed ones (-inf's draw).
 pub fn draw(gpa: std.mem.Allocator, logits: []const u16, settings: ?lanes.Sampling, position: u64, mask: []const u32) !u32 {
+    if (mask.len == 0 and (settings == null or settings.?.temperature <= 0)) return greedy.select(logits);
     var best: ?usize = null;
     var allowed: usize = 0;
     for (logits, 0..) |word, id| {

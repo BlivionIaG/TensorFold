@@ -123,6 +123,8 @@ pub const Scratch = struct {
     act: mtl.Buffer,
     head_gate: mtl.Buffer,
     sums: ?mtl.Buffer = null,
+    binned_sums: ?mtl.Buffer = null,
+    binned_meta: ?mtl.Buffer = null,
     logits: mtl.Buffer,
     snapshots: [c.layers]?mtl.Buffer = @splat(null),
 
@@ -149,6 +151,8 @@ pub const Scratch = struct {
         out.po = try mem.alloc(partials * c.head_dim * 4);
         inline for (.{ "gate", "up", "act" }) |name| @field(out, name) = try mem.alloc(rows * c.intermediate * 2);
         out.sums = null;
+        out.binned_sums = null;
+        out.binned_meta = null;
         out.head_gate = try mem.alloc(rows * c.query_heads * 2);
         const logit_rows: usize = @min(rows, batch_rows);
         out.logits = try mem.alloc(logit_rows * c.vocab * 2);
@@ -156,6 +160,12 @@ pub const Scratch = struct {
             s.* = try mem.alloc(logit_rows * conv_bytes);
         };
         return out;
+    }
+
+    pub fn prepareBinnedProjectionCandidate(self: *Scratch) !void {
+        const bytes = self.rows * (c.intermediate / 32) * 8;
+        if (self.binned_sums == null) self.binned_sums = try self.memory.alloc(bytes);
+        if (self.binned_meta == null) self.binned_meta = try self.memory.alloc(bytes);
     }
 
     pub fn prepareProjectionCandidate(self: *Scratch) !void {

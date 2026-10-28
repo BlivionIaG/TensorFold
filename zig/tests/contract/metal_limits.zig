@@ -31,6 +31,19 @@ fn launchOf(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch) !La
             return std.mem.indexOf(u8, s, p) != null;
         }
     }.f;
+    if (std.mem.startsWith(u8, d.name, "binned ")) {
+        const prefix = if (has(d.name, " bad-rows ")) "#define TF_BP_BAD_ROWS 1\n" else if (has(d.name, " bad-acc ")) "#define TF_BP_BAD_ACC 1\n" else "";
+        const source = try tf.lfm3.binned_projection.source(device, a);
+        const body = try std.mem.concat(a, u8, &.{ prefix, source });
+        const pre = try preM5(a, prefix, sources.core_binned_projection);
+        return .{ .decl = d, .function = fun, .here = body, .pre_m5 = pre };
+    }
+    if (std.mem.startsWith(u8, d.name, "lfm3-dual ")) {
+        const source = try tf.lfm3.dual_projection.source(a);
+        const prefix = if (has(d.name, " bad-tail ")) "#define L3_DUAL_BAD_TAIL 1\n" else if (has(d.name, " bad-second ")) "#define L3_DUAL_BAD_SECOND 1\n" else "";
+        const body = try std.mem.concat(a, u8, &.{ prefix, source });
+        return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };
+    }
     if (std.mem.startsWith(u8, d.name, "lfm3-projection ")) {
         const source = try tf.lfm3.row_projection.source(a);
         const prefix = if (has(d.name, " bad-tail ")) "#define L3_PROJECTION_BAD_TAIL 1\n" else if (has(d.name, " bad-rows ")) "#define L3_PROJECTION_BAD_ROWS 1\n" else "";

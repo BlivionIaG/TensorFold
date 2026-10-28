@@ -9,7 +9,10 @@ from fp64_reference import Oracle, bf
 
 
 class VisionOracle:
-    def __init__(self, directory, dump=None):
+    def __init__(self, directory, dump=None, dense_rounding='fp64'):
+        if dense_rounding not in ('fp64', 'metal-row'):
+            raise ValueError('Unsupported dense projection rounding mode')
+        self.dense_rounding = dense_rounding
         self.loader = Oracle(directory)
         self.config = self.loader.config
         if self.config.get('model_type') != 'lfm3_vl':
@@ -21,9 +24,13 @@ class VisionOracle:
 
     def dense(self, x, name):
         weight = self.weight(name + '.weight')
-        result = x @ weight.T
+        if getattr(self, 'dense_rounding', 'fp64') == 'metal-row':
+            from row_projection_reference import dense_rows
+            result = dense_rows(x, weight)
+        else:
+            result = x @ weight.T
         if name + '.bias' in self.loader.map:
-            result += self.weight(name + '.bias')
+            result += self.weight(name + '.bias').astype(result.dtype)
         return bf(result)
 
     def rms(self, x, name):
@@ -120,6 +127,7 @@ def main():
     parser.add_argument('--grid-w', type=int, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--trace-dir', type=Path)
+    parser.add_argument('--dense-rounding', choices=('fp64', 'metal-row'), default='fp64')
     args = parser.parse_args()
     def write(path, values):
         path.write_bytes((np.asarray(values, dtype=np.float32).view(np.uint32) >> 16).astype('<u2').tobytes())
@@ -127,14 +135,14 @@ def main():
         write(args.trace_dir / (name + '.bf16'), values)
     if args.trace_dir:
         args.trace_dir.mkdir(parents=True, exist_ok=True)
-    oracle = VisionOracle(args.model_dir, dump if args.trace_dir else None)
+    oracle = VisionOracle(args.model_dir, dump if args.trace_dir else None, args.dense_rounding)
     result = oracle.run(np.load(args.patches, allow_pickle=False), args.grid_h, args.grid_w)
     if not np.isfinite(result).all():
         raise ValueError('Reference produced nonfinite image rows')
     write(args.output, result)
     args.output.with_suffix('.json').write_text(json.dumps({'shape': list(result.shape), 'dtype': 'BF16',
-        'arithmetic': 'FP64 dense/reductions; direct binary64-to-BF16 RNE activation boundaries',
-        'accepted_threshold': None}, indent=2) + '\n')
+        'arithmetic': ('FP64 reductions with direct BF16 boundaries; dense projections use the named rounding mode'),
+        'dense_rounding': args.dense_rounding, 'accepted_threshold': None}, indent=2) + '\n')
 
 
 if __name__ == '__main__':
