@@ -115,6 +115,9 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     try @import("../tp/cuda_exl3_tp.zig").canonical(p);
 }
 
+/// Offloaded expert layers of the loaded engine (lane engine: plain rounds compete with drafted ones when nonzero).
+pub var offloaded_layers: usize = 0;
+
 /// Host time of the A/B cut (the picks D2H and its wait) and of Pool.plan, summed over every pooled block (read by
 pub var pool_time: struct { cut_ns: u64 = 0, plan_ns: u64 = 0, blocks: u64 = 0 } = .{};
 
@@ -375,6 +378,7 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
         return err;
     };
     const allocation = if (delta_text != null) "uniform-equivalent lines (experimental deltas applied)" else if (profile_sized) "uniform-equivalent lines (profile-sized decoder pools)" else "lines a layer";
+    offloaded_layers = out.layers;
     std.log.info("flashnext exl3: {d} offloaded expert layers, {d} {s} of {d:.2} MiB ({d:.2} GiB on the device, {d:.2} GiB free before); pinned host bank {d:.2} GiB copied in {d:.1} s", .{ out.layers, out.lines, allocation, @as(f64, @floatFromInt(out.line_bytes)) / (1 << 20), @as(f64, @floatFromInt(out.device_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.free_before)) / (1 << 30), @as(f64, @floatFromInt(out.bank_bytes)) / (1 << 30), @as(f64, @floatFromInt(out.bank_ns)) / 1e9 });
     return out;
 }
