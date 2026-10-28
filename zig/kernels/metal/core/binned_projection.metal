@@ -18,6 +18,9 @@ inline float2 tf_bp_normal(float2 a) {
 }
 inline float2 tf_bp_mul(float2 a, float b) {
   const float p = a.x * b;
+#ifndef TF_BP_BAD_NONFINITE
+  if (!isfinite(p)) return float2(p, 0);
+#endif
   return tf_bp_normal(float2(p, fma(a.y, b, fma(a.x, b, -p))));
 }
 inline bfloat tf_bp_round(float2 a) {

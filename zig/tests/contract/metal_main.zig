@@ -197,7 +197,7 @@ pub fn main(init: std.process.Init) !u8 {
         lfm3_attention_count += 1;
     };
     for (lfm3_attention_probes[0..lfm3_attention_count]) |*probe| try kernels.append(a, probe.kernel());
-    var binned_probes: [8]binned_projection.Probe = undefined;
+    var binned_probes: [9]binned_projection.Probe = undefined;
     var binned_count: usize = 0;
     defer for (binned_probes[0..binned_count]) |*probe| probe.deinit();
     for ([_]u8{ 4, 6, 8 }) |bits| for ([_]usize{ 32, 64 }) |group| {
@@ -207,7 +207,7 @@ pub fn main(init: std.process.Init) !u8 {
         binned_probes[binned_count] = try binned_projection.Probe.init(a, device, queue, bits, group, .none);
         binned_count += 1;
     };
-    for ([_]binned_projection.Fault{ .rows, .accum }) |fault| {
+    for ([_]binned_projection.Fault{ .rows, .accum, .nonfinite }) |fault| {
         const name = try binned_projection.label(a, 4, 64, fault);
         defer a.free(name);
         if (!wanted(o, name)) continue;
