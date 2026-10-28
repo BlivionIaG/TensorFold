@@ -131,3 +131,8 @@ Every measured decode/concurrency reply has 256 tokens; each cold request has 16
 All 180 native concurrent-to-solo and 24 serial comparisons matched. Exact public prompts, client hashes, token hashes and timings are retained.
 There is one cold sample per cell and three decode/concurrency repetitions. These baseline rates remain below the standard server; they are not a performance-gate pass.
 The native binary SHA is `d1656249bdb581b147faacbd3b3c557c00b6c45b710eeddce517a67178b6ba2b`.
+
+The public long-prompt wrapper is `tools/lfm3/bench_decode.py`; its prompts match the recorded JSON exactly.
+Use `python3 tools/lfm3/bench_decode.py decode URL MODEL --tokens 256 --reps 3 --temperatures 0 --output decode.json`.
+For concurrency use the `concurrent` mode with `--levels 1,4 --alone --serial` on native, or `--levels 1,4 --no-seed` on standard.
+Verify every reply length in the evidence; a shorter standard reply does not establish an equal-length rate.
