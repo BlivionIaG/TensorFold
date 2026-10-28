@@ -182,20 +182,20 @@ struct TfExl3Chains {
   unsigned per, wk;
 };
 
-// The prompt tile with decode's bytes at any row count: tf_exl3_rot_in's rows, chains summed as a decode warp does.
+// The prompt tile (32 rows a block) in decode's bytes at any row count: tf_exl3_rot_in's rows, chains as a decode warp sums.
 template <int K, int C>
 __device__ __forceinline__ void tf_exl3_promptd_job(const __half* Xh, unsigned rows, const uint8_t* T, const __half* svh,
                                                     const TfExl3Matrix m, const TfExl3Chains ch, uint8_t* Y, unsigned y_f32,
                                                     float* buf) {
   constexpr unsigned TB = 32 * K;
   const unsigned tid = threadIdx.x, sg = tid / 32, lane = tid % 32, g8 = lane / 4, t4 = lane % 4, ob = blockIdx.x;
-  const unsigned row0 = blockIdx.y * 64, kb = m.k / 128;
+  const unsigned row0 = blockIdx.y * 32, kb = m.k / 128;
   __half* xs = reinterpret_cast<__half*>(buf);
   const uint64_t row_bytes = (uint64_t)m.tiles_n * TB;
   const uint8_t* col = T + (uint64_t)(8 * ob + sg) * TB;
-  float acc[4][2][4], part[4][2][4], tot[4][2][4];
+  float acc[2][2][4], part[2][2][4], tot[2][2][4];
 #pragma unroll
-  for (int i = 0; i < 4; ++i)
+  for (int i = 0; i < 2; ++i)
 #pragma unroll
     for (int n = 0; n < 2; ++n)
 #pragma unroll
@@ -203,7 +203,7 @@ __device__ __forceinline__ void tf_exl3_promptd_job(const __half* Xh, unsigned r
   unsigned left = ch.per, w = 0, s = 0;
   uint4 next = tf_exl3_words<K>(reinterpret_cast<const uint32_t*>(col), lane);
   for (unsigned ib = 0; ib < kb; ++ib) {
-    for (unsigned i = tid; i < 64 * 16; i += 256) {
+    for (unsigned i = tid; i < 32 * 16; i += 256) {
       const unsigned r = i / 16, c = (i % 16) * 8;
       const uint4 v = row0 + r < rows ? *reinterpret_cast<const uint4*>(Xh + (uint64_t)(row0 + r) * m.k + ib * 128 + c) : make_uint4(0, 0, 0, 0);
       *reinterpret_cast<uint4*>(xs + r * TF_EXL3_XS + c) = v;
@@ -216,7 +216,7 @@ __device__ __forceinline__ void tf_exl3_promptd_job(const __half* Xh, unsigned r
       tf_exl3_unpack<K, C>(now, lane, wv);
       const uint32_t b[2][2] = {{tf_exl3_pair(wv[0], wv[1]), tf_exl3_pair(wv[2], wv[3])}, {tf_exl3_pair(wv[4], wv[5]), tf_exl3_pair(wv[6], wv[7])}};
 #pragma unroll
-      for (int i = 0; i < 4; ++i) {
+      for (int i = 0; i < 2; ++i) {
         const __half* x = xs + (16 * i + g8) * TF_EXL3_XS + 16 * r + 2 * t4;
         const uint32_t a[4] = {*reinterpret_cast<const uint32_t*>(x), *reinterpret_cast<const uint32_t*>(x + 8 * TF_EXL3_XS),
                                *reinterpret_cast<const uint32_t*>(x + 8), *reinterpret_cast<const uint32_t*>(x + 8 * TF_EXL3_XS + 8)};
@@ -226,7 +226,7 @@ __device__ __forceinline__ void tf_exl3_promptd_job(const __half* Xh, unsigned r
       if (--left == 0) {   // a chain ends: into its split's warp sum, and the last chain of a split into the total
         left = ch.per;
 #pragma unroll
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 2; ++i)
 #pragma unroll
           for (int n = 0; n < 2; ++n)
 #pragma unroll
@@ -237,7 +237,7 @@ __device__ __forceinline__ void tf_exl3_promptd_job(const __half* Xh, unsigned r
         if (++w == ch.wk) {
           w = 0;
 #pragma unroll
-          for (int i = 0; i < 4; ++i)
+          for (int i = 0; i < 2; ++i)
 #pragma unroll
             for (int n = 0; n < 2; ++n)
 #pragma unroll
@@ -249,7 +249,7 @@ __device__ __forceinline__ void tf_exl3_promptd_job(const __half* Xh, unsigned r
     __syncthreads();
   }
 #pragma unroll
-  for (int i = 0; i < 4; ++i)
+  for (int i = 0; i < 2; ++i)
     for (int n = 0; n < 2; ++n)
       for (int h = 0; h < 2; ++h) {
         const unsigned c = 16 * sg + 8 * n + 2 * t4;
@@ -257,7 +257,7 @@ __device__ __forceinline__ void tf_exl3_promptd_job(const __half* Xh, unsigned r
         buf[(16 * i + g8 + 8 * h) * 128 + c + 1] = tot[i][n][2 * h + 1];
       }
   __syncthreads();
-  for (unsigned i = sg; i < 64 && row0 + i < rows; i += 8) {
+  for (unsigned i = sg; i < 32 && row0 + i < rows; i += 8) {
     float v[4];
     for (int q = 0; q < 4; ++q) v[q] = buf[i * 128 + 4 * lane + q];
     tf_exl3::fwht128(v, lane);
