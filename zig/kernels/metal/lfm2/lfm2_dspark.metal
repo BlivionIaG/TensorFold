@@ -244,3 +244,15 @@ constant constexpr uint BF16_ROWS = 16;
     if (row < p.rows && col < p.n) y[size_t(row) * p.n + col] = static_cast<bfloat>(out[sg][i]);
   }
 }
+
+// A drafter block's attention: lfm2_attn_mma where every row sees all keys, its 128 threads reserved for M1 and M2.
+[[max_total_threads_per_threadgroup(128)]] [[kernel]] void lfm2_attn_block(
+    const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
+    const device bfloat* values [[buffer(2)]], constant lfm2_attn_args& p [[buffer(3)]], device float* pm [[buffer(4)]],
+    device float* pl [[buffer(5)]], device float* po [[buffer(6)]], constant uint& rows [[buffer(7)]],
+    uint3 tg [[threadgroup_position_in_grid]], uint tid [[thread_index_in_threadgroup]],
+    uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  threadgroup uint ks[2][HD * (KT / 2)];
+  threadgroup bfloat vs[2][KB * KP];
+  lfm2_attn_rows<1, true>(queries, keys, values, p, pm, pl, po, rows, tg, tid, sg, lane, ks, vs);
+}

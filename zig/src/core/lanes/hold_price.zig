@@ -30,7 +30,7 @@ pub fn holdMs(costs: []const HoldCost, streams: usize, depth: i64) f64 {
     return at_lo + t * (atDepth(costs, hi, depth) - at_lo);
 }
 
-/// One stream count's hold ms at `depth`: linear between its two nearest timed depths (one alone: as timed).
+/// One stream count's hold ms at `depth`: linear through its two smallest timed depths (one alone: as timed).
 fn atDepth(costs: []const HoldCost, streams: u32, depth: i64) f64 {
     var a: ?HoldCost = null;
     var b: ?HoldCost = null;

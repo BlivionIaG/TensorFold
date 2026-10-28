@@ -82,6 +82,11 @@ pub fn open(a: std.mem.Allocator, gpa: std.mem.Allocator, io: std.Io, o: api.Ope
     h.draft = null;
     h.wrap = null;
     if (if (o.drafts) o.drafter else null) |dir| {
+        if (h.metal.width == 1) {
+            problem.* = "--drafter: LFM2 wider lanes failed the local exactness check; drafts require verified wider lanes";
+            release(h);
+            return null;
+        }
         const bits: u8 = if (o.drafter_bits_given) o.drafter_bits else 0;
         if (bits != 0 and bits != 8) {
             problem.* = "--drafter-bits: the LFM2 DSpark drafter takes 0 (bf16 as released, the default) or 8 (8-bit codes quantized at load)";

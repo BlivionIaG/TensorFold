@@ -66,8 +66,8 @@ pub const Config = struct {
         if (head != .string or !std.mem.eql(u8, head.string, "vanilla")) return error.UnsupportedMarkovHead;
         if (o.get("sample_from_anchor")) |v| if (v != .bool or !v.bool) return error.UnsupportedDraftAnchor;
         if (out.layers == 0 or out.layers > 8 or out.block < 2 or out.block > 16) return error.UnsupportedDraftShape;
-        if (out.intermediate == 0 or out.intermediate % 64 != 0 or out.rank == 0 or out.rank % 64 != 0) return error.UnsupportedDraftShape;
-        if (out.mask >= c.vocab or !(out.theta > 0)) return error.BadDraftConfig;
+        if (out.intermediate == 0 or out.intermediate % 64 != 0 or out.rank == 0 or out.rank > 256 or out.rank % 64 != 0) return error.UnsupportedDraftShape;
+        if (out.mask >= c.vocab or !std.math.isFinite(out.theta) or !(out.theta > 0)) return error.BadDraftConfig;
         return out;
     }
 };
@@ -136,5 +136,7 @@ test "lfm2 dspark: other drafters and shapes are refused with their reason" {
     try std.testing.expectError(error.UnsupportedDraftMask, edited("\"block_size\"", "\"is_causal\":true,\"block_size\""));
     try std.testing.expectError(error.UnsupportedDraftAnchor, edited("\"block_size\"", "\"sample_from_anchor\":false,\"block_size\""));
     try std.testing.expectError(error.UnsupportedDraftShape, edited("\"block_size\":9", "\"block_size\":17"));
+    try std.testing.expectError(error.UnsupportedDraftShape, edited("\"markov_rank\":256", "\"markov_rank\":512"));
+    try std.testing.expectError(error.BadDraftConfig, edited("10000000.0", "1e100"));
     try std.testing.expectError(error.BadDraftConfig, edited("\"mask_token_id\":125017", "\"mask_token_id\":128000"));
 }

@@ -6,6 +6,7 @@ const sources = @import("kernel_sources");
 const c = contract.spec;
 const g = contract.gates;
 const rig_ = @import("rig.zig");
+const controls = @import("metal_lfm2_controls.zig");
 
 pub const Which = enum { markov_step, draft_ids, markov_step_bf16 };
 const rank = 256;
@@ -53,6 +54,7 @@ pub const Probe = struct {
     a: std.mem.Allocator,
     rig: rig_.Rig,
     which: Which,
+    mutation: controls.Mutation,
     pipes: [2]mtl.Pipeline,
     rows: usize = 0,
     src: []u16 = &.{}, // the base logits rows
@@ -66,16 +68,18 @@ pub const Probe = struct {
     y: rig_.Ref = undefined,
     bad: rig_.Ref = undefined, // draft_ids: the flag word it sets for a flagged or invalid pick, zeroed each run
 
-    pub fn init(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue, w: Which) !Probe {
+    pub fn init(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue, w: Which, mutation: controls.Mutation) !Probe {
+        const text = try controls.source(a, mutation);
+        defer if (mutation != .none) a.free(text);
         const kernels: [2][:0]const u8 = switch (w) {
             .markov_step => .{ "lfm2_markov_scan", "lfm2_markov_pick" },
             .markov_step_bf16 => .{ "lfm2_markov_scan_bf16", "lfm2_markov_pick" },
             .draft_ids => .{ "lfm2_draft_ids", "lfm2_draft_ids" },
         };
-        const first = try rig_.pipeline(device, sources.lfm2, kernels[0]);
+        const first = try rig_.pipeline(device, text, kernels[0]);
         errdefer first.deinit();
-        const second = try rig_.pipeline(device, sources.lfm2, kernels[1]);
-        return .{ .a = a, .rig = .{ .a = a, .device = device, .queue = queue }, .which = w, .pipes = .{ first, second } };
+        const second = try rig_.pipeline(device, text, kernels[1]);
+        return .{ .a = a, .rig = .{ .a = a, .device = device, .queue = queue }, .which = w, .mutation = mutation, .pipes = .{ first, second } };
     }
 
     fn drop(p: *Probe) void {
@@ -94,7 +98,9 @@ pub const Probe = struct {
 
     const vt = g.hooks(Probe);
     pub fn kernel(p: *Probe) g.Kernel {
-        return .{ .ctx = p, .vt = &vt, .spec = spec(p.which) };
+        var s = spec(p.which);
+        if (p.mutation != .none) s.name = p.mutation.name();
+        return .{ .ctx = p, .vt = &vt, .spec = s, .control = p.mutation.gate() };
     }
 
     fn fill(out: []u16, seed: u64, f: g.Fill) void {
@@ -256,19 +262,3 @@ pub const Probe = struct {
         return null;
     }
 };
-
-/// Gate 5 for the three launches on every Apple chip and this GPU: ids 32 threads, others 256, the scan 1,088 bytes.
-pub fn limits(a: std.mem.Allocator, device: mtl.Device, only: ?[]const u8) !usize {
-    var problems: usize = 0;
-    const launches = [_]struct { []const u8, []const u8, u32, u32 }{ .{ "metal lfm2 markov scan", "lfm2_markov_scan", 1088, 256 }, .{ "metal lfm2 markov pick", "lfm2_markov_pick", 3072, 256 }, .{ "metal lfm2 draft ids", "lfm2_draft_ids", 0, 32 } };
-    for (launches) |l| {
-        if (only) |s| if (std.mem.indexOf(u8, l[0], s) == null) continue;
-        const d = contract.limits.MetalLaunch{ .name = l[0], .threads = l[3], .tg_memory = l[2], .offline = false };
-        var notes: std.ArrayList(u8) = .empty;
-        defer notes.deinit(a);
-        for (contract.limits.apple) |chip| problems += try contract.limits.metal(d, chip, &notes, a);
-        std.debug.print("{s}", .{notes.items});
-        problems += try @import("metal_limits.zig").onThisGpu(a, device, .{ .decl = d, .function = l[1], .here = sources.lfm2, .pre_m5 = "" }, false);
-    }
-    return problems;
-}

@@ -20,17 +20,18 @@ const glm_rows_k = @import("metal_glm_rows.zig");
 
 const flash_pool = @import("metal_flashnext_pool.zig");
 const flash = @import("metal_flashnext.zig");
+const fsr = @import("metal_fsr.zig");
 const gemma = @import("metal_gemma4.zig");
 const gemma_embed = @import("metal_gemma4_embed.zig");
 const gemma_mixed = @import("metal_gemma4_mixed.zig");
 const lfm2_argmax = @import("metal_lfm2_argmax.zig");
 const lfm2_streams = @import("metal_lfm2_streams.zig");
+const lfm2_controls = @import("metal_lfm2_controls.zig");
 const lfm2_tap = @import("metal_lfm2_tap.zig");
 const lfm2_dspark = @import("metal_lfm2_dspark.zig");
 const lfm2_bf16 = @import("metal_lfm2_bf16.zig");
 const lfm2_attn = @import("metal_lfm2_attn.zig");
 const lfm2_conf = @import("metal_lfm2_confidence.zig");
-const lfm2_controls = @import("metal_lfm2_controls.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
 
@@ -325,6 +326,15 @@ pub fn main(init: std.process.Init) !u8 {
             try kernels.append(a, flash_list[flash_made - 1].kernel());
         }
     };
+    var fsr_probes: [4]fsr.Probe = undefined;
+    var fsr_made: usize = 0;
+    defer for (fsr_probes[0..fsr_made]) |*probe| probe.deinit();
+    for ([_]usize{ 4, 6 }) |bits| for ([_]bool{ false, true }) |control| {
+        if (!wanted(o, fsr.Probe.name(bits, control))) continue;
+        fsr_probes[fsr_made] = .{ .a = a, .device = device, .queue = queue, .bits = bits, .control = control };
+        fsr_made += 1;
+        try kernels.append(a, fsr_probes[fsr_made - 1].kernel());
+    };
     var d3norm: ?drama3_k.Norm = null;
     defer if (d3norm) |*n| n.deinit();
     if (wanted(o, drama3_k.spec().name)) {
@@ -416,6 +426,9 @@ pub fn main(init: std.process.Init) !u8 {
     var glm_windows: glm_rows_k.Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
     defer glm_windows.deinit();
     try glm_windows.collect(o.only);
+    var nemotron_experts: @import("metal_nemotron_experts.zig").Suite = .{ .a = a, .device = device, .queue = queue, .kernels = &kernels };
+    defer nemotron_experts.deinit();
+    try nemotron_experts.collect(o.only);
     const weight_only = @import("metal_weight_only.zig");
     const weight_source = try weight_only.text(a);
     defer a.free(weight_source);
@@ -454,6 +467,8 @@ pub fn main(init: std.process.Init) !u8 {
     defer native_ple.destroy();
     const native_gdn = try @import("metal_qwen4_gdn.zig").Suite.create(a, device, queue, &kernels, o.only);
     defer native_gdn.destroy();
+    const moss_image = try @import("metal_moss_image.zig").Suite.create(a, device, queue, &kernels, o.only);
+    defer moss_image.destroy();
     var t: g.Tally = .{};
     const t0 = std.Io.Clock.awake.now(init.io);
     if (o.gates) {

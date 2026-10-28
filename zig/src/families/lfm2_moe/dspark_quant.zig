@@ -85,7 +85,7 @@ test "lfm2 dspark: 4- and 8-bit codes keep the larger edge exact, as MLX quantiz
         var codes: [64]u8 = undefined;
         var s: u16 = undefined;
         var b: u16 = undefined;
-        group(&x, bits, codes[0 .. 64 * bits / 8], &s, &b);
+        group(&x, bits, codes[0 .. 64 * @as(usize, bits) / 8], &s, &b);
         try std.testing.expect(toF32(s) < 0 and toF32(b) == 5.875); // the max is the edge: codes descend from it
         const last: u8 = if (bits == 8) codes[63] else codes[31] >> 4;
         try std.testing.expectEqual(@as(u8, 0), last);

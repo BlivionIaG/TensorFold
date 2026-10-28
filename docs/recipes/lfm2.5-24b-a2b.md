@@ -77,8 +77,7 @@ checkpoint's interleaved RoPE. Its own kernels are `lfm2_tap`, `lfm2_attn_block`
 (non-causal block attention, the target's attention kernels with a template flag), `lfm2_markov_scan` and
 `lfm2_markov_pick` (a Markov step) and `lfm2_draft_ids` (a hold's drafts into the next verify's rows on the GPU, so
 the host does not wait for a hold that fits one pass). Each kept prompt state keeps the drafter's context too, so a
-drafting stream resumes prompts. Shared rounds take the lane core's shared-round guard: they draft only while
-drafted rounds measure faster than plain ones at that stream count.
+drafting stream resumes prompts. The lane core prices drafts across the admitted stream counts.
 
 `tf-kernel-contract --only lfm2` checks these kernels. `tf-lfm2-dspark MODEL DRAFTER TOKENS [ROWS]` runs the drafter
 against an fp32 host reference of the released checkpoint (the same taps and the target's embedding and head),
@@ -97,14 +96,13 @@ without the head verifies by the core's depth rule, from each stream's measured 
 
 A stream with a copy ahead verifies the copy and asks no hold, and a drafting stream prices its copy
 windows by its own copies. The lane core also weighs the hold pass itself: the drafter times holds of 1 to 16
-blocks at load and corrects those prices toward each settled hold's GPU time. A lone stream holds drafts only while
-its drafted rounds measure faster than plain ones (`zig/src/core/lanes/lone_guard.zig`); shared rounds keep the
-shared-round guard.
+blocks at load and corrects those prices toward each settled hold's GPU time.
 
 `tf-lfm2-dspark` also prints the confidence
 head against its fp32 reference and times shared holds of 2 to 16 streams.
 
-The loader reads the checkpoint one matrix at a time and keeps only the 8-bit codes; a stream's drafter lane is one
+The loader reads the checkpoint one matrix at a time and keeps the released bf16 matrices by default, or the
+8-bit codes with `--drafter-bits 8`; a stream's drafter lane is one
 Metal buffer (its layers' keys and values, then its staged rows), and its bytes join the streams the load limit
 admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-lfm2-dspark` also counts host
 allocations over twenty served drafter rounds, which must be none.

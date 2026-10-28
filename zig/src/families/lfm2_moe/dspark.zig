@@ -103,11 +103,17 @@ pub const Drafter = struct {
         errdefer d.event.deinit();
         d.w = try dw.load(gpa, target.device, io, dir, &d.config, options.bits);
         errdefer d.w.deinit(gpa);
-        errdefer for (d.owned.items) |b| b.deinit();
-        errdefer d.owned.deinit(gpa);
+        try d.prepare();
+        return d;
+    }
+
+    fn prepare(d: *Drafter) !void {
+        errdefer {
+            for (d.owned.items) |b| b.deinit();
+            d.owned.deinit(d.gpa);
+        }
         try d.scratch();
         try d.warm();
-        return d;
     }
 
     pub fn deinit(d: *Drafter) void {
@@ -195,7 +201,7 @@ pub const Drafter = struct {
 
     fn factsFn(ptr: *anyopaque) dr.Facts {
         const d = cast(ptr);
-        var f: dr.Facts = .{ .depth = d.config.block, .step_ms = d.step_ms, .prior = prior[0..d.config.block], .batched = true, .shared_guard = true, .stream_bytes = d.laneBytes(d.options.capacity), .copy_first = true };
+        var f: dr.Facts = .{ .depth = d.config.block, .step_ms = d.step_ms, .prior = prior[0..d.config.block], .batched = true, .stream_bytes = d.laneBytes(d.options.capacity), .copy_first = true };
         f.chances = d.confident();
         f.hold_costs = d.holds[0..d.holds_len];
         return f;
@@ -549,3 +555,25 @@ pub const Drafter = struct {
         };
     }
 };
+
+test "lfm2 dspark: scratch and warm allocation failures release buffers before their list" {
+    const device = mtl.Device.init() catch return error.SkipZigTest;
+    defer device.deinit();
+    var target: Model = undefined;
+    target.device = device;
+    for ([_]usize{ 1, 3 }) |fail_index| {
+        var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{ .fail_index = fail_index });
+        var d: Drafter = .{
+            .gpa = failing.allocator(),
+            .io = undefined,
+            .target = &target,
+            .config = try dc.Config.parse(std.testing.allocator, dc.stock),
+            .w = undefined,
+            .options = .{ .capacity = 64 },
+            .s = undefined,
+        };
+        try std.testing.expectError(error.OutOfMemory, d.prepare());
+        try std.testing.expect(failing.has_induced_failure);
+        try std.testing.expectEqual(failing.allocated_bytes, failing.freed_bytes);
+    }
+}

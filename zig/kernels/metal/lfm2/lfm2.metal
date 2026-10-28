@@ -353,7 +353,6 @@ template <int RB, bool FULL = false>
 }
 template [[host_name("lfm2_attn_mma")]] [[kernel]] decltype(lfm2_attn_mma<1>) lfm2_attn_mma<1>;
 template [[host_name("lfm2_attn_mma_r2")]] [[kernel]] decltype(lfm2_attn_mma<2>) lfm2_attn_mma<2>;
-template [[host_name("lfm2_attn_block")]] [[kernel]] decltype(lfm2_attn_mma<1, true>) lfm2_attn_mma<1, true>;
 
 // The chunks merged in chunk order for (head, row): Y [rows, QH*HD] bf16.
 template <bool FULL = false>

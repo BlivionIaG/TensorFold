@@ -6,6 +6,7 @@ const sources = @import("kernel_sources");
 const c = contract.spec;
 const g = contract.gates;
 const rig_ = @import("rig.zig");
+const controls = @import("metal_lfm2_controls.zig");
 
 const qh = 32;
 const kvh = 8;
@@ -34,6 +35,7 @@ fn value(i: usize, seed: u64, scale: f32) u16 {
 pub const Probe = struct {
     a: std.mem.Allocator,
     rig: rig_.Rig,
+    mutation: controls.Mutation,
     pipes: [2]mtl.Pipeline,
     shape: c.Shape = undefined,
     cap: usize = 0,
@@ -44,10 +46,12 @@ pub const Probe = struct {
     args: [5]rig_.Ref = undefined,
     y: rig_.Ref = undefined,
 
-    pub fn init(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue) !Probe {
-        const first = try rig_.pipeline(device, sources.lfm2, "lfm2_attn_block");
+    pub fn init(a: std.mem.Allocator, device: mtl.Device, queue: mtl.Queue, mutation: controls.Mutation) !Probe {
+        const text = try controls.source(a, mutation);
+        defer if (mutation != .none) a.free(text);
+        const first = try rig_.pipeline(device, text, "lfm2_attn_block");
         errdefer first.deinit();
-        return .{ .a = a, .rig = .{ .a = a, .device = device, .queue = queue }, .pipes = .{ first, try rig_.pipeline(device, sources.lfm2, "lfm2_attn_block_merge") } };
+        return .{ .a = a, .rig = .{ .a = a, .device = device, .queue = queue }, .pipes = .{ first, try rig_.pipeline(device, text, "lfm2_attn_block_merge") }, .mutation = mutation };
     }
 
     fn drop(p: *Probe) void {
@@ -66,7 +70,9 @@ pub const Probe = struct {
 
     const vt = g.hooks(Probe);
     pub fn kernel(p: *Probe) g.Kernel {
-        return .{ .ctx = p, .vt = &vt, .spec = spec() };
+        var s = spec();
+        if (p.mutation != .none) s.name = p.mutation.name();
+        return .{ .ctx = p, .vt = &vt, .spec = s, .control = p.mutation.gate() };
     }
 
     pub fn prepare(p: *Probe, s: c.Shape, f: g.Fill, seed: u64) !bool {
@@ -164,19 +170,3 @@ pub const Probe = struct {
         return null;
     }
 };
-
-/// Gate 5 for the block attention's two launches on every Apple chip we serve and this GPU.
-pub fn limits(a: std.mem.Allocator, device: mtl.Device, only: ?[]const u8) !usize {
-    var problems: usize = 0;
-    const launches = [_]struct { []const u8, []const u8, u32, u32 }{ .{ "metal lfm2 block attention", "lfm2_attn_block", 128, 18688 }, .{ "metal lfm2 block attention merge", "lfm2_attn_block_merge", 32, 0 } };
-    for (launches) |l| {
-        if (only) |s| if (std.mem.indexOf(u8, l[0], s) == null) continue;
-        const d = contract.limits.MetalLaunch{ .name = l[0], .threads = l[2], .tg_memory = l[3], .offline = false };
-        var notes: std.ArrayList(u8) = .empty;
-        defer notes.deinit(a);
-        for (contract.limits.apple) |chip| problems += try contract.limits.metal(d, chip, &notes, a);
-        std.debug.print("{s}", .{notes.items});
-        problems += try @import("metal_limits.zig").onThisGpu(a, device, .{ .decl = d, .function = l[1], .here = sources.lfm2, .pre_m5 = "" }, false);
-    }
-    return problems;
-}
