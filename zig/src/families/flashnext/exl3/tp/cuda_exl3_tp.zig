@@ -244,7 +244,6 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
     const mp = t.picks.?.ptr;
     try t.mask(st, s.picks, mp, n * slots, r);
     if (x.needsPool()) return error.Exl3PoolNotAttached;
-    try st.d.check(st.d.api.cuMemsetD8Async(s.y, 0, n * slots * dims * 4, st.handle), "cuMemsetD8Async");
     var r0: usize = 0;
     while (r0 < n) : (r0 += t.moe_cap) {
         const rows = @min(t.moe_cap, n - r0);
@@ -265,7 +264,16 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
         }
         try ex.runSlots(st, x.layer, xin, dims, .bf16, mp + r0 * slots * 4, rows, sc);
     }
-    try c.sum(st, s.y, n * slots * dims);
+    try canonical(p, r);
+    try c.sum(st, s.moe_f32, n * dims);
+}
+
+/// The canonical branch: the expert split's two groups summed in slot order, then added (a rank of two: its own group).
+pub fn canonical(p: anytype, rank: ?Rank) !void {
+    const half = (try Rank.init(2, 0)).hi;
+    const moe_sum = @import("../../cuda_batch_moe.zig");
+    if (rank) |r| return moe_sum.groupSum(p, half, r.lo, r.hi, false);
+    return moe_sum.groupSum(p, half, 0, 0, true);
 }
 
 // ---- memory ------------------------------------------------------------------------------------------------------

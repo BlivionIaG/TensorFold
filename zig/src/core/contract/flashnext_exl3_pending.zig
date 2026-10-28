@@ -6,6 +6,7 @@ const registry = @import("registry.zig");
 /// Launches with no nvcc 13.0 to 13.3 receipt yet: the geometry is recorded and usage stays pending until measured.
 pub const records = [_]registry.CudaRecord{
     .{ .launch = .{ .name = "flashnext_exl3 fn_exl3_split_f16", .symbol = "fn_exl3_split_f16", .image = "flashnext_exl3", .threads = 256 }, .usage = registry.none },
+    .{ .launch = .{ .name = "flashnext_batch fn_exl3_group_sum", .symbol = "fn_exl3_group_sum", .image = "flashnext_batch", .threads = 256 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_tp fn_exl3_tp_mask", .symbol = "fn_exl3_tp_mask", .image = "flashnext_exl3_tp", .threads = 256 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_dplan fn_exl3_dcheckpoint", .symbol = "fn_exl3_dcheckpoint", .image = "flashnext_exl3_dplan", .threads = 1 }, .usage = registry.none },
     .{ .launch = .{ .name = "flashnext_exl3_dplan fn_exl3_dplan", .symbol = "fn_exl3_dplan", .image = "flashnext_exl3_dplan", .threads = 256 }, .usage = registry.none },
@@ -27,6 +28,7 @@ pub const records = [_]registry.CudaRecord{
 /// nvcc 13.4's measured registers, static shared bytes and launch bounds for sm_80, sm_86, sm_89, sm_120, sm_121.
 pub const cuda_134 = [_]registry.Override{
     .{ .name = "flashnext_exl3 fn_exl3_split_f16", .usage = .{ .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 10, .static = 0, .bound = 0 }, .{ .regs = 12, .static = 0, .bound = 0 }, .{ .regs = 12, .static = 0, .bound = 0 } } },
+    .{ .name = "flashnext_batch fn_exl3_group_sum", .usage = .{ .{ .regs = 32, .static = 0, .bound = 0 }, .{ .regs = 36, .static = 0, .bound = 0 }, .{ .regs = 36, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 }, .{ .regs = 40, .static = 0, .bound = 0 } } },
     .{ .name = "flashnext_exl3_tp fn_exl3_tp_mask", .usage = .{ .{ .regs = 16, .static = 0, .bound = 0 }, .{ .regs = 16, .static = 0, .bound = 0 }, .{ .regs = 16, .static = 0, .bound = 0 }, .{ .regs = 18, .static = 0, .bound = 0 }, .{ .regs = 18, .static = 0, .bound = 0 } } },
     .{ .name = "flashnext_exl3_dplan fn_exl3_dcheckpoint", .usage = .{ .{ .regs = 32, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 }, .{ .regs = 34, .static = 0, .bound = 0 } } },
     .{ .name = "flashnext_exl3_dplan fn_exl3_dplan", .usage = .{ .{ .regs = 32, .static = 4688, .bound = 256 }, .{ .regs = 40, .static = 4688, .bound = 256 }, .{ .regs = 40, .static = 4688, .bound = 256 }, .{ .regs = 48, .static = 4688, .bound = 256 }, .{ .regs = 48, .static = 4688, .bound = 256 } } },

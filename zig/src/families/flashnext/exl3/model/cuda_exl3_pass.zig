@@ -112,6 +112,7 @@ pub fn moe(p: anytype, lw: anytype, x: *const load.Experts) !void {
         }
         try ex.runSlots(p.stream, x.layer, xin, dims, .bf16, picks, rows, sc);
     }
+    try @import("../tp/cuda_exl3_tp.zig").canonical(p, null);
 }
 
 /// Offloaded expert layers of the loaded engine (lane engine: plain rounds compete with drafted ones when nonzero).
