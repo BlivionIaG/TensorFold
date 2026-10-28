@@ -315,5 +315,69 @@
       "new_findings": 0
     },
     "not_claimed": "This combined host build is not a rerun of zig build test test-golden or the complete backend kernel numerical suite."
+  },
+  "limits_source_selection_correction": {
+    "reason": "The original Gate 5 postnorm-bad record selected normal source because its fault macro was placed in the vision branch. The numerical removed-rounding control already used its fault macro correctly. Move the macro selection to the generic LFM3 branch and remove it from the vision branch. Runtime arithmetic is unchanged.",
+    "supersedes": "Only the earlier fault-variant launch-reflection source selection; all exact runtime/model proofs and normal/control numerical checks remain valid.",
+    "record": "lfm3 postnorm-bad lfm3_post_norm",
+    "macro": "L3_POSTNORM_SKIP_ROUND=1",
+    "variants": {
+      "main": {
+        "parent_commit": "1cdcd2c1d580f8a4b9bf3f9dec1984548097328e",
+        "source_selector_sha256": "3cefea93fa4d813d0b2e79fa781d2df4a07d91e150f9ecf4d3e6fb8b7216e684",
+        "previously_misselected_normal_source_sha256": "2a9edd589a50dea6c3289770d386459e14aa60c707e797e8e23d8f9fc3d73678",
+        "corrected_fault_source_sha256": "00068f4c021a65ef139e07ba9991f17a15ee3bc3a36a28d68cf88ae6fefa01f6",
+        "source_construction": "#define L3_POSTNORM_SKIP_ROUND 1 plus newline, ops.metal, newline, attention.metal",
+        "contract_binary_sha256": "dc23cf60560fd688f873bafb3fe2b31339b13af214d9489c65d9ff42aac1672b",
+        "build_exit_code": 0,
+        "build_summary": "Build Summary: 43/43 steps succeeded",
+        "checks": {
+          "m4": {
+            "summary": "SUMMARY 1 kernels: 1 pass gates 1-4, 0 fail, 0 known findings; 1 controls: 1 red as planted, 0 missed; 0 limit problems; gates 9 ms, limits 165 ms",
+            "full_normal_launch_reflection": true,
+            "normal_launch_records": 355,
+            "fault_reflection": {
+              "threads": 256,
+              "static_threadgroup_bytes": 144
+            },
+            "log_sha256": "20d7a6766a63fe4bd4d1262491947436e6c01a6a997c60703debd566df7963c0"
+          },
+          "m5": {
+            "summary": "SUMMARY 1 kernels: 1 pass gates 1-4, 0 fail, 0 known findings; 1 controls: 1 red as planted, 0 missed; 0 limit problems; gates 9 ms, limits 9644 ms",
+            "full_normal_launch_reflection": true,
+            "normal_launch_records": 355,
+            "fault_reflection": {
+              "threads": 256,
+              "static_threadgroup_bytes": 144
+            },
+            "log_sha256": "da6c1ad478b9b91cd5bae7d44f9e176e86d7d6aeaea97db50f3b569899abd6d4"
+          }
+        }
+      },
+      "text_foundation": {
+        "parent_commit": "fea79f5fad0c8e951ae1157fa245f244c68c492c",
+        "source_selector_sha256": "b23efe8d782cd45ba452375bab0d72ad297b5bd35e299ddb5ce4a959cea89b9a",
+        "previously_misselected_normal_source_sha256": "2a9edd589a50dea6c3289770d386459e14aa60c707e797e8e23d8f9fc3d73678",
+        "corrected_fault_source_sha256": "00068f4c021a65ef139e07ba9991f17a15ee3bc3a36a28d68cf88ae6fefa01f6",
+        "source_construction": "#define L3_POSTNORM_SKIP_ROUND 1 plus newline, ops.metal, newline, attention.metal",
+        "contract_binary_sha256": "69153461afe40f5f45d14fd838306b70b85e86d2c937a304a7e9b4d9adf9e249",
+        "build_exit_code": 0,
+        "build_summary": "Build Summary: 43/43 steps succeeded",
+        "checks": {
+          "m4": {
+            "summary": "SUMMARY 1 kernels: 1 pass gates 1-4, 0 fail, 0 known findings; 1 controls: 1 red as planted, 0 missed; 0 limit problems; gates 8 ms, limits 1137 ms",
+            "full_normal_launch_reflection": true,
+            "normal_launch_records": 337,
+            "fault_reflection": {
+              "threads": 256,
+              "static_threadgroup_bytes": 144
+            },
+            "log_sha256": "e39f929d7cc6eebd5b92e186cd8177d91b0a34d1ce8720e1fb6e915fb299f95d"
+          }
+        }
+      }
+    },
+    "formatting": "zig fmt --check passes in main and text",
+    "model_repetition": "None: this correction changes contract source selection only."
   }
 }
