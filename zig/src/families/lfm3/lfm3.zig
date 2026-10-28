@@ -3,6 +3,7 @@ pub const config = @import("config.zig");
 pub const weights = @import("weights.zig");
 pub const metal_weights = @import("metal_weights.zig");
 pub const kernels = @import("kernels.zig");
+pub const row_projection = @import("row_projection.zig");
 pub const Model = @import("model.zig").Model;
 pub const state = @import("state.zig");
 pub const forward = @import("forward.zig");

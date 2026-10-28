@@ -7,6 +7,7 @@ const lfm3 = @import("metal_lfm3.zig");
 const lfm3_vision = @import("metal_lfm3_vision.zig");
 const lfm3_sums = @import("metal_lfm3_sums.zig");
 const lfm3_attention_sums = @import("metal_lfm3_attention_sums.zig");
+const lfm3_projection = @import("metal_lfm3_projection.zig");
 const rows_k = @import("metal_rows.zig");
 const affine_k = @import("metal_affine.zig");
 const topk_k = @import("metal_topk.zig");
@@ -166,6 +167,24 @@ pub fn main(init: std.process.Init) !u8 {
         lfm3_attention_count += 1;
     };
     for (lfm3_attention_probes[0..lfm3_attention_count]) |*probe| try kernels.append(a, probe.kernel());
+    var lfm3_projection_probes: [14]lfm3_projection.Probe = undefined;
+    var lfm3_projection_count: usize = 0;
+    defer for (lfm3_projection_probes[0..lfm3_projection_count]) |*probe| probe.deinit();
+    for ([_]u8{ 4, 6, 8 }) |bits| for ([_]usize{ 32, 64 }) |group| for (std.enums.values(lfm3_projection.Proof)) |proof| {
+        const name = try lfm3_projection.label(a, bits, group, proof, .none);
+        defer a.free(name);
+        if (!wanted(o, name)) continue;
+        lfm3_projection_probes[lfm3_projection_count] = try lfm3_projection.Probe.init(a, device, queue, bits, group, proof, .none);
+        lfm3_projection_count += 1;
+    };
+    for ([_]lfm3_projection.Fault{ .tail, .rows }) |fault| {
+        const name = try lfm3_projection.label(a, 4, 64, .bytes, fault);
+        defer a.free(name);
+        if (!wanted(o, name)) continue;
+        lfm3_projection_probes[lfm3_projection_count] = try lfm3_projection.Probe.init(a, device, queue, 4, 64, .bytes, fault);
+        lfm3_projection_count += 1;
+    }
+    for (lfm3_projection_probes[0..lfm3_projection_count]) |*probe| try kernels.append(a, probe.kernel());
     for (gemma.all_entries) |v| {
         if (!wanted(o, v.name)) continue;
         if (!tensor) {

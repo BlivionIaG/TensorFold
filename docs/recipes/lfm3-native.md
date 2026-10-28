@@ -4,7 +4,7 @@ Tracking issue: [#1491](https://github.com/ashhart/TensorFold/issues/1491).
 
 The native Metal engine implements LFM3-1.7B text generation and LFM3-VL-2B image-to-text generation.
 Both read the official MLX affine 4-, 6-, and 8-bit checkpoints without converting stored weights.
-This is an experimental family port. Device and model receipts cover an M4 Pro; they do not qualify other Apple GPUs.
+This is an experimental family port. Device and model checks cover an M4 Pro and an M5 Ultra; they do not qualify other Apple GPUs.
 
 ## Run the models
 
@@ -85,47 +85,35 @@ The header inspections used these revisions:
 - VL 6-bit: `6d71bfae121abedc75f6d531fc7f6ceb4f5e3501`.
 - VL 8-bit: `83336d5be3874a2bdd3297bde77b2114dbd3a816`.
 
-## Next gate
+## Qualification and remaining gate
 
-Checks run on an Apple M4 Pro with 48 GB RAM, macOS 26.5.1, Zig 0.17.0 and MLX 0.32.4:
+Detailed counts, hashes, numerical evidence and reproducible requests are in the [receipts](../receipts/lfm3/README.md).
 
-- All six checkpoints: 186 served checks and 60 cancellation/recovery checks passed, with no failures or skips.
-- Warm repeats reused 896 of 910 prompt tokens and matched the fresh output hash.
-- The 1.7B 4-bit exactness suite passed all 68 default cases. The optional long suite was not run.
-- All 27 LFM3 operator variants passed their declared gates and limits; all seven planted controls were red as intended.
-- The complete repository test target passed 7,231 tests, with 45 skips. Server goldens had no unexpected differences.
-- Lean checks added zero findings over the inherited 428.
+All six checkpoints passed 303 greedy/seeded-sampling, cache, concurrency and cancellation checks on one optimized M4 binary.
+The final source build also passed 303/303 on an M5. Text4 and VL4 additionally passed real grammar, thinking, tool,
+streaming, history and image-conditioned tool checks with the matching optional grammar library.
+The 4-bit text long exactness suite passed all 73 cases through 8,193-token seams.
+The final family contract passed 50 kernels and caught all 13 real controls, with zero limit problems.
 
-The complete global GPU runner stops on an unrelated Gemma case that requires M5 tensor units.
-Its compiler preflight was exercised with a complete measured rotary receipt; the hardware requirement was not bypassed.
-The LFM3 operator and planted-control runs are separate targeted checks, not a claim that the global suite passed.
+Independent projection audits covered 66 class/layout cells and 60,954,624 outputs with no violations of existing FP32/BF16 bounds.
+The row-pair optimization preserves the shared arithmetic: 132 checkpoint calls and a full 8,193-token logit comparison were byte-identical.
+On the M5, controlled 4-bit cold requests improved text engine prefill from 1.240 to 0.813 seconds at 2k and
+73.402 to 61.633 seconds at 64k; VL decoder requests improved from 1.262 to 0.815 and 73.920 to 59.647 seconds.
+These are engine prefill measurements; the receipt also retains client TTFT. All compared full output-token hashes matched.
 
-The independent text reference matched all seven next-token choices in the initial public prompt; its embedding was
-byte-identical. On the 256-patch synthetic vision fixture, patch projection and embedding RMS outputs were byte-identical.
-Projected image rows had relative RMS difference 0.026 against the independent MLX reference, with differences beginning
-in the first encoder layer. This measured case is not an accepted fidelity threshold.
-
-The implementation includes 7-tap convolution, gated full/sliding attention, partial RoPE, sandwich RMS norms,
-and the native hybrid vision encoder and projector. It keeps BF16 activation boundaries and FP32 reductions.
-
-Use the real-checkpoint and served checks in addition to the host admission suite:
+Native inference retains the checkpoint's BF16 activation boundaries and FP32 reductions.
+Text trigonometric values round to BF16 before rotation; vision axial trigonometric values remain FP32.
+The CPU FP64 oracle records numerical differences rather than inventing a tie policy.
+MLX's vector/matrix quantized paths use different effective reconstruction, and bounded FP32 differences can propagate through history.
+See the exact primitive and whole-model evidence before interpreting a next-token mismatch.
 
 ```sh
-zig build tf-lfm3-forward tf-lfm3-vision tf-lfm3-exact -Dcpu=apple_m1
-./zig-out/bin/tf-lfm3-exact MODEL_DIR
+zig build tf-lfm3-forward tf-lfm3-vision tf-lfm3-project tf-lfm3-profile tf-lfm3-exact -Dcpu=apple_m1
 ./zig-out/bin/tf-lfm3-exact MODEL_DIR --long
-python3 tools/lfm3/serve_check.py --binary ./zig-out/native/bin/tensorfold-native --model-dir MODEL_DIR --cancel --output served.json
+python3 tools/lfm3/serve_check.py --binary ./zig-out/native/bin/tensorfold-native --model-dir MODEL_DIR --sampled --cancel --output served.json
 ```
 
-The default exactness suite covers 68 prompt, sliding-window, partial-acceptance, shared-stream and snapshot cases.
-The long suite adds five checks through 8,193 tokens. The served checker starts and stops only its own loopback server.
-It compares complete token hashes, checks actual cache reuse, and tests image content, order and corrupt input for VL.
-
-Independent MLX references live in `tools/lfm3/reference.py` and `vision_reference.py`; they are development tools,
-not inference dependencies. Native and MLX reductions can cross different BF16 rounding boundaries.
-Record per-layer errors and teacher-forced token differences; same-engine equality alone does not establish model fidelity.
-
-Long-context fidelity, maximum image budgets, stronger nonlinear accumulation witnesses and other Apple generations
-remain separate qualification work. Structured output requires the native grammar library; logprobs are not advertised.
-
-Agree model-fidelity and performance acceptance criteria on the tracking issue before claiming release readiness.
+Long-context model fidelity, maximum image budgets, 6/8-bit performance and other Apple GPU generations remain separate qualification work.
+Structured output requires the native grammar library; logprobs and video are not advertised.
+A complete earlier global M5 contract run found one Qwen4 failure that also reproduces on the unchanged pinned base.
+It is not a final-source global pass. Agree model-fidelity and performance gates on #1491 before claiming release readiness.

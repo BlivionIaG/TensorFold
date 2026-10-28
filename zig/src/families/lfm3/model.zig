@@ -6,6 +6,7 @@ const ckpt = @import("../../core/checkpoint_metal.zig");
 const shards = @import("../../core/checkpoint.zig");
 const weights = @import("metal_weights.zig");
 const kernels = @import("kernels.zig");
+const counters = @import("../../core/gpu_counters.zig");
 
 pub const Model = struct {
     gpa: std.mem.Allocator,
@@ -16,6 +17,7 @@ pub const Model = struct {
     weights: weights.Weights,
     kernels: kernels.Kernels,
     resident: ?mtl.ResidencySet = null,
+    profile: ?*counters.Recorder = null,
 
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !*Model {
         return loadWithResidency(gpa, io, dir, true);
@@ -26,6 +28,7 @@ pub const Model = struct {
         errdefer config.deinit();
         const m = try gpa.create(Model);
         errdefer gpa.destroy(m);
+        m.profile = null;
         m.gpa = gpa;
         m.config = config;
         m.device = try mtl.Device.init();

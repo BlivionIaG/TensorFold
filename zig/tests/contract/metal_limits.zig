@@ -31,6 +31,12 @@ fn launchOf(a: std.mem.Allocator, device: mtl.Device, d: limits.MetalLaunch) !La
             return std.mem.indexOf(u8, s, p) != null;
         }
     }.f;
+    if (std.mem.startsWith(u8, d.name, "lfm3-projection ")) {
+        const source = try tf.lfm3.row_projection.source(a);
+        const prefix = if (has(d.name, " bad-tail ")) "#define L3_PROJECTION_BAD_TAIL 1\n" else if (has(d.name, " bad-rows ")) "#define L3_PROJECTION_BAD_ROWS 1\n" else "";
+        const body = try std.mem.concat(a, u8, &.{ prefix, source });
+        return .{ .decl = d, .function = fun, .here = body, .pre_m5 = body };
+    }
     if (std.mem.startsWith(u8, d.name, "lfm3-vision ")) {
         const lfm3_head = if (has(d.name, " square-bad ")) "#define L3_SQUARE_ACC half\n" else if (has(d.name, " attention-bad ")) "#define L3_ATTN_ACC half\n" else "";
         const body = try std.mem.concat(a, u8, &.{ lfm3_head, sources.lfm3_vision });

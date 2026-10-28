@@ -2,7 +2,7 @@
 const std = @import("std");
 const mtl = @import("metal");
 const sources = @import("kernel_sources");
-const row = @import("../../core/row_projection.zig");
+const row = @import("row_projection.zig");
 
 pub const chunk_keys = 4096;
 pub const max_chunks = 64;
