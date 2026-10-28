@@ -190,3 +190,74 @@ pass: 66/66 build steps, 56/56 tests. Lean compares at 425 findings on both main
 and the merged tree, zero new. Performance and served-GPU receipts above are
 for `b4deee277` before this merge; they are not relabeled as exact merged-head
 measurements.
+
+### Wide-batch calibration (`099455490`)
+
+LFM2 timed single-stream verification windows through 16 rows, but the core may
+verify 32 shared rows. It therefore priced the extra rows by proportional
+extrapolation. This revision measures the shared path with two individually
+qualified windows, and anchors its measured increments to the existing 16-row
+window cost. Per-stream qualification remains 16 rows. The granted-depth rule
+also reuses its first copy-proposer decision: asking again can mutate the
+proposer's silence state and change that same decision. A stateful regression
+reproduces the duplicate-query bug. Qwen/DFlash2's policy is unchanged.
+
+`wide-calibration-candidate.json` retains the exact source and executable hashes,
+checkpoint/tokenizer identities, rendered prompt IDs, all 128 cells, request
+SSE timing spans, output hashes and counters. Four Latin rotations compare main
+`dd0a9cc5e`, published head `68c7435b0`, candidate without the drafter, and
+candidate with bf16 drafting. Every output hash agrees. The plain performance
+arms keep suffix copying enabled; literal `"draft": false` is the separate
+correctness oracle.
+
+Against the published PR, candidate drafted code changes at 1/4/8/16 streams are
++0.48%, **-1.93%**, -0.01%, **+10.96%**; prose changes are +0.05%, -0.42%,
++0.50%, **+8.86%**. At 16 streams it also beats main: 886.46 versus 830.13 tok/s
+for code, and 862.91 versus 798.61 for prose. The task owner accepted the
+four-stream tradeoff for the larger sixteen-stream gain. This is not a universal
+no-loss claim. The candidate without the drafter also loses 2.04% on four-stream
+prose versus main; all four arms are retained, including that result.
+
+M5 final correctness passes all 11 LFM2 contracts, with all 17 planted controls
+red and zero limit problems; 9/9 independent FP32 drafter picks; 20 steady rounds
+with zero host allocations/resizes; resumed/fresh equality with 3,517 reused
+prompt tokens; 29 seeded sampled cases; eight 8-bit cells; and drafted/plain plus
+four-concurrent/solo equality at 65,536 and 130,816 prompt tokens. Six-slot stress
+completes 423 requests with 233 cancellations; sixteen-slot stress completes
+845 with 455 cancellations. Zero wrong replies or request errors; graceful
+shutdowns throughout.
+
+M4 passes the same 11 operator contracts and 17 controls, 9/9 independent drafter
+picks (worst confidence difference 0.00106), and 20 allocation-free steady
+rounds. Its served run stops at the resumed-cache prerequisite: the OS reports
+memory pressure and explicitly disables keeping prompt states, so reused tokens
+remain zero. Its later stress/sampled/8-bit phases did not run. No pressure guard
+was bypassed, and no new M4 serving or throughput qualification is claimed.
+
+Local native/family/shared-lane checks pass 69/69 steps and 117/117 tests. The
+default build passes 239/239 steps. The direct proposer regression, 14 granted
+and 34 copy-policy tests also pass. M5 pre-request, context-4096, one-stream bf16
+load peaks are 15,709,645,744 bytes for published and 15,733,451,768 for candidate
+(+22.7 MiB, one run each). Hot startup increases by roughly one second. Other
+chips/backends and the full cross-family operator gate were not rerun.
+
+`wide-calibration-ablations.json` retains 765 M5 diagnostic cells and 35 interrupted,
+contended M4 cells. Interrupted runs are marked; they are not qualification
+passes. Larger staging, changed copy-rate policies, confidence fallbacks and
+uniform late-hold budgeting were discarded rather than included in this patch.
+
+To reproduce the four-arm comparison, reserve the GPU exclusively and build
+all three checkouts with `zig build native -Dcpu=apple_m1 -Dversion=1.1.8`, then run:
+
+```sh
+TF_QUAL_MAIN=/path/to/main/zig-out/native/bin/tensorfold-native \
+TF_QUAL_PUBLISHED=/path/to/published/zig-out/native/bin/tensorfold-native \
+TF_QUAL_CANDIDATE=/path/to/candidate/zig-out/native/bin/tensorfold-native \
+TF_QUAL_CANDIDATE_ROOT=/path/to/candidate \
+TF_QUAL_DRAFTER=/path/to/LFM2.5-24B-A2B-DSpark \
+TF_QUAL_OUT=/tmp/tf-lfm2-wide-matrix \
+python3 docs/receipts/lfm2-dspark-review/wide_matrix.py
+```
+
+`TF_QUAL_MODEL` overrides the default target snapshot path. The reproducer uses
+only Python's standard library and the sibling `qualification.py` helper.

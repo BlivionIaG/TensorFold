@@ -116,3 +116,9 @@ from 9 rows (the head from 5) where it has them. Held blocks use one bf16 16-row
 keeps the original row kernel through 32 rows, preserving the persistent context projections.
 When one lane's stage of 128 verified rows fills, its absorb pass takes
 every lane's staged rows, so the lanes' stages fill together.
+
+Shared verification past the 16-row qualified window uses measured increments
+from the shared forward path through 32 rows, anchored at the 16-row window
+price. This calibrates the batch cost without widening a stream's qualified
+window. The wide-batch receipt records the throughput gains, the accepted
+four-stream tradeoff, startup/footprint cost and hardware coverage limits.
