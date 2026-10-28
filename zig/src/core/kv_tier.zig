@@ -279,6 +279,17 @@ pub const Tier = struct {
         return t.host[id * b ..][0..b];
     }
 
+    /// `id`'s host rows were rewritten (a restored snapshot): its frame, if any, is dropped; Pinned while a call reads it.
+    pub fn invalidate(t: *Tier, id: u32) error{Pinned}!void {
+        const f = t.frame_of[id];
+        if (f == none) return;
+        if (t.pinned[f] > 0) return error.Pinned;
+        t.dirty[id] = false; // the frame's rows are being replaced
+        t.unmap(f);
+        t.free_frames[t.nfree] = f;
+        t.nfree += 1;
+    }
+
     /// Drop up to `n` unpinned frames, least recently used first; the count dropped.
     pub fn evict(t: *Tier, n: usize) usize {
         var done: usize = 0;

@@ -174,11 +174,12 @@ pub const LaneSel = struct {
     pub fn begin(s: *LaneSel, stream: cuda.Stream, ai: usize, pos0: usize, n: usize) !void {
         if (ai >= s.layers) return;
         if (s.reset_pending) {
+            // a new, resumed or restored stream: rows before pos0 are canonical in the host store
             try s.reset(stream);
-            s.flushed = 0;
-            s.win0 = 0;
-            s.hw = 0;
-            s.done = @splat(0);
+            s.flushed = pos0 / page_rows;
+            s.win0 = s.flushed * page_rows;
+            s.hw = (pos0 + page_rows - 1) / page_rows;
+            s.done = @splat(pos0);
         }
         const first = pos0 / page_rows;
         if (first < s.flushed) {
@@ -209,6 +210,20 @@ pub const LaneSel = struct {
         const last = (pos0 + n + page_rows - 1) / page_rows;
         if (last > s.npages) return error.PromptTooLong;
         for (0..last) |q| if (q < head_pages or q >= s.flushed) try s.ensure(stream, q);
+    }
+
+    /// The snapshot restored the stream's K/V rows into the host store: no page keeps a frame, the window starts over.
+    pub fn restored(s: *LaneSel) void {
+        const t = &s.host.tier;
+        for (s.tl.pages.ids.items, 0..) |id, p| {
+            if (p < s.fids.items.len and s.fids.items[p] != none) {
+                t.sync(id);
+                t.unpin(s.tl, id) catch {};
+                s.fids.items[p] = none;
+            }
+            t.invalidate(id) catch {};
+        }
+        s.reset_pending = true;
     }
 
     /// Rows [fed / page_rows * page_rows, fed) and everything before them are canonical in the host store.

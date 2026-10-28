@@ -125,6 +125,8 @@ pub const Paged = struct {
     ids: []u32,
     /// The frame of each page's K/V rows when a host tier maps them (empty: the page id is the frame).
     fids: []const u32 = &.{},
+    /// A host tier's K/V store as the device addresses it (0: none): snapshots use its rows, not the frames'.
+    hbase: u64 = 0,
     /// The index plane's table on the device, an int a page naming the logical page (0: the K/V table's).
     itable: u64 = 0,
     /// Positions a page holds.
@@ -155,6 +157,12 @@ pub const Paged = struct {
         const kv_id = if (p.fids.len > 0) p.fids[row / per] else p.ids[row / per];
         const plane = if (inIndexPlane(part)) p.ibase + @as(u64, p.ids[row / per]) * indexPageBytes(p.tokens, p.layers) else p.base + @as(u64, kv_id) * kvPageBytes(p.tokens, p.layers);
         return plane + planeOffset(p.tokens, layer, part) + (row % per) * rowBytes(part);
+    }
+
+    /// Byte address of row `row` of a K/V `part` in the host store (a host tier's canonical rows).
+    pub fn hostRowAt(p: *const Paged, layer: usize, part: Part, row: usize) u64 {
+        const per = rows(part, p.tokens);
+        return p.hbase + @as(u64, p.ids[row / per]) * kvPageBytes(p.tokens, p.layers) + planeOffset(p.tokens, layer, part) + (row % per) * rowBytes(part);
     }
 
     /// Borrowed views of each attention layer's `part` in page 0 (what kc, vc, ikc and pooled hold when paged).
