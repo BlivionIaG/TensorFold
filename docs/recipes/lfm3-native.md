@@ -2,7 +2,7 @@
 
 Tracking issue: [#1491](https://github.com/ashhart/TensorFold/issues/1491).
 
-The native Metal engine implements LFM3-1.7B text generation and LFM3-VL-2B image-to-text generation.
+This slice implements native LFM3-1.7B text generation. LFM3-VL execution is in the dependent vision slice.
 Both read the official MLX affine 4-, 6-, and 8-bit checkpoints without converting stored weights.
 This is an experimental family port. Device and model checks cover an M4 Pro and an M5 Ultra; they do not qualify other Apple GPUs.
 
@@ -13,13 +13,11 @@ Build the native engine with the Zig version in `.zig-version` and Xcode's Metal
 ```sh
 zig build native -Dcpu=apple_m1
 ./zig-out/native/bin/tensorfold-native serve LiquidAI/LFM3-1.7B-MLX-4bit --context 8192
-./zig-out/native/bin/tensorfold-native serve LiquidAI/LFM3-VL-2B-MLX-4bit --context 8192
 ```
 
 Replace `4bit` with `6bit` or `8bit` for those exports. A complete local checkpoint folder also works.
-The VL checkpoint loads its own image tower. Send images through OpenAI `image_url` content parts.
-The default image budget is 256 tokens per request, with at most four images.
-Video input is not implemented. JPEG and WebP decoding require the matching shared decoder libraries.
+This slice refuses VL checkpoints until the vision contribution is applied.
+Image budgets and decoder libraries are described by the stacked VL contribution.
 
 The shared lane engine handles target verification, sampling and concurrent streams.
 Convolution history and KV state are kept per stream; partial acceptance restores the accepted row's state.
@@ -117,3 +115,11 @@ Long-context model fidelity, maximum image budgets, 6/8-bit performance and othe
 Structured output requires the native grammar library; logprobs and video are not advertised.
 A complete earlier global M5 contract run found one Qwen4 failure that also reproduces on the unchanged pinned base.
 It is not a final-source global pass. Agree model-fidelity and performance gates on #1491 before claiming release readiness.
+
+## Weight licence
+
+The official text and VL MLX exports retain the LFM Open License v1.0.
+See the [text licence](https://huggingface.co/LiquidAI/LFM3-1.7B-MLX-4bit/blob/main/LICENSE) and
+[VL licence](https://huggingface.co/LiquidAI/LFM3-VL-2B-MLX-4bit/blob/main/LICENSE).
+TensorFold code remains Apache-2.0. The measured Macs are M4 Pro 48 GB and M5 Ultra 256 GiB.
+Receipts that include VL describe the combined chain, not a capability enabled in this text-only slice.

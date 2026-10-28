@@ -9,6 +9,4 @@ pub const state = @import("state.zig");
 pub const forward = @import("forward.zig");
 pub const backend = @import("backend.zig");
 pub const snapshot = @import("snapshot.zig");
-pub const image = @import("image.zig");
 pub const image_rows = @import("image_rows.zig");
-pub const vision = @import("vision.zig");
