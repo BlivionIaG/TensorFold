@@ -6,6 +6,13 @@ The native Metal engine implements LFM3-1.7B text generation and LFM3-VL-2B imag
 Both read the official MLX affine 4-, 6-, and 8-bit checkpoints without converting stored weights.
 This is an experimental family port. Device and model checks cover an M4 Pro and an M5 Ultra; they do not qualify other Apple GPUs.
 
+## Weight licence
+
+The official text and VL MLX exports retain the **LFM Open License v1.0**, rather than TensorFold’s Apache-2.0 code licence.
+See the [text weights licence](https://huggingface.co/LiquidAI/LFM3-1.7B-MLX-4bit/blob/main/LICENSE) and
+[VL weights licence](https://huggingface.co/LiquidAI/LFM3-VL-2B-MLX-4bit/blob/main/LICENSE).
+The checked Macs are an M4 Pro with 48 GB RAM and an M5 Ultra with 256 GiB RAM.
+
 ## Run the models
 
 Build the native engine with the Zig version in `.zig-version` and Xcode's Metal toolchain:
