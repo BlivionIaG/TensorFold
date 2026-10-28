@@ -561,3 +561,25 @@ test "a stream ends cleanly once the dirty pages it pins are flushed, and one th
     try t.pool.drop(keep);
     try expect(t.idle());
 }
+
+test "a page whose host rows were rewritten loses its frame, so the next pin copies them in; a pinned one refuses" {
+    var r: Rig = undefined;
+    try r.open(4, 2);
+    defer r.close();
+    const t = &r.tier;
+    var a = try r.lease(2, 2);
+    defer t.finish(&a);
+    const p = a.pages.ids.items;
+    _ = try r.pin(&a, p[0]);
+    r.write(&a, p[0], 4);
+    r.flush(p[0]);
+    try std.testing.expectError(error.Pinned, t.invalidate(p[0]));
+    try t.unpin(&a, p[0]);
+    @memset(r.tier.host_page(p[0]), 9); // the restore
+    try t.invalidate(p[0]);
+    try expect(t.resident(p[0]) == null);
+    try t.audit();
+    const f = try r.pin(&a, p[0]);
+    try expect(f.miss);
+    try t.invalidate(p[1]); // no frame: nothing to do
+}

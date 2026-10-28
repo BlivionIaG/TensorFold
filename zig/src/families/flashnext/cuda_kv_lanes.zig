@@ -209,7 +209,7 @@ pub const Pool = struct {
         const d = p.e.driver;
         var table = try cuda.DeviceBuffer.alloc(d, (mostPages(p.capacity, p.layout.page_tokens) + p.slot_frames) * 4);
         errdefer table.free();
-        const paged: pages.Paged = .{ .base = p.arena.ptr, .ibase = p.ibase, .planes = p.planes, .table = table, .ids = &.{}, .tokens = p.layout.page_tokens, .own_ids = false, .layers = wt.attn_n + @intFromBool(p.head != null) };
+        const paged: pages.Paged = .{ .base = p.arena.ptr, .ibase = p.ibase, .planes = p.planes, .hbase = if (p.host) |h| (h.store.device() catch 0) else 0, .table = table, .ids = &.{}, .tokens = p.layout.page_tokens, .own_ids = false, .layers = wt.attn_n + @intFromBool(p.head != null) };
         const conv = try gpa.alloc(cuda.DeviceBuffer, wt.linear_n);
         errdefer gpa.free(conv);
         const state = try gpa.alloc(cuda.DeviceBuffer, wt.linear_n);
@@ -333,7 +333,9 @@ pub const Pool = struct {
         const x = p.laneOf(seq) orelse return error.UnknownStream;
         const run_len = p.runLen();
         if (run_len < seqRunBytes()) return error.FlashNextRunTooShort;
-        return mtp.Draft.initIn(p.gpa, p.e.driver, cap, h.draft_n, h.rows, &x.seq.paged.?, p.runBase(x) + seqRunBytes(), run_len - seqRunBytes());
+        var d = try mtp.Draft.initIn(p.gpa, p.e.driver, cap, h.draft_n, h.rows, &x.seq.paged.?, p.runBase(x) + seqRunBytes(), run_len - seqRunBytes());
+        d.sel = x.sel;
+        return d;
     }
 
     /// Whether `seq` is a lane's cache.
