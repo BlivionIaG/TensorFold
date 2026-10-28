@@ -84,6 +84,26 @@ pub const Probe = struct {
                 f.biases[i * groups] = c.toBf16(value);
                 f.scales[(i + 3) * groups] = c.toBf16(value);
             }
+            if (p.inner.v.bits >= 6) {
+                // The nibble/bin order leaves q*x as (high=0, low=2), so an
+                // infinite scale must multiply the represented sum, not 0.
+                const input = f.x[(shape.rows - 1) * shape.k ..][0..p.inner.v.group];
+                @memset(input, c.toBf16(0));
+                input[0] = c.toBf16(0x1p26);
+                input[1] = c.toBf16(-0x1p22);
+                input[2] = c.toBf16(2);
+                for (3..6) |col| {
+                    const codes = f.codes[col * shape.k ..][0..p.inner.v.group];
+                    @memset(codes, 0);
+                    codes[0] = 1;
+                    codes[1] = 16;
+                    codes[2] = 1;
+                }
+                const words = try p.inner.a.alloc(u32, shape.n * shape.k * p.inner.v.bits / 32);
+                defer p.inner.a.free(words);
+                f.words(words);
+                @memcpy(p.inner.rig.bytes(p.inner.w, words.len * 4), std.mem.sliceAsBytes(words));
+            }
             for ([_]struct { ref: rig_.Ref, data: []const u8 }{
                 .{ .ref = p.inner.x, .data = std.mem.sliceAsBytes(f.x) },
                 .{ .ref = p.inner.s, .data = std.mem.sliceAsBytes(f.scales) },
