@@ -40,6 +40,15 @@ The full earlier M5 runner reported 272/273 kernels passing, two known findings,
 Its Qwen4 HC activation failure reproduces exactly in a separate build of pinned base `b30d5b9d3`.
 That is not a global pass or a final-source global-suite receipt.
 
+## Shared-stream attention follow-up
+
+`shared-attention.json` records the subsequent shared-dispatch source and binary identity.
+Full and sliding attention reuse the serial partial and merge arithmetic, with stream-local cache addresses and row maps.
+All 52 LFM3 kernels passed gates 1–4, all 14 controls were red as planted, and launch limits had zero problems.
+The real text4 default exactness suite passed 68/68, including unequal two/four-stream state and logits.
+All six sampled/cancellation serving suites on the M5 passed 303/303 with zero failures or skips.
+This follow-up is byte-preserving shared scheduling; it does not qualify tensor-unit prompt attention or a speed gate.
+
 ## Numerical evidence
 
 `projection-fp64-bounds.json` covers 66 projection/layout cells and 60,954,624 outputs.
