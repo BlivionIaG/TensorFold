@@ -34,8 +34,8 @@ pub fn runTogether(c: *collective.Collective, key: Key, pass: anytype, ids: []co
     const fail_hash = gfall.hashOf(1, key);
     var vote = if (entry != null) graphVote(entry, c.graphTimeoutMs()) else collective.GraphVote{
         .state = if (grebind.stateRequest(key, pass)) |request|
-            if (grebind.rebindCandidate(key, request, true) != null) .capture else if (gcache.sighting(key) < gcache.after() or gfall.blocked(fail_hash, gcache.clock)) .eager else .capture
-        else if (gcache.sighting(key) < gcache.after() or gfall.blocked(fail_hash, gcache.clock)) .eager else .capture,
+            if (grebind.rebindCandidate(key, request, true) != null) .capture else if (gcache.sighting(key) < gcache.afterKey(key) or gfall.blocked(fail_hash, gcache.clock)) .eager else .capture
+        else if (gcache.sighting(key) < gcache.afterKey(key) or gfall.blocked(fail_hash, gcache.clock)) .eager else .capture,
     };
     // this rank's instantiation failed: it votes eager (the peer's graph stays), the key backs off, both run eagerly
     const instantiation_failed = vote.state == .failed;

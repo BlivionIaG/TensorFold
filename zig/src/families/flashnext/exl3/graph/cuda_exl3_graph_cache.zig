@@ -182,3 +182,10 @@ pub var capture_after_override: ?u32 = null;
 pub fn after() u32 {
     return capture_after_override orelse capture_after;
 }
+
+/// A window (kind 2) is keyed by rows, state set and seams, so each is seen a few times and a capture costs more.
+pub const window_capture_after: u32 = 12;
+
+pub fn afterKey(key: Key) u32 {
+    return capture_after_override orelse if (key.kind == 2) window_capture_after else capture_after;
+}
