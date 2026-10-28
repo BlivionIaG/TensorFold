@@ -118,6 +118,8 @@ pub fn Pass(comptime Tri: type) type {
         /// The pending write-back's branch sits in fp32 in moe_f32 (something added to it, or it is kept).
         pending_f32: bool = false,
         pending_f32_weights: ?u64 = null,
+        /// moe_f32 holds the EXL3 canonical grouped branch (moeAdds keeps it instead of re-summing the slots).
+        canon_f32: bool = false,
         /// This layer's out projection leaves part's other slices alone; its writeback adds the zero slice once.
         zero_slices: bool = false,
 
@@ -508,6 +510,7 @@ pub fn Pass(comptime Tri: type) type {
             self.pending = null;
             self.pending_f32 = false;
             self.pending_f32_weights = null;
+            self.canon_f32 = false;
             // the gather writes the scratch's pinned rows, so the last pass's uploads must have read them first
             if (!self.prepared) try s.ready();
             const emb = s.hostEmb(n);
