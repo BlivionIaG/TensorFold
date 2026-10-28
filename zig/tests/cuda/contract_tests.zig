@@ -36,7 +36,6 @@ const f32w_k = @import("contract_glm_f32w.zig");
 const w4a8_k = @import("contract_w4a8.zig");
 
 const round_k = @import("contract_tree_round.zig");
-
 const act_k = @import("contract_act.zig");
 const vit_g4_group = @import("contract_gemma_group.zig");
 const gdn_k = @import("contract_gdn.zig");
@@ -47,7 +46,6 @@ const glm_index_k = @import("contract_glm_index.zig");
 const glm_attn_k = @import("contract_glm_attn.zig");
 const glm = @import("glm_cuda");
 const elementwise_k = @import("contract_elementwise.zig");
-
 const tree_k = @import("contract_tree_attn.zig");
 const block_k = @import("contract_block_attn.zig");
 const q35_k = @import("contract_q35_attn.zig");
@@ -571,6 +569,8 @@ pub fn run(gpu: check.Gpu) !void {
     for (&contiguous) |*x| try kernels.append(a, x.kernel());
     const weight_only = try @import("contract_weight_only_suite.zig").Suite.create(a, gpu, s, &kernels);
     defer weight_only.destroy(a);
+    const exl3_prefill = try @import("contract_flashnext_exl3_prefill.zig").Group.create(a, gpu, s, &kernels);
+    defer exl3_prefill.destroy();
     var t: g.Tally = .{};
     try @import("contract_dump.zig").run(a, kernels.items);
     const t0 = check.now(gpu.io);
