@@ -16,6 +16,28 @@ var depth_hist: [5][max_hist]u64 = @splat(@splat(0));
 var depth_calls: u64 = 0;
 const max_hist = 17;
 
+/// Whether a plain stream skips the head (EXL3 with offloaded experts: its pass costs misses); see cuda_mtp_stash.zig.
+fn deferring() bool {
+    return @import("exl3/model/cuda_exl3_pass.zig").offloaded_layers != 0;
+}
+
+/// A request for no drafts that the head skips: the window's kept rows are stashed, not run. False: draft as usual.
+pub fn deferred(self: anytype, r: be.DraftRequest) !bool {
+    const path = r.rows orelse return false;
+    if (!deferring() or r.lanes != null) return false;
+    const l = try self.lane(r.stream);
+    const d = if (l.draft) |*x| x else return false;
+    if (d.media != null) return false;
+    for (path, 0..) |row, i| if (row != i) return false;
+    if (r.follow.len < path.len) return error.PositionMismatch;
+    if (@min(@min(r.depth, self.depth), l.seq.cap - l.seq.fed - 1) != 0) return false;
+    try self.ops().rollback(&l.seq, d, path.len);
+    if (r.position != l.seq.fed + 1) return error.PositionMismatch;
+    if (!try self.ops().stash(d, r.follow[0..path.len], d.streams.ptr)) return false;
+    l.chain.n = 0;
+    return true;
+}
+
 /// Greedy requests (no trees, no media) drafted together: draftFn's rollbacks, one head pass a step; `done` marks them.
 pub fn batched(self: anytype, requests: []const be.DraftRequest, done: []bool) !void {
     var ds: [mtp_ops.max_lanes]*mtp.Draft = undefined;
@@ -29,6 +51,10 @@ pub fn batched(self: anytype, requests: []const be.DraftRequest, done: []bool) !
     for (requests, 0..) |r, ri| {
         if (r.lanes != null) continue;
         if (r.stream.sampling) |sm| if (sm.temperature > 0) continue;
+        if (try deferred(self, r)) {
+            done[ri] = true;
+            continue;
+        }
         const l = try self.lane(r.stream);
         const d = if (l.draft) |*x| x else continue;
         if (d.media != null) continue;
