@@ -11,6 +11,7 @@ const gcache = @import("cuda_exl3_graph_cache.zig");
 const gbudget = @import("cuda_exl3_graph_budget.zig");
 const grebind = @import("cuda_exl3_graph_rebind.zig");
 const glog = @import("cuda_exl3_graph_log.zig");
+const probe = @import("../pack/exl3_memprobe.zig");
 const gfall = @import("cuda_exl3_graph_fallback.zig");
 const gtogether = @import("cuda_exl3_graph_together.zig");
 const Key = gkey.Key;
@@ -56,6 +57,7 @@ pub fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
     const t0 = std.Io.Clock.awake.now(pass.io).toNanoseconds();
     try pass.stream.synchronize();
     const admission = try gbudget.reserveMemory(pass.stream, .decode, 0);
+    const probe_free = probe.free(pass.stream.d);
     var admitted = true;
     defer if (admitted) memory.release(admission) catch unreachable;
     var graph = gfall.captureOnce(pass, ids, pos0) orelse return fellBack(key, pass, ids, pos0);
@@ -132,6 +134,7 @@ pub fn run(key: Key, pass: anytype, ids: []const u32, pos0: usize) !void {
     hub.stats.captures += 1;
     const t2 = std.Io.Clock.awake.now(pass.io).toNanoseconds();
     hub.stats.capture_ns += @intCast(t2 - t0);
+    if (probe.enabled()) std.log.info("memprobe graph {s} rows={d}: device bytes taken by capture+{s} {d}", .{ if (key.kind == 1) "round" else "window", key.rows, how, @as(i64, @intCast(probe_free)) - @as(i64, @intCast(probe.free(pass.stream.d))) });
     std.log.info("flashnext exl3 graph: captured a {s} of {d} rows in {d:.1} ms + {s} in {d:.1} ms ({d} captures, {d} updates, {d} replays, {d} eager, {d} declined steps)", .{ if (key.kind == 1) "decode round" else "window", key.rows, @as(f64, @floatFromInt(t1 - t0)) / 1e6, how, @as(f64, @floatFromInt(t2 - t1)) / 1e6, hub.stats.captures, hub.stats.updates, hub.stats.replays, hub.stats.eager_dplan, hub.stats.declined });
     try at.exec.?.launchOn(pass.stream);
 }

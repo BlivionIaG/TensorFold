@@ -224,6 +224,7 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     const delta_text = if (std.c.getenv("TF_FLASHNEXT_EXL3_LINE_DELTAS")) |value| std.mem.span(value) else null;
     var out: Attached = .{};
     const scratch_before = try freeBytes(d);
+    _ = @import("../pack/exl3_memprobe.zig").at(d, "attach_begin");
     out.graph_reservation = b.graph_reservation;
     // every distinct Ops (the engine's store and the MTP head's) reserves its scratch now
     var seen: [4]*load.Ops = undefined;
@@ -247,6 +248,7 @@ pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cud
     var free: usize = 0;
     var total: usize = 0;
     try d.check(d.api.cuMemGetInfo_v2(&free, &total), "cuMemGetInfo");
+    _ = @import("../pack/exl3_memprobe.zig").at(d, "after_pool_scratch_tp");
     out.free_before = free;
     out.scratch_bytes = scratch_before -| free;
     const reserve_floor = b.reserve orelse serverReserve(total);
