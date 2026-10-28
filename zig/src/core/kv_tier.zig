@@ -16,6 +16,25 @@ pub const Shape = struct {
     }
 };
 
+/// A rank's shape, slots and digest (16-bit float pieces), told to the other ranks at open; a differing one is refused.
+pub const Lockstep = struct {
+    pub const len = 8;
+
+    pub fn vector(t: *const Tier, slots: usize) [len]f32 {
+        const d = t.digest();
+        var v: [len]f32 = @splat(0);
+        v[0] = @floatFromInt(t.pool.total());
+        v[1] = @floatFromInt(t.count());
+        v[2] = @floatFromInt(slots);
+        for (0..4) |i| v[3 + i] = @floatFromInt((d >> @intCast(16 * i)) & 0xffff);
+        return v;
+    }
+
+    pub fn agree(a: [len]f32, b: [len]f32) error{RanksDisagree}!void {
+        if (!std.mem.eql(f32, &a, &b)) return error.RanksDisagree;
+    }
+};
+
 /// A deliberate bug a test turns on to show that the check beside it fails without the rule: never set outside tests.
 pub const Fault = enum { none, keep_generation, ignore_pins, ignore_dirty, unpinned_dirty };
 
@@ -440,4 +459,5 @@ pub const Tier = struct {
 
 test {
     _ = @import("kv_tier_test.zig");
+    _ = @import("kv_tier_ranks_test.zig");
 }

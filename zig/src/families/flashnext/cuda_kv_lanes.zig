@@ -181,6 +181,7 @@ pub const Pool = struct {
         }
         errdefer if (p.host) |h| h.destroy(gpa) else p.plain.deinit();
         errdefer if (p.kern) |*kn| kn.unload();
+        if (p.host) |h| try h.lockstep(e, slot_frames);
         p.lanes = try gpa.alloc(Lane, streams);
         errdefer gpa.free(p.lanes);
         var made: usize = 0;

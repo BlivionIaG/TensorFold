@@ -37,6 +37,24 @@ pub const Host = struct {
         return h;
     }
 
+    /// The ranks exchange the tier's shape, slot count and digest at open; one that differs refuses.
+    pub fn lockstep(h: *const Host, e: anytype, slots: usize) !void {
+        const c = e.collective orelse return;
+        const rank = e.layers[0].exl3.?.tp.?.rank;
+        const st = e.stream.*;
+        const n = kv.tier.Lockstep.len;
+        var b = try cuda.DeviceBuffer.alloc(e.driver, 256);
+        defer b.free();
+        var v: [2 * n]f32 = @splat(0);
+        v[rank * n ..][0..n].* = kv.tier.Lockstep.vector(&h.tier, slots);
+        try st.synchronize();
+        try b.upload(0, std.mem.asBytes(&v));
+        try c.sum(st, b.ptr, 2 * n);
+        try c.finish(st);
+        try b.download(0, std.mem.asBytes(&v));
+        kv.tier.Lockstep.agree(v[0..n].*, v[n..][0..n].*) catch return error.FlashNextTierRanksDisagree;
+    }
+
     pub fn destroy(h: *Host, gpa: std.mem.Allocator) void {
         h.tier.deinit();
         h.store.free();
