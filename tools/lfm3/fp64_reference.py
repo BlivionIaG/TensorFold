@@ -29,9 +29,30 @@ def bf(values):
     return ((encoded | sign).astype(np.uint32) << 16).view(np.float32).astype(np.float64)
 
 
+def inject_image_rows(hidden, tokens, rows, start):
+    rows = np.asarray(rows, dtype=np.float64)
+    if start is None or start < 0 or rows.ndim != 2 or not len(rows):
+        raise ValueError('Expected nonempty projected image rows and nonnegative image start')
+    if rows.shape[1] != hidden.shape[1] or start + len(rows) > len(hidden):
+        raise ValueError('Projected image rows exceed decoder geometry')
+    expected = np.zeros(len(tokens), dtype=bool)
+    expected[start:start + len(rows)] = True
+    if not np.array_equal(np.asarray(tokens) == 125030, expected):
+        raise ValueError('Image placeholder rows do not match projected image span')
+    if not np.isfinite(rows).all():
+        raise ValueError('Projected image rows must be finite')
+    result = hidden.copy()
+    result[start:start + len(rows)] = bf(rows)
+    return result
+
+
 class Oracle:
-    def __init__(self, directory, weight_mode='exact', dump=None):
+    def __init__(self, directory, weight_mode='exact', dump=None, projection_rounding='fp64'):
         self.directory, self.weight_mode, self.dump = directory, weight_mode, dump
+        self.projection_rounding = projection_rounding
+        valid_rounding = projection_rounding in ('fp64', 'metal-row')
+        if not valid_rounding or (projection_rounding == 'metal-row' and weight_mode != 'exact'):
+            raise ValueError('Metal row replay requires exact affine weights')
         directory = directory.resolve()
         self.config = json.loads((directory / 'config.json').read_text())
         self.text = self.config.get('text_config', self.config)
@@ -100,6 +121,9 @@ class Oracle:
         return bf(weight) if self.weight_mode == 'bf16' else weight
 
     def linear(self, x, name):
+        if self.projection_rounding == 'metal-row':
+            from row_projection_reference import affine_rows
+            return bf(affine_rows(self, name, x))
         path, base, header = self.files[self.map[name + '.weight']]
         count = header[name + '.weight']['shape'][0]
         output = np.empty((*x.shape[:-1], count), dtype=np.float64)
@@ -164,8 +188,12 @@ class Oracle:
         gates = bf(1 / (1 + np.exp(-self.linear(x, prefix + 'self_attn.gate_proj'))))
         return self.linear(bf(output * gates[:, :, None]).reshape(len(x), heads * width), prefix + 'self_attn.o_proj')
 
-    def run(self, tokens):
+    def run(self, tokens, image_rows=None, image_start=None):
         hidden = bf(self.weights(self.prefix + 'embed_tokens', tokens))
+        if image_rows is not None:
+            hidden = inject_image_rows(hidden, tokens, image_rows, image_start)
+        elif image_start is not None:
+            raise ValueError('Image start requires projected image rows')
         self.take('embedding', hidden)
         for index, kind in enumerate(self.text['layer_types']):
             tag = f'layer_{index:02d}'
@@ -199,7 +227,10 @@ def main():
     parser.add_argument('--tokens', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--weight-mode', choices=('exact', 'bf16'), default='exact')
+    parser.add_argument('--projection-rounding', choices=('fp64', 'metal-row'), default='fp64')
     parser.add_argument('--trace-dir', type=Path)
+    parser.add_argument('--image-rows', type=Path, help='Projected rows as a two-dimensional numeric NumPy array')
+    parser.add_argument('--image-start', type=int)
     args = parser.parse_args()
     def write(path, values):
         path.write_bytes((np.asarray(values, dtype=np.float32).view(np.uint32) >> 16).astype('<u2').tobytes())
@@ -207,7 +238,7 @@ def main():
         write(args.trace_dir / (name + '.bf16'), values)
     if args.trace_dir:
         args.trace_dir.mkdir(parents=True, exist_ok=True)
-    oracle = Oracle(args.model_dir, args.weight_mode, dump if args.trace_dir else None)
+    oracle = Oracle(args.model_dir, args.weight_mode, dump if args.trace_dir else None, args.projection_rounding)
     tokens = np.load(args.tokens, allow_pickle=False)
     if tokens.ndim != 1 or not np.issubdtype(tokens.dtype, np.integer) or tokens.size == 0:
         parser.error('Expected a nonempty one-dimensional integer token array')
@@ -215,11 +246,20 @@ def main():
         parser.error('Token IDs exceed the decoder vocabulary')
     if tokens.size > oracle.text['max_position_embeddings']:
         parser.error('Token array exceeds the decoder context')
-    logits = oracle.run(tokens)
+    image_rows = np.load(args.image_rows, allow_pickle=False) if args.image_rows else None
+    if (args.image_rows is None) != (args.image_start is None):
+        parser.error('--image-rows and --image-start must be supplied together')
+    logits = oracle.run(tokens, image_rows, args.image_start)
     if not np.isfinite(logits).all():
         raise ValueError('Reference produced nonfinite logits')
     write(args.output, logits)
-    args.output.with_suffix('.json').write_text(json.dumps({'dtype': 'BF16', 'arithmetic': 'FP64 reductions with direct binary64-to-BF16 RNE activation boundaries', 'weight_mode': args.weight_mode, 'shape': list(logits.shape), 'accepted_threshold': None}, indent=2)+'\n')
+    arithmetic = 'FP64 reductions with direct binary64-to-BF16 RNE activation boundaries'
+    if args.projection_rounding == 'metal-row':
+        arithmetic += '; affine projections instead replay the Metal FP32 lane rounding, other operations remain FP64'
+    metadata = {'dtype': 'BF16', 'arithmetic': arithmetic, 'weight_mode': args.weight_mode,
+                'projection_rounding': args.projection_rounding, 'shape': list(logits.shape),
+                'accepted_threshold': None}
+    args.output.with_suffix('.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
 if __name__ == '__main__':
     main()
