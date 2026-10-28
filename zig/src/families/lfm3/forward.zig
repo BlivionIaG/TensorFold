@@ -24,6 +24,7 @@ const AttnArgs = @import("kernels.zig").AttentionArgs;
 const Encoder = struct {
     e: mtl.ComputeEncoder,
     m: *Model,
+    scratch: *st.Scratch,
     record: bool,
 
     fn begin(self: *Encoder, kind: counters.Class) !void {
@@ -52,7 +53,9 @@ const Encoder = struct {
 
     fn projection(self: *Encoder, w: row.Weights, x: Buffer, x_off: usize, y: Buffer, y_off: usize, rows: usize) !void {
         try self.begin(.dense);
-        try pairs.encode(self.e, &self.m.kernels.rows, w, x, x_off, y, y_off, rows);
+        if (self.m.projection_candidate) |*candidate| {
+            try candidate.encode(self.e, &self.m.kernels.rows, w, x, x_off, self.scratch.sums orelse return error.MissingProjectionCandidateScratch, y, y_off, rows);
+        } else try pairs.encode(self.e, &self.m.kernels.rows, w, x, x_off, y, y_off, rows);
         try self.end();
     }
 
@@ -88,8 +91,9 @@ pub fn run(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
 /// Developer projection fixture through the production selector, with no tokenizer or model-state update.
 pub fn project(m: *Model, s: *st.Scratch, w: row.Weights, input: Buffer, output: Buffer, rows: usize) !void {
     if (m.profile != null or rows == 0 or rows > s.rows) return error.InvalidLfmProjectionFixture;
+    if (m.projection_candidate != null) try s.prepareProjectionCandidate();
     const cb = m.queue.commandBuffer();
-    var enc = Encoder{ .e = cb.compute(.serial), .m = m, .record = false };
+    var enc = Encoder{ .e = cb.compute(.serial), .m = m, .scratch = s, .record = false };
     var ended = false;
     errdefer if (!ended) enc.e.end();
     try enc.projection(w, input, 0, output, 0, rows);
@@ -123,8 +127,9 @@ fn execute(m: *Model, s: *st.Scratch, segments: []const Segment, tokens: []const
     @memcpy(s.ids.slice(u32, total), tokens);
     const pool = mtl.objc.Pool.push();
     defer pool.pop();
+    if (m.projection_candidate != null) try s.prepareProjectionCandidate();
     var cb = m.queue.commandBuffer();
-    var enc = Encoder{ .e = cb.compute(.serial), .m = m, .record = record };
+    var enc = Encoder{ .e = cb.compute(.serial), .m = m, .scratch = s, .record = record };
     var ended = false;
     if (m.profile) |profile| profile.beginCommand(cb) catch |err| {
         enc.e.end();
@@ -252,6 +257,49 @@ fn conv(enc: *Encoder, s: *st.Scratch, cv: wts.Conv, layer: usize, segments: []c
     try enc.projection(cv.out, s.y, 0, s.r, 0, total);
 }
 
+const AttentionSegment = @import("kernels.zig").AttentionSegment;
+
+fn sharedAttention(enc: *Encoder, s: *st.Scratch, segments: []const Segment, layer: usize, sliding: bool, total: usize) !void {
+    const table = s.attention_segments.slice(AttentionSegment, c.layers * st.batch_rows)[layer * st.batch_rows ..][0..st.batch_rows];
+    const row_segments = s.attention_rows.slice(u32, st.batch_rows);
+    var base: usize = 0;
+    var used: usize = 0;
+    for (segments, 0..) |seg, i| {
+        const cache = seg.cache.blocks[layer].attention;
+        const first = if (sliding) (seg.cache.len + 1 -| c.sliding_window) / st.chunk_keys else 0;
+        const last = (seg.cache.len + seg.rows + st.chunk_keys - 1) / st.chunk_keys;
+        used = @max(used, last - first);
+        table[i] = .{ .keys = cache.keys.gpuAddress(), .values = cache.values.gpuAddress(), .base = @intCast(base), .rows = @intCast(seg.rows), .args = .{ .len = @intCast(seg.cache.len), .cap = @intCast(seg.cache.capacity), .scale = 1.0 / @sqrt(@as(f32, c.head_dim)), .window = if (sliding) c.sliding_window else 0, .chunk_base = @intCast(first) } };
+        @memset(row_segments[base..][0..seg.rows], @intCast(i));
+        base += seg.rows;
+    }
+    try enc.begin(.attention);
+    enc.pipe("lfm3_attn_segments");
+    for (segments) |seg| {
+        const cache = seg.cache.blocks[layer].attention;
+        enc.e.useResource(cache.keys, mtl.ResourceUsage.read);
+        enc.e.useResource(cache.values, mtl.ResourceUsage.read);
+    }
+    enc.e.setBuffer(s.queries, 0, 0);
+    enc.e.setBuffer(s.attention_segments, layer * st.batch_rows * @sizeOf(AttentionSegment), 1);
+    enc.e.setBuffer(s.attention_rows, 0, 2);
+    enc.e.setBuffer(s.pm, 0, 4);
+    enc.e.setBuffer(s.pl, 0, 5);
+    enc.e.setBuffer(s.po, 0, 6);
+    enc.groups(.{ c.query_heads, total, used }, .{ 128, 1, 1 });
+    try enc.end();
+    try enc.begin(.attention);
+    enc.pipe("lfm3_attn_segments_merge");
+    enc.e.setBuffer(s.pm, 0, 0);
+    enc.e.setBuffer(s.pl, 0, 1);
+    enc.e.setBuffer(s.po, 0, 2);
+    enc.e.setBuffer(s.attention_segments, layer * st.batch_rows * @sizeOf(AttentionSegment), 3);
+    enc.e.setBuffer(s.y, 0, 4);
+    enc.e.setBuffer(s.attention_rows, 0, 5);
+    enc.groups(.{ c.query_heads, total, 1 }, .{ 32, 1, 1 });
+    try enc.end();
+}
+
 fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const Segment, layer: usize, total: usize) !void {
     try enc.projection(a.q, s.x, 0, s.q, 0, total);
     try enc.projection(a.k, s.x, 0, s.k, 0, total);
@@ -259,6 +307,7 @@ fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const 
     try enc.projection(a.gate, s.x, 0, s.head_gate, 0, total);
     const sliding = enc.m.config.layer_types[layer] == .sliding_attention;
     const rotary = if (sliding) enc.m.config.sliding_rotary else enc.m.config.full_rotary;
+    const shared = segments.len > 1 and total <= st.batch_rows;
     var base: usize = 0;
     for (segments) |seg| {
         const cache = seg.cache.blocks[layer].attention;
@@ -283,6 +332,10 @@ fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const 
         enc.e.setBuffer(cache.values, 0, 8);
         enc.groups(.{ c.query_heads + c.kv_heads, seg.rows, 1 }, .{ 32, 1, 1 });
         try enc.end();
+        if (shared) {
+            base += seg.rows;
+            continue;
+        }
         var at: usize = 0;
         while (at < seg.rows) : (at += st.attn_slice) {
             const rows = @min(seg.rows - at, st.attn_slice);
@@ -313,6 +366,7 @@ fn attention(enc: *Encoder, s: *st.Scratch, a: wts.Attention, segments: []const 
         }
         base += seg.rows;
     }
+    if (shared) try sharedAttention(enc, s, segments, layer, sliding, total);
     try enc.begin(.activation);
     enc.pipe("lfm3_gate");
     enc.e.setBuffer(s.y, 0, 0);

@@ -17,12 +17,11 @@ inline float lfm3_attention_dot(const thread float* q, const device bfloat* k) {
   return simd_sum(float(dot));
 }
 
-[[kernel, max_total_threads_per_threadgroup(128)]] void lfm3_attn_partial(const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
-                                 const device bfloat* values [[buffer(2)]], constant lfm3_attn_args& p [[buffer(3)]],
-                                 device float* pm [[buffer(4)]], device float* pl [[buffer(5)]], device float* po [[buffer(6)]],
-                                 uint3 tg [[threadgroup_position_in_grid]], uint sg [[simdgroup_index_in_threadgroup]],
-                                 uint lane [[thread_index_in_simdgroup]]) {
-  const uint head = tg.x, row = tg.y, chunk = tg.z + p.chunk_base, count = p.len + row + 1;
+inline void lfm3_attention_partial(const device bfloat* queries, const device bfloat* keys,
+    const device bfloat* values, constant lfm3_attn_args& p, device float* pm, device float* pl, device float* po,
+    uint head, uint row, uint partition, uint sg, uint lane,
+    threadgroup float* maxima, threadgroup float* totals, threadgroup float* outputs) {
+  const uint chunk = partition + p.chunk_base, count = p.len + row + 1;
   const uint cutoff = p.window == 0 ? 0 : count > p.window ? count - p.window : 0;
   const uint first = max(chunk * L3PER + sg * L3PART, cutoff);
   const uint end = min(chunk * L3PER + (sg + 1) * L3PART, count);
@@ -42,7 +41,6 @@ inline float lfm3_attention_dot(const thread float* q, const device bfloat* k) {
     for (uint j = 0; j < 4; ++j) result[j] = result[j] * alpha + probability * float(values[base + 32 * j]);
     maximum = next;
   }
-  threadgroup float maxima[4], totals[4], outputs[4 * 128];
   if (lane == 0) { maxima[sg] = maximum; totals[sg] = total; }
   for (uint j = 0; j < 4; ++j) outputs[sg * 128 + lane + 32 * j] = result[j];
   threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -60,6 +58,15 @@ inline float lfm3_attention_dot(const thread float* q, const device bfloat* k) {
   }
   if (lane == 0) { pm[target] = merged_max; pl[target] = merged_total; }
   for (uint j = 0; j < 4; ++j) po[target * 128 + lane + 32 * j] = merged[j];
+}
+
+[[kernel, max_total_threads_per_threadgroup(128)]] void lfm3_attn_partial(const device bfloat* queries [[buffer(0)]], const device bfloat* keys [[buffer(1)]],
+                                 const device bfloat* values [[buffer(2)]], constant lfm3_attn_args& p [[buffer(3)]],
+                                 device float* pm [[buffer(4)]], device float* pl [[buffer(5)]], device float* po [[buffer(6)]],
+                                 uint3 tg [[threadgroup_position_in_grid]], uint sg [[simdgroup_index_in_threadgroup]],
+                                 uint lane [[thread_index_in_simdgroup]]) {
+  threadgroup float maxima[4], totals[4], outputs[4 * 128];
+  lfm3_attention_partial(queries, keys, values, p, pm, pl, po, tg.x, tg.y, tg.z, sg, lane, maxima, totals, outputs);
 }
 
 inline float lfm3_attention_merge(const device float* pm, const device float* pl, const device float* po,
@@ -113,4 +120,38 @@ inline float lfm3_attention_merge(const device float* pm, const device float* pl
   for (uint j = 0; j < 4; ++j) values[j] = float(q[size_t(row) * 128 + lane + 32 * j]);
   const float total = lfm3_attention_dot(values, k + size_t(row) * 128 + lane);
   if (lane == 0) out[row] = total;
+}
+
+struct lfm3_attn_segment { ulong keys, values; uint base, rows; lfm3_attn_args args; uint pad; };
+
+[[kernel, max_total_threads_per_threadgroup(128)]] void lfm3_attn_segments(
+    const device bfloat* queries [[buffer(0)]], constant lfm3_attn_segment* segments [[buffer(1)]],
+    const device uint* row_segments [[buffer(2)]], device float* pm [[buffer(4)]], device float* pl [[buffer(5)]],
+    device float* po [[buffer(6)]], uint3 tg [[threadgroup_position_in_grid]],
+    uint sg [[simdgroup_index_in_threadgroup]], uint lane [[thread_index_in_simdgroup]]) {
+  constant lfm3_attn_segment& seg = segments[row_segments[tg.y]];
+  const uint row = tg.y - seg.base;
+  const uint last = (seg.args.len + row + 1 + L3PER - 1) / L3PER;
+  if (tg.z + seg.args.chunk_base >= last) return;
+  threadgroup float maxima[4], totals[4], outputs[4 * 128];
+  const size_t offset = size_t(seg.base) * 16 * L3CHUNKS;
+  lfm3_attention_partial(queries + size_t(seg.base) * 16 * 128,
+    reinterpret_cast<const device bfloat*>(seg.keys), reinterpret_cast<const device bfloat*>(seg.values),
+    seg.args, pm + offset, pl + offset, po + offset * 128, tg.x, row, tg.z, sg, lane, maxima, totals, outputs);
+}
+
+[[kernel, max_total_threads_per_threadgroup(32)]] void lfm3_attn_segments_merge(
+    const device float* pm [[buffer(0)]], const device float* pl [[buffer(1)]], const device float* po [[buffer(2)]],
+    constant lfm3_attn_segment* segments [[buffer(3)]], device bfloat* y [[buffer(4)]],
+    const device uint* row_segments [[buffer(5)]], uint2 tg [[threadgroup_position_in_grid]],
+    uint lane [[thread_index_in_simdgroup]]) {
+  constant lfm3_attn_segment& seg = segments[row_segments[tg.y]];
+  const size_t offset = size_t(seg.base) * 16 * L3CHUNKS;
+  float result[4] = {0, 0, 0, 0};
+  const float total = lfm3_attention_merge(pm + offset, pl + offset, po + offset * 128,
+    seg.args, tg.x, tg.y - seg.base, lane, result);
+#ifdef L3_SEGMENT_BAD_TAIL
+  if (tg.y + 1 == seg.base + seg.rows) return;
+#endif
+  for (uint j = 0; j < 4; ++j) y[(size_t(tg.y) * 16 + tg.x) * 128 + lane + 32 * j] = bfloat(result[j] / total);
 }

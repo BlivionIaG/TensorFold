@@ -2,6 +2,9 @@
 const M = @import("limits.zig").MetalLaunch;
 
 pub const metal = [_]M{
+    .{ .name = "lfm3 segment-bad lfm3_attn_segments_merge", .threads = 32, .tg_memory = 0, .reserved = 32 },
+    .{ .name = "lfm3 lfm3_attn_segments", .threads = 128, .tg_memory = 2080, .reserved = 128 },
+    .{ .name = "lfm3 lfm3_attn_segments_merge", .threads = 32, .tg_memory = 0, .reserved = 32 },
     .{ .name = "lfm3-projection lfm3_row_pairs_q4", .threads = 64, .tg_memory = 0, .reserved = 64 },
     .{ .name = "lfm3-projection lfm3_row_pairs_q6", .threads = 64, .tg_memory = 0, .reserved = 64 },
     .{ .name = "lfm3-projection lfm3_row_pairs_q8", .threads = 64, .tg_memory = 0, .reserved = 64 },

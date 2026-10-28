@@ -9,9 +9,12 @@ pub const max_chunks = 64;
 pub const QkArgs = extern struct { len: u32, cap: u32, eps: f32, log2_theta: f32, rotary_pairs: u32 };
 pub const AttentionArgs = extern struct { len: u32, cap: u32, scale: f32, window: u32, chunk_base: u32 = 0 };
 
+pub const AttentionSegment = extern struct { keys: u64, values: u64, base: u32, rows: u32, args: AttentionArgs, pad: u32 = 0 };
+
 pub const names = [_][:0]const u8{
-    "lfm3_embed_b4", "lfm3_embed_b6", "lfm3_embed_b8", "lfm3_norm",   "lfm3_post_add",     "lfm3_add",
-    "lfm3_conv",     "lfm3_qk",       "lfm3_gate",     "lfm3_swiglu", "lfm3_attn_partial", "lfm3_attn_merge",
+    "lfm3_embed_b4",      "lfm3_embed_b6",            "lfm3_embed_b8", "lfm3_norm", "lfm3_post_add", "lfm3_add",
+    "lfm3_attn_segments", "lfm3_attn_segments_merge", "lfm3_conv",     "lfm3_qk",   "lfm3_gate",     "lfm3_swiglu",
+    "lfm3_attn_partial",  "lfm3_attn_merge",
 };
 
 pub const Kernels = struct {

@@ -6,6 +6,7 @@ const ckpt = @import("../../core/checkpoint_metal.zig");
 const shards = @import("../../core/checkpoint.zig");
 const weights = @import("metal_weights.zig");
 const kernels = @import("kernels.zig");
+const prompt = @import("prompt_projection.zig");
 const counters = @import("../../core/gpu_counters.zig");
 
 pub const Model = struct {
@@ -18,6 +19,7 @@ pub const Model = struct {
     kernels: kernels.Kernels,
     resident: ?mtl.ResidencySet = null,
     profile: ?*counters.Recorder = null,
+    projection_candidate: ?prompt.Candidate = null,
 
     pub fn load(gpa: std.mem.Allocator, io: std.Io, dir: []const u8) !*Model {
         return loadWithResidency(gpa, io, dir, true);
@@ -29,6 +31,7 @@ pub const Model = struct {
         const m = try gpa.create(Model);
         errdefer gpa.destroy(m);
         m.profile = null;
+        m.projection_candidate = null;
         m.gpa = gpa;
         m.config = config;
         m.device = try mtl.Device.init();
@@ -55,6 +58,22 @@ pub const Model = struct {
         return m;
     }
 
+    /// Explicit developer qualification path; ordinary model loading retains the established row arithmetic.
+    pub fn enableProjectionCandidate(m: *Model) !void {
+        if (m.projection_candidate != null) return error.ProjectionCandidateAlreadyEnabled;
+        var list: std.ArrayList(weights.Linear) = .empty;
+        defer list.deinit(m.gpa);
+        try list.append(m.gpa, m.weights.embedding);
+        for (m.weights.blocks) |b| {
+            switch (b.mixer) {
+                .conv => |cv| try list.appendSlice(m.gpa, &.{ cv.in, cv.out }),
+                .attention => |at| try list.appendSlice(m.gpa, &.{ at.q, at.k, at.v, at.gate, at.out }),
+            }
+            try list.appendSlice(m.gpa, &.{ b.ffn.gate, b.ffn.up, b.ffn.down });
+        }
+        m.projection_candidate = try prompt.Candidate.init(m.device, list.items);
+    }
+
     pub fn dropResident(m: *Model) void {
         if (m.resident) |set| {
             m.queue.removeResidencySet(set);
@@ -65,6 +84,7 @@ pub const Model = struct {
 
     pub fn deinit(m: *Model) void {
         m.dropResident();
+        if (m.projection_candidate) |*candidate| candidate.deinit();
         m.kernels.deinit();
         m.checkpoint.deinit();
         m.queue.deinit();

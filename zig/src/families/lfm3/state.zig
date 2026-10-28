@@ -113,6 +113,8 @@ pub const Scratch = struct {
     k: mtl.Buffer,
     v: mtl.Buffer,
     queries: mtl.Buffer,
+    attention_segments: mtl.Buffer,
+    attention_rows: mtl.Buffer,
     pm: mtl.Buffer,
     pl: mtl.Buffer,
     po: mtl.Buffer,
@@ -120,6 +122,7 @@ pub const Scratch = struct {
     up: mtl.Buffer,
     act: mtl.Buffer,
     head_gate: mtl.Buffer,
+    sums: ?mtl.Buffer = null,
     logits: mtl.Buffer,
     snapshots: [c.layers]?mtl.Buffer = @splat(null),
 
@@ -139,10 +142,13 @@ pub const Scratch = struct {
         out.v = try mem.alloc(rows * c.kv_heads * c.head_dim * 2);
         const slice_rows: usize = @min(rows, attn_slice);
         const partials = slice_rows * c.query_heads * chunks;
+        out.attention_segments = try mem.alloc(c.layers * batch_rows * @sizeOf(@import("kernels.zig").AttentionSegment));
+        out.attention_rows = try mem.alloc(batch_rows * 4);
         out.pm = try mem.alloc(partials * 4);
         out.pl = try mem.alloc(partials * 4);
         out.po = try mem.alloc(partials * c.head_dim * 4);
         inline for (.{ "gate", "up", "act" }) |name| @field(out, name) = try mem.alloc(rows * c.intermediate * 2);
+        out.sums = null;
         out.head_gate = try mem.alloc(rows * c.query_heads * 2);
         const logit_rows: usize = @min(rows, batch_rows);
         out.logits = try mem.alloc(logit_rows * c.vocab * 2);
@@ -150,6 +156,10 @@ pub const Scratch = struct {
             s.* = try mem.alloc(logit_rows * conv_bytes);
         };
         return out;
+    }
+
+    pub fn prepareProjectionCandidate(self: *Scratch) !void {
+        if (self.sums == null) self.sums = try self.memory.alloc(self.rows * (c.intermediate / 32) * 4);
     }
 
     pub fn deinit(self: *Scratch) void {
