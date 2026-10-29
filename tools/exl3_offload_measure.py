@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 
-def vectors(report):
+def vectors(report, expected_prompt_tokens=None):
     result = {}
     cells = report.get("cells", [])
     if not cells:
@@ -30,6 +30,8 @@ def vectors(report):
             for row in rows:
                 if row.get("complete") is not True or row["tokens"] != report["tokens"]:
                     raise ValueError("incomplete output")
+                if expected_prompt_tokens is not None and (row.get("prompt_tokens") != expected_prompt_tokens or row.get("cached_tokens") != 0):
+                    raise ValueError("input length or cold-cache evidence differs from required workload")
                 pair = tuple(row[field] for field in ("token_sha256", "output_sha256"))
                 if any(not isinstance(value, str) or re.fullmatch("[0-9a-f]{64}", value) is None for value in pair):
                     raise ValueError("missing full output hashes")
@@ -40,8 +42,8 @@ def vectors(report):
     return result
 
 
-def measure(log_text, report, reference, rank, phase="decode", minimum_samples=5, expected_layers=48):
-    if vectors(report) != vectors(reference):
+def measure(log_text, report, reference, rank, phase="decode", minimum_samples=5, expected_layers=48, expected_prompt_tokens=None):
+    if vectors(report, expected_prompt_tokens) != vectors(reference, expected_prompt_tokens):
         raise ValueError("candidate differs from reference")
     if "EXL3-CACHE-INVALID" in log_text or "CUDA_ERROR" in log_text:
         raise ValueError("invalid runtime telemetry")
@@ -77,11 +79,12 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--rank", type=int, required=True)
+    parser.add_argument("--expected-prompt-tokens", type=int)
     parser.add_argument("--phase", choices=("decode", "verify"), default="decode")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     try:
-        data = measure(args.log.read_text(), json.loads(args.report.read_text()), json.loads(args.reference.read_text()), args.rank, args.phase)
+        data = measure(args.log.read_text(), json.loads(args.report.read_text()), json.loads(args.reference.read_text()), args.rank, args.phase, expected_prompt_tokens=args.expected_prompt_tokens)
     except (ValueError, KeyError, TypeError) as error:
         parser.error(str(error))
     result = {"rank": args.rank, "phase": args.phase, "timing_scope": "last_device_invocation", "layers": data,

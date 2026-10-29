@@ -31,6 +31,17 @@ class MeasureTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 measure.measure(log(), candidate, report(), 0, expected_layers=1)
 
+    def test_required_16k_workload_needs_actual_usage_and_cold_evidence(self):
+        candidate = report()
+        row = candidate["cells"][0]["reps"][0]["evidence"][0]
+        row.update(prompt_tokens=16384, cached_tokens=0)
+        self.assertTrue(measure.vectors(candidate, 16384))
+        for field, value in (("prompt_tokens", 16383), ("prompt_tokens", None), ("cached_tokens", 1), ("cached_tokens", None)):
+            bad = copy.deepcopy(candidate)
+            bad["cells"][0]["reps"][0]["evidence"][0][field] = value
+            with self.assertRaises(ValueError):
+                measure.vectors(bad, 16384)
+
     def test_refuse_partial_layer_coverage_geometry_changes_and_runtime_errors(self):
         with self.assertRaises(ValueError):
             measure.measure(log(), report(), report(), 0)

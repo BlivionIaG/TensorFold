@@ -34,6 +34,20 @@ class PromptFile(unittest.TestCase):
         self.assertEqual(len({q["prompt"] for q in items}), 16)
         self.assertEqual({q["kind"] for q in items}, {"chat", "completion"})
 
+    def test_completion_arrays_preserve_exact_ids_and_refuse_invalid_arrays(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prompts.json"
+            good = [{"name": "raw", "kind": "completion", "prompt": [0, 1, 0xffffffff]}]
+            path.write_text(json.dumps(good))
+            self.assertEqual(bench_concurrent.distinct(str(path)), good)
+            for tokens in ([], [True], [-1], [0x100000000], [1.0], ["1"]):
+                path.write_text(json.dumps([{"name": "raw", "kind": "completion", "prompt": tokens}]))
+                with self.assertRaises(ValueError):
+                    bench_concurrent.distinct(str(path))
+            path.write_text(json.dumps([{"name": "raw", "kind": "chat", "prompt": [1, 2]}]))
+            with self.assertRaises(ValueError):
+                bench_concurrent.distinct(str(path))
+
     def test_malformed_files_are_refused(self):
         bad = [[], {}, [{"name": "a", "kind": "chat"}], [{"name": "a", "kind": "other", "prompt": "x"}],
                [{"name": "a", "kind": "chat", "prompt": ""}], [{"name": 1, "kind": "chat", "prompt": "x"}],
@@ -83,6 +97,16 @@ class DistinctCell(unittest.TestCase):
         self.assertEqual(cell["alone"], {"equal": 4, "unequal": 0, "failed": 0})
         self.assertEqual(cell["serial"], {"equal": 4, "unequal": 0, "failed": 0})
         self.assertEqual(sum(1 for b in bodies if b.get("draft") is False), 4)
+
+    def test_raw_array_requests_and_metadata_keep_exact_input_length(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "prompts.json"
+            path.write_text(json.dumps([{"name": "raw", "kind": "completion", "prompt": [3, 2, 1]}]))
+            report, bodies = self.main("--prompts", str(path))
+        self.assertEqual(report["prompt_token_counts"], {"raw": 3})
+        requests = [body for body in bodies if body["max_tokens"] != 16]
+        self.assertEqual(len(requests), 4)
+        self.assertTrue(all(body["prompt"] == [3, 2, 1] for body in requests))
 
     def test_prompts_and_mixed_are_exclusive(self):
         with self.assertRaises(SystemExit):
