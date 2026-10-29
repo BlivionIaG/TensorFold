@@ -100,3 +100,8 @@ blocks at load and corrects those prices toward each settled hold's GPU time. Th
 
 `tf-lfm2-dspark` also prints the confidence
 head against its fp32 reference and times shared holds of 2 to 16 streams.
+
+The loader reads the checkpoint one matrix at a time and keeps the released bf16 matrices, or 8-bit codes only when explicitly requested; a stream's drafter lane is one
+Metal buffer (its layers' keys and values, then its staged rows), and its bytes join the streams the load limit
+admits. At load the drafter logs its weights, scratch and a stream's bytes. `tf-lfm2-dspark` also counts host
+allocations over twenty served drafter rounds, which must be none.

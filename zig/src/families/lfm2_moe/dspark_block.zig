@@ -93,8 +93,8 @@ const Enc = struct {
         const args = QkArgs{ .len = @intCast(len), .cap = @intCast(lane.cap), .eps = c.eps, .log2_theta = std.math.log2(x.d.config.theta) };
         x.e.setBytes(std.mem.asBytes(&args), 5);
         x.e.setBuffer(queries.buf, queries.off, 6);
-        x.e.setBuffer(lane.keys[layer], 0, 7);
-        x.e.setBuffer(lane.values[layer], 0, 8);
+        x.e.setBuffer(lane.mem, lane.kv(layer, false).off, 7);
+        x.e.setBuffer(lane.mem, lane.kv(layer, true).off, 8);
         x.e.dispatchGroups(mtl.Size.of(c.query_heads + c.kv_heads, rows, 1), mtl.Size.of(32, 1, 1));
     }
 
@@ -105,8 +105,8 @@ const Enc = struct {
         const used = (keys + st.chunk_keys - 1) / st.chunk_keys * st.subs;
         x.pipe("lfm2_attn_block");
         x.e.setBuffer(s.queries, row * c.hidden * 2, 0);
-        x.e.setBuffer(lane.keys[layer], 0, 1);
-        x.e.setBuffer(lane.values[layer], 0, 2);
+        x.e.setBuffer(lane.mem, lane.kv(layer, false).off, 1);
+        x.e.setBuffer(lane.mem, lane.kv(layer, true).off, 2);
         x.e.setBytes(std.mem.asBytes(&args), 3);
         x.e.setBuffer(s.pm, 0, 4);
         x.e.setBuffer(s.pl, 0, 5);
@@ -123,18 +123,6 @@ const Enc = struct {
     }
 };
 
-fn failed(msg: [*:0]const u8) anyerror {
-    std.log.err("lfm2 dspark: command buffer failed: {s}", .{msg});
-    return error.GpuFailed;
-}
-
-fn finish(cb: mtl.CommandBuffer, e: mtl.ComputeEncoder) !void {
-    e.end();
-    cb.commit();
-    cb.wait();
-    if (cb.failure()) |msg| return failed(msg);
-}
-
 /// One stream's tapped rows in an absorb pass: `rows` rows at `src`, the context from position `p0`.
 pub const Piece = struct { lane: *Lane, src: Ref, rows: usize, p0: u64 };
 
@@ -148,16 +136,15 @@ pub fn absorbPass(d: *Drafter, e: mtl.ComputeEncoder, pieces: []const Piece) !vo
         rows += pc.rows;
     }
     if (rows == 0 or rows > ds.absorb_rows) return error.DraftContextGap;
-    x.norm(s.fcx, s.fcx, d.w.hidden_norm, false, s.hctx, rows);
+    x.norm(s.fcx, s.fcx, d.w.hidden_norm, false, s.fcx, rows); // in place: a thread reads its values first
     for (0..d.config.layers) |i| {
         const ly = &d.w.layers[i];
-        try x.project(ly.k, .{ .buf = s.hctx }, .{ .buf = s.k }, rows);
-        try x.project(ly.v, .{ .buf = s.hctx }, .{ .buf = s.v }, rows);
+        try x.project(ly.k, .{ .buf = s.fcx }, .{ .buf = s.k }, rows);
+        try x.project(ly.v, .{ .buf = s.fcx }, .{ .buf = s.v }, rows);
         var at: usize = 0;
         for (pieces) |pc| {
-            // the kernel rotates query heads too: they read the context rows and land in x, which no one reads
-            const q = Ref{ .buf = s.hctx, .off = at * c.hidden * 2 };
-            x.qk(q, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, i, pc.lane, pc.p0, .{ .buf = s.x }, pc.rows);
+            const q = Ref{ .buf = s.fcx, .off = at * c.hidden * 2 };
+            x.qk(q, .{ .buf = s.k, .off = at * kw * 2 }, .{ .buf = s.v, .off = at * kw * 2 }, i, pc.lane, pc.p0, .{ .buf = s.dump }, pc.rows);
             at += pc.rows;
         }
     }
@@ -170,7 +157,13 @@ pub fn begin(d: *Drafter) struct { cb: mtl.CommandBuffer, e: mtl.ComputeEncoder 
 }
 
 pub fn end(cb: mtl.CommandBuffer, e: mtl.ComputeEncoder) !void {
-    return finish(cb, e);
+    e.end();
+    cb.commit();
+    cb.wait();
+    if (cb.failure()) |msg| {
+        std.log.err("lfm2 dspark: command buffer failed: {s}", .{msg});
+        return error.GpuFailed;
+    }
 }
 
 /// A GPU event a hold signals instead of being waited on, and the value it sets.
@@ -262,7 +255,7 @@ pub fn hold(d: *Drafter, blocks: []const Block, signal: ?Signal) !?mtl.CommandBu
         cb.commit();
         return kept;
     }
-    try finish(cb, e);
+    try end(cb, e);
     const picks = s.picks.slice(Pick, d.config.block * ds.pass_rows);
     for (blocks, 0..) |b, bi| {
         for (b.lane.held[0..steps], 0..) |*h, i| {

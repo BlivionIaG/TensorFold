@@ -61,6 +61,7 @@ const Loader = struct {
     gpa: std.mem.Allocator,
     device: mtl.Device,
     check: *const ckpt.Checkpoint,
+    stage: *ckpt.Stage, // a matrix read from the file, one at a time, into one reused buffer
     owned: *std.ArrayList(mtl.Buffer),
     bits: u8,
 
@@ -71,8 +72,11 @@ const Loader = struct {
         return b;
     }
 
+    /// A vector as loaded, or a matrix read into the stage (valid until the next matrix), of `shape` in bf16.
     fn tensor(l: Loader, name: []const u8, shape: []const usize) !ckpt.Tensor {
-        const t = try l.check.get(name);
+        l.stage.reset();
+        if (shape.len == 2) try l.stage.reserve(l.check, &.{name});
+        const t = if (shape.len == 2) try l.stage.read(l.check, name) else try l.check.get(name);
         if (t.dtype != .bf16 or t.rank != shape.len or !std.mem.eql(usize, t.shape[0..t.rank], shape)) {
             std.log.err("{s}: unexpected DSpark tensor dtype or shape", .{name});
             return error.BadDraftWeight;
@@ -119,18 +123,25 @@ fn part(buf: []u8, layer: usize, name: []const u8) ![]const u8 {
     return std.fmt.bufPrint(buf, "layers.{d}.{s}.weight", .{ layer, name });
 }
 
-/// The drafter's checkpoint read as released (`bits` 0) or quantized to 8-bit codes; its own buffers are freed after.
+/// Matrices stay in the file until the loader reads them; vectors load with the header.
+fn matrices(_: []const u8, rank: usize) bool {
+    return rank == 2;
+}
+
+/// The checkpoint read as released (`bits` 0) or quantized to 8-bit codes, a matrix at a time; buffers freed after.
 pub fn load(gpa: std.mem.Allocator, device: mtl.Device, io: std.Io, dir: []const u8, cfg: *const dc.Config, bits: u8) !Weights {
     if (bits != 0 and bits != 8) return error.UnsupportedDraftBits;
     var check = ckpt.Checkpoint.init(gpa);
     defer check.deinit();
+    var stage: ckpt.Stage = .{ .device = device };
+    defer stage.deinit();
     const files = try shards.shardFiles(gpa, io, dir);
     defer shards.freeShardFiles(gpa, files);
-    for (files) |path| try check.addFile(device, path, "");
+    for (files) |path| try check.addFileSplit(device, path, "", null, matrices);
     var w: Weights = undefined;
     w.owned = .empty;
     errdefer w.deinit(gpa);
-    const l: Loader = .{ .gpa = gpa, .device = device, .check = &check, .owned = &w.owned, .bits = bits };
+    const l: Loader = .{ .gpa = gpa, .device = device, .check = &check, .stage = &stage, .owned = &w.owned, .bits = bits };
     const qw = c.query_heads * c.head_dim;
     const kw = c.kv_heads * c.head_dim;
     w.fc = try l.matrix("fc.weight", c.hidden, cfg.tap_count * c.hidden, false);
@@ -156,7 +167,7 @@ pub fn load(gpa: std.mem.Allocator, device: mtl.Device, io: std.Io, dir: []const
     w.w2 = try l.matrix("markov_head.markov_w2.weight", c.vocab, cfg.rank, false);
     w.confidence = null;
     w.confidence_bias = 0;
-    if (check.tensors.contains("confidence_head.proj.weight")) {
+    if (check.has("confidence_head.proj.weight")) {
         const width = c.hidden + cfg.rank; // the final norm's row, then W1 of the token before the draft
         const proj = (try l.tensor("confidence_head.proj.weight", &.{ 1, width })).host(u16);
         w.confidence = try l.buffer(width * 2);
