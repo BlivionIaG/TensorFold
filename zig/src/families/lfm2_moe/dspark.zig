@@ -20,9 +20,11 @@ pub const pass_rows = 32;
 pub const absorb_rows = 2048;
 /// Verified rows a lane keeps on the host until its next hold absorbs them (a round's rows for no GPU work).
 pub const stage_rows = 128;
+/// The blocks a hold is timed with at load, each at one draft and at four (two at 16 blocks: one 32-row pass).
+const hold_grid = [_]u32{ 1, 2, 4, 8, 16 };
 const kw = c.kv_heads * c.head_dim;
 
-/// `bits`: 0 runs the released bf16 matrices as stored; 8 quantizes the linears to 8-bit codes at load.
+/// `bits`: 0 runs the bf16 matrices as stored, 8 quantizes them at load.
 pub const Options = struct { capacity: usize, bits: u8 = 0 };
 
 /// One stream's context keys and values a layer ([kv head][cap][head dim], as the target's attention reads them).
@@ -35,6 +37,8 @@ pub const Lane = struct {
     staged: u32 = 0,
     held: [16]u32 = @splat(0),
     held_len: u32 = 0,
+    conf: [16]f32 = @splat(0), // each held draft's chance given the drafts before it landed (the confidence head)
+    conf_len: u32 = 0, // the drafts `conf` covers: the last settled hold's depth
     slot: ?u32 = null, // its block's place in the last signalled hold, whose picks still hold its drafts
 };
 
@@ -62,6 +66,7 @@ pub const Scratch = struct {
     best: mtl.Buffer, // the Markov scan's best score and token of each threadgroup, by stream
     at: mtl.Buffer,
     picks: mtl.Buffer,
+    conf: mtl.Buffer, // the confidence logits, step by step, a pass's blocks each
 };
 
 pub const Drafter = struct {
@@ -77,6 +82,8 @@ pub const Drafter = struct {
     /// One stream's hold wall ms at full depth, and that over the block (the depth rule's cost a draft).
     hold_ms: f64 = 0,
     step_ms: f64 = 0,
+    holds: [hold_grid.len * 2]lanes.hold_price.HoldCost = undefined, // hold passes timed at load, then by settled holds
+    holds_len: usize = 0,
     event: mtl.Event = undefined,
     signalled: u64 = 0,
     pending: ?mtl.CommandBuffer = null,
@@ -153,6 +160,7 @@ pub const Drafter = struct {
             .best = try d.buffer(r * block.scan_groups * 4),
             .at = try d.buffer(r * block.scan_groups * 4),
             .picks = try d.buffer(d.config.block * r * 8),
+            .conf = try d.buffer(d.config.block * r * 4),
         };
     }
 
@@ -162,7 +170,12 @@ pub const Drafter = struct {
     }
 
     pub fn drafter(d: *Drafter) dr.Drafter {
-        return .{ .ptr = d, .vtable = &.{ .taps = tapsFn, .facts = factsFn, .open = openFn, .absorb = absorbFn, .hold = holdFn, .held = heldFn, .release = releaseFn } };
+        return .{ .ptr = d, .vtable = &.{ .taps = tapsFn, .facts = factsFn, .open = openFn, .absorb = absorbFn, .hold = holdFn, .held = heldFn, .release = releaseFn, .chances = chancesFn } };
+    }
+
+    /// Whether holds compute the confidence head: the verify rows follow its chances, else the core's depth rule.
+    pub fn confident(d: *const Drafter) bool {
+        return d.w.confidence != null;
     }
 
     fn cast(ptr: *anyopaque) *Drafter {
@@ -179,7 +192,35 @@ pub const Drafter = struct {
 
     fn factsFn(ptr: *anyopaque) dr.Facts {
         const d = cast(ptr);
-        return .{ .depth = d.config.block, .step_ms = d.step_ms, .prior = prior[0..d.config.block], .batched = true, .stream_bytes = d.laneBytes(d.options.capacity) };
+        var f: dr.Facts = .{ .depth = d.config.block, .step_ms = d.step_ms, .prior = prior[0..d.config.block], .batched = true, .stream_bytes = d.laneBytes(d.options.capacity), .copy_first = true };
+        f.chances = d.confident();
+        f.hold_costs = d.holds[0..d.holds_len];
+        return f;
+    }
+
+    /// A held chain's chances: the confidence head's running product, or for a fixed window, ones that fall by depth.
+    fn chancesFn(ptr: *anyopaque, s: *Stream, out: []f64) anyerror!bool {
+        const d = cast(ptr);
+        const l = d.lanes.get(s) orelse return false;
+        if (!d.confident()) return false;
+        if (d.pending != null and l.slot != null and l.conf_len > 0) {
+            // the hold still runs: the lane's last settled confidences price it, so the host does not wait on the GPU
+            if (out.len > d.depths[l.slot.?]) return error.DraftHeldFewer;
+            var reach: f64 = 1;
+            for (out, 0..) |*o, j| {
+                reach *= l.conf[@min(j, l.conf_len - 1)];
+                o.* = reach;
+            }
+            return true;
+        }
+        try d.settle();
+        if (out.len > l.held_len) return error.DraftHeldFewer;
+        var reach: f64 = 1;
+        for (out, l.conf[0..out.len]) |*o, p| {
+            reach *= p;
+            o.* = reach;
+        }
+        return true;
     }
 
     pub fn laneBytes(d: *const Drafter, capacity: usize) usize {
@@ -301,7 +342,7 @@ pub const Drafter = struct {
         };
     }
 
-    /// Rows from `start` replace the context there: verified rows wait on the host for the next hold, others run now.
+    /// Rows from `start` replace the context there: rows that fit the stage wait on the host for the next hold.
     fn absorbFn(ptr: *anyopaque, items: []const dr.Absorb) anyerror!void {
         const d = cast(ptr);
         try d.settle();
@@ -324,7 +365,7 @@ pub const Drafter = struct {
             // rows from `start` replace what was staged past it; rows before the absorbed end go to the GPU now
             const keep: u32 = if (it.start >= l.end) @intCast(it.start - l.end) else 0;
             l.staged = @min(l.staged, keep);
-            if (!it.prompt and it.start >= l.end and l.staged + f.rows <= stage_rows) {
+            if (it.start >= l.end and l.staged + f.rows <= stage_rows) {
                 const from = (src.contents() + f.offset)[0 .. f.rows * width];
                 @memcpy((l.stage.contents() + l.staged * width)[0 .. f.rows * width], from);
                 l.staged += f.rows;
@@ -414,7 +455,27 @@ pub const Drafter = struct {
             std.log.err("lfm2 dspark: a hold failed on the GPU: {s}", .{msg});
             return error.DraftGpuFailed;
         }
+        d.priceHold((cb.gpuEnd() - cb.gpuStart()) * 1000);
         try block.readPicks(d, d.pass[0..d.pass_len], d.depths[0..d.pass_len]);
+    }
+
+    /// A settled hold's GPU ms against its price: the timed passes at its block counts move a tenth of the way to it.
+    pub fn priceHold(d: *Drafter, ms: f64) void {
+        const timed = d.holds[0..d.holds_len];
+        if (timed.len == 0 or d.pass_len == 0 or !(ms > 0)) return;
+        const deepest = std.mem.max(u32, d.depths[0..d.pass_len]);
+        const priced = lanes.hold_price.holdMs(timed, d.pass_len, deepest);
+        if (!(priced > 0)) return;
+        const step = 1 + 0.1 * (ms / priced - 1);
+        var lo: u32 = 0;
+        var hi: u32 = std.math.maxInt(u32);
+        for (timed) |h| {
+            if (h.streams <= d.pass_len) lo = @max(lo, h.streams);
+            if (h.streams >= d.pass_len) hi = @min(hi, h.streams);
+        }
+        for (timed) |*h| if (h.streams >= lo and h.streams <= hi) {
+            h.ms *= step;
+        };
     }
 
     /// The signalled hold settled and its lanes' picks forgotten (a lane may be dropped, or a hold may overwrite).
@@ -443,10 +504,13 @@ pub const Drafter = struct {
         return heldFn(ptr, &.{s}, &.{out});
     }
 
-    /// Holds on an empty context: the pipelines compiled, then one-draft and full-depth holds timed (best of three).
+    /// Holds on empty contexts: the pipelines compiled, then holds timed by blocks and depth (best of three).
     fn warm(d: *Drafter) !void {
-        const l = try d.newLane(64);
-        defer d.dropLane(l);
+        var made: [hold_grid[hold_grid.len - 1]]*Lane = undefined;
+        var n: usize = 0;
+        defer for (made[0..n]) |l| d.dropLane(l);
+        while (n < made.len) : (n += 1) made[n] = try d.newLane(64);
+        const l = made[0];
         var best: [2]f64 = @splat(std.math.floatMax(f64));
         for (0..4) |i| for ([_]u32{ 1, d.config.block }, &best) |depth, *b| {
             const t0 = std.Io.Clock.awake.now(d.io);
@@ -457,6 +521,22 @@ pub const Drafter = struct {
         d.hold_ms = best[1];
         d.step_ms = best[1] / @as(f64, @floatFromInt(d.config.block));
         std.log.info("lfm2 dspark: a 1-draft hold takes {d:.2} ms, a {d}-draft hold {d:.2} ms", .{ best[0], d.config.block, best[1] });
+        var blocks: [hold_grid[hold_grid.len - 1]]block.Block = undefined;
+        for (made, &blocks) |lane, *b| b.* = .{ .lane = lane, .pending = 1, .anchor = 0, .depth = 1 };
+        d.holds_len = 0;
+        for (hold_grid) |streams| for ([_]u32{ 1, @min(4, pass_rows / streams) }, 0..) |depth, j| {
+            if (j == 1 and depth == 1) continue;
+            for (blocks[0..streams]) |*b| b.depth = depth;
+            var ms_best = std.math.floatMax(f64);
+            for (0..4) |i| {
+                const t0 = std.Io.Clock.awake.now(d.io);
+                _ = try block.hold(d, blocks[0..streams], null);
+                const ms = @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(d.io)).toNanoseconds())) / 1e6;
+                if (i > 0) ms_best = @min(ms_best, ms);
+            }
+            d.holds[d.holds_len] = .{ .streams = streams, .depth = depth, .ms = ms_best };
+            d.holds_len += 1;
+        };
     }
 };
 

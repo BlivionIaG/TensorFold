@@ -111,6 +111,16 @@ fn compare(label: []const u8, gpu: []const u16, row: []const f32, bias: []const 
     std.debug.print("{s}: cosine {d:.5}, worst difference {d:.3}\n", .{ label, dot / @sqrt(gg * rr), worst });
 }
 
+/// A hold's GPU ms: the blocks held in a signalled command buffer, waited on and read for its GPU times.
+fn gpuHold(d: *q.dspark.Drafter, blocks: []const q.dspark_block.Block) !f64 {
+    d.signalled += 1;
+    const cb = (try q.dspark_block.hold(d, blocks, .{ .event = d.event, .value = d.signalled })).?;
+    defer cb.release();
+    cb.wait();
+    if (cb.failure() != null) return error.GpuFailed;
+    return (cb.gpuEnd() - cb.gpuStart()) * 1000;
+}
+
 fn absorb(d: *q.dspark.Drafter, piece: q.dspark_block.Piece) !void {
     const run = q.dspark_block.begin(d);
     try q.dspark_block.absorbPass(d, run.e, &.{piece});
@@ -158,8 +168,11 @@ pub fn main(init: std.process.Init) !void {
     _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }}, null);
     var held: [16]u32 = undefined;
     @memcpy(held[0..block], lane.held[0..block]);
+    var conf: [16]f32 = undefined;
+    @memcpy(conf[0..block], lane.conf[0..block]);
     const gpu = held[0..block];
-    for ([_]usize{ 1, 4, 16 }) |rows| {
+    for ([_]usize{ 1, 4, 16, 128, q.dspark.absorb_rows }) |rows| {
+        if (rows > ctx) continue;
         var best: f64 = std.math.floatMax(f64);
         for (0..5) |_| {
             const t0 = std.Io.Clock.awake.now(init.io);
@@ -178,6 +191,35 @@ pub fn main(init: std.process.Init) !void {
         }
         std.debug.print("hold at depth {d}: {d:.2} ms (best of 5)\n", .{ depth, best });
     }
+    // a shared round's hold: S streams' blocks of d rows in one pass (S x d at most pass_rows), each on this context
+    var lanes_: [16]*q.dspark.Lane = undefined;
+    lanes_[0] = lane;
+    var made: usize = 1;
+    defer for (lanes_[1..made]) |l| d.dropLane(l);
+    while (made < lanes_.len) : (made += 1) {
+        const l = try d.newLane(length + 32);
+        lanes_[made] = l;
+        var from: usize = 0;
+        while (from < ctx) : (from += q.dspark.absorb_rows) {
+            const rows = @min(q.dspark.absorb_rows, ctx - from);
+            try absorb(d, .{ .lane = l, .src = .{ .buf = taps.buf, .off = from * width * 2 }, .rows = rows, .p0 = from });
+        }
+        l.end = ctx;
+    }
+    for ([_]usize{ 2, 4, 8, 16 }) |streams| for ([_]u32{ 1, 2, 3, 4, 8 }) |depth| {
+        if (streams * depth > q.dspark.pass_rows) continue;
+        var blocks: [16]q.dspark_block.Block = undefined;
+        for (blocks[0..streams], lanes_[0..streams]) |*b, l| b.* = .{ .lane = l, .pending = ids[ctx], .anchor = ctx, .depth = depth };
+        var best: f64 = std.math.floatMax(f64);
+        var gpu_best: f64 = std.math.floatMax(f64);
+        for (0..5) |_| {
+            const t0 = std.Io.Clock.awake.now(init.io);
+            _ = try q.dspark_block.hold(d, blocks[0..streams], null);
+            best = @min(best, @as(f64, @floatFromInt(t0.durationTo(std.Io.Clock.awake.now(init.io)).toNanoseconds())) / 1e6);
+            gpu_best = @min(gpu_best, try gpuHold(d, blocks[0..streams]));
+        }
+        std.debug.print("hold of {d} streams at depth {d}: {d:.2} ms, GPU {d:.2} ms (best of 5)\n", .{ streams, depth, best, gpu_best });
+    };
     _ = try q.dspark_block.hold(d, &.{.{ .lane = lane, .pending = ids[ctx], .anchor = ctx, .depth = block }}, null);
     // the host reference, fp32 throughout
     var r: Ref = .{ .gpa = gpa, .check = ck.Checkpoint.init(gpa), .cfg = cfg };
@@ -271,6 +313,9 @@ pub fn main(init: std.process.Init) !void {
     const w1 = try r.get("markov_head.markov_w1.weight");
     const w2 = try r.get("markov_head.markov_w2.weight");
     const bias = try a.alloc(f32, c.vocab);
+    const proj = try r.get("confidence_head.proj.weight");
+    const proj_bias = (try r.get("confidence_head.proj.bias"))[0];
+    var conf_worst: f32 = 0;
     var prev = ids[ctx];
     var same: usize = 0;
     var worst: f32 = 0;
@@ -296,8 +341,16 @@ pub fn main(init: std.process.Init) !void {
         same += @intFromBool(ok);
         std.debug.print("step {d}: reference {d} (margin {d:.3}, second {d}), GPU {d} {s}\n", .{ i, best, margin, second, gpu[i], if (ok) "equal" else "DIFFERENT" });
         if (!ok) worst = @max(worst, margin);
+        // the confidence head: [final norm row i, W1 of the token before draft i] . proj + bias, through a sigmoid
+        var logit: f32 = proj_bias;
+        for (h[i * c.hidden ..][0..c.hidden], proj[0..c.hidden]) |x0, w0| logit += x0 * w0;
+        for (w1[@as(usize, prev) * cfg.rank ..][0..cfg.rank], proj[c.hidden..]) |x0, w0| logit += x0 * w0;
+        const want = 1 / (1 + @exp(-logit));
+        conf_worst = @max(conf_worst, @abs(want - conf[i]));
+        std.debug.print("step {d}: confidence reference {d:.4}, GPU {d:.4}\n", .{ i, want, conf[i] });
         prev = gpu[i]; // teacher-forced: step i + 1 follows the GPU's pick, so each step is compared alone
     }
     std.debug.print("the reference's largest margin over a different GPU pick: {d:.3}\n", .{worst});
+    std.debug.print("the confidences' worst difference from the fp32 reference: {d:.5}\n", .{conf_worst});
     std.debug.print("{d} of {d} drafts equal the fp32 reference's picks on the same chain ({d}-token context)\n", .{ same, n, ctx });
 }

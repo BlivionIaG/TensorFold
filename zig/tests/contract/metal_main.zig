@@ -30,6 +30,7 @@ const lfm2_tap = @import("metal_lfm2_tap.zig");
 const lfm2_dspark = @import("metal_lfm2_dspark.zig");
 const lfm2_bf16 = @import("metal_lfm2_bf16.zig");
 const lfm2_attn = @import("metal_lfm2_attn.zig");
+const lfm2_conf = @import("metal_lfm2_confidence.zig");
 const lfm2_controls = @import("metal_lfm2_controls.zig");
 const g = contract.gates;
 const usage = "usage: tf-kernel-contract [--only TEXT] [--no-gates] [--no-limits] [--offline DIR] [--seed N] [--repro] [--rotary-long] [--rotary-accuracy FILE]";
@@ -273,6 +274,22 @@ pub fn main(init: std.process.Init) !u8 {
             try block_list.append(a, p);
             try kernels.append(a, p.kernel());
         }
+    }
+    var conf_list: std.ArrayList(*lfm2_conf.Probe) = .empty;
+    defer {
+        for (conf_list.items) |p| {
+            p.deinit();
+            a.destroy(p);
+        }
+        conf_list.deinit(a);
+    }
+    for ([_]lfm2_controls.Mutation{ .none, .confidence_no_w1 }) |m| {
+        if (!wanted(o, if (m == .none) lfm2_conf.name else m.name())) continue;
+        const p = try a.create(lfm2_conf.Probe);
+        errdefer a.destroy(p);
+        p.* = try lfm2_conf.Probe.init(a, device, queue, m);
+        try conf_list.append(a, p);
+        try kernels.append(a, p.kernel());
     }
     var rows_list: std.ArrayList(*rows_k.Row) = .empty;
     var proj_list: std.ArrayList(*affine_k.Proj) = .empty;

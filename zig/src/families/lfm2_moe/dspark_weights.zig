@@ -41,6 +41,9 @@ pub const Weights = struct {
     /// The Markov head: W1 [vocab, rank] bf16 as stored (rows gathered by token), W2 [vocab, rank] as the linears.
     w1: mtl.Buffer,
     w2: Linear,
+    /// The confidence head: its [hidden + rank] bf16 weights and fp32 bias (null: the checkpoint has none).
+    confidence: ?mtl.Buffer = null,
+    confidence_bias: f32 = 0,
     owned: std.ArrayList(mtl.Buffer) = .empty,
 
     pub fn deinit(w: *Weights, gpa: std.mem.Allocator) void {
@@ -151,5 +154,14 @@ pub fn load(gpa: std.mem.Allocator, device: mtl.Device, io: std.Io, dir: []const
     w.w1 = try l.buffer(c.vocab * cfg.rank * 2);
     @memcpy(w.w1.slice(u16, c.vocab * cfg.rank), w1);
     w.w2 = try l.matrix("markov_head.markov_w2.weight", c.vocab, cfg.rank, false);
+    w.confidence = null;
+    w.confidence_bias = 0;
+    if (check.tensors.contains("confidence_head.proj.weight")) {
+        const width = c.hidden + cfg.rank; // the final norm's row, then W1 of the token before the draft
+        const proj = (try l.tensor("confidence_head.proj.weight", &.{ 1, width })).host(u16);
+        w.confidence = try l.buffer(width * 2);
+        @memcpy(w.confidence.?.slice(u16, width), proj);
+        w.confidence_bias = quant.toF32((try l.tensor("confidence_head.proj.bias", &.{1})).host(u16)[0]);
+    }
     return w;
 }
