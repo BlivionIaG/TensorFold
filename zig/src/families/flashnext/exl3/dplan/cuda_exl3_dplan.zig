@@ -84,6 +84,7 @@ pub const DevPlan = struct {
     /// Experts read in place from the host bank (more misses than free lines in a round), summed at each pull.
     inplace: u64 = 0,
     timings: []timing_.Timing = &.{},
+    timing_epoch: ?cuda.Event = null,
     trace_mem: ?cuda.DeviceBuffer = null,
     trace_checkpoint_fn: ?cuda.Function = null,
 
@@ -144,6 +145,14 @@ pub const DevPlan = struct {
         errdefer gpa.free(seen);
         var side = try cuda.Stream.init(d, true);
         errdefer side.deinit();
+        var timing_epoch: ?cuda.Event = if (timing_requested) try cuda.Event.init(d, true) else null;
+        errdefer if (timing_epoch) |*epoch| epoch.deinit();
+        if (timing_epoch) |epoch| {
+            try epoch.recordExternal(side);
+            for (timings) |*timing| try timing.initialize(side);
+            try side.synchronize();
+            for (timings) |*timing| try timing.initializeAfterConsumers(epoch);
+        }
         var ev_plan = try cuda.Event.init(d, false);
         errdefer ev_plan.deinit();
         var ev_copy = try cuda.Event.init(d, false);
@@ -188,6 +197,7 @@ pub const DevPlan = struct {
             .overlap = experiment.overlap,
             .recent_eviction = experiment.recent_eviction,
             .timings = timings,
+            .timing_epoch = timing_epoch,
             .trace_mem = trace_mem,
             .trace_checkpoint_fn = if (trace_mem != null) try mod.function("fn_exl3_dcheckpoint") else null,
         };
@@ -201,6 +211,7 @@ pub const DevPlan = struct {
         if (dp.stream) |stream| stream.synchronize() catch {};
         for (dp.timings) |*timing| timing.deinit();
         dp.gpa.free(dp.timings);
+        if (dp.timing_epoch) |*epoch| epoch.deinit();
         if (dp.trace_mem) |*buffer| buffer.free();
         dp.split.free();
         dp.ev_copy.deinit();
@@ -327,7 +338,7 @@ pub const DevPlan = struct {
     pub fn samplePoolTimingAfterConsumers(dp: *const DevPlan, pool: *const pool_.Pool) !?telemetry.LayerTiming {
         if (dp.timings.len == 0 or dp.owner != .device) return null;
         const index = dp.indexOf(pool) orelse return null;
-        return dp.timings[index].sampleAfterConsumers(dp.overlap);
+        return dp.timings[index].sampleAfterConsumers(dp.overlap, dp.timing_epoch orelse return error.InvalidOffloadTiming);
     }
 
     pub fn samplePoolAfterConsumers(dp: *const DevPlan, pool: *const pool_.Pool) !telemetry.Device {

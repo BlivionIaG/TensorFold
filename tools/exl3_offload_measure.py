@@ -17,6 +17,9 @@ def vectors(report):
             raise ValueError("invalid benchmark cell")
         if cell.get("timing_valid") is not True:
             raise ValueError("invalid served timing")
+        for check in ("alone", "serial"):
+            if check in cell and (cell[check].get("unequal") != 0 or cell[check].get("failed") != 0 or cell[check].get("equal", 0) == 0):
+                raise ValueError("failed solo/plain comparison")
         evidence = []
         for rep in cell["reps"]:
             if rep.get("errors") or rep.get("failed") != 0 or rep.get("unmeasured") != 0:
