@@ -264,3 +264,24 @@ test "holds as wide as the grants: replies equal one-token decode at 1, 4 and 8 
         }
     }
 }
+
+test "hold budgeting queries a stateful copy proposer once for a granted depth" {
+    const empty: Table = .{};
+    var rule: depth.Rule = .{ .gpa = gpa, .prior = &.{0.8}, .most_drafts = 9, .family_costs = &empty, .shared_costs = &empty, .mtp_step_ms = 1, .plain_guard = true, .node_probabilities = true, .granted_depth = true, .batch_rows = 32 };
+    defer rule.deinit();
+    var state: ?depth.State = null;
+    defer if (state) |*s| s.deinit(gpa);
+    var whos = [_]depth.Who{.{ .state = &state, .draft_room = 64, .finished = false, .forced = false, .granted = 1 }};
+    const Changing = struct {
+        fn copy(ptr: *anyopaque, _: *const depth.Who) bool {
+            const calls: *usize = @ptrCast(@alignCast(ptr));
+            calls.* += 1;
+            return calls.* > 1;
+        }
+    };
+    var calls: usize = 0;
+    var out: [1]i64 = undefined;
+    try rule.budgets(&whos, .{ .ptr = &calls, .copy = Changing.copy }, false, &out);
+    try std.testing.expectEqual(@as(usize, 1), calls);
+    try std.testing.expectEqual(@as(i64, 2), out[0]);
+}

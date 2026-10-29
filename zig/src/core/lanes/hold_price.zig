@@ -30,21 +30,47 @@ pub fn holdMs(costs: []const HoldCost, streams: usize, depth: i64) f64 {
     return at_lo + t * (atDepth(costs, hi, depth) - at_lo);
 }
 
-/// One stream count's hold ms at `depth`: linear between its two nearest timed depths (one alone: as timed).
+/// Interpolate neighboring depths, or extrapolate the nearest end segment (one alone: as timed).
 fn atDepth(costs: []const HoldCost, streams: u32, depth: i64) f64 {
     var a: ?HoldCost = null;
     var b: ?HoldCost = null;
     for (costs) |c| {
         if (c.streams != streams) continue;
-        if (a == null or c.depth < a.?.depth) {
-            b = a;
+        if (c.depth == depth) return c.ms;
+        if (c.depth < depth and (a == null or c.depth > a.?.depth)) a = c;
+        if (c.depth > depth and (b == null or c.depth < b.?.depth)) b = c;
+    }
+    if (a == null) {
+        a = b.?;
+        b = null;
+        for (costs) |c| if (c.streams == streams and c.depth > a.?.depth and (b == null or c.depth < b.?.depth)) {
+            b = c;
+        };
+        if (b == null) return a.?.ms;
+    } else if (b == null) {
+        b = a.?;
+        a = null;
+        for (costs) |c| if (c.streams == streams and c.depth < b.?.depth and (a == null or c.depth > a.?.depth)) {
             a = c;
-        } else if (b == null or c.depth < b.?.depth) b = c;
+        };
+        if (a == null) return b.?.ms;
     }
     const x = a.?;
-    const y = b orelse return x.ms;
+    const y = b.?;
     const t = (@as(f64, @floatFromInt(depth)) - @as(f64, @floatFromInt(x.depth))) / @as(f64, @floatFromInt(y.depth - x.depth));
     return x.ms + t * (y.ms - x.ms);
+}
+
+test "hold prices retain measured kernel transitions and use the adjacent depth segment" {
+    const t = [_]HoldCost{
+        .{ .streams = 8, .depth = 4, .ms = 18 },
+        .{ .streams = 8, .depth = 1, .ms = 10 },
+        .{ .streams = 8, .depth = 2, .ms = 17 },
+    };
+    try std.testing.expectEqual(@as(f64, 17), holdMs(&t, 8, 2));
+    try std.testing.expectEqual(@as(f64, 17.5), holdMs(&t, 8, 3));
+    try std.testing.expectEqual(@as(f64, 18.5), holdMs(&t, 8, 5));
+    try std.testing.expectEqual(@as(f64, 3), holdMs(&t, 8, 0));
 }
 
 test "a hold's ms between and past the timed passes" {

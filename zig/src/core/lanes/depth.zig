@@ -78,7 +78,10 @@ pub const Rule = struct {
     shared_rounds: u64 = 0,
     greedy_overhead: std.ArrayList(Overhead) = .empty, // overhead from rounds without a sampled stream
 
+    hold_order: []usize = &.{}, // reused hold ordering, at most batch_rows entries
+
     pub fn deinit(r: *Rule) void {
+        r.gpa.free(r.hold_order);
         r.round_ms.deinit(r.gpa);
         r.overhead.deinit(r.gpa);
         r.greedy_ms.deinit(r.gpa);
@@ -243,8 +246,9 @@ pub const Rule = struct {
 
     /// Granted holds kept, most expected drafts a row first, while they raise the next round's expected tokens a ms.
     fn payHolds(r: *Rule, whos: []const Who, sampled: bool, out: []i64) !void {
-        const order = try r.gpa.alloc(usize, whos.len);
-        defer r.gpa.free(order);
+        if (whos.len > r.batch_rows) return error.BadHoldStreamCount;
+        if (r.hold_order.len == 0) r.hold_order = try r.gpa.alloc(usize, r.batch_rows);
+        const order = r.hold_order[0..whos.len];
         var m: usize = 0;
         var probes: usize = 0; // a probe after a grant of none keeps its hold: it measures the stream again
         var deepest: i64 = 0;
@@ -310,7 +314,7 @@ pub const Rule = struct {
             for (whos, out) |*w, *o| {
                 const inner = try r.headDepth(w, null, probe);
                 const granted: i64 = if (w.granted) |g| g else r.most_drafts;
-                o.* = try r.headDepth(w, if (r.granted_depth) inner else @min(inner, granted + r.k.draft_slack), probe);
+                o.* = if (r.granted_depth) inner else try r.headDepth(w, @min(inner, granted + r.k.draft_slack), probe);
             }
             if (r.granted_depth) capPass(out, r.batch_rows);
             if (r.granted_depth and r.k.hold_costs.len > 0) try r.payHolds(whos, sampled, out);
@@ -548,6 +552,13 @@ test "a granted hold stays only while its stream's expected drafts pay for the v
     var out = [_]i64{ 4, 4, 0, 3 };
     try rule.payHolds(&whos, false, &out);
     try std.testing.expectEqualSlices(i64, &.{ 4, 0, 0, 3 }, &out);
+    var failing = std.testing.FailingAllocator.init(gpa, .{ .fail_index = 0 });
+    rule.gpa = failing.allocator();
+    out = .{ 4, 4, 0, 3 };
+    try rule.payHolds(&whos, false, &out);
+    try std.testing.expect(!failing.has_induced_failure);
+    try std.testing.expectEqualSlices(i64, &.{ 4, 0, 0, 3 }, &out);
+    rule.gpa = gpa;
     const dear = [_]HoldCost{.{ .streams = 1, .depth = 1, .ms = 20.0 }};
     rule.k.hold_costs = &dear;
     out = .{ 4, 4, 0, 3 };
