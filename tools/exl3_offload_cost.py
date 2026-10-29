@@ -78,23 +78,23 @@ def propose(profile):
         curves.append(sorted(points))
     # Multiple-choice exact budget search; both line count and full variable bytes
     # must match because the native admission check enforces both invariants.
-    states = {(0, 0): (0, ())}
+    states = {(0, 0): (0, 0, ())}
     for index, curve in enumerate(curves):
         remaining = len(curves) - index - 1
         next_states = {}
-        for (used_lines, used_bytes), (cost, chosen) in states.items():
+        for (used_lines, used_bytes), (cost, displacement, chosen) in states.items():
             for lines, device_bytes, measured_cost in curve:
                 key = (used_lines + lines, used_bytes + device_bytes)
                 if key[0] + remaining * 10 > baseline_lines or key[1] > budget:
                     continue
-                candidate = (cost + measured_cost, chosen + (lines,))
+                candidate = (cost + measured_cost, displacement + abs(lines - uniform), chosen + (lines,))
                 previous = next_states.get(key)
                 if previous is None or candidate < previous:
                     next_states[key] = candidate
-        if len(next_states) > MAX_STATES:
-            raise ValueError("measurement grid exceeds bounded allocation search")
+                    if len(next_states) > MAX_STATES:
+                        raise ValueError("measurement grid exceeds bounded allocation search")
         states = next_states
-    cost, chosen = states[(baseline_lines, budget)]
+    cost, _, chosen = states[(baseline_lines, budget)]
     deltas = ",".join(f"{layer}:{lines - uniform:+d}" for layer, lines in enumerate(chosen) if lines != uniform)
     return {
         "schema": 1,
