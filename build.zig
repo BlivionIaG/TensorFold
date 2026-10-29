@@ -76,6 +76,7 @@ pub fn build(b: *std.Build) void {
     const slide_test_hooks = b.option(bool, "slide-test-hooks", "Living Weights test hooks, such as TF_SLIDE_FORGET_FAIL (never in a release)") orelse false;
     if (slide_test_hooks and release_version != null) @panic("-Dslide-test-hooks is for test builds: a -Dversion release never carries it");
     build_options.addOption(bool, "slide_test_hooks", slide_test_hooks);
+    const lfm3_risk_fast = b.option(bool, "lfm3-risk-fast", "Developer LFM3 exact risk predicate candidate") orelse false;
     const optimize = b.option(std.builtin.OptimizeMode, "optimize", "debug, safe, fast or small (default fast)") orelse .fast;
     // Nemotron's draft vocabulary (zig/src/families/nemotron/draft_ids.txt), for every backend
     const ids_files = b.addWriteFiles();
@@ -87,7 +88,7 @@ pub fn build(b: *std.Build) void {
     @import("zig/build/kernel_symbols.zig").tests(b, test_step);
     @import("zig/build/checkpoint_security.zig").tests(b, test_step);
     if (b.graph.host.result.os.tag == .macos) {
-        const step5_mods = metalEngineModules(b, b.graph.host, .Debug, draft_ids);
+        const step5_mods = metalEngineModules(b, b.graph.host, .Debug, draft_ids, false);
         const empty = b.addWriteFiles().add("step5-compile-only.metallib", "");
         step5_mods.sources.addImport("nemotron_packed_metallib", embedded(b, empty, "nemotron_packed.metallib"));
         @import("zig/build/step5_host.zig").steps(b, step5_mods.metal, step5_mods.engine, step5_mods.lanes);
@@ -98,7 +99,7 @@ pub fn build(b: *std.Build) void {
     @import("zig/build/flashnext_batch_host.zig").tests(b, test_step);
     @import("zig/build/lfm3_host.zig").steps(b, test_step);
     if (b.graph.host.result.os.tag == .macos) {
-        const budget_mods = metalEngineModules(b, b.graph.host, .Debug, draft_ids);
+        const budget_mods = metalEngineModules(b, b.graph.host, .Debug, draft_ids, false);
         const budget_empty = b.addWriteFiles().add("budget-compile-only.metallib", "");
         budget_mods.sources.addImport("nemotron_packed_metallib", embedded(b, budget_empty, "nemotron_packed.metallib"));
         @import("zig/build/fsr.zig").deviceSteps(b, budget_mods.metal, budget_mods.engine, budget_mods.sources);
@@ -140,7 +141,7 @@ pub fn build(b: *std.Build) void {
     const cuda_options = @import("zig/build/options.zig").cuda(b);
     const tp_options = @import("zig/build/options.zig").tp(b);
     switch (target.result.os.tag) {
-        .macos => metalTargets(b, target, optimize, draft_ids, build_options, test_step),
+        .macos => metalTargets(b, target, optimize, draft_ids, build_options, test_step, lfm3_risk_fast),
         .linux, .windows => cuda_build.targets(b, target, optimize, draft_ids, build_options, cuda_options),
         else => {},
     }
@@ -149,7 +150,7 @@ pub fn build(b: *std.Build) void {
     const gemma4_contract_host = @import("zig/build/gemma4_host.zig").tests(b, gemma4_host_sources);
     gemma4_contract_host.dependOn(@import("zig/build/glm_rows_contract.zig").host(b, gemma4_host_sources));
     if (b.graph.host.result.os.tag == .macos) {
-        const gemma4_host_mods = metalEngineModules(b, b.graph.host, .Debug, draft_ids);
+        const gemma4_host_mods = metalEngineModules(b, b.graph.host, .Debug, draft_ids, false);
         gemma4_host_mods.sources.addImport("nemotron_packed_metallib", embedded(b, b.addWriteFiles().add("gemma4-compile-empty.metallib", ""), "nemotron_packed.metallib"));
         @import("zig/build/gemma4_host.zig").compileHost(b, gemma4_host_mods.metal, gemma4_host_mods.engine, gemma4_host_mods.lanes, gemma4_host_mods.sources);
         @import("zig/build/qwen27_host.zig").compileHost(b, gemma4_host_mods.metal, gemma4_host_mods.engine, gemma4_host_mods.lanes);

@@ -10,6 +10,7 @@ const lfm3_sums = @import("metal_lfm3_sums.zig");
 const lfm3_attention_sums = @import("metal_lfm3_attention_sums.zig");
 const lfm3_dual = @import("metal_lfm3_dual.zig");
 const lfm3_segments = @import("metal_lfm3_segments.zig");
+const lfm3_risk_fast = @import("metal_lfm3_risk_fast.zig");
 const lfm3_alpha = @import("metal_lfm3_alpha.zig");
 const lfm3_conv_segments = @import("metal_lfm3_conv_segments.zig");
 const binned_projection = @import("metal_binned_projection.zig");
@@ -173,6 +174,15 @@ pub fn main(init: std.process.Init) !u8 {
         postnorm_count += 1;
     }
     for (postnorm_probes[0..postnorm_count]) |*probe| try kernels.append(a, probe.kernel());
+    var lfm3_risk_probes: [2]lfm3_risk_fast.Probe = undefined;
+    var lfm3_risk_count: usize = 0;
+    defer for (lfm3_risk_probes[0..lfm3_risk_count]) |*probe| probe.deinit();
+    for ([_]bool{ false, true }) |sliding| {
+        if (!wanted(o, lfm3_risk_fast.name(sliding))) continue;
+        lfm3_risk_probes[lfm3_risk_count] = try lfm3_risk_fast.Probe.init(a, device, queue, sliding);
+        lfm3_risk_count += 1;
+    }
+    for (lfm3_risk_probes[0..lfm3_risk_count]) |*probe| try kernels.append(a, probe.kernel());
     var lfm3_skip_probe: ?lfm3_alpha.SkipProbe = null;
     defer if (lfm3_skip_probe) |*probe| probe.deinit();
     if (wanted(o, lfm3_alpha.skip_name)) {
