@@ -46,6 +46,7 @@ test "exl3: ownership trace checkpoints use ragged pool state and serialized com
     driver.api.cuLaunchKernel = Probe.launch;
     var entries = [_]PoolState{ try PoolState.init(10, 0), try PoolState.init(31, stateWords(10)) };
     var device: DevPlan = undefined;
+    device.timings = &.{};
     device.pool_states = &entries;
     device.state.ptr = 0x10000;
     device.trace_mem = .{ .d = &driver, .ptr = 0x100000, .len = 2 * demand_trace.pool_bytes, .borrowed = true };
@@ -106,6 +107,7 @@ test "exl3: demand trace planner arguments stay fixed and joined reads isolate p
     var pools = [_]*pool_.Pool{ &resident, &resident };
     var states = [_]PoolState{ try PoolState.init(10, 0), try PoolState.init(10, stateWords(10)) };
     var device: DevPlan = undefined;
+    device.timings = &.{};
     device.pools = &pools;
     device.pool_states = &states;
     device.max_rows = 16;

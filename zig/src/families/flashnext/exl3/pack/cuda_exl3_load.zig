@@ -420,6 +420,7 @@ pub const Experts = struct {
     /// Makes the pool: `lines` device lines, `counts` the family's lifetime use table (null: the pool's own), `layer`
     pub fn attach(x: *Experts, io: std.Io, d: *const cuda.Driver, which: u8, lines: usize, max_rows: usize, counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !void {
         if (x.bank == null or x.pool != null) return error.Invalid;
+        const experiment = try @import("../offload/exl3_offload_experiment.zig").fromEnv();
         const p = try x.gpa.create(pool_.Pool);
         errdefer x.gpa.destroy(p);
         const l = x.layer;
@@ -430,7 +431,8 @@ pub const Experts = struct {
             .width = wt.moe_w,
             .max_rows = max_rows,
             .slots = wt.slots,
-            .direct = true, // the bank is pinned: one H2D a projection on the copy engine, no staging memcpy
+            .direct = experiment.staging == 0,
+            .staging = experiment.staging,
             .codebook = .mul1,
             .act_mode = l.act_mode,
             .max_passes = pool_.passesFor(pool_.min_lines),

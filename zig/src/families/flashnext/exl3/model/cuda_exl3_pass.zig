@@ -222,7 +222,8 @@ pub fn freeBytes(d: *const cuda.Driver) !u64 {
 pub fn attach(gpa: std.mem.Allocator, io: std.Io, d: *const cuda.Driver, st: cuda.Stream, runtime: ?*@import("../prefill/cuda_exl3_prefill_state.zig").Runtime, layers: []const @import("../../cuda_prompt_load.zig").Layer, mtp: ?*const @import("../../cuda_prompt_load.zig").Layer, rows: usize, b: Budget, profile_counts: ?*[pool_.shape.layers][pool_.shape.experts]u32) !Attached {
     var all: [wt.layers_n + 1]*load.Experts = undefined;
     const n = offloadedLayers(layers, mtp, &all);
-    const delta_text = if (std.c.getenv("TF_FLASHNEXT_EXL3_LINE_DELTAS")) |value| std.mem.span(value) else null;
+    const allocation_rank = if (n != 0 and all[0].tp != null) all[0].tp.?.rank else 0;
+    const delta_text = try line_deltas.fromEnv(allocation_rank);
     var out: Attached = .{};
     const scratch_before = try freeBytes(d);
     out.graph_reservation = b.graph_reservation;

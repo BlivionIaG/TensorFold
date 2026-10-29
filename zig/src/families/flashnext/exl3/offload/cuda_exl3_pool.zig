@@ -19,6 +19,8 @@ pub const min_lines: usize = 10;
 
 test {
     _ = @import("exl3_frequency_seed.zig");
+    _ = @import("exl3_offload_experiment.zig");
+    _ = @import("../dplan/cuda_exl3_offload_timing.zig");
 }
 
 /// The layer's experts in host memory: routed [512] gate/up/down trellis bytes (stored layout), the shared expert's.
@@ -65,6 +67,7 @@ pub const Stats = struct {
     blocks: u64 = 0,
     rounds: u64 = 0,
     passes: u64 = 0,
+    split_passes: u64 = 0,
     hit_slots: u64 = 0,
     miss_slots: u64 = 0,
     unique: u64 = 0,
@@ -72,6 +75,7 @@ pub const Stats = struct {
     prefetches: u64 = 0,
     evictions: u64 = 0,
     busy: u64 = 0, // plans that had to drain in-flight copies first
+    busy_wait_ns: u64 = 0,
     protected: u64 = 0, // rounds that spared the previous round's lines
 };
 
@@ -268,7 +272,9 @@ pub const Pool = struct {
             error.Busy => {
                 // every line is held by a copy in flight: let them land, then plan again (nothing was written)
                 p.stats.busy += 1;
+                const wait_start = std.Io.Clock.awake.now(p.io).toNanoseconds();
                 try p.lines.drain();
+                p.stats.busy_wait_ns += @intCast(std.Io.Clock.awake.now(p.io).toNanoseconds() - wait_start);
                 try p.reap();
                 try round_.plan(&p.v, p.opt.layer, picks, p.counts, p.now, p.round_no, ropt, &p.round);
             },
@@ -297,6 +303,7 @@ pub const Pool = struct {
         }
         p.stats.rounds += 1;
         p.stats.passes += r.n_passes;
+        p.stats.split_passes += r.n_passes - 1;
         p.stats.hit_slots += r.hit_slots;
         p.stats.miss_slots += r.miss_slots;
         p.stats.unique += r.unique;
